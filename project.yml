@@ -102,6 +102,18 @@ targets:
     dependencies:
       - target: Vosh
 
+  VoshTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: VoshTests
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.cluas.vosh.tests
+        GENERATE_INFOPLIST_FILE: YES
+    dependencies:
+      - target: Vosh
+
   VoshWidgetExtension:
     type: app-extension
     platform: iOS
