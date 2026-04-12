@@ -1,0 +1,129 @@
+name: Vosh
+options:
+  bundleIdPrefix: com.cluas
+  deploymentTarget:
+    iOS: "17.0"
+  xcodeVersion: "16.0"
+  generateEmptyDirectories: true
+
+settings:
+  base:
+    SWIFT_VERSION: "5.9"
+    MARKETING_VERSION: "1.0.0"
+    CURRENT_PROJECT_VERSION: 1
+    DEVELOPMENT_TEAM: ""
+    CODE_SIGN_IDENTITY: "Apple Development"
+    CODE_SIGN_STYLE: Automatic
+
+packages:
+  SwiftTerm:
+    url: https://github.com/migueldeicaza/SwiftTerm.git
+    from: "1.2.0"
+  Citadel:
+    url: https://github.com/orlandos-nl/Citadel.git
+    from: "0.7.0"
+  WhisperKit:
+    url: https://github.com/argmaxinc/WhisperKit.git
+    from: "0.9.0"
+
+targets:
+  Vosh:
+    type: application
+    platform: iOS
+    sources:
+      - path: Vosh
+    entitlements:
+      path: Vosh/App/Vosh.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.com.cluas.vosh
+    settings:
+      base:
+        INFOPLIST_FILE: Vosh/App/Info.plist
+        PRODUCT_BUNDLE_IDENTIFIER: com.cluas.vosh
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ENABLE_PREVIEWS: YES
+        SWIFT_OBJC_BRIDGING_HEADER: Vosh/MoshBridge/Vosh-Bridging-Header.h
+        HEADER_SEARCH_PATHS:
+          - "$(PROJECT_DIR)/build/mosh-ios/include/mosh"
+          - "$(PROJECT_DIR)/build/mosh-ios/include"
+        CLANG_CXX_LANGUAGE_STANDARD: "c++17"
+        LIBRARY_SEARCH_PATHS:
+          - "$(PROJECT_DIR)/build/mosh-ios/lib"
+        OTHER_LDFLAGS:
+          - "-lmosh"
+          - "-lc++"
+          - "-lz"
+          - "-lresolv"
+    dependencies:
+      - package: SwiftTerm
+      - package: Citadel
+      - package: WhisperKit
+      - target: VoshWidgetExtension
+    info:
+      path: Vosh/App/Info.plist
+      properties:
+        CFBundleName: Vosh
+        CFBundleDisplayName: Vosh
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        UILaunchScreen:
+          UIColorName: ""
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        NSFaceIDUsageDescription: "Use Face ID to unlock SSH keys"
+        NSSpeechRecognitionUsageDescription: "Voice input for terminal commands"
+        NSMicrophoneUsageDescription: "Voice input for terminal commands"
+        UIBackgroundModes:
+          - remote-notification
+        NSSupportsLiveActivities: true
+        CFBundleURLTypes:
+          - CFBundleURLSchemes:
+              - vosh
+            CFBundleURLName: com.cluas.vosh
+
+  VoshUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: VoshUITests
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.cluas.vosh.uitests
+        TEST_TARGET_NAME: Vosh
+        GENERATE_INFOPLIST_FILE: YES
+    dependencies:
+      - target: Vosh
+
+  VoshWidgetExtension:
+    type: app-extension
+    platform: iOS
+    product: VoshWidgetExtension
+    sources:
+      - path: VoshWidget
+      - path: Vosh/Models/VoshActivityAttributes.swift
+    entitlements:
+      path: VoshWidget/VoshWidget.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.com.cluas.vosh
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.cluas.vosh.widget
+        INFOPLIST_FILE: VoshWidget/Info.plist
+        SKIP_INSTALL: YES
+    info:
+      path: VoshWidget/Info.plist
+      properties:
+        CFBundleDisplayName: Vosh Widget
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
