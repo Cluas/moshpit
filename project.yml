@@ -3,7 +3,7 @@ options:
   bundleIdPrefix: com.cluas
   deploymentTarget:
     iOS: "17.0"
-  xcodeVersion: "16.0"
+  xcodeVersion: "26.0"
   generateEmptyDirectories: true
 
 settings:
@@ -22,9 +22,6 @@ packages:
   Citadel:
     url: https://github.com/orlandos-nl/Citadel.git
     from: "0.7.0"
-  WhisperKit:
-    url: https://github.com/argmaxinc/WhisperKit.git
-    from: "0.9.0"
 
 targets:
   Vosh:
@@ -43,23 +40,9 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.cluas.vosh
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ENABLE_PREVIEWS: YES
-        SWIFT_OBJC_BRIDGING_HEADER: Vosh/MoshBridge/Vosh-Bridging-Header.h
-        HEADER_SEARCH_PATHS:
-          - "$(PROJECT_DIR)/build/mosh-ios/include/mosh"
-          - "$(PROJECT_DIR)/build/mosh-ios/include"
-        CLANG_CXX_LANGUAGE_STANDARD: "c++17"
-        LIBRARY_SEARCH_PATHS:
-          - "$(PROJECT_DIR)/build/mosh-ios/lib"
-        OTHER_LDFLAGS:
-          - "-lmosh"
-          - "-lc++"
-          - "-lz"
-          - "-lresolv"
     dependencies:
       - package: SwiftTerm
       - package: Citadel
-      - package: WhisperKit
-      - target: VoshWidgetExtension
     info:
       path: Vosh/App/Info.plist
       properties:
@@ -79,11 +62,6 @@ targets:
           - UIInterfaceOrientationLandscapeLeft
           - UIInterfaceOrientationLandscapeRight
         NSFaceIDUsageDescription: "Use Face ID to unlock SSH keys"
-        NSSpeechRecognitionUsageDescription: "Voice input for terminal commands"
-        NSMicrophoneUsageDescription: "Voice input for terminal commands"
-        UIBackgroundModes:
-          - remote-notification
-        NSSupportsLiveActivities: true
         CFBundleURLTypes:
           - CFBundleURLSchemes:
               - vosh
@@ -114,28 +92,23 @@ targets:
     dependencies:
       - target: Vosh
 
-  VoshWidgetExtension:
-    type: app-extension
-    platform: iOS
-    product: VoshWidgetExtension
-    sources:
-      - path: VoshWidget
-      - path: Vosh/Models/VoshActivityAttributes.swift
-    entitlements:
-      path: VoshWidget/VoshWidget.entitlements
-      properties:
-        com.apple.security.application-groups:
-          - group.com.cluas.vosh
-    settings:
-      base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.cluas.vosh.widget
-        INFOPLIST_FILE: VoshWidget/Info.plist
-        SKIP_INSTALL: YES
-    info:
-      path: VoshWidget/Info.plist
-      properties:
-        CFBundleDisplayName: Vosh Widget
-        CFBundleShortVersionString: "$(MARKETING_VERSION)"
-        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
-        NSExtension:
-          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+schemes:
+  Vosh:
+    build:
+      targets:
+        Vosh: all
+        VoshTests: [test]
+        VoshUITests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - VoshTests
+        - VoshUITests
+    profile:
+      config: Release
+    analyze:
+      config: Debug
+    archive:
+      config: Release
