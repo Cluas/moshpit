@@ -3,3 +3,4 @@ build/
 *.xcuserdata
 secret.md
 .salvage/
+/.claude/skills/ios-simulator-skill/scripts/common/__pycache__/
