@@ -2,7 +2,7 @@ name: Vosh
 options:
   bundleIdPrefix: com.cluas
   deploymentTarget:
-    iOS: "17.0"
+    iOS: "18.0"
   xcodeVersion: "26.0"
   generateEmptyDirectories: true
 
@@ -31,9 +31,7 @@ targets:
       - path: Vosh
     entitlements:
       path: Vosh/App/Vosh.entitlements
-      properties:
-        com.apple.security.application-groups:
-          - group.com.cluas.vosh
+      properties: {}
     settings:
       base:
         INFOPLIST_FILE: Vosh/App/Info.plist
@@ -43,11 +41,14 @@ targets:
     dependencies:
       - package: SwiftTerm
       - package: Citadel
+      - target: VoshIsland
+        embed: true
     info:
       path: Vosh/App/Info.plist
       properties:
         CFBundleName: Vosh
         CFBundleDisplayName: Vosh
+        NSSupportsLiveActivities: true
         CFBundleShortVersionString: "$(MARKETING_VERSION)"
         CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         UILaunchScreen:
@@ -66,6 +67,22 @@ targets:
           - CFBundleURLSchemes:
               - vosh
             CFBundleURLName: com.cluas.vosh
+
+  VoshIsland:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: VoshIsland
+      - path: Vosh/Island/AgentActivityAttributes.swift
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.cluas.vosh.island
+    info:
+      path: VoshIsland/Info.plist
+      properties:
+        CFBundleDisplayName: Vosh Island
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
 
   VoshUITests:
     type: bundle.ui-testing
@@ -101,8 +118,10 @@ schemes:
         VoshUITests: [test]
     run:
       config: Debug
+      storeKitConfiguration: Vosh/Vosh.storekit
     test:
       config: Debug
+      storeKitConfiguration: Vosh/Vosh.storekit
       targets:
         - VoshTests
         - VoshUITests

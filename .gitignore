@@ -4,3 +4,4 @@ build/
 secret.md
 .salvage/
 /.claude/skills/ios-simulator-skill/scripts/common/__pycache__/
+.playwright-mcp/
