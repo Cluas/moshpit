@@ -46,8 +46,14 @@ targets:
     info:
       path: Vosh/App/Info.plist
       properties:
-        CFBundleName: Vosh
-        CFBundleDisplayName: Vosh
+        CFBundleName: Moshi
+        CFBundleDisplayName: Moshi
+        CFBundleIconName: AppIcon
+        CFBundleIcons:
+          CFBundlePrimaryIcon:
+            CFBundleIconFiles:
+              - AppIcon60x60
+            CFBundleIconName: AppIcon
         NSSupportsLiveActivities: true
         CFBundleShortVersionString: "$(MARKETING_VERSION)"
         CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
@@ -80,7 +86,7 @@ targets:
     info:
       path: VoshIsland/Info.plist
       properties:
-        CFBundleDisplayName: Vosh Island
+        CFBundleDisplayName: Moshi Island
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
 
