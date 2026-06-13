@@ -99,6 +99,11 @@ xcrun devicectl device install app --device <UDID> \
 - 后台刷新不是 100% 可靠(iOS 后台调度 + 设备可达性所限),但比每周手动强得多。
 - **想完全摆脱"电脑常驻"**:用 [SideStore](https://sidestore.io)(AltStore 分支,
   靠设备本地 WireGuard 回环续签,无需电脑在同一网络)。流程同上,出包脚本通用。
+- **Tailscale 内网能替代"同一 Wi-Fi"吗?基本不能**。经典 AltServer 靠局域网
+  Bonjour/mDNS(链路本地组播)发现设备,**组播不跨 Tailscale 的 L3 overlay**,所以
+  AltServer 隔着 Tailscale 通常发现不了手机;即便手动指定 IP,iOS 的 lockdownd 也未必
+  在 Tailscale 接口上可达。别指望它做后台续签。**续签请用 SideStore(设备本地,
+  与网络无关)**。Tailscale 真正的用武之地是下一条——连你的服务器。
 - **付费墙价格**:AltStore 装的版本不带本地 StoreKit 测试配置,付费墙会停在
   "Loading plans…"(需真实 App Store Connect 商品才显示)——mosh / SSH / tmux /
   三语 / 灵动岛全部正常,不影响日常使用。
