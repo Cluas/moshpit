@@ -1,9 +1,9 @@
 #!/usr/bin/env swift
 //
-// generate-app-icon.swift — Generate pixel-art Vosh app icon
+// generate-app-icon.swift — Generate pixel-art Moshi app icon
 //
 // Usage: swift scripts/generate-app-icon.swift
-// Output: Vosh/App/Assets.xcassets/AppIcon.appiconset/icon_1024.png
+// Output: Moshi/App/Assets.xcassets/AppIcon.appiconset/icon_1024.png
 //
 
 import Foundation
@@ -96,7 +96,7 @@ guard let image = ctx.makeImage() else {
     exit(1)
 }
 
-let outputDir = "Vosh/App/Assets.xcassets/AppIcon.appiconset"
+let outputDir = "Moshi/App/Assets.xcassets/AppIcon.appiconset"
 let outputPath = "\(outputDir)/icon_1024.png"
 
 // Ensure directory exists

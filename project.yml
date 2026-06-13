@@ -1,4 +1,4 @@
-name: Vosh
+name: Moshi
 options:
   bundleIdPrefix: com.cluas
   deploymentTarget:
@@ -24,27 +24,27 @@ packages:
     from: "0.7.0"
 
 targets:
-  Vosh:
+  Moshi:
     type: application
     platform: iOS
     sources:
-      - path: Vosh
+      - path: Moshi
     entitlements:
-      path: Vosh/App/Vosh.entitlements
+      path: Moshi/App/Moshi.entitlements
       properties: {}
     settings:
       base:
-        INFOPLIST_FILE: Vosh/App/Info.plist
-        PRODUCT_BUNDLE_IDENTIFIER: com.cluas.vosh
+        INFOPLIST_FILE: Moshi/App/Info.plist
+        PRODUCT_BUNDLE_IDENTIFIER: com.cluas.moshi
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ENABLE_PREVIEWS: YES
     dependencies:
       - package: SwiftTerm
       - package: Citadel
-      - target: VoshIsland
+      - target: MoshiIsland
         embed: true
     info:
-      path: Vosh/App/Info.plist
+      path: Moshi/App/Info.plist
       properties:
         CFBundleName: Moshi
         CFBundleDisplayName: Moshi
@@ -71,66 +71,66 @@ targets:
         NSFaceIDUsageDescription: "Use Face ID to unlock SSH keys"
         CFBundleURLTypes:
           - CFBundleURLSchemes:
-              - vosh
-            CFBundleURLName: com.cluas.vosh
+              - moshi
+            CFBundleURLName: com.cluas.moshi
 
-  VoshIsland:
+  MoshiIsland:
     type: app-extension
     platform: iOS
     sources:
-      - path: VoshIsland
-      - path: Vosh/Island/AgentActivityAttributes.swift
+      - path: MoshiIsland
+      - path: Moshi/Island/AgentActivityAttributes.swift
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.cluas.vosh.island
+        PRODUCT_BUNDLE_IDENTIFIER: com.cluas.moshi.island
     info:
-      path: VoshIsland/Info.plist
+      path: MoshiIsland/Info.plist
       properties:
         CFBundleDisplayName: Moshi Island
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
 
-  VoshUITests:
+  MoshiUITests:
     type: bundle.ui-testing
     platform: iOS
     sources:
-      - path: VoshUITests
+      - path: MoshiUITests
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.cluas.vosh.uitests
-        TEST_TARGET_NAME: Vosh
+        PRODUCT_BUNDLE_IDENTIFIER: com.cluas.moshi.uitests
+        TEST_TARGET_NAME: Moshi
         GENERATE_INFOPLIST_FILE: YES
     dependencies:
-      - target: Vosh
+      - target: Moshi
 
-  VoshTests:
+  MoshiTests:
     type: bundle.unit-test
     platform: iOS
     sources:
-      - path: VoshTests
+      - path: MoshiTests
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.cluas.vosh.tests
+        PRODUCT_BUNDLE_IDENTIFIER: com.cluas.moshi.tests
         GENERATE_INFOPLIST_FILE: YES
     dependencies:
-      - target: Vosh
+      - target: Moshi
 
 schemes:
-  Vosh:
+  Moshi:
     build:
       targets:
-        Vosh: all
-        VoshTests: [test]
-        VoshUITests: [test]
+        Moshi: all
+        MoshiTests: [test]
+        MoshiUITests: [test]
     run:
       config: Debug
-      storeKitConfiguration: Vosh/Vosh.storekit
+      storeKitConfiguration: Moshi/Moshi.storekit
     test:
       config: Debug
-      storeKitConfiguration: Vosh/Vosh.storekit
+      storeKitConfiguration: Moshi/Moshi.storekit
       targets:
-        - VoshTests
-        - VoshUITests
+        - MoshiTests
+        - MoshiUITests
     profile:
       config: Release
     analyze:
