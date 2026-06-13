@@ -74,6 +74,35 @@ xcrun devicectl device install app --device <UDID> \
 
 ---
 
+## D. 用 AltStore 自动续签(免去每周手动 ⌘R)
+
+7 天过期是免费账号最烦的点。**AltStore 正是为此而生**:它用你的免费 Apple ID
+侧载,并由常驻电脑的 **AltServer** 在后台、过期前自动重新签名,你无需每周手动重装。
+好处:**这条路连 `Signing.xcconfig` 的 Team ID 都不用填**——签名由 AltStore 用它自己
+登录的 Apple ID 完成。
+
+1. **出包**(未签名 .ipa,含灵动岛扩展):
+   ```bash
+   ./scripts/build-ipa.sh        # → build/Moshi.ipa(约 9 MB)
+   ```
+2. **装 AltStore**:Mac/PC 装 [AltServer](https://altstore.io),手机装 AltStore,
+   在 AltStore 里用你的 Apple ID 登录。
+3. **侧载**:把 `build/Moshi.ipa` 拖进 AltStore(或 `altserver -u <UDID> build/Moshi.ipa`)。
+   AltStore 用你的 Apple ID 重签后安装。
+4. **开自动续签**:AltStore ▸ Settings ▸ 打开 Background Refresh。让 AltServer 在
+   电脑常驻,手机与电脑同一 Wi-Fi(并开启设备的 Wi-Fi 同步)即可后台续签。
+
+**前提与现实**:
+- AltServer 需要在一台电脑上常驻、且手机定期能与它同网可达——后台刷新才会发生;
+  完全离线太久仍会过期(打开 App 触发一次前台刷新即可补上)。
+- AltStore 本身占用免费账号 3 个 App 名额里的 1 个(剩 2 个;Moshi 是其中之一)。
+- 后台刷新不是 100% 可靠(iOS 后台调度 + 设备可达性所限),但比每周手动强得多。
+- **想完全摆脱"电脑常驻"**:用 [SideStore](https://sidestore.io)(AltStore 分支,
+  靠设备本地 WireGuard 回环续签,无需电脑在同一网络)。流程同上,出包脚本通用。
+- **付费墙价格**:AltStore 装的版本不带本地 StoreKit 测试配置,付费墙会停在
+  "Loading plans…"(需真实 App Store Connect 商品才显示)——mosh / SSH / tmux /
+  三语 / 灵动岛全部正常,不影响日常使用。
+
 ## 常见问题
 
 - **"Failed to register bundle identifier"** → `com.cluas.moshi` 全球唯一被占用了。
