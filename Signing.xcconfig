@@ -1,0 +1,15 @@
+// Local code-signing — your free Apple ID's "Personal Team".
+//
+// Fill DEVELOPMENT_TEAM with your 10-character Team ID, found in:
+//   Xcode ▸ Settings ▸ Accounts ▸ (your Apple ID) ▸ pick the
+//   "(Personal Team)" row — the Team ID is shown beside it.
+// Or run:  ./scripts/team-id.sh   (after adding the account in Xcode)
+//
+// This file is committed with an EMPTY value so `xcodegen generate`
+// never fails. After you fill it, keep your Team ID out of git with:
+//   git update-index --skip-worktree Signing.xcconfig
+//
+// Simulator builds (CODE_SIGNING_ALLOWED=NO) ignore this entirely;
+// only on-device builds need a Team.
+
+DEVELOPMENT_TEAM =

@@ -7,12 +7,19 @@ options:
   xcodeVersion: "26.0"
   generateEmptyDirectories: true
 
+# DEVELOPMENT_TEAM is supplied by Signing.xcconfig (kept out of git, see
+# that file) so on-device signing survives `xcodegen generate`. It is NOT
+# set in `settings` here, because project build settings would override the
+# xcconfig value.
+configFiles:
+  Debug: Signing.xcconfig
+  Release: Signing.xcconfig
+
 settings:
   base:
     SWIFT_VERSION: "5.9"
     MARKETING_VERSION: "1.0.0"
     CURRENT_PROJECT_VERSION: 1
-    DEVELOPMENT_TEAM: ""
     CODE_SIGN_IDENTITY: "Apple Development"
     CODE_SIGN_STYLE: Automatic
 
