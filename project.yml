@@ -1,6 +1,7 @@
 name: Moshi
 options:
   bundleIdPrefix: com.cluas
+  developmentLanguage: en
   deploymentTarget:
     iOS: "18.0"
   xcodeVersion: "26.0"
@@ -38,6 +39,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.cluas.moshi
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ENABLE_PREVIEWS: YES
+        SWIFT_EMIT_LOC_STRINGS: YES
     dependencies:
       - package: SwiftTerm
       - package: Citadel
