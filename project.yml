@@ -57,6 +57,10 @@ targets:
       properties:
         CFBundleName: Moshi
         CFBundleDisplayName: Moshi
+        UIAppFonts:
+          - JetBrainsMono-Regular.ttf
+          - MapleMono-Regular.ttf
+          - Hack-Regular.ttf
         CFBundleIconName: AppIcon
         CFBundleIcons:
           CFBundlePrimaryIcon:
