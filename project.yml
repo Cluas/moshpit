@@ -60,7 +60,11 @@ targets:
         UIAppFonts:
           - JetBrainsMono-Regular.ttf
           - MapleMono-Regular.ttf
+          - FiraCode-Regular.ttf
+          - SourceCodePro-Regular.ttf
+          - IBMPlexMono-Regular.ttf
           - Hack-Regular.ttf
+          - AnonymousPro-Regular.ttf
         CFBundleIconName: AppIcon
         CFBundleIcons:
           CFBundlePrimaryIcon:
