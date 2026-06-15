@@ -97,6 +97,7 @@ targets:
     sources:
       - path: MoshiIsland
       - path: Moshi/Island/AgentActivityAttributes.swift
+      - path: Moshi/Island/AgentControl.swift
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.cluas.moshi.island
@@ -104,6 +105,11 @@ targets:
       path: MoshiIsland/Info.plist
       properties:
         CFBundleDisplayName: Moshi Island
+        # Keep the extension's version in lockstep with the app — a mismatch is
+        # an App Store rejection. Driven by the shared MARKETING_VERSION /
+        # CURRENT_PROJECT_VERSION in settings.base, same as the app target.
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
 
