@@ -86,6 +86,7 @@ pane_in_mode() { "$TMUX_BIN" -L "$SOCK" display-message -p -t "$SESSION" '#{pane
 pane_cmd()     { "$TMUX_BIN" -L "$SOCK" display-message -p -t "$SESSION" '#{pane_current_command}' 2>/dev/null | tr -d '[:space:]'; }
 mouse_flag()   { "$TMUX_BIN" -L "$SOCK" display-message -p -t "$SESSION" '#{mouse_any_flag}' 2>/dev/null | tr -d '[:space:]'; }
 top_line()     { "$TMUX_BIN" -L "$SOCK" capture-pane -p -t "$SESSION" 2>/dev/null | sed -n '1p'; }
+active_win()   { "$TMUX_BIN" -L "$SOCK" display-message -p -t "$SESSION" '#{window_index}' 2>/dev/null | tr -d '[:space:]'; }
 # The harness tmux has `set -g mouse on` (matches the user's config), so the
 # mosh-rendered client's mouse layer is active — exercising the real decision.
 "$TMUX_BIN" -L "$SOCK" set-option -g mouse on 2>/dev/null || true
@@ -154,6 +155,21 @@ sleep 1.5
 CMD_AFTER_Q="$(pane_cmd)"
 echo "  pane command after 'q': '$CMD_AFTER_Q' (expect a shell, not 'less')"
 
+# === Horizontal swipe switches windows (single-pane window → window switch). ===
+echo "▶ Creating a 2nd window, then horizontal-swiping to switch windows"
+"$TMUX_BIN" -L "$SOCK" new-window -t "$SESSION" 2>/dev/null || true
+sleep 1.5
+WIN_BEFORE="$(active_win)"
+# ONE swipe (two windows + two swipes would round-trip back to the start).
+idb ui swipe --udid "$SIM_UDID" 300 420 60 420 --duration 0.18 2>/dev/null || \
+  idb ui swipe 300 420 60 420 2>/dev/null || true   # swipe LEFT = next window
+sleep 1.2
+WIN_AFTER="$(active_win)"
+SWIPESHOT="$OUT_DIR/$TS-5-after-swipe.png"
+xcrun simctl io "$SIM_UDID" screenshot --type=png "$SWIPESHOT" >/dev/null 2>&1
+echo "  active window index: '$WIN_BEFORE' -> '$WIN_AFTER' (expect it to change); shot: $SWIPESHOT"
+[ -n "$WIN_AFTER" ] && [ -n "$WIN_BEFORE" ] && [ "$WIN_AFTER" != "$WIN_BEFORE" ] && WIN_SWITCH_OK=1 || WIN_SWITCH_OK=0
+
 # Deterministic outcomes for the alt-app phase.
 [ "$IN_MODE_APP" = "0" ] && APP_NO_COPYMODE=1 || APP_NO_COPYMODE=0
 [ -n "$TOP_AFTER" ] && [ "$TOP_AFTER" != "$TOP_BEFORE" ] && APP_SCROLLED=1 || APP_SCROLLED=0
@@ -169,4 +185,5 @@ echo "================ RESULT ================"
 [ "$APP_NO_COPYMODE" = "1" ]      && echo "  app swipe → wheel (NOT copy-mode) : PASS" || echo "  app swipe → wheel (NOT copy-mode) : FAIL (in_mode='$IN_MODE_APP')"
 [ "$APP_SCROLLED" = "1" ]         && echo "  app scrolled (top line advanced)  : PASS" || echo "  app scrolled (top line advanced)  : FAIL ('$TOP_BEFORE'->'$TOP_AFTER')"
 [ "$APP_TYPE_OK" = "1" ]          && echo "  typing reaches app after scroll   : PASS" || echo "  typing reaches app after scroll   : FAIL (cmd='$CMD_AFTER_Q')"
+[ "$WIN_SWITCH_OK" = "1" ]        && echo "  swipe switches window             : PASS" || echo "  swipe switches window             : FAIL ('$WIN_BEFORE'->'$WIN_AFTER')"
 echo "  Screenshots: $LIVE | $SCROLLED | $TYPED | $APP_SCROLL"
