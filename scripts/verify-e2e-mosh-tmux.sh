@@ -83,6 +83,12 @@ xcrun simctl launch "$SIM_UDID" "$BUNDLE_ID" \
 
 # tmux state on the isolated socket — deterministic PASS/FAIL, no screenshot squinting.
 pane_in_mode() { "$TMUX_BIN" -L "$SOCK" display-message -p -t "$SESSION" '#{pane_in_mode}' 2>/dev/null | tr -d '[:space:]'; }
+pane_cmd()     { "$TMUX_BIN" -L "$SOCK" display-message -p -t "$SESSION" '#{pane_current_command}' 2>/dev/null | tr -d '[:space:]'; }
+mouse_flag()   { "$TMUX_BIN" -L "$SOCK" display-message -p -t "$SESSION" '#{mouse_any_flag}' 2>/dev/null | tr -d '[:space:]'; }
+top_line()     { "$TMUX_BIN" -L "$SOCK" capture-pane -p -t "$SESSION" 2>/dev/null | sed -n '1p'; }
+# The harness tmux has `set -g mouse on` (matches the user's config), so the
+# mosh-rendered client's mouse layer is active — exercising the real decision.
+"$TMUX_BIN" -L "$SOCK" set-option -g mouse on 2>/dev/null || true
 # A NON-control client (mosh `tmux attach`, control_mode=0) whose session is demo.
 # The -CC sidecar is control_mode=1, so this isolates the real rendering client.
 mosh_in_demo() { "$TMUX_BIN" -L "$SOCK" list-clients -F '#{client_control_mode} #{client_session}' 2>/dev/null | grep -c "^0 $SESSION$" || true; }
@@ -121,10 +127,46 @@ xcrun simctl io "$SIM_UDID" screenshot --type=png "$TYPED" >/dev/null 2>&1
 IN_MODE_AFTER_TYPE="$(pane_in_mode)"
 echo "  typed shot: $TYPED   pane_in_mode=$IN_MODE_AFTER_TYPE (expect 0 = exited)"
 
+# === Alt-screen MOUSE app (Claude Code stand-in): swipe must scroll the APP via
+# a forwarded wheel, NOT tmux copy-mode — and typing must still reach the app. ===
+echo "▶ Launching a mouse app (seq | less --mouse) as a Claude-Code stand-in"
+"$TMUX_BIN" -L "$SOCK" send-keys -t "$SESSION" C-u                                 # clear the 'k'
+"$TMUX_BIN" -L "$SOCK" send-keys -t "$SESSION" "seq 1 400 | less --mouse" Enter
+APP_UP=0
+for _ in $(seq 1 20); do [ "$(mouse_flag)" = "1" ] && { APP_UP=1; break; }; sleep 0.3; done
+echo "  app requested mouse (mouse_any_flag): $(mouse_flag) (expect 1)"
+TOP_BEFORE="$(top_line)"
+echo "▶ Swiping UP (drag up = wheel-down = pager advances) — should forward to less"
+for _ in 1 2 3 4 5; do
+  idb ui swipe --udid "$SIM_UDID" 200 680 200 360 --duration 0.25 2>/dev/null || \
+    idb ui swipe 200 680 200 360 2>/dev/null || true
+  sleep 0.5
+done
+sleep 1
+APP_SCROLL="$OUT_DIR/$TS-4-app-scrolled.png"
+xcrun simctl io "$SIM_UDID" screenshot --type=png "$APP_SCROLL" >/dev/null 2>&1
+IN_MODE_APP="$(pane_in_mode)"; TOP_AFTER="$(top_line)"
+echo "  app shot: $APP_SCROLL   pane_in_mode=$IN_MODE_APP (expect 0 = forwarded, not copy-mode)"
+echo "  less top line: '$TOP_BEFORE' -> '$TOP_AFTER' (expect it to advance)"
+echo "▶ Typing 'q' must reach less (no copy-mode swallowing it) and quit it"
+idb ui text --udid "$SIM_UDID" "q" 2>/dev/null || idb ui text "q" 2>/dev/null || true
+sleep 1.5
+CMD_AFTER_Q="$(pane_cmd)"
+echo "  pane command after 'q': '$CMD_AFTER_Q' (expect a shell, not 'less')"
+
+# Deterministic outcomes for the alt-app phase.
+[ "$IN_MODE_APP" = "0" ] && APP_NO_COPYMODE=1 || APP_NO_COPYMODE=0
+[ -n "$TOP_AFTER" ] && [ "$TOP_AFTER" != "$TOP_BEFORE" ] && APP_SCROLLED=1 || APP_SCROLLED=0
+case "$CMD_AFTER_Q" in *less*) APP_TYPE_OK=0;; "") APP_TYPE_OK=0;; *) APP_TYPE_OK=1;; esac
+
 echo
 echo "================ RESULT ================"
-[ "$ATTACHED" = 1 ]               && echo "  mosh client attached '$SESSION' : PASS" || echo "  mosh client attached '$SESSION' : FAIL (login-shell race — results below are moot)"
-[ "${IDB_INPUT_OK:-0}" = 1 ]      && echo "  idb keyboard input delivery     : OK"   || echo "  idb keyboard input delivery     : UNAVAILABLE (type-exit check is inconclusive)"
-[ "$IN_MODE_AFTER_SCROLL" = "1" ] && echo "  Bug B scroll → enters copy-mode : PASS" || echo "  Bug B scroll → enters copy-mode : FAIL (got '$IN_MODE_AFTER_SCROLL')"
-[ "$IN_MODE_AFTER_TYPE" = "0" ]  && echo "  Typing      → exits  copy-mode : PASS" || echo "  Typing      → exits  copy-mode : FAIL (got '$IN_MODE_AFTER_TYPE')"
-echo "  Screenshots: $LIVE | $SCROLLED | $TYPED"
+[ "$ATTACHED" = 1 ]               && echo "  mosh client attached '$SESSION'   : PASS" || echo "  mosh client attached '$SESSION'   : FAIL (login-shell race — results below are moot)"
+[ "${IDB_INPUT_OK:-0}" = 1 ]      && echo "  idb keyboard input delivery       : OK"   || echo "  idb keyboard input delivery       : UNAVAILABLE (type-exit check is inconclusive)"
+[ "$IN_MODE_AFTER_SCROLL" = "1" ] && echo "  shell scroll → enters copy-mode   : PASS" || echo "  shell scroll → enters copy-mode   : FAIL (got '$IN_MODE_AFTER_SCROLL')"
+[ "$IN_MODE_AFTER_TYPE" = "0" ]   && echo "  typing       → exits  copy-mode   : PASS" || echo "  typing       → exits  copy-mode   : FAIL (got '$IN_MODE_AFTER_TYPE')"
+[ "$APP_UP" = "1" ]               && echo "  mouse app came up (mouse_any_flag): PASS" || echo "  mouse app came up (mouse_any_flag): FAIL"
+[ "$APP_NO_COPYMODE" = "1" ]      && echo "  app swipe → wheel (NOT copy-mode) : PASS" || echo "  app swipe → wheel (NOT copy-mode) : FAIL (in_mode='$IN_MODE_APP')"
+[ "$APP_SCROLLED" = "1" ]         && echo "  app scrolled (top line advanced)  : PASS" || echo "  app scrolled (top line advanced)  : FAIL ('$TOP_BEFORE'->'$TOP_AFTER')"
+[ "$APP_TYPE_OK" = "1" ]          && echo "  typing reaches app after scroll   : PASS" || echo "  typing reaches app after scroll   : FAIL (cmd='$CMD_AFTER_Q')"
+echo "  Screenshots: $LIVE | $SCROLLED | $TYPED | $APP_SCROLL"
