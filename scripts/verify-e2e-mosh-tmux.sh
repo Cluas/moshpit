@@ -81,13 +81,21 @@ xcrun simctl launch "$SIM_UDID" "$BUNDLE_ID" \
   -MOSAIC_SEED_MOSH 1 -MOSAIC_SEED_MOSH_BIN "$MOSH_SERVER" \
   -MOSAIC_SEED_TMUX 1 -MOSAIC_SEED_TMUX_BIN "$WRAP" >/dev/null
 
-echo "▶ Waiting 14s for SSH→mosh→tmux attach + render…"
-sleep 14
+# tmux state on the isolated socket — deterministic PASS/FAIL, no screenshot squinting.
+pane_in_mode() { "$TMUX_BIN" -L "$SOCK" display-message -p -t "$SESSION" '#{pane_in_mode}' 2>/dev/null | tr -d '[:space:]'; }
+nonctl_clients() { "$TMUX_BIN" -L "$SOCK" list-clients -F '#{client_control_mode}' 2>/dev/null | grep -c '^0$' || true; }
+
+echo "▶ Waiting for the mosh client to attach tmux (the real rendering client)…"
+for t in $(seq 1 30); do
+  [ "$(nonctl_clients)" -ge 1 ] && { echo "  ✓ mosh client attached after ${t}s"; break; }
+  sleep 1
+done
+sleep 2
 LIVE="$OUT_DIR/$TS-1-live.png"
 xcrun simctl io "$SIM_UDID" screenshot --type=png "$LIVE" >/dev/null 2>&1
-echo "  live shot: $LIVE"
+echo "  live shot: $LIVE   pane_in_mode=$(pane_in_mode) (expect 0 = live)"
 
-echo "▶ Scrolling: 4 downward swipes on the terminal (drag-down = older history)"
+echo "▶ Scrolling: downward swipes (drag-down = older history → enters copy-mode)"
 for _ in 1 2 3 4; do
   idb ui swipe --udid "$SIM_UDID" 200 360 200 680 --duration 0.25 2>/dev/null || \
     idb ui swipe 200 360 200 680 2>/dev/null || true
@@ -96,9 +104,19 @@ done
 sleep 1
 SCROLLED="$OUT_DIR/$TS-2-scrolled.png"
 xcrun simctl io "$SIM_UDID" screenshot --type=png "$SCROLLED" >/dev/null 2>&1
-echo "  scrolled shot: $SCROLLED"
+IN_MODE_AFTER_SCROLL="$(pane_in_mode)"
+echo "  scrolled shot: $SCROLLED   pane_in_mode=$IN_MODE_AFTER_SCROLL (expect 1 = copy-mode)"
+
+echo "▶ One keystroke after scroll — must LEAVE copy-mode (the reported bug)"
+idb ui text --udid "$SIM_UDID" "k" 2>/dev/null || idb ui text "k" 2>/dev/null || true
+sleep 1.5
+TYPED="$OUT_DIR/$TS-3-typed.png"
+xcrun simctl io "$SIM_UDID" screenshot --type=png "$TYPED" >/dev/null 2>&1
+IN_MODE_AFTER_TYPE="$(pane_in_mode)"
+echo "  typed shot: $TYPED   pane_in_mode=$IN_MODE_AFTER_TYPE (expect 0 = exited)"
 
 echo
-echo "✓ Done. Inspect:"
-echo "   LIVE     $LIVE     (expect bottom of 60 lines + clean 你好世界/こんにちは/box)"
-echo "   SCROLLED $SCROLLED (expect LOWER line numbers = tmux history paged in)"
+echo "================ RESULT ================"
+[ "$IN_MODE_AFTER_SCROLL" = "1" ] && echo "  Bug B scroll → enters copy-mode : PASS" || echo "  Bug B scroll → enters copy-mode : FAIL (got '$IN_MODE_AFTER_SCROLL')"
+[ "$IN_MODE_AFTER_TYPE" = "0" ]  && echo "  Typing      → exits  copy-mode : PASS" || echo "  Typing      → exits  copy-mode : FAIL (got '$IN_MODE_AFTER_TYPE')"
+echo "  Screenshots: $LIVE | $SCROLLED | $TYPED"
