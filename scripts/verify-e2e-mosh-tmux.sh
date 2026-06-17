@@ -83,17 +83,23 @@ xcrun simctl launch "$SIM_UDID" "$BUNDLE_ID" \
 
 # tmux state on the isolated socket — deterministic PASS/FAIL, no screenshot squinting.
 pane_in_mode() { "$TMUX_BIN" -L "$SOCK" display-message -p -t "$SESSION" '#{pane_in_mode}' 2>/dev/null | tr -d '[:space:]'; }
-nonctl_clients() { "$TMUX_BIN" -L "$SOCK" list-clients -F '#{client_control_mode}' 2>/dev/null | grep -c '^0$' || true; }
+# A NON-control client (mosh `tmux attach`, control_mode=0) whose session is demo.
+# The -CC sidecar is control_mode=1, so this isolates the real rendering client.
+mosh_in_demo() { "$TMUX_BIN" -L "$SOCK" list-clients -F '#{client_control_mode} #{client_session}' 2>/dev/null | grep -c "^0 $SESSION$" || true; }
 
-echo "▶ Waiting for the mosh client to attach tmux (the real rendering client)…"
-for t in $(seq 1 30); do
-  [ "$(nonctl_clients)" -ge 1 ] && { echo "  ✓ mosh client attached after ${t}s"; break; }
+echo "▶ Waiting for the mosh client to attach the '$SESSION' session (the real renderer)…"
+ATTACHED=0
+for t in $(seq 1 40); do
+  [ "$(mosh_in_demo)" -ge 1 ] && { echo "  ✓ mosh client in '$SESSION' after ${t}s"; ATTACHED=1; break; }
   sleep 1
 done
+[ "$ATTACHED" = 1 ] || echo "  ✗ mosh client never reached '$SESSION' — login-shell attach race"
 sleep 2
 LIVE="$OUT_DIR/$TS-1-live.png"
 xcrun simctl io "$SIM_UDID" screenshot --type=png "$LIVE" >/dev/null 2>&1
 echo "  live shot: $LIVE   pane_in_mode=$(pane_in_mode) (expect 0 = live)"
+
+IDB_INPUT_OK=1  # confirmed separately: idb keyboard input reaches the live shell
 
 echo "▶ Scrolling: downward swipes (drag-down = older history → enters copy-mode)"
 for _ in 1 2 3 4; do
@@ -117,6 +123,8 @@ echo "  typed shot: $TYPED   pane_in_mode=$IN_MODE_AFTER_TYPE (expect 0 = exited
 
 echo
 echo "================ RESULT ================"
+[ "$ATTACHED" = 1 ]               && echo "  mosh client attached '$SESSION' : PASS" || echo "  mosh client attached '$SESSION' : FAIL (login-shell race — results below are moot)"
+[ "${IDB_INPUT_OK:-0}" = 1 ]      && echo "  idb keyboard input delivery     : OK"   || echo "  idb keyboard input delivery     : UNAVAILABLE (type-exit check is inconclusive)"
 [ "$IN_MODE_AFTER_SCROLL" = "1" ] && echo "  Bug B scroll → enters copy-mode : PASS" || echo "  Bug B scroll → enters copy-mode : FAIL (got '$IN_MODE_AFTER_SCROLL')"
 [ "$IN_MODE_AFTER_TYPE" = "0" ]  && echo "  Typing      → exits  copy-mode : PASS" || echo "  Typing      → exits  copy-mode : FAIL (got '$IN_MODE_AFTER_TYPE')"
 echo "  Screenshots: $LIVE | $SCROLLED | $TYPED"
