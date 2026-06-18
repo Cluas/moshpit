@@ -42,7 +42,6 @@ targets:
       properties:
         com.apple.security.application-groups:
           - group.com.cluas.moshi
-        com.apple.developer.usernotifications.time-sensitive: true
     settings:
       base:
         INFOPLIST_FILE: Moshi/App/Info.plist
