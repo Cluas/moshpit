@@ -39,7 +39,9 @@ targets:
       - path: Moshi
     entitlements:
       path: Moshi/App/Moshi.entitlements
-      properties: {}
+      properties:
+        com.apple.security.application-groups:
+          - group.com.cluas.moshi
     settings:
       base:
         INFOPLIST_FILE: Moshi/App/Info.plist
@@ -98,6 +100,12 @@ targets:
       - path: MoshiIsland
       - path: Moshi/Island/AgentActivityAttributes.swift
       - path: Moshi/Island/AgentControl.swift
+      - path: Moshi/Island/AgentWidgetState.swift
+    entitlements:
+      path: MoshiIsland/MoshiIsland.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.com.cluas.moshi
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.cluas.moshi.island
