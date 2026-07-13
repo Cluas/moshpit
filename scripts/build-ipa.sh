@@ -29,6 +29,13 @@ BUILDNUM="$(git rev-list --count HEAD 2>/dev/null || echo 1)"
 /usr/libexec/PlistBuddy -c "Add :MoshiBuildStamp string $STAMP" "$APP/Info.plist" 2>/dev/null \
   || /usr/libexec/PlistBuddy -c "Set :MoshiBuildStamp $STAMP" "$APP/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILDNUM" "$APP/Info.plist" 2>/dev/null || true
+# App extensions MUST carry the same CFBundleVersion as the containing app —
+# a mismatch can get the appex rejected at install/validation, which silently
+# kills the Dynamic Island (Activity.request fails, swallowed by try?).
+for appex in "$APP"/PlugIns/*.appex; do
+  [ -d "$appex" ] || continue
+  /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILDNUM" "$appex/Info.plist" 2>/dev/null || true
+done
 echo "▶ Stamped build $BUILDNUM ($STAMP)"
 
 echo "▶ Packaging .ipa…"
