@@ -94,6 +94,31 @@ active_win()   { "$TMUX_BIN" -L "$SOCK" display-message -p -t "$SESSION" '#{wind
 # The -CC sidecar is control_mode=1, so this isolates the real rendering client.
 mosh_in_demo() { "$TMUX_BIN" -L "$SOCK" list-clients -F '#{client_control_mode} #{client_session}' 2>/dev/null | grep -c "^0 $SESSION$" || true; }
 
+# Fresh simulator installs hit the TOFU host-key prompt ("New Host … Trust")
+# before any transport starts — nothing attaches until it's accepted. Find the
+# Trust button via idb accessibility and tap it (no-op when already trusted).
+echo "▶ Accepting the TOFU host-key prompt if it appears…"
+for _ in $(seq 1 10); do
+  TRUST_XY="$(idb ui describe-all --udid "$SIM_UDID" 2>/dev/null | python3 -c '
+import sys, json
+try:
+    els = json.load(sys.stdin)
+except Exception:
+    sys.exit(0)
+for e in els:
+    if e.get("AXLabel") == "Trust" and e.get("type") == "Button":
+        f = e.get("frame", {})
+        print(int(f.get("x",0)+f.get("width",0)/2), int(f.get("y",0)+f.get("height",0)/2))
+        break
+')"
+  if [ -n "$TRUST_XY" ]; then
+    idb ui tap --udid "$SIM_UDID" $TRUST_XY 2>/dev/null || idb ui tap $TRUST_XY 2>/dev/null || true
+    echo "  ✓ tapped Trust at $TRUST_XY"
+    break
+  fi
+  sleep 1
+done
+
 echo "▶ Waiting for the mosh client to attach the '$SESSION' session (the real renderer)…"
 ATTACHED=0
 for t in $(seq 1 40); do
