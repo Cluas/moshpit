@@ -25,8 +25,13 @@ settings:
 
 packages:
   SwiftTerm:
-    url: https://github.com/migueldeicaza/SwiftTerm.git
-    from: "1.2.0"
+    # Forked from migueldeicaza/SwiftTerm at v1.13.0 to fix an OSC-8 hyperlink
+    # underline overshoot (oscHyperlink's close handler tagged one cell past
+    # the link text when it was the last thing printed on its line — see the
+    # fork's commit message). Revert to the upstream URL if/when this lands
+    # there and a release picks it up.
+    url: https://github.com/Cluas/SwiftTerm.git
+    revision: d94216c231f290d46168e345aaaa64f8d1aea4cd
   Citadel:
     url: https://github.com/orlandos-nl/Citadel.git
     from: "0.7.0"
