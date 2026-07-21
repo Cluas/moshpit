@@ -25,13 +25,15 @@ settings:
 
 packages:
   SwiftTerm:
-    # Forked from migueldeicaza/SwiftTerm at v1.13.0 to fix an OSC-8 hyperlink
-    # underline overshoot (oscHyperlink's close handler tagged one cell past
-    # the link text when it was the last thing printed on its line — see the
-    # fork's commit message). Revert to the upstream URL if/when this lands
-    # there and a release picks it up.
+    # Forked from migueldeicaza/SwiftTerm at v1.13.0 to fix two OSC-8 hyperlink
+    # underline-overshoot bugs in oscHyperlink's close handler (see the fork's
+    # commit messages): (1) tagged one cell past the link text when it was the
+    # last thing printed on its line, (2) tagged the ENTIRE rest of the line
+    # once any scrollback had accumulated (an absolute-vs-viewport-relative row
+    # comparison bug — essentially always hit in a real session). Revert to the
+    # upstream URL if/when these land there and a release picks them up.
     url: https://github.com/Cluas/SwiftTerm.git
-    revision: d94216c231f290d46168e345aaaa64f8d1aea4cd
+    revision: 0fe3cfb9816b2d9da93ab672e4bd886ca8b44ab9
   Citadel:
     url: https://github.com/orlandos-nl/Citadel.git
     from: "0.7.0"
