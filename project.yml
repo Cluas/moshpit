@@ -25,15 +25,16 @@ settings:
 
 packages:
   SwiftTerm:
-    # Forked from migueldeicaza/SwiftTerm at v1.13.0 to fix two OSC-8 hyperlink
-    # underline-overshoot bugs in oscHyperlink's close handler (see the fork's
-    # commit messages): (1) tagged one cell past the link text when it was the
-    # last thing printed on its line, (2) tagged the ENTIRE rest of the line
-    # once any scrollback had accumulated (an absolute-vs-viewport-relative row
-    # comparison bug — essentially always hit in a real session). Revert to the
-    # upstream URL if/when these land there and a release picks them up.
+    # Forked from migueldeicaza/SwiftTerm at v1.13.0 (see the fork's commit
+    # messages): (1)+(2) two OSC-8 hyperlink underline-overshoot fixes in
+    # oscHyperlink's close handler, (3) a new public API (viewportLineText /
+    # tagPlainTextLink) letting Moshi linkify plain http(s) URLs it detects
+    # itself, reusing the same cell.hasPayload path a real OSC-8 hyperlink
+    # uses — SwiftTerm's own built-in implicit-link regex is too permissive
+    # (matches bare file paths) to turn on globally. Revert to the upstream
+    # URL if/when these land there and a release picks them up.
     url: https://github.com/Cluas/SwiftTerm.git
-    revision: 0fe3cfb9816b2d9da93ab672e4bd886ca8b44ab9
+    revision: b550659ac5fb9dbfefb80e37a97060e46799e0c1
   Citadel:
     url: https://github.com/orlandos-nl/Citadel.git
     from: "0.7.0"
