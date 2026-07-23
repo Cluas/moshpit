@@ -81,6 +81,19 @@ targets:
             CFBundleIconFiles:
               - AppIcon60x60
             CFBundleIconName: AppIcon
+          CFBundleAlternateIcons:
+            AppIcon-MoshiClassic:
+              CFBundleIconFiles:
+                - AppIcon-MoshiClassic60x60
+              UIPrerenderedIcon: false
+            AppIcon-TerminalGreen:
+              CFBundleIconFiles:
+                - AppIcon-TerminalGreen60x60
+              UIPrerenderedIcon: false
+            AppIcon-AmberConsole:
+              CFBundleIconFiles:
+                - AppIcon-AmberConsole60x60
+              UIPrerenderedIcon: false
         NSSupportsLiveActivities: true
         CFBundleShortVersionString: "$(MARKETING_VERSION)"
         CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
