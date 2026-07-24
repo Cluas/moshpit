@@ -19,7 +19,7 @@ def plural(key, en_one, zh, ja):
     S[key] = {"plural": True, "en_one": en_one, "zh": zh, "ja": ja}
 
 # ---------- Brand / protocol / glyphs (identical everywhere) ----------
-for k in ["Beacon", "Beacon Pro", "Vibe Island", "PRO", "MOSH", "SRTT", "REC",
+for k in ["Beacon", "Vibe Island", "MOSH", "SRTT", "REC",
           "ED25519", "ECDSA-sk", "RSA-4096", "tmux", "paste", "tmux prefix",
           "⌘B", "＋", "22", "60000", "61000", "/usr/local/bin/mosh-server",
           "ABCdef 012 ~/ssh $", "%lldms", "%lldpt", "Wi-Fi → 5G",
@@ -77,7 +77,6 @@ add("Paste PEM", "粘贴 PEM", "PEM を貼り付け")
 add("Paste a PEM instead…", "改为粘贴 PEM…", "代わりに PEM を貼り付け…")
 add("Private Key (PEM)", "私钥（PEM）", "秘密鍵（PEM）")
 add("ROAMING · MOSH", "漫游 · MOSH", "ローミング · MOSH")
-add("ROAMING · MOSH (PRO)", "漫游 · MOSH (PRO)", "ローミング · MOSH (PRO)")
 add("Mosh keeps the session alive across Wi-Fi / 5G handoff and sleep/wake. UDP must be open server-side; the client picks an unused port within range. With tmux, Beacon attaches to your existing sessions and never creates or restyles them; only sessions you create through Beacon get its native look (status bar hidden, restored on disconnect).",
     "Mosh 让会话在 Wi-Fi / 5G 切换及休眠唤醒后保持存活。服务器端需开放 UDP；客户端会在范围内挑选一个未占用的端口。使用 tmux 时，Beacon 只附加到你已有的会话，绝不创建或改样式；只有通过 Beacon 创建的会话才会应用其原生外观（隐藏状态栏，断开时恢复）。",
     "Mosh は Wi-Fi / 5G の切り替えやスリープ/復帰をまたいでセッションを維持します。サーバー側で UDP を開放してください。クライアントは範囲内の未使用ポートを選びます。tmux では Beacon は既存セッションにアタッチするだけで、作成やスタイル変更は行いません。Beacon から作成したセッションのみネイティブな外観（ステータスバー非表示、切断時に復元）になります。")
@@ -122,7 +121,6 @@ add("Send keepalive pings so the server does not drop idle connections",
     "发送保活探测，防止服务器断开空闲连接",
     "キープアライブを送信し、アイドル接続がサーバーに切断されないようにします")
 add("MOSH · ROAMING", "MOSH · 漫游", "MOSH · ローミング")
-add("MOSH · ROAMING (PRO)", "MOSH · 漫游 (PRO)", "MOSH · ローミング (PRO)")
 add("Mosh runs over UDP and survives IP changes. If your server is behind a strict firewall, open the port range above outbound from your iPhone.",
     "Mosh 基于 UDP，可在 IP 变化后存活。若服务器位于严格防火墙之后，请从 iPhone 出方向开放上面的端口范围。",
     "Mosh は UDP 上で動作し、IP の変化にも耐えます。サーバーが厳格なファイアウォール内にある場合は、iPhone からの送信方向で上記のポート範囲を開放してください。")
@@ -136,9 +134,9 @@ add("KEYBOARD · KEYS", "键盘 · 密钥", "キーボード · キー")
 add("Shortcuts", "快捷键", "ショートカット")
 add("SSH Keys", "SSH 密钥", "SSH キー")
 add("NOTIFICATIONS", "通知", "通知")
-add("Beacon watches the active tmux session for the terminal bell and posts a local alert when your agent needs attention. Alerts fire while Beacon is running or backgrounded; both require a Pro subscription.",
-    "Beacon 会监听活动 tmux 会话的终端响铃，并在你的智能体需要关注时发出本地提醒。提醒在 Beacon 运行或处于后台时触发；两者均需 Pro 订阅。",
-    "Beacon はアクティブな tmux セッションのターミナルベルを監視し、エージェントが注意を必要とするとローカル通知を出します。通知は Beacon の実行中またはバックグラウンド時に発火し、いずれも Pro サブスクリプションが必要です。")
+add("Beacon watches the active tmux session for the terminal bell and posts a local alert when your agent needs attention.",
+    "Beacon 会监听活动 tmux 会话的终端响铃，并在你的智能体需要关注时发出本地提醒。",
+    "Beacon はアクティブな tmux セッションのターミナルベルを監視し、エージェントが注意を必要とするとローカル通知を出します。")
 add("Notifications", "通知", "通知")
 add("Alert when the agent rings the bell", "智能体响铃时提醒", "エージェントがベルを鳴らしたら通知")
 add("Live Activity", "实时活动", "ライブアクティビティ")
@@ -150,7 +148,6 @@ add("Dictate commands instead of typing. Planned for a future update.",
     "タイプの代わりに音声でコマンドを入力。今後のアップデートで提供予定です。")
 add("Enable Voice Input", "启用语音输入", "音声入力を有効化")
 add("Coming soon", "即将推出", "近日公開")
-add("Mosh roaming is a Pro feature", "Mosh 漫游是 Pro 功能", "Mosh ローミングは Pro 機能です")
 # Notification info sheet
 add("Bell = attention", "响铃 = 需要关注", "ベル = 要注意")
 add("When a tmux pane rings the terminal bell (BEL) — which Claude Code and most CLIs emit when they finish or need input — Beacon posts a local notification and flips the Vibe Island to “needs attention.”",
@@ -163,10 +160,6 @@ add("Local, not push", "本地通知，而非推送", "ローカル通知（プ�
 add("Alerts are generated on-device from the live session — there’s no cloud push server. They fire while Beacon is in the foreground or recently backgrounded; a fully suspended app won’t poll. iOS will ask for notification permission the first time you connect with Notifications on.",
     "提醒由设备端的实时会话生成——没有云端推送服务器。它们在 Beacon 处于前台或刚进入后台时触发；完全挂起的应用不会轮询。首次在开启通知的情况下连接时，iOS 会请求通知权限。",
     "通知はライブセッションからデバイス上で生成されます——クラウドのプッシュサーバーはありません。Beacon がフォアグラウンドまたは直近バックグラウンドの間に発火し、完全にサスペンドされたアプリはポーリングしません。通知をオンにして初めて接続する際、iOS が通知の許可を求めます。")
-add("Pro feature", "Pro 功能", "Pro 機能")
-add("Notifications and the Vibe Island are part of Beacon Pro.",
-    "通知与 Vibe Island 属于 Beacon Pro。",
-    "通知と Vibe Island は Beacon Pro の一部です。")
 # Server binary editor
 add("MOSH SERVER PATH", "MOSH SERVER 路径", "MOSH SERVER パス")
 add("The mosh-server executable on the remote host. Override if it isn't on PATH (e.g. /opt/homebrew/bin/mosh-server).",
@@ -329,46 +322,6 @@ add("Tap to focus pane", "点按聚焦窗格", "タップでペインにフォ�
 add("no panes", "没有窗格", "ペインなし")
 add("attached", "已附加", "アタッチ済み")
 add("detached", "已分离", "デタッチ済み")
-
-# ---------- Paywall ----------
-add("Not now", "暂不", "今はしない")
-add("Restore", "恢复购买", "復元")
-add("Purchase failed", "购买失败", "購入に失敗しました")
-add("Stay connected, anywhere", "随时随地，保持连接", "どこにいても、つながったまま")
-add("Unlock Mosh roaming, predictive echo, the Vibe Island Live Activity, and every Pro feature to come.",
-    "解锁 Mosh 漫游、预测回显、Vibe Island 实时活动，以及未来所有 Pro 功能。",
-    "Mosh ローミング、予測エコー、Vibe Island のライブアクティビティ、そして今後のすべての Pro 機能をアンロック。")
-add("Mosh roaming", "Mosh 漫游", "Mosh ローミング")
-add("Sessions survive Wi-Fi ↔ 5G handoff and sleep/wake — no reconnect, no lost scrollback.",
-    "会话可跨 Wi-Fi ↔ 5G 切换和休眠唤醒存活——无需重连，不丢回滚缓冲。",
-    "セッションは Wi-Fi ↔ 5G の切り替えやスリープ/復帰でも維持 — 再接続不要、スクロールバックも失われません。")
-add("Predictive echo", "预测回显", "予測エコー")
-add("Type ahead of the network — characters appear instantly with a confidence trail.",
-    "输入先于网络——字符即时显示，并带置信拖尾。",
-    "ネットワークより先に入力 — 文字は信頼度トレイル付きで即座に表示されます。")
-add("Watch your coding agent's status in the Dynamic Island; tap to jump straight back to its pane.",
-    "在灵动岛查看编码智能体的状态；点按即可直接跳回它的窗格。",
-    "コーディングエージェントの状態を Dynamic Island で確認。タップでそのペインへ即ジャンプ。")
-add("Unlimited everything", "全部无限制", "すべて無制限")
-add("No caps on connections, shortcuts, or SSH keys.",
-    "连接、快捷键、SSH 密钥均不限数量。",
-    "接続・ショートカット・SSH キーの数に上限はありません。")
-add("Loading plans…", "正在加载方案…", "プランを読み込み中…")
-add("Cancel anytime · payment charged to your Apple ID", "随时取消 · 费用从你的 Apple ID 扣除", "いつでもキャンセル可 · お支払いは Apple ID に請求されます")
-add("Subscriptions renew automatically until cancelled. Manage or cancel in Settings › Apple ID. Restoring re-applies a prior purchase on this Apple ID.",
-    "订阅在取消前会自动续期。可在「设置 › Apple ID」中管理或取消。恢复购买会重新应用此 Apple ID 上的历史购买。",
-    "サブスクリプションはキャンセルするまで自動更新されます。設定 › Apple ID で管理・キャンセルできます。復元するとこの Apple ID の過去の購入が再適用されます。")
-add("BEST VALUE", "超值", "ベストバリュー")
-add("ONE-TIME", "一次性", "買い切り")
-add("Subscribe", "订阅", "登録する")
-add("Buy %@", "以 %@ 购买", "%@で購入")
-add("Pay once · yours forever", "一次付费 · 永久拥有", "一度の支払いで · ずっと使えます")
-add("Billed yearly", "按年计费", "年単位の請求")
-add("Billed monthly", "按月计费", "月単位の請求")
-add("Billed every %lld months", "每 %lld 个月计费", "%lldか月ごとの請求")
-add("Billed weekly", "按周计费", "週単位の請求")
-add("Billed daily", "按日计费", "日単位の請求")
-add("Subscription", "订阅", "サブスクリプション")
 
 # ---------- Vibe Island (shared with widget) ----------
 ISLAND = {}

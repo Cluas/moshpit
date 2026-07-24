@@ -176,10 +176,8 @@ schemes:
         MoshiUITests: [test]
     run:
       config: Debug
-      storeKitConfiguration: Moshi/Moshi.storekit
     test:
       config: Debug
-      storeKitConfiguration: Moshi/Moshi.storekit
       targets:
         - MoshiTests
         - MoshiUITests
