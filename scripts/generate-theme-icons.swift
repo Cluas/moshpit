@@ -55,14 +55,14 @@ func renderIcon(theme: IconTheme, pixelSize: Int) -> CGImage? {
 
     let rect = CGRect(x: 0, y: 0, width: size, height: size)
 
-    // 1. Diagonal gradient background: a lightened highlight (top-left) to a
-    //    darkened shadow (bottom-right) of the theme's accent hue. Using
-    //    accent unmixed at both ends read as a near-flat block — this widens
-    //    it into a real light-to-dark gradient while staying anchored to
-    //    each theme's own color, not introducing an unrelated second hue.
-    let highlight = mix(theme.accent, toward: (255, 255, 255), by: 0.24)
-    let shadow = mix(theme.accent, toward: (0, 0, 0), by: 0.58)
-    let gradientColors = [color(highlight), color(shadow)] as CFArray
+    // 1. Full-bleed near-black background — the dark "terminal panel" from
+    //    the original design, just stretched edge-to-edge instead of inset
+    //    (the inset used to leave a distracting colored ring around it). A
+    //    faint diagonal falloff toward the theme accent keeps some depth
+    //    without turning the whole icon into a saturated color block.
+    let deepShadow = mix(theme.accent, toward: (0, 0, 0), by: 0.93)
+    let deepHighlight = mix(theme.accent, toward: (0, 0, 0), by: 0.82)
+    let gradientColors = [color(deepHighlight), color(deepShadow)] as CFArray
     if let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: gradientColors, locations: [0, 1]) {
         ctx.saveGState()
         ctx.addRect(rect)
@@ -80,8 +80,7 @@ func renderIcon(theme: IconTheme, pixelSize: Int) -> CGImage? {
     //    raw CoreGraphics. Both arcs share the dot's center so they read as
     //    concentric. Sized/centered against a logical ~78%-of-canvas content
     //    area (matching the old inset panel's proportions) even though the
-    //    gradient itself now runs full-bleed with no panel drawn — that inset
-    //    dark rect used to leave a distracting colored ring around the edge.
+    //    background itself now runs full-bleed with no panel drawn.
     let contentInset = size * 0.11
     let contentRect = rect.insetBy(dx: contentInset, dy: contentInset)
     let midY = size * 0.5
@@ -95,12 +94,6 @@ func renderIcon(theme: IconTheme, pixelSize: Int) -> CGImage? {
 
     let waveStart = CGFloat(-55.0 * .pi / 180)
     let waveEnd = CGFloat(55.0 * .pi / 180)
-
-    // Soft dark halo behind the glyph — with no dark panel to sit on anymore,
-    // the white glyph needs its own contrast against whichever theme color is
-    // directly behind it (lighter themes like Amber Console especially).
-    ctx.saveGState()
-    ctx.setShadow(offset: .zero, blur: pw * 0.05, color: CGColor(red: 0, green: 0, blue: 0, alpha: 0.4))
 
     ctx.setStrokeColor(CGColor(red: 1, green: 1, blue: 1, alpha: 0.5))
     ctx.setLineWidth(pw * 0.038)
@@ -118,10 +111,13 @@ func renderIcon(theme: IconTheme, pixelSize: Int) -> CGImage? {
                startAngle: waveStart, endAngle: waveEnd, clockwise: false)
     ctx.strokePath()
 
-    // White dot, not accent — on the gradient itself (no dark panel behind it
-    // anymore) an accent-colored dot would nearly vanish into the same-hued
-    // background. White reads as the glyph's "light source" on every theme.
-    ctx.setFillColor(CGColor(red: 1, green: 1, blue: 1, alpha: 1))
+    // Accent-colored dot, with a soft glow of the same color behind it — the
+    // "light source" the waves radiate from. Back on the dark panel, the
+    // accent reads clearly again (that's what a flat/bright full-panel
+    // gradient was drowning out).
+    ctx.saveGState()
+    ctx.setShadow(offset: .zero, blur: pw * 0.16, color: color(theme.accent, alpha: 0.75))
+    ctx.setFillColor(color(theme.accent))
     ctx.fillEllipse(in: CGRect(x: originX - dotRadius, y: midY - dotRadius,
                                 width: dotRadius * 2, height: dotRadius * 2))
     ctx.restoreGState()
