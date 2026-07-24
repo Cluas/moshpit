@@ -64,30 +64,32 @@ func renderIcon(theme: IconTheme, pixelSize: Int) -> CGImage? {
         ctx.restoreGState()
     }
 
-    // 2. Inner terminal panel — dark rounded rect, ~78% of the canvas.
-    let panelInset = size * 0.11
-    let panelRect = rect.insetBy(dx: panelInset, dy: panelInset)
-    let panelPath = CGPath(roundedRect: panelRect, cornerWidth: size * 0.14, cornerHeight: size * 0.14, transform: nil)
-    ctx.setFillColor(color((0x05, 0x05, 0x07), alpha: 0.92))
-    ctx.addPath(panelPath)
-    ctx.fillPath()
-
-    // 3. Beacon glyph: a light source (filled dot) with two signal waves
+    // 2. Beacon glyph: a light source (filled dot) with two signal waves
     //    radiating outward — same motif as BeaconMark.swift, translated to
     //    raw CoreGraphics. Both arcs share the dot's center so they read as
-    //    concentric; sized off `panelRect.width` (not the full canvas) and
-    //    centered within it so nothing crosses the panel's rounded edge.
+    //    concentric. Sized/centered against a logical ~78%-of-canvas content
+    //    area (matching the old inset panel's proportions) even though the
+    //    gradient itself now runs full-bleed with no panel drawn — that inset
+    //    dark rect used to leave a distracting colored ring around the edge.
+    let contentInset = size * 0.11
+    let contentRect = rect.insetBy(dx: contentInset, dy: contentInset)
     let midY = size * 0.5
-    let pw = panelRect.width
+    let pw = contentRect.width
     let dotRadius = pw * 0.08
     let innerWaveRadius = pw * 0.17
     let outerWaveRadius = pw * 0.28
     let totalWidth = dotRadius + outerWaveRadius
     let leftMargin = (pw - totalWidth) / 2
-    let originX = panelRect.minX + leftMargin + dotRadius
+    let originX = contentRect.minX + leftMargin + dotRadius
 
     let waveStart = CGFloat(-55.0 * .pi / 180)
     let waveEnd = CGFloat(55.0 * .pi / 180)
+
+    // Soft dark halo behind the glyph — with no dark panel to sit on anymore,
+    // the white glyph needs its own contrast against whichever theme color is
+    // directly behind it (lighter themes like Amber Console especially).
+    ctx.saveGState()
+    ctx.setShadow(offset: .zero, blur: pw * 0.05, color: CGColor(red: 0, green: 0, blue: 0, alpha: 0.4))
 
     ctx.setStrokeColor(CGColor(red: 1, green: 1, blue: 1, alpha: 0.5))
     ctx.setLineWidth(pw * 0.038)
@@ -105,10 +107,13 @@ func renderIcon(theme: IconTheme, pixelSize: Int) -> CGImage? {
                startAngle: waveStart, endAngle: waveEnd, clockwise: false)
     ctx.strokePath()
 
-    // Accent-colored dot last, on top of the wave arcs' inner ends.
-    ctx.setFillColor(color(theme.accent))
+    // White dot, not accent — on the gradient itself (no dark panel behind it
+    // anymore) an accent-colored dot would nearly vanish into the same-hued
+    // background. White reads as the glyph's "light source" on every theme.
+    ctx.setFillColor(CGColor(red: 1, green: 1, blue: 1, alpha: 1))
     ctx.fillEllipse(in: CGRect(x: originX - dotRadius, y: midY - dotRadius,
                                 width: dotRadius * 2, height: dotRadius * 2))
+    ctx.restoreGState()
 
     return ctx.makeImage()
 }
