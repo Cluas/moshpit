@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Mosaic — end-to-end localhost SSH smoke test.
 #
-# Builds Moshi, installs onto an iPhone simulator, launches with seed
+# Builds Beacon, installs onto an iPhone simulator, launches with seed
 # args that:
 #   1. Write `~/.ssh/id_ed25519` into the app's keychain
 #   2. Register a `127.0.0.1:22` connection
@@ -19,7 +19,7 @@
 set -euo pipefail
 
 SIM_NAME="${MOSAIC_SIM:-iPhone 17 Pro}"
-BUNDLE_ID="com.cluas.moshi"
+BUNDLE_ID="com.cluas.beacon"
 KEY_PATH="${MOSAIC_SSH_KEY:-$HOME/.ssh/id_ed25519}"
 SSH_HOST="${MOSAIC_SSH_HOST:-127.0.0.1}"
 SSH_PORT="${MOSAIC_SSH_PORT:-22}"
@@ -74,16 +74,16 @@ if [ "$STATE" != "Booted" ]; then
   sleep 10
 fi
 
-echo "▶ Building Moshi"
+echo "▶ Building Beacon"
 DERIVED="$(mktemp -d)"
 xcodebuild \
-  -project "$REPO_ROOT/Moshi.xcodeproj" -scheme Moshi \
+  -project "$REPO_ROOT/Beacon.xcodeproj" -scheme Beacon \
   -configuration Debug -sdk iphonesimulator \
   -destination "platform=iOS Simulator,name=$SIM_NAME" \
   -derivedDataPath "$DERIVED" \
   CODE_SIGNING_ALLOWED=NO build > "$DERIVED/build.log" 2>&1 \
   || { echo "✘ build failed"; tail -30 "$DERIVED/build.log"; exit 1; }
-APP="$(find "$DERIVED/Build/Products" -name 'Moshi.app' -type d | head -1)"
+APP="$(find "$DERIVED/Build/Products" -name 'Beacon.app' -type d | head -1)"
 
 echo "▶ Installing app on $SIM_UDID"
 xcrun simctl install "$SIM_UDID" "$APP"

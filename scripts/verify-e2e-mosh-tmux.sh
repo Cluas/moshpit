@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# T4 — end-to-end self-verification of Moshi over REAL mosh+tmux to localhost.
+# T4 — end-to-end self-verification of Beacon over REAL mosh+tmux to localhost.
 #
 # What it proves, with screenshots I can inspect myself (no device, no sideload):
 #   * Bug A (garble): renders ASCII + CJK + Japanese + box-drawing through the
@@ -15,7 +15,7 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-BUNDLE_ID="com.cluas.moshi"
+BUNDLE_ID="com.cluas.beacon"
 KEY_PATH="${MOSAIC_SSH_KEY:-$HOME/.ssh/id_ed25519}"
 SSH_HOST="127.0.0.1"; SSH_PORT="22"
 TMUX_BIN="$(command -v tmux)"
@@ -41,7 +41,7 @@ chmod +x "$WRAP"
 cat > "$GEN" <<'EOF'
 #!/bin/sh
 clear
-printf '=== MOSHI E2E  mosh+tmux  (scroll up to see lower numbers) ===\n'
+printf '=== BEACON E2E  mosh+tmux  (scroll up to see lower numbers) ===\n'
 i=1
 while [ $i -le 60 ]; do
   printf '%03d | ASCII=abcXYZ | CJK=你好世界 | JP=こんにちは | box ┌──┬──┐ │AB│ └──┴──┘\n' "$i"
@@ -62,13 +62,13 @@ SIM_UDID="$(xcrun simctl list devices booted --json | python3 -c 'import json,sy
 SIM_NAME="$(xcrun simctl list devices --json | python3 -c 'import json,sys;u=sys.argv[1];d=json.load(sys.stdin);print(next((x["name"] for ds in d["devices"].values() for x in ds if x.get("udid")==u),""))' "$SIM_UDID")"
 echo "▶ Simulator: $SIM_NAME ($SIM_UDID)"
 
-echo "▶ Building Moshi"
+echo "▶ Building Beacon"
 DERIVED="$(mktemp -d)"
-xcodebuild -project "$REPO_ROOT/Moshi.xcodeproj" -scheme Moshi -configuration Debug \
+xcodebuild -project "$REPO_ROOT/Beacon.xcodeproj" -scheme Beacon -configuration Debug \
   -sdk iphonesimulator -destination "platform=iOS Simulator,id=$SIM_UDID" \
   -derivedDataPath "$DERIVED" CODE_SIGNING_ALLOWED=NO build > "$DERIVED/build.log" 2>&1 \
   || { echo "✘ build failed"; tail -30 "$DERIVED/build.log"; exit 1; }
-APP="$(find "$DERIVED/Build/Products" -name 'Moshi.app' -type d | head -1)"
+APP="$(find "$DERIVED/Build/Products" -name 'Beacon.app' -type d | head -1)"
 
 echo "▶ Installing + launching (mosh + tmux, isolated socket)"
 xcrun simctl install "$SIM_UDID" "$APP"

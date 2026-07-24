@@ -29,7 +29,7 @@ OUTPUT="$BUILD_DIR/mosh-ios"
 
 NCPU=$(sysctl -n hw.ncpu)
 
-echo "=== Moshi: Building mosh for iOS ==="
+echo "=== Beacon: Building mosh for iOS ==="
 echo "iOS SDK: $IOS_SDK"
 echo "Sim SDK: $SIM_SDK"
 echo ""

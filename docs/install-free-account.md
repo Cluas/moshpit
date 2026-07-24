@@ -1,6 +1,6 @@
-# 本地安装 Moshi 到 iPhone(免费 Apple 开发者账号)
+# 本地安装 Beacon 到 iPhone(免费 Apple 开发者账号)
 
-免费 Apple ID 足以把 Moshi 装到你自己的 iPhone——本项目 entitlements 为空、无
+免费 Apple ID 足以把 Beacon 装到你自己的 iPhone——本项目 entitlements 为空、无
 App Groups / 推送,Live Activity 只是个 Info.plist 开关,全部免费档可用。
 
 ## 免费账号能做 / 不能做
@@ -11,7 +11,7 @@ App Groups / 推送,Live Activity 只是个 Info.plist 开关,全部免费档可
 | mosh + SSH + tmux 全功能 | 后台远程推送(我们不用) |
 | 本地通知 + 灵动岛 Live Activity | App 不在同一网络时远程安装 |
 
-**硬限制(记住)**:① App **7 天过期**,过期后图标在但打不开,重新 ⌘R 一次即可续(数据保留)。② 同时最多 **3 个**自签 App。③ 每 7 天最多 10 个 App ID(Moshi 占 2 个:主 App + 灵动岛扩展)。
+**硬限制(记住)**:① App **7 天过期**,过期后图标在但打不开,重新 ⌘R 一次即可续(数据保留)。② 同时最多 **3 个**自签 App。③ 每 7 天最多 10 个 App ID(Beacon 占 2 个:主 App + 灵动岛扩展)。
 
 ---
 
@@ -24,7 +24,7 @@ App Groups / 推送,Live Activity 只是个 Info.plist 开关,全部免费档可
    ```bash
    ./scripts/team-id.sh
    ```
-   若提示还没有 team:先在 Xcode 里打开 `Moshi.xcodeproj`,选 **Moshi** target ▸
+   若提示还没有 team:先在 Xcode 里打开 `Beacon.xcodeproj`,选 **Beacon** target ▸
    Signing & Capabilities ▸ Team 下拉选你的 Personal Team(这一步会触发 Xcode
    创建证书),再跑一次脚本。
 
@@ -64,12 +64,12 @@ App Groups / 推送,Live Activity 只是个 Info.plist 开关,全部免费档可
 
 ```bash
 # 设备 UDID:xcrun devicectl list devices
-xcodebuild -project Moshi.xcodeproj -scheme Moshi -configuration Debug \
+xcodebuild -project Beacon.xcodeproj -scheme Beacon -configuration Debug \
   -destination 'generic/platform=iOS' \
   -derivedDataPath build/Device -allowProvisioningUpdates build
 
 xcrun devicectl device install app --device <UDID> \
-  build/Device/Build/Products/Debug-iphoneos/Moshi.app
+  build/Device/Build/Products/Debug-iphoneos/Beacon.app
 ```
 
 ---
@@ -83,11 +83,11 @@ xcrun devicectl device install app --device <UDID> \
 
 1. **出包**(未签名 .ipa,含灵动岛扩展):
    ```bash
-   ./scripts/build-ipa.sh        # → build/Moshi.ipa(约 9 MB)
+   ./scripts/build-ipa.sh        # → build/Beacon.ipa(约 9 MB)
    ```
 2. **装 AltStore**:Mac/PC 装 [AltServer](https://altstore.io),手机装 AltStore,
    在 AltStore 里用你的 Apple ID 登录。
-3. **侧载**:把 `build/Moshi.ipa` 拖进 AltStore(或 `altserver -u <UDID> build/Moshi.ipa`)。
+3. **侧载**:把 `build/Beacon.ipa` 拖进 AltStore(或 `altserver -u <UDID> build/Beacon.ipa`)。
    AltStore 用你的 Apple ID 重签后安装。
 4. **开自动续签**:AltStore ▸ Settings ▸ 打开 Background Refresh。让 AltServer 在
    电脑常驻,手机与电脑同一 Wi-Fi(并开启设备的 Wi-Fi 同步)即可后台续签。
@@ -95,7 +95,7 @@ xcrun devicectl device install app --device <UDID> \
 **前提与现实**:
 - AltServer 需要在一台电脑上常驻、且手机定期能与它同网可达——后台刷新才会发生;
   完全离线太久仍会过期(打开 App 触发一次前台刷新即可补上)。
-- AltStore 本身占用免费账号 3 个 App 名额里的 1 个(剩 2 个;Moshi 是其中之一)。
+- AltStore 本身占用免费账号 3 个 App 名额里的 1 个(剩 2 个;Beacon 是其中之一)。
 - 后台刷新不是 100% 可靠(iOS 后台调度 + 设备可达性所限),但比每周手动强得多。
 - **想完全摆脱"电脑常驻"**:用 [SideStore](https://sidestore.io)(AltStore 分支,
   靠设备本地 WireGuard 回环续签,无需电脑在同一网络)。流程同上,出包脚本通用。
@@ -104,17 +104,14 @@ xcrun devicectl device install app --device <UDID> \
   AltServer 隔着 Tailscale 通常发现不了手机;即便手动指定 IP,iOS 的 lockdownd 也未必
   在 Tailscale 接口上可达。别指望它做后台续签。**续签请用 SideStore(设备本地,
   与网络无关)**。Tailscale 真正的用武之地是下一条——连你的服务器。
-- **付费墙价格**:AltStore 装的版本不带本地 StoreKit 测试配置,付费墙会停在
-  "Loading plans…"(需真实 App Store Connect 商品才显示)——mosh / SSH / tmux /
-  三语 / 灵动岛全部正常,不影响日常使用。
 
 ## 常见问题
 
-- **"Failed to register bundle identifier"** → `com.cluas.moshi` 全球唯一被占用了。
-  改 `project.yml` 里 `com.cluas.moshi` → 更独特的(如 `com.<你的标识>.moshi`),
+- **"Failed to register bundle identifier"** → `com.cluas.beacon` 全球唯一被占用了。
+  改 `project.yml` 里 `com.cluas.beacon` → 更独特的(如 `com.<你的标识>.beacon`),
   连带把 `.island` 后缀的扩展 id 一起改,`xcodegen generate` 后重试。
-- **灵动岛扩展签名报错** → 免费账号偶发。临时验证主 App:在 `project.yml` 的 Moshi
-  target `dependencies` 里去掉 `MoshiIsland` 那两行,generate 后只装主 App(会暂时
+- **灵动岛扩展签名报错** → 免费账号偶发。临时验证主 App:在 `project.yml` 的 Beacon
+  target `dependencies` 里去掉 `BeaconIsland` 那两行,generate 后只装主 App(会暂时
   失去 Live Activity);确认主 App 能装后再加回来排查。
 - **装上后 7 天打不开** → 正常,重新 ⌘R 续签。
 - **想人不在家也能更新** → 免费账号做不到;升级 $99/年开发者账号后走 TestFlight(90 天)

@@ -4,7 +4,7 @@
 
 ## 问题
 
-Moshi 假设目标机已装 tmux(会话持久化/原生导航)和 mosh-server(漫游)。
+Beacon 假设目标机已装 tmux(会话持久化/原生导航)和 mosh-server(漫游)。
 现实中大量主机两者皆无。当前的失败形态:
 
 | 场景 | 现状 | 问题 |
@@ -17,7 +17,7 @@ Moshi 假设目标机已装 tmux(会话持久化/原生导航)和 mosh-server(�
 
 1. **永远能连上**:依赖缺失绝不阻断连接——降级,不失败。SSH 是保底传输,裸 shell 是保底形态。
 2. **说人话**:明确告知"缺什么、影响什么、怎么装",不甩 stderr。
-3. **不偷装**:任何安装动作必须用户显式触发,且**在终端里可见地执行**(sudo 密码、输出全程可见),Moshi 只代填命令。
+3. **不偷装**:任何安装动作必须用户显式触发,且**在终端里可见地执行**(sudo 密码、输出全程可见),Beacon 只代填命令。
 
 ## 方案
 
@@ -69,9 +69,9 @@ command -v tmux mosh-server; echo "::$(uname -s)::$(command -v apt-get dnf yum p
 
 ### 5. 实现落点
 
-- 新:`Moshi/Services/HostCapabilities.swift`(探测 + 缓存,~80 行)
+- 新:`Beacon/Services/HostCapabilities.swift`(探测 + 缓存,~80 行)
 - 改:`SessionHub.start/startMosh`(探测注入 + 降级分支,~40 行)
-- 新:`Moshi/UI/Terminal/HostBannerView.swift` + `InstallAssistSheet.swift`(~150 行)
+- 新:`Beacon/UI/Terminal/HostBannerView.swift` + `InstallAssistSheet.swift`(~150 行)
 - 改:`TmuxEmptyStateView` 分支、`ConnectionCard` 降级 pill
 - 测试:HostCapabilities 解析单测(mock exec 输出);UI 测试用 `-MOSAIC_SEED_TMUX_BIN /bin/false` 模拟缺 tmux 走降级路径
 - 实测:`tmux -L` 探测干扰不了(探测的是 PATH 中的 tmux);用一台干净 Docker/无 tmux 用户验证
@@ -80,4 +80,4 @@ command -v tmux mosh-server; echo "::$(uname -s)::$(command -v apt-get dnf yum p
 
 - 静默自动安装(违反原则 3)
 - 给 mosh 缺失弹模态阻断(降级即可,banner 足够)
-- 在 Moshi 里内置二进制分发(签名/架构矩阵成本,v2 再议 static-binary 助手)
+- 在 Beacon 里内置二进制分发(签名/架构矩阵成本,v2 再议 static-binary 助手)

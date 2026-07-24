@@ -1,4 +1,4 @@
-name: Moshi
+name: Beacon
 options:
   bundleIdPrefix: com.cluas
   developmentLanguage: en
@@ -28,7 +28,7 @@ packages:
     # Forked from migueldeicaza/SwiftTerm at v1.13.0 (see the fork's commit
     # messages): (1)+(2) two OSC-8 hyperlink underline-overshoot fixes in
     # oscHyperlink's close handler, (3) a new public API (viewportLineText /
-    # tagPlainTextLink) letting Moshi linkify plain http(s) URLs it detects
+    # tagPlainTextLink) letting Beacon linkify plain http(s) URLs it detects
     # itself, reusing the same cell.hasPayload path a real OSC-8 hyperlink
     # uses — SwiftTerm's own built-in implicit-link regex is too permissive
     # (matches bare file paths) to turn on globally. Revert to the upstream
@@ -40,30 +40,30 @@ packages:
     from: "0.7.0"
 
 targets:
-  Moshi:
+  Beacon:
     type: application
     platform: iOS
     sources:
-      - path: Moshi
+      - path: Beacon
     entitlements:
-      path: Moshi/App/Moshi.entitlements
+      path: Beacon/App/Beacon.entitlements
       properties:
         com.apple.security.application-groups:
-          - group.com.cluas.moshi
+          - group.com.cluas.beacon
     settings:
       base:
-        INFOPLIST_FILE: Moshi/App/Info.plist
-        PRODUCT_BUNDLE_IDENTIFIER: com.cluas.moshi
+        INFOPLIST_FILE: Beacon/App/Info.plist
+        PRODUCT_BUNDLE_IDENTIFIER: com.cluas.beacon
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ENABLE_PREVIEWS: YES
         SWIFT_EMIT_LOC_STRINGS: YES
     dependencies:
       - package: SwiftTerm
       - package: Citadel
-      - target: MoshiIsland
+      - target: BeaconIsland
         embed: true
     info:
-      path: Moshi/App/Info.plist
+      path: Beacon/App/Info.plist
       properties:
         CFBundleName: Beacon
         CFBundleDisplayName: Beacon
@@ -82,9 +82,9 @@ targets:
               - AppIcon60x60
             CFBundleIconName: AppIcon
           CFBundleAlternateIcons:
-            AppIcon-MoshiClassic:
+            AppIcon-BeaconClassic:
               CFBundleIconFiles:
-                - AppIcon-MoshiClassic60x60
+                - AppIcon-BeaconClassic60x60
               UIPrerenderedIcon: false
             AppIcon-TerminalGreen:
               CFBundleIconFiles:
@@ -111,27 +111,27 @@ targets:
         NSFaceIDUsageDescription: "Use Face ID to unlock SSH keys"
         CFBundleURLTypes:
           - CFBundleURLSchemes:
-              - moshi
-            CFBundleURLName: com.cluas.moshi
+              - beacon
+            CFBundleURLName: com.cluas.beacon
 
-  MoshiIsland:
+  BeaconIsland:
     type: app-extension
     platform: iOS
     sources:
-      - path: MoshiIsland
-      - path: Moshi/Island/AgentActivityAttributes.swift
-      - path: Moshi/Island/AgentControl.swift
-      - path: Moshi/Island/AgentWidgetState.swift
+      - path: BeaconIsland
+      - path: Beacon/Island/AgentActivityAttributes.swift
+      - path: Beacon/Island/AgentControl.swift
+      - path: Beacon/Island/AgentWidgetState.swift
     entitlements:
-      path: MoshiIsland/MoshiIsland.entitlements
+      path: BeaconIsland/BeaconIsland.entitlements
       properties:
         com.apple.security.application-groups:
-          - group.com.cluas.moshi
+          - group.com.cluas.beacon
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.cluas.moshi.island
+        PRODUCT_BUNDLE_IDENTIFIER: com.cluas.beacon.island
     info:
-      path: MoshiIsland/Info.plist
+      path: BeaconIsland/Info.plist
       properties:
         CFBundleDisplayName: Beacon Island
         # Keep the extension's version in lockstep with the app — a mismatch is
@@ -142,45 +142,45 @@ targets:
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
 
-  MoshiUITests:
+  BeaconUITests:
     type: bundle.ui-testing
     platform: iOS
     sources:
-      - path: MoshiUITests
+      - path: BeaconUITests
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.cluas.moshi.uitests
-        TEST_TARGET_NAME: Moshi
+        PRODUCT_BUNDLE_IDENTIFIER: com.cluas.beacon.uitests
+        TEST_TARGET_NAME: Beacon
         GENERATE_INFOPLIST_FILE: YES
     dependencies:
-      - target: Moshi
+      - target: Beacon
 
-  MoshiTests:
+  BeaconTests:
     type: bundle.unit-test
     platform: iOS
     sources:
-      - path: MoshiTests
+      - path: BeaconTests
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.cluas.moshi.tests
+        PRODUCT_BUNDLE_IDENTIFIER: com.cluas.beacon.tests
         GENERATE_INFOPLIST_FILE: YES
     dependencies:
-      - target: Moshi
+      - target: Beacon
 
 schemes:
-  Moshi:
+  Beacon:
     build:
       targets:
-        Moshi: all
-        MoshiTests: [test]
-        MoshiUITests: [test]
+        Beacon: all
+        BeaconTests: [test]
+        BeaconUITests: [test]
     run:
       config: Debug
     test:
       config: Debug
       targets:
-        - MoshiTests
-        - MoshiUITests
+        - BeaconTests
+        - BeaconUITests
     profile:
       config: Release
     analyze:

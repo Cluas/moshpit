@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate Moshi/Resources/Localizable.xcstrings and MoshiIsland/Localizable.xcstrings.
+"""Generate Beacon/Resources/Localizable.xcstrings and BeaconIsland/Localizable.xcstrings.
 
 Source language: en (the key IS the English value).
 Each entry carries complete zh-Hans + ja translations.
@@ -58,7 +58,6 @@ add("Delete Connection", "删除连接", "接続を削除")
 add("SESSIONS", "会话", "セッション")
 add("%lldh roamed", "漫游 %lld 小时", "ローミング %lld 時間")
 add("%lldh up", "在线 %lld 小时", "稼働 %lld 時間")
-add("Free plan is limited to %lld connections", "免费版最多支持 %lld 个连接", "無料プランは %lld 件の接続までです")
 plural("%lld windows", "%lld window", "%lld 个窗口", "%lld個のウィンドウ")
 plural("%lld panes", "%lld pane", "%lld 个窗格", "%lld個のペイン")
 plural("%lld keys", "%lld key", "%lld 个密钥", "%lld個のキー")
@@ -371,5 +370,5 @@ def write_catalog(path, table):
 
 
 root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-write_catalog(os.path.join(root, "Moshi/Resources/Localizable.xcstrings"), S)
-write_catalog(os.path.join(root, "MoshiIsland/Localizable.xcstrings"), ISLAND)
+write_catalog(os.path.join(root, "Beacon/Resources/Localizable.xcstrings"), S)
+write_catalog(os.path.join(root, "BeaconIsland/Localizable.xcstrings"), ISLAND)

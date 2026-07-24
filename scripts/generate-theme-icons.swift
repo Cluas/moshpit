@@ -8,9 +8,9 @@
 //
 // Usage: swift scripts/generate-theme-icons.swift
 // Output:
-//   Moshi/App/IconFiles/AppIcon60x60@{2x,3x}.png              (primary, Signal Room)
-//   Moshi/App/IconFiles/AppIcon-<Theme>60x60@{2x,3x}.png      (alternates)
-//   Moshi/App/Assets.xcassets/AppIcon.appiconset/AppIcon.png  (1024, primary/marketing)
+//   Beacon/App/IconFiles/AppIcon60x60@{2x,3x}.png              (primary, Signal Room)
+//   Beacon/App/IconFiles/AppIcon-<Theme>60x60@{2x,3x}.png      (alternates)
+//   Beacon/App/Assets.xcassets/AppIcon.appiconset/AppIcon.png  (1024, primary/marketing)
 
 import CoreGraphics
 import ImageIO
@@ -28,7 +28,7 @@ struct IconTheme {
 
 let themes: [IconTheme] = [
     IconTheme(fileTag: nil, accent: (0x6C, 0x6B, 0xEF), accentPressed: (0x56, 0x52, 0xD6)),           // Signal Room (primary)
-    IconTheme(fileTag: "MoshiClassic", accent: (0x53, 0xDC, 0xC9), accentPressed: (0x3E, 0xBF, 0xA9)),
+    IconTheme(fileTag: "BeaconClassic", accent: (0x53, 0xDC, 0xC9), accentPressed: (0x3E, 0xBF, 0xA9)),
     IconTheme(fileTag: "TerminalGreen", accent: (0x2F, 0xA8, 0x71), accentPressed: (0x25, 0x86, 0x5A)),
     IconTheme(fileTag: "AmberConsole", accent: (0xC9, 0x8A, 0x2E), accentPressed: (0xA6, 0x6F, 0x1F)),
 ]
@@ -133,8 +133,8 @@ func writePNG(_ image: CGImage, to path: String) {
     }
 }
 
-let iconFilesDir = "Moshi/App/IconFiles"
-let appIconSetDir = "Moshi/App/Assets.xcassets/AppIcon.appiconset"
+let iconFilesDir = "Beacon/App/IconFiles"
+let appIconSetDir = "Beacon/App/Assets.xcassets/AppIcon.appiconset"
 try? FileManager.default.createDirectory(atPath: iconFilesDir, withIntermediateDirectories: true)
 
 // 60pt @2x/@3x = 120px/180px, matching the existing AppIcon60x60 convention
