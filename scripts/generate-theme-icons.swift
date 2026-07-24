@@ -23,18 +23,25 @@ struct IconTheme {
     /// nil fileTag = primary icon (no "-<Theme>" suffix, matches AppTheme.iconName == nil).
     let fileTag: String?
     let accent: (UInt8, UInt8, UInt8)
-    let accentPressed: (UInt8, UInt8, UInt8)
 }
 
 let themes: [IconTheme] = [
-    IconTheme(fileTag: nil, accent: (0x6C, 0x6B, 0xEF), accentPressed: (0x56, 0x52, 0xD6)),           // Signal Room (primary)
-    IconTheme(fileTag: "BeaconClassic", accent: (0x53, 0xDC, 0xC9), accentPressed: (0x3E, 0xBF, 0xA9)),
-    IconTheme(fileTag: "TerminalGreen", accent: (0x2F, 0xA8, 0x71), accentPressed: (0x25, 0x86, 0x5A)),
-    IconTheme(fileTag: "AmberConsole", accent: (0xC9, 0x8A, 0x2E), accentPressed: (0xA6, 0x6F, 0x1F)),
+    IconTheme(fileTag: nil, accent: (0x6C, 0x6B, 0xEF)),           // Signal Room (primary)
+    IconTheme(fileTag: "BeaconClassic", accent: (0x53, 0xDC, 0xC9)),
+    IconTheme(fileTag: "TerminalGreen", accent: (0x2F, 0xA8, 0x71)),
+    IconTheme(fileTag: "AmberConsole", accent: (0xC9, 0x8A, 0x2E)),
 ]
 
 func color(_ rgb: (UInt8, UInt8, UInt8), alpha: CGFloat = 1) -> CGColor {
     CGColor(red: CGFloat(rgb.0) / 255, green: CGFloat(rgb.1) / 255, blue: CGFloat(rgb.2) / 255, alpha: alpha)
+}
+
+/// Blends `rgb` toward `target` by `t` (0 = unchanged, 1 = `target`).
+func mix(_ rgb: (UInt8, UInt8, UInt8), toward target: (UInt8, UInt8, UInt8), by t: CGFloat) -> (UInt8, UInt8, UInt8) {
+    func lerp(_ a: UInt8, _ b: UInt8) -> UInt8 {
+        UInt8(max(0, min(255, CGFloat(a) + (CGFloat(b) - CGFloat(a)) * t)))
+    }
+    return (lerp(rgb.0, target.0), lerp(rgb.1, target.1), lerp(rgb.2, target.2))
 }
 
 func renderIcon(theme: IconTheme, pixelSize: Int) -> CGImage? {
@@ -48,10 +55,14 @@ func renderIcon(theme: IconTheme, pixelSize: Int) -> CGImage? {
 
     let rect = CGRect(x: 0, y: 0, width: size, height: size)
 
-    // 1. Diagonal gradient background, accent (top-left) -> accentPressed
-    //    (bottom-right) — monochromatic-per-theme so each icon reads as a
-    //    distinct color at a glance, not just a recolored detail.
-    let gradientColors = [color(theme.accent), color(theme.accentPressed)] as CFArray
+    // 1. Diagonal gradient background: a lightened highlight (top-left) to a
+    //    darkened shadow (bottom-right) of the theme's accent hue. Using
+    //    accent unmixed at both ends read as a near-flat block — this widens
+    //    it into a real light-to-dark gradient while staying anchored to
+    //    each theme's own color, not introducing an unrelated second hue.
+    let highlight = mix(theme.accent, toward: (255, 255, 255), by: 0.24)
+    let shadow = mix(theme.accent, toward: (0, 0, 0), by: 0.58)
+    let gradientColors = [color(highlight), color(shadow)] as CFArray
     if let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: gradientColors, locations: [0, 1]) {
         ctx.saveGState()
         ctx.addRect(rect)
