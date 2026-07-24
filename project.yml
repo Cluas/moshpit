@@ -65,8 +65,8 @@ targets:
     info:
       path: Moshi/App/Info.plist
       properties:
-        CFBundleName: Moshi
-        CFBundleDisplayName: Moshi
+        CFBundleName: Beacon
+        CFBundleDisplayName: Beacon
         UIAppFonts:
           - JetBrainsMono-Regular.ttf
           - MapleMono-Regular.ttf
@@ -133,7 +133,7 @@ targets:
     info:
       path: MoshiIsland/Info.plist
       properties:
-        CFBundleDisplayName: Moshi Island
+        CFBundleDisplayName: Beacon Island
         # Keep the extension's version in lockstep with the app — a mismatch is
         # an App Store rejection. Driven by the shared MARKETING_VERSION /
         # CURRENT_PROJECT_VERSION in settings.base, same as the app target.

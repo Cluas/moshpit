@@ -1,12 +1,16 @@
 #!/usr/bin/env swift
-// Renders alternate app icon PNGs for each non-primary AppTheme, using plain
-// CoreGraphics + ImageIO (no UIKit/AppKit/SwiftUI needed) so it runs as a
-// standalone `swift` script. Mirrors MoshiMark's composition (diagonal
-// gradient panel, slash cut, terminal cursor glyph) but full-bleed —
-// iOS applies its own corner mask to app icons, so no rounding here.
+// Renders app icon PNGs for every AppTheme (primary Signal Room + the 3
+// alternates), using plain CoreGraphics + ImageIO (no UIKit/AppKit/SwiftUI
+// needed) so it runs as a standalone `swift` script. Mirrors BeaconMark's
+// composition (diagonal gradient panel, slash cut, dot + radiating signal
+// waves) but full-bleed — iOS applies its own corner mask to app icons, so
+// no rounding here.
 //
 // Usage: swift scripts/generate-theme-icons.swift
-// Output: Moshi/App/IconFiles/AppIcon-<Theme><size>@<scale>x.png
+// Output:
+//   Moshi/App/IconFiles/AppIcon60x60@{2x,3x}.png              (primary, Signal Room)
+//   Moshi/App/IconFiles/AppIcon-<Theme>60x60@{2x,3x}.png      (alternates)
+//   Moshi/App/Assets.xcassets/AppIcon.appiconset/AppIcon.png  (1024, primary/marketing)
 
 import CoreGraphics
 import ImageIO
@@ -16,12 +20,14 @@ import UniformTypeIdentifiers
 #endif
 
 struct IconTheme {
-    let fileTag: String   // matches AppTheme.iconName minus "AppIcon-"
+    /// nil fileTag = primary icon (no "-<Theme>" suffix, matches AppTheme.iconName == nil).
+    let fileTag: String?
     let accent: (UInt8, UInt8, UInt8)
     let accentPressed: (UInt8, UInt8, UInt8)
 }
 
 let themes: [IconTheme] = [
+    IconTheme(fileTag: nil, accent: (0x6C, 0x6B, 0xEF), accentPressed: (0x56, 0x52, 0xD6)),           // Signal Room (primary)
     IconTheme(fileTag: "MoshiClassic", accent: (0x53, 0xDC, 0xC9), accentPressed: (0x3E, 0xBF, 0xA9)),
     IconTheme(fileTag: "TerminalGreen", accent: (0x2F, 0xA8, 0x71), accentPressed: (0x25, 0x86, 0x5A)),
     IconTheme(fileTag: "AmberConsole", accent: (0xC9, 0x8A, 0x2E), accentPressed: (0xA6, 0x6F, 0x1F)),
@@ -66,43 +72,43 @@ func renderIcon(theme: IconTheme, pixelSize: Int) -> CGImage? {
     ctx.addPath(panelPath)
     ctx.fillPath()
 
-    // 3. Prompt glyph: a ">" chevron + a solid cursor bar, same silhouette
-    //    as MoshiMark's terminal-prompt motif. Every measurement is relative
-    //    to `panelRect` (not the full canvas) and the whole glyph run is
-    //    sized to ~70% of the panel width so nothing crosses the panel's
-    //    rounded edge, whatever `panelInset` happens to be.
+    // 3. Beacon glyph: a light source (filled dot) with two signal waves
+    //    radiating outward — same motif as BeaconMark.swift, translated to
+    //    raw CoreGraphics. Both arcs share the dot's center so they read as
+    //    concentric; sized off `panelRect.width` (not the full canvas) and
+    //    centered within it so nothing crosses the panel's rounded edge.
     let midY = size * 0.5
     let pw = panelRect.width
-    let chevronW = pw * 0.22
-    let chevronH = pw * 0.28
-    let gap1 = pw * 0.08
-    let barW = pw * 0.24
-    let gap2 = pw * 0.07
-    let cursorW = pw * 0.09
-    let cursorH = pw * 0.32
-    let barH = pw * 0.075
-    let runStartX = panelRect.minX + pw * 0.15   // (pw*0.15 both sides; run = 0.70*pw)
+    let dotRadius = pw * 0.08
+    let innerWaveRadius = pw * 0.17
+    let outerWaveRadius = pw * 0.28
+    let totalWidth = dotRadius + outerWaveRadius
+    let leftMargin = (pw - totalWidth) / 2
+    let originX = panelRect.minX + leftMargin + dotRadius
 
-    let chevronX = runStartX
-    ctx.setStrokeColor(CGColor(red: 1, green: 1, blue: 1, alpha: 0.94))
-    ctx.setLineWidth(pw * 0.075)
+    let waveStart = CGFloat(-55.0 * .pi / 180)
+    let waveEnd = CGFloat(55.0 * .pi / 180)
+
+    ctx.setStrokeColor(CGColor(red: 1, green: 1, blue: 1, alpha: 0.5))
+    ctx.setLineWidth(pw * 0.038)
     ctx.setLineCap(.round)
-    ctx.setLineJoin(.round)
     ctx.beginPath()
-    ctx.move(to: CGPoint(x: chevronX, y: midY + chevronH / 2))
-    ctx.addLine(to: CGPoint(x: chevronX + chevronW, y: midY))
-    ctx.addLine(to: CGPoint(x: chevronX, y: midY - chevronH / 2))
+    ctx.addArc(center: CGPoint(x: originX, y: midY), radius: outerWaveRadius,
+               startAngle: waveStart, endAngle: waveEnd, clockwise: false)
     ctx.strokePath()
 
-    let barX = chevronX + chevronW + gap1
-    ctx.setFillColor(CGColor(red: 1, green: 1, blue: 1, alpha: 0.94))
-    ctx.fill(CGRect(x: barX, y: midY - barH / 2, width: barW, height: barH))
+    ctx.setStrokeColor(CGColor(red: 1, green: 1, blue: 1, alpha: 0.92))
+    ctx.setLineWidth(pw * 0.045)
+    ctx.setLineCap(.round)
+    ctx.beginPath()
+    ctx.addArc(center: CGPoint(x: originX, y: midY), radius: innerWaveRadius,
+               startAngle: waveStart, endAngle: waveEnd, clockwise: false)
+    ctx.strokePath()
 
-    // 4. Accent-colored cursor block, right of the dash — echoes MoshiMark's
-    //    small solid accent rectangle so the glyph isn't monochrome-on-color.
-    let cursorX = barX + barW + gap2
+    // Accent-colored dot last, on top of the wave arcs' inner ends.
     ctx.setFillColor(color(theme.accent))
-    ctx.fill(CGRect(x: cursorX, y: midY - cursorH / 2, width: cursorW, height: cursorH))
+    ctx.fillEllipse(in: CGRect(x: originX - dotRadius, y: midY - dotRadius,
+                                width: dotRadius * 2, height: dotRadius * 2))
 
     return ctx.makeImage()
 }
@@ -127,19 +133,29 @@ func writePNG(_ image: CGImage, to path: String) {
     }
 }
 
-let outDir = "Moshi/App/IconFiles"
-try? FileManager.default.createDirectory(atPath: outDir, withIntermediateDirectories: true)
+let iconFilesDir = "Moshi/App/IconFiles"
+let appIconSetDir = "Moshi/App/Assets.xcassets/AppIcon.appiconset"
+try? FileManager.default.createDirectory(atPath: iconFilesDir, withIntermediateDirectories: true)
 
-// 60pt @2x/@3x = 120px/180px, matching the existing primary AppIcon60x60
-// convention already declared in project.yml.
+// 60pt @2x/@3x = 120px/180px, matching the existing AppIcon60x60 convention
+// already declared in project.yml.
 let sizes: [(scale: String, px: Int)] = [("@2x", 120), ("@3x", 180)]
 
 for theme in themes {
+    let baseName = theme.fileTag.map { "AppIcon-\($0)" } ?? "AppIcon"
     for size in sizes {
         guard let image = renderIcon(theme: theme, pixelSize: size.px) else {
-            FileHandle.standardError.write("Render failed for \(theme.fileTag) @\(size.px)\n".data(using: .utf8)!)
+            FileHandle.standardError.write("Render failed for \(baseName) @\(size.px)\n".data(using: .utf8)!)
             continue
         }
-        writePNG(image, to: "\(outDir)/AppIcon-\(theme.fileTag)60x60\(size.scale).png")
+        writePNG(image, to: "\(iconFilesDir)/\(baseName)60x60\(size.scale).png")
+    }
+
+    // Primary theme also gets the 1024 marketing/App-Store icon used by the
+    // Assets.xcassets appiconset (ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon).
+    if theme.fileTag == nil {
+        if let image1024 = renderIcon(theme: theme, pixelSize: 1024) {
+            writePNG(image1024, to: "\(appIconSetDir)/AppIcon.png")
+        }
     }
 }
