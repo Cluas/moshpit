@@ -31,10 +31,13 @@ packages:
     # tagPlainTextLink) letting Beacon linkify plain http(s) URLs it detects
     # itself, reusing the same cell.hasPayload path a real OSC-8 hyperlink
     # uses — SwiftTerm's own built-in implicit-link regex is too permissive
-    # (matches bare file paths) to turn on globally. Revert to the upstream
-    # URL if/when these land there and a release picks them up.
+    # (matches bare file paths) to turn on globally, (4) singleTap checks for
+    # a link hit BEFORE treating a not-yet-focused tap as "just focus me" —
+    # otherwise tapping a link while the keyboard was dismissed silently ate
+    # the first tap and needed a second one. Revert to the upstream URL
+    # if/when these land there and a release picks them up.
     url: https://github.com/Cluas/SwiftTerm.git
-    revision: b550659ac5fb9dbfefb80e37a97060e46799e0c1
+    revision: e7315e19755df423526cc8ffd14c644fc972c6dd
   Citadel:
     url: https://github.com/orlandos-nl/Citadel.git
     from: "0.7.0"
