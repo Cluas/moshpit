@@ -36,11 +36,12 @@ packages:
     # otherwise tapping a link while the keyboard was dismissed silently ate
     # the first tap and needed a second one, (5) setMarkedText/unmarkText now
     # paint an underlined overlay at the cursor for IME composition (Pinyin
-    # etc.) — previously tracked internally but never rendered anywhere.
-    # Revert to the upstream URL if/when these land there and a release
-    # picks them up.
+    # etc.) — previously tracked internally but never rendered anywhere,
+    # (6) a caret within that overlay advances to the actual insertion
+    # point as composition grows. Revert to the upstream URL if/when these
+    # land there and a release picks them up.
     url: https://github.com/Cluas/SwiftTerm.git
-    revision: c297b2f2539ef3da7301c5c830555a6092a9548a
+    revision: a8f1a2875468f98b73528eed9815ad4cd33cf1cf
   Citadel:
     url: https://github.com/orlandos-nl/Citadel.git
     from: "0.7.0"
