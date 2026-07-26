@@ -34,10 +34,13 @@ packages:
     # (matches bare file paths) to turn on globally, (4) singleTap checks for
     # a link hit BEFORE treating a not-yet-focused tap as "just focus me" —
     # otherwise tapping a link while the keyboard was dismissed silently ate
-    # the first tap and needed a second one. Revert to the upstream URL
-    # if/when these land there and a release picks them up.
+    # the first tap and needed a second one, (5) setMarkedText/unmarkText now
+    # paint an underlined overlay at the cursor for IME composition (Pinyin
+    # etc.) — previously tracked internally but never rendered anywhere.
+    # Revert to the upstream URL if/when these land there and a release
+    # picks them up.
     url: https://github.com/Cluas/SwiftTerm.git
-    revision: e7315e19755df423526cc8ffd14c644fc972c6dd
+    revision: c297b2f2539ef3da7301c5c830555a6092a9548a
   Citadel:
     url: https://github.com/orlandos-nl/Citadel.git
     from: "0.7.0"
