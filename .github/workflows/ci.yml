@@ -1,0 +1,96 @@
+name: CI
+
+# Build + test on every push and pull request. Beacon is an iOS 18 app whose
+# Xcode project is generated from project.yml by xcodegen (project.yml is the
+# source of truth; Beacon.xcodeproj is a generated artifact), so CI regenerates
+# it from scratch rather than trusting the checked-in copy.
+on:
+  push:
+  pull_request:
+
+# Cancel superseded runs on the same ref so a fast-follow push doesn't pay for
+# a stale build.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-test:
+    name: Build & Test (iOS Simulator)
+    runs-on: macos-15
+
+    env:
+      # Local SPM checkout dir so downloaded packages can be cached across runs
+      # independently of DerivedData (which we intentionally do not cache).
+      SPM_CACHE_DIR: ${{ github.workspace }}/.spm-cache
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # project.yml declares xcodeVersion: "26.0". That is an xcodegen
+      # *compatibility* hint (it controls the LastUpgradeCheck / object version
+      # written into the generated .pbxproj), not a hard requirement to build
+      # with Xcode 26 — the app deploys to iOS 18, which any Xcode shipping the
+      # iOS 18 SDK can build. We pin Xcode 16.4 here because it is the newest
+      # toolchain on the macos-15 image that ships the iOS 18 SDK + iPhone 16
+      # (iOS 18) simulator runtime this test destination targets.
+      #
+      # ASSUMPTION: /Applications/Xcode_16.4.app exists on the macos-15 runner.
+      # GitHub rotates the Xcode set installed on each image over time; if this
+      # path disappears, bump it to the newest 16.x present (see the runner's
+      # `ls /Applications | grep Xcode` output, or use the "latest-stable"
+      # symlink at /Applications/Xcode.app) — anything with the iOS 18 SDK works.
+      - name: Select Xcode
+        run: |
+          sudo xcode-select -s /Applications/Xcode_16.4.app/Contents/Developer
+          xcodebuild -version
+          echo "Available iOS simulators:"
+          xcrun simctl list devicetypes | grep -i iphone || true
+
+      - name: Install xcodegen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      # Cache the resolved SwiftPM checkouts keyed on Package.resolved. On a hit
+      # the resolve step below is essentially a no-op; on a miss it repopulates
+      # the cache. The key uses the committed Package.resolved (SwiftTerm is a
+      # pinned fork by revision, Citadel by version) so it only busts when a
+      # dependency actually changes.
+      - name: Cache SwiftPM packages
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.SPM_CACHE_DIR }}
+          key: spm-${{ runner.os }}-${{ hashFiles('Beacon.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
+          restore-keys: |
+            spm-${{ runner.os }}-
+
+      - name: Resolve SwiftPM dependencies
+        run: |
+          xcodebuild -resolvePackageDependencies \
+            -project Beacon.xcodeproj \
+            -scheme Beacon \
+            -clonedSourcePackagesDirPath "$SPM_CACHE_DIR"
+
+      # Run the unit + UI test targets (BeaconTests + BeaconUITests, both wired
+      # into the shared "Beacon" scheme's test action in project.yml).
+      #
+      # CODE_SIGNING_ALLOWED=NO: project.yml sets CODE_SIGN_IDENTITY
+      # "Apple Development" / CODE_SIGN_STYLE Automatic and expects a
+      # DEVELOPMENT_TEAM from Signing.xcconfig. Signing.xcconfig IS committed to
+      # this repo (with an empty DEVELOPMENT_TEAM), so `xcodegen generate` never
+      # fails for lack of it — but a simulator Debug build needs no signing at
+      # all, so we disable it here. If project.yml ever forced signing in a way
+      # that broke the *simulator* destination, that would be fixed in
+      # project.yml (out of scope for this workflow); as configured today the
+      # simulator build+test works with no Signing.xcconfig secret present.
+      - name: Build & test
+        run: |
+          xcodebuild test \
+            -project Beacon.xcodeproj \
+            -scheme Beacon \
+            -destination 'platform=iOS Simulator,name=iPhone 16' \
+            -clonedSourcePackagesDirPath "$SPM_CACHE_DIR" \
+            CODE_SIGNING_ALLOWED=NO
