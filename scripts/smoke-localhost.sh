@@ -95,10 +95,10 @@ xcrun simctl terminate "$SIM_UDID" "$BUNDLE_ID" 2>/dev/null || true
 echo "▶ Launching with seed args: $(whoami)@$SSH_HOST:$SSH_PORT"
 KEY_B64="$(base64 -i "$KEY_PATH" | tr -d '\n')"
 xcrun simctl launch "$SIM_UDID" "$BUNDLE_ID" \
-  -MOSAIC_SEED_USER "$(whoami)" \
-  -MOSAIC_SEED_KEY_B64 "$KEY_B64" \
-  -MOSAIC_SEED_HOST "$SSH_HOST" \
-  -MOSAIC_SEED_PORT "$SSH_PORT" >/dev/null
+  -BEACON_SEED_USER "$(whoami)" \
+  -BEACON_SEED_KEY_B64 "$KEY_B64" \
+  -BEACON_SEED_HOST "$SSH_HOST" \
+  -BEACON_SEED_PORT "$SSH_PORT" >/dev/null
 
 echo "▶ Waiting 6s for SSH handshake + first PTY output…"
 sleep 6
