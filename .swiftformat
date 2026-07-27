@@ -1,0 +1,41 @@
+# SwiftFormat configuration for Beacon
+#
+# Tuned to match the codebase's existing house style so a format pass is a
+# no-op on already-clean files: 4-space indentation, K&R braces (opening brace
+# on the same line), imports grouped at the top. Run with:  swiftformat .
+
+# Target the app's own Swift; leave generated/vendored trees alone.
+--exclude .build,build,Beacon.xcodeproj,design-audit,scripts
+
+# Swift language level in use.
+--swiftversion 5.10
+
+# --- Layout ---------------------------------------------------------------
+--indent 4
+--tabwidth 4
+--maxwidth none            # length is not enforced (see .swiftlint.yml)
+--allman false             # K&R braces: `func f() {` on one line
+--wraparguments preserve
+--wrapparameters preserve
+--wrapcollections preserve
+--closingparen balanced
+
+# --- Spacing & punctuation -----------------------------------------------
+--commas inline            # no trailing comma on the last element
+--trimwhitespace always
+--emptybraces no-space     # `{}` not `{ }`
+--operatorfunc spaced
+--ranges spaced
+--semicolons never
+
+# --- Imports & self -------------------------------------------------------
+--importgrouping testable-bottom
+--self remove              # drop redundant `self.`
+
+# --- Redundancy cleanups (safe, match existing style) ---------------------
+--redundanttype inferred
+
+# Rules explicitly disabled to avoid churn / respect house choices.
+# - wrapMultilineStatementBraces: leave existing brace wrapping as-is.
+# - blankLinesAtStartOfScope: some files keep a blank line after `{`.
+--disable wrapMultilineStatementBraces, blankLinesAtStartOfScope, andOperator
