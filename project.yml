@@ -37,11 +37,16 @@ packages:
     # the first tap and needed a second one, (5) setMarkedText/unmarkText now
     # paint an underlined overlay at the cursor for IME composition (Pinyin
     # etc.) — previously tracked internally but never rendered anywhere,
-    # (6) a caret within that overlay advances to the actual insertion
-    # point as composition grows. Revert to the upstream URL if/when these
-    # land there and a release picks them up.
+    # (6) that overlay moves the terminal's own real cursor (caretView) to
+    # track the composition insertion point, rather than drawing a second
+    # separate caret, and (7) deleteBackward() during active composition
+    # removes one character from the end of the marked text and sends
+    # nothing to the terminal, instead of nuking the whole composition in
+    # one shot with real (wrong) backspace keypresses — fixes hold-to-repeat
+    # delete under the Pinyin keyboard. Revert to the upstream URL if/when
+    # these land there and a release picks them up.
     url: https://github.com/Cluas/SwiftTerm.git
-    revision: a8f1a2875468f98b73528eed9815ad4cd33cf1cf
+    revision: ca5402319621c495bf85cb449a24fe907bc2bbc6
   Citadel:
     url: https://github.com/orlandos-nl/Citadel.git
     from: "0.7.0"
