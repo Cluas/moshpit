@@ -104,8 +104,7 @@ xcrun simctl launch booted com.cluas.vosh
 ```
 Vosh/           主 App（SwiftUI + Citadel SSH + SwiftTerm）
 VoshWidget/     Widget Extension（Dynamic Island + 桌面小组件）
-build/          mosh C++ 静态库编译产物
-scripts/        构建脚本（mosh 编译、App Icon 生成、服务端推送）
+scripts/        构建脚本（App Icon 生成、服务端推送）
 ```
 
 详见 [PROJECT.md](PROJECT.md)

@@ -237,7 +237,6 @@ moshi/
 
 ### 已完成（本轮）
 
-- [x] **Mosh C++ 交叉编译脚本** — `scripts/build-mosh-ios.sh`，自动下载 + 编译 mosh/protobuf for iOS arm64
 - [x] **AgentOutputParser 调优** — 基于 Claude Code 真实输出格式（Edit/Read/Bash/Glob 等工具名、Braille spinner、权限提示）优化匹配规则
 - [x] **Live Activity Preview** — Widget Extension 内 SwiftUI Preview，模拟 Running/Waiting/Idle 三种状态
 - [x] **App Icon** — 像素风终端窗口图标（1024x1024），`scripts/generate-app-icon.swift` 代码生成
