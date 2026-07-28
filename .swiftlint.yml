@@ -1,0 +1,78 @@
+# SwiftLint configuration for Beacon
+#
+# This lint config is being retrofitted onto a large, pre-existing SwiftUI /
+# actor-heavy codebase, so the goal is signal over noise: keep the rules that
+# catch genuine mistakes and turn off the ones that would flag half the files
+# on day one (line/file/body length, etc.). Tighten over time.
+
+included:
+  - Beacon
+  - BeaconIsland
+  - BeaconTests
+  - BeaconUITests
+
+excluded:
+  - .build
+  - build
+  - Beacon.xcodeproj
+  - design-audit
+  - scripts
+
+# Rules that are too noisy for a large existing codebase — disabled wholesale.
+disabled_rules:
+  - line_length              # long URLs, shell command literals, log strings
+  - file_length             # some service files are legitimately large
+  - type_body_length
+  - function_body_length
+  - function_parameter_count
+  - cyclomatic_complexity
+  - todo                     # TODO/FIXME are tracked elsewhere, not lint errors
+  - trailing_comma           # conflicts with SwiftFormat's comma handling
+  - nesting                  # SwiftUI view builders nest deeply by nature
+  - for_where                # occasionally clearer to keep the if inside
+
+# Genuinely useful rules that are not on by default — opt in.
+opt_in_rules:
+  - empty_count              # `.isEmpty` over `.count == 0`
+  - empty_string
+  - first_where              # `.first(where:)` over `.filter {}.first`
+  - last_where
+  - contains_over_first_not_nil
+  - contains_over_filter_count
+  - contains_over_filter_is_empty
+  - collection_alignment
+  - closure_spacing
+  - explicit_init
+  - fatal_error_message      # give fatalError a reason
+  - force_unwrapping         # discourage `!`; audit each use
+  - implicitly_unwrapped_optional
+  - redundant_nil_coalescing
+  - redundant_type_annotation
+  - toggle_bool
+  - unneeded_parentheses_in_closure_argument
+  - unused_import
+  - vertical_whitespace_closing_braces
+  - yoda_condition
+
+# Keep a few defaults from being errors — warnings are enough while retrofitting.
+force_cast: warning
+force_try: warning
+force_unwrapping: warning
+
+identifier_name:
+  # Short names are idiomatic in tight scopes (x, id, os, r, g, b, ...).
+  min_length:
+    warning: 1
+    error: 0
+  max_length:
+    warning: 60
+    error: 80
+  # Allow common short identifiers that would otherwise trip min_length.
+  allowed_symbols: ["_"]
+
+type_name:
+  max_length:
+    warning: 60
+    error: 80
+
+reporter: "xcode"
