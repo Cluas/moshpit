@@ -18,3 +18,6 @@ docs/superpowers/
 vibe-terminal-prd.docx
 vibe-code-prototype.jsx
 tmux_session_connect_flow.html
+
+# Local test credentials (never commit)
+.passwd
