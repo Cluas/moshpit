@@ -46,15 +46,20 @@ packages:
     # removes one character from the end of the marked text and sends
     # nothing to the terminal, instead of nuking the whole composition in
     # one shot with real (wrong) backspace keypresses — fixes hold-to-repeat
-    # delete under the Pinyin keyboard, and (8) a new public
-    # `isRowWrapped(_:)` on Terminal exposing the emulator's own soft-wrap
-    # bit, so Beacon can join a URL that wrapped across rows exactly instead
-    # of guessing from row text width (which broke, silently truncating the
-    # opened link, whenever a CJK/emoji character earlier on the row threw
-    # off a character-count-vs-column-count comparison). Revert to the
-    # upstream URL if/when these land there and a release picks them up.
+    # delete under the Pinyin keyboard, (8) a new public `isRowWrapped(_:)`
+    # on Terminal exposing the emulator's own soft-wrap bit, so Beacon can
+    # join a URL that wrapped across rows exactly instead of guessing from
+    # row text width (which broke, silently truncating the opened link,
+    # whenever a CJK/emoji character earlier on the row threw off a
+    # character-count-vs-column-count comparison), and (9) composition-end
+    # no longer snaps the caret to updateCursorPosition() — the terminal
+    # buffer's cursor hasn't moved yet at that instant (the committed text
+    # is only just sent, not yet echoed back), so snapping to it yanked the
+    # caret backwards to the pre-composition position right as you finished
+    # typing a word. Revert to the upstream URL if/when these land there and
+    # a release picks them up.
     url: https://github.com/Cluas/SwiftTerm.git
-    revision: 69829cf23d490fe44ae310276692600c6459fe6f
+    revision: 9dfb96bafb6bb9f5fe4ee1ab3d7c5b2fd29a5bad
   Citadel:
     url: https://github.com/orlandos-nl/Citadel.git
     from: "0.7.0"
