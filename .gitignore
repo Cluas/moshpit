@@ -3,6 +3,18 @@ build/
 *.xcuserdata
 secret.md
 .salvage/
-/.claude/skills/ios-simulator-skill/scripts/common/__pycache__/
 .playwright-mcp/
 cookies.json
+
+# Claude Code agent scaffolding (personal paths, vendored third-party skill docs)
+.claude/
+
+# Personal marketing-site deployment (old "Moshi" brand, k8s manifest with personal infra)
+site/
+site-dist/
+
+# Planning docs and prototypes with personal paths
+docs/superpowers/
+vibe-terminal-prd.docx
+vibe-code-prototype.jsx
+tmux_session_connect_flow.html
