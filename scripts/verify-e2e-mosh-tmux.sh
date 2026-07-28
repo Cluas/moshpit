@@ -8,7 +8,7 @@
 #     — the visible line numbers must move to older content.
 #
 # Isolation: the app's tmux is pointed at a private socket via a wrapper
-# (MOSAIC_SEED_TMUX_BIN), so this NEVER touches your real tmux sessions.
+# (BEACON_SEED_TMUX_BIN), so this NEVER touches your real tmux sessions.
 #
 # Prereqs: Remote Login on; ~/.ssh/id_ed25519 in authorized_keys; a booted sim;
 # idb, tmux, mosh-server installed.
@@ -75,11 +75,11 @@ xcrun simctl install "$SIM_UDID" "$APP"
 xcrun simctl terminate "$SIM_UDID" "$BUNDLE_ID" 2>/dev/null || true
 KEY_B64="$(base64 -i "$KEY_PATH" | tr -d '\n')"
 xcrun simctl launch "$SIM_UDID" "$BUNDLE_ID" \
-  -MOSAIC_SEED_USER "$(whoami)" \
-  -MOSAIC_SEED_KEY_B64 "$KEY_B64" \
-  -MOSAIC_SEED_HOST "$SSH_HOST" -MOSAIC_SEED_PORT "$SSH_PORT" \
-  -MOSAIC_SEED_MOSH 1 -MOSAIC_SEED_MOSH_BIN "$MOSH_SERVER" \
-  -MOSAIC_SEED_TMUX 1 -MOSAIC_SEED_TMUX_BIN "$WRAP" >/dev/null
+  -BEACON_SEED_USER "$(whoami)" \
+  -BEACON_SEED_KEY_B64 "$KEY_B64" \
+  -BEACON_SEED_HOST "$SSH_HOST" -BEACON_SEED_PORT "$SSH_PORT" \
+  -BEACON_SEED_MOSH 1 -BEACON_SEED_MOSH_BIN "$MOSH_SERVER" \
+  -BEACON_SEED_TMUX 1 -BEACON_SEED_TMUX_BIN "$WRAP" >/dev/null
 
 # tmux state on the isolated socket — deterministic PASS/FAIL, no screenshot squinting.
 pane_in_mode() { "$TMUX_BIN" -L "$SOCK" display-message -p -t "$SESSION" '#{pane_in_mode}' 2>/dev/null | tr -d '[:space:]'; }
