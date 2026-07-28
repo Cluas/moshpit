@@ -1,118 +1,82 @@
-# Vosh — iOS SSH/Mosh Terminal
+# Beacon
 
-> Vibe + Mosh = Vosh. AI 编程工作流优先的 iOS 终端客户端。
+**English** · [中文](README-zh.md)
 
-## 快速开始
+**Beacon is an SSH / Mosh / tmux terminal client for iPhone and iPad**, built for
+developers who run remote AI coding agents (Claude Code, and other CLI tools) and
+want to keep a shell — and an eye on their agents — in their pocket.
 
-### 环境要求
+Its headline feature is **Vibe Island**: a Live Activity that surfaces the status of
+a remote agent session on the Lock Screen and in the Dynamic Island, so you can watch
+a long-running build or agent run without keeping the app in the foreground.
 
-- macOS 14+
-- Xcode 16+
+Beacon is written in SwiftUI, targets iOS 18, and is generated with
+[XcodeGen](https://github.com/yonaskolb/XcodeGen) — `project.yml` is the source of
+truth and `Beacon.xcodeproj` is generated from it.
+
+## Features
+
+- **Fully free.** No subscriptions, no paywall, no in-app purchases — every feature
+  is available to everyone.
+- **Mosh with roaming.** Sessions survive network handoff (Wi-Fi ↔ cellular) and IP
+  changes, reconnecting automatically instead of dropping your shell.
+- **tmux integration.** Attach to existing tmux sessions with native window and pane
+  switching, so the app understands your session layout instead of treating it as a
+  raw scrollback.
+- **Vibe Island Live Activity.** Monitor a remote agent or long-running command from
+  the Lock Screen and Dynamic Island — latency, session, and agent status at a glance.
+- **4 switchable app themes.** Signal Room, Beacon Classic, Terminal Green, and Amber
+  Console — each pairs an accent color with a matching alternate app icon. The terminal
+  itself ships with several built-in color schemes (Dracula, Nord, Solarized Dark,
+  Monokai, Tokyo Night, and more).
+- **SSH built in.** Pure-Swift SSH via [Citadel](https://github.com/orlandos-nl/Citadel),
+  with keys stored in the iOS Keychain and unlocked with Face ID.
+- **A terminal that handles real work.** [SwiftTerm](https://github.com/migueldeicaza/SwiftTerm)
+  emulation (Beacon uses a small fork), a custom key bar for `esc`/`ctrl`/`alt`/arrows,
+  IME/Pinyin composition support, and tappable links.
+
+## Screenshots
+
+| Servers | Terminal | tmux panes | Vibe Island |
+|---|---|---|---|
+| ![Servers list](design-audit/swiftui/02-home.png) | ![Terminal session](design-audit/swiftui/04-terminal.png) | ![tmux panes](design-audit/swiftui/06-tmux-panes.png) | ![Live Activity](design-audit/swiftui/10-live-activity.png) |
+
+## Getting Started
+
+### Requirements
+
+- macOS with Xcode 26
 - [XcodeGen](https://github.com/yonaskolb/XcodeGen): `brew install xcodegen`
+- iOS 18 target (device or simulator)
 
-### 构建 & 运行
+### Build & run
 
 ```bash
-# 1. 生成 Xcode 项目
+# 1. Clone the repository
+git clone <repository-url>
+cd beacon
+
+# 2. Generate the Xcode project from project.yml
 xcodegen generate
 
-# 2. 命令行编译
-xcodebuild -project Vosh.xcodeproj -scheme Vosh \
-  -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' build
-
-# 3. 或者用 Xcode 打开
-open Vosh.xcodeproj
-# 选择 iPhone 17 Pro 模拟器，Cmd+R 运行
+# 3. Open the generated project
+open Beacon.xcodeproj
 ```
 
-### 模拟器测试
+In Xcode, select the **Beacon** scheme, pick a simulator or your device, and press
+**⌘R**. The app's bundle identifier is `com.cluas.beacon` (the Vibe Island widget
+extension is `com.cluas.beacon.island`). Swift Package dependencies — SwiftTerm and
+Citadel — are resolved automatically on first build.
 
-```bash
-# 启动模拟器
-xcrun simctl boot CE0FEF85-AAE0-48BF-9FCB-6D56AAEEA898
-open -a Simulator
+### Installing on your own iPhone
 
-# 安装 & 启动 app
-APP=$(find ~/Library/Developer/Xcode/DerivedData/Vosh-*/Build/Products/Debug-iphonesimulator -name "Vosh.app" -type d | head -1)
-xcrun simctl install booted "$APP"
-xcrun simctl launch booted com.cluas.vosh
+You do **not** need a paid Apple Developer account. A free Apple ID is enough to
+sideload Beacon onto your own device, and there's a step-by-step guide covering
+signing, on-device install, and optional auto-resigning with AltStore / SideStore:
 
-# 截图
-xcrun simctl io booted screenshot /tmp/vosh.png
-```
+➡️ **[Install on iPhone with a free Apple ID](docs/install-free-account.md)**
 
-### 一键编译部署
+## Architecture
 
-```bash
-xcodegen generate && \
-xcodebuild -project Vosh.xcodeproj -scheme Vosh \
-  -sdk iphonesimulator \
-  -destination 'platform=iOS Simulator,name=iPhone 17 Pro' build && \
-xcrun simctl install booted \
-  "$(find ~/Library/Developer/Xcode/DerivedData/Vosh-*/Build/Products/Debug-iphonesimulator -name 'Vosh.app' -type d | head -1)" && \
-xcrun simctl launch booted com.cluas.vosh
-```
-
-## 测试流程
-
-### SSH 连接测试
-
-1. 启动 App → 点 ⊕ 添加服务器
-2. 填入：Host / Port(22) / Username / Password
-3. Protocol 选 **SSH**
-4. 点 Save → 点连接卡片
-5. 应看到：连接动画 → tmux 检测 → 终端 shell
-
-### Mosh 连接测试
-
-前提：远程服务器已安装 `mosh-server`
-
-1. 添加服务器，Protocol 选 **Mosh**
-2. Server Path 填 `mosh-server`（或 `/opt/homebrew/bin/mosh-server`）
-3. UDP Ports 保持默认 60001-60999
-4. 连接后：SSH bootstrap → mosh-server 启动 → 终端 shell
-
-### tmux Session 测试
-
-前提：远程服务器有运行中的 tmux session
-
-1. 先在服务器上创建 tmux：`tmux new -s dev`
-2. 在 Vosh 中连接该服务器
-3. 连接动画完成后应显示 **tmux sessions** 选择页
-4. 选择 session → 查看 layout → Attach
-
-### 键盘快捷栏测试
-
-- 终端底部应有横向滚动的快捷键栏
-- 包含：Ctrl / Esc / Tab / ↑↓←→ / C-c C-d C-z C-l / | ~ / - _ 等
-- 点 Ctrl 切换为高亮（组合键模式），再点任意键发送 Ctrl+X
-
-### 付费墙测试
-
-- Debug 模式下默认解锁 Pro（`StoreManager._debugProOverride = true`）
-- 改为 `false` 后可测试免费用户视角
-- 免费版限 2 个连接，点 Pro 功能弹付费墙
-
-### StoreKit 测试
-
-1. Xcode → Product → Scheme → Edit Scheme
-2. Run → Options → StoreKit Configuration → 选 `StoreKit.storekit`
-3. 运行后可测试完整购买流程（Sandbox 环境）
-
-## 项目结构
-
-```
-Vosh/           主 App（SwiftUI + Citadel SSH + SwiftTerm）
-VoshWidget/     Widget Extension（Dynamic Island + 桌面小组件）
-build/          mosh C++ 静态库编译产物
-scripts/        构建脚本（mosh 编译、App Icon 生成、服务端推送）
-```
-
-详见 [PROJECT.md](PROJECT.md)
-
-## Debug 开关
-
-| 开关 | 位置 | 作用 |
-|------|------|------|
-| `_debugProOverride` | `StoreManager.swift` | `true` = 解锁全部 Pro 功能 |
-| `preferredColorScheme(.dark)` | 各 View | 强制深色模式 |
+For a deeper tour of the codebase — services, the SwiftUI layout, and how Vibe Island
+is wired up — see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
