@@ -21,3 +21,7 @@ tmux_session_connect_flow.html
 
 # Local test credentials (never commit)
 .passwd
+
+# Local build artifacts parked in design-audit (IPAs, screenshots for review)
+design-audit/*.ipa
+design-audit/*.ipa.prev

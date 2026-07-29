@@ -75,51 +75,65 @@ func renderIcon(theme: IconTheme, pixelSize: Int) -> CGImage? {
         ctx.restoreGState()
     }
 
-    // 2. Beacon glyph: a light source (filled dot) with two signal waves
-    //    radiating outward — same motif as BeaconMark.swift, translated to
-    //    raw CoreGraphics. Both arcs share the dot's center so they read as
-    //    concentric. Sized/centered against a logical ~78%-of-canvas content
-    //    area (matching the old inset panel's proportions) even though the
-    //    background itself now runs full-bleed with no panel drawn.
-    let contentInset = size * 0.11
+    // 2. Ringdown glyph: a handset (shallow arc + two solid end beads) hanging
+    //    ABOVE its cradle, which is drawn as a filled terminal cursor block —
+    //    off-hook forever (the line never closes) and a shell waiting for you.
+    //    Same motif as RingdownMark.swift, translated to raw CoreGraphics.
+    //
+    //    Geometry is authored once in the mark's 24×24 design grid and mapped
+    //    here, so this and the SwiftUI mark cannot drift: `u` converts design
+    //    units to pixels, `px`/`py` place a design point (with py flipping the
+    //    axis, since CoreGraphics' origin is bottom-left and the grid's is
+    //    top-left like SVG).
+    let contentInset = size * 0.075
     let contentRect = rect.insetBy(dx: contentInset, dy: contentInset)
-    let midY = size * 0.5
     let pw = contentRect.width
-    let dotRadius = pw * 0.08
-    let innerWaveRadius = pw * 0.17
-    let outerWaveRadius = pw * 0.28
-    let totalWidth = dotRadius + outerWaveRadius
-    let leftMargin = (pw - totalWidth) / 2
-    let originX = contentRect.minX + leftMargin + dotRadius
+    /// Design units → pixels.
+    func u(_ v: CGFloat) -> CGFloat { pw * v / 24 }
+    func px(_ v: CGFloat) -> CGFloat { contentRect.minX + u(v) }
+    /// Design-grid Y (top-left origin) → CoreGraphics Y (bottom-left origin).
+    func py(_ v: CGFloat) -> CGFloat { contentRect.minY + u(24 - v) }
 
-    let waveStart = CGFloat(-55.0 * .pi / 180)
-    let waveEnd = CGFloat(55.0 * .pi / 180)
+    // The whole glyph sits 0.8u high of the grid's centre so its optical
+    // centre (arc crown → cursor baseline) lands on the canvas centre.
+    let lift: CGFloat = -0.4
+    let beadY = 11.8 + lift
+    // Arc through (5.5, beadY) and (18.5, beadY): the 13u chord fixes the
+    // centre √(r² − 6.5²) below the beads. r is only just over the 6.5
+    // minimum, which is what makes the curve deep enough to read as a handset
+    // rather than a pair of headphones.
+    let arcR: CGFloat = 6.62
+    let arcDrop = (arcR * arcR - 6.5 * 6.5).squareRoot()
+    let arcCenter = CGPoint(x: px(12), y: py(beadY + arcDrop))
+    let toEnd = atan2(arcDrop, CGFloat(6.5))     // right bead
+    let toStart = CGFloat.pi - toEnd             // left bead
 
-    ctx.setStrokeColor(CGColor(red: 1, green: 1, blue: 1, alpha: 0.5))
-    ctx.setLineWidth(pw * 0.038)
+    // Handset: near-white so it reads as the physical object, with the theme
+    // accent reserved for the live cursor below.
+    ctx.setStrokeColor(CGColor(red: 1, green: 1, blue: 1, alpha: 0.94))
+    ctx.setLineWidth(u(2))
     ctx.setLineCap(.round)
     ctx.beginPath()
-    ctx.addArc(center: CGPoint(x: originX, y: midY), radius: outerWaveRadius,
-               startAngle: waveStart, endAngle: waveEnd, clockwise: false)
+    ctx.addArc(center: arcCenter, radius: u(arcR),
+               startAngle: toStart, endAngle: toEnd, clockwise: true)
     ctx.strokePath()
 
-    ctx.setStrokeColor(CGColor(red: 1, green: 1, blue: 1, alpha: 0.92))
-    ctx.setLineWidth(pw * 0.045)
-    ctx.setLineCap(.round)
-    ctx.beginPath()
-    ctx.addArc(center: CGPoint(x: originX, y: midY), radius: innerWaveRadius,
-               startAngle: waveStart, endAngle: waveEnd, clockwise: false)
-    ctx.strokePath()
+    ctx.setFillColor(CGColor(red: 1, green: 1, blue: 1, alpha: 0.94))
+    for beadX in [CGFloat(5.5), CGFloat(18.5)] {
+        ctx.fillEllipse(in: CGRect(x: px(beadX) - u(2), y: py(beadY) - u(2),
+                                   width: u(4), height: u(4)))
+    }
 
-    // Accent-colored dot, with a soft glow of the same color behind it — the
-    // "light source" the waves radiate from. Back on the dark panel, the
-    // accent reads clearly again (that's what a flat/bright full-panel
-    // gradient was drowning out).
+    // Cradle-as-cursor: the accent-colored block the handset never returns to,
+    // glowing like a live prompt.
     ctx.saveGState()
-    ctx.setShadow(offset: .zero, blur: pw * 0.16, color: color(theme.accent, alpha: 0.75))
+    ctx.setShadow(offset: .zero, blur: u(2.6), color: color(theme.accent, alpha: 0.8))
     ctx.setFillColor(color(theme.accent))
-    ctx.fillEllipse(in: CGRect(x: originX - dotRadius, y: midY - dotRadius,
-                                width: dotRadius * 2, height: dotRadius * 2))
+    let cursor = CGRect(x: px(9.5), y: py(18.9 + lift),
+                        width: u(5), height: u(3))
+    ctx.addPath(CGPath(roundedRect: cursor, cornerWidth: u(0.8), cornerHeight: u(0.8),
+                       transform: nil))
+    ctx.fillPath()
     ctx.restoreGState()
 
     return ctx.makeImage()
