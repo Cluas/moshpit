@@ -90,8 +90,8 @@ targets:
     info:
       path: Beacon/App/Info.plist
       properties:
-        CFBundleName: Beacon
-        CFBundleDisplayName: Beacon
+        CFBundleName: Ringdown
+        CFBundleDisplayName: Ringdown
         UIAppFonts:
           - JetBrainsMono-Regular.ttf
           - MapleMono-Regular.ttf
@@ -134,6 +134,12 @@ targets:
           - UIInterfaceOrientationLandscapeLeft
           - UIInterfaceOrientationLandscapeRight
         NSFaceIDUsageDescription: "Use Face ID to unlock SSH keys"
+        # MUST live here, not just in Info.plist: XcodeGen regenerates that file
+        # from this block, so a key added to the plist by hand silently vanishes
+        # at the next `xcodegen generate`. Without this key iOS drops UDP to LAN
+        # addresses on the floor, which presents as "SSH connects but mosh
+        # black-screens" against a 192.168.x.x host.
+        NSLocalNetworkUsageDescription: "Ringdown connects to servers on your local network over SSH and mosh (UDP). Without this permission, connections to LAN hosts (e.g. 192.168.x.x) will fail."
         CFBundleURLTypes:
           - CFBundleURLSchemes:
               - beacon
