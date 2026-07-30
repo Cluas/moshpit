@@ -56,10 +56,19 @@ packages:
     # buffer's cursor hasn't moved yet at that instant (the committed text
     # is only just sent, not yet echoed back), so snapping to it yanked the
     # caret backwards to the pre-composition position right as you finished
-    # typing a word. Revert to the upstream URL if/when these land there and
-    # a release picks them up.
+    # typing a word, (10) UIKeyInput.hasText now always reports true — UIKit
+    # gates the delete key's hold-to-repeat on it, and answering from
+    # SwiftTerm's shadow input buffer (emptied on every Return, and empty for
+    # anything the REMOTE put on screen) killed hold-to-delete for exactly
+    # the text you most want to clear: a reattached session's half-written
+    # prompt — and (11) updateCursorPosition() defers to the composition
+    # overlay while an IME composition is on screen, so a pane that keeps
+    # repainting (agent status line, resync, reflow) stops yanking the caret
+    # from the end of the Pinyin back to its front mid-word — (9) fixed that
+    # coming from the IME, this fixes it coming from output. Revert to the
+    # upstream URL if/when these land there and a release picks them up.
     url: https://github.com/Cluas/SwiftTerm.git
-    revision: 9dfb96bafb6bb9f5fe4ee1ab3d7c5b2fd29a5bad
+    revision: 866078a3831fecc8bccb170a9855bc9b551745c4
   Citadel:
     url: https://github.com/orlandos-nl/Citadel.git
     from: "0.7.0"
