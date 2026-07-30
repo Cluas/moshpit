@@ -1,4 +1,4 @@
-name: Beacon
+name: Ringdown
 options:
   bundleIdPrefix: com.cluas
   developmentLanguage: en
@@ -28,7 +28,7 @@ packages:
     # Forked from migueldeicaza/SwiftTerm at v1.13.0 (see the fork's commit
     # messages): (1)+(2) two OSC-8 hyperlink underline-overshoot fixes in
     # oscHyperlink's close handler, (3) a new public API (viewportLineText /
-    # tagPlainTextLink) letting Beacon linkify plain http(s) URLs it detects
+    # tagPlainTextLink) letting Ringdown linkify plain http(s) URLs it detects
     # itself, reusing the same cell.hasPayload path a real OSC-8 hyperlink
     # uses — SwiftTerm's own built-in implicit-link regex is too permissive
     # (matches bare file paths) to turn on globally, (4) singleTap checks for
@@ -47,7 +47,7 @@ packages:
     # nothing to the terminal, instead of nuking the whole composition in
     # one shot with real (wrong) backspace keypresses — fixes hold-to-repeat
     # delete under the Pinyin keyboard, (8) a new public `isRowWrapped(_:)`
-    # on Terminal exposing the emulator's own soft-wrap bit, so Beacon can
+    # on Terminal exposing the emulator's own soft-wrap bit, so Ringdown can
     # join a URL that wrapped across rows exactly instead of guessing from
     # row text width (which broke, silently truncating the opened link,
     # whenever a CJK/emoji character earlier on the row threw off a
@@ -74,30 +74,30 @@ packages:
     from: "0.7.0"
 
 targets:
-  Beacon:
+  Ringdown:
     type: application
     platform: iOS
     sources:
-      - path: Beacon
+      - path: Ringdown
     entitlements:
-      path: Beacon/App/Beacon.entitlements
+      path: Ringdown/App/Ringdown.entitlements
       properties:
         com.apple.security.application-groups:
-          - group.com.cluas.beacon
+          - group.com.cluas.ringdown
     settings:
       base:
-        INFOPLIST_FILE: Beacon/App/Info.plist
-        PRODUCT_BUNDLE_IDENTIFIER: com.cluas.beacon
+        INFOPLIST_FILE: Ringdown/App/Info.plist
+        PRODUCT_BUNDLE_IDENTIFIER: com.cluas.ringdown
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ENABLE_PREVIEWS: YES
         SWIFT_EMIT_LOC_STRINGS: YES
     dependencies:
       - package: SwiftTerm
       - package: Citadel
-      - target: BeaconIsland
+      - target: RingdownIsland
         embed: true
     info:
-      path: Beacon/App/Info.plist
+      path: Ringdown/App/Info.plist
       properties:
         CFBundleName: Ringdown
         CFBundleDisplayName: Ringdown
@@ -172,29 +172,29 @@ targets:
         NSLocalNetworkUsageDescription: "Ringdown connects to servers on your local network over SSH and mosh (UDP). Without this permission, connections to LAN hosts (e.g. 192.168.x.x) will fail."
         CFBundleURLTypes:
           - CFBundleURLSchemes:
-              - beacon
-            CFBundleURLName: com.cluas.beacon
+              - ringdown
+            CFBundleURLName: com.cluas.ringdown
 
-  BeaconIsland:
+  RingdownIsland:
     type: app-extension
     platform: iOS
     sources:
-      - path: BeaconIsland
-      - path: Beacon/Island/AgentActivityAttributes.swift
-      - path: Beacon/Island/AgentControl.swift
-      - path: Beacon/Island/AgentWidgetState.swift
+      - path: RingdownIsland
+      - path: Ringdown/Island/AgentActivityAttributes.swift
+      - path: Ringdown/Island/AgentControl.swift
+      - path: Ringdown/Island/AgentWidgetState.swift
     entitlements:
-      path: BeaconIsland/BeaconIsland.entitlements
+      path: RingdownIsland/RingdownIsland.entitlements
       properties:
         com.apple.security.application-groups:
-          - group.com.cluas.beacon
+          - group.com.cluas.ringdown
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.cluas.beacon.island
+        PRODUCT_BUNDLE_IDENTIFIER: com.cluas.ringdown.island
     info:
-      path: BeaconIsland/Info.plist
+      path: RingdownIsland/Info.plist
       properties:
-        CFBundleDisplayName: Beacon Island
+        CFBundleDisplayName: Ringdown Island
         # Keep the extension's version in lockstep with the app — a mismatch is
         # an App Store rejection. Driven by the shared MARKETING_VERSION /
         # CURRENT_PROJECT_VERSION in settings.base, same as the app target.
@@ -203,45 +203,45 @@ targets:
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
 
-  BeaconUITests:
+  RingdownUITests:
     type: bundle.ui-testing
     platform: iOS
     sources:
-      - path: BeaconUITests
+      - path: RingdownUITests
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.cluas.beacon.uitests
-        TEST_TARGET_NAME: Beacon
+        PRODUCT_BUNDLE_IDENTIFIER: com.cluas.ringdown.uitests
+        TEST_TARGET_NAME: Ringdown
         GENERATE_INFOPLIST_FILE: YES
     dependencies:
-      - target: Beacon
+      - target: Ringdown
 
-  BeaconTests:
+  RingdownTests:
     type: bundle.unit-test
     platform: iOS
     sources:
-      - path: BeaconTests
+      - path: RingdownTests
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.cluas.beacon.tests
+        PRODUCT_BUNDLE_IDENTIFIER: com.cluas.ringdown.tests
         GENERATE_INFOPLIST_FILE: YES
     dependencies:
-      - target: Beacon
+      - target: Ringdown
 
 schemes:
-  Beacon:
+  Ringdown:
     build:
       targets:
-        Beacon: all
-        BeaconTests: [test]
-        BeaconUITests: [test]
+        Ringdown: all
+        RingdownTests: [test]
+        RingdownUITests: [test]
     run:
       config: Debug
     test:
       config: Debug
       targets:
-        - BeaconTests
-        - BeaconUITests
+        - RingdownTests
+        - RingdownUITests
     profile:
       config: Release
     analyze:

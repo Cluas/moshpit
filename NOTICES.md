@@ -1,6 +1,6 @@
 # Third-Party Notices
 
-Beacon is licensed under the MIT License (see [LICENSE](LICENSE)). It
+Ringdown is licensed under the MIT License (see [LICENSE](LICENSE)). It
 incorporates the following third-party components, each under its own license.
 
 ## Swift Package Dependencies
@@ -11,7 +11,7 @@ incorporates the following third-party components, each under its own license.
 - Upstream: https://github.com/migueldeicaza/SwiftTerm
 - License: MIT
 
-Beacon depends on a fork of SwiftTerm maintained at
+Ringdown depends on a fork of SwiftTerm maintained at
 `github.com/Cluas/SwiftTerm`, forked from `migueldeicaza/SwiftTerm`. The fork
 carries a small set of terminal-rendering and hyperlink/IME fixes (see the
 fork's commit history and the annotated `SwiftTerm` entry in `project.yml`).
@@ -22,14 +22,14 @@ Both the upstream project and the fork are distributed under the MIT License.
 - Source: https://github.com/orlandos-nl/Citadel
 - License: MIT
 
-Citadel provides the SSH client implementation used by Beacon.
+Citadel provides the SSH client implementation used by Ringdown.
 
 ## Bundled Fonts
 
-Beacon bundles several programmer monospace fonts, selectable under
+Ringdown bundles several programmer monospace fonts, selectable under
 Settings ▸ Display ▸ Font. Each font is redistributable and retains its own
 license. The per-font license and source table is maintained in
-[`Beacon/Resources/Fonts/LICENSES.md`](Beacon/Resources/Fonts/LICENSES.md) and
+[`Ringdown/Resources/Fonts/LICENSES.md`](Ringdown/Resources/Fonts/LICENSES.md) and
 is incorporated here by reference.
 
 In summary, the bundled fonts are covered by the SIL Open Font License 1.1
@@ -39,7 +39,7 @@ referenced file for full attribution, source URLs, and license text pointers.
 
 ## Clean-Room Disclaimer — Mosh State Synchronization Protocol
 
-The Swift sources under `Beacon/Services/Mosh/` (`MoshBootstrap.swift`,
+The Swift sources under `Ringdown/Services/Mosh/` (`MoshBootstrap.swift`,
 `MoshCompression.swift`, `MoshCrypto.swift`, `MoshTransport.swift`,
 `MoshWire.swift`, `OCB3.swift`) are an **independent, clean-room Swift
 reimplementation** of mosh's State Synchronization Protocol (SSP) and its
@@ -53,7 +53,7 @@ code.
 
 Because it is an original work implementing an interoperable protocol rather
 than a derivative of the mosh codebase, this code carries **no GPL
-obligations** and is distributed under Beacon's MIT License along with the rest
+obligations** and is distributed under Ringdown's MIT License along with the rest
 of the project.
 
 "mosh" is a project of Keith Winstein and contributors; the name is used here

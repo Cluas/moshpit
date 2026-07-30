@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate Beacon/Resources/Localizable.xcstrings and BeaconIsland/Localizable.xcstrings.
+"""Generate Ringdown/Resources/Localizable.xcstrings and RingdownIsland/Localizable.xcstrings.
 
 Source language: en (the key IS the English value).
 Each entry carries complete zh-Hans + ja translations.
@@ -19,7 +19,7 @@ def plural(key, en_one, zh, ja):
     S[key] = {"plural": True, "en_one": en_one, "zh": zh, "ja": ja}
 
 # ---------- Brand / protocol / glyphs (identical everywhere) ----------
-for k in ["Beacon", "Vibe Island", "MOSH", "SRTT", "REC",
+for k in ["Ringdown", "Vibe Island", "MOSH", "SRTT", "REC",
           "ED25519", "ECDSA-sk", "RSA-4096", "tmux", "paste", "tmux prefix",
           "⌘B", "＋", "22", "60000", "61000", "/usr/local/bin/mosh-server",
           "ABCdef 012 ~/ssh $", "%lldms", "%lldpt", "Wi-Fi → 5G",
@@ -45,9 +45,9 @@ add("Continue", "继续", "続ける")
 # ---------- Home (AttachHomeView) ----------
 add("Your servers, on call.", "你的服务器，随叫随到。", "あなたのサーバー、いつでもオンコール。")
 add("No connections yet", "还没有连接", "接続はまだありません")
-add("Tap ＋ to add your first server. Beacon keeps your sessions alive across Wi-Fi / 5G handoff.",
-    "点按 ＋ 添加第一台服务器。Beacon 会在 Wi-Fi / 5G 切换时保持会话不断线。",
-    "＋をタップして最初のサーバーを追加。Beacon は Wi-Fi / 5G の切り替えをまたいでセッションを維持します。")
+add("Tap ＋ to add your first server. Ringdown keeps your sessions alive across Wi-Fi / 5G handoff.",
+    "点按 ＋ 添加第一台服务器。Ringdown 会在 Wi-Fi / 5G 切换时保持会话不断线。",
+    "＋をタップして最初のサーバーを追加。Ringdown は Wi-Fi / 5G の切り替えをまたいでセッションを維持します。")
 add("SIGNAL FOR YOUR AGENTS", "智能体信号站", "エージェントのシグナル")
 add("Delete %@?", "删除 %@？", "%@を削除しますか？")
 add("connection", "连接", "接続")
@@ -76,9 +76,9 @@ add("Paste PEM", "粘贴 PEM", "PEM を貼り付け")
 add("Paste a PEM instead…", "改为粘贴 PEM…", "代わりに PEM を貼り付け…")
 add("Private Key (PEM)", "私钥（PEM）", "秘密鍵（PEM）")
 add("ROAMING · MOSH", "漫游 · MOSH", "ローミング · MOSH")
-add("Mosh keeps the session alive across Wi-Fi / 5G handoff and sleep/wake. UDP must be open server-side; the client picks an unused port within range. With tmux, Beacon attaches to your existing sessions and never creates or restyles them; only sessions you create through Beacon get its native look (status bar hidden, restored on disconnect).",
-    "Mosh 让会话在 Wi-Fi / 5G 切换及休眠唤醒后保持存活。服务器端需开放 UDP；客户端会在范围内挑选一个未占用的端口。使用 tmux 时，Beacon 只附加到你已有的会话，绝不创建或改样式；只有通过 Beacon 创建的会话才会应用其原生外观（隐藏状态栏，断开时恢复）。",
-    "Mosh は Wi-Fi / 5G の切り替えやスリープ/復帰をまたいでセッションを維持します。サーバー側で UDP を開放してください。クライアントは範囲内の未使用ポートを選びます。tmux では Beacon は既存セッションにアタッチするだけで、作成やスタイル変更は行いません。Beacon から作成したセッションのみネイティブな外観（ステータスバー非表示、切断時に復元）になります。")
+add("Mosh keeps the session alive across Wi-Fi / 5G handoff and sleep/wake. UDP must be open server-side; the client picks an unused port within range. With tmux, Ringdown attaches to your existing sessions and never creates or restyles them; only sessions you create through Ringdown get its native look (status bar hidden, restored on disconnect).",
+    "Mosh 让会话在 Wi-Fi / 5G 切换及休眠唤醒后保持存活。服务器端需开放 UDP；客户端会在范围内挑选一个未占用的端口。使用 tmux 时，Ringdown 只附加到你已有的会话，绝不创建或改样式；只有通过 Ringdown 创建的会话才会应用其原生外观（隐藏状态栏，断开时恢复）。",
+    "Mosh は Wi-Fi / 5G の切り替えやスリープ/復帰をまたいでセッションを維持します。サーバー側で UDP を開放してください。クライアントは範囲内の未使用ポートを選びます。tmux では Ringdown は既存セッションにアタッチするだけで、作成やスタイル変更は行いません。Ringdown から作成したセッションのみネイティブな外観（ステータスバー非表示、切断時に復元）になります。")
 add("Use Mosh", "使用 Mosh", "Mosh を使用")
 add("Wrap SSH with mosh-server (UDP)", "连接时用 mosh-server (UDP) 包装 SSH", "SSH を mosh-server (UDP) でラップ")
 add("UDP Port Range", "UDP 端口范围", "UDP ポート範囲")
@@ -133,9 +133,9 @@ add("KEYBOARD · KEYS", "键盘 · 密钥", "キーボード · キー")
 add("Shortcuts", "快捷键", "ショートカット")
 add("SSH Keys", "SSH 密钥", "SSH キー")
 add("NOTIFICATIONS", "通知", "通知")
-add("Beacon watches the active tmux session for the terminal bell and posts a local alert when your agent needs attention.",
-    "Beacon 会监听活动 tmux 会话的终端响铃，并在你的智能体需要关注时发出本地提醒。",
-    "Beacon はアクティブな tmux セッションのターミナルベルを監視し、エージェントが注意を必要とするとローカル通知を出します。")
+add("Ringdown watches the active tmux session for the terminal bell and posts a local alert when your agent needs attention.",
+    "Ringdown 会监听活动 tmux 会话的终端响铃，并在你的智能体需要关注时发出本地提醒。",
+    "Ringdown はアクティブな tmux セッションのターミナルベルを監視し、エージェントが注意を必要とするとローカル通知を出します。")
 add("Notifications", "通知", "通知")
 add("Alert when the agent rings the bell", "智能体响铃时提醒", "エージェントがベルを鳴らしたら通知")
 add("Live Activity", "实时活动", "ライブアクティビティ")
@@ -149,16 +149,16 @@ add("Enable Voice Input", "启用语音输入", "音声入力を有効化")
 add("Coming soon", "即将推出", "近日公開")
 # Notification info sheet
 add("Bell = attention", "响铃 = 需要关注", "ベル = 要注意")
-add("When a tmux pane rings the terminal bell (BEL) — which Claude Code and most CLIs emit when they finish or need input — Beacon posts a local notification and flips the Vibe Island to “needs attention.”",
-    "当 tmux 窗格触发终端响铃（BEL）——Claude Code 和多数 CLI 在完成或需要输入时都会发出——Beacon 会发送本地通知，并把 Vibe Island 切换为“需要关注”。",
-    "tmux ペインがターミナルベル（BEL）を鳴らすと——Claude Code やほとんどの CLI は完了時や入力待ちで発します——Beacon はローカル通知を送り、Vibe Island を「要注意」に切り替えます。")
+add("When a tmux pane rings the terminal bell (BEL) — which Claude Code and most CLIs emit when they finish or need input — Ringdown posts a local notification and flips the Vibe Island to “needs attention.”",
+    "当 tmux 窗格触发终端响铃（BEL）——Claude Code 和多数 CLI 在完成或需要输入时都会发出——Ringdown 会发送本地通知，并把 Vibe Island 切换为“需要关注”。",
+    "tmux ペインがターミナルベル（BEL）を鳴らすと——Claude Code やほとんどの CLI は完了時や入力待ちで発します——Ringdown はローカル通知を送り、Vibe Island を「要注意」に切り替えます。")
 add("While a session is attached, the Dynamic Island shows whether the agent is working, idle, or waiting on you. Tapping it deep-links straight back to that pane.",
     "会话附加期间，灵动岛会显示智能体正在工作、空闲，还是在等你。点按即可直接深链回到该窗格。",
     "セッションのアタッチ中、Dynamic Island はエージェントが作業中・アイドル・あなた待ちのいずれかを表示します。タップするとそのペインへ直接ジャンプします。")
 add("Local, not push", "本地通知，而非推送", "ローカル通知（プッシュではありません）")
-add("Alerts are generated on-device from the live session — there’s no cloud push server. They fire while Beacon is in the foreground or recently backgrounded; a fully suspended app won’t poll. iOS will ask for notification permission the first time you connect with Notifications on.",
-    "提醒由设备端的实时会话生成——没有云端推送服务器。它们在 Beacon 处于前台或刚进入后台时触发；完全挂起的应用不会轮询。首次在开启通知的情况下连接时，iOS 会请求通知权限。",
-    "通知はライブセッションからデバイス上で生成されます——クラウドのプッシュサーバーはありません。Beacon がフォアグラウンドまたは直近バックグラウンドの間に発火し、完全にサスペンドされたアプリはポーリングしません。通知をオンにして初めて接続する際、iOS が通知の許可を求めます。")
+add("Alerts are generated on-device from the live session — there’s no cloud push server. They fire while Ringdown is in the foreground or recently backgrounded; a fully suspended app won’t poll. iOS will ask for notification permission the first time you connect with Notifications on.",
+    "提醒由设备端的实时会话生成——没有云端推送服务器。它们在 Ringdown 处于前台或刚进入后台时触发；完全挂起的应用不会轮询。首次在开启通知的情况下连接时，iOS 会请求通知权限。",
+    "通知はライブセッションからデバイス上で生成されます——クラウドのプッシュサーバーはありません。Ringdown がフォアグラウンドまたは直近バックグラウンドの間に発火し、完全にサスペンドされたアプリはポーリングしません。通知をオンにして初めて接続する際、iOS が通知の許可を求めます。")
 # Server binary editor
 add("MOSH SERVER PATH", "MOSH SERVER 路径", "MOSH SERVER パス")
 add("The mosh-server executable on the remote host. Override if it isn't on PATH (e.g. /opt/homebrew/bin/mosh-server).",
@@ -305,9 +305,9 @@ add("Connecting…", "连接中…", "接続中…")
 add("roaming…", "漫游中…", "ローミング中…")
 add("Predict ON", "预测已开", "予測オン")
 add("No tmux sessions", "没有 tmux 会话", "tmux セッションがありません")
-add("This server has no running sessions.\nBeacon only attaches — create the first one to start.",
-    "该服务器上没有正在运行的会话。\nBeacon 只做附加 — 创建第一个会话以开始。",
-    "このサーバーには実行中のセッションがありません。\nBeacon はアタッチのみ行います — 最初のセッションを作成して始めましょう。")
+add("This server has no running sessions.\nRingdown only attaches — create the first one to start.",
+    "该服务器上没有正在运行的会话。\nRingdown 只做附加 — 创建第一个会话以开始。",
+    "このサーバーには実行中のセッションがありません。\nRingdown はアタッチのみ行います — 最初のセッションを作成して始めましょう。")
 add("Creating…", "创建中…", "作成中…")
 add("Create Session", "创建会话", "セッションを作成")
 add("Attaching tmux…", "正在附加 tmux…", "tmux にアタッチ中…")
@@ -370,5 +370,5 @@ def write_catalog(path, table):
 
 
 root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-write_catalog(os.path.join(root, "Beacon/Resources/Localizable.xcstrings"), S)
-write_catalog(os.path.join(root, "BeaconIsland/Localizable.xcstrings"), ISLAND)
+write_catalog(os.path.join(root, "Ringdown/Resources/Localizable.xcstrings"), S)
+write_catalog(os.path.join(root, "RingdownIsland/Localizable.xcstrings"), ISLAND)

@@ -1,0 +1,1269 @@
+import Foundation
+import Testing
+@testable import Ringdown
+
+// MARK: - Helpers
+
+private func bytes(_ s: String) -> Data { Data(s.utf8) }
+
+/// Wait for an `@MainActor`-isolated async predicate to become true (poll
+/// every 5 ms up to `timeout`). Async so callers can `await` actor-isolated
+/// values inside the predicate body (e.g. `await transport.recordedCommands()`).
+@MainActor
+private func waitUntil(
+    timeout: TimeInterval = 1.0,
+    _ predicate: @MainActor () async -> Bool
+) async -> Bool {
+    let deadline = Date().addingTimeInterval(timeout)
+    while Date() < deadline {
+        if await predicate() { return true }
+        try? await Task.sleep(for: .milliseconds(5))
+    }
+    return await predicate()
+}
+
+/// Build a controller wired to a fresh `MockTmuxTransport`, attach it, and
+/// return both so each test can drive the parser side of the protocol while
+/// asserting on the snapshot.
+@MainActor
+private func makeAttachedController() async -> (TmuxSessionController, MockTmuxTransport) {
+    let transport = MockTmuxTransport()
+    let controller = TmuxSessionController(sshSession: transport)
+    await controller.attach()
+    return (controller, transport)
+}
+
+// MARK: - Suite
+
+@Suite("TmuxSessionController state machine", .serialized)
+@MainActor
+struct TmuxSessionControllerTests {
+
+    // ─────────────────────────────────────────────────────────────
+    // attach() / initial discovery
+    // ─────────────────────────────────────────────────────────────
+
+    @Test("attach() flips isAttached=true and dispatches list-sessions / list-windows / list-panes in order")
+    func attachSendsDiscoveryCommands() async throws {
+        let transport = MockTmuxTransport()
+        let controller = TmuxSessionController(sshSession: transport)
+        await controller.attach()
+
+        #expect(controller.snapshot.isAttached == true)
+
+        // Wait for the three discovery writes to land — `send(rawCommand:)`
+        // dispatches them via Task.detached so they may arrive asynchronously.
+        let captured = await waitUntil { await transport.recordedCommands().count >= 3 }
+        #expect(captured)
+
+        let commands = await transport.recordedCommands()
+        #expect(commands[0].hasPrefix("list-sessions"))
+        #expect(commands[1].hasPrefix("list-windows"))
+        #expect(commands[2].hasPrefix("list-panes"))
+    }
+
+    @Test("detach() cancels pumping, resets parser, clears isAttached")
+    func detachShutsEverythingDown() async throws {
+        let (controller, transport) = await makeAttachedController()
+        // Drain the discovery commands so we observe the pre-detach baseline.
+        _ = await waitUntil { await transport.recordedCommands().count >= 3 }
+
+        await controller.detach()
+        transport.finish()
+
+        #expect(controller.snapshot.isAttached == false)
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // Parsing list-* responses
+    // ─────────────────────────────────────────────────────────────
+
+    @Test("list-sessions response populates snapshot.sessions and picks the attached session")
+    func listSessionsResponse() async throws {
+        let (controller, transport) = await makeAttachedController()
+        _ = await waitUntil { await transport.recordedCommands().count >= 1 }
+
+        transport.pushText("""
+        %begin 1 1 0
+        $0 1 main
+        $1 0 alt
+        %end 1 1 0
+
+        """)
+
+        let ok = await waitUntil { controller.snapshot.sessions.count == 2 }
+        #expect(ok, "expected two sessions")
+        #expect(controller.snapshot.sessions["$0"]?.isAttached == true)
+        #expect(controller.snapshot.sessions["$1"]?.isAttached == false)
+        #expect(controller.snapshot.activeSessionId == "$0")
+    }
+
+    @Test("list-windows response populates windows + activeWindowId from the active flag")
+    func listWindowsResponse() async throws {
+        let (controller, transport) = await makeAttachedController()
+        _ = await waitUntil { await transport.recordedCommands().count >= 2 }
+
+        // First reply consumes the list-sessions callback (empty).
+        transport.pushText("""
+        %begin 1 1 0
+        $0 1 main
+        %end 1 1 0
+        %begin 2 2 0
+        $0 @0 0 81x24,0,0,0 1 1 main
+        $0 @1 1 81x24,0,0,1 0 1 logs
+        %end 2 2 0
+
+        """)
+
+        let ok = await waitUntil { controller.snapshot.windows.count == 2 }
+        #expect(ok)
+        #expect(controller.snapshot.windows["@0"]?.name == "main")
+        #expect(controller.snapshot.windows["@0"]?.paneCount == 1)
+        #expect(controller.snapshot.activeWindowId == "@0")
+    }
+
+    @Test("list-panes response builds PaneInfo entries and picks the active pane")
+    func listPanesResponse() async throws {
+        let (controller, transport) = await makeAttachedController()
+        _ = await waitUntil { await transport.recordedCommands().count >= 3 }
+
+        transport.pushText("""
+        %begin 1 1 0
+        $0 1 main
+        %end 1 1 0
+        %begin 2 2 0
+        $0 @0 0 81x24,0,0,0 1 2 main
+        %end 2 2 0
+        %begin 3 3 0
+        %0 @0 0 80 24 1 bash
+        %1 @0 1 80 24 0 vim
+        %end 3 3 0
+
+        """)
+
+        let ok = await waitUntil { controller.snapshot.panes.count == 2 }
+        #expect(ok)
+        #expect(controller.snapshot.panes["%0"]?.command == "bash")
+        #expect(controller.snapshot.panes["%0"]?.isActive == true)
+        #expect(controller.snapshot.activePaneId == "%0")
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // Window-size pin: release on Home, re-pin on return
+    // ─────────────────────────────────────────────────────────────
+
+    @Test("releaseWindowPins leaves sizing math (ignore-size) and unsets pinned windows; repin reverses both")
+    func releaseAndRepinWindowPins() async throws {
+        let (controller, transport) = await makeAttachedController()
+        _ = await waitUntil { await transport.recordedCommands().count >= 3 }
+
+        // Drain the 3 discovery callbacks (list-sessions / -windows / -panes) so
+        // activeWindowId resolves to @0 and the FIFO response queue is empty.
+        transport.pushText("""
+        %begin 1 1 0
+        $0 1 main
+        %end 1 1 0
+        %begin 2 2 0
+        $0 @0 0 81x24,0,0,0 1 1 main
+        %end 2 2 0
+        %begin 3 3 0
+        %0 @0 0 80 24 1 bash
+        %end 3 3 0
+
+        """)
+        #expect(await waitUntil { controller.snapshot.activeWindowId == "@0" })
+
+        // A client resize pins @0 to our phone grid (70×35).
+        controller.resizeClient(rows: 35, cols: 70)
+        #expect(await waitUntil {
+            await transport.recordedCommands().contains { $0.hasPrefix("resize-window -t @0 -x 70 -y 35") }
+        }, "resizeClient should pin the active window to the client size")
+
+        // Backgrounding: leave the sizing math + return the window to automatic.
+        // Must NOT use `resize-window -A` (that re-pins at "largest session",
+        // still manual — the desktop stays stuck).
+        controller.releaseWindowPins()
+        #expect(await waitUntil {
+            let cmds = await transport.recordedCommands()
+            return cmds.contains { $0.hasPrefix("refresh-client -f ignore-size") }
+                && cmds.contains { $0.hasPrefix("set-option -u -w -t @0 window-size") }
+        }, "release must set ignore-size and unset the per-window size override")
+        #expect(!(await transport.recordedCommands().contains { $0.contains(" -A") }),
+                "release must not use resize-window -A (it re-pins, still manual)")
+
+        // Foregrounding: rejoin sizing, re-assert our size, re-pin the grid.
+        controller.repinActiveWindow()
+        #expect(await waitUntil {
+            let cmds = await transport.recordedCommands()
+            return cmds.contains { $0.hasPrefix("refresh-client -f !ignore-size") }
+                && cmds.filter { $0.hasPrefix("resize-window -t @0 -x 70 -y 35") }.count >= 2
+        }, "repin must clear ignore-size and restore the phone-grid pin")
+    }
+
+    @Test("releaseWindowPins without pinned windows still leaves sizing math, but unsets nothing")
+    func releaseWithoutPinsOnlyIgnoresSize() async throws {
+        let (controller, transport) = await makeAttachedController()
+        _ = await waitUntil { await transport.recordedCommands().count >= 3 }
+
+        controller.releaseWindowPins()   // no pins — but our size must stop dragging `latest`
+
+        #expect(await waitUntil {
+            await transport.recordedCommands().contains { $0.hasPrefix("refresh-client -f ignore-size") }
+        }, "even with no pins, the client must leave the sizing math (the 2s poll re-wins latest)")
+        try? await Task.sleep(for: .milliseconds(40))
+        #expect(!(await transport.recordedCommands().contains { $0.hasPrefix("set-option -u -w") }),
+                "nothing was pinned, so no per-window override should be unset")
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // Resize debounce + resync-from-tmux (the IME/keyboard garble fix)
+    // ─────────────────────────────────────────────────────────────
+
+    /// Answer every control command written so far — and everything those
+    /// replies go on to enqueue — with a harmless block, until the chatter
+    /// stops. tmux replies to EVERY command, so blanket-answering is exactly
+    /// what a real server does and it keeps the response FIFO in sync.
+    ///
+    /// Needed because the attach-time repaint is a CHAIN, not a batch: the
+    /// backfill's `alternate_on` probe enqueues its scrollback capture only
+    /// when the probe's reply lands, and THAT reply is what releases the
+    /// resync parked behind the dump (see `backfillsInFlight` — the resync
+    /// waits so the authoritative frame isn't scrolled off by 2 000 lines of
+    /// history). No fixed number of pushes can drain that.
+    ///
+    /// `answered` is how many replies the caller has already pushed itself;
+    /// the return value lets a later call resume from there.
+    @discardableResult
+    private func settleControlChatter(_ transport: MockTmuxTransport,
+                                      answered alreadyAnswered: Int) async -> Int {
+        var answered = alreadyAnswered
+        for _ in 0..<20 {
+            // Only ever answer commands that have actually been written —
+            // a reply with no slot waiting for it desyncs the FIFO.
+            let sent = await transport.recordedCommands().count
+            while answered < sent {
+                transport.pushText("%begin 900 900 0\n0 0\n%end 900 900 0\n\n")
+                answered += 1
+            }
+            try? await Task.sleep(for: .milliseconds(20))
+            if await transport.recordedCommands().count == answered { break }
+        }
+        return answered
+    }
+
+    /// Discovery replies that resolve one session/window/pane (@0/%0 active).
+    private func pushOneWindowDiscovery(_ transport: MockTmuxTransport) {
+        transport.pushText("""
+        %begin 1 1 0
+        $0 1 main
+        %end 1 1 0
+        %begin 2 2 0
+        $0 @0 0 81x24,0,0,0 1 1 main
+        %end 2 2 0
+        %begin 3 3 0
+        %0 @0 0 80 24 1 bash
+        %end 3 3 0
+
+        """)
+    }
+
+    @Test("resizeClient debounces a resize storm to one refresh-client at the final size")
+    func resizeStormCoalesces() async throws {
+        let (controller, transport) = await makeAttachedController()
+        _ = await waitUntil { await transport.recordedCommands().count >= 3 }
+        pushOneWindowDiscovery(transport)
+        #expect(await waitUntil { controller.snapshot.activeWindowId == "@0" })
+
+        // Keyboard/IME animation: three sizes in quick succession.
+        controller.resizeClient(rows: 40, cols: 90)
+        controller.resizeClient(rows: 37, cols: 80)
+        controller.resizeClient(rows: 35, cols: 70)
+
+        #expect(await waitUntil(timeout: 2.0) {
+            await transport.recordedCommands().contains { $0.hasPrefix("refresh-client -C 70x35") }
+        }, "the final size must be committed after the debounce")
+        let cmds = await transport.recordedCommands()
+        #expect(!cmds.contains { $0.hasPrefix("refresh-client -C 90x40") },
+                "intermediate sizes must be coalesced away")
+        #expect(!cmds.contains { $0.hasPrefix("refresh-client -C 80x37") },
+                "intermediate sizes must be coalesced away")
+    }
+
+    @Test("repeated foreign-width layout-change drift backs off after a few reclaims (tug-of-war guard)")
+    func layoutDriftReclaimBacksOffDuringTugOfWar() async throws {
+        let (controller, transport) = await makeAttachedController()
+        _ = await waitUntil { await transport.recordedCommands().count >= 3 }
+        pushOneWindowDiscovery(transport)
+        #expect(await waitUntil { controller.snapshot.activeWindowId == "@0" })
+
+        // Pin the phone grid first, as attach normally does — this sets
+        // `lastClientSize` so a differently-sized layout-change reads as drift.
+        controller.resizeClient(rows: 35, cols: 70)
+        #expect(await waitUntil(timeout: 2.0) {
+            await transport.recordedCommands().contains { $0.hasPrefix("resize-window -t @0 -x 70 -y 35") }
+        })
+        let baseline = await transport.recordedCommands().count
+
+        // A live peer client keeps re-widening the SAME window (e.g. tmux
+        // `window-size latest` following its own activity) — four drift
+        // notifications in a row, faster than any real reclaim round trip.
+        transport.pushText("""
+        %layout-change @0 200x24,0,0,2
+        %layout-change @0 200x24,0,0,2
+        %layout-change @0 200x24,0,0,2
+        %layout-change @0 200x24,0,0,2
+
+        """)
+        try? await Task.sleep(for: .milliseconds(150))
+
+        let reclaims = await transport.recordedCommands()
+            .dropFirst(baseline)
+            .filter { $0.hasPrefix("resize-window -t @0 -x 70 -y 35") }
+        #expect(reclaims.count == 2,
+                "only the first two drift events reclaim; the third trips the backoff and the fourth is suppressed by it")
+    }
+
+    @Test("a settled resize resyncs the active pane from tmux: capture the frame, then the cursor")
+    func settledResizeResyncsFromTmux() async throws {
+        let (controller, transport) = await makeAttachedController()
+        _ = await waitUntil { await transport.recordedCommands().count >= 3 }
+        pushOneWindowDiscovery(transport)
+        #expect(await waitUntil { controller.snapshot.activePaneId == "%0" })
+        // The fresh attach fires its own backfill + resync for %0 — settle it
+        // so the indices below belong to THIS test's resize.
+        await settleControlChatter(transport, answered: 3)
+        let baseline = await transport.recordedCommands().count
+
+        controller.resizeClient(rows: 35, cols: 70)
+
+        // Frame BEFORE cursor: %output arriving between the two replies is then
+        // applied on top of the fresh frame AND already reflected in the cursor
+        // reply — the final CUP is exact (the cursor-first order restored a
+        // pre-redraw cursor: the "cursor drifts after an IME switch" bug).
+        #expect(await waitUntil(timeout: 2.0) {
+            let cmds = await transport.recordedCommands().dropFirst(baseline)
+            guard let capture = cmds.firstIndex(where: { $0.hasPrefix("capture-pane -p -e -t %0") }),
+                  let cursor = cmds.firstIndex(where: {
+                      $0.hasPrefix("display-message -p -t %0 '#{cursor_x}") })
+            else { return false }
+            return capture < cursor
+        }, "resync must capture the frame, then query the cursor, in stream order")
+    }
+
+    @Test("resyncActivePane(reveal: false) corrects the buffer without lifting an active cover; the default reveals")
+    func resyncRevealParameterGatesCoverLift() async throws {
+        let (controller, transport) = await makeAttachedController()
+        _ = await waitUntil { await transport.recordedCommands().count >= 3 }
+        pushOneWindowDiscovery(transport)
+        #expect(await waitUntil { controller.snapshot.activePaneId == "%0" })
+
+        // A fresh attach ALSO auto-veils + resyncs the active pane (see
+        // ensureTerminalsForAllPanes(isFreshAttach:)), chained behind the
+        // terminal's own backfill: probe → scrollback capture → the parked
+        // resync's frame → its cursor query. Settle the whole chain so the
+        // FIFO is clean before this test's own veilForSwitch/resyncActivePane
+        // calls — the resync's frame reply also lifts the automatic cover via
+        // its default `reveal: true`, same as after any completed fresh
+        // attach, so the pane is uncovered by the time we get there.
+        await settleControlChatter(transport, answered: 3)
+        #expect(await waitUntil { controller.activeCoordinator?.isCoverPresented == false },
+                "the auto-resync's own frame reply must reveal the fresh-attach veil before this test begins")
+
+        // veilForSwitch needs no real window/rendering (unlike
+        // freezeForKeyboardTransition's UIKit snapshot) — a test-friendly
+        // way to put a cover up and observe when it comes down.
+        controller.activeCoordinator?.veilForSwitch()
+        #expect(controller.activeCoordinator?.isCoverPresented == true)
+
+        let before = await transport.recordedCommands().count
+        controller.resyncActivePane(reveal: false)
+        _ = await waitUntil { await transport.recordedCommands().count > before }
+        transport.pushText("""
+        %begin 100 100 0
+        resynced without reveal
+        %end 100 100 0
+        %begin 101 101 0
+        0 0
+        %end 101 101 0
+
+        """)
+        try? await Task.sleep(for: .milliseconds(200))
+        #expect(controller.activeCoordinator?.isCoverPresented == true, """
+                reveal: false must correct the buffer without lifting the cover — this is the fix for the \
+                keyboard show/hide race where an immediate, possibly mid-redraw capture used to lift the \
+                cover and flash a duplicated/blank frame before the settled capture corrected it
+                """)
+
+        controller.resyncActivePane()   // default reveal: true
+        transport.pushText("""
+        %begin 102 102 0
+        resynced and revealed
+        %end 102 102 0
+        %begin 103 103 0
+        0 0
+        %end 103 103 0
+
+        """)
+        #expect(await waitUntil { controller.activeCoordinator?.isCoverPresented == false },
+                "the default reveal must lift the cover once the frame lands")
+    }
+
+    @Test("extendCoverTimeout no-ops without a cover, and reschedules the reveal deadline with one")
+    func extendCoverTimeoutBehavior() async throws {
+        let (controller, transport) = await makeAttachedController()
+        _ = await waitUntil { await transport.recordedCommands().count >= 3 }
+        pushOneWindowDiscovery(transport)
+        #expect(await waitUntil { controller.snapshot.activePaneId == "%0" })
+        let coordinator = controller.activeCoordinator
+
+        // A fresh attach auto-veils + resyncs the active pane (see
+        // ensureTerminalsForAllPanes(isFreshAttach:)) — settle that chain
+        // (backfill's probe, backfill's own capture, then the resync parked
+        // behind the dump) so the auto-cover is lifted by the resync's own
+        // frame reply before this test's assertions, which are about
+        // extendCoverTimeout's behavior in isolation, not the fresh-attach
+        // veil.
+        await settleControlChatter(transport, answered: 3)
+        #expect(await waitUntil { coordinator?.isCoverPresented == false },
+                "the fresh-attach auto-veil must be lifted by its own resync frame reply before this test begins")
+
+        coordinator?.extendCoverTimeout(by: 0.05)
+        #expect(coordinator?.isCoverPresented == false,
+                "must not itself start a freeze that wasn't already requested")
+
+        coordinator?.veilForSwitch()   // installs a cover with the default 0.8s safety timeout
+        #expect(coordinator?.isCoverPresented == true)
+        coordinator?.extendCoverTimeout(by: 0.05)   // reschedule far sooner than the 0.8s default
+
+        try? await Task.sleep(for: .milliseconds(20))
+        #expect(coordinator?.isCoverPresented == true, "the extended deadline shouldn't have fired yet")
+
+        #expect(await waitUntil(timeout: 0.5) { coordinator?.isCoverPresented == false },
+                "the extended deadline should fire and reveal, well before the original 0.8s default would have")
+    }
+
+    @Test("selectWindow resyncs the target pane from tmux after activating it")
+    func selectWindowResyncsTarget() async throws {
+        let (controller, transport) = await makeAttachedController()
+        _ = await waitUntil { await transport.recordedCommands().count >= 3 }
+        transport.pushText("""
+        %begin 1 1 0
+        $0 1 main
+        %end 1 1 0
+        %begin 2 2 0
+        $0 @0 0 81x24,0,0,0 1 1 main
+        $0 @1 1 81x24,0,0,1 0 1 work
+        %end 2 2 0
+        %begin 3 3 0
+        %0 @0 0 80 24 1 bash
+        %1 @1 0 80 24 1 vim
+        %end 3 3 0
+
+        """)
+        #expect(await waitUntil { controller.snapshot.windows.count == 2 })
+        // Both panes get an attach-time backfill; settle them (and the fresh
+        // attach's own resync of %0) so %1's resync below isn't parked behind
+        // an unanswered dump.
+        await settleControlChatter(transport, answered: 3)
+
+        controller.selectWindow("@1")
+
+        #expect(await waitUntil {
+            let cmds = await transport.recordedCommands()
+            guard let select = cmds.firstIndex(where: { $0.hasPrefix("select-window -t @1") }),
+                  let capture = cmds.firstIndex(where: { $0.hasPrefix("capture-pane -p -e -t %1") })
+            else { return false }
+            return select < capture
+        }, "the switched-to pane must be repainted from tmux's model after activation")
+    }
+
+    @Test("backfill cancels a stale copy-mode left over from a dead connection")
+    func backfillCancelsStaleCopyMode() async throws {
+        let (controller, transport) = await makeAttachedController()
+        _ = await waitUntil { await transport.recordedCommands().count >= 3 }
+        pushOneWindowDiscovery(transport)
+        #expect(await waitUntil { controller.snapshot.activePaneId == "%0" })
+
+        // Minting %0 triggers backfill, whose first query now also carries
+        // #{pane_in_mode}. Answer "0 1" (primary screen, IN copy-mode — the
+        // stale leftover) on every pending FIFO slot; fire-and-forget slots
+        // ignore it, the backfill callback reads it.
+        #expect(await waitUntil {
+            await transport.recordedCommands().contains {
+                $0.hasPrefix("display-message -p -t %0 '#{alternate_on} #{pane_in_mode}'") }
+        }, "backfill must query alternate_on + pane_in_mode together")
+        for _ in 0..<8 {
+            transport.pushText("%begin 9 9 0\n0 1\n%end 9 9 0\n\n")
+        }
+
+        #expect(await waitUntil {
+            await transport.recordedCommands().contains { $0.hasPrefix("send-keys -t %0 -X cancel") }
+        }, "a pane still in copy-mode on first sight after attach must be cancelled — the 'reconnect scrolls to the top' bug")
+    }
+
+    @Test("a resync requested during a pane's backfill is sent AFTER the scrollback dump, not before it")
+    func resyncWaitsForTheBackfillDump() async throws {
+        let (controller, transport) = await makeAttachedController()
+        _ = await waitUntil { await transport.recordedCommands().count >= 3 }
+        pushOneWindowDiscovery(transport)
+        #expect(await waitUntil { controller.snapshot.activePaneId == "%0" })
+
+        // The fresh attach asks for BOTH a backfill and a repaint of %0. The
+        // backfill's probe goes out at once; the repaint must not.
+        #expect(await waitUntil {
+            await transport.recordedCommands().contains {
+                $0.hasPrefix("display-message -p -t %0 '#{alternate_on}")
+            }
+        })
+        let racedAhead = await transport.recordedCommands()
+            .contains { $0.hasPrefix("capture-pane -p -e -t %0") }
+        #expect(racedAhead == false, """
+                the resync must not go out while the backfill is still in flight: the dump's own \
+                capture is only enqueued from the probe's reply, so it would land LAST and scroll \
+                the authoritative frame away — leaving the pane showing the tail of history (the \
+                last thing typed before the drop) after every reconnect
+                """)
+
+        await settleControlChatter(transport, answered: 3)
+
+        let cmds = await transport.recordedCommands()
+        let dump = try #require(cmds.firstIndex { $0.hasPrefix("capture-pane -p -e -S") },
+                                "backfill must have captured the scrollback")
+        let frame = try #require(cmds.firstIndex { $0.hasPrefix("capture-pane -p -e -t %0") },
+                                 "the parked resync must have been released by the dump's reply")
+        #expect(dump < frame, "the authoritative frame has to be fed last, on top of the history")
+    }
+
+    @Test("newWindow lands ON the window it just created")
+    func newWindowSelectsTheNewWindow() async throws {
+        let (controller, transport) = await makeAttachedController()
+        _ = await waitUntil { await transport.recordedCommands().count >= 3 }
+        pushOneWindowDiscovery(transport)
+        #expect(await waitUntil { controller.snapshot.activeWindowId == "@0" })
+        await settleControlChatter(transport, answered: 3)
+        let baseline = await transport.recordedCommands().count
+
+        controller.newWindow(named: "logs")
+
+        #expect(await waitUntil {
+            await transport.recordedCommands().contains {
+                $0.hasPrefix("new-window -P -F '#{window_id}' -n 'logs'")
+            }
+        }, "new-window must print the new window's id so we can land on it")
+
+        // Reply in send order: the printed id, then the re-list that gives
+        // selectWindow a snapshot to work with.
+        transport.pushText("""
+        %begin 20 20 0
+        @1
+        %end 20 20 0
+        %begin 21 21 0
+        $0 @0 0 81x24,0,0,0 0 1 main
+        $0 @1 1 81x24,0,0,1 1 1 logs
+        %end 21 21 0
+        %begin 22 22 0
+        %0 @0 0 80 24 1 bash
+        %1 @1 0 80 24 1 bash
+        %end 22 22 0
+
+        """)
+
+        #expect(await waitUntil { controller.snapshot.activeWindowId == "@1" }, """
+                creating a window must move the view to it — discovery alone can't, because \
+                parseListWindows deliberately refuses to follow tmux's current window while ours \
+                is alive (that's what stops another client's switch from yanking our view)
+                """)
+        #expect(controller.snapshot.activePaneId == "%1",
+                "and the pane shown must be the new window's, not the old window's")
+        #expect(await waitUntil {
+            await transport.recordedCommands().dropFirst(baseline)
+                .contains { $0.hasPrefix("select-window -t @1") }
+        }, "tmux must be told too, so the mosh-rendered client follows")
+    }
+
+    @Test("selectPane keeps the window zoomed while switching (select-pane -Z)")
+    func selectPaneKeepsZoom() async throws {
+        let (controller, transport) = await makeAttachedController()
+        _ = await waitUntil { await transport.recordedCommands().count >= 3 }
+        // One window, two panes — the single-pane presentation zooms one of
+        // them; cycling must swap the zoomed pane in ONE layout change, not
+        // unzoom → select → re-zoom (split flash on every swipe).
+        transport.pushText("""
+        %begin 1 1 0
+        $0 1 main
+        %end 1 1 0
+        %begin 2 2 0
+        $0 @0 0 81x24,0,0,0 1 2 main
+        %end 2 2 0
+        %begin 3 3 0
+        %0 @0 0 80 24 1 bash
+        %1 @0 1 80 24 0 vim
+        %end 3 3 0
+
+        """)
+        #expect(await waitUntil { controller.snapshot.panes.count == 2 })
+
+        controller.selectPane("%1")
+
+        #expect(await waitUntil {
+            await transport.recordedCommands().contains { $0.hasPrefix("select-pane -Z -t %1") }
+        }, "pane switches must use select-pane -Z so the zoom never drops")
+    }
+
+    /// Interleaved %output and command replies must be handled in byte-stream
+    /// order. The old wiring hopped each parser callback to the main actor in
+    /// its own Task — Swift doesn't guarantee FIFO between independent tasks,
+    /// so under load a capture-pane reply could be handled before %output that
+    /// preceded it, smearing stale bytes over a resync frame. The single
+    /// event-stream pipeline makes this deterministic.
+    @Test("%output and command replies are handled in byte-stream order")
+    func eventOrderingIsPreserved() async throws {
+        let (controller, transport) = await makeAttachedController()
+        _ = await waitUntil { await transport.recordedCommands().count >= 3 }
+        pushOneWindowDiscovery(transport)
+        #expect(await waitUntil { controller.snapshot.activePaneId == "%0" })
+
+        @MainActor final class Recorder { var seq: [String] = [] }
+        let recorder = Recorder()
+        controller.onPaneActivity = { _ in recorder.seq.append("out") }
+        controller.onAgentHooksUpdated = { recorder.seq.append("hooks") }
+
+        // Empty the FIFO before queueing the polls, so the poll replies pair
+        // 1:1 with the interleaved pushes below. A fresh attach leaves a whole
+        // repaint CHAIN outstanding (backfill probe → its scrollback capture →
+        // the resync parked behind that dump → its cursor query), each link
+        // only enqueued when the previous reply lands, so this has to be
+        // answer-until-quiet rather than a fixed push.
+        await settleControlChatter(transport, answered: 3)
+
+        // Queue 20 commands whose replies fire onAgentHooksUpdated…
+        for _ in 0..<20 { controller.pollAgentHooks() }
+        // …then interleave: %output, reply, %output, reply, … in ONE stream.
+        for _ in 0..<20 {
+            transport.pushText("%output %0 x\n%begin 9 9 0\n%end 9 9 0\n")
+        }
+
+        #expect(await waitUntil(timeout: 2.0) { recorder.seq.count == 40 })
+        let expected = (0..<20).flatMap { _ in ["out", "hooks"] }
+        #expect(recorder.seq == expected,
+                "events must interleave exactly as pushed — any swap means the pipeline reordered")
+    }
+
+    @Test("selectWindow resizes the target to our width BEFORE select-window (no wide-render ？ on switch)")
+    func selectWindowPreSizesBeforeActivating() async throws {
+        let (controller, transport) = await makeAttachedController()
+        _ = await waitUntil { await transport.recordedCommands().count >= 3 }
+
+        // Two windows in the active session; @0 active, @1 idle.
+        transport.pushText("""
+        %begin 1 1 0
+        $0 1 main
+        %end 1 1 0
+        %begin 2 2 0
+        $0 @0 0 81x24,0,0,0 1 1 main
+        $0 @1 1 81x24,0,0,1 0 1 work
+        %end 2 2 0
+        %begin 3 3 0
+        %0 @0 0 80 24 1 bash
+        %1 @1 0 80 24 1 vim
+        %end 3 3 0
+
+        """)
+        #expect(await waitUntil { controller.snapshot.windows.count == 2 })
+
+        controller.resizeClient(rows: 35, cols: 70)   // establishes our width
+        controller.selectWindow("@1")
+
+        #expect(await waitUntil {
+            let cmds = await transport.recordedCommands()
+            guard let resize = cmds.firstIndex(where: { $0.hasPrefix("resize-window -t @1 -x 70") }),
+                  let select = cmds.firstIndex(where: { $0.hasPrefix("select-window -t @1") })
+            else { return false }
+            return resize < select
+        }, "the target window must be sized to our width before select-window streams its output")
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // Terminal pool invariants (the Phase 3 architectural promise)
+    // ─────────────────────────────────────────────────────────────
+
+    @Test("terminalView(for:) returns the SAME instance across calls — the Phase 3 invariant")
+    func terminalViewIsIdempotent() async throws {
+        let (controller, _) = await makeAttachedController()
+        let tv1 = controller.terminalView(for: "%0")
+        let tv2 = controller.terminalView(for: "%0")
+        let tv3 = controller.terminalView(for: "%0")
+        #expect(tv1 === tv2)
+        #expect(tv2 === tv3)
+    }
+
+    @Test("Different paneIds get different TerminalView instances")
+    func differentPanesGetDifferentTerminals() async throws {
+        let (controller, _) = await makeAttachedController()
+        let a = controller.terminalView(for: "%0")
+        let b = controller.terminalView(for: "%1")
+        #expect(a !== b)
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // %output routing
+    // ─────────────────────────────────────────────────────────────
+
+    @Test("%output for a pane that already exists feeds the existing coordinator (no terminal duplicated)")
+    func outputUsesExistingTerminal() async throws {
+        let (controller, transport) = await makeAttachedController()
+        let preMint = controller.terminalView(for: "%0")
+
+        transport.pushText("%output %0 hello\n")
+
+        // Race: parser callback hops to MainActor. Give it a beat.
+        _ = await waitUntil(timeout: 0.5) {
+            controller.terminalView(for: "%0") === preMint
+        }
+        #expect(controller.terminalView(for: "%0") === preMint)
+    }
+
+    @Test("%output for a pane we have not yet seen mints a TerminalView on demand (no byte drop)")
+    func outputBeforeListPanesMintsTerminal() async throws {
+        let (controller, transport) = await makeAttachedController()
+
+        transport.pushText("%output %42 surprise\n")
+
+        let appeared = await waitUntil(timeout: 0.5) {
+            controller.snapshot.panes["%42"] != nil
+        }
+        #expect(appeared, "%output before list-panes should still register a placeholder pane")
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // Window lifecycle
+    // ─────────────────────────────────────────────────────────────
+
+    @Test("%window-add re-fires list-windows + list-panes to refresh the world")
+    func windowAddTriggersRefetch() async throws {
+        let (controller, transport) = await makeAttachedController()
+        _ = await waitUntil { await transport.recordedCommands().count >= 3 }
+        let baseline = await transport.recordedCommands().count
+
+        transport.pushText("%window-add @9\n")
+
+        // First confirm the parser callback actually fired on MainActor —
+        // handleWindowAdd seeds a placeholder WindowInfo before sending the
+        // refetch commands. If this assertion holds and the next one fails,
+        // the issue is downstream in send/Task.detached, not in the parser.
+        let snapshotted = await waitUntil(timeout: 2.0) {
+            controller.snapshot.windows["@9"] != nil
+        }
+        #expect(snapshotted, "controller should record the new window in snapshot")
+
+        let refetched = await waitUntil(timeout: 2.0) {
+            await transport.recordedCommands().count >= baseline + 2
+        }
+        #expect(refetched, "expected two refetch commands (list-windows + list-panes)")
+        let cmds = await transport.recordedCommands()
+        let tail = Array(cmds.suffix(2))
+        #expect(tail.contains(where: { $0.hasPrefix("list-windows") }))
+        #expect(tail.contains(where: { $0.hasPrefix("list-panes") }))
+    }
+
+    @Test("%window-close cascades: window removed, panes removed, terminals freed, active window switched")
+    func windowCloseCascadesCleanup() async throws {
+        let (controller, transport) = await makeAttachedController()
+
+        // Seed two windows + pane each via list-* responses.
+        transport.pushText("""
+        %begin 1 1 0
+        $0 1 main
+        %end 1 1 0
+        %begin 2 2 0
+        $0 @0 0 81x24,0,0,0 1 1 main
+        $0 @1 1 81x24,0,0,1 0 1 logs
+        %end 2 2 0
+        %begin 3 3 0
+        %0 @0 0 80 24 1 bash
+        %1 @1 0 80 24 0 tail
+        %end 3 3 0
+
+        """)
+
+        _ = await waitUntil { controller.snapshot.panes.count == 2 }
+        #expect(controller.snapshot.activeWindowId == "@0")
+
+        transport.pushText("%window-close @0\n")
+
+        let cascaded = await waitUntil(timeout: 0.5) {
+            controller.snapshot.windows["@0"] == nil
+                && controller.snapshot.panes["%0"] == nil
+        }
+        #expect(cascaded)
+        #expect(controller.snapshot.activeWindowId == "@1")
+    }
+
+    @Test("%window-renamed mutates the existing window's name without resetting other fields")
+    func windowRenamedMutatesInPlace() async throws {
+        let (controller, transport) = await makeAttachedController()
+        transport.pushText("""
+        %begin 1 1 0
+        $0 1 main
+        %end 1 1 0
+        %begin 2 2 0
+        $0 @0 0 81x24,0,0,0 1 1 main
+        %end 2 2 0
+        %begin 3 3 0
+        %0 @0 0 80 24 1 bash
+        %end 3 3 0
+
+        """)
+        _ = await waitUntil { controller.snapshot.windows["@0"]?.name == "main" }
+
+        transport.pushText("%window-renamed @0 edge\n")
+
+        let renamed = await waitUntil { controller.snapshot.windows["@0"]?.name == "edge" }
+        #expect(renamed)
+        #expect(controller.snapshot.windows["@0"]?.index == 0,
+                "rename should not reset the index")
+    }
+
+    @Test("%layout-change for an unknown window creates the window with that layout")
+    func layoutChangeCreatesUnknownWindow() async throws {
+        let (controller, transport) = await makeAttachedController()
+        transport.pushText("%layout-change @99 81x24,0,0,77\n")
+
+        let appeared = await waitUntil {
+            controller.snapshot.windows["@99"]?.layout == "81x24,0,0,77"
+        }
+        #expect(appeared)
+    }
+
+    @Test("%session-changed updates activeSessionId and creates a session entry if needed")
+    func sessionChangedCreatesEntry() async throws {
+        let (controller, transport) = await makeAttachedController()
+        transport.pushText("%session-changed $42 newone\n")
+
+        let updated = await waitUntil {
+            controller.snapshot.activeSessionId == "$42"
+                && controller.snapshot.sessions["$42"]?.name == "newone"
+        }
+        #expect(updated)
+    }
+
+    @Test("%window-pane-changed updates snapshot.activePaneId for a window of OUR session")
+    func windowPaneChangedUpdatesActivePane() async throws {
+        let (controller, transport) = await makeAttachedController()
+        // Seed: our session $0 owns window @0 (active) with pane %7.
+        transport.pushText("""
+        %begin 1 1 0
+        $0 1 main
+        %end 1 1 0
+        %begin 2 2 0
+        $0 @0 0 81x24,0,0,0 1 1 main
+        %end 2 2 0
+        %begin 3 3 0
+        %7 @0 0 80 24 1 zsh
+        %end 3 3 0
+
+        """)
+        _ = await waitUntil { controller.snapshot.windows["@0"] != nil }
+
+        transport.pushText("%window-pane-changed @0 %7\n")
+        let updated = await waitUntil { controller.snapshot.activePaneId == "%7" }
+        #expect(updated)
+    }
+
+    @Test("%window-pane-changed for a FOREIGN window is ignored")
+    func windowPaneChangedForeignWindowIgnored() async throws {
+        let (controller, transport) = await makeAttachedController()
+        transport.pushText("%window-pane-changed @77 %99\n")
+
+        let updated = await waitUntil { controller.snapshot.activePaneId == "%99" }
+        #expect(!updated, "pane focus in a window we don't know must not steal activePaneId")
+    }
+
+    @Test("%session-window-changed updates snapshot.activeWindowId for OUR session")
+    func sessionWindowChangedUpdatesActiveWindow() async throws {
+        let (controller, transport) = await makeAttachedController()
+        // %session-changed establishes $0 as our active session first.
+        transport.pushText("%session-changed $0 main\n")
+        _ = await waitUntil { controller.snapshot.activeSessionId == "$0" }
+
+        transport.pushText("%session-window-changed $0 @9\n")
+        let updated = await waitUntil { controller.snapshot.activeWindowId == "@9" }
+        #expect(updated)
+    }
+
+    @Test("%session-window-changed for ANOTHER session is ignored")
+    func sessionWindowChangedForeignSessionIgnored() async throws {
+        let (controller, transport) = await makeAttachedController()
+        transport.pushText("%session-changed $0 main\n")
+        _ = await waitUntil { controller.snapshot.activeSessionId == "$0" }
+
+        // A different session ($5) switching windows must not move OUR active window.
+        transport.pushText("%session-window-changed $5 @42\n")
+        let moved = await waitUntil { controller.snapshot.activeWindowId == "@42" }
+        #expect(!moved, "window change of a foreign session must be ignored")
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // %pause auto-resume
+    // ─────────────────────────────────────────────────────────────
+
+    @Test("%pause %paneId triggers an outbound refresh-client -A request to resume the stream")
+    func pauseAutoResumes() async throws {
+        // Keep the controller alive — its parser callbacks capture `self`
+        // weakly, so dropping the reference with `_` lets the callback fire
+        // into a nil self and silently swallow the auto-resume.
+        let (controller, transport) = await makeAttachedController()
+        _ = controller  // keep alive across awaits
+        _ = await waitUntil { await transport.recordedCommands().count >= 3 }
+        let baseline = await transport.recordedCommands().count
+
+        transport.pushText("%pause %3\n")
+
+        let resumed = await waitUntil(timeout: 2.0) {
+            let cmds = await transport.recordedCommands()
+            return cmds.count > baseline
+                && cmds.contains(where: { $0.contains("refresh-client -A %3") })
+        }
+        #expect(resumed)
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // Outbound input
+    // ─────────────────────────────────────────────────────────────
+
+    @Test("sendInput hex-encodes bytes via send-keys -H, preserving control bytes round-trip-safe")
+    func sendInputHexEncodes() async throws {
+        let (controller, transport) = await makeAttachedController()
+        _ = await waitUntil { await transport.recordedCommands().count >= 3 }
+        let baseline = await transport.recordedCommands().count
+
+        // "a\nb" → 0x61 0x0A 0x62
+        controller.sendInput(Data([0x61, 0x0A, 0x62]), paneId: "%0")
+
+        let landed = await waitUntil(timeout: 0.5) {
+            await transport.recordedCommands().count > baseline
+        }
+        #expect(landed)
+        let cmds = await transport.recordedCommands()
+        let sent = cmds.last ?? ""
+        #expect(sent.hasPrefix("send-keys -t %0 -H "))
+        #expect(sent.contains("61 0a 62"))
+    }
+
+    @Test("sendInput with empty data is a no-op (no write)")
+    func sendInputEmptyIsNoOp() async throws {
+        let (controller, transport) = await makeAttachedController()
+        _ = await waitUntil { await transport.recordedCommands().count >= 3 }
+        let baseline = await transport.recordedCommands().count
+
+        controller.sendInput(Data(), paneId: "%0")
+
+        try? await Task.sleep(for: .milliseconds(80))
+        let after = await transport.recordedCommands().count
+        #expect(after == baseline, "empty input must not produce a send-keys")
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // selectWindow optimistic update
+    // ─────────────────────────────────────────────────────────────
+
+    @Test("selectWindow updates snapshot.activeWindowId immediately AND sends select-window to tmux")
+    func selectWindowOptimisticAndCommand() async throws {
+        let (controller, transport) = await makeAttachedController()
+        _ = await waitUntil { await transport.recordedCommands().count >= 3 }
+        let baseline = await transport.recordedCommands().count
+
+        controller.selectWindow("@77")
+        #expect(controller.snapshot.activeWindowId == "@77",
+                "snapshot must update synchronously for the UI")
+
+        let landed = await waitUntil(timeout: 0.5) {
+            await transport.recordedCommands().count > baseline
+        }
+        #expect(landed)
+        // selectWindow now also issues resize-window (fit to client) +
+        // immersive-zoom queries, so assert the batch CONTAINS select-window
+        // rather than checking only the last command.
+        let cmds = await transport.recordedCommands()
+        #expect(cmds.contains { $0.contains("select-window -t @77") })
+    }
+
+    @Test("selectWindow with the current activeWindowId still issues the command (idempotent UI)")
+    func selectWindowSameTargetStillCommands() async throws {
+        let (controller, transport) = await makeAttachedController()
+        _ = await waitUntil { await transport.recordedCommands().count >= 3 }
+        controller.selectWindow("@0")
+        let baseline = await transport.recordedCommands().count
+        controller.selectWindow("@0")
+        let landed = await waitUntil(timeout: 0.5) {
+            await transport.recordedCommands().count > baseline
+        }
+        #expect(landed)
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // resizeClient
+    // ─────────────────────────────────────────────────────────────
+
+    @Test("resizeClient sends refresh-client -C <cols>x<rows>")
+    func resizeClientSendsRefresh() async throws {
+        let (controller, transport) = await makeAttachedController()
+        _ = await waitUntil { await transport.recordedCommands().count >= 3 }
+        let baseline = await transport.recordedCommands().count
+
+        controller.resizeClient(rows: 30, cols: 100)
+
+        let landed = await waitUntil(timeout: 0.5) {
+            await transport.recordedCommands().count > baseline
+        }
+        #expect(landed)
+        // resizeClient also fits the active window, so check the batch
+        // contains the refresh-client rather than only the last command.
+        let cmds = await transport.recordedCommands()
+        #expect(cmds.contains { $0.contains("refresh-client -C 100x30") })
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // %exit / %client-detached
+    // ─────────────────────────────────────────────────────────────
+
+    @Test("%exit flips isAttached=false")
+    func exitFlipsAttachedFalse() async throws {
+        let (controller, transport) = await makeAttachedController()
+        #expect(controller.snapshot.isAttached == true)
+
+        transport.pushText("%exit detached\n")
+
+        let detached = await waitUntil { controller.snapshot.isAttached == false }
+        #expect(detached)
+    }
+
+    @Test("%client-detached is ignored — it's a server-wide broadcast about some client, not necessarily ours")
+    func clientDetachedDoesNotFlipAttached() async throws {
+        let (controller, transport) = await makeAttachedController()
+        #expect(controller.snapshot.isAttached == true)
+        // An unrelated client detaching must NOT drop us to the empty state
+        // (this regressed window switches into a "No tmux sessions" screen).
+        transport.pushText("%client-detached client-7\n")
+        let stillAttached = await waitUntil(timeout: 0.5) {
+            controller.snapshot.isAttached == false
+        }
+        #expect(stillAttached == false, "isAttached must stay true after %client-detached")
+        #expect(controller.snapshot.isAttached == true)
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // Viewed window is LOCAL state (multi-client yank protection)
+    // ─────────────────────────────────────────────────────────────
+
+    /// Attach + seed a two-window / two-pane world where we view @0 (%0).
+    private func seedTwoWindowWorld(
+        _ transport: MockTmuxTransport, controller: TmuxSessionController
+    ) async {
+        _ = await waitUntil { await transport.recordedCommands().count >= 3 }
+        transport.pushText("""
+        %begin 1 1 0
+        $0 1 main
+        %end 1 1 0
+        %begin 2 2 0
+        $0 @0 0 81x24,0,0,0 1 1 main
+        $0 @1 1 81x24,0,0,1 0 1 logs
+        %end 2 2 0
+        %begin 3 3 0
+        %0 @0 0 80 24 1 zsh
+        %1 @1 0 80 24 1 vim
+        %end 3 3 0
+
+        """)
+        _ = await waitUntil {
+            controller.snapshot.activeWindowId == "@0"
+                && controller.snapshot.panes.count == 2
+        }
+    }
+
+    @Test("another client's %session-window-changed does NOT yank our viewed window")
+    func externalWindowChangeIsIgnored() async throws {
+        let (controller, transport) = await makeAttachedController()
+        await seedTwoWindowWorld(transport, controller: controller)
+
+        // A desktop client (or automation) switches the session's current
+        // window to @1. Our view must stay on @0.
+        transport.pushText("%session-window-changed $0 @1\n")
+
+        let yanked = await waitUntil(timeout: 0.5) {
+            controller.snapshot.activeWindowId == "@1"
+        }
+        #expect(yanked == false, "external window switch must not move our view")
+        #expect(controller.snapshot.activeWindowId == "@0")
+    }
+
+    @Test("a discovery refresh flagging another window active does NOT yank our viewed window")
+    func refreshDoesNotFollowServerCurrentWindow() async throws {
+        let (controller, transport) = await makeAttachedController()
+        await seedTwoWindowWorld(transport, controller: controller)
+
+        // Drain the callbacks the seed's pane backfill queued (a
+        // display-message per pane, whose handler queues a capture-pane
+        // each), PLUS the fresh attach's automatic veil+resync of the
+        // active pane %0 (see ensureTerminalsForAllPanes(isFreshAttach:)) —
+        // its frame capture and cursor query, sent right after both panes'
+        // backfill probes — so the NEXT responses line up with the refetch
+        // we trigger below. Order (all within one push, no `await` before
+        // the %window-add notification below, so it's all one FIFO batch):
+        // backfill probe ×2, auto-resync frame, auto-resync cursor,
+        // backfill capture ×2 — matching send order after a 2-pane fresh
+        // attach.
+        transport.pushText("""
+        %begin 4 4 0
+        0 0
+        %end 4 4 0
+        %begin 5 5 0
+        0 0
+        %end 5 5 0
+        %begin 6 6 0
+        %end 6 6 0
+        %begin 7 7 0
+        0 0
+        %end 7 7 0
+        %begin 8 8 0
+        %end 8 8 0
+        %begin 9 9 0
+        %end 9 9 0
+
+        """)
+
+        // Any server event that re-lists windows (here %window-add) queues a
+        // list-windows + list-panes refetch. tmux's reply says @1 is now the
+        // session's current window — our local choice @0 must survive.
+        transport.pushText("%window-add @9\n")
+        _ = await waitUntil { controller.snapshot.windows["@9"] != nil }
+        transport.pushText("""
+        %begin 10 10 0
+        $0 @0 0 81x24,0,0,0 0 1 main
+        $0 @1 1 81x24,0,0,1 1 1 logs
+        %end 10 10 0
+        %begin 11 11 0
+        %0 @0 0 80 24 1 zsh
+        %1 @1 0 80 24 1 vim
+        %end 11 11 0
+
+        """)
+
+        // The refresh landed once @9's placeholder is replaced by the re-list.
+        let refreshed = await waitUntil { controller.snapshot.windows["@9"] == nil }
+        #expect(refreshed, "the pushed list-windows reply should replace the window set")
+        #expect(controller.snapshot.activeWindowId == "@0",
+                "list-windows refresh must not follow tmux's current window")
+    }
+
+    @Test("our own selectWindow's %session-window-changed echo is accepted (idempotent)")
+    func ownSelectWindowEchoAccepted() async throws {
+        let (controller, transport) = await makeAttachedController()
+        await seedTwoWindowWorld(transport, controller: controller)
+
+        controller.selectWindow("@1")   // optimistic: activeWindowId flips now
+        #expect(controller.snapshot.activeWindowId == "@1")
+
+        // tmux confirms our select-window; the echo must keep (not fight) it.
+        transport.pushText("%session-window-changed $0 @1\n")
+        try? await Task.sleep(for: .milliseconds(100))
+        #expect(controller.snapshot.activeWindowId == "@1")
+    }
+
+    @Test("closing the viewed window falls back locally — window AND pane — and tmux's follow-up echo holds")
+    func windowCloseFallsBackWindowAndPane() async throws {
+        let (controller, transport) = await makeAttachedController()
+        await seedTwoWindowWorld(transport, controller: controller)
+
+        // Our window dies (%window-close) leaving only @1 — the close handler
+        // falls back locally, and a subsequent server-side current-window
+        // announcement for @1 must be accepted (it matches our fallback).
+        transport.pushText("%window-close @0\n")
+        let fellBack = await waitUntil {
+            controller.snapshot.activeWindowId == "@1"
+        }
+        #expect(fellBack, "close of the viewed window must land on a survivor")
+        #expect(controller.snapshot.activePaneId == "%1",
+                "activePaneId must move off the dead pane immediately")
+
+        transport.pushText("%session-window-changed $0 @1\n")
+        try? await Task.sleep(for: .milliseconds(100))
+        #expect(controller.snapshot.activeWindowId == "@1")
+    }
+
+    @Test("closing the viewed window does not push select-window (no yanking desktop clients back)")
+    func windowCloseFallbackIsLocalOnly() async throws {
+        let (controller, transport) = await makeAttachedController()
+        await seedTwoWindowWorld(transport, controller: controller)
+        // Drain commands recorded so far, then close the viewed window.
+        let baseline = await transport.recordedCommands().count
+
+        transport.pushText("%window-close @0\n")
+        _ = await waitUntil { controller.snapshot.activeWindowId == "@1" }
+        try? await Task.sleep(for: .milliseconds(150))
+
+        let after = await transport.recordedCommands()
+        let newCommands = after.dropFirst(baseline)
+        #expect(!newCommands.contains { $0.hasPrefix("select-window") },
+                "local fallback must not move tmux's shared current window")
+    }
+}
+
+/// The window-width parser behind the multi-client re-pin: when a layout-change
+/// shows the active window was sized by another (wide desktop) client,
+/// TmuxSessionController reclaims it to the phone width.
+@Suite("tmux layout width")
+struct TmuxLayoutWidthTests {
+    typealias C = TmuxSessionController
+
+    @Test("parses the window width from a simple layout")
+    func simple() {
+        #expect(C.windowWidth(fromLayout: "bb62,355x62,0,0,1") == 355)
+        #expect(C.windowWidth(fromLayout: "1a2b,70x35,0,0,4") == 70)
+    }
+
+    @Test("parses the WINDOW width (first WxH) of a split layout")
+    func split() {
+        #expect(C.windowWidth(fromLayout: "34de,80x24,0,0{40x24,0,0,1,39x24,41,0,2}") == 80)
+    }
+
+    @Test("returns nil for a malformed layout")
+    func malformed() {
+        #expect(C.windowWidth(fromLayout: "") == nil)
+        #expect(C.windowWidth(fromLayout: "justchecksum") == nil)
+    }
+}
+
+/// Per-connection persistence for the last tmux selection — must survive the
+/// ActiveSession's death (protocol switch, app relaunch), which is exactly
+/// when it's needed: the mosh renderer attaches the REMEMBERED session by
+/// name instead of tmux's "most recent".
+@Suite("tmux selection store")
+struct TmuxSelectionStoreTests {
+    private func isolatedDefaults() -> UserDefaults {
+        let name = "moshi-tests-\(UUID().uuidString)"
+        let d = UserDefaults(suiteName: name)!
+        d.removePersistentDomain(forName: name)
+        return d
+    }
+
+    @Test("round-trips a selection per connection id")
+    func roundTrip() {
+        let d = isolatedDefaults()
+        let id = UUID()
+        let sel = TmuxSelection(session: "$3", window: "@7", pane: "%12")
+        TmuxSelectionStore.save(sel, for: id, defaults: d)
+        #expect(TmuxSelectionStore.load(id, defaults: d) == sel)
+        // A different connection id sees nothing.
+        #expect(TmuxSelectionStore.load(UUID(), defaults: d) == nil)
+    }
+
+    @Test("saving nil clears the stored selection")
+    func nilClears() {
+        let d = isolatedDefaults()
+        let id = UUID()
+        TmuxSelectionStore.save(TmuxSelection(session: "$0", window: nil, pane: nil), for: id, defaults: d)
+        TmuxSelectionStore.save(nil, for: id, defaults: d)
+        #expect(TmuxSelectionStore.load(id, defaults: d) == nil)
+    }
+}

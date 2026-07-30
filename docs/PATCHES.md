@@ -1,6 +1,6 @@
 # Forked SwiftTerm patches
 
-Beacon depends on a fork of [SwiftTerm](https://github.com/migueldeicaza/SwiftTerm)
+Ringdown depends on a fork of [SwiftTerm](https://github.com/migueldeicaza/SwiftTerm)
 rather than the upstream release. The fork lives at
 [github.com/Cluas/SwiftTerm](https://github.com/Cluas/SwiftTerm) on branch
 `moshi-hyperlink-underline-fix`, forked from upstream `v1.13.0`. `project.yml`
@@ -61,8 +61,8 @@ correction to the emulator's OSC handling with an accompanying test.
 **Why:** SwiftTerm only treats a run of cells as a clickable link when the
 program explicitly emits an OSC-8 hyperlink. It does ship a built-in
 implicit-link regex for bare URLs, but that regex is too permissive — it also
-matches bare file paths — so Beacon cannot safely turn it on globally. Instead
-Beacon detects `http(s)` URLs in the visible text itself and wants to mark just
+matches bare file paths — so Ringdown cannot safely turn it on globally. Instead
+Ringdown detects `http(s)` URLs in the visible text itself and wants to mark just
 those as links. This patch adds two public entry points: `viewportLineText`
 lets the host read back the text of a viewport line so it can run its own URL
 detection, and `tagPlainTextLink` lets the host tag a detected span as a link
@@ -72,7 +72,7 @@ would use — so host-detected links behave identically to emulator-native ones
 
 **Recommendation:** Would need generalizing first. The underlying mechanism
 (let a host contribute link payloads without emitting OSC-8) is broadly useful,
-but the API surface here was shaped around Beacon's specific need. Upstreaming
+but the API surface here was shaped around Ringdown's specific need. Upstreaming
 it would warrant a review of the method names and signatures and a decision on
 how it should relate to the existing built-in implicit-link support before it
 becomes a permanent part of SwiftTerm's public API.
@@ -96,7 +96,7 @@ focused.
 **Recommendation:** Upstream-mergeable as-is. It is a general iOS interaction
 correctness fix — any host that renders links benefits — and it is localized to
 the tap handler. It may attract a review discussion about tap semantics, but it
-is not Beacon-specific.
+is not Ringdown-specific.
 
 ---
 
@@ -114,8 +114,8 @@ and clears it on `unmarkText`, giving normal visual feedback during composition.
 
 **Recommendation:** Upstream-mergeable as-is (with review). Rendering marked
 text is standard, expected behavior for any iOS text input and benefits every
-CJK user of SwiftTerm, not just Beacon. Because it introduces a rendering path
-it deserves a visual review upstream, but it is not a Beacon-specific behavior.
+CJK user of SwiftTerm, not just Ringdown. Because it introduces a rendering path
+it deserves a visual review upstream, but it is not a Ringdown-specific behavior.
 
 ---
 
@@ -155,7 +155,7 @@ remove a single character from the end of the marked text and send nothing to
 the terminal, matching how a text field behaves while composing.
 
 **Recommendation:** Upstream-mergeable as-is (with review). Like patches 5–6 it
-is a general iOS IME correctness fix, not something specific to Beacon.
+is a general iOS IME correctness fix, not something specific to Ringdown.
 
 ---
 
@@ -165,7 +165,7 @@ is a general iOS IME correctness fix, not something specific to Beacon.
 `isRowWrapped(_:)`).
 
 **Why:** When a URL wraps across two terminal rows because of a soft wrap,
-Beacon needs to join those rows back into one string to open the full link.
+Ringdown needs to join those rows back into one string to open the full link.
 Previously it had to guess whether a row was a soft-wrap continuation by
 comparing the row's text length against its column width — which broke whenever
 a CJK or emoji character earlier on the row threw off the

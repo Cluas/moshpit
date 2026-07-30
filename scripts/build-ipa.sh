@@ -3,16 +3,16 @@
 # free Apple ID. No Team ID needed here — the sideloader handles signing
 # and (with AltServer running) auto-refreshes before the 7-day expiry.
 #
-# Output: build/Beacon.ipa  → drag into AltStore, or `altserver` install.
+# Output: build/Ringdown.ipa  → drag into AltStore, or `altserver` install.
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 CONFIG="${1:-Debug}"
 DERIVED="build/ipa"
-APP="$DERIVED/Build/Products/$CONFIG-iphoneos/Beacon.app"
+APP="$DERIVED/Build/Products/$CONFIG-iphoneos/Ringdown.app"
 
 echo "▶ Building $CONFIG (device, unsigned)…"
-xcodebuild -project Beacon.xcodeproj -scheme Beacon -configuration "$CONFIG" \
+xcodebuild -project Ringdown.xcodeproj -scheme Ringdown -configuration "$CONFIG" \
   -sdk iphoneos -derivedDataPath "$DERIVED" \
   CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build >/dev/null
 
@@ -26,8 +26,8 @@ SHA="$(git rev-parse --short HEAD 2>/dev/null || echo unknown)"
 git diff --quiet HEAD 2>/dev/null || SHA="${SHA}+"
 STAMP="$SHA · $(date '+%m-%d %H:%M')"
 BUILDNUM="$(git rev-list --count HEAD 2>/dev/null || echo 1)"
-/usr/libexec/PlistBuddy -c "Add :BeaconBuildStamp string $STAMP" "$APP/Info.plist" 2>/dev/null \
-  || /usr/libexec/PlistBuddy -c "Set :BeaconBuildStamp $STAMP" "$APP/Info.plist"
+/usr/libexec/PlistBuddy -c "Add :RingdownBuildStamp string $STAMP" "$APP/Info.plist" 2>/dev/null \
+  || /usr/libexec/PlistBuddy -c "Set :RingdownBuildStamp $STAMP" "$APP/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILDNUM" "$APP/Info.plist" 2>/dev/null || true
 # App extensions MUST carry the same CFBundleVersion as the containing app —
 # a mismatch can get the appex rejected at install/validation, which silently
@@ -39,11 +39,11 @@ done
 echo "▶ Stamped build $BUILDNUM ($STAMP)"
 
 echo "▶ Packaging .ipa…"
-rm -rf build/Payload build/Beacon.ipa
+rm -rf build/Payload build/Ringdown.ipa
 mkdir -p build/Payload
 cp -R "$APP" build/Payload/
-( cd build && zip -qry Beacon.ipa Payload )
+( cd build && zip -qry Ringdown.ipa Payload )
 rm -rf build/Payload
 
-echo "✓ build/Beacon.ipa  ($(du -h build/Beacon.ipa | cut -f1))"
-echo "  Install via AltStore (drag in) or: altserver -u <UDID> build/Beacon.ipa"
+echo "✓ build/Ringdown.ipa  ($(du -h build/Ringdown.ipa | cut -f1))"
+echo "  Install via AltStore (drag in) or: altserver -u <UDID> build/Ringdown.ipa"

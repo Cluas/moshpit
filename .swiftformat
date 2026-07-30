@@ -1,11 +1,11 @@
-# SwiftFormat configuration for Beacon
+# SwiftFormat configuration for Ringdown
 #
 # Tuned to match the codebase's existing house style so a format pass is a
 # no-op on already-clean files: 4-space indentation, K&R braces (opening brace
 # on the same line), imports grouped at the top. Run with:  swiftformat .
 
 # Target the app's own Swift; leave generated/vendored trees alone.
---exclude .build,build,Beacon.xcodeproj,design-audit,scripts
+--exclude .build,build,Ringdown.xcodeproj,design-audit,scripts
 
 # Swift language level in use.
 --swiftversion 5.10

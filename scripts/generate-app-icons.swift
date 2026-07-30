@@ -11,13 +11,13 @@
 // the colors it wants.
 //
 // The handset-over-cursor geometry mirrors `RingdownGlyph.Metrics` in
-// Beacon/UI/Brand/RingdownMark.swift — keep the two in step.
+// Ringdown/UI/Brand/RingdownMark.swift — keep the two in step.
 //
 // Usage: swift scripts/generate-app-icons.swift
 // Output:
-//   Beacon/App/IconFiles/AppIcon60x60@{2x,3x}.png              (primary)
-//   Beacon/App/IconFiles/AppIcon-<Tag>60x60@{2x,3x}.png        (alternates)
-//   Beacon/App/Assets.xcassets/AppIcon.appiconset/AppIcon.png  (1024 marketing)
+//   Ringdown/App/IconFiles/AppIcon60x60@{2x,3x}.png              (primary)
+//   Ringdown/App/IconFiles/AppIcon-<Tag>60x60@{2x,3x}.png        (alternates)
+//   Ringdown/App/Assets.xcassets/AppIcon.appiconset/AppIcon.png  (1024 marketing)
 
 import CoreGraphics
 import ImageIO
@@ -241,8 +241,8 @@ func writePNG(_ image: CGImage, to path: String) {
     }
 }
 
-let iconFilesDir = "Beacon/App/IconFiles"
-let appIconSetDir = "Beacon/App/Assets.xcassets/AppIcon.appiconset"
+let iconFilesDir = "Ringdown/App/IconFiles"
+let appIconSetDir = "Ringdown/App/Assets.xcassets/AppIcon.appiconset"
 try? FileManager.default.createDirectory(atPath: iconFilesDir, withIntermediateDirectories: true)
 
 // 60pt @2x/@3x = 120px/180px, matching the AppIcon60x60 convention declared in

@@ -1,8 +1,8 @@
 name: CI
 
-# Build + test on every push and pull request. Beacon is an iOS 18 app whose
+# Build + test on every push and pull request. Ringdown is an iOS 18 app whose
 # Xcode project is generated from project.yml by xcodegen (project.yml is the
-# source of truth; Beacon.xcodeproj is a generated artifact), so CI regenerates
+# source of truth; Ringdown.xcodeproj is a generated artifact), so CI regenerates
 # it from scratch rather than trusting the checked-in copy.
 on:
   push:
@@ -63,19 +63,19 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ env.SPM_CACHE_DIR }}
-          key: spm-${{ runner.os }}-${{ hashFiles('Beacon.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
+          key: spm-${{ runner.os }}-${{ hashFiles('Ringdown.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
           restore-keys: |
             spm-${{ runner.os }}-
 
       - name: Resolve SwiftPM dependencies
         run: |
           xcodebuild -resolvePackageDependencies \
-            -project Beacon.xcodeproj \
-            -scheme Beacon \
+            -project Ringdown.xcodeproj \
+            -scheme Ringdown \
             -clonedSourcePackagesDirPath "$SPM_CACHE_DIR"
 
-      # Run the unit + UI test targets (BeaconTests + BeaconUITests, both wired
-      # into the shared "Beacon" scheme's test action in project.yml).
+      # Run the unit + UI test targets (RingdownTests + RingdownUITests, both wired
+      # into the shared "Ringdown" scheme's test action in project.yml).
       #
       # CODE_SIGNING_ALLOWED=NO: project.yml sets CODE_SIGN_IDENTITY
       # "Apple Development" / CODE_SIGN_STYLE Automatic and expects a
@@ -89,8 +89,8 @@ jobs:
       - name: Build & test
         run: |
           xcodebuild test \
-            -project Beacon.xcodeproj \
-            -scheme Beacon \
+            -project Ringdown.xcodeproj \
+            -scheme Ringdown \
             -destination 'platform=iOS Simulator,name=iPhone 16' \
             -clonedSourcePackagesDirPath "$SPM_CACHE_DIR" \
             CODE_SIGNING_ALLOWED=NO

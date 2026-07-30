@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# T4 — end-to-end self-verification of Beacon over REAL mosh+tmux to localhost.
+# T4 — end-to-end self-verification of Ringdown over REAL mosh+tmux to localhost.
 #
 # What it proves, with screenshots I can inspect myself (no device, no sideload):
 #   * Bug A (garble): renders ASCII + CJK + Japanese + box-drawing through the
@@ -8,14 +8,14 @@
 #     — the visible line numbers must move to older content.
 #
 # Isolation: the app's tmux is pointed at a private socket via a wrapper
-# (BEACON_SEED_TMUX_BIN), so this NEVER touches your real tmux sessions.
+# (RINGDOWN_SEED_TMUX_BIN), so this NEVER touches your real tmux sessions.
 #
 # Prereqs: Remote Login on; ~/.ssh/id_ed25519 in authorized_keys; a booted sim;
 # idb, tmux, mosh-server installed.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-BUNDLE_ID="com.cluas.beacon"
+BUNDLE_ID="com.cluas.ringdown"
 KEY_PATH="${MOSAIC_SSH_KEY:-$HOME/.ssh/id_ed25519}"
 SSH_HOST="127.0.0.1"; SSH_PORT="22"
 TMUX_BIN="$(command -v tmux)"
@@ -41,7 +41,7 @@ chmod +x "$WRAP"
 cat > "$GEN" <<'EOF'
 #!/bin/sh
 clear
-printf '=== BEACON E2E  mosh+tmux  (scroll up to see lower numbers) ===\n'
+printf '=== RINGDOWN E2E  mosh+tmux  (scroll up to see lower numbers) ===\n'
 i=1
 while [ $i -le 60 ]; do
   printf '%03d | ASCII=abcXYZ | CJK=你好世界 | JP=こんにちは | box ┌──┬──┐ │AB│ └──┴──┘\n' "$i"
@@ -62,24 +62,24 @@ SIM_UDID="$(xcrun simctl list devices booted --json | python3 -c 'import json,sy
 SIM_NAME="$(xcrun simctl list devices --json | python3 -c 'import json,sys;u=sys.argv[1];d=json.load(sys.stdin);print(next((x["name"] for ds in d["devices"].values() for x in ds if x.get("udid")==u),""))' "$SIM_UDID")"
 echo "▶ Simulator: $SIM_NAME ($SIM_UDID)"
 
-echo "▶ Building Beacon"
+echo "▶ Building Ringdown"
 DERIVED="$(mktemp -d)"
-xcodebuild -project "$REPO_ROOT/Beacon.xcodeproj" -scheme Beacon -configuration Debug \
+xcodebuild -project "$REPO_ROOT/Ringdown.xcodeproj" -scheme Ringdown -configuration Debug \
   -sdk iphonesimulator -destination "platform=iOS Simulator,id=$SIM_UDID" \
   -derivedDataPath "$DERIVED" CODE_SIGNING_ALLOWED=NO build > "$DERIVED/build.log" 2>&1 \
   || { echo "✘ build failed"; tail -30 "$DERIVED/build.log"; exit 1; }
-APP="$(find "$DERIVED/Build/Products" -name 'Beacon.app' -type d | head -1)"
+APP="$(find "$DERIVED/Build/Products" -name 'Ringdown.app' -type d | head -1)"
 
 echo "▶ Installing + launching (mosh + tmux, isolated socket)"
 xcrun simctl install "$SIM_UDID" "$APP"
 xcrun simctl terminate "$SIM_UDID" "$BUNDLE_ID" 2>/dev/null || true
 KEY_B64="$(base64 -i "$KEY_PATH" | tr -d '\n')"
 xcrun simctl launch "$SIM_UDID" "$BUNDLE_ID" \
-  -BEACON_SEED_USER "$(whoami)" \
-  -BEACON_SEED_KEY_B64 "$KEY_B64" \
-  -BEACON_SEED_HOST "$SSH_HOST" -BEACON_SEED_PORT "$SSH_PORT" \
-  -BEACON_SEED_MOSH 1 -BEACON_SEED_MOSH_BIN "$MOSH_SERVER" \
-  -BEACON_SEED_TMUX 1 -BEACON_SEED_TMUX_BIN "$WRAP" >/dev/null
+  -RINGDOWN_SEED_USER "$(whoami)" \
+  -RINGDOWN_SEED_KEY_B64 "$KEY_B64" \
+  -RINGDOWN_SEED_HOST "$SSH_HOST" -RINGDOWN_SEED_PORT "$SSH_PORT" \
+  -RINGDOWN_SEED_MOSH 1 -RINGDOWN_SEED_MOSH_BIN "$MOSH_SERVER" \
+  -RINGDOWN_SEED_TMUX 1 -RINGDOWN_SEED_TMUX_BIN "$WRAP" >/dev/null
 
 # tmux state on the isolated socket — deterministic PASS/FAIL, no screenshot squinting.
 pane_in_mode() { "$TMUX_BIN" -L "$SOCK" display-message -p -t "$SESSION" '#{pane_in_mode}' 2>/dev/null | tr -d '[:space:]'; }

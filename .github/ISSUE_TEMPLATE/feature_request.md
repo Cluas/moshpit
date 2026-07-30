@@ -1,6 +1,6 @@
 ---
 name: Feature request
-about: Suggest an idea or improvement for Beacon
+about: Suggest an idea or improvement for Ringdown
 title: "[Feature] "
 labels: enhancement
 assignees: ''
@@ -8,7 +8,7 @@ assignees: ''
 
 ## Problem
 
-What are you trying to do that Beacon makes hard or impossible today? Describe
+What are you trying to do that Ringdown makes hard or impossible today? Describe
 the situation, not just the solution.
 
 ## Proposed solution

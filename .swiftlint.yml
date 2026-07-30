@@ -1,4 +1,4 @@
-# SwiftLint configuration for Beacon
+# SwiftLint configuration for Ringdown
 #
 # This lint config is being retrofitted onto a large, pre-existing SwiftUI /
 # actor-heavy codebase, so the goal is signal over noise: keep the rules that
@@ -6,15 +6,15 @@
 # on day one (line/file/body length, etc.). Tighten over time.
 
 included:
-  - Beacon
-  - BeaconIsland
-  - BeaconTests
-  - BeaconUITests
+  - Ringdown
+  - RingdownIsland
+  - RingdownTests
+  - RingdownUITests
 
 excluded:
   - .build
   - build
-  - Beacon.xcodeproj
+  - Ringdown.xcodeproj
   - design-audit
   - scripts
 

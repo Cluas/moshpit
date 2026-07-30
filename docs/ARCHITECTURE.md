@@ -1,11 +1,11 @@
-# Beacon Architecture
+# Ringdown Architecture
 
-Beacon is an iOS SSH / Mosh / tmux terminal client, built with SwiftUI and
+Ringdown is an iOS SSH / Mosh / tmux terminal client, built with SwiftUI and
 targeting iOS 18. It connects to remote servers, runs interactive shells and
 CLI coding agents (Claude Code, Codex, …), and surfaces live agent status on
 the Lock Screen and Dynamic Island. The project is managed by
 [XcodeGen](https://github.com/yonaskolb/XcodeGen) — `project.yml` is the source
-of truth and `Beacon.xcodeproj` is generated from it.
+of truth and `Ringdown.xcodeproj` is generated from it.
 
 This document is an orientation for new contributors: how the code is layered,
 what the core services do, and the handful of designs that are non-obvious
@@ -17,12 +17,12 @@ the named source files alongside it.
 
 ## 1. Layering
 
-The app target lives under `Beacon/`, split into layers by directory. Roughly
+The app target lives under `Ringdown/`, split into layers by directory. Roughly
 top (UI) to bottom (transport):
 
 ```
-Beacon/
-  App/          @main entry (BeaconApp.swift), entitlements, assets, icons
+Ringdown/
+  App/          @main entry (RingdownApp.swift), entitlements, assets, icons
   UI/           SwiftUI surfaces: Home, Terminal, Settings, Shortcuts, Keys,
                 Island, Brand + design tokens (AppTheme, DesignTokens, Components)
   Views/        Terminal view layer (SwiftTerm bridge / coordinators)
@@ -42,8 +42,8 @@ Beacon/
   Island/       Shared agent-status code (see §6) — compiled into BOTH the app
                 and the widget extension
 
-BeaconIsland/   Widget extension target: Live Activity + home/lock widgets
-BeaconTests/    unit tests    BeaconUITests/   UI tests
+RingdownIsland/   Widget extension target: Live Activity + home/lock widgets
+RingdownTests/    unit tests    RingdownUITests/   UI tests
 ```
 
 **Dependency direction is one-way, top-down.** UI/Views observe ViewModels and
@@ -117,7 +117,7 @@ reconnecting.
   `attach` / `new -A` re-lands on the same server-side session so panes and
   scrollback come right back. `isStopping` / `isReconnecting` guard against a
   keepalive tick and a death callback fighting each other.
-- **Window-size pins.** Beacon pins the tmux window to the phone grid while the
+- **Window-size pins.** Ringdown pins the tmux window to the phone grid while the
   terminal is on screen. On backgrounding the hub hands those pins back
   (`releaseWindowPinsForBackground`) so a desktop client sharing the window
   isn't stranded at phone width; `repinForeground()` (only for the currently
@@ -163,9 +163,9 @@ Observation-free *parser* of that stream (byte-level `%output` handling,
 octal-escape decoding, `%begin/%end` block tracking); `TmuxSessionController`
 (`@MainActor @Observable`) is the *state owner* that turns those callbacks into
 a single observable `TmuxSnapshot` (sessions/windows/panes) plus a pool of
-per-pane SwiftTerm `TerminalView`s. This is what powers Beacon's native
+per-pane SwiftTerm `TerminalView`s. This is what powers Ringdown's native
 breadcrumb and the Sessions/Windows/Panes sheets — the UI reads live tmux state
-instead of scraping a rendered TUI. **Beacon never creates or modifies tmux
+instead of scraping a rendered TUI. **Ringdown never creates or modifies tmux
 sessions on its own**: it attaches the user's existing sessions (most recent),
 and if the server has none it shows an empty state and lets the user create the
 first one explicitly.
@@ -175,7 +175,7 @@ first one explicitly.
 You cannot run tmux `-CC` over mosh: mosh transmits *screen diffs*, not the raw
 line-framed control stream `-CC` needs (verified empirically). So when the user
 wants **both** roaming (mosh) **and** the native session/window/pane UI (tmux
-`-CC`), Beacon runs **two transports at once** against the same tmux server:
+`-CC`), Ringdown runs **two transports at once** against the same tmux server:
 
 ```
                     ┌─────────────────────────── remote host ──┐
@@ -216,7 +216,7 @@ teardown; `TmuxSelectionStore` lets a reconnect re-target the right session.
 
 ## 5. Capability probe & degrade
 
-Before committing to tmux `-CC` or mosh, Beacon probes the host so a missing
+Before committing to tmux `-CC` or mosh, Ringdown probes the host so a missing
 dependency degrades gracefully instead of stalling on a failing command.
 
 - **The probe.** `HostCapabilities.probeCommand` runs over the first SSH
@@ -249,7 +249,7 @@ dependency degrades gracefully instead of stalling on a failing command.
 
 ## 6. Concurrency model
 
-Beacon leans hard on Swift's actor model to keep transport bytes, terminal
+Ringdown leans hard on Swift's actor model to keep transport bytes, terminal
 rendering, and UI state from racing.
 
 - **`SessionHub` / `ActiveSession` / `TmuxSessionController` are `@MainActor`.**
@@ -264,7 +264,7 @@ rendering, and UI state from racing.
 
 Independently-spawned `Task {}`s have **no ordering guarantee relative to each
 other**. When several must reach a transport in the exact order they were
-issued, Beacon chains them explicitly instead of firing bare tasks:
+issued, Ringdown chains them explicitly instead of firing bare tasks:
 
 - **`ActiveSession.moshWriteChain`** serializes mosh keystroke writes. Without
   it, typing a word and immediately tapping an arrow key could deliver the arrow
@@ -290,18 +290,18 @@ keepalive or attach loops.
 
 ---
 
-## 7. The BeaconIsland widget extension & App Group
+## 7. The RingdownIsland widget extension & App Group
 
-`BeaconIsland/` is a separate widget-extension target that renders the Vibe
+`RingdownIsland/` is a separate widget-extension target that renders the Vibe
 Island: a Dynamic Island pill / Lock Screen Live Activity, plus a home/lock
 timeline widget, both showing live agent status. The types shared across the
-app/extension boundary live in `Beacon/Island/` (compiled into both targets):
+app/extension boundary live in `Ringdown/Island/` (compiled into both targets):
 `AgentActivityAttributes` (the Live Activity payload), `AgentWidgetState` +
 `AgentWidgetStore` (the App Group snapshot), and `AgentActivityMonitor` (the
 `@MainActor` producer that watches tmux panes and computes agent state).
 
 `AgentActivityMonitor` observes each session's `TmuxSessionController` — pane
-output, bells, and the precise per-pane `@beacon_*` hook stamps that coding
+output, bells, and the precise per-pane `@ringdown_*` hook stamps that coding
 agents write into tmux user options — and computes an ordered list of active
 agents (working / needs-you / done / idle). On every sync it feeds that list to
 the widget extension by **two different mechanisms**, because the two widget
@@ -319,11 +319,11 @@ kinds are updated in fundamentally different ways:
    socket.
 
 2. **WidgetKit timeline pulling a JSON snapshot → the home/lock widget.** A
-   `StaticConfiguration` timeline widget (`BeaconStatusWidget`) **cannot** read
+   `StaticConfiguration` timeline widget (`RingdownStatusWidget`) **cannot** read
    the pushed ActivityKit state — a `TimelineProvider` runs on the OS's own
    schedule, in the extension process, with no access to the app's memory. So
    the monitor also **writes** the same agent list as JSON into a shared **App
-   Group** container (`group.com.cluas.beacon`, via `AgentWidgetStore` backed by
+   Group** container (`group.com.cluas.ringdown`, via `AgentWidgetStore` backed by
    a suite `UserDefaults`) and calls `WidgetCenter.shared.reloadAllTimelines()`
    to nudge a refresh. The widget's provider `read()`s that snapshot in
    `getTimeline`. On the simulator the App Group works without provisioning; on
@@ -345,5 +345,5 @@ dictated by what each widget kind can actually see.
 - **Mosh SSP:** `MoshTransport.handleDatagram` (the diff-apply state machine)
   and `MoshBootstrap`.
 - **Widget bridge:** `AgentActivityMonitor.sync` / `writeWidgetSnapshot`, then
-  `BeaconIsland/BeaconIslandWidget.swift` (Live Activity) and
-  `BeaconIsland/BeaconStatusWidget.swift` (timeline).
+  `RingdownIsland/RingdownIslandWidget.swift` (Live Activity) and
+  `RingdownIsland/RingdownStatusWidget.swift` (timeline).
