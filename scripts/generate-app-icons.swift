@@ -221,6 +221,25 @@ func renderIcon(spec: IconSpec, pixelSize: Int) -> CGImage? {
     return ctx.makeImage()
 }
 
+/// Redraws an image into a context that has no alpha channel at all.
+///
+/// The App Store's 1024 marketing icon is rejected on upload (ITMS-90717) if
+/// its PNG carries an alpha channel — even a fully opaque one, which is exactly
+/// what the `premultipliedLast` render context above produces. Every icon here
+/// is full-bleed, so this changes no pixel; it only changes what the PNG file
+/// declares about itself. The home-screen `IconFiles` PNGs are left alone: iOS
+/// composites those itself and never complains.
+func flattened(_ image: CGImage) -> CGImage? {
+    guard let ctx = CGContext(
+        data: nil, width: image.width, height: image.height,
+        bitsPerComponent: 8, bytesPerRow: 0,
+        space: CGColorSpaceCreateDeviceRGB(),
+        bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue
+    ) else { return nil }
+    ctx.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+    return ctx.makeImage()
+}
+
 func writePNG(_ image: CGImage, to path: String) {
     let url = URL(fileURLWithPath: path) as CFURL
     let type: CFString
@@ -258,8 +277,11 @@ for spec in specs {
         }
         writePNG(image, to: "\(iconFilesDir)/\(baseName)60x60\(size.scale).png")
     }
-    // The primary icon also supplies the 1024 marketing asset.
-    if spec.fileTag == nil, let marketing = renderIcon(spec: spec, pixelSize: 1024) {
-        writePNG(marketing, to: "\(appIconSetDir)/AppIcon.png")
+    // The primary icon also supplies the 1024 marketing asset, flattened so the
+    // App Store will accept it.
+    if spec.fileTag == nil,
+       let marketing = renderIcon(spec: spec, pixelSize: 1024),
+       let opaque = flattened(marketing) {
+        writePNG(opaque, to: "\(appIconSetDir)/AppIcon.png")
     }
 }

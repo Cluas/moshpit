@@ -19,9 +19,23 @@ settings:
   base:
     SWIFT_VERSION: "5.9"
     MARKETING_VERSION: "1.0.0"
+    # Only the floor for local builds. A release overrides it from the command
+    # line (scripts/release-archive.sh) — App Store Connect requires a build
+    # number that is unique and monotonically increasing within a version, and
+    # bumping it here by hand is exactly the step that gets forgotten.
     CURRENT_PROJECT_VERSION: 1
-    CODE_SIGN_IDENTITY: "Apple Development"
     CODE_SIGN_STYLE: Automatic
+  configs:
+    Debug:
+      # Pinned for Debug only — it MUST NOT sit in `base`. An App Store archive
+      # has to be signed "Apple Distribution", and an explicit identity in base
+      # beats automatic signing's own per-action choice: the archive would then
+      # be built with a development certificate, which App Store Connect
+      # rejects on upload. Release deliberately sets nothing, so automatic
+      # signing keeps picking Development for a plain `build` (including the
+      # free-Personal-Team path in docs/install-free-account.md, which builds
+      # Debug anyway) and Distribution when archiving.
+      CODE_SIGN_IDENTITY: "Apple Development"
 
 packages:
   SwiftTerm:
@@ -91,6 +105,24 @@ targets:
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ENABLE_PREVIEWS: YES
         SWIFT_EMIT_LOC_STRINGS: YES
+      configs:
+        # Both of these exist to beat XcodeGen's own setting preset for iOS
+        # application targets, which injects a legacy
+        # `CODE_SIGN_IDENTITY = "iPhone Developer"` into EVERY config of this
+        # target. Target settings win over the project-level ones above, so
+        # fixing this at the project level alone silently achieves nothing and
+        # a Release archive still goes out development-signed — which App Store
+        # Connect rejects. Verify after `xcodegen generate` with:
+        #   grep -c 'iPhone Developer' Ringdown.xcodeproj/project.pbxproj   # 0
+        #
+        # Note this means a local Release build (the scheme's Profile action)
+        # now wants a distribution certificate, so a free Personal Team has to
+        # stay on Debug — which is what docs/install-free-account.md and
+        # scripts/build-ipa.sh already do.
+        Debug:
+          CODE_SIGN_IDENTITY: "Apple Development"
+        Release:
+          CODE_SIGN_IDENTITY: "Apple Distribution"
     dependencies:
       - package: SwiftTerm
       - package: Citadel
@@ -150,6 +182,26 @@ targets:
                 - AppIcon-Hail60x60
               UIPrerenderedIcon: false
         NSSupportsLiveActivities: true
+        # Answers App Store Connect's export-compliance question in the binary
+        # instead of leaving every upload parked on "Missing Compliance".
+        #
+        # Settled as `true`: Ringdown ships its own strong confidentiality
+        # crypto — Citadel/swift-crypto for SSH, plus the OCB3/AES + ChaCha20
+        # code under Services/Mosh — so none of the narrow cases Apple treats
+        # as exempt apply (OS-provided crypto only, authentication-only, DRM,
+        # <=56-bit keys, medical). The looser reading available to a public MIT
+        # codebase (publicly-available source, EAR 740.13(e)/742.15(b)) was
+        # considered and deliberately not taken: `true` is the conservative
+        # answer and costs nothing at build time.
+        #
+        # What that implies at release time, which no build setting can do for
+        # you: the first submission of a version asks the follow-up questions in
+        # App Store Connect (the answer is standard algorithms, nothing
+        # proprietary), and the account holder carries the mass-market
+        # self-classification duty for ECCN 5D992.c — the annual report to
+        # BIS/NSA. If an ERN or CCATS code ever comes back, declare it beside
+        # this key as ITSEncryptionExportComplianceCode.
+        ITSAppUsesNonExemptEncryption: true
         CFBundleShortVersionString: "$(MARKETING_VERSION)"
         CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         UILaunchScreen:
