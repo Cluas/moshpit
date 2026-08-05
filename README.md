@@ -16,8 +16,11 @@ truth and `Ringdown.xcodeproj` is generated from it.
 
 ## Features
 
-- **Fully free.** No subscriptions, no paywall, no in-app purchases — every feature
-  is available to everyone.
+- **A one-time purchase, not a subscription.** One price unlocks every feature —
+  no subscription, no in-app purchases, no feature tiers, no per-host limits, and
+  no upsell for the parts you actually came for. Ringdown is MIT-licensed as well,
+  so [building and sideloading it yourself](docs/install-free-account.md) with a
+  free Apple ID is a first-class path rather than a loophole.
 - **Mosh with roaming.** Sessions survive network handoff (Wi-Fi ↔ cellular) and IP
   changes, reconnecting automatically instead of dropping your shell.
 - **tmux integration.** Attach to existing tmux sessions with native window and pane

@@ -1,7 +1,9 @@
 # 本地安装 Ringdown 到 iPhone(免费 Apple 开发者账号)
 
-免费 Apple ID 足以把 Ringdown 装到你自己的 iPhone——本项目 entitlements 为空、无
-App Groups / 推送,Live Activity 只是个 Info.plist 开关,全部免费档可用。
+免费 Apple ID 足以把 Ringdown 装到你自己的 iPhone——没有推送、没有后台模式,Live Activity
+只是个 Info.plist 开关。唯一的 entitlement 是一个 App Group(`group.com.cluas.ringdown`,
+主 App 与灵动岛扩展靠它共享 Agent 状态);免费账号签它偶尔会失败,遇到就看下面「常见问题」
+里剥掉扩展只验主 App 的做法。
 
 ## 免费账号能做 / 不能做
 
