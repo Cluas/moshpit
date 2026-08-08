@@ -3,38 +3,38 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Offhook — Privacy Policy</title>
+<title>Privacy Policy — Offhook</title>
+<meta name="description" content="Offhook collects nothing. No analytics, no crash reporting, no accounts, and no servers of ours.">
 <link rel="icon" type="image/png" href="/icon-192.png">
-<style>
-:root{color-scheme:dark}
-*{box-sizing:border-box}
-body{margin:0;background:#06070A;color:rgba(244,241,232,.96);
-  font:16px/1.7 -apple-system,"PingFang SC",system-ui,sans-serif}
-.wrap{max-width:44rem;margin:0 auto;padding:3rem 1.25rem 5rem}
-a{color:#9b8cff}
-h1{font-size:1.7rem;letter-spacing:-.01em}
-h2{font-size:1.15rem;margin-top:2rem;color:rgba(232,227,214,.9)}
-p,li{color:rgba(232,227,214,.78)}
-em{color:#5EE3D9;font-style:normal}
-.meta{font:12.5px ui-monospace,Menlo,monospace;color:rgba(199,193,181,.5)}
-hr{border:none;border-top:1px solid rgba(255,255,255,.08);margin:2.5rem 0}
-nav{font-size:13.5px;margin-bottom:2rem}
-</style>
+<link rel="stylesheet" href="/offhook.css?v=13">
 </head>
-<body><div class="wrap">
-<nav><a href="./">← Offhook</a></nav>
-<h1>Privacy Policy</h1>
-<p class="meta">Effective: 2026-08-07 · Contact: see <a href="/support">Support</a></p>
+<body>
 
-<p>Offhook is a terminal. Your data is none of our business, and the app is
+<div class="shell">
+  <header class="top">
+    <a class="brand" href="/"><img src="/icon-192.png" alt="" width="30" height="30">Offhook</a>
+    <div class="topright">
+      <a class="lang" href="/docs">Docs</a>
+      <a class="lang" href="/guides">Guides</a>
+      <a class="lang" href="/compare">Compare</a>
+      <a class="lang" href="/pricing">Pricing</a>
+    </div>
+  </header>
+</div>
+
+<div class="shell">
+  <section class="band doc" style="border-top:none">
+<h2>Privacy Policy</h2>
+<p class="meta">Effective: 2026-08-07 · Contact: see <a href="/support">Support</a></p>
+<p class="txt">Offhook is a terminal. Your data is none of our business, and the app is
 built so it never becomes our business.</p>
 
-<h2>What we collect</h2>
-<p><strong>Nothing.</strong> Offhook has no analytics, no crash-reporting
+<h3>What we collect</h3>
+<p class="txt"><strong>Nothing.</strong> Offhook has no analytics, no crash-reporting
 service, no advertising SDKs, no tracking, and no accounts. We run no servers
 that your data could be sent to.</p>
 
-<h2>Where your data lives</h2>
+<h3>Where your data lives</h3>
 <ul>
 <li><strong>Connection details</strong> (hosts, usernames, ports) are stored on
 your device.</li>
@@ -45,31 +45,31 @@ except as part of the SSH/Mosh handshake with the server <em>you</em> configured
 and your servers, encrypted by SSH or Mosh (AES-128-OCB3), and on your screen.</li>
 </ul>
 
-<h2>Network connections</h2>
-<p>Offhook connects exclusively to servers you add. There are no first-party or
+<h3>Network connections</h3>
+<p class="txt">Offhook connects exclusively to servers you add. There are no first-party or
 third-party endpoints: no telemetry, no update pings, no font or CDN fetches.
 The Local Network permission is requested only so SSH/Mosh can reach hosts on
 your own LAN (e.g. 192.168.x.x); iOS would otherwise silently drop that traffic.</p>
 
-<h2>Notifications &amp; Live Activities</h2>
-<p>Agent-status notifications and the Dynamic Island Live Activity are generated
+<h3>Notifications &amp; Live Activities</h3>
+<p class="txt">Agent-status notifications and the Dynamic Island Live Activity are generated
 <em>on your device</em> from your own session data. They use no push servers; we
 could not see them if we wanted to. The lock-screen preview of what an agent is
 asking can be turned off in Settings.</p>
 
-<h2>Purchases</h2>
-<p>Offhook is a one-time purchase handled entirely by Apple's App Store. We
+<h3>Purchases</h3>
+<p class="txt">Offhook is a one-time purchase handled entirely by Apple's App Store. We
 receive no payment information.</p>
 
-<h2>Changes</h2>
-<p>If this policy ever changes, the new version ships with an app update and is
+<h3>Changes</h3>
+<p class="txt">If this policy ever changes, the new version ships with an app update and is
 dated at the top. Since the app collects nothing, the realistic change is
 wording, not substance.</p>
 
 <hr>
 
-<h1>隐私政策</h1>
-<p>Offhook 是一个终端。<strong>我们不收集任何数据</strong>：无分析、无崩溃上报服务、
+<h3>隐私政策</h3>
+<p class="txt">Offhook 是一个终端。<strong>我们不收集任何数据</strong>：无分析、无崩溃上报服务、
 无广告 SDK、无跟踪、无账号，也没有任何我们自己的服务器。</p>
 <ul>
 <li>连接信息存于你的设备；密码与私钥存于 iOS 钥匙串（有 Secure Enclave 则由其保护），
@@ -79,5 +79,20 @@ wording, not substance.</p>
 <li>通知与灵动岛均在设备本地生成，不经任何推送服务器。</li>
 <li>购买由 Apple App Store 处理，我们接触不到任何支付信息。</li>
 </ul>
-</div></body>
+  </section>
+</div>
+
+<footer>
+  <div class="shell">
+    <p class="signoff">Off the hook, still on the line.</p>
+    <nav class="fnav">
+      <a href="/">Home</a><a href="/docs">Docs</a><a href="/guides">Guides</a>
+      <a href="/compare">Compare</a><a href="/pricing">Pricing</a>
+      <a href="/privacy">Privacy</a><a href="/support">Support</a>
+    </nav>
+    <p class="legal">© 2026 Offhook · SSH · Mosh · tmux · herdr · iPhone</p>
+  </div>
+</footer>
+
+</body>
 </html>

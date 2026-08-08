@@ -3,53 +3,72 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Offhook — Support</title>
+<title>Support — Offhook</title>
+<meta name="description" content="How to reach us, and answers to the questions that come up most often.">
 <link rel="icon" type="image/png" href="/icon-192.png">
-<style>
-:root{color-scheme:dark}
-*{box-sizing:border-box}
-body{margin:0;background:#06070A;color:rgba(244,241,232,.96);
-  font:16px/1.7 -apple-system,"PingFang SC",system-ui,sans-serif}
-.wrap{max-width:44rem;margin:0 auto;padding:3rem 1.25rem 5rem}
-a{color:#9b8cff}
-h1{font-size:1.7rem}
-h2{font-size:1.1rem;margin-top:2rem;color:rgba(232,227,214,.9)}
-p,li{color:rgba(232,227,214,.78)}
-code{font:13px ui-monospace,Menlo,monospace;background:#171B22;
-  border:1px solid rgba(255,255,255,.08);border-radius:6px;padding:.15rem .45rem}
-nav{font-size:13.5px;margin-bottom:2rem}
-</style>
+<link rel="stylesheet" href="/offhook.css?v=13">
 </head>
-<body><div class="wrap">
-<nav><a href="./">← Offhook</a></nav>
-<h1>Support</h1>
+<body>
 
-<h2>Get in touch</h2>
-<p>Questions, bug reports, feature requests — the fastest route is the public
-issue tracker (link coming with launch). Until then, reach us at
-<a href="mailto:support@offhook.example">support@offhook.example</a>.
-<!-- TODO: replace with the real support address before submitting to ASC --></p>
+<div class="shell">
+  <header class="top">
+    <a class="brand" href="/"><img src="/icon-192.png" alt="" width="30" height="30">Offhook</a>
+    <div class="topright">
+      <a class="lang" href="/docs">Docs</a>
+      <a class="lang" href="/guides">Guides</a>
+      <a class="lang" href="/compare">Compare</a>
+      <a class="lang" href="/pricing">Pricing</a>
+    </div>
+  </header>
+</div>
 
-<h2>Common questions</h2>
+<div class="shell">
+  <section class="band doc" style="border-top:none">
+<h2>Support</h2>
 
-<h2 style="font-size:1rem">Does Offhook need anything installed on my server?</h2>
-<p>No. It's a standard SSH client out of the box. <code>mosh</code>,
+<h3>Get in touch</h3>
+<p class="txt">Questions, bug reports and feature requests all go to the same place, and
+the address opens with the App Store listing.
+<!-- BLOCKER: App Store Connect requires a working support URL and contact at
+     submission. Put the real address here before submitting; the previous
+     placeholder (support@offhook.example) was a live mailto to a domain that
+     does not exist, which is worse than saying nothing. --></p>
+
+<h3>Common questions</h3>
+
+<h4>Does Offhook need anything installed on my server?</h4>
+<p class="txt">No. It's a standard SSH client out of the box. <code>mosh</code>,
 <code>tmux</code> and <code>herdr</code> are each optional — if one is missing,
 Offhook tells you and offers the install command; it never installs anything
 silently and never falls back to a different multiplexer behind your back.</p>
 
-<h2 style="font-size:1rem">How does agent status work?</h2>
-<p>On <code>herdr</code>, agent state is part of the protocol — zero setup.
+<h4>How does agent status work?</h4>
+<p class="txt">On <code>herdr</code>, agent state is part of the protocol — zero setup.
 On <code>tmux</code>, a one-line hook install (offered in Settings) lets
 Claude Code and friends report state; without it, Offhook falls back to
 output heuristics.</p>
 
-<h2 style="font-size:1rem">Why does iOS ask for Local Network permission?</h2>
-<p>Only so SSH/Mosh can reach hosts on your own LAN (192.168.x.x and similar).
+<h4>Why does iOS ask for Local Network permission?</h4>
+<p class="txt">Only so SSH/Mosh can reach hosts on your own LAN (192.168.x.x and similar).
 Deny it and internet hosts still work fine.</p>
 
-<h2 style="font-size:1rem">Is my data collected?</h2>
-<p>No — nothing is. See the <a href="/privacy">privacy policy</a>;
+<h4>Is my data collected?</h4>
+<p class="txt">No — nothing is. See the <a href="/privacy">privacy policy</a>;
 the App Store label is <em>Data Not Collected</em>.</p>
-</div></body>
+  </section>
+</div>
+
+<footer>
+  <div class="shell">
+    <p class="signoff">Off the hook, still on the line.</p>
+    <nav class="fnav">
+      <a href="/">Home</a><a href="/docs">Docs</a><a href="/guides">Guides</a>
+      <a href="/compare">Compare</a><a href="/pricing">Pricing</a>
+      <a href="/privacy">Privacy</a><a href="/support">Support</a>
+    </nav>
+    <p class="legal">© 2026 Offhook · SSH · Mosh · tmux · herdr · iPhone</p>
+  </div>
+</footer>
+
+</body>
 </html>
