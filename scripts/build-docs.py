@@ -251,7 +251,8 @@ def process(slug: str, zh: bool) -> bool:
     # Idempotence: remove anything a previous run injected.
     for a, b in ((BEGIN, END), (TOC_BEGIN, TOC_END), (NEXT_BEGIN, NEXT_END)):
         s = strip(a, b, s)
-    s = s.replace('<div class="dwrap">', "").replace("<!--/dwrap-->", "")
+    s = re.sub(r'<div class="dwrap[^"]*">\s*', "", s)
+    s = s.replace("<!--/dwrap-->", "")
     s = re.sub(r'\s*<div class="dbody">|</div><!--dbody-->', "", s)
 
     s = anchor_headings(s)
@@ -276,14 +277,23 @@ def process(slug: str, zh: bool) -> bool:
     class _M:
         pass
     m = _M(); m.start = lambda: first; m.end = lambda: end
+    # A page whose content is a wide comparison table cannot also carry the
+    # contents rail: five columns need ~884px and the reading column offers
+    # 736, so the last column fell off the edge and the table scrolled
+    # sideways — on the one page where the table IS the argument. Such pages
+    # give up the rail and take its width instead.
+    wide = any(
+        len(re.findall(r"<th\b", head)) >= 5
+        for head in re.findall(r"<thead[^>]*>(.*?)</thead>", block, re.S)
+    )
     shell = (
-        '<div class="dwrap">\n'
+        ('<div class="dwrap notoc">\n' if wide else '<div class="dwrap">\n')
         + sidebar(slug, zh) + "\n"
         + '<div class="dbody">\n'
         + block + "\n"
         + prevnext(slug, zh) + "\n"
         + "</div><!--dbody-->\n"
-        + toc(block, zh) + "\n"
+        + ("" if wide else toc(block, zh) + "\n")
         + "</div><!--/dwrap-->"
     )
     s = s[: m.start()] + shell + s[m.end():]

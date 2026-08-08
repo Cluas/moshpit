@@ -450,12 +450,15 @@ footer{border-top:1px solid var(--line);padding:3rem 0 4rem;text-align:center}
    and the contents column disappears, because a table of
    contents on a 390pt screen is just a second, worse menu.
    ───────────────────────────────────────────────────────────── */
-.dwrap{max-width:72rem;margin:0 auto;padding:0 1.5rem;
-  display:grid;grid-template-columns:15rem minmax(0,36rem) 13rem;gap:2.5rem;
+.dwrap{max-width:82rem;margin:0 auto;padding:0 1.5rem;
+  display:grid;grid-template-columns:15rem minmax(0,1fr) 13rem;gap:2.5rem;
   align-items:start;justify-content:center}
 /* Docs pages only: give the header the same width as the grid below it, so
    the wordmark sits over the sidebar and the nav ends over the contents. */
-body:has(.dwrap) .shell:has(> .top){max-width:72rem}
+body:has(.dwrap) .shell:has(> .top){max-width:82rem}
+/* Pages that traded the contents rail for table width (see build-docs.py). */
+.dwrap.notoc{grid-template-columns:15rem minmax(0,1fr)}
+.dwrap.notoc > .dbody{grid-column:2}
 /* Everything that is not the nav or the contents belongs in the middle column,
    stated explicitly rather than relying on source order. These pages are
    hand-written (some by different authors) and one stray </div> is enough to
