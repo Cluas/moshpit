@@ -61,6 +61,11 @@ docker buildx build --builder multiarch --platform "$PLATFORMS" \
   -t "$REPO:$TAG" -t "$REPO:latest" --push "$SITE"
 
 say "Rolling out"
+# Apply the manifest first: it is what removes the old ConfigMap volume
+# mounts, which sat on exactly the paths the image serves from. Setting the
+# image without it leaves nginx reading the mounted ConfigMaps — the deploy
+# reports success and ships nothing.
+kubectl apply -f "$SITE/k8s.yaml"
 kubectl set image deploy/offhook-site "nginx=$REPO:$TAG"
 kubectl rollout status deploy/offhook-site --timeout=180s
 

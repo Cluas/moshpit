@@ -36,29 +36,24 @@ spec:
     metadata:
       labels: { app: offhook-site }
     spec:
+      imagePullSecrets:
+        - name: ghcr-secret
       containers:
+        # The site is baked into this image. There are deliberately no volume
+        # mounts: the ConfigMaps this used to run on mounted at exactly
+        # /usr/share/nginx/html and /usr/share/nginx/html/assets, so leaving
+        # them in place would shadow every file in the image and the switch
+        # would silently be a no-op — new image, old content, no error.
+        # scripts/deploy-site.sh replaces the tag below on each deploy.
         - name: nginx
-          image: nginx:1.27-alpine
+          image: ghcr.io/cluas/offhook-site:latest
+          imagePullPolicy: IfNotPresent
           ports: [{ containerPort: 80 }]
           readinessProbe:
             httpGet: { path: /, port: 80 }
-          volumeMounts:
-            - name: site
-              mountPath: /usr/share/nginx/html
-              readOnly: true
-            - name: assets
-              mountPath: /usr/share/nginx/html/assets
-              readOnly: true
-            - name: nginx-conf
-              mountPath: /etc/nginx/conf.d
-              readOnly: true
-      volumes:
-        - name: site
-          configMap: { name: offhook-site }
-        - name: assets
-          configMap: { name: offhook-assets }
-        - name: nginx-conf
-          configMap: { name: offhook-nginx }
+          resources:
+            requests: { cpu: 10m, memory: 24Mi }
+            limits: { memory: 128Mi }
 ---
 apiVersion: v1
 kind: Service

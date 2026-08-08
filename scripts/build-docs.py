@@ -297,7 +297,7 @@ def process(slug: str, zh: bool) -> bool:
             f'    <input id="dq" type="search" autocomplete="off" placeholder="{"搜索文档…" if zh else "Search the docs…"}">\n'
             '    <div id="dres"></div>\n'
             "  </div>\n</div>\n"
-            '<script src="/docs-search.js?v=13" defer></script>\n</body>',
+            '<script src="/docs-search.js?v=15" defer></script>\n</body>',
         )
 
     # Pages are served at pretty paths (/docs/herdr), so a relative asset
