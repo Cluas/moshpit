@@ -1,0 +1,259 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>How Offhook compares — Offhook</title>
+<meta name="description" content="An honest comparison of iPhone terminals: where Offhook is the right tool for agent work, and the cases where another app serves you better.">
+<link rel="icon" type="image/png" href="/icon-192.png">
+<link rel="alternate" hreflang="zh-Hans" href="https://offhook.cluas.eu.org/zh/compare">
+<link rel="stylesheet" href="/offhook.css?v=7">
+</head>
+<body>
+
+<div class="shell">
+  <header class="top">
+    <a class="brand" href="./"><img src="/icon-192.png" alt="" width="30" height="30">Offhook</a>
+    <div class="topright">
+      <a class="lang" href="/docs">Docs</a>
+      <a class="lang" href="/guides">Guides</a>
+      <a class="lang" href="/compare">Compare</a>
+      <a class="lang" href="/zh/compare" hreflang="zh-Hans" lang="zh-Hans">中文</a>
+    </div>
+  </header>
+</div>
+<div class="dwrap">
+<!--DOCSHELL:BEGIN-->
+<aside class="dnav" id="dnav">
+  <a class="dhome" href="/">← Back to the app</a>
+  <p class="dtitle">Docs</p>
+  <button class="dsearchbtn" type="button" data-docsearch><span>Search the docs…</span><kbd>⌘K</kbd></button>
+  <nav><p class="dsec">Start</p><a href="/docs/intro">What Offhook does</a><a href="/docs/setup">Set up a connection</a><a href="/docs/first-session">Run your first session</a><p class="dsec">Connections</p><a href="/docs/keys">SSH keys and host trust</a><a href="/docs/mosh">Mosh and roaming</a><a href="/guide/remote-access">Reach your machine from anywhere</a><p class="dsec">Multiplexers</p><a href="/docs/multiplexers">Choosing tmux or herdr</a><a href="/docs/tmux">Using tmux</a><a href="/docs/herdr">Using herdr</a><p class="dsec">Agents</p><a href="/docs/agents">Agent status and the lock screen</a><a href="/docs/worktrees">Isolated tasks with git worktrees</a><a href="/guide/claude-code">Run Claude Code from your iPhone</a><p class="dsec">Input</p><a href="/docs/keyboard">Keyboard and shortcuts</a><a href="/docs/scrolling">Scrolling and scrollback</a><a href="/docs/clipboard">Clipboard and paste</a><a href="/docs/ime">CJK and IME input</a><p class="dsec">Appearance</p><a href="/docs/appearance">Themes, fonts and icons</a><p class="dsec">Help</p><a href="/docs/troubleshooting">Troubleshooting</a><a href="/compare" class="on" aria-current="page">How Offhook compares</a></nav>
+</aside>
+<!--DOCSHELL:END-->
+<div class="dbody">
+<div class="shell">
+  <section class="band doc" style="border-top:none">
+    <p class="eyebrow">Compare</p>
+    <h2>Where Offhook fits, and where it doesn't.</h2>
+    <p class="sub">iPhone terminals are a crowded shelf, and several of them are very good
+    at things Offhook does not attempt. This page is the version of that comparison we
+    would want to read before paying for something: capability by capability, with the
+    cases where you should buy a competitor instead stated plainly rather than buried.</p>
+
+    <h3 id="s1">The short version</h3>
+    <p class="txt">Offhook is built for one job: <b>your coding agents can reach you</b>.
+    An agent blocks on a permission prompt, your lock screen says so, and you answer it
+    there. Everything else — SSH, Mosh, tmux, herdr — exists so that job works on a real
+    terminal instead of a toy one. If that is not your job, a different app is probably
+    a better buy, and the last section says which.</p>
+
+    <h3 id="s2">Capability by capability</h3>
+    <p class="txt">Columns are categories rather than named products, because features and
+    prices move and a table that names names goes stale and unfair within a release. The
+    pricing row is the exception — those figures were checked directly, and dated.</p>
+
+    <div class="tbl-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Capability</th>
+            <th class="us">Offhook</th>
+            <th>Subscription terminals</th>
+            <th>One-time tmux clients</th>
+            <th>Agent-first apps</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="cap-col"><b>Answer an agent from the lock screen</b><br>
+              Approve, deny or reply without unlocking into the app</td>
+            <td class="us"><span class="yes">Allow · Deny · Reply</span></td>
+            <td class="no">—</td>
+            <td class="no">Connection alerts only</td>
+            <td class="no">Varies — several do this well</td>
+          </tr>
+          <tr>
+            <td class="cap-col"><b>Agent status with no host-side setup</b></td>
+            <td class="us"><span class="yes">Built in on herdr</span></td>
+            <td class="no">—</td>
+            <td class="no">—</td>
+            <td class="no">Usually needs a hook or agent integration</td>
+          </tr>
+          <tr>
+            <td class="cap-col"><b>Mosh</b><br>Survives Wi-Fi/5G handoff, sleep, packet loss</td>
+            <td class="us"><span class="yes">Native</span></td>
+            <td class="no">Sometimes</td>
+            <td class="no">Usually absent</td>
+            <td class="no">Sometimes</td>
+          </tr>
+          <tr>
+            <td class="cap-col"><b>tmux rendered natively</b><br>Not a shrunken desktop</td>
+            <td class="us"><span class="yes">Control mode</span></td>
+            <td class="no">Varies</td>
+            <td class="no">Yes — this is their core</td>
+            <td class="no">Varies</td>
+          </tr>
+          <tr>
+            <td class="cap-col"><b>herdr support</b></td>
+            <td class="us"><span class="yes">Yes</span></td>
+            <td class="no">—</td>
+            <td class="no">—</td>
+            <td class="no">Rare</td>
+          </tr>
+          <tr>
+            <td class="cap-col"><b>Start an isolated task from the phone</b><br>
+              New git worktree, new workspace, agent started in it</td>
+            <td class="us"><span class="yes">One sheet</span></td>
+            <td class="no">—</td>
+            <td class="no">—</td>
+            <td class="no">Rare</td>
+          </tr>
+          <tr>
+            <td class="cap-col"><b>Data collected</b></td>
+            <td class="us"><span class="yes">None — no account, no telemetry</span></td>
+            <td class="no">Account required</td>
+            <td class="no">Varies</td>
+            <td class="no">Varies</td>
+          </tr>
+          <tr>
+            <td class="cap-col"><b>Pricing model</b></td>
+            <td class="us"><span class="yes">One-time purchase</span></td>
+            <td class="no">Recurring, indefinitely</td>
+            <td class="no">One-time</td>
+            <td class="no">Mostly subscription</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3 id="s3">What the field actually costs</h3>
+    <p class="txt">Checked on the App Store and the vendors' own pages on
+    <b>2026-08-07</b>. Prices change and regional pricing differs — treat this as a
+    snapshot, not a live quote, and check the store before you buy anything.</p>
+
+    <div class="tbl-wrap">
+      <table>
+        <thead>
+          <tr><th>App</th><th>Model</th><th>Price when checked</th></tr>
+        </thead>
+        <tbody>
+          <tr><td class="cap-col">Termius</td><td>Freemium + subscription</td>
+              <td class="no">Pro about $10/month; free tier has no cloud sync</td></tr>
+          <tr><td class="cap-col">Blink Shell</td><td>Subscription (source is GPL)</td>
+              <td class="no">Blink+ about $19.99/year; Build add-on about $7.99/month</td></tr>
+          <tr><td class="cap-col">Prompt 3 (Panic)</td><td>Subscription</td>
+              <td class="no">About $9.99/year, with a trial</td></tr>
+          <tr><td class="cap-col">Secure ShellFish</td><td>Free + one-time unlock</td>
+              <td class="no">About $29.99 lifetime</td></tr>
+          <tr><td class="cap-col">Moshi</td><td>Subscription + lifetime</td>
+              <td class="no">About $7.99/month, $69.99/year, or $199 lifetime</td></tr>
+          <tr><td class="cap-col">Attach</td><td>One-time, no in-app purchases</td>
+              <td class="no">About $4.99</td></tr>
+          <tr><td class="us">Offhook</td><td class="us">One-time, no in-app purchases</td>
+              <td class="us"><span class="yes">$4.99 launch → $6.99 → $9.99 standard</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p class="txt">The launch price is a real launch price, not a struck-through
+    discount: Offhook has never sold at a higher number, so there is nothing honest to
+    cross out. It rises to $6.99 once the first wave of buyers is in, and $9.99 after
+    that. Buying at $4.99 includes every update after it, at no extra cost.</p>
+
+    <h3 id="s4">When you should <em>not</em> choose Offhook</h3>
+    <p class="txt">These are real, and they are the reason to read this page rather than
+    the front one. If any of them is your situation, one of the apps above is the better
+    purchase and we would rather you bought it than returned ours.</p>
+
+    <ul class="list">
+      <li><b>You want a mature product with years of reviews.</b> Offhook is new. There is
+      no track record to check, no long changelog, and no community answering questions at
+      2am. Termius, Blink, Prompt and Secure ShellFish have all been shipping for years.</li>
+      <li><b>You need file management as a first-class feature.</b> Offhook is a terminal.
+      If your day is SFTP, editing remote files in a GUI, or mounting a server into the
+      Files app, Secure ShellFish is built precisely for that and Offhook is not.</li>
+      <li><b>You want the same subscription to cover desktop.</b> Offhook is iPhone and
+      iPad only, bought once, with no Mac or web client. Termius and Prompt cover several
+      platforms under one account.</li>
+      <li><b>You need Android.</b> There is no Android version and none planned.</li>
+      <li><b>You want an app that syncs hosts and keys across devices for you.</b> Offhook
+      has no account and no cloud, which is the point — but it also means moving to a new
+      phone means adding your hosts again.</li>
+      <li><b>You do not run agents.</b> If you just want a solid SSH client, everything
+      Offhook is unusual at is wasted on you, and the one-time tmux clients are cheaper
+      and perfectly good.</li>
+    </ul>
+
+    <h3 id="s5">When it is clearly the right one</h3>
+    <ul class="list">
+      <li>You run Claude Code, Codex or similar on your own machines, and you are tired of
+      finding an agent that stopped hours ago waiting for a yes.</li>
+      <li>You use herdr, or you would if a phone client supported it.</li>
+      <li>You work from trains, cafés and other places where the network moves — Mosh is
+      built in, not an add-on.</li>
+      <li>You would rather buy something once than rent it, and you would rather an app
+      collected nothing about you at all.</li>
+    </ul>
+
+    <p class="txt" style="margin-top:1.6rem"><a href="/docs">Read the docs</a> ·
+    <a href="/guide/claude-code">See the full walkthrough</a> ·
+    <a href="./">Back to the overview</a></p>
+  </section>
+</div>
+<!--DOCNEXT:BEGIN-->
+<div class="dpager"><a class="dprev" href="/docs/troubleshooting"><span>Previous</span>Troubleshooting</a></div>
+<!--DOCNEXT:END-->
+</div><!--dbody-->
+<!--DOCTOC:BEGIN-->
+<aside class="dtoc">
+  <p class="dtoclabel">On this page</p>
+  <nav><a href="#s1">The short version</a><a href="#s2">Capability by capability</a><a href="#s3">What the field actually costs</a><a href="#s4">When you should not choose Offhook</a><a href="#s5">When it is clearly the right one</a></nav>
+</aside>
+<!--DOCTOC:END-->
+</div><!--/dwrap-->
+
+
+
+</div>
+
+
+
+</div>
+
+
+
+</div>
+
+
+
+</div>
+
+
+
+</div>
+
+
+
+</div>
+
+<footer>
+  <div class="shell">
+    <p class="signoff">Off the hook, still on the line.</p>
+    <nav class="fnav">
+      <a href="./">Home</a><a href="/docs">Docs</a><a href="/guides">Guides</a>
+      <a href="/compare">Compare</a><a href="/privacy">Privacy</a><a href="/support">Support</a>
+    </nav>
+    <p class="legal">© 2026 Offhook · SSH · Mosh · tmux · herdr · iPhone</p>
+  </div>
+</footer>
+
+<div class="dsearch" id="dsearch" hidden style="display:none">
+  <div class="dsearchbox" role="dialog" aria-modal="true" aria-label="Search docs">
+    <input id="dq" type="search" autocomplete="off" placeholder="Search the docs…">
+    <div id="dres"></div>
+  </div>
+</div>
+<script src="/docs-search.js?v=7" defer></script>
+</body>
+</html>

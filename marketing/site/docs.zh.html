@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="zh-Hans">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>文档 — Offhook 摘机</title>
+<meta name="description" content="Offhook 文档：连接与密钥、Mosh、tmux、herdr、在锁屏上回复 agent、键盘与主题，以及排障。">
+<link rel="icon" type="image/png" href="/icon-192.png">
+<link rel="alternate" hreflang="en" href="https://offhook.cluas.eu.org/zh/docs">
+<link rel="stylesheet" href="/offhook.css?v=7">
+</head>
+<body>
+
+<div class="shell">
+  <header class="top">
+    <a class="brand" href="/zh"><img src="/icon-192.png" alt="" width="30" height="30">Offhook</a>
+    <div class="topright">
+      <a class="lang" href="/zh/docs">文档</a>
+      <a class="lang" href="/zh/guides">指南</a>
+      <a class="lang" href="/zh/compare">对比</a>
+      <a class="lang" href="/zh/docs" hreflang="en" lang="en">EN</a>
+    </div>
+  </header>
+</div>
+
+<div class="shell">
+  <section class="band doc" style="border-top:none">
+    <p class="eyebrow">文档</p>
+    <h2>Offhook 能做什么，以及到哪儿为止。</h2>
+    <p class="sub">Offhook 是给「在自己服务器上跑 AI coding agent」的人用的 iPhone 终端：
+    SSH 与 Mosh、原生 tmux 与 herdr，以及会送到锁屏上的 agent 状态。它没有账号，
+    也没有自己的服务器——只跟你的主机说话，仅此而已。下面这些页面假设你已经有一台
+    能 SSH 进去的机器。</p>
+
+    <h3>从这里开始</h3>
+    <div class="grid">
+      <div class="cell">
+        <span class="ic">配置</span>
+        <h4><a href="/zh/docs/setup">配置一个连接</a></h4>
+        <p>添加主机、选密码或密钥登录、在设备上生成或导入 SSH 密钥、首次连接核对主机指纹。以及：你选的多路复用器主机上没有时会怎样。</p>
+      </div>
+      <div class="cell">
+        <span class="ic">指南</span>
+        <h4><a href="/zh/guide/claude-code">用 iPhone 跑 Claude Code</a></h4>
+        <p>这个 App 存在的理由，一条龙走完——从一台空主机，到在锁屏上批准一个权限请求。</p>
+      </div>
+      <div class="cell">
+        <span class="ic">对比</span>
+        <h4><a href="/zh/compare">和别的比怎么样</a></h4>
+        <p>什么时候该选 Offhook，以及哪些情况下别的终端确实更适合你。</p>
+      </div>
+    </div>
+
+    <h3>多路复用器</h3>
+    <p class="txt">两个都是可选的——不用它们，Offhook 就是个普通 SSH 客户端。按连接各选各的；绝不会在背后替你切换，因为这两者持有的会话毫不相干。</p>
+    <div class="grid">
+      <div class="cell">
+        <span class="ic">herdr</span>
+        <h4><a href="/zh/docs/herdr">使用 herdr</a></h4>
+        <p>为 coding agent 而生的多路复用器：agent 状态主机零安装、单窗格满宽、在新建的 git worktree 上开隔离任务。也如实写了限制——轮询延迟、独占式直连，以及 herdr 0.7.3 不上报的那些字段。</p>
+      </div>
+      <div class="cell">
+        <span class="ic">tmux</span>
+        <h4><a href="/zh/docs/tmux">使用 tmux</a></h4>
+        <p>原生控制模式：会话、窗口、窗格都正经渲染。怎么用一行命令装 hook 拿到 agent 状态，以及不装的话你会看到什么。</p>
+      </div>
+      <div class="cell">
+        <span class="ic">Mosh</span>
+        <h4><a href="/zh/docs/mosh">Mosh 与漫游</a></h4>
+        <p>扛得住 Wi-Fi/5G 切换和丢包的会话、预测回显、UDP 的要求——以及为什么走 Mosh 时 tmux 和 herdr 会退回它们自己的 TUI。</p>
+      </div>
+    </div>
+
+    <h3>Agent</h3>
+    <div class="grid">
+      <div class="cell">
+        <span class="ic">锁屏</span>
+        <h4><a href="/zh/docs/agents">在锁屏上回复 agent</a></h4>
+        <p>agent 状态怎么到达实时活动和灵动岛、Allow / Deny 和快捷回复实际发送了什么，以及后台的真实限制。</p>
+      </div>
+      <div class="cell">
+        <span class="ic">键盘</span>
+        <h4><a href="/zh/docs/keyboard">键盘、主题与快捷键</a></h4>
+        <p>从终端键库里搭出自己的快捷键栏、用外接键盘，以及换主题、字体、图标和强调色。</p>
+      </div>
+      <div class="cell">
+        <span class="ic">排障</span>
+        <h4><a href="/zh/docs/troubleshooting">排障</a></h4>
+        <p>按症状找：Mosh 黑屏、缺多路复用器、别的客户端抢走窗格、attach 卡住、agent 状态不再更新。</p>
+      </div>
+    </div>
+
+    <h3>指南</h3>
+    <div class="grid">
+      <div class="cell">
+        <span class="ic">走一遍</span>
+        <h4><a href="/zh/guide/claude-code">用 iPhone 跑 Claude Code</a></h4>
+        <p>从主机到锁屏，按顺序走，配上你真正会看到的界面。</p>
+      </div>
+      <div class="cell">
+        <span class="ic">走一遍</span>
+        <h4><a href="/zh/guide/remote-access">在任何地方连上你的机器</a></h4>
+        <p>不把 SSH 暴露到公网也能连上家里或公司的机器——WireGuard 组网加 Mosh，以及各自需要开什么。</p>
+      </div>
+      <div class="cell">
+        <span class="ic">支持</span>
+        <h4><a href="/support">还是卡住了？</a></h4>
+        <p>怎么找到我们，以及带上哪些信息能让第一次回复就有用。</p>
+      </div>
+    </div>
+
+    <h3>有两件事值得先说</h3>
+    <p class="txt"><b>Offhook 绝不在你的主机上擅自动手。</b>它不静默装包、不创建你没要求的会话、也不偷偷挂上你没选的那个多路复用器。缺什么就直说，并把命令摆给你看。</p>
+    <p class="txt"><b>没有推送服务器，所以后台就不再更新了。</b>App 进后台后 iOS 会挂起连接，agent 状态停在它最后看到的样子，等你回来才继续。这是「中间什么都没有」的代价，两种传输都一样。</p>
+  </section>
+</div>
+
+<footer>
+  <div class="shell">
+    <p class="signoff">解了套，仍在线上。</p>
+    <nav class="fnav">
+      <a href="/zh">首页</a><a href="/zh/docs">文档</a><a href="/zh/guides">指南</a>
+      <a href="/zh/compare">对比</a><a href="/privacy">隐私</a><a href="/support">支持</a>
+    </nav>
+    <p class="legal">© 2026 Offhook 摘机 · SSH · Mosh · tmux · herdr · iPhone</p>
+  </div>
+</footer>
+
+</body>
+</html>

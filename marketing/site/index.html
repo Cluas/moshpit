@@ -1,0 +1,534 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Offhook — your agents can reach you</title>
+<meta name="description" content="The iOS terminal for AI coding agents. Approve Claude Code from the lock screen, watch every agent's line status, start isolated tasks from your phone. SSH · Mosh · tmux · herdr. One-time purchase, nothing collected.">
+<meta property="og:title" content="Offhook — your agents can reach you">
+<meta property="og:description" content="Claude Code hits a permission prompt on your server. Your phone lights up. You tap Allow from the lock screen.">
+<meta property="og:image" content="https://offhook.cluas.eu.org/icon-192.png">
+<meta name="theme-color" content="#05060A">
+<link rel="icon" type="image/png" href="/icon-192.png">
+<link rel="alternate" hreflang="en" href="https://offhook.cluas.eu.org/">
+<link rel="alternate" hreflang="zh-Hans" href="https://offhook.cluas.eu.org/zh">
+<link rel="alternate" hreflang="x-default" href="https://offhook.cluas.eu.org/">
+<link rel="stylesheet" href="/offhook.css?v=7">
+</head>
+<body>
+
+<div class="shell">
+  <header class="top">
+    <a class="brand" href="./"><img src="/icon-192.png" alt="" width="30" height="30">Offhook</a>
+    <div class="topright">
+      <a class="lang" href="/docs">Docs</a>
+      <a class="lang" href="/guides">Guides</a>
+      <a class="lang" href="/compare">Compare</a>
+      <span class="chip launch">Limited launch · $4.99</span>
+      <a class="lang" href="/zh" hreflang="zh-Hans" lang="zh-Hans">中文</a>
+    </div>
+  </header>
+</div>
+
+<!-- ══ HERO ══ -->
+<div class="shell">
+  <section class="hero">
+    <div>
+      <p class="eyebrow">Always on the line</p>
+      <h1>Your agents<br>can <em>reach you</em>.</h1>
+      <p class="lede">Claude Code hits a permission prompt on your server.
+      Your phone lights up. You tap <b>Allow</b> from the lock screen — and it keeps going.
+      No unlocking, no SSH, no walking back to your desk.</p>
+      <div class="actions">
+        <span class="price">$4.99 <span>· one-time</span></span>
+        <span class="soon">Coming to the App Store</span>
+      </div>
+      <div class="ladder">
+        <span class="now">$4.99 now</span><span class="arrow">→</span>
+        <span class="after">$6.99 next</span><span class="arrow">→</span>
+        <span class="after">$9.99 standard</span>
+      </div>
+      <p class="launchnote"><b>Limited launch price.</b> It moves to $6.99 once the first
+      wave of buyers is in — no countdown theatre, just the next rung. Buy at $4.99 and
+      you own every update after it, at no extra cost.</p>
+    </div>
+    <div class="herophone">
+      <img class="phone lift" src="/01-agents.jpg" width="1320" height="2868"
+           alt="Offhook home screen: an Agents section listing Claude Code needing you, codex working, and an idle claude, above a tree of workspaces">
+      <span class="pin"><span class="lamp"></span>1 NEEDS YOU</span>
+    </div>
+  </section>
+</div>
+
+<!-- ══ AGENTS + HOW ══ -->
+<div class="shell">
+  <section class="band">
+    <p class="eyebrow plain" style="justify-content:center">Works with</p>
+    <div class="agents">
+      <span class="agentchip"><span class="dot"></span>Claude Code</span>
+      <span class="agentchip"><span class="dot"></span>Codex</span>
+      <span class="agentchip"><span class="dot"></span>opencode</span>
+      <span class="agentchip"><span class="dot"></span>aider</span>
+      <span class="agentchip"><span class="dot"></span>Gemini CLI</span>
+      <span class="agentchip any">…anything that runs in a terminal</span>
+    </div>
+    <p class="agentnote">There is no integration list to be on. Offhook drives a real shell,
+    so an agent it has never heard of works the same day it ships.</p>
+
+    <h2 style="margin-top:3.2rem">Three steps, then it's just your terminal.</h2>
+    <div class="steps3">
+      <div class="step3">
+        <h3>Add the host</h3>
+        <p>SSH details and a key — or generate one on the phone. Pick tmux, herdr, or
+        neither. First connection shows you the host fingerprint to check.</p>
+      </div>
+      <div class="step3">
+        <h3>Run agents the way you already do</h3>
+        <p>Start <code>claude</code> in a pane, or let Offhook open an isolated
+        <code>git worktree</code> and start it there. Nothing new to learn on the host.</p>
+      </div>
+      <div class="step3">
+        <h3>Put the phone down</h3>
+        <p>When an agent needs a human, your lock screen says so — with the buttons
+        that answer it.</p>
+      </div>
+    </div>
+  </section>
+</div>
+
+<!-- ══ THE MOMENT ══ -->
+<div class="shell">
+  <section class="band">
+    <p class="eyebrow">The moment</p>
+    <h2>It reaches your lock screen. You answer it there.</h2>
+    <p class="sub">This is the actual lock screen, not a mockup: a Live Activity for every
+    agent Offhook can see, the blocked one carrying the answers you'd give anyway.
+    Allow, Deny, or a quick reply — none of it opens the app.</p>
+
+    <div class="lockrow">
+      <img class="phone lift lockshot" src="/20-lockscreen.jpg" width="440" height="956"
+           alt="iPhone lock screen with an Offhook Live Activity: Claude Code with Allow and Deny buttons, and codex working below it">
+      <div class="notes">
+        <p><b class="amber">Claude Code · needs you</b>
+        Amber dot, and the two buttons that end the wait. <em>yes</em> and
+        <em>continue</em> are quick replies — they type into the pane, not into a chat.</p>
+        <p><b class="teal">codex · working</b>
+        Teal dot with a live timer, so a thinking agent and a stuck one don't look alike.</p>
+        <p><b class="dimb">The timer is the point</b>
+        That agent had been waiting hours. It waited — you didn't have to sit there.
+        The moment you glance at your phone, it's one tap from moving again.</p>
+      </div>
+    </div>
+
+    <div class="moment">
+      <div class="strip a">
+        <img src="/island-blocked.jpg" alt="Dynamic Island showing an amber dot and an exclamation mark: an agent needs you" loading="lazy">
+        <p class="cap"><b>Dynamic Island · needs you</b>
+        Unlocked, the pill keeps the count. Amber with the exclamation mark means
+        someone is blocked on you.</p>
+      </div>
+      <div class="strip b">
+        <img src="/island-working.jpg" alt="Dynamic Island showing a teal dot and a live timer while an agent works" loading="lazy">
+        <p class="cap"><b>Dynamic Island · working</b>
+        Teal with a running timer while the work happens — no notification spam, just
+        a glanceable state.</p>
+      </div>
+    </div>
+  </section>
+</div>
+
+<!-- ══ FEATURE ROWS ══ -->
+<div class="shell">
+  <section class="band">
+    <p class="eyebrow">What you get</p>
+    <h2>A real terminal first. Then everything agents need on top.</h2>
+    <p class="sub">Every screen below is the shipping app on an iPhone — no mockups,
+    no renders.</p>
+
+    <div class="rows">
+
+      <div class="row">
+        <div>
+          <span class="kicker">Agent workbench · herdr</span>
+          <h3>Answer the one that's blocking</h3>
+          <p>The pane's breadcrumb carries the agent's name and its state dot, so you
+          always know whose turn it is. Amber means it wants you.</p>
+          <ul>
+            <li>Agents sort by who's waiting, with how long they've waited</li>
+            <li>Tap a line, land in that pane — no hunting through a tree</li>
+            <li>Zero host-side setup on herdr; one-line hook install on tmux</li>
+          </ul>
+        </div>
+      <div class="gal rowshot" id="gal-agent">
+        <div class="galframes">
+          <img src="/02-agent-terminal.jpg" class="phone on" width="1320" height="2868" alt="Terminal showing a Claude Code edit request awaiting approval, with the breadcrumb naming the agent in amber">
+          <img src="/01-agents.jpg" class="phone" width="1320" height="2868" alt="Home screen Agents section: Claude Code needs you, codex working, claude idle" loading="lazy">
+        </div>
+        <div class="galtabs" role="tablist" aria-label="Agent workbench screens">
+          <button type="button" role="tab" aria-selected="true" aria-controls="gal-agent">In the pane</button>
+          <button type="button" role="tab" aria-selected="false" aria-controls="gal-agent">On the home screen</button>
+        </div>
+      </div>
+      </div>
+
+      <div class="row">
+        <div>
+          <span class="kicker">Start work · git worktree</span>
+          <h3>Open a new task from the train</h3>
+          <p>Pick a repo, name a branch, hand over the first prompt. Offhook creates an
+          isolated git worktree on the host and starts the agent inside it — your working
+          tree never moves.</p>
+          <ul>
+            <li>Repos found for you, from where your panes already are</li>
+            <li>Branch names checked before the round trip</li>
+            <li>Remove the worktree later from a long-press, with a real confirmation</li>
+          </ul>
+        </div>
+        <img class="phone rowshot" src="/06-new-task.jpg" width="409" height="533" loading="lazy"
+             alt="New Agent Task sheet: repo payments-api, branch fix-webhook-retry, agent claude, and a first message">
+      </div>
+
+      <div class="row">
+        <div>
+          <span class="kicker">tmux · native control mode</span>
+          <h3>Your tmux, not a shrunken desktop</h3>
+          <p>Sessions, windows and panes render natively and switch with a swipe. Create,
+          rename and kill them from the sheet. Offhook attaches to what you already have
+          and never restyles it.</p>
+          <ul>
+            <li>Windows and sessions as real lists, not a squinting exercise</li>
+            <li>herdr supported too — workspaces, tabs, one full-width pane</li>
+            <li>Prefix keys and the shortcut bar match the multiplexer you're on</li>
+          </ul>
+        </div>
+      <div class="gal rowshot" id="gal-tmux">
+        <div class="galframes">
+          <img src="/08-tmux-windows.jpg" class="phone on" width="1320" height="2868" alt="tmux Windows sheet listing server, tests and logs over a live git log">
+          <img src="/06-tmux-sessions.jpg" class="phone" width="1320" height="2868" alt="tmux Sessions sheet listing payments-api and dashboard" loading="lazy">
+          <img src="/07-tmux-terminal.jpg" class="phone" width="1320" height="2868" alt="A tmux pane rendering a coloured git log, with the breadcrumb reading payments-api, 1:server, git" loading="lazy">
+        </div>
+        <div class="galtabs" role="tablist" aria-label="tmux screens">
+          <button type="button" role="tab" aria-selected="true" aria-controls="gal-tmux">Windows</button>
+          <button type="button" role="tab" aria-selected="false" aria-controls="gal-tmux">Sessions</button>
+          <button type="button" role="tab" aria-selected="false" aria-controls="gal-tmux">Terminal</button>
+        </div>
+      </div>
+      </div>
+
+      <div class="row">
+        <div>
+          <span class="kicker">Mosh · roaming</span>
+          <h3>Walk out of the building mid-command</h3>
+          <p>Mosh is built in, not bolted on: sessions survive Wi-Fi/5G handoffs, sleep,
+          and hotel networks. Predictive echo shows your keystrokes immediately on a link
+          that hasn't answered yet.</p>
+          <ul>
+            <li>Roams on cellular when Wi-Fi drops, mid-session</li>
+            <li>Predictive echo with a visible trail until the server confirms</li>
+            <li>A clean-room implementation, checked against the RFC's own vectors</li>
+          </ul>
+        </div>
+      <div class="gal rowshot" id="gal-mosh">
+        <div class="galframes">
+          <img src="/09-mosh.jpg" class="phone on" width="1320" height="2868" alt="A Mosh session showing git log output, with the MOSH pill in the title bar">
+          <img src="/13-mosh-settings.jpg" class="phone" width="1320" height="2868" alt="Settings: Mosh by default, predictive echo, and the cursor trail option" loading="lazy">
+        </div>
+        <div class="galtabs" role="tablist" aria-label="Mosh screens">
+          <button type="button" role="tab" aria-selected="true" aria-controls="gal-mosh">Session</button>
+          <button type="button" role="tab" aria-selected="false" aria-controls="gal-mosh">Roaming</button>
+        </div>
+      </div>
+      </div>
+
+      <div class="row">
+        <div>
+          <span class="kicker">Keyboard · yours</span>
+          <h3>The keys you actually press</h3>
+          <p>The bar above the keyboard is a toolbar you build: pick from a library of
+          terminal keys, drag to reorder, drop the ones you never use. Hardware keyboards
+          work too.</p>
+          <ul>
+            <li>esc, tab, ^C, ^L, paste, D-pad — or whatever you put there</li>
+            <li>Up to 12 keys, reorderable, per your habits</li>
+            <li>Eight terminal themes, seven monospace fonts, or bring your own colours</li>
+          </ul>
+        </div>
+      <div class="gal rowshot" id="gal-keys">
+        <div class="galframes">
+          <img src="/11-shortcuts.jpg" class="phone on" width="1320" height="2868" alt="Shortcuts editor: a preview of the toolbar and a reorderable list of keys">
+          <img src="/10-themes.jpg" class="phone" width="1320" height="2868" alt="Settings: accent, app icon, terminal font, size and theme" loading="lazy">
+        </div>
+        <div class="galtabs" role="tablist" aria-label="Customisation screens">
+          <button type="button" role="tab" aria-selected="true" aria-controls="gal-keys">Shortcut bar</button>
+          <button type="button" role="tab" aria-selected="false" aria-controls="gal-keys">Appearance</button>
+        </div>
+      </div>
+      </div>
+
+    </div>
+  </section>
+</div>
+
+<!-- ══ REST OF THE APP ══ -->
+<div class="shell">
+  <section class="band">
+    <p class="eyebrow plain">Also in the box</p>
+    <div class="grid">
+      <div class="cell"><span class="ic">Keys</span>
+        <h4>Keychain + Face ID</h4>
+        <p>SSH keys generated or imported on device, held in the Secure Enclave, unlocked
+        with Face ID.</p></div>
+      <div class="cell"><span class="ic">Themes</span>
+        <h4>Looks like your desktop</h4>
+        <p>Eight terminal themes and a custom editor, seven bundled fonts, eight app icons,
+        and an accent you can set yourself.</p></div>
+      <div class="cell"><span class="ic">Install</span>
+        <h4>Guided setup, never silent</h4>
+        <p>Missing mosh, tmux or herdr? Offhook shows the command and runs it only when
+        you tap it.</p></div>
+      <div class="cell"><span class="ic">Scroll</span>
+        <h4>Scrollback that behaves</h4>
+        <p>Swipe scrolls real history — and a full-screen app that grabbed the mouse gets
+        a wheel, not a copy-mode surprise.</p></div>
+      <div class="cell"><span class="ic">Hosts</span>
+        <h4>Fingerprints you can check</h4>
+        <p>First connection shows the host key with the command to verify it. Changed key,
+        loud warning.</p></div>
+      <div class="cell"><span class="ic">Reconnect</span>
+        <h4>Comes back on its own</h4>
+        <p>Sleep, airplane mode, a dead tunnel — Offhook reconnects and puts you back on
+        the pane you were on.</p></div>
+    </div>
+  </section>
+</div>
+
+<!-- ══ HERDR ══ -->
+<div class="shell">
+  <section class="band">
+    <p class="eyebrow">Pick your multiplexer</p>
+    <h2>The only iPhone terminal that speaks herdr.</h2>
+    <p class="sub">tmux has run the world's servers for twenty years and Offhook renders it
+    natively. But <a href="https://github.com/herdrdev/herdr">herdr</a> is a multiplexer
+    written for coding agents, and it turns the hardest part of this app — knowing what an
+    agent is doing — from a guess into a fact.</p>
+
+    <div class="mux">
+      <div class="muxcard plain">
+        <h3>tmux</h3>
+        <p class="tagline">mature · already on your box</p>
+        <ul>
+          <li>Native control mode: sessions, windows, panes, all switchable</li>
+          <li>Attaches to what you already have, never restyles it</li>
+          <li>Agent status via a one-line hook install — accurate, but you install it</li>
+          <li>Scrollback, copy-mode and prefix keys behave the way you expect</li>
+        </ul>
+      </div>
+      <div class="muxcard lit">
+        <h3>herdr</h3>
+        <p class="tagline">built for coding agents</p>
+        <ul>
+          <li><b>Agent state is a protocol field</b> — nothing to install on the host</li>
+          <li>One pane, full phone width: no sidebar, no shrunken layout</li>
+          <li>Your phone's size never squeezes the window on your laptop</li>
+          <li>Scrolling is decided server-side — the app that grabbed the mouse gets a wheel</li>
+          <li><b>Isolated tasks</b>: a git worktree, a workspace and an agent, from one sheet</li>
+        </ul>
+      </div>
+    </div>
+
+    <p class="muxnote">Offhook speaks each one in its own words: herdr connections say
+    <em>workspace</em> and <em>tab</em> and print herdr's real key bindings — because
+    <code>⌃ b q</code> lists panes in tmux and <b>detaches</b> in herdr, and an app that
+    prints the wrong one drops your session. You pick per connection; nothing is switched
+    behind your back.</p>
+  </section>
+</div>
+
+<!-- ══ DIRECT CONNECTION ══ -->
+<div class="shell">
+  <section class="band">
+    <p class="eyebrow">One line, no operator</p>
+    <h2>Your phone talks to your server. That's the whole diagram.</h2>
+    <p class="sub">There is no Offhook account, no relay, no cloud in the middle — because
+    there is no Offhook server at all. Nothing to breach, nothing to subscribe to, nothing
+    that can go down and take your terminal with it.</p>
+
+    <div class="wire">
+      <svg viewBox="0 0 720 120" role="img" aria-label="Diagram: your iPhone connects directly to your own server over SSH or Mosh, with nothing in between">
+        <rect x="34" y="24" width="52" height="86" rx="11" fill="#141922" stroke="rgba(255,255,255,.16)"/>
+        <rect x="46" y="38" width="28" height="4" rx="2" fill="#6C6BEF"/>
+        <circle cx="50" cy="54" r="3" fill="#FFB35C"/>
+        <rect x="58" y="51" width="18" height="4" rx="2" fill="rgba(255,255,255,.2)"/>
+        <circle cx="50" cy="68" r="3" fill="#5EE3D9"/>
+        <rect x="58" y="65" width="14" height="4" rx="2" fill="rgba(255,255,255,.14)"/>
+        <text x="60" y="20" fill="rgba(199,193,181,.55)" font-family="ui-monospace,Menlo,monospace" font-size="10.5" text-anchor="middle">your iPhone</text>
+        <line x1="98" y1="67" x2="608" y2="67" stroke="rgba(255,255,255,.1)" stroke-width="2"/>
+        <line class="dash" x1="98" y1="67" x2="608" y2="67" stroke="#5EE3D9" stroke-width="2" opacity=".85"/>
+        <rect x="292" y="46" width="122" height="20" rx="10" fill="#0D1015" stroke="rgba(94,227,217,.35)"/>
+        <text x="353" y="60" fill="#5EE3D9" font-family="ui-monospace,Menlo,monospace" font-size="10.5" text-anchor="middle">SSH · MOSH</text>
+        <text x="353" y="86" fill="rgba(199,193,181,.45)" font-family="ui-monospace,Menlo,monospace" font-size="10" text-anchor="middle">end-to-end, keys never leave the device</text>
+        <rect x="620" y="30" width="66" height="24" rx="5" fill="#141922" stroke="rgba(255,255,255,.16)"/>
+        <rect x="620" y="58" width="66" height="24" rx="5" fill="#141922" stroke="rgba(255,255,255,.16)"/>
+        <circle cx="632" cy="42" r="3" fill="#83E58C"/><circle cx="632" cy="70" r="3" fill="#83E58C"/>
+        <rect x="642" y="39" width="32" height="5" rx="2.5" fill="rgba(255,255,255,.13)"/>
+        <rect x="642" y="67" width="32" height="5" rx="2.5" fill="rgba(255,255,255,.13)"/>
+        <text x="653" y="102" fill="rgba(199,193,181,.55)" font-family="ui-monospace,Menlo,monospace" font-size="10.5" text-anchor="middle">your server</text>
+      </svg>
+      <div class="legend">
+        <span>No account</span><span>No telemetry</span><span>No third-party endpoints</span>
+        <span>Keys in the Secure Enclave</span>
+      </div>
+    </div>
+  </section>
+</div>
+
+<!-- ══ COMPARISON ══ -->
+<div class="shell">
+  <section class="band">
+    <p class="eyebrow">Where it differs</p>
+    <h2>Priced like a tmux client. Built for the thing that changed.</h2>
+    <p class="sub">Terminals on iPhone are a crowded shelf. Here's the honest shape of the
+    difference — capabilities, not adjectives.</p>
+
+    <div class="tbl-wrap">
+      <table>
+        <thead>
+          <tr><th>Capability</th><th class="us">Offhook</th>
+              <th>Typical tmux client</th><th>Subscription terminals</th></tr>
+        </thead>
+        <tbody>
+          <tr><td class="cap-col">Answer an agent from the lock screen</td>
+              <td class="us"><span class="yes">Allow · Deny · Reply</span></td>
+              <td class="no">Connection alerts only</td><td class="no">—</td></tr>
+          <tr><td class="cap-col">Agent status without host-side setup</td>
+              <td class="us"><span class="yes">Built in (herdr)</span></td>
+              <td class="no">—</td><td class="no">Varies</td></tr>
+          <tr><td class="cap-col">Mosh — survives handoffs and packet loss</td>
+              <td class="us"><span class="yes">Native</span></td>
+              <td class="no">Usually absent</td><td class="no">Sometimes</td></tr>
+          <tr><td class="cap-col">Start an isolated task (git worktree) from the phone</td>
+              <td class="us"><span class="yes">One sheet</span></td>
+              <td class="no">—</td><td class="no">—</td></tr>
+          <tr><td class="cap-col">Cost</td>
+              <td class="us"><span class="yes">$4.99 once</span></td>
+              <td class="no">A few dollars once</td><td class="no">$20–120 / year, forever</td></tr>
+          <tr><td class="cap-col">Data collected</td>
+              <td class="us"><span class="yes">None</span></td>
+              <td class="no">Varies</td><td class="no">Account required</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+</div>
+
+<!-- ══ PRICE ══ -->
+<div class="shell">
+  <section class="band">
+    <p class="eyebrow">Flat rate</p>
+    <h2>Buy it once. That's the entire pricing page.</h2>
+    <div class="pricebox">
+      <div class="amount">$4.99<small>launch price</small></div>
+      <ul>
+        <li>One purchase, every feature. No tiers, no per-host limits, no add-ons.</li>
+        <li>Less than one month of a subscription terminal — and it never comes back.</li>
+        <li>The launch price goes up as the app grows. Bought early stays bought.</li>
+        <li>No accounts to create, nothing to log in to, nothing to cancel.</li>
+      </ul>
+      <div class="steps">
+        <span class="step on">$4.99<small>now · launch</small></span>
+        <span class="step">$6.99<small>next</small></span>
+        <span class="step">$9.99<small>standard</small></span>
+      </div>
+    </div>
+  </section>
+</div>
+
+<!-- ══ PROOF ══ -->
+<div class="shell">
+  <section class="band">
+    <p class="eyebrow">Under the hood</p>
+    <h2>No reviews yet. Here's what's actually built.</h2>
+    <p class="sub">Offhook is new. Instead of borrowed praise, the things you can check
+    yourself once it ships.</p>
+    <div class="facts">
+      <div class="fact"><div class="big">465</div><div class="lbl">unit tests, run on every build</div></div>
+      <div class="fact"><div class="big">RFC 7253</div><div class="lbl">Mosh crypto checked against the spec's own vectors</div></div>
+      <div class="fact"><div class="big">0</div><div class="lbl">third-party endpoints, SDKs, or trackers</div></div>
+      <div class="fact"><div class="big">8 / 7</div><div class="lbl">terminal themes and monospace fonts, plus your own</div></div>
+    </div>
+  </section>
+</div>
+
+<!-- ══ FAQ ══ -->
+<div class="shell">
+  <section class="band">
+    <p class="eyebrow plain">Questions</p>
+    <h2>The things people ask first.</h2>
+    <div class="faq">
+      <details>
+        <summary>Does it need anything installed on my server?</summary>
+        <p>No — it's a standard SSH client out of the box. <code>mosh</code>,
+        <code>tmux</code> and <code>herdr</code> are each optional. If one is missing,
+        Offhook says so, shows the install command, and runs it only when you tap it.
+        It never installs anything silently, and it never quietly attaches a different
+        multiplexer than the one you picked.</p>
+      </details>
+      <details>
+        <summary>How does it know an agent needs me?</summary>
+        <p>On <code>herdr</code>, agent state is a protocol field — nothing to set up.
+        On <code>tmux</code>, a one-line hook install (offered inside the app) lets agents
+        report state directly; without it, Offhook falls back to reading output.</p>
+      </details>
+      <details>
+        <summary>Which agents work with it?</summary>
+        <p>Anything that runs in a terminal — Claude Code, Codex, and friends. Status
+        detection is protocol-level on herdr and hook-based on tmux, so a new agent
+        usually needs nothing from us.</p>
+      </details>
+      <details>
+        <summary>Can it wake me up when the app is closed?</summary>
+        <p>Honest answer: only while the session is alive on your device. Offhook has no
+        push server — that's the trade for having nothing in the middle. iOS suspends the
+        connection eventually, and state stops updating until you return.</p>
+      </details>
+      <details>
+        <summary>Why "Offhook"?</summary>
+        <p>Off-hook is the telephone state where the handset is up and the line is live —
+        which is also what the icon is. And when your agents do the work, they take you
+        <em>off the hook</em>. 中文名：摘机。</p>
+      </details>
+    </div>
+  </section>
+</div>
+
+<footer>
+  <div class="shell">
+    <p class="signoff">Off the hook, still on the line.</p>
+    <nav class="fnav">
+      <a href="/docs">Docs</a>
+      <a href="/guides">Guides</a>
+      <a href="/compare">Compare</a>
+      <a href="/privacy">Privacy</a>
+      <a href="/support">Support</a>
+      <!-- TODO: point at the real repo once marketing/github is published -->
+      <a href="https://github.com/Cluas">GitHub</a>
+    </nav>
+    <p class="legal">© 2026 Offhook · SSH · Mosh · tmux · herdr · iPhone</p>
+  </div>
+</footer>
+
+<script>
+// Gallery: click a tab, show that frame. Kept deliberately small — the markup
+// works without it (first frame is a plain <img>), so a failed script costs a
+// screenshot, not the page.
+for (const gal of document.querySelectorAll('.gal')) {
+  const frames = gal.querySelectorAll('.galframes img');
+  const tabs = gal.querySelectorAll('.galtabs button');
+  tabs.forEach((tab, i) => tab.addEventListener('click', () => {
+    frames.forEach((f, j) => f.classList.toggle('on', i === j));
+    tabs.forEach((t, j) => t.setAttribute('aria-selected', String(i === j)));
+  }));
+}
+</script>
+</body>
+</html>

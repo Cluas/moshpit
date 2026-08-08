@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Isolated tasks with git worktrees — Offhook</title>
+<meta name="description" content="Start an agent on a fresh branch from your phone: what New Agent Task actually runs on the host, and how to clean up afterwards.">
+<link rel="icon" type="image/png" href="/icon-192.png">
+<link rel="alternate" hreflang="zh-Hans" href="/zh/docs/worktrees">
+<link rel="stylesheet" href="/offhook.css?v=7">
+</head>
+<body>
+
+<div class="shell">
+  <header class="top">
+    <a class="brand" href="./"><img src="/icon-192.png" alt="" width="30" height="30">Offhook</a>
+    <div class="topright">
+      <a class="lang" href="/docs">Docs</a>
+      <a class="lang" href="/guides">Guides</a>
+      <a class="lang" href="/compare">Compare</a>
+      <a class="lang dsearchtrigger" data-docsearch href="#">Search</a>
+      <a class="lang" href="/zh/docs/worktrees" hreflang="zh-Hans" lang="zh-Hans">中文</a>
+    </div>
+  </header>
+</div>
+<div class="dwrap">
+<!--DOCSHELL:BEGIN-->
+<aside class="dnav" id="dnav">
+  <a class="dhome" href="/">← Back to the app</a>
+  <p class="dtitle">Docs</p>
+  <button class="dsearchbtn" type="button" data-docsearch><span>Search the docs…</span><kbd>⌘K</kbd></button>
+  <nav><p class="dsec">Start</p><a href="/docs/intro">What Offhook does</a><a href="/docs/setup">Set up a connection</a><a href="/docs/first-session">Run your first session</a><p class="dsec">Connections</p><a href="/docs/keys">SSH keys and host trust</a><a href="/docs/mosh">Mosh and roaming</a><a href="/guide/remote-access">Reach your machine from anywhere</a><p class="dsec">Multiplexers</p><a href="/docs/multiplexers">Choosing tmux or herdr</a><a href="/docs/tmux">Using tmux</a><a href="/docs/herdr">Using herdr</a><p class="dsec">Agents</p><a href="/docs/agents">Agent status and the lock screen</a><a href="/docs/worktrees" class="on" aria-current="page">Isolated tasks with git worktrees</a><a href="/guide/claude-code">Run Claude Code from your iPhone</a><p class="dsec">Input</p><a href="/docs/keyboard">Keyboard and shortcuts</a><a href="/docs/scrolling">Scrolling and scrollback</a><a href="/docs/clipboard">Clipboard and paste</a><a href="/docs/ime">CJK and IME input</a><p class="dsec">Appearance</p><a href="/docs/appearance">Themes, fonts and icons</a><p class="dsec">Help</p><a href="/docs/troubleshooting">Troubleshooting</a><a href="/compare">How Offhook compares</a></nav>
+</aside>
+<!--DOCSHELL:END-->
+<div class="dbody">
+<div class="shell">
+  <section class="band doc" style="border-top:none">
+    <p class="eyebrow">Agents</p>
+    <h2>Start a task without touching your working tree.</h2>
+    <p class="sub">Handing an agent a job usually means being at the machine: make a branch, open a terminal in it, start the agent, type the prompt. Offhook's New Agent Task does those four things from one sheet — and it does them in a fresh git worktree, so whatever you had checked out stays exactly as it was. This is a herdr feature; tmux has no equivalent.</p>
+    <h3 id="s1">The sheet</h3>
+    <p class="txt">The <b>+</b> on the AGENTS section of a herdr connection opens it. Four
+    fields:</p>
+    <ul class="list">
+      <li><b>Repo</b> — found for you. Offhook resolves the directories your panes are
+      already sitting in to their repository roots, and scans your home directory for the
+      rest. &ldquo;Other…&rdquo; takes a path you type.</li>
+      <li><b>Branch</b> — the new branch name. Checked against git's rules before anything
+      is sent, so a bad name fails instantly instead of after a round trip.</li>
+      <li><b>Agent</b> — which agent to start, from the list herdr knows how to detect.</li>
+      <li><b>First message</b> — optional. Typed into the agent once it is up, so you can
+      hand over the job and put the phone away.</li>
+    </ul>
+
+    <h3 id="s2">What runs on the host</h3>
+    <p class="txt">In order: a <code>worktree create</code> that makes the branch, the
+    checkout and a herdr workspace whose pane is already in that directory; then the agent
+    command typed into that pane, exactly as you would have typed it; then your first
+    message, if you wrote one.</p>
+    <p class="txt">The checkout lands under <code>~/.herdr/worktrees/&lt;repo&gt;/&lt;branch&gt;</code>,
+    not next to your repository — your working directory is not touched at all.</p>
+
+    <h3 id="s3">Cleaning up</h3>
+    <p class="txt">Long-press the workspace in the tree and choose <b>Remove Worktree</b>.
+    It appears only on workspaces herdr created from a repository, because an ordinary
+    workspace has no directory to delete.</p>
+    <p class="txt"><b>The first attempt never forces.</b> If the checkout has uncommitted
+    or untracked files, herdr refuses and leaves everything intact; only then does Offhook
+    ask a second, sharper question — the one that says those changes exist nowhere else.
+    That safety net is herdr's own, and following it beats deciding for you.</p>
+
+    <h3 id="s4">Limits</h3>
+    <ul class="list">
+      <li><b>A big repository takes a while to check out.</b> The sheet shows progress;
+      it has not hung.</li>
+      <li><b>An existing branch name fails</b>, with herdr's own error shown verbatim.
+      Pick another name.</li>
+      <li><b>No custom path.</b> Worktrees go where herdr puts them; typing a path on
+      glass was not worth the field.</li>
+      <li><b>Agent arguments are not guessed.</b> Offhook runs the agent's default command.
+      If you want flags, type them in the first message or start it yourself in a pane.</li>
+    </ul>
+  </section>
+</div>
+<!--DOCNEXT:BEGIN-->
+<div class="dpager"><a class="dprev" href="/docs/agents"><span>Previous</span>Agent status and the lock screen</a><a class="dnext" href="/guide/claude-code"><span>Next</span>Run Claude Code from your iPhone</a></div>
+<!--DOCNEXT:END-->
+</div><!--dbody-->
+<!--DOCTOC:BEGIN-->
+<aside class="dtoc">
+  <p class="dtoclabel">On this page</p>
+  <nav><a href="#s1">The sheet</a><a href="#s2">What runs on the host</a><a href="#s3">Cleaning up</a><a href="#s4">Limits</a></nav>
+</aside>
+<!--DOCTOC:END-->
+</div><!--/dwrap-->
+
+
+
+</div>
+
+
+
+</div>
+
+
+
+</div>
+
+
+
+</div>
+
+<footer>
+  <div class="shell">
+    <p class="signoff">Off the hook, still on the line.</p>
+    <nav class="fnav">
+      <a href="./">Home</a><a href="/docs">Docs</a><a href="/guides">Guides</a>
+      <a href="/compare">Compare</a><a href="/privacy">Privacy</a><a href="/support">Support</a>
+    </nav>
+    <p class="legal">© 2026 Offhook · SSH · Mosh · tmux · herdr · iPhone</p>
+  </div>
+</footer>
+
+<div class="dsearch" id="dsearch" hidden style="display:none">
+  <div class="dsearchbox" role="dialog" aria-modal="true" aria-label="Search docs">
+    <input id="dq" type="search" autocomplete="off" placeholder="Search the docs…">
+    <div id="dres"></div>
+  </div>
+</div>
+<script src="/docs-search.js?v=7" defer></script>
+</body>
+</html>

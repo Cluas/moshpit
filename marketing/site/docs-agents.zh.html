@@ -1,0 +1,519 @@
+<!doctype html>
+<html lang="zh-Hans">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>在锁屏上回应 agent — Offhook</title>
+<meta name="description" content="agent 的状态怎么传到锁屏和灵动岛，Allow、Deny、Reply、Stop 各自往 pane 里发了什么，以及 iOS 会在哪一步把这一切停掉。">
+<link rel="icon" type="image/png" href="/icon-192.png">
+<link rel="alternate" hreflang="en" href="/docs/agents">
+<link rel="stylesheet" href="/offhook.css?v=7">
+</head>
+<body>
+
+<div class="shell">
+  <header class="top">
+    <a class="brand" href="/zh"><img src="/icon-192.png" alt="" width="30" height="30">Offhook</a>
+    <div class="topright">
+      <a class="lang" href="/zh/docs">文档</a>
+      <a class="lang" href="/zh/guides">指南</a>
+      <a class="lang" href="/zh/compare">对比</a>
+      <a class="lang" href="/docs/agents" hreflang="en" lang="en">EN</a>
+    </div>
+  </header>
+</div>
+
+<!-- ══ 开篇 + 整条链路 ══ -->
+<div class="dwrap">
+<!--DOCSHELL:BEGIN-->
+<aside class="dnav" id="dnav">
+  <a class="dhome" href="/zh">← 回到首页</a>
+  <p class="dtitle">文档</p>
+  <button class="dsearchbtn" type="button" data-docsearch><span>搜索文档…</span><kbd>⌘K</kbd></button>
+  <nav><p class="dsec">开始</p><a href="/zh/docs/intro">Offhook 是做什么的</a><a href="/zh/docs/setup">配置一个连接</a><a href="/zh/docs/first-session">跑通第一个会话</a><p class="dsec">连接</p><a href="/zh/docs/keys">SSH 密钥与主机信任</a><a href="/zh/docs/mosh">Mosh 与漫游</a><a href="/zh/guide/remote-access">在任何地方连上你的机器</a><p class="dsec">多路复用器</p><a href="/zh/docs/multiplexers">选 tmux 还是 herdr</a><a href="/zh/docs/tmux">使用 tmux</a><a href="/zh/docs/herdr">使用 herdr</a><p class="dsec">Agent</p><a href="/zh/docs/agents" class="on" aria-current="page">Agent 状态与锁屏</a><a href="/zh/docs/worktrees">用 git worktree 开隔离任务</a><a href="/zh/guide/claude-code">用 iPhone 跑 Claude Code</a><p class="dsec">输入</p><a href="/zh/docs/keyboard">键盘与快捷键</a><a href="/zh/docs/scrolling">滚动与回滚</a><a href="/zh/docs/clipboard">剪贴板与粘贴</a><a href="/zh/docs/ime">中日韩与输入法</a><p class="dsec">外观</p><a href="/zh/docs/appearance">主题、字体与图标</a><p class="dsec">帮助</p><a href="/zh/docs/troubleshooting">排障</a><a href="/zh/compare">和别的比怎么样</a></nav>
+</aside>
+<!--DOCSHELL:END-->
+<div class="dbody">
+<div class="shell">
+  <section class="band doc" style="border-top:none">
+    <p class="eyebrow">Docs</p>
+    <h2>在锁屏上回应 agent</h2>
+    <p class="sub">服务器上的 agent 停下来问你要不要放行。这一页把整条链路讲清楚：那个状态怎么到你手机上、
+    每个按钮按下去实际往 pane 里打了什么、哪些开关能改它，以及 iOS 会在哪一步把这一切停掉。</p>
+
+    <div class="steps3">
+      <div class="step3">
+        <h3 id="s1">agent 上报状态</h3>
+        <p>用 <b>herdr</b> 时，<code>agent_status</code> 本来就是每个 pane 上的协议字段，主机上什么都不用装。
+        用 <b>tmux</b> 时，你装的 hook 会往 agent 所在的 pane 上盖四个 <code>@offhook_*</code> 选项。</p>
+      </div>
+      <div class="step3">
+        <h3 id="s2">Offhook 去读</h3>
+        <p>只要 Offhook 还活着，它每 <code>2s</code> 扫一遍所有被跟踪的 session。herdr 的控制面轮询在有变化时是
+        2s，树一安静下来就退到 8s。</p>
+      </div>
+      <div class="step3">
+        <h3 id="s3">你这一下打回去</h3>
+        <p>锁屏上的按钮跑在 Offhook 进程里，不在小组件里。每个按钮往那个 pane 发一串原始字节——Enter、Esc、
+        Ctrl-C，或者你输的文字。就这些，没有别的。</p>
+      </div>
+    </div>
+
+    <div class="wire" style="margin-top:2.2rem">
+      <p><b>这张图里没有 Offhook 的服务器。</b>你手机上的每一条提醒，都是正在运行的 App 从活着的会话里读出来、
+      在本机生成的本地通知。这是"中间不放任何东西"换来的，代价你在依赖它之前应该先知道。</p>
+      <p>把手机揣兜里走人之前，先看
+      <a href="#limits" style="color:var(--teal)">哪些情况下它不管用</a>。</p>
+    </div>
+  </section>
+</div>
+
+
+
+</div>
+
+<!-- ══ 状态从哪来 ══ -->
+<div class="shell">
+  <section class="band doc">
+    <p class="eyebrow">状态来源</p>
+    <h2>状态到手机上，有两条路</h2>
+    <p class="sub">两条路最后落到同样四个词——工作中、需要你、已完成、空闲——但走法很不一样，
+    差别你是看得见的。</p>
+
+    <div class="mux">
+      <div class="muxcard lit">
+        <h3 id="s4">herdr</h3>
+        <p class="tagline">协议字段 · 主机零安装</p>
+        <ul>
+          <li>agent 状态是协议字段：每个 pane 自带，主机上什么都不用装</li>
+          <li>blocked 对应"需要你"，working、done、idle 一一对上</li>
+          <li>其余的值（包括 unknown）一律不产生状态，没有理由的东西不会亮</li>
+          <li>herdr 连接下设置里不显示 hook 安装那一行，因为没什么可装的</li>
+          <li>不带状态切换的时间戳，计时从 Offhook 第一次看见那次变化开始，不是从它真正发生开始</li>
+        </ul>
+      </div>
+      <div class="muxcard plain">
+        <h3 id="s5">tmux</h3>
+        <p class="tagline">要装 hook · 每个 agent 装一次</p>
+        <ul>
+          <li>一条命令，在设置里给你：Install agent hooks，配 Run in terminal、Copy command、
+          Re-check 三个按钮</li>
+          <li>覆盖 Claude Code、Codex、Gemini CLI、Qwen Code、Qoder、Factory、CodeBuddy 七个</li>
+          <li>重复跑没关系：先备份你的配置，脚本永远 exit 0 卡不住 agent，重复跑会去重</li>
+          <li>不装就只能靠输出和终端响铃去猜——这一页下面会说清楚它有多粗</li>
+        </ul>
+      </div>
+    </div>
+
+    <h3 id="s6">tmux 那条命令到底写了什么</h3>
+    <p class="txt">一个共用脚本，加上在 agent 自己的配置文件里注册一次。动手改之前，你的配置会先被复制成一份带
+    时间戳的 <code>.offhook.bak</code>。</p>
+
+<pre><i># 只写一次，所有 agent 共用</i>
+~/.offhook/offhook-stamp.sh
+
+<i># 注册进 agent 自己的配置（这里以 Claude Code 为例）</i>
+~/.claude/settings.json
+~/.claude/settings.json.offhook.bak.1754630400   <i>&lt;- 先备份你的文件</i>
+
+<i># hook 事件 → 盖上去的状态</i>
+UserPromptSubmit   →  <b>working</b>
+PreToolUse         →  <b>working</b>
+Notification       →  <u>attention</u>      <i>（Codex 是 PermissionRequest）</i>
+Stop               →  done</pre>
+
+    <p class="txt">每次触发盖四个 tmux pane 选项。Offhook 一次轮询只用一条
+    <code>list-panes -a</code> 全读回来——不管你开了多少 pane，都只有一个来回。</p>
+
+<pre>@offhook_state   <u>attention</u>
+@offhook_agent   claude
+@offhook_since   1754630400        <i>（unix 秒）</i>
+@offhook_title   Bash: npm install --save-dev vitest    <i>（最多 80 字符）</i></pre>
+
+    <p class="txt">四项里只有 title 会单独失败：它靠 <code>jq</code> 从 hook 的 stdin 里抽出来，
+    所以主机上没装 <code>jq</code> 时状态照常，只是少了"它到底在问什么"那一行。<code>done</code> 时会清掉，
+    不会留一条过期的挂在那儿。还有一个坑值得知道：<b>Gemini CLI 根本没有 <code>Notification</code>
+    这个事件</b>，所以在 Gemini 上那组 hook 是空转的，"需要你"要靠终端响铃兜底。</p>
+
+    <h3 id="s7">tmux 上不装 hook？那就是在猜，而且它自己承认</h3>
+    <p class="txt">什么都不装时，Offhook 盯的是 pane 的输出和终端响铃（BEL）。它故意做得很保守：
+    只有前台命令在一份固定名单里——Claude Code、Codex、Gemini、Qwen、Qoder、Factory、CodeBuddy、
+    aider、goose、opencode——而且要持续输出满 2 秒，才会冒出一行。编译、tail、跑着的服务永远不会被提上来。
+    安静 4 秒判为已完成，再过 25 秒这一行就消失。</p>
+    <p class="txt">这个猜法做不到的事：它<b>没有 detail 那一行</b>——<code>Bash: npm install</code>
+    这种内容只有 hook 和 herdr 两条路上才有；而且它认定的"完成"太糊，不足以拿来发完成提醒。
+    响铃则总会浮上来，哪怕响的是一个 shell 提示符。另外，一旦某个 pane 收到了真的 hook 戳记，
+    这个猜法对它就不再起作用。</p>
+    <p class="txt">herdr 上永远不跑这套启发式。herdr 报的是事实，在事实上再叠一层猜测，
+    只会是一个更差的第二意见在跟真相打架。</p>
+  </section>
+</div>
+
+<!-- ══ 锁屏 ══ -->
+<div class="shell">
+  <section class="band doc">
+    <p class="eyebrow">呈现</p>
+    <h2>锁屏上真正出现的东西</h2>
+    <p class="sub">整个 App 只有一个 Live Activity，不是每个连接一个。它最多带 4 个 agent，
+    最急的排最前：需要你 → 工作中 → 已完成 → 空闲。</p>
+
+    <div class="lockrow">
+      <img class="phone lift lockshot" src="/20-lockscreen.jpg" width="440" height="956"
+           loading="lazy"
+           alt="iPhone 锁屏上的 Offhook Live Activity：Claude Code 需要你，下面是 Allow 和 Deny 按钮，再下面是工作中的 codex">
+      <div class="notes">
+        <p><b class="dimb">头一行是计数</b>
+        左边是 <em>Offhook</em>，右边是按实时计数拼出来的一句话——<em>1 needs you · 1 working</em>。
+        已完成的也算在里面。</p>
+        <p><b class="amber">只有最急的那个带按钮</b>
+        状态点、命令名、<em>host · session · window</em>、它在问什么，加上那排按钮。
+        它下面的全部收成一行——因为 iOS 会把过高的 Live Activity 裁掉，
+        当初被裁掉的正好就是第二个 agent 的 Allow 和 Deny。</p>
+        <p><b class="teal">计时是实时走的</b>
+        工作中和需要你的行，从状态变化那一刻起往上数。已完成和空闲显示的是状态词，不是时间。</p>
+      </div>
+    </div>
+
+    <p class="txt" style="margin-top:2.6rem">把同一张卡片写成文字示意图，结构就没有歧义了。
+    第二个 agent 没有 detail 行、也没有按钮，这是有意的：</p>
+
+<pre>Offhook                              <u>1 needs you</u> · <b>1 working</b>
+
+<u>●</u>  claude                                       <u>04:11</u>
+   <i>work · main · 2:rednote</i>
+   <u>Bash: npm install --save-dev vitest</u>
+   [ Allow ]  [ Deny ]  [ yes ]  [ continue ]
+
+<b>●</b>  codex                                        <b>1:22:07</b>
+   <i>work · api · 1:server</i></pre>
+
+    <h3 id="s8">灵动岛上</h3>
+    <p class="txt">胶囊里一次只显示一个 agent——这是 iOS 的限制，不是我们的选择。多个 agent 同时活着时，
+    展开态里有一个 <b>Switch</b> 按钮，用来轮换胶囊显示的是哪一个。点这张卡片的任意位置，
+    会直接跳进那个 pane。</p>
+    <ul class="list">
+      <li><b>收起态：</b>左边是状态点。右边：只有一个 agent 被挡住时是一个琥珀色 <code>!</code>，
+      多个时是琥珀色数字；正好一个 agent 在工作时是一个青色的实时计时；有一个完成时是一个对勾。</li>
+      <li><b>展开态：</b>头条 agent 带 detail 行，然后最多再来两行带各自的状态点和计时，
+      然后 <code>+N more</code>，最后是那排按钮。</li>
+    </ul>
+
+    <div class="moment" style="margin-top:2rem">
+      <div class="strip a">
+        <img src="/island-blocked.jpg" loading="lazy"
+             alt="灵动岛收起态：琥珀色圆点加一个感叹号">
+        <p class="cap"><b>needs you</b>
+        只要有人卡在等你，胶囊就归琥珀色。一个 agent 显示感叹号，多个显示数字。</p>
+      </div>
+      <div class="strip b">
+        <img src="/island-working.jpg" loading="lazy"
+             alt="灵动岛收起态：青色圆点加一个实时计时">
+        <p class="cap"><b>working</b>
+        只有一个 agent 在工作时，显示的是实时计时而不是标签——正在想的和卡住的，不该长得一样。</p>
+      </div>
+    </div>
+
+    <h3 id="s9">这四个颜色不会变</h3>
+    <p class="txt">它们由含义固定，不跟你在"外观"里选的主题色走。要是跟着主题色走，
+    一个把强调色调成琥珀的人，会看到"工作中"和"需要你"变成同一个颜色。</p>
+
+    <div class="tbl-wrap">
+      <table>
+        <thead>
+          <tr><th>状态</th><th class="us">屏幕上</th><th>颜色</th><th>含义</th></tr>
+        </thead>
+        <tbody>
+          <tr><td class="cap-col"><code>working</code></td>
+              <td class="us">工作中 + 实时计时</td>
+              <td class="no">青</td>
+              <td class="cap-col">正在干活</td></tr>
+          <tr><td class="cap-col"><code>blocked</code> / <code>attention</code></td>
+              <td class="us"><span class="yes">需要你</span> + 实时计时</td>
+              <td class="no">琥珀</td>
+              <td class="cap-col">在等人——放行、提问、权限确认</td></tr>
+          <tr><td class="cap-col"><code>done</code></td>
+              <td class="us">已完成</td>
+              <td class="no">绿</td>
+              <td class="cap-col">这一轮干完了，你还没看</td></tr>
+          <tr><td class="cap-col"><code>idle</code></td>
+              <td class="us">空闲</td>
+              <td class="no">暗白</td>
+              <td class="cap-col">永远不会点亮灵动岛——只在首页留一行安静的记录</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+</div>
+
+<!-- ══ 控制面 ══ -->
+<div class="shell">
+  <section class="band doc">
+    <p class="eyebrow">控制面</p>
+    <h2>每个按钮实际发出去的是什么</h2>
+    <p class="sub">往 agent 那个 pane 里打原始按键。整套机制就这么多——没有 API 调用，
+    没有 agent SDK，也没有什么聊天通道。</p>
+
+    <div class="tbl-wrap">
+      <table>
+        <thead>
+          <tr><th>按钮</th><th class="us">往 pane 里发的字节</th><th>什么状态下出现</th><th>出现在哪</th></tr>
+        </thead>
+        <tbody>
+          <tr><td class="cap-col"><b>Allow</b></td>
+              <td class="us"><code>0x0d</code>——一个裸 Enter</td>
+              <td class="no">需要你</td>
+              <td class="no">Live Activity + 通知</td></tr>
+          <tr><td class="cap-col"><b>Deny</b></td>
+              <td class="us"><code>0x1b</code>——Esc</td>
+              <td class="no">需要你</td>
+              <td class="no">Live Activity + 通知</td></tr>
+          <tr><td class="cap-col"><b>yes</b> / <b>continue</b></td>
+              <td class="us">这个词，然后 Enter</td>
+              <td class="no">需要你</td>
+              <td class="no">只在 Live Activity</td></tr>
+          <tr><td class="cap-col"><b>Reply</b></td>
+              <td class="us">你输的文字，然后 Enter</td>
+              <td class="no">需要你 · 已完成</td>
+              <td class="no">只在通知</td></tr>
+          <tr><td class="cap-col"><b>Stop</b></td>
+              <td class="us"><code>0x03</code>——Ctrl-C</td>
+              <td class="no">卡片上是工作中；通知里挂在每条"需要你"上</td>
+              <td class="no">Live Activity + 通知</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p class="txt">Allow 和 Deny 是照着 Claude Code 的权限确认框调的：肯定项默认高亮，Esc 取消——
+    这也对得上绝大多数终端里的 yes/no 菜单。但话得说明白：<b>这是盲打。</b>
+    Offhook 不会去读那个提示框、确认现在高亮的到底是哪一项。<code>yes</code> 和 <code>continue</code>
+    是打进 pane 里的，不是发进某个聊天框。Reply 留空也照样发一个 Enter 出去。</p>
+
+    <h3 id="s10">两道保险，因为"悄悄失败"是最坏的结果</h3>
+    <ul class="list">
+      <li><b>Prompt already gone。</b>如果 Offhook 知道那个 pane 已经离开了"需要你"，
+      Allow / Deny <b>不会发出去</b>，而是弹一条通知告诉你。去回答一个已经不存在的提示，
+      有可能放行的是后面那个更危险的。如果 App 重启过、根本没有记录，这一下会照常发出去——
+      "没记录"永远不当拦截理由。</li>
+      <li><b>Not delivered。</b>链路死了的话，Offhook 会强制唤醒并重试；实在够不着那个 pane 就直说：
+      <em>"Your tap didn't reach the agent — open Offhook and answer there."</em>
+      锁屏上按了 Allow 却悄悄失败，是唯一值得再打扰你一次的情况——否则你会以为自己已经放行了，
+      然后就走开了。</li>
+    </ul>
+
+    <p class="txt">herdr 上还有一步你看不见。tmux 能用 <code>send-keys -t</code> 直接寻址到某个 pane；
+    herdr 不行——它只往当前 focus 的那个 pane 打字。所以 Offhook 会先把目标 pane focus 过去、
+    等帧通道真的切完，然后才写。5 秒内拿不到 focus 就报失败，而不是赌一把。
+    这一步的由来是评审时发现的问题：同时跑两个 agent 时，锁屏上的 Allow 有可能落进另一个 agent 的 pane。</p>
+  </section>
+</div>
+
+<!-- ══ 通知 ══ -->
+<div class="shell">
+  <section class="band doc">
+    <p class="eyebrow">提醒</p>
+    <h2>通知本身，以及怎么调</h2>
+    <p class="sub">全部是本地通知——在设备上从活着的会话里生成，没有任何服务器参与。
+    iOS 的通知权限是在你第一次带着 Notifications 开关连上主机时才问，不是一启动就问。</p>
+
+    <h3 id="s11">会发哪几种</h3>
+    <ul class="list">
+      <li><b>需要你。</b>标题是 agent 名（<code>claude</code>）；正文是"它在问什么 + 在哪"，
+      如果没抓到 title 就退回通用的那句
+      <em>「Agent 需要你的输入 — host · session · window」</em>。每个 pane 只有一条，
+      新的会替换旧的，不会越堆越多。动作：Allow、Deny、Reply、Stop。</li>
+      <li><b>已完成。</b><code>✓ claude finished</code>，正文是位置，带一个 Reply 动作，
+      让你不开 App 就能把下一条指令扔过去。这一条<b>只有 hook 路径才会发</b>——
+      tmux 猜法认定的"完成"是安静 4 秒，这个理由不足以震你一下口袋。</li>
+      <li><b>会自动撤回。</b>一个 pane 离开"需要你"之后，已经推送出去的那条会从锁屏上撤掉。
+      一条过期的"需要你"，等于在诱导你去回答一个已经没了的提示。</li>
+      <li><b>你已经在看时会安静。</b>如果你正好停在那个 pane 上，通知只进通知列表，
+      不横幅、不响。在任何别的界面上，它照常横幅。</li>
+    </ul>
+
+    <h3 id="s12">设置 → NOTIFICATIONS</h3>
+    <p class="txt">四个开关，默认全开。</p>
+
+    <div class="tbl-wrap">
+      <table>
+        <thead>
+          <tr><th>开关</th><th class="us">App 里的说明</th><th>关掉之后</th></tr>
+        </thead>
+        <tbody>
+          <tr><td class="cap-col"><b>Notifications</b></td>
+              <td class="us">Alert when an agent needs you</td>
+              <td class="no">一条提醒都不发——Live Activity 照常</td></tr>
+          <tr><td class="cap-col"><b>Live Activity</b></td>
+              <td class="us">Show agent session status in the Dynamic Island</td>
+              <td class="no">锁屏卡片和胶囊都没有了——通知照常</td></tr>
+          <tr><td class="cap-col"><b>Alert sound</b></td>
+              <td class="us">Play a sound when the agent needs you</td>
+              <td class="no">"需要你"和"已完成"两种提醒都静音</td></tr>
+          <tr><td class="cap-col"><b>Show detail on lock screen</b></td>
+              <td class="us">Display what the agent is running/asking — off keeps it private</td>
+              <td class="no">"在干什么"这一行从卡片、小组件、通知正文里一起消失。状态还在。</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p class="txt">同一组里还有两行：<b>How notifications work</b>（内容和这一页说的是一回事），
+    以及只在 tmux 连接下出现的 <b>Install agent hooks</b>。如果你把 Notifications 和 Live Activity
+    <b>两个都</b>关掉，Offhook 会完全不再跟踪这个连接——什么都不看，什么都不轮询。</p>
+
+    <h3 id="s13">Agent Status 小组件</h3>
+    <p class="txt">它和 Live Activity 是两回事，行为也不一样，值得单独说一句。可以加成桌面上的
+    小尺寸 / 中尺寸小组件，也可以加成锁屏挂件（矩形、圆形、行内）。它收不到任何推送：
+    读的是 App 每次同步时写下的一份快照，刷新时机由 iOS 自己决定。小尺寸和中尺寸优先显示 detail 而不是位置，
+    因为 <em>Bash: npm install</em> 比 <em>work · 2:rednote</em> 信息量大。中尺寸显示 3 个 agent。
+    快照超过 3 分钟没更新，所有状态点会统一变灰，摘要行变成 <em>paused — open Offhook</em>。</p>
+  </section>
+</div>
+
+<!-- ══ 限制 ══ -->
+<div class="shell">
+  <section class="band doc" id="limits">
+    <p class="eyebrow">这一段请读完</p>
+    <h2>哪些情况下它不管用</h2>
+    <p class="sub">Offhook 没有推送服务器。下面绝大部分都是这一个决定的下游后果，
+    在 App 这一侧修不掉。</p>
+
+    <div class="grid">
+      <div class="cell"><span class="ic">后台</span>
+        <h4>被挂起就等于冻住</h4>
+        <p>iOS 一挂起 Offhook，那个 2 秒的扫描就停了。真机上验过：App 切后台后，
+        把一个 agent 从 blocked 改成 working，灵动岛纹丝不动；回到前台、跑完一次轮询，它才翻。</p></div>
+      <div class="cell"><span class="ic">诚实</span>
+        <h4>它宁可承认，也不装作还在动</h4>
+        <p>Live Activity 带一个 120 秒的过期线。过线之后 iOS 把这张卡片标记为陈旧，
+        它显示的是 <em>paused — open Offhook to refresh</em>，而不是一个假的"working"一直挂着。</p></div>
+      <div class="cell"><span class="ic">专注模式</span>
+        <h4>它穿不过专注模式</h4>
+        <p>"需要你"那条申请了 time-sensitive，但 Offhook 并没有带
+        <code>time-sensitive</code> 权限。iOS 会按普通提醒投递，所以勿扰模式照样把它压下去。</p></div>
+      <div class="cell"><span class="ic">一次一个</span>
+        <h4>只有最急的那个带按钮</h4>
+        <p>Live Activity 最多带 4 个 agent；灵动岛展开态是头条加两行，再往后就是
+        <code>+N more</code>。只有第一个有按钮，胶囊里也只塞得下一个，其余的要靠 Switch 翻。</p></div>
+      <div class="cell"><span class="ic">按键</span>
+        <h4>Allow 并不会去读屏幕</h4>
+        <p>就是 Enter 和 Esc，盲发。如果你用的某个 TUI 把危险选项放在默认高亮上，Allow 按下去就是它。
+        那道"提示已消失"的保险，只在 Offhook <em>确切知道</em>提示没了的时候才拦。</p></div>
+      <div class="cell"><span class="ic">Mosh</span>
+        <h4>Mosh + tmux 没有 agent 状态</h4>
+        <p>Mosh 承载不了 tmux 控制模式，也承载不了 herdr 的帧协议，所以在 Mosh 上这两个跑的是各自的 TUI。
+        Mosh + tmux 的连接下，灵动岛和它的通知<b>完全不被驱动</b>。Mosh + herdr 是可以的——
+        控制面走一条轻量的 SSH 边车。</p></div>
+      <div class="cell"><span class="ic">纯 SSH</span>
+        <h4>没有 multiplexer 就没有 agent 状态</h4>
+        <p>Multiplexer 选 None 的连接，根本没有地方可以读状态。agent 状态要么靠 tmux，要么靠 herdr——
+        这也正是那个选择器存在的理由。</p></div>
+      <div class="cell"><span class="ic">herdr</span>
+        <h4>最多滞后 8 秒</h4>
+        <p>herdr 的 CLI 没有手机够得着的事件订阅，所以 Offhook 只能轮询：有变化时 2 秒，
+        树安静下来退到 8 秒。你在笔记本上做的改动，最多会晚这么久才出现。在 App 里的操作是立刻刷新的。</p></div>
+      <div class="cell"><span class="ic">herdr</span>
+        <h4>直连是独占的</h4>
+        <p>一个 pane 同时只能被一个客户端占着。两台 Offhook 连同一个 pane 会互相抢，
+        各自大约 2 秒夺回一次。这是 herdr 独占式直连的固有行为，客户端消不掉——
+        它会退避，并且明确告诉你正在发生这件事。</p></div>
+    </div>
+
+    <p class="txt" style="max-width:44rem">还有几条小的，一并说完。<b>herdr 0.7.3</b>——
+    也就是现在 Homebrew 上的稳定版——不上报 pane 的命令名和 agent 名，所以面包屑会退回
+    <code>pane N</code>，空闲的 agent 在那儿也永远不会长出一行。<b>herdr 只看得见自己的 pane</b>：
+    你在主机的普通终端里起的 agent，它是看不到的。App 重启之后，Offhook 没有"状态是什么时候开始的"
+    这份记录，所以那些行宁可不显示时长，也不编一个出来。还有，按钮上的字本身——<em>Allow</em>、
+    <em>Deny</em>、<em>Reply</em>、<em>Stop</em>，以及 <em>Not delivered</em>、
+    <em>Prompt already gone</em> 这两条失败提醒——目前不分语言，一律显示英文。</p>
+  </section>
+</div>
+
+<!-- ══ FAQ ══ -->
+<div class="shell">
+  <section class="band doc">
+    <p class="eyebrow plain">常见问题</p>
+    <h2>大家最先问的几个</h2>
+    <div class="faq">
+      <details>
+        <summary>我的服务器上要装东西吗？</summary>
+        <p>herdr 上不用——agent 状态本来就是协议字段。tmux 上，如果你想要准确的状态和"它在问什么"那一行，
+        就要装：<b>设置 → Install agent hooks</b> 会把完整命令摆给你看，先备份你的配置，
+        并且只在你按下 Run 时才执行。不装的话，Offhook 退回去盯输出和终端响铃——那是猜，
+        而且它就是这么说的。</p>
+      </details>
+      <details>
+        <summary>Offhook 关掉之后，它能把我叫醒吗？</summary>
+        <p>不能。所有提醒都来自正在运行的 App 去读活着的会话，而 iOS 会把它挂起。
+        状态会一直停在那儿，直到你回来。没有推送服务器可以解决这件事——
+        这和"没有账号、中间没有任何东西"是同一个原因。</p>
+      </details>
+      <details>
+        <summary>能不能不让 agent 问的内容显示在锁屏上？</summary>
+        <p>把 <b>Show detail on lock screen</b> 关掉。<code>Bash: npm install …</code>
+        这一行会从 Live Activity、小组件和通知正文里一起消失。你仍然看得到是哪个 agent、在哪，
+        以及它是不是在等你。</p>
+      </details>
+      <details>
+        <summary>我按了 Allow，但那个提示早就过去了会怎样？</summary>
+        <p>如果 Offhook 知道那个 pane 已经离开"需要你"，它什么都不发，并告诉你提示已经没了。
+        如果 App 重启过、没有记录，这个 Enter 会照常发出去——这也正是为什么提示一解除，
+        那条通知就会从锁屏上被撤掉。</p>
+      </details>
+      <details>
+        <summary>灵动岛能同时显示我所有的 agent 吗？</summary>
+        <p>胶囊里一次只有一个——iOS 在那儿只渲染一个 Live Activity。展开态是头条加两行再加一个计数，
+        <b>Switch</b> 按钮用来轮换胶囊显示哪一个。要看全的话，首页的 Agents 区块才是完整列表。</p>
+      </details>
+    </div>
+  </section>
+</div>
+<!--DOCNEXT:BEGIN-->
+<div class="dpager"><a class="dprev" href="/zh/docs/herdr"><span>上一页</span>使用 herdr</a><a class="dnext" href="/zh/docs/worktrees"><span>下一页</span>用 git worktree 开隔离任务</a></div>
+<!--DOCNEXT:END-->
+</div><!--dbody-->
+<!--DOCTOC:BEGIN-->
+<aside class="dtoc">
+  <p class="dtoclabel">本页内容</p>
+  <nav><a href="#s1">agent 上报状态</a><a href="#s2">Offhook 去读</a><a href="#s3">你这一下打回去</a><a href="#s4">herdr</a><a href="#s5">tmux</a><a href="#s6">tmux 那条命令到底写了什么</a><a href="#s7">tmux 上不装 hook？那就是在猜，而且它自己承认</a><a href="#s8">灵动岛上</a><a href="#s9">这四个颜色不会变</a><a href="#s10">两道保险，因为&quot;悄悄失败&quot;是最坏的结果</a><a href="#s11">会发哪几种</a><a href="#s12">设置 → NOTIFICATIONS</a><a href="#s13">Agent Status 小组件</a></nav>
+</aside>
+<!--DOCTOC:END-->
+</div><!--/dwrap-->
+
+
+
+</div>
+
+
+
+</div>
+
+
+
+</div>
+
+
+
+</div>
+
+
+
+</div>
+
+<footer>
+  <div class="shell">
+    <p class="signoff">Off the hook, still on the line.</p>
+    <nav class="fnav">
+      <a href="/zh">首页</a><a href="/zh/docs">文档</a><a href="/zh/guides">指南</a>
+      <a href="/zh/compare">对比</a><a href="/privacy">隐私</a><a href="/support">支持</a>
+    </nav>
+    <p class="legal">© 2026 Offhook · SSH · Mosh · tmux · herdr · iPhone</p>
+  </div>
+</footer>
+<div class="dsearch" id="dsearch" hidden style="display:none">
+  <div class="dsearchbox" role="dialog" aria-modal="true" aria-label="Search docs">
+    <input id="dq" type="search" autocomplete="off" placeholder="搜索文档…">
+    <div id="dres"></div>
+  </div>
+</div>
+<script src="/docs-search.js?v=7" defer></script>
+</body>
+</html>

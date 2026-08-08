@@ -1,0 +1,448 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Using tmux — Offhook</title>
+<meta name="description" content="How Offhook drives tmux over control mode: sessions, windows and panes, scrollback, the prefix key, the agent-status hook install, and what it changes on your server.">
+<link rel="icon" type="image/png" href="/icon-192.png">
+<link rel="alternate" hreflang="en" href="https://offhook.cluas.eu.org/docs/tmux">
+<link rel="alternate" hreflang="zh-Hans" href="https://offhook.cluas.eu.org/zh/docs/tmux">
+<link rel="stylesheet" href="/offhook.css?v=7">
+</head>
+<body>
+
+<div class="shell">
+  <header class="top">
+    <a class="brand" href="./"><img src="/icon-192.png" alt="" width="30" height="30">Offhook</a>
+    <div class="topright">
+      <a class="lang" href="/docs">Docs</a>
+      <a class="lang" href="/guides">Guides</a>
+      <a class="lang" href="/compare">Compare</a>
+      <a class="lang" href="/zh/docs/tmux" hreflang="zh-Hans" lang="zh-Hans">中文</a>
+    </div>
+  </header>
+</div>
+
+<!-- ══ INTRO + CONTROL MODE ══ -->
+<div class="dwrap">
+<!--DOCSHELL:BEGIN-->
+<aside class="dnav" id="dnav">
+  <a class="dhome" href="/">← Back to the app</a>
+  <p class="dtitle">Docs</p>
+  <button class="dsearchbtn" type="button" data-docsearch><span>Search the docs…</span><kbd>⌘K</kbd></button>
+  <nav><p class="dsec">Start</p><a href="/docs/intro">What Offhook does</a><a href="/docs/setup">Set up a connection</a><a href="/docs/first-session">Run your first session</a><p class="dsec">Connections</p><a href="/docs/keys">SSH keys and host trust</a><a href="/docs/mosh">Mosh and roaming</a><a href="/guide/remote-access">Reach your machine from anywhere</a><p class="dsec">Multiplexers</p><a href="/docs/multiplexers">Choosing tmux or herdr</a><a href="/docs/tmux" class="on" aria-current="page">Using tmux</a><a href="/docs/herdr">Using herdr</a><p class="dsec">Agents</p><a href="/docs/agents">Agent status and the lock screen</a><a href="/docs/worktrees">Isolated tasks with git worktrees</a><a href="/guide/claude-code">Run Claude Code from your iPhone</a><p class="dsec">Input</p><a href="/docs/keyboard">Keyboard and shortcuts</a><a href="/docs/scrolling">Scrolling and scrollback</a><a href="/docs/clipboard">Clipboard and paste</a><a href="/docs/ime">CJK and IME input</a><p class="dsec">Appearance</p><a href="/docs/appearance">Themes, fonts and icons</a><p class="dsec">Help</p><a href="/docs/troubleshooting">Troubleshooting</a><a href="/compare">How Offhook compares</a></nav>
+</aside>
+<!--DOCSHELL:END-->
+<div class="dbody">
+<div class="shell">
+  <section class="band doc" style="border-top:none">
+    <p class="eyebrow">Docs</p>
+    <h2>Using tmux</h2>
+    <p class="sub">Offhook attaches as a tmux control client and draws your sessions,
+    windows and panes as native iOS views. Here is what that does, what it changes on your
+    server, and where it stops.</p>
+
+    <p class="txt">You need tmux on the host, on <code>PATH</code> — or a path in the
+    connection form's <b>Custom tmux Path</b> field. Nothing else. The
+    <a href="#agents">hook install</a> below is optional and separate.</p>
+    <p class="txt">If tmux is missing the session degrades instead of failing: a plain SSH
+    single pane plus a banner reading <b>"tmux not found on this host — plain SSH
+    session."</b>, and an <b>Install tmux</b> action that shows the command for your package
+    manager and runs it only when you tap it. Offhook never silently swaps in a different
+    multiplexer — tmux and herdr hold unrelated sessions. A custom tmux path skips the check
+    entirely, since the probe only walks <code>PATH</code>.</p>
+
+    <h3 id="s1">One line into your login shell</h3>
+    <p class="txt">Offhook doesn't shrink tmux's own text UI onto a phone. It attaches as a
+    control client — <code>tmux -CC</code>, the same control mode iTerm2 uses — and renders
+    the result itself. On connect it writes exactly this:</p>
+<pre>tmux set -g history-limit 50000 2&gt;/dev/null; <b>tmux -CC attach</b></pre>
+    <p class="txt"><code>attach</code> with no <code>-t</code> means your most recent
+    existing session. <b>Offhook never runs <code>tmux new</code> on its own.</b> With no
+    sessions on the server you get an empty state saying so, and a <b>Create Session</b>
+    button you press yourself.</p>
+    <p class="txt">Discovery is three commands on the same channel, re-run whenever the tree
+    changes. <code>-a</code> is every session on the server — that's why the home screen can
+    show several expanded at once:</p>
+<pre>list-sessions -F '#{session_id} #{session_attached} #{session_name}'
+list-windows -a -F '#{session_id} #{window_id} #{window_index} #{window_layout} …'
+list-panes   -a -F '#{pane_id} #{window_id} #{pane_index} … #{pane_current_command}'</pre>
+
+    <ul class="list">
+      <li><b>Attach has a 22-second deadline.</b> If tmux never confirms, the home card
+      reads <em>stalled</em> — "Attach didn't complete — tmux never confirmed." — with a
+      retry. SSH itself is still alive; it's the tmux handshake that didn't land.</li>
+      <li><b>Control mode cannot run over mosh.</b> Mosh sends screen diffs, not a
+      line-framed protocol. On mosh + tmux, Offhook renders tmux's ordinary full-screen UI
+      over mosh and opens a <b>second, sidecar SSH connection</b> running <code>-CC</code>
+      just to feed the breadcrumb and the sheets. No SSH, no native sheets — you get a bare
+      <code>tmux attach</code>.</li>
+    </ul>
+  </section>
+</div>
+
+
+
+</div>
+
+<!-- ══ NAVIGATION ══ -->
+<div class="shell">
+  <section class="band doc">
+    <p class="eyebrow">Getting around</p>
+
+    <h3 id="s2">One pane, full screen, always</h3>
+    <p class="txt">Offhook shows a single pane and zooms it for you
+    (<code>select-pane -Z</code>, plus <code>resize-pane -Z</code> when the window has splits
+    and isn't zoomed). Splits are never drawn side by side, and <b>the zoom is left in place
+    when you leave</b> — your layout isn't Offhook's to curate, and <code>prefix z</code>
+    restores it anywhere. The <b>Select Pane</b> sheet is the only view of the real split
+    geometry.</p>
+    <p class="txt">The top bar is three tappable crumbs — session › window › pane — each
+    opening its sheet. The pane crumb names the agent if a hook stamped one, else the
+    foreground command, else <code>pane 2</code>.</p>
+
+    <div class="tbl-wrap">
+      <table>
+        <thead>
+          <tr><th>Sheet</th><th>What it lists</th><th>Footer</th></tr>
+        </thead>
+        <tbody>
+          <tr><td class="cap-col"><b>Sessions</b></td>
+              <td>Every session on the server — <code>3 windows · 2:logs</code> for the
+              active one, <em>attached</em> / <em>detached</em> for the rest</td>
+              <td class="no">Swipe to switch · ⌃ b s</td></tr>
+          <tr><td class="cap-col"><b>Windows</b></td>
+              <td>The <b>active session's</b> windows as <code>2 panes · nvim</code>, with an
+              agent dot <em>and its text label</em> — colour alone isn't the signal</td>
+              <td class="no">Swipe to switch · ⌃ 1-9</td></tr>
+          <tr><td class="cap-col"><b>Select Pane</b></td>
+              <td>The real layout tree from tmux's layout string, drawn proportionally; each
+              cell shows the window-local index and the pane's command</td>
+              <td class="no">Tap to focus · ＋ splits a new pane · ⌃ b q</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p class="txt"><b>Limit:</b> the Windows sheet lists only the active session's windows.
+    Other sessions live in the home tree. The footer key chips print what <em>your</em> tmux
+    binds, for a hardware keyboard on the host — they're per-multiplexer because
+    <code>⌃ b q</code> lists panes in tmux and <b>detaches</b> in herdr.</p>
+
+    <div class="rows">
+      <div class="row">
+        <div>
+          <span class="kicker">Swipe</span>
+          <h3 id="s3">One finger, two axes</h3>
+          <p>A single pan gesture handles both. The axis locks after about 12 pt of
+          accumulated drag; a horizontal swipe commits at 40 pt with a haptic tick.</p>
+          <ul>
+            <li>Left for next, right for previous — it wraps</li>
+            <li>More than one pane in this window? It cycles panes. Otherwise, the session's
+            windows</li>
+            <li>Works on SSH + tmux and mosh + tmux (routed through the sidecar). It is
+            <b>not</b> wired on herdr, whose sheets say "Tap to switch"</li>
+          </ul>
+        </div>
+        <img class="phone rowshot" src="/08-tmux-windows.jpg" width="1320" height="2868"
+             loading="lazy"
+             alt="The tmux Windows sheet listing server, tests and logs above a live git log">
+      </div>
+    </div>
+
+    <h3 id="s4">Creating and killing</h3>
+    <p class="txt">Create from the <code>+</code> in a sheet header or the home screen's
+    SESSIONS row; rename and kill are in the long-press menu on any row. Names are
+    single-quoted, so a session called <code>my project</code> works.</p>
+
+    <div class="tbl-wrap">
+      <table>
+        <thead>
+          <tr><th>Action</th><th>What Offhook sends</th><th>Notes</th></tr>
+        </thead>
+        <tbody>
+          <tr><td class="cap-col">New session</td>
+              <td><code>new-session -d -P -F '#{session_id}'</code></td>
+              <td>Then selects it. A Create that leaves you where you were reads as "did
+              nothing".</td></tr>
+          <tr><td class="cap-col">New window</td>
+              <td><code>new-window -P -F '#{window_id}'</code></td>
+              <td>Field is <b>Name (optional)</b> — "Leave blank to let the program name
+              it."</td></tr>
+          <tr><td class="cap-col">New pane</td>
+              <td><code>split-window</code>, then <code>resize-pane -Z</code></td>
+              <td>The split is immediately zoomed back to one full-screen pane.</td></tr>
+          <tr><td class="cap-col">Rename</td>
+              <td><code>rename-session</code> / <code>rename-window</code></td>
+              <td>tmux panes have no name, so there's no Rename for a pane.</td></tr>
+          <tr><td class="cap-col">Kill</td>
+              <td><code>kill-session</code> / <code>kill-window</code> /
+              <code>kill-pane</code></td>
+              <td>Confirmations spell out the damage: "Kill window 2: logs? Every pane in it
+              dies."</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p class="txt"><b>Killing the last session exits the tmux server</b> and closes the
+    control channel, so Offhook prunes its own tree first rather than hang waiting for a
+    reply that never comes. When tmux refuses — a duplicate name, say — you get tmux's own
+    error text for three seconds. Nothing is swallowed.</p>
+  </section>
+</div>
+
+<!-- ══ SCROLLBACK ══ -->
+<div class="shell">
+  <section class="band doc">
+    <p class="eyebrow">Scrollback</p>
+    <h3 id="s5">Two different things called "scroll up"</h3>
+    <p class="txt">A pane's history lives on the server; what the app holds locally is only
+    what tmux repainted. So Offhook asks tmux which kind of scroll this is —
+    <code>display-message -p '#{mouse_any_flag}'</code> for the active pane, refreshed on
+    every switch and at the start of every drag. It asks rather than guesses, because under
+    <code>mouse on</code> the rendered terminal can't tell.</p>
+
+    <h4>The program grabbed the mouse — Claude Code, <code>vim --mouse</code>, <code>less --mouse</code></h4>
+    <p class="txt">Offhook synthesizes wheel events into the pane, so the program scrolls
+    itself, tmux never enters copy-mode, and typing still works. Clamped to six per flick.</p>
+<pre>ESC [ &lt; 64 ; col ; row M   <i># wheel up   (older)</i>
+ESC [ &lt; 65 ; col ; row M   <i># wheel down (newer)</i></pre>
+
+    <h4>A plain shell</h4>
+    <p class="txt">tmux copy-mode over the control channel, one step per 0.18 s. Any
+    keystroke sends <code>-X cancel</code> first, so typing always drops you back at the live
+    bottom — and <b>scroll-down does nothing until you've scrolled up</b>, because there's no
+    copy-mode to scroll down in yet.</p>
+<pre>copy-mode -t %41
+send-keys -t %41 -N 3 -X scroll-up</pre>
+
+    <h3 id="s6">What you can actually scroll into</h3>
+    <p class="txt">On attach, Offhook replays a pane's history once
+    (<code>capture-pane -e -S -2000 -E -1</code>) — up to <b>2 000 lines</b>, and only for
+    primary-screen panes. A pane in the alternate screen (vim, top, Claude Code) gets its
+    visible frame and nothing above it: a text dump has no cursor positioning and would
+    corrupt a full-screen program.</p>
+    <p class="txt">So a Claude Code pane you just attached has no local history above the
+    prompt. Scrolling up still works — copy-mode reaches tmux's own history from there — but
+    there is <b>no deeper on-demand fetch yet</b>. That's a gap, not a setting. Server-side
+    history is raised to 50 000 lines at attach and the client keeps 50 000 per pane; the
+    2 000 is only the replay depth.</p>
+    <p class="txt">If the swipe conflicts with what you run, the <code>⇅</code>
+    <b>Scroll history</b> chip does the same job. It's a builtin that starts outside the
+    shortcut bar.</p>
+  </section>
+</div>
+
+<!-- ══ KEYBOARD ══ -->
+<div class="shell">
+  <section class="band doc">
+    <p class="eyebrow">The prefix key</p>
+    <h3 id="s7">Over SSH + tmux, Ctrl-b does not reach tmux</h3>
+    <p class="txt">Keystrokes are delivered per-pane as a tmux command that injects bytes
+    into the program running there:</p>
+<pre>send-keys -t %41 -H 1b 5b 41</pre>
+    <p class="txt">Nothing on that path consults tmux's key table, so a typed
+    <code>^B</code> reaches your shell or your agent as <code>^B</code> — it doesn't open the
+    prefix. Navigate with the breadcrumb, the sheets, the home tree and the swipe. To send a
+    control key from the software keyboard, use the <code>ctrl</code> chip: it arms one-shot,
+    and the next key goes out as its control code.</p>
+    <p class="txt"><b>Over mosh + tmux the opposite is true.</b> The screen is tmux's own UI,
+    so <code>Ctrl-b</code> drives it as it does on your desktop — which is why the breadcrumb
+    there collapses to <code>user@host · tmux</code>. One sharp edge: a custom shortcut scoped
+    with <b>Only in tmux</b> keys off the SSH + tmux controller, so it does <b>not</b> appear
+    on a mosh + tmux session.</p>
+  </section>
+</div>
+
+<!-- ══ AGENT STATUS ══ -->
+<div class="shell">
+  <section class="band doc" id="agents">
+    <p class="eyebrow">Agent status on tmux</p>
+    <h2>Without the hooks it guesses. With them it knows.</h2>
+    <p class="sub">herdr reports agent state as a protocol field and needs nothing
+    installed. tmux has no such field, so Offhook offers a hook install — and is honest that
+    it's an install you perform, on a config it backs up first.</p>
+
+    <div class="steps3">
+      <div class="step3">
+        <h3 id="s8">Open the sheet</h3>
+        <p>Settings → <b>Install agent hooks</b>. Pick your agent: Claude Code, Codex,
+        Gemini CLI, Qwen Code, Qoder, Factory or CodeBuddy. The row is hidden on herdr,
+        which doesn't need it.</p>
+      </div>
+      <div class="step3">
+        <h3 id="s9">Run the one-liner</h3>
+        <p><b>Run in terminal</b>, or <b>Copy command</b> and paste it yourself. It backs up
+        your config, writes <code>~/.offhook/offhook-stamp.sh</code>, then merges four hook
+        groups.</p>
+      </div>
+      <div class="step3">
+        <h3 id="s10">Run a turn, then Re-check</h3>
+        <p>Hooks fire during an agent turn, so nothing appears until one runs. Then
+        <b>Re-check</b> confirms: "Hooks are live."</p>
+      </div>
+    </div>
+
+    <h3 id="s11">What the hook writes</h3>
+    <p class="txt">Four tmux pane options on <code>$TMUX_PANE</code>. That's the whole
+    mechanism — no socket, no daemon, no callback to Offhook.</p>
+<pre>tmux set -p -t "$TMUX_PANE" @offhook_state working   <i># or attention | done</i>
+tmux set -p -t "$TMUX_PANE" @offhook_agent claude
+tmux set -p -t "$TMUX_PANE" @offhook_since 1754630400
+tmux set -p -t "$TMUX_PANE" @offhook_title "Bash: npm install"</pre>
+    <p class="txt"><code>UserPromptSubmit</code> and <code>PreToolUse</code> → <b>working</b>;
+    <code>Notification</code> (Claude family) or <code>PermissionRequest</code> (Codex) →
+    <b>attention</b>; <code>Stop</code> → <b>done</b>. The script opens with
+    <code>[ -n "$TMUX" ] || exit 0</code> and always exits 0 — it stamps a pane, it can't
+    block or slow the agent. Re-running de-dupes instead of stacking.</p>
+    <p class="txt">Offhook reads it back with one command every two seconds while attached.
+    An unset option expands to nothing, so an unstamped pane returns <code>%5||||</code> and
+    falls through to the guess below:</p>
+<pre>list-panes -a -F '#{pane_id}|#{@offhook_state}|#{@offhook_agent}|#{@offhook_since}|#{@offhook_title}'</pre>
+
+    <div class="rows">
+      <div class="row">
+        <div>
+          <span class="kicker">What you lose without it</span>
+          <h3 id="s12">The fallback is a guess, deliberately narrow</h3>
+          <p>With no hooks, Offhook reads the pane: sustained output under a known agent
+          command for 2 s → working; a terminal bell (BEL) → needs you; 4 s of quiet → done,
+          gone after 25 s.</p>
+          <ul>
+            <li>Only <code>claude</code>, <code>codex</code>, <code>gemini</code>,
+            <code>qwen</code>, <code>qoder</code>, <code>factory</code>,
+            <code>codebuddy</code>, <code>aider</code>, <code>goose</code> and
+            <code>opencode</code> are promoted by output. Builds, <code>tail -f</code>, dev
+            servers and vim never are — a BEL is the one thing that bypasses the filter</li>
+            <li><b>No detail line.</b> "Bash: npm install" comes from
+            <code>@offhook_title</code>; the guess has no idea what the agent is asking</li>
+            <li><b>No "finished" ping.</b> That fires only on a real <code>Stop</code> stamp —
+            four seconds of quiet is too fuzzy to buzz a phone for</li>
+          </ul>
+        </div>
+        <img class="phone rowshot" src="/02-agent-terminal.jpg" width="1320" height="2868"
+             loading="lazy"
+             alt="A tmux pane showing a Claude Code edit request awaiting approval, with the breadcrumb naming the agent in amber">
+      </div>
+    </div>
+
+    <h3 id="s13">Limits to know before you rely on it</h3>
+    <ul class="list">
+      <li><b>Gemini CLI exposes no <code>Notification</code> event</b>, so "needs you" falls
+      back to the bell there.</li>
+      <li><b>No <code>jq</code> on the host means no title.</b> The state still stamps.</li>
+      <li><b>Run in terminal refuses</b> when the active pane is already running an agent —
+      the command would be typed into the agent's input box. Switch to a shell pane
+      first.</li>
+      <li><b>There's no Agents list on the home screen for tmux.</b> That section exists only
+      on herdr: hook coverage is only as complete as what you installed, and a list that
+      silently omits half your agents is worse than no list.</li>
+      <li><b>Agent status doesn't reach the island over mosh + tmux at all.</b> The
+      <code>-CC</code> sidecar drives the breadcrumb and the sheets; it isn't wired to the
+      agent monitor. Use SSH + tmux if you want your phone to tell you an agent is
+      waiting.</li>
+      <li><b>iOS suspends the app and the two-second poll stops with it.</b> State doesn't
+      update again until you return. There is no Offhook server and no push. The Live
+      Activity marks itself stale after 120 seconds and says <em>paused</em> rather than
+      showing a frozen "working".</li>
+    </ul>
+  </section>
+</div>
+
+<!-- ══ WHAT IT CHANGES ══ -->
+<div class="shell">
+  <section class="band doc">
+    <p class="eyebrow">On your server</p>
+    <h2>It attaches to what you have. It doesn't leave it untouched.</h2>
+    <p class="sub">Offhook never creates or restyles your sessions. But "changes nothing"
+    would be a lie — here is the complete list of what it does change while you're
+    connected.</p>
+
+    <div class="grid">
+      <div class="cell"><span class="ic">Global</span>
+        <h4>history-limit</h4>
+        <p><code>tmux set -g history-limit 50000</code> runs before every attach, on the SSH
+        path and the mosh sidecar. Server-wide; tmux applies it to panes created
+        afterwards.</p></div>
+      <div class="cell"><span class="ic">Per window</span>
+        <h4>Size pinning</h4>
+        <p>While you view a window, <code>resize-window -x -y</code> pins it to the phone's
+        grid so full-screen programs reflow. Another client on that window gets the phone's
+        width meanwhile.</p></div>
+      <div class="cell"><span class="ic">Handed back</span>
+        <h4>…and unpinned</h4>
+        <p>On leaving the window, on background, and on disconnect. Plain
+        <code>resize-window -A</code> isn't enough — it re-pins at "largest".</p></div>
+      <div class="cell"><span class="ic">Left as is</span>
+        <h4>Zoom</h4>
+        <p>The active pane stays zoomed after you leave. Deliberate: the split layout is
+        yours, and <code>prefix z</code> restores it anywhere.</p></div>
+      <div class="cell"><span class="ic">Transient</span>
+        <h4>copy-mode</h4>
+        <p>Entered and cancelled as you scroll and type, plus a one-shot cancel of a stale
+        copy-mode the first time a pane is seen after attach.</p></div>
+      <div class="cell"><span class="ic">mosh only</span>
+        <h4>The status bar</h4>
+        <p>On the sidecar path the attached session gets <code>status off</code> for the
+        duration, restored on switch or disconnect. Over SSH + tmux nothing about your
+        session's appearance is touched.</p></div>
+    </div>
+
+    <p class="txt">The other half of the rule: another client moving <em>its</em> window
+    never drags your view along unless the window you're on is gone. And if a desktop client
+    on <code>window-size latest</code> fights you over the size, Offhook backs off — three
+    reclaims within five seconds and it pauses for five. A stable screen, at the cost of the
+    desktop winning for a moment.</p>
+  </section>
+</div>
+<!--DOCNEXT:BEGIN-->
+<div class="dpager"><a class="dprev" href="/docs/multiplexers"><span>Previous</span>Choosing tmux or herdr</a><a class="dnext" href="/docs/herdr"><span>Next</span>Using herdr</a></div>
+<!--DOCNEXT:END-->
+</div><!--dbody-->
+<!--DOCTOC:BEGIN-->
+<aside class="dtoc">
+  <p class="dtoclabel">On this page</p>
+  <nav><a href="#s1">One line into your login shell</a><a href="#s2">One pane, full screen, always</a><a href="#s3">One finger, two axes</a><a href="#s4">Creating and killing</a><a href="#s5">Two different things called &quot;scroll up&quot;</a><a href="#s6">What you can actually scroll into</a><a href="#s7">Over SSH + tmux, Ctrl-b does not reach tmux</a><a href="#s8">Open the sheet</a><a href="#s9">Run the one-liner</a><a href="#s10">Run a turn, then Re-check</a><a href="#s11">What the hook writes</a><a href="#s12">The fallback is a guess, deliberately narrow</a><a href="#s13">Limits to know before you rely on it</a></nav>
+</aside>
+<!--DOCTOC:END-->
+</div><!--/dwrap-->
+
+
+
+</div>
+
+
+
+</div>
+
+
+
+</div>
+
+
+
+</div>
+
+
+
+</div>
+
+<footer>
+  <div class="shell">
+    <p class="signoff">Off the hook, still on the line.</p>
+    <nav class="fnav">
+      <a href="./">Home</a><a href="/docs">Docs</a><a href="/guides">Guides</a>
+      <a href="/compare">Compare</a><a href="/privacy">Privacy</a><a href="/support">Support</a>
+    </nav>
+    <p class="legal">© 2026 Offhook · SSH · Mosh · tmux · herdr · iPhone</p>
+  </div>
+</footer>
+<div class="dsearch" id="dsearch" hidden style="display:none">
+  <div class="dsearchbox" role="dialog" aria-modal="true" aria-label="Search docs">
+    <input id="dq" type="search" autocomplete="off" placeholder="Search the docs…">
+    <div id="dres"></div>
+  </div>
+</div>
+<script src="/docs-search.js?v=7" defer></script>
+</body>
+</html>

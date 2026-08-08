@@ -1,0 +1,93 @@
+# Offhook marketing site — same shape as moshi-site (nginx + ConfigMap),
+# but the page source now lives in the repo (marketing/site/) instead of
+# only inside the cluster.
+#
+# Deploy / update:
+#   kubectl create configmap offhook-site \
+#     $(for f in marketing/site/*.html; do printf -- "--from-file=%s " "$f"; done) \
+#     --dry-run=client -o yaml | kubectl apply --server-side -f -
+#   kubectl create configmap offhook-assets --from-file=marketing/site/assets/ \
+#     --dry-run=client -o yaml | kubectl apply --server-side -f -
+#   kubectl create configmap offhook-nginx \
+#     --from-file=default.conf=marketing/site/nginx.conf \
+#     --dry-run=client -o yaml | kubectl apply --server-side -f -
+#
+# Three ConfigMaps, not one: a ConfigMap caps at 1MiB and the docs pages plus
+# the screenshots blew past it. nginx.conf makes the split invisible to the
+# pages — they still reference assets flat, and nginx falls back to assets/.
+# `--server-side` is also required: the binary screenshots exceed the 256KiB
+# last-applied annotation that a client-side apply writes.
+#   kubectl apply -f marketing/site/k8s.yaml
+#   kubectl rollout restart deploy/offhook-site   # pick up ConfigMap changes
+#
+# DNS (one-time, in the cluas.eu.org zone):
+#   offhook.cluas.eu.org → CNAME moshi.cluas.eu.org  (or the same 4 A records)
+# cert-manager then completes the TLS order on its own.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: offhook-site
+  namespace: default
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: offhook-site }
+  template:
+    metadata:
+      labels: { app: offhook-site }
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:1.27-alpine
+          ports: [{ containerPort: 80 }]
+          readinessProbe:
+            httpGet: { path: /, port: 80 }
+          volumeMounts:
+            - name: site
+              mountPath: /usr/share/nginx/html
+              readOnly: true
+            - name: assets
+              mountPath: /usr/share/nginx/html/assets
+              readOnly: true
+            - name: nginx-conf
+              mountPath: /etc/nginx/conf.d
+              readOnly: true
+      volumes:
+        - name: site
+          configMap: { name: offhook-site }
+        - name: assets
+          configMap: { name: offhook-assets }
+        - name: nginx-conf
+          configMap: { name: offhook-nginx }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: offhook-site
+  namespace: default
+spec:
+  selector: { app: offhook-site }
+  ports: [{ port: 80, targetPort: 80 }]
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: offhook-site
+  namespace: default
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: offhook.cluas.eu.org
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: offhook-site
+                port: { number: 80 }
+  tls:
+    - hosts: [offhook.cluas.eu.org]
+      secretName: offhook-site-tls

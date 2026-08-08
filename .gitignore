@@ -9,9 +9,12 @@ cookies.json
 # Claude Code agent scaffolding (personal paths, vendored third-party skill docs)
 .claude/
 
-# Personal marketing-site deployment (old "Moshi" brand, k8s manifest with personal infra)
-site/
-site-dist/
+# Personal marketing-site deployment (old "Moshi" brand, k8s manifest with personal infra).
+# Anchored to the repo root: unanchored, `site/` matches a directory named
+# "site" at any depth, which silently swallowed marketing/site — the current
+# website — so none of it was ever committed.
+/site/
+/site-dist/
 
 # Planning docs and prototypes with personal paths
 docs/superpowers/
@@ -22,6 +25,6 @@ tmux_session_connect_flow.html
 # Local test credentials (never commit)
 .passwd
 
-# Local build artifacts parked in design-audit (IPAs, screenshots for review)
-design-audit/*.ipa
-design-audit/*.ipa.prev
+# Screenshot/IPA scratch space — smoke-localhost.sh and verify-e2e-mosh-tmux.sh
+# recreate design-audit/{smoke,e2e} on each run; none of it belongs in the repo.
+design-audit/

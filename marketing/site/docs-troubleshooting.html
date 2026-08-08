@@ -1,0 +1,605 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Troubleshooting — Offhook</title>
+<meta name="description" content="Symptom first: what you see on screen, what it actually means, and what to do about it — missing tmux, mosh, or herdr, black screens, stalled attaches, contended panes, and stale agent state.">
+<link rel="icon" type="image/png" href="/icon-192.png">
+<link rel="alternate" hreflang="en" href="https://offhook.cluas.eu.org/docs/troubleshooting">
+<link rel="alternate" hreflang="zh-Hans" href="https://offhook.cluas.eu.org/zh/docs/troubleshooting">
+<link rel="stylesheet" href="/offhook.css?v=7">
+</head>
+<body>
+
+<div class="shell">
+  <header class="top">
+    <a class="brand" href="./"><img src="/icon-192.png" alt="" width="30" height="30">Offhook</a>
+    <div class="topright">
+      <a class="lang" href="/docs">Docs</a>
+      <a class="lang" href="/guides">Guides</a>
+      <a class="lang" href="/compare">Compare</a>
+      <a class="lang" href="/zh/docs/troubleshooting" hreflang="zh-Hans" lang="zh-Hans">中文</a>
+    </div>
+  </header>
+</div>
+
+<!-- ══ INTRO ══ -->
+<div class="dwrap">
+<!--DOCSHELL:BEGIN-->
+<aside class="dnav" id="dnav">
+  <a class="dhome" href="/">← Back to the app</a>
+  <p class="dtitle">Docs</p>
+  <button class="dsearchbtn" type="button" data-docsearch><span>Search the docs…</span><kbd>⌘K</kbd></button>
+  <nav><p class="dsec">Start</p><a href="/docs/intro">What Offhook does</a><a href="/docs/setup">Set up a connection</a><a href="/docs/first-session">Run your first session</a><p class="dsec">Connections</p><a href="/docs/keys">SSH keys and host trust</a><a href="/docs/mosh">Mosh and roaming</a><a href="/guide/remote-access">Reach your machine from anywhere</a><p class="dsec">Multiplexers</p><a href="/docs/multiplexers">Choosing tmux or herdr</a><a href="/docs/tmux">Using tmux</a><a href="/docs/herdr">Using herdr</a><p class="dsec">Agents</p><a href="/docs/agents">Agent status and the lock screen</a><a href="/docs/worktrees">Isolated tasks with git worktrees</a><a href="/guide/claude-code">Run Claude Code from your iPhone</a><p class="dsec">Input</p><a href="/docs/keyboard">Keyboard and shortcuts</a><a href="/docs/scrolling">Scrolling and scrollback</a><a href="/docs/clipboard">Clipboard and paste</a><a href="/docs/ime">CJK and IME input</a><p class="dsec">Appearance</p><a href="/docs/appearance">Themes, fonts and icons</a><p class="dsec">Help</p><a href="/docs/troubleshooting" class="on" aria-current="page">Troubleshooting</a><a href="/compare">How Offhook compares</a></nav>
+</aside>
+<!--DOCSHELL:END-->
+<div class="dbody">
+<div class="shell">
+  <section class="band doc" style="border-top:none">
+    <p class="eyebrow">Docs</p>
+    <h2>Troubleshooting</h2>
+    <p class="sub">Organised by what you see, not by what went wrong underneath. Every entry
+    says what the screen means and what to do next. Several of them end in "nothing, this is
+    a limit" — those are the honest ones.</p>
+
+    <p class="txt">Three rules shape almost everything on this page, and knowing them
+    explains most of what you will run into.</p>
+
+    <div class="steps3">
+      <div class="step3">
+        <h3 id="s1">You always get connected</h3>
+        <p>A missing dependency never blocks the connection. It degrades. SSH is the floor
+        transport, a bare shell is the floor experience, and the terminal stays fully usable
+        behind any banner.</p>
+      </div>
+      <div class="step3">
+        <h3 id="s2">Plain language, not stderr</h3>
+        <p>Offhook says what is missing, what it costs you, and how to install it. A raw
+        <code>command not found</code> is a bug, not a message.</p>
+      </div>
+      <div class="step3">
+        <h3 id="s3">Nothing happens behind your back</h3>
+        <p>No silent installs. No silent session creation. No quietly attaching the other
+        multiplexer because the one you picked isn't there.</p>
+      </div>
+    </div>
+
+    <div class="wire">
+      <p><b>Three surfaces to read before anything else.</b></p>
+      <p><b>The banner at the top of the terminal.</b> One slot, one banner at a time,
+      always dismissible. Precedence is fixed: a dead mosh return path outranks the roaming
+      banner, which outranks the degraded-host banner.</p>
+      <p><b>The transport pill in the top bar.</b> It reads <code>SSH</code> or
+      <code>MOSH</code> when live, <code>MOSH · roaming</code> while roaming,
+      <code>reconnecting</code> with an amber dot, or <code>offline</code> with a red one. A
+      dropped session is visible, not silent.</p>
+      <p><b>Long-press that pill on a mosh session.</b> You get <b>MOSH DIAGNOSTICS</b> — four
+      raw counters, meant to be screenshotted and sent, not admired.</p>
+    </div>
+  </section>
+</div>
+
+
+
+</div>
+
+<!-- ══ MISSING DEPENDENCIES ══ -->
+<div class="shell">
+  <section class="band doc">
+    <p class="eyebrow">Missing on the host</p>
+    <h2>A banner says something isn't installed</h2>
+    <p class="sub">Offhook probes the host once over the first SSH channel and caches the
+    answer per connection. A missing tool degrades the session it is in and nothing else —
+    install it and the next connect comes back at full capability.</p>
+
+    <div class="faq">
+      <details>
+        <summary>"tmux not found on this host — plain SSH session."</summary>
+        <p><b>What it means.</b> The capability probe walked PATH on the host and did not
+        find <code>tmux</code>. You are on a single plain SSH pane. Session persistence and
+        the native Sessions / Windows / Pane sheets are off for this session.</p>
+        <p><b>What to do.</b> Tap <b>Install tmux</b> in the banner. Install Assist opens
+        with the command for whichever package manager the probe found — <code>apt-get</code>,
+        <code>dnf</code>, <code>yum</code>, <code>pacman</code>, <code>apk</code> or
+        <code>brew</code>. Three buttons, no fourth: <b>Run in terminal</b> pastes the
+        command into the visible shell and presses return, so the sudo prompt and all the
+        output are yours to watch; <b>Copy command</b> hands it over; <b>Re-check</b> re-runs
+        the probe. On success it offers <b>Reconnect</b>.</p>
+        <p>If the probe recognised none of those six, there is no command to show. The sheet
+        says <i>"Couldn't detect a package manager."</i> and drops to generic guidance plus
+        Re-check rather than guessing at a line that would fail.</p>
+        <p>tmux and mosh are offered in one command, because a host missing one is usually
+        missing the other. Which packages get named comes from the connection's own
+        multiplexer choice, so a herdr connection is never handed a tmux install line.</p>
+      </details>
+
+      <details>
+        <summary>"herdr not found on this host — plain shell session." — but tmux is installed</summary>
+        <p><b>What it means.</b> Exactly what it says. Offhook did not fall back to tmux, and
+        it never will.</p>
+        <p><b>Why.</b> tmux and herdr are separate servers holding unrelated sessions.
+        Quietly attaching the one that happens to be installed would show you work that is
+        not the work you asked for.</p>
+        <p><b>What to do.</b> Tap <b>Install herdr</b>. herdr is in no Linux distribution
+        repository, so Offhook never synthesises <code>sudo apt-get install -y herdr</code> —
+        that fails with "unable to locate package" and reads as our bug. You get one of
+        two:</p>
+        <pre>brew install herdr                            <i># Homebrew</i>
+curl -fsSL https://herdr.dev/install.sh | sh  <i># everywhere else</i></pre>
+        <p>Because the installer needs no package manager, there is always a command to
+        offer for herdr even when no package manager was detected. When you get the script
+        line rather than the Homebrew one, the sheet adds: <i>"Installs to ~/.local/bin.
+        Offhook looks there when probing and launching, so you don't need to change
+        PATH."</i> The official installer really does drop the binary there and deliberately
+        touches no rc file, so its own "not in your PATH" warning is expected — it is not a
+        failure.</p>
+      </details>
+
+      <details>
+        <summary>"mosh-server not found — connected over SSH instead."</summary>
+        <p><b>What it means.</b> The probe did not find <code>mosh-server</code>, so Offhook
+        reused the SSH session it had already authenticated and gave you a shell over TCP.
+        You lose roaming; you lose nothing else. The connection's card on the home screen
+        also turns its MOSH pill grey with a warning triangle, so the card is not claiming
+        roaming it does not have.</p>
+        <p><b>What to do.</b> Tap <b>Install mosh</b>. If the connection also uses tmux, one
+        command installs both. The fallback keeps your multiplexer: with tmux it still boots
+        <code>tmux -CC</code>, and with herdr it runs the native single-pane frame channel —
+        which is the one thing mosh could not have carried anyway. If the multiplexer is
+        missing as well, you get a bare shell and still only one banner: the mosh one already
+        opens the same Install Assist sheet, so Offhook does not stack a second on top.</p>
+      </details>
+
+      <details>
+        <summary>The binary is definitely installed, and the banner still says it isn't</summary>
+        <p><b>What it means.</b> <code>ssh host command</code> runs a non-login,
+        non-interactive shell. It never sources <code>.zprofile</code> or
+        <code>.bash_profile</code>, so anything <code>brew shellenv</code> added to your PATH
+        is invisible over that channel — the exact binary that works when you log in by hand
+        probes as missing. This has been seen live on a macOS/Homebrew host.</p>
+        <p><b>What Offhook already does.</b> It prepends the same five directories to both
+        the probe and the launch, so a tool found by one is reachable by the other:</p>
+        <pre>/opt/homebrew/bin   /opt/homebrew/sbin   /usr/local/bin   /usr/local/sbin   $HOME/.local/bin</pre>
+        <p><b>What to do.</b> If your install is somewhere else, set an explicit path in the
+        connection form: <b>Custom tmux Path</b>, <b>Custom herdr Path</b>, or
+        <code>mosh-server path</code>. <b>The catch, stated plainly:</b> an explicit path
+        means you have vouched for the binary, so it skips the probe's degrade check
+        entirely. A wrong path gives you a raw remote failure instead of a banner. That is
+        also why the fields ship empty — an earlier build prefilled the Apple-Silicon
+        Homebrew mosh path and made every Linux host bypass the graceful degrade.</p>
+      </details>
+
+      <details>
+        <summary>Re-check says "Can't re-check over this transport — reconnect to apply."</summary>
+        <p><b>What it means.</b> You are on mosh. The bootstrap SSH channel is closed the
+        moment mosh takes over, so there is no live channel left to probe. Offhook returns
+        "no new information" rather than probing a dead session, which would falsely read as
+        "everything is installed".</p>
+        <p><b>What to do.</b> Tap <b>Reconnect</b> in the same sheet. A reconnect re-runs the
+        probe from scratch, so anything you installed in the meantime is picked up without
+        touching a setting.</p>
+      </details>
+
+      <details>
+        <summary>The banner arrives a moment after the terminal does</summary>
+        <p><b>What it means.</b> The degrade decision waits for the probe. The shell paints
+        as soon as SSH is up; the banner is raised only once <code>command -v</code> has
+        answered over that first channel, one round trip later. Nothing is guessed in the
+        gap and nothing flashes — the cached verdict is used to populate Install Assist, not
+        to raise or clear the banner.</p>
+        <p><b>The one place a stale answer shows through.</b> If the probe cannot run at all,
+        Offhook keeps what it last knew rather than assuming everything is present. A cache
+        entry written by a build that predates herdr support has no herdr field in it and is
+        read as "herdr missing" — deliberately, because a stale "present" would launch a
+        binary the host does not have, and a stale "missing" costs one banner that the next
+        successful probe clears.</p>
+        <p><b>Why not the optimistic default.</b> A probe that cannot run returns "no new
+        information". Upgrading a known-degraded host back to "all present" would send it
+        straight into <code>tmux -CC attach</code> on a box with no tmux, which never
+        returns.</p>
+        <p><b>What to do.</b> Nothing, unless you fixed the host in another window — the
+        probe runs once per connect, so reconnect to pick it up.</p>
+      </details>
+    </div>
+  </section>
+</div>
+
+<!-- ══ BLACK SCREENS ══ -->
+<div class="shell">
+  <section class="band doc">
+    <p class="eyebrow">Nothing is painting</p>
+    <h2>Black screen, spinner, or an empty state</h2>
+    <p class="sub">Several unrelated causes that look nearly identical on a phone. The
+    difference is which surface tells you the truth.</p>
+
+    <div class="faq">
+      <details>
+        <summary>Mosh: black screen, live cursor, no error</summary>
+        <p><b>What it means.</b> The UDP socket reached ready and Offhook kept flushing, but
+        zero reply datagrams ever came back. The <b>return path</b> is dead — almost always a
+        VPN, proxy or firewall on the network you are on right now, passing your outbound UDP
+        and dropping the server's replies. It is not a decode bug and not a dead server. SSH
+        rides TCP over the same path and works.</p>
+        <p><b>What you see, after eight seconds.</b> A watchdog arms once the connection is
+        ready and flushing, and fires at most once:</p>
+        <pre><u>⚠</u>  Mosh isn't receiving data — your network may be
+   blocking UDP (VPN, proxy, or firewall).
+
+   <b>Switch to SSH</b>                                    <i>×</i></pre>
+        <p>The deadline is deliberately generous. The first reply is one round trip after the
+        first flush, so even a multi-second-latency link answers well inside eight seconds —
+        only a link that returns <i>nothing</i> runs it out. The watchdog retires the instant
+        <b>any</b> datagram lands, including one that fails to decrypt or parse, so a
+        working-but-slow link never trips it. It only ever arms before the first datagram: a
+        mid-session stall is a different problem, often recoverable through roaming, and is
+        left alone.</p>
+        <p><b>What to do.</b> Tap <b>Switch to SSH</b>. It flips the connection's protocol,
+        saves it, and reconnects over TCP through the same path that ate your UDP. The
+        terminal was never blocked — keystrokes were reaching the server the whole time, only
+        the rendering was starved — so the × just dismisses the banner and leaves the mosh
+        session as it was. To fix the path instead: UDP 60000–61000 inbound on the server and
+        outbound from your phone, and check whether your VPN or proxy is the thing eating
+        it.</p>
+      </details>
+
+      <details>
+        <summary>How to confirm it is the return path and not something else</summary>
+        <p>Long-press the transport pill on a mosh session for <b>MOSH DIAGNOSTICS</b>. If it
+        reads <b>"No datagrams yet."</b>, that is the tell — nothing has come back at all.
+        Otherwise you get four counters:</p>
+        <div class="notes">
+          <p><b class="teal">datagrams</b>
+          Total UDP datagrams received, counted before decrypt or parse. A low number behind
+          a connected pill points at the network or NAT, not at the app.</p>
+          <p><b class="teal">applied</b>
+          The highest display state actually applied. Stuck at 0 while datagrams arrive means
+          every diff so far hit the gap or parse-failure branch.</p>
+          <p><b class="teal">parse fails</b>
+          Host messages that failed to parse on an otherwise applicable diff.</p>
+          <p><b class="teal">gaps</b>
+          Diffs that arrived out of order. Occasional gaps are expected on a lossy link. A
+          count that keeps climbing while <i>applied</i> never advances means the client is
+          stuck re-diffing.</p>
+        </div>
+        <p class="txt">This overlay exists because the failure it diagnoses needs real packet
+        loss, real reordering, or one specific remote's shell config to reproduce, and none
+        of that happens on a loopback test. A screenshot of it is the most useful thing you
+        can attach to a report.</p>
+      </details>
+
+      <details>
+        <summary>A host on your own LAN behaves differently from one on the internet</summary>
+        <p><b>What it means.</b> iOS Local Network permission was denied for Offhook. Hosts
+        on the internet are unaffected; hosts like <code>192.168.1.10</code> are gated by
+        that switch. Offhook's own prompt says it plainly, and it covers both transports:
+        <i>"Offhook connects to servers on your local network over SSH and mosh (UDP).
+        Without this permission, connections to LAN hosts (e.g. 192.168.x.x) will fail."</i></p>
+        <p><b>What to do.</b> iOS Settings → Offhook → Local Network, and turn it on. The
+        app declares the permission for this one reason and asks for it on first use. Check
+        it before anything else on a LAN address — it is one switch and it rules out the
+        whole class, including the case where SSH connects and only mosh sits black.</p>
+      </details>
+
+      <details>
+        <summary>"No tmux sessions" / "No herdr workspaces", with a Create button</summary>
+        <p><b>What it means.</b> The binary is installed and reachable. The server simply has
+        nothing running. The panel says it outright, in whichever noun the multiplexer uses:
+        <i>"This server has no running sessions / workspaces. Offhook only attaches — create
+        the first one to start."</i></p>
+        <p><b>Why the app doesn't just make one.</b> Offhook never creates or restyles a
+        session on its own. With tmux it attaches to sessions you already have and leaves
+        them exactly as they are; only the sessions you create through Offhook get Offhook's
+        own look — status bar off — and that is restored on disconnect.</p>
+        <p><b>What to do.</b> Tap <b>Create Session</b> or <b>Create Workspace</b>. The button
+        reads <b>Creating…</b> while the command is in flight. On herdr, that one tap also
+        starts the server if it isn't running — a genuinely cold <code>herdr server</code>
+        comes up with zero workspaces, so Offhook starts it and then creates the first
+        workspace, and only ever from that explicit tap.</p>
+      </details>
+
+      <details>
+        <summary>Stuck on "Attaching tmux…" or "Attaching herdr…"</summary>
+        <p><b>What it means.</b> The first few seconds are the normal attach handshake. The
+        spinner holds for four seconds before Offhook is willing to say anything, then it
+        settles into one of exactly two honest answers: <b>"tmux not installed on this
+        host"</b> with an Install button, or <b>"No tmux sessions"</b> with a Create button.
+        The panel exists to kill a specific mis-diagnosis: without tmux,
+        <code>tmux -CC attach</code> never returns, the screen used to sit on "Attaching
+        tmux…" forever, and the empty state then falsely reported "No tmux sessions" — where
+        Create Session would have failed too.</p>
+        <p><b>What to do.</b> Wait past four seconds and read which of the two you got. If
+        it is a tmux connection, a second, longer deadline is running on the home screen at
+        the same time: a control-mode attach that has not confirmed within 22 seconds turns
+        that connection's card amber, replaces the spinner with <b>"Attach didn't complete —
+        tmux never confirmed."</b>, and offers <b>RETRY</b>. SSH is still up at that point,
+        so it is a stalled attach, not a dead host. The 22 seconds are sized for a slow link:
+        a normal attach on a high-latency host was measured at 10–20 seconds with no progress
+        feedback at all, which reads as "stuck" long before it is. herdr has no equivalent
+        deadline — on that path the four-second panel is the whole story.</p>
+      </details>
+
+      <details>
+        <summary>herdr: black screen, no empty state, and the Tabs sheet's + does nothing</summary>
+        <p><b>What it means.</b> herdr is installed but its server is not running, and you are
+        on a build that could not tell. This was a real shipped bug. Offhook detected the
+        condition by matching herdr 0.8.0's structured
+        <code>{"error":{"code":"server_not_running"}}</code>, but herdr 0.7.3 — what
+        <code>brew install herdr</code> gave us in August 2026 — emits a bare Rust error
+        instead:</p>
+        <pre>Error: Os { code: 2, kind: NotFound, … }</pre>
+        <p>The text never matched, the "server not running" flag stayed false, and the empty
+        state never showed. Worse, the SSH layer merges stderr into stdout and drops the exit
+        code, so nothing on screen indicated the command had failed at all.</p>
+        <p><b>The fix, and the lesson.</b> Stop matching error text entirely. Every herdr
+        command now carries <code>; echo "__offhook_rc=$?"</code> and the decision is made on
+        the exit code, which is 1 in both versions. Cross-version detection has to pick the
+        most stable signal available, and error strings are the least stable one there
+        is.</p>
+        <p><b>What to do.</b> Update. A herdr server that isn't running is an empty state
+        with a Create Workspace button — it is not a connection failure and is not treated as
+        one.</p>
+      </details>
+
+      <details>
+        <summary>The pane breadcrumb says "pane 2" instead of the command</summary>
+        <p><b>What it means.</b> herdr 0.7.3 (protocol 16) does not report a pane's command,
+        title or label — those fields arrive in 0.8.0 (protocol 19). The snapshot decoder is
+        written so a missing field degrades that one detail rather than failing the whole
+        read, so the crumb falls back to <code>pane N</code>.</p>
+        <p><b>Why it doesn't just disappear.</b> The pane crumb is the only entry point to
+        the Select Pane sheet. A vanished crumb would take pane switching with it.</p>
+        <p><b>What to do.</b> Nothing you need to. Note the related gap while you are here:
+        because 0.7.3 reports no agent name either, idle agent rows never appear in the
+        Agents section on 0.7.3.</p>
+      </details>
+
+      <details>
+        <summary>Over mosh you get herdr's own sidebar, or tmux's own status line</summary>
+        <p><b>What it means.</b> This is by design and it cannot be fixed. mosh transmits
+        rendered screen diffs, so it cannot carry a line-framed control protocol — neither
+        tmux <code>-CC</code> nor herdr's frame protocol survives it. Verified empirically:
+        <code>tmux -CC</code> starts server-side over mosh and no <code>%begin</code> or
+        <code>%output</code> ever comes back.</p>
+        <p><b>What you actually get.</b> The multiplexer runs its own full-screen TUI inside
+        the mosh shell and Offhook is just the renderer. A separate lightweight SSH connection
+        runs alongside to feed the native sheets: rendering over UDP, control over TCP. On a
+        phone, herdr's own sidebar takes roughly a third of the screen width — usable, but
+        cramped. That is precisely why the native single-pane frame channel exists on
+        SSH.</p>
+        <p><b>What to do.</b> If you want native rendering, use SSH for that connection. The
+        Add Connection form says so before you connect: <i>"With Mosh, herdr runs its own
+        terminal UI; native rendering needs SSH."</i></p>
+      </details>
+    </div>
+  </section>
+</div>
+
+<!-- ══ CONTENTION AND BACKGROUND ══ -->
+<div class="shell">
+  <section class="band doc">
+    <p class="eyebrow">It was fine, then it wasn't</p>
+    <h2>Drops, contended panes, and stale state</h2>
+    <p class="sub">These are the ones where the answer is most often a limit rather than a
+    fix. They are written down here so you do not have to discover them by filing a bug.</p>
+
+    <div class="faq">
+      <details>
+        <summary>"Another client is using this pane — retrying shortly"</summary>
+        <p><b>What it means.</b> herdr's direct attach is <b>exclusive per terminal</b>. Its
+        <code>terminal_attach_owners</code> refuses a second attacher unless that attacher
+        passes <code>--takeover</code>, and Offhook always passes it, because a reconnect
+        necessarily collides with its own stale attach. So two Offhooks pointed at the same
+        pane evict each other.</p>
+        <p><b>What Offhook does about it.</b> The control poller re-reports the focused pane
+        after <i>every</i> poll, not only when the focus changes. That repeat is what heals a
+        channel someone else evicted. Before that fix, the evicted client went black and
+        never recovered, because retarget only ran on a focus change and the focus had not
+        changed — and an eviction moves nothing in the tree, so nothing looked different. For
+        the same reason a lost attach also drops the poller back to its fast cadence and
+        reads immediately, instead of waiting out an idle interval.</p>
+        <p>After three evictions inside a 30-second window, Offhook stops re-attaching for 30
+        seconds and shows this notice. It clears itself the moment a frame paints again.</p>
+        <p><b>The limit, plainly.</b> Two directly-attached clients will fight each other,
+        each reclaiming the pane on its next poll — every couple of seconds while anything is
+        moving. That is inherent to herdr's exclusive direct attach and cannot be fixed on the
+        client side. Put the second client on a different pane, or close it.</p>
+        <p><b>One thing we have not verified.</b> A laptop running herdr's own TUI does not
+        occupy an attach owner, so "laptop on the TUI, phone on Offhook, same host" should not
+        conflict. We have not tested it, so we are not claiming it works.</p>
+      </details>
+
+      <details>
+        <summary>You come back to the app and the agent state is stale</summary>
+        <p><b>What it means.</b> iOS suspends the app in the background, including its SSH
+        polling. Agent state stops updating until you return, and catches up one poll after
+        you re-foreground. Measured on device: flipping a pane from blocked to working while
+        the app was backgrounded left the Dynamic Island unchanged until the app came
+        forward.</p>
+        <p><b>Why there is no fix.</b> There is no push server, because there is no Offhook
+        server at all. Alerts are generated on-device from the live session; they fire while
+        the app is in the foreground or recently backgrounded, and a fully suspended app does
+        not poll. This is identical on the tmux path — it is not a herdr problem.</p>
+        <p>The lock-screen Live Activity carries a 120-second stale date, so two minutes
+        without a push from the app lets it render an honest "paused" hint instead of a frozen
+        "working".</p>
+        <p><b>What to do.</b> Open the app. That is the whole remedy, and it is the cost of
+        having nothing in the middle.</p>
+      </details>
+
+      <details>
+        <summary>Something you did on your laptop takes seconds to show up on the phone</summary>
+        <p><b>What it means.</b> herdr's control plane is polled, not pushed. The poll runs
+        every 2 seconds while anything is moving and eases to 8 seconds after three identical
+        reads; any change or a manual refresh snaps it back to 2 seconds. Actions you take
+        <i>in the app</i> are followed by an immediate re-read and feel instant. Actions taken
+        anywhere else can lag by up to 8 seconds.</p>
+        <p><b>Why polling.</b> herdr's socket API does have <code>events.subscribe</code>,
+        with 26 event types. The CLI never exposes a general subscribe subcommand — it has
+        <code>api snapshot</code> and <code>api schema</code>, plus a <code>wait</code> that
+        is scoped to one pane and one status — and a phone cannot open the host's Unix domain
+        socket. Polling is the only mechanism that covers the whole tree. It is also how agent
+        state reaches the Dynamic Island, which is why the idle ceiling is 8 seconds and not
+        something more frugal.</p>
+        <p><b>A consequence worth knowing.</b> Elapsed times in the Agents section are only
+        ever shown to minute granularity — <code>now</code>, <code>2m</code>,
+        <code>1h 12m</code>. The number behind them carries up to eight seconds of error, and
+        printing seconds would claim a precision it does not have.</p>
+      </details>
+
+      <details>
+        <summary>The pill says "reconnecting" or "offline"</summary>
+        <p><b>What it means.</b> The session dropped and Offhook is handling it. While the
+        app is in the foreground it probes the transport every 12 seconds; the probe itself
+        round-trips a trivial command with an 8-second timeout. If it fails, the session marks
+        reconnecting and reconnects. If it is already reconnecting, the next 12-second tick
+        retries, which is what acts as the backoff.</p>
+        <p>The 8-second probe timeout is tuned, not arbitrary: a false "dead" tears down a
+        working session and forces a full SSH re-handshake, which on a slow link costs 6–9
+        seconds. Genuinely dead sockets still fail fast on a write error.</p>
+        <p><b>What to do.</b> Usually nothing. A tmux <code>attach</code> reattaches to the
+        same server-side session, so panes and their scrollback come straight back, and you
+        land on the pane you were on. Mosh is exempt from the SSH probe entirely — it owns its
+        own UDP resume and roaming.</p>
+      </details>
+
+      <details>
+        <summary>You were away for a minute and it reconnected instead of resuming</summary>
+        <p><b>What it means.</b> Backgrounded for longer than 20 seconds, Offhook skips the
+        liveness probe on return and forces a fresh reconnect. iOS has almost certainly killed
+        the TCP socket by then, and the probe can false-positive on a half-open channel — the
+        result of trusting it is a green pill over a frozen pane.</p>
+        <p>Backgrounding also stops the keepalive timer (iOS would suspend it anyway) and
+        hands every tmux window-size pin back to the server, so a desktop client attaching
+        while you are away gets its full width instead of the phone's grid.</p>
+      </details>
+
+      <details>
+        <summary>It asked for Face ID again</summary>
+        <p><b>What it means.</b> Every backgrounding drops every decrypted secret Offhook was
+        holding in memory. Re-foregrounding forces a fresh, biometry-gated read from the
+        Keychain, and that is what prompts.</p>
+        <p><b>Why.</b> A key configured to authenticate on every read would otherwise quietly
+        become "once per app launch". The reconnect after a backgrounding re-reads the
+        credential, so the prompt lands there.</p>
+      </details>
+
+      <details>
+        <summary>An agent you are definitely running does not appear in the Agents section</summary>
+        <p><b>First, the section only exists on herdr connections.</b> A tmux connection's card
+        has no Agents section at all — that data depends on whether you installed Offhook's
+        status hook, and a list that silently omits half your agents is worse than no list.</p>
+        <p><b>On herdr.</b> The section lists agents inside herdr's own panes, not every agent
+        process on the machine. A <code>claude</code> you started in Terminal.app is invisible
+        to it. herdr is a runtime, not a process scanner: it identifies agents by watching the
+        panes it owns, and <code>herdr integration install claude</code> makes the agent report
+        itself rather than being recognised on screen — more authoritative, still only for
+        panes herdr holds.</p>
+        <p><b>What to do.</b> Start it through <b>New Agent Task</b>, or run it inside a herdr
+        pane. Either way it shows up on the next poll.</p>
+        <p><b>One version gap.</b> On herdr 0.7.3 a pane carries no agent name, so an agent
+        sitting <i>idle</i> produces no row — there would be nothing to label it with. An agent
+        that is working or blocked still appears; the row just falls back to a generic
+        name.</p>
+      </details>
+
+      <details>
+        <summary>A prefix chord dropped the whole session</summary>
+        <p><b>What it means.</b> tmux and herdr both default to <code>Ctrl-b</code> as the
+        prefix, and they do not agree on what follows it. <code>⌃ b q</code> lists panes in
+        tmux and <b>detaches</b> in herdr. <code>⌃ b s</code> opens the session list in tmux
+        and is unbound in herdr, where workspaces are <code>⌃ b w</code>. tmux jumps to a
+        window with <code>⌃ 1-9</code>; herdr steps with <code>⌃ b n</code> /
+        <code>⌃ b p</code>.</p>
+        <p><b>Where this can bite you.</b> Only where the multiplexer's own full-screen UI is
+        what you are looking at — over mosh, or in a shell where you started
+        <code>herdr</code> / <code>tmux</code> yourself. On the native paths Offhook drives
+        the multiplexer over its own channel and your keystrokes go to the pane, so the
+        prefix never reaches it.</p>
+        <p><b>What to do.</b> Detach is not kill: the workspace and its panes stay on the
+        server, so reconnecting picks them straight back up. If you build your own prefix key
+        in the shortcut editor, build the one for the multiplexer you actually use. The sheets
+        print the right chord per connection, and the pane sheet on a herdr connection prints
+        <code>⌃ b v</code> — the split — precisely because herdr has no "show me the panes"
+        key to print.</p>
+      </details>
+    </div>
+  </section>
+</div>
+
+<!-- ══ REPORTING ══ -->
+<div class="shell">
+  <section class="band doc">
+    <p class="eyebrow">Still stuck</p>
+    <h2>What to send</h2>
+    <p class="sub">There are no users yet and no support queue to hide behind, so a report
+    goes straight to the person who wrote the code. These four things make it answerable in
+    one round trip instead of five.</p>
+
+    <ul class="list">
+      <li><b>The banner text, verbatim</b>, or a photo of the screen. The wording identifies
+      which branch you hit.</li>
+      <li><b>A screenshot of MOSH DIAGNOSTICS</b> if the session is mosh. Long-press the
+      transport pill. "No datagrams yet." answers the question on its own.</li>
+      <li><b>Transport and multiplexer</b> for that connection — SSH or mosh, and none, tmux
+      or herdr. Half the failure modes on this page only exist in one combination.</li>
+      <li><b>Versions on the host.</b> <code>tmux -V</code>, <code>mosh-server --version</code>,
+      <code>herdr --version</code>. herdr protocol drift between 0.7.3 and 0.8.0 has already
+      caused one black-screen bug, and it will not be the last.</li>
+    </ul>
+
+    <p class="txt">Where to send it is on the <a href="/support"
+    style="color:var(--teal)">support page</a>.</p>
+  </section>
+</div>
+<!--DOCNEXT:BEGIN-->
+<div class="dpager"><a class="dprev" href="/docs/appearance"><span>Previous</span>Themes, fonts and icons</a><a class="dnext" href="/compare"><span>Next</span>How Offhook compares</a></div>
+<!--DOCNEXT:END-->
+</div><!--dbody-->
+<!--DOCTOC:BEGIN-->
+<aside class="dtoc">
+  <p class="dtoclabel">On this page</p>
+  <nav><a href="#s1">You always get connected</a><a href="#s2">Plain language, not stderr</a><a href="#s3">Nothing happens behind your back</a></nav>
+</aside>
+<!--DOCTOC:END-->
+</div><!--/dwrap-->
+
+
+
+</div>
+
+
+
+</div>
+
+
+
+</div>
+
+
+
+</div>
+
+
+
+</div>
+
+<footer>
+  <div class="shell">
+    <p class="signoff">Off the hook, still on the line.</p>
+    <nav class="fnav">
+      <a href="./">Home</a><a href="/docs">Docs</a><a href="/guides">Guides</a>
+      <a href="/compare">Compare</a><a href="/privacy">Privacy</a><a href="/support">Support</a>
+    </nav>
+    <p class="legal">© 2026 Offhook · SSH · Mosh · tmux · herdr · iPhone</p>
+  </div>
+</footer>
+<div class="dsearch" id="dsearch" hidden style="display:none">
+  <div class="dsearchbox" role="dialog" aria-modal="true" aria-label="Search docs">
+    <input id="dq" type="search" autocomplete="off" placeholder="Search the docs…">
+    <div id="dres"></div>
+  </div>
+</div>
+<script src="/docs-search.js?v=7" defer></script>
+</body>
+</html>

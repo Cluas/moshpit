@@ -1,0 +1,583 @@
+<!doctype html>
+<html lang="zh-Hans">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>用 herdr — Offhook 摘机</title>
+<meta name="description" content="Offhook 怎么驱动 herdr：安装、workspace 和 tab 的叫法、和 tmux 不一样的键位、Agents 区、隔离的 worktree 任务，以及所有该知道的限制。">
+<link rel="icon" type="image/png" href="/icon-192.png">
+<link rel="alternate" hreflang="en" href="https://offhook.cluas.eu.org/docs/herdr">
+<link rel="alternate" hreflang="zh-Hans" href="https://offhook.cluas.eu.org/zh/docs/herdr">
+<link rel="stylesheet" href="/offhook.css?v=7">
+</head>
+<body>
+
+<div class="shell">
+  <header class="top">
+    <a class="brand" href="/zh"><img src="/icon-192.png" alt="" width="30" height="30">Offhook</a>
+    <div class="topright">
+      <a class="lang" href="/zh/docs">文档</a>
+      <a class="lang" href="/zh/guides">指南</a>
+      <a class="lang" href="/zh/compare">对比</a>
+      <a class="lang" href="/docs/herdr" hreflang="en" lang="en">EN</a>
+    </div>
+  </header>
+</div>
+
+<!-- ══ 它是什么 ══ -->
+<div class="dwrap">
+<!--DOCSHELL:BEGIN-->
+<aside class="dnav" id="dnav">
+  <a class="dhome" href="/zh">← 回到首页</a>
+  <p class="dtitle">文档</p>
+  <button class="dsearchbtn" type="button" data-docsearch><span>搜索文档…</span><kbd>⌘K</kbd></button>
+  <nav><p class="dsec">开始</p><a href="/zh/docs/intro">Offhook 是做什么的</a><a href="/zh/docs/setup">配置一个连接</a><a href="/zh/docs/first-session">跑通第一个会话</a><p class="dsec">连接</p><a href="/zh/docs/keys">SSH 密钥与主机信任</a><a href="/zh/docs/mosh">Mosh 与漫游</a><a href="/zh/guide/remote-access">在任何地方连上你的机器</a><p class="dsec">多路复用器</p><a href="/zh/docs/multiplexers">选 tmux 还是 herdr</a><a href="/zh/docs/tmux">使用 tmux</a><a href="/zh/docs/herdr" class="on" aria-current="page">使用 herdr</a><p class="dsec">Agent</p><a href="/zh/docs/agents">Agent 状态与锁屏</a><a href="/zh/docs/worktrees">用 git worktree 开隔离任务</a><a href="/zh/guide/claude-code">用 iPhone 跑 Claude Code</a><p class="dsec">输入</p><a href="/zh/docs/keyboard">键盘与快捷键</a><a href="/zh/docs/scrolling">滚动与回滚</a><a href="/zh/docs/clipboard">剪贴板与粘贴</a><a href="/zh/docs/ime">中日韩与输入法</a><p class="dsec">外观</p><a href="/zh/docs/appearance">主题、字体与图标</a><p class="dsec">帮助</p><a href="/zh/docs/troubleshooting">排障</a><a href="/zh/compare">和别的比怎么样</a></nav>
+</aside>
+<!--DOCSHELL:END-->
+<div class="dbody">
+<div class="shell">
+  <section class="band doc" style="border-top:none">
+    <p class="eyebrow">文档</p>
+    <h2>用 herdr</h2>
+    <p class="sub">herdr 是专门为 CLI coding agent 写的多路复用器。连 herdr 的时候，
+    Offhook 不用你在主机上装任何东西，就知道每个 agent 在干什么。这一页讲安装、术语、键位、
+    Agents 区、隔离任务——最后一节讲清楚哪些事它做不到。</p>
+
+    <p class="txt"><a href="https://github.com/herdrdev/herdr">herdr</a> 是一个 Rust
+    单二进制。Offhook 支持它，是因为它把三件苦活从手机搬到了服务端——而 tmux 那条路上，
+    这三件事还得 Offhook 自己扛。</p>
+
+    <div class="grid">
+      <div class="cell"><span class="ic">Agent 状态</span>
+        <h4>协议里的一等字段</h4>
+        <p>每个 pane 上都有 <code>agent_status</code>，并自动从 pane 上卷到 tab、再到
+        workspace。tmux 上要你先装 hook，往 <code>@offhook_*</code> 里写状态。</p></div>
+      <div class="cell"><span class="ic">滚动</span>
+        <h4>服务端决定去向</h4>
+        <p><code>terminal.scroll</code> 是协议动作，一次滑动该变成 mouse report 还是翻
+        scrollback 由 herdr 判。tmux 上是 Offhook 自己读
+        <code>#{mouse_any_flag}</code> 再猜。</p></div>
+      <div class="cell"><span class="ic">尺寸</span>
+        <h4>只影响自己那个 pane</h4>
+        <p>直连客户端的 resize 只打到自己那个 pane 的 PTY。tmux 上手机一连，整个 window
+        对所有客户端都被拉小——Offhook 那套钉窗口尺寸的机制就是为此存在的。</p></div>
+    </div>
+
+    <p class="txt"><b>它是 tmux 的另一种选择，不是替代品。</b>两者是独立的服务器，
+    装的是毫不相干的会话。选哪个按连接决定，Offhook 绝不替你换成另一个——herdr 没装就默默去
+    attach tmux，等于把别人的活儿端到你面前说这是你的。</p>
+
+    <p class="txt"><b>版本。</b>设计基准是 herdr main / v0.8.0，protocol 19；
+    实机验证跑的是 0.7.3，protocol 16——当时 <code>brew install herdr</code> 装到的就是它，
+    差了三个协议版本。解码器按「字段缺了就降级这一处细节、绝不让整份读取失败」写；
+    0.7.3 上会少点什么，这一页会明说。</p>
+  </section>
+</div>
+
+
+
+</div>
+
+<!-- ══ 安装 ══ -->
+<div class="shell">
+  <section class="band doc">
+    <p class="eyebrow">安装</p>
+    <h2>先装上，再按连接选它</h2>
+    <p class="sub">herdr 不在任何 Linux 发行版仓库里，它自己的 packaging 只覆盖 Windows。
+    所以这里没有 <code>apt-get</code> 那一行可给，Offhook 也拒绝硬凑一条——
+    凑出来的命令只会以「找不到软件包」收场，而用户会以为是 App 的 bug。</p>
+
+    <div class="steps3">
+      <div class="step3">
+        <h3 id="s1">在主机上装 herdr</h3>
+        <p>有 Homebrew 就用 Homebrew，没有就用官方脚本。脚本把二进制放进
+        <code>~/.local/bin</code>，并且刻意不动你任何 rc 文件。</p>
+      </div>
+      <div class="step3">
+        <h3 id="s2">在连接里选 herdr</h3>
+        <p>Add Connection → <code>ADVANCED</code> → <b>Multiplexer</b> → herdr。
+        按连接存，不做全局默认——你的每台主机装的东西本来就不一样。</p>
+      </div>
+      <div class="step3">
+        <h3 id="s3">连上去</h3>
+        <p>主机上没有？横幅直说，并给出 Install Assist。这时你得到的是裸 shell，
+        <b>不会</b>被偷偷换成 tmux。</p>
+      </div>
+    </div>
+
+<pre><i># Offhook 按探测到的主机情况给出其中一条</i>
+<b>brew install herdr</b>
+<b>curl -fsSL https://herdr.dev/install.sh | sh</b></pre>
+
+    <p class="txt">Offhook 探测和启动用的是同一套额外 PATH，其中包含
+    <code>$HOME/.local/bin</code>——否则 Install Assist 刚给你的那条命令，
+    会在下次连接时变成「herdr: command not found」。填了 <b>Custom herdr Path</b> 的话，
+    它会被原样信任，同时绕过这两者。</p>
+
+    <div class="wire">
+      <p><b><code>ADVANCED</code> 那一组的脚注，原话：</b>“tmux and herdr hold separate,
+      unrelated sessions. If the host doesn't have the one you pick, Offhook says so and
+      drops to a plain shell — it never quietly attaches the other. With Mosh, herdr runs its
+      own terminal UI; native rendering needs SSH.”</p>
+    </div>
+
+    <ul class="list">
+      <li><b>主机没装</b>——横幅 “herdr not found on this host — plain shell session.”，
+      动作 <b>Install herdr</b>。Install Assist 开头是所有安装流程共用的一句：
+      “Offhook never installs anything silently. Run the command below in your shell — sudo
+      and its output stay fully visible.” 装完点 <b>Re-check</b> 会翻成「已安装，重连即可」。</li>
+      <li><b>服务器没在跑</b>——空态 “No herdr workspaces” / “This server has no running
+      workspaces. Offhook only attaches — create the first one to start.”，
+      按钮 <b>Create Workspace</b>，执行中读作 <b>Creating…</b>。</li>
+    </ul>
+
+    <p class="txt">那个按钮是 Offhook 里唯一会拉起 herdr 服务器的地方
+    （<code>nohup herdr server</code>，然后 <code>workspace create --focus</code>——
+    干净启动的服务器是零个 workspace，所以必须两步）。有一处例外要说清楚：Mosh 那条路上
+    Offhook 是往 shell 里敲一个裸 <code>herdr</code>，而它在服务器没跑时<em>确实</em>会顺手建一个
+    workspace。这一点被接受，是因为那个终端里跑的本来就是 herdr 自己的界面，
+    你看到的和自己敲 <code>herdr</code> 一模一样。</p>
+
+    <h3 id="s4">这里 SSH 比 Mosh 拿得多</h3>
+    <p class="txt">Mosh 传的是渲染完的屏幕差分，会把行分帧毁掉——和 tmux <code>-CC</code>
+    上不了 mosh 是同一个原因。所以 herdr 的帧协议只在 SSH 上跑。</p>
+
+    <div class="tbl-wrap">
+      <table>
+        <thead>
+          <tr><th>连接方式</th><th>主机有 herdr</th><th class="us">你得到什么</th></tr>
+        </thead>
+        <tbody>
+          <tr><td class="cap-col">herdr + SSH</td><td class="no">有</td>
+              <td class="us"><span class="yes">原生表单 + 单窗格原生渲染，满屏宽</span></td></tr>
+          <tr><td class="cap-col">herdr + Mosh</td><td class="no">有</td>
+              <td class="us">herdr 自己的 TUI（侧边栏吃掉约三分之一屏宽），
+              另加一条 SSH sidecar 让表单照常可用</td></tr>
+          <tr><td class="cap-col">选了 herdr，主机只有 tmux</td><td class="no">没有</td>
+              <td class="us">横幅 + Install Assist，绝不静默切换</td></tr>
+          <tr><td class="cap-col">选了 herdr，两个都没有</td><td class="no">没有</td>
+              <td class="us">裸 shell + 横幅</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+</div>
+
+<!-- ══ AGENT 状态 ══ -->
+<div class="shell">
+  <section class="band doc">
+    <p class="eyebrow">Agent 状态</p>
+    <h2>为什么这里的状态是白送的，tmux 上却要装 hook</h2>
+    <p class="sub">在 tmux 上，「哪个 agent 在等我」是推断出来的：你先装 hook，
+    hook 往 pane option 里写状态，没装 hook 的 pane 只能靠输出和响铃猜。
+    在 herdr 上这是一次查询——<code>agent_status</code> 本来就在每个 pane 上。</p>
+
+    <div class="tbl-wrap">
+      <table>
+        <thead>
+          <tr><th>herdr <code>agent_status</code></th><th class="us">Offhook 显示成</th>
+              <th>出现在哪</th></tr>
+        </thead>
+        <tbody>
+          <tr><td class="cap-col"><code>working</code></td>
+              <td class="us"><span class="yes">青色点 · 工作中 · 实时计时</span></td>
+              <td class="no">主页 · 面包屑 · 灵动岛 · 锁屏</td></tr>
+          <tr><td class="cap-col"><code>blocked</code></td>
+              <td class="us"><span class="yes">琥珀点 · 需要你</span></td>
+              <td class="no">主页 · 面包屑 · 灵动岛 · 锁屏</td></tr>
+          <tr><td class="cap-col"><code>done</code></td>
+              <td class="us"><span class="yes">绿色点 · 已完成</span></td>
+              <td class="no">主页 · 灵动岛。不会把整个窗口点亮成琥珀</td></tr>
+          <tr><td class="cap-col"><code>idle</code></td>
+              <td class="us">不给点——一行安静的暗行</td>
+              <td class="no">只在主页。永远不点亮锁屏</td></tr>
+          <tr><td class="cap-col"><code>unknown</code> / 没有</td>
+              <td class="us">什么都不显示</td><td class="no">—</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <ul class="list">
+      <li>这三个颜色是写死的，不跟你的强调色走——否则把强调色调成偏琥珀，
+      「工作中」和「需要你」就会变成同一个颜色。</li>
+      <li>herdr 连接下，设置里的 <b>Install agent hooks</b> 那一行会隐藏，
+      只用 herdr 的人不会被劝去装 tmux 的 hook。</li>
+      <li>tmux 那套「看输出和响铃猜」的启发式<b>不会</b>叠到 herdr 上：真相已经报上来了，
+      再加一个猜测只是一个更差的第二意见。</li>
+      <li>已实机验证：<code>herdr pane report-agent --state blocked</code> 和
+      <code>--state working</code>（herdr 自家集成用的同一个接口），主机上零安装。</li>
+      <li>可选、而且更权威：<code>herdr integration install claude</code> 让 agent 自己上报，
+      而不是靠 herdr 读屏幕。不装也能用。</li>
+    </ul>
+
+    <div class="moment">
+      <div class="strip a">
+        <img src="/island-blocked.jpg" width="900" height="239" loading="lazy"
+             alt="灵动岛显示琥珀色圆点和感叹号：有 agent 被卡住了">
+        <p class="cap"><b>blocked → 需要你</b>
+        琥珀色，超过一个时带计数。锁屏卡片上是 Allow、Deny 和两条快捷回复。</p>
+      </div>
+      <div class="strip b">
+        <img src="/island-working.jpg" width="900" height="239" loading="lazy"
+             alt="灵动岛显示青色圆点和实时计时器：agent 正在工作">
+        <p class="cap"><b>working → 青色计时</b>
+        在想事情的 agent 和卡死的 agent 不再长得一样。working 只给 Stop。</p>
+      </div>
+    </div>
+
+    <div class="rows">
+      <div class="row">
+        <div>
+          <span class="kicker">在锁屏上回答</span>
+          <h3 id="s5">herdr 上要先把焦点挪过去</h3>
+          <p>tmux 能用 <code>send-keys -t</code> 直接寻址某个 pane；herdr 的帧通道只会打进
+          它当前 attach 的那个 pane。所以 Offhook 先聚焦目标、等 retarget 收尾，<em>再</em>写入
+          ——切换途中入列的按键会掉进裸 shell 里死掉。聚焦不到就明确失败，
+          通知层退回「打开 App」，而不是假装你那一下点成了。</p>
+          <p>另一种可能是复查时抓到的：两个 agent 同时在跑时，
+          锁屏上的 <b>Allow</b> 可能变成另一个 agent 的回车。</p>
+        </div>
+        <img class="phone rowshot" src="/02-agent-terminal.jpg" width="1320" height="2868"
+             loading="lazy"
+             alt="Offhook 终端里 Claude Code 的权限询问，面包屑用琥珀色标出 agent 名">
+      </div>
+    </div>
+  </section>
+</div>
+
+<!-- ══ 术语 ══ -->
+<div class="shell">
+  <section class="band doc">
+    <p class="eyebrow">术语</p>
+    <h2>是 workspace 和 tab，不是 session 和 window</h2>
+    <p class="sub">内部只有一份数据模型，两种多路复用器共用，只在展示层翻译。
+    但「模型能复用」不等于「tmux 的词也该复用」：herdr 里明明叫 tab 的东西，
+    界面上读到 “Kill Window”，每看一眼都是一次小小的税。</p>
+
+    <div class="tbl-wrap">
+      <table>
+        <thead>
+          <tr><th>herdr</th><th>id</th><th>tmux</th><th class="us">Offhook 里叫</th></tr>
+        </thead>
+        <tbody>
+          <tr><td class="cap-col">workspace</td><td class="cap-col"><code>w1</code></td>
+              <td class="no">session <code>$0</code></td>
+              <td class="us">Workspace / Workspaces</td></tr>
+          <tr><td class="cap-col">tab</td><td class="cap-col"><code>w1:t1</code></td>
+              <td class="no">window <code>@0</code></td>
+              <td class="us">Tab / Tabs</td></tr>
+          <tr><td class="cap-col">pane</td><td class="cap-col"><code>w1:p1</code></td>
+              <td class="no">pane <code>%0</code></td>
+              <td class="us">Pane / Panes</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <ul class="list">
+      <li>删除的动词跟着 CLI 走：tmux 是 <b>Kill</b>，herdr 是 <b>Close</b>——因为 herdr 的命令
+      就是 <code>workspace close</code> / <code>tab close</code> / <code>pane close</code>。</li>
+      <li>树的区标题读 <code>WORKSPACES</code>；顶部统计芯片两个控制面都数——
+      它以前写死 <code>TMUX</code>，herdr workspace 活着也报 0。</li>
+      <li><b>显示成 “Tab 1”，不是 “1: 1”</b>——herdr 默认拿序号给 tab 命名，一棵这样的树就是
+      一墙数字。tmux 那种以命令命名的 window 仍然读作 <code>2: logs</code>。</li>
+      <li><b>重名时补 “~ · w4”</b>——herdr 用 cwd 给 workspace 命名，四个都在 <code>~</code>
+      的会全读作「~」。重名时行尾补原始 id：那是 herdr CLI 寻址用的把手，不是装饰。</li>
+    </ul>
+  </section>
+</div>
+
+<!-- ══ 键位 ══ -->
+<div class="shell">
+  <section class="band doc">
+    <p class="eyebrow">键位</p>
+    <h2><code>⌃ b q</code> 在 herdr 里是断开会话。这是个真坑。</h2>
+    <p class="sub">两边默认前缀键都是 <code>Ctrl-b</code>，所以现有的前缀处理和快捷键栏原样能用。
+    但有三个键对不上，其中一个会把你踢下线。</p>
+
+    <div class="wire">
+      <p><b>Select Pane 表单以前在 herdr 连接上印的是 <code>⌃ b q</code>。</b>
+      在 tmux 里那是列窗格，在 herdr 里那是 detach——App 在印一个会把用户会话丢掉的键。
+      现在印的是 <code>⌃ b v</code>，也就是分屏：herdr 根本没有「把窗格列出来」这个键，
+      硬编一个出来比承认没有更糟。</p>
+      <p><code>⌃ b s</code> 在 herdr 里没有绑定（workspace 是 <code>⌃ b w</code>）；
+      <code>⌃ 1-9</code> 在 tmux 里是按编号跳窗口，herdr 则用 <code>n</code> /
+      <code>p</code> 一步一步走。</p>
+    </div>
+
+    <div class="tbl-wrap">
+      <table>
+        <thead>
+          <tr><th>表单</th><th>tmux 印</th><th class="us">herdr 印</th></tr>
+        </thead>
+        <tbody>
+          <tr><td class="cap-col">Sessions / Workspaces</td><td class="no"><code>⌃ b s</code></td>
+              <td class="us"><code>⌃ b w</code></td></tr>
+          <tr><td class="cap-col">Windows / Tabs</td><td class="no"><code>⌃ 1-9</code></td>
+              <td class="us"><code>⌃ b n/p</code></td></tr>
+          <tr><td class="cap-col">Panes</td><td class="no"><code>⌃ b q</code></td>
+              <td class="us"><code>⌃ b v</code></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p class="txt">快捷键栏里那个「只在多路复用器里显示」的开关，现在把 herdr 也算进去了。
+    它以前由「有没有 tmux controller」喂，herdr 上恒为 false——结果你勾了这个选项的键，
+    偏偏在你唯一想要它的连接上消失。</p>
+  </section>
+</div>
+
+<!-- ══ AGENTS 区 ══ -->
+<div class="shell">
+  <section class="band doc">
+    <p class="eyebrow">主页</p>
+    <h2>Agents 区回答的是你真正想问的那个问题</h2>
+    <p class="sub">主机 → 会话 → 窗口 → 窗格这四层树回答的是「它在哪」，不是「谁在等我」。
+    herdr 连接的主页会在 workspace 树之上加一个 <code>AGENTS</code> 区，
+    长在同一张卡、同一条滚动里。没有 Agents 页，没有底部 tab 栏，不新增导航轴。</p>
+
+    <div class="rows">
+      <div class="row">
+        <div>
+          <span class="kicker">仅 herdr 连接</span>
+          <h3 id="s6">它是一次投影，不是又一次轮询</h3>
+          <p>每一行都来自树和灵动岛本来就在读的那份 snapshot，额外远端调用为零。</p>
+          <ul>
+            <li>排序：需要你 → 工作中 → 已完成 → 有名字的 idle 排最后</li>
+            <li>同级按名字、再按 pane id 破平，两次轮询之间不会重新洗牌</li>
+            <li>点一行的效果和点树里的窗格完全一样——只有一个入口</li>
+          </ul>
+        </div>
+        <img class="phone rowshot" src="/01-agents.jpg" width="1320" height="2868"
+             loading="lazy"
+             alt="Offhook 主页：AGENTS 区里一个 agent 需要你、一个在工作、一个空闲，下面是 workspace 树">
+      </div>
+    </div>
+
+    <ul class="list">
+      <li><b>标题栏</b>——<code>AGENTS</code> 加计数芯片，右侧琥珀色的 <code>NEEDS YOU</code>
+      （多于一个时读 <code>2 NEED YOU</code>），再加一个 <code>+</code>。</li>
+      <li><b>一行</b>——agent 名、<code>workspace · tab</code>、状态点、行尾的已持续时长。
+      状态点带 VoiceOver 文字，颜色不是唯一的通道。</li>
+      <li><b>时长只到分钟</b>——<code>now</code>、<code>2m</code>、<code>1h 12m</code>，
+      永远不显示秒：背后的轮询最粗到 8 秒。它和锁屏计时器读同一只钟，两边永远不会打架。</li>
+      <li><b>一行得有出现的理由</b>——要么有活的信号，要么是一个<em>带 agent 名字的</em>
+      idle 状态。匿名的安静窗格什么都不产生。有名字的 idle 是暗行、无光点、排最后：
+      「一个停在提示符前等活的 claude」和「什么都没跑」是两个不同的答案。</li>
+      <li><b>空态</b>——“Nothing running — start a task to isolate one”。
+      一个 agent 都没有时标题栏也照样在——把整个区藏起来就等于藏掉了那个 <code>+</code>，
+      第一个任务就永远建不出来。</li>
+    </ul>
+  </section>
+</div>
+
+<!-- ══ NEW AGENT TASK ══ -->
+<div class="shell">
+  <section class="band doc">
+    <p class="eyebrow">隔离任务</p>
+    <h2>New Agent Task：一个 git worktree、一个 workspace、一个 agent</h2>
+    <p class="sub">AGENTS 标题栏里的 <code>+</code> 打开一张四个字段的表单。填完它会在主机上
+    建一个真的 git worktree，并把 agent 起在里面。你自己的工作区一动不动。</p>
+
+    <div class="rows">
+      <div class="row">
+        <div>
+          <span class="kicker">表单</span>
+          <h3 id="s7">Repo、Branch、Agent、第一条消息</h3>
+          <p><code>TASK</code> 组脚注：<em>“Creates a git worktree on the host, then starts
+          the agent inside it. Your working tree is untouched.”</em>；
+          <code>FIRST MESSAGE</code> 组脚注：<em>“Optional. Sent to the agent once it's
+          running — leave blank to type it yourself.”</em></p>
+          <p>执行中 <b>Start</b> 变成 <b>Starting…</b>。大仓库 checkout 要几十秒，
+          一个没有进行中状态的按钮看起来就是坏的。</p>
+        </div>
+        <img class="phone rowshot" src="/06-new-task.jpg" width="409" height="533"
+             loading="lazy"
+             alt="New Agent Task 表单：repo 菜单、branch 输入框、agent 菜单和可选的第一条消息">
+      </div>
+    </div>
+
+<pre><b>herdr worktree create</b> --cwd '&lt;repo&gt;' --branch '&lt;branch&gt;' --label '&lt;branch&gt;' --focus --json
+<i>→ 新 worktree + 新 workspace + 一个 cwd 已经在检出目录里的窗格，
+  位置是 ~/.herdr/worktrees/&lt;repo&gt;/&lt;branch&gt;</i>
+
+<b>herdr pane run</b> '&lt;root_pane&gt;' '&lt;agent&gt;'   <i># 把命令敲进去并回车</i>
+<b>herdr agent send</b> '&lt;root_pane&gt;' '&lt;prompt&gt;'  <i># 你填了才发，2 秒之后</i></pre>
+
+    <p class="txt">没有用 <code>agent start</code>：实测它<b>不继承</b> worktree 的目录，
+    新窗格落在发起 CLI 的那个 cwd 里。而 <code>worktree create</code> 已经给了一个目录正确的
+    窗格，直接 <code>pane run</code> 更简单，少一个失败点。所有字符串进 shell 之前都做了
+    POSIX 单引号包裹。</p>
+
+    <h3 id="s8">Repo 列表是从哪来的</h3>
+    <p class="txt">herdr 不管「你有哪些仓库」，所以 Offhook 自己去找——而且是两条命令并发跑，
+    这是有意的。窗格 cwd 用 <code>git -C &lt;cwd&gt; rev-parse --show-toplevel</code> 反查，
+    小、快、排在前面；旁边并行一次 <code>$HOME</code> 扫描
+    （<code>find -L "$HOME" -maxdepth 4</code>，prune 掉 <code>Library</code>、
+    <code>node_modules</code>、媒体目录和隐藏目录，按 mtime 取前 40），
+    客户端预算 8 秒。熔成一条命令的版本在真机上翻过车：iCloud 同步的
+    <code>$HOME</code> 把 <code>find</code> 卡过 25 秒，随后整条链路失联，
+    表单最后只剩一个「Other…」。</p>
+    <p class="txt"><b>残留的限制：</b>预算超时之后，远端的 <code>find</code> 还会继续跑完——
+    exec 通道发出去就收不回来——那份 prune 列表就是它的全部上限。菜单在扫描时读
+    “Looking for repositories…”，空手而归时读
+    “None found — no panes in repos, and nothing under ~”，最后一项永远是 <b>Other…</b>。</p>
+
+    <ul class="list">
+      <li>agent 列表来自 <code>herdr server agent-manifests --json</code>。默认优先
+      <code>claude</code>，其次 <code>codex</code>——按字母序曾经在一台真实主机上把默认值
+      选成了 <code>agy</code>。</li>
+      <li>分支名在手机上先校验，不合法就一个请求都不发（不许空格、不许 <code>..</code>、
+      不许以 <code>.lock</code> 结尾、不许 <code>~ ^ : ? * [ \</code> 等）。
+      原因就地显示在字段下方，所以变灰的 Start 不会看着像坏了。</li>
+      <li>herdr 自己的错误原文照抄——<code>branch 'fix-scroll' already exists</code>
+      不需要翻译。</li>
+      <li>agent 的参数不替你决定。跑的是 manifest 里的默认命令，
+      <code>--dangerously-skip-permissions</code> 之类要你自己敲。</li>
+    </ul>
+
+    <h3 id="s9">删 worktree 要过两道确认</h3>
+    <p class="txt">长按 workspace 行 → <b>Remove Worktree</b>，只在真的是 linked worktree 的
+    workspace 上出现。第一条命令<b>绝不</b>带 <code>--force</code>：</p>
+    <div class="wire">
+      <p><b>1 ·</b> “Remove the worktree for &lt;name&gt;?”——“Deletes the branch checkout under
+      <code>~/.herdr/worktrees</code>. &lt;repo&gt; itself is untouched.”
+      <b>Remove</b> / <b>Cancel</b>。</p>
+      <p><b>2 ·</b> 只有当 herdr 回 <code>dirty_worktree_requires_force</code> 时才弹第二道
+      （实测它会拒绝，并且文件一个不动）：“&lt;name&gt; has uncommitted changes”——
+      “Those changes exist nowhere else. Removing the worktree throws them away.”
+      <b>Delete anyway</b> / <b>Keep it</b>。只有这一下才会加上 <code>--force</code>。</p>
+      <p>这是 herdr 自己的安全网，不是我们发明的。<b>未在设备上验证</b>：长按菜单本身——
+      idb 驱动不了 SwiftUI 的 contextMenu 长按，所以「菜单 → 对话框 → 对话框」这一段只有编译
+      和单测保证，没有设备录像。</p>
+    </div>
+  </section>
+</div>
+
+<!-- ══ 限制 ══ -->
+<div class="shell">
+  <section class="band doc">
+    <p class="eyebrow">限制</p>
+    <h2>做不到的事，都在这一节</h2>
+    <p class="sub">下面大部分是真机跑出来的，每一条都会改变你该怎么用它。</p>
+
+    <div class="notes">
+      <p><b>外部改动最多滞后 8 秒。</b>
+      Offhook 每 2 秒轮询一次 <code>herdr api snapshot</code>，树不再变化后退到 8 秒。
+      App 内的操作立即刷新；你在笔记本上、别的客户端上，或者 agent 自己改状态，
+      都要等一轮轮询。这个 ±8 秒的误差，正是 Agents 区从不显示秒的原因。</p>
+
+      <p><b>没有推送，也没有 Offhook 服务器。</b>
+      所有提醒都是正在运行的 App 生成的本地通知。herdr 的 socket 上确实有事件订阅，
+      但 CLI 没有 subscribe 子命令，手机也打不开主机上的 Unix socket。轮询是唯一可用的机制。</p>
+
+      <p><b>iOS 把连接挂到后台后，agent 状态就停止更新，直到你回来。</b>
+      实机验证：退到后台，把一个 pane 从 blocked 改成 working，灵动岛纹丝不动；
+      回到前台一轮轮询之后才翻。这是「不做远程推送」这个产品决定的必然结果，tmux 路径同理。
+      Live Activity 带 120 秒的过期时间，所以锁屏会说「已暂停」，
+      而不是挂着一个冻住的「工作中」。</p>
+
+      <p><b>直连 attach 是按 pane 独占的——两个客户端连同一个 pane 会打架。</b>
+      Offhook 必须 takeover，因为每次重连都会撞上自己的旧通道；之后两个直连客户端会各自约每
+      2 秒重新夺一次。这在客户端消不掉。Offhook 至少能认出来：30 秒内三次非预期断开会触发
+      30 秒暂停并显示 “Another client is using this pane — retrying shortly”，
+      画面恢复后自动消失。</p>
+
+      <p><b>未验证：笔记本上开着 herdr 自己的 TUI，同时手机连上来。</b>
+      TUI 客户端不占 attach 名额，理论上这个组合安全。但没测过，所以不做保证。</p>
+
+      <p><b>一次只渲染一个窗格。</b>
+      原生渲染就是单窗格满宽，这是有意的——每多一个窗格就要多一条 SSH 通道。</p>
+
+      <p><b>没有全量 scrollback。</b>
+      herdr 的读取接口只有 visible / recent / recent-unwrapped / detection；
+      而且它的帧是逐格绝对定位的重绘，不是追加式字节流，本地也攒不出有意义的 scrollback。
+      历史浏览走服务端翻页。</p>
+
+      <p><b>herdr 0.7.3 的 pane 上没有 title、agent 名和 label。</b>
+      窗格的「命令」因此是空的，面包屑第三段兜底成 <code>pane N</code>——这是有意保留的，
+      因为面包屑一旦消失，就把进 Select Pane 表单的唯一入口一起带走了。
+      另外，拿不到 agent 名，<b>0.7.3 上 idle 行根本不会出现</b>。</p>
+
+      <p><b>没有 tmux 那种 layout 字符串，窗格版面是推出来的</b>：
+      读窗格自己上报的几何，宽度都一样是纵排，高度都一样是横排，否则当网格。
+      目标是每个窗格都在屏幕上、都能点，并且真正的活动窗格被标出来，不是逐像素还原布局。</p>
+
+      <p><b><code>herdr pane focus</code> 只接受方向，不接受 pane id</b>——0.7.3 和 0.8.0 都一样。
+      唯一能按 id 聚焦的是 <code>herdr agent focus &lt;pane_id&gt;</code>，
+      它对普通 shell 窗格会报 <code>agent_not_found</code>，但<em>焦点确实会移动</em>：
+      服务端先聚焦，再在构造响应体时失败。Offhook 故意把这个错误吞掉。
+      这是整个集成里最脏的一处，代码注释里也是这么写的。</p>
+
+      <p><b>不支持具名 herdr session。</b>
+      herdr 可以用 <code>--session</code> / <code>HERDR_SESSION</code> 跑多个互相独立的服务器，
+      Offhook 只连默认那个 socket。更麻烦的是：App 里目前哪儿都没写这件事——
+      你要是把主机拆成了多个具名 session，Offhook 只看得见其中一个，而且不会给你任何提示。</p>
+
+      <p><b>只看得见 herdr 托管的窗格。</b>
+      实测踩过：Terminal.app 里跑着一个 <code>claude</code>，herdr 的五个窗格全都空转，
+      于是这个区正确地显示「Nothing running」，而用户确信有东西在跑。
+      herdr 是 runtime，不是进程扫描器——想让 agent 出现，
+      要么用 New Agent Task 起它，要么在 herdr 窗格里跑。</p>
+
+      <p><b>带宽和帧率从来没测过。</b>
+      逐格定位的重绘走 SSH，对上 tmux <code>-CC</code> 的输出流，在一个疯狂刷屏的 agent 面前
+      谁更省字节——重绘很可能更费。在有人真的量出来之前，两个方向的性能结论都不说。</p>
+
+      <p><b>worktree 落在 <code>~/.herdr/worktrees/&lt;repo&gt;/&lt;branch&gt;</code></b>，
+      不在仓库旁边，这一版也不给自定义路径。大仓库 checkout 要几十秒。
+      仓库不干净时 <code>git worktree add</code> 的行为按理没问题（独立 checkout），
+      但<b>还没验证过</b>。</p>
+    </div>
+  </section>
+</div>
+<!--DOCNEXT:BEGIN-->
+<div class="dpager"><a class="dprev" href="/zh/docs/tmux"><span>上一页</span>使用 tmux</a><a class="dnext" href="/zh/docs/agents"><span>下一页</span>Agent 状态与锁屏</a></div>
+<!--DOCNEXT:END-->
+</div><!--dbody-->
+<!--DOCTOC:BEGIN-->
+<aside class="dtoc">
+  <p class="dtoclabel">本页内容</p>
+  <nav><a href="#s1">在主机上装 herdr</a><a href="#s2">在连接里选 herdr</a><a href="#s3">连上去</a><a href="#s4">这里 SSH 比 Mosh 拿得多</a><a href="#s5">herdr 上要先把焦点挪过去</a><a href="#s6">它是一次投影，不是又一次轮询</a><a href="#s7">Repo、Branch、Agent、第一条消息</a><a href="#s8">Repo 列表是从哪来的</a><a href="#s9">删 worktree 要过两道确认</a></nav>
+</aside>
+<!--DOCTOC:END-->
+</div><!--/dwrap-->
+
+
+
+</div>
+
+
+
+</div>
+
+
+
+</div>
+
+
+
+</div>
+
+
+
+</div>
+
+<footer>
+  <div class="shell">
+    <p class="signoff">解了套，仍在线上。</p>
+    <nav class="fnav">
+      <a href="/zh">首页</a><a href="/zh/docs">文档</a><a href="/zh/guides">指南</a>
+      <a href="/zh/compare">对比</a><a href="/privacy">隐私</a><a href="/support">支持</a>
+    </nav>
+    <p class="legal">© 2026 Offhook 摘机 · SSH · Mosh · tmux · herdr · iPhone</p>
+  </div>
+</footer>
+<div class="dsearch" id="dsearch" hidden style="display:none">
+  <div class="dsearchbox" role="dialog" aria-modal="true" aria-label="Search docs">
+    <input id="dq" type="search" autocomplete="off" placeholder="搜索文档…">
+    <div id="dres"></div>
+  </div>
+</div>
+<script src="/docs-search.js?v=7" defer></script>
+</body>
+</html>

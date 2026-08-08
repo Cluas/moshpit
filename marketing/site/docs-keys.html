@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SSH keys and host trust — Offhook</title>
+<meta name="description" content="Generating or importing SSH keys on device, where they are stored, Face ID, and what the host fingerprint dialog is protecting you from.">
+<link rel="icon" type="image/png" href="/icon-192.png">
+<link rel="alternate" hreflang="zh-Hans" href="/zh/docs/keys">
+<link rel="stylesheet" href="/offhook.css?v=7">
+</head>
+<body>
+
+<div class="shell">
+  <header class="top">
+    <a class="brand" href="./"><img src="/icon-192.png" alt="" width="30" height="30">Offhook</a>
+    <div class="topright">
+      <a class="lang" href="/docs">Docs</a>
+      <a class="lang" href="/guides">Guides</a>
+      <a class="lang" href="/compare">Compare</a>
+      <a class="lang dsearchtrigger" data-docsearch href="#">Search</a>
+      <a class="lang" href="/zh/docs/keys" hreflang="zh-Hans" lang="zh-Hans">中文</a>
+    </div>
+  </header>
+</div>
+<div class="dwrap">
+<!--DOCSHELL:BEGIN-->
+<aside class="dnav" id="dnav">
+  <a class="dhome" href="/">← Back to the app</a>
+  <p class="dtitle">Docs</p>
+  <button class="dsearchbtn" type="button" data-docsearch><span>Search the docs…</span><kbd>⌘K</kbd></button>
+  <nav><p class="dsec">Start</p><a href="/docs/intro">What Offhook does</a><a href="/docs/setup">Set up a connection</a><a href="/docs/first-session">Run your first session</a><p class="dsec">Connections</p><a href="/docs/keys" class="on" aria-current="page">SSH keys and host trust</a><a href="/docs/mosh">Mosh and roaming</a><a href="/guide/remote-access">Reach your machine from anywhere</a><p class="dsec">Multiplexers</p><a href="/docs/multiplexers">Choosing tmux or herdr</a><a href="/docs/tmux">Using tmux</a><a href="/docs/herdr">Using herdr</a><p class="dsec">Agents</p><a href="/docs/agents">Agent status and the lock screen</a><a href="/docs/worktrees">Isolated tasks with git worktrees</a><a href="/guide/claude-code">Run Claude Code from your iPhone</a><p class="dsec">Input</p><a href="/docs/keyboard">Keyboard and shortcuts</a><a href="/docs/scrolling">Scrolling and scrollback</a><a href="/docs/clipboard">Clipboard and paste</a><a href="/docs/ime">CJK and IME input</a><p class="dsec">Appearance</p><a href="/docs/appearance">Themes, fonts and icons</a><p class="dsec">Help</p><a href="/docs/troubleshooting">Troubleshooting</a><a href="/compare">How Offhook compares</a></nav>
+</aside>
+<!--DOCSHELL:END-->
+<div class="dbody">
+<div class="shell">
+  <section class="band doc" style="border-top:none">
+    <p class="eyebrow">Connections</p>
+    <h2>Keys, and knowing which machine answered.</h2>
+    <p class="sub">Two different trust problems sit at either end of a connection: proving to the server that you are you, and proving to you that the server is the one you meant. Offhook handles both on device, and neither secret ever leaves it.</p>
+    <h3 id="s1">Your key, on the phone</h3>
+    <p class="txt">Under <b>Settings → SSH Keys</b> you can generate a key on the device or
+    import one you already have. Generation happens locally; nothing is uploaded, because
+    there is nowhere to upload it to.</p>
+    <p class="txt">To use a generated key, copy its public half and append it to
+    <code>~/.ssh/authorized_keys</code> on the host, the same as any other key.</p>
+
+    <h3 id="s2">Where secrets live</h3>
+    <ul class="list">
+      <li><b>Private keys and passwords</b> are held in the iOS Keychain, protected by the
+      Secure Enclave where the device has one.</li>
+      <li><b>Face ID</b> can be required before a key is released for use — turn it on when
+      importing or generating.</li>
+      <li><b>Connection details</b> (host, port, username) are ordinary app data. There is
+      no sync: a new phone means adding your hosts again, which is the trade for having no
+      account.</li>
+    </ul>
+
+    <h3 id="s3">The other direction: is that really your server?</h3>
+    <p class="txt">The first time Offhook connects to a host it shows a <b>New Host</b>
+    sheet with the key fingerprint and a command to check it against the server itself:</p>
+    <div class="wire"><p><code>ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub</code></p></div>
+    <p class="txt">Run that on the machine (from a console you already trust) and compare.
+    Matching means you are talking to the machine you meant. This is the moment that
+    stops a machine-in-the-middle, and it is the only moment — after you tap Trust, that
+    key is pinned for that host.</p>
+
+    <h3 id="s4">When a key changes</h3>
+    <p class="txt">If a host later presents a different key, Offhook stops and says so
+    rather than connecting. Usually that means the server was rebuilt or reinstalled and
+    the fingerprint genuinely changed; occasionally it means something is wrong. Verify
+    out of band before you accept it — an app that quietly accepts a changed host key has
+    thrown away the only protection this check provides.</p>
+
+    <h3 id="s5">Passwords</h3>
+    <p class="txt">Password auth works and is stored in the Keychain like a key. It is the
+    weaker option: prefer a key, and if you must use a password, do not expose SSH
+    directly to the internet — see
+    <a href="/guide/remote-access">Reach your machine from anywhere</a>.</p>
+  </section>
+</div>
+<!--DOCNEXT:BEGIN-->
+<div class="dpager"><a class="dprev" href="/docs/first-session"><span>Previous</span>Run your first session</a><a class="dnext" href="/docs/mosh"><span>Next</span>Mosh and roaming</a></div>
+<!--DOCNEXT:END-->
+</div><!--dbody-->
+<!--DOCTOC:BEGIN-->
+<aside class="dtoc">
+  <p class="dtoclabel">On this page</p>
+  <nav><a href="#s1">Your key, on the phone</a><a href="#s2">Where secrets live</a><a href="#s3">The other direction: is that really your server?</a><a href="#s4">When a key changes</a><a href="#s5">Passwords</a></nav>
+</aside>
+<!--DOCTOC:END-->
+</div><!--/dwrap-->
+
+
+
+</div>
+
+
+
+</div>
+
+
+
+</div>
+
+
+
+</div>
+
+<footer>
+  <div class="shell">
+    <p class="signoff">Off the hook, still on the line.</p>
+    <nav class="fnav">
+      <a href="./">Home</a><a href="/docs">Docs</a><a href="/guides">Guides</a>
+      <a href="/compare">Compare</a><a href="/privacy">Privacy</a><a href="/support">Support</a>
+    </nav>
+    <p class="legal">© 2026 Offhook · SSH · Mosh · tmux · herdr · iPhone</p>
+  </div>
+</footer>
+
+<div class="dsearch" id="dsearch" hidden style="display:none">
+  <div class="dsearchbox" role="dialog" aria-modal="true" aria-label="Search docs">
+    <input id="dq" type="search" autocomplete="off" placeholder="Search the docs…">
+    <div id="dres"></div>
+  </div>
+</div>
+<script src="/docs-search.js?v=7" defer></script>
+</body>
+</html>

@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="zh-Hans">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>选 tmux 还是 herdr — Offhook 摘机</title>
+<meta name="description" content="tmux 和 herdr 做同一件事，方式不同。每个连接该选哪个，以及各自在 Offhook 里能带来什么。">
+<link rel="icon" type="image/png" href="/icon-192.png">
+<link rel="alternate" hreflang="en" href="/docs/multiplexers">
+<link rel="stylesheet" href="/offhook.css?v=7">
+</head>
+<body>
+
+<div class="shell">
+  <header class="top">
+    <a class="brand" href="/zh"><img src="/icon-192.png" alt="" width="30" height="30">Offhook</a>
+    <div class="topright">
+      <a class="lang" href="/zh/docs">文档</a>
+      <a class="lang" href="/zh/guides">指南</a>
+      <a class="lang" href="/zh/compare">对比</a>
+      <a class="lang dsearchtrigger" data-docsearch href="#">搜索</a>
+      <a class="lang" href="/docs/multiplexers" hreflang="en" lang="en">EN</a>
+    </div>
+  </header>
+</div>
+<div class="dwrap">
+<!--DOCSHELL:BEGIN-->
+<aside class="dnav" id="dnav">
+  <a class="dhome" href="/zh">← 回到首页</a>
+  <p class="dtitle">文档</p>
+  <button class="dsearchbtn" type="button" data-docsearch><span>搜索文档…</span><kbd>⌘K</kbd></button>
+  <nav><p class="dsec">开始</p><a href="/zh/docs/intro">Offhook 是做什么的</a><a href="/zh/docs/setup">配置一个连接</a><a href="/zh/docs/first-session">跑通第一个会话</a><p class="dsec">连接</p><a href="/zh/docs/keys">SSH 密钥与主机信任</a><a href="/zh/docs/mosh">Mosh 与漫游</a><a href="/zh/guide/remote-access">在任何地方连上你的机器</a><p class="dsec">多路复用器</p><a href="/zh/docs/multiplexers" class="on" aria-current="page">选 tmux 还是 herdr</a><a href="/zh/docs/tmux">使用 tmux</a><a href="/zh/docs/herdr">使用 herdr</a><p class="dsec">Agent</p><a href="/zh/docs/agents">Agent 状态与锁屏</a><a href="/zh/docs/worktrees">用 git worktree 开隔离任务</a><a href="/zh/guide/claude-code">用 iPhone 跑 Claude Code</a><p class="dsec">输入</p><a href="/zh/docs/keyboard">键盘与快捷键</a><a href="/zh/docs/scrolling">滚动与回滚</a><a href="/zh/docs/clipboard">剪贴板与粘贴</a><a href="/zh/docs/ime">中日韩与输入法</a><p class="dsec">外观</p><a href="/zh/docs/appearance">主题、字体与图标</a><p class="dsec">帮助</p><a href="/zh/docs/troubleshooting">排障</a><a href="/zh/compare">和别的比怎么样</a></nav>
+</aside>
+<!--DOCSHELL:END-->
+<div class="dbody">
+<div class="shell">
+  <section class="band doc" style="border-top:none">
+    <p class="eyebrow">多路复用器</p>
+    <h2>tmux 还是 herdr —— 按连接各选各的。</h2>
+    <p class="sub">多路复用器让你的活儿在断线时不死，也让 Offhook 有比「一长条滚动」更好的东西可渲染。Offhook 会说两种。它们不能互换，而且 Offhook 绝不会偷偷替你换——因为两者的会话毫不相干，换一下等于给你看别人的工作。</p>
+    <h3 id="s1">简短答案</h3>
+    <ul class="list">
+      <li><b>本来就活在 tmux 里？</b>选 tmux。Offhook 附着到你已有的会话上，
+      绝不改动它们的样式。</li>
+      <li><b>主要在跑 coding agent？</b>选 <a href="/zh/docs/herdr">herdr</a>。
+      agent 状态零安装、窗格满宽渲染，而且能从手机上开一个隔离任务。</li>
+      <li><b>都没装，也不确定？</b>选 None。Offhook 当普通 SSH 客户端也完全够用，
+      等你真的想念某个功能时再加。</li>
+    </ul>
+
+    <h3 id="s2">并排看</h3>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>&nbsp;</th><th>tmux</th><th class="us">herdr</th></tr></thead>
+        <tbody>
+          <tr><td class="cap-col">在哪儿</td>
+              <td>几乎每台服务器上都已经有了</td>
+              <td class="us">自己装（一个二进制）</td></tr>
+          <tr><td class="cap-col">agent 状态</td>
+              <td>装 hook，之后准确</td>
+              <td class="us">协议字段——什么都不用装</td></tr>
+          <tr><td class="cap-col">它管这些叫什么</td>
+              <td>session · window · pane</td>
+              <td class="us">workspace · tab · pane</td></tr>
+          <tr><td class="cap-col">手机上的渲染</td>
+              <td>完整布局，含分屏</td>
+              <td class="us">单窗格，满宽</td></tr>
+          <tr><td class="cap-col">你笔记本上的窗口尺寸</td>
+              <td>共享——最小的客户端说了算</td>
+              <td class="us">不受影响——手机只改自己那个窗格</td></tr>
+          <tr><td class="cap-col">手机上开隔离任务</td>
+              <td class="no">—</td>
+              <td class="us">一个表单搞定 worktree + workspace + agent</td></tr>
+          <tr><td class="cap-col">成熟度</td>
+              <td>二十年</td>
+              <td class="us">新，而且在快速变化</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3 id="s3">各自真正的短板</h3>
+    <p class="txt"><b>tmux</b> 的窗口尺寸是所有已连接客户端共享的，所以手机加入你的会话
+    可能会把笔记本上的布局挤扁。Offhook 用 pin 窗口的办法绕开，但这个约束是真实存在的。
+    另外 agent 状态需要在主机上装 hook，不装的话 Offhook 只能靠读输出来猜。</p>
+    <p class="txt"><b>herdr</b> 还年轻。它的直连是按窗格独占的，所以两个客户端连同一个
+    窗格会互相抢；App 会退避并告诉你，而不是默默闪烁。它的树是轮询的，所以你在笔记本上
+    的改动可能要几秒才反映过来。而且 0.7.3 不上报前台命令，所以窗格面包屑会兜底成
+    <code>pane N</code>。</p>
+
+    <h3 id="s4">改主意</h3>
+    <p class="txt">多路复用器是连接的属性，在 <b>编辑 → ADVANCED</b> 里改，然后重连。
+    什么都不会丢——另一个多路复用器的会话还在主机上，跟你离开时一模一样，
+    因为 Offhook 从没为了切换而杀掉任何东西。</p>
+
+    <h3 id="s5">走 Mosh 时两者都会降级</h3>
+    <p class="txt">Mosh 传的是渲染完的屏幕差分，承载不了 tmux 的控制模式协议，
+    也承载不了 herdr 的帧协议。走 Mosh 时你在终端里看到的是多路复用器自己的文字界面，
+    而不是原生渲染——照样能用、照样漫游，只是没有原生列表。
+    详见 <a href="/zh/docs/mosh">Mosh 与漫游</a>。</p>
+  </section>
+</div>
+<!--DOCNEXT:BEGIN-->
+<div class="dpager"><a class="dprev" href="/zh/guide/remote-access"><span>上一页</span>在任何地方连上你的机器</a><a class="dnext" href="/zh/docs/tmux"><span>下一页</span>使用 tmux</a></div>
+<!--DOCNEXT:END-->
+</div><!--dbody-->
+<!--DOCTOC:BEGIN-->
+<aside class="dtoc">
+  <p class="dtoclabel">本页内容</p>
+  <nav><a href="#s1">简短答案</a><a href="#s2">并排看</a><a href="#s3">各自真正的短板</a><a href="#s4">改主意</a><a href="#s5">走 Mosh 时两者都会降级</a></nav>
+</aside>
+<!--DOCTOC:END-->
+</div><!--/dwrap-->
+
+
+
+</div>
+
+
+
+</div>
+
+
+
+</div>
+
+
+
+</div>
+
+<footer>
+  <div class="shell">
+    <p class="signoff">解了套，仍在线上。</p>
+    <nav class="fnav">
+      <a href="/zh">首页</a><a href="/zh/docs">文档</a><a href="/zh/guides">指南</a>
+      <a href="/zh/compare">对比</a><a href="/privacy">隐私</a><a href="/support">支持</a>
+    </nav>
+    <p class="legal">© 2026 Offhook 摘机 · SSH · Mosh · tmux · herdr · iPhone</p>
+  </div>
+</footer>
+
+<div class="dsearch" id="dsearch" hidden style="display:none">
+  <div class="dsearchbox" role="dialog" aria-modal="true" aria-label="Search docs">
+    <input id="dq" type="search" autocomplete="off" placeholder="搜索文档…">
+    <div id="dres"></div>
+  </div>
+</div>
+<script src="/docs-search.js?v=7" defer></script>
+</body>
+</html>

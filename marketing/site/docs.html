@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Docs — Offhook</title>
+<meta name="description" content="Offhook documentation: connections and keys, Mosh, tmux, herdr, answering agents from the lock screen, keyboard and themes, and troubleshooting.">
+<link rel="icon" type="image/png" href="/icon-192.png">
+<link rel="alternate" hreflang="zh-Hans" href="https://offhook.cluas.eu.org/zh/docs">
+<link rel="stylesheet" href="/offhook.css?v=7">
+</head>
+<body>
+
+<div class="shell">
+  <header class="top">
+    <a class="brand" href="./"><img src="/icon-192.png" alt="" width="30" height="30">Offhook</a>
+    <div class="topright">
+      <a class="lang" href="/docs">Docs</a>
+      <a class="lang" href="/guides">Guides</a>
+      <a class="lang" href="/compare">Compare</a>
+      <a class="lang" href="/zh/docs" hreflang="zh-Hans" lang="zh-Hans">中文</a>
+    </div>
+  </header>
+</div>
+
+<div class="shell">
+  <section class="band doc" style="border-top:none">
+    <p class="eyebrow">Docs</p>
+    <h2>Everything Offhook does, and where it stops.</h2>
+    <p class="sub">Offhook is an iPhone terminal for people who run AI coding agents on
+    their own servers: SSH and Mosh, native tmux and herdr, and agent state that reaches
+    your lock screen. It has no account and no server of its own — it talks to your hosts
+    and nothing else. These pages assume you already have a machine you can SSH into.</p>
+
+    <h3>Start here</h3>
+    <div class="grid">
+      <div class="cell">
+        <span class="ic">Setup</span>
+        <h4><a href="/docs/setup">Set up a connection</a></h4>
+        <p>Add a host, choose password or key auth, generate or import an SSH key, and
+        check the host fingerprint on first connect. Also: what happens when the host
+        is missing the multiplexer you picked.</p>
+      </div>
+      <div class="cell">
+        <span class="ic">Guide</span>
+        <h4><a href="/guide/claude-code">Run Claude Code from your iPhone</a></h4>
+        <p>The end-to-end walkthrough this app exists for — from a bare host to
+        approving a permission prompt on your lock screen.</p>
+      </div>
+      <div class="cell">
+        <span class="ic">Compare</span>
+        <h4><a href="/compare">How it compares</a></h4>
+        <p>Where Offhook is the right tool, and the cases where another terminal
+        genuinely serves you better.</p>
+      </div>
+    </div>
+
+    <h3>Multiplexers</h3>
+    <p class="txt">Both are optional — Offhook is a plain SSH client without them. Pick one
+    per connection; it is never switched behind your back, because the two hold completely
+    unrelated sessions.</p>
+    <div class="grid">
+      <div class="cell">
+        <span class="ic">herdr</span>
+        <h4><a href="/docs/herdr">Using herdr</a></h4>
+        <p>The multiplexer built for coding agents: agent state with zero host-side setup,
+        one full-width pane, and isolated tasks on a fresh git worktree. Includes the
+        limits — polling latency, exclusive attach, and what herdr 0.7.3 does not report.</p>
+      </div>
+      <div class="cell">
+        <span class="ic">tmux</span>
+        <h4><a href="/docs/tmux">Using tmux</a></h4>
+        <p>Native control mode: sessions, windows and panes rendered properly. How to get
+        agent status with the one-line hook install, and what you see without it.</p>
+      </div>
+      <div class="cell">
+        <span class="ic">Mosh</span>
+        <h4><a href="/docs/mosh">Mosh and roaming</a></h4>
+        <p>Sessions that survive Wi-Fi/5G handoffs and packet loss, predictive echo, the
+        UDP requirements — and why tmux and herdr fall back to their own TUI over Mosh.</p>
+      </div>
+    </div>
+
+    <h3>Agents</h3>
+    <div class="grid">
+      <div class="cell">
+        <span class="ic">Lock screen</span>
+        <h4><a href="/docs/agents">Answering agents from the lock screen</a></h4>
+        <p>How agent state reaches the Live Activity and Dynamic Island, what Allow, Deny
+        and the quick replies actually send, and the honest background limits.</p>
+      </div>
+      <div class="cell">
+        <span class="ic">Keyboard</span>
+        <h4><a href="/docs/keyboard">Keyboard, themes and shortcuts</a></h4>
+        <p>Build the shortcut bar from a library of terminal keys, use a hardware
+        keyboard, and change themes, fonts, icon and accent.</p>
+      </div>
+      <div class="cell">
+        <span class="ic">Fixes</span>
+        <h4><a href="/docs/troubleshooting">Troubleshooting</a></h4>
+        <p>Symptom first: black screen over Mosh, a missing multiplexer, another client
+        stealing a pane, stalled attach, agent state that stopped updating.</p>
+      </div>
+    </div>
+
+    <h3>Guides</h3>
+    <div class="grid">
+      <div class="cell">
+        <span class="ic">Walkthrough</span>
+        <h4><a href="/guide/claude-code">Run Claude Code from your iPhone</a></h4>
+        <p>Host to lock screen, in order, with the screens you will actually see.</p>
+      </div>
+      <div class="cell">
+        <span class="ic">Walkthrough</span>
+        <h4><a href="/guide/remote-access">Reach your machine from anywhere</a></h4>
+        <p>Getting to a home or office machine without exposing SSH to the internet —
+        a WireGuard mesh plus Mosh, and what each one needs open.</p>
+      </div>
+      <div class="cell">
+        <span class="ic">Support</span>
+        <h4><a href="/support">Still stuck?</a></h4>
+        <p>How to reach us, and what to include so the first reply is a useful one.</p>
+      </div>
+    </div>
+
+    <h3>Two things worth knowing up front</h3>
+    <p class="txt"><b>Offhook never acts on your host without asking.</b> It does not install
+    packages silently, does not create sessions you did not ask for, and does not quietly
+    attach a different multiplexer than the one you picked. When something is missing it
+    says so and shows you the command.</p>
+    <p class="txt"><b>There is no push server, so background updates stop.</b> iOS suspends
+    the connection once the app is in the background; agent state freezes at whatever it
+    last saw and resumes when you come back. That is the price of having nothing in the
+    middle, and it is the same for every transport.</p>
+  </section>
+</div>
+
+<footer>
+  <div class="shell">
+    <p class="signoff">Off the hook, still on the line.</p>
+    <nav class="fnav">
+      <a href="./">Home</a><a href="/docs">Docs</a><a href="/guides">Guides</a>
+      <a href="/compare">Compare</a><a href="/privacy">Privacy</a><a href="/support">Support</a>
+    </nav>
+    <p class="legal">© 2026 Offhook · SSH · Mosh · tmux · herdr · iPhone</p>
+  </div>
+</footer>
+
+</body>
+</html>

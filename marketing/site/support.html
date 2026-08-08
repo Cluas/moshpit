@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Offhook — Support</title>
+<link rel="icon" type="image/png" href="/icon-192.png">
+<style>
+:root{color-scheme:dark}
+*{box-sizing:border-box}
+body{margin:0;background:#06070A;color:rgba(244,241,232,.96);
+  font:16px/1.7 -apple-system,"PingFang SC",system-ui,sans-serif}
+.wrap{max-width:44rem;margin:0 auto;padding:3rem 1.25rem 5rem}
+a{color:#9b8cff}
+h1{font-size:1.7rem}
+h2{font-size:1.1rem;margin-top:2rem;color:rgba(232,227,214,.9)}
+p,li{color:rgba(232,227,214,.78)}
+code{font:13px ui-monospace,Menlo,monospace;background:#171B22;
+  border:1px solid rgba(255,255,255,.08);border-radius:6px;padding:.15rem .45rem}
+nav{font-size:13.5px;margin-bottom:2rem}
+</style>
+</head>
+<body><div class="wrap">
+<nav><a href="./">← Offhook</a></nav>
+<h1>Support</h1>
+
+<h2>Get in touch</h2>
+<p>Questions, bug reports, feature requests — the fastest route is the public
+issue tracker (link coming with launch). Until then, reach us at
+<a href="mailto:support@offhook.example">support@offhook.example</a>.
+<!-- TODO: replace with the real support address before submitting to ASC --></p>
+
+<h2>Common questions</h2>
+
+<h2 style="font-size:1rem">Does Offhook need anything installed on my server?</h2>
+<p>No. It's a standard SSH client out of the box. <code>mosh</code>,
+<code>tmux</code> and <code>herdr</code> are each optional — if one is missing,
+Offhook tells you and offers the install command; it never installs anything
+silently and never falls back to a different multiplexer behind your back.</p>
+
+<h2 style="font-size:1rem">How does agent status work?</h2>
+<p>On <code>herdr</code>, agent state is part of the protocol — zero setup.
+On <code>tmux</code>, a one-line hook install (offered in Settings) lets
+Claude Code and friends report state; without it, Offhook falls back to
+output heuristics.</p>
+
+<h2 style="font-size:1rem">Why does iOS ask for Local Network permission?</h2>
+<p>Only so SSH/Mosh can reach hosts on your own LAN (192.168.x.x and similar).
+Deny it and internet hosts still work fine.</p>
+
+<h2 style="font-size:1rem">Is my data collected?</h2>
+<p>No — nothing is. See the <a href="/privacy">privacy policy</a>;
+the App Store label is <em>Data Not Collected</em>.</p>
+</div></body>
+</html>

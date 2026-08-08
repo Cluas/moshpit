@@ -1,0 +1,415 @@
+<!doctype html>
+<html lang="zh-Hans">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>使用 tmux — Offhook 摘机</title>
+<meta name="description" content="Offhook 怎么用控制模式驱动 tmux：session / window / pane 导航、scrollback、前缀键、agent 状态的 hook 安装，以及它到底在你服务器上改了什么。">
+<link rel="icon" type="image/png" href="/icon-192.png">
+<link rel="alternate" hreflang="en" href="https://offhook.cluas.eu.org/docs/tmux">
+<link rel="alternate" hreflang="zh-Hans" href="https://offhook.cluas.eu.org/zh/docs/tmux">
+<link rel="stylesheet" href="/offhook.css?v=7">
+</head>
+<body>
+
+<div class="shell">
+  <header class="top">
+    <a class="brand" href="/zh"><img src="/icon-192.png" alt="" width="30" height="30">Offhook</a>
+    <div class="topright">
+      <a class="lang" href="/zh/docs">文档</a>
+      <a class="lang" href="/zh/guides">指南</a>
+      <a class="lang" href="/zh/compare">对比</a>
+      <a class="lang" href="/docs/tmux" hreflang="en" lang="en">EN</a>
+    </div>
+  </header>
+</div>
+
+<!-- ══ 开场 + 控制模式 ══ -->
+<div class="dwrap">
+<!--DOCSHELL:BEGIN-->
+<aside class="dnav" id="dnav">
+  <a class="dhome" href="/zh">← 回到首页</a>
+  <p class="dtitle">文档</p>
+  <button class="dsearchbtn" type="button" data-docsearch><span>搜索文档…</span><kbd>⌘K</kbd></button>
+  <nav><p class="dsec">开始</p><a href="/zh/docs/intro">Offhook 是做什么的</a><a href="/zh/docs/setup">配置一个连接</a><a href="/zh/docs/first-session">跑通第一个会话</a><p class="dsec">连接</p><a href="/zh/docs/keys">SSH 密钥与主机信任</a><a href="/zh/docs/mosh">Mosh 与漫游</a><a href="/zh/guide/remote-access">在任何地方连上你的机器</a><p class="dsec">多路复用器</p><a href="/zh/docs/multiplexers">选 tmux 还是 herdr</a><a href="/zh/docs/tmux" class="on" aria-current="page">使用 tmux</a><a href="/zh/docs/herdr">使用 herdr</a><p class="dsec">Agent</p><a href="/zh/docs/agents">Agent 状态与锁屏</a><a href="/zh/docs/worktrees">用 git worktree 开隔离任务</a><a href="/zh/guide/claude-code">用 iPhone 跑 Claude Code</a><p class="dsec">输入</p><a href="/zh/docs/keyboard">键盘与快捷键</a><a href="/zh/docs/scrolling">滚动与回滚</a><a href="/zh/docs/clipboard">剪贴板与粘贴</a><a href="/zh/docs/ime">中日韩与输入法</a><p class="dsec">外观</p><a href="/zh/docs/appearance">主题、字体与图标</a><p class="dsec">帮助</p><a href="/zh/docs/troubleshooting">排障</a><a href="/zh/compare">和别的比怎么样</a></nav>
+</aside>
+<!--DOCSHELL:END-->
+<div class="dbody">
+<div class="shell">
+  <section class="band doc" style="border-top:none">
+    <p class="eyebrow">文档</p>
+    <h2>使用 tmux</h2>
+    <p class="sub">Offhook 以 tmux 控制客户端的身份 attach 上去，把你的 session、window、pane
+    用原生 iOS 视图画出来。这页讲清楚三件事：它做了什么、在你服务器上改了什么、以及到哪儿为止。</p>
+
+    <p class="txt">前提是主机上有 tmux，在 <code>PATH</code> 里——或者你在连接表单的
+    <b>Custom tmux Path</b> 里填了路径。没别的了。下面<a href="#agents">装 hook</a> 那节是可选的，
+    跟连接本身无关。</p>
+    <p class="txt">没有 tmux 的话，连接不会失败，只会降级：一个纯 SSH 的单 pane，加一条横幅
+    <b>“tmux not found on this host — plain SSH session.”</b>，旁边的 <b>Install tmux</b>
+    会按你的包管理器把命令摆出来，你点了才执行。Offhook 绝不会偷偷把你切到另一个多路复用器
+    ——tmux 和 herdr 各自持有互不相干的 session。另外，一旦你填了自定义 tmux 路径，这套探测整个
+    跳过：探测只走 <code>PATH</code>，而你亲手填路径本身就是为那个二进制背书。</p>
+
+    <h3 id="s1">只往登录 shell 里写一行</h3>
+    <p class="txt">Offhook 不是把 tmux 那套字符界面塞进一块小屏幕，而是以控制客户端的身份
+    attach——<code>tmux -CC</code>，跟 iTerm2 用的是同一套控制模式——然后自己渲染。连上那一刻
+    写进去的就是这行：</p>
+<pre>tmux set -g history-limit 50000 2&gt;/dev/null; <b>tmux -CC attach</b></pre>
+    <p class="txt"><code>attach</code> 不带 <code>-t</code>，接的是你最近用过的那个已有 session。
+    <b>Offhook 自己绝不执行 <code>tmux new</code>。</b>服务器上一个 session 都没有时，你看到的是
+    一个把话说明白的空状态，和一颗要你自己按的 <b>Create Session</b>。</p>
+    <p class="txt">发现（discovery）是同一条通道上的三条命令，树有变动就重跑。<code>-a</code>
+    是服务器上的全部 session，所以首页那棵树能同时展开好几个：</p>
+<pre>list-sessions -F '#{session_id} #{session_attached} #{session_name}'
+list-windows -a -F '#{session_id} #{window_id} #{window_index} #{window_layout} …'
+list-panes   -a -F '#{pane_id} #{window_id} #{pane_index} … #{pane_current_command}'</pre>
+
+    <ul class="list">
+      <li><b>attach 有 22 秒的期限。</b>tmux 一直不确认，首页卡片就变成 <em>stalled</em>，
+      并给出「Attach didn't complete — tmux never confirmed.」和一颗重试。注意这时 SSH 本身是活的，
+      没接上的是 tmux 这一握手。</li>
+      <li><b>控制模式跑不了 mosh。</b>mosh 传的是屏幕差分，不是按行分帧的协议流。所以
+      mosh + tmux 这条路上，Offhook 在 mosh 里渲染 tmux 原本那套全屏界面，同时<b>另开一条
+      sidecar SSH 连接</b>跑 <code>-CC</code>，只为喂饱面包屑和那几个面板。这条 SSH 连不上，
+      你拿到的就是一个光秃秃的 <code>tmux attach</code>，一个原生面板都没有。</li>
+    </ul>
+  </section>
+</div>
+
+
+
+</div>
+
+<!-- ══ 导航 ══ -->
+<div class="shell">
+  <section class="band doc">
+    <p class="eyebrow">怎么走动</p>
+
+    <h3 id="s2">永远只有一个 pane，占满整屏</h3>
+    <p class="txt">Offhook 只显示一个 pane，并且替你 zoom（<code>select-pane -Z</code>；
+    window 有分屏且没 zoom 时再补一条 <code>resize-pane -Z</code>）。分屏永远不会并排画出来，
+    而且<b>你离开的时候 zoom 是留在那儿的</b>——分屏布局不归 Offhook 打理，<code>prefix z</code>
+    在哪儿都能变回来。真实的分屏几何只有 <b>Select Pane</b> 面板里看得到。</p>
+    <p class="txt">顶栏是三段可点的面包屑——session › window › pane，各开各的面板。pane 那一段的
+    文字优先级是：hook 打上的 agent 名 → pane 的前台命令 → <code>pane 2</code>。</p>
+
+    <div class="tbl-wrap">
+      <table>
+        <thead>
+          <tr><th>面板</th><th>列出什么</th><th>底部提示</th></tr>
+        </thead>
+        <tbody>
+          <tr><td class="cap-col"><b>Sessions</b></td>
+              <td>服务器上的全部 session：当前那个显示 <code>3 windows · 2:logs</code>，
+              其余显示 <em>attached</em> / <em>detached</em></td>
+              <td class="no">Swipe to switch · ⌃ b s</td></tr>
+          <tr><td class="cap-col"><b>Windows</b></td>
+              <td><b>当前 session</b> 的 window，形如 <code>2 panes · nvim</code>，带 agent
+              圆点<em>以及圆点的文字标签</em>——只靠颜色不算把话说清楚</td>
+              <td class="no">Swipe to switch · ⌃ 1-9</td></tr>
+          <tr><td class="cap-col"><b>Select Pane</b></td>
+              <td>按 tmux 自己的 layout 字符串解析出的真实布局树，按比例画；每格显示 window
+              内的 pane 序号和它的命令</td>
+              <td class="no">Tap to focus · ＋ splits a new pane · ⌃ b q</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p class="txt"><b>限制：</b>Windows 面板只列当前 session 的 window，别的 session 要去首页
+    那棵树里找。底部那几颗键位印的是<em>你自己那台</em> tmux 的绑定，方便你在主机上用实体键盘
+    做同样的事；按多路复用器分开印是因为 <code>⌃ b q</code> 在 tmux 里是列 pane，在 herdr
+    里是<b>断开</b>。</p>
+
+    <div class="rows">
+      <div class="row">
+        <div>
+          <span class="kicker">滑动</span>
+          <h3 id="s3">一根手指，两个方向</h3>
+          <p>终端上就一个 pan 手势，两个轴都归它管。拖过大约 12 pt 后按累计位移锁定方向；
+          横向滑到 40 pt 才算数，同时给一次触感反馈。</p>
+          <ul>
+            <li>左滑下一个、右滑上一个，到头会绕回来</li>
+            <li>当前 window 里有多个 pane 就在 pane 之间循环；只有一个，就在这个 session 的
+            window 之间循环</li>
+            <li>SSH + tmux 和 mosh + tmux 都能用（后者走 sidecar 转发）。herdr 上<b>没有</b>
+            接这个手势，所以 herdr 的面板印的是「Tap to switch」</li>
+          </ul>
+        </div>
+        <img class="phone rowshot" src="/08-tmux-windows.jpg" width="1320" height="2868"
+             loading="lazy"
+             alt="tmux 的 Windows 面板，列出 server、tests、logs，背后是一屏 git log">
+      </div>
+    </div>
+
+    <h3 id="s4">新建与销毁</h3>
+    <p class="txt">新建走面板标题栏或首页 SESSIONS 那一行的 <code>+</code>；重命名和销毁在任意
+    一行长按出来的菜单里。名字发出去之前会加单引号，所以叫 <code>my project</code> 的 session
+    也能正常处理。</p>
+
+    <div class="tbl-wrap">
+      <table>
+        <thead>
+          <tr><th>动作</th><th>Offhook 发出去的命令</th><th>说明</th></tr>
+        </thead>
+        <tbody>
+          <tr><td class="cap-col">新建 session</td>
+              <td><code>new-session -d -P -F '#{session_id}'</code></td>
+              <td>然后立刻切过去。点了 Create 还留在原地，读起来就是「啥也没发生」。</td></tr>
+          <tr><td class="cap-col">新建 window</td>
+              <td><code>new-window -P -F '#{window_id}'</code></td>
+              <td>输入框是 <b>Name (optional)</b>——「Leave blank to let the program name
+              it.」</td></tr>
+          <tr><td class="cap-col">新建 pane</td>
+              <td><code>split-window</code>，紧接 <code>resize-pane -Z</code></td>
+              <td>分出来那一刻就被 zoom 回单个整屏 pane。</td></tr>
+          <tr><td class="cap-col">重命名</td>
+              <td><code>rename-session</code> / <code>rename-window</code></td>
+              <td>tmux 的 pane 本来就没有名字，所以 pane 没有重命名这一项。</td></tr>
+          <tr><td class="cap-col">销毁</td>
+              <td><code>kill-session</code> / <code>kill-window</code> /
+              <code>kill-pane</code></td>
+              <td>确认框把后果写明白：「Kill window 2: logs? Every pane in it dies.」</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p class="txt"><b>销毁最后一个 session 会让 tmux server 退出</b>，控制通道跟着断，所以
+    Offhook 先在本地把树剪掉，免得界面卡在那儿等一条永远不回来的回复。tmux 拒绝执行时——
+    比如 session 重名——你会看到 tmux 自己的报错原文，停三秒。没有一条错误被吞掉。</p>
+  </section>
+</div>
+
+<!-- ══ SCROLLBACK ══ -->
+<div class="shell">
+  <section class="band doc">
+    <p class="eyebrow">Scrollback</p>
+    <h3 id="s5">「往上滚」其实是两件不同的事</h3>
+    <p class="txt">pane 的历史在服务器上，App 本地留下的只是 tmux 重绘过的内容。所以往上滑属于
+    哪一种，Offhook 是去问 tmux 的：对当前 pane 执行
+    <code>display-message -p '#{mouse_any_flag}'</code>，每次切换、每次开始滚动都重新读。
+    问而不猜，是因为在 <code>mouse on</code> 之下渲染出来的终端根本判断不了。</p>
+
+    <h4>程序抢走了鼠标——Claude Code、<code>vim --mouse</code>、<code>less --mouse</code></h4>
+    <p class="txt">Offhook 合成滚轮事件送进这个 pane，让程序自己滚：tmux 不会进 copy-mode，
+    滚完照样能打字。一次挥动最多 6 个事件。</p>
+<pre>ESC [ &lt; 64 ; col ; row M   <i># 向上，看更早的内容</i>
+ESC [ &lt; 65 ; col ; row M   <i># 向下，回到更新的内容</i></pre>
+
+    <h4>普通 shell</h4>
+    <p class="txt">走 tmux 的 copy-mode（复制模式），命令从控制通道发，节流到每 0.18 秒一步。
+    任何一次按键都会先发 <code>-X cancel</code>，所以打字永远能把你带回最底下的实时行——
+    也因此<b>没先往上滚过，往下滚是没反应的</b>：还没进 copy-mode，无处可往下。</p>
+<pre>copy-mode -t %41
+send-keys -t %41 -N 3 -X scroll-up</pre>
+
+    <h3 id="s6">你到底能往上翻到哪儿</h3>
+    <p class="txt">attach 的时候，Offhook 会把这个 pane 已有的历史回灌一次
+    （<code>capture-pane -e -S -2000 -E -1</code>），最多 <b>2 000 行</b>，而且只对主屏幕
+    (primary screen) 的 pane 做。处在备用屏幕 (alternate screen) 的 pane——vim、top、Claude
+    Code——只拿到当前可见的那一帧：纯文本 dump 里没有光标定位，倒进全屏程序会把它冲烂。</p>
+    <p class="txt">所以刚 attach 上的那个 Claude Code pane，本地在提示符之上是空的。往上滚仍然
+    能用——那是通过 copy-mode 去翻 tmux 自己的历史——但<b>目前还没有「翻到顶再按需拉更多」这个
+    能力</b>。这是真实的缺口，不是你哪个开关没打开。服务端历史在 attach 时被抬到 50 000 行，
+    客户端每个 pane 也留 50 000 行；2 000 只是回灌的深度。</p>
+    <p class="txt">如果终端上的滑动跟你跑的程序打架，快捷键栏里的 <code>⇅</code>
+    <b>Scroll history</b> 能干同样的活儿。它是内置项，但默认不在栏里。</p>
+  </section>
+</div>
+
+<!-- ══ 前缀键 ══ -->
+<div class="shell">
+  <section class="band doc">
+    <p class="eyebrow">前缀键</p>
+    <h3 id="s7">SSH + tmux 下，Ctrl-b 到不了 tmux</h3>
+    <p class="txt">按键是按 pane 作为 tmux 命令投递的，字节直接注进那个 pane 里跑着的程序：</p>
+<pre>send-keys -t %41 -H 1b 5b 41</pre>
+    <p class="txt">这条路上没有任何一环会去查 tmux 的键表，所以你敲的 <code>^B</code> 就是以
+    <code>^B</code> 的身份到达你的 shell 或 agent，它不会打开前缀。导航请用面包屑、三个面板、
+    首页那棵树和滑动。要从软键盘发控制键，用 <code>ctrl</code> 那颗键：它是一次性的，按下之后
+    你敲的下一个键会以对应的控制码发出去。</p>
+    <p class="txt"><b>mosh + tmux 恰好反过来。</b>屏幕上就是 tmux 自己的界面，
+    <code>Ctrl-b</code> 跟你在桌面上用得一模一样——也正因如此，那条路上的面包屑会退化成
+    <code>user@host · tmux</code>。有个尖角：自定义快捷键勾了 <b>Only in tmux</b> 之后，
+    过滤看的是 SSH + tmux 的控制器，所以它在 mosh + tmux 的会话里<b>不会</b>出现。</p>
+  </section>
+</div>
+
+<!-- ══ AGENT 状态 ══ -->
+<div class="shell">
+  <section class="band doc" id="agents">
+    <p class="eyebrow">tmux 上的 agent 状态</p>
+    <h2>不装 hook 是猜，装了才是知道。</h2>
+    <p class="sub">herdr 把 agent 状态做成了协议字段，主机上什么都不用装。tmux 没有这个字段，
+    所以 Offhook 提供一套 hook 安装——并且老实承认：这是要你自己动手装的，装之前它先给你的配置
+    做备份。</p>
+
+    <div class="steps3">
+      <div class="step3">
+        <h3 id="s8">打开那个面板</h3>
+        <p>设置 → <b>Install agent hooks</b>。选你的 agent：Claude Code、Codex、Gemini
+        CLI、Qwen Code、Qoder、Factory、CodeBuddy。herdr 连接上这一行直接隐藏——用不着。</p>
+      </div>
+      <div class="step3">
+        <h3 id="s9">把那行命令跑掉</h3>
+        <p><b>Run in terminal</b>，或 <b>Copy command</b> 自己贴。它先把配置复制成一份带时间戳
+        的备份，写入 <code>~/.offhook/offhook-stamp.sh</code>，再合并四组 hook。</p>
+      </div>
+      <div class="step3">
+        <h3 id="s10">跑一轮，再 Re-check</h3>
+        <p>hook 只在 agent 的一轮里触发，没跑之前什么都不会出现。跑完点 <b>Re-check</b>
+        确认：「Hooks are live」。</p>
+      </div>
+    </div>
+
+    <h3 id="s11">hook 到底写了什么</h3>
+    <p class="txt">往 <code>$TMUX_PANE</code> 上写四个 tmux pane 选项。机制就这些——没有
+    socket、没有守护进程、没有任何回调打给 Offhook。</p>
+<pre>tmux set -p -t "$TMUX_PANE" @offhook_state working   <i># 或 attention | done</i>
+tmux set -p -t "$TMUX_PANE" @offhook_agent claude
+tmux set -p -t "$TMUX_PANE" @offhook_since 1754630400
+tmux set -p -t "$TMUX_PANE" @offhook_title "Bash: npm install"</pre>
+    <p class="txt">映射是：<code>UserPromptSubmit</code> 和 <code>PreToolUse</code> →
+    <b>working</b>；<code>Notification</code>（Claude 系）或 <code>PermissionRequest</code>
+    （Codex）→ <b>attention</b>；<code>Stop</code> → <b>done</b>。脚本第一行是
+    <code>[ -n "$TMUX" ] || exit 0</code>，而且永远 exit 0——它只给 pane 打个戳，不可能挡住、
+    拖慢或打断 agent。重复跑安装命令是去重，不是往上叠。</p>
+    <p class="txt">Offhook 在附着期间每两秒读回一次。没设过的选项展开是空串，所以没被打戳的
+    pane 回来长这样 <code>%5||||</code>，然后落到下面那套猜测里：</p>
+<pre>list-panes -a -F '#{pane_id}|#{@offhook_state}|#{@offhook_agent}|#{@offhook_since}|#{@offhook_title}'</pre>
+
+    <div class="rows">
+      <div class="row">
+        <div>
+          <span class="kicker">不装的话，你少了什么</span>
+          <h3 id="s12">兜底那套是猜的，而且故意收得很窄</h3>
+          <p>没有 hook 时，Offhook 只能读 pane：已知 agent 命令下持续有输出满 2 秒 → working；
+          终端响铃 (BEL) → 需要你；安静 4 秒 → done，25 秒后这一行消失。</p>
+          <ul>
+            <li>只有 <code>claude</code>、<code>codex</code>、<code>gemini</code>、
+            <code>qwen</code>、<code>qoder</code>、<code>factory</code>、
+            <code>codebuddy</code>、<code>aider</code>、<code>goose</code>、
+            <code>opencode</code> 会因为输出被提升。构建、<code>tail -f</code>、dev server
+            和 vim 永远不会被当成 agent——只有 BEL 能绕过这层过滤</li>
+            <li><b>没有细节行。</b>「Bash: npm install」来自 <code>@offhook_title</code>；
+            猜的那套根本不知道 agent 在问什么</li>
+            <li><b>没有「跑完了」那一声。</b>done 通知只在真收到 <code>Stop</code> 戳时才发
+            ——「安静了四秒」这种模糊程度，不配震你一下手机</li>
+          </ul>
+        </div>
+        <img class="phone rowshot" src="/02-agent-terminal.jpg" width="1320" height="2868"
+             loading="lazy"
+             alt="一个 tmux pane 里 Claude Code 正等待批准修改，面包屑用琥珀色标出 agent 名字">
+      </div>
+    </div>
+
+    <h3 id="s13">依赖它之前，先知道这些限制</h3>
+    <ul class="list">
+      <li><b>Gemini CLI 没有 <code>Notification</code> 这个事件</b>，在它这儿「需要你」只能退回
+      到响铃那套。</li>
+      <li><b>主机上没有 <code>jq</code> 就没有 title。</b>状态照样打戳。</li>
+      <li><b>当前 pane 正在跑 agent 时，Run in terminal 会拒绝执行</b>——那条命令会被打进
+      agent 的输入框。它会明说，并让你先切到一个 shell pane。</li>
+      <li><b>tmux 连接的首页没有 Agents 列表。</b>那一节只在 herdr 上有：hook 的覆盖度只等于
+      你装了多少，而一个会默默漏掉一半 agent 的列表，比没有列表更糟。</li>
+      <li><b>mosh + tmux 上，agent 状态根本到不了灵动岛。</b><code>-CC</code> sidecar 只驱动
+      面包屑和面板，没有接到 agent 监控上。想让手机告诉你 agent 在等人，请用 SSH + tmux。</li>
+      <li><b>iOS 会把 App 挂起，那两秒一次的轮询也跟着停。</b>在你回到 App 之前，状态不会再更新。
+      Offhook 没有服务器，也没有推送——这就是「中间什么都不放」的代价。Live Activity 会在 120
+      秒后把自己标记为过期，显示 <em>paused</em>，而不是给你看一个冻住的「working」。</li>
+    </ul>
+  </section>
+</div>
+
+<!-- ══ 它改了什么 ══ -->
+<div class="shell">
+  <section class="band doc">
+    <p class="eyebrow">在你的服务器上</p>
+    <h2>它附着到你已有的东西，但没做到「什么都没碰」。</h2>
+    <p class="sub">Offhook 不会替你创建 session，也不会改它的样式。但说「什么都不改」就是撒谎，
+    所以这里是连着的时候它确实改动的全部清单。</p>
+
+    <div class="grid">
+      <div class="cell"><span class="ic">全局</span>
+        <h4>history-limit</h4>
+        <p>每次 attach 之前都会先跑 <code>tmux set -g history-limit 50000</code>，SSH 路径和
+        mosh sidecar 都一样。这是服务器级选项；按 tmux 的语义，它作用于之后新建的 pane。</p></div>
+      <div class="cell"><span class="ic">按 window</span>
+        <h4>尺寸钉死</h4>
+        <p>你在看某个 window 时，<code>resize-window -x -y</code> 会把它钉到手机的字符网格上，
+        好让全屏程序重排。同一时间看这个 window 的其他客户端，也会被拿到手机的宽度。</p></div>
+      <div class="cell"><span class="ic">会还回去</span>
+        <h4>……然后解钉</h4>
+        <p>离开这个 window 时、App 进后台时、断开时都会还。光发 <code>resize-window -A</code>
+        不够——那只是改钉到「最大的那个客户端」。</p></div>
+      <div class="cell"><span class="ic">留着不动</span>
+        <h4>Zoom</h4>
+        <p>当前 pane 是 zoom 状态，你离开之后它还是 zoom。刻意的：分屏布局是你的，
+        <code>prefix z</code> 在哪儿都能还原。</p></div>
+      <div class="cell"><span class="ic">临时</span>
+        <h4>copy-mode</h4>
+        <p>你滚动和打字的过程里，pane 会被进出 copy-mode；另外 attach 后第一次看到某个 pane
+        时，会一次性取消它遗留的 copy-mode。</p></div>
+      <div class="cell"><span class="ic">仅 mosh</span>
+        <h4>状态栏</h4>
+        <p>在 sidecar 这条路上，它附着的那个 session 会被设成 <code>status off</code>，
+        直到你切走或断开才还原。纯 SSH + tmux 下，你 session 的外观不会被动任何一处。</p></div>
+    </div>
+
+    <p class="txt">同一条原则的另一半：别的客户端切<em>它自己</em>的 window，绝不会把你手机的
+    视图拖着走，除非你正在看的那个 window 已经没了。而如果一台开着
+    <code>window-size latest</code> 的桌面客户端跟你抢尺寸，Offhook 会退让——5 秒内抢回 3 次
+    就停手 5 秒。你换来的是一块稳定的屏幕，代价是那一小会儿桌面端赢。</p>
+  </section>
+</div>
+<!--DOCNEXT:BEGIN-->
+<div class="dpager"><a class="dprev" href="/zh/docs/multiplexers"><span>上一页</span>选 tmux 还是 herdr</a><a class="dnext" href="/zh/docs/herdr"><span>下一页</span>使用 herdr</a></div>
+<!--DOCNEXT:END-->
+</div><!--dbody-->
+<!--DOCTOC:BEGIN-->
+<aside class="dtoc">
+  <p class="dtoclabel">本页内容</p>
+  <nav><a href="#s1">只往登录 shell 里写一行</a><a href="#s2">永远只有一个 pane，占满整屏</a><a href="#s3">一根手指，两个方向</a><a href="#s4">新建与销毁</a><a href="#s5">「往上滚」其实是两件不同的事</a><a href="#s6">你到底能往上翻到哪儿</a><a href="#s7">SSH + tmux 下，Ctrl-b 到不了 tmux</a><a href="#s8">打开那个面板</a><a href="#s9">把那行命令跑掉</a><a href="#s10">跑一轮，再 Re-check</a><a href="#s11">hook 到底写了什么</a><a href="#s12">兜底那套是猜的，而且故意收得很窄</a><a href="#s13">依赖它之前，先知道这些限制</a></nav>
+</aside>
+<!--DOCTOC:END-->
+</div><!--/dwrap-->
+
+
+
+</div>
+
+
+
+</div>
+
+
+
+</div>
+
+
+
+</div>
+
+
+
+</div>
+
+<footer>
+  <div class="shell">
+    <p class="signoff">解了套，仍在线上。</p>
+    <nav class="fnav">
+      <a href="/zh">首页</a><a href="/zh/docs">文档</a><a href="/zh/guides">指南</a>
+      <a href="/zh/compare">对比</a><a href="/privacy">隐私</a><a href="/support">支持</a>
+    </nav>
+    <p class="legal">© 2026 Offhook 摘机 · SSH · Mosh · tmux · herdr · iPhone</p>
+  </div>
+</footer>
+<div class="dsearch" id="dsearch" hidden style="display:none">
+  <div class="dsearchbox" role="dialog" aria-modal="true" aria-label="Search docs">
+    <input id="dq" type="search" autocomplete="off" placeholder="搜索文档…">
+    <div id="dres"></div>
+  </div>
+</div>
+<script src="/docs-search.js?v=7" defer></script>
+</body>
+</html>

@@ -1,0 +1,642 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Keyboard, themes and shortcuts — Offhook</title>
+<meta name="description" content="How to build Offhook's shortcut bar, what a hardware keyboard gives you, and how to change the terminal theme, font, app icon and accent colour.">
+<link rel="icon" type="image/png" href="/icon-192.png">
+<link rel="alternate" hreflang="en" href="https://offhook.cluas.eu.org/docs/keyboard">
+<link rel="alternate" hreflang="zh-Hans" href="https://offhook.cluas.eu.org/zh/docs/keyboard">
+<link rel="stylesheet" href="/offhook.css?v=7">
+</head>
+<body>
+
+<div class="shell">
+  <header class="top">
+    <a class="brand" href="./"><img src="/icon-192.png" alt="" width="30" height="30">Offhook</a>
+    <div class="topright">
+      <a class="lang" href="/docs">Docs</a>
+      <a class="lang" href="/guides">Guides</a>
+      <a class="lang" href="/compare">Compare</a>
+      <a class="lang" href="/zh/docs/keyboard" hreflang="zh-Hans" lang="zh-Hans">中文</a>
+    </div>
+  </header>
+</div>
+
+<!-- ══ INTRO ══ -->
+<div class="dwrap">
+<!--DOCSHELL:BEGIN-->
+<aside class="dnav" id="dnav">
+  <a class="dhome" href="/">← Back to the app</a>
+  <p class="dtitle">Docs</p>
+  <button class="dsearchbtn" type="button" data-docsearch><span>Search the docs…</span><kbd>⌘K</kbd></button>
+  <nav><p class="dsec">Start</p><a href="/docs/intro">What Offhook does</a><a href="/docs/setup">Set up a connection</a><a href="/docs/first-session">Run your first session</a><p class="dsec">Connections</p><a href="/docs/keys">SSH keys and host trust</a><a href="/docs/mosh">Mosh and roaming</a><a href="/guide/remote-access">Reach your machine from anywhere</a><p class="dsec">Multiplexers</p><a href="/docs/multiplexers">Choosing tmux or herdr</a><a href="/docs/tmux">Using tmux</a><a href="/docs/herdr">Using herdr</a><p class="dsec">Agents</p><a href="/docs/agents">Agent status and the lock screen</a><a href="/docs/worktrees">Isolated tasks with git worktrees</a><a href="/guide/claude-code">Run Claude Code from your iPhone</a><p class="dsec">Input</p><a href="/docs/keyboard" class="on" aria-current="page">Keyboard and shortcuts</a><a href="/docs/scrolling">Scrolling and scrollback</a><a href="/docs/clipboard">Clipboard and paste</a><a href="/docs/ime">CJK and IME input</a><p class="dsec">Appearance</p><a href="/docs/appearance">Themes, fonts and icons</a><p class="dsec">Help</p><a href="/docs/troubleshooting">Troubleshooting</a><a href="/compare">How Offhook compares</a></nav>
+</aside>
+<!--DOCSHELL:END-->
+<div class="dbody">
+<div class="shell">
+  <section class="band" style="border-top:none">
+    <p class="eyebrow">Docs</p>
+    <h2>Keyboard, themes and shortcuts</h2>
+    <p class="sub">The strip above the keyboard is the part of Offhook you touch most, and
+    it is entirely yours to build. This page covers that bar, custom keys, what a hardware
+    keyboard actually gives you, the terminal themes and their editor, fonts, the app icon
+    and the accent colour — with the real screen and button names, so you can follow along
+    in the app.</p>
+
+    <div class="grid">
+      <div class="cell"><span class="ic">Part one</span>
+        <h4>The shortcut bar</h4>
+        <p>Twelve slots, twenty-two built-in keys, and an editor that reorders them by
+        drag. Plus custom keys of your own.</p></div>
+      <div class="cell"><span class="ic">Part two</span>
+        <h4>Keyboards</h4>
+        <p>What a Bluetooth keyboard covers, what it does not, and why Pinyin and Japanese
+        input needed a fix.</p></div>
+      <div class="cell"><span class="ic">Part three</span>
+        <h4>How it looks</h4>
+        <p>Eight terminal themes and a colour editor, ten fonts, eight app icons, and an
+        accent you set yourself.</p></div>
+    </div>
+  </section>
+</div>
+
+<!-- ══ THE SHORTCUT BAR ══ -->
+<div class="shell">
+  <section class="band">
+    <p class="eyebrow">Shortcut bar</p>
+    <h2>The bar above the keyboard is yours to build</h2>
+    <p class="sub">Offhook draws its own strip and switches off the system input accessory
+    view, so what you see there is the app's, not the keyboard's. It holds up to twelve
+    keys and it ships with six.</p>
+
+    <div class="doc">
+
+      <div class="rows">
+        <div class="row">
+          <div>
+            <span class="kicker">Settings → Keyboard · Keys → Shortcuts</span>
+            <h3 id="s1">Six keys out of the box, sixteen more waiting</h3>
+            <p>A fresh install puts <code>esc</code>, <code>tab</code>, <code>^C</code>,
+            <code>^L</code>, paste and the arrow D-pad in the bar, in that order. The other
+            sixteen built-ins sit in the editor's <b>AVAILABLE</b> list until you add them.
+            Three chips carry a glyph on the bar instead of their label — paste a clipboard,
+            the D-pad a four-way arrow, scroll an up/down arrow; the names
+            <code>paste</code>, <code>✛</code> and <code>⇅</code> are what the editor list
+            shows.</p>
+            <ul>
+              <li>Pan the row sideways to reach keys past the screen edge</li>
+              <li>The keyboard show/hide button sits outside the pan area, always in reach</li>
+              <li>The Settings row shows your slot count — <code>6/12</code>, <code>9/12</code></li>
+            </ul>
+          </div>
+          <img class="phone rowshot" src="/11-shortcuts.jpg" width="414" height="900" loading="lazy"
+               alt="The Shortcuts editor: a live preview of the toolbar above a reorderable list of keys">
+        </div>
+      </div>
+
+      <h3 id="s2">Editing the bar</h3>
+      <p class="txt">The editor has four groups. <b>PREVIEW</b> renders the bar as it will
+      look. <b>IN TOOLBAR · n/12</b> is the bar itself — drag the <code>≡</code> handle to
+      reorder, tap the red <code>−</code> to take a key out. <b>CUSTOM</b> holds keys you
+      made. <b>AVAILABLE</b> holds every built-in currently out of the bar, each with a
+      green <code>+</code> to put it back.</p>
+      <ul class="list">
+        <li>Removing a built-in never deletes it — it drops back to AVAILABLE. You cannot
+        lose a built-in key. A custom key is not the same: the red <code>−</code> in the
+        CUSTOM group deletes it outright, with no undo.</li>
+        <li>Reordering applies to the bar. AVAILABLE is not reorderable — it follows the
+        stored order, which a bar reorder can shuffle.</li>
+        <li>When an update adds a new built-in and your bar is already full, the new key
+        lands in AVAILABLE rather than silently vanishing.</li>
+      </ul>
+
+      <h3 id="s3">The sixteen keys that start outside the bar</h3>
+      <p class="txt">Two of these exist specifically for coding agents: <code>⌃End</code>
+      jumps a long Claude Code transcript to the live end, and <code>⇧Tab</code> is its
+      mode toggle. Neither is typeable on a software keyboard — there is no End key, and
+      Shift-Tab needs a hardware Tab.</p>
+
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>Key</th><th>What it does</th></tr></thead>
+          <tbody>
+            <tr><td><b>ctrl</b></td><td class="cap-col">Control — sticky, one-shot</td></tr>
+            <tr><td><b>⇅</b></td><td class="cap-col">Scroll history</td></tr>
+            <tr><td><b>⌃End</b></td><td class="cap-col">Jump to end</td></tr>
+            <tr><td><b>⇧Tab</b></td><td class="cap-col">Back-tab / toggle mode</td></tr>
+            <tr><td><b>^D</b></td><td class="cap-col">End of file</td></tr>
+            <tr><td><b>^R</b></td><td class="cap-col">Reverse search</td></tr>
+            <tr><td><b>^A</b></td><td class="cap-col">Beginning of line</td></tr>
+            <tr><td><b>^E</b></td><td class="cap-col">End of line</td></tr>
+            <tr><td><b>^W</b></td><td class="cap-col">Delete word</td></tr>
+            <tr><td><b>^Z</b></td><td class="cap-col">Suspend</td></tr>
+            <tr><td><b>↑ / ↓</b></td><td class="cap-col">History previous / next</td></tr>
+            <tr><td><b>Home / End</b></td><td class="cap-col">Home, End</td></tr>
+            <tr><td><b>PgUp / PgDn</b></td><td class="cap-col">Page up, page down</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3 id="s4">Three chips that are not taps</h3>
+
+      <div class="grid">
+        <div class="cell"><span class="ic">✛ D-pad</span>
+          <h4>Drag, don't tap</h4>
+          <p>A joystick with a dead zone and a dominant axis: it fires once when you enter
+          a direction, then repeats while you hold. Plain arrows go out through the D-pad's
+          own encoder, so application-cursor-key mode is respected and shell history search
+          keeps working.</p></div>
+        <div class="cell"><span class="ic">⇅ Scroll</span>
+          <h4>Three lines a step</h4>
+          <p>Drag it up for older lines, down for newer, three lines a step, hold to keep
+          going. It lives on the bar rather than the terminal surface so it cannot collide
+          with tap-to-focus or long-press-to-select. Where those lines come from depends on
+          the session — see below.</p></div>
+        <div class="cell"><span class="ic">ctrl Sticky</span>
+          <h4>Arms, then clears</h4>
+          <p>Tap it, then type a letter: that letter goes out as its control code and the
+          chip disarms itself. Tapping any other bar control — esc, tab, paste, the D-pad —
+          also disarms it, so it never folds into a key you did not mean.</p></div>
+      </div>
+
+      <h3 id="s5">What ⇅ actually scrolls</h3>
+      <p class="txt">Only a plain shell keeps its history on the phone. Everywhere else it
+      lives on the server, so the thumb asks the server to move. That is the right answer —
+      it is also why "scroll" is not a purely local control, and it is worth knowing which
+      one you are using.</p>
+      <ul class="list">
+        <li><b>Plain SSH, or a bare shell over mosh</b> — pages Offhook's own buffer and
+        nothing goes out. If the program in front of you has grabbed the mouse, it gets a
+        synthesized wheel event instead.</li>
+        <li><b>SSH + tmux</b> — the control-mode connection decides: a wheel for a
+        mouse-grabbing program (Claude Code, vim), tmux copy-mode for a shell. Either way it
+        is the tmux server doing the scrolling.</li>
+        <li><b>mosh + tmux</b> — the same decision, but the wheel bytes or copy-mode
+        keystrokes travel over mosh, and paging is throttled so a held thumb cannot rip
+        through history.</li>
+        <li><b>herdr</b> — sends a <code>terminal.scroll</code> message and the server
+        decides wheel versus scrollback. <b>herdr has no local scrollback at all:</b> its
+        frames are absolute repaints rather than an appended byte stream, so there is nothing
+        on the phone to page back through and every step is a round trip.</li>
+      </ul>
+
+      <div class="wire">
+        <p><b>Paste behaves like a real paste.</b> It is bracketed-paste aware, so a
+        multi-line prompt arrives as one block instead of being executed line by line.</p>
+        <p>The clipboard is read off the main thread, because a cross-app paste raises
+        iOS's "Allow Paste?" prompt and the read blocks until you answer it. An empty
+        clipboard gives a warning haptic rather than doing nothing visible.</p>
+      </div>
+    </div>
+  </section>
+</div>
+
+<!-- ══ CUSTOM KEYS ══ -->
+<div class="shell">
+  <section class="band">
+    <p class="eyebrow">Custom keys</p>
+    <h2>Make a key that sends whatever you want</h2>
+    <p class="sub">Tap <code>＋</code> in the top right of the Shortcuts editor. The Add
+    Shortcut sheet is one screen, top to bottom, with a live preview of the chip and a
+    <code>SLOT n/12</code> readout so you know what you are spending.</p>
+
+    <div class="doc">
+      <ul class="list">
+        <li><b>TYPE</b> — Key Combo sends modifiers plus a key. Text types a string as-is.
+        Command submits one command with Return.</li>
+        <li><b>QUICK KEYS</b> — 41 presets in five groups: PREFIX, CONTROL, SPECIAL,
+        NAVIGATION and F-KEYS (F1–F12). Tap one to fill the trigger, then adjust the label.
+        The first PREFIX entry is the multiplexer prefix, <code>C-b</code> — the default for
+        tmux and herdr alike.</li>
+        <li><b>TRIGGER</b> — four modifier toggles, <code>⌃ ⌥ ⇧ ⌘</code>, and a main key.
+        On a phone <code>⌘</code> maps to Control semantics in the PTY.</li>
+        <li><b>ACTION</b> — the payload. <code>\r</code>, <code>\n</code>, <code>\t</code>
+        and <code>\e</code> are interpreted, so you can type an escape sequence directly.
+        <b>Append Return</b> adds <code>⏎</code> to submit.</li>
+        <li><b>DISPLAY</b> — the chip label is capped at six characters; the description
+        is what you will see in the editor list.</li>
+        <li><b>SCOPE</b> — leave it empty and the key is everywhere. Bind it to hosts and
+        it only appears on those connections, which is how you get more than twelve keys
+        in practice.</li>
+      </ul>
+      <p class="txt"><b>A payload beats the trigger.</b> On a Key Combo, anything in ACTION is
+      sent as written and the modifiers and main key above it are ignored. Several quick keys
+      — S-Tab, Del, BSpace, Home, End, PgUp, PgDn and every F-key — fill the payload rather
+      than the trigger, so editing the trigger afterwards changes nothing until you clear
+      ACTION.</p>
+
+      <h3 id="s6">Two things in that sheet that do less than they look like</h3>
+      <p class="txt">Both are real in the app today, and worth knowing before you plan
+      around them.</p>
+      <ul class="list">
+        <li><b>The Color swatch is stored but not drawn.</b> Every chip in the bar renders
+        as the same dark-grey pill, built-in or custom. Your choice is saved and will
+        survive, but there is no colour-coding on the bar right now.</li>
+        <li><b>"Repeat on hold" is not a per-key switch.</b> Every Key Combo chip repeats
+        while you hold it, whether or not the toggle is on. The subtitle promises 30 a second
+        after a 0.4s hold; the bar starts repeating at about 0.3s and fires roughly 14 a
+        second. Treat it as: hold a key, it repeats.</li>
+      </ul>
+
+      <h3 id="s7">Only in a multiplexer</h3>
+      <p class="txt">The SCOPE group also carries a toggle labelled <b>Only in a
+      multiplexer</b> — "show only while the session runs tmux or herdr". This is the right
+      place for a key that sends a prefix chord and would be noise on a plain SSH shell.</p>
+      <p class="txt">It used to check for tmux specifically, which meant a herdr session
+      counted as "not in a multiplexer" and silently dropped the chip on the one connection
+      you wanted it on. That is fixed. The stored field keeps its old name so saved
+      shortcuts still load; only the meaning changed.</p>
+      <p class="txt"><b>What "in a multiplexer" means, exactly:</b> the app holds a live
+      control plane for tmux or herdr on that connection — not "the word tmux is on screen".
+      Over mosh that control plane is a second, lightweight SSH connection, because mosh
+      carries a rendered screen and cannot carry tmux <code>-CC</code> or herdr's frame
+      protocol. If the host will not give Offhook that side connection, the session can be
+      visibly running a multiplexer and the chip will still stay hidden.</p>
+
+      <h3 id="s8">Prefix keys are not the same on tmux and herdr</h3>
+      <p class="txt">Both default to <code>⌃ b</code> as the prefix, which is why the PREFIX
+      quick key is correct on either. What the prefix is bound <em>to</em> is where they part
+      company — and Offhook prints the right bindings per connection in its own sheets for
+      that reason.</p>
+
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>You want</th><th>tmux</th><th>herdr</th></tr></thead>
+          <tbody>
+            <tr><td class="cap-col">List sessions / workspaces</td>
+                <td><b>⌃ b s</b></td><td><b>⌃ b w</b></td></tr>
+            <tr><td class="cap-col">Switch windows / tabs</td>
+                <td><b>⌃ b</b> then <b>1</b>–<b>9</b></td><td><b>⌃ b n</b> / <b>⌃ b p</b> — steps, no jump by number</td></tr>
+            <tr><td class="cap-col">Panes</td>
+                <td><b>⌃ b q</b> lists them</td><td><b>⌃ b v</b> splits; there is no "show me the panes" key</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p class="txt"><code>⌃ b q</code> is the one to remember: it lists panes in tmux and
+      <b>detaches</b> in herdr. The nouns differ too — tmux says Session and Window, herdr
+      says Workspace and Tab.</p>
+    </div>
+  </section>
+</div>
+
+<!-- ══ KEYBOARDS ══ -->
+<div class="shell">
+  <section class="band">
+    <p class="eyebrow">Keyboards</p>
+    <h2>Hardware keyboards, and typing in Chinese</h2>
+    <p class="sub">Two different problems. One is handled by the terminal engine and works
+    the moment you pair a keyboard; the other needed a deliberate fix, and a deliberate
+    decision about what <em>not</em> to enable.</p>
+
+    <div class="doc">
+      <h3 id="s9">What a Bluetooth keyboard gives you</h3>
+      <p class="txt">Physical key events go straight to the terminal, so the keys a terminal
+      needs are already there:</p>
+      <ul class="list">
+        <li>Arrow keys, aware of application-cursor mode; <code>⌥←</code> / <code>⌥→</code>
+        send emacs word motion, <code>⌃←</code> / <code>⌃→</code> send control-left/right</li>
+        <li>Escape, Tab and Shift-Tab (back-tab), forward delete</li>
+        <li>Home and End; Page Up and Page Down, which scroll the view when the remote is
+        not in application-cursor mode</li>
+        <li>Control chords, and Option as Meta — toggled at runtime with
+        <code>⌥⌘O</code></li>
+        <li>Function keys up to F11. Key repeat starts after 0.4s and then repeats every
+        0.1s.</li>
+      </ul>
+      <p class="txt"><b>The limit, stated plainly:</b> there is no hardware-keyboard
+      remapping in Offhook. No app-level <code>⌘</code> shortcuts, no key-binding screen,
+      and F12 and above are ignored. The Shortcuts editor configures the on-screen bar
+      only. If you need a key a hardware keyboard cannot produce, put it on the bar.</p>
+
+      <h3 id="s10">Pinyin, Japanese, and the candidate bar</h3>
+      <p class="txt">Terminal views normally turn off autocorrect, spell-checking and smart
+      quotes, which is correct for a shell. On a real device that also collapses the
+      keyboard's prediction strip — which is exactly where a Pinyin or Japanese keyboard
+      draws its candidate list. The result was no candidate bar at all.</p>
+      <p class="txt">Offhook re-enables spell-checking on its terminals for that one reason.
+      Autocorrect stays off, so the shell never rewrites a command — <code>ls</code> will
+      not become <code>last</code>. Autocapitalisation and smart quotes and dashes stay off
+      too, so <code>'foo'</code> and <code>--flag</code> arrive as you typed them.</p>
+      <p class="txt">The terminal's frame is frozen while the keyboard appears, disappears
+      or changes height, including when you switch between a Chinese and an English
+      keyboard. Reflowing mid-transition garbles the screen.</p>
+    </div>
+  </section>
+</div>
+
+<!-- ══ THEMES ══ -->
+<div class="shell">
+  <section class="band">
+    <p class="eyebrow">Themes</p>
+    <h2>Eight themes, and an editor for your own</h2>
+    <p class="sub">Settings → DISPLAY → Theme. Every row previews the actual palette — a
+    miniature terminal plus the eight base ANSI swatches — because a list of theme
+    <em>names</em> cannot answer the only question you are asking.</p>
+
+    <div class="doc">
+
+      <div class="rows">
+        <div class="row">
+          <div>
+            <span class="kicker">Settings → Display</span>
+            <h3 id="s11">Pick one, or start from one</h3>
+            <p>Long-press a built-in theme for <b>Duplicate &amp; Edit</b>. Long-press one
+            of your own for Edit, Duplicate, Copy JSON or Delete. The <code>+</code> menu
+            offers <b>New Theme</b> and <b>Import JSON…</b>.</p>
+            <ul>
+              <li>Built-ins are read-only — duplicating is the only way in</li>
+              <li>Deleting the theme you are using moves you back to the default</li>
+              <li>All eight built-ins are dark. There is no light terminal theme.</li>
+            </ul>
+          </div>
+          <img class="phone rowshot" src="/10-themes.jpg" width="414" height="900" loading="lazy"
+               alt="Settings showing the accent colour, app icon, terminal font, font size and theme rows">
+        </div>
+      </div>
+
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>Theme</th><th>Background</th><th></th></tr></thead>
+          <tbody>
+            <tr><td><b>GitHub Dark</b></td><td><code>#050507</code></td><td class="cap-col">The default</td></tr>
+            <tr><td><b>Liquid Glass</b></td><td><code>#0E1019</code></td><td class="cap-col">Deep-glass palette</td></tr>
+            <tr><td><b>Bioluminescent</b></td><td><code>#0D1117</code></td><td class="cap-col"></td></tr>
+            <tr><td><b>Dracula</b></td><td><code>#282A36</code></td><td class="cap-col"></td></tr>
+            <tr><td><b>Nord</b></td><td><code>#2E3440</code></td><td class="cap-col"></td></tr>
+            <tr><td><b>Solarized Dark</b></td><td><code>#002B36</code></td><td class="cap-col"></td></tr>
+            <tr><td><b>Monokai</b></td><td><code>#272822</code></td><td class="cap-col"></td></tr>
+            <tr><td><b>Tokyo Night</b></td><td><code>#1A1B26</code></td><td class="cap-col"></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3 id="s12">The editor</h3>
+      <p class="txt">The top of the screen is a fake <code>git status</code> session painted
+      in the palette you are editing — chosen because it exercises prompt green, path blue,
+      a diff's red and green pair, a warning yellow, and dim secondary text in one view.
+      Nothing is committed until you tap Save, so backing out leaves your live terminal
+      alone.</p>
+      <p class="txt">Four groups: <b>NAME</b>, <b>TERMINAL</b> (background, foreground,
+      cursor), <b>ANSI COLORS</b> — "these eight are what shells, diffs and TUIs paint
+      with" — and <b>BRIGHT COLORS</b>.</p>
+      <p class="txt">Bright slots are derived automatically: each one is its base colour
+      blended <b>32% toward white</b>. That is deliberately not xterm's hand-picked table.
+      It is a predictable lift that keeps the hue, never darkens, and — unlike copying the
+      base colour into the bright slot — keeps bright black distinct from black. Many tools
+      paint dim text with bright black, and identical to black means invisible. Flip
+      <b>Override bright colors</b> if you want exact control.</p>
+
+      <h3 id="s13">Import and export</h3>
+      <p class="txt">Export is pretty-printed with sorted keys, so re-exporting a theme
+      produces a reviewable diff rather than a reshuffle. The format is flat and
+      human-named on purpose: you can hand-edit it, and palettes pasted from other terminal
+      emulators decode.</p>
+
+<pre>{
+  <b>"name"</b>: "My Palette",
+  <b>"background"</b>: "#0D1117",
+  <b>"foreground"</b>: "#C9D1D9",
+  <b>"cursor"</b>: "#5FE3D8",
+  <b>"black"</b>: "#0A0C10",   <b>"red"</b>:     "#F85149",
+  <b>"green"</b>: "#56D364",   <b>"yellow"</b>:  "#E3B341",
+  <b>"blue"</b>:  "#58A6FF",   <b>"magenta"</b>: "#BC8CFF",
+  <b>"cyan"</b>:  "#39C5CF",   <b>"white"</b>:   "#B1BAC4"
+  <i>// brightBlack … brightWhite are optional</i>
+}</pre>
+
+      <ul class="list">
+        <li>Shorthand aliases decode too: <code>bg</code>, <code>fg</code>,
+        <code>text</code>, <code>cursorColor</code>, <code>caret</code>, and positional
+        <code>ansi0</code>…<code>ansi15</code></li>
+        <li>Hex accepts <code>#RGB</code>, <code>#RRGGBB</code>, <code>RRGGBB</code> and
+        <code>0xRRGGBB</code>; <code>#RRGGBBAA</code> loads with the alpha dropped, because
+        a terminal palette entry has no alpha</li>
+        <li>One typo'd colour becomes black instead of failing the whole import, so a
+        nearly-good theme still loads and can be fixed in the editor</li>
+        <li>Import takes a single theme or an array. <b>Every import gets a fresh id</b> —
+        an id in the payload is not trusted, so nothing can collide with a built-in or
+        overwrite a theme you still want. Duplicate names get " 2", " 3" appended.</li>
+      </ul>
+
+      <div class="wire">
+        <p><b>The limit:</b> import and export are clipboard and text box only. There is no
+        file picker, no theme URL, no bundled theme gallery to browse.</p>
+        <p>Custom themes are stored on the device. There is no account and no iCloud sync,
+        so a theme you build on your iPhone does not appear on your iPad — copy it as JSON
+        and paste it across.</p>
+      </div>
+    </div>
+  </section>
+</div>
+
+<!-- ══ FONTS ══ -->
+<div class="shell">
+  <section class="band">
+    <p class="eyebrow">Fonts</p>
+    <h2>Ten choices, seven of them bundled</h2>
+    <p class="sub">Settings → DISPLAY → Font. Seven programmer fonts ship inside the app, so
+    they look the same on every device; three come from iOS itself.</p>
+
+    <div class="doc">
+      <ul class="list">
+        <li><b>Bundled:</b> JetBrains Mono, Maple Mono, Fira Code, Source Code Pro,
+        IBM Plex Mono, Hack, Anonymous Pro</li>
+        <li><b>From iOS:</b> SF Mono (the default), Menlo, Courier</li>
+      </ul>
+
+      <h3 id="s14">Ligatures are off, on purpose</h3>
+      <p class="txt">Fira Code and JetBrains Mono are here, but you do not get their
+      ligatures. A cell terminal places one glyph per column by glyph index; a ligating font
+      collapses <code>-&gt;</code>, <code>!=</code> and <code>==</code> into a single glyph,
+      so every glyph after it lands one column early and the row garbles. Off is the correct
+      behaviour for a terminal, and it is not something to turn back on.</p>
+
+      <h3 id="s15">Chinese, Japanese and Korean text</h3>
+      <p class="txt">The bundled programmer fonts carry no CJK glyphs, so text echoed from
+      the remote — or shown in your keyboard's composing overlay — used to render as tofu.
+      Offhook attaches a fallback chain to whichever font you pick: PingFang SC, then
+      PingFang TC, Hiragino Sans, Apple SD Gothic Neo, Apple Symbols for check marks,
+      arrows and box glyphs, and Apple Color Emoji. ASCII never leaves your chosen monospace
+      face and CJK stays double-width, so column alignment is untouched.</p>
+
+      <h3 id="s16">Size</h3>
+      <p class="txt">Settings → DISPLAY → <b>Font Size</b> is a slider from 8 to 18 points
+      in steps of 1, default 9. A live sample line, <code>ABCdef 012 ~/ssh $</code>, sits
+      under it. Pinch to zoom in the terminal and the size you land on is written back into
+      this setting, so the next redraw does not snap it away.</p>
+    </div>
+  </section>
+</div>
+
+<!-- ══ ICON AND ACCENT ══ -->
+<div class="shell">
+  <section class="band">
+    <p class="eyebrow">Icon and accent</p>
+    <h2>Two settings, not one</h2>
+    <p class="sub">Settings → APPEARANCE holds <b>Accent</b> and <b>App Icon</b> as separate
+    rows. They used to be one list where picking a colour also swapped the icon. Splitting
+    them was not cosmetic — it is a consequence of what iOS allows.</p>
+
+    <div class="doc">
+      <h3 id="s17">Accent</h3>
+      <p class="txt">Four built-in accents ship: <b>Signal Room</b> (the default indigo),
+      <b>Teal Line</b>, <b>Terminal Green</b> and <b>Amber Console</b>. A custom accent is
+      a single colour — the pressed state and the two faint background washes are derived
+      from it, and only the accent hex is stored, so a future refinement to the derivation
+      also reaches accents you already saved.</p>
+      <ul class="list">
+        <li>The editor previews your colour on a mock of the app's own chrome — a CONNECT
+        button, a MOSH pill, a selected row — with the fixed warning, success and error
+        colours right beside it, so a clash is visible before you save.</li>
+        <li><b>Status colours never move.</b> Warning, success and error stay fixed so they
+        are never mistaken for the accent.</li>
+        <li><b>An accent applies when you leave the gallery, not when you tap it.</b> The
+        row ticks immediately and commits on dismiss. Applying it on the spot rebuilds the
+        whole view tree, which took this pushed screen down with it and bounced you back to
+        Settings — comparing two accents meant re-navigating each time.</li>
+      </ul>
+
+      <h3 id="s18">App icon</h3>
+      <p class="txt">Eight icons: Offhook, Teal, Green, Amber, Daylight, Mono, Cursor and
+      Hail. Two of them are not the app's mark at all — the set is meant to be genuinely
+      different artwork, not eight recolours. The picker renders the real bundled image
+      rather than redrawing it, so what you see is what lands on your home screen.</p>
+
+      <div class="wire">
+        <p>The app says the limit on that screen, and it is worth repeating: <b>the icon is
+        separate from the accent colour, because iOS only allows switching between icons
+        bundled with the app.</b> A custom accent cannot have matching artwork generated for
+        it. Nothing can create an app icon at runtime.</p>
+        <p>If iOS refuses the change, Offhook does not record the selection — the home
+        screen would otherwise disagree with the checkmark — and tells you so.</p>
+      </div>
+
+      <h3 id="s19">Cursor</h3>
+      <p class="txt">Settings → CURSOR: Block, Bar or Underline; a colour from teal, green,
+      white or your accent; and Blink on a 1.1s cadence. Amber is not on the list — it is the
+      automatic roaming colour.</p>
+      <p class="txt"><b>"Trail on predict" is the same story as the Color swatch.</b> The
+      toggle is there, it is on by default, and it says it marks the characters mosh's
+      predictive echo is showing ahead of the server — but the only thing that draws it today
+      is the little preview directly beneath it on the Settings screen. No terminal render
+      path reads the setting, so the live cursor has no trail either way.</p>
+      <p class="txt">Your choice is re-asserted after every batch of output. Remote programs
+      emit cursor-style controls freely — vim, zsh plugins and coding agents all do — so a
+      one-shot apply would only survive until the next one, and the cursor would be right
+      sometimes and wrong other times.</p>
+    </div>
+  </section>
+</div>
+
+<!-- ══ LIMITS ══ -->
+<div class="shell">
+  <section class="band">
+    <p class="eyebrow plain">Known limits</p>
+    <h2>The short answers</h2>
+    <div class="faq">
+      <details>
+        <summary>Do my shortcuts and themes sync between devices?</summary>
+        <p>No. The shortcut layout, custom shortcuts, custom themes and custom accents are
+        all stored on the device. There is no Offhook account and no iCloud sync, so a
+        second device starts from the defaults. Copy a theme as JSON and paste it across if
+        you need it in two places.</p>
+      </details>
+      <details>
+        <summary>Can I colour-code my custom keys?</summary>
+        <p>Not today. The Color swatch in the Add Shortcut sheet is saved but no rendering
+        path reads it — every chip on the bar is the same dark-grey pill.</p>
+      </details>
+      <details>
+        <summary>Does the cursor trail work?</summary>
+        <p>Not in the terminal. "Trail on predict" is stored and drawn in its own Settings
+        preview, but nothing on the render path reads it, so the live cursor looks the same
+        with the toggle on or off.</p>
+      </details>
+      <details>
+        <summary>Does ⇅ ever send anything to the server?</summary>
+        <p>Yes, in most sessions. Only a plain shell has scrollback on the phone. Under tmux
+        the app sends a wheel event or copy-mode keys; under herdr it sends a
+        <code>terminal.scroll</code> message and the server pages, because herdr's frames are
+        absolute repaints and leave no local history to page through.</p>
+      </details>
+      <details>
+        <summary>Can I remap a hardware keyboard?</summary>
+        <p>No. Hardware keys are handled by the terminal engine and are not remappable, and
+        there are no app-level <code>⌘</code> shortcuts. F12 and above do nothing. The
+        Shortcuts editor covers the on-screen bar only.</p>
+      </details>
+      <details>
+        <summary>Is there a light terminal theme?</summary>
+        <p>No. All eight built-ins are dark. You can build a light one in the editor —
+        nothing stops you setting a pale background — but none ships.</p>
+      </details>
+      <details>
+        <summary>Why don't Fira Code's ligatures work?</summary>
+        <p>They are disabled deliberately. One glyph per column is what makes a terminal
+        grid line up; a ligature collapses two characters into one glyph and shifts
+        everything after it one column left. This is a correctness decision, not an
+        oversight.</p>
+      </details>
+      <details>
+        <summary>Can I have more than 12 keys on the bar?</summary>
+        <p>No — twelve is a hard cap. The way around it is SCOPE: bind a key to specific
+        hosts, or to multiplexer sessions only, and it stops competing for a slot on the
+        connections where you do not need it.</p>
+      </details>
+    </div>
+  </section>
+</div>
+<!--DOCNEXT:BEGIN-->
+<div class="dpager"><a class="dprev" href="/guide/claude-code"><span>Previous</span>Run Claude Code from your iPhone</a><a class="dnext" href="/docs/scrolling"><span>Next</span>Scrolling and scrollback</a></div>
+<!--DOCNEXT:END-->
+</div><!--dbody-->
+<!--DOCTOC:BEGIN-->
+<aside class="dtoc">
+  <p class="dtoclabel">On this page</p>
+  <nav><a href="#s1">Six keys out of the box, sixteen more waiting</a><a href="#s2">Editing the bar</a><a href="#s3">The sixteen keys that start outside the bar</a><a href="#s4">Three chips that are not taps</a><a href="#s5">What ⇅ actually scrolls</a><a href="#s6">Two things in that sheet that do less than they look like</a><a href="#s7">Only in a multiplexer</a><a href="#s8">Prefix keys are not the same on tmux and herdr</a><a href="#s9">What a Bluetooth keyboard gives you</a><a href="#s10">Pinyin, Japanese, and the candidate bar</a><a href="#s11">Pick one, or start from one</a><a href="#s12">The editor</a><a href="#s13">Import and export</a><a href="#s14">Ligatures are off, on purpose</a><a href="#s15">Chinese, Japanese and Korean text</a><a href="#s16">Size</a><a href="#s17">Accent</a><a href="#s18">App icon</a><a href="#s19">Cursor</a></nav>
+</aside>
+<!--DOCTOC:END-->
+</div><!--/dwrap-->
+
+
+
+</div>
+
+
+
+</div>
+
+
+
+</div>
+
+
+
+</div>
+
+
+
+</div>
+
+<footer>
+  <div class="shell">
+    <p class="signoff">Off the hook, still on the line.</p>
+    <nav class="fnav">
+      <a href="./">Home</a><a href="/docs">Docs</a><a href="/guides">Guides</a>
+      <a href="/compare">Compare</a><a href="/privacy">Privacy</a><a href="/support">Support</a>
+    </nav>
+    <p class="legal">© 2026 Offhook · SSH · Mosh · tmux · herdr · iPhone</p>
+  </div>
+</footer>
+<div class="dsearch" id="dsearch" hidden style="display:none">
+  <div class="dsearchbox" role="dialog" aria-modal="true" aria-label="Search docs">
+    <input id="dq" type="search" autocomplete="off" placeholder="Search the docs…">
+    <div id="dres"></div>
+  </div>
+</div>
+<script src="/docs-search.js?v=7" defer></script>
+</body>
+</html>
