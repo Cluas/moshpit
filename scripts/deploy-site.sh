@@ -40,8 +40,27 @@ die() { printf '\n\033[1;31m%s\033[0m\n' "$*" >&2; exit 1; }
 # that token, which is also what makes this script work on CI.
 if [[ "${DRY:-}" != "--dry-run" ]]; then
   if [[ -n "${GHCR_TOKEN:-}" ]]; then
+    # DOCKER_CONFIG is not just credentials — the CLI resolves plugins,
+    # buildx builders and daemon contexts under it. Pointing it at an empty
+    # directory to dodge the keychain hid all three in turn: first "no builder
+    # multiarch", then "unable to parse docker host orbstack". So mirror the
+    # real directory and replace only the file that names the keychain.
     export DOCKER_CONFIG="$(mktemp -d)"
-    ln -sfn "$HOME/.docker/cli-plugins" "$DOCKER_CONFIG/cli-plugins" 2>/dev/null || true
+    for entry in "$HOME"/.docker/*; do
+      [[ "$(basename "$entry")" == "config.json" ]] && continue
+      ln -sfn "$entry" "$DOCKER_CONFIG/$(basename "$entry")" 2>/dev/null || true
+    done
+    # Same settings as the user's config, minus credsStore, so the token below
+    # is written into this throwaway file instead of the keychain.
+    python3 - "$HOME/.docker/config.json" "$DOCKER_CONFIG/config.json" <<'PY'
+import json, sys
+try:
+    cfg = json.load(open(sys.argv[1]))
+except Exception:
+    cfg = {}
+cfg.pop("credsStore", None); cfg.pop("credHelpers", None); cfg.pop("auths", None)
+json.dump(cfg, open(sys.argv[2], "w"))
+PY
     printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "${GHCR_USER:-cluas}" --password-stdin >/dev/null \
       || die "GHCR_TOKEN was rejected by ghcr.io. It needs the write:packages scope.
 
@@ -95,6 +114,13 @@ if [[ "$DRY" == "--dry-run" ]]; then
 fi
 
 say "Building and pushing $REPO:$TAG ($PLATFORMS)"
+# The default docker driver cannot emit a multi-arch manifest; that needs a
+# docker-container builder. Create it if this machine has not got one rather
+# than failing after every gate has already passed.
+if ! docker buildx inspect multiarch >/dev/null 2>&1; then
+  say "Creating the multiarch builder"
+  docker buildx create --name multiarch --driver docker-container --bootstrap >/dev/null
+fi
 docker buildx build --builder multiarch --platform "$PLATFORMS" \
   -t "$REPO:$TAG" -t "$REPO:latest" --push "$SITE"
 
