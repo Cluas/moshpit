@@ -15,7 +15,7 @@
 }
 *{box-sizing:border-box;margin:0;padding:0}
 html{scroll-behavior:smooth}
-body{background:var(--ink);color:var(--paper);font:16px/1.6 var(--sans);
+body{background:var(--ink);color:var(--paper);font:17px/1.65 var(--sans);
   -webkit-font-smoothing:antialiased;overflow-x:hidden}
 /* height:auto is not optional here: the phone shots carry width/height
    attributes (so the layout doesn't jump while they load), and without this
@@ -26,7 +26,7 @@ a{color:inherit;text-decoration:none}
 :focus-visible{outline:2px solid var(--teal);outline-offset:3px;border-radius:4px}
 .shell{max-width:66rem;margin:0 auto;padding:0 1.5rem}
 
-.eyebrow{font:600 11px/1 var(--mono);letter-spacing:.26em;text-transform:uppercase;
+.eyebrow{font:600 12.5px/1 var(--mono);letter-spacing:.26em;text-transform:uppercase;
   color:var(--teal);display:flex;align-items:center;gap:.7rem}
 .eyebrow::after{content:"";flex:1;height:1px;background:var(--line);max-width:7rem}
 .eyebrow.plain::after{display:none}
@@ -41,7 +41,7 @@ a{color:inherit;text-decoration:none}
   padding:1.4rem 0;border-bottom:1px solid var(--line)}
 .brand{display:flex;align-items:center;gap:.65rem;font:700 17px var(--sans);letter-spacing:-.01em}
 .brand img{width:30px;height:30px;border-radius:8px}
-.chip{font:600 11px var(--mono);letter-spacing:.1em;text-transform:uppercase;
+.chip{font:600 12.5px var(--mono);letter-spacing:.1em;text-transform:uppercase;
   color:var(--dim);border:1px solid var(--line-lit);border-radius:999px;padding:.42rem .8rem}
 
 /* ── hero ── */
@@ -54,13 +54,13 @@ a{color:inherit;text-decoration:none}
 .lede b{color:var(--paper);font-weight:600}
 .actions{display:flex;flex-wrap:wrap;align-items:center;gap:.9rem;margin-top:1.9rem}
 .price{background:var(--indigo);color:#08080f;border-radius:12px;padding:.72rem 1.15rem;
-  font-weight:700;font-size:.97rem}
+  font-weight:700;font-size:1rem}
 .price span{opacity:.68;font-weight:500}
-.soon{font:600 12px var(--mono);letter-spacing:.06em;color:var(--meta)}
+.soon{font:600 13px var(--mono);letter-spacing:.06em;color:var(--meta)}
 .herophone{max-width:340px;margin:0 auto;position:relative}
 .pin{position:absolute;left:-1.5rem;top:26%;background:var(--panel);
   border:1px solid rgba(255,179,92,.4);border-radius:10px;padding:.5rem .7rem;
-  font:600 10.5px var(--mono);letter-spacing:.1em;color:var(--amber);white-space:nowrap;
+  font:600 12px var(--mono);letter-spacing:.1em;color:var(--amber);white-space:nowrap;
   box-shadow:0 10px 30px -12px #000}
 .pin .lamp{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--amber);
   margin-right:.45rem;vertical-align:1px;box-shadow:0 0 10px 1px rgba(255,179,92,.8);
@@ -70,11 +70,11 @@ a{color:inherit;text-decoration:none}
 /* ── agent badges: who this works with, said plainly ── */
 .agents{display:flex;flex-wrap:wrap;gap:.55rem;justify-content:center;margin-top:2rem}
 .agentchip{display:inline-flex;align-items:center;gap:.45rem;border:1px solid var(--line);
-  border-radius:999px;padding:.45rem .85rem;font:600 12px var(--mono);color:var(--dim);
+  border-radius:999px;padding:.45rem .85rem;font:600 13px var(--mono);color:var(--dim);
   background:var(--panel)}
 .agentchip .dot{width:6px;height:6px;border-radius:50%;background:var(--teal);flex:0 0 auto}
 .agentchip.any{border-style:dashed;color:var(--meta)}
-.agentnote{text-align:center;margin-top:.9rem;font-size:.9rem;color:var(--meta)}
+.agentnote{text-align:center;margin-top:.9rem;font-size:.95rem;color:var(--meta)}
 
 /* ── how it works: three steps ── */
 .steps3{display:grid;grid-template-columns:repeat(3,1fr);gap:1.2rem;margin-top:2.4rem;
@@ -84,8 +84,8 @@ a{color:inherit;text-decoration:none}
 .step3::before{counter-increment:step;content:counter(step);position:absolute;top:1.1rem;
   right:1.2rem;font:700 2rem/1 var(--sans);color:rgba(255,255,255,.05);letter-spacing:-.05em}
 .step3 h3{font-size:1rem;font-weight:650;margin-bottom:.4rem}
-.step3 p{color:var(--dim);font-size:.9rem}
-.step3 code{font:12px var(--mono);background:var(--raise);border-radius:5px;padding:.1rem .35rem;
+.step3 p{color:var(--dim);font-size:.95rem}
+.step3 code{font:13px var(--mono);background:var(--raise);border-radius:5px;padding:.1rem .35rem;
   color:var(--teal)}
 @media(max-width:900px){.steps3{grid-template-columns:1fr}}
 
@@ -100,8 +100,8 @@ a{color:inherit;text-decoration:none}
 .strip{background:var(--panel);border:1px solid var(--line);border-radius:14px;
   padding:1rem;display:grid;grid-template-columns:auto 1fr;gap:1.3rem;align-items:center}
 .strip img{border-radius:9px;width:400px}
-.strip .cap{font-family:var(--mono);font-size:12.5px;line-height:1.7;color:var(--dim)}
-.strip .cap b{display:block;font-size:11px;letter-spacing:.2em;text-transform:uppercase;
+.strip .cap{font-family:var(--mono);font-size:13.5px;line-height:1.7;color:var(--dim)}
+.strip .cap b{display:block;font-size:12.5px;letter-spacing:.2em;text-transform:uppercase;
   margin-bottom:.3rem}
 .strip.a .cap b{color:var(--amber)}
 .strip.b .cap b{color:var(--teal)}
@@ -112,19 +112,19 @@ a{color:inherit;text-decoration:none}
 .row:nth-child(even) .rowshot{order:-1}
 .rowshot{max-width:340px;justify-self:center}
 .row h3{font-size:1.3rem;font-weight:700;letter-spacing:-.02em;margin:.7rem 0 .55rem}
-.row p{color:var(--dim);font-size:.97rem}
-.row .kicker{font:600 10.5px var(--mono);letter-spacing:.2em;text-transform:uppercase;
+.row p{color:var(--dim);font-size:1rem}
+.row .kicker{font:600 12px var(--mono);letter-spacing:.2em;text-transform:uppercase;
   color:var(--meta)}
-.row ul{list-style:none;margin-top:.9rem;display:grid;gap:.4rem;font-size:.92rem;color:var(--dim)}
+.row ul{list-style:none;margin-top:.9rem;display:grid;gap:.4rem;font-size:.97rem;color:var(--dim)}
 .row li::before{content:"·  ";color:var(--teal);font-weight:700}
 
 /* ── feature grid (the rest of the app) ── */
 .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:1.1rem;margin-top:2.4rem}
 .cell{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:1.1rem;
   position:relative}
-.cell h4{font-size:.98rem;font-weight:650;margin-bottom:.35rem}
-.cell p{color:var(--dim);font-size:.88rem}
-.cell .ic{font:700 11px var(--mono);color:var(--teal);letter-spacing:.14em;
+.cell h4{font-size:1.02rem;font-weight:650;margin-bottom:.35rem}
+.cell p{color:var(--dim);font-size:.95rem}
+.cell .ic{font:700 12.5px var(--mono);color:var(--teal);letter-spacing:.14em;
   text-transform:uppercase;display:block;margin-bottom:.6rem}
 
 /* The whole card is the target, not just the title.
@@ -142,12 +142,31 @@ a{color:inherit;text-decoration:none}
 .cell h4 a:focus-visible::after{outline:2px solid var(--teal);outline-offset:2px}
 @media(prefers-reduced-motion:reduce){.cell:has(h4 a){transition:none}}
 
+/* ── pricing ──────────────────────────────────────────────────
+   One price means no tier cards to compare, so the page leads with the
+   number itself and spends its detail on the argument around it. The
+   ledger table is the signature: a bill for a product named after a
+   telephone, where every row after the first is the same number. */
+.pricecard{margin-top:2.2rem;max-width:34rem;background:var(--panel);
+  border:1px solid rgba(94,227,217,.3);border-radius:18px;padding:1.8rem}
+.priceline{display:flex;align-items:baseline;gap:.6rem}
+.priceline .amount{font:700 3.4rem/1 var(--sans);letter-spacing:-.03em;color:var(--paper)}
+.priceline .once{font:600 1.05rem var(--mono);color:var(--teal)}
+.pricenote{margin-top:.7rem;color:var(--dim);font-size:.95rem}
+.pricecta{margin-top:1.2rem;display:inline-block;font:600 .95rem var(--sans);
+  color:var(--ink);background:var(--teal);border-radius:999px;padding:.55rem 1.1rem}
+.pricefine{margin-top:1.1rem;color:var(--meta);font-size:.93rem;line-height:1.6}
+/* The flat column is the argument; let it read as one figure repeated
+   rather than four separate prices. */
+.ledger .us .yes{font-variant-numeric:tabular-nums}
+.ledger td.no{font-variant-numeric:tabular-nums}
+
 /* ── diagram ── */
 .wire{margin-top:2.4rem;background:var(--panel);border:1px solid var(--line);
   border-radius:16px;padding:2rem 1.5rem 1.3rem}
 .wire svg{width:100%;height:auto;max-height:130px}
 .wire .legend{display:flex;flex-wrap:wrap;gap:1.4rem;justify-content:center;
-  margin-top:1.2rem;font:11.5px var(--mono);color:var(--meta)}
+  margin-top:1.2rem;font:13px var(--mono);color:var(--meta)}
 .dash{stroke-dasharray:5 7;animation:crawl 1.1s linear infinite}
 @keyframes crawl{to{stroke-dashoffset:-24}}
 
@@ -156,24 +175,24 @@ a{color:inherit;text-decoration:none}
 .muxcard{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:1.4rem}
 .muxcard.lit{border-color:rgba(94,227,217,.32);background:linear-gradient(180deg,rgba(94,227,217,.045),var(--panel))}
 .muxcard h3{font-size:1.05rem;font-weight:700;letter-spacing:-.01em;margin-bottom:.15rem}
-.muxcard .tagline{font:600 10.5px var(--mono);letter-spacing:.16em;text-transform:uppercase;
+.muxcard .tagline{font:600 12px var(--mono);letter-spacing:.16em;text-transform:uppercase;
   color:var(--meta);margin-bottom:.9rem}
 .muxcard.lit .tagline{color:var(--teal)}
-.muxcard ul{list-style:none;display:grid;gap:.5rem;font-size:.9rem;color:var(--dim)}
+.muxcard ul{list-style:none;display:grid;gap:.5rem;font-size:.95rem;color:var(--dim)}
 /* flex, not grid: in a grid each text run and each <b> becomes its own
    grid item, so a bullet like "<b>lead</b> — rest" stacked one word per
    line. Flex folds contiguous inline content into a single anonymous item. */
 .muxcard li{display:flex;gap:.5rem;align-items:baseline}
-.muxcard li::before{content:"✓";color:var(--teal);font-weight:700;font-size:.85rem;flex:0 0 auto}
+.muxcard li::before{content:"✓";color:var(--teal);font-weight:700;font-size:.94rem;flex:0 0 auto}
 .muxcard.plain li::before{content:"·";color:var(--meta)}
-.muxnote{margin-top:1.5rem;font-size:.92rem;color:var(--dim);max-width:38rem}
+.muxnote{margin-top:1.5rem;font-size:.97rem;color:var(--dim);max-width:38rem}
 @media(max-width:900px){.mux{grid-template-columns:1fr}}
 
 /* ── comparison ── */
 .tbl-wrap{margin-top:2.2rem;overflow-x:auto;border:1px solid var(--line);border-radius:14px}
-table{border-collapse:collapse;width:100%;min-width:38rem;font-size:.9rem}
+table{border-collapse:collapse;width:100%;min-width:38rem;font-size:.95rem}
 th,td{padding:.78rem 1rem;text-align:left;border-bottom:1px solid var(--line)}
-thead th{background:rgba(255,255,255,.022);font:600 11px var(--mono);letter-spacing:.14em;
+thead th{background:rgba(255,255,255,.022);font:600 12.5px var(--mono);letter-spacing:.14em;
   text-transform:uppercase;color:var(--meta);white-space:nowrap}
 thead th.us{color:var(--teal)}
 tbody tr:last-child td{border-bottom:none}
@@ -187,37 +206,37 @@ td.no{color:var(--meta)}
   border:1px solid var(--line-lit);border-radius:18px;padding:2rem;
   display:grid;grid-template-columns:auto 1fr;gap:2.4rem;align-items:center}
 .amount{font-size:3.2rem;font-weight:750;letter-spacing:-.04em;line-height:1}
-.amount small{display:block;font:600 11px var(--mono);letter-spacing:.18em;
+.amount small{display:block;font:600 12.5px var(--mono);letter-spacing:.18em;
   text-transform:uppercase;color:var(--meta);margin-top:.5rem}
-.pricebox ul{list-style:none;display:grid;gap:.5rem;font-size:.94rem;color:var(--dim)}
+.pricebox ul{list-style:none;display:grid;gap:.5rem;font-size:.98rem;color:var(--dim)}
 .pricebox li::before{content:"—  ";color:var(--meta)}
 
 /* ── proof ── */
 .facts{display:grid;grid-template-columns:repeat(4,1fr);gap:1rem;margin-top:2.2rem}
 .fact{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:1.1rem}
 .fact .big{font:700 1.45rem/1 var(--sans);letter-spacing:-.03em;color:var(--teal)}
-.fact .lbl{font-size:.83rem;color:var(--dim);margin-top:.45rem}
+.fact .lbl{font-size:.92rem;color:var(--dim);margin-top:.45rem}
 
 /* ── faq ── */
 .faq{margin-top:2rem;display:grid;gap:.55rem}
 details{background:var(--panel);border:1px solid var(--line);border-radius:12px;
   padding:.95rem 1.1rem}
 details[open]{border-color:var(--line-lit)}
-summary{cursor:pointer;font-weight:600;font-size:.96rem;list-style:none;
+summary{cursor:pointer;font-weight:600;font-size:1rem;list-style:none;
   display:flex;justify-content:space-between;gap:1rem;align-items:center}
 summary::-webkit-details-marker{display:none}
 summary::after{content:"+";font-family:var(--mono);color:var(--meta);flex:0 0 auto}
 details[open] summary::after{content:"–"}
-details p{color:var(--dim);font-size:.92rem;margin-top:.7rem}
-details code{font:12.5px var(--mono);background:var(--raise);border-radius:5px;padding:.1rem .35rem}
+details p{color:var(--dim);font-size:.97rem;margin-top:.7rem}
+details code{font:13.5px var(--mono);background:var(--raise);border-radius:5px;padding:.1rem .35rem}
 
 footer{border-top:1px solid var(--line);padding:3rem 0 4rem;text-align:center}
-.signoff{font:600 13px var(--mono);letter-spacing:.06em;color:var(--dim)}
-.fnav{margin:1.1rem 0 .9rem;font-size:13.5px;display:flex;gap:1.6rem;justify-content:center;
+.signoff{font:600 13.5px var(--mono);letter-spacing:.06em;color:var(--dim)}
+.fnav{margin:1.1rem 0 .9rem;font-size:14px;display:flex;gap:1.6rem;justify-content:center;
   flex-wrap:wrap}
 .fnav a{color:var(--dim)}
 .fnav a:hover{color:var(--teal)}
-.legal{font:11.5px var(--mono);color:var(--meta)}
+.legal{font:13px var(--mono);color:var(--meta)}
 
 /* ── launch framing ───────────────────────────────────────────
    Urgency without a fake "was" price: we show the LADDER (what it
@@ -225,28 +244,28 @@ footer{border-top:1px solid var(--line);padding:3rem 0 4rem;text-align:center}
    app never actually sold at. A fictitious reference price is
    exactly what the EU's Omnibus rules prohibit — and we ship in
    the EU. ────────────────────────────────────────────────────── */
-.ladder{display:inline-flex;align-items:center;gap:.55rem;font:600 12px var(--mono);
+.ladder{display:inline-flex;align-items:center;gap:.55rem;font:600 13px var(--mono);
   letter-spacing:.04em;margin-top:.75rem}
 .ladder .now{color:var(--amber)}
 .ladder .arrow{color:var(--meta)}
 .ladder .next{color:var(--meta);text-decoration:line-through;text-decoration-color:rgba(199,193,181,.35)}
 .ladder .after{color:var(--meta)}
 
-.launchnote{margin-top:.55rem;font:12.5px var(--mono);color:var(--meta);line-height:1.65}
+.launchnote{margin-top:.55rem;font:13.5px var(--mono);color:var(--meta);line-height:1.65}
 .launchnote b{color:var(--amber);font-weight:700}
 
 .steps{display:flex;flex-wrap:wrap;gap:.5rem;margin-top:1.2rem}
 .step{border:1px solid var(--line);border-radius:10px;padding:.55rem .8rem;
-  font:600 11.5px var(--mono);color:var(--meta);background:rgba(255,255,255,.015)}
+  font:600 13px var(--mono);color:var(--meta);background:rgba(255,255,255,.015)}
 .step.on{border-color:rgba(255,179,92,.5);color:var(--amber);background:rgba(255,179,92,.06)}
-.step small{display:block;font-weight:500;font-size:10px;letter-spacing:.08em;
+.step small{display:block;font-weight:500;font-size:12px;letter-spacing:.08em;
   text-transform:uppercase;color:var(--meta);margin-top:.25rem}
 .step.on small{color:rgba(255,179,92,.7)}
 
 /* header right side */
 .topright{display:flex;align-items:center;gap:.8rem}
 .chip.launch{border-color:rgba(255,179,92,.45);color:var(--amber)}
-.lang{font:600 12px var(--mono);letter-spacing:.06em;color:var(--dim);
+.lang{font:600 13px var(--mono);letter-spacing:.06em;color:var(--dim);
   border-bottom:1px solid var(--line-lit);padding-bottom:1px}
 .lang:hover{color:var(--teal);border-color:var(--teal)}
 
@@ -255,8 +274,8 @@ footer{border-top:1px solid var(--line);padding:3rem 0 4rem;text-align:center}
   margin-top:2.6rem}
 .lockshot{justify-self:center}
 .notes{display:grid;gap:1.3rem;max-width:32rem}
-.notes p{color:var(--dim);font-size:.95rem}
-.notes b{display:block;font:600 11px var(--mono);letter-spacing:.18em;text-transform:uppercase;
+.notes p{color:var(--dim);font-size:.98rem}
+.notes b{display:block;font:600 12.5px var(--mono);letter-spacing:.18em;text-transform:uppercase;
   margin-bottom:.3rem}
 .notes .amber{color:var(--amber)} .notes .teal{color:var(--teal)} .notes .dimb{color:var(--meta)}
 .notes em{font-style:normal;font-family:var(--mono);font-size:.86em;color:var(--paper)}
@@ -270,7 +289,7 @@ footer{border-top:1px solid var(--line);padding:3rem 0 4rem;text-align:center}
 .galframes img{display:none}
 .galframes img.on{display:block}
 .galtabs{display:flex;flex-wrap:wrap;gap:.4rem;justify-content:center}
-.galtabs button{font:600 10.5px var(--mono);letter-spacing:.1em;text-transform:uppercase;
+.galtabs button{font:600 12px var(--mono);letter-spacing:.1em;text-transform:uppercase;
   color:var(--meta);background:var(--panel);border:1px solid var(--line);
   border-radius:999px;padding:.4rem .7rem;cursor:pointer;transition:color .15s,border-color .15s}
 .galtabs button:hover{color:var(--dim)}
@@ -303,7 +322,7 @@ footer{border-top:1px solid var(--line);padding:3rem 0 4rem;text-align:center}
      components the landing page already styled — the last two
      lines hand .step3 and .row their own rhythm back.
    ─────────────────────────────────────────────────────────────── */
-.doc > h4{font-size:.98rem;font-weight:650;margin:1.8rem 0 .45rem;color:var(--paper)}
+.doc > h4{font-size:1.02rem;font-weight:650;margin:1.8rem 0 .45rem;color:var(--paper)}
 .doc .tbl-wrap td b{color:var(--paper);font-weight:600}
 .doc .tbl-wrap td code{white-space:nowrap}
 .doc .step3 h3{font-size:1rem;font-weight:650;margin:0 0 .4rem}
@@ -325,24 +344,39 @@ footer{border-top:1px solid var(--line);padding:3rem 0 4rem;text-align:center}
 .doc h3:first-of-type{margin-top:2rem}
 .doc .txt{color:var(--dim);max-width:38rem;margin-top:.85rem}
 .doc .txt b{color:var(--paper);font-weight:600}
+
+/* Long-form reading, not landing-page reading. Inside the docs shell the
+   prose gets more leading and a narrower measure than the marketing pages:
+   38rem at this size runs to ~85 characters, past the point where the eye
+   starts losing the line it is returning to. Brightened too — body copy set
+   in the dim tone is fine for one paragraph under a heading and tiring for
+   a page of it. */
+.dbody .doc .txt,
+.dbody .doc p{font-size:1.06rem;line-height:1.75;max-width:34rem;
+  color:rgba(232,227,214,.78)}
+.dbody .doc ul.list{font-size:1.03rem;line-height:1.7;max-width:34rem}
+.dbody .doc h3{font-size:1.25rem;margin:2.8rem 0 .6rem}
+.dbody .doc h4{font-size:1.04rem}
+/* Cards keep their own tighter setting — they are scannable units, not prose. */
+.dbody .doc .cell p{font-size:.95rem;line-height:1.55;max-width:none}
 .doc ul.list{list-style:none;margin-top:.9rem;display:grid;gap:.45rem;
-  font-size:.94rem;color:var(--dim);max-width:38rem}
+  font-size:.98rem;color:var(--dim);max-width:38rem}
 .doc ul.list li::before{content:"·  ";color:var(--teal);font-weight:700}
 .doc ul.list b{color:var(--paper);font-weight:600}
 .doc code{font:.87em var(--mono);background:var(--raise);border-radius:5px;
   padding:.12rem .38rem;color:var(--teal)}
 .doc pre{margin-top:1.1rem;background:var(--panel);border:1px solid var(--line);
   border-radius:12px;padding:1rem 1.15rem;overflow-x:auto;
-  font:12.5px/1.8 var(--mono);color:var(--dim)}
+  font:13.5px/1.8 var(--mono);color:var(--dim)}
 .doc pre code{background:none;padding:0;color:inherit;font-size:inherit}
 .doc pre b{color:var(--teal);font-weight:600}
 .doc pre i{font-style:normal;color:var(--meta)}
 .doc .wire{padding:1.3rem 1.4rem}
-.doc .wire p{color:var(--dim);font-size:.95rem;max-width:44rem}
+.doc .wire p{color:var(--dim);font-size:.98rem;max-width:44rem}
 .doc .wire p+p{margin-top:.75rem}
 .doc .wire b{color:var(--paper)}
 .doc .notes{max-width:none;gap:1.15rem}
-.doc .notes p{font-size:.94rem;max-width:44rem}
+.doc .notes p{font-size:.98rem;max-width:44rem}
 .doc .steps3{margin-top:1.8rem}
 .doc .step3 p+p{margin-top:.5rem}
 
@@ -407,8 +441,8 @@ footer{border-top:1px solid var(--line);padding:3rem 0 4rem;text-align:center}
 .dwrap .band{padding-top:2.4rem;border-top:none}
 
 .dnav{position:sticky;top:1.5rem;max-height:calc(100vh - 3rem);overflow-y:auto;
-  padding:1.5rem 0 2rem;font-size:.9rem}
-.dnav .dhome{display:block;font:600 11.5px var(--mono);letter-spacing:.06em;
+  padding:1.5rem 0 2rem;font-size:.95rem}
+.dnav .dhome{display:block;font:600 13px var(--mono);letter-spacing:.06em;
   color:var(--meta);margin-bottom:1.2rem}
 .dnav .dhome:hover{color:var(--teal)}
 .dnav .dtitle{font:700 1.05rem var(--sans);letter-spacing:-.02em;margin-bottom:1rem}
@@ -418,14 +452,14 @@ footer{border-top:1px solid var(--line);padding:3rem 0 4rem;text-align:center}
 .dsearchbtn{display:flex;align-items:center;justify-content:space-between;gap:.5rem;
   width:100%;margin-bottom:1.4rem;padding:.5rem .7rem;cursor:pointer;
   background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.1);
-  border-radius:9px;color:rgba(199,193,181,.62);font:13px var(--sans);text-align:left}
+  border-radius:9px;color:rgba(199,193,181,.62);font:13.5px var(--sans);text-align:left}
 .dsearchbtn:hover{border-color:rgba(94,227,217,.4);color:rgba(244,241,232,.9);
   background:rgba(94,227,217,.06)}
 .dsearchbtn:focus-visible{outline:2px solid var(--teal);outline-offset:2px}
-.dsearchbtn kbd{font:11px var(--mono);padding:.1rem .3rem;border-radius:4px;
+.dsearchbtn kbd{font:12.5px var(--mono);padding:.1rem .3rem;border-radius:4px;
   background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.1);color:inherit}
 @media (max-width:900px){.dsearchbtn kbd{display:none}}
-.dnav .dsec{font:600 10.5px var(--mono);letter-spacing:.2em;text-transform:uppercase;
+.dnav .dsec{font:600 12px var(--mono);letter-spacing:.2em;text-transform:uppercase;
   color:var(--meta);margin:1.5rem 0 .5rem}
 .dnav .dsec:first-of-type{margin-top:0}
 .dnav nav a{display:block;padding:.32rem 0 .32rem .8rem;color:var(--dim);
@@ -433,17 +467,17 @@ footer{border-top:1px solid var(--line);padding:3rem 0 4rem;text-align:center}
 .dnav nav a:hover{color:var(--paper);border-left-color:var(--line-lit)}
 .dnav nav a.on{color:var(--teal);border-left-color:var(--teal);font-weight:600}
 
-.dtoc{position:sticky;top:1.5rem;padding:4.2rem 0 2rem;font-size:.84rem}
-.dtoc .dtoclabel{font:600 10.5px var(--mono);letter-spacing:.2em;text-transform:uppercase;
+.dtoc{position:sticky;top:1.5rem;padding:4.2rem 0 2rem;font-size:.93rem}
+.dtoc .dtoclabel{font:600 12px var(--mono);letter-spacing:.2em;text-transform:uppercase;
   color:var(--meta);margin-bottom:.7rem}
 .dtoc nav a{display:block;padding:.28rem 0;color:var(--dim);line-height:1.4}
 .dtoc nav a:hover{color:var(--teal)}
 
 .dpager{display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin:3rem 0 4rem}
 .dpager a{border:1px solid var(--line);border-radius:12px;padding:.9rem 1.1rem;
-  background:var(--panel);font-weight:600;font-size:.95rem}
+  background:var(--panel);font-weight:600;font-size:.98rem}
 .dpager a:hover{border-color:var(--line-lit)}
-.dpager a span{display:block;font:600 10.5px var(--mono);letter-spacing:.16em;
+.dpager a span{display:block;font:600 12px var(--mono);letter-spacing:.16em;
   text-transform:uppercase;color:var(--meta);margin-bottom:.3rem}
 .dpager .dnext{text-align:right}
 
@@ -461,9 +495,9 @@ footer{border-top:1px solid var(--line);padding:3rem 0 4rem;text-align:center}
 #dres{max-height:52vh;overflow-y:auto}
 #dres a{display:block;padding:.8rem 1.2rem;border-bottom:1px solid var(--line)}
 #dres a:hover{background:rgba(255,255,255,.03)}
-#dres a b{display:block;font-size:.94rem;color:var(--paper);margin-bottom:.2rem}
-#dres a span{font-size:.82rem;color:var(--meta);line-height:1.5}
-.dnohit{padding:1rem 1.2rem;color:var(--meta);font-size:.9rem}
+#dres a b{display:block;font-size:.98rem;color:var(--paper);margin-bottom:.2rem}
+#dres a span{font-size:.92rem;color:var(--meta);line-height:1.5}
+.dnohit{padding:1rem 1.2rem;color:var(--meta);font-size:.95rem}
 .dsearchtrigger{cursor:pointer}
 
 @media(max-width:1100px){
@@ -484,7 +518,7 @@ footer{border-top:1px solid var(--line);padding:3rem 0 4rem;text-align:center}
     border-bottom:1px solid var(--line)}
   .dnav nav{display:flex;flex-wrap:wrap;gap:.3rem .5rem}
   .dnav nav a{border-left:none;padding:.3rem .6rem;border:1px solid var(--line);
-    border-radius:999px;font-size:.82rem}
+    border-radius:999px;font-size:.92rem}
   .dnav nav a.on{border-color:var(--teal)}
   .dnav .dsec{width:100%;margin:.9rem 0 .35rem}
   .dpager{grid-template-columns:1fr}
