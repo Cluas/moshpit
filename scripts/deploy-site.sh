@@ -11,6 +11,10 @@
 #   scripts/deploy-site.sh            # build, check, push, roll out
 #   scripts/deploy-site.sh --dry-run  # build and check locally, push nothing
 #
+# If the push cannot reach the keychain, export a GitHub token with
+# write:packages first and this script will use it instead:
+#   export GHCR_TOKEN=ghp_…    # or: GHCR_TOKEN=$(gh auth token)
+#
 set -euo pipefail
 
 REPO=ghcr.io/cluas/offhook-site
@@ -24,6 +28,40 @@ DRY=${1:-}
 PLATFORMS=linux/amd64,linux/arm64
 
 say() { printf '\n\033[1m%s\033[0m\n' "$*"; }
+die() { printf '\n\033[1;31m%s\033[0m\n' "$*" >&2; exit 1; }
+
+# Preflight: Docker here is configured with credsStore=osxkeychain, and when
+# the keychain will not unlock for a non-interactive shell the helper does not
+# fail — it blocks forever. Every registry call then hangs, including the pull
+# of a public base image, with no output at all. Ten minutes of silence looks
+# exactly like a slow multi-arch build, so probe it up front and say so.
+#
+# GHCR_TOKEN skips the helper entirely: a throwaway DOCKER_CONFIG holding just
+# that token, which is also what makes this script work on CI.
+if [[ "${DRY:-}" != "--dry-run" ]]; then
+  if [[ -n "${GHCR_TOKEN:-}" ]]; then
+    export DOCKER_CONFIG="$(mktemp -d)"
+    ln -sfn "$HOME/.docker/cli-plugins" "$DOCKER_CONFIG/cli-plugins" 2>/dev/null || true
+    printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "${GHCR_USER:-cluas}" --password-stdin >/dev/null \
+      || die "GHCR_TOKEN was rejected by ghcr.io. It needs the write:packages scope.
+
+A plain \`gh auth token\` does not carry it — the default gh scopes are
+repo/read:org/gist. Add it once:
+
+    gh auth refresh -h github.com -s write:packages"
+    say "Authenticated to ghcr.io with GHCR_TOKEN"
+  elif ! echo ghcr.io | timeout 5 docker-credential-osxkeychain get >/dev/null 2>&1; then
+    die "Docker's credential helper is not responding (docker-credential-osxkeychain hangs on ghcr.io).
+
+The keychain will not unlock for this shell, so any push would hang silently.
+Either unlock it by running a docker command yourself in a terminal where the
+keychain prompt can appear, or hand this script a token instead:
+
+    gh auth refresh -h github.com -s write:packages
+    export GHCR_TOKEN=\$(gh auth token)
+    scripts/deploy-site.sh"
+  fi
+fi
 
 say "Rebuilding the docs shell"
 python3 "$(dirname "$0")/build-docs.py"
