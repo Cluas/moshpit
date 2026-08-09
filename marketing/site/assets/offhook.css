@@ -399,6 +399,12 @@ footer{border-top:1px solid var(--line);padding:3rem 0 4rem;text-align:center}
 .dbody .doc h4{font-size:1.04rem}
 /* Cards keep their own tighter setting — they are scannable units, not prose. */
 .dbody .doc .cell p{font-size:.95rem;line-height:1.55;max-width:none}
+/* A figure standing on its own in the prose, rather than paired with text in a
+   two-column row. It aligns with the paragraph it illustrates — centring it
+   left a 200px indent against the text above and below, which reads as a
+   layout mistake rather than a deliberate placement. */
+.dbody .doc > img.phone{margin:1.4rem 0 0;justify-self:start;max-width:300px;
+  border-radius:18px}
 .doc ul.list{list-style:none;margin-top:.9rem;display:grid;gap:.45rem;
   font-size:.98rem;color:var(--dim);max-width:38rem}
 .doc ul.list li{padding-left:1.1rem;text-indent:-1.1rem}
