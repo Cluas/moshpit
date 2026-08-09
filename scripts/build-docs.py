@@ -131,14 +131,22 @@ def sidebar(current: str, zh: bool) -> str:
 
 
 def toc(body: str, zh: bool) -> str:
-    """On-page contents, built from the h3s the author already wrote."""
-    heads = re.findall(r'<h3[^>]*>(.*?)</h3>', body, re.S)
+    """On-page contents, built from the h3s the author already wrote.
+
+    The anchor has to be worked out the same way anchor_headings() does, or the
+    contents point at ids that were never assigned. A heading that arrived with
+    its own id keeps it — that is how in-page links from elsewhere stay valid —
+    and numbering one by position regardless produced a link to #s19 on a page
+    where that heading was id="new-phone" and #s19 existed nowhere.
+    """
+    heads = re.findall(r'<h3([^>]*)>(.*?)</h3>', body, re.S)
     items = []
-    for i, raw in enumerate(heads):
+    for i, (attrs, raw) in enumerate(heads):
         text = re.sub(r"<[^>]+>", "", raw).strip()
         if not text:
             continue
-        items.append((f"s{i + 1}", text))
+        existing = re.search(r'id="([^"]+)"', attrs)
+        items.append((existing.group(1) if existing else f"s{i + 1}", text))
     if len(items) < 2:
         return f"{TOC_BEGIN}{TOC_END}"
     links = "".join(

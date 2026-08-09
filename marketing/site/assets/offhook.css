@@ -163,7 +163,7 @@ a{color:inherit;text-decoration:none}
    number itself and spends its detail on the argument around it. The
    ledger table is the signature: a bill for a product named after a
    telephone, where every row after the first is the same number. */
-.pricecard{margin-top:2.2rem;max-width:34rem;background:var(--panel);
+.pricecard{margin-top:2.2rem;max-width:44rem;background:var(--panel);
   border:1px solid rgba(94,227,217,.3);border-radius:18px;padding:1.8rem}
 .priceline{display:flex;align-items:baseline;gap:.6rem}
 .priceline .amount{font:700 3.4rem/1 var(--sans);letter-spacing:-.03em;color:var(--paper)}
@@ -391,7 +391,9 @@ footer{border-top:1px solid var(--line);padding:3rem 0 4rem;text-align:center}
 .dbody .doc .cell p{font-size:.95rem;line-height:1.55;max-width:none}
 .doc ul.list{list-style:none;margin-top:.9rem;display:grid;gap:.45rem;
   font-size:.98rem;color:var(--dim);max-width:38rem}
-.doc ul.list li::before{content:"·  ";color:var(--teal);font-weight:700}
+.doc ul.list li{padding-left:1.1rem;text-indent:-1.1rem}
+.doc ul.list li::before{content:"·";color:var(--teal);font-weight:700;
+  display:inline-block;width:1.1rem;text-indent:0}
 .doc ul.list b{color:var(--paper);font-weight:600}
 .doc code{overflow-wrap:anywhere;
   font:.87em var(--mono);background:var(--raise);border-radius:5px;
@@ -514,7 +516,12 @@ footer{border-top:1px solid var(--line);padding:3rem 0 4rem;text-align:center}
 .dtoc nav a{display:block;padding:.28rem 0;color:var(--dim);line-height:1.4}
 .dtoc nav a:hover{color:var(--teal)}
 
+/* Two cells when there is a previous and a next; one full-width cell when
+   there is only one of them. The placeholder span used to hold an empty
+   359px cell open on the first and last page of the sequence. */
 .dpager{display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin:3rem 0 4rem}
+.dpager:has(> span:empty){grid-template-columns:1fr}
+.dpager > span:empty{display:none}
 .dpager a{border:1px solid var(--line);border-radius:12px;padding:.9rem 1.1rem;
   background:var(--panel);font-weight:600;font-size:.98rem}
 .dpager a:hover{border-color:var(--line-lit)}
