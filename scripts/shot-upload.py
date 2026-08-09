@@ -2,16 +2,16 @@
 # Tiny phone→Mac screenshot upload page. Open the URL on the phone (same Wi-Fi),
 # pick a screenshot, tap 上传 — it lands in DEST so Claude can read it directly.
 import http.server, os, time, urllib.parse
-DEST = os.path.expanduser("~/Downloads/ringdown-shots")
+DEST = os.path.expanduser("~/Downloads/offhook-shots")
 os.makedirs(DEST, exist_ok=True)
 PAGE = ("""<!doctype html><meta name=viewport content="width=device-width,initial-scale=1">
-<title>Ringdown → Claude</title>
+<title>Offhook → Claude</title>
 <style>body{font:17px -apple-system,system-ui;background:#0b0b0d;color:#eee;margin:0;
 padding:32px 24px;text-align:center}h2{color:#53dcc9}
 .b{background:#53dcc9;color:#001018;border:0;border-radius:14px;padding:16px 26px;
 font-size:18px;font-weight:700;margin-top:20px}input{font-size:16px;color:#eee;margin-top:10px}
 #s{margin-top:18px;color:#9fe}</style>
-<h2>Ringdown → Claude</h2><p>选一张截图,点上传</p>
+<h2>Offhook → Claude</h2><p>选一张截图,点上传</p>
 <input type=file accept=image/* id=f><br><button class=b onclick=up()>上传</button>
 <p id=s></p><script>
 async function up(){let f=document.getElementById('f').files[0];if(!f)return;

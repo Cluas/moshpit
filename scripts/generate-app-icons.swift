@@ -10,14 +10,14 @@
 // accent, the icon is its own choice from this gallery and each entry bakes in
 // the colors it wants.
 //
-// The handset-over-cursor geometry mirrors `RingdownGlyph.Metrics` in
-// Ringdown/UI/Brand/RingdownMark.swift — keep the two in step.
+// The handset-over-cursor geometry mirrors `OffhookGlyph.Metrics` in
+// Offhook/UI/Brand/OffhookMark.swift — keep the two in step.
 //
 // Usage: swift scripts/generate-app-icons.swift
 // Output:
-//   Ringdown/App/IconFiles/AppIcon60x60@{2x,3x}.png              (primary)
-//   Ringdown/App/IconFiles/AppIcon-<Tag>60x60@{2x,3x}.png        (alternates)
-//   Ringdown/App/Assets.xcassets/AppIcon.appiconset/AppIcon.png  (1024 marketing)
+//   Offhook/App/IconFiles/AppIcon60x60@{2x,3x}.png              (primary)
+//   Offhook/App/IconFiles/AppIcon-<Tag>60x60@{2x,3x}.png        (alternates)
+//   Offhook/App/Assets.xcassets/AppIcon.appiconset/AppIcon.png  (1024 marketing)
 
 import CoreGraphics
 import ImageIO
@@ -260,8 +260,8 @@ func writePNG(_ image: CGImage, to path: String) {
     }
 }
 
-let iconFilesDir = "Ringdown/App/IconFiles"
-let appIconSetDir = "Ringdown/App/Assets.xcassets/AppIcon.appiconset"
+let iconFilesDir = "Offhook/App/IconFiles"
+let appIconSetDir = "Offhook/App/Assets.xcassets/AppIcon.appiconset"
 try? FileManager.default.createDirectory(atPath: iconFilesDir, withIntermediateDirectories: true)
 
 // 60pt @2x/@3x = 120px/180px, matching the AppIcon60x60 convention declared in

@@ -47,8 +47,6 @@ MIN_KEEP = 0.32
 WITHHELD = {
     "09-mosh": "pane is a bare prompt — the staged run never reaches a plain "
                "login shell, and the pasteboard route did not land",
-    "30-ssh-keys": "shows the Settings root, not the SSH Keys screen — the "
-                   "scroll did not reach the row before the tap fired",
     "31-connection-error": "shows a healthy home screen with a LIVE connection; "
                            "the port override did not take, so no error occurred",
     "32-scrollback": "identical to 07-tmux-terminal to within 0.02% of pixels — "

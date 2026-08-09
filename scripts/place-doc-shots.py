@@ -30,23 +30,9 @@ END = "<!--DOCSHELL:END-->"
 PLACEMENTS: dict[str, tuple[str, str, str]] = {
     "docs-keys": (
         "30-ssh-keys.jpg", "s1",
-        "The SSH Keys screen in Settings: a generated key listed with its type and "
-        "fingerprint, a control to copy the public half, and a Face ID toggle",
-    ),
-    "docs-troubleshooting": (
-        "31-connection-error.jpg", "s1",
-        "A Connection Error alert over the connection list, naming what failed in "
-        "plain language rather than repeating the underlying library error",
-    ),
-    "docs-scrolling": (
-        "32-scrollback.jpg", "s1",
-        "A terminal pane scrolled back into its history, with earlier output above "
-        "the live tail",
-    ),
-    "docs-clipboard": (
-        "33-paste.jpg", "s1",
-        "The paste control open over a terminal pane, holding a multi-line block "
-        "ready to send as a single paste rather than line by line",
+        "The SSH Keys screen in Settings, before any key exists: a THIS DEVICE · "
+        "SECURE ENCLAVE section reading \"No device key yet — generate one with +\", "
+        "an IMPORTED section, and the add control in the corner",
     ),
 }
 
