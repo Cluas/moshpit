@@ -32,107 +32,48 @@
     their own servers: SSH and Mosh, native tmux and herdr, and agent state that reaches
     your lock screen. It has no account and no server of its own — it talks to your hosts
     and nothing else. These pages assume you already have a machine you can SSH into.</p>
-
-    <h3>Start here</h3>
-    <div class="grid">
-      <div class="cell">
-        <span class="ic">Setup</span>
-        <h4><a href="/docs/setup">Set up a connection</a></h4>
-        <p>Add a host, choose password or key auth, generate or import an SSH key, and
-        check the host fingerprint on first connect. Also: what happens when the host
-        is missing the multiplexer you picked.</p>
-      </div>
-      <div class="cell">
-        <span class="ic">Guide</span>
-        <h4><a href="/guide/claude-code">Run Claude Code from your iPhone</a></h4>
-        <p>The end-to-end walkthrough this app exists for — from a bare host to
-        approving a permission prompt on your lock screen.</p>
-      </div>
-      <div class="cell">
-        <span class="ic">Compare</span>
-        <h4><a href="/compare">How it compares</a></h4>
-        <p>Where Offhook is the right tool, and the cases where another terminal
-        genuinely serves you better.</p>
-      </div>
-    </div>
-
-    <h3>Multiplexers</h3>
-    <p class="txt">Both are optional — Offhook is a plain SSH client without them. Pick one
-    per connection; it is never switched behind your back, because the two hold completely
-    unrelated sessions.</p>
-    <div class="grid">
-      <div class="cell">
-        <span class="ic">herdr</span>
-        <h4><a href="/docs/herdr">Using herdr</a></h4>
-        <p>The multiplexer built for coding agents: agent state with zero host-side setup,
-        one full-width pane, and isolated tasks on a fresh git worktree. Includes the
-        limits — polling latency, exclusive attach, and what herdr 0.7.3 does not report.</p>
-      </div>
-      <div class="cell">
-        <span class="ic">tmux</span>
-        <h4><a href="/docs/tmux">Using tmux</a></h4>
-        <p>Native control mode: sessions, windows and panes rendered properly. How to get
-        agent status with the one-line hook install, and what you see without it.</p>
-      </div>
-      <div class="cell">
-        <span class="ic">Mosh</span>
-        <h4><a href="/docs/mosh">Mosh and roaming</a></h4>
-        <p>Sessions that survive Wi-Fi/5G handoffs and packet loss, predictive echo, the
-        UDP requirements — and why tmux and herdr fall back to their own TUI over Mosh.</p>
-      </div>
-    </div>
-
-    <h3>Agents</h3>
-    <div class="grid">
-      <div class="cell">
-        <span class="ic">Lock screen</span>
-        <h4><a href="/docs/agents">Answering agents from the lock screen</a></h4>
-        <p>How agent state reaches the Live Activity and Dynamic Island, what Allow, Deny
-        and the quick replies actually send, and the honest background limits.</p>
-      </div>
-      <div class="cell">
-        <span class="ic">Keyboard</span>
-        <h4><a href="/docs/keyboard">Keyboard, themes and shortcuts</a></h4>
-        <p>Build the shortcut bar from a library of terminal keys, use a hardware
-        keyboard, and change themes, fonts, icon and accent.</p>
-      </div>
-      <div class="cell">
-        <span class="ic">Fixes</span>
-        <h4><a href="/docs/troubleshooting">Troubleshooting</a></h4>
-        <p>Symptom first: black screen over Mosh, a missing multiplexer, another client
-        stealing a pane, stalled attach, agent state that stopped updating.</p>
-      </div>
-    </div>
-
-    <h3>Guides</h3>
-    <div class="grid">
-      <div class="cell">
-        <span class="ic">Walkthrough</span>
-        <h4><a href="/guide/claude-code">Run Claude Code from your iPhone</a></h4>
-        <p>Host to lock screen, in order, with the screens you will actually see.</p>
-      </div>
-      <div class="cell">
-        <span class="ic">Walkthrough</span>
-        <h4><a href="/guide/remote-access">Reach your machine from anywhere</a></h4>
-        <p>Getting to a home or office machine without exposing SSH to the internet —
-        a WireGuard mesh plus Mosh, and what each one needs open.</p>
-      </div>
-      <div class="cell">
-        <span class="ic">Support</span>
-        <h4><a href="/support">Still stuck?</a></h4>
-        <p>How to reach us, and what to include so the first reply is a useful one.</p>
-      </div>
-    </div>
-
-    <h3>Two things worth knowing up front</h3>
-    <p class="txt"><b>Offhook never acts on your host without asking.</b> It does not install
-    packages silently, does not create sessions you did not ask for, and does not quietly
-    attach a different multiplexer than the one you picked. When something is missing it
-    says so and shows you the command.</p>
-    <p class="txt"><b>There is no push server, so background updates stop.</b> iOS suspends
-    the connection once the app is in the background; agent state freezes at whatever it
-    last saw and resumes when you come back. That is the price of having nothing in the
-    middle, and it is the same for every transport.</p>
+<!--DOCSHUB:BEGIN-->
+<h3>Start</h3>
+<div class="grid">
+<div class="cell"><span class="ic">Start</span><h4><a href="/docs/intro">What Offhook does</a></h4><p>One paragraph, in case you landed here from a search: Offhook is a paid iPhone and iPad terminal for people who run AI coding agents on machines they own.</p></div>
+<div class="cell"><span class="ic">Start</span><h4><a href="/docs/setup">Set up a connection</a></h4><p>Everything between tapping ＋ and having a live shell: the fields, the key, the fingerprint prompt, the multiplexer choice, and what Offhook does when the host turns out not to have tmux, herdr or mosh-server.</p></div>
+<div class="cell"><span class="ic">Start</span><h4><a href="/docs/first-session">Run your first session</a></h4><p>You have added a host (if not, start at Set up a connection).</p></div>
+</div>
+<h3>Connections</h3>
+<div class="grid">
+<div class="cell"><span class="ic">Connections</span><h4><a href="/docs/keys">SSH keys and host trust</a></h4><p>Two different trust problems sit at either end of a connection: proving to the server that you are you, and proving to you that the server is the one you meant.</p></div>
+<div class="cell"><span class="ic">Connections</span><h4><a href="/docs/mosh">Mosh and roaming</a></h4><p>What mosh actually gives you, what has to be open for it to work, and what to do when the terminal goes black behind a live cursor.</p></div>
+<div class="cell"><span class="ic">Connections</span><h4><a href="/guide/remote-access">Reach your machine from anywhere</a></h4><p>The box your agents run on is usually behind NAT — a home router, an office network, a laptop on a desk.</p></div>
+</div>
+<h3>Multiplexers</h3>
+<div class="grid">
+<div class="cell"><span class="ic">Multiplexers</span><h4><a href="/docs/multiplexers">Choosing tmux or herdr</a></h4><p>A multiplexer keeps your work alive when the connection drops, and gives Offhook something better to render than one long scroll.</p></div>
+<div class="cell"><span class="ic">Multiplexers</span><h4><a href="/docs/tmux">Using tmux</a></h4><p>Offhook attaches as a tmux control client and draws your sessions, windows and panes as native iOS views.</p></div>
+<div class="cell"><span class="ic">Multiplexers</span><h4><a href="/docs/herdr">Using herdr</a></h4><p>herdr is a terminal multiplexer written for CLI coding agents.</p></div>
+</div>
+<h3>Agents</h3>
+<div class="grid">
+<div class="cell"><span class="ic">Agents</span><h4><a href="/docs/agents">Agent status and the lock screen</a></h4><p>An agent on your server stops and asks for permission.</p></div>
+<div class="cell"><span class="ic">Agents</span><h4><a href="/docs/worktrees">Isolated tasks with git worktrees</a></h4><p>Handing an agent a job usually means being at the machine: make a branch, open a terminal in it, start the agent, type the prompt.</p></div>
+<div class="cell"><span class="ic">Agents</span><h4><a href="/guide/claude-code">Run Claude Code from your iPhone</a></h4><p>This is the walkthrough the app exists for.</p></div>
+</div>
+<h3>Input</h3>
+<div class="grid">
+<div class="cell"><span class="ic">Input</span><h4><a href="/docs/keyboard">Keyboard and shortcuts</a></h4><p>The strip above the keyboard is the part of Offhook you touch most, and it is entirely yours to build.</p></div>
+<div class="cell"><span class="ic">Input</span><h4><a href="/docs/scrolling">Scrolling and scrollback</a></h4><p>A swipe up means two completely different things depending on what is running in the pane.</p></div>
+<div class="cell"><span class="ic">Input</span><h4><a href="/docs/clipboard">Clipboard and paste</a></h4><p>Pasting a multi-line block into a terminal used to be a way to execute the first three lines by accident.</p></div>
+<div class="cell"><span class="ic">Input</span><h4><a href="/docs/ime">CJK and IME input</a></h4><p>Terminal emulators on iOS are usually written by people typing ASCII.</p></div>
+</div>
+<h3>Appearance</h3>
+<div class="grid">
+<div class="cell"><span class="ic">Appearance</span><h4><a href="/docs/appearance">Themes, fonts and icons</a></h4><p>Two colour systems live side by side and they are deliberately separate: the terminal theme is what your shell&#x27;s 16 colours look like, and the accent is what the app&#x27;s own controls look like.</p></div>
+</div>
+<h3>Help</h3>
+<div class="grid">
+<div class="cell"><span class="ic">Help</span><h4><a href="/docs/troubleshooting">Troubleshooting</a></h4><p>Organised by what you see, not by what went wrong underneath.</p></div>
+<div class="cell"><span class="ic">Help</span><h4><a href="/compare">How Offhook compares</a></h4><p>iPhone terminals are a crowded shelf, and several of them are very good at things Offhook does not attempt.</p></div>
+</div>
+<!--DOCSHUB:END-->
   </section>
 </div>
 
@@ -141,7 +82,7 @@
     <p class="signoff">Off the hook, still on the line.</p>
     <nav class="fnav">
       <a href="./">Home</a><a href="/docs">Docs</a><a href="/guides">Guides</a>
-      <a href="/compare">Compare</a><a href="/privacy">Privacy</a><a href="/support">Support</a>
+      <a href="/compare">Compare</a><a href="/pricing">Pricing</a><a href="/privacy">Privacy</a><a href="/support">Support</a>
     </nav>
     <p class="legal">© 2026 Offhook · SSH · Mosh · tmux · herdr · iPhone</p>
   </div>

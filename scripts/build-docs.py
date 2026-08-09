@@ -65,6 +65,7 @@ NAV: list[tuple[str, str, list[tuple[str, str, str]]]] = [
 ]
 
 BEGIN, END = "<!--DOCSHELL:BEGIN-->", "<!--DOCSHELL:END-->"
+HUB_BEGIN, HUB_END = "<!--DOCSHUB:BEGIN-->", "<!--DOCSHUB:END-->"
 TOC_BEGIN, TOC_END = "<!--DOCTOC:BEGIN-->", "<!--DOCTOC:END-->"
 NEXT_BEGIN, NEXT_END = "<!--DOCNEXT:BEGIN-->", "<!--DOCNEXT:END-->"
 
@@ -202,6 +203,50 @@ def strip(marker_begin: str, marker_end: str, text: str) -> str:
     )
 
 
+def lede(slug: str, zh: bool) -> str:
+    """The first sentence of a page's own intro, used as its card on the hub."""
+    path = SITE / page_file(slug, zh)
+    if not path.exists():
+        return ""
+    body = path.read_text().split(END)[-1]
+    m = re.search(r'<p class="sub">(.*?)</p>', body, re.S)
+    if not m:
+        return ""
+    text = re.sub(r"<[^>]+>", "", m.group(1))
+    text = re.sub(r"\s+", " ", text).strip()
+    first = re.split(r"(?<=[.。])\s", text)[0]
+    return html.escape(first)
+
+
+def docs_hub(zh: bool) -> str:
+    """The /docs index, generated from NAV.
+
+    It used to be hand-written, and drifted: it listed twelve of the nineteen
+    pages the sidebar carries, grouped them four ways against the sidebar's
+    seven, and gave the same destination a different eyebrow and a different
+    description depending on which grid it appeared in. Generating it means the
+    hub cannot disagree with the sidebar, and the eyebrow is the section name
+    every time rather than a word chosen per card.
+    """
+    out = [HUB_BEGIN]
+    for sec_en, sec_zh, pages in NAV:
+        section = sec_zh if zh else sec_en
+        out.append(f"<h3>{html.escape(section)}</h3>")
+        out.append('<div class="grid">')
+        for slug, t_en, t_zh in pages:
+            title = html.escape(t_zh if zh else t_en)
+            out.append(
+                '<div class="cell">'
+                f'<span class="ic">{html.escape(section)}</span>'
+                f'<h4><a href="{page_href(slug, zh)}">{title}</a></h4>'
+                f"<p>{lede(slug, zh)}</p>"
+                "</div>"
+            )
+        out.append("</div>")
+    out.append(HUB_END)
+    return "\n".join(out)
+
+
 def build_index() -> None:
     """A search index small enough to ship inline with the page.
 
@@ -328,8 +373,33 @@ def process(slug: str, zh: bool) -> bool:
     return True
 
 
+def build_hub() -> None:
+    """Replace the card grids on /docs with generated ones."""
+    for zh in (False, True):
+        path = SITE / page_file("docs", zh)
+        if not path.exists():
+            continue
+        s = path.read_text()
+        block = docs_hub(zh)
+        if HUB_BEGIN in s:
+            s = re.sub(
+                re.escape(HUB_BEGIN) + ".*?" + re.escape(HUB_END), block, s, flags=re.S
+            )
+        else:
+            # First run: replace everything between the intro and the closing
+            # section with the generated hub.
+            m = re.search(r'(<p class="sub">.*?</p>)(.*?)(\s*</section>)', s, re.S)
+            if not m:
+                print(f"  ! could not find the hub body in {path.name}")
+                continue
+            s = s[: m.end(1)] + "\n" + block + m.group(3) + s[m.end(3):]
+        path.write_text(s)
+        print(f"  hub regenerated: {path.name}")
+
+
 def main() -> None:
     print("Building the docs shell…")
+    build_hub()
     done = 0
     for _sec_en, _sec_zh, pages in NAV:
         for slug, _t_en, _t_zh in pages:
