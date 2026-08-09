@@ -40,6 +40,23 @@ PAD = 28
 # stops reading as a phone.
 MIN_KEEP = 0.32
 
+# Captures that exist but must not be published, with the reason. Checked by
+# opening each one rather than trusting the filename: a capture script that
+# taps its way through a UI will happily save a screenshot of the wrong screen
+# and report success.
+WITHHELD = {
+    "09-mosh": "pane is a bare prompt — the staged run never reaches a plain "
+               "login shell, and the pasteboard route did not land",
+    "30-ssh-keys": "shows the Settings root, not the SSH Keys screen — the "
+                   "scroll did not reach the row before the tap fired",
+    "31-connection-error": "shows a healthy home screen with a LIVE connection; "
+                           "the port override did not take, so no error occurred",
+    "32-scrollback": "identical to 07-tmux-terminal to within 0.02% of pixels — "
+                     "the swipe did not scroll the pane",
+    "33-paste": "identical to 07-tmux-terminal — the paste control never opened; "
+                "an earlier attempt captured iOS's own permission alert instead",
+}
+
 
 def content_bottom(img: Image.Image) -> int:
     a = np.asarray(img.convert("L"), dtype=np.uint8)
@@ -63,6 +80,9 @@ def main() -> None:
         sys.exit(f"no source shots at {SRC}")
 
     for png in sorted(SRC.glob("*.png")):
+        if png.stem in WITHHELD:
+            print(f"  {png.stem:24s} WITHHELD — {WITHHELD[png.stem]}")
+            continue
         img = Image.open(png)
         w, h = img.size
         bottom = max(content_bottom(img), int(h * MIN_KEEP))

@@ -234,6 +234,25 @@ trust_host() {
   if tap_label Trust "" "" Button; then sleep 6; fi
 }
 
+# iOS asks before an app may read the pasteboard, and the alert is a system
+# one — it sits above the app, swallows the tap that was meant for the app,
+# and stays there. Two shots came back wrong because of it: the Mosh pane was
+# a bare prompt (the paste never landed) and the clipboard shot was a picture
+# of the alert itself rather than the app's paste control.
+allow_paste() {
+  sleep 1
+  tap_label "Allow Paste" "" "" Button && sleep 2
+}
+
+# Put text on the pasteboard and get it into the pane, alert and all.
+paste_into_pane() {   # paste_into_pane <text>
+  printf '%s\n' "$1" | xcrun simctl pbcopy "$SIM_UDID" || true
+  sleep 1
+  tap_label "Paste" "" "" Button || return 1
+  allow_paste
+  return 0
+}
+
 # Tap the saved card, get past the sheet, wait for the tree to arrive.
 connect_card() {
   tap_label "mac-studio" "" "" Button || echo "  ! no connection card to tap" >&2
@@ -298,9 +317,7 @@ echo "▶ Mosh"
 launch none -OFFHOOK_SEED_MOSH 1
 sleep 10; trust_host
 sleep 8
-printf 'sh ~/.offhook-stage/run\n' | xcrun simctl pbcopy "$SIM_UDID" || true
-sleep 1
-tap_label "Paste" "" "" Button && sleep 2
+paste_into_pane 'sh ~/.offhook-stage/run'
 tap_label "return" "" "" Button || idb ui key --udid "$SIM_UDID" 40 >/dev/null 2>&1 || true
 shot 09-mosh 10
 
@@ -366,13 +383,9 @@ idb ui swipe --udid "$SIM_UDID" --duration 0.4 220 760 220 380 >/dev/null 2>&1 |
 sleep 2
 
 # Paste: put something multi-line on the pasteboard and open the paste control.
-xcrun simctl pbcopy "$SIM_UDID" <<'CLIP' || true
-export PAYMENTS_WEBHOOK_SECRET=whsec_9f2b
+paste_into_pane 'export PAYMENTS_WEBHOOK_SECRET=whsec_9f2b
 npm run migrate -- --to 2026_08_backoff
-npm test -- --run
-CLIP
-sleep 1
-tap_label "Paste" "" "" Button && sleep 2
+npm test -- --run'
 shot 33-paste 2
 
 echo
