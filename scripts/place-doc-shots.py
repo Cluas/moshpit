@@ -28,6 +28,13 @@ END = "<!--DOCSHELL:END-->"
 # reader who cannot see the image should learn the same thing a sighted reader
 # learns from it, which is the state of a screen.
 PLACEMENTS: dict[str, tuple[str, str, str]] = {
+    "docs-troubleshooting": (
+        "31-connection-error.jpg", "s1",
+        "A Connection Error alert reading \"The server closed the connection while "
+        "setting up SSH. Check that the port really is an SSH server, and that a "
+        "firewall or proxy isn't cutting the connection.\" — with the transport "
+        "pill above it showing offline",
+    ),
     "docs-keys": (
         "30-ssh-keys.jpg", "s1",
         "The SSH Keys screen in Settings, before any key exists: a THIS DEVICE · "
