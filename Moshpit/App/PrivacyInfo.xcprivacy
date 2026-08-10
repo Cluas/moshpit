@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Privacy manifest for the Moshpit app. App Store submissions are checked for
+  one of these whenever the binary touches a "required reason" API, and the
+  declaration has to match what the code actually does.
+
+  Moshpit reaches exactly one such category: UserDefaults. Two reasons apply.
+    CA92.1 — UserDefaults.standard, read/written only by the app itself
+             (AppSettings, ConnectionStore, ThemeStore, AppThemeStore,
+             SSHKeyStore, TerminalShortcut, HostCapabilities).
+    1C8F.1 — UserDefaults(suiteName: "group.com.cluas.moshpit"), shared with
+             the MoshpitIsland widget extension in the same App Group
+             (Island/AgentWidgetState.swift).
+
+  Deliberately absent, because a grep of the sources finds no use of them:
+  file timestamps, disk space, system boot time, and active keyboards. Add the
+  matching category here if that ever changes — a missing declaration is
+  rejected at upload, and a stale over-declaration is its own kind of lie.
+
+  Nothing is collected and nothing is tracked: SSH credentials live in the
+  local Keychain, everything else in local UserDefaults, and there is no
+  Moshpit server for any of it to be sent to.
+-->
+<plist version="1.0">
+<dict>
+	<key>NSPrivacyTracking</key>
+	<false/>
+	<key>NSPrivacyTrackingDomains</key>
+	<array/>
+	<key>NSPrivacyCollectedDataTypes</key>
+	<array/>
+	<key>NSPrivacyAccessedAPITypes</key>
+	<array>
+		<dict>
+			<key>NSPrivacyAccessedAPIType</key>
+			<string>NSPrivacyAccessedAPICategoryUserDefaults</string>
+			<key>NSPrivacyAccessedAPITypeReasons</key>
+			<array>
+				<string>CA92.1</string>
+				<string>1C8F.1</string>
+			</array>
+		</dict>
+	</array>
+</dict>
+</plist>

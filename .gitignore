@@ -28,3 +28,7 @@ tmux_session_connect_flow.html
 # Screenshot/IPA scratch space — smoke-localhost.sh and verify-e2e-mosh-tmux.sh
 # recreate design-audit/{smoke,e2e} on each run; none of it belongs in the repo.
 design-audit/
+
+# Xcode per-user state (generated, never shared)
+xcuserdata/
+*.xcuserdatad/
