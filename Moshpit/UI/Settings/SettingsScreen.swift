@@ -114,17 +114,7 @@ struct SettingsScreen: View {
                             }
                         }
 
-                        FormGroup(
-                            title: "VOICE INPUT",
-                            footer: "Dictate commands instead of typing. Planned for a future update."
-                        ) {
-                            ToggleRow(
-                                label: "Enable Voice Input",
-                                subtitle: "Coming soon",
-                                isOn: .constant(false))
-                            .disabled(true)
-                            .opacity(0.5)
-                        }
+                        voiceGroup(settings: $settings)
 
                         // Build identity — long-press to copy (for bug reports).
                         Text(Self.versionLine)
@@ -338,6 +328,46 @@ struct SettingsScreen: View {
                 colorId: settings.wrappedValue.cursorColorId,
                 blink: settings.wrappedValue.cursorBlink,
                 trail: settings.wrappedValue.trailOnPredict)
+        }
+    }
+
+    // MARK: VOICE INPUT
+
+    /// What the picked dictation language is called, for the Language row's
+    /// value slot. "" (automatic) reads as the word Automatic, not the
+    /// resolved language — the row's own detail line in the picker explains.
+    private func voiceLanguageName(_ settings: AppSettings) -> String {
+        let id = settings.voiceInputLocaleId
+        guard !id.isEmpty else { return String(localized: "Automatic") }
+        return Locale.current.localizedString(forIdentifier: id) ?? id
+    }
+
+    @ViewBuilder
+    private func voiceGroup(settings: Bindable<AppSettings>) -> some View {
+        FormGroup(
+            title: "VOICE INPUT",
+            footer: "Dictate commands and prompts from the mic key on the terminal bar. Speech is transcribed by Apple's models entirely on-device — your voice never leaves this device, and nothing is typed until you tap Insert."
+        ) {
+            ToggleRow(
+                label: "Enable Voice Input",
+                subtitle: "Adds a mic key to the terminal bar",
+                isOn: settings.voiceInputEnabled)
+            if settings.wrappedValue.voiceInputEnabled {
+                NavigationLink {
+                    VoiceLanguageView()
+                } label: {
+                    HStack(spacing: 10) {
+                        Text("Language").font(Face.text(14)).foregroundStyle(Ink.primary)
+                        Spacer()
+                        Text(voiceLanguageName(settings.wrappedValue))
+                            .font(Face.text(14)).foregroundStyle(Ink.meta).lineLimit(1)
+                        MiniChevron()
+                    }
+                    .frame(minHeight: Metrics.cellMinHeight)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
         }
     }
 

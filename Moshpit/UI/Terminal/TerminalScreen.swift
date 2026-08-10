@@ -55,6 +55,10 @@ struct TerminalScreen: View {
     /// copy is the natural gesture, so meet the user right after it).
     @State private var copiedURL: URL?
     @State private var copiedURLDismiss: Task<Void, Never>?
+    /// Live voice-input session; non-nil while the dictation overlay is up.
+    /// Minted on mic tap (not at screen init) so idle terminals never touch
+    /// audio plumbing.
+    @State private var dictation: VoiceDictationController?
 
     private var theme: TerminalTheme {
         themes.theme(id: settings.themeId)
@@ -300,18 +304,7 @@ struct TerminalScreen: View {
         }
         .navigationBarHidden(true)
         .preferredColorScheme(.dark)
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            ShortcutBarView(
-                shortcuts: shortcutStore.toolbar(
-                    forHost: connection.displayName,
-                    inMultiplexer: active?.tmuxControl != nil || active?.herdrControl != nil),
-                onTap: send(shortcut:),
-                ctrlArmed: ctrlArmed,
-                onArrow: sendArrow,
-                onScroll: scrollHistory,
-                keyboardDown: keyboardDismissed,
-                onToggleKeyboard: { keyboardDismissed.toggle() })
-        }
+        .safeAreaInset(edge: .bottom, spacing: 0) { bottomAccessory }
         .task { await connectAndAttach() }
         .onDisappear {
             // Back to Home keeps the connection alive but stops rendering — hand
@@ -870,6 +863,77 @@ struct TerminalScreen: View {
         let lines = 3
         active?.scrollActiveTerminal(lines: direction == "up" ? lines : -lines)
     }
+
+    // MARK: - Voice input
+
+    /// The bottom safe-area stack: dictation overlay (when a session is up)
+    /// riding directly above the shortcut bar, both following the keyboard.
+    /// Split out of the main modifier chain for the same type-checker-budget
+    /// reason as `contentWithLifecycle`.
+    @ViewBuilder
+    private var bottomAccessory: some View {
+        VStack(spacing: 0) {
+            if let dictation {
+                DictationOverlayView(
+                    controller: dictation,
+                    onCancel: { cancelDictation() },
+                    onInsert: { finishDictation() })
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+            ShortcutBarView(
+                shortcuts: shortcutStore.toolbar(
+                    forHost: connection.displayName,
+                    inMultiplexer: active?.tmuxControl != nil || active?.herdrControl != nil),
+                onTap: send(shortcut:),
+                ctrlArmed: ctrlArmed,
+                onArrow: sendArrow,
+                onScroll: scrollHistory,
+                keyboardDown: keyboardDismissed,
+                onToggleKeyboard: { keyboardDismissed.toggle() },
+                micActive: dictation != nil,
+                onMic: settings.voiceInputEnabled ? { toggleDictation() } : nil)
+        }
+        .animation(.easeOut(duration: 0.2), value: dictation == nil)
+    }
+
+    /// Mic key: no session → start one; session live → stop-and-insert (the
+    /// natural "I'm done talking" gesture); session failed/preparing → treat
+    /// the tap as dismissal.
+    private func toggleDictation() {
+        disarmStickyCtrlIfNeeded()
+        if let dictation {
+            if dictation.isListening {
+                finishDictation()
+            } else {
+                cancelDictation()
+            }
+            return
+        }
+        Haptics.tap()
+        let controller = VoiceDictationController()
+        dictation = controller
+        Task { await controller.start(localeId: settings.voiceInputLocaleId) }
+    }
+
+    /// Stop the mic, wait for the engine's final words, and type the result
+    /// into the live session. `sendPaste` (not raw bytes) so bracketed-paste
+    /// apps — Claude Code prompts being the whole point — receive multi-line
+    /// dictation as one block instead of executing it line by line.
+    private func finishDictation() {
+        guard let dictation else { return }
+        Task {
+            if let text = await dictation.finish() {
+                active?.sendPaste(text)
+                Haptics.success()
+            }
+            self.dictation = nil
+        }
+    }
+
+    private func cancelDictation() {
+        dictation?.cancel()
+        dictation = nil
+    }
 }
 
 // MARK: - tmux single-pane rendering
@@ -1024,6 +1088,11 @@ struct ShortcutBarView: View {
     var keyboardDown: Bool = false
     /// Toggle the system keyboard up/down. nil hides the button entirely.
     var onToggleKeyboard: (() -> Void)?
+    /// True while a dictation session is up (tints the mic key active).
+    var micActive: Bool = false
+    /// Start/stop voice input. nil (voice input disabled in Settings) hides
+    /// the mic key entirely.
+    var onMic: (() -> Void)?
 
     /// Committed horizontal pan of the chip row, plus the in-flight drag
     /// delta. A plain `ScrollView(.horizontal)` here measurably has its
@@ -1048,6 +1117,9 @@ struct ShortcutBarView: View {
     var body: some View {
         HStack(spacing: 0) {
             chipRow
+            if let onMic {
+                micKey(onMic)
+            }
             if let onToggleKeyboard {
                 keyboardToggle(onToggleKeyboard)
             }
@@ -1066,6 +1138,30 @@ struct ShortcutBarView: View {
             .frame(height: 14)
             .allowsHitTesting(false)
         }
+    }
+
+    /// The voice-input key — pinned beside the keyboard toggle (outside the
+    /// scroll) so dictation is always one tap away. Accent-filled while a
+    /// session is live, mirroring the armed-ctrl treatment.
+    private func micKey(_ action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: micActive ? "mic.fill" : "mic")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(micActive ? Color(hex: "090B0D") : Ink.primary)
+                .frame(minWidth: 42, minHeight: 30)
+                .background(
+                    micActive ? AnyShapeStyle(Ink.shortcutKeyActiveBG) : AnyShapeStyle(Ink.shortcutKeyBG),
+                    in: RoundedRectangle(cornerRadius: Metrics.controlRadius, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: Metrics.controlRadius, style: .continuous)
+                        .strokeBorder(micActive ? Ink.accent.opacity(0.55) : Ink.groupBorder, lineWidth: 1)
+                )
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .padding(.leading, 4)
+        .accessibilityLabel(Text(micActive ? "Stop voice input" : "Start voice input"))
+        .accessibilityIdentifier("voice-input")
     }
 
     /// Pinned at the trailing edge (outside the scroll) so it's always reachable

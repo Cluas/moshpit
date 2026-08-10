@@ -13,6 +13,7 @@
 		0543352CE66FF0B08654B156 /* AppSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6942C851AB7E6BB41499FA8C /* AppSettings.swift */; };
 		06D7AB5D3662DFCD51E62F4A /* AgentWidgetState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 91C7B6E5DB5DDEC7E4BB7D12 /* AgentWidgetState.swift */; };
 		091C26D152BA4222BFD6E76D /* AppIcon-Cursor60x60@3x.png in Resources */ = {isa = PBXBuildFile; fileRef = 89468952BA7A9F409046CF76 /* AppIcon-Cursor60x60@3x.png */; };
+		0CE0FC4BE657CA16B16817A1 /* VoiceInputOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F7D960D32A76F0660F1F28E /* VoiceInputOverlay.swift */; };
 		0D3AC8BFAFBA5C6731A330E5 /* AppThemeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 972E95607F15115064C3330A /* AppThemeTests.swift */; };
 		0F7884FDF3499832B5202604 /* AgentActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38DDFA79CFB8CF2FC264FB6B /* AgentActivityAttributes.swift */; };
 		0FE3E6E14760469D366EA6D2 /* AgentPalette.swift in Sources */ = {isa = PBXBuildFile; fileRef = A47DF607D0A0BB071C864EEF /* AgentPalette.swift */; };
@@ -30,6 +31,7 @@
 		1E6457CEE2D4F37078C08058 /* TerminalKeyboard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 165CEF42B77D998876FFAFE6 /* TerminalKeyboard.swift */; };
 		1E780F280546AC31FC1EBD9F /* MoshPipelineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 115D007246B1D0E171E3F949 /* MoshPipelineTests.swift */; };
 		1F877ACDBB8A3D93C120DB71 /* TerminalScrollbackTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4797B6DEA99236675BC184F0 /* TerminalScrollbackTests.swift */; };
+		1F8AFF4A8B389296954AEAF3 /* VoiceLanguageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 453FC4E503E7B2EB70B5493A /* VoiceLanguageView.swift */; };
 		1FA7F76851C38003FC27289D /* AgentControl.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55C4E67A13B0D810E9DF11AE /* AgentControl.swift */; };
 		1FE30226A673730AB6F88D78 /* MockTmuxTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 832E8D17993391FE02B5A38F /* MockTmuxTransport.swift */; };
 		20A69BBDC4404E02ABE6C710 /* TerminalScrollback.swift in Sources */ = {isa = PBXBuildFile; fileRef = E57649BDE4AFD4DFE8F64556 /* TerminalScrollback.swift */; };
@@ -40,6 +42,7 @@
 		2848F1250162A182A5E2873A /* Hack-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = CA8016E1600688806FF448C5 /* Hack-Regular.ttf */; };
 		2968208343313A20D3A98A14 /* IslandContentTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C662260594802B598A657877 /* IslandContentTests.swift */; };
 		2A5CA5647477E12D2FB0B481 /* TmuxTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9142F7A03ECAEA872CAAACF4 /* TmuxTransport.swift */; };
+		2D42D9EEDA69CD43BBF3EC05 /* DictationEngines.swift in Sources */ = {isa = PBXBuildFile; fileRef = 67175EDBEC009C5FEDACA869 /* DictationEngines.swift */; };
 		2F4BBC78F10FCE418FD64837 /* KeychainService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A41D45DEB209E64F8E845274 /* KeychainService.swift */; };
 		2FA26F8EC2884F05965080D6 /* AgentControl.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55C4E67A13B0D810E9DF11AE /* AgentControl.swift */; };
 		2FBC60B79B8AFF6F28DD6307 /* MultiplexerVocabularyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8161A97D21A7FC96C7621D86 /* MultiplexerVocabularyTests.swift */; };
@@ -69,6 +72,7 @@
 		58BBD96E29CFDF3CDD4354FB /* MoshpitMark.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7118E3B937405064AF5E7F3 /* MoshpitMark.swift */; };
 		58DF0A3A80B5FE077CB1A7C2 /* HerdrFrameChannelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 70465CF8A76E1EC73144DDFE /* HerdrFrameChannelTests.swift */; };
 		5C821FCDD2E54727DF04624F /* AppIcon-Hail60x60@3x.png in Resources */ = {isa = PBXBuildFile; fileRef = 616BEFE563976733B6CC4D3D /* AppIcon-Hail60x60@3x.png */; };
+		5D55B5A61345681ABEF9198E /* VoiceDictationControllerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E468E22C8246BFACCCBBF685 /* VoiceDictationControllerTests.swift */; };
 		5D8F91769E40D5629794B5F5 /* TerminalScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F758D0947C98C6763A9DEC6 /* TerminalScreen.swift */; };
 		65C2373D0A4E31BECDB15418 /* TerminalShortcutTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56923C29050B3175A8A1CB3F /* TerminalShortcutTests.swift */; };
 		65F04782B30380D6C82F3456 /* AppIconGalleryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = ECD81899B7F48834C843F423 /* AppIconGalleryView.swift */; };
@@ -144,6 +148,7 @@
 		D0B029DD39EC37B8C906CCBE /* TerminalScrollGesture.swift in Sources */ = {isa = PBXBuildFile; fileRef = B326D2F66528444967AA24B1 /* TerminalScrollGesture.swift */; };
 		D1A820E077C06D87BC940B22 /* AppIcon-Wq60x60@3x.png in Resources */ = {isa = PBXBuildFile; fileRef = A2FE8969CB4779E12D7B6868 /* AppIcon-Wq60x60@3x.png */; };
 		D34D2B47BA6A724EC4981263 /* MoshCrypto.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78599612F3EA2C84F9DC8490 /* MoshCrypto.swift */; };
+		D5FAB3E04B265D5AEB8FCFF7 /* VoiceDictation.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6A46357469548D128D4A58D /* VoiceDictation.swift */; };
 		D63BF39A751F2DFCF67D2F24 /* AgentSignal.swift in Sources */ = {isa = PBXBuildFile; fileRef = 598FD3115EE12240E8D59354 /* AgentSignal.swift */; };
 		D776A72516458C77F0C76169 /* GoldenPathTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E38BC2D3345D7A0B4FCCFB0 /* GoldenPathTests.swift */; };
 		DD7EE98AEBEC2C1B9729957D /* AppIcon-NoCarrier60x60@3x.png in Resources */ = {isa = PBXBuildFile; fileRef = 21A747EB28C31A47AB2B5035 /* AppIcon-NoCarrier60x60@3x.png */; };
@@ -250,6 +255,7 @@
 		3D54D8BED42003A713382F7F /* AppThemeStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppThemeStore.swift; sourceTree = "<group>"; };
 		3EC8EE836991DC4496E68004 /* AgentControlTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentControlTests.swift; sourceTree = "<group>"; };
 		3F0598BDB2392EFCA70A71BF /* HostKeyValidator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostKeyValidator.swift; sourceTree = "<group>"; };
+		453FC4E503E7B2EB70B5493A /* VoiceLanguageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceLanguageView.swift; sourceTree = "<group>"; };
 		45E7CD1C68C74101335B817F /* AgentTaskRequest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTaskRequest.swift; sourceTree = "<group>"; };
 		4797B6DEA99236675BC184F0 /* TerminalScrollbackTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalScrollbackTests.swift; sourceTree = "<group>"; };
 		492DAB127CE604BC318C93C4 /* MapleMono-Regular.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "MapleMono-Regular.ttf"; sourceTree = "<group>"; };
@@ -257,6 +263,7 @@
 		4A97E67F617F8FFB8148D308 /* AppIcon-Prefix60x60@3x.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "AppIcon-Prefix60x60@3x.png"; sourceTree = "<group>"; };
 		4D1086DD88F4B50D0E9861B3 /* MoshpitUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = MoshpitUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		4E9EDA5ECCBE5ABBFA79EA7E /* MoshpitTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = MoshpitTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		4F7D960D32A76F0660F1F28E /* VoiceInputOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceInputOverlay.swift; sourceTree = "<group>"; };
 		5026177CCB80D4BC832576CE /* CaptureScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureScreen.swift; sourceTree = "<group>"; };
 		55C4E67A13B0D810E9DF11AE /* AgentControl.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentControl.swift; sourceTree = "<group>"; };
 		56923C29050B3175A8A1CB3F /* TerminalShortcutTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalShortcutTests.swift; sourceTree = "<group>"; };
@@ -271,6 +278,7 @@
 		62EB730C4DE65227A4CF5774 /* HerdrLaunch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HerdrLaunch.swift; sourceTree = "<group>"; };
 		63899F38DC22080C52BD078C /* BreadcrumbPlan.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BreadcrumbPlan.swift; sourceTree = "<group>"; };
 		64A66C2F760B34B2E375CE41 /* KeychainServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainServiceTests.swift; sourceTree = "<group>"; };
+		67175EDBEC009C5FEDACA869 /* DictationEngines.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictationEngines.swift; sourceTree = "<group>"; };
 		6937F863672E5171992F95F5 /* AppIcon-Ringdown60x60@3x.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "AppIcon-Ringdown60x60@3x.png"; sourceTree = "<group>"; };
 		6942C851AB7E6BB41499FA8C /* AppSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSettings.swift; sourceTree = "<group>"; };
 		6A28ACE946F638391F9E5213 /* LICENSES.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = LICENSES.md; sourceTree = "<group>"; };
@@ -355,6 +363,7 @@
 		DA88DD878C3330D057D02B9F /* SettingsScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsScreen.swift; sourceTree = "<group>"; };
 		DF94C284887BF4FA3FC37482 /* MoshpitApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoshpitApp.swift; sourceTree = "<group>"; };
 		E2D6E9A63E8DD4B6955D9224 /* Signing.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Signing.xcconfig; sourceTree = "<group>"; };
+		E468E22C8246BFACCCBBF685 /* VoiceDictationControllerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceDictationControllerTests.swift; sourceTree = "<group>"; };
 		E4F3EB0C0463CCB6037118A9 /* MultiplexerVocabulary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MultiplexerVocabulary.swift; sourceTree = "<group>"; };
 		E57649BDE4AFD4DFE8F64556 /* TerminalScrollback.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalScrollback.swift; sourceTree = "<group>"; };
 		E5A29D31BACB57F150A2C9E3 /* TerminalShortcut.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalShortcut.swift; sourceTree = "<group>"; };
@@ -365,6 +374,7 @@
 		F1B0C0CC62DFD21594A9C5B9 /* HostKeyValidatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostKeyValidatorTests.swift; sourceTree = "<group>"; };
 		F349E074D94B87835FCE5404 /* AppIcon-Prefix60x60@2x.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "AppIcon-Prefix60x60@2x.png"; sourceTree = "<group>"; };
 		F38264331A2B3B69AB9B8375 /* MoshCompression.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoshCompression.swift; sourceTree = "<group>"; };
+		F6A46357469548D128D4A58D /* VoiceDictation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceDictation.swift; sourceTree = "<group>"; };
 		FB1A95FDA6DF8F627038AC4D /* SessionHub.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionHub.swift; sourceTree = "<group>"; };
 		FD21A1CC28848BE2B0F82071 /* IBMPlexMono-Regular.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "IBMPlexMono-Regular.ttf"; sourceTree = "<group>"; };
 		FDDD99A2CCD267596F9496A2 /* SessionMetrics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionMetrics.swift; sourceTree = "<group>"; };
@@ -456,6 +466,7 @@
 				5D2E3B89FC8276785CE7ACA2 /* Herdr */,
 				C2D7DAF990ABED7E589626E8 /* Mosh */,
 				425B8916F6F46179A4E7F8DC /* Tmux */,
+				FCD806C852ABBC7E36D114F1 /* Voice */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -496,6 +507,7 @@
 				D20A3B0D13C63AA0E26D1920 /* InstallAssistView.swift */,
 				85826DB77434C2926EC52D24 /* MoshReturnPathBannerView.swift */,
 				7F758D0947C98C6763A9DEC6 /* TerminalScreen.swift */,
+				4F7D960D32A76F0660F1F28E /* VoiceInputOverlay.swift */,
 			);
 			path = Terminal;
 			sourceTree = "<group>";
@@ -567,6 +579,7 @@
 				5E3C5B9F2BD776AC30A16C86 /* Models */,
 				E8354F152B2797AD27A57856 /* Services */,
 				879133788BC4BEBB74FE3E22 /* UI */,
+				A6138EB7950981E1C8D8CC30 /* Voice */,
 			);
 			path = MoshpitTests;
 			sourceTree = "<group>";
@@ -713,6 +726,14 @@
 			path = Brand;
 			sourceTree = "<group>";
 		};
+		A6138EB7950981E1C8D8CC30 /* Voice */ = {
+			isa = PBXGroup;
+			children = (
+				E468E22C8246BFACCCBBF685 /* VoiceDictationControllerTests.swift */,
+			);
+			path = Voice;
+			sourceTree = "<group>";
+		};
 		A7EFBFDE952769C40D8577BC /* Tmux */ = {
 			isa = PBXGroup;
 			children = (
@@ -737,6 +758,7 @@
 				DA88DD878C3330D057D02B9F /* SettingsScreen.swift */,
 				B2361DCED84C3BDE4DEF91AF /* ThemeEditorView.swift */,
 				6C6E0E8EE7D87DC9BC55058D /* ThemeGalleryView.swift */,
+				453FC4E503E7B2EB70B5493A /* VoiceLanguageView.swift */,
 			);
 			path = Settings;
 			sourceTree = "<group>";
@@ -856,6 +878,15 @@
 				17B385C2A9129CBB524F9B55 /* ThemeScreenshotUITest.swift */,
 			);
 			path = MoshpitUITests;
+			sourceTree = "<group>";
+		};
+		FCD806C852ABBC7E36D114F1 /* Voice */ = {
+			isa = PBXGroup;
+			children = (
+				67175EDBEC009C5FEDACA869 /* DictationEngines.swift */,
+				F6A46357469548D128D4A58D /* VoiceDictation.swift */,
+			);
+			path = Voice;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -1096,6 +1127,7 @@
 				847B35CFF26B0A989AEC17F5 /* TmuxLayoutParserTests.swift in Sources */,
 				B079312D3EC271B3B573FD59 /* TmuxSessionControllerTests.swift in Sources */,
 				82409C713CF692218C0D4FCF /* TmuxTypesTests.swift in Sources */,
+				5D55B5A61345681ABEF9198E /* VoiceDictationControllerTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1125,6 +1157,7 @@
 				37A06670A3855AFD7097FD13 /* Components.swift in Sources */,
 				7199A8FE3E93E0627F4BF2DF /* ConnectionStore.swift in Sources */,
 				13481D2CA563A399BC578E6A /* DesignTokens.swift in Sources */,
+				2D42D9EEDA69CD43BBF3EC05 /* DictationEngines.swift in Sources */,
 				A9C0F3410C4AA1E286789123 /* HerdrControlClient.swift in Sources */,
 				BE3A5F62FEC9527336F8EAFE /* HerdrFrameChannel.swift in Sources */,
 				EA634C97DDAD7D88F19EB013 /* HerdrLaunch.swift in Sources */,
@@ -1178,6 +1211,9 @@
 				8525F650803392AD2CBAB12A /* TmuxSheets.swift in Sources */,
 				2A5CA5647477E12D2FB0B481 /* TmuxTransport.swift in Sources */,
 				E5DE2728AC921175DFE38300 /* TmuxTypes.swift in Sources */,
+				D5FAB3E04B265D5AEB8FCFF7 /* VoiceDictation.swift in Sources */,
+				0CE0FC4BE657CA16B16817A1 /* VoiceInputOverlay.swift in Sources */,
+				1F8AFF4A8B389296954AEAF3 /* VoiceLanguageView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -117,6 +117,10 @@
 	<string>Use Face ID to unlock SSH keys</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Moshpit connects to servers on your local network over SSH and mosh (UDP). Without this permission, connections to LAN hosts (e.g. 192.168.x.x) will fail.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Voice input uses the microphone so you can dictate commands and prompts into your terminal. Audio is transcribed by Apple's speech models entirely on this device and is never uploaded anywhere.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Dictation runs Apple's on-device speech recognition. Your voice and transcripts never leave this device — Moshpit does not use server-based recognition.</string>
 	<key>NSSupportsLiveActivities</key>
 	<true/>
 	<key>UIAppFonts</key>

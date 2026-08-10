@@ -224,6 +224,16 @@ targets:
           - UIInterfaceOrientationLandscapeLeft
           - UIInterfaceOrientationLandscapeRight
         NSFaceIDUsageDescription: "Use Face ID to unlock SSH keys"
+        # Voice input (Settings → VOICE INPUT, mic key on the terminal bar).
+        # BOTH keys are required or App Review rejects the binary: the mic key
+        # for the recording session, the speech key because the iOS 18–25 path
+        # goes through SFSpeechRecognizer (which gates on that permission).
+        # The "on-device / never uploaded" wording is a real, load-bearing
+        # promise: DictationEngineFactory refuses the server recognition path
+        # outright (on-device only, all OS versions), so keep code and copy in
+        # lockstep if either ever changes.
+        NSMicrophoneUsageDescription: "Voice input uses the microphone so you can dictate commands and prompts into your terminal. Audio is transcribed by Apple's speech models entirely on this device and is never uploaded anywhere."
+        NSSpeechRecognitionUsageDescription: "Dictation runs Apple's on-device speech recognition. Your voice and transcripts never leave this device — Moshpit does not use server-based recognition."
         # MUST live here, not just in Info.plist: XcodeGen regenerates that file
         # from this block, so a key added to the plist by hand silently vanishes
         # at the next `xcodegen generate`. Without this key iOS drops UDP to LAN

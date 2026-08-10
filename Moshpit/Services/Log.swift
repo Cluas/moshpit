@@ -34,4 +34,7 @@ enum Log {
 
     /// Mosh transport: UDP session bring-up, roaming, and predictive echo.
     static let mosh = Logger(subsystem: subsystem, category: "mosh")
+
+    /// Voice input: engine selection, model downloads, capture failures.
+    static let voice = Logger(subsystem: subsystem, category: "voice")
 }

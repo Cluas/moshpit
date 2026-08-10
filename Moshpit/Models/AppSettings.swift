@@ -173,10 +173,20 @@ final class AppSettings {
         set { withMutation(keyPath: \.lockScreenDetailEnabled) { defaults.set(newValue, forKey: "moshpit.settings.lockScreenDetail") } }
     }
 
-    // MARK: VOICE INPUT (EXPERIMENTAL)
+    // MARK: VOICE INPUT
 
+    /// Shows the mic key on the terminal shortcut bar. On by default — the
+    /// permission prompts only fire on first actual use, so the key costs
+    /// nothing until tapped.
     var voiceInputEnabled: Bool {
-        get { access(keyPath: \.voiceInputEnabled); return get("moshpit.settings.voiceInput", false) }
+        get { access(keyPath: \.voiceInputEnabled); return get("moshpit.settings.voiceInput", true) }
         set { withMutation(keyPath: \.voiceInputEnabled) { defaults.set(newValue, forKey: "moshpit.settings.voiceInput") } }
+    }
+
+    /// BCP-47 identifier of the dictation language ("en-US", "zh-CN"…).
+    /// Empty = follow the system language.
+    var voiceInputLocaleId: String {
+        get { access(keyPath: \.voiceInputLocaleId); return get("moshpit.settings.voiceInputLocale", "") }
+        set { withMutation(keyPath: \.voiceInputLocaleId) { defaults.set(newValue, forKey: "moshpit.settings.voiceInputLocale") } }
     }
 }
