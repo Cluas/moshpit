@@ -1,4 +1,4 @@
-# SwiftLint configuration for Ringdown
+# SwiftLint configuration for Moshpit
 #
 # This lint config is being retrofitted onto a large, pre-existing SwiftUI /
 # actor-heavy codebase, so the goal is signal over noise: keep the rules that
@@ -6,15 +6,15 @@
 # on day one (line/file/body length, etc.). Tighten over time.
 
 included:
-  - Ringdown
-  - RingdownIsland
-  - RingdownTests
-  - RingdownUITests
+  - Moshpit
+  - MoshpitIsland
+  - MoshpitTests
+  - MoshpitUITests
 
 excluded:
   - .build
   - build
-  - Ringdown.xcodeproj
+  - Moshpit.xcodeproj
   - design-audit
   - scripts
 
