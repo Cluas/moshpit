@@ -96,5 +96,5 @@ echo "✓ $EXPORT_DIR/Moshpit.ipa  ($(du -h "$EXPORT_DIR/Moshpit.ipa" | cut -f1)
 echo
 echo "  Upload with either:"
 echo "    open $ARCHIVE          # Xcode Organizer ▸ Distribute App"
-echo "    xcrun altool --upload-app -f $EXPORT_DIR/Moshpit.ipa -t ios \\"
-echo "      --apiKey \$ASC_KEY_ID --apiIssuer \$ASC_ISSUER_ID"
+echo "    open -a Transporter $EXPORT_DIR/Moshpit.ipa   # drag-and-drop uploader"
+echo "  (altool --upload-app is gone since Xcode 15 — don't reach for it.)"
