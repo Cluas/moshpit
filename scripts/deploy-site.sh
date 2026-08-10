@@ -17,7 +17,7 @@
 #
 set -euo pipefail
 
-REPO=ghcr.io/cluas/offhook-site
+REPO=ghcr.io/cluas/moshpit-site
 SITE="$(cd "$(dirname "$0")/.." && pwd)/marketing/site"
 TAG="$(git -C "$(dirname "$SITE")/.." rev-parse --short HEAD)-$(date +%H%M)"
 DRY=${1:-}
@@ -98,12 +98,12 @@ echo "  all root-absolute"
 # Gate 2: nginx has to accept the config. Run natively — the image itself
 # carries no RUN step so that the multi-arch build stays a pure file copy.
 say "Validating nginx.conf"
-docker build -q -t offhook-site:check "$SITE" >/dev/null
-docker run --rm offhook-site:check nginx -t
+docker build -q -t moshpit-site:check "$SITE" >/dev/null
+docker run --rm moshpit-site:check nginx -t
 
 # Gate 3: the files the site cannot work without.
-for f in index.html assets/offhook.css assets/docs-index.json assets/docs-search.js; do
-  docker run --rm offhook-site:check test -f "/usr/share/nginx/html/$f" \
+for f in index.html assets/moshpit.css assets/docs-index.json assets/docs-search.js; do
+  docker run --rm moshpit-site:check test -f "/usr/share/nginx/html/$f" \
     || { echo "missing: $f" >&2; exit 1; }
 done
 echo "  required files present"
@@ -130,12 +130,12 @@ say "Rolling out"
 # image without it leaves nginx reading the mounted ConfigMaps — the deploy
 # reports success and ships nothing.
 kubectl apply -f "$SITE/k8s.yaml"
-kubectl set image deploy/offhook-site "nginx=$REPO:$TAG"
-kubectl rollout status deploy/offhook-site --timeout=180s
+kubectl set image deploy/moshpit-site "nginx=$REPO:$TAG"
+kubectl rollout status deploy/moshpit-site --timeout=180s
 
 say "Verifying from outside the cluster"
 for u in / /docs /docs/herdr /pricing /zh/docs/herdr; do
-  code=$(curl -s -o /dev/null -w '%{http_code}' "https://offhook.cluas.eu.org$u")
+  code=$(curl -s -o /dev/null -w '%{http_code}' "https://moshpit.cluas.eu.org$u")
   printf '  %-18s %s\n' "$u" "$code"
   [[ "$code" == 200 ]] || { echo "  ^ FAILED" >&2; exit 1; }
 done

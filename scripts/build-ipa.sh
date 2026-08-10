@@ -3,16 +3,16 @@
 # free Apple ID. No Team ID needed here — the sideloader handles signing
 # and (with AltServer running) auto-refreshes before the 7-day expiry.
 #
-# Output: build/Offhook.ipa  → drag into AltStore, or `altserver` install.
+# Output: build/Moshpit.ipa  → drag into AltStore, or `altserver` install.
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 CONFIG="${1:-Debug}"
 DERIVED="build/ipa"
-APP="$DERIVED/Build/Products/$CONFIG-iphoneos/Offhook.app"
+APP="$DERIVED/Build/Products/$CONFIG-iphoneos/Moshpit.app"
 
 echo "▶ Building $CONFIG (device, unsigned)…"
-xcodebuild -project Offhook.xcodeproj -scheme Offhook -configuration "$CONFIG" \
+xcodebuild -project Moshpit.xcodeproj -scheme Moshpit -configuration "$CONFIG" \
   -sdk iphoneos -derivedDataPath "$DERIVED" \
   CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build >/dev/null
 
@@ -26,8 +26,8 @@ SHA="$(git rev-parse --short HEAD 2>/dev/null || echo unknown)"
 git diff --quiet HEAD 2>/dev/null || SHA="${SHA}+"
 STAMP="$SHA · $(date '+%m-%d %H:%M')"
 BUILDNUM="$(git rev-list --count HEAD 2>/dev/null || echo 1)"
-/usr/libexec/PlistBuddy -c "Add :OffhookBuildStamp string $STAMP" "$APP/Info.plist" 2>/dev/null \
-  || /usr/libexec/PlistBuddy -c "Set :OffhookBuildStamp $STAMP" "$APP/Info.plist"
+/usr/libexec/PlistBuddy -c "Add :MoshpitBuildStamp string $STAMP" "$APP/Info.plist" 2>/dev/null \
+  || /usr/libexec/PlistBuddy -c "Set :MoshpitBuildStamp $STAMP" "$APP/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILDNUM" "$APP/Info.plist" 2>/dev/null || true
 # App extensions MUST carry the same CFBundleVersion as the containing app —
 # a mismatch can get the appex rejected at install/validation, which silently
@@ -39,11 +39,11 @@ done
 echo "▶ Stamped build $BUILDNUM ($STAMP)"
 
 echo "▶ Packaging .ipa…"
-rm -rf build/Payload build/Offhook.ipa
+rm -rf build/Payload build/Moshpit.ipa
 mkdir -p build/Payload
 cp -R "$APP" build/Payload/
-( cd build && zip -qry Offhook.ipa Payload )
+( cd build && zip -qry Moshpit.ipa Payload )
 rm -rf build/Payload
 
-echo "✓ build/Offhook.ipa  ($(du -h build/Offhook.ipa | cut -f1))"
-echo "  Install via AltStore (drag in) or: altserver -u <UDID> build/Offhook.ipa"
+echo "✓ build/Moshpit.ipa  ($(du -h build/Moshpit.ipa | cut -f1))"
+echo "  Install via AltStore (drag in) or: altserver -u <UDID> build/Moshpit.ipa"

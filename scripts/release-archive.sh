@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Archive and export a SIGNED App Store build → build/AppStore/Offhook.ipa
+# Archive and export a SIGNED App Store build → build/AppStore/Moshpit.ipa
 #
 # The counterpart to scripts/build-ipa.sh, which builds an UNSIGNED .ipa for
 # AltStore/SideStore to re-sign with a free Apple ID. This is the paid
@@ -8,7 +8,7 @@
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
-ARCHIVE="build/Offhook.xcarchive"
+ARCHIVE="build/Moshpit.xcarchive"
 EXPORT_DIR="build/AppStore"
 OPTS="build/ExportOptions.plist"
 
@@ -18,10 +18,10 @@ OPTS="build/ExportOptions.plist"
 #
 # It is passed as a command-line build setting rather than written into
 # project.yml because command-line settings apply to EVERY target in the build:
-# that is what makes the app and the OffhookIsland extension come out with the
+# that is what makes the app and the MoshpitIsland extension come out with the
 # identical CFBundleVersion that App Store validation insists on. Override with
-# OFFHOOK_BUILD=n to re-upload after a rejection without a dummy commit.
-BUILD="${OFFHOOK_BUILD:-$(git rev-list --count HEAD)}"
+# MOSHPIT_BUILD=n to re-upload after a rejection without a dummy commit.
+BUILD="${MOSHPIT_BUILD:-$(git rev-list --count HEAD)}"
 
 TEAM="$(sed -n 's/^[[:space:]]*DEVELOPMENT_TEAM[[:space:]]*=[[:space:]]*//p' Signing.xcconfig | tr -d '[:space:]')"
 if [ -z "$TEAM" ]; then
@@ -32,8 +32,8 @@ fi
 
 # A stale .xcodeproj is a silent footgun in a project where project.yml is the
 # source of truth — refuse rather than ship yesterday's Info.plist.
-if [ project.yml -nt Offhook.xcodeproj/project.pbxproj ]; then
-  echo "✘ project.yml is newer than Offhook.xcodeproj — run: xcodegen generate" >&2
+if [ project.yml -nt Moshpit.xcodeproj/project.pbxproj ]; then
+  echo "✘ project.yml is newer than Moshpit.xcodeproj — run: xcodegen generate" >&2
   exit 1
 fi
 
@@ -43,7 +43,7 @@ git diff --quiet HEAD 2>/dev/null || \
 echo "▶ Archiving Release (build $BUILD, team $TEAM)…"
 rm -rf "$ARCHIVE" "$EXPORT_DIR"
 mkdir -p build
-xcodebuild -project Offhook.xcodeproj -scheme Offhook \
+xcodebuild -project Moshpit.xcodeproj -scheme Moshpit \
   -configuration Release -destination 'generic/platform=iOS' \
   -archivePath "$ARCHIVE" \
   -allowProvisioningUpdates \
@@ -54,7 +54,7 @@ xcodebuild -project Offhook.xcodeproj -scheme Offhook \
 # the app and its embedded extension is an upload rejection, and the whole point
 # of overriding the setting globally above is to make that impossible.
 plist_get() { /usr/libexec/PlistBuddy -c "Print :$2" "$1/Info.plist"; }
-APP="$ARCHIVE/Products/Applications/Offhook.app"
+APP="$ARCHIVE/Products/Applications/Moshpit.app"
 APP_BUILD="$(plist_get "$APP" CFBundleVersion)"
 for appex in "$APP"/PlugIns/*.appex; do
   [ -d "$appex" ] || continue
@@ -92,9 +92,9 @@ xcodebuild -exportArchive -archivePath "$ARCHIVE" \
   -exportOptionsPlist "$OPTS" -exportPath "$EXPORT_DIR" \
   -allowProvisioningUpdates
 
-echo "✓ $EXPORT_DIR/Offhook.ipa  ($(du -h "$EXPORT_DIR/Offhook.ipa" | cut -f1))"
+echo "✓ $EXPORT_DIR/Moshpit.ipa  ($(du -h "$EXPORT_DIR/Moshpit.ipa" | cut -f1))"
 echo
 echo "  Upload with either:"
 echo "    open $ARCHIVE          # Xcode Organizer ▸ Distribute App"
-echo "    xcrun altool --upload-app -f $EXPORT_DIR/Offhook.ipa -t ios \\"
+echo "    xcrun altool --upload-app -f $EXPORT_DIR/Moshpit.ipa -t ios \\"
 echo "      --apiKey \$ASC_KEY_ID --apiIssuer \$ASC_ISSUER_ID"

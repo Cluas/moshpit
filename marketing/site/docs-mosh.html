@@ -3,16 +3,16 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Mosh and roaming — Offhook</title>
-<meta name="description" content="What mosh buys you in Offhook, how to install mosh-server, what UDP has to be open, the settings that matter, and what to do when the screen stays black.">
+<title>Mosh and roaming — Moshpit</title>
+<meta name="description" content="What mosh buys you in Moshpit, how to install mosh-server, what UDP has to be open, the settings that matter, and what to do when the screen stays black.">
 <link rel="icon" type="image/png" href="/icon-192.png">
-<link rel="stylesheet" href="/offhook.css?v=15">
+<link rel="stylesheet" href="/moshpit.css?v=15">
 </head>
 <body>
 
 <div class="shell">
   <header class="top">
-    <a class="brand" href="./"><img src="/icon-192.png" alt="" width="192" height="192">Offhook</a>
+    <a class="brand" href="./"><img src="/icon-192.png" alt="" width="192" height="192">Moshpit</a>
     <div class="topright">
       <a class="lang" href="/docs">Docs</a>
       <a class="lang" href="/guides">Guides</a>
@@ -30,7 +30,7 @@
   <a class="dhome" href="/">← Back to the app</a>
   <p class="dtitle">Docs</p>
   <button class="dsearchbtn" type="button" data-docsearch><span>Search the docs…</span><kbd>⌘K</kbd></button>
-  <nav><p class="dsec">Start</p><a href="/docs/intro">What Offhook does</a><a href="/docs/setup">Set up a connection</a><a href="/docs/first-session">Run your first session</a><p class="dsec">Connections</p><a href="/docs/keys">SSH keys and host trust</a><a href="/docs/mosh" class="on" aria-current="page">Mosh and roaming</a><a href="/guide/remote-access">Reach your machine from anywhere</a><p class="dsec">Multiplexers</p><a href="/docs/multiplexers">Choosing tmux or herdr</a><a href="/docs/tmux">Using tmux</a><a href="/docs/herdr">Using herdr</a><p class="dsec">Agents</p><a href="/docs/agents">Agent status and the lock screen</a><a href="/docs/worktrees">Isolated tasks with git worktrees</a><a href="/guide/claude-code">Run Claude Code from your iPhone</a><p class="dsec">Input</p><a href="/docs/keyboard">Keyboard and shortcuts</a><a href="/docs/scrolling">Scrolling and scrollback</a><a href="/docs/clipboard">Clipboard and paste</a><a href="/docs/ime">CJK and IME input</a><p class="dsec">Appearance</p><a href="/docs/appearance">Themes, fonts and icons</a><p class="dsec">Help</p><a href="/docs/troubleshooting">Troubleshooting</a><a href="/compare">How Offhook compares</a></nav>
+  <nav><p class="dsec">Start</p><a href="/docs/intro">What Moshpit does</a><a href="/docs/setup">Set up a connection</a><a href="/docs/first-session">Run your first session</a><p class="dsec">Connections</p><a href="/docs/keys">SSH keys and host trust</a><a href="/docs/mosh" class="on" aria-current="page">Mosh and roaming</a><a href="/guide/remote-access">Reach your machine from anywhere</a><p class="dsec">Multiplexers</p><a href="/docs/multiplexers">Choosing tmux or herdr</a><a href="/docs/tmux">Using tmux</a><a href="/docs/herdr">Using herdr</a><p class="dsec">Agents</p><a href="/docs/agents">Agent status and the lock screen</a><a href="/docs/worktrees">Isolated tasks with git worktrees</a><a href="/guide/claude-code">Run Claude Code from your iPhone</a><p class="dsec">Input</p><a href="/docs/keyboard">Keyboard and shortcuts</a><a href="/docs/scrolling">Scrolling and scrollback</a><a href="/docs/clipboard">Clipboard and paste</a><a href="/docs/ime">CJK and IME input</a><p class="dsec">Appearance</p><a href="/docs/appearance">Themes, fonts and icons</a><p class="dsec">Help</p><a href="/docs/troubleshooting">Troubleshooting</a><a href="/compare">How Moshpit compares</a></nav>
 </aside>
 <!--DOCSHELL:END-->
 <div class="dbody">
@@ -43,10 +43,10 @@
     settings that currently do nothing.</p>
 
     <div class="doc">
-      <p class="txt">Mosh is optional. Offhook is a plain SSH client without it, and every
+      <p class="txt">Mosh is optional. Moshpit is a plain SSH client without it, and every
       feature except roaming works the same. What mosh adds is a session that does not die
       when your phone changes networks — and one structural cost, stated up front:
-      <b>over mosh, tmux and herdr paint their own full-screen TUI instead of Offhook
+      <b>over mosh, tmux and herdr paint their own full-screen TUI instead of Moshpit
       rendering them natively.</b> The native sheets still work, fed by a second SSH
       connection alongside — but the terminal itself is whatever the multiplexer paints.
       That is not a bug awaiting a fix; the reason is
@@ -56,7 +56,7 @@
         <div class="step3">
           <h3 id="s1">It roams</h3>
           <p>When iOS reports a better network path — Wi-Fi coming up, cellular taking
-          over — Offhook marks the session roaming and immediately pushes a packet down the
+          over — Moshpit marks the session roaming and immediately pushes a packet down the
           new path so the server re-homes to your new address.</p>
           <p>Nothing renegotiates. Mosh's State Synchronization Protocol is connectionless:
           the client keeps its own state numbers, so there is no handshake to redo. The
@@ -65,7 +65,7 @@
         <div class="step3">
           <h3 id="s2">It survives sleep</h3>
           <p>Coming back to the app, if the UDP connection went into a failed or waiting
-          state while iOS held the socket, Offhook restarts it and flushes at once so the
+          state while iOS held the socket, Moshpit restarts it and flushes at once so the
           server re-homes.</p>
           <p>An SSH session gets a full reconnect after a long suspension. A mosh session
           takes its own resume path instead, because SSP usually heals itself. What it does
@@ -75,7 +75,7 @@
         <div class="step3">
           <h3 id="s3">It tolerates loss</h3>
           <p>A screen diff is applied only when its <code>old_num</code> matches the state
-          Offhook already holds, so the ANSI composes correctly. On a gap, Offhook acks its
+          Moshpit already holds, so the ANSI composes correctly. On a gap, Moshpit acks its
           true state and lets the server re-diff rather than applying a broken one.</p>
           <p>A one-second heartbeat keeps NAT mappings warm and acks flowing.</p>
         </div>
@@ -89,7 +89,7 @@
   <section class="band">
     <p class="eyebrow">Under it</p>
     <h2>A Swift client speaking mosh's protocol.</h2>
-    <p class="sub">Offhook does not shell out to the <code>mosh</code> binary and does not
+    <p class="sub">Moshpit does not shell out to the <code>mosh</code> binary and does not
     bundle mosh's C++. It is a from-scratch client for the same wire protocol.</p>
 
     <div class="rows">
@@ -112,7 +112,7 @@
           </ul>
         </div>
         <img class="phone rowshot" src="/09-mosh.jpg" width="1320" height="2763" loading="lazy"
-             alt="A Mosh session in Offhook showing git log output, with the MOSH pill in the title bar">
+             alt="A Mosh session in Moshpit showing git log output, with the MOSH pill in the title bar">
       </div>
     </div>
 
@@ -135,13 +135,13 @@
   <section class="band">
     <p class="eyebrow">Setup</p>
     <h2>Installing mosh-server</h2>
-    <p class="sub">Offhook probes the host before it spends a round trip. A missing
+    <p class="sub">Moshpit probes the host before it spends a round trip. A missing
     <code>mosh-server</code> never produces a raw <code>command not found</code> — it
     degrades instead.</p>
 
     <div class="doc">
       <h3 id="s6">If it isn't there, you still get a terminal</h3>
-      <p class="txt">Offhook reuses the SSH session it already authenticated, connects you
+      <p class="txt">Moshpit reuses the SSH session it already authenticated, connects you
       as a plain shell, and raises a dismissible banner:</p>
 
       <pre><u>⚠</u>  mosh-server not found — connected over SSH instead.
@@ -168,7 +168,7 @@ brew install mosh                   <i># macOS</i></pre>
       <p class="txt">Three actions, no fourth. <b>Run in terminal</b> pastes the command
       into the visible shell and presses return, so the sudo prompt and all the output are
       yours to watch. <b>Copy command</b> hands it over. <b>Re-check</b> re-runs the probe.
-      Offhook never installs anything silently. If the connection also uses tmux, it offers
+      Moshpit never installs anything silently. If the connection also uses tmux, it offers
       <code>tmux mosh</code> in one command. If the probe found no package manager at all
       there is no command to offer, so the sheet says so and leaves you with generic
       guidance and the same <b>Re-check</b> button.</p>
@@ -180,7 +180,7 @@ brew install mosh                   <i># macOS</i></pre>
       It does not source <code>.zprofile</code> or <code>.bash_profile</code>, so anything
       <code>brew shellenv</code> added to your PATH is invisible over that channel — the
       exact binary that works fine when you log in by hand probes as missing.</p>
-      <p class="txt">Offhook prepends the same directories to both the probe and the
+      <p class="txt">Moshpit prepends the same directories to both the probe and the
       launch:</p>
 
       <pre>/opt/homebrew/bin   /opt/homebrew/sbin   /usr/local/bin   /usr/local/sbin   $HOME/.local/bin</pre>
@@ -189,7 +189,7 @@ brew install mosh                   <i># macOS</i></pre>
       form's <b>mosh-server path</b> field — under ROAMING · MOSH, not the Settings row
       called Server binary, which the connect path never reads (see
       <a href="#settings" style="color:var(--teal)">the settings section</a>). An explicit
-      path means you have vouched for it: Offhook uses it verbatim, adds no PATH prefix, and
+      path means you have vouched for it: Moshpit uses it verbatim, adds no PATH prefix, and
       skips the missing-binary check entirely for that connection.</p>
     </div>
   </section>
@@ -219,7 +219,7 @@ brew install mosh                   <i># macOS</i></pre>
     </div>
 
     <div class="doc">
-      <h3 id="s9">The exact command Offhook runs</h3>
+      <h3 id="s9">The exact command Moshpit runs</h3>
       <pre>PATH="$PATH:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:$HOME/.local/bin" \
   <b>mosh-server new -s -c 256 -p 60000:61000 -l LANG=en_US.UTF-8</b></pre>
       <p class="txt"><code>new -s</code> binds the UDP socket to the server-side IP of the
@@ -227,10 +227,10 @@ brew install mosh                   <i># macOS</i></pre>
       <code>-c 256</code> asks for 256 colours. The server prints one line and forks into
       the background:</p>
       <pre>MOSH CONNECT <b>60001</b> <i>&lt;22 base64 chars = a 16-byte AES-128 key&gt;</i></pre>
-      <p class="txt">Offhook reads that line, <b>closes the SSH connection</b>, and the
+      <p class="txt">Moshpit reads that line, <b>closes the SSH connection</b>, and the
       rendering after it is all UDP. That is why blocking SSH after connect does not kill
       the picture on a mosh session — and why blocking UDP does. One caveat: if the
-      connection uses tmux or herdr, Offhook opens a <i>second</i> SSH connection for the
+      connection uses tmux or herdr, Moshpit opens a <i>second</i> SSH connection for the
       control plane, and that one does need TCP for as long as the session lives.</p>
 
       <h3 id="s10">A bad range degrades rather than erroring</h3>
@@ -268,7 +268,7 @@ brew install mosh                   <i># macOS</i></pre>
           <ul>
             <li>Turning <b>Mosh by default</b> off makes new hosts plain SSH; existing
             connections keep whatever they were saved with</li>
-            <li>The connection's own <code>mosh-server path</code> is the only path Offhook
+            <li>The connection's own <code>mosh-server path</code> is the only path Moshpit
             actually runs. Leave it empty and it runs bare <code>mosh-server</code></li>
             <li>The port range shown in the connection form mirrors Settings and is
             read-only there — it is copied into the connection when you save the form, so
@@ -277,7 +277,7 @@ brew install mosh                   <i># macOS</i></pre>
           </ul>
         </div>
         <img class="phone rowshot" src="/13-mosh-settings.jpg" width="1320" height="2829" loading="lazy"
-             alt="Offhook Settings showing the Mosh and Roaming group: Mosh by default, Predictive Echo, Server binary and UDP port range">
+             alt="Moshpit Settings showing the Mosh and Roaming group: Mosh by default, Predictive Echo, Server binary and UDP port range">
       </div>
     </div>
 
@@ -302,7 +302,7 @@ brew install mosh                   <i># macOS</i></pre>
                 <td class="no">Per-host protocol. Also switchable live from the transport pill</td></tr>
             <tr><td class="cap-col"><code>mosh-server path</code></td><td class="no">Connection form</td>
                 <td class="us">Empty</td>
-                <td class="no">The path Offhook actually launches. Empty means bare <code>mosh-server</code> on PATH — more portable than an absolute path</td></tr>
+                <td class="no">The path Moshpit actually launches. Empty means bare <code>mosh-server</code> on PATH — more portable than an absolute path</td></tr>
             <tr><td class="cap-col">Predictive Echo · Predict Mode</td><td class="no">Both</td>
                 <td class="us">Adaptive</td>
                 <td class="no">Stored. Not acted on — see below</td></tr>
@@ -327,7 +327,7 @@ brew install mosh                   <i># macOS</i></pre>
 
       <h3 id="s13">Predictive echo is not implemented</h3>
       <p class="txt">The picker is real, the choice persists, and in the current build it
-      changes nothing. There is no local prediction engine in the transport: Offhook renders
+      changes nothing. There is no local prediction engine in the transport: Moshpit renders
       only bytes the server sent. The protocol's echo-acknowledgement field is skipped
       unread, the mode never reaches the UDP transport, and nothing about it appears on the
       remote command line. <b>Trail on predict</b> is in the same position — it drives a
@@ -337,7 +337,7 @@ brew install mosh                   <i># macOS</i></pre>
       shipping feature. It isn't, and that copy is wrong. On a high-latency link you see
       your keystrokes when the server echoes them, exactly as you would over SSH.</p>
       <p class="txt"><b>Roam on Cellular</b> is stored and never read either. Roaming is not
-      opt-in: it is driven by the system telling Offhook a better network path exists, and it
+      opt-in: it is driven by the system telling Moshpit a better network path exists, and it
       happens whether that toggle is on or off. We would rather write this down than have you
       file a bug about it.</p>
     </div>
@@ -373,25 +373,25 @@ brew install mosh                   <i># macOS</i></pre>
         <ul>
           <li><b>tmux</b> — the plain attach TUI inside the mosh shell, driven by Ctrl-b,
           roaming along with mosh</li>
-          <li><b>herdr</b> — herdr's own TUI. Offhook is the renderer</li>
+          <li><b>herdr</b> — herdr's own TUI. Moshpit is the renderer</li>
           <li><b>A second, lightweight SSH connection</b> feeds the native sheets:
           rendering over UDP, control over TCP</li>
         </ul>
       </div>
     </div>
 
-    <p class="muxnote">Offhook tells you this before you connect, not after. The connection
+    <p class="muxnote">Moshpit tells you this before you connect, not after. The connection
     form's footer ends with it in one line: <i>"With Mosh, herdr runs its own terminal UI;
     native rendering needs SSH."</i> One thing to carry over from that TUI: herdr's prefix
     is also Ctrl-b, but the bindings under it are not tmux's — <b>Ctrl-b q lists panes in
-    tmux and detaches in herdr</b>. Offhook's own sheets print each multiplexer's real keys;
+    tmux and detaches in herdr</b>. Moshpit's own sheets print each multiplexer's real keys;
     your muscle memory does not get that check.</p>
 
     <div class="doc">
       <h3 id="s16">What the dual transport means in practice</h3>
       <ul class="list">
         <li><b>mosh + tmux is two connections at once.</b> If SSH is blocked but UDP works,
-        the control sidecar cannot come up — Offhook falls back to typing
+        the control sidecar cannot come up — Moshpit falls back to typing
         <code>tmux attach</code> into the mosh shell. You get tmux; you do not get the
         native sheets.</li>
         <li><b>Both control planes ride SSH, which iOS kills in the background.</b> On resume
@@ -408,7 +408,7 @@ brew install mosh                   <i># macOS</i></pre>
         <li><b>The mosh + tmux bootstrap can take up to about 15 seconds</b> — a second SSH
         handshake, then polling — and the attach loop waits up to 6 seconds for the control
         plane to land on a session.</li>
-        <li><b>Offhook never creates a tmux session for you.</b> If the sidecar is alive but
+        <li><b>Moshpit never creates a tmux session for you.</b> If the sidecar is alive but
         your tmux server has no sessions, it leaves the mosh shell alone and waits for you to
         create the first one.</li>
       </ul>
@@ -427,7 +427,7 @@ brew install mosh                   <i># macOS</i></pre>
     dropping the inbound.</p>
 
     <div class="doc">
-      <h3 id="s17">Offhook notices, on purpose</h3>
+      <h3 id="s17">Moshpit notices, on purpose</h3>
       <p class="txt">Once the connection is ready and flushing, a watchdog arms with an
       <b>8-second deadline</b>. It is deliberately generous: the first reply arrives one
       round trip after the first flush, so even a link with multi-second latency answers well
@@ -472,7 +472,7 @@ brew install mosh                   <i># macOS</i></pre>
         climbing while <em>applied</em> never moves means the client is stuck re-diffing.</p>
         <p><b class="amber">"No datagrams yet."</b>
         This is the tell. Nothing has arrived at all — that is the dead return path, not a
-        rendering bug. Stop debugging Offhook and start debugging the network.</p>
+        rendering bug. Stop debugging Moshpit and start debugging the network.</p>
       </div>
 
       <p class="txt">That overlay exists because the failure needs real packet loss, real
@@ -486,12 +486,12 @@ brew install mosh                   <i># macOS</i></pre>
         answer, not the app.</li>
         <li><b>Turn the phone's VPN off</b> and reconnect. Split-tunnel VPN profiles are the
         single most common cause.</li>
-        <li><b>LAN host?</b> Check Settings → Offhook → Local Network on the phone. Denied,
+        <li><b>LAN host?</b> Check Settings → Moshpit → Local Network on the phone. Denied,
         iOS drops UDP to 192.168.x.x and 10.x.x.x on the floor and tells nobody.</li>
         <li><b>Check the cloud firewall or security group</b> — is the UDP range open
-        inbound, and is it the <i>same</i> range Offhook is configured for?</li>
+        inbound, and is it the <i>same</i> range Moshpit is configured for?</li>
         <li><b>Run <code>mosh</code> from a laptop on the same network.</b> If that
-        black-screens too, it is not Offhook.</li>
+        black-screens too, it is not Moshpit.</li>
       </ul>
     </div>
   </section>
@@ -505,14 +505,14 @@ brew install mosh                   <i># macOS</i></pre>
 
     <div class="doc">
       <div class="wire">
-        <p>Offhook's keepalive runs on a 12-second timer and <b>only in the foreground</b> —
-        iOS suspends timers in the background. Away for more than 20 seconds, Offhook forces
+        <p>Moshpit's keepalive runs on a 12-second timer and <b>only in the foreground</b> —
+        iOS suspends timers in the background. Away for more than 20 seconds, Moshpit forces
         a fresh reconnect on return rather than trusting a liveness probe that can
         false-positive on a half-open channel. Mosh is the exception on that return leg and
         takes its own UDP resume path, but the tmux or herdr control plane rides SSH, so it
         gets rebuilt.</p>
         <p>There is no push server — that is the trade for having nothing in the middle.
-        Notifications are generated on-device from the live session. They fire while Offhook
+        Notifications are generated on-device from the live session. They fire while Moshpit
         is in the foreground or recently backgrounded; <b>a fully suspended app won't
         poll</b>, so agent state stops updating until you come back, and catches up then.</p>
         <p>Backgrounding also drops every cached decrypted secret, so the next resume goes
@@ -531,7 +531,7 @@ brew install mosh                   <i># macOS</i></pre>
     <div class="faq">
       <details>
         <summary>Do I need mosh at all?</summary>
-        <p>No. Offhook is a normal SSH client without it. Turn <b>Mosh by default</b> off in
+        <p>No. Moshpit is a normal SSH client without it. Turn <b>Mosh by default</b> off in
         Settings, or leave <b>Use Mosh</b> off on a given connection. Everything except
         roaming behaves identically, and native rendering of tmux and herdr only happens
         over SSH — so on a stable network SSH is the better trade.</p>
@@ -539,7 +539,7 @@ brew install mosh                   <i># macOS</i></pre>
       <details>
         <summary>Does mosh replace SSH?</summary>
         <p>No. Mosh cannot bootstrap without a successful SSH login to the same host: SSH is
-        what starts <code>mosh-server</code> and carries the session key back. Offhook then
+        what starts <code>mosh-server</code> and carries the session key back. Moshpit then
         closes the SSH connection and runs on UDP. Keep TCP 22 (or your SSH port)
         reachable.</p>
       </details>
@@ -570,8 +570,8 @@ brew install mosh                   <i># macOS</i></pre>
         field.</p>
         <p>If you want herdr rendered natively, connect over SSH instead. One thing to know
         before you do: herdr's direct attach is exclusive per pane, so a second client on
-        the same pane evicts the first. Two Offhooks pointed at one pane will take it from
-        each other until one of them backs off, which Offhook does after three evictions in
+        the same pane evicts the first. Two Moshpits pointed at one pane will take it from
+        each other until one of them backs off, which Moshpit does after three evictions in
         30 seconds, showing <i>"Another client is using this pane — retrying shortly."</i>
         herdr's own TUI does not hold the attach, so a terminal running plain
         <code>herdr</code> on your laptop is not a competitor.</p>
@@ -593,7 +593,7 @@ brew install mosh                   <i># macOS</i></pre>
 <!--DOCTOC:BEGIN-->
 <aside class="dtoc">
   <p class="dtoclabel">On this page</p>
-  <nav><a href="#s1">It roams</a><a href="#s2">It survives sleep</a><a href="#s3">It tolerates loss</a><a href="#s4">Clean-room, checked against the RFC</a><a href="#s5">One deliberate difference from stock mosh</a><a href="#s6">If it isn&#x27;t there, you still get a terminal</a><a href="#s7">Install Assist</a><a href="#s8">The Homebrew trap</a><a href="#s9">The exact command Offhook runs</a><a href="#s10">A bad range degrades rather than erroring</a><a href="#s11">Four rows, in the order you&#x27;ll need them</a><a href="#s12">Settings → Server binary is not wired up</a><a href="#s13">Predictive echo is not implemented</a><a href="#s14">Over SSH</a><a href="#s15">Over mosh</a><a href="#s16">What the dual transport means in practice</a><a href="#s17">Offhook notices, on purpose</a><a href="#s18">Reading the counters</a><a href="#s19">Work through this before filing anything</a></nav>
+  <nav><a href="#s1">It roams</a><a href="#s2">It survives sleep</a><a href="#s3">It tolerates loss</a><a href="#s4">Clean-room, checked against the RFC</a><a href="#s5">One deliberate difference from stock mosh</a><a href="#s6">If it isn&#x27;t there, you still get a terminal</a><a href="#s7">Install Assist</a><a href="#s8">The Homebrew trap</a><a href="#s9">The exact command Moshpit runs</a><a href="#s10">A bad range degrades rather than erroring</a><a href="#s11">Four rows, in the order you&#x27;ll need them</a><a href="#s12">Settings → Server binary is not wired up</a><a href="#s13">Predictive echo is not implemented</a><a href="#s14">Over SSH</a><a href="#s15">Over mosh</a><a href="#s16">What the dual transport means in practice</a><a href="#s17">Moshpit notices, on purpose</a><a href="#s18">Reading the counters</a><a href="#s19">Work through this before filing anything</a></nav>
 </aside>
 <!--DOCTOC:END-->
 </div><!--/dwrap-->
@@ -737,7 +737,7 @@ brew install mosh                   <i># macOS</i></pre>
       <a href="./">Home</a><a href="/docs">Docs</a><a href="/guides">Guides</a>
       <a href="/compare">Compare</a><a href="/pricing">Pricing</a><a href="/privacy">Privacy</a><a href="/support">Support</a>
     </nav>
-    <p class="legal">© 2026 Offhook · SSH · Mosh · tmux · herdr · iPhone</p>
+    <p class="legal">© 2026 Moshpit · SSH · Mosh · tmux · herdr · iPhone</p>
   </div>
 </footer>
 <div class="dsearch" id="dsearch" hidden style="display:none">

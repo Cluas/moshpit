@@ -3,17 +3,17 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Answering agents from the lock screen — Offhook</title>
+<title>Answering agents from the lock screen — Moshpit</title>
 <meta name="description" content="How agent state reaches your lock screen and Dynamic Island, what Allow, Deny, Reply and Stop actually send into the pane, and the point where iOS stops all of it.">
 <link rel="icon" type="image/png" href="/icon-192.png">
 <link rel="alternate" hreflang="zh-Hans" href="/zh/docs/agents">
-<link rel="stylesheet" href="/offhook.css?v=15">
+<link rel="stylesheet" href="/moshpit.css?v=15">
 </head>
 <body>
 
 <div class="shell">
   <header class="top">
-    <a class="brand" href="./"><img src="/icon-192.png" alt="" width="192" height="192">Offhook</a>
+    <a class="brand" href="./"><img src="/icon-192.png" alt="" width="192" height="192">Moshpit</a>
     <div class="topright">
       <a class="lang" href="/docs">Docs</a>
       <a class="lang" href="/guides">Guides</a>
@@ -31,7 +31,7 @@
   <a class="dhome" href="/">← Back to the app</a>
   <p class="dtitle">Docs</p>
   <button class="dsearchbtn" type="button" data-docsearch><span>Search the docs…</span><kbd>⌘K</kbd></button>
-  <nav><p class="dsec">Start</p><a href="/docs/intro">What Offhook does</a><a href="/docs/setup">Set up a connection</a><a href="/docs/first-session">Run your first session</a><p class="dsec">Connections</p><a href="/docs/keys">SSH keys and host trust</a><a href="/docs/mosh">Mosh and roaming</a><a href="/guide/remote-access">Reach your machine from anywhere</a><p class="dsec">Multiplexers</p><a href="/docs/multiplexers">Choosing tmux or herdr</a><a href="/docs/tmux">Using tmux</a><a href="/docs/herdr">Using herdr</a><p class="dsec">Agents</p><a href="/docs/agents" class="on" aria-current="page">Agent status and the lock screen</a><a href="/docs/worktrees">Isolated tasks with git worktrees</a><a href="/guide/claude-code">Run Claude Code from your iPhone</a><p class="dsec">Input</p><a href="/docs/keyboard">Keyboard and shortcuts</a><a href="/docs/scrolling">Scrolling and scrollback</a><a href="/docs/clipboard">Clipboard and paste</a><a href="/docs/ime">CJK and IME input</a><p class="dsec">Appearance</p><a href="/docs/appearance">Themes, fonts and icons</a><p class="dsec">Help</p><a href="/docs/troubleshooting">Troubleshooting</a><a href="/compare">How Offhook compares</a></nav>
+  <nav><p class="dsec">Start</p><a href="/docs/intro">What Moshpit does</a><a href="/docs/setup">Set up a connection</a><a href="/docs/first-session">Run your first session</a><p class="dsec">Connections</p><a href="/docs/keys">SSH keys and host trust</a><a href="/docs/mosh">Mosh and roaming</a><a href="/guide/remote-access">Reach your machine from anywhere</a><p class="dsec">Multiplexers</p><a href="/docs/multiplexers">Choosing tmux or herdr</a><a href="/docs/tmux">Using tmux</a><a href="/docs/herdr">Using herdr</a><p class="dsec">Agents</p><a href="/docs/agents" class="on" aria-current="page">Agent status and the lock screen</a><a href="/docs/worktrees">Isolated tasks with git worktrees</a><a href="/guide/claude-code">Run Claude Code from your iPhone</a><p class="dsec">Input</p><a href="/docs/keyboard">Keyboard and shortcuts</a><a href="/docs/scrolling">Scrolling and scrollback</a><a href="/docs/clipboard">Clipboard and paste</a><a href="/docs/ime">CJK and IME input</a><p class="dsec">Appearance</p><a href="/docs/appearance">Themes, fonts and icons</a><p class="dsec">Help</p><a href="/docs/troubleshooting">Troubleshooting</a><a href="/compare">How Moshpit compares</a></nav>
 </aside>
 <!--DOCSHELL:END-->
 <div class="dbody">
@@ -47,23 +47,23 @@
       <div class="step3">
         <h3 id="s1">The agent reports</h3>
         <p>On <b>herdr</b>, <code>agent_status</code> is a field on every pane — nothing to
-        install. On <b>tmux</b>, hooks you install stamp four <code>@offhook_*</code> options
+        install. On <b>tmux</b>, hooks you install stamp four <code>@moshpit_*</code> options
         onto the pane the agent runs in.</p>
       </div>
       <div class="step3">
-        <h3 id="s2">Offhook reads it</h3>
-        <p>While Offhook is running it sweeps every tracked session every <code>2s</code>. On
+        <h3 id="s2">Moshpit reads it</h3>
+        <p>While Moshpit is running it sweeps every tracked session every <code>2s</code>. On
         herdr the control poll is 2s while things move, easing to 8s once the tree goes quiet.</p>
       </div>
       <div class="step3">
         <h3 id="s3">Your tap types back</h3>
-        <p>The lock-screen buttons run inside Offhook, not in the widget. Each sends raw bytes
+        <p>The lock-screen buttons run inside Moshpit, not in the widget. Each sends raw bytes
         into that pane — Enter, Esc, Ctrl-C, or your text. Nothing else.</p>
       </div>
     </div>
 
     <div class="wire" style="margin-top:2.2rem">
-      <p><b>There is no Offhook server in this picture.</b> Every alert on your phone is a local
+      <p><b>There is no Moshpit server in this picture.</b> Every alert on your phone is a local
       notification the running app generated from the live session. That is the trade for having
       nothing in the middle, and it has a cost you should know before you rely on it.</p>
       <p>Read <a href="#limits" style="color:var(--teal)">where this stops working</a> before
@@ -95,7 +95,7 @@
           <li>Anything else, unknown included, produces no state at all — nothing lights up
           without cause</li>
           <li>Settings hides the hook installer here, because there is nothing to install</li>
-          <li>No transition timestamp, so the timer starts when Offhook first sees the change,
+          <li>No transition timestamp, so the timer starts when Moshpit first sees the change,
           not when it happened</li>
         </ul>
       </div>
@@ -116,14 +116,14 @@
 
     <h3 id="s6">What the tmux installer writes</h3>
     <p class="txt">One shared script, plus a registration in the agent's own config file. Your
-    config is copied to a timestamped <code>.offhook.bak</code> before anything changes.</p>
+    config is copied to a timestamped <code>.moshpit.bak</code> before anything changes.</p>
 
 <pre><i># written once, shared by every agent</i>
-~/.offhook/offhook-stamp.sh
+~/.moshpit/moshpit-stamp.sh
 
 <i># registered in the agent's own config (Claude Code shown)</i>
 ~/.claude/settings.json
-~/.claude/settings.json.offhook.bak.1754630400   <i>&lt;- your file, first</i>
+~/.claude/settings.json.moshpit.bak.1754630400   <i>&lt;- your file, first</i>
 
 <i># hook event → the state it stamps</i>
 UserPromptSubmit   →  <b>working</b>
@@ -131,13 +131,13 @@ PreToolUse         →  <b>working</b>
 Notification       →  <u>attention</u>      <i>(Codex: PermissionRequest)</i>
 Stop               →  done</pre>
 
-    <p class="txt">Each fire stamps four tmux pane options. Offhook reads them all back with a
+    <p class="txt">Each fire stamps four tmux pane options. Moshpit reads them all back with a
     single <code>list-panes -a</code> per poll — one round trip, however many panes you have.</p>
 
-<pre>@offhook_state   <u>attention</u>
-@offhook_agent   claude
-@offhook_since   1754630400        <i>(unix seconds)</i>
-@offhook_title   Bash: npm install --save-dev vitest    <i>(80 chars max)</i></pre>
+<pre>@moshpit_state   <u>attention</u>
+@moshpit_agent   claude
+@moshpit_since   1754630400        <i>(unix seconds)</i>
+@moshpit_title   Bash: npm install --save-dev vitest    <i>(80 chars max)</i></pre>
 
     <p class="txt">The title is the only part that can fail on its own. It is derived from the
     hook's stdin with <code>jq</code>, so on a host without <code>jq</code> you still get state,
@@ -146,7 +146,7 @@ Stop               →  done</pre>
     event</b>, so on Gemini that hook group is inert and attention falls back to the bell.</p>
 
     <h3 id="s7">No hooks on tmux? Then it is a guess, and it says so</h3>
-    <p class="txt">With nothing installed, Offhook watches pane output and the terminal bell. It
+    <p class="txt">With nothing installed, Moshpit watches pane output and the terminal bell. It
     is deliberately conservative: a row appears only for a known agent command — Claude Code,
     Codex, Gemini, Qwen, Qoder, Factory, CodeBuddy, aider, goose or opencode — and only after two
     seconds of sustained output. A build, a tail or a running server never gets promoted. Four
@@ -172,10 +172,10 @@ Stop               →  done</pre>
     <div class="lockrow">
       <img class="phone lift lockshot" src="/20-lockscreen.jpg" width="440" height="956"
            loading="lazy"
-           alt="iPhone lock screen showing an Offhook Live Activity with Claude Code needing you above Allow and Deny buttons, and codex working below it">
+           alt="iPhone lock screen showing an Moshpit Live Activity with Claude Code needing you above Allow and Deny buttons, and codex working below it">
       <div class="notes">
         <p><b class="dimb">The header counts</b>
-        <em>Offhook</em> on the left, and on the right a summary built from live counts —
+        <em>Moshpit</em> on the left, and on the right a summary built from live counts —
         <em>1 needs you · 1 working</em>. Finished agents are counted there too.</p>
         <p><b class="amber">The urgent one gets the buttons</b>
         Dot, command, <em>host · session · window</em>, what it is asking, and the controls.
@@ -190,7 +190,7 @@ Stop               →  done</pre>
     <p class="txt" style="margin-top:2.6rem">The same card as a text diagram, so the shape is
     unambiguous. The second agent has no detail line and no buttons, by design:</p>
 
-<pre>Offhook                              <u>1 needs you</u> · <b>1 working</b>
+<pre>Moshpit                              <u>1 needs you</u> · <b>1 working</b>
 
 <u>●</u>  claude                                       <u>04:11</u>
    <i>work · main · 2:rednote</i>
@@ -302,26 +302,26 @@ Stop               →  done</pre>
 
     <p class="txt">Allow and Deny are tuned for Claude Code's permission prompt, where the
     affirmative option is default-highlighted and Esc cancels — which also fits the great
-    majority of terminal yes/no menus. Say it plainly: <b>they are blind keystrokes.</b> Offhook
+    majority of terminal yes/no menus. Say it plainly: <b>they are blind keystrokes.</b> Moshpit
     does not read the prompt to check which option is highlighted. <code>yes</code> and
     <code>continue</code> type into the pane, not into a chat. An empty Reply still submits a
     lone Enter.</p>
 
     <h3 id="s10">Two guards, because a silent failure is the worst outcome</h3>
     <ul class="list">
-      <li><b>Prompt already gone.</b> If Offhook knows that pane has already left needs-you, an
+      <li><b>Prompt already gone.</b> If Moshpit knows that pane has already left needs-you, an
       Allow or Deny is <b>not sent</b>, and a notification says so. Answering a prompt that no
       longer exists could approve a newer, more dangerous one. If the app was relaunched and has
       no record, the keystroke does go through — no record never blocks.</li>
-      <li><b>Not delivered.</b> If the transport is dead, Offhook force-resumes and retries. If
+      <li><b>Not delivered.</b> If the transport is dead, Moshpit force-resumes and retries. If
       it still cannot reach the pane it tells you: <em>"Your tap didn't reach the agent — open
-      Offhook and answer there."</em> A lock-screen Allow that silently fails is the one outcome
+      Moshpit and answer there."</em> A lock-screen Allow that silently fails is the one outcome
       worth interrupting you for, because otherwise you walk away believing you approved.</li>
     </ul>
 
     <p class="txt">On herdr there is a third step you never see. tmux can address a pane directly
     with <code>send-keys -t</code>; herdr cannot — it types into whatever pane is focused. So
-    Offhook focuses the target first, waits for the frame channel to actually flip, and only then
+    Moshpit focuses the target first, waits for the frame channel to actually flip, and only then
     writes. If it cannot get focus within five seconds it reports failure rather than guessing.
     This exists because in review, with two agents running, a lock-screen Allow could land in the
     other agent's pane.</p>
@@ -383,7 +383,7 @@ Stop               →  done</pre>
 
     <p class="txt">Two more rows live in the same group: <b>How notifications work</b>, which
     says the same thing this page does, and <b>Install agent hooks</b>, which appears only on
-    tmux connections. If you turn <b>both</b> Notifications and Live Activity off, Offhook stops
+    tmux connections. If you turn <b>both</b> Notifications and Live Activity off, Moshpit stops
     tracking the connection entirely — nothing is watched and nothing is polled.</p>
 
     <h3 id="s13">The Agent Status widget</h3>
@@ -393,7 +393,7 @@ Stop               →  done</pre>
     on iOS's own refresh schedule. Small and medium prefer the detail line over the location,
     because <em>Bash: npm install</em> tells you more than <em>work · 2:rednote</em>. Medium
     shows three agents. Once the snapshot passes three minutes old, every dot dims to grey and
-    the summary line becomes <em>paused — open Offhook</em>.</p>
+    the summary line becomes <em>paused — open Moshpit</em>.</p>
   </section>
 </div>
 
@@ -402,23 +402,23 @@ Stop               →  done</pre>
   <section class="band doc" id="limits">
     <p class="eyebrow">Read this part</p>
     <h2>Where this stops working</h2>
-    <p class="sub">Offhook has no push server. Most of what follows is downstream of that one
+    <p class="sub">Moshpit has no push server. Most of what follows is downstream of that one
     decision, and none of it is fixable in the app.</p>
 
     <div class="grid">
       <div class="cell"><span class="ic">Background</span>
         <h4>Suspended means frozen</h4>
-        <p>When iOS suspends Offhook, the 2-second sweep stops. Verified on device: with the app
+        <p>When iOS suspends Moshpit, the 2-second sweep stops. Verified on device: with the app
         backgrounded, flipping an agent from blocked to working did not move the island until we
         returned and one poll ran.</p></div>
       <div class="cell"><span class="ic">Honesty</span>
         <h4>It admits it instead of lying</h4>
         <p>The Live Activity carries a 120-second staleness horizon. Past it, iOS marks the card
-        stale and it renders <em>paused — open Offhook to refresh</em> rather than a frozen
+        stale and it renders <em>paused — open Moshpit to refresh</em> rather than a frozen
         "working" that would be untrue.</p></div>
       <div class="cell"><span class="ic">Focus</span>
         <h4>It will not break through Focus</h4>
-        <p>The needs-you alert asks to be time-sensitive, but Offhook does not ship the
+        <p>The needs-you alert asks to be time-sensitive, but Moshpit does not ship the
         <code>time-sensitive</code> entitlement. iOS delivers it as an ordinary alert, so Do Not
         Disturb silences it like anything else.</p></div>
       <div class="cell"><span class="ic">One at a time</span>
@@ -429,7 +429,7 @@ Stop               →  done</pre>
       <div class="cell"><span class="ic">Keystrokes</span>
         <h4>Allow does not read the screen</h4>
         <p>Enter and Esc, sent blind. If a TUI you use puts the destructive option under the
-        highlight, Allow presses that. The stale-prompt guard blocks a tap only when Offhook
+        highlight, Allow presses that. The stale-prompt guard blocks a tap only when Moshpit
         <em>knows</em> the prompt is gone.</p></div>
       <div class="cell"><span class="ic">Mosh</span>
         <h4>Mosh + tmux has no agent status</h4>
@@ -443,12 +443,12 @@ Stop               →  done</pre>
         needs tmux or herdr; that is the whole reason the picker exists.</p></div>
       <div class="cell"><span class="ic">herdr</span>
         <h4>Up to 8 seconds behind</h4>
-        <p>herdr's CLI exposes no event subscription a phone can reach, so Offhook polls: 2
+        <p>herdr's CLI exposes no event subscription a phone can reach, so Moshpit polls: 2
         seconds while things move, 8 once the tree settles. Changes you make on your laptop can
         lag that long. Actions taken in the app refresh immediately.</p></div>
       <div class="cell"><span class="ic">herdr</span>
         <h4>Direct attach is exclusive</h4>
-        <p>One client owns a pane at a time. Two Offhooks on the same pane will fight, each
+        <p>One client owns a pane at a time. Two Moshpits on the same pane will fight, each
         reclaiming it within about two seconds. That is inherent to herdr's direct attach, not
         something the app can smooth over — it backs off and tells you when it happens.</p></div>
     </div>
@@ -457,7 +457,7 @@ Stop               →  done</pre>
     the current Homebrew stable — reports no pane command or agent name, so the breadcrumb falls
     back to <code>pane N</code> and idle agents never grow a row there. <b>herdr only sees its
     own panes</b>: an agent you started in a plain Terminal on the host is invisible to it. After
-    an app relaunch, Offhook has no record of when a state began, so rows show no duration rather
+    an app relaunch, Moshpit has no record of when a state began, so rows show no duration rather
     than inventing one. And the button titles themselves — <em>Allow</em>, <em>Deny</em>,
     <em>Reply</em>, <em>Stop</em> — render in English today regardless of your language.</p>
   </section>
@@ -473,12 +473,12 @@ Stop               →  done</pre>
         <summary>Do I have to install something on my server?</summary>
         <p>On herdr, no — agent state is a protocol field. On tmux, yes if you want precise state
         and the "what is it asking" line: <b>Settings → Install agent hooks</b> shows you the
-        exact command, backs up your config, and runs only when you tap Run. Without it, Offhook
+        exact command, backs up your config, and runs only when you tap Run. Without it, Moshpit
         falls back to watching output and the terminal bell, which is a guess and is described as
         one.</p>
       </details>
       <details>
-        <summary>Will it wake me up when Offhook is closed?</summary>
+        <summary>Will it wake me up when Moshpit is closed?</summary>
         <p>No. Every alert comes from the running app reading the live session, and iOS suspends
         that. State stops updating until you come back. There is no push server to fix this
         with — the same reason there is no account and nothing in the middle.</p>
@@ -491,7 +491,7 @@ Stop               →  done</pre>
       </details>
       <details>
         <summary>What if I tap Allow and the prompt already moved on?</summary>
-        <p>If Offhook knows the pane left needs-you, nothing is sent and it tells you the prompt
+        <p>If Moshpit knows the pane left needs-you, nothing is sent and it tells you the prompt
         is gone. If the app was relaunched and has no record, the Enter does go through — which
         is why the notification is withdrawn from your lock screen as soon as the prompt
         clears.</p>
@@ -512,7 +512,7 @@ Stop               →  done</pre>
 <!--DOCTOC:BEGIN-->
 <aside class="dtoc">
   <p class="dtoclabel">On this page</p>
-  <nav><a href="#s1">The agent reports</a><a href="#s2">Offhook reads it</a><a href="#s3">Your tap types back</a><a href="#s4">herdr</a><a href="#s5">tmux</a><a href="#s6">What the tmux installer writes</a><a href="#s7">No hooks on tmux? Then it is a guess, and it says so</a><a href="#s8">In the Dynamic Island</a><a href="#s9">The four colours never change</a><a href="#s10">Two guards, because a silent failure is the worst outcome</a><a href="#s11">What gets posted</a><a href="#s12">Settings → NOTIFICATIONS</a><a href="#s13">The Agent Status widget</a></nav>
+  <nav><a href="#s1">The agent reports</a><a href="#s2">Moshpit reads it</a><a href="#s3">Your tap types back</a><a href="#s4">herdr</a><a href="#s5">tmux</a><a href="#s6">What the tmux installer writes</a><a href="#s7">No hooks on tmux? Then it is a guess, and it says so</a><a href="#s8">In the Dynamic Island</a><a href="#s9">The four colours never change</a><a href="#s10">Two guards, because a silent failure is the worst outcome</a><a href="#s11">What gets posted</a><a href="#s12">Settings → NOTIFICATIONS</a><a href="#s13">The Agent Status widget</a></nav>
 </aside>
 <!--DOCTOC:END-->
 </div><!--/dwrap-->
@@ -656,7 +656,7 @@ Stop               →  done</pre>
       <a href="./">Home</a><a href="/docs">Docs</a><a href="/guides">Guides</a>
       <a href="/compare">Compare</a><a href="/pricing">Pricing</a><a href="/privacy">Privacy</a><a href="/support">Support</a>
     </nav>
-    <p class="legal">© 2026 Offhook · SSH · Mosh · tmux · herdr · iPhone</p>
+    <p class="legal">© 2026 Moshpit · SSH · Mosh · tmux · herdr · iPhone</p>
   </div>
 </footer>
 <div class="dsearch" id="dsearch" hidden style="display:none">

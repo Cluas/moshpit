@@ -3,17 +3,17 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Docs — Offhook</title>
-<meta name="description" content="Offhook documentation: connections and keys, Mosh, tmux, herdr, answering agents from the lock screen, keyboard and themes, and troubleshooting.">
+<title>Docs — Moshpit</title>
+<meta name="description" content="Moshpit documentation: connections and keys, Mosh, tmux, herdr, answering agents from the lock screen, keyboard and themes, and troubleshooting.">
 <link rel="icon" type="image/png" href="/icon-192.png">
-<link rel="alternate" hreflang="zh-Hans" href="https://offhook.cluas.eu.org/zh/docs">
-<link rel="stylesheet" href="/offhook.css?v=15">
+<link rel="alternate" hreflang="zh-Hans" href="https://moshpit.cluas.eu.org/zh/docs">
+<link rel="stylesheet" href="/moshpit.css?v=15">
 </head>
 <body>
 
 <div class="shell">
   <header class="top">
-    <a class="brand" href="./"><img src="/icon-192.png" alt="" width="192" height="192">Offhook</a>
+    <a class="brand" href="./"><img src="/icon-192.png" alt="" width="192" height="192">Moshpit</a>
     <div class="topright">
       <a class="lang" href="/docs">Docs</a>
       <a class="lang" href="/guides">Guides</a>
@@ -27,16 +27,16 @@
 <div class="shell">
   <section class="band doc" style="border-top:none">
     <p class="eyebrow">Docs</p>
-    <h2>Everything Offhook does, and where it stops.</h2>
-    <p class="sub">Offhook is an iPhone terminal for people who run AI coding agents on
+    <h2>Everything Moshpit does, and where it stops.</h2>
+    <p class="sub">Moshpit is an iPhone terminal for people who run AI coding agents on
     their own servers: SSH and Mosh, native tmux and herdr, and agent state that reaches
     your lock screen. It has no account and no server of its own — it talks to your hosts
     and nothing else. These pages assume you already have a machine you can SSH into.</p>
 <!--DOCSHUB:BEGIN-->
 <h3>Start</h3>
 <div class="grid">
-<div class="cell"><span class="ic">Start</span><h4><a href="/docs/intro">What Offhook does</a></h4><p>One paragraph, in case you landed here from a search: Offhook is a paid iPhone and iPad terminal for people who run AI coding agents on machines they own.</p></div>
-<div class="cell"><span class="ic">Start</span><h4><a href="/docs/setup">Set up a connection</a></h4><p>Everything between tapping ＋ and having a live shell: the fields, the key, the fingerprint prompt, the multiplexer choice, and what Offhook does when the host turns out not to have tmux, herdr or mosh-server.</p></div>
+<div class="cell"><span class="ic">Start</span><h4><a href="/docs/intro">What Moshpit does</a></h4><p>One paragraph, in case you landed here from a search: Moshpit is a paid iPhone and iPad terminal for people who run AI coding agents on machines they own.</p></div>
+<div class="cell"><span class="ic">Start</span><h4><a href="/docs/setup">Set up a connection</a></h4><p>Everything between tapping ＋ and having a live shell: the fields, the key, the fingerprint prompt, the multiplexer choice, and what Moshpit does when the host turns out not to have tmux, herdr or mosh-server.</p></div>
 <div class="cell"><span class="ic">Start</span><h4><a href="/docs/first-session">Run your first session</a></h4><p>You have added a host (if not, start at Set up a connection).</p></div>
 </div>
 <h3>Connections</h3>
@@ -47,8 +47,8 @@
 </div>
 <h3>Multiplexers</h3>
 <div class="grid">
-<div class="cell"><span class="ic">Multiplexers</span><h4><a href="/docs/multiplexers">Choosing tmux or herdr</a></h4><p>A multiplexer keeps your work alive when the connection drops, and gives Offhook something better to render than one long scroll.</p></div>
-<div class="cell"><span class="ic">Multiplexers</span><h4><a href="/docs/tmux">Using tmux</a></h4><p>Offhook attaches as a tmux control client and draws your sessions, windows and panes as native iOS views.</p></div>
+<div class="cell"><span class="ic">Multiplexers</span><h4><a href="/docs/multiplexers">Choosing tmux or herdr</a></h4><p>A multiplexer keeps your work alive when the connection drops, and gives Moshpit something better to render than one long scroll.</p></div>
+<div class="cell"><span class="ic">Multiplexers</span><h4><a href="/docs/tmux">Using tmux</a></h4><p>Moshpit attaches as a tmux control client and draws your sessions, windows and panes as native iOS views.</p></div>
 <div class="cell"><span class="ic">Multiplexers</span><h4><a href="/docs/herdr">Using herdr</a></h4><p>herdr is a terminal multiplexer written for CLI coding agents.</p></div>
 </div>
 <h3>Agents</h3>
@@ -59,7 +59,7 @@
 </div>
 <h3>Input</h3>
 <div class="grid">
-<div class="cell"><span class="ic">Input</span><h4><a href="/docs/keyboard">Keyboard and shortcuts</a></h4><p>The strip above the keyboard is the part of Offhook you touch most, and it is entirely yours to build.</p></div>
+<div class="cell"><span class="ic">Input</span><h4><a href="/docs/keyboard">Keyboard and shortcuts</a></h4><p>The strip above the keyboard is the part of Moshpit you touch most, and it is entirely yours to build.</p></div>
 <div class="cell"><span class="ic">Input</span><h4><a href="/docs/scrolling">Scrolling and scrollback</a></h4><p>A swipe up means two completely different things depending on what is running in the pane.</p></div>
 <div class="cell"><span class="ic">Input</span><h4><a href="/docs/clipboard">Clipboard and paste</a></h4><p>Pasting a multi-line block into a terminal used to be a way to execute the first three lines by accident.</p></div>
 <div class="cell"><span class="ic">Input</span><h4><a href="/docs/ime">CJK and IME input</a></h4><p>Terminal emulators on iOS are usually written by people typing ASCII.</p></div>
@@ -71,7 +71,7 @@
 <h3>Help</h3>
 <div class="grid">
 <div class="cell"><span class="ic">Help</span><h4><a href="/docs/troubleshooting">Troubleshooting</a></h4><p>Organised by what you see, not by what went wrong underneath.</p></div>
-<div class="cell"><span class="ic">Help</span><h4><a href="/compare">How Offhook compares</a></h4><p>iPhone terminals are a crowded shelf, and several of them are very good at things Offhook does not attempt.</p></div>
+<div class="cell"><span class="ic">Help</span><h4><a href="/compare">How Moshpit compares</a></h4><p>iPhone terminals are a crowded shelf, and several of them are very good at things Moshpit does not attempt.</p></div>
 </div>
 <!--DOCSHUB:END-->
   </section>
@@ -84,7 +84,7 @@
       <a href="./">Home</a><a href="/docs">Docs</a><a href="/guides">Guides</a>
       <a href="/compare">Compare</a><a href="/pricing">Pricing</a><a href="/privacy">Privacy</a><a href="/support">Support</a>
     </nav>
-    <p class="legal">© 2026 Offhook · SSH · Mosh · tmux · herdr · iPhone</p>
+    <p class="legal">© 2026 Moshpit · SSH · Mosh · tmux · herdr · iPhone</p>
   </div>
 </footer>
 

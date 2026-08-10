@@ -3,17 +3,17 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>SSH keys and host trust — Offhook</title>
+<title>SSH keys and host trust — Moshpit</title>
 <meta name="description" content="Generating or importing SSH keys on device, where they are stored, Face ID, and what the host fingerprint dialog is protecting you from.">
 <link rel="icon" type="image/png" href="/icon-192.png">
 <link rel="alternate" hreflang="zh-Hans" href="/zh/docs/keys">
-<link rel="stylesheet" href="/offhook.css?v=15">
+<link rel="stylesheet" href="/moshpit.css?v=15">
 </head>
 <body>
 
 <div class="shell">
   <header class="top">
-    <a class="brand" href="./"><img src="/icon-192.png" alt="" width="192" height="192">Offhook</a>
+    <a class="brand" href="./"><img src="/icon-192.png" alt="" width="192" height="192">Moshpit</a>
     <div class="topright">
       <a class="lang" href="/docs">Docs</a>
       <a class="lang" href="/guides">Guides</a>
@@ -30,7 +30,7 @@
   <a class="dhome" href="/">← Back to the app</a>
   <p class="dtitle">Docs</p>
   <button class="dsearchbtn" type="button" data-docsearch><span>Search the docs…</span><kbd>⌘K</kbd></button>
-  <nav><p class="dsec">Start</p><a href="/docs/intro">What Offhook does</a><a href="/docs/setup">Set up a connection</a><a href="/docs/first-session">Run your first session</a><p class="dsec">Connections</p><a href="/docs/keys" class="on" aria-current="page">SSH keys and host trust</a><a href="/docs/mosh">Mosh and roaming</a><a href="/guide/remote-access">Reach your machine from anywhere</a><p class="dsec">Multiplexers</p><a href="/docs/multiplexers">Choosing tmux or herdr</a><a href="/docs/tmux">Using tmux</a><a href="/docs/herdr">Using herdr</a><p class="dsec">Agents</p><a href="/docs/agents">Agent status and the lock screen</a><a href="/docs/worktrees">Isolated tasks with git worktrees</a><a href="/guide/claude-code">Run Claude Code from your iPhone</a><p class="dsec">Input</p><a href="/docs/keyboard">Keyboard and shortcuts</a><a href="/docs/scrolling">Scrolling and scrollback</a><a href="/docs/clipboard">Clipboard and paste</a><a href="/docs/ime">CJK and IME input</a><p class="dsec">Appearance</p><a href="/docs/appearance">Themes, fonts and icons</a><p class="dsec">Help</p><a href="/docs/troubleshooting">Troubleshooting</a><a href="/compare">How Offhook compares</a></nav>
+  <nav><p class="dsec">Start</p><a href="/docs/intro">What Moshpit does</a><a href="/docs/setup">Set up a connection</a><a href="/docs/first-session">Run your first session</a><p class="dsec">Connections</p><a href="/docs/keys" class="on" aria-current="page">SSH keys and host trust</a><a href="/docs/mosh">Mosh and roaming</a><a href="/guide/remote-access">Reach your machine from anywhere</a><p class="dsec">Multiplexers</p><a href="/docs/multiplexers">Choosing tmux or herdr</a><a href="/docs/tmux">Using tmux</a><a href="/docs/herdr">Using herdr</a><p class="dsec">Agents</p><a href="/docs/agents">Agent status and the lock screen</a><a href="/docs/worktrees">Isolated tasks with git worktrees</a><a href="/guide/claude-code">Run Claude Code from your iPhone</a><p class="dsec">Input</p><a href="/docs/keyboard">Keyboard and shortcuts</a><a href="/docs/scrolling">Scrolling and scrollback</a><a href="/docs/clipboard">Clipboard and paste</a><a href="/docs/ime">CJK and IME input</a><p class="dsec">Appearance</p><a href="/docs/appearance">Themes, fonts and icons</a><p class="dsec">Help</p><a href="/docs/troubleshooting">Troubleshooting</a><a href="/compare">How Moshpit compares</a></nav>
 </aside>
 <!--DOCSHELL:END-->
 <div class="dbody">
@@ -38,7 +38,7 @@
   <section class="band doc" style="border-top:none">
     <p class="eyebrow">Connections</p>
     <h2>Keys, and knowing which machine answered.</h2>
-    <p class="sub">Two different trust problems sit at either end of a connection: proving to the server that you are you, and proving to you that the server is the one you meant. Offhook handles both on device, and neither secret ever leaves it.</p>
+    <p class="sub">Two different trust problems sit at either end of a connection: proving to the server that you are you, and proving to you that the server is the one you meant. Moshpit handles both on device, and neither secret ever leaves it.</p>
     <h3 id="s1">Your key, on the phone</h3>
     <p class="txt">Under <b>Settings → SSH Keys</b> you can generate a key on the device or
     import one you already have. Generation happens locally; nothing is uploaded, because
@@ -60,7 +60,7 @@
     </ul>
 
     <h3 id="s3">The other direction: is that really your server?</h3>
-    <p class="txt">The first time Offhook connects to a host it shows a <b>New Host</b>
+    <p class="txt">The first time Moshpit connects to a host it shows a <b>New Host</b>
     sheet with the key fingerprint and a command to check it against the server itself:</p>
     <div class="wire"><p><code>ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub</code></p></div>
     <p class="txt">Run that on the machine (from a console you already trust) and compare.
@@ -69,7 +69,7 @@
     key is pinned for that host.</p>
 
     <h3 id="s4">When a key changes</h3>
-    <p class="txt">If a host later presents a different key, Offhook stops and says so
+    <p class="txt">If a host later presents a different key, Moshpit stops and says so
     rather than connecting. Usually that means the server was rebuilt or reinstalled and
     the fingerprint genuinely changed; occasionally it means something is wrong. Verify
     out of band before you accept it — an app that quietly accepts a changed host key has
@@ -229,7 +229,7 @@
       <a href="./">Home</a><a href="/docs">Docs</a><a href="/guides">Guides</a>
       <a href="/compare">Compare</a><a href="/pricing">Pricing</a><a href="/privacy">Privacy</a><a href="/support">Support</a>
     </nav>
-    <p class="legal">© 2026 Offhook · SSH · Mosh · tmux · herdr · iPhone</p>
+    <p class="legal">© 2026 Moshpit · SSH · Mosh · tmux · herdr · iPhone</p>
   </div>
 </footer>
 

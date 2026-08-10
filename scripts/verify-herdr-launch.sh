@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# Offhook — end-to-end check that a herdr connection boots herdr's TUI.
+# Moshpit — end-to-end check that a herdr connection boots herdr's TUI.
 #
-# Phase 0 of docs/design/herdr-multiplexer.md: Offhook probes for herdr,
+# Phase 0 of docs/design/herdr-multiplexer.md: Moshpit probes for herdr,
 # launches it in the remote shell, and renders its full-screen UI. This script
 # proves that against a real herdr server over real SSH (localhost), because
 # the unit tests can only prove the command STRING is right.
 #
 # Builds, installs on a simulator, seeds a 127.0.0.1 connection with
-# `-OFFHOOK_SEED_MUX herdr`, waits for the handshake, and screenshots the
+# `-MOSHPIT_SEED_MUX herdr`, waits for the handshake, and screenshots the
 # terminal. Expect herdr's UI (sidebar + pane), not a bare shell prompt.
 #
 # Prerequisites on the Mac:
@@ -22,7 +22,7 @@
 set -euo pipefail
 
 SIM_NAME="${MOSAIC_SIM:-iPhone 17 Pro}"
-BUNDLE_ID="com.cluas.offhook"
+BUNDLE_ID="com.cluas.moshpit"
 KEY_PATH="${MOSAIC_SSH_KEY:-$HOME/.ssh/id_ed25519}"
 SSH_HOST="${MOSAIC_SSH_HOST:-127.0.0.1}"
 SSH_PORT="${MOSAIC_SSH_PORT:-22}"
@@ -120,16 +120,16 @@ if [ "$STATE" != "Booted" ]; then
   sleep 10
 fi
 
-echo "▶ Building Offhook"
+echo "▶ Building Moshpit"
 DERIVED="$(mktemp -d)"
 xcodebuild \
-  -project "$REPO_ROOT/Offhook.xcodeproj" -scheme Offhook \
+  -project "$REPO_ROOT/Moshpit.xcodeproj" -scheme Moshpit \
   -configuration Debug -sdk iphonesimulator \
   -destination "platform=iOS Simulator,name=$SIM_NAME" \
   -derivedDataPath "$DERIVED" \
   CODE_SIGNING_ALLOWED=NO build > "$DERIVED/build.log" 2>&1 \
   || { echo "✘ build failed"; tail -30 "$DERIVED/build.log"; exit 1; }
-APP="$(find "$DERIVED/Build/Products" -name 'Offhook.app' -type d | head -1)"
+APP="$(find "$DERIVED/Build/Products" -name 'Moshpit.app' -type d | head -1)"
 
 echo "▶ Installing app on $SIM_UDID"
 xcrun simctl install "$SIM_UDID" "$APP"
@@ -139,13 +139,13 @@ xcrun simctl status_bar "$SIM_UDID" override \
 xcrun simctl terminate "$SIM_UDID" "$BUNDLE_ID" 2>/dev/null || true
 
 # MOSAIC_MOSH=1 runs the same check over mosh. Both transports render herdr's
-# TUI identically in Phase 0 (Offhook is only the renderer), so the one thing
+# TUI identically in Phase 0 (Moshpit is only the renderer), so the one thing
 # this actually distinguishes is whether the launch line reaches the shell
 # through the mosh keystroke channel rather than the SSH PTY.
 TRANSPORT_ARGS=()
 LABEL="ssh"
 if [ "${MOSAIC_MOSH:-0}" = "1" ]; then
-  TRANSPORT_ARGS=(-OFFHOOK_SEED_MOSH 1)
+  TRANSPORT_ARGS=(-MOSHPIT_SEED_MOSH 1)
   LABEL="mosh"
 fi
 
@@ -161,12 +161,12 @@ KEY_B64="$(base64 -i "$KEY_PATH" | tr -d '\n')"
 # unaffected — it rides `liveActivityEnabled`, and the assertions here read the
 # control plane, not the notification centre.
 xcrun simctl launch "$SIM_UDID" "$BUNDLE_ID" \
-  -OFFHOOK_SEED_USER "$(whoami)" \
-  -OFFHOOK_SEED_KEY_B64 "$KEY_B64" \
-  -OFFHOOK_SEED_HOST "$SSH_HOST" \
-  -OFFHOOK_SEED_PORT "$SSH_PORT" \
-  -OFFHOOK_SEED_MUX herdr \
-  -OFFHOOK_SEED_QUIET 1 \
+  -MOSHPIT_SEED_USER "$(whoami)" \
+  -MOSHPIT_SEED_KEY_B64 "$KEY_B64" \
+  -MOSHPIT_SEED_HOST "$SSH_HOST" \
+  -MOSHPIT_SEED_PORT "$SSH_PORT" \
+  -MOSHPIT_SEED_MUX herdr \
+  -MOSHPIT_SEED_QUIET 1 \
   "${TRANSPORT_ARGS[@]}" >/dev/null
 
 echo "▶ Waiting 6s for the SSH handshake…"
@@ -275,7 +275,7 @@ else
 fi
 
 # Phase 1: the control plane. `herdr api snapshot` above proves the SERVER is
-# alive; this proves Offhook is reading it — the breadcrumb only renders
+# alive; this proves Moshpit is reading it — the breadcrumb only renders
 # session/window crumbs when a snapshot has been decoded into the app's model.
 echo "▶ Control plane (breadcrumb driven by herdr api snapshot):"
 CRUMBS="$(idb ui describe-all --udid "$SIM_UDID" 2>/dev/null | python3 -c "
@@ -302,7 +302,7 @@ if [ "$LABEL" = "ssh" ]; then
   echo "▶ Frame channel (native rendering, not herdr's TUI):"
   # Work in a tab this script creates, so the assertions don't depend on
   # whatever layout the server restored from a previous run.
-  PROBE_TAB="$(timeout 5 herdr tab create --label offhook-probe --focus 2>/dev/null | python3 -c "
+  PROBE_TAB="$(timeout 5 herdr tab create --label moshpit-probe --focus 2>/dev/null | python3 -c "
 import json, sys
 try: print(json.load(sys.stdin)['result']['tab']['tab_id'])
 except Exception: print('')
@@ -340,7 +340,7 @@ print(0)
   # that just happened (creating a tab, or coming off the empty state).
   idb ui tap --udid "$SIM_UDID" --duration 0.15 200 400 >/dev/null 2>&1 || true
   sleep 1
-  MARKER="offhook-frame-probe-$$"
+  MARKER="moshpit-frame-probe-$$"
   idb ui text --udid "$SIM_UDID" "echo $MARKER" >/dev/null 2>&1 || true
   idb ui key --udid "$SIM_UDID" 40 >/dev/null 2>&1 || true
   sleep 2
@@ -375,7 +375,7 @@ except Exception: print('')
   # that just happened (creating a tab, or coming off the empty state).
   idb ui tap --udid "$SIM_UDID" --duration 0.15 200 400 >/dev/null 2>&1 || true
   sleep 1
-  MARKER2="offhook-retarget-probe-$$"
+  MARKER2="moshpit-retarget-probe-$$"
   idb ui text --udid "$SIM_UDID" "echo $MARKER2" >/dev/null 2>&1 || true
   idb ui key --udid "$SIM_UDID" 40 >/dev/null 2>&1 || true
   sleep 3
@@ -393,7 +393,7 @@ except Exception: print('')
   AGENT_PANE="$(timeout 5 herdr api snapshot 2>/dev/null | python3 -c "
 import json, sys
 print(json.load(sys.stdin).get('result', {}).get('snapshot', {}).get('focused_pane_id', ''))")"
-  timeout 5 herdr pane report-agent "$AGENT_PANE" --source offhook-verify \
+  timeout 5 herdr pane report-agent "$AGENT_PANE" --source moshpit-verify \
     --agent "Claude Code" --state working >/dev/null 2>&1 || true
   # The control poll eases off to 8s once the tree stops changing, so a change
   # made OUT of band — like this one — can take that long to show up. Wait past
@@ -411,7 +411,7 @@ raise SystemExit(0 if any('Claude Code' in l for l in labels) else 1)
     echo "  ✘ agent state never surfaced in the app" >&2
     exit 1
   fi
-  timeout 5 herdr pane release-agent "$AGENT_PANE" --source offhook-verify \
+  timeout 5 herdr pane release-agent "$AGENT_PANE" --source moshpit-verify \
     --agent "Claude Code" >/dev/null 2>&1 || true
 
   timeout 5 herdr tab close "$PROBE_TAB" >/dev/null 2>&1 || true
@@ -437,7 +437,7 @@ echo "✓ Done."
 echo "  Screenshot: $OUT"
 echo "  Open with:  open $OUT"
 if [ "$LABEL" = "ssh" ]; then
-  echo "  Expect ONE full-width pane under Offhook's own breadcrumb — herdr's"
+  echo "  Expect ONE full-width pane under Moshpit's own breadcrumb — herdr's"
   echo "  sidebar and tab bar should be absent (that's the frame channel)."
 else
   echo "  Expect herdr's own TUI (sidebar + tab bar): mosh can't carry the"

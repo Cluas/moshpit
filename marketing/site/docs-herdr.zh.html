@@ -3,18 +3,18 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>用 herdr — Offhook 摘机</title>
-<meta name="description" content="Offhook 怎么驱动 herdr：安装、workspace 和 tab 的叫法、和 tmux 不一样的键位、Agents 区、隔离的 worktree 任务，以及所有该知道的限制。">
+<title>用 herdr — Moshpit 摘机</title>
+<meta name="description" content="Moshpit 怎么驱动 herdr：安装、workspace 和 tab 的叫法、和 tmux 不一样的键位、Agents 区、隔离的 worktree 任务，以及所有该知道的限制。">
 <link rel="icon" type="image/png" href="/icon-192.png">
-<link rel="alternate" hreflang="en" href="https://offhook.cluas.eu.org/docs/herdr">
-<link rel="alternate" hreflang="zh-Hans" href="https://offhook.cluas.eu.org/zh/docs/herdr">
-<link rel="stylesheet" href="/offhook.css?v=15">
+<link rel="alternate" hreflang="en" href="https://moshpit.cluas.eu.org/docs/herdr">
+<link rel="alternate" hreflang="zh-Hans" href="https://moshpit.cluas.eu.org/zh/docs/herdr">
+<link rel="stylesheet" href="/moshpit.css?v=15">
 </head>
 <body>
 
 <div class="shell">
   <header class="top">
-    <a class="brand" href="/zh"><img src="/icon-192.png" alt="" width="192" height="192">Offhook</a>
+    <a class="brand" href="/zh"><img src="/icon-192.png" alt="" width="192" height="192">Moshpit</a>
     <div class="topright">
       <a class="lang" href="/zh/docs">文档</a>
       <a class="lang" href="/zh/guides">指南</a>
@@ -32,7 +32,7 @@
   <a class="dhome" href="/zh">← 回到首页</a>
   <p class="dtitle">文档</p>
   <button class="dsearchbtn" type="button" data-docsearch><span>搜索文档…</span><kbd>⌘K</kbd></button>
-  <nav><p class="dsec">开始</p><a href="/zh/docs/intro">Offhook 是做什么的</a><a href="/zh/docs/setup">配置一个连接</a><a href="/zh/docs/first-session">跑通第一个会话</a><p class="dsec">连接</p><a href="/zh/docs/keys">SSH 密钥与主机信任</a><a href="/zh/docs/mosh">Mosh 与漫游</a><a href="/zh/guide/remote-access">在任何地方连上你的机器</a><p class="dsec">多路复用器</p><a href="/zh/docs/multiplexers">选 tmux 还是 herdr</a><a href="/zh/docs/tmux">使用 tmux</a><a href="/zh/docs/herdr" class="on" aria-current="page">使用 herdr</a><p class="dsec">Agent</p><a href="/zh/docs/agents">Agent 状态与锁屏</a><a href="/zh/docs/worktrees">用 git worktree 开隔离任务</a><a href="/zh/guide/claude-code">用 iPhone 跑 Claude Code</a><p class="dsec">输入</p><a href="/zh/docs/keyboard">键盘与快捷键</a><a href="/zh/docs/scrolling">滚动与回滚</a><a href="/zh/docs/clipboard">剪贴板与粘贴</a><a href="/zh/docs/ime">中日韩与输入法</a><p class="dsec">外观</p><a href="/zh/docs/appearance">主题、字体与图标</a><p class="dsec">帮助</p><a href="/zh/docs/troubleshooting">排障</a><a href="/zh/compare">和别的比怎么样</a></nav>
+  <nav><p class="dsec">开始</p><a href="/zh/docs/intro">Moshpit 是做什么的</a><a href="/zh/docs/setup">配置一个连接</a><a href="/zh/docs/first-session">跑通第一个会话</a><p class="dsec">连接</p><a href="/zh/docs/keys">SSH 密钥与主机信任</a><a href="/zh/docs/mosh">Mosh 与漫游</a><a href="/zh/guide/remote-access">在任何地方连上你的机器</a><p class="dsec">多路复用器</p><a href="/zh/docs/multiplexers">选 tmux 还是 herdr</a><a href="/zh/docs/tmux">使用 tmux</a><a href="/zh/docs/herdr" class="on" aria-current="page">使用 herdr</a><p class="dsec">Agent</p><a href="/zh/docs/agents">Agent 状态与锁屏</a><a href="/zh/docs/worktrees">用 git worktree 开隔离任务</a><a href="/zh/guide/claude-code">用 iPhone 跑 Claude Code</a><p class="dsec">输入</p><a href="/zh/docs/keyboard">键盘与快捷键</a><a href="/zh/docs/scrolling">滚动与回滚</a><a href="/zh/docs/clipboard">剪贴板与粘贴</a><a href="/zh/docs/ime">中日韩与输入法</a><p class="dsec">外观</p><a href="/zh/docs/appearance">主题、字体与图标</a><p class="dsec">帮助</p><a href="/zh/docs/troubleshooting">排障</a><a href="/zh/compare">和别的比怎么样</a></nav>
 </aside>
 <!--DOCSHELL:END-->
 <div class="dbody">
@@ -41,31 +41,31 @@
     <p class="eyebrow">文档</p>
     <h2>用 herdr</h2>
     <p class="sub">herdr 是专门为 CLI coding agent 写的多路复用器。连 herdr 的时候，
-    Offhook 不用你在主机上装任何东西，就知道每个 agent 在干什么。这一页讲安装、术语、键位、
+    Moshpit 不用你在主机上装任何东西，就知道每个 agent 在干什么。这一页讲安装、术语、键位、
     Agents 区、隔离任务——最后一节讲清楚哪些事它做不到。</p>
 
     <p class="txt"><a href="https://github.com/herdrdev/herdr">herdr</a> 是一个 Rust
-    单二进制。Offhook 支持它，是因为它把三件苦活从手机搬到了服务端——而 tmux 那条路上，
-    这三件事还得 Offhook 自己扛。</p>
+    单二进制。Moshpit 支持它，是因为它把三件苦活从手机搬到了服务端——而 tmux 那条路上，
+    这三件事还得 Moshpit 自己扛。</p>
 
     <div class="grid">
       <div class="cell"><span class="ic">Agent 状态</span>
         <h4>协议里的一等字段</h4>
         <p>每个 pane 上都有 <code>agent_status</code>，并自动从 pane 上卷到 tab、再到
-        workspace。tmux 上要你先装 hook，往 <code>@offhook_*</code> 里写状态。</p></div>
+        workspace。tmux 上要你先装 hook，往 <code>@moshpit_*</code> 里写状态。</p></div>
       <div class="cell"><span class="ic">滚动</span>
         <h4>服务端决定去向</h4>
         <p><code>terminal.scroll</code> 是协议动作，一次滑动该变成 mouse report 还是翻
-        scrollback 由 herdr 判。tmux 上是 Offhook 自己读
+        scrollback 由 herdr 判。tmux 上是 Moshpit 自己读
         <code>#{mouse_any_flag}</code> 再猜。</p></div>
       <div class="cell"><span class="ic">尺寸</span>
         <h4>只影响自己那个 pane</h4>
         <p>直连客户端的 resize 只打到自己那个 pane 的 PTY。tmux 上手机一连，整个 window
-        对所有客户端都被拉小——Offhook 那套钉窗口尺寸的机制就是为此存在的。</p></div>
+        对所有客户端都被拉小——Moshpit 那套钉窗口尺寸的机制就是为此存在的。</p></div>
     </div>
 
     <p class="txt"><b>它是 tmux 的另一种选择，不是替代品。</b>两者是独立的服务器，
-    装的是毫不相干的会话。选哪个按连接决定，Offhook 绝不替你换成另一个——herdr 没装就默默去
+    装的是毫不相干的会话。选哪个按连接决定，Moshpit 绝不替你换成另一个——herdr 没装就默默去
     attach tmux，等于把别人的活儿端到你面前说这是你的。</p>
 
     <p class="txt"><b>版本。</b>设计基准是 herdr main / v0.8.0，protocol 19；
@@ -85,7 +85,7 @@
     <p class="eyebrow">安装</p>
     <h2>先装上，再按连接选它</h2>
     <p class="sub">herdr 不在任何 Linux 发行版仓库里，它自己的 packaging 只覆盖 Windows。
-    所以这里没有 <code>apt-get</code> 那一行可给，Offhook 也拒绝硬凑一条——
+    所以这里没有 <code>apt-get</code> 那一行可给，Moshpit 也拒绝硬凑一条——
     凑出来的命令只会以「找不到软件包」收场，而用户会以为是 App 的 bug。</p>
 
     <div class="steps3">
@@ -106,18 +106,18 @@
       </div>
     </div>
 
-<pre><i># Offhook 按探测到的主机情况给出其中一条</i>
+<pre><i># Moshpit 按探测到的主机情况给出其中一条</i>
 <b>brew install herdr</b>
 <b>curl -fsSL https://herdr.dev/install.sh | sh</b></pre>
 
-    <p class="txt">Offhook 探测和启动用的是同一套额外 PATH，其中包含
+    <p class="txt">Moshpit 探测和启动用的是同一套额外 PATH，其中包含
     <code>$HOME/.local/bin</code>——否则 Install Assist 刚给你的那条命令，
     会在下次连接时变成「herdr: command not found」。填了 <b>Custom herdr Path</b> 的话，
     它会被原样信任，同时绕过这两者。</p>
 
     <div class="wire">
       <p><b><code>ADVANCED</code> 那一组的脚注，原话：</b>“tmux and herdr hold separate,
-      unrelated sessions. If the host doesn't have the one you pick, Offhook says so and
+      unrelated sessions. If the host doesn't have the one you pick, Moshpit says so and
       drops to a plain shell — it never quietly attaches the other. With Mosh, herdr runs its
       own terminal UI; native rendering needs SSH.”</p>
     </div>
@@ -125,17 +125,17 @@
     <ul class="list">
       <li><b>主机没装</b>——横幅 “herdr not found on this host — plain shell session.”，
       动作 <b>Install herdr</b>。Install Assist 开头是所有安装流程共用的一句：
-      “Offhook never installs anything silently. Run the command below in your shell — sudo
+      “Moshpit never installs anything silently. Run the command below in your shell — sudo
       and its output stay fully visible.” 装完点 <b>Re-check</b> 会翻成「已安装，重连即可」。</li>
       <li><b>服务器没在跑</b>——空态 “No herdr workspaces” / “This server has no running
-      workspaces. Offhook only attaches — create the first one to start.”，
+      workspaces. Moshpit only attaches — create the first one to start.”，
       按钮 <b>Create Workspace</b>，执行中读作 <b>Creating…</b>。</li>
     </ul>
 
-    <p class="txt">那个按钮是 Offhook 里唯一会拉起 herdr 服务器的地方
+    <p class="txt">那个按钮是 Moshpit 里唯一会拉起 herdr 服务器的地方
     （<code>nohup herdr server</code>，然后 <code>workspace create --focus</code>——
     干净启动的服务器是零个 workspace，所以必须两步）。有一处例外要说清楚：Mosh 那条路上
-    Offhook 是往 shell 里敲一个裸 <code>herdr</code>，而它在服务器没跑时<em>确实</em>会顺手建一个
+    Moshpit 是往 shell 里敲一个裸 <code>herdr</code>，而它在服务器没跑时<em>确实</em>会顺手建一个
     workspace。这一点被接受，是因为那个终端里跑的本来就是 herdr 自己的界面，
     你看到的和自己敲 <code>herdr</code> 一模一样。</p>
 
@@ -176,7 +176,7 @@
     <div class="tbl-wrap">
       <table>
         <thead>
-          <tr><th>herdr <code>agent_status</code></th><th class="us">Offhook 显示成</th>
+          <tr><th>herdr <code>agent_status</code></th><th class="us">Moshpit 显示成</th>
               <th>出现在哪</th></tr>
         </thead>
         <tbody>
@@ -232,7 +232,7 @@
           <span class="kicker">在锁屏上回答</span>
           <h3 id="s5">herdr 上要先把焦点挪过去</h3>
           <p>tmux 能用 <code>send-keys -t</code> 直接寻址某个 pane；herdr 的帧通道只会打进
-          它当前 attach 的那个 pane。所以 Offhook 先聚焦目标、等 retarget 收尾，<em>再</em>写入
+          它当前 attach 的那个 pane。所以 Moshpit 先聚焦目标、等 retarget 收尾，<em>再</em>写入
           ——切换途中入列的按键会掉进裸 shell 里死掉。聚焦不到就明确失败，
           通知层退回「打开 App」，而不是假装你那一下点成了。</p>
           <p>另一种可能是复查时抓到的：两个 agent 同时在跑时，
@@ -240,7 +240,7 @@
         </div>
         <img class="phone rowshot" src="/02-agent-terminal.jpg" width="1320" height="2868"
              loading="lazy"
-             alt="Offhook 终端里 Claude Code 的权限询问，面包屑用琥珀色标出 agent 名">
+             alt="Moshpit 终端里 Claude Code 的权限询问，面包屑用琥珀色标出 agent 名">
       </div>
     </div>
   </section>
@@ -258,7 +258,7 @@
     <div class="tbl-wrap">
       <table>
         <thead>
-          <tr><th>herdr</th><th>id</th><th>tmux</th><th class="us">Offhook 里叫</th></tr>
+          <tr><th>herdr</th><th>id</th><th>tmux</th><th class="us">Moshpit 里叫</th></tr>
         </thead>
         <tbody>
           <tr><td class="cap-col">workspace</td><td class="cap-col"><code>w1</code></td>
@@ -350,7 +350,7 @@
         </div>
         <img class="phone rowshot" src="/01-agents.jpg" width="1320" height="2868"
              loading="lazy"
-             alt="Offhook 主页：AGENTS 区里一个 agent 需要你、一个在工作、一个空闲，下面是 workspace 树">
+             alt="Moshpit 主页：AGENTS 区里一个 agent 需要你、一个在工作、一个空闲，下面是 workspace 树">
       </div>
     </div>
 
@@ -410,7 +410,7 @@
     POSIX 单引号包裹。</p>
 
     <h3 id="s8">Repo 列表是从哪来的</h3>
-    <p class="txt">herdr 不管「你有哪些仓库」，所以 Offhook 自己去找——而且是两条命令并发跑，
+    <p class="txt">herdr 不管「你有哪些仓库」，所以 Moshpit 自己去找——而且是两条命令并发跑，
     这是有意的。窗格 cwd 用 <code>git -C &lt;cwd&gt; rev-parse --show-toplevel</code> 反查，
     小、快、排在前面；旁边并行一次 <code>$HOME</code> 扫描
     （<code>find -L "$HOME" -maxdepth 4</code>，prune 掉 <code>Library</code>、
@@ -463,11 +463,11 @@
 
     <div class="notes">
       <p><b>外部改动最多滞后 8 秒。</b>
-      Offhook 每 2 秒轮询一次 <code>herdr api snapshot</code>，树不再变化后退到 8 秒。
+      Moshpit 每 2 秒轮询一次 <code>herdr api snapshot</code>，树不再变化后退到 8 秒。
       App 内的操作立即刷新；你在笔记本上、别的客户端上，或者 agent 自己改状态，
       都要等一轮轮询。这个 ±8 秒的误差，正是 Agents 区从不显示秒的原因。</p>
 
-      <p><b>没有推送，也没有 Offhook 服务器。</b>
+      <p><b>没有推送，也没有 Moshpit 服务器。</b>
       所有提醒都是正在运行的 App 生成的本地通知。herdr 的 socket 上确实有事件订阅，
       但 CLI 没有 subscribe 子命令，手机也打不开主机上的 Unix socket。轮询是唯一可用的机制。</p>
 
@@ -478,8 +478,8 @@
       而不是挂着一个冻住的「工作中」。</p>
 
       <p><b>直连 attach 是按 pane 独占的——两个客户端连同一个 pane 会打架。</b>
-      Offhook 必须 takeover，因为每次重连都会撞上自己的旧通道；之后两个直连客户端会各自约每
-      2 秒重新夺一次。这在客户端消不掉。Offhook 至少能认出来：30 秒内三次非预期断开会触发
+      Moshpit 必须 takeover，因为每次重连都会撞上自己的旧通道；之后两个直连客户端会各自约每
+      2 秒重新夺一次。这在客户端消不掉。Moshpit 至少能认出来：30 秒内三次非预期断开会触发
       30 秒暂停并显示 “Another client is using this pane — retrying shortly”，
       画面恢复后自动消失。</p>
 
@@ -506,13 +506,13 @@
       <p><b><code>herdr pane focus</code> 只接受方向，不接受 pane id</b>——0.7.3 和 0.8.0 都一样。
       唯一能按 id 聚焦的是 <code>herdr agent focus &lt;pane_id&gt;</code>，
       它对普通 shell 窗格会报 <code>agent_not_found</code>，但<em>焦点确实会移动</em>：
-      服务端先聚焦，再在构造响应体时失败。Offhook 故意把这个错误吞掉。
+      服务端先聚焦，再在构造响应体时失败。Moshpit 故意把这个错误吞掉。
       这是整个集成里最脏的一处，代码注释里也是这么写的。</p>
 
       <p><b>不支持具名 herdr session。</b>
       herdr 可以用 <code>--session</code> / <code>HERDR_SESSION</code> 跑多个互相独立的服务器，
-      Offhook 只连默认那个 socket。更麻烦的是：App 里目前哪儿都没写这件事——
-      你要是把主机拆成了多个具名 session，Offhook 只看得见其中一个，而且不会给你任何提示。</p>
+      Moshpit 只连默认那个 socket。更麻烦的是：App 里目前哪儿都没写这件事——
+      你要是把主机拆成了多个具名 session，Moshpit 只看得见其中一个，而且不会给你任何提示。</p>
 
       <p><b>只看得见 herdr 托管的窗格。</b>
       实测踩过：Terminal.app 里跑着一个 <code>claude</code>，herdr 的五个窗格全都空转，
@@ -682,7 +682,7 @@
       <a href="/zh">首页</a><a href="/zh/docs">文档</a><a href="/zh/guides">指南</a>
       <a href="/zh/compare">对比</a><a href="/zh/pricing">定价</a><a href="/privacy">隐私</a><a href="/support">支持</a>
     </nav>
-    <p class="legal">© 2026 Offhook 摘机 · SSH · Mosh · tmux · herdr · iPhone</p>
+    <p class="legal">© 2026 Moshpit 摘机 · SSH · Mosh · tmux · herdr · iPhone</p>
   </div>
 </footer>
 <div class="dsearch" id="dsearch" hidden style="display:none">

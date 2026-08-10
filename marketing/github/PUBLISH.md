@@ -9,12 +9,12 @@
 ```sh
 cd marketing/github
 mkdir -p assets && cp ../site/assets/icon-192.png ../site/assets/40-agents-home.png ../site/assets/43-agent-breadcrumb.png assets/
-cp -R ../../.github .github        # bug/feature issue 模板（已是 Offhook 品牌）
+cp -R ../../.github .github        # bug/feature issue 模板（已是 Moshpit 品牌）
 rm -f PUBLISH.md                    # 本文件不推
-git init -b main && git add -A && git commit -m "Offhook — public home"
-gh repo create Cluas/offhook --public --source . --push \
+git init -b main && git add -A && git commit -m "Moshpit — public home"
+gh repo create Cluas/moshpit --public --source . --push \
   --description "The iOS terminal built for agent work — SSH · Mosh · tmux · herdr. Answer your agents from the lock screen."
-gh repo edit Cluas/offhook --homepage "https://offhook.cluas.eu.org" \
+gh repo edit Cluas/moshpit --homepage "https://moshpit.cluas.eu.org" \
   --add-topic ios --add-topic terminal --add-topic ssh --add-topic mosh \
   --add-topic tmux --add-topic claude-code --add-topic ai-agents
 # Discussions 在 repo Settings 里手动开
@@ -31,5 +31,5 @@ gh repo edit Cluas/offhook --homepage "https://offhook.cluas.eu.org" \
 - ⚠️ 私有产品仓库根目录有 **MIT LICENSE**（开源时代遗留）。既然定了不开源：
   私有仓库**不要 public**；这个引流仓库不放 LICENSE（README 明说 not open source）。
   要不要把私有仓库的 LICENSE 换成 proprietary 声明，等用户拍板。
-- scripts/offhook-notify.sh 是带占位 API 的遗留脚本（产品已决定不做远程推送），
+- scripts/moshpit-notify.sh 是带占位 API 的遗留脚本（产品已决定不做远程推送），
   **不要**放进公共仓库，免得误导。

@@ -27,7 +27,7 @@ SITE = pathlib.Path(__file__).resolve().parent.parent / "marketing" / "site"
 # `slug` is the English filename without .html; the zh page is "<slug>.zh.html".
 NAV: list[tuple[str, str, list[tuple[str, str, str]]]] = [
     ("Start", "开始", [
-        ("docs-intro", "What Offhook does", "Offhook 是做什么的"),
+        ("docs-intro", "What Moshpit does", "Moshpit 是做什么的"),
         ("docs-setup", "Set up a connection", "配置一个连接"),
         ("docs-first-session", "Run your first session", "跑通第一个会话"),
     ]),
@@ -60,7 +60,7 @@ NAV: list[tuple[str, str, list[tuple[str, str, str]]]] = [
     ]),
     ("Help", "帮助", [
         ("docs-troubleshooting", "Troubleshooting", "排障"),
-        ("compare", "How Offhook compares", "和别的比怎么样"),
+        ("compare", "How Moshpit compares", "和别的比怎么样"),
     ]),
 ]
 

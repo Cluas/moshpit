@@ -3,18 +3,18 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Using herdr — Offhook</title>
-<meta name="description" content="How Offhook drives herdr: install it, what workspaces and tabs are called, the key bindings that differ from tmux, the Agents section, isolated worktree tasks — and every limit worth knowing.">
+<title>Using herdr — Moshpit</title>
+<meta name="description" content="How Moshpit drives herdr: install it, what workspaces and tabs are called, the key bindings that differ from tmux, the Agents section, isolated worktree tasks — and every limit worth knowing.">
 <link rel="icon" type="image/png" href="/icon-192.png">
-<link rel="alternate" hreflang="en" href="https://offhook.cluas.eu.org/docs/herdr">
-<link rel="alternate" hreflang="zh-Hans" href="https://offhook.cluas.eu.org/zh/docs/herdr">
-<link rel="stylesheet" href="/offhook.css?v=15">
+<link rel="alternate" hreflang="en" href="https://moshpit.cluas.eu.org/docs/herdr">
+<link rel="alternate" hreflang="zh-Hans" href="https://moshpit.cluas.eu.org/zh/docs/herdr">
+<link rel="stylesheet" href="/moshpit.css?v=15">
 </head>
 <body>
 
 <div class="shell">
   <header class="top">
-    <a class="brand" href="./"><img src="/icon-192.png" alt="" width="192" height="192">Offhook</a>
+    <a class="brand" href="./"><img src="/icon-192.png" alt="" width="192" height="192">Moshpit</a>
     <div class="topright">
       <a class="lang" href="/docs">Docs</a>
       <a class="lang" href="/guides">Guides</a>
@@ -32,7 +32,7 @@
   <a class="dhome" href="/">← Back to the app</a>
   <p class="dtitle">Docs</p>
   <button class="dsearchbtn" type="button" data-docsearch><span>Search the docs…</span><kbd>⌘K</kbd></button>
-  <nav><p class="dsec">Start</p><a href="/docs/intro">What Offhook does</a><a href="/docs/setup">Set up a connection</a><a href="/docs/first-session">Run your first session</a><p class="dsec">Connections</p><a href="/docs/keys">SSH keys and host trust</a><a href="/docs/mosh">Mosh and roaming</a><a href="/guide/remote-access">Reach your machine from anywhere</a><p class="dsec">Multiplexers</p><a href="/docs/multiplexers">Choosing tmux or herdr</a><a href="/docs/tmux">Using tmux</a><a href="/docs/herdr" class="on" aria-current="page">Using herdr</a><p class="dsec">Agents</p><a href="/docs/agents">Agent status and the lock screen</a><a href="/docs/worktrees">Isolated tasks with git worktrees</a><a href="/guide/claude-code">Run Claude Code from your iPhone</a><p class="dsec">Input</p><a href="/docs/keyboard">Keyboard and shortcuts</a><a href="/docs/scrolling">Scrolling and scrollback</a><a href="/docs/clipboard">Clipboard and paste</a><a href="/docs/ime">CJK and IME input</a><p class="dsec">Appearance</p><a href="/docs/appearance">Themes, fonts and icons</a><p class="dsec">Help</p><a href="/docs/troubleshooting">Troubleshooting</a><a href="/compare">How Offhook compares</a></nav>
+  <nav><p class="dsec">Start</p><a href="/docs/intro">What Moshpit does</a><a href="/docs/setup">Set up a connection</a><a href="/docs/first-session">Run your first session</a><p class="dsec">Connections</p><a href="/docs/keys">SSH keys and host trust</a><a href="/docs/mosh">Mosh and roaming</a><a href="/guide/remote-access">Reach your machine from anywhere</a><p class="dsec">Multiplexers</p><a href="/docs/multiplexers">Choosing tmux or herdr</a><a href="/docs/tmux">Using tmux</a><a href="/docs/herdr" class="on" aria-current="page">Using herdr</a><p class="dsec">Agents</p><a href="/docs/agents">Agent status and the lock screen</a><a href="/docs/worktrees">Isolated tasks with git worktrees</a><a href="/guide/claude-code">Run Claude Code from your iPhone</a><p class="dsec">Input</p><a href="/docs/keyboard">Keyboard and shortcuts</a><a href="/docs/scrolling">Scrolling and scrollback</a><a href="/docs/clipboard">Clipboard and paste</a><a href="/docs/ime">CJK and IME input</a><p class="dsec">Appearance</p><a href="/docs/appearance">Themes, fonts and icons</a><p class="dsec">Help</p><a href="/docs/troubleshooting">Troubleshooting</a><a href="/compare">How Moshpit compares</a></nav>
 </aside>
 <!--DOCSHELL:END-->
 <div class="dbody">
@@ -41,34 +41,34 @@
     <p class="eyebrow">Docs</p>
     <h2>Using herdr</h2>
     <p class="sub">herdr is a terminal multiplexer written for CLI coding agents. On a herdr
-    connection Offhook knows what every agent is doing with nothing installed on the host.
+    connection Moshpit knows what every agent is doing with nothing installed on the host.
     Setup, vocabulary, key bindings, the Agents section, isolated tasks — and at the end,
     everything that does not work.</p>
 
     <p class="txt"><a href="https://github.com/herdrdev/herdr">herdr</a> is a single Rust
-    binary. Offhook supports it because it moves three jobs off the phone and onto the server
+    binary. Moshpit supports it because it moves three jobs off the phone and onto the server
     — jobs the tmux path still does by hand.</p>
 
     <div class="grid">
       <div class="cell"><span class="ic">Agent status</span>
         <h4>A protocol field</h4>
         <p><code>agent_status</code> sits on every pane and rolls up pane → tab → workspace.
-        On tmux, Offhook needs you to install hooks that stamp <code>@offhook_*</code>
+        On tmux, Moshpit needs you to install hooks that stamp <code>@moshpit_*</code>
         options.</p></div>
       <div class="cell"><span class="ic">Scroll</span>
         <h4>Routed server-side</h4>
         <p><code>terminal.scroll</code> is a protocol action; herdr decides whether a swipe
-        becomes a mouse report or scrollback. On tmux, Offhook inspects
+        becomes a mouse report or scrollback. On tmux, Moshpit inspects
         <code>#{mouse_any_flag}</code> and picks.</p></div>
       <div class="cell"><span class="ic">Resize</span>
         <h4>Scoped to one pane</h4>
         <p>An attached client's resize hits only its own pane's PTY. On tmux a phone
-        attaching shrinks the window for every client — hence Offhook's window-pinning
+        attaching shrinks the window for every client — hence Moshpit's window-pinning
         machinery.</p></div>
     </div>
 
     <p class="txt"><b>It is an alternative to tmux, not a replacement.</b> The two are
-    separate servers holding unrelated sessions. You pick one per connection, and Offhook
+    separate servers holding unrelated sessions. You pick one per connection, and Moshpit
     never substitutes the other — attaching tmux because herdr is missing would show you
     someone else's work and call it yours.</p>
 
@@ -90,7 +90,7 @@
     <p class="eyebrow">Setup</p>
     <h2>Install it, then pick it per connection</h2>
     <p class="sub">herdr is in no Linux distribution repository — its own packaging covers
-    Windows only. There is no <code>apt-get</code> line to offer, and Offhook refuses to
+    Windows only. There is no <code>apt-get</code> line to offer, and Moshpit refuses to
     synthesize one that would fail with "unable to locate package".</p>
 
     <div class="steps3">
@@ -111,36 +111,36 @@
       </div>
     </div>
 
-<pre><i># whichever fits the host Offhook probed</i>
+<pre><i># whichever fits the host Moshpit probed</i>
 <b>brew install herdr</b>
 <b>curl -fsSL https://herdr.dev/install.sh | sh</b></pre>
 
-    <p class="txt">Offhook probes and launches with the same extra PATH entries,
+    <p class="txt">Moshpit probes and launches with the same extra PATH entries,
     <code>$HOME/.local/bin</code> among them — otherwise the command Install Assist just
     handed you produces "herdr: command not found" on the next connect. A <b>Custom herdr
     Path</b> is trusted verbatim and bypasses both.</p>
 
     <div class="wire">
       <p><b>The <code>ADVANCED</code> group's footer, verbatim:</b> "tmux and herdr hold
-      separate, unrelated sessions. If the host doesn't have the one you pick, Offhook says
+      separate, unrelated sessions. If the host doesn't have the one you pick, Moshpit says
       so and drops to a plain shell — it never quietly attaches the other. With Mosh, herdr
       runs its own terminal UI; native rendering needs SSH."</p>
     </div>
 
     <ul class="list">
       <li><b>Binary missing</b> — banner "herdr not found on this host — plain shell
-      session.", action <b>Install herdr</b>. Install Assist opens with "Offhook never
+      session.", action <b>Install herdr</b>. Install Assist opens with "Moshpit never
       installs anything silently. Run the command below in your shell — sudo and its output
       stay fully visible." <b>Re-check</b> flips to "installed — reconnect".</li>
       <li><b>Server not running</b> — empty state "No herdr workspaces" / "This server has no
-      running workspaces. Offhook only attaches — create the first one to start." with a
+      running workspaces. Moshpit only attaches — create the first one to start." with a
       <b>Create Workspace</b> button that reads <b>Creating…</b> while it works.</li>
     </ul>
 
-    <p class="txt">That button is the only thing that starts a herdr server from Offhook
+    <p class="txt">That button is the only thing that starts a herdr server from Moshpit
     (<code>nohup herdr server</code>, then <code>workspace create --focus</code> — a cold
     server comes up with zero workspaces, hence two steps). One wrinkle: on the Mosh path
-    Offhook types a bare <code>herdr</code>, which <em>does</em> create a workspace when no
+    Moshpit types a bare <code>herdr</code>, which <em>does</em> create a workspace when no
     server is running. Accepted, because that terminal is herdr's own UI and you see exactly
     what typing <code>herdr</code> would do.</p>
 
@@ -181,7 +181,7 @@
     <div class="tbl-wrap">
       <table>
         <thead>
-          <tr><th>herdr <code>agent_status</code></th><th class="us">Offhook shows</th>
+          <tr><th>herdr <code>agent_status</code></th><th class="us">Moshpit shows</th>
               <th>Where</th></tr>
         </thead>
         <tbody>
@@ -240,7 +240,7 @@
           <span class="kicker">Answering from the lock screen</span>
           <h3 id="s5">herdr needs the focus moved first</h3>
           <p>tmux addresses a pane directly with <code>send-keys -t</code>; herdr's frame
-          channel types into whichever pane it is attached to. So Offhook focuses the target,
+          channel types into whichever pane it is attached to. So Moshpit focuses the target,
           waits for the retarget to finish, <em>then</em> writes — a keystroke sent mid-switch
           lands on a bare shell and dies. If focus can't be obtained, delivery fails loudly
           and the notification says "open the app" instead of pretending.</p>
@@ -249,7 +249,7 @@
         </div>
         <img class="phone rowshot" src="/02-agent-terminal.jpg" width="1320" height="2868"
              loading="lazy"
-             alt="An Offhook terminal showing a Claude Code permission prompt, with the breadcrumb naming the agent in amber">
+             alt="An Moshpit terminal showing a Claude Code permission prompt, with the breadcrumb naming the agent in amber">
       </div>
     </div>
   </section>
@@ -267,7 +267,7 @@
     <div class="tbl-wrap">
       <table>
         <thead>
-          <tr><th>herdr</th><th>id</th><th>tmux</th><th class="us">Offhook says</th></tr>
+          <tr><th>herdr</th><th>id</th><th>tmux</th><th class="us">Moshpit says</th></tr>
         </thead>
         <tbody>
           <tr><td class="cap-col">workspace</td><td class="cap-col"><code>w1</code></td>
@@ -305,7 +305,7 @@
   <section class="band doc">
     <p class="eyebrow">Keyboard</p>
     <h2><code>⌃ b q</code> detaches in herdr. That one is a trap.</h2>
-    <p class="sub">Both default to <code>Ctrl-b</code> as the prefix, so Offhook's prefix
+    <p class="sub">Both default to <code>Ctrl-b</code> as the prefix, so Moshpit's prefix
     handling and shortcut bar carry over unchanged. Three bindings do not, and one of them
     ends your session.</p>
 
@@ -366,7 +366,7 @@
         </div>
         <img class="phone rowshot" src="/01-agents.jpg" width="1320" height="2868"
              loading="lazy"
-             alt="Offhook Home screen: an AGENTS section listing an agent that needs you, one working, and one idle, above the workspace tree">
+             alt="Moshpit Home screen: an AGENTS section listing an agent that needs you, one working, and one idle, above the workspace tree">
       </div>
     </div>
 
@@ -431,7 +431,7 @@
     single-quoted before it reaches a shell.</p>
 
     <h3 id="s8">Where the repo list comes from</h3>
-    <p class="txt">herdr has no concept of "your repos", so Offhook looks — as two concurrent
+    <p class="txt">herdr has no concept of "your repos", so Moshpit looks — as two concurrent
     commands, on purpose. Pane cwds resolved with <code>git -C &lt;cwd&gt; rev-parse
     --show-toplevel</code> are small, fast and listed first; a <code>$HOME</code> scan
     (<code>find -L "$HOME" -maxdepth 4</code>, pruning <code>Library</code>,
@@ -470,7 +470,7 @@
       does while leaving every file in place: "&lt;name&gt; has uncommitted changes" — "Those
       changes exist nowhere else. Removing the worktree throws them away."
       <b>Delete anyway</b> / <b>Keep it</b>. Only that tap adds <code>--force</code>.</p>
-      <p>This is herdr's own safety net, not something Offhook invented. <b>Not verified on
+      <p>This is herdr's own safety net, not something Moshpit invented. <b>Not verified on
       device:</b> the long-press menu itself — idb cannot drive a SwiftUI context-menu long
       press, so menu → dialog → dialog is guaranteed by compilation and unit tests, with no
       device recording.</p>
@@ -488,12 +488,12 @@
 
     <div class="notes">
       <p><b>Up to 8 seconds of staleness for changes made elsewhere.</b>
-      Offhook polls <code>herdr api snapshot</code> every 2 seconds while anything moves and
+      Moshpit polls <code>herdr api snapshot</code> every 2 seconds while anything moves and
       eases to 8 once the tree stops changing. In-app actions refresh immediately; anything
       done on your laptop, by another client, or by an agent changing state waits for a poll.
       That ±8s error is why the Agents section never prints seconds.</p>
 
-      <p><b>No push. There is no Offhook server.</b>
+      <p><b>No push. There is no Moshpit server.</b>
       Every alert is a local notification generated by the running app. herdr's socket does
       have an event subscription, but its CLI exposes no subscribe subcommand and a phone
       cannot open the host's Unix socket. Polling is the only mechanism available.</p>
@@ -506,9 +506,9 @@
       frozen "working".</p>
 
       <p><b>Direct attach is exclusive per pane — two clients on the same pane fight.</b>
-      Offhook must take over, because a reconnect always collides with its own stale channel,
+      Moshpit must take over, because a reconnect always collides with its own stale channel,
       after which two direct clients re-claim about every 2 seconds. Not fixable from the
-      client. Offhook does detect it: three unrequested closes in 30 seconds trigger a
+      client. Moshpit does detect it: three unrequested closes in 30 seconds trigger a
       30-second pause and a visible "Another client is using this pane — retrying shortly",
       clearing as soon as frames paint again.</p>
 
@@ -537,13 +537,13 @@
       <p><b><code>herdr pane focus</code> takes a direction, not a pane id</b> — in both 0.7.3
       and 0.8.0. The only id-addressable focus is <code>herdr agent focus &lt;pane_id&gt;</code>,
       which on a plain shell pane prints <code>agent_not_found</code> but <em>still moves the
-      focus</em>: the server focuses first, then fails building the response. Offhook swallows
+      focus</em>: the server focuses first, then fails building the response. Moshpit swallows
       that error on purpose. It is the dirtiest part of the integration and the code says so.</p>
 
       <p><b>Named herdr sessions are not supported.</b> herdr can run several independent
-      servers via <code>--session</code> / <code>HERDR_SESSION</code>; Offhook only talks to
+      servers via <code>--session</code> / <code>HERDR_SESSION</code>; Moshpit only talks to
       the default socket. Worse, the app does not currently say this anywhere — split your
-      host into named sessions and Offhook sees one of them with no hint about the rest.</p>
+      host into named sessions and Moshpit sees one of them with no hint about the rest.</p>
 
       <p><b>Only herdr-hosted panes are visible.</b> Observed for real: a <code>claude</code>
       running in Terminal.app, five herdr panes all idle, and the section correctly saying
@@ -712,7 +712,7 @@
       <a href="./">Home</a><a href="/docs">Docs</a><a href="/guides">Guides</a>
       <a href="/compare">Compare</a><a href="/pricing">Pricing</a><a href="/privacy">Privacy</a><a href="/support">Support</a>
     </nav>
-    <p class="legal">© 2026 Offhook · SSH · Mosh · tmux · herdr · iPhone</p>
+    <p class="legal">© 2026 Moshpit · SSH · Mosh · tmux · herdr · iPhone</p>
   </div>
 </footer>
 <div class="dsearch" id="dsearch" hidden style="display:none">

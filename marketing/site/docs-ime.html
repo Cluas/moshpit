@@ -3,17 +3,17 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>CJK and IME input — Offhook</title>
-<meta name="description" content="Typing Chinese, Japanese and Korean in a terminal on iOS — what Offhook fixed in its terminal engine to make composition work properly.">
+<title>CJK and IME input — Moshpit</title>
+<meta name="description" content="Typing Chinese, Japanese and Korean in a terminal on iOS — what Moshpit fixed in its terminal engine to make composition work properly.">
 <link rel="icon" type="image/png" href="/icon-192.png">
 <link rel="alternate" hreflang="zh-Hans" href="/zh/docs/ime">
-<link rel="stylesheet" href="/offhook.css?v=15">
+<link rel="stylesheet" href="/moshpit.css?v=15">
 </head>
 <body>
 
 <div class="shell">
   <header class="top">
-    <a class="brand" href="./"><img src="/icon-192.png" alt="" width="192" height="192">Offhook</a>
+    <a class="brand" href="./"><img src="/icon-192.png" alt="" width="192" height="192">Moshpit</a>
     <div class="topright">
       <a class="lang" href="/docs">Docs</a>
       <a class="lang" href="/guides">Guides</a>
@@ -30,7 +30,7 @@
   <a class="dhome" href="/">← Back to the app</a>
   <p class="dtitle">Docs</p>
   <button class="dsearchbtn" type="button" data-docsearch><span>Search the docs…</span><kbd>⌘K</kbd></button>
-  <nav><p class="dsec">Start</p><a href="/docs/intro">What Offhook does</a><a href="/docs/setup">Set up a connection</a><a href="/docs/first-session">Run your first session</a><p class="dsec">Connections</p><a href="/docs/keys">SSH keys and host trust</a><a href="/docs/mosh">Mosh and roaming</a><a href="/guide/remote-access">Reach your machine from anywhere</a><p class="dsec">Multiplexers</p><a href="/docs/multiplexers">Choosing tmux or herdr</a><a href="/docs/tmux">Using tmux</a><a href="/docs/herdr">Using herdr</a><p class="dsec">Agents</p><a href="/docs/agents">Agent status and the lock screen</a><a href="/docs/worktrees">Isolated tasks with git worktrees</a><a href="/guide/claude-code">Run Claude Code from your iPhone</a><p class="dsec">Input</p><a href="/docs/keyboard">Keyboard and shortcuts</a><a href="/docs/scrolling">Scrolling and scrollback</a><a href="/docs/clipboard">Clipboard and paste</a><a href="/docs/ime" class="on" aria-current="page">CJK and IME input</a><p class="dsec">Appearance</p><a href="/docs/appearance">Themes, fonts and icons</a><p class="dsec">Help</p><a href="/docs/troubleshooting">Troubleshooting</a><a href="/compare">How Offhook compares</a></nav>
+  <nav><p class="dsec">Start</p><a href="/docs/intro">What Moshpit does</a><a href="/docs/setup">Set up a connection</a><a href="/docs/first-session">Run your first session</a><p class="dsec">Connections</p><a href="/docs/keys">SSH keys and host trust</a><a href="/docs/mosh">Mosh and roaming</a><a href="/guide/remote-access">Reach your machine from anywhere</a><p class="dsec">Multiplexers</p><a href="/docs/multiplexers">Choosing tmux or herdr</a><a href="/docs/tmux">Using tmux</a><a href="/docs/herdr">Using herdr</a><p class="dsec">Agents</p><a href="/docs/agents">Agent status and the lock screen</a><a href="/docs/worktrees">Isolated tasks with git worktrees</a><a href="/guide/claude-code">Run Claude Code from your iPhone</a><p class="dsec">Input</p><a href="/docs/keyboard">Keyboard and shortcuts</a><a href="/docs/scrolling">Scrolling and scrollback</a><a href="/docs/clipboard">Clipboard and paste</a><a href="/docs/ime" class="on" aria-current="page">CJK and IME input</a><p class="dsec">Appearance</p><a href="/docs/appearance">Themes, fonts and icons</a><p class="dsec">Help</p><a href="/docs/troubleshooting">Troubleshooting</a><a href="/compare">How Moshpit compares</a></nav>
 </aside>
 <!--DOCSHELL:END-->
 <div class="dbody">
@@ -38,11 +38,11 @@
   <section class="band doc" style="border-top:none">
     <p class="eyebrow">Input</p>
     <h2>Typing Chinese in a terminal, properly.</h2>
-    <p class="sub">Terminal emulators on iOS are usually written by people typing ASCII. Turn on a Pinyin keyboard and the cracks show: the composing text is invisible, the caret jumps to the wrong place mid-word, and hold-to-delete refuses to repeat. Offhook ships a patched terminal engine specifically to fix that.</p>
+    <p class="sub">Terminal emulators on iOS are usually written by people typing ASCII. Turn on a Pinyin keyboard and the cracks show: the composing text is invisible, the caret jumps to the wrong place mid-word, and hold-to-delete refuses to repeat. Moshpit ships a patched terminal engine specifically to fix that.</p>
     <h3 id="s1">What composition should look like</h3>
     <p class="txt">While an IME is composing — Pinyin, Kana, Hangul — the in-progress text
     belongs to the keyboard, not to the shell. Nothing should reach the remote host until
-    you commit. Offhook draws that composing text underlined at the cursor, and moves the
+    you commit. Moshpit draws that composing text underlined at the cursor, and moves the
     terminal's real caret to the end of it as it grows, so what you see is where you are.</p>
 
     <h3 id="s2">What was broken, and is not</h3>
@@ -67,12 +67,12 @@
     <h3 id="s3">Wide characters</h3>
     <p class="txt">CJK glyphs occupy two cells. That matters beyond looks: a URL that
     wrapped across rows cannot be rejoined by counting characters when a wide glyph earlier
-    on the line throws the count off. Offhook reads the emulator's own soft-wrap bit
+    on the line throws the count off. Moshpit reads the emulator's own soft-wrap bit
     instead, so linkifying a wrapped URL does not silently truncate it.</p>
 
     <h3 id="s4">Honest limits</h3>
     <p class="txt">All of this is client side. If the program on the host does not handle
-    wide characters properly — some TUIs do not — Offhook renders faithfully what it is
+    wide characters properly — some TUIs do not — Moshpit renders faithfully what it is
     sent, including the misalignment. And a terminal font must contain the glyphs: the
     bundled monospace fonts cover Latin well and CJK unevenly, so the system font
     fallback does the work for characters they lack.</p>
@@ -225,7 +225,7 @@
       <a href="./">Home</a><a href="/docs">Docs</a><a href="/guides">Guides</a>
       <a href="/compare">Compare</a><a href="/pricing">Pricing</a><a href="/privacy">Privacy</a><a href="/support">Support</a>
     </nav>
-    <p class="legal">© 2026 Offhook · SSH · Mosh · tmux · herdr · iPhone</p>
+    <p class="legal">© 2026 Moshpit · SSH · Mosh · tmux · herdr · iPhone</p>
   </div>
 </footer>
 

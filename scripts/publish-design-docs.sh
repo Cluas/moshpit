@@ -12,7 +12,7 @@ set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 OUT="build/serve"
-PORT="${OFFHOOK_SERVE_PORT:-8787}"
+PORT="${MOSHPIT_SERVE_PORT:-8787}"
 mkdir -p "$OUT/docs"
 
 command -v pandoc >/dev/null || { echo "✘ pandoc not installed (brew install pandoc)" >&2; exit 1; }
@@ -88,7 +88,7 @@ done
 
 cat > "$OUT/docs/index.html" <<HTML
 <!doctype html><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1">
-<title>Offhook design docs</title><link rel=stylesheet href=style.css>
+<title>Moshpit design docs</title><link rel=stylesheet href=style.css>
 <div class=nav><a href="../">← build</a></div>
 <h1>Design docs</h1>
 <ul>$LINKS</ul>
@@ -99,7 +99,7 @@ HTML
 if [ "${1:-}" != "--no-serve" ]; then
   if ! curl -sf "http://127.0.0.1:$PORT/" >/dev/null 2>&1; then
     echo "▶ Starting HTTP server on :$PORT"
-    ( cd "$OUT" && nohup python3 -m http.server "$PORT" --bind 0.0.0.0 > /tmp/offhook-serve.log 2>&1 & )
+    ( cd "$OUT" && nohup python3 -m http.server "$PORT" --bind 0.0.0.0 > /tmp/moshpit-serve.log 2>&1 & )
     sleep 1
   fi
   IP="$(ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || echo 127.0.0.1)"

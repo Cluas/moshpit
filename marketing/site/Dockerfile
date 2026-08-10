@@ -23,7 +23,7 @@ FROM nginx:1.27-alpine
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 
 # Pages at the root, assets under /assets. The `try_files … /assets/$uri`
-# fallback in nginx.conf means pages can keep referencing /offhook.css and
+# fallback in nginx.conf means pages can keep referencing /moshpit.css and
 # /island-working.jpg without knowing which directory they landed in — the
 # same contract the ConfigMap split established, kept so no page has to change.
 COPY *.html /usr/share/nginx/html/

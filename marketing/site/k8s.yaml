@@ -1,14 +1,14 @@
-# Offhook marketing site — same shape as moshi-site (nginx + ConfigMap),
+# Moshpit marketing site — same shape as moshi-site (nginx + ConfigMap),
 # but the page source now lives in the repo (marketing/site/) instead of
 # only inside the cluster.
 #
 # Deploy / update:
-#   kubectl create configmap offhook-site \
+#   kubectl create configmap moshpit-site \
 #     $(for f in marketing/site/*.html; do printf -- "--from-file=%s " "$f"; done) \
 #     --dry-run=client -o yaml | kubectl apply --server-side -f -
-#   kubectl create configmap offhook-assets --from-file=marketing/site/assets/ \
+#   kubectl create configmap moshpit-assets --from-file=marketing/site/assets/ \
 #     --dry-run=client -o yaml | kubectl apply --server-side -f -
-#   kubectl create configmap offhook-nginx \
+#   kubectl create configmap moshpit-nginx \
 #     --from-file=default.conf=marketing/site/nginx.conf \
 #     --dry-run=client -o yaml | kubectl apply --server-side -f -
 #
@@ -18,23 +18,23 @@
 # `--server-side` is also required: the binary screenshots exceed the 256KiB
 # last-applied annotation that a client-side apply writes.
 #   kubectl apply -f marketing/site/k8s.yaml
-#   kubectl rollout restart deploy/offhook-site   # pick up ConfigMap changes
+#   kubectl rollout restart deploy/moshpit-site   # pick up ConfigMap changes
 #
 # DNS (one-time, in the cluas.eu.org zone):
-#   offhook.cluas.eu.org → CNAME moshi.cluas.eu.org  (or the same 4 A records)
+#   moshpit.cluas.eu.org → CNAME moshi.cluas.eu.org  (or the same 4 A records)
 # cert-manager then completes the TLS order on its own.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: offhook-site
+  name: moshpit-site
   namespace: default
 spec:
   replicas: 2
   selector:
-    matchLabels: { app: offhook-site }
+    matchLabels: { app: moshpit-site }
   template:
     metadata:
-      labels: { app: offhook-site }
+      labels: { app: moshpit-site }
     spec:
       imagePullSecrets:
         - name: ghcr-secret
@@ -46,7 +46,7 @@ spec:
         # would silently be a no-op — new image, old content, no error.
         # scripts/deploy-site.sh replaces the tag below on each deploy.
         - name: nginx
-          image: ghcr.io/cluas/offhook-site:latest
+          image: ghcr.io/cluas/moshpit-site:latest
           imagePullPolicy: IfNotPresent
           ports: [{ containerPort: 80 }]
           readinessProbe:
@@ -58,31 +58,31 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: offhook-site
+  name: moshpit-site
   namespace: default
 spec:
-  selector: { app: offhook-site }
+  selector: { app: moshpit-site }
   ports: [{ port: 80, targetPort: 80 }]
 ---
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: offhook-site
+  name: moshpit-site
   namespace: default
   annotations:
     cert-manager.io/cluster-issuer: letsencrypt-prod
 spec:
   ingressClassName: nginx
   rules:
-    - host: offhook.cluas.eu.org
+    - host: moshpit.cluas.eu.org
       http:
         paths:
           - path: /
             pathType: Prefix
             backend:
               service:
-                name: offhook-site
+                name: moshpit-site
                 port: { number: 80 }
   tls:
-    - hosts: [offhook.cluas.eu.org]
-      secretName: offhook-site-tls
+    - hosts: [moshpit.cluas.eu.org]
+      secretName: moshpit-site-tls

@@ -3,17 +3,17 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Choosing tmux or herdr — Offhook</title>
-<meta name="description" content="tmux and herdr do the same job differently. Which one to pick per connection, and what each buys you in Offhook.">
+<title>Choosing tmux or herdr — Moshpit</title>
+<meta name="description" content="tmux and herdr do the same job differently. Which one to pick per connection, and what each buys you in Moshpit.">
 <link rel="icon" type="image/png" href="/icon-192.png">
 <link rel="alternate" hreflang="zh-Hans" href="/zh/docs/multiplexers">
-<link rel="stylesheet" href="/offhook.css?v=15">
+<link rel="stylesheet" href="/moshpit.css?v=15">
 </head>
 <body>
 
 <div class="shell">
   <header class="top">
-    <a class="brand" href="./"><img src="/icon-192.png" alt="" width="192" height="192">Offhook</a>
+    <a class="brand" href="./"><img src="/icon-192.png" alt="" width="192" height="192">Moshpit</a>
     <div class="topright">
       <a class="lang" href="/docs">Docs</a>
       <a class="lang" href="/guides">Guides</a>
@@ -30,7 +30,7 @@
   <a class="dhome" href="/">← Back to the app</a>
   <p class="dtitle">Docs</p>
   <button class="dsearchbtn" type="button" data-docsearch><span>Search the docs…</span><kbd>⌘K</kbd></button>
-  <nav><p class="dsec">Start</p><a href="/docs/intro">What Offhook does</a><a href="/docs/setup">Set up a connection</a><a href="/docs/first-session">Run your first session</a><p class="dsec">Connections</p><a href="/docs/keys">SSH keys and host trust</a><a href="/docs/mosh">Mosh and roaming</a><a href="/guide/remote-access">Reach your machine from anywhere</a><p class="dsec">Multiplexers</p><a href="/docs/multiplexers" class="on" aria-current="page">Choosing tmux or herdr</a><a href="/docs/tmux">Using tmux</a><a href="/docs/herdr">Using herdr</a><p class="dsec">Agents</p><a href="/docs/agents">Agent status and the lock screen</a><a href="/docs/worktrees">Isolated tasks with git worktrees</a><a href="/guide/claude-code">Run Claude Code from your iPhone</a><p class="dsec">Input</p><a href="/docs/keyboard">Keyboard and shortcuts</a><a href="/docs/scrolling">Scrolling and scrollback</a><a href="/docs/clipboard">Clipboard and paste</a><a href="/docs/ime">CJK and IME input</a><p class="dsec">Appearance</p><a href="/docs/appearance">Themes, fonts and icons</a><p class="dsec">Help</p><a href="/docs/troubleshooting">Troubleshooting</a><a href="/compare">How Offhook compares</a></nav>
+  <nav><p class="dsec">Start</p><a href="/docs/intro">What Moshpit does</a><a href="/docs/setup">Set up a connection</a><a href="/docs/first-session">Run your first session</a><p class="dsec">Connections</p><a href="/docs/keys">SSH keys and host trust</a><a href="/docs/mosh">Mosh and roaming</a><a href="/guide/remote-access">Reach your machine from anywhere</a><p class="dsec">Multiplexers</p><a href="/docs/multiplexers" class="on" aria-current="page">Choosing tmux or herdr</a><a href="/docs/tmux">Using tmux</a><a href="/docs/herdr">Using herdr</a><p class="dsec">Agents</p><a href="/docs/agents">Agent status and the lock screen</a><a href="/docs/worktrees">Isolated tasks with git worktrees</a><a href="/guide/claude-code">Run Claude Code from your iPhone</a><p class="dsec">Input</p><a href="/docs/keyboard">Keyboard and shortcuts</a><a href="/docs/scrolling">Scrolling and scrollback</a><a href="/docs/clipboard">Clipboard and paste</a><a href="/docs/ime">CJK and IME input</a><p class="dsec">Appearance</p><a href="/docs/appearance">Themes, fonts and icons</a><p class="dsec">Help</p><a href="/docs/troubleshooting">Troubleshooting</a><a href="/compare">How Moshpit compares</a></nav>
 </aside>
 <!--DOCSHELL:END-->
 <div class="dbody">
@@ -38,15 +38,15 @@
   <section class="band doc" style="border-top:none">
     <p class="eyebrow">Multiplexers</p>
     <h2>tmux or herdr — pick per connection.</h2>
-    <p class="sub">A multiplexer keeps your work alive when the connection drops, and gives Offhook something better to render than one long scroll. Offhook speaks two. They are not interchangeable and it will never quietly swap one for the other, because their sessions are completely unrelated — switching would show you someone else's work.</p>
+    <p class="sub">A multiplexer keeps your work alive when the connection drops, and gives Moshpit something better to render than one long scroll. Moshpit speaks two. They are not interchangeable and it will never quietly swap one for the other, because their sessions are completely unrelated — switching would show you someone else's work.</p>
     <h3 id="s1">The short answer</h3>
     <ul class="list">
-      <li><b>Already living in tmux?</b> Pick tmux. Offhook attaches to the sessions you
+      <li><b>Already living in tmux?</b> Pick tmux. Moshpit attaches to the sessions you
       already have and never restyles them.</li>
       <li><b>Mostly running coding agents?</b> Pick <a href="/docs/herdr">herdr</a>.
       Agent status works with nothing installed, panes render full width, and you can
       start an isolated task from the phone.</li>
-      <li><b>Neither installed and not sure?</b> Pick None. Offhook is a perfectly good
+      <li><b>Neither installed and not sure?</b> Pick None. Moshpit is a perfectly good
       plain SSH client; add a multiplexer when you miss one.</li>
     </ul>
 
@@ -82,9 +82,9 @@
 
     <h3 id="s3">Where each one is genuinely worse</h3>
     <p class="txt"><b>tmux</b> shares one window size across every attached client, so a
-    phone joining your session can squeeze the layout on your laptop. Offhook pins the
+    phone joining your session can squeeze the layout on your laptop. Moshpit pins the
     window to work around it, but the constraint is real. Agent status also needs the
-    hook installed on the host, and without it Offhook falls back to reading output,
+    hook installed on the host, and without it Moshpit falls back to reading output,
     which is a guess.</p>
 <img class="phone rowshot" src="/07-tmux-terminal.jpg" width="1320" height="2868" loading="lazy" alt="A tmux session rendered natively: the window bar across the top and a full-width terminal pane below it">
 
@@ -97,7 +97,7 @@
     <h3 id="s4">Changing your mind</h3>
     <p class="txt">The multiplexer lives on the connection, in <b>Edit → Advanced</b>.
     Change it and reconnect. Nothing is lost — the other multiplexer's sessions are still
-    on the host, exactly as you left them, because Offhook never killed anything to make
+    on the host, exactly as you left them, because Moshpit never killed anything to make
     the switch.</p>
 
     <h3 id="s5">Over Mosh, both fall back</h3>
@@ -254,7 +254,7 @@
       <a href="./">Home</a><a href="/docs">Docs</a><a href="/guides">Guides</a>
       <a href="/compare">Compare</a><a href="/pricing">Pricing</a><a href="/privacy">Privacy</a><a href="/support">Support</a>
     </nav>
-    <p class="legal">© 2026 Offhook · SSH · Mosh · tmux · herdr · iPhone</p>
+    <p class="legal">© 2026 Moshpit · SSH · Mosh · tmux · herdr · iPhone</p>
   </div>
 </footer>
 

@@ -3,18 +3,18 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Keyboard, themes and shortcuts — Offhook</title>
-<meta name="description" content="How to build Offhook's shortcut bar, what a hardware keyboard gives you, and how to change the terminal theme, font, app icon and accent colour.">
+<title>Keyboard, themes and shortcuts — Moshpit</title>
+<meta name="description" content="How to build Moshpit's shortcut bar, what a hardware keyboard gives you, and how to change the terminal theme, font, app icon and accent colour.">
 <link rel="icon" type="image/png" href="/icon-192.png">
-<link rel="alternate" hreflang="en" href="https://offhook.cluas.eu.org/docs/keyboard">
-<link rel="alternate" hreflang="zh-Hans" href="https://offhook.cluas.eu.org/zh/docs/keyboard">
-<link rel="stylesheet" href="/offhook.css?v=15">
+<link rel="alternate" hreflang="en" href="https://moshpit.cluas.eu.org/docs/keyboard">
+<link rel="alternate" hreflang="zh-Hans" href="https://moshpit.cluas.eu.org/zh/docs/keyboard">
+<link rel="stylesheet" href="/moshpit.css?v=15">
 </head>
 <body>
 
 <div class="shell">
   <header class="top">
-    <a class="brand" href="./"><img src="/icon-192.png" alt="" width="192" height="192">Offhook</a>
+    <a class="brand" href="./"><img src="/icon-192.png" alt="" width="192" height="192">Moshpit</a>
     <div class="topright">
       <a class="lang" href="/docs">Docs</a>
       <a class="lang" href="/guides">Guides</a>
@@ -32,7 +32,7 @@
   <a class="dhome" href="/">← Back to the app</a>
   <p class="dtitle">Docs</p>
   <button class="dsearchbtn" type="button" data-docsearch><span>Search the docs…</span><kbd>⌘K</kbd></button>
-  <nav><p class="dsec">Start</p><a href="/docs/intro">What Offhook does</a><a href="/docs/setup">Set up a connection</a><a href="/docs/first-session">Run your first session</a><p class="dsec">Connections</p><a href="/docs/keys">SSH keys and host trust</a><a href="/docs/mosh">Mosh and roaming</a><a href="/guide/remote-access">Reach your machine from anywhere</a><p class="dsec">Multiplexers</p><a href="/docs/multiplexers">Choosing tmux or herdr</a><a href="/docs/tmux">Using tmux</a><a href="/docs/herdr">Using herdr</a><p class="dsec">Agents</p><a href="/docs/agents">Agent status and the lock screen</a><a href="/docs/worktrees">Isolated tasks with git worktrees</a><a href="/guide/claude-code">Run Claude Code from your iPhone</a><p class="dsec">Input</p><a href="/docs/keyboard" class="on" aria-current="page">Keyboard and shortcuts</a><a href="/docs/scrolling">Scrolling and scrollback</a><a href="/docs/clipboard">Clipboard and paste</a><a href="/docs/ime">CJK and IME input</a><p class="dsec">Appearance</p><a href="/docs/appearance">Themes, fonts and icons</a><p class="dsec">Help</p><a href="/docs/troubleshooting">Troubleshooting</a><a href="/compare">How Offhook compares</a></nav>
+  <nav><p class="dsec">Start</p><a href="/docs/intro">What Moshpit does</a><a href="/docs/setup">Set up a connection</a><a href="/docs/first-session">Run your first session</a><p class="dsec">Connections</p><a href="/docs/keys">SSH keys and host trust</a><a href="/docs/mosh">Mosh and roaming</a><a href="/guide/remote-access">Reach your machine from anywhere</a><p class="dsec">Multiplexers</p><a href="/docs/multiplexers">Choosing tmux or herdr</a><a href="/docs/tmux">Using tmux</a><a href="/docs/herdr">Using herdr</a><p class="dsec">Agents</p><a href="/docs/agents">Agent status and the lock screen</a><a href="/docs/worktrees">Isolated tasks with git worktrees</a><a href="/guide/claude-code">Run Claude Code from your iPhone</a><p class="dsec">Input</p><a href="/docs/keyboard" class="on" aria-current="page">Keyboard and shortcuts</a><a href="/docs/scrolling">Scrolling and scrollback</a><a href="/docs/clipboard">Clipboard and paste</a><a href="/docs/ime">CJK and IME input</a><p class="dsec">Appearance</p><a href="/docs/appearance">Themes, fonts and icons</a><p class="dsec">Help</p><a href="/docs/troubleshooting">Troubleshooting</a><a href="/compare">How Moshpit compares</a></nav>
 </aside>
 <!--DOCSHELL:END-->
 <div class="dbody">
@@ -40,7 +40,7 @@
   <section class="band" style="border-top:none">
     <p class="eyebrow">Docs</p>
     <h2>Keyboard, themes and shortcuts</h2>
-    <p class="sub">The strip above the keyboard is the part of Offhook you touch most, and
+    <p class="sub">The strip above the keyboard is the part of Moshpit you touch most, and
     it is entirely yours to build. This page covers that bar, custom keys, what a hardware
     keyboard actually gives you, the terminal themes and their editor, fonts, the app icon
     and the accent colour — with the real screen and button names, so you can follow along
@@ -68,7 +68,7 @@
   <section class="band">
     <p class="eyebrow">Shortcut bar</p>
     <h2>The bar above the keyboard is yours to build</h2>
-    <p class="sub">Offhook draws its own strip and switches off the system input accessory
+    <p class="sub">Moshpit draws its own strip and switches off the system input accessory
     view, so what you see there is the app's, not the keyboard's. It holds up to twelve
     keys and it ships with six.</p>
 
@@ -168,7 +168,7 @@
       it is also why "scroll" is not a purely local control, and it is worth knowing which
       one you are using.</p>
       <ul class="list">
-        <li><b>Plain SSH, or a bare shell over mosh</b> — pages Offhook's own buffer and
+        <li><b>Plain SSH, or a bare shell over mosh</b> — pages Moshpit's own buffer and
         nothing goes out. If the program in front of you has grabbed the mouse, it gets a
         synthesized wheel event instead.</li>
         <li><b>SSH + tmux</b> — the control-mode connection decides: a wheel for a
@@ -253,13 +253,13 @@
       control plane for tmux or herdr on that connection — not "the word tmux is on screen".
       Over mosh that control plane is a second, lightweight SSH connection, because mosh
       carries a rendered screen and cannot carry tmux <code>-CC</code> or herdr's frame
-      protocol. If the host will not give Offhook that side connection, the session can be
+      protocol. If the host will not give Moshpit that side connection, the session can be
       visibly running a multiplexer and the chip will still stay hidden.</p>
 
       <h3 id="s8">Prefix keys are not the same on tmux and herdr</h3>
       <p class="txt">Both default to <code>⌃ b</code> as the prefix, which is why the PREFIX
       quick key is correct on either. What the prefix is bound <em>to</em> is where they part
-      company — and Offhook prints the right bindings per connection in its own sheets for
+      company — and Moshpit prints the right bindings per connection in its own sheets for
       that reason.</p>
 
       <div class="tbl-wrap">
@@ -308,7 +308,7 @@
         0.1s.</li>
       </ul>
       <p class="txt"><b>The limit, stated plainly:</b> there is no hardware-keyboard
-      remapping in Offhook. No app-level <code>⌘</code> shortcuts, no key-binding screen,
+      remapping in Moshpit. No app-level <code>⌘</code> shortcuts, no key-binding screen,
       and F12 and above are ignored. The Shortcuts editor configures the on-screen bar
       only. If you need a key a hardware keyboard cannot produce, put it on the bar.</p>
 
@@ -317,7 +317,7 @@
       quotes, which is correct for a shell. On a real device that also collapses the
       keyboard's prediction strip — which is exactly where a Pinyin or Japanese keyboard
       draws its candidate list. The result was no candidate bar at all.</p>
-      <p class="txt">Offhook re-enables spell-checking on its terminals for that one reason.
+      <p class="txt">Moshpit re-enables spell-checking on its terminals for that one reason.
       Autocorrect stays off, so the shell never rewrites a command — <code>ls</code> will
       not become <code>last</code>. Autocapitalisation and smart quotes and dashes stay off
       too, so <code>'foo'</code> and <code>--flag</code> arrive as you typed them.</p>
@@ -458,7 +458,7 @@
       <h3 id="s15">Chinese, Japanese and Korean text</h3>
       <p class="txt">The bundled programmer fonts carry no CJK glyphs, so text echoed from
       the remote — or shown in your keyboard's composing overlay — used to render as tofu.
-      Offhook attaches a fallback chain to whichever font you pick: PingFang SC, then
+      Moshpit attaches a fallback chain to whichever font you pick: PingFang SC, then
       PingFang TC, Hiragino Sans, Apple SD Gothic Neo, Apple Symbols for check marks,
       arrows and box glyphs, and Apple Color Emoji. ASCII never leaves your chosen monospace
       face and CJK stays double-width, so column alignment is untouched.</p>
@@ -501,7 +501,7 @@
       </ul>
 
       <h3 id="s18">App icon</h3>
-      <p class="txt">Eight icons: Offhook, Teal, Green, Amber, Daylight, Mono, Cursor and
+      <p class="txt">Eight icons: Moshpit, Teal, Green, Amber, Daylight, Mono, Cursor and
       Hail. Two of them are not the app's mark at all — the set is meant to be genuinely
       different artwork, not eight recolours. The picker renders the real bundled image
       rather than redrawing it, so what you see is what lands on your home screen.</p>
@@ -511,7 +511,7 @@
         separate from the accent colour, because iOS only allows switching between icons
         bundled with the app.</b> A custom accent cannot have matching artwork generated for
         it. Nothing can create an app icon at runtime.</p>
-        <p>If iOS refuses the change, Offhook does not record the selection — the home
+        <p>If iOS refuses the change, Moshpit does not record the selection — the home
         screen would otherwise disagree with the checkmark — and tells you so.</p>
       </div>
 
@@ -541,7 +541,7 @@
       <details>
         <summary>Do my shortcuts and themes sync between devices?</summary>
         <p>No. The shortcut layout, custom shortcuts, custom themes and custom accents are
-        all stored on the device. There is no Offhook account and no iCloud sync, so a
+        all stored on the device. There is no Moshpit account and no iCloud sync, so a
         second device starts from the defaults. Copy a theme as JSON and paste it across if
         you need it in two places.</p>
       </details>
@@ -741,7 +741,7 @@
       <a href="./">Home</a><a href="/docs">Docs</a><a href="/guides">Guides</a>
       <a href="/compare">Compare</a><a href="/pricing">Pricing</a><a href="/privacy">Privacy</a><a href="/support">Support</a>
     </nav>
-    <p class="legal">© 2026 Offhook · SSH · Mosh · tmux · herdr · iPhone</p>
+    <p class="legal">© 2026 Moshpit · SSH · Mosh · tmux · herdr · iPhone</p>
   </div>
 </footer>
 <div class="dsearch" id="dsearch" hidden style="display:none">

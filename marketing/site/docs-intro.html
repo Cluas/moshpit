@@ -3,17 +3,17 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>What Offhook does — Offhook</title>
-<meta name="description" content="Offhook is an iPhone terminal for developers running AI coding agents on their own servers: SSH and Mosh, native tmux and herdr, and agent state that reaches your lock screen.">
+<title>What Moshpit does — Moshpit</title>
+<meta name="description" content="Moshpit is an iPhone terminal for developers running AI coding agents on their own servers: SSH and Mosh, native tmux and herdr, and agent state that reaches your lock screen.">
 <link rel="icon" type="image/png" href="/icon-192.png">
 <link rel="alternate" hreflang="zh-Hans" href="/zh/docs/intro">
-<link rel="stylesheet" href="/offhook.css?v=15">
+<link rel="stylesheet" href="/moshpit.css?v=15">
 </head>
 <body>
 
 <div class="shell">
   <header class="top">
-    <a class="brand" href="./"><img src="/icon-192.png" alt="" width="192" height="192">Offhook</a>
+    <a class="brand" href="./"><img src="/icon-192.png" alt="" width="192" height="192">Moshpit</a>
     <div class="topright">
       <a class="lang" href="/docs">Docs</a>
       <a class="lang" href="/guides">Guides</a>
@@ -30,23 +30,23 @@
   <a class="dhome" href="/">← Back to the app</a>
   <p class="dtitle">Docs</p>
   <button class="dsearchbtn" type="button" data-docsearch><span>Search the docs…</span><kbd>⌘K</kbd></button>
-  <nav><p class="dsec">Start</p><a href="/docs/intro" class="on" aria-current="page">What Offhook does</a><a href="/docs/setup">Set up a connection</a><a href="/docs/first-session">Run your first session</a><p class="dsec">Connections</p><a href="/docs/keys">SSH keys and host trust</a><a href="/docs/mosh">Mosh and roaming</a><a href="/guide/remote-access">Reach your machine from anywhere</a><p class="dsec">Multiplexers</p><a href="/docs/multiplexers">Choosing tmux or herdr</a><a href="/docs/tmux">Using tmux</a><a href="/docs/herdr">Using herdr</a><p class="dsec">Agents</p><a href="/docs/agents">Agent status and the lock screen</a><a href="/docs/worktrees">Isolated tasks with git worktrees</a><a href="/guide/claude-code">Run Claude Code from your iPhone</a><p class="dsec">Input</p><a href="/docs/keyboard">Keyboard and shortcuts</a><a href="/docs/scrolling">Scrolling and scrollback</a><a href="/docs/clipboard">Clipboard and paste</a><a href="/docs/ime">CJK and IME input</a><p class="dsec">Appearance</p><a href="/docs/appearance">Themes, fonts and icons</a><p class="dsec">Help</p><a href="/docs/troubleshooting">Troubleshooting</a><a href="/compare">How Offhook compares</a></nav>
+  <nav><p class="dsec">Start</p><a href="/docs/intro" class="on" aria-current="page">What Moshpit does</a><a href="/docs/setup">Set up a connection</a><a href="/docs/first-session">Run your first session</a><p class="dsec">Connections</p><a href="/docs/keys">SSH keys and host trust</a><a href="/docs/mosh">Mosh and roaming</a><a href="/guide/remote-access">Reach your machine from anywhere</a><p class="dsec">Multiplexers</p><a href="/docs/multiplexers">Choosing tmux or herdr</a><a href="/docs/tmux">Using tmux</a><a href="/docs/herdr">Using herdr</a><p class="dsec">Agents</p><a href="/docs/agents">Agent status and the lock screen</a><a href="/docs/worktrees">Isolated tasks with git worktrees</a><a href="/guide/claude-code">Run Claude Code from your iPhone</a><p class="dsec">Input</p><a href="/docs/keyboard">Keyboard and shortcuts</a><a href="/docs/scrolling">Scrolling and scrollback</a><a href="/docs/clipboard">Clipboard and paste</a><a href="/docs/ime">CJK and IME input</a><p class="dsec">Appearance</p><a href="/docs/appearance">Themes, fonts and icons</a><p class="dsec">Help</p><a href="/docs/troubleshooting">Troubleshooting</a><a href="/compare">How Moshpit compares</a></nav>
 </aside>
 <!--DOCSHELL:END-->
 <div class="dbody">
 <div class="shell">
   <section class="band doc" style="border-top:none">
     <p class="eyebrow">Start</p>
-    <h2>What Offhook does.</h2>
-    <p class="sub">One paragraph, in case you landed here from a search: Offhook is a paid iPhone and iPad terminal for people who run AI coding agents on machines they own. It connects over SSH or Mosh, renders tmux and herdr natively, and — the part no other iPhone terminal does — puts an agent's &ldquo;I need a human&rdquo; on your lock screen with the buttons that answer it.</p>
+    <h2>What Moshpit does.</h2>
+    <p class="sub">One paragraph, in case you landed here from a search: Moshpit is a paid iPhone and iPad terminal for people who run AI coding agents on machines they own. It connects over SSH or Mosh, renders tmux and herdr natively, and — the part no other iPhone terminal does — puts an agent's &ldquo;I need a human&rdquo; on your lock screen with the buttons that answer it.</p>
     <h3 id="s1">The problem it solves</h3>
     <p class="txt">A coding agent runs for a long time and then stops, because it wants
     permission to do something. If you are not at the desk, it waits. People come back
     hours later to an agent that finished its thinking in the first ten minutes and spent
     the rest of the afternoon holding a question.</p>
-<img class="phone rowshot" src="/01-agents.jpg" width="1320" height="2868" loading="lazy" alt="Offhook's home screen: an Agents section listing Claude Code needing you, codex working and an idle claude, above a tree of workspaces">
+<img class="phone rowshot" src="/01-agents.jpg" width="1320" height="2868" loading="lazy" alt="Moshpit's home screen: an Agents section listing Claude Code needing you, codex working and an idle claude, above a tree of workspaces">
 
-    <p class="txt">Offhook's whole reason to exist is closing that gap: the question
+    <p class="txt">Moshpit's whole reason to exist is closing that gap: the question
     reaches your phone, and you answer it without unlocking into anything.</p>
 
     <h3 id="s2">What it is</h3>
@@ -63,22 +63,22 @@
 
     <h3 id="s3">What it is not</h3>
     <ul class="list">
-      <li><b>Not a service.</b> There is no Offhook account, no relay and no cloud —
-      because there is no Offhook server at all. Your phone talks to your machines.</li>
+      <li><b>Not a service.</b> There is no Moshpit account, no relay and no cloud —
+      because there is no Moshpit server at all. Your phone talks to your machines.</li>
       <li><b>Not a file manager.</b> No SFTP browser, no mounting servers into Files.
       If that is your day, other apps do it well and this one does not do it.</li>
-      <li><b>Not an agent.</b> Offhook does not think, summarise or write code. It
+      <li><b>Not an agent.</b> Moshpit does not think, summarise or write code. It
       carries your agents' output to you and your keystrokes back.</li>
     </ul>
 
     <h3 id="s4">What it needs from you</h3>
     <p class="txt">A machine you can already SSH into. Everything else is optional:
     <code>mosh</code> buys roaming, <code>tmux</code> or <code>herdr</code> buy session
-    persistence and the agent features. Offhook tells you what is missing and shows the
+    persistence and the agent features. Moshpit tells you what is missing and shows the
     command — it never installs anything on your host on its own.</p>
 
     <h3 id="s5">The limit worth knowing on day one</h3>
-    <p class="txt">There is no push server, so agent state only updates while Offhook is
+    <p class="txt">There is no push server, so agent state only updates while Moshpit is
     running in the foreground or briefly in the background. Once iOS suspends the
     connection, the lock screen keeps showing the last thing it saw until you come back.
     That is the price of nothing-in-the-middle, and it applies to every transport.</p>
@@ -86,7 +86,7 @@
     <h3 id="s6">Where to go next</h3>
     <p class="txt"><a href="/docs/setup">Set up a connection</a> if you want to start,
     <a href="/docs/multiplexers">Choosing tmux or herdr</a> if you are deciding, or
-    <a href="/compare">How Offhook compares</a> if you are still working out whether
+    <a href="/compare">How Moshpit compares</a> if you are still working out whether
     this is the right app at all.</p>
   </section>
 </div>
@@ -237,7 +237,7 @@
       <a href="./">Home</a><a href="/docs">Docs</a><a href="/guides">Guides</a>
       <a href="/compare">Compare</a><a href="/pricing">Pricing</a><a href="/privacy">Privacy</a><a href="/support">Support</a>
     </nav>
-    <p class="legal">© 2026 Offhook · SSH · Mosh · tmux · herdr · iPhone</p>
+    <p class="legal">© 2026 Moshpit · SSH · Mosh · tmux · herdr · iPhone</p>
   </div>
 </footer>
 

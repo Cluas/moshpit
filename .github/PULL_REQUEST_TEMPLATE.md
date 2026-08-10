@@ -17,7 +17,7 @@ What does this PR change, and why? Link any related issue (e.g. `Closes #123`).
 
 ## Checklist
 
-- [ ] I did **not** hand-edit `Ringdown.xcodeproj` — project changes go through
+- [ ] I did **not** hand-edit `Moshpit.xcodeproj` — project changes go through
       `project.yml`
 - [ ] Comments explain **why**, anchored to the constraint or bug they prevent
 - [ ] Code crossing an SSH / keychain / tmux boundary depends on the protocol

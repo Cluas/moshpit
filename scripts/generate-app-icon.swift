@@ -1,9 +1,9 @@
 #!/usr/bin/env swift
 //
-// generate-app-icon.swift — Generate pixel-art Offhook app icon
+// generate-app-icon.swift — Generate pixel-art Moshpit app icon
 //
 // Usage: swift scripts/generate-app-icon.swift
-// Output: Offhook/App/Assets.xcassets/AppIcon.appiconset/icon_1024.png
+// Output: Moshpit/App/Assets.xcassets/AppIcon.appiconset/icon_1024.png
 //
 
 import Foundation
@@ -96,7 +96,7 @@ guard let image = ctx.makeImage() else {
     exit(1)
 }
 
-let outputDir = "Offhook/App/Assets.xcassets/AppIcon.appiconset"
+let outputDir = "Moshpit/App/Assets.xcassets/AppIcon.appiconset"
 let outputPath = "\(outputDir)/icon_1024.png"
 
 // Ensure directory exists

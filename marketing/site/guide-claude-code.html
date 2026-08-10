@@ -3,17 +3,17 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Run Claude Code from your iPhone — Offhook</title>
+<title>Run Claude Code from your iPhone — Moshpit</title>
 <meta name="description" content="End to end: get a host reachable, install herdr, start Claude Code in a pane or on a fresh git worktree, and answer its permission prompts from the lock screen.">
 <link rel="icon" type="image/png" href="/icon-192.png">
 <link rel="alternate" hreflang="zh-Hans" href="/zh/guide/claude-code">
-<link rel="stylesheet" href="/offhook.css?v=15">
+<link rel="stylesheet" href="/moshpit.css?v=15">
 </head>
 <body>
 
 <div class="shell">
   <header class="top">
-    <a class="brand" href="./"><img src="/icon-192.png" alt="" width="192" height="192">Offhook</a>
+    <a class="brand" href="./"><img src="/icon-192.png" alt="" width="192" height="192">Moshpit</a>
     <div class="topright">
       <a class="lang" href="/docs">Docs</a>
       <a class="lang" href="/guides">Guides</a>
@@ -31,7 +31,7 @@
   <a class="dhome" href="/">← Back to the app</a>
   <p class="dtitle">Docs</p>
   <button class="dsearchbtn" type="button" data-docsearch><span>Search the docs…</span><kbd>⌘K</kbd></button>
-  <nav><p class="dsec">Start</p><a href="/docs/intro">What Offhook does</a><a href="/docs/setup">Set up a connection</a><a href="/docs/first-session">Run your first session</a><p class="dsec">Connections</p><a href="/docs/keys">SSH keys and host trust</a><a href="/docs/mosh">Mosh and roaming</a><a href="/guide/remote-access">Reach your machine from anywhere</a><p class="dsec">Multiplexers</p><a href="/docs/multiplexers">Choosing tmux or herdr</a><a href="/docs/tmux">Using tmux</a><a href="/docs/herdr">Using herdr</a><p class="dsec">Agents</p><a href="/docs/agents">Agent status and the lock screen</a><a href="/docs/worktrees">Isolated tasks with git worktrees</a><a href="/guide/claude-code" class="on" aria-current="page">Run Claude Code from your iPhone</a><p class="dsec">Input</p><a href="/docs/keyboard">Keyboard and shortcuts</a><a href="/docs/scrolling">Scrolling and scrollback</a><a href="/docs/clipboard">Clipboard and paste</a><a href="/docs/ime">CJK and IME input</a><p class="dsec">Appearance</p><a href="/docs/appearance">Themes, fonts and icons</a><p class="dsec">Help</p><a href="/docs/troubleshooting">Troubleshooting</a><a href="/compare">How Offhook compares</a></nav>
+  <nav><p class="dsec">Start</p><a href="/docs/intro">What Moshpit does</a><a href="/docs/setup">Set up a connection</a><a href="/docs/first-session">Run your first session</a><p class="dsec">Connections</p><a href="/docs/keys">SSH keys and host trust</a><a href="/docs/mosh">Mosh and roaming</a><a href="/guide/remote-access">Reach your machine from anywhere</a><p class="dsec">Multiplexers</p><a href="/docs/multiplexers">Choosing tmux or herdr</a><a href="/docs/tmux">Using tmux</a><a href="/docs/herdr">Using herdr</a><p class="dsec">Agents</p><a href="/docs/agents">Agent status and the lock screen</a><a href="/docs/worktrees">Isolated tasks with git worktrees</a><a href="/guide/claude-code" class="on" aria-current="page">Run Claude Code from your iPhone</a><p class="dsec">Input</p><a href="/docs/keyboard">Keyboard and shortcuts</a><a href="/docs/scrolling">Scrolling and scrollback</a><a href="/docs/clipboard">Clipboard and paste</a><a href="/docs/ime">CJK and IME input</a><p class="dsec">Appearance</p><a href="/docs/appearance">Themes, fonts and icons</a><p class="dsec">Help</p><a href="/docs/troubleshooting">Troubleshooting</a><a href="/compare">How Moshpit compares</a></nav>
 </aside>
 <!--DOCSHELL:END-->
 <div class="dbody">
@@ -42,7 +42,7 @@
     <p class="sub">This is the walkthrough the app exists for. Four steps: get a host
     reachable, put herdr on it, start Claude Code, and answer its permission prompts from
     the lock screen. Everything here is a real string from the shipping app or a real
-    command Offhook runs.</p>
+    command Moshpit runs.</p>
 
     <div class="steps3">
       <div class="step3">
@@ -52,7 +52,7 @@
       </div>
       <div class="step3">
         <h3 id="s2">Start the agent</h3>
-        <p>Type <code>claude</code> in a herdr pane, or let Offhook cut a fresh
+        <p>Type <code>claude</code> in a herdr pane, or let Moshpit cut a fresh
         <code>git worktree</code> and start Claude Code inside it.</p>
       </div>
       <div class="step3">
@@ -64,7 +64,7 @@
 
     <div class="wire" style="margin-top:2.2rem">
       <p><b>What you need before you start.</b> A server you can already reach over SSH,
-      an iPhone running iOS 18 or later, and Claude Code installed on the server. Offhook
+      an iPhone running iOS 18 or later, and Claude Code installed on the server. Moshpit
       does not install Claude Code and does not talk to Anthropic — it drives a shell, and
       Claude Code is just a program running in it.</p>
       <p><b>herdr is optional.</b> It is what makes agent status a fact instead of a guess,
@@ -105,7 +105,7 @@
     "why doesn't this one connect".</p>
 
     <h3 id="s5">Check the fingerprint once</h3>
-    <p class="txt">The first time you connect, the handshake pauses and Offhook shows the
+    <p class="txt">The first time you connect, the handshake pauses and Moshpit shows the
     host key it was offered:</p>
 
 <pre><b>New Host</b>
@@ -119,7 +119,7 @@ Verify it matches the server (e.g. `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key
 
           [ Cancel ]   [ <b>Trust</b> ]</pre>
 
-    <p class="txt">Offhook cannot verify the fingerprint for you — it shows you the command
+    <p class="txt">Moshpit cannot verify the fingerprint for you — it shows you the command
     to compare against. If a stored key ever changes, the dialog turns into
     <b>⚠️ Host Key Changed</b> with both fingerprints printed, <b>Disconnect</b> as the
     default button and <b>Trust New Key</b> marked destructive.</p>
@@ -143,7 +143,7 @@ Verify it matches the server (e.g. `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key
     <p class="eyebrow">Step 2</p>
     <h2>Put herdr on the host</h2>
     <p class="sub">herdr is a single Rust binary written for CLI coding agents. It reports
-    <code>agent_status</code> as a protocol field on every pane, which is why Offhook needs
+    <code>agent_status</code> as a protocol field on every pane, which is why Moshpit needs
     nothing installed on your host to know that Claude Code is waiting on you.</p>
 
     <h3 id="s6">Install it</h3>
@@ -154,11 +154,11 @@ brew install herdr
 curl -fsSL https://herdr.dev/install.sh | sh</pre>
 
     <p class="txt">There is no <code>apt-get</code> line to give you: <b>herdr is in no Linux
-    distribution repository</b>, and its own packaging only covers Windows. Offhook refuses
+    distribution repository</b>, and its own packaging only covers Windows. Moshpit refuses
     to synthesize <code>sudo apt-get install -y herdr</code> for that reason — a command
     that ends in "unable to locate package" reads as an app bug.</p>
     <p class="txt">The installer drops the binary in <code>~/.local/bin</code> and
-    deliberately touches no rc file. Offhook adds that directory to the PATH it uses when
+    deliberately touches no rc file. Moshpit adds that directory to the PATH it uses when
     probing and when launching herdr, so you do not need to change anything on the host.</p>
 
     <h3 id="s7">If it is missing, the app says so</h3>
@@ -168,7 +168,7 @@ curl -fsSL https://herdr.dev/install.sh | sh</pre>
       <li>Banner: <b>"herdr not found on this host — plain shell session."</b> with an
       <b>Install herdr</b> action.</li>
       <li>The Install Assist sheet opens with the right command already filled in and the
-      line <i>"Offhook never installs anything silently. Run the command below in your
+      line <i>"Moshpit never installs anything silently. Run the command below in your
       shell — sudo and its output stay fully visible."</i></li>
       <li><b>Run in terminal</b> pastes it into the live shell so sudo prompts and output
       stay visible. <b>Copy command</b> and <b>Re-check</b> sit next to it.</li>
@@ -191,7 +191,7 @@ curl -fsSL https://herdr.dev/install.sh | sh</pre>
       <p><b>Use SSH, not Mosh, for this guide.</b> Mosh transmits rendered screen diffs,
       which destroy line framing, so it cannot carry herdr's frame protocol (the same reason
       it cannot carry <code>tmux -CC</code>). Over Mosh, herdr runs its own full-screen TUI
-      and Offhook is only the renderer — on a phone that costs roughly a third of the screen
+      and Moshpit is only the renderer — on a phone that costs roughly a third of the screen
       width to herdr's sidebar. The control-plane sheets still work through a separate SSH
       sidecar.</p>
     </div>
@@ -203,7 +203,7 @@ curl -fsSL https://herdr.dev/install.sh | sh</pre>
   <section class="band doc">
     <p class="eyebrow">Step 3</p>
     <h2>Start Claude Code</h2>
-    <p class="sub">Two ways in. Run it in a pane you already have, or let Offhook cut an
+    <p class="sub">Two ways in. Run it in a pane you already have, or let Moshpit cut an
     isolated git worktree and start it there. The second is the one worth reaching for from
     a phone.</p>
 
@@ -240,7 +240,7 @@ curl -fsSL https://herdr.dev/install.sh | sh</pre>
         <p class="txt">Group <b>TASK</b>, footer: <i>"Creates a git worktree on the host,
         then starts the agent inside it. Your working tree is untouched."</i></p>
         <ul class="list">
-          <li><b>Repo</b> — a menu. Offhook finds candidates two ways at once: the cwd of
+          <li><b>Repo</b> — a menu. Moshpit finds candidates two ways at once: the cwd of
           every open pane resolved with <code>git rev-parse --show-toplevel</code>, and a
           scan of <code>$HOME</code> by modification time. While it looks, the menu reads
           <i>"Looking for repositories…"</i>; if nothing turns up,
@@ -341,7 +341,7 @@ curl -fsSL https://herdr.dev/install.sh | sh</pre>
 
     <div class="lockrow">
       <img class="phone lift lockshot" src="/20-lockscreen.jpg" width="440" height="956"
-           alt="iPhone lock screen with an Offhook Live Activity: Claude Code with Allow and Deny buttons, and codex working below it">
+           alt="iPhone lock screen with an Moshpit Live Activity: Claude Code with Allow and Deny buttons, and codex working below it">
       <div class="notes">
         <p><b class="amber">The row that is blocking</b>
         State dot, the command in mono, the location as <em>host · workspace · tab</em>, and
@@ -352,7 +352,7 @@ curl -fsSL https://herdr.dev/install.sh | sh</pre>
         clips a tall Live Activity, and what fell off the bottom was exactly the second
         agent's Allow and Deny.</p>
         <p><b class="dimb">Where the buttons run</b>
-        In Offhook's own process, not in the widget. iOS launches the app into the
+        In Moshpit's own process, not in the widget. iOS launches the app into the
         background to handle the tap. The screen stays locked.</p>
       </div>
     </div>
@@ -388,7 +388,7 @@ curl -fsSL https://herdr.dev/install.sh | sh</pre>
 
     <p class="txt">The mapping is tuned for Claude Code's permission prompt, where the
     affirmative option is default-highlighted and Esc cancels — which also fits most TUI
-    yes/no menus. <b>They are blind keystrokes: Offhook does not read the prompt</b> to
+    yes/no menus. <b>They are blind keystrokes: Moshpit does not read the prompt</b> to
     confirm which option is highlighted. <code>yes</code> and <code>continue</code> are
     quick replies that type into the pane, not into a chat.</p>
 
@@ -399,10 +399,10 @@ curl -fsSL https://herdr.dev/install.sh | sh</pre>
       finish before writing. This exists because of a real bug: with two agents running,
       a lock-screen <b>Allow</b> could send someone else's Enter.</li>
       <li>If focus cannot be obtained, delivery returns false and you get a notification —
-      <b>"Not delivered"</b>, <i>"Your tap didn't reach the agent — open Offhook and answer
+      <b>"Not delivered"</b>, <i>"Your tap didn't reach the agent — open Moshpit and answer
       there."</i> A lock-screen Allow that silently fails is the worst outcome, so it is
       announced rather than swallowed.</li>
-      <li>If Offhook knows the pane already left the "needs you" state, Allow and Deny are
+      <li>If Moshpit knows the pane already left the "needs you" state, Allow and Deny are
       not sent at all: <b>"Prompt already gone"</b>,
       <i>"That request was already answered or has changed — nothing was sent."</i> Stale
       "needs you" notifications are also pulled off the lock screen when the state changes,
@@ -456,16 +456,16 @@ curl -fsSL https://herdr.dev/install.sh | sh</pre>
     turn off.</p>
 
     <h3 id="s17">iOS suspends the connection, and state stops updating</h3>
-    <p class="txt">There is <b>no push server</b> anywhere in Offhook. Every alert on your
+    <p class="txt">There is <b>no push server</b> anywhere in Moshpit. Every alert on your
     phone is a local notification the running app generated from the live session. When iOS
     suspends the app, the 2-second sweep and the SSH polls stop with it.</p>
-    <p class="txt">Measured on device: with Offhook backgrounded, flipping a pane from
+    <p class="txt">Measured on device: with Moshpit backgrounded, flipping a pane from
     blocked to working left the Dynamic Island unchanged. It only flipped one poll after
     returning to the foreground. The same is true on the tmux path — this is a product
     decision about not running a relay, not a herdr problem.</p>
 
     <h3 id="s18">So the app says "paused" instead of lying</h3>
-<pre>Offhook                      <i>2 working · 1 needs you</i>
+<pre>Moshpit                      <i>2 working · 1 needs you</i>
 <u>●  claude       needs you</u>   <i>2m</i>
    mac-studio · ~ · Tab 1
    <i>Bash: npm install</i>
@@ -474,7 +474,7 @@ curl -fsSL https://herdr.dev/install.sh | sh</pre>
 
 <i>… app suspended for two minutes …</i>
 
-Offhook            <i>paused — open Offhook to refresh</i></pre>
+Moshpit            <i>paused — open Moshpit to refresh</i></pre>
 
     <p class="txt">The Live Activity carries a 120-second staleness horizon — two missed
     sweeps — and renders an honest "paused" hint rather than a frozen "working". The Home
@@ -497,13 +497,13 @@ Offhook            <i>paused — open Offhook to refresh</i></pre>
       only mechanism available today.</li>
     </ul>
 
-    <h3 id="s20">Two Offhook clients on the same pane will fight</h3>
-    <p class="txt">herdr's direct attach is <b>exclusive per pane</b>. Offhook must attach
+    <h3 id="s20">Two Moshpit clients on the same pane will fight</h3>
+    <p class="txt">herdr's direct attach is <b>exclusive per pane</b>. Moshpit must attach
     with <code>--takeover</code>, because a reconnect always collides with its own stale
     channel. Two phones on the same pane therefore each re-claim it roughly every two
     seconds. That is inherent to exclusive direct attach and cannot be fixed from the
     client.</p>
-    <p class="txt">What Offhook does about it: three unrequested closes inside 30 seconds
+    <p class="txt">What Moshpit does about it: three unrequested closes inside 30 seconds
     trigger a 30-second pause and a visible notice —
     <b>"Another client is using this pane — retrying shortly"</b> — which clears itself as
     soon as frames paint again. A laptop running herdr's own <b>TUI</b> does not occupy an
@@ -525,12 +525,12 @@ Offhook            <i>paused — open Offhook to refresh</i></pre>
         <code>UserPromptSubmit</code>, <code>PreToolUse</code>, <code>Notification</code>
         and <code>Stop</code> hooks so they stamp state onto the tmux pane. It backs up
         <code>~/.claude/settings.json</code> first, always exits 0 so it cannot block the
-        agent, and de-dupes itself if you run it twice. Without hooks, Offhook falls back
+        agent, and de-dupes itself if you run it twice. Without hooks, Moshpit falls back
         to reading pane output and the terminal bell, which is a guess and is described as
         one. The Agents section on Home is herdr-only.</p>
       </details>
       <details>
-        <summary>Can it wake me when Offhook is closed?</summary>
+        <summary>Can it wake me when Moshpit is closed?</summary>
         <p>No. There is no push server, so alerts only exist while the session is alive on
         your device. iOS suspends the connection and state stops updating until you return.
         See <a href="#background" style="color:var(--teal)">the section above</a>.</p>
@@ -553,8 +553,8 @@ Offhook            <i>paused — open Offhook to refresh</i></pre>
         reported, so an idle agent never grows a row at all.</p>
       </details>
       <details>
-        <summary>Does Offhook read my code, my prompts, or anything else?</summary>
-        <p>There is no Offhook account, no relay and no Offhook server. The app connects
+        <summary>Does Moshpit read my code, my prompts, or anything else?</summary>
+        <p>There is no Moshpit account, no relay and no Moshpit server. The app connects
         only to servers you add. The one thing that leaves the pane is the hook's short
         title — what the agent is running or asking, capped at 80 characters — which is
         rendered on your own lock screen and can be turned off with <b>Show detail on lock
@@ -581,7 +581,7 @@ Offhook            <i>paused — open Offhook to refresh</i></pre>
 <!--DOCTOC:BEGIN-->
 <aside class="dtoc">
   <p class="dtoclabel">On this page</p>
-  <nav><a href="#s1">Reach the host</a><a href="#s2">Start the agent</a><a href="#s3">Put the phone down</a><a href="#s4">Add the connection</a><a href="#s5">Check the fingerprint once</a><a href="#s6">Install it</a><a href="#s7">If it is missing, the app says so</a><a href="#s8">In a pane you already have</a><a href="#s9">New Agent Task</a><a href="#s10">The sheet, field by field</a><a href="#s11">What Start actually runs</a><a href="#s12">What you will see first</a><a href="#s13">Cleaning up afterwards</a><a href="#s14">What each button types</a><a href="#s15">When the tap cannot land</a><a href="#s16">The four switches that control it</a><a href="#s17">iOS suspends the connection, and state stops updating</a><a href="#s18">So the app says &quot;paused&quot; instead of lying</a><a href="#s19">Even in the foreground, out-of-band changes lag</a><a href="#s20">Two Offhook clients on the same pane will fight</a></nav>
+  <nav><a href="#s1">Reach the host</a><a href="#s2">Start the agent</a><a href="#s3">Put the phone down</a><a href="#s4">Add the connection</a><a href="#s5">Check the fingerprint once</a><a href="#s6">Install it</a><a href="#s7">If it is missing, the app says so</a><a href="#s8">In a pane you already have</a><a href="#s9">New Agent Task</a><a href="#s10">The sheet, field by field</a><a href="#s11">What Start actually runs</a><a href="#s12">What you will see first</a><a href="#s13">Cleaning up afterwards</a><a href="#s14">What each button types</a><a href="#s15">When the tap cannot land</a><a href="#s16">The four switches that control it</a><a href="#s17">iOS suspends the connection, and state stops updating</a><a href="#s18">So the app says &quot;paused&quot; instead of lying</a><a href="#s19">Even in the foreground, out-of-band changes lag</a><a href="#s20">Two Moshpit clients on the same pane will fight</a></nav>
 </aside>
 <!--DOCTOC:END-->
 </div><!--/dwrap-->
@@ -725,7 +725,7 @@ Offhook            <i>paused — open Offhook to refresh</i></pre>
       <a href="./">Home</a><a href="/docs">Docs</a><a href="/guides">Guides</a>
       <a href="/compare">Compare</a><a href="/pricing">Pricing</a><a href="/privacy">Privacy</a><a href="/support">Support</a>
     </nav>
-    <p class="legal">© 2026 Offhook · SSH · Mosh · tmux · herdr · iPhone</p>
+    <p class="legal">© 2026 Moshpit · SSH · Mosh · tmux · herdr · iPhone</p>
   </div>
 </footer>
 <div class="dsearch" id="dsearch" hidden style="display:none">

@@ -1,17 +1,17 @@
 /* ─────────────────────────────────────────────────────────────
-   Offhook — a switchboard, not a landing page.
+   Moshpit — a switchboard, not a landing page.
    Sans is the product's voice, mono is the machine's. Amber
    appears ONLY where an agent needs a human — never as
    decoration. That rule is the whole palette discipline, and
    it has been broken once already: the launch-price chip, the
    ladder's current rung and the launch note were all amber,
    which put "sale" in the same colour as "an agent is waiting
-   for you" one hero apart. Promotional emphasis is teal.
+   for you" one hero apart. Promotional emphasis is the brand violet (--accent); teal stays semantic (working).
    ───────────────────────────────────────────────────────────── */
 :root{
   --ink:#05060A; --panel:#0D1015; --raise:#141922;
   --line:rgba(255,255,255,.07); --line-lit:rgba(255,255,255,.14);
-  --indigo:#6C6BEF; --teal:#5EE3D9; --amber:#FFB35C; --green:#83E58C;
+  --indigo:#6C6BEF; --accent:#6C6BEF; --teal:#5EE3D9; --amber:#FFB35C; --green:#83E58C;
   --paper:rgba(244,241,232,.97); --dim:rgba(232,227,214,.64); --meta:rgba(199,193,181,.42);
   --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,monospace;
   --sans:-apple-system,BlinkMacSystemFont,"PingFang SC",system-ui,sans-serif;
@@ -35,15 +35,15 @@ a{color:inherit;text-decoration:none}
    not a signal everyone receives. Card titles are h4 > a and keep their own
    treatment. */
 .band p a, .band li a, .band td a, .doc .txt a, .dbody p a, .dbody li a{
-  color:var(--teal);text-decoration:underline;text-underline-offset:.18em;
-  text-decoration-thickness:1px;text-decoration-color:rgba(94,227,217,.45)}
+  color:var(--accent);text-decoration:underline;text-underline-offset:.18em;
+  text-decoration-thickness:1px;text-decoration-color:rgba(108,107,239,.45)}
 .band p a:hover, .band li a:hover, .band td a:hover, .doc .txt a:hover,
-.dbody p a:hover, .dbody li a:hover{text-decoration-color:var(--teal)}
-:focus-visible{outline:2px solid var(--teal);outline-offset:3px;border-radius:4px}
+.dbody p a:hover, .dbody li a:hover{text-decoration-color:var(--accent)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:4px}
 .shell{max-width:66rem;margin:0 auto;padding:0 1.5rem}
 
 .eyebrow{font:600 12.5px/1 var(--mono);letter-spacing:.26em;text-transform:uppercase;
-  color:var(--teal);display:flex;align-items:center;gap:.7rem}
+  color:var(--accent);display:flex;align-items:center;gap:.7rem}
 .eyebrow::after{content:"";flex:1;height:1px;background:var(--line);max-width:7rem}
 .eyebrow.plain::after{display:none}
 
@@ -65,7 +65,7 @@ a{color:inherit;text-decoration:none}
   gap:3rem;align-items:center}
 .hero h1{font-size:clamp(2.4rem,5.2vw,3.6rem);font-weight:750;line-height:1.03;
   letter-spacing:-.035em;margin:1.5rem 0 0}
-.hero h1 em{font-style:normal;color:var(--teal)}
+.hero h1 em{font-style:normal;color:var(--accent)}
 .lede{color:var(--dim);font-size:1.08rem;margin-top:1.15rem;max-width:31rem}
 .lede b{color:var(--paper);font-weight:600}
 .actions{display:flex;flex-wrap:wrap;align-items:center;gap:.9rem;margin-top:1.9rem}
@@ -74,12 +74,12 @@ a{color:inherit;text-decoration:none}
 .price span{opacity:.68;font-weight:500}
 .soon{font:600 14px var(--mono);letter-spacing:.04em;color:var(--meta);margin-top:1rem}
 .soon b{color:var(--paper);font-weight:700}
-.cta{display:inline-block;background:var(--teal);color:#04120f;border-radius:12px;
+.cta{display:inline-block;background:var(--accent);color:#fff;border-radius:12px;
   padding:.78rem 1.3rem;font:700 1rem var(--sans);letter-spacing:-.01em;
   transition:filter .15s ease}
 .cta:hover{filter:brightness(1.08)}
 .cta.ghost{background:none;color:var(--paper);border:1px solid var(--line-lit);font-weight:600}
-.cta.ghost:hover{border-color:var(--teal);color:var(--teal);filter:none}
+.cta.ghost:hover{border-color:var(--accent);color:var(--accent);filter:none}
 .band.close{text-align:center}
 .band.close .sub{margin:0 auto}
 .band.close .actions{justify-content:center;margin-top:1.6rem}
@@ -112,7 +112,7 @@ a{color:inherit;text-decoration:none}
 .step3 h3{font-size:1rem;font-weight:650;margin-bottom:.4rem}
 .step3 p{color:var(--dim);font-size:.95rem}
 .step3 code{font:13px var(--mono);background:var(--raise);border-radius:5px;padding:.1rem .35rem;
-  color:var(--teal)}
+  color:var(--accent)}
 @media(max-width:900px){.steps3{grid-template-columns:1fr}}
 
 /* ── section rhythm ── */
@@ -130,7 +130,7 @@ a{color:inherit;text-decoration:none}
 .strip .cap b{display:block;font-size:12.5px;letter-spacing:.2em;text-transform:uppercase;
   margin-bottom:.3rem}
 .strip.a .cap b{color:var(--amber)}
-.strip.b .cap b{color:var(--teal)}
+.strip.b .cap b{color:var(--accent)}
 
 /* ── alternating feature rows ── */
 .rows{display:grid;gap:3.2rem;margin-top:3rem}
@@ -142,7 +142,7 @@ a{color:inherit;text-decoration:none}
 .row .kicker{font:600 12px var(--mono);letter-spacing:.2em;text-transform:uppercase;
   color:var(--meta)}
 .row ul{list-style:none;margin-top:.9rem;display:grid;gap:.4rem;font-size:.97rem;color:var(--dim)}
-.row li::before{content:"·  ";color:var(--teal);font-weight:700}
+.row li::before{content:"·  ";color:var(--accent);font-weight:700}
 
 /* ── feature grid (the rest of the app) ── */
 .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:1.1rem;margin-top:2.4rem}
@@ -150,7 +150,7 @@ a{color:inherit;text-decoration:none}
   position:relative}
 .cell h4{font-size:1.02rem;font-weight:650;margin-bottom:.35rem}
 .cell p{color:var(--dim);font-size:.95rem}
-.cell .ic{font:700 12.5px var(--mono);color:var(--teal);letter-spacing:.14em;
+.cell .ic{font:700 12.5px var(--mono);color:var(--accent);letter-spacing:.14em;
   text-transform:uppercase;display:block;margin-bottom:.6rem}
 
 /* The whole card is the target, not just the title.
@@ -163,9 +163,9 @@ a{color:inherit;text-decoration:none}
    Cards without a link are explanatory, and must not grow a hover state. */
 .cell h4 a::after{content:"";position:absolute;inset:0;border-radius:inherit}
 .cell:has(h4 a){cursor:pointer;transition:border-color .15s ease,background .15s ease}
-.cell:has(h4 a):hover{border-color:rgba(94,227,217,.35);background:rgba(94,227,217,.045)}
-.cell:has(h4 a):hover h4 a{color:var(--teal)}
-.cell h4 a:focus-visible::after{outline:2px solid var(--teal);outline-offset:2px}
+.cell:has(h4 a):hover{border-color:rgba(108,107,239,.35);background:rgba(108,107,239,.045)}
+.cell:has(h4 a):hover h4 a{color:var(--accent)}
+.cell h4 a:focus-visible::after{outline:2px solid var(--accent);outline-offset:2px}
 @media(prefers-reduced-motion:reduce){.cell:has(h4 a){transition:none}}
 
 /* ── pricing ──────────────────────────────────────────────────
@@ -174,13 +174,13 @@ a{color:inherit;text-decoration:none}
    ledger table is the signature: a bill for a product named after a
    telephone, where every row after the first is the same number. */
 .pricecard{margin-top:2.2rem;max-width:44rem;background:var(--panel);
-  border:1px solid rgba(94,227,217,.3);border-radius:18px;padding:1.8rem}
+  border:1px solid rgba(108,107,239,.3);border-radius:18px;padding:1.8rem}
 .priceline{display:flex;align-items:baseline;gap:.6rem}
 .priceline .amount{font:700 3.4rem/1 var(--sans);letter-spacing:-.03em;color:var(--paper)}
-.priceline .once{font:600 1.05rem var(--mono);color:var(--teal)}
+.priceline .once{font:600 1.05rem var(--mono);color:var(--accent)}
 .pricenote{margin-top:.7rem;color:var(--dim);font-size:.95rem}
 .pricecta{margin-top:1.2rem;display:inline-block;font:600 .95rem var(--sans);
-  color:var(--ink);background:var(--teal);border-radius:999px;padding:.55rem 1.1rem}
+  color:#fff;background:var(--accent);border-radius:999px;padding:.55rem 1.1rem}
 .pricefine{margin-top:1.1rem;color:var(--meta);font-size:.93rem;line-height:1.6}
 /* The flat column is the argument; let it read as one figure repeated
    rather than four separate prices. */
@@ -200,17 +200,17 @@ a{color:inherit;text-decoration:none}
 .mux{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1.2rem;margin-top:2.4rem}
 .muxcard{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:1.4rem;
   min-width:0;overflow-wrap:anywhere}
-.muxcard.lit{border-color:rgba(94,227,217,.32);background:linear-gradient(180deg,rgba(94,227,217,.045),var(--panel))}
+.muxcard.lit{border-color:rgba(108,107,239,.32);background:linear-gradient(180deg,rgba(108,107,239,.045),var(--panel))}
 .muxcard h3{font-size:1.05rem;font-weight:700;letter-spacing:-.01em;margin-bottom:.15rem}
 .muxcard .tagline{font:600 12px var(--mono);letter-spacing:.16em;text-transform:uppercase;
   color:var(--meta);margin-bottom:.9rem}
-.muxcard.lit .tagline{color:var(--teal)}
+.muxcard.lit .tagline{color:var(--accent)}
 .muxcard ul{list-style:none;display:grid;gap:.5rem;font-size:.95rem;color:var(--dim)}
 /* flex, not grid: in a grid each text run and each <b> becomes its own
    grid item, so a bullet like "<b>lead</b> — rest" stacked one word per
    line. Flex folds contiguous inline content into a single anonymous item. */
 .muxcard li{display:flex;gap:.5rem;align-items:baseline}
-.muxcard li::before{content:"✓";color:var(--teal);font-weight:700;font-size:.94rem;flex:0 0 auto}
+.muxcard li::before{content:"✓";color:var(--accent);font-weight:700;font-size:.94rem;flex:0 0 auto}
 .muxcard.plain li::before{content:"·";color:var(--meta)}
 .muxnote{margin-top:1.5rem;font-size:.97rem;color:var(--dim);max-width:38rem}
 @media(max-width:900px){.mux{grid-template-columns:1fr}}
@@ -227,12 +227,12 @@ table td{overflow-wrap:anywhere}
 th,td{padding:.78rem 1rem;text-align:left;border-bottom:1px solid var(--line)}
 thead th{background:rgba(255,255,255,.022);font:600 12.5px var(--mono);letter-spacing:.14em;
   text-transform:uppercase;color:var(--meta);white-space:nowrap}
-thead th.us{color:var(--teal)}
+thead th.us{color:var(--accent)}
 tbody tr:last-child td{border-bottom:none}
 td.cap-col{color:var(--dim)}
-td.us{color:var(--paper);font-weight:600;background:rgba(94,227,217,.045)}
+td.us{color:var(--paper);font-weight:600;background:rgba(108,107,239,.045)}
 td.no{color:var(--meta)}
-.yes{color:var(--teal)}
+.yes{color:var(--accent)}
 
 /* ── pricing ── */
 .pricebox{margin-top:2.2rem;background:linear-gradient(180deg,var(--raise),var(--panel));
@@ -247,7 +247,7 @@ td.no{color:var(--meta)}
 /* ── proof ── */
 .facts{display:grid;grid-template-columns:repeat(4,1fr);gap:1rem;margin-top:2.2rem}
 .fact{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:1.1rem}
-.fact .big{font:700 1.45rem/1 var(--sans);letter-spacing:-.03em;color:var(--teal)}
+.fact .big{font:700 1.45rem/1 var(--sans);letter-spacing:-.03em;color:var(--accent)}
 .fact .lbl{font-size:.92rem;color:var(--dim);margin-top:.45rem}
 
 /* ── faq ── */
@@ -268,7 +268,7 @@ footer{border-top:1px solid var(--line);padding:3rem 0 4rem;text-align:center}
 .fnav{margin:1.1rem 0 .9rem;font-size:14px;display:flex;gap:1.6rem;justify-content:center;
   flex-wrap:wrap}
 .fnav a{color:var(--dim)}
-.fnav a:hover{color:var(--teal)}
+.fnav a:hover{color:var(--accent)}
 .legal{font:13px var(--mono);color:var(--meta)}
 
 /* ── launch framing ───────────────────────────────────────────
@@ -279,18 +279,18 @@ footer{border-top:1px solid var(--line);padding:3rem 0 4rem;text-align:center}
    the EU. ────────────────────────────────────────────────────── */
 .ladder{display:inline-flex;align-items:center;gap:.55rem;font:600 13px var(--mono);
   letter-spacing:.04em;margin-top:.75rem}
-.ladder .now{color:var(--teal)}
+.ladder .now{color:var(--accent)}
 .ladder .arrow{color:var(--meta)}
 .ladder .next{color:var(--meta);text-decoration:line-through;text-decoration-color:rgba(199,193,181,.35)}
 .ladder .after{color:var(--meta)}
 
 .launchnote{margin-top:.55rem;font:13.5px var(--mono);color:var(--meta);line-height:1.65}
-.launchnote b{color:var(--teal);font-weight:700}
+.launchnote b{color:var(--accent);font-weight:700}
 
 .steps{display:flex;flex-wrap:wrap;gap:.5rem;margin-top:1.2rem}
 .step{border:1px solid var(--line);border-radius:10px;padding:.55rem .8rem;
   font:600 13px var(--mono);color:var(--meta);background:rgba(255,255,255,.015)}
-.step.on{border-color:rgba(94,227,217,.5);color:var(--teal);background:rgba(94,227,217,.06)}
+.step.on{border-color:rgba(108,107,239,.5);color:var(--accent);background:rgba(108,107,239,.06)}
 .step small{display:block;font-weight:500;font-size:12px;letter-spacing:.08em;
   text-transform:uppercase;color:var(--meta);margin-top:.25rem}
 .step.on small{color:rgba(255,179,92,.7)}
@@ -298,10 +298,10 @@ footer{border-top:1px solid var(--line);padding:3rem 0 4rem;text-align:center}
 /* header right side */
 .topright{display:flex;align-items:center;gap:.8rem;flex-wrap:wrap;
   justify-content:flex-end;min-width:0}
-.chip.launch{border-color:rgba(94,227,217,.45);color:var(--teal)}
+.chip.launch{border-color:rgba(108,107,239,.45);color:var(--accent)}
 .lang{font:600 14px var(--mono);letter-spacing:.06em;color:var(--dim);
   border-bottom:1px solid var(--line-lit);padding-bottom:1px}
-.lang:hover{color:var(--teal);border-color:var(--teal)}
+.lang:hover{color:var(--accent);border-color:var(--accent)}
 
 /* the lock-screen row */
 .lockrow{display:grid;grid-template-columns:300px 1fr;gap:3rem;align-items:center;
@@ -327,8 +327,8 @@ footer{border-top:1px solid var(--line);padding:3rem 0 4rem;text-align:center}
   color:var(--meta);background:var(--panel);border:1px solid var(--line);
   border-radius:999px;padding:.4rem .7rem;cursor:pointer;transition:color .15s,border-color .15s}
 .galtabs button:hover{color:var(--dim)}
-.galtabs button[aria-selected="true"]{color:var(--teal);border-color:rgba(94,227,217,.45);
-  background:rgba(94,227,217,.06)}
+.galtabs button[aria-selected="true"]{color:var(--accent);border-color:rgba(108,107,239,.45);
+  background:rgba(108,107,239,.06)}
 
 @media(max-width:900px){
   .lockrow{grid-template-columns:1fr;gap:1.8rem}
@@ -408,12 +408,12 @@ footer{border-top:1px solid var(--line);padding:3rem 0 4rem;text-align:center}
 .doc ul.list{list-style:none;margin-top:.9rem;display:grid;gap:.45rem;
   font-size:.98rem;color:var(--dim);max-width:38rem}
 .doc ul.list li{padding-left:1.1rem;text-indent:-1.1rem}
-.doc ul.list li::before{content:"·";color:var(--teal);font-weight:700;
+.doc ul.list li::before{content:"·";color:var(--accent);font-weight:700;
   display:inline-block;width:1.1rem;text-indent:0}
 .doc ul.list b{color:var(--paper);font-weight:600}
 .doc code{overflow-wrap:anywhere;
   font:.87em var(--mono);background:var(--raise);border-radius:5px;
-  padding:.12rem .38rem;color:var(--teal)}
+  padding:.12rem .38rem;color:var(--accent)}
 .doc pre{margin-top:1.1rem;background:var(--panel);border:1px solid var(--line);
   border-radius:12px;padding:1rem 1.15rem;overflow-x:auto;
   font:13.5px/1.8 var(--mono);color:var(--dim)}
@@ -503,7 +503,7 @@ footer{border-top:1px solid var(--line);padding:3rem 0 4rem;text-align:center}
   padding:1.5rem 0 2rem;font-size:.95rem}
 .dnav .dhome{display:block;font:600 13px var(--mono);letter-spacing:.06em;
   color:var(--meta);margin-bottom:1.2rem}
-.dnav .dhome:hover{color:var(--teal)}
+.dnav .dhome:hover{color:var(--accent)}
 .dnav .dtitle{font:700 1.05rem var(--sans);letter-spacing:-.02em;margin-bottom:1rem}
 
 /* Reads as a search field rather than a button, because that is the thing
@@ -512,9 +512,9 @@ footer{border-top:1px solid var(--line);padding:3rem 0 4rem;text-align:center}
   width:100%;margin-bottom:1.4rem;padding:.5rem .7rem;cursor:pointer;
   background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.1);
   border-radius:9px;color:rgba(199,193,181,.62);font:13.5px var(--sans);text-align:left}
-.dsearchbtn:hover{border-color:rgba(94,227,217,.4);color:rgba(244,241,232,.9);
-  background:rgba(94,227,217,.06)}
-.dsearchbtn:focus-visible{outline:2px solid var(--teal);outline-offset:2px}
+.dsearchbtn:hover{border-color:rgba(108,107,239,.4);color:rgba(244,241,232,.9);
+  background:rgba(108,107,239,.06)}
+.dsearchbtn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .dsearchbtn kbd{font:12.5px var(--mono);padding:.1rem .3rem;border-radius:4px;
   background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.1);color:inherit}
 @media (max-width:900px){.dsearchbtn kbd{display:none}}
@@ -524,13 +524,13 @@ footer{border-top:1px solid var(--line);padding:3rem 0 4rem;text-align:center}
 .dnav nav a{display:block;padding:.32rem 0 .32rem .8rem;color:var(--dim);
   border-left:2px solid var(--line);line-height:1.45}
 .dnav nav a:hover{color:var(--paper);border-left-color:var(--line-lit)}
-.dnav nav a.on{color:var(--teal);border-left-color:var(--teal);font-weight:600}
+.dnav nav a.on{color:var(--accent);border-left-color:var(--accent);font-weight:600}
 
 .dtoc{position:sticky;top:1.5rem;padding:4.2rem 0 2rem;font-size:.93rem}
 .dtoc .dtoclabel{font:600 12px var(--mono);letter-spacing:.2em;text-transform:uppercase;
   color:var(--meta);margin-bottom:.7rem}
 .dtoc nav a{display:block;padding:.28rem 0;color:var(--dim);line-height:1.4}
-.dtoc nav a:hover{color:var(--teal)}
+.dtoc nav a:hover{color:var(--accent)}
 
 /* Two cells when there is a previous and a next; one full-width cell when
    there is only one of them. The placeholder span used to hold an empty
@@ -590,7 +590,7 @@ footer{border-top:1px solid var(--line);padding:3rem 0 4rem;text-align:center}
   .dnav nav{display:flex;flex-wrap:wrap;gap:.3rem .5rem}
   .dnav nav a{border-left:none;padding:.3rem .6rem;border:1px solid var(--line);
     border-radius:999px;font-size:.92rem}
-  .dnav nav a.on{border-color:var(--teal)}
+  .dnav nav a.on{border-color:var(--accent)}
   .dnav .dsec{width:100%;margin:.9rem 0 .35rem}
   .dpager{grid-template-columns:1fr}
   .dpager .dnext{text-align:left}

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Mosaic — end-to-end localhost SSH smoke test.
 #
-# Builds Offhook, installs onto an iPhone simulator, launches with seed
+# Builds Moshpit, installs onto an iPhone simulator, launches with seed
 # args that:
 #   1. Write `~/.ssh/id_ed25519` into the app's keychain
 #   2. Register a `127.0.0.1:22` connection
@@ -19,7 +19,7 @@
 set -euo pipefail
 
 SIM_NAME="${MOSAIC_SIM:-iPhone 17 Pro}"
-BUNDLE_ID="com.cluas.offhook"
+BUNDLE_ID="com.cluas.moshpit"
 KEY_PATH="${MOSAIC_SSH_KEY:-$HOME/.ssh/id_ed25519}"
 SSH_HOST="${MOSAIC_SSH_HOST:-127.0.0.1}"
 SSH_PORT="${MOSAIC_SSH_PORT:-22}"
@@ -74,16 +74,16 @@ if [ "$STATE" != "Booted" ]; then
   sleep 10
 fi
 
-echo "▶ Building Offhook"
+echo "▶ Building Moshpit"
 DERIVED="$(mktemp -d)"
 xcodebuild \
-  -project "$REPO_ROOT/Offhook.xcodeproj" -scheme Offhook \
+  -project "$REPO_ROOT/Moshpit.xcodeproj" -scheme Moshpit \
   -configuration Debug -sdk iphonesimulator \
   -destination "platform=iOS Simulator,name=$SIM_NAME" \
   -derivedDataPath "$DERIVED" \
   CODE_SIGNING_ALLOWED=NO build > "$DERIVED/build.log" 2>&1 \
   || { echo "✘ build failed"; tail -30 "$DERIVED/build.log"; exit 1; }
-APP="$(find "$DERIVED/Build/Products" -name 'Offhook.app' -type d | head -1)"
+APP="$(find "$DERIVED/Build/Products" -name 'Moshpit.app' -type d | head -1)"
 
 echo "▶ Installing app on $SIM_UDID"
 xcrun simctl install "$SIM_UDID" "$APP"
@@ -95,10 +95,10 @@ xcrun simctl terminate "$SIM_UDID" "$BUNDLE_ID" 2>/dev/null || true
 echo "▶ Launching with seed args: $(whoami)@$SSH_HOST:$SSH_PORT"
 KEY_B64="$(base64 -i "$KEY_PATH" | tr -d '\n')"
 xcrun simctl launch "$SIM_UDID" "$BUNDLE_ID" \
-  -OFFHOOK_SEED_USER "$(whoami)" \
-  -OFFHOOK_SEED_KEY_B64 "$KEY_B64" \
-  -OFFHOOK_SEED_HOST "$SSH_HOST" \
-  -OFFHOOK_SEED_PORT "$SSH_PORT" >/dev/null
+  -MOSHPIT_SEED_USER "$(whoami)" \
+  -MOSHPIT_SEED_KEY_B64 "$KEY_B64" \
+  -MOSHPIT_SEED_HOST "$SSH_HOST" \
+  -MOSHPIT_SEED_PORT "$SSH_PORT" >/dev/null
 
 echo "▶ Waiting 6s for SSH handshake + first PTY output…"
 sleep 6

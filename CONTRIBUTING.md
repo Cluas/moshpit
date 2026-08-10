@@ -1,6 +1,6 @@
-# Contributing to Ringdown
+# Contributing to Moshpit
 
-Thanks for your interest in contributing. Ringdown is an iOS SSH / Mosh / tmux
+Thanks for your interest in contributing. Moshpit is an iOS SSH / Mosh / tmux
 terminal client built with SwiftUI, targeting iOS 18. This guide covers the
 project's workflow and conventions so your change lands cleanly.
 
@@ -8,7 +8,7 @@ By participating you agree to abide by our [Code of Conduct](CODE_OF_CONDUCT.md)
 
 ## The xcodegen-first workflow
 
-**The `Ringdown.xcodeproj` is generated. Never hand-edit it.** `project.yml` is
+**The `Moshpit.xcodeproj` is generated. Never hand-edit it.** `project.yml` is
 the single source of truth for targets, build settings, Info.plist keys,
 entitlements, and Swift Package dependencies. The `.xcodeproj` is regenerated
 from it by [XcodeGen](https://github.com/yonaskolb/XcodeGen) and any manual
@@ -23,7 +23,7 @@ setting, adding a dependency, or editing an Info.plist value:
 3. Build and commit — commit `project.yml`, not out-of-band `.xcodeproj` edits.
 
 New source files placed under a path already listed in `project.yml` (e.g.
-`Ringdown/`) are picked up automatically on the next `xcodegen generate` — no
+`Moshpit/`) are picked up automatically on the next `xcodegen generate` — no
 project.yml edit needed for those.
 
 ### One-time setup
@@ -39,21 +39,21 @@ brew install xcodegen
 xcodegen generate
 
 # Build for the simulator
-xcodebuild -project Ringdown.xcodeproj -scheme Ringdown \
+xcodebuild -project Moshpit.xcodeproj -scheme Moshpit \
   -sdk iphonesimulator \
   -destination 'platform=iOS Simulator,name=iPhone 16 Pro' build
 
 # Or open in Xcode and Cmd+R
-open Ringdown.xcodeproj
+open Moshpit.xcodeproj
 ```
 
 ### Run the tests
 
-The test suite is the Ringdown scheme's `RingdownTests` (unit) and `RingdownUITests`
+The test suite is the Moshpit scheme's `MoshpitTests` (unit) and `MoshpitUITests`
 targets. Run them locally before opening a PR:
 
 ```bash
-xcodebuild test -project Ringdown.xcodeproj -scheme Ringdown \
+xcodebuild test -project Moshpit.xcodeproj -scheme Moshpit \
   -sdk iphonesimulator \
   -destination 'platform=iOS Simulator,name=iPhone 16 Pro'
 ```
@@ -101,14 +101,14 @@ The hard external boundaries — the SSH client, the keychain, and the tmux
 control transport — are each fronted by a narrow protocol with a
 mock/in-memory implementation for tests:
 
-- **SSH** — `SSHClientProvider` (`Ringdown/Services/SSHService.swift`), with a
-  mock exercised in `RingdownTests/Services/SSHServiceMockTests.swift`.
-- **Keychain** — `KeychainBackend` (`Ringdown/Services/KeychainService.swift`),
+- **SSH** — `SSHClientProvider` (`Moshpit/Services/SSHService.swift`), with a
+  mock exercised in `MoshpitTests/Services/SSHServiceMockTests.swift`.
+- **Keychain** — `KeychainBackend` (`Moshpit/Services/KeychainService.swift`),
   with `InMemoryKeychainBackend` and `KeychainService.inMemory(...)` for tests,
   plus a file-vault backend for the simulator.
 - **tmux transport** — `TmuxTransport` / `TmuxControlling`
-  (`Ringdown/Services/Tmux/`), with `MockTmuxTransport`
-  (`RingdownTests/Mocks/MockTmuxTransport.swift`).
+  (`Moshpit/Services/Tmux/`), with `MockTmuxTransport`
+  (`MoshpitTests/Mocks/MockTmuxTransport.swift`).
 
 New code that crosses one of these boundaries should follow the same pattern:
 depend on the protocol, not the concrete type, and provide (or reuse) a test

@@ -1,7 +1,7 @@
-# 本地安装 Ringdown 到 iPhone(免费 Apple 开发者账号)
+# 本地安装 Moshpit 到 iPhone(免费 Apple 开发者账号)
 
-免费 Apple ID 足以把 Ringdown 装到你自己的 iPhone——没有推送、没有后台模式,Live Activity
-只是个 Info.plist 开关。唯一的 entitlement 是一个 App Group(`group.com.cluas.ringdown`,
+免费 Apple ID 足以把 Moshpit 装到你自己的 iPhone——没有推送、没有后台模式,Live Activity
+只是个 Info.plist 开关。唯一的 entitlement 是一个 App Group(`group.com.cluas.moshpit`,
 主 App 与灵动岛扩展靠它共享 Agent 状态);免费账号签它偶尔会失败,遇到就看下面「常见问题」
 里剥掉扩展只验主 App 的做法。
 
@@ -13,7 +13,7 @@
 | mosh + SSH + tmux 全功能 | 后台远程推送(我们不用) |
 | 本地通知 + 灵动岛 Live Activity | App 不在同一网络时远程安装 |
 
-**硬限制(记住)**:① App **7 天过期**,过期后图标在但打不开,重新 ⌘R 一次即可续(数据保留)。② 同时最多 **3 个**自签 App。③ 每 7 天最多 10 个 App ID(Ringdown 占 2 个:主 App + 灵动岛扩展)。
+**硬限制(记住)**:① App **7 天过期**,过期后图标在但打不开,重新 ⌘R 一次即可续(数据保留)。② 同时最多 **3 个**自签 App。③ 每 7 天最多 10 个 App ID(Moshpit 占 2 个:主 App + 灵动岛扩展)。
 
 ---
 
@@ -26,7 +26,7 @@
    ```bash
    ./scripts/team-id.sh
    ```
-   若提示还没有 team:先在 Xcode 里打开 `Ringdown.xcodeproj`,选 **Ringdown** target ▸
+   若提示还没有 team:先在 Xcode 里打开 `Moshpit.xcodeproj`,选 **Moshpit** target ▸
    Signing & Capabilities ▸ Team 下拉选你的 Personal Team(这一步会触发 Xcode
    创建证书),再跑一次脚本。
 
@@ -66,12 +66,12 @@
 
 ```bash
 # 设备 UDID:xcrun devicectl list devices
-xcodebuild -project Ringdown.xcodeproj -scheme Ringdown -configuration Debug \
+xcodebuild -project Moshpit.xcodeproj -scheme Moshpit -configuration Debug \
   -destination 'generic/platform=iOS' \
   -derivedDataPath build/Device -allowProvisioningUpdates build
 
 xcrun devicectl device install app --device <UDID> \
-  build/Device/Build/Products/Debug-iphoneos/Ringdown.app
+  build/Device/Build/Products/Debug-iphoneos/Moshpit.app
 ```
 
 ---
@@ -85,11 +85,11 @@ xcrun devicectl device install app --device <UDID> \
 
 1. **出包**(未签名 .ipa,含灵动岛扩展):
    ```bash
-   ./scripts/build-ipa.sh        # → build/Ringdown.ipa(约 9 MB)
+   ./scripts/build-ipa.sh        # → build/Moshpit.ipa(约 9 MB)
    ```
 2. **装 AltStore**:Mac/PC 装 [AltServer](https://altstore.io),手机装 AltStore,
    在 AltStore 里用你的 Apple ID 登录。
-3. **侧载**:把 `build/Ringdown.ipa` 拖进 AltStore(或 `altserver -u <UDID> build/Ringdown.ipa`)。
+3. **侧载**:把 `build/Moshpit.ipa` 拖进 AltStore(或 `altserver -u <UDID> build/Moshpit.ipa`)。
    AltStore 用你的 Apple ID 重签后安装。
 4. **开自动续签**:AltStore ▸ Settings ▸ 打开 Background Refresh。让 AltServer 在
    电脑常驻,手机与电脑同一 Wi-Fi(并开启设备的 Wi-Fi 同步)即可后台续签。
@@ -97,7 +97,7 @@ xcrun devicectl device install app --device <UDID> \
 **前提与现实**:
 - AltServer 需要在一台电脑上常驻、且手机定期能与它同网可达——后台刷新才会发生;
   完全离线太久仍会过期(打开 App 触发一次前台刷新即可补上)。
-- AltStore 本身占用免费账号 3 个 App 名额里的 1 个(剩 2 个;Ringdown 是其中之一)。
+- AltStore 本身占用免费账号 3 个 App 名额里的 1 个(剩 2 个;Moshpit 是其中之一)。
 - 后台刷新不是 100% 可靠(iOS 后台调度 + 设备可达性所限),但比每周手动强得多。
 - **想完全摆脱"电脑常驻"**:用 [SideStore](https://sidestore.io)(AltStore 分支,
   靠设备本地 WireGuard 回环续签,无需电脑在同一网络)。流程同上,出包脚本通用。
@@ -109,11 +109,11 @@ xcrun devicectl device install app --device <UDID> \
 
 ## 常见问题
 
-- **"Failed to register bundle identifier"** → `com.cluas.ringdown` 全球唯一被占用了。
-  改 `project.yml` 里 `com.cluas.ringdown` → 更独特的(如 `com.<你的标识>.ringdown`),
+- **"Failed to register bundle identifier"** → `com.cluas.moshpit` 全球唯一被占用了。
+  改 `project.yml` 里 `com.cluas.moshpit` → 更独特的(如 `com.<你的标识>.moshpit`),
   连带把 `.island` 后缀的扩展 id 一起改,`xcodegen generate` 后重试。
-- **灵动岛扩展签名报错** → 免费账号偶发。临时验证主 App:在 `project.yml` 的 Ringdown
-  target `dependencies` 里去掉 `RingdownIsland` 那两行,generate 后只装主 App(会暂时
+- **灵动岛扩展签名报错** → 免费账号偶发。临时验证主 App:在 `project.yml` 的 Moshpit
+  target `dependencies` 里去掉 `MoshpitIsland` 那两行,generate 后只装主 App(会暂时
   失去 Live Activity);确认主 App 能装后再加回来排查。
 - **装上后 7 天打不开** → 正常,重新 ⌘R 续签。
 - **想人不在家也能更新** → 免费账号做不到;升级 $99/年开发者账号后走 TestFlight(90 天)

@@ -3,16 +3,16 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Reach your machine from anywhere — Offhook</title>
+<title>Reach your machine from anywhere — Moshpit</title>
 <meta name="description" content="Getting to a home or office machine from your phone without exposing SSH to the internet: a WireGuard mesh like Tailscale, plus mosh, plus the exact ports and permissions to check.">
 <link rel="icon" type="image/png" href="/icon-192.png">
-<link rel="stylesheet" href="/offhook.css?v=15">
+<link rel="stylesheet" href="/moshpit.css?v=15">
 </head>
 <body>
 
 <div class="shell">
   <header class="top">
-    <a class="brand" href="./"><img src="/icon-192.png" alt="" width="192" height="192">Offhook</a>
+    <a class="brand" href="./"><img src="/icon-192.png" alt="" width="192" height="192">Moshpit</a>
     <div class="topright">
       <a class="lang" href="/docs">Docs</a>
       <a class="lang" href="/guides">Guides</a>
@@ -30,7 +30,7 @@
   <a class="dhome" href="/">← Back to the app</a>
   <p class="dtitle">Docs</p>
   <button class="dsearchbtn" type="button" data-docsearch><span>Search the docs…</span><kbd>⌘K</kbd></button>
-  <nav><p class="dsec">Start</p><a href="/docs/intro">What Offhook does</a><a href="/docs/setup">Set up a connection</a><a href="/docs/first-session">Run your first session</a><p class="dsec">Connections</p><a href="/docs/keys">SSH keys and host trust</a><a href="/docs/mosh">Mosh and roaming</a><a href="/guide/remote-access" class="on" aria-current="page">Reach your machine from anywhere</a><p class="dsec">Multiplexers</p><a href="/docs/multiplexers">Choosing tmux or herdr</a><a href="/docs/tmux">Using tmux</a><a href="/docs/herdr">Using herdr</a><p class="dsec">Agents</p><a href="/docs/agents">Agent status and the lock screen</a><a href="/docs/worktrees">Isolated tasks with git worktrees</a><a href="/guide/claude-code">Run Claude Code from your iPhone</a><p class="dsec">Input</p><a href="/docs/keyboard">Keyboard and shortcuts</a><a href="/docs/scrolling">Scrolling and scrollback</a><a href="/docs/clipboard">Clipboard and paste</a><a href="/docs/ime">CJK and IME input</a><p class="dsec">Appearance</p><a href="/docs/appearance">Themes, fonts and icons</a><p class="dsec">Help</p><a href="/docs/troubleshooting">Troubleshooting</a><a href="/compare">How Offhook compares</a></nav>
+  <nav><p class="dsec">Start</p><a href="/docs/intro">What Moshpit does</a><a href="/docs/setup">Set up a connection</a><a href="/docs/first-session">Run your first session</a><p class="dsec">Connections</p><a href="/docs/keys">SSH keys and host trust</a><a href="/docs/mosh">Mosh and roaming</a><a href="/guide/remote-access" class="on" aria-current="page">Reach your machine from anywhere</a><p class="dsec">Multiplexers</p><a href="/docs/multiplexers">Choosing tmux or herdr</a><a href="/docs/tmux">Using tmux</a><a href="/docs/herdr">Using herdr</a><p class="dsec">Agents</p><a href="/docs/agents">Agent status and the lock screen</a><a href="/docs/worktrees">Isolated tasks with git worktrees</a><a href="/guide/claude-code">Run Claude Code from your iPhone</a><p class="dsec">Input</p><a href="/docs/keyboard">Keyboard and shortcuts</a><a href="/docs/scrolling">Scrolling and scrollback</a><a href="/docs/clipboard">Clipboard and paste</a><a href="/docs/ime">CJK and IME input</a><p class="dsec">Appearance</p><a href="/docs/appearance">Themes, fonts and icons</a><p class="dsec">Help</p><a href="/docs/troubleshooting">Troubleshooting</a><a href="/compare">How Moshpit compares</a></nav>
 </aside>
 <!--DOCSHELL:END-->
 <div class="dbody">
@@ -60,24 +60,24 @@
         <div class="step3">
           <h3 id="s2">Put the phone on the same mesh</h3>
           <p>Install the vendor's iOS app and sign in. It installs a VPN profile. Nothing
-          about Offhook is involved in this step.</p>
+          about Moshpit is involved in this step.</p>
           <p>iOS runs one VPN tunnel at a time, so a corporate VPN and your mesh generally
           cannot both be up.</p>
         </div>
         <div class="step3">
-          <h3 id="s3">Add the connection in Offhook</h3>
+          <h3 id="s3">Add the connection in Moshpit</h3>
           <p><b>Host</b> = the mesh name or address. <b>Port</b> = 22 unless you moved it.
           <b>Username</b>, then <b>SSH Key</b> under AUTHENTICATION.</p>
-          <p>Offhook connects to exactly the address you typed. That is the entire
+          <p>Moshpit connects to exactly the address you typed. That is the entire
           integration.</p>
         </div>
       </div>
 
       <div class="wire">
-        <p><b>Offhook has no VPN of any kind, and no Tailscale integration.</b> It does not
+        <p><b>Moshpit has no VPN of any kind, and no Tailscale integration.</b> It does not
         dial, route, or discover anything. It opens a TCP connection to the host string in
         the form and, for mosh, sends UDP to that same string. If your phone can reach the
-        address, so can Offhook.</p>
+        address, so can Moshpit.</p>
         <p>There is a <code>useTailscale</code> field on the saved connection model. Nothing
         in the app reads it and it is not in the form. It is a leftover, and we would rather
         say so here than have you go looking for the toggle.</p>
@@ -101,25 +101,25 @@
       minimum is key-only authentication — and note that this is the minimum, not a
       recommendation:</p>
 
-      <pre><i># /etc/ssh/sshd_config.d/offhook.conf</i>
+      <pre><i># /etc/ssh/sshd_config.d/moshpit.conf</i>
 <b>PasswordAuthentication no</b>
 <b>KbdInteractiveAuthentication no</b>
 <b>PermitRootLogin no</b>
 <b>AuthenticationMethods publickey</b>
 <i># check it parses, then reload: sudo sshd -t &amp;&amp; sudo systemctl reload ssh</i></pre>
 
-      <p class="txt">Three things about Offhook you should know before you design around
+      <p class="txt">Three things about Moshpit you should know before you design around
       it:</p>
       <ul class="list">
         <li><b>Two authentication methods, no third.</b> Password and public key. There is
         no keyboard-interactive, so an sshd configured for a TOTP prompt will not
-        authenticate from Offhook.</li>
+        authenticate from Moshpit.</li>
         <li><b>No ProxyJump, no bastion, no agent forwarding.</b> "SSH to a jump box first"
         is not something the app can do. The <code>jumpHost</code> and
         <code>forwardAgent</code> fields exist on the model and nothing reads them.</li>
         <li><b>Passphrase-encrypted private keys do not work.</b> The key is loaded without a
         decryption key, so an encrypted PEM fails to authenticate. Generate a key inside
-        Offhook (Settings → SSH Keys → ＋) and put its public half on the server instead —
+        Moshpit (Settings → SSH Keys → ＋) and put its public half on the server instead —
         those can be held in the Secure Enclave and gated behind Face ID.</li>
       </ul>
     </div>
@@ -157,7 +157,7 @@
           your router never sees it</li>
           <li><code>mosh-server</code> binds <b>one port per session</b> in the configured
           range, default <b>60000–61000</b></li>
-          <li>Offhook sends datagrams to the <b>same host string you typed</b> in the
+          <li>Moshpit sends datagrams to the <b>same host string you typed</b> in the
           form, on the port the server reported</li>
           <li>Mosh cannot bootstrap without a working SSH login first — TCP has to work
           before UDP matters</li>
@@ -170,14 +170,14 @@
         <div>
           <span class="kicker">The bootstrap, exactly</span>
           <h3 id="s7">SSH starts it, then gets out of the way</h3>
-          <p>Offhook runs one command over the authenticated SSH session, reads the one line
+          <p>Moshpit runs one command over the authenticated SSH session, reads the one line
           it prints, and then closes SSH. Everything after that is UDP.</p>
           <p style="margin-top:.9rem">That is why blocking SSH after connect does not kill a
           mosh session, and why blocking UDP does. It is also why a mesh that carries TCP
           well but relays UDP badly is a mesh where mosh feels worse than plain SSH.</p>
         </div>
         <img class="phone rowshot" src="/09-mosh.jpg" width="1320" height="2763" loading="lazy"
-             alt="A Mosh session in Offhook showing git log output, with the MOSH pill in the title bar">
+             alt="A Mosh session in Moshpit showing git log output, with the MOSH pill in the title bar">
       </div>
     </div>
 
@@ -232,7 +232,7 @@ MOSH CONNECT <b>60001</b> <i>&lt;22 base64 chars = a 16-byte AES-128 key&gt;</i>
     people an evening, so it gets its own section.</p>
 
     <div class="doc">
-      <p class="txt">Offhook launches <code>mosh-server new <b>-s</b></code>. That flag is
+      <p class="txt">Moshpit launches <code>mosh-server new <b>-s</b></code>. That flag is
       mosh's <code>--bind-server=ssh</code>, the upstream default since mosh 1.4: <b>the
       server binds only the address the SSH connection arrived on.</b> It is a deliberate
       choice — the datagrams then take the same path your login just took.</p>
@@ -243,7 +243,7 @@ MOSH CONNECT <b>60001</b> <i>&lt;22 base64 chars = a 16-byte AES-128 key&gt;</i>
         server is <b>unreachable</b>.</li>
         <li>A session started over the mesh binds the mesh address, and is unreachable from
         the LAN.</li>
-        <li>Neither of those is Offhook doing something wrong. It is what
+        <li>Neither of those is Moshpit doing something wrong. It is what
         <code>--bind-server=ssh</code> means.</li>
       </ul>
       <p class="txt">So: <b>save the connection with the mesh name, and use it at home
@@ -253,7 +253,7 @@ MOSH CONNECT <b>60001</b> <i>&lt;22 base64 chars = a 16-byte AES-128 key&gt;</i>
       <h3 id="s9">Orphan mosh-servers pile up</h3>
       <p class="txt">Every connect starts a fresh <code>mosh-server</code>. When the link
       dies, the old one does not exit — it sits there holding its UDP port. Over weeks of
-      reconnecting they accumulate. Offhook does not reap them, and that is a real gap, not
+      reconnecting they accumulate. Moshpit does not reap them, and that is a real gap, not
       a design decision.</p>
       <pre>pgrep -fl mosh-server                 <i># what's still running</i>
 lsof -nP -iUDP | grep mosh-server     <i># and which address each one bound</i>
@@ -277,7 +277,7 @@ pkill -f mosh-server                  <i># the blunt fix; kills live sessions to
     <div class="grid">
       <div class="cell"><span class="ic">Prompt</span>
         <h4>Appears once</h4>
-        <p>On the first connection to a LAN address. Offhook's reason string is: "Offhook
+        <p>On the first connection to a LAN address. Moshpit's reason string is: "Moshpit
         connects to servers on your local network over SSH and mosh (UDP). Without this
         permission, connections to LAN hosts (e.g. 192.168.x.x) will fail."</p></div>
       <div class="cell"><span class="ic">Denied</span>
@@ -285,7 +285,7 @@ pkill -f mosh-server                  <i># the blunt fix; kills live sessions to
         <p>iOS drops UDP to LAN addresses on the floor and tells nobody. TCP is unaffected,
         so SSH works perfectly and only mosh stays black behind a live cursor.</p></div>
       <div class="cell"><span class="ic">Fix</span>
-        <h4>Settings → Offhook → Local Network</h4>
+        <h4>Settings → Moshpit → Local Network</h4>
         <p>The prompt does not come back on its own. Turn it on there, then reconnect the
         session.</p></div>
     </div>
@@ -319,7 +319,7 @@ tailscale ip -4           <i># the address to put in the Host field</i></pre>
       <h3 id="s11">2 · Does plain SSH work from a laptop on the same mesh?</h3>
       <pre>ssh -v user@m1-pro.your-tailnet.ts.net</pre>
       <p class="txt">If this fails, stop. Nothing above it can work — mosh has no standalone
-      mode, and Offhook is an SSH client first.</p>
+      mode, and Moshpit is an SSH client first.</p>
 
       <h3 id="s12">3 · Does UDP actually round-trip?</h3>
       <p class="txt">This is the check nobody runs, and it is the one that finds the problem.
@@ -339,7 +339,7 @@ echo PING | nc -u -w3 m1-pro.your-tailnet.ts.net 60005</pre>
 sudo firewall-cmd --list-all                  <i># Fedora / RHEL</i>
 sudo ufw allow in on tailscale0 to any port 60000:61000 proto udp</pre>
       <p class="txt">Then check the cloud security group separately if there is one. And
-      confirm it is the <i>same</i> range Offhook is configured for — the default is
+      confirm it is the <i>same</i> range Moshpit is configured for — the default is
       60000–61000, but it is editable.</p>
 
       <h3 id="s14">5 · Ask the app what it is seeing</h3>
@@ -350,7 +350,7 @@ sudo ufw allow in on tailscale0 to any port 60000:61000 proto udp</pre>
       <pre><b>MOSH DIAGNOSTICS</b>
    <u>No datagrams yet.</u></pre>
       <p class="txt">That means literally nothing has come back — the counter increments
-      before any decryption or parsing. Dead return path. Stop debugging Offhook and go back
+      before any decryption or parsing. Dead return path. Stop debugging Moshpit and go back
       to step 3.</p>
 
       <h3 id="s15">6 · Take the escape hatch</h3>
@@ -404,10 +404,10 @@ sudo ufw allow in on tailscale0 to any port 60000:61000 proto udp</pre>
     <div class="doc">
       <div class="notes">
         <p><b class="amber">The app suspends in the background</b>
-        iOS suspends Offhook, its 12-second keepalive timer, and its polling. Agent state
+        iOS suspends Moshpit, its 12-second keepalive timer, and its polling. Agent state
         stops updating until you come back to the app, and catches up then. There is no push
         server — that is the trade for having nothing in the middle. Away for more than 20
-        seconds, Offhook forces a fresh reconnect on return rather than trusting a liveness
+        seconds, Moshpit forces a fresh reconnect on return rather than trusting a liveness
         probe that can false-positive on a half-open socket.</p>
         <p><b class="teal">Over mosh, tmux and herdr run their own TUI</b>
         Mosh transmits rendered screen diffs, not a raw line-framed byte pipe, so
@@ -416,7 +416,7 @@ sudo ufw allow in on tailscale0 to any port 60000:61000 proto udp</pre>
         second, lightweight SSH connection alongside — so if your mesh carries UDP but SSH is
         blocked, you get tmux without the native lists.</p>
         <p><b class="teal">herdr's direct attach is exclusive per pane</b>
-        Offhook attaches with <code>--takeover</code>. Two Offhook clients pointed at the same
+        Moshpit attaches with <code>--takeover</code>. Two Moshpit clients pointed at the same
         herdr pane will fight over it, each reclaiming roughly every two seconds. That is
         inherent to herdr's exclusive attach, not something the client can paper over. A
         desktop herdr TUI does not hold an attach owner, so that combination is believed safe
@@ -444,13 +444,13 @@ sudo ufw allow in on tailscale0 to any port 60000:61000 proto udp</pre>
     <div class="faq">
       <details>
         <summary>Do I have to use Tailscale?</summary>
-        <p>No. Offhook connects to an address; how that address becomes reachable is entirely
+        <p>No. Moshpit connects to an address; how that address becomes reachable is entirely
         yours to decide. NetBird, headscale, plain WireGuard, ZeroTier, a corporate VPN, or a
         server with a real public IP all work identically from the app's side. Tailscale is
         named here because it is the shortest path from nothing to working.</p>
       </details>
       <details>
-        <summary>Can Offhook connect through a jump host?</summary>
+        <summary>Can Moshpit connect through a jump host?</summary>
         <p>No. There is no ProxyJump, no bastion support and no agent forwarding. The
         <code>jumpHost</code> and <code>forwardAgent</code> fields exist on the stored model
         and nothing reads them — they are not in the form either. A mesh sidesteps the need
@@ -471,7 +471,7 @@ sudo ufw allow in on tailscale0 to any port 60000:61000 proto udp</pre>
         network gives you. This is an iOS constraint, not something an app can work around.</p>
       </details>
       <details>
-        <summary>Does Offhook see my mesh, or my other machines?</summary>
+        <summary>Does Moshpit see my mesh, or my other machines?</summary>
         <p>No. It has no network discovery, no account, no relay and no server of its own. It
         knows the connections you typed in, and it only ever talks to those. The Local Network
         permission exists solely so iOS does not drop UDP to LAN addresses — not to scan
@@ -495,7 +495,7 @@ sudo ufw allow in on tailscale0 to any port 60000:61000 proto udp</pre>
 <!--DOCTOC:BEGIN-->
 <aside class="dtoc">
   <p class="dtoclabel">On this page</p>
-  <nav><a href="#s1">Put the server on a mesh</a><a href="#s2">Put the phone on the same mesh</a><a href="#s3">Add the connection in Offhook</a><a href="#s4">If you genuinely have no alternative</a><a href="#s5">The mesh, underneath</a><a href="#s6">mosh, on top</a><a href="#s7">SSH starts it, then gets out of the way</a><a href="#s8">What has to be open, and where</a><a href="#s9">Orphan mosh-servers pile up</a><a href="#s10">1 · Is the peer up, and is it direct?</a><a href="#s11">2 · Does plain SSH work from a laptop on the same mesh?</a><a href="#s12">3 · Does UDP actually round-trip?</a><a href="#s13">4 · Is the range open on the interface the traffic arrives on?</a><a href="#s14">5 · Ask the app what it is seeing</a><a href="#s15">6 · Take the escape hatch</a></nav>
+  <nav><a href="#s1">Put the server on a mesh</a><a href="#s2">Put the phone on the same mesh</a><a href="#s3">Add the connection in Moshpit</a><a href="#s4">If you genuinely have no alternative</a><a href="#s5">The mesh, underneath</a><a href="#s6">mosh, on top</a><a href="#s7">SSH starts it, then gets out of the way</a><a href="#s8">What has to be open, and where</a><a href="#s9">Orphan mosh-servers pile up</a><a href="#s10">1 · Is the peer up, and is it direct?</a><a href="#s11">2 · Does plain SSH work from a laptop on the same mesh?</a><a href="#s12">3 · Does UDP actually round-trip?</a><a href="#s13">4 · Is the range open on the interface the traffic arrives on?</a><a href="#s14">5 · Ask the app what it is seeing</a><a href="#s15">6 · Take the escape hatch</a></nav>
 </aside>
 <!--DOCTOC:END-->
 </div><!--/dwrap-->
@@ -639,7 +639,7 @@ sudo ufw allow in on tailscale0 to any port 60000:61000 proto udp</pre>
       <a href="./">Home</a><a href="/docs">Docs</a><a href="/guides">Guides</a>
       <a href="/compare">Compare</a><a href="/pricing">Pricing</a><a href="/privacy">Privacy</a><a href="/support">Support</a>
     </nav>
-    <p class="legal">© 2026 Offhook · SSH · Mosh · tmux · herdr · iPhone</p>
+    <p class="legal">© 2026 Moshpit · SSH · Mosh · tmux · herdr · iPhone</p>
   </div>
 </footer>
 <div class="dsearch" id="dsearch" hidden style="display:none">

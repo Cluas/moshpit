@@ -3,18 +3,18 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>建立一个连接 — Offhook 摘机</title>
+<title>建立一个连接 — Moshpit 摘机</title>
 <meta name="description" content="第一次用要走完的路：加主机、选认证方式、生成或导入密钥、核对主机指纹、选 multiplexer，以及主机上缺东西时会发生什么。">
 <link rel="icon" type="image/png" href="/icon-192.png">
-<link rel="alternate" hreflang="en" href="https://offhook.cluas.eu.org/docs/setup">
-<link rel="alternate" hreflang="zh-Hans" href="https://offhook.cluas.eu.org/zh/docs/setup">
-<link rel="stylesheet" href="/offhook.css?v=15">
+<link rel="alternate" hreflang="en" href="https://moshpit.cluas.eu.org/docs/setup">
+<link rel="alternate" hreflang="zh-Hans" href="https://moshpit.cluas.eu.org/zh/docs/setup">
+<link rel="stylesheet" href="/moshpit.css?v=15">
 </head>
 <body>
 
 <div class="shell">
   <header class="top">
-    <a class="brand" href="/zh"><img src="/icon-192.png" alt="" width="192" height="192">Offhook</a>
+    <a class="brand" href="/zh"><img src="/icon-192.png" alt="" width="192" height="192">Moshpit</a>
     <div class="topright">
       <a class="lang" href="/zh/docs">文档</a>
       <a class="lang" href="/zh/guides">指南</a>
@@ -32,7 +32,7 @@
   <a class="dhome" href="/zh">← 回到首页</a>
   <p class="dtitle">文档</p>
   <button class="dsearchbtn" type="button" data-docsearch><span>搜索文档…</span><kbd>⌘K</kbd></button>
-  <nav><p class="dsec">开始</p><a href="/zh/docs/intro">Offhook 是做什么的</a><a href="/zh/docs/setup" class="on" aria-current="page">配置一个连接</a><a href="/zh/docs/first-session">跑通第一个会话</a><p class="dsec">连接</p><a href="/zh/docs/keys">SSH 密钥与主机信任</a><a href="/zh/docs/mosh">Mosh 与漫游</a><a href="/zh/guide/remote-access">在任何地方连上你的机器</a><p class="dsec">多路复用器</p><a href="/zh/docs/multiplexers">选 tmux 还是 herdr</a><a href="/zh/docs/tmux">使用 tmux</a><a href="/zh/docs/herdr">使用 herdr</a><p class="dsec">Agent</p><a href="/zh/docs/agents">Agent 状态与锁屏</a><a href="/zh/docs/worktrees">用 git worktree 开隔离任务</a><a href="/zh/guide/claude-code">用 iPhone 跑 Claude Code</a><p class="dsec">输入</p><a href="/zh/docs/keyboard">键盘与快捷键</a><a href="/zh/docs/scrolling">滚动与回滚</a><a href="/zh/docs/clipboard">剪贴板与粘贴</a><a href="/zh/docs/ime">中日韩与输入法</a><p class="dsec">外观</p><a href="/zh/docs/appearance">主题、字体与图标</a><p class="dsec">帮助</p><a href="/zh/docs/troubleshooting">排障</a><a href="/zh/compare">和别的比怎么样</a></nav>
+  <nav><p class="dsec">开始</p><a href="/zh/docs/intro">Moshpit 是做什么的</a><a href="/zh/docs/setup" class="on" aria-current="page">配置一个连接</a><a href="/zh/docs/first-session">跑通第一个会话</a><p class="dsec">连接</p><a href="/zh/docs/keys">SSH 密钥与主机信任</a><a href="/zh/docs/mosh">Mosh 与漫游</a><a href="/zh/guide/remote-access">在任何地方连上你的机器</a><p class="dsec">多路复用器</p><a href="/zh/docs/multiplexers">选 tmux 还是 herdr</a><a href="/zh/docs/tmux">使用 tmux</a><a href="/zh/docs/herdr">使用 herdr</a><p class="dsec">Agent</p><a href="/zh/docs/agents">Agent 状态与锁屏</a><a href="/zh/docs/worktrees">用 git worktree 开隔离任务</a><a href="/zh/guide/claude-code">用 iPhone 跑 Claude Code</a><p class="dsec">输入</p><a href="/zh/docs/keyboard">键盘与快捷键</a><a href="/zh/docs/scrolling">滚动与回滚</a><a href="/zh/docs/clipboard">剪贴板与粘贴</a><a href="/zh/docs/ime">中日韩与输入法</a><p class="dsec">外观</p><a href="/zh/docs/appearance">主题、字体与图标</a><p class="dsec">帮助</p><a href="/zh/docs/troubleshooting">排障</a><a href="/zh/compare">和别的比怎么样</a></nav>
 </aside>
 <!--DOCSHELL:END-->
 <div class="dbody">
@@ -42,7 +42,7 @@
     <h2>建立一个连接</h2>
     <p class="sub">从点 ＋ 到拿到一个能敲命令的 shell，中间发生的全部事情：表单里每个字段、
     密钥从哪来、指纹提示怎么读、multiplexer 怎么选，以及主机上没装 tmux / herdr /
-    mosh-server 时 Offhook 会怎么做。主机现成的话，一分钟左右。</p>
+    mosh-server 时 Moshpit 会怎么做。主机现成的话，一分钟左右。</p>
 
     <div class="steps3">
       <div class="step3">
@@ -98,7 +98,7 @@
           </ul>
         </div>
         <img class="phone rowshot" src="/01-agents.jpg" width="1320" height="2868" loading="lazy"
-             alt="Offhook 首页：顶部是齿轮与加号按钮和 HOSTS / LIVE / WORKSPACES 计数，下面是 CONNECTIONS 列表里一张标着 SSH 与 LIVE 的主机卡片">
+             alt="Moshpit 首页：顶部是齿轮与加号按钮和 HOSTS / LIVE / WORKSPACES 计数，下面是 CONNECTIONS 列表里一张标着 SSH 与 LIVE 的主机卡片">
       </div>
     </div>
 
@@ -106,7 +106,7 @@
     <p class="txt">连接的元数据——名称、主机、端口、用户名、你选的 multiplexer——是
     <code>UserDefaults</code> 里的一段 JSON。密码和私钥<b>不在</b>里面：它们进 iOS
     Keychain，存成一条 generic password，连接记录里只留一个形如
-    <code>offhook.secret.&lt;uuid&gt;</code> 的不透明引用。</p>
+    <code>moshpit.secret.&lt;uuid&gt;</code> 的不透明引用。</p>
     <p class="txt">Keychain 条目用的是
     <code>kSecAttrAccessibleWhenUnlockedThisDeviceOnly</code>：只在手机解锁时可读，
     并且<b>不进备份、不随设备迁移</b>。这是刻意的，代价见下面
@@ -123,7 +123,7 @@
     <h3 id="s8">连内网主机</h3>
     <p class="txt">第一次访问局域网地址时，iOS 会弹本地网络权限。拒绝之后公网主机照常能连，
     <code>192.168.1.10</code> 这类连不上。弹窗里的说明就是 App 里写的那句：
-    <em>Offhook connects to servers on your local network over SSH and mosh (UDP). Without
+    <em>Moshpit connects to servers on your local network over SSH and mosh (UDP). Without
     this permission, connections to LAN hosts (e.g. 192.168.x.x) will fail.</em></p>
   </section>
 </div>
@@ -149,7 +149,7 @@
 
     <h3 id="s11">用不了的东西</h3>
     <ul class="list">
-      <li><b>带口令加密的私钥。</b>解析私钥时 Offhook 从不传解密口令，所以加密过的 PEM
+      <li><b>带口令加密的私钥。</b>解析私钥时 Moshpit 从不传解密口令，所以加密过的 PEM
       直接失败。先对副本去掉口令——<code>ssh-keygen -p -N "" -f ./key-copy</code>——
       原文件留着别动。</li>
       <li><b>ECDSA P-384 / P-521。</b>会被拒，报<em>不支持的 SSH 密钥类型</em>。
@@ -214,7 +214,7 @@ chmod 600 ~/.ssh/authorized_keys</pre>
       <li><b>「口令」那两个框不加密任何东西。</b>「口令」和「确认口令」只驱动强度条和
       一致性校验，之后既不会传给密钥生成器，也不会传给 Keychain；生成的 ED25519 密钥是以
       cipher <code>none</code> 写入的。真正保护它的是 Keychain 加上（你开了的话）Face ID，
-      不是那个输入框。别把 Offhook 生成的密钥当成「有口令保护的密钥」。</li>
+      不是那个输入框。别把 Moshpit 生成的密钥当成「有口令保护的密钥」。</li>
       <li><b>「绑定主机」目前只是展示。</b>芯片会被保存、会被画出来，但选密钥时没有任何代码
       去读它。要指定用哪把，就在连接里选。（这一组的说明里提到的「SSH 密钥详情页」同样
       还不存在，每行只有长按菜单。）</li>
@@ -232,7 +232,7 @@ chmod 600 ~/.ssh/authorized_keys</pre>
   <section class="band doc">
     <p class="eyebrow">第三步</p>
     <h2>核对主机指纹</h2>
-    <p class="sub">Offhook 走的是 TOFU（首次使用即信任），和 OpenSSH 的 known_hosts 同一套
+    <p class="sub">Moshpit 走的是 TOFU（首次使用即信任），和 OpenSSH 的 known_hosts 同一套
     模型。对某个「主机 + 端口」的第一次握手会停下来问你，没有任何自动信任的路径。</p>
 
     <h3 id="s17">第一次连</h3>
@@ -247,7 +247,7 @@ chmod 600 ~/.ssh/authorized_keys</pre>
 
                           <i>[ 取消 ]</i>   <b>[ 信任 ]</b></pre>
     <p class="txt">去主机上跑那条命令——串口控制台、已有的会话、云厂商的网页终端都行，
-    只要不是你正在验证的这条连接——然后比对。Offhook 只负责把指纹摆给你看，
+    只要不是你正在验证的这条连接——然后比对。Moshpit 只负责把指纹摆给你看，
     它没办法替你判断对不对。</p>
 
     <h3 id="s18">指纹变了的时候</h3>
@@ -277,7 +277,7 @@ chmod 600 ~/.ssh/authorized_keys</pre>
     </ul>
 
     <h3 id="new-phone">局限：没有 known-hosts 管理界面</h3>
-    <p class="txt">Offhook 没法列出你信任过哪些主机，事后也看不到它们的指纹，
+    <p class="txt">Moshpit 没法列出你信任过哪些主机，事后也看不到它们的指纹，
     更没有「忘记这台主机」。删掉连接不会带走它的指纹。服务器正常换了密钥（重装、迁移）之后，
     App 内唯一的路径就是在那个警告框里读完两个指纹、然后接受变更。</p>
     <p class="txt">而且因为信任只存在本机、不进备份，<b>换新手机等于从零开始</b>：
@@ -321,13 +321,13 @@ chmod 600 ~/.ssh/authorized_keys</pre>
     </div>
 
     <p class="muxnote">选 <code>None</code> 就是一个纯 shell：断线即失去会话，
-    也没有什么「缺失」需要 Offhook 汇报。在这个选择器出现之前保存的连接没有 multiplexer
+    也没有什么「缺失」需要 Moshpit 汇报。在这个选择器出现之前保存的连接没有 multiplexer
     这个字段，会回落到老的 <code>useTmux</code> 开关——而老表单一直把它写成 true，
     所以它们解码出来就是 tmux，和一直以来的行为一致。</p>
 
     <h3 id="s23">这两个不能互相顶替</h3>
     <p class="txt">tmux 和 herdr 是两个独立的 server，各自持有互不相干的会话。
-    你选了一个而主机上只有另一个，Offhook 会告诉你，然后退成一个纯 shell。
+    你选了一个而主机上只有另一个，Moshpit 会告诉你，然后退成一个纯 shell。
     <b>它不会去附加另一个</b>——那等于把别人的工作端到你面前，还说这是你的。
     这条规则在表单说明、降级逻辑和设计文档里是同一句话。</p>
 
@@ -346,7 +346,7 @@ chmod 600 ~/.ssh/authorized_keys</pre>
     但是以它们<b>自己的全屏文本界面</b>跑在 mosh 的 shell 里，用它们自己的 prefix 键。
     丢掉的是<b>原生 pane 渲染</b>：终端里显示的就是那个 multiplexer 自己的画面，
     连侧边栏一起。表单在「高级」的说明里也是这么写的。</p>
-    <p class="txt">但<em>面板不会丢</em>。走 mosh 时 Offhook 会另开一条轻量的 SSH 连接
+    <p class="txt">但<em>面板不会丢</em>。走 mosh 时 Moshpit 会另开一条轻量的 SSH 连接
     专门跑控制面——tmux 走 <code>-CC</code> sidecar，herdr 走
     <code>herdr api snapshot</code> 轮询——所以 Sessions / Workspaces 面板、
     Windows / Tabs 面板、首页的树和面包屑照常可用。这条连接拨的是 mosh 引导时
@@ -358,14 +358,14 @@ chmod 600 ~/.ssh/authorized_keys</pre>
     其中一个会让你付出代价：<b><code>⌃B q</code> 在 tmux 里是显示窗格编号，在 herdr 里是
     <em>detach</em>。</b>herdr 切 workspace 用 <code>⌃B w</code>，切 tab 用
     <code>⌃B n</code> / <code>⌃B p</code>；tmux 那边对应的是 <code>⌃B s</code> 和
-    <code>⌃B 1-9</code>。Offhook 各个面板底部印的就是当前连接该用的那一组，
+    <code>⌃B 1-9</code>。Moshpit 各个面板底部印的就是当前连接该用的那一组，
     照着那里按，别照着 tmux 的肌肉记忆按。</p>
 
     <h3 id="s27">herdr 的三条边界，先说在前面</h3>
     <ul class="list">
-      <li><b>直连是按 pane 独占的，而 Offhook 带 <code>--takeover</code> 附加</b>——
-      必须带，否则重连会撞上自己上一条没断干净的附加。因此<b>两个 Offhook 客户端连同一个
-      pane 会互相把对方踢下去</b>，这个 pane 同一时刻只能归一个。Offhook 会数自己
+      <li><b>直连是按 pane 独占的，而 Moshpit 带 <code>--takeover</code> 附加</b>——
+      必须带，否则重连会撞上自己上一条没断干净的附加。因此<b>两个 Moshpit 客户端连同一个
+      pane 会互相把对方踢下去</b>，这个 pane 同一时刻只能归一个。Moshpit 会数自己
       「不是主动断的」那些断开：30 秒内被踢三次，就退避 30 秒并直说
       <em>Another client is using this pane — retrying shortly</em>，
       而不是每两秒抢一轮、你打的字却落在一条刚被踢掉的通道上。对方一走，它自己就恢复。
@@ -388,7 +388,7 @@ chmod 600 ~/.ssh/authorized_keys</pre>
   <section class="band doc">
     <p class="eyebrow">第五步</p>
     <h2>主机上缺东西时</h2>
-    <p class="sub">依赖缺失<b>绝不会阻断连接</b>。Offhook 在第一条 SSH 通道上探测一次，
+    <p class="sub">依赖缺失<b>绝不会阻断连接</b>。Moshpit 在第一条 SSH 通道上探测一次，
     降级到一个能用的形态，然后告诉你它放弃了什么。</p>
 
     <h3 id="s28">探测看的是哪些地方</h3>
@@ -432,7 +432,7 @@ chmod 600 ~/.ssh/authorized_keys</pre>
     或<em>未找到 mosh-server —— 已改用 SSH 连接。</em>——右侧带一个「安装 …」按钮。
     banner 后面的终端完全可用。</p>
     <p class="txt">面板标题是「在主机上安装」，开头就是它守住的那句承诺：
-    <em>Offhook 绝不会静默安装任何内容。请在你的 shell 中运行下面的命令 —— sudo
+    <em>Moshpit 绝不会静默安装任何内容。请在你的 shell 中运行下面的命令 —— sudo
     及其输出全程可见。</em>接着是按探测到的包管理器生成的命令：</p>
 <pre><i>apt-get   </i>sudo apt-get install -y tmux mosh
 <i>dnf / yum </i>sudo dnf install -y tmux mosh
@@ -456,7 +456,7 @@ chmod 600 ~/.ssh/authorized_keys</pre>
     重新检测的结果是<em>已安装 —— 重新连接以启用。</em>加一个「重新连接」按钮，
     或者<em>仍未检测到。请运行命令并等待其完成，然后重新检测。</em></p>
     <p class="txt">如果 herdr 不是用 Homebrew 装的，面板还会补一句：
-    <em>Installs to ~/.local/bin. Offhook looks there when probing and launching, so you
+    <em>Installs to ~/.local/bin. Moshpit looks there when probing and launching, so you
     don't need to change PATH.</em></p>
 
     <h3 id="s31">重新检测在哪里不管用</h3>
@@ -473,7 +473,7 @@ chmod 600 ~/.ssh/authorized_keys</pre>
     <p class="txt">转圈（<em>Attaching tmux…</em> / <em>Attaching herdr…</em>）大约四秒后，
     终端会落到两种状态之一，含义完全不同。一种是<b>这台主机没装那个 multiplexer</b>，
     配一个 <b>Install …</b> 按钮；另一种是二进制在、只是没有东西在跑：
-    <em>This server has no running sessions. Offhook only attaches — create the first one
+    <em>This server has no running sessions. Moshpit only attaches — create the first one
     to start.</em>，按钮是 <b>Create Session</b>。二进制缺失和无会话是两件事，
     别当成同一个问题处理。</p>
     <p class="txt">这几句话会跟着 multiplexer 换词，因为 herdr 没有「会话」这个概念：
@@ -489,7 +489,7 @@ chmod 600 ~/.ssh/authorized_keys</pre>
 <div class="shell">
   <section class="band doc">
     <p class="eyebrow plain">规矩</p>
-    <h2>Offhook 绝不会做的三件事</h2>
+    <h2>Moshpit 绝不会做的三件事</h2>
     <p class="sub">整条初始化路径都是围着这三条搭的。它们写在源码里、写在表单自己的
     说明文字里、也写在设计文档里，不只是写在这一页。</p>
 
@@ -497,11 +497,11 @@ chmod 600 ~/.ssh/authorized_keys</pre>
       <div class="cell"><span class="ic">安装</span>
         <h4>绝不静默安装</h4>
         <p>每条安装命令都先给你看，再在你可见的 shell 里执行，sudo 交互和输出一样不少。
-        Offhook 只负责代填命令，按钮由你来按。</p></div>
+        Moshpit 只负责代填命令，按钮由你来按。</p></div>
       <div class="cell"><span class="ic">会话</span>
         <h4>绝不擅自创建或改造会话</h4>
         <p>它附加到已经在跑的东西上，不动你的配置。只有你点「创建会话」才会有新会话；
-        而且只有通过 Offhook 创建的会话才会套上它的原生外观——隐藏状态栏，
+        而且只有通过 Moshpit 创建的会话才会套上它的原生外观——隐藏状态栏，
         断开时还原。</p></div>
       <div class="cell"><span class="ic">复用器</span>
         <h4>绝不替你换 multiplexer</h4>
@@ -548,7 +548,7 @@ chmod 600 ~/.ssh/authorized_keys</pre>
         <summary>App 切到后台时，还会盯着我的 agent 吗？</summary>
         <p>不会。iOS 会挂起 App、挂起保活定时器、挂起轮询，agent 状态会停在那里，
         直到你回到 App——灵动岛和 agent 列表会在你回来之后的第一次轮询补上。
-        没有推送服务器，因为根本就没有 Offhook 服务器。这是「中间不放任何东西」的代价，
+        没有推送服务器，因为根本就没有 Moshpit 服务器。这是「中间不放任何东西」的代价，
         我们照实说。</p>
       </details>
       <details>
@@ -581,7 +581,7 @@ chmod 600 ~/.ssh/authorized_keys</pre>
   </section>
 </div>
 <!--DOCNEXT:BEGIN-->
-<div class="dpager"><a class="dprev" href="/zh/docs/intro"><span>上一页</span>Offhook 是做什么的</a><a class="dnext" href="/zh/docs/first-session"><span>下一页</span>跑通第一个会话</a></div>
+<div class="dpager"><a class="dprev" href="/zh/docs/intro"><span>上一页</span>Moshpit 是做什么的</a><a class="dnext" href="/zh/docs/first-session"><span>下一页</span>跑通第一个会话</a></div>
 <!--DOCNEXT:END-->
 </div><!--dbody-->
 <!--DOCTOC:BEGIN-->
@@ -731,7 +731,7 @@ chmod 600 ~/.ssh/authorized_keys</pre>
       <a href="/zh">首页</a><a href="/zh/docs">文档</a><a href="/zh/guides">指南</a>
       <a href="/zh/compare">对比</a><a href="/zh/pricing">定价</a><a href="/privacy">隐私</a><a href="/support">支持</a>
     </nav>
-    <p class="legal">© 2026 Offhook 摘机 · SSH · Mosh · tmux · herdr · iPhone</p>
+    <p class="legal">© 2026 Moshpit 摘机 · SSH · Mosh · tmux · herdr · iPhone</p>
   </div>
 </footer>
 <div class="dsearch" id="dsearch" hidden style="display:none">

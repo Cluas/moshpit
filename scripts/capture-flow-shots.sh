@@ -16,11 +16,11 @@ set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 SIM_NAME="${MOSAIC_SIM:-iPhone 17 Pro}"
-BUNDLE_ID="com.cluas.offhook"
+BUNDLE_ID="com.cluas.moshpit"
 KEY_PATH="${MOSAIC_SSH_KEY:-$HOME/.ssh/id_ed25519}"
 OUT="build/serve/docs/shots"
 TMUX_BIN="$(command -v tmux)"
-SOCK="offhook-proto"
+SOCK="moshpit-proto"
 WRAP="build/proto-tmux"
 mkdir -p "$OUT" build
 
@@ -52,10 +52,10 @@ WRAP_ABS="$(cd "$(dirname "$WRAP")" && pwd)/$(basename "$WRAP")"
 
 echo "▶ Building"
 DERIVED="$(mktemp -d)"
-xcodebuild -project Offhook.xcodeproj -scheme Offhook -configuration Debug \
+xcodebuild -project Moshpit.xcodeproj -scheme Moshpit -configuration Debug \
   -sdk iphonesimulator -destination "platform=iOS Simulator,name=$SIM_NAME" \
   -derivedDataPath "$DERIVED" CODE_SIGNING_ALLOWED=NO build >/dev/null 2>&1
-APP="$(find "$DERIVED/Build/Products" -name 'Offhook.app' -type d | head -1)"
+APP="$(find "$DERIVED/Build/Products" -name 'Moshpit.app' -type d | head -1)"
 xcrun simctl install "$SIM_UDID" "$APP"
 xcrun simctl status_bar "$SIM_UDID" override --time "9:41" --batteryState charged \
   --batteryLevel 100 --wifiBars 3 --cellularBars 4 --dataNetwork wifi 2>/dev/null || true
@@ -79,14 +79,14 @@ launch() {   # launch <mux> [extra args…]
   xcrun simctl terminate "$SIM_UDID" "$BUNDLE_ID" >/dev/null 2>&1 || true
   local mux="$1"; shift
   xcrun simctl launch "$SIM_UDID" "$BUNDLE_ID" \
-    -OFFHOOK_SEED_USER "$(whoami)" -OFFHOOK_SEED_KEY_B64 "$KEY_B64" \
-    -OFFHOOK_SEED_HOST 127.0.0.1 -OFFHOOK_SEED_PORT 22 \
-    -OFFHOOK_SEED_MUX "$mux" -OFFHOOK_SEED_QUIET 1 "$@" >/dev/null
+    -MOSHPIT_SEED_USER "$(whoami)" -MOSHPIT_SEED_KEY_B64 "$KEY_B64" \
+    -MOSHPIT_SEED_HOST 127.0.0.1 -MOSHPIT_SEED_PORT 22 \
+    -MOSHPIT_SEED_MUX "$mux" -MOSHPIT_SEED_QUIET 1 "$@" >/dev/null
 }
 
 # ---------------------------------------------------------------- shared
 echo "▶ Shared: home + connection form"
-launch herdr -OFFHOOK_SEED_HOME 1
+launch herdr -MOSHPIT_SEED_HOME 1
 shot 01-home 6
 P="$(find_label Add)"; [ -n "$P" ] && tapl $P
 shot 02-add-connection 3
@@ -102,8 +102,8 @@ echo "▶ tmux (private socket — your own sessions are untouched)"
 "$TMUX_BIN" -L "$SOCK" kill-server >/dev/null 2>&1 || true
 "$TMUX_BIN" -L "$SOCK" new-session -d -s demo -x 52 -y 30
 "$TMUX_BIN" -L "$SOCK" new-window -t demo -n logs
-"$TMUX_BIN" -L "$SOCK" send-keys -t demo "printf 'offhook · tmux path\\n'" C-m
-launch tmux -OFFHOOK_SEED_TMUX_BIN "$WRAP_ABS"
+"$TMUX_BIN" -L "$SOCK" send-keys -t demo "printf 'moshpit · tmux path\\n'" C-m
+launch tmux -MOSHPIT_SEED_TMUX_BIN "$WRAP_ABS"
 shot 10-tmux-terminal 16
 P="$(find_label '0')"; [ -n "$P" ] || P="200 89"
 tapl 202 89
@@ -133,7 +133,7 @@ sleep 1
 # W1 + W2. Needs a repo with a pane sitting in it (that's how the form finds
 # repos) and two agents in different states so the ordering is visible.
 echo "▶ Agent workbench (W1 + W2)"
-DEMO_REPO="$HOME/offhook-demo"
+DEMO_REPO="$HOME/moshpit-demo"
 rm -rf "$DEMO_REPO"; mkdir -p "$DEMO_REPO"
 git -C "$DEMO_REPO" init -q
 git -C "$DEMO_REPO" commit -q --allow-empty -m init
@@ -144,13 +144,13 @@ import json, sys
 snap = json.load(sys.stdin).get('result', {}).get('snapshot', {})
 print(' '.join(p['pane_id'] for p in snap.get('panes', [])[:3]))")"
 set -- $SHOT_PANES
-timeout 5 herdr pane report-agent "${1:-w1:p1}" --source offhook-shots \
+timeout 5 herdr pane report-agent "${1:-w1:p1}" --source moshpit-shots \
   --agent "Claude Code" --state blocked >/dev/null 2>&1 || true
-timeout 5 herdr pane report-agent "${2:-w1:p1}" --source offhook-shots \
+timeout 5 herdr pane report-agent "${2:-w1:p1}" --source moshpit-shots \
   --agent "Codex" --state working >/dev/null 2>&1 || true
 # A third, idle-by-name agent, so the section's quiet bottom row is on film
 # too. Optional garnish — no verification, 0.7.3 may refuse the state.
-[ -n "${3:-}" ] && timeout 5 herdr pane report-agent "$3" --source offhook-shots \
+[ -n "${3:-}" ] && timeout 5 herdr pane report-agent "$3" --source moshpit-shots \
   --agent "agy" --state idle >/dev/null 2>&1 || true
 
 # The whole point of shot 40 is a POPULATED Agents section. report-agent can
@@ -169,7 +169,7 @@ if ! staged_ok; then
   staged_ok || { echo "✘ agent staging didn't take (report-agent failed?) — refusing to shoot an empty Agents section" >&2; exit 1; }
 fi
 
-launch herdr -OFFHOOK_SEED_HOME 1
+launch herdr -MOSHPIT_SEED_HOME 1
 sleep 6
 tapl 201 299          # connect the card
 sleep 20
@@ -227,9 +227,9 @@ if [ -n "$AGENT_ROW" ]; then
 fi
 
 # Clean up everything this section created.
-timeout 5 herdr pane release-agent "${1:-w1:p1}" --source offhook-shots --agent "Claude Code" >/dev/null 2>&1 || true
-timeout 5 herdr pane release-agent "${2:-w1:p1}" --source offhook-shots --agent "Codex" >/dev/null 2>&1 || true
-[ -n "${3:-}" ] && timeout 5 herdr pane release-agent "$3" --source offhook-shots --agent "agy" >/dev/null 2>&1 || true
+timeout 5 herdr pane release-agent "${1:-w1:p1}" --source moshpit-shots --agent "Claude Code" >/dev/null 2>&1 || true
+timeout 5 herdr pane release-agent "${2:-w1:p1}" --source moshpit-shots --agent "Codex" >/dev/null 2>&1 || true
+[ -n "${3:-}" ] && timeout 5 herdr pane release-agent "$3" --source moshpit-shots --agent "agy" >/dev/null 2>&1 || true
 DEMO_WS="$(timeout 5 herdr api snapshot 2>/dev/null | python3 -c "
 import json, sys
 snap = json.load(sys.stdin).get('result', {}).get('snapshot', {})

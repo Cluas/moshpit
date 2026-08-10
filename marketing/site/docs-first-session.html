@@ -3,17 +3,17 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Run your first session — Offhook</title>
+<title>Run your first session — Moshpit</title>
 <meta name="description" content="From a saved host to a working terminal: connect, trust the fingerprint, and find your way around the breadcrumb, sheets and keyboard bar.">
 <link rel="icon" type="image/png" href="/icon-192.png">
 <link rel="alternate" hreflang="zh-Hans" href="/zh/docs/first-session">
-<link rel="stylesheet" href="/offhook.css?v=15">
+<link rel="stylesheet" href="/moshpit.css?v=15">
 </head>
 <body>
 
 <div class="shell">
   <header class="top">
-    <a class="brand" href="./"><img src="/icon-192.png" alt="" width="192" height="192">Offhook</a>
+    <a class="brand" href="./"><img src="/icon-192.png" alt="" width="192" height="192">Moshpit</a>
     <div class="topright">
       <a class="lang" href="/docs">Docs</a>
       <a class="lang" href="/guides">Guides</a>
@@ -30,7 +30,7 @@
   <a class="dhome" href="/">← Back to the app</a>
   <p class="dtitle">Docs</p>
   <button class="dsearchbtn" type="button" data-docsearch><span>Search the docs…</span><kbd>⌘K</kbd></button>
-  <nav><p class="dsec">Start</p><a href="/docs/intro">What Offhook does</a><a href="/docs/setup">Set up a connection</a><a href="/docs/first-session" class="on" aria-current="page">Run your first session</a><p class="dsec">Connections</p><a href="/docs/keys">SSH keys and host trust</a><a href="/docs/mosh">Mosh and roaming</a><a href="/guide/remote-access">Reach your machine from anywhere</a><p class="dsec">Multiplexers</p><a href="/docs/multiplexers">Choosing tmux or herdr</a><a href="/docs/tmux">Using tmux</a><a href="/docs/herdr">Using herdr</a><p class="dsec">Agents</p><a href="/docs/agents">Agent status and the lock screen</a><a href="/docs/worktrees">Isolated tasks with git worktrees</a><a href="/guide/claude-code">Run Claude Code from your iPhone</a><p class="dsec">Input</p><a href="/docs/keyboard">Keyboard and shortcuts</a><a href="/docs/scrolling">Scrolling and scrollback</a><a href="/docs/clipboard">Clipboard and paste</a><a href="/docs/ime">CJK and IME input</a><p class="dsec">Appearance</p><a href="/docs/appearance">Themes, fonts and icons</a><p class="dsec">Help</p><a href="/docs/troubleshooting">Troubleshooting</a><a href="/compare">How Offhook compares</a></nav>
+  <nav><p class="dsec">Start</p><a href="/docs/intro">What Moshpit does</a><a href="/docs/setup">Set up a connection</a><a href="/docs/first-session" class="on" aria-current="page">Run your first session</a><p class="dsec">Connections</p><a href="/docs/keys">SSH keys and host trust</a><a href="/docs/mosh">Mosh and roaming</a><a href="/guide/remote-access">Reach your machine from anywhere</a><p class="dsec">Multiplexers</p><a href="/docs/multiplexers">Choosing tmux or herdr</a><a href="/docs/tmux">Using tmux</a><a href="/docs/herdr">Using herdr</a><p class="dsec">Agents</p><a href="/docs/agents">Agent status and the lock screen</a><a href="/docs/worktrees">Isolated tasks with git worktrees</a><a href="/guide/claude-code">Run Claude Code from your iPhone</a><p class="dsec">Input</p><a href="/docs/keyboard">Keyboard and shortcuts</a><a href="/docs/scrolling">Scrolling and scrollback</a><a href="/docs/clipboard">Clipboard and paste</a><a href="/docs/ime">CJK and IME input</a><p class="dsec">Appearance</p><a href="/docs/appearance">Themes, fonts and icons</a><p class="dsec">Help</p><a href="/docs/troubleshooting">Troubleshooting</a><a href="/compare">How Moshpit compares</a></nav>
 </aside>
 <!--DOCSHELL:END-->
 <div class="dbody">
@@ -43,7 +43,7 @@
     <p class="txt">Tap the connection card on the home screen. The first connection to any
     host raises a <b>New Host</b> sheet with the key fingerprint and the command to verify
     it on the server. Check it if you can; tap <b>Trust</b> to continue, <b>Cancel</b> to
-    abort. Offhook remembers the answer per host, and warns loudly if that key ever
+    abort. Moshpit remembers the answer per host, and warns loudly if that key ever
     changes later.</p>
 
     <h3 id="s2">Read the top bar</h3>
@@ -72,7 +72,7 @@
     <ul class="list">
       <li><b>Switch windows or panes</b> — tap the matching breadcrumb segment and pick
       from the sheet. On tmux you can also swipe horizontally across the terminal.</li>
-      <li><b>Scroll</b> — swipe vertically. Offhook decides whether that becomes real
+      <li><b>Scroll</b> — swipe vertically. Moshpit decides whether that becomes real
       scrollback or a wheel event for a full-screen app; see
       <a href="/docs/scrolling">Scrolling and scrollback</a>.</li>
       <li><b>Create, rename or close</b> — the <b>+</b> in each sheet creates; long-press a
@@ -81,7 +81,7 @@
 
     <h3 id="s5">Leave and come back</h3>
     <p class="txt">Go back to the home screen and the session stays live: the card shows
-    <b>LIVE</b> with an uptime. Offhook reconnects on its own after sleep, airplane mode
+    <b>LIVE</b> with an uptime. Moshpit reconnects on its own after sleep, airplane mode
     or a dropped tunnel, and puts you back on the pane you were on.</p>
     <p class="txt">What does <em>not</em> survive is the app being suspended for a long
     time in the background — iOS stops the connection, and agent state stops updating
@@ -240,7 +240,7 @@
       <a href="./">Home</a><a href="/docs">Docs</a><a href="/guides">Guides</a>
       <a href="/compare">Compare</a><a href="/pricing">Pricing</a><a href="/privacy">Privacy</a><a href="/support">Support</a>
     </nav>
-    <p class="legal">© 2026 Offhook · SSH · Mosh · tmux · herdr · iPhone</p>
+    <p class="legal">© 2026 Moshpit · SSH · Mosh · tmux · herdr · iPhone</p>
   </div>
 </footer>
 

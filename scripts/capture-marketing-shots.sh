@@ -7,12 +7,12 @@
 # where "~ · 1 tabs" and an empty terminal say nothing about the product.
 #
 # Isolation (nothing here touches your real setup):
-#   herdr  — a private session (`--session offhook-stage`) through a wrapper the
-#            app is pointed at via -OFFHOOK_SEED_HERDR_BIN. Your own herdr server
+#   herdr  — a private session (`--session moshpit-stage`) through a wrapper the
+#            app is pointed at via -MOSHPIT_SEED_HERDR_BIN. Your own herdr server
 #            keeps running, untouched and unseen.
-#   tmux   — a private socket (`-L offhook-stage`), same wrapper trick. Attaching
+#   tmux   — a private socket (`-L moshpit-stage`), same wrapper trick. Attaching
 #            to your real session would pin its windows to the phone's grid.
-#   repos  — staged under ~/.offhook-stage, deleted at the end.
+#   repos  — staged under ~/.moshpit-stage, deleted at the end.
 #   device — iPhone 17 Pro Max: 1320×2868, the size App Store Connect demands.
 #            (capture-flow-shots uses the 6.3" Pro, which CANNOT be uploaded.)
 #
@@ -22,14 +22,14 @@
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
-SIM_NAME="${OFFHOOK_SIM:-iPhone 17 Pro Max}"
-BUNDLE_ID="com.cluas.offhook"
-KEY_PATH="${OFFHOOK_SSH_KEY:-$HOME/.ssh/id_ed25519}"
-OUT="${OFFHOOK_SHOT_DIR:-marketing/shots}"
-STAGE="$HOME/.offhook-stage"
+SIM_NAME="${MOSHPIT_SIM:-iPhone 17 Pro Max}"
+BUNDLE_ID="com.cluas.moshpit"
+KEY_PATH="${MOSHPIT_SSH_KEY:-$HOME/.ssh/id_ed25519}"
+OUT="${MOSHPIT_SHOT_DIR:-marketing/shots}"
+STAGE="$HOME/.moshpit-stage"
 HERDR_BIN="$(command -v herdr)"
 TMUX_BIN="$(command -v tmux)"
-SOCK="offhook-stage"
+SOCK="moshpit-stage"
 mkdir -p "$OUT" build
 
 command -v idb >/dev/null || { echo "✘ idb not installed" >&2; exit 1; }
@@ -98,7 +98,7 @@ echo "▶ Starting the staged herdr server (private session: $SOCK)"
 rm -rf "$HOME/.config/herdr/sessions/$SOCK"
 env -i HOME="$HOME" PATH="/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin" \
   TERM=xterm-256color SHELL=/bin/zsh LANG=en_US.UTF-8 \
-  nohup "$HERDR" server >/tmp/offhook-stage-herdr.log 2>&1 &
+  nohup "$HERDR" server >/tmp/moshpit-stage-herdr.log 2>&1 &
 for _ in $(seq 1 20); do "$HERDR" api snapshot >/dev/null 2>&1 && break; sleep .5; done
 "$HERDR" api snapshot >/dev/null 2>&1 || { echo "✘ staged herdr server never came up" >&2; exit 1; }
 
@@ -136,9 +136,9 @@ sleep 2
 # Agent states. `report-agent` is herdr's own integration interface — the same
 # call `herdr integration install claude` wires up, so what the app reads here
 # is exactly what it reads in the field.
-"$HERDR" pane report-agent "$AGENT_PANE" --source offhook-stage --agent "Claude Code" --state blocked >/dev/null
-"$HERDR" pane report-agent "$WORK_PANE"  --source offhook-stage --agent "Codex"       --state working >/dev/null
-"$HERDR" pane report-agent "$IDLE_PANE"  --source offhook-stage --agent "claude"      --state idle    >/dev/null
+"$HERDR" pane report-agent "$AGENT_PANE" --source moshpit-stage --agent "Claude Code" --state blocked >/dev/null
+"$HERDR" pane report-agent "$WORK_PANE"  --source moshpit-stage --agent "Codex"       --state working >/dev/null
+"$HERDR" pane report-agent "$IDLE_PANE"  --source moshpit-stage --agent "claude"      --state idle    >/dev/null
 
 staged_ok() {
   "$HERDR" api snapshot 2>/dev/null | python3 -c "
@@ -163,10 +163,10 @@ sleep 1
 # ── build & install ──
 echo "▶ Building"
 DERIVED="$(mktemp -d)"
-xcodebuild -project Offhook.xcodeproj -scheme Offhook -configuration Debug \
+xcodebuild -project Moshpit.xcodeproj -scheme Moshpit -configuration Debug \
   -sdk iphonesimulator -destination "platform=iOS Simulator,name=$SIM_NAME" \
   -derivedDataPath "$DERIVED" CODE_SIGNING_ALLOWED=NO build >/dev/null 2>&1
-APP="$(find "$DERIVED/Build/Products" -name 'Offhook.app' -type d | head -1)"
+APP="$(find "$DERIVED/Build/Products" -name 'Moshpit.app' -type d | head -1)"
 xcrun simctl boot "$SIM_UDID" >/dev/null 2>&1 || true
 xcrun simctl bootstatus "$SIM_UDID" -b >/dev/null 2>&1 || true
 xcrun simctl install "$SIM_UDID" "$APP"
@@ -219,10 +219,10 @@ launch() {   # launch <mux> [extra args…]
   xcrun simctl terminate "$SIM_UDID" "$BUNDLE_ID" >/dev/null 2>&1 || true
   local mux="$1"; shift
   xcrun simctl launch "$SIM_UDID" "$BUNDLE_ID" \
-    -OFFHOOK_SEED_USER "$(whoami)" -OFFHOOK_SEED_KEY_B64 "$KEY_B64" \
-    -OFFHOOK_SEED_HOST 127.0.0.1 -OFFHOOK_SEED_PORT 22 \
-    -OFFHOOK_SEED_NAME "mac-studio" \
-    -OFFHOOK_SEED_MUX "$mux" -OFFHOOK_SEED_QUIET 1 "$@" >/dev/null
+    -MOSHPIT_SEED_USER "$(whoami)" -MOSHPIT_SEED_KEY_B64 "$KEY_B64" \
+    -MOSHPIT_SEED_HOST 127.0.0.1 -MOSHPIT_SEED_PORT 22 \
+    -MOSHPIT_SEED_NAME "mac-studio" \
+    -MOSHPIT_SEED_MUX "$mux" -MOSHPIT_SEED_QUIET 1 "$@" >/dev/null
 }
 
 # First connection from a fresh simulator raises the host-key sheet, and it
@@ -262,7 +262,7 @@ connect_card() {
 }
 
 echo "▶ Agent workbench (herdr)"
-launch herdr -OFFHOOK_SEED_HERDR_BIN "$HERDR" -OFFHOOK_SEED_HOME 1
+launch herdr -MOSHPIT_SEED_HERDR_BIN "$HERDR" -MOSHPIT_SEED_HOME 1
 sleep 8
 connect_card 20
 shot 01-agents 4
@@ -286,7 +286,7 @@ fi
 
 echo "▶ New agent task"
 xcrun simctl terminate "$SIM_UDID" "$BUNDLE_ID" >/dev/null 2>&1 || true
-launch herdr -OFFHOOK_SEED_HERDR_BIN "$HERDR" -OFFHOOK_SEED_HOME 1
+launch herdr -MOSHPIT_SEED_HERDR_BIN "$HERDR" -MOSHPIT_SEED_HOME 1
 sleep 8
 connect_card 18
 PLUS="$(idb ui describe-all --udid "$SIM_UDID" 2>/dev/null | python3 -c "
@@ -308,27 +308,27 @@ if [ -n "$PLUS" ]; then
 fi
 
 echo "▶ tmux"
-launch tmux -OFFHOOK_SEED_TMUX_BIN "$TMUXW"
+launch tmux -MOSHPIT_SEED_TMUX_BIN "$TMUXW"
 sleep 10; trust_host
 shot 07-tmux-terminal 14
 if tap_label ":" 80 130 Button; then shot 08-tmux-windows 3; fi
 
 echo "▶ Mosh"
-launch none -OFFHOOK_SEED_MOSH 1
+launch none -MOSHPIT_SEED_MOSH 1
 sleep 10; trust_host
 sleep 8
-paste_into_pane 'sh ~/.offhook-stage/run'
+paste_into_pane 'sh ~/.moshpit-stage/run'
 tap_label "return" "" "" Button || idb ui key --udid "$SIM_UDID" 40 >/dev/null 2>&1 || true
 shot 09-mosh 10
 
 echo "▶ Settings: themes, shortcuts, appearance"
 xcrun simctl terminate "$SIM_UDID" "$BUNDLE_ID" >/dev/null 2>&1 || true
-launch herdr -OFFHOOK_SEED_HERDR_BIN "$HERDR" -OFFHOOK_SEED_HOME 1
+launch herdr -MOSHPIT_SEED_HERDR_BIN "$HERDR" -MOSHPIT_SEED_HOME 1
 sleep 7
 tap_label "gearshape" "" "" Button && sleep 3
 open_settings() {
   xcrun simctl terminate "$SIM_UDID" "$BUNDLE_ID" >/dev/null 2>&1 || true
-  launch herdr -OFFHOOK_SEED_HERDR_BIN "$HERDR" -OFFHOOK_SEED_HOME 1
+  launch herdr -MOSHPIT_SEED_HERDR_BIN "$HERDR" -MOSHPIT_SEED_HOME 1
   sleep 6
   tap_label "gearshape" "" "" Button || tap_label "Settings" "" 200 Button || return 1
   sleep 3
@@ -336,17 +336,27 @@ open_settings() {
 
 settings_shot() {   # settings_shot <row substring> <shot name>
   open_settings || { echo "  ! could not open Settings for $2" >&2; return; }
-  # Settings is a long scroll and idb only sees what is on screen, so walk
-  # down until the row appears rather than assuming it starts visible.
+  # idb reports the WHOLE scroll view's accessibility tree, including rows far
+  # below the fold — "Shortcuts," came back at y=1509 on a 956-point screen.
+  # Finding a label therefore proves nothing about being able to tap it, and
+  # tapping an off-screen point silently does nothing: three of these shots
+  # came back as identical pictures of the Settings root. So scroll until the
+  # row is inside the viewport, and only then tap it.
   local tries=0
-  until find_label "$1" >/dev/null && [ -n "$(find_label "$1")" ]; do
+  until [ -n "$(find_label "$1" 130 880)" ]; do
     tries=$((tries + 1))
-    [ "$tries" -gt 6 ] && { echo "  ! settings row not found: $1" >&2; return; }
+    [ "$tries" -gt 8 ] && { echo "  ! settings row never reached the viewport: $1" >&2; return; }
     idb ui swipe --udid "$SIM_UDID" --duration 0.3 220 700 220 300 >/dev/null 2>&1 || true
     sleep 1
   done
-  tap_label "$1" || return
+  tap_label "$1" 130 880 || return
   sleep 3
+  # Prove we actually left the Settings root — otherwise this shot is a
+  # duplicate and the site would publish it as if it showed the feature.
+  if [ -n "$(find_label 'Accent,' 130 880)" ]; then
+    echo "  ! tap on '$1' did not navigate — refusing to shoot $2" >&2
+    return
+  fi
   shot "$2" 2
 }
 settings_shot "Theme,"     10-themes
@@ -361,20 +371,20 @@ settings_shot "SSH Keys," 30-ssh-keys
 # The error a failed connection actually shows — /docs/troubleshooting.
 # Port 9 discards everything, so the connection fails the way a wrong port
 # does in the field rather than by an invented error path.
-launch herdr -OFFHOOK_SEED_HERDR_BIN "$HERDR" -OFFHOOK_SEED_PORT 9 -OFFHOOK_SEED_HOME 1
+launch herdr -MOSHPIT_SEED_HERDR_BIN "$HERDR" -MOSHPIT_SEED_PORT 9 -MOSHPIT_SEED_HOME 1
 sleep 6
 tap_label "mac-studio" "" "" Button && sleep 12
 shot 31-connection-error 2
 
 # Scrollback, paste and CJK all need a live pane — /docs/scrolling,
 # /docs/clipboard, /docs/ime.
-launch herdr -OFFHOOK_SEED_HERDR_BIN "$HERDR"
+launch herdr -MOSHPIT_SEED_HERDR_BIN "$HERDR"
 sleep 8; trust_host; sleep 10
 
 # Scrollback: on the tmux connection, whose pane carries a full run of output.
 # Shooting this on the agent pane produced an identical frame — that pane holds
 # one frozen screen and has nothing above it to scroll into.
-launch tmux -OFFHOOK_SEED_TMUX_BIN "$TMUXW"
+launch tmux -MOSHPIT_SEED_TMUX_BIN "$TMUXW"
 sleep 10; trust_host; sleep 6
 idb ui swipe --udid "$SIM_UDID" --duration 0.4 220 380 220 760 >/dev/null 2>&1 || true
 sleep 2

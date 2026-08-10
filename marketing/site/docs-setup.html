@@ -3,18 +3,18 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Set up a connection — Offhook</title>
+<title>Set up a connection — Moshpit</title>
 <meta name="description" content="The first run, end to end: add a host, pick an auth method, generate or import a key, check the host fingerprint, choose tmux or herdr, and what happens when the host is missing one of them.">
 <link rel="icon" type="image/png" href="/icon-192.png">
-<link rel="alternate" hreflang="en" href="https://offhook.cluas.eu.org/docs/setup">
-<link rel="alternate" hreflang="zh-Hans" href="https://offhook.cluas.eu.org/zh/docs/setup">
-<link rel="stylesheet" href="/offhook.css?v=15">
+<link rel="alternate" hreflang="en" href="https://moshpit.cluas.eu.org/docs/setup">
+<link rel="alternate" hreflang="zh-Hans" href="https://moshpit.cluas.eu.org/zh/docs/setup">
+<link rel="stylesheet" href="/moshpit.css?v=15">
 </head>
 <body>
 
 <div class="shell">
   <header class="top">
-    <a class="brand" href="./"><img src="/icon-192.png" alt="" width="192" height="192">Offhook</a>
+    <a class="brand" href="./"><img src="/icon-192.png" alt="" width="192" height="192">Moshpit</a>
     <div class="topright">
       <a class="lang" href="/docs">Docs</a>
       <a class="lang" href="/guides">Guides</a>
@@ -32,7 +32,7 @@
   <a class="dhome" href="/">← Back to the app</a>
   <p class="dtitle">Docs</p>
   <button class="dsearchbtn" type="button" data-docsearch><span>Search the docs…</span><kbd>⌘K</kbd></button>
-  <nav><p class="dsec">Start</p><a href="/docs/intro">What Offhook does</a><a href="/docs/setup" class="on" aria-current="page">Set up a connection</a><a href="/docs/first-session">Run your first session</a><p class="dsec">Connections</p><a href="/docs/keys">SSH keys and host trust</a><a href="/docs/mosh">Mosh and roaming</a><a href="/guide/remote-access">Reach your machine from anywhere</a><p class="dsec">Multiplexers</p><a href="/docs/multiplexers">Choosing tmux or herdr</a><a href="/docs/tmux">Using tmux</a><a href="/docs/herdr">Using herdr</a><p class="dsec">Agents</p><a href="/docs/agents">Agent status and the lock screen</a><a href="/docs/worktrees">Isolated tasks with git worktrees</a><a href="/guide/claude-code">Run Claude Code from your iPhone</a><p class="dsec">Input</p><a href="/docs/keyboard">Keyboard and shortcuts</a><a href="/docs/scrolling">Scrolling and scrollback</a><a href="/docs/clipboard">Clipboard and paste</a><a href="/docs/ime">CJK and IME input</a><p class="dsec">Appearance</p><a href="/docs/appearance">Themes, fonts and icons</a><p class="dsec">Help</p><a href="/docs/troubleshooting">Troubleshooting</a><a href="/compare">How Offhook compares</a></nav>
+  <nav><p class="dsec">Start</p><a href="/docs/intro">What Moshpit does</a><a href="/docs/setup" class="on" aria-current="page">Set up a connection</a><a href="/docs/first-session">Run your first session</a><p class="dsec">Connections</p><a href="/docs/keys">SSH keys and host trust</a><a href="/docs/mosh">Mosh and roaming</a><a href="/guide/remote-access">Reach your machine from anywhere</a><p class="dsec">Multiplexers</p><a href="/docs/multiplexers">Choosing tmux or herdr</a><a href="/docs/tmux">Using tmux</a><a href="/docs/herdr">Using herdr</a><p class="dsec">Agents</p><a href="/docs/agents">Agent status and the lock screen</a><a href="/docs/worktrees">Isolated tasks with git worktrees</a><a href="/guide/claude-code">Run Claude Code from your iPhone</a><p class="dsec">Input</p><a href="/docs/keyboard">Keyboard and shortcuts</a><a href="/docs/scrolling">Scrolling and scrollback</a><a href="/docs/clipboard">Clipboard and paste</a><a href="/docs/ime">CJK and IME input</a><p class="dsec">Appearance</p><a href="/docs/appearance">Themes, fonts and icons</a><p class="dsec">Help</p><a href="/docs/troubleshooting">Troubleshooting</a><a href="/compare">How Moshpit compares</a></nav>
 </aside>
 <!--DOCSHELL:END-->
 <div class="dbody">
@@ -41,7 +41,7 @@
     <p class="eyebrow">Docs</p>
     <h2>Set up a connection</h2>
     <p class="sub">Everything between tapping ＋ and having a live shell: the fields, the
-    key, the fingerprint prompt, the multiplexer choice, and what Offhook does when the
+    key, the fingerprint prompt, the multiplexer choice, and what Moshpit does when the
     host turns out not to have tmux, herdr or mosh-server. About a minute if the host is
     ready.</p>
 
@@ -94,7 +94,7 @@
           </ul>
         </div>
         <img class="phone rowshot" src="/01-agents.jpg" width="1320" height="2868" loading="lazy"
-             alt="Offhook home screen: the header carries a gear and a plus button and HOSTS / LIVE / WORKSPACES counters, above a CONNECTIONS list with one saved host card marked SSH and LIVE">
+             alt="Moshpit home screen: the header carries a gear and a plus button and HOSTS / LIVE / WORKSPACES counters, above a CONNECTIONS list with one saved host card marked SSH and LIVE">
       </div>
     </div>
 
@@ -103,7 +103,7 @@
     choice — is a JSON array in <code>UserDefaults</code>. The password or private key is
     <b>not</b> in there. It goes to the iOS Keychain as a generic password item, and the
     connection only stores an opaque reference like
-    <code>offhook.secret.&lt;uuid&gt;</code>.</p>
+    <code>moshpit.secret.&lt;uuid&gt;</code>.</p>
     <p class="txt">Keychain items are written with
     <code>kSecAttrAccessibleWhenUnlockedThisDeviceOnly</code>: readable only while the
     phone is unlocked, and excluded from backups and from device transfer. That is
@@ -120,10 +120,10 @@
     you trusted. That entry stays in the Keychain, keyed by host and port.</p>
 
     <h3 id="s7">Hosts on your LAN</h3>
-    <p class="txt">The first time Offhook reaches a local address, iOS asks for Local
+    <p class="txt">The first time Moshpit reaches a local address, iOS asks for Local
     Network permission. Deny it and hosts on the internet still work; hosts like
     <code>192.168.1.10</code> will not. The wording in that prompt comes from the app:
-    <em>Offhook connects to servers on your local network over SSH and mosh (UDP). Without
+    <em>Moshpit connects to servers on your local network over SSH and mosh (UDP). Without
     this permission, connections to LAN hosts (e.g. 192.168.x.x) will fail.</em></p>
   </section>
 </div>
@@ -153,7 +153,7 @@
 
     <h3 id="s10">What will not work</h3>
     <ul class="list">
-      <li><b>Passphrase-encrypted private keys.</b> Offhook never passes a decryption key
+      <li><b>Passphrase-encrypted private keys.</b> Moshpit never passes a decryption key
       to the parser, so an encrypted PEM fails. Strip the passphrase from a copy first —
       <code>ssh-keygen -p -N "" -f ./copy-of-key</code> — and keep the original.</li>
       <li><b>ECDSA P-384 and P-521.</b> They are rejected with <em>Unsupported SSH key
@@ -179,7 +179,7 @@
     <p class="txt">Two consequences worth knowing. The credential is read <em>before</em>
     the socket opens, so on a gated key the Face ID sheet appears first and the host-key
     prompt second. And the decrypted secret is cached in memory only while the app is in
-    the foreground — Offhook clears that cache on every backgrounding, precisely so
+    the foreground — Moshpit clears that cache on every backgrounding, precisely so
     "authenticate on every read" does not quietly become "once per launch". Coming back to
     a dropped session will ask again.</p>
   </section>
@@ -228,7 +228,7 @@ chmod 600 ~/.ssh/authorized_keys</pre>
       <b>Confirm Passphrase</b> drive the strength meter and the match check, and nothing
       else — they are never handed to the key generator or to the Keychain. Generated
       ED25519 keys are written with cipher <code>none</code>. What protects the key is the
-      Keychain plus Face ID, not that field. Do not treat an Offhook-generated key as
+      Keychain plus Face ID, not that field. Do not treat an Moshpit-generated key as
       passphrase-protected.</li>
       <li><b>Bind to hosts is display-only.</b> The chips are stored and drawn, but nothing
       reads them when choosing a key. Pick the key on the connection instead. (The group's
@@ -249,7 +249,7 @@ chmod 600 ~/.ssh/authorized_keys</pre>
   <section class="band doc">
     <p class="eyebrow">Step 3</p>
     <h2>Trust the host fingerprint</h2>
-    <p class="sub">Offhook does trust-on-first-use, the same model as OpenSSH's
+    <p class="sub">Moshpit does trust-on-first-use, the same model as OpenSSH's
     known_hosts. The first handshake to a host and port pauses and asks. Nothing is trusted
     automatically.</p>
 
@@ -266,7 +266,7 @@ Verify it matches the server (e.g. `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key
                           <i>[ Cancel ]</i>   <b>[ Trust ]</b></pre>
     <p class="txt">Run that command on the host — over a console, an existing session, your
     provider's web terminal, anything that is not the connection you are trying to verify —
-    and compare. Offhook shows you the fingerprint; it cannot check it for you.</p>
+    and compare. Moshpit shows you the fingerprint; it cannot check it for you.</p>
 
     <h3 id="s17">When the key changes</h3>
 <pre><b>⚠️ Host Key Changed</b>
@@ -301,7 +301,7 @@ New:    <b>SHA256:pR7wY…</b>
     </ul>
 
     <h3 id="new-phone">The limitation: there is no known-hosts screen</h3>
-    <p class="txt">Offhook cannot list the hosts you have trusted, cannot show you their
+    <p class="txt">Moshpit cannot list the hosts you have trusted, cannot show you their
     fingerprints after the fact, and has no "forget this host". Deleting a connection leaves
     its fingerprint behind. After a legitimate re-key — a rebuild, a migration — the only
     route in the app is to read both fingerprints in the warning dialog and accept the
@@ -348,14 +348,14 @@ New:    <b>SHA256:pR7wY…</b>
     </div>
 
     <p class="muxnote">Pick <b>None</b> and you get a single plain shell: no session
-    survives a disconnect, and there is nothing for Offhook to report as missing.
+    survives a disconnect, and there is nothing for Moshpit to report as missing.
     Connections saved before this picker existed have no multiplexer field, so they fall
     back to the old <code>useTmux</code> flag — which the old form always set to true. They
     come back as tmux, which is what they always did.</p>
 
     <h3 id="s22">They are not interchangeable</h3>
     <p class="txt">tmux and herdr are separate servers holding unrelated sessions. If you
-    pick one and the host only has the other, Offhook says so and drops to a plain shell. It
+    pick one and the host only has the other, Moshpit says so and drops to a plain shell. It
     does not attach the other one — that would show you somebody else's work and label it
     yours. The rule is stated in the form's own footer, in the degrade logic, and in the
     design doc.</p>
@@ -377,7 +377,7 @@ New:    <b>SHA256:pR7wY…</b>
     their own full-screen text UI inside the mosh shell, driven by their own prefix keys.
     What you give up is <b>native pane rendering</b>: the terminal shows the multiplexer's
     own screen, sidebar and all. The form says so in the ADVANCED footer.</p>
-    <p class="txt">You do <em>not</em> give up the native sheets. Over mosh, Offhook opens a
+    <p class="txt">You do <em>not</em> give up the native sheets. Over mosh, Moshpit opens a
     second, lightweight SSH connection purely for the control plane — tmux's
     <code>-CC</code> sidecar, or a <code>herdr api snapshot</code> poller — so the Sessions /
     Workspaces sheet, the Windows / Tabs sheet, the home tree and the breadcrumb keep
@@ -391,16 +391,16 @@ New:    <b>SHA256:pR7wY…</b>
     behind it are not. One of them will cost you: <b><code>⌃B q</code> shows pane numbers in
     tmux and <em>detaches</em> in herdr.</b> herdr picks workspaces with <code>⌃B w</code>
     and steps through tabs with <code>⌃B n</code> / <code>⌃B p</code>, where tmux uses
-    <code>⌃B s</code> and <code>⌃B 1-9</code>. Offhook's own sheet footers print whichever
+    <code>⌃B s</code> and <code>⌃B 1-9</code>. Moshpit's own sheet footers print whichever
     pair belongs to the connection you are on, so read those rather than your tmux
     muscle memory.</p>
 
     <h3 id="s26">Three herdr limits worth knowing up front</h3>
     <ul class="list">
-      <li><b>Direct attach is exclusive per pane, and Offhook attaches with
+      <li><b>Direct attach is exclusive per pane, and Moshpit attaches with
       <code>--takeover</code></b> — it has to, or a reconnect would collide with its own
-      stale attachment. Two Offhook clients on the same pane therefore evict each other,
-      because only one of them can hold that pane. Offhook counts the evictions it did not
+      stale attachment. Two Moshpit clients on the same pane therefore evict each other,
+      because only one of them can hold that pane. Moshpit counts the evictions it did not
       ask for: three inside 30 seconds and it backs off for 30 seconds and says so —
       <em>Another client is using this pane — retrying shortly</em> — instead of trading the
       pane back and forth every couple of seconds while your keystrokes land on a channel
@@ -426,7 +426,7 @@ New:    <b>SHA256:pR7wY…</b>
   <section class="band doc">
     <p class="eyebrow">Step 5</p>
     <h2>When the host is missing something</h2>
-    <p class="sub">A missing dependency never blocks the connection. Offhook probes once
+    <p class="sub">A missing dependency never blocks the connection. Moshpit probes once
     over the first SSH channel, degrades to something that works, and tells you what it gave
     up.</p>
 
@@ -473,7 +473,7 @@ New:    <b>SHA256:pR7wY…</b>
     over SSH instead.</em> — with an <b>Install …</b> button. The terminal behind it works
     normally.</p>
     <p class="txt">The sheet is titled <b>Install on host</b> and leads with the promise it
-    keeps: <em>Offhook never installs anything silently. Run the command below in your shell
+    keeps: <em>Moshpit never installs anything silently. Run the command below in your shell
     — sudo and its output stay fully visible.</em> Then a command, built for the package
     manager the probe found:</p>
 <pre><i>apt-get   </i>sudo apt-get install -y tmux mosh
@@ -499,7 +499,7 @@ New:    <b>SHA256:pR7wY…</b>
     <em>Installed — reconnect to enable it.</em> and a <b>Reconnect</b> button, or
     <em>Still not detected. Run the command, wait for it to finish, then re-check.</em></p>
     <p class="txt">For herdr installed outside Homebrew, the sheet adds: <em>Installs to
-    ~/.local/bin. Offhook looks there when probing and launching, so you don't need to change
+    ~/.local/bin. Moshpit looks there when probing and launching, so you don't need to change
     PATH.</em></p>
 
     <h3 id="s30">Where re-check does not work</h3>
@@ -516,7 +516,7 @@ New:    <b>SHA256:pR7wY…</b>
     herdr…</em>) the terminal resolves to one of two states, and they mean different things.
     One says the multiplexer is <b>not installed on this host</b> and offers an
     <b>Install</b> button. The other says there is nothing running: <em>This server has no
-    running sessions. Offhook only attaches — create the first one to start.</em>, with a
+    running sessions. Moshpit only attaches — create the first one to start.</em>, with a
     <b>Create Session</b> button. Binary missing versus nothing running — do not treat them
     as the same problem.</p>
     <p class="txt">Those words follow the multiplexer, because herdr does not have sessions.
@@ -532,7 +532,7 @@ New:    <b>SHA256:pR7wY…</b>
 <div class="shell">
   <section class="band doc">
     <p class="eyebrow plain">The rules</p>
-    <h2>What Offhook never does</h2>
+    <h2>What Moshpit never does</h2>
     <p class="sub">Three promises the setup path is built around. They are in the source, in
     the form's own footer text, and in the design docs — not just here.</p>
 
@@ -540,12 +540,12 @@ New:    <b>SHA256:pR7wY…</b>
       <div class="cell"><span class="ic">Install</span>
         <h4>Never installs silently</h4>
         <p>Every install command is shown before it runs, and runs in your visible shell,
-        sudo prompt and all. Offhook fills in the command; you press the button.</p></div>
+        sudo prompt and all. Moshpit fills in the command; you press the button.</p></div>
       <div class="cell"><span class="ic">Sessions</span>
         <h4>Never creates or restyles sessions on its own</h4>
         <p>It attaches to what is already running and leaves the configuration alone. A
         session is created only when you tap Create Session, and only sessions created
-        through Offhook get its native look — status bar hidden, restored on
+        through Moshpit get its native look — status bar hidden, restored on
         disconnect.</p></div>
       <div class="cell"><span class="ic">Multiplexer</span>
         <h4>Never switches your multiplexer</h4>
@@ -599,7 +599,7 @@ New:    <b>SHA256:pR7wY…</b>
         <summary>Does it keep watching my agents when the app is in the background?</summary>
         <p>No. iOS suspends the app, its keepalive timer and its polling, so agent state
         stops updating until you come back — the island and the agent list catch up one poll
-        after you return. There is no push server, because there is no Offhook server at
+        after you return. There is no push server, because there is no Moshpit server at
         all. It is the honest cost of having nothing in the middle.</p>
       </details>
       <details>
@@ -611,7 +611,7 @@ New:    <b>SHA256:pR7wY…</b>
       </details>
       <details>
         <summary>It dropped. Do I have to do anything?</summary>
-        <p>Usually not. On an SSH session, Offhook probes the transport every 12 seconds
+        <p>Usually not. On an SSH session, Moshpit probes the transport every 12 seconds
         while the app is in the foreground and reconnects on its own; a tmux re-attach lands
         you back on the pane you were on, with the server-side scrollback intact. herdr
         re-attaches to the focused pane, but its frame protocol sends screen repaints rather
@@ -637,7 +637,7 @@ New:    <b>SHA256:pR7wY…</b>
   </section>
 </div>
 <!--DOCNEXT:BEGIN-->
-<div class="dpager"><a class="dprev" href="/docs/intro"><span>Previous</span>What Offhook does</a><a class="dnext" href="/docs/first-session"><span>Next</span>Run your first session</a></div>
+<div class="dpager"><a class="dprev" href="/docs/intro"><span>Previous</span>What Moshpit does</a><a class="dnext" href="/docs/first-session"><span>Next</span>Run your first session</a></div>
 <!--DOCNEXT:END-->
 </div><!--dbody-->
 <!--DOCTOC:BEGIN-->
@@ -787,7 +787,7 @@ New:    <b>SHA256:pR7wY…</b>
       <a href="./">Home</a><a href="/docs">Docs</a><a href="/guides">Guides</a>
       <a href="/compare">Compare</a><a href="/pricing">Pricing</a><a href="/privacy">Privacy</a><a href="/support">Support</a>
     </nav>
-    <p class="legal">© 2026 Offhook · SSH · Mosh · tmux · herdr · iPhone</p>
+    <p class="legal">© 2026 Moshpit · SSH · Mosh · tmux · herdr · iPhone</p>
   </div>
 </footer>
 <div class="dsearch" id="dsearch" hidden style="display:none">

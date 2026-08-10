@@ -27,7 +27,7 @@ issue.
 
 ## Environment
 
-- Ringdown version:
+- Moshpit version:
 - Device / iOS version (e.g. iPhone 16 Pro, iOS 18.2):
 - Transport: SSH / Mosh / tmux
 - Remote host OS (e.g. Ubuntu 24.04, macOS 15):

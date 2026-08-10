@@ -3,18 +3,18 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Troubleshooting — Offhook</title>
+<title>Troubleshooting — Moshpit</title>
 <meta name="description" content="Symptom first: what you see on screen, what it actually means, and what to do about it — missing tmux, mosh, or herdr, black screens, stalled attaches, contended panes, and stale agent state.">
 <link rel="icon" type="image/png" href="/icon-192.png">
-<link rel="alternate" hreflang="en" href="https://offhook.cluas.eu.org/docs/troubleshooting">
-<link rel="alternate" hreflang="zh-Hans" href="https://offhook.cluas.eu.org/zh/docs/troubleshooting">
-<link rel="stylesheet" href="/offhook.css?v=15">
+<link rel="alternate" hreflang="en" href="https://moshpit.cluas.eu.org/docs/troubleshooting">
+<link rel="alternate" hreflang="zh-Hans" href="https://moshpit.cluas.eu.org/zh/docs/troubleshooting">
+<link rel="stylesheet" href="/moshpit.css?v=15">
 </head>
 <body>
 
 <div class="shell">
   <header class="top">
-    <a class="brand" href="./"><img src="/icon-192.png" alt="" width="192" height="192">Offhook</a>
+    <a class="brand" href="./"><img src="/icon-192.png" alt="" width="192" height="192">Moshpit</a>
     <div class="topright">
       <a class="lang" href="/docs">Docs</a>
       <a class="lang" href="/guides">Guides</a>
@@ -32,7 +32,7 @@
   <a class="dhome" href="/">← Back to the app</a>
   <p class="dtitle">Docs</p>
   <button class="dsearchbtn" type="button" data-docsearch><span>Search the docs…</span><kbd>⌘K</kbd></button>
-  <nav><p class="dsec">Start</p><a href="/docs/intro">What Offhook does</a><a href="/docs/setup">Set up a connection</a><a href="/docs/first-session">Run your first session</a><p class="dsec">Connections</p><a href="/docs/keys">SSH keys and host trust</a><a href="/docs/mosh">Mosh and roaming</a><a href="/guide/remote-access">Reach your machine from anywhere</a><p class="dsec">Multiplexers</p><a href="/docs/multiplexers">Choosing tmux or herdr</a><a href="/docs/tmux">Using tmux</a><a href="/docs/herdr">Using herdr</a><p class="dsec">Agents</p><a href="/docs/agents">Agent status and the lock screen</a><a href="/docs/worktrees">Isolated tasks with git worktrees</a><a href="/guide/claude-code">Run Claude Code from your iPhone</a><p class="dsec">Input</p><a href="/docs/keyboard">Keyboard and shortcuts</a><a href="/docs/scrolling">Scrolling and scrollback</a><a href="/docs/clipboard">Clipboard and paste</a><a href="/docs/ime">CJK and IME input</a><p class="dsec">Appearance</p><a href="/docs/appearance">Themes, fonts and icons</a><p class="dsec">Help</p><a href="/docs/troubleshooting" class="on" aria-current="page">Troubleshooting</a><a href="/compare">How Offhook compares</a></nav>
+  <nav><p class="dsec">Start</p><a href="/docs/intro">What Moshpit does</a><a href="/docs/setup">Set up a connection</a><a href="/docs/first-session">Run your first session</a><p class="dsec">Connections</p><a href="/docs/keys">SSH keys and host trust</a><a href="/docs/mosh">Mosh and roaming</a><a href="/guide/remote-access">Reach your machine from anywhere</a><p class="dsec">Multiplexers</p><a href="/docs/multiplexers">Choosing tmux or herdr</a><a href="/docs/tmux">Using tmux</a><a href="/docs/herdr">Using herdr</a><p class="dsec">Agents</p><a href="/docs/agents">Agent status and the lock screen</a><a href="/docs/worktrees">Isolated tasks with git worktrees</a><a href="/guide/claude-code">Run Claude Code from your iPhone</a><p class="dsec">Input</p><a href="/docs/keyboard">Keyboard and shortcuts</a><a href="/docs/scrolling">Scrolling and scrollback</a><a href="/docs/clipboard">Clipboard and paste</a><a href="/docs/ime">CJK and IME input</a><p class="dsec">Appearance</p><a href="/docs/appearance">Themes, fonts and icons</a><p class="dsec">Help</p><a href="/docs/troubleshooting" class="on" aria-current="page">Troubleshooting</a><a href="/compare">How Moshpit compares</a></nav>
 </aside>
 <!--DOCSHELL:END-->
 <div class="dbody">
@@ -58,7 +58,7 @@
       </div>
       <div class="step3">
         <h3 id="s2">Plain language, not stderr</h3>
-        <p>Offhook says what is missing, what it costs you, and how to install it. A raw
+        <p>Moshpit says what is missing, what it costs you, and how to install it. A raw
         <code>command not found</code> is a bug, not a message.</p>
       </div>
       <div class="step3">
@@ -92,7 +92,7 @@
   <section class="band doc">
     <p class="eyebrow">Missing on the host</p>
     <h2>A banner says something isn't installed</h2>
-    <p class="sub">Offhook probes the host once over the first SSH channel and caches the
+    <p class="sub">Moshpit probes the host once over the first SSH channel and caches the
     answer per connection. A missing tool degrades the session it is in and nothing else —
     install it and the next connect comes back at full capability.</p>
 
@@ -119,13 +119,13 @@
 
       <details>
         <summary>"herdr not found on this host — plain shell session." — but tmux is installed</summary>
-        <p><b>What it means.</b> Exactly what it says. Offhook did not fall back to tmux, and
+        <p><b>What it means.</b> Exactly what it says. Moshpit did not fall back to tmux, and
         it never will.</p>
         <p><b>Why.</b> tmux and herdr are separate servers holding unrelated sessions.
         Quietly attaching the one that happens to be installed would show you work that is
         not the work you asked for.</p>
         <p><b>What to do.</b> Tap <b>Install herdr</b>. herdr is in no Linux distribution
-        repository, so Offhook never synthesises <code>sudo apt-get install -y herdr</code> —
+        repository, so Moshpit never synthesises <code>sudo apt-get install -y herdr</code> —
         that fails with "unable to locate package" and reads as our bug. You get one of
         two:</p>
         <pre>brew install herdr                            <i># Homebrew</i>
@@ -133,7 +133,7 @@ curl -fsSL https://herdr.dev/install.sh | sh  <i># everywhere else</i></pre>
         <p>Because the installer needs no package manager, there is always a command to
         offer for herdr even when no package manager was detected. When you get the script
         line rather than the Homebrew one, the sheet adds: <i>"Installs to ~/.local/bin.
-        Offhook looks there when probing and launching, so you don't need to change
+        Moshpit looks there when probing and launching, so you don't need to change
         PATH."</i> The official installer really does drop the binary there and deliberately
         touches no rc file, so its own "not in your PATH" warning is expected — it is not a
         failure.</p>
@@ -141,7 +141,7 @@ curl -fsSL https://herdr.dev/install.sh | sh  <i># everywhere else</i></pre>
 
       <details>
         <summary>"mosh-server not found — connected over SSH instead."</summary>
-        <p><b>What it means.</b> The probe did not find <code>mosh-server</code>, so Offhook
+        <p><b>What it means.</b> The probe did not find <code>mosh-server</code>, so Moshpit
         reused the SSH session it had already authenticated and gave you a shell over TCP.
         You lose roaming; you lose nothing else. The connection's card on the home screen
         also turns its MOSH pill grey with a warning triangle, so the card is not claiming
@@ -151,7 +151,7 @@ curl -fsSL https://herdr.dev/install.sh | sh  <i># everywhere else</i></pre>
         <code>tmux -CC</code>, and with herdr it runs the native single-pane frame channel —
         which is the one thing mosh could not have carried anyway. If the multiplexer is
         missing as well, you get a bare shell and still only one banner: the mosh one already
-        opens the same Install Assist sheet, so Offhook does not stack a second on top.</p>
+        opens the same Install Assist sheet, so Moshpit does not stack a second on top.</p>
       </details>
 
       <details>
@@ -161,7 +161,7 @@ curl -fsSL https://herdr.dev/install.sh | sh  <i># everywhere else</i></pre>
         <code>.bash_profile</code>, so anything <code>brew shellenv</code> added to your PATH
         is invisible over that channel — the exact binary that works when you log in by hand
         probes as missing. This has been seen live on a macOS/Homebrew host.</p>
-        <p><b>What Offhook already does.</b> It prepends the same five directories to both
+        <p><b>What Moshpit already does.</b> It prepends the same five directories to both
         the probe and the launch, so a tool found by one is reachable by the other:</p>
         <pre>/opt/homebrew/bin   /opt/homebrew/sbin   /usr/local/bin   /usr/local/sbin   $HOME/.local/bin</pre>
         <p><b>What to do.</b> If your install is somewhere else, set an explicit path in the
@@ -176,7 +176,7 @@ curl -fsSL https://herdr.dev/install.sh | sh  <i># everywhere else</i></pre>
       <details>
         <summary>Re-check says "Can't re-check over this transport — reconnect to apply."</summary>
         <p><b>What it means.</b> You are on mosh. The bootstrap SSH channel is closed the
-        moment mosh takes over, so there is no live channel left to probe. Offhook returns
+        moment mosh takes over, so there is no live channel left to probe. Moshpit returns
         "no new information" rather than probing a dead session, which would falsely read as
         "everything is installed".</p>
         <p><b>What to do.</b> Tap <b>Reconnect</b> in the same sheet. A reconnect re-runs the
@@ -192,7 +192,7 @@ curl -fsSL https://herdr.dev/install.sh | sh  <i># everywhere else</i></pre>
         gap and nothing flashes — the cached verdict is used to populate Install Assist, not
         to raise or clear the banner.</p>
         <p><b>The one place a stale answer shows through.</b> If the probe cannot run at all,
-        Offhook keeps what it last knew rather than assuming everything is present. A cache
+        Moshpit keeps what it last knew rather than assuming everything is present. A cache
         entry written by a build that predates herdr support has no herdr field in it and is
         read as "herdr missing" — deliberately, because a stale "present" would launch a
         binary the host does not have, and a stale "missing" costs one banner that the next
@@ -219,7 +219,7 @@ curl -fsSL https://herdr.dev/install.sh | sh  <i># everywhere else</i></pre>
     <div class="faq">
       <details>
         <summary>Mosh: black screen, live cursor, no error</summary>
-        <p><b>What it means.</b> The UDP socket reached ready and Offhook kept flushing, but
+        <p><b>What it means.</b> The UDP socket reached ready and Moshpit kept flushing, but
         zero reply datagrams ever came back. The <b>return path</b> is dead — almost always a
         VPN, proxy or firewall on the network you are on right now, passing your outbound UDP
         and dropping the server's replies. It is not a decode bug and not a dead server. SSH
@@ -273,12 +273,12 @@ curl -fsSL https://herdr.dev/install.sh | sh  <i># everywhere else</i></pre>
 
       <details>
         <summary>A host on your own LAN behaves differently from one on the internet</summary>
-        <p><b>What it means.</b> iOS Local Network permission was denied for Offhook. Hosts
+        <p><b>What it means.</b> iOS Local Network permission was denied for Moshpit. Hosts
         on the internet are unaffected; hosts like <code>192.168.1.10</code> are gated by
-        that switch. Offhook's own prompt says it plainly, and it covers both transports:
-        <i>"Offhook connects to servers on your local network over SSH and mosh (UDP).
+        that switch. Moshpit's own prompt says it plainly, and it covers both transports:
+        <i>"Moshpit connects to servers on your local network over SSH and mosh (UDP).
         Without this permission, connections to LAN hosts (e.g. 192.168.x.x) will fail."</i></p>
-        <p><b>What to do.</b> iOS Settings → Offhook → Local Network, and turn it on. The
+        <p><b>What to do.</b> iOS Settings → Moshpit → Local Network, and turn it on. The
         app declares the permission for this one reason and asks for it on first use. Check
         it before anything else on a LAN address — it is one switch and it rules out the
         whole class, including the case where SSH connects and only mosh sits black.</p>
@@ -288,23 +288,23 @@ curl -fsSL https://herdr.dev/install.sh | sh  <i># everywhere else</i></pre>
         <summary>"No tmux sessions" / "No herdr workspaces", with a Create button</summary>
         <p><b>What it means.</b> The binary is installed and reachable. The server simply has
         nothing running. The panel says it outright, in whichever noun the multiplexer uses:
-        <i>"This server has no running sessions / workspaces. Offhook only attaches — create
+        <i>"This server has no running sessions / workspaces. Moshpit only attaches — create
         the first one to start."</i></p>
-        <p><b>Why the app doesn't just make one.</b> Offhook never creates or restyles a
+        <p><b>Why the app doesn't just make one.</b> Moshpit never creates or restyles a
         session on its own. With tmux it attaches to sessions you already have and leaves
-        them exactly as they are; only the sessions you create through Offhook get Offhook's
+        them exactly as they are; only the sessions you create through Moshpit get Moshpit's
         own look — status bar off — and that is restored on disconnect.</p>
         <p><b>What to do.</b> Tap <b>Create Session</b> or <b>Create Workspace</b>. The button
         reads <b>Creating…</b> while the command is in flight. On herdr, that one tap also
         starts the server if it isn't running — a genuinely cold <code>herdr server</code>
-        comes up with zero workspaces, so Offhook starts it and then creates the first
+        comes up with zero workspaces, so Moshpit starts it and then creates the first
         workspace, and only ever from that explicit tap.</p>
       </details>
 
       <details>
         <summary>Stuck on "Attaching tmux…" or "Attaching herdr…"</summary>
         <p><b>What it means.</b> The first few seconds are the normal attach handshake. The
-        spinner holds for four seconds before Offhook is willing to say anything, then it
+        spinner holds for four seconds before Moshpit is willing to say anything, then it
         settles into one of exactly two honest answers: <b>"tmux not installed on this
         host"</b> with an Install button, or <b>"No tmux sessions"</b> with a Create button.
         The panel exists to kill a specific mis-diagnosis: without tmux,
@@ -325,7 +325,7 @@ curl -fsSL https://herdr.dev/install.sh | sh  <i># everywhere else</i></pre>
       <details>
         <summary>herdr: black screen, no empty state, and the Tabs sheet's + does nothing</summary>
         <p><b>What it means.</b> herdr is installed but its server is not running, and you are
-        on a build that could not tell. This was a real shipped bug. Offhook detected the
+        on a build that could not tell. This was a real shipped bug. Moshpit detected the
         condition by matching herdr 0.8.0's structured
         <code>{"error":{"code":"server_not_running"}}</code>, but herdr 0.7.3 — what
         <code>brew install herdr</code> gave us in August 2026 — emits a bare Rust error
@@ -335,7 +335,7 @@ curl -fsSL https://herdr.dev/install.sh | sh  <i># everywhere else</i></pre>
         state never showed. Worse, the SSH layer merges stderr into stdout and drops the exit
         code, so nothing on screen indicated the command had failed at all.</p>
         <p><b>The fix, and the lesson.</b> Stop matching error text entirely. Every herdr
-        command now carries <code>; echo "__offhook_rc=$?"</code> and the decision is made on
+        command now carries <code>; echo "__moshpit_rc=$?"</code> and the decision is made on
         the exit code, which is 1 in both versions. Cross-version detection has to pick the
         most stable signal available, and error strings are the least stable one there
         is.</p>
@@ -365,7 +365,7 @@ curl -fsSL https://herdr.dev/install.sh | sh  <i># everywhere else</i></pre>
         <code>tmux -CC</code> starts server-side over mosh and no <code>%begin</code> or
         <code>%output</code> ever comes back.</p>
         <p><b>What you actually get.</b> The multiplexer runs its own full-screen TUI inside
-        the mosh shell and Offhook is just the renderer. A separate lightweight SSH connection
+        the mosh shell and Moshpit is just the renderer. A separate lightweight SSH connection
         runs alongside to feed the native sheets: rendering over UDP, control over TCP. On a
         phone, herdr's own sidebar takes roughly a third of the screen width — usable, but
         cramped. That is precisely why the native single-pane frame channel exists on
@@ -391,24 +391,24 @@ curl -fsSL https://herdr.dev/install.sh | sh  <i># everywhere else</i></pre>
         <summary>"Another client is using this pane — retrying shortly"</summary>
         <p><b>What it means.</b> herdr's direct attach is <b>exclusive per terminal</b>. Its
         <code>terminal_attach_owners</code> refuses a second attacher unless that attacher
-        passes <code>--takeover</code>, and Offhook always passes it, because a reconnect
-        necessarily collides with its own stale attach. So two Offhooks pointed at the same
+        passes <code>--takeover</code>, and Moshpit always passes it, because a reconnect
+        necessarily collides with its own stale attach. So two Moshpits pointed at the same
         pane evict each other.</p>
-        <p><b>What Offhook does about it.</b> The control poller re-reports the focused pane
+        <p><b>What Moshpit does about it.</b> The control poller re-reports the focused pane
         after <i>every</i> poll, not only when the focus changes. That repeat is what heals a
         channel someone else evicted. Before that fix, the evicted client went black and
         never recovered, because retarget only ran on a focus change and the focus had not
         changed — and an eviction moves nothing in the tree, so nothing looked different. For
         the same reason a lost attach also drops the poller back to its fast cadence and
         reads immediately, instead of waiting out an idle interval.</p>
-        <p>After three evictions inside a 30-second window, Offhook stops re-attaching for 30
+        <p>After three evictions inside a 30-second window, Moshpit stops re-attaching for 30
         seconds and shows this notice. It clears itself the moment a frame paints again.</p>
         <p><b>The limit, plainly.</b> Two directly-attached clients will fight each other,
         each reclaiming the pane on its next poll — every couple of seconds while anything is
         moving. That is inherent to herdr's exclusive direct attach and cannot be fixed on the
         client side. Put the second client on a different pane, or close it.</p>
         <p><b>One thing we have not verified.</b> A laptop running herdr's own TUI does not
-        occupy an attach owner, so "laptop on the TUI, phone on Offhook, same host" should not
+        occupy an attach owner, so "laptop on the TUI, phone on Moshpit, same host" should not
         conflict. We have not tested it, so we are not claiming it works.</p>
       </details>
 
@@ -419,7 +419,7 @@ curl -fsSL https://herdr.dev/install.sh | sh  <i># everywhere else</i></pre>
         you re-foreground. Measured on device: flipping a pane from blocked to working while
         the app was backgrounded left the Dynamic Island unchanged until the app came
         forward.</p>
-        <p><b>Why there is no fix.</b> There is no push server, because there is no Offhook
+        <p><b>Why there is no fix.</b> There is no push server, because there is no Moshpit
         server at all. Alerts are generated on-device from the live session; they fire while
         the app is in the foreground or recently backgrounded, and a fully suspended app does
         not poll. This is identical on the tmux path — it is not a herdr problem.</p>
@@ -452,7 +452,7 @@ curl -fsSL https://herdr.dev/install.sh | sh  <i># everywhere else</i></pre>
 
       <details>
         <summary>The pill says "reconnecting" or "offline"</summary>
-        <p><b>What it means.</b> The session dropped and Offhook is handling it. While the
+        <p><b>What it means.</b> The session dropped and Moshpit is handling it. While the
         app is in the foreground it probes the transport every 12 seconds; the probe itself
         round-trips a trivial command with an 8-second timeout. If it fails, the session marks
         reconnecting and reconnects. If it is already reconnecting, the next 12-second tick
@@ -468,7 +468,7 @@ curl -fsSL https://herdr.dev/install.sh | sh  <i># everywhere else</i></pre>
 
       <details>
         <summary>You were away for a minute and it reconnected instead of resuming</summary>
-        <p><b>What it means.</b> Backgrounded for longer than 20 seconds, Offhook skips the
+        <p><b>What it means.</b> Backgrounded for longer than 20 seconds, Moshpit skips the
         liveness probe on return and forces a fresh reconnect. iOS has almost certainly killed
         the TCP socket by then, and the probe can false-positive on a half-open channel — the
         result of trusting it is a green pill over a frozen pane.</p>
@@ -479,7 +479,7 @@ curl -fsSL https://herdr.dev/install.sh | sh  <i># everywhere else</i></pre>
 
       <details>
         <summary>It asked for Face ID again</summary>
-        <p><b>What it means.</b> Every backgrounding drops every decrypted secret Offhook was
+        <p><b>What it means.</b> Every backgrounding drops every decrypted secret Moshpit was
         holding in memory. Re-foregrounding forces a fresh, biometry-gated read from the
         Keychain, and that is what prompts.</p>
         <p><b>Why.</b> A key configured to authenticate on every read would otherwise quietly
@@ -490,7 +490,7 @@ curl -fsSL https://herdr.dev/install.sh | sh  <i># everywhere else</i></pre>
       <details>
         <summary>An agent you are definitely running does not appear in the Agents section</summary>
         <p><b>First, the section only exists on herdr connections.</b> A tmux connection's card
-        has no Agents section at all — that data depends on whether you installed Offhook's
+        has no Agents section at all — that data depends on whether you installed Moshpit's
         status hook, and a list that silently omits half your agents is worse than no list.</p>
         <p><b>On herdr.</b> The section lists agents inside herdr's own panes, not every agent
         process on the machine. A <code>claude</code> you started in Terminal.app is invisible
@@ -516,7 +516,7 @@ curl -fsSL https://herdr.dev/install.sh | sh  <i># everywhere else</i></pre>
         <code>⌃ b p</code>.</p>
         <p><b>Where this can bite you.</b> Only where the multiplexer's own full-screen UI is
         what you are looking at — over mosh, or in a shell where you started
-        <code>herdr</code> / <code>tmux</code> yourself. On the native paths Offhook drives
+        <code>herdr</code> / <code>tmux</code> yourself. On the native paths Moshpit drives
         the multiplexer over its own channel and your keystrokes go to the pane, so the
         prefix never reaches it.</p>
         <p><b>What to do.</b> Detach is not kill: the workspace and its panes stay on the
@@ -556,7 +556,7 @@ curl -fsSL https://herdr.dev/install.sh | sh  <i># everywhere else</i></pre>
   </section>
 </div>
 <!--DOCNEXT:BEGIN-->
-<div class="dpager"><a class="dprev" href="/docs/appearance"><span>Previous</span>Themes, fonts and icons</a><a class="dnext" href="/compare"><span>Next</span>How Offhook compares</a></div>
+<div class="dpager"><a class="dprev" href="/docs/appearance"><span>Previous</span>Themes, fonts and icons</a><a class="dnext" href="/compare"><span>Next</span>How Moshpit compares</a></div>
 <!--DOCNEXT:END-->
 </div><!--dbody-->
 <!--DOCTOC:BEGIN-->
@@ -706,7 +706,7 @@ curl -fsSL https://herdr.dev/install.sh | sh  <i># everywhere else</i></pre>
       <a href="./">Home</a><a href="/docs">Docs</a><a href="/guides">Guides</a>
       <a href="/compare">Compare</a><a href="/pricing">Pricing</a><a href="/privacy">Privacy</a><a href="/support">Support</a>
     </nav>
-    <p class="legal">© 2026 Offhook · SSH · Mosh · tmux · herdr · iPhone</p>
+    <p class="legal">© 2026 Moshpit · SSH · Mosh · tmux · herdr · iPhone</p>
   </div>
 </footer>
 <div class="dsearch" id="dsearch" hidden style="display:none">
