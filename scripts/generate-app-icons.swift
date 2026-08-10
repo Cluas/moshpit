@@ -407,9 +407,14 @@ try? FileManager.default.createDirectory(atPath: iconFilesDir, withIntermediateD
 // ("1,2"), and App Store validation flags every alternate icon that lacks
 // its iPad sizes (ITMS-90892) — the files must exist here AND be listed in
 // project.yml's CFBundleIcons~ipad block.
-let variants: [(pointName: String, scale: String, px: Int)] = [
-    ("60x60", "@2x", 120), ("60x60", "@3x", 180),
-    ("76x76", "@2x", 152), ("83.5x83.5", "@2x", 167),
+//
+// The iPad files MUST carry the `~ipad` device suffix in the FILENAME
+// (`…76x76@2x~ipad.png`): the validator resolves loose icon files by the
+// QA1686 naming convention, and correctly-sized files without the suffix
+// still warn ITMS-90892 on upload — verified the hard way on build 284.
+let variants: [(pointName: String, scale: String, px: Int, device: String)] = [
+    ("60x60", "@2x", 120, ""), ("60x60", "@3x", 180, ""),
+    ("76x76", "@2x", 152, "~ipad"), ("83.5x83.5", "@2x", 167, "~ipad"),
 ]
 
 for spec in specs {
@@ -419,7 +424,7 @@ for spec in specs {
             FileHandle.standardError.write("Render failed for \(baseName) @\(variant.px)\n".data(using: .utf8)!)
             continue
         }
-        writePNG(image, to: "\(iconFilesDir)/\(baseName)\(variant.pointName)\(variant.scale).png")
+        writePNG(image, to: "\(iconFilesDir)/\(baseName)\(variant.pointName)\(variant.scale)\(variant.device).png")
     }
     // The primary icon also supplies the 1024 marketing asset, flattened so the
     // App Store will accept it.
