@@ -2,14 +2,14 @@
   <img src="assets/icon-192.png" width="96" alt="Moshpit icon">
 </p>
 <h1 align="center">Moshpit</h1>
-<p align="center"><b>Always on the line.</b><br>
+<p align="center"><b>Your agents can reach you.</b><br>
 The iOS terminal built for agent work — SSH · Mosh · tmux · <a href="https://github.com/herdrdev/herdr">herdr</a>.</p>
 
 <p align="center">
   <a href="https://moshpit.cluas.eu.org">Website</a> ·
   <a href="https://moshpit.cluas.eu.org/privacy.html">Privacy</a> ·
   <a href="../../issues">Issues</a> ·
-  App Store — <i>coming soon, $4.99 launch price (one-time)</i>
+  App Store — <i>coming soon, $6.99 launch price (one-time)</i>
 </p>
 
 ---
@@ -61,9 +61,10 @@ Moshpit itself is **not open source**. This repository is the public home for:
 
 ## FAQ
 
-**Why "Moshpit"?** Off-hook is the telephone state where the handset is up and
-the line is live — which is also the logo. And your agents taking the work
-means they take you *off the hook*. 中文名：「摘机」。
+**Why "Moshpit"?** Two reasons that turn out to be one. *Mosh* is the protocol
+this app speaks — the one that survives a subway tunnel and a closed lid. And a
+mosh pit is what a screen full of agents at work looks like: dense, loud, everyone
+moving at once. The logo is a crowd surf: one figure carried by many hands.
 
 **Which agents does it understand?** Anything that runs in a terminal.
 Status detection is protocol-level on herdr (Claude Code, Codex, and friends),

@@ -1,7 +1,8 @@
 # 上架执行手册（账号批下来照着跑）
 
-状态：2026-08-08。前提：个人开发者账号（已决定）、付费买断（首发 $4.99 →
-$6.99 → 标准价 $9.99，见 pricing.md）、首发排除中国大陆（已决定）、iPad 保留、欧盟开放。
+状态：2026-08-08（价格于 2026-08-10 修订）。前提：个人开发者账号（已决定）、
+付费买断（首发 **$6.99** → 标准价 $9.99，见 pricing.md）、首发排除中国大陆（已决定）、
+iPad 保留、欧盟开放。
 
 ## ✅ 已拍板（2026-08-08）
 
@@ -39,7 +40,7 @@ $6.99 → 标准价 $9.99，见 pricing.md）、首发排除中国大陆（已�
       Bundle ID `com.cluas.moshpit`（已在 project.yml），
       名字先试裸名 `Moshpit`，占不到用候选 1 `Moshpit: SSH · Mosh · Agents`，
       SKU 随意（`moshpit-ios`），语言 English (U.S.)。
-- [ ] Pricing：首发 $4.99；Availability：**全球 − 中国大陆**（ICP，见下）。
+- [ ] Pricing：首发 $6.99；Availability：**全球 − 中国大陆**（ICP，见下）。
       欧盟**开放**，但先完成 DSA trader 认证。
 - [ ] **DSA trader 认证**（欧盟区必需）：ASC → Business → Trader Status，
       填姓名/地址/邮箱/电话并提交验证。没做完就发布 = 欧盟区被摘。
@@ -66,7 +67,10 @@ $6.99 → 标准价 $9.99，见 pricing.md）、首发排除中国大陆（已�
 
 ## 提交与放行
 
-- [ ] 出口合规追问答"standard algorithms"（键已在二进制）
+- [x] 出口合规：已在 **App 级加密声明**解决（App Information → App 加密文稿，
+      2026-08-10 填：标准算法、不发法国、免文稿）。二进制**不带**加密键——
+      `ITSAppUsesNonExemptEncryption: true` 无合规代码时 Validate/Upload 都会
+      报 90592（project.yml 有完整注释）。将来开法国区：重答问卷 + ANSSI 申报。
 - [ ] 版本发布方式选 **Manually release**（审过后自己挑时间上线，配合发帖）
 - [ ] 审核通过后：Features → Promo Codes 生成（每版本 100 个、28 天有效）发员工
 - [ ] 上线当天：Show HN / X 发 30 秒视频（锁屏 Allow 一个 Claude Code 权限请求）
@@ -91,6 +95,6 @@ Echo、Conduit 都在架，含个人开发者与 mosh）。
 
 ## 回本仪表
 
-目标：**~24 份 × $4.99**（Small Business 15% 抽成，净 ~$4.24/份）≈ $99 年费。
-回本后按 pricing.md 的扳机涨到 $6.99——**回本本身就是第一个扳机**。
+目标：**~17 份 × $6.99**（Small Business 15% 抽成，净 ~$5.94/份）≈ $99 年费。
+回本后按 pricing.md 的扳机涨到 $9.99 标准价——**回本本身就是第一个扳机**。
 两个月 < 5 份 → 是曝光问题，加帖不降价。

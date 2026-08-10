@@ -5,10 +5,15 @@
 
 ## 名字（≤30 字符）
 
-品牌定名 **Moshpit**（2026-08-07；电信术语"摘机"=线路激活，双关 *your agents
-take you off the hook*；听筒 logo 与 "Always on the line" tagline 原样保留；
-中文名「摘机」）。查证过 App Store 无同名 App——"Off The Hook" 只有海鲜餐厅
-和小游戏，类目不冲突。**名字讲故事，副标题扛搜索**：
+品牌定名 **Moshpit**（2026-08-09 由 Offhook 改名。*Mosh* 正是 app 说的协议，
+而 mosh pit 就是一屏 agent 同时开工的样子——密、吵、全都在动；icon 换成 crowd
+surf，一个人被许多只手托起。中文不另起名字）。tagline 同步换成 **"Your agents
+can reach you."**。
+
+> ⚠️ **提交前必办**：App Store 同名查证还没对 "Moshpit" 做过。之前"无同名"的
+> 结论是针对旧名 "Off The Hook" 的（只有海鲜餐厅和小游戏），改名后不能顺延。
+
+**名字讲故事，副标题扛搜索**：
 
 1. `Moshpit: SSH · Mosh · Agents` （28 ✓ 首选——机制词全放冒号后做 SEO）
 2. `Moshpit` （裸名，若 ASC 占得到可作正名 + 副标题扛全部机制词）
@@ -91,7 +96,7 @@ guides are built in.
 | Privacy Policy URL | `https://moshpit.cluas.eu.org/privacy.html` ✅ 已上线 |
 | Copyright | `© 2026 ⟨你的名字⟩` |
 | 年龄分级 | 问卷全部"无" → 4+（无浏览器、无 UGC 分发、终端内容自备） |
-| 价格 | 首发 **$4.99**（launch price），阶梯 $6.99 → $9.99——时间线与扳机见 pricing.md |
+| 价格 | 首发 **$6.99**（launch price），下一档 $9.99 标准价——时间线与扳机见 pricing.md |
 | App 隐私标签 | **Data Not Collected**（与 PrivacyInfo.xcprivacy 一致：零收集零跟踪） |
 
 ## 截图（提交最低集）
