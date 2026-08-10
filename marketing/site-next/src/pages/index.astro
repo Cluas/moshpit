@@ -1,25 +1,27 @@
 ---
 import Marketing from '@layouts/Marketing.astro';
+import { ctaPrimary, ctaNote, hasPrimaryCta } from '../release.mjs';
 
 // Raw markup, lifted verbatim from the page this replaces.
 const body = `<!-- ══ HERO ══ -->
 <div class="shell">
   <section class="hero">
     <div>
-      <p class="eyebrow">The pit never closes</p>
+      <p class="eyebrow">Answer agents from lock screen</p>
       <h1>Your agents<br>can <em>reach you</em>.</h1>
       <p class="lede">Claude Code hits a permission prompt on your server.
       Your phone lights up. You tap <b>Allow</b> from the lock screen — and it keeps going.
       No unlocking, no SSH, no walking back to your desk.</p>
       <div class="actions">
-        <a class="cta" href="/guide/claude-code">See it end to end</a>
+        ${ctaPrimary('en')}
+        <a class="cta ${hasPrimaryCta ? 'ghost' : ''}" href="/guide/claude-code">See it end to end</a>
         <a class="cta ghost" href="/compare">How it compares</a>
       </div>
-      <p class="soon"><b>$6.99</b> one-time · coming to the App Store</p>
+      <p class="soon">${ctaNote('en')}</p>
     </div>
     <div class="herophone">
-      <img class="phone lift" src="/01-agents.jpg" width="1320" height="2868"
-           alt="Moshpit home screen: an Agents section listing Claude Code needing you, codex working, and an idle claude, above a tree of workspaces">
+      <img class="phone lift" src="/20-lockscreen.jpg" width="440" height="956"
+           alt="An iPhone lock screen showing a Live Activity for Claude Code with Allow and Deny buttons, and codex below it">
       <span class="pin"><span class="lamp"></span>1 NEEDS YOU</span>
     </div>
   </section>
@@ -112,46 +114,11 @@ const body = `<!-- ══ HERO ══ -->
 
     <div class="rows">
 
-      <div class="row">
-        <div>
-          <span class="kicker">Agent workbench · herdr</span>
-          <h3>Answer the one that's blocking</h3>
-          <p>The pane's breadcrumb carries the agent's name and its state dot, so you
-          always know whose turn it is. Amber means it wants you.</p>
-          <ul>
-            <li>Agents sort by who's waiting, with how long they've waited</li>
-            <li>Tap a line, land in that pane — no hunting through a tree</li>
-            <li>Zero host-side setup on herdr; one-line hook install on tmux</li>
-          </ul>
+        <div class="pillar">
+          <h3 class="pillarhead">A real terminal</h3>
+          <p class="pillarsub">It is a terminal before it is anything else. SSH and Mosh, and tmux rendered as native views rather than a desktop shrunk to fit.</p>
         </div>
-      <div class="gal rowshot" id="gal-agent">
-        <div class="galframes">
-          <img src="/02-agent-terminal.jpg" class="phone on" width="1320" height="2868" alt="Terminal showing a Claude Code edit request awaiting approval, with the breadcrumb naming the agent in amber">
-          <img src="/01-agents.jpg" class="phone" width="1320" height="2868" alt="Home screen Agents section: Claude Code needs you, codex working, claude idle" loading="lazy">
-        </div>
-        <div class="galtabs" role="tablist" aria-label="Agent workbench screens">
-          <button type="button" role="tab" aria-selected="true" aria-controls="gal-agent">In the pane</button>
-          <button type="button" role="tab" aria-selected="false" aria-controls="gal-agent">On the home screen</button>
-        </div>
-      </div>
-      </div>
 
-      <div class="row">
-        <div>
-          <span class="kicker">Start work · git worktree</span>
-          <h3>Open a new task from the train</h3>
-          <p>Pick a repo, name a branch, hand over the first prompt. Moshpit creates an
-          isolated git worktree on the host and starts the agent inside it — your working
-          tree never moves.</p>
-          <ul>
-            <li>Repos found for you, from where your panes already are</li>
-            <li>Branch names checked before the round trip</li>
-            <li>Remove the worktree later from a long-press, with a real confirmation</li>
-          </ul>
-        </div>
-        <img class="phone rowshot" src="/06-new-task.jpg" width="1320" height="1466" loading="lazy"
-             alt="New Agent Task sheet: repo payments-api, branch fix-webhook-retry, agent claude, and a first message">
-      </div>
 
       <div class="row">
         <div>
@@ -180,6 +147,7 @@ const body = `<!-- ══ HERO ══ -->
       </div>
       </div>
 
+
       <div class="row">
         <div>
           <span class="kicker">Mosh · roaming</span>
@@ -204,6 +172,7 @@ const body = `<!-- ══ HERO ══ -->
         </div>
       </div>
       </div>
+
 
       <div class="row">
         <div>
@@ -230,7 +199,120 @@ const body = `<!-- ══ HERO ══ -->
       </div>
       </div>
 
-    </div>
+        <div class="pillar">
+          <h3 class="pillarhead">Built for agents</h3>
+          <p class="pillarsub">The part no other iPhone terminal does: an agent's &ldquo;I need a human&rdquo; reaching your lock screen, and a way to answer it.</p>
+        </div>
+
+
+      <div class="row">
+        <div>
+          <span class="kicker">Agent workbench · herdr</span>
+          <h3>Answer the one that's blocking</h3>
+          <p>The pane's breadcrumb carries the agent's name and its state dot, so you
+          always know whose turn it is. Amber means it wants you.</p>
+          <ul>
+            <li>Agents sort by who's waiting, with how long they've waited</li>
+            <li>Tap a line, land in that pane — no hunting through a tree</li>
+            <li>Zero host-side setup on herdr; one-line hook install on tmux</li>
+          </ul>
+        </div>
+      <div class="gal rowshot" id="gal-agent">
+        <div class="galframes">
+          <img src="/02-agent-terminal.jpg" class="phone on" width="1320" height="2868" alt="Terminal showing a Claude Code edit request awaiting approval, with the breadcrumb naming the agent in amber">
+          <img src="/01-agents.jpg" class="phone" width="1320" height="2868" alt="Home screen Agents section: Claude Code needs you, codex working, claude idle" loading="lazy">
+        </div>
+        <div class="galtabs" role="tablist" aria-label="Agent workbench screens">
+          <button type="button" role="tab" aria-selected="true" aria-controls="gal-agent">In the pane</button>
+          <button type="button" role="tab" aria-selected="false" aria-controls="gal-agent">On the home screen</button>
+        </div>
+      </div>
+      </div>
+
+
+      <div class="row">
+        <div>
+          <span class="kicker">Start work · git worktree</span>
+          <h3>Open a new task from the train</h3>
+          <p>Pick a repo, name a branch, hand over the first prompt. Moshpit creates an
+          isolated git worktree on the host and starts the agent inside it — your working
+          tree never moves.</p>
+          <ul>
+            <li>Repos found for you, from where your panes already are</li>
+            <li>Branch names checked before the round trip</li>
+            <li>Remove the worktree later from a long-press, with a real confirmation</li>
+          </ul>
+        </div>
+        <img class="phone rowshot" src="/06-new-task.jpg" width="1320" height="1466" loading="lazy"
+             alt="New Agent Task sheet: repo payments-api, branch fix-webhook-retry, agent claude, and a first message">
+      </div>
+
+        <div class="row solo">
+          <div>
+            <span class="kicker">Voice · on this device</span>
+            <h3>Dictate the prompt, read it, then send it</h3>
+            <p>A mic key sits on the terminal's shortcut bar. What you say lands in a
+            panel above the keyboard first — <b>Insert</b> is what types it into the
+            shell. A terminal is the one place a mis-heard word must never auto-type,
+            so nothing reaches the host until you have read it.</p>
+            <ul>
+              <li>Transcribed entirely on this device by Apple's speech models — the audio
+              never leaves the phone, because there is no server path for it to take</li>
+              <li>Chinese works, and so does every other language an on-device engine can
+              handle; the picker lists exactly those and nothing it cannot do</li>
+              <li>Automatic follows your system language, or pin one per taste</li>
+              <li>Hide the mic key entirely if you never want it</li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="pillar">
+          <h3 class="pillarhead">Honest by construction</h3>
+          <p class="pillarsub">Not a policy page — these are consequences of how the app
+          is built. There is no server of ours for your traffic to pass through, so there
+          is nothing for us to collect even if we wanted to.</p>
+        </div>
+
+        <div class="grid">
+          <div class="cell">
+            <span class="ic">Once</span>
+            <h4>$6.99, one purchase</h4>
+            <p>No subscription, no in-app purchases, no tiers. Every feature is in the
+            app you bought.</p>
+          </div>
+          <div class="cell">
+            <span class="ic">Nobody</span>
+            <h4>No account to make</h4>
+            <p>Nothing to sign up for, nothing to log in to, nothing to cancel. The app
+            has no idea who you are.</p>
+          </div>
+          <div class="cell">
+            <span class="ic">Nothing</span>
+            <h4>Data Not Collected</h4>
+            <p>That is the App Store privacy label, and it is the literal truth: no
+            analytics, no crash telemetry, no third-party SDKs.</p>
+          </div>
+          <div class="cell">
+            <span class="ic">Direct</span>
+            <h4>Your server, and only it</h4>
+            <p>SSH and Mosh go straight from the phone to the host you named. There is no
+            relay in the middle, ours or anyone's.</p>
+          </div>
+          <div class="cell">
+            <span class="ic">Enclave</span>
+            <h4>Keys stay in the Secure Enclave</h4>
+            <p>Private keys are generated and held by the phone's hardware, unlocked by
+            Face ID. They are not exportable, by us or by you.</p>
+          </div>
+          <div class="cell">
+            <span class="ic">Local</span>
+            <h4>Dictation never leaves</h4>
+            <p>Voice input is transcribed on this device by Apple's speech models. The
+            audio is not uploaded anywhere — there is no server path for it.</p>
+          </div>
+        </div>
+
+      </div>
   </section>
 </div>
 

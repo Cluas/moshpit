@@ -1,25 +1,27 @@
 ---
 import Marketing from '@layouts/Marketing.astro';
+import { ctaPrimary, ctaNote, hasPrimaryCta } from '../release.mjs';
 
 // Raw markup, lifted verbatim from the page this replaces.
 const body = `<!-- ══ HERO ══ -->
 <div class="shell">
   <section class="hero">
     <div>
-      <p class="eyebrow">The pit never closes</p>
+      <p class="eyebrow">在锁屏上回 agent</p>
       <h1>让你的 agent<br><em>找得到你</em>。</h1>
       <p class="lede">Claude Code 在你的服务器上卡在一个权限询问。你的手机亮了。
       你在锁屏上点一下 <b>Allow</b>，它就继续跑下去——不用解锁、不用 SSH、
       不用走回工位。</p>
       <div class="actions">
-        <a class="cta" href="/zh/guide/claude-code">完整跑一遍</a>
+        ${ctaPrimary('zh')}
+        <a class="cta ${hasPrimaryCta ? 'ghost' : ''}" href="/zh/guide/claude-code">完整跑一遍</a>
         <a class="cta ghost" href="/zh/compare">和别的比怎么样</a>
       </div>
-      <p class="soon"><b>$6.99</b> 一次性买断 · 即将上架 App Store</p>
+      <p class="soon">${ctaNote('zh')}</p>
     </div>
     <div class="herophone">
-      <img class="phone lift" src="/01-agents.jpg" width="1320" height="2868"
-           alt="Moshpit 主页：Agents 区列出等你回话的 Claude Code、正在干活的 codex、以及闲置的 claude，下面是工作区树">
+      <img class="phone lift" src="/20-lockscreen.jpg" width="440" height="956"
+           alt="iPhone 锁屏上的实时活动卡片：Claude Code 带 Allow 和 Deny 两个按钮，下面还有 codex">
       <span class="pin"><span class="lamp"></span>1 NEEDS YOU</span>
     </div>
   </section>
@@ -108,45 +110,11 @@ const body = `<!-- ══ HERO ══ -->
 
     <div class="rows">
 
-      <div class="row">
-        <div>
-          <span class="kicker">Agent 工作台 · herdr</span>
-          <h3>先回那个卡住的</h3>
-          <p>面包屑上带着 agent 的名字和状态点，所以你一眼知道现在轮到谁。
-          琥珀色 = 它在等你。</p>
-          <ul>
-            <li>按"谁在等你"排序，并显示等了多久</li>
-            <li>点一行直接落到那个窗格——不用在树里找</li>
-            <li>herdr 上主机零安装；tmux 上一行命令装 hook</li>
-          </ul>
+        <div class="pillar">
+          <h3 class="pillarhead">先是个真终端</h3>
+          <p class="pillarsub">它首先是个终端，其次才是别的。SSH 与 Mosh，以及被画成原生视图的 tmux——不是把桌面缩小塞进屏幕。</p>
         </div>
-      <div class="gal rowshot" id="gal-agent">
-        <div class="galframes">
-          <img src="/02-agent-terminal.jpg" class="phone on" width="1320" height="2868" alt="终端里 Claude Code 的修改请求正在等待批准，面包屑用琥珀色标出 agent 名">
-          <img src="/01-agents.jpg" class="phone" width="1320" height="2868" alt="主页 Agents 区：Claude Code 等你回话、codex 正在干活、claude 闲置" loading="lazy">
-        </div>
-        <div class="galtabs" role="tablist" aria-label="Agent 工作台界面">
-          <button type="button" role="tab" aria-selected="true" aria-controls="gal-agent">窗格里</button>
-          <button type="button" role="tab" aria-selected="false" aria-controls="gal-agent">主页上</button>
-        </div>
-      </div>
-      </div>
 
-      <div class="row">
-        <div>
-          <span class="kicker">开新活 · git worktree</span>
-          <h3>在地铁上开一个新任务</h3>
-          <p>选仓库、起分支名、把第一句话交给它。Moshpit 在主机上建一个隔离的
-          git worktree，然后在里面把 agent 起起来——你手边的工作区一动不动。</p>
-          <ul>
-            <li>仓库自动找出来，来源是你窗格已经待着的目录</li>
-            <li>分支名先在本地校验，不用等一个来回才报错</li>
-            <li>用完长按删除 worktree，带一次真正的二次确认</li>
-          </ul>
-        </div>
-        <img class="phone rowshot" src="/06-new-task.jpg" width="1320" height="1466" loading="lazy"
-             alt="新建 agent 任务表单：仓库 payments-api、分支 fix-webhook-retry、agent claude，以及第一句话">
-      </div>
 
       <div class="row">
         <div>
@@ -174,6 +142,7 @@ const body = `<!-- ══ HERO ══ -->
       </div>
       </div>
 
+
       <div class="row">
         <div>
           <span class="kicker">Mosh · 漫游</span>
@@ -197,6 +166,7 @@ const body = `<!-- ══ HERO ══ -->
         </div>
       </div>
       </div>
+
 
       <div class="row">
         <div>
@@ -222,7 +192,115 @@ const body = `<!-- ══ HERO ══ -->
       </div>
       </div>
 
-    </div>
+        <div class="pillar">
+          <h3 class="pillarhead">为 agent 而生</h3>
+          <p class="pillarsub">别的 iPhone 终端不做的那部分：agent 那句「我需要人」能送到你的锁屏上，而且你能在那儿回它。</p>
+        </div>
+
+
+      <div class="row">
+        <div>
+          <span class="kicker">Agent 工作台 · herdr</span>
+          <h3>先回那个卡住的</h3>
+          <p>面包屑上带着 agent 的名字和状态点，所以你一眼知道现在轮到谁。
+          琥珀色 = 它在等你。</p>
+          <ul>
+            <li>按"谁在等你"排序，并显示等了多久</li>
+            <li>点一行直接落到那个窗格——不用在树里找</li>
+            <li>herdr 上主机零安装；tmux 上一行命令装 hook</li>
+          </ul>
+        </div>
+      <div class="gal rowshot" id="gal-agent">
+        <div class="galframes">
+          <img src="/02-agent-terminal.jpg" class="phone on" width="1320" height="2868" alt="终端里 Claude Code 的修改请求正在等待批准，面包屑用琥珀色标出 agent 名">
+          <img src="/01-agents.jpg" class="phone" width="1320" height="2868" alt="主页 Agents 区：Claude Code 等你回话、codex 正在干活、claude 闲置" loading="lazy">
+        </div>
+        <div class="galtabs" role="tablist" aria-label="Agent 工作台界面">
+          <button type="button" role="tab" aria-selected="true" aria-controls="gal-agent">窗格里</button>
+          <button type="button" role="tab" aria-selected="false" aria-controls="gal-agent">主页上</button>
+        </div>
+      </div>
+      </div>
+
+
+      <div class="row">
+        <div>
+          <span class="kicker">开新活 · git worktree</span>
+          <h3>在地铁上开一个新任务</h3>
+          <p>选仓库、起分支名、把第一句话交给它。Moshpit 在主机上建一个隔离的
+          git worktree，然后在里面把 agent 起起来——你手边的工作区一动不动。</p>
+          <ul>
+            <li>仓库自动找出来，来源是你窗格已经待着的目录</li>
+            <li>分支名先在本地校验，不用等一个来回才报错</li>
+            <li>用完长按删除 worktree，带一次真正的二次确认</li>
+          </ul>
+        </div>
+        <img class="phone rowshot" src="/06-new-task.jpg" width="1320" height="1466" loading="lazy"
+             alt="新建 agent 任务表单：仓库 payments-api、分支 fix-webhook-retry、agent claude，以及第一句话">
+      </div>
+
+        <div class="row solo">
+          <div>
+            <span class="kicker">语音 · 就在这台设备上</span>
+            <h3>把 prompt 说出来，看清了再发</h3>
+            <p>终端的快捷条上有一个 mic 键。你说的话先落到键盘上方那块面板里，
+            按 <b>Insert</b> 才会真的敲进 shell。终端恰恰是最不能容忍「听错了还自动敲进去」
+            的地方，所以在你看清之前，什么都不会到主机上。</p>
+            <ul>
+              <li>由 Apple 的语音模型完全在这台设备上转写——音频不出手机，
+              因为它根本没有一条通向服务器的路</li>
+              <li>中文可用，其他任何端侧引擎能处理的语言也一样；
+              选择器里列出的就是它真能转的那些，不会列它做不到的</li>
+              <li>「自动」跟随系统语言，也可以固定成某一种</li>
+              <li>不想要的话，可以把 mic 键整个隐藏掉</li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="pillar">
+          <h3 class="pillarhead">诚实是结构决定的</h3>
+          <p class="pillarsub">这不是一页隐私政策，而是这个 app 造法的必然结果：你的流量
+          不经过我们任何服务器，所以就算我们想收集，也没有东西可收。</p>
+        </div>
+
+        <div class="grid">
+          <div class="cell">
+            <span class="ic">一次</span>
+            <h4>$6.99，买一次</h4>
+            <p>没有订阅、没有内购、没有分档。你买到的那个 app 里就是全部功能。</p>
+          </div>
+          <div class="cell">
+            <span class="ic">无人</span>
+            <h4>不用注册账号</h4>
+            <p>没有东西要注册、要登录、要取消。这个 app 根本不知道你是谁。</p>
+          </div>
+          <div class="cell">
+            <span class="ic">零</span>
+            <h4>Data Not Collected</h4>
+            <p>这是 App Store 隐私标签上的原话，也是字面意思：没有埋点、没有崩溃上报、
+            没有任何第三方 SDK。</p>
+          </div>
+          <div class="cell">
+            <span class="ic">直连</span>
+            <h4>只到你自己那台机器</h4>
+            <p>SSH 和 Mosh 从手机直接连到你写的那台主机。中间没有中转，我们的没有，
+            别人的也没有。</p>
+          </div>
+          <div class="cell">
+            <span class="ic">Enclave</span>
+            <h4>密钥留在 Secure Enclave</h4>
+            <p>私钥由手机硬件生成和保管，用 Face ID 解锁。它导不出来——我们导不出，
+            你也导不出。</p>
+          </div>
+          <div class="cell">
+            <span class="ic">本机</span>
+            <h4>口述不出本机</h4>
+            <p>语音输入由 Apple 的语音模型在这台设备上转写。音频不会上传到任何地方——
+            它没有一条通向服务器的路。</p>
+          </div>
+        </div>
+
+      </div>
   </section>
 </div>
 

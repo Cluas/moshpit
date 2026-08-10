@@ -134,7 +134,23 @@ a{color:inherit;text-decoration:none}
 
 /* ── alternating feature rows ── */
 .rows{display:grid;gap:3.2rem;margin-top:3rem}
+/* Pillar headings group the rows under them. They are ordinary .rows children,
+   so they take the grid's full width and gap for free; the hairline above is
+   what makes a group read as a group instead of as one more feature row.
+   Note they shift .row:nth-child parity below — the shots still alternate
+   inside each pillar, which is the only thing that rule is for. */
+.pillar{border-top:1px solid var(--line);padding-top:1.7rem}
+.pillar:first-child{border-top:none;padding-top:0}
+.pillarhead{font-size:clamp(1.4rem,2.6vw,1.75rem);font-weight:750;
+  letter-spacing:-.025em;margin:0 0 .5rem}
+.pillarsub{color:var(--dim);font-size:1.02rem;max-width:58ch}
 .row{display:grid;grid-template-columns:1fr 1fr;gap:3rem;align-items:center}
+/* A feature row whose screenshot does not exist yet. Full width with a held
+   measure, rather than a half-empty two-column row or a placeholder box — an
+   empty frame promises a picture, this just reads as text. Drop the class when
+   the capture lands and it becomes an ordinary row. */
+.row.solo{grid-template-columns:1fr}
+.row.solo>div{max-width:64ch}
 .row:nth-child(even) .rowshot{order:-1}
 .rowshot{max-width:340px;justify-self:center}
 .row h3{font-size:1.3rem;font-weight:700;letter-spacing:-.02em;margin:.7rem 0 .55rem}

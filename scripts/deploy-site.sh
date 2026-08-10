@@ -181,6 +181,8 @@ for u in /docs-herdr.html /docs-herdr.zh.html /guide-claude-code.html \
          /docs/herdr.html /zh/docs/herdr.html; do
   probe "$u" 301
 done
+# Filed in App Store Connect, so these two answer instead of redirecting.
+for u in /privacy.html /support.html; do probe "$u" 200; done
 probe /nope 404
 gate rm -f "$cid" >/dev/null
 trap 'rm -rf "$GATECFG"' EXIT
