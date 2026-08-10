@@ -10,16 +10,17 @@
 // accent, the icon is its own choice from this gallery and each entry bakes in
 // the colors it wants.
 //
-// The handset-over-cursor geometry mirrors `OffhookGlyph.Metrics` in
-// Offhook/UI/Brand/OffhookMark.swift — keep the two in step.
+// The crowd-surf geometry mirrors `MoshpitGlyph.Metrics` in
+// Moshpit/UI/Brand/MoshpitMark.swift — keep the two in step.
 //
 // Usage: swift scripts/generate-app-icons.swift
 // Output:
-//   Offhook/App/IconFiles/AppIcon60x60@{2x,3x}.png              (primary)
-//   Offhook/App/IconFiles/AppIcon-<Tag>60x60@{2x,3x}.png        (alternates)
-//   Offhook/App/Assets.xcassets/AppIcon.appiconset/AppIcon.png  (1024 marketing)
+//   Moshpit/App/IconFiles/AppIcon60x60@{2x,3x}.png              (primary)
+//   Moshpit/App/IconFiles/AppIcon-<Tag>60x60@{2x,3x}.png        (alternates)
+//   Moshpit/App/Assets.xcassets/AppIcon.appiconset/AppIcon.png  (1024 marketing)
 
 import CoreGraphics
+import CoreText
 import ImageIO
 import Foundation
 #if canImport(UniformTypeIdentifiers)
@@ -31,8 +32,21 @@ typealias RGB = (UInt8, UInt8, UInt8)
 /// Which figure to draw. Distinct compositions, not recolors — the picker is
 /// meant to offer real alternatives.
 enum Pattern {
-    /// Handset (arc + two beads) hanging above a filled cursor block.
+    /// A glowing cursor crowd-surfing a row of three grounded blocks.
+    case pit
+    /// The heritage mark: a handset over its cursor cradle. A ringdown
+    /// circuit has no dial — the line is already up. Kept as an easter egg.
     case handset
+    /// ":wq" — the one vim command everybody knows.
+    case wq
+    /// A "⌃b" keycap — the tmux prefix, muscle memory made visible.
+    case prefixKey
+    /// A little house whose door is a glowing cursor block — there's no
+    /// place like 127.0.0.1.
+    case localhost
+    /// "NO CARRIER" in CRT amber over faint scanlines — how a line died
+    /// before mosh existed.
+    case noCarrier
     /// The cursor block alone, oversized.
     case cursor
     /// A prompt chevron with two hail arcs — "❯))".
@@ -75,19 +89,21 @@ func darkBG(_ tint: RGB) -> (RGB, RGB) {
     (mix(tint, toward: (0, 0, 0), by: 0.82), mix(tint, toward: (0, 0, 0), by: 0.93))
 }
 
+// Every alternate is a DIFFERENT figure with its own colorway — an easter-egg
+// gallery, not recolors of one mark. Each egg carries one of the accents, so
+// the color range survives the redesign.
 let specs: [IconSpec] = [
     // Primary — the app's own identity.
-    IconSpec(fileTag: nil, pattern: .handset, ink: nearWhite, glow: violet, bg: darkBG(violet)),
-    IconSpec(fileTag: "Teal", pattern: .handset, ink: nearWhite, glow: teal, bg: darkBG(teal)),
-    IconSpec(fileTag: "Green", pattern: .handset, ink: nearWhite, glow: green, bg: darkBG(green)),
-    IconSpec(fileTag: "Amber", pattern: .handset, ink: nearWhite, glow: amber, bg: darkBG(amber)),
-    // Inverted: the same figure, read as ink on paper.
-    IconSpec(fileTag: "Daylight", pattern: .handset, ink: (0x1A, 0x1C, 0x24), glow: violet,
+    IconSpec(fileTag: nil, pattern: .pit, ink: nearWhite, glow: violet, bg: darkBG(violet)),
+    // The heritage mark, restored as an egg.
+    IconSpec(fileTag: "Ringdown", pattern: .handset, ink: nearWhite, glow: violet, bg: darkBG(violet)),
+    IconSpec(fileTag: "Wq", pattern: .wq, ink: nearWhite, glow: green, bg: darkBG(green)),
+    IconSpec(fileTag: "Prefix", pattern: .prefixKey, ink: nearWhite, glow: teal, bg: darkBG(teal)),
+    // The one light tile — home reads as daylight.
+    IconSpec(fileTag: "Localhost", pattern: .localhost, ink: (0x1A, 0x1C, 0x24), glow: violet,
              bg: ((0xF2, 0xF4, 0xF8), (0xD8, 0xDD, 0xE8))),
-    // No color at all — the one that pairs with any custom accent.
-    IconSpec(fileTag: "Mono", pattern: .handset, ink: (0xFF, 0xFF, 0xFF), glow: (0xFF, 0xFF, 0xFF),
-             bg: ((0x0B, 0x0B, 0x0D), (0x00, 0x00, 0x00))),
-    // Different figures.
+    IconSpec(fileTag: "NoCarrier", pattern: .noCarrier, ink: nearWhite, glow: amber, bg: darkBG(amber)),
+    // Different figures from the original set — already distinct, kept.
     IconSpec(fileTag: "Cursor", pattern: .cursor, ink: nearWhite, glow: violet, bg: darkBG(violet)),
     IconSpec(fileTag: "Hail", pattern: .hail, ink: nearWhite, glow: teal, bg: darkBG(teal)),
 ]
@@ -119,14 +135,66 @@ func drawCursorBlock(_ ctx: CGContext, _ g: Grid, spec: IconSpec, rect: CGRect) 
     ctx.restoreGState()
 }
 
-/// Handset: shallow arc with two solid end beads, over a filled cursor block.
+/// A rotated rounded block. `rect` is in design units (top-left origin);
+/// positive `tilt` lifts the RIGHT edge — this CG context's y grows upward, so
+/// the sign here is the opposite of the SwiftUI view's `rotationEffect`.
+func drawBlock(_ ctx: CGContext, _ g: Grid, rect: CGRect, tilt: CGFloat = 0,
+               fill: CGColor, glow: CGColor? = nil, corner: CGFloat) {
+    ctx.saveGState()
+    ctx.translateBy(x: g.px(rect.midX), y: g.py(rect.midY))
+    if tilt != 0 { ctx.rotate(by: tilt * .pi / 180) }
+    if let glow { ctx.setShadow(offset: .zero, blur: g.u(2.6), color: glow) }
+    ctx.setFillColor(fill)
+    let w = g.u(rect.width), h = g.u(rect.height)
+    ctx.addPath(CGPath(roundedRect: CGRect(x: -w / 2, y: -h / 2, width: w, height: h),
+                       cornerWidth: g.u(corner), cornerHeight: g.u(corner), transform: nil))
+    ctx.fillPath()
+    ctx.restoreGState()
+}
+
+/// Crowd-surf: a glowing cursor block carried over a row of three grounded ink
+/// blocks. Geometry mirrors `MoshpitGlyph.Metrics`.
+func drawPit(_ ctx: CGContext, _ g: Grid, spec: IconSpec) {
+    for x in [3.6, 9.8, 16.0] as [CGFloat] {
+        drawBlock(ctx, g, rect: CGRect(x: x, y: 15.6, width: 4.4, height: 2.8),
+                  fill: color(spec.ink, alpha: 0.9), corner: 0.8)
+    }
+    drawBlock(ctx, g, rect: CGRect(x: 8.4, y: 8.0, width: 6.8, height: 4.0), tilt: 12,
+              fill: color(spec.glow), glow: color(spec.glow, alpha: 0.8), corner: 1.1)
+}
+
+/// Centered monospace text (Menlo-Bold via CoreText), optionally glowing.
+/// `size` and `center` are in design units.
+func drawMonoText(_ ctx: CGContext, _ g: Grid, text: String, size: CGFloat,
+                  center: CGPoint, fill: CGColor, glow: CGColor? = nil) {
+    let font = CTFontCreateWithName("Menlo-Bold" as CFString, g.u(size), nil)
+    let attrs: [CFString: Any] = [
+        kCTFontAttributeName: font,
+        kCTForegroundColorAttributeName: fill,
+    ]
+    guard let astr = CFAttributedStringCreate(
+        kCFAllocatorDefault, text as CFString, attrs as CFDictionary) else { return }
+    let line = CTLineCreateWithAttributedString(astr)
+    ctx.saveGState()
+    if let glow { ctx.setShadow(offset: .zero, blur: g.u(2.0), color: glow) }
+    // CTLineGetImageBounds measures relative to the CURRENT text position —
+    // zero it first, or the second string on a tile inherits the first one's
+    // offset and gets shoved off-canvas.
+    ctx.textPosition = .zero
+    let bounds = CTLineGetImageBounds(line, ctx)
+    ctx.textPosition = CGPoint(x: g.px(center.x) - bounds.width / 2 - bounds.minX,
+                               y: g.py(center.y) - bounds.height / 2 - bounds.minY)
+    CTLineDraw(line, ctx)
+    ctx.restoreGState()
+}
+
+/// Ringdown: the heritage handset — a shallow arc with two end beads over a
+/// glowing cursor cradle. Geometry preserved verbatim from the pre-rebrand
+/// mark so the egg IS the original, not a tribute.
 func drawHandset(_ ctx: CGContext, _ g: Grid, spec: IconSpec) {
     let lift: CGFloat = -0.4
     let beadY = 11.8 + lift
     let halfChord: CGFloat = 6.5
-    // r only just over the 6.5 minimum for a 13u chord — that near-minimum
-    // radius is what makes the curve deep enough to read as a handset rather
-    // than a pair of headphones.
     let arcR: CGFloat = 6.62
     let drop = (arcR * arcR - halfChord * halfChord).squareRoot()
     let center = CGPoint(x: g.px(12), y: g.py(beadY + drop))
@@ -149,6 +217,71 @@ func drawHandset(_ ctx: CGContext, _ g: Grid, spec: IconSpec) {
 
     drawCursorBlock(ctx, g, spec: spec,
                     rect: CGRect(x: 9.5, y: 15.9 + lift, width: 5, height: 3))
+}
+
+/// ":wq" — write and quit. Nothing else on the tile; the joke needs no help.
+func drawWq(_ ctx: CGContext, _ g: Grid, spec: IconSpec) {
+    drawMonoText(ctx, g, text: ":wq", size: 9,
+                 center: CGPoint(x: 12, y: 12),
+                 fill: color(spec.glow), glow: color(spec.glow, alpha: 0.75))
+}
+
+/// "⌃b" on a keycap — drawn like the shortcut bar's keycaps, one level up.
+func drawPrefixKey(_ ctx: CGContext, _ g: Grid, spec: IconSpec) {
+    let cap = CGRect(x: g.px(5.2), y: g.py(17.2), width: g.u(13.6), height: g.u(10.4))
+    let path = CGPath(roundedRect: cap, cornerWidth: g.u(2.4), cornerHeight: g.u(2.4),
+                      transform: nil)
+    ctx.setFillColor(color(spec.ink, alpha: 0.10))
+    ctx.addPath(path)
+    ctx.fillPath()
+    ctx.setStrokeColor(color(spec.ink, alpha: 0.30))
+    ctx.setLineWidth(g.u(0.9))
+    ctx.addPath(path)
+    ctx.strokePath()
+
+    drawMonoText(ctx, g, text: "⌃b", size: 6,
+                 center: CGPoint(x: 12, y: 12),
+                 fill: color(spec.glow), glow: color(spec.glow, alpha: 0.7))
+}
+
+/// A house whose door is a live cursor block — no place like 127.0.0.1.
+func drawLocalhost(_ ctx: CGContext, _ g: Grid, spec: IconSpec) {
+    ctx.setStrokeColor(color(spec.ink, alpha: 0.92))
+    ctx.setLineWidth(g.u(2))
+    ctx.setLineCap(.round)
+    ctx.setLineJoin(.round)
+    ctx.beginPath()
+    ctx.move(to: CGPoint(x: g.px(5), y: g.py(18)))
+    ctx.addLine(to: CGPoint(x: g.px(5), y: g.py(11)))
+    ctx.addLine(to: CGPoint(x: g.px(12), y: g.py(5.6)))
+    ctx.addLine(to: CGPoint(x: g.px(19), y: g.py(11)))
+    ctx.addLine(to: CGPoint(x: g.px(19), y: g.py(18)))
+    ctx.addLine(to: CGPoint(x: g.px(5), y: g.py(18)))
+    ctx.strokePath()
+
+    // The door: same glowing cursor block every figure in the family carries.
+    drawCursorBlock(ctx, g, spec: spec,
+                    rect: CGRect(x: 10, y: 13.2, width: 4, height: 4.8))
+}
+
+/// "NO CARRIER" over CRT scanlines — the amber goodbye mosh made obsolete.
+func drawNoCarrier(_ ctx: CGContext, _ g: Grid, spec: IconSpec) {
+    // Scanlines across the full tile (drawn inside the grid's inset is fine —
+    // the falloff bg already darkens the edges).
+    ctx.setFillColor(CGColor(red: 0, green: 0, blue: 0, alpha: 0.16))
+    var y: CGFloat = 0
+    while y < 24 {
+        ctx.fill(CGRect(x: g.rect.minX - g.u(2), y: g.py(y),
+                        width: g.side + g.u(4), height: g.u(0.5)))
+        y += 1.7
+    }
+
+    drawMonoText(ctx, g, text: "NO", size: 6.4,
+                 center: CGPoint(x: 12, y: 9.4),
+                 fill: color(spec.glow), glow: color(spec.glow, alpha: 0.75))
+    drawMonoText(ctx, g, text: "CARRIER", size: 3.6,
+                 center: CGPoint(x: 12, y: 14.6),
+                 fill: color(spec.glow), glow: color(spec.glow, alpha: 0.6))
 }
 
 /// Oversized cursor block, centred — the terminal reduced to its heartbeat.
@@ -213,9 +346,14 @@ func renderIcon(spec: IconSpec, pixelSize: Int) -> CGImage? {
 
     let g = Grid(rect: rect.insetBy(dx: size * 0.075, dy: size * 0.075))
     switch spec.pattern {
-    case .handset: drawHandset(ctx, g, spec: spec)
-    case .cursor:  drawCursor(ctx, g, spec: spec)
-    case .hail:    drawHail(ctx, g, spec: spec)
+    case .pit:       drawPit(ctx, g, spec: spec)
+    case .handset:   drawHandset(ctx, g, spec: spec)
+    case .wq:        drawWq(ctx, g, spec: spec)
+    case .prefixKey: drawPrefixKey(ctx, g, spec: spec)
+    case .localhost: drawLocalhost(ctx, g, spec: spec)
+    case .noCarrier: drawNoCarrier(ctx, g, spec: spec)
+    case .cursor:    drawCursor(ctx, g, spec: spec)
+    case .hail:      drawHail(ctx, g, spec: spec)
     }
 
     return ctx.makeImage()
@@ -260,8 +398,8 @@ func writePNG(_ image: CGImage, to path: String) {
     }
 }
 
-let iconFilesDir = "Offhook/App/IconFiles"
-let appIconSetDir = "Offhook/App/Assets.xcassets/AppIcon.appiconset"
+let iconFilesDir = "Moshpit/App/IconFiles"
+let appIconSetDir = "Moshpit/App/Assets.xcassets/AppIcon.appiconset"
 try? FileManager.default.createDirectory(atPath: iconFilesDir, withIntermediateDirectories: true)
 
 // 60pt @2x/@3x = 120px/180px, matching the AppIcon60x60 convention declared in
