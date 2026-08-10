@@ -1,0 +1,56 @@
+---
+import Marketing from '@layouts/Marketing.astro';
+
+// Raw markup, lifted verbatim from the page this replaces.
+const body = `<div class="shell">
+  <section class="band doc" style="border-top:none">
+    <p class="eyebrow">Guides</p>
+    <h2>Start to finish, in the order you'd actually do it.</h2>
+    <p class="sub">The <a href="/docs">docs</a> explain each part on its own. These
+    walk a whole job end to end — every command you run on the host, every screen you tap
+    on the phone, and what it looks like when it works.</p>
+
+    <div class="grid">
+      <div class="cell">
+        <span class="ic">Walkthrough</span>
+        <h4><a href="/guide/claude-code">Run Claude Code from your iPhone</a></h4>
+        <p>Get a host reachable, install herdr, start Claude Code in a pane — or let
+        Moshpit open an isolated git worktree and start it there — then answer its
+        permission prompts from the lock screen without unlocking the phone.</p>
+      </div>
+      <div class="cell">
+        <span class="ic">Walkthrough</span>
+        <h4><a href="/guide/remote-access">Reach your machine from anywhere</a></h4>
+        <p>Reaching a home or office machine without opening SSH to the internet: a
+        WireGuard mesh such as Tailscale, plus Mosh for the roaming. Which ports each
+        needs, and how to verify before you leave the building.</p>
+      </div>
+      <div class="cell">
+        <span class="ic">Reference</span>
+        <h4><a href="/docs">All documentation</a></h4>
+        <p>Setup, Mosh, tmux, herdr, agent notifications, keyboard and themes, and the
+        symptom-first troubleshooting list.</p>
+      </div>
+    </div>
+
+    <h3>What to read next</h3>
+    <p class="txt">If you are choosing a multiplexer, read <a href="/docs/herdr">Using
+    herdr</a> first — it is where Moshpit does things no other iPhone terminal does, and
+    it lists its own limits in the same page. If you already live in tmux, start at
+    <a href="/docs/tmux">Using tmux</a>; Moshpit attaches to your existing sessions
+    and never restyles them.</p>
+    <p class="txt">If something is already broken, skip to
+    <a href="/docs/troubleshooting">Troubleshooting</a> — it is written symptom first,
+    so you can find your screen rather than guess at a cause.</p>
+  </section>
+</div>`;
+---
+
+<Marketing
+  title="Guides — Moshpit"
+  description="End-to-end walkthroughs: run Claude Code from your iPhone, and reach your machine from anywhere without exposing SSH."
+  path="guides"
+  lang="en"
+>
+  <Fragment set:html={body} />
+</Marketing>

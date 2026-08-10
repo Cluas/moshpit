@@ -12,7 +12,7 @@ image be short and dense instead of tall and empty. Width is never cropped —
 a phone screenshot narrower than a phone stops looking like one.
 
     python3 scripts/crop-shots.py                 # report only
-    python3 scripts/crop-shots.py --write         # write marketing/site/assets
+    python3 scripts/crop-shots.py --write         # write marketing/site-next/public
 
 The threshold is deliberately generous about what counts as content: the app's
 background is near-black (#05060A-ish) with a faint grid, so "brighter than the
@@ -29,7 +29,11 @@ from PIL import Image
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 SRC = ROOT / "marketing" / "shots"
-DST = ROOT / "marketing" / "site" / "assets"
+# Astro serves public/ at the site root, which is where the pages already
+# reference these (/01-agents.jpg). The old destination was
+# marketing/site/assets, read through an nginx fallback that no longer exists —
+# writing there now would produce screenshots nothing ever loads.
+DST = ROOT / "marketing" / "site-next" / "public"
 
 # Rows dimmer than this (0-255, mean of the brightest 2% of pixels in the row)
 # are treated as empty background rather than content.

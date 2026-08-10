@@ -1,0 +1,71 @@
+/* Starlight's chrome, wearing Moshpit's palette.
+ *
+ * Starlight themes itself through a documented set of custom properties, so
+ * the cheap way to make its sidebar, search dialog and table of contents look
+ * like ours is to redefine those properties in terms of the tokens moshpit.css
+ * already owns — not to fight its stylesheet selector by selector, which is
+ * what makes theme overrides rot the moment it ships a new version.
+ *
+ * moshpit.css is loaded first and keeps every token; this file only maps them.
+ */
+
+:root,
+:root[data-theme='dark'] {
+  /* Accent — the brand violet, in the three weights Starlight asks for. */
+  --sl-color-accent-low: #1b1b3d;
+  --sl-color-accent: var(--accent);
+  --sl-color-accent-high: #cfceff;
+
+  /* Surfaces, from near-black up through the raised panels. */
+  --sl-color-black: var(--ink);
+  --sl-color-gray-6: var(--ink);
+  --sl-color-gray-5: var(--panel);
+  --sl-color-gray-4: var(--raise);
+  --sl-color-gray-3: rgba(255, 255, 255, 0.14);
+  --sl-color-gray-2: var(--dim);
+  --sl-color-gray-1: var(--paper);
+  --sl-color-white: var(--paper);
+
+  --sl-color-bg: var(--ink);
+  --sl-color-bg-nav: rgba(5, 6, 10, 0.86);
+  --sl-color-bg-sidebar: var(--ink);
+  --sl-color-hairline: var(--line);
+  --sl-color-hairline-light: var(--line-lit);
+  --sl-color-hairline-shade: var(--line);
+
+  --sl-color-text: var(--dim);
+  --sl-color-text-accent: var(--accent);
+  --sl-color-text-invert: var(--ink);
+
+  /* Code blocks are terminal output on this site — keep them true black so a
+   * screenshot of a real pane and a fenced block read as the same surface. */
+  --sl-color-bg-inline-code: rgba(255, 255, 255, 0.06);
+
+  /* Type: the site's own stacks, so docs and marketing pages are one voice. */
+  --sl-font: var(--sans);
+  --sl-font-mono: var(--mono);
+
+  /* Starlight's default content column is wider than our prose measure. */
+  --sl-content-width: 48rem;
+}
+
+/* The site never had a light mode and the app is dark-only; offering one here
+ * would promise a theme the product does not have. Pin both to the dark map. */
+:root[data-theme='light'] {
+  color-scheme: dark;
+}
+
+/* Links inside docs prose: our underline treatment, not Starlight's. */
+.sl-markdown-content a:not(:where(.not-content *)) {
+  color: var(--accent);
+  text-underline-offset: 0.18em;
+}
+
+/* Screenshot figures. The old docs pages sized phone shots by hand in every
+ * page; one rule here covers all of them. */
+.sl-markdown-content img[src$='.jpg'],
+.sl-markdown-content img[src$='.png'] {
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  max-width: min(100%, 320px);
+}

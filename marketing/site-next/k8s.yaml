@@ -1,24 +1,12 @@
-# Moshpit marketing site — same shape as moshi-site (nginx + ConfigMap),
-# but the page source now lives in the repo (marketing/site/) instead of
-# only inside the cluster.
+# Moshpit marketing site — nginx serving the Astro build from an image.
 #
-# Deploy / update:
-#   kubectl create configmap moshpit-site \
-#     $(for f in marketing/site/*.html; do printf -- "--from-file=%s " "$f"; done) \
-#     --dry-run=client -o yaml | kubectl apply --server-side -f -
-#   kubectl create configmap moshpit-assets --from-file=marketing/site/assets/ \
-#     --dry-run=client -o yaml | kubectl apply --server-side -f -
-#   kubectl create configmap moshpit-nginx \
-#     --from-file=default.conf=marketing/site/nginx.conf \
-#     --dry-run=client -o yaml | kubectl apply --server-side -f -
+#   scripts/deploy-site.sh     # builds, gates, pushes, applies this, rolls out
 #
-# Three ConfigMaps, not one: a ConfigMap caps at 1MiB and the docs pages plus
-# the screenshots blew past it. nginx.conf makes the split invisible to the
-# pages — they still reference assets flat, and nginx falls back to assets/.
-# `--server-side` is also required: the binary screenshots exceed the 256KiB
-# last-applied annotation that a client-side apply writes.
-#   kubectl apply -f marketing/site/k8s.yaml
-#   kubectl rollout restart deploy/moshpit-site   # pick up ConfigMap changes
+# The history is worth keeping because it explains two things in here that look
+# like they could be simplified. The site first shipped as three ConfigMaps
+# (pages, assets, nginx.conf) and outgrew them: a ConfigMap caps at 1MiB and the
+# screenshots blew past it. It then shipped as a flat-HTML image, and now as an
+# Astro build in the same image.
 #
 # DNS (one-time, in the cluas.eu.org zone):
 #   moshpit.cluas.eu.org → CNAME moshi.cluas.eu.org  (or the same 4 A records)
@@ -45,6 +33,9 @@ spec:
         # them in place would shadow every file in the image and the switch
         # would silently be a no-op — new image, old content, no error.
         # scripts/deploy-site.sh replaces the tag below on each deploy.
+        #
+        # imagePullPolicy stays IfNotPresent because the tag is unique per
+        # deploy; :latest moves too, but nothing schedules on it.
         - name: nginx
           image: ghcr.io/cluas/moshpit-site:latest
           imagePullPolicy: IfNotPresent
@@ -83,6 +74,21 @@ spec:
               service:
                 name: moshpit-site
                 port: { number: 80 }
+    # The pre-rebrand host, routed to the same pods so nginx.conf can 301 it
+    # per-path. It needs its own TLS entry because the redirect happens after
+    # the handshake — a certificate error is what a reader would see otherwise,
+    # and that is worse than the 404 this replaces.
+    - host: offhook.cluas.eu.org
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: moshpit-site
+                port: { number: 80 }
   tls:
     - hosts: [moshpit.cluas.eu.org]
       secretName: moshpit-site-tls
+    - hosts: [offhook.cluas.eu.org]
+      secretName: moshpit-site-offhook-tls

@@ -18,8 +18,9 @@
 set -euo pipefail
 
 REPO=ghcr.io/cluas/moshpit-site
-SITE="$(cd "$(dirname "$0")/.." && pwd)/marketing/site"
-TAG="$(git -C "$(dirname "$SITE")/.." rev-parse --short HEAD)-$(date +%H%M)"
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+SITE="$ROOT/marketing/site-next"
+TAG="$(git -C "$ROOT" rev-parse --short HEAD)-$(date +%H%M)"
 DRY=${1:-}
 
 # The cluster runs both. A single-arch image schedules onto half the nodes and
@@ -29,6 +30,37 @@ PLATFORMS=linux/amd64,linux/arm64
 
 say() { printf '\n\033[1m%s\033[0m\n' "$*"; }
 die() { printf '\n\033[1;31m%s\033[0m\n' "$*" >&2; exit 1; }
+
+# The gates build and run the image locally. That needs a public base image and
+# no credentials at all — but Docker consults the credential helper on any
+# registry call regardless, and on this machine
+# docker-credential-osxkeychain blocks forever when the keychain will not unlock
+# for a non-interactive shell. The gates then hang with no output, which reads
+# exactly like a slow build. A --dry-run used to walk straight into it, because
+# the preflight below only guarded the push.
+#
+# So the gates get their own config directory: the real one mirrored (contexts
+# and buildx builders still resolve — pointing at an empty directory instead
+# breaks both, which cost an afternoon once) with only the credential keys
+# removed. `--config` and not DOCKER_CONFIG, because this docker binary ignores
+# the environment variable.
+GATECFG="$(mktemp -d)"
+trap 'rm -rf "$GATECFG"' EXIT
+for entry in "$HOME"/.docker/*; do
+  [[ "$(basename "$entry")" == "config.json" ]] && continue
+  ln -sfn "$entry" "$GATECFG/$(basename "$entry")" 2>/dev/null || true
+done
+python3 - "$HOME/.docker/config.json" "$GATECFG/config.json" <<'STRIP'
+import json, sys
+try:
+    cfg = json.load(open(sys.argv[1]))
+except Exception:
+    cfg = {}
+for key in ("credsStore", "credHelpers", "auths"):
+    cfg.pop(key, None)
+json.dump(cfg, open(sys.argv[2], "w"))
+STRIP
+gate() { docker --config "$GATECFG" "$@"; }
 
 # Preflight: Docker here is configured with credsStore=osxkeychain, and when
 # the keychain will not unlock for a non-interactive shell the helper does not
@@ -82,31 +114,78 @@ keychain prompt can appear, or hand this script a token instead:
   fi
 fi
 
-say "Rebuilding the docs shell"
-python3 "$(dirname "$0")/build-docs.py"
+say "Building the site"
+# npm ci, not install: the lockfile records what was actually tested, and a
+# deploy is the last place to let a transitive minor bump in.
+[[ -d "$SITE/node_modules" ]] || ( cd "$SITE" && npm ci )
+( cd "$SITE" && npx astro build )
 
-# Gate 1: the pages must not reference an asset relatively. Served at pretty
-# paths like /docs/herdr, a relative href resolves against /docs/ and 404s —
-# this once shipped every docs page with no stylesheet at all.
-say "Checking asset references"
-if grep -rlE '(href|src)="[^"/#][^":]*\.(css|js|png|jpe?g|svg|json)' "$SITE"/*.html; then
-  echo "  ^ these pages reference an asset relatively; must be root-absolute" >&2
-  exit 1
-fi
-echo "  all root-absolute"
+# Gate 1: every internal link must resolve to a file the image will contain.
+# The old gate looked for relatively-referenced assets, which is one way to
+# produce a 404. This looks for the 404, so it covers that case and the rest.
+say "Checking every internal link resolves"
+python3 "$ROOT/scripts/check-site-links.py" "$SITE/dist"
 
 # Gate 2: nginx has to accept the config. Run natively — the image itself
 # carries no RUN step so that the multi-arch build stays a pure file copy.
 say "Validating nginx.conf"
-docker build -q -t moshpit-site:check "$SITE" >/dev/null
-docker run --rm moshpit-site:check nginx -t
+gate build -q -t moshpit-site:check "$SITE" >/dev/null
+gate run --rm moshpit-site:check nginx -t
 
-# Gate 3: the files the site cannot work without.
-for f in index.html assets/moshpit.css assets/docs-index.json assets/docs-search.js; do
-  docker run --rm moshpit-site:check test -f "/usr/share/nginx/html/$f" \
-    || { echo "missing: $f" >&2; exit 1; }
-done
+# Gate 3: the files the site cannot work without. The stylesheet and the search
+# index are hashed or generated, so this asserts that a directory holds
+# something rather than naming a file that goes stale on the next build.
+say "Checking required files"
+gate run --rm moshpit-site:check sh -eu -c '
+  cd /usr/share/nginx/html
+  # Directory format: every page but 404 is <path>/index.html.
+  for f in index.html zh/index.html docs/index.html zh/docs/index.html \
+           pricing/index.html docs/herdr/index.html 404.html; do
+    test -f "$f" || { echo "missing: $f" >&2; exit 1; }
+  done
+  ls _astro/*.css >/dev/null   || { echo "missing: bundled CSS under _astro/" >&2; exit 1; }
+  test -f pagefind/pagefind.js || { echo "missing: pagefind search index" >&2; exit 1; }
+'
 echo "  required files present"
+
+# Gate 4: run the image and walk the URLs the old site served. try_files and the
+# rewrite rules are the two things this migration replaced wholesale, and both
+# fail silently — a wrong rule serves a 404, not an error. Checking here means
+# production is not where we find out.
+say "Smoke-testing the image"
+cid=$(gate run -d -p 18080:80 moshpit-site:check)
+trap 'gate rm -f "$cid" >/dev/null 2>&1; rm -rf "$GATECFG"' EXIT
+for _ in $(seq 30); do
+  curl -sf -o /dev/null http://127.0.0.1:18080/ && break
+  sleep 0.3
+done
+fail=0
+probe() { # path expected-code
+  local code
+  code=$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:18080$1")
+  if [[ "$code" != "$2" ]]; then
+    printf '  %-24s %s  <-- expected %s\n' "$1" "$code" "$2"
+    fail=1
+  fi
+}
+# The pretty URLs, in both languages. These are what is published.
+for u in / /zh /docs /zh/docs /docs/herdr /zh/docs/herdr /docs/intro /pricing \
+         /zh/pricing /compare /zh/compare /guides /guide/claude-code \
+         /zh/guide/claude-code /privacy /support; do
+  probe "$u" 200
+done
+# The retired flat filenames, which must redirect rather than 404.
+for u in /docs-herdr.html /docs-herdr.zh.html /guide-claude-code.html \
+         /docs.zh.html /compare.zh.html /assets/moshpit.css \
+         /index.html /zh.html /pricing.html /docs.html \
+         /docs/herdr.html /zh/docs/herdr.html; do
+  probe "$u" 301
+done
+probe /nope 404
+gate rm -f "$cid" >/dev/null
+trap 'rm -rf "$GATECFG"' EXIT
+[[ "$fail" == 0 ]] || die "the image does not serve the URLs the old site served"
+echo "  every URL the old site served still resolves"
 
 if [[ "$DRY" == "--dry-run" ]]; then
   say "Dry run — built and verified, pushed nothing"
@@ -134,8 +213,16 @@ kubectl set image deploy/moshpit-site "nginx=$REPO:$TAG"
 kubectl rollout status deploy/moshpit-site --timeout=180s
 
 say "Verifying from outside the cluster"
-for u in / /docs /docs/herdr /pricing /zh/docs/herdr; do
-  code=$(curl -s -o /dev/null -w '%{http_code}' "https://moshpit.cluas.eu.org$u")
+# The first deploy of a new host has no certificate yet — cert-manager only
+# starts the HTTP-01 order once this Ingress exists, and until it finishes every
+# https request fails at the handshake. Without this wait the script reports a
+# failed deploy for a site that is fine ninety seconds later.
+for _ in $(seq 40); do
+  curl -sf -o /dev/null --max-time 5 https://moshpit.cluas.eu.org/ && break
+  sleep 3
+done
+for u in / /zh /docs /zh/docs /docs/herdr /zh/docs/herdr /pricing /compare; do
+  code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 "https://moshpit.cluas.eu.org$u")
   printf '  %-18s %s\n' "$u" "$code"
   [[ "$code" == 200 ]] || { echo "  ^ FAILED" >&2; exit 1; }
 done

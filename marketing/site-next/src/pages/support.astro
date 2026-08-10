@@ -1,0 +1,50 @@
+---
+import Marketing from '@layouts/Marketing.astro';
+
+// Raw markup, lifted verbatim from the page this replaces.
+const body = `<div class="shell">
+  <section class="band doc" style="border-top:none">
+<h2>Support</h2>
+
+<h3>Get in touch</h3>
+<p class="txt">Questions, bug reports and feature requests all go to the same place, and
+the address opens with the App Store listing.
+<!-- BLOCKER: App Store Connect requires a working support URL and contact at
+     submission. Put the real address here before submitting; the previous
+     placeholder (support@moshpit.example) was a live mailto to a domain that
+     does not exist, which is worse than saying nothing. --></p>
+
+<h3>Common questions</h3>
+
+<h4>Does Moshpit need anything installed on my server?</h4>
+<p class="txt">No. It's a standard SSH client out of the box. <code>mosh</code>,
+<code>tmux</code> and <code>herdr</code> are each optional — if one is missing,
+Moshpit tells you and offers the install command; it never installs anything
+silently and never falls back to a different multiplexer behind your back.</p>
+
+<h4>How does agent status work?</h4>
+<p class="txt">On <code>herdr</code>, agent state is part of the protocol — zero setup.
+On <code>tmux</code>, a one-line hook install (offered in Settings) lets
+Claude Code and friends report state; without it, Moshpit falls back to
+output heuristics.</p>
+
+<h4>Why does iOS ask for Local Network permission?</h4>
+<p class="txt">Only so SSH/Mosh can reach hosts on your own LAN (192.168.x.x and similar).
+Deny it and internet hosts still work fine.</p>
+
+<h4>Is my data collected?</h4>
+<p class="txt">No — nothing is. See the <a href="/privacy">privacy policy</a>;
+the App Store label is <em>Data Not Collected</em>.</p>
+  </section>
+</div>`;
+---
+
+<Marketing
+  title="Support — Moshpit"
+  description="How to reach us, and answers to the questions that come up most often."
+  path="support"
+  lang="en"
+  translated={false}
+>
+  <Fragment set:html={body} />
+</Marketing>

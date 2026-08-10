@@ -1,0 +1,13 @@
+# Only dist/ and nginx.conf belong in the build context. Without this the
+# context is ~300MB of node_modules and Astro's cache, which the daemon has to
+# receive in full before it reads the first COPY — and it gets sent twice, once
+# per platform, on every deploy.
+node_modules
+.astro
+src
+public
+.vscode
+astro.config.mjs
+tsconfig.json
+package.json
+package-lock.json

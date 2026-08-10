@@ -1,0 +1,296 @@
+---
+import Marketing from '@layouts/Marketing.astro';
+
+// Raw markup, lifted verbatim from the page this replaces.
+const body = `<div class="dwrap notoc">
+<!--DOCSHELL:BEGIN-->
+<aside class="dnav" id="dnav">
+  <a class="dhome" href="/zh">← 回到首页</a>
+  <p class="dtitle">文档</p>
+  <button class="dsearchbtn" type="button" data-docsearch><span>搜索文档…</span><kbd>⌘K</kbd></button>
+  <nav><p class="dsec">开始</p><a href="/zh/docs/intro">Moshpit 是做什么的</a><a href="/zh/docs/setup">配置一个连接</a><a href="/zh/docs/first-session">跑通第一个会话</a><p class="dsec">连接</p><a href="/zh/docs/keys">SSH 密钥与主机信任</a><a href="/zh/docs/mosh">Mosh 与漫游</a><a href="/zh/guide/remote-access">在任何地方连上你的机器</a><p class="dsec">多路复用器</p><a href="/zh/docs/multiplexers">选 tmux 还是 herdr</a><a href="/zh/docs/tmux">使用 tmux</a><a href="/zh/docs/herdr">使用 herdr</a><p class="dsec">Agent</p><a href="/zh/docs/agents">Agent 状态与锁屏</a><a href="/zh/docs/worktrees">用 git worktree 开隔离任务</a><a href="/zh/guide/claude-code">用 iPhone 跑 Claude Code</a><p class="dsec">输入</p><a href="/zh/docs/keyboard">键盘与快捷键</a><a href="/zh/docs/scrolling">滚动与回滚</a><a href="/zh/docs/clipboard">剪贴板与粘贴</a><a href="/zh/docs/ime">中日韩与输入法</a><p class="dsec">外观</p><a href="/zh/docs/appearance">主题、字体与图标</a><p class="dsec">帮助</p><a href="/zh/docs/troubleshooting">排障</a><a href="/zh/compare" class="on" aria-current="page">和别的比怎么样</a></nav>
+</aside>
+<!--DOCSHELL:END-->
+<div class="dbody">
+<div class="shell">
+  <section class="band doc" style="border-top:none">
+    <p class="eyebrow">对比</p>
+    <h2>Moshpit 适合什么，不适合什么。</h2>
+    <p class="sub">iPhone 上的终端已经很挤了，其中好几个在 Moshpit 根本没打算做的事情上做得很好。
+    这一页是我们自己掏钱之前会想读到的那种对比：一条能力一条能力地摆，
+    并且把「你该去买竞品」的情况明明白白写出来，而不是埋起来。</p>
+
+    <h3 id="s1">一句话版本</h3>
+    <p class="txt">Moshpit 只为一件事而造：<b>让你的 coding agent 找得到你</b>。
+    agent 卡在一个权限请求上，你的锁屏会说，然后你就在那儿回它。
+    其余的一切——SSH、Mosh、tmux、herdr——都是为了让这件事发生在一个真正的终端上，
+    而不是一个玩具上。如果这不是你的需求，多半有别的 App 更值得买，最后一节写了是哪些。</p>
+
+    <h3 id="s2">逐条能力</h3>
+    <p class="txt">列用的是类别而不是具体产品名，因为功能和价格都在动，
+    点名的表格用不了一个版本就过时、也不公平。价格那一节是例外——那些数字是直接查的，并标了日期。</p>
+
+    <div class="tbl-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>能力</th>
+            <th class="us">Moshpit</th>
+            <th>订阅制终端</th>
+            <th>买断制 tmux 客户端</th>
+            <th>agent 优先的 App</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="cap-col"><b>在锁屏上回复 agent</b><br>不解锁进 App 就能批准、拒绝或回一句</td>
+            <td class="us"><span class="yes">Allow · Deny · Reply</span></td>
+            <td class="no">—</td>
+            <td class="no">只有连接类提醒</td>
+            <td class="no">看情况——有几个做得不错</td>
+          </tr>
+          <tr>
+            <td class="cap-col"><b>agent 状态，主机零安装</b></td>
+            <td class="us"><span class="yes">herdr 上内建</span></td>
+            <td class="no">—</td>
+            <td class="no">—</td>
+            <td class="no">通常要装 hook 或做 agent 集成</td>
+          </tr>
+          <tr>
+            <td class="cap-col"><b>Mosh</b><br>扛得住 Wi-Fi/5G 切换、息屏、丢包</td>
+            <td class="us"><span class="yes">原生</span></td>
+            <td class="no">有的有</td>
+            <td class="no">通常没有</td>
+            <td class="no">有的有</td>
+          </tr>
+          <tr>
+            <td class="cap-col"><b>tmux 原生渲染</b><br>不是缩小版桌面</td>
+            <td class="us"><span class="yes">控制模式</span></td>
+            <td class="no">看情况</td>
+            <td class="no">是——这就是它们的本行</td>
+            <td class="no">看情况</td>
+          </tr>
+          <tr>
+            <td class="cap-col"><b>herdr 支持</b></td>
+            <td class="us"><span class="yes">有</span></td>
+            <td class="no">—</td>
+            <td class="no">—</td>
+            <td class="no">很少见</td>
+          </tr>
+          <tr>
+            <td class="cap-col"><b>手机上开一个隔离任务</b><br>新 git worktree、新 workspace，agent 在里面起好</td>
+            <td class="us"><span class="yes">一个表单</span></td>
+            <td class="no">—</td>
+            <td class="no">—</td>
+            <td class="no">很少见</td>
+          </tr>
+          <tr>
+            <td class="cap-col"><b>收集的数据</b></td>
+            <td class="us"><span class="yes">没有——无账号、无遥测</span></td>
+            <td class="no">需要注册账号</td>
+            <td class="no">Varies</td>
+            <td class="no">Varies</td>
+          </tr>
+          <tr>
+            <td class="cap-col"><b>收费模式</b></td>
+            <td class="us"><span class="yes">一次性买断</span></td>
+            <td class="no">一直续费</td>
+            <td class="no">买断</td>
+            <td class="no">多为订阅</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3 id="s3">这一行现在多少钱</h3>
+    <p class="txt">于 <b>2026-08-07</b> 在 App Store 和各家官网查得。价格会变、各区也不同——
+    把这当成一张快照而不是实时报价，买之前请以商店为准。</p>
+
+    <div class="tbl-wrap">
+      <table>
+        <thead>
+          <tr><th>App</th><th>模式</th><th>查询时价格</th></tr>
+        </thead>
+        <tbody>
+          <tr><td class="cap-col">Termius</td><td>免费增值 + 订阅</td>
+              <td class="no">Pro 约 $10/月；免费层没有云同步</td></tr>
+          <tr><td class="cap-col">Blink Shell</td><td>订阅（源码 GPL）</td>
+              <td class="no">Blink+ 约 $19.99/年；Build 另约 $7.99/月</td></tr>
+          <tr><td class="cap-col">Prompt 3 (Panic)</td><td>订阅</td>
+              <td class="no">约 $9.99/年，带试用</td></tr>
+          <tr><td class="cap-col">Secure ShellFish</td><td>免费 + 一次性解锁</td>
+              <td class="no">约 $29.99 终身</td></tr>
+          <tr><td class="cap-col">Moshi</td><td>订阅 + 终身</td>
+              <td class="no">约 $7.99/月、$69.99/年，或 $199 终身</td></tr>
+          <tr><td class="cap-col">Attach</td><td>买断，无内购</td>
+              <td class="no">约 $4.99</td></tr>
+          <tr><td class="us">Moshpit</td><td class="us">买断，无内购</td>
+              <td class="us"><span class="yes">$6.99 首发 → $9.99 标准价</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p class="txt">首发价是真正的首发价，不是划线折扣：Moshpit 从没按更高的价格卖过，
+    所以没有任何可以诚实划掉的数字。第一批用户进来之后涨到 $9.99。
+    在 $6.99 买下的，之后所有更新都不再收钱。</p>
+
+    <h3 id="s4">什么时候<em>别</em>选 Moshpit</h3>
+    <p class="txt">下面这些都是真的，也正是这一页比首页更值得读的理由。
+    如果其中哪条说的就是你，上面某个 App 才是更划算的选择——
+    我们宁愿你去买它，也不愿你买了我们的再退。</p>
+
+    <ul class="list">
+      <li><b>你想要一个有多年口碑的成熟产品。</b>Moshpit 是新的：没有可查的历史、没有长长的更新日志、也没有半夜两点还有人答疑的社区。Termius、Blink、Prompt、Secure ShellFish 都已经做了很多年。</li>
+      <li><b>你需要把文件管理当一等公民。</b>Moshpit 是个终端。如果你每天在用 SFTP、在图形界面里改远程文件、或者要把服务器挂进「文件」App，Secure ShellFish 就是为此而造的，而 Moshpit 不是。</li>
+      <li><b>你希望同一份订阅覆盖桌面端。</b>Moshpit 只有 iPhone 和 iPad，买断制，没有 Mac 端也没有网页端。Termius 和 Prompt 用一个账号覆盖多个平台。</li>
+      <li><b>你需要 Android。</b>没有 Android 版，也没有计划做。</li>
+      <li><b>你想要 App 帮你在多设备间同步主机和密钥。</b>Moshpit 没有账号也没有云——这正是它的立场，但也意味着换新手机要重新添加主机。</li>
+      <li><b>你根本不跑 agent。</b>如果你只想要一个靠谱的 SSH 客户端，Moshpit 所有与众不同的地方对你都是浪费，买断制的 tmux 客户端更便宜，而且完全够用。</li>
+    </ul>
+
+    <h3 id="s5">什么时候它显然是对的那个</h3>
+    <ul class="list">
+      <li>你在自己的机器上跑 Claude Code、Codex 之类，并且已经受够了「回来一看，agent 几小时前就停在那儿等一个 yes」。</li>
+      <li>你在用 herdr，或者只要手机端支持你就会用。</li>
+      <li>你常在火车上、咖啡馆这类网络会变的地方干活——Mosh 是内建的，不是外挂。</li>
+      <li>你宁愿买断也不愿一直租，而且希望一个 App 对你什么都不收集。</li>
+    </ul>
+
+    <p class="txt" style="margin-top:1.6rem"><a href="/zh/docs">读文档</a> ·
+    <a href="/zh/guide/claude-code">看完整实操</a> ·
+    <a href="/zh">回到总览</a></p>
+  </section>
+</div>
+<!--DOCNEXT:BEGIN-->
+<div class="dpager"><a class="dprev" href="/zh/docs/troubleshooting"><span>上一页</span>排障</a></div>
+<!--DOCNEXT:END-->
+</div><!--dbody-->
+</div><!--/dwrap-->
+
+
+</div>
+
+
+</div>
+
+
+</div>
+
+
+</div>
+
+
+</div>
+
+
+</div>
+
+
+</div>
+
+
+</div>
+
+
+</div>
+
+
+</div>
+
+
+</div>
+
+
+</div>
+
+
+</div>
+
+
+</div>
+
+
+</div>
+
+
+</div>
+
+
+</div>
+
+
+</div>
+
+
+
+</div>
+
+
+
+</div>
+
+
+
+</div>
+
+
+
+</div>
+
+
+
+</div>
+
+
+
+</div>
+
+
+
+</div>
+
+
+
+</div>
+
+
+
+</div>
+
+
+
+</div>
+
+
+
+</div>
+
+
+
+</div>
+
+
+
+</div>
+
+
+
+</div>
+
+
+
+</div>
+
+
+
+</div>`;
+---
+
+<Marketing
+  title="Moshpit 和别的比怎么样 — Moshpit"
+  description="一份诚实的 iPhone 终端对比：什么时候 Moshpit 是对的工具，以及哪些情况下别的 App 更适合你。"
+  path="compare"
+  lang="zh"
+>
+  <Fragment set:html={body} />
+</Marketing>

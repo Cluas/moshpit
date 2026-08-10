@@ -32,3 +32,10 @@ design-audit/
 # Xcode per-user state (generated, never shared)
 xcuserdata/
 *.xcuserdatad/
+
+# xcodebuild -exportArchive without -exportPath drops the .ipa, its logs and
+# the signing summary into a directory named "<scheme> <date> <time>" at
+# whatever the working directory was. Anchored and dated so it only catches
+# those, not a real directory that happens to start with the app's name.
+# Unquoted: .gitignore has no quoting, and a space in a pattern is just a space.
+/Moshpit 20*/

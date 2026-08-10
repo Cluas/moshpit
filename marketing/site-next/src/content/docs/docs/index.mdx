@@ -1,0 +1,60 @@
+---
+title: Everything Moshpit does, and where it stops.
+description: >-
+  Moshpit is an iPhone terminal for people who run AI coding agents on their own
+  servers: SSH and Mosh, native tmux and herdr, and agent state that reaches your
+  lock screen.
+tableOfContents: false
+---
+
+import { getCollection } from 'astro:content';
+import { CardGrid, LinkCard } from '@astrojs/starlight/components';
+import { SECTIONS } from '../../../docs-nav.mjs';
+
+export const all = await getCollection('docs');
+export const page = (slug) => all.find((e) => e.id === slug);
+
+Moshpit is an iPhone terminal for people who run AI coding agents on their own
+servers: SSH and Mosh, native tmux and herdr, and agent state that reaches your
+lock screen. It has no account and no server of its own — it talks to your hosts
+and nothing else. These pages assume you already have a machine you can SSH into.
+
+{/* Cards are built from each page's own frontmatter, so a doc whose description
+    changes does not leave a stale blurb behind on this page. */}
+{SECTIONS.map((section) => (
+  <>
+    <h2 id={section.label.toLowerCase().replace(/\s+/g, '-')}>{section.label}</h2>
+    <CardGrid>
+      {section.slugs.map((slug) => {
+        const entry = page(slug);
+        return (
+          <LinkCard
+            title={entry.data.title}
+            href={`/${slug}`}
+            description={entry.data.description}
+          />
+        );
+      })}
+    </CardGrid>
+  </>
+))}
+
+## Beyond the reference
+
+<CardGrid>
+  <LinkCard
+    title="Reach your machine from anywhere"
+    href="/guide/remote-access"
+    description="The box your agents run on is usually behind NAT — a home router, an office network, a laptop on a desk. Four ways in, ranked by how much they ask of you."
+  />
+  <LinkCard
+    title="Claude Code on your phone"
+    href="/guide/claude-code"
+    description="The full loop: start a task from the lock screen, approve a permission prompt without unlocking, and read the diff on the train."
+  />
+  <LinkCard
+    title="How Moshpit compares"
+    href="/compare"
+    description="Where other terminals are the better buy, said plainly, with prices checked on the store."
+  />
+</CardGrid>

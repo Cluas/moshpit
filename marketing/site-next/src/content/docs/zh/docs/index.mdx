@@ -1,0 +1,57 @@
+---
+title: Moshpit 能做什么，以及到哪儿为止。
+description: >-
+  Moshpit 是给「在自己服务器上跑 AI coding agent」的人用的 iPhone 终端：SSH 与
+  Mosh、原生 tmux 与 herdr，以及会送到锁屏上的 agent 状态。
+tableOfContents: false
+---
+
+import { getCollection } from 'astro:content';
+import { CardGrid, LinkCard } from '@astrojs/starlight/components';
+import { SECTIONS } from '../../../../docs-nav.mjs';
+
+export const all = await getCollection('docs');
+export const page = (slug) => all.find((e) => e.id === `zh/${slug}`);
+
+Moshpit 是给「在自己服务器上跑 AI coding agent」的人用的 iPhone 终端：SSH 与
+Mosh、原生 tmux 与 herdr，以及会送到锁屏上的 agent 状态。它没有账号，也没有自己的
+服务器——只跟你的主机说话，仅此而已。下面这些页面假设你已经有一台能 SSH 进去的机器。
+
+{/* 卡片文案直接取自各页自己的 frontmatter，改了描述这里不会留下旧的一份。 */}
+{SECTIONS.map((section) => (
+  <>
+    <h2 id={section.label.toLowerCase().replace(/\s+/g, '-')}>{section.zh}</h2>
+    <CardGrid>
+      {section.slugs.map((slug) => {
+        const entry = page(slug);
+        return (
+          <LinkCard
+            title={entry.data.title}
+            href={`/zh/${slug}`}
+            description={entry.data.description}
+          />
+        );
+      })}
+    </CardGrid>
+  </>
+))}
+
+## 参考之外
+
+<CardGrid>
+  <LinkCard
+    title="从任何地方连到你的机器"
+    href="/zh/guide/remote-access"
+    description="跑 agent 的那台机器通常在 NAT 后面——家里的路由器、公司的网络、桌上的一台笔记本。四种进去的办法，按对你的要求从低到高排。"
+  />
+  <LinkCard
+    title="在手机上用 Claude Code"
+    href="/zh/guide/claude-code"
+    description="完整的一圈：从锁屏起一个任务，不解锁就批准权限请求，然后在地铁上读 diff。"
+  />
+  <LinkCard
+    title="Moshpit 和别的比怎么样"
+    href="/zh/compare"
+    description="哪些情况下别的终端更适合你，直说，价格都在商店里查过。"
+  />
+</CardGrid>

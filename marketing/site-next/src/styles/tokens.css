@@ -1,0 +1,18 @@
+/* Design tokens, shared by the marketing pages and the docs.
+ *
+ * Split out of moshpit.css because Starlight owns the layout of every docs
+ * page: loading the full stylesheet there dragged in the old site's own
+ * layout (`body` padding, `.shell`, `.dwrap`, `.dnav`) and it fought
+ * Starlight's grid until the sidebar sat on top of the prose. The variables
+ * are the part both worlds want; the layout rules stay with the pages they
+ * were written for.
+ */
+:root{
+  --ink:#05060A; --panel:#0D1015; --raise:#141922;
+  --line:rgba(255,255,255,.07); --line-lit:rgba(255,255,255,.14);
+  --indigo:#6C6BEF; --accent:#6C6BEF; --teal:#5EE3D9; --amber:#FFB35C; --green:#83E58C;
+  --paper:rgba(244,241,232,.97); --dim:rgba(232,227,214,.64); --meta:rgba(199,193,181,.42);
+  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"PingFang SC",system-ui,sans-serif;
+  color-scheme:dark;
+}

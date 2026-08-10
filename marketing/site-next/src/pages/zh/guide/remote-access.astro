@@ -1,0 +1,556 @@
+---
+import Marketing from '@layouts/Marketing.astro';
+
+// Raw markup, lifted verbatim from the page this replaces.
+const body = `<!-- ══ 开头 ══ -->
+<div class="dwrap">
+<!--DOCSHELL:BEGIN-->
+<aside class="dnav" id="dnav">
+  <a class="dhome" href="/zh">← 回到首页</a>
+  <p class="dtitle">文档</p>
+  <button class="dsearchbtn" type="button" data-docsearch><span>搜索文档…</span><kbd>⌘K</kbd></button>
+  <nav><p class="dsec">开始</p><a href="/zh/docs/intro">Moshpit 是做什么的</a><a href="/zh/docs/setup">配置一个连接</a><a href="/zh/docs/first-session">跑通第一个会话</a><p class="dsec">连接</p><a href="/zh/docs/keys">SSH 密钥与主机信任</a><a href="/zh/docs/mosh">Mosh 与漫游</a><a href="/zh/guide/remote-access" class="on" aria-current="page">在任何地方连上你的机器</a><p class="dsec">多路复用器</p><a href="/zh/docs/multiplexers">选 tmux 还是 herdr</a><a href="/zh/docs/tmux">使用 tmux</a><a href="/zh/docs/herdr">使用 herdr</a><p class="dsec">Agent</p><a href="/zh/docs/agents">Agent 状态与锁屏</a><a href="/zh/docs/worktrees">用 git worktree 开隔离任务</a><a href="/zh/guide/claude-code">用 iPhone 跑 Claude Code</a><p class="dsec">输入</p><a href="/zh/docs/keyboard">键盘与快捷键</a><a href="/zh/docs/scrolling">滚动与回滚</a><a href="/zh/docs/clipboard">剪贴板与粘贴</a><a href="/zh/docs/ime">中日韩与输入法</a><p class="dsec">外观</p><a href="/zh/docs/appearance">主题、字体与图标</a><p class="dsec">帮助</p><a href="/zh/docs/troubleshooting">排障</a><a href="/zh/compare">和别的比怎么样</a></nav>
+</aside>
+<!--DOCSHELL:END-->
+<div class="dbody">
+<div class="shell">
+  <section class="band" style="border-top:none">
+    <p class="eyebrow">指南</p>
+    <h2>在任何地方连回自己的机器</h2>
+    <p class="sub">跑 agent 的那台机器多半在 NAT 后面——家里的路由器、公司的内网、桌上一台合着盖的
+    笔记本。这篇讲怎么从手机连回去，而不用把 SSH 挂到公网上。</p>
+
+    <div class="doc">
+      <p class="txt">路只有两条。一条是在路由器上做端口转发，然后祈祷。另一条是把两台设备拉进同一张
+      私有 mesh 网络：手机拿到这台机器的一个固定地址，而公网上一个监听端口都没有。这篇讲第二条，
+      因为第一条是大多数人丢掉服务器的方式。</p>
+
+      <div class="steps3">
+        <div class="step3">
+          <h3 id="s1">先把服务器接进 mesh</h3>
+          <p>Tailscale、NetBird、headscale，或者自己搭的 WireGuard——底下都是同一套东西。服务器上一条
+          命令，它就有了一个只有你自己的设备能路由到的固定地址。</p>
+          <p>Tailscale 发的地址在 <code>100.64.0.0/10</code> 里，另外给一个
+          <code>m1-pro.your-tailnet.ts.net</code> 这样的名字。</p>
+        </div>
+        <div class="step3">
+          <h3 id="s2">手机也进同一张网</h3>
+          <p>装官方 iOS App 登录即可，它会装一个 VPN profile。这一步跟 Moshpit 没有任何关系。</p>
+          <p>iOS 同时只能起一条 VPN 隧道，所以公司 VPN 和 mesh 基本上没法同时开着。</p>
+        </div>
+        <div class="step3">
+          <h3 id="s3">在 Moshpit 里加连接</h3>
+          <p><b>Host</b> 填 mesh 的名字或地址，<b>Port</b> 没改过就是 22，再填 <b>Username</b>，
+          AUTHENTICATION 那一栏选 <b>SSH Key</b>。</p>
+          <p>Moshpit 连的就是你填的那个地址，一个字都不多解释。整个「集成」就这么多。</p>
+        </div>
+      </div>
+
+      <div class="wire">
+        <p><b>Moshpit 自己不带任何 VPN，也没有 Tailscale 集成。</b>它不拨号、不做路由、不做发现。
+        它只是往表单里那个 host 开一条 TCP 连接；走 mosh 的话，UDP 也发到同一个字符串。
+        手机能连到那个地址，Moshpit 就能连到。</p>
+        <p>连接的数据模型里确实有一个 <code>useTailscale</code> 字段，但 App 里没有任何代码读它，
+        表单里也没有这个开关。它是历史遗留——与其让你满设置里翻，不如在这写清楚。</p>
+      </div>
+    </div>
+  </section>
+</div>
+
+<!-- ══ 别做的事 ══ -->
+<div class="shell">
+  <section class="band">
+    <p class="eyebrow">先说不该做的</p>
+    <h2>别把 22 端口转发出去，还开着密码登录。</h2>
+    <p class="sub">一个刚暴露出去的 SSH 端口，几分钟内就会被扫到。开着密码认证，等于把它变成一场
+    没有次数限制的猜密码游戏，而对面是全职干这个的。mesh 的做法不是「加固目标」，是让目标根本不存在。</p>
+
+    <div class="doc">
+      <h3 id="s4">如果确实别无选择</h3>
+      <p class="txt">有些网络环境就是搭不起 mesh。真要暴露 SSH，最低限度是只留公钥认证——注意这是
+      下限，不是推荐做法：</p>
+
+      <pre><i># /etc/ssh/sshd_config.d/moshpit.conf</i>
+<b>PasswordAuthentication no</b>
+<b>KbdInteractiveAuthentication no</b>
+<b>PermitRootLogin no</b>
+<b>AuthenticationMethods publickey</b>
+<i># 改完先验证再重载：sudo sshd -t &amp;&amp; sudo systemctl reload ssh</i></pre>
+
+      <p class="txt">在你按这套方案设计之前，Moshpit 有三件事得先知道：</p>
+      <ul class="list">
+        <li><b>只有两种认证方式，没有第三种。</b>密码和公钥。不支持 keyboard-interactive，
+        所以配了 TOTP 二次验证提示的 sshd，Moshpit 是登不上去的。</li>
+        <li><b>没有 ProxyJump、没有跳板机、没有 agent forwarding。</b>「先连堡垒机再跳过去」这件事
+        App 做不到。<code>jumpHost</code> 和 <code>forwardAgent</code> 字段在模型里存着，
+        但没有任何代码读它们。</li>
+        <li><b>带 passphrase 加密的私钥用不了。</b>加载私钥时没有传解密密钥，加密过的 PEM 会直接认证失败。
+        改成在 Moshpit 里生成密钥（Settings → SSH Keys → ＋）、把公钥放到服务器上——那样的密钥可以放进
+        Secure Enclave，每次签名都过 Face ID。</li>
+      </ul>
+    </div>
+  </section>
+</div>
+
+<!-- ══ 两层 UDP ══ -->
+<div class="shell">
+  <section class="band">
+    <p class="eyebrow">为什么 UDP 是关键</p>
+    <h2>UDP 会出现两次，原因还不一样。</h2>
+    <p class="sub">底下一次，因为 WireGuard 本身就是 UDP 协议；上面一次，因为 mosh 也是。
+    两者坏起来的样子完全不同，所以最好在脑子里分开放。</p>
+
+    <div class="mux">
+      <div class="muxcard plain">
+        <h3 id="s5">底层：mesh</h3>
+        <p class="tagline">wireguard · udp</p>
+        <ul>
+          <li>Tailscale 会先尝试在两台机器之间打出一条 <b>UDP 直连</b>——默认监听端口 41641，
+          两端都要能出去</li>
+          <li>打不通就退回<b>中继</b>。中继照样能用，代价是延迟</li>
+          <li>两端任意一端跑 <code>tailscale status</code>，就能看到走的是
+          <code>direct</code> 还是中继</li>
+          <li>这一层不需要在路由器上开任何入站端口</li>
+        </ul>
+      </div>
+      <div class="muxcard lit">
+        <h3 id="s6">上层：mosh</h3>
+        <p class="tagline">跑在隧道里</p>
+        <ul>
+          <li>mosh 端到端都是 UDP；走 mesh 时它是<b>隧道里的 UDP</b>，你的路由器根本看不见它</li>
+          <li><code>mosh-server</code> <b>每个会话在配置的范围里绑一个端口</b>，默认
+          <b>60000–61000</b></li>
+          <li>Moshpit 把数据报发到<b>你在表单里填的那个 host 字符串</b>，端口用服务端报回来的那个</li>
+          <li>没有一次成功的 SSH 登录，mosh 根本起不来——TCP 先要通，UDP 才谈得上</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="rows">
+      <div class="row">
+        <div>
+          <span class="kicker">bootstrap 的真实过程</span>
+          <h3 id="s7">SSH 负责点火，然后就退场</h3>
+          <p>Moshpit 在已认证的 SSH 通道上跑一条命令，读走它打印的那一行，然后把 SSH 关掉。
+          之后全程都是 UDP。</p>
+          <p style="margin-top:.9rem">所以连上之后再把 SSH 掐了，mosh 会话不会死；而把 UDP 掐了，
+          它就死了。也正因如此，一张 TCP 走得挺好、UDP 却只能中继的 mesh，用 mosh 反而不如直接用 SSH 舒服。</p>
+        </div>
+        <img class="phone rowshot" src="/09-mosh.jpg" width="1320" height="2763" loading="lazy"
+             alt="Moshpit 里的一个 Mosh 会话，正在显示 git log 输出，标题栏上是 MOSH 标记">
+      </div>
+    </div>
+
+    <div class="doc">
+      <pre>PATH="$PATH:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:$HOME/.local/bin" \\
+  <b>mosh-server new -s -c 256 -p 60000:61000 -l LANG=en_US.UTF-8</b>
+
+MOSH CONNECT <b>60001</b> <i>&lt;22 个 base64 字符 = 一把 16 字节的 AES-128 密钥&gt;</i></pre>
+
+      <h3 id="s8">到底要开什么、开在哪</h3>
+      <div class="tbl-wrap">
+        <table>
+          <thead>
+            <tr><th>用途</th><th class="us">端口</th><th>方向</th><th>为什么</th></tr>
+          </thead>
+          <tbody>
+            <tr><td class="cap-col">SSH</td><td class="us">TCP 22 <span class="no">（或你自己改的 Port）</span></td>
+                <td class="no">服务器入站</td>
+                <td class="no">mosh 没有独立模式——是 SSH 拉起 <code>mosh-server</code> 并把密钥带回来的</td></tr>
+            <tr><td class="cap-col">mosh 会话</td><td class="us">UDP 60000–61000</td>
+                <td class="no">服务器入站 + 手机出站</td>
+                <td class="no">每个会话一个端口，由 <code>mosh-server</code> 在范围内自己挑</td></tr>
+            <tr><td class="cap-col">mesh 直连</td><td class="us">UDP 41641</td>
+                <td class="no">两端出站</td>
+                <td class="no">Tailscale 的默认端口。被挡了只是退化成中继，不是不通</td></tr>
+            <tr><td class="cap-col">你的路由器</td><td class="us"><span class="yes">什么都不用开</span></td>
+                <td class="no">—</td>
+                <td class="no">不做任何端口转发。这正是选这条路的全部意义</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="txt">走 mesh 的时候，「服务器入站」指的是<b>在 mesh 这块网卡上入站</b>。主机防火墙照样管得着：
+      <code>ufw</code>、<code>firewalld</code>、云上的安全组，都夹在隧道和 <code>mosh-server</code> 中间。
+      在 <code>tailscale0</code> 上放开这段范围，跟对公网放开完全是两回事——而这一步恰恰是最常被跳过的。</p>
+      <p class="txt">范围在 <b>Settings → MOSH · ROAMING → UDP port range</b> 里改（From / To，
+      校验 1–65535 且 From ≤ To）。连接表单里显示的是同一份，只读。起始端口不合法时会整个丢掉
+      <code>-p</code>，让 mosh-server 用它自己的默认范围；结束端口不合法则退化成只钉在起始那一个端口上。</p>
+    </div>
+  </section>
+</div>
+
+<!-- ══ 地址的坑 ══ -->
+<div class="shell" id="one-address">
+  <section class="band">
+    <p class="eyebrow">最像 bug 的那个坑</p>
+    <h2>选定一个地址，到哪都用它。</h2>
+    <p class="sub">这个问题最像 App 的 bug，但它不是。它值一个晚上的排查时间，所以单开一节。</p>
+
+    <div class="doc">
+      <p class="txt">Moshpit 起的是 <code>mosh-server new <b>-s</b></code>。这个参数就是 mosh 的
+      <code>--bind-server=ssh</code>，也是 mosh 1.4 起的上游默认行为：<b>server 只绑 SSH 连接进来的
+      那一个地址。</b>这是有意的设计——数据报因此会走你刚刚登录时走过的同一条路。</p>
+      <p class="txt">于是就有了：</p>
+      <ul class="list">
+        <li>在家连 <code>192.168.1.30</code> 建起来的会话，它的 <code>mosh-server</code> 绑在
+        <code>192.168.1.30</code> 上。从 mesh 那一侧，这个 server <b>根本够不着</b>。</li>
+        <li>反过来也一样：从 mesh 建的会话绑的是 mesh 地址，回到家用局域网就连不上。</li>
+        <li>这两件事都不是 Moshpit 做错了什么，这就是 <code>--bind-server=ssh</code> 的字面含义。</li>
+      </ul>
+      <p class="txt">所以：<b>连接里就存 mesh 的名字，在家也用它。</b>反正 mesh 到自己局域网内的流量本来
+      就会走本地直连。一个地址、一条连接、走出办公室的时候不会突然出事。</p>
+
+      <h3 id="s9">孤儿 mosh-server 会越攒越多</h3>
+      <p class="txt">每次连接都会起一个新的 <code>mosh-server</code>。链路断掉时，旧的那个不会退出——
+      它就杵在那占着自己的 UDP 端口。反复重连几周下来就攒了一堆。Moshpit 目前不回收它们，
+      这是实打实的缺口，不是什么设计取舍。</p>
+      <pre>pgrep -fl mosh-server                 <i># 还活着几个</i>
+lsof -nP -iUDP | grep mosh-server     <i># 以及每个分别绑在哪个地址上</i>
+pkill -f mosh-server                  <i># 粗暴解决；活着的会话也会一起被杀</i></pre>
+      <p class="txt">第二条命令里的绑定地址本身就是诊断信息：它告诉你每个会话当初是从哪张网建的，
+      通常这一条就足够解释「为什么其中一个不响应了」。</p>
+    </div>
+  </section>
+</div>
+
+<!-- ══ 本地网络权限 ══ -->
+<div class="shell">
+  <section class="band">
+    <p class="eyebrow">iOS</p>
+    <h2>本地网络权限，以及拒绝之后是什么样</h2>
+    <p class="sub">iOS 用一个一次性弹窗管着对局域网地址的访问。如果你几个月前在别的界面顺手点了「不允许」，
+    症状就是下面这个。</p>
+
+    <div class="grid">
+      <div class="cell"><span class="ic">弹窗</span>
+        <h4>只弹一次</h4>
+        <p>第一次连局域网地址时弹。Moshpit 的说明文案是：「Moshpit connects to servers on your local
+        network over SSH and mosh (UDP). Without this permission, connections to LAN hosts
+        (e.g. 192.168.x.x) will fail.」</p></div>
+      <div class="cell"><span class="ic">被拒</span>
+        <h4>SSH 连得上，mosh 一片黑</h4>
+        <p>iOS 会把发往局域网地址的 UDP 直接丢掉，而且不告诉任何人。TCP 不受影响，所以 SSH 一切正常，
+        只有 mosh 黑着屏、光标还在闪。</p></div>
+      <div class="cell"><span class="ic">修</span>
+        <h4>设置 → Moshpit → 本地网络</h4>
+        <p>弹窗不会自己再来一次。在那里打开，然后重连会话。</p></div>
+    </div>
+
+    <div class="doc">
+      <p class="txt">说清楚它管的范围：这个权限管的是<b>局域网地址</b>——<code>192.168.x.x</code>、
+      <code>10.x.x.x</code> 这些。发往 mesh 地址的流量走的是 VPN 隧道那块虚拟网卡。
+      但只要你有可能用局域网地址连这台机器，就顺手把它打开：它造成的故障和防火墙问题长得一模一样，
+      而你会在错误的那一头耗掉一整晚。</p>
+    </div>
+  </section>
+</div>
+
+<!-- ══ 验证 ══ -->
+<div class="shell">
+  <section class="band">
+    <p class="eyebrow">怎么验</p>
+    <h2>六步，按这个顺序来</h2>
+    <p class="sub">每一步都在排除它下面那一层。别跳步——答案基本都在第 1 步或第 2 步。</p>
+
+    <div class="doc">
+      <h3 id="s10">1 · 对端在线吗，是直连还是中继？</h3>
+      <pre>tailscale status          <i># 对端那一行末尾是 direct 还是某个中继名</i>
+tailscale ip -4           <i># 这个地址就是要填进 Host 的</i></pre>
+      <p class="txt">走中继也能用，只是慢；运气差的时候，这就是「能用」和「没法用」的区别。</p>
+
+      <h3 id="s11">2 · 同一张 mesh 上的电脑，裸 SSH 通吗？</h3>
+      <pre>ssh -v user@m1-pro.your-tailnet.ts.net</pre>
+      <p class="txt">这一步不通就别往下走了。上面所有东西都建立在它之上——mosh 没有独立模式，
+      Moshpit 首先是个 SSH 客户端。</p>
+
+      <h3 id="s12">3 · UDP 真的能双向跑通吗？</h3>
+      <p class="txt">这一步几乎没人做，而它恰恰是最容易揪出问题的一步。在范围里挑一个端口，
+      服务端监听，用一台和手机在同一张网上的电脑发：</p>
+      <pre><i># 服务器上</i>
+echo REPLY | nc -u -l 60005 &gt; /tmp/udp-in
+
+<i># 和手机同一个 Wi-Fi 的电脑上</i>
+echo PING | nc -u -w3 m1-pro.your-tailnet.ts.net 60005</pre>
+      <p class="txt">两边都得看到对方那个词。服务端收到了 <code>PING</code>、客户端却始终等不到
+      <code>REPLY</code>，就是<b>回程死了</b>——这正是 mosh 黑屏的成因。这是网络的答案，不是 App 的答案。</p>
+
+      <h3 id="s13">4 · 范围在「流量真正进来的那块网卡」上放开了吗？</h3>
+      <pre>sudo ufw status verbose                       <i># Debian / Ubuntu</i>
+sudo firewall-cmd --list-all                  <i># Fedora / RHEL</i>
+sudo ufw allow in on tailscale0 to any port 60000:61000 proto udp</pre>
+      <p class="txt">然后云上的安全组要单独再看一遍。另外确认放开的是 Moshpit 配置的<i>同一段</i>范围——
+      默认是 60000–61000，但它是可改的。</p>
+
+      <h3 id="s14">5 · 问 App 自己看到了什么</h3>
+      <p class="txt">在 mosh 会话里长按终端顶栏的传输标记，会弹出 <b>MOSH DIAGNOSTICS</b>：
+      <code>datagrams</code>、<code>applied</code>、<code>parse fails</code>、<code>gaps</code>。
+      最有价值的那一行反而不是数字：</p>
+      <pre><b>MOSH DIAGNOSTICS</b>
+   <u>No datagrams yet.</u></pre>
+      <p class="txt">它的意思是：一个包都没回来过——这个计数器在任何解密和解析之前就已经加过了。
+      回程是死的。别再查 Moshpit 了，回到第 3 步。</p>
+
+      <h3 id="s15">6 · 用逃生口</h3>
+      <p class="txt">如果这张网就是在吃你的 UDP，而你现在就要一个能用的终端：点 banner 上的
+      <b>Switch to SSH</b>，或者点顶栏的 <b>MOSH</b> 标记确认 <i>"Switch to SSH?"</i>。
+      SSH 走 TCP，能穿过那条把数据报吃掉的路径。banner 可以直接叉掉，它从不挡住终端——
+      你的击键其实一直都送到了服务器，被饿死的只是画面。</p>
+      <pre><u>⚠</u>  Mosh isn't receiving data — your network may be
+   blocking UDP (VPN, proxy, or firewall).
+
+   <b>Switch to SSH</b>                                    <i>×</i></pre>
+    </div>
+  </section>
+</div>
+
+<!-- ══ 一条实测链路 ══ -->
+<div class="shell">
+  <section class="band">
+    <p class="eyebrow">一个实测数字，不是承诺</p>
+    <h2>一条糟糕的 mesh 链路，用起来到底什么感觉</h2>
+    <p class="sub">还没有用户，所以没有任何统计数字。只有一台我们天天拿来测的开发机——它的实测数据
+    比任何形容词都有用。</p>
+
+    <div class="doc">
+      <div class="wire">
+        <p>一台 Mac，走 Tailscale 直连，出口是国内移动网络：<b>RTT 433–640 ms，丢包约 13%</b>。
+        这条链路上 SSH 握手要 5.8–9 秒。mosh 在上面能用：裸 mosh 会话大约 10 秒出第一屏；
+        mosh + tmux 要做两次 SSH 握手，原生面包屑填上要 20–25 秒。</p>
+        <p>这是一条链路、测了一次、机器是我们自己的。它不是 benchmark，你的网络一定不一样。
+        写在这里，是因为「扛得住丢包」这种话，理应带个数字。</p>
+        <p>这条链路还教了我们两件事，你也该有心理准备：笔记本一睡下去就整个从 mesh 上掉了
+        （direct → 中继 → 离线）；插件配置很重的 tmux server 首次启动时可能直接卡死。
+        这两件都不是网络问题，但它们看起来跟网络问题一模一样。</p>
+      </div>
+    </div>
+  </section>
+</div>
+
+<!-- ══ 边界 ══ -->
+<div class="shell">
+  <section class="band">
+    <p class="eyebrow plain">依赖它之前，先知道这些边界</p>
+    <h2>能连上之后，还有哪些事仍然做不到。</h2>
+
+    <div class="doc">
+      <div class="notes">
+        <p><b class="amber">App 切到后台就被挂起</b>
+        iOS 会挂起 Moshpit、它 12 秒一次的 keepalive、以及所有轮询。agent 状态会停在那里不再更新，
+        等你切回 App 才补上。没有推送服务器——这是「中间什么都没有」的代价。后台超过 20 秒，
+        Moshpit 回来时会直接重连，而不去信任那个可能对半开 socket 误判为「活着」的探活。</p>
+        <p><b class="teal">走 mosh 时，tmux 和 herdr 跑的是自己的 TUI</b>
+        mosh 传的是渲染完的屏幕差分，不是原始的按行分帧字节流，所以 <code>tmux -CC</code> 和 herdr
+        的 frame 协议都承载不了，两者都退回到 mosh shell 里的全屏界面。原生 sheet 是由旁边另一条
+        轻量 SSH 连接喂的——所以如果你的 mesh 能过 UDP 但 SSH 被挡了，你会得到一个没有原生列表的 tmux。</p>
+        <p><b class="teal">herdr 的直连 attach 是每个 pane 独占的</b>
+        Moshpit 用 <code>--takeover</code> 接入。两个 Moshpit 客户端指向同一个 herdr pane 会互相抢，
+        大约每两秒互相夺一次。这是 herdr 独占式直连的固有行为，客户端糊不过去。桌面端的 herdr <b>TUI</b>
+        不持有 attach owner，所以那个组合我们认为是安全的——但还没验证过。</p>
+        <p><b class="dimb">herdr 0.7.3 不上报 pane 的命令</b>
+        当前 Homebrew stable 版本的快照里没有 pane 的命令字段，面包屑因此退回显示
+        <code>pane N</code>。只是显示问题，但面包屑是进 Select Pane sheet 的唯一入口，值得先认得它。</p>
+        <p><b class="dimb">已信任的 host key 既列不出来也删不掉</b>
+        首次连接会把指纹和用来核对的 <code>ssh-keygen</code> 命令一起显示给你。但之后没有任何界面能
+        列出你信任过哪些主机，没有「忘记这台主机」，删掉连接也不会清掉它的指纹。服务器正常换了密钥，
+        只能在警告弹窗里接受变更——那个按钮是刻意做成红色危险样式的，默认按钮是 <b>Disconnect</b>。</p>
+      </div>
+    </div>
+  </section>
+</div>
+
+<!-- ══ FAQ ══ -->
+<div class="shell">
+  <section class="band">
+    <p class="eyebrow plain">常见问题</p>
+    <h2>就「怎么连回去」这件事。</h2>
+    <div class="faq">
+      <details>
+        <summary>一定要用 Tailscale 吗？</summary>
+        <p>不用。Moshpit 连的是一个地址，这个地址怎么变得可达完全由你决定。NetBird、headscale、
+        自己搭的 WireGuard、ZeroTier、公司 VPN，或者一台有公网 IP 的服务器，从 App 这边看没有任何区别。
+        这里点名 Tailscale，只是因为它是从零到能用最短的一条路。</p>
+      </details>
+      <details>
+        <summary>Moshpit 能走跳板机吗？</summary>
+        <p>不能。没有 ProxyJump，不支持堡垒机，也没有 agent forwarding。<code>jumpHost</code> 和
+        <code>forwardAgent</code> 字段存在模型里，但没有代码读，表单里也没有。mesh 恰好让你不再需要跳板机，
+        这也是这篇推荐它的原因之一。</p>
+      </details>
+      <details>
+        <summary>为什么 5G 下好好的，公司 Wi-Fi 就不行？</summary>
+        <p>基本都是那种放行出站 UDP、却把回来的包丢掉的网络——分流的 VPN profile、代理、
+        或者公司防火墙。SSH 照样能用，因为它走 TCP 穿过同一条路。在那张网上跑一遍上面的
+        <code>nc -u</code> 测试；如果那里等不到回包、切到蜂窝就能收到，答案就出来了。</p>
+      </details>
+      <details>
+        <summary>公司 VPN 和 mesh 能同时开吗？</summary>
+        <p>在 iOS 上基本不行，系统同时只跑一条 VPN 隧道。公司 VPN 必须开着，mesh 就开不了，
+        你就只能用公司网络给你的那条路。这是 iOS 的限制，不是 App 能绕过去的。</p>
+      </details>
+      <details>
+        <summary>Moshpit 会看到我的 mesh 或者别的机器吗？</summary>
+        <p>不会。它没有网络发现、没有账号、没有中继，也没有自己的服务器。它只知道你手动填进去的那几条连接，
+        也只会跟它们通信。本地网络权限存在的唯一目的是别让 iOS 把发往局域网的 UDP 丢掉，不是用来扫描什么的。</p>
+      </details>
+      <details>
+        <summary>回到家之后 mosh 会话就断了，为什么？</summary>
+        <p>多半是地址的问题。<code>mosh-server</code> 只绑 SSH 登录进来的那个地址，
+        所以从 mesh 建的会话在局域网里够不着，反过来也一样。连接里就存 mesh 的名字，在家也用它。
+        见上面<a href="#one-address" style="color:var(--teal)">「选定一个地址」</a>那一节。</p>
+      </details>
+    </div>
+  </section>
+</div>
+<!--DOCNEXT:BEGIN-->
+<div class="dpager"><a class="dprev" href="/zh/docs/mosh"><span>上一页</span>Mosh 与漫游</a><a class="dnext" href="/zh/docs/multiplexers"><span>下一页</span>选 tmux 还是 herdr</a></div>
+<!--DOCNEXT:END-->
+</div><!--dbody-->
+<!--DOCTOC:BEGIN-->
+<aside class="dtoc">
+  <p class="dtoclabel">本页内容</p>
+  <nav><a href="#s1">先把服务器接进 mesh</a><a href="#s2">手机也进同一张网</a><a href="#s3">在 Moshpit 里加连接</a><a href="#s4">如果确实别无选择</a><a href="#s5">底层：mesh</a><a href="#s6">上层：mosh</a><a href="#s7">SSH 负责点火，然后就退场</a><a href="#s8">到底要开什么、开在哪</a><a href="#s9">孤儿 mosh-server 会越攒越多</a><a href="#s10">1 · 对端在线吗，是直连还是中继？</a><a href="#s11">2 · 同一张 mesh 上的电脑，裸 SSH 通吗？</a><a href="#s12">3 · UDP 真的能双向跑通吗？</a><a href="#s13">4 · 范围在「流量真正进来的那块网卡」上放开了吗？</a><a href="#s14">5 · 问 App 自己看到了什么</a><a href="#s15">6 · 用逃生口</a></nav>
+</aside>
+<!--DOCTOC:END-->
+</div><!--/dwrap-->
+
+
+
+</div>
+
+
+
+</div>
+
+
+
+</div>
+
+
+
+</div>
+
+
+
+</div>
+
+
+
+</div>
+
+
+
+</div>
+
+
+
+</div>
+
+
+
+</div>
+
+
+
+</div>
+
+
+
+</div>
+
+
+
+</div>
+
+
+
+</div>
+
+
+
+</div>
+
+
+
+</div>
+
+
+
+</div>
+
+
+
+</div>
+
+
+
+</div>
+
+
+
+</div>
+
+
+
+</div>
+
+
+
+</div>
+
+
+
+</div>
+
+
+
+</div>
+
+
+
+</div>
+
+
+
+</div>
+
+
+
+</div>
+
+
+
+</div>
+
+
+
+</div>
+
+
+
+</div>
+
+
+
+</div>
+
+
+
+</div>
+
+
+
+</div>
+
+
+
+</div>`;
+---
+
+<Marketing
+  title="在任何地方连回自己的机器 — Moshpit"
+  description="不把 SSH 暴露到公网，也能从手机连回家里或公司的机器：Tailscale 这类 WireGuard mesh 加 mosh，以及具体该开哪些端口、该验证什么。"
+  path="guide/remote-access"
+  lang="zh"
+>
+  <Fragment set:html={body} />
+</Marketing>

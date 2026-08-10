@@ -1,0 +1,48 @@
+---
+import Marketing from '@layouts/Marketing.astro';
+
+// Raw markup, lifted verbatim from the page this replaces.
+const body = `<div class="shell">
+  <section class="band doc" style="border-top:none">
+    <p class="eyebrow">指南</p>
+    <h2>从头走到尾，按你真正会做的顺序。</h2>
+    <p class="sub"><a href="/zh/docs">文档</a>把每一块单独讲清楚，这里则是把一整件事从头走到尾——
+    主机上敲的每条命令、手机上点的每一屏，以及成功之后长什么样。</p>
+
+    <div class="grid">
+      <div class="cell">
+        <span class="ic">走一遍</span>
+        <h4><a href="/zh/guide/claude-code">用 iPhone 跑 Claude Code</a></h4>
+        <p>先让主机连得上、装好 herdr、在窗格里起 Claude Code——或者让 Moshpit 开一个隔离的 git worktree 在里面起——然后不解锁手机，直接在锁屏上回它的权限请求。</p>
+      </div>
+      <div class="cell">
+        <span class="ic">走一遍</span>
+        <h4><a href="/zh/guide/remote-access">在任何地方连上你的机器</a></h4>
+        <p>不把 SSH 开到公网也能连上家里或公司的机器：用 Tailscale 这类 WireGuard 组网，加上 Mosh 负责漫游。各自要开哪些端口，以及出门之前怎么验证。</p>
+      </div>
+      <div class="cell">
+        <span class="ic">参考</span>
+        <h4><a href="/zh/docs">全部文档</a></h4>
+        <p>配置、Mosh、tmux、herdr、agent 通知、键盘与主题，以及按症状排列的排障清单。</p>
+      </div>
+    </div>
+
+    <h3>接下来读什么</h3>
+    <p class="txt">如果你在挑多路复用器，先读<a href="/zh/docs/herdr">使用 herdr</a>——
+    那是 Moshpit 做了别的 iPhone 终端都没做的事的地方，而且它在同一页里把自己的限制也列了。
+    如果你本来就活在 tmux 里，从<a href="/zh/docs/tmux">使用 tmux</a>开始；
+    Moshpit 只附着到你已有的会话上，绝不改动它们的样式。</p>
+    <p class="txt">如果已经出问题了，直接跳到<a href="/zh/docs/troubleshooting">排障</a>——
+    它是按症状写的，你可以照着屏幕上的样子找，而不用先猜原因。</p>
+  </section>
+</div>`;
+---
+
+<Marketing
+  title="指南 — Moshpit"
+  description="一条龙走完的实操指南：用 iPhone 跑 Claude Code；不暴露 SSH 也能在任何地方连上你的机器。"
+  path="guides"
+  lang="zh"
+>
+  <Fragment set:html={body} />
+</Marketing>

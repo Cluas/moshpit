@@ -1,0 +1,143 @@
+---
+/**
+ * The chrome every marketing page used to carry its own copy of.
+ *
+ * On the old site the <head>, the nav and the footer were pasted into all 48
+ * HTML files. That is what made the rename a 51-file edit and what let the
+ * footer keep an Offhook pun ("Off the hook, still on the line.") for two days
+ * after the app stopped being called that. One file now owns all of it.
+ *
+ * Page bodies are still hand-written HTML, deliberately: the hero, the phone
+ * galleries and the comparison tables are bespoke design, and re-expressing
+ * them as components during a migration would mean changing the markup and the
+ * plumbing in one step with no way to tell which broke the layout.
+ */
+interface Props {
+  title: string;
+  description: string;
+  /** Page path without locale or extension: '' for home, 'compare', 'guide/claude-code'. */
+  path?: string;
+  lang?: 'en' | 'zh';
+  /**
+   * Whether a counterpart exists in the other language. Privacy and Support are
+   * English-only, and offering the toggle there would link to a 404 and tell
+   * search engines about a Chinese page that was never written.
+   */
+  translated?: boolean;
+}
+const { title, description, path = '', lang = 'en', translated = true } = Astro.props;
+
+const SITE = 'https://moshpit.cluas.eu.org';
+const enHref = `/${path}`.replace(/\/$/, '') || '/';
+const zhHref = `/zh/${path}`.replace(/\/$/, '');
+
+const nav =
+  lang === 'zh'
+    ? [
+        { href: '/zh/docs', label: '文档' },
+        { href: '/zh/guides', label: '指南' },
+        { href: '/zh/compare', label: '对比' },
+        { href: '/zh/pricing', label: '定价' },
+      ]
+    : [
+        { href: '/docs', label: 'Docs' },
+        { href: '/guides', label: 'Guides' },
+        { href: '/compare', label: 'Compare' },
+        { href: '/pricing', label: 'Pricing' },
+      ];
+
+// Privacy and Support are English-only pages; the Chinese footer linked them
+// unprefixed on the old site too, so the links stay honest either way.
+// Home leads, as it did on the old site — the wordmark up top is the only other
+// way back, and it is not obvious to everyone that a logo is a link.
+const footerNav =
+  lang === 'zh'
+    ? [
+        { href: '/zh', label: '首页' },
+        ...nav,
+        { href: '/privacy', label: '隐私' },
+        { href: '/support', label: '支持' },
+      ]
+    : [
+        { href: '/', label: 'Home' },
+        ...nav,
+        { href: '/privacy', label: 'Privacy' },
+        { href: '/support', label: 'Support' },
+      ];
+
+// Imported, not linked: Astro then hashes and minifies it, and — the part that
+// matters — it lands ONLY on pages using this layout. The docs deliberately do
+// not get it, because its `body`/`.shell`/`.dwrap` layout rules fight
+// Starlight's grid (they put the sidebar on top of the prose the first time).
+import '../styles/moshpit.css';
+
+const signoff = lang === 'zh' ? '这个 pit 不打烊。' : 'The pit never closes.';
+const legal = '© 2026 Moshpit · SSH · Mosh · tmux · herdr · iPhone';
+---
+
+<!doctype html>
+<html lang={lang === 'zh' ? 'zh-Hans' : 'en'}>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:image" content={`${SITE}/icon-192.png`} />
+    <meta name="theme-color" content="#05060A" />
+    <link rel="icon" type="image/png" href="/icon-192.png" />
+    <link rel="alternate" hreflang="en" href={`${SITE}${enHref}`} />
+    {translated && <link rel="alternate" hreflang="zh-Hans" href={`${SITE}${zhHref}`} />}
+    <link rel="alternate" hreflang="x-default" href={`${SITE}${enHref}`} />
+  </head>
+  <body>
+    <div class="shell">
+      <header class="top">
+        <a class="brand" href={lang === 'zh' ? '/zh' : '/'}>
+          <img src="/icon-192.png" alt="" width="192" height="192" />Moshpit
+        </a>
+        <div class="topright">
+          {nav.map((n) => <a class="lang" href={n.href}>{n.label}</a>)}
+          {
+            translated &&
+              (lang === 'zh' ? (
+                <a class="lang" href={enHref} hreflang="en" lang="en">EN</a>
+              ) : (
+                <a class="lang" href={zhHref} hreflang="zh-Hans" lang="zh-Hans">中文</a>
+              ))
+          }
+        </div>
+      </header>
+    </div>
+
+    <slot />
+
+    <footer>
+      <div class="shell">
+        <p class="signoff">{signoff}</p>
+        <nav class="fnav">
+          {footerNav.map((n) => <a href={n.href}>{n.label}</a>)}
+          <a href="https://github.com/Cluas/moshpit">GitHub</a>
+        </nav>
+        <p class="legal">{legal}</p>
+      </div>
+    </footer>
+
+    <script>
+      // Gallery tabs. Deliberately tiny and progressive: the first frame is a
+      // plain <img> that shows without any of this, so a failed script costs a
+      // tab strip, not the screenshots.
+      document.querySelectorAll<HTMLElement>('.gal').forEach((gal) => {
+        const frames = gal.querySelectorAll<HTMLElement>('.galframes img');
+        const tabs = gal.querySelectorAll<HTMLElement>('.galtabs button');
+        tabs.forEach((tab, i) =>
+          tab.addEventListener('click', () => {
+            frames.forEach((f, j) => f.classList.toggle('on', i === j));
+            tabs.forEach((t, j) => t.setAttribute('aria-selected', String(i === j)));
+          }),
+        );
+      });
+    </script>
+  </body>
+</html>
