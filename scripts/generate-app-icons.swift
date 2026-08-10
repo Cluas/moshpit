@@ -402,18 +402,24 @@ let iconFilesDir = "Moshpit/App/IconFiles"
 let appIconSetDir = "Moshpit/App/Assets.xcassets/AppIcon.appiconset"
 try? FileManager.default.createDirectory(atPath: iconFilesDir, withIntermediateDirectories: true)
 
-// 60pt @2x/@3x = 120px/180px, matching the AppIcon60x60 convention declared in
-// project.yml.
-let sizes: [(scale: String, px: Int)] = [("@2x", 120), ("@3x", 180)]
+// 60pt @2x/@3x = 120px/180px (iPhone), plus 76pt @2x = 152px and
+// 83.5pt @2x = 167px (iPad). The app ships for both device families
+// ("1,2"), and App Store validation flags every alternate icon that lacks
+// its iPad sizes (ITMS-90892) — the files must exist here AND be listed in
+// project.yml's CFBundleIcons~ipad block.
+let variants: [(pointName: String, scale: String, px: Int)] = [
+    ("60x60", "@2x", 120), ("60x60", "@3x", 180),
+    ("76x76", "@2x", 152), ("83.5x83.5", "@2x", 167),
+]
 
 for spec in specs {
     let baseName = spec.fileTag.map { "AppIcon-\($0)" } ?? "AppIcon"
-    for size in sizes {
-        guard let image = renderIcon(spec: spec, pixelSize: size.px) else {
-            FileHandle.standardError.write("Render failed for \(baseName) @\(size.px)\n".data(using: .utf8)!)
+    for variant in variants {
+        guard let image = renderIcon(spec: spec, pixelSize: variant.px) else {
+            FileHandle.standardError.write("Render failed for \(baseName) @\(variant.px)\n".data(using: .utf8)!)
             continue
         }
-        writePNG(image, to: "\(iconFilesDir)/\(baseName)60x60\(size.scale).png")
+        writePNG(image, to: "\(iconFilesDir)/\(baseName)\(variant.pointName)\(variant.scale).png")
     }
     // The primary icon also supplies the 1024 marketing asset, flattened so the
     // App Store will accept it.

@@ -191,6 +191,59 @@ targets:
               CFBundleIconFiles:
                 - AppIcon-Hail60x60
               UIPrerenderedIcon: false
+        # iPad mirrors of the alternate icons. The device family is "1,2", and
+        # App Store validation warns per-upload (ITMS-90892) about any
+        # alternate icon that lacks its iPad sizes — the 76x76 (152px @2x) and
+        # 83.5x83.5 (167px @2x) files come from scripts/generate-app-icons.swift.
+        CFBundleIcons~ipad:
+          CFBundlePrimaryIcon:
+            CFBundleIconFiles:
+              - AppIcon60x60
+              - AppIcon76x76
+            CFBundleIconName: AppIcon
+          CFBundleAlternateIcons:
+            AppIcon-Ringdown:
+              CFBundleIconFiles:
+                - AppIcon-Ringdown60x60
+                - AppIcon-Ringdown76x76
+                - AppIcon-Ringdown83.5x83.5
+              UIPrerenderedIcon: false
+            AppIcon-Wq:
+              CFBundleIconFiles:
+                - AppIcon-Wq60x60
+                - AppIcon-Wq76x76
+                - AppIcon-Wq83.5x83.5
+              UIPrerenderedIcon: false
+            AppIcon-Prefix:
+              CFBundleIconFiles:
+                - AppIcon-Prefix60x60
+                - AppIcon-Prefix76x76
+                - AppIcon-Prefix83.5x83.5
+              UIPrerenderedIcon: false
+            AppIcon-Localhost:
+              CFBundleIconFiles:
+                - AppIcon-Localhost60x60
+                - AppIcon-Localhost76x76
+                - AppIcon-Localhost83.5x83.5
+              UIPrerenderedIcon: false
+            AppIcon-NoCarrier:
+              CFBundleIconFiles:
+                - AppIcon-NoCarrier60x60
+                - AppIcon-NoCarrier76x76
+                - AppIcon-NoCarrier83.5x83.5
+              UIPrerenderedIcon: false
+            AppIcon-Cursor:
+              CFBundleIconFiles:
+                - AppIcon-Cursor60x60
+                - AppIcon-Cursor76x76
+                - AppIcon-Cursor83.5x83.5
+              UIPrerenderedIcon: false
+            AppIcon-Hail:
+              CFBundleIconFiles:
+                - AppIcon-Hail60x60
+                - AppIcon-Hail76x76
+                - AppIcon-Hail83.5x83.5
+              UIPrerenderedIcon: false
         NSSupportsLiveActivities: true
         # Export compliance is DELIBERATELY absent from the binary. It lives as
         # an app-level encryption declaration in App Store Connect instead
