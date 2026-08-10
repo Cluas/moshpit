@@ -192,26 +192,23 @@ targets:
                 - AppIcon-Hail60x60
               UIPrerenderedIcon: false
         NSSupportsLiveActivities: true
-        # Answers App Store Connect's export-compliance question in the binary
-        # instead of leaving every upload parked on "Missing Compliance".
+        # Export compliance is DELIBERATELY absent from the binary. It lives as
+        # an app-level encryption declaration in App Store Connect instead
+        # (App Information → App Encryption Documentation, filed 2026-08-10:
+        # uses encryption / standard algorithms only — AES-GCM + ECDH/Curve25519
+        # + Ed25519/ECDSA/RSA for SSH, AES-128-OCB3 per RFC 7253 for Mosh — not
+        # distributed in France, no documentation required).
         #
-        # Settled as `true`: Moshpit ships its own strong confidentiality
-        # crypto — Citadel/swift-crypto for SSH, plus the OCB3/AES + ChaCha20
-        # code under Services/Mosh — so none of the narrow cases Apple treats
-        # as exempt apply (OS-provided crypto only, authentication-only, DRM,
-        # <=56-bit keys, medical). The looser reading available to a public MIT
-        # codebase (publicly-available source, EAR 740.13(e)/742.15(b)) was
-        # considered and deliberately not taken: `true` is the conservative
-        # answer and costs nothing at build time.
-        #
-        # What that implies at release time, which no build setting can do for
-        # you: the first submission of a version asks the follow-up questions in
-        # App Store Connect (the answer is standard algorithms, nothing
-        # proprietary), and the account holder carries the mass-market
-        # self-classification duty for ECCN 5D992.c — the annual report to
-        # BIS/NSA. If an ERN or CCATS code ever comes back, declare it beside
-        # this key as ITSEncryptionExportComplianceCode.
-        ITSAppUsesNonExemptEncryption: true
+        # Do NOT re-add ITSAppUsesNonExemptEncryption here. Since the 2026 ASC
+        # flow, `true` without an ITSEncryptionExportComplianceCode makes BOTH
+        # Organizer Validate and Upload hard-fail with error 90592 ("Invalid
+        # Export Compliance Code") — verified on build 282, 2026-08-10, even
+        # after the app-level declaration was on file — and the no-France/
+        # standard-algorithms path issues no code that could ever satisfy the
+        # check.
+        # If distribution ever expands to France: redo the ASC questionnaire
+        # (answer France = yes), file the ANSSI declaration, and only then
+        # consider carrying the resulting code in the plist.
         CFBundleShortVersionString: "$(MARKETING_VERSION)"
         CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         UILaunchScreen:

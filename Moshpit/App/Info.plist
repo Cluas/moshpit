@@ -111,8 +111,6 @@
 	</array>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
-	<key>ITSAppUsesNonExemptEncryption</key>
-	<true/>
 	<key>NSFaceIDUsageDescription</key>
 	<string>Use Face ID to unlock SSH keys</string>
 	<key>NSLocalNetworkUsageDescription</key>
