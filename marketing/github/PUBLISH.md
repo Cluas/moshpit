@@ -22,7 +22,9 @@ gh repo edit Cluas/moshpit --homepage "https://moshpit.cluas.eu.org" \
 
 发布后顺手做的引流位：
 
-1. 官网 footer 加 GitHub 链接（marketing/site/index.html，改完重跑 configmap apply + rollout restart）
+1. ~~官网 footer 加 GitHub 链接~~ —— 已经在 `marketing/site-next/src/layouts/Marketing.astro`
+   的页脚里了，一处改动覆盖全部页面。改完跑 `scripts/deploy-site.sh`（configmap
+   那套早就退役了）。
 2. 提交 awesome-lists：awesome-ios、awesome-tmux、awesome-claude-code（各自开 PR）
 3. HN "Show HN" / X 首发帖正文放 GitHub 链接（比裸官网更容易被点）
 
