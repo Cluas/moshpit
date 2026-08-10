@@ -980,20 +980,20 @@
 				LastUpgradeCheck = 2600;
 				TargetAttributes = {
 					46055837F41E11FDD1BA20A8 = {
-						DevelopmentTeam = "";
+						DevelopmentTeam = 38RWZPNDPZ;
 						ProvisioningStyle = Automatic;
 					};
 					56689BDF532EC8A013AA9CFA = {
-						DevelopmentTeam = "";
+						DevelopmentTeam = 38RWZPNDPZ;
 						ProvisioningStyle = Automatic;
 						TestTargetID = C04339524D7C881039141416;
 					};
 					C04339524D7C881039141416 = {
-						DevelopmentTeam = "";
+						DevelopmentTeam = 38RWZPNDPZ;
 						ProvisioningStyle = Automatic;
 					};
 					E1E5D691D44179F8887C719D = {
-						DevelopmentTeam = "";
+						DevelopmentTeam = 38RWZPNDPZ;
 						ProvisioningStyle = Automatic;
 					};
 				};
@@ -1514,7 +1514,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = Moshpit/App/Moshpit.entitlements;
-				CODE_SIGN_IDENTITY = "Apple Distribution";
+				CODE_SIGN_IDENTITY = "Apple Development";
 				ENABLE_PREVIEWS = YES;
 				INFOPLIST_FILE = Moshpit/App/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (

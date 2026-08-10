@@ -118,19 +118,21 @@ targets:
         # application targets, which injects a legacy
         # `CODE_SIGN_IDENTITY = "iPhone Developer"` into EVERY config of this
         # target. Target settings win over the project-level ones above, so
-        # fixing this at the project level alone silently achieves nothing and
-        # a Release archive still goes out development-signed — which App Store
-        # Connect rejects. Verify after `xcodegen generate` with:
+        # fixing this at the project level alone silently achieves nothing.
+        # Verify after `xcodegen generate` with:
         #   grep -c 'iPhone Developer' Moshpit.xcodeproj/project.pbxproj   # 0
         #
-        # Note this means a local Release build (the scheme's Profile action)
-        # now wants a distribution certificate, so a free Personal Team has to
-        # stay on Debug — which is what docs/install-free-account.md and
-        # scripts/build-ipa.sh already do.
+        # Release is "Apple Development" ON PURPOSE, not a typo: with
+        # automatic signing the ARCHIVE is development-signed and the
+        # app-store-connect EXPORT re-signs it "Apple Distribution"
+        # (scripts/release-archive.sh's -exportOptionsPlist step). Forcing
+        # Distribution here instead makes xcodebuild refuse to archive at all
+        # ("conflicting provisioning settings" — automatic signing archives
+        # development-style by design).
         Debug:
           CODE_SIGN_IDENTITY: "Apple Development"
         Release:
-          CODE_SIGN_IDENTITY: "Apple Distribution"
+          CODE_SIGN_IDENTITY: "Apple Development"
     dependencies:
       - package: SwiftTerm
       - package: Citadel
