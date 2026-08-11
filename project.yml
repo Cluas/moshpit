@@ -386,6 +386,40 @@ targets:
       - target: Moshpit
 
 schemes:
+  # Unit tests only, and the point is what it leaves OUT.
+  #
+  # `-only-testing:MoshpitTests` filters what RUNS, not what gets built and
+  # installed: the Moshpit scheme lists MoshpitUITests as testable, so every
+  # unit-test run also compiled the UI test target and pushed its 18 MB runner
+  # app onto the simulator alongside the 80 MB debug app, then waited through a
+  # second launch handshake.
+  #
+  # Measured on the Moshpit scheme: 172 s wall, of which the tests themselves
+  # were 13.5 s (~8%). xcodebuild's own accounting put 135 s in the "Testing"
+  # phase — install, launch, handshake, teardown — so the wait had almost
+  # nothing to do with how many tests exist. This scheme attacks that instead.
+  #
+  #   xcodebuild -scheme MoshpitUnitTests -destination '…' test
+  #
+  # Iterating on test code only? Build once with `build-for-testing`, then
+  # `test-without-building` — that saves a further ~60 s per cycle. And do NOT
+  # run `xcodegen generate` unless project.yml changed: rewriting the pbxproj
+  # invalidates DerivedData and forces a full rebuild of WhisperKit, SwiftTerm,
+  # Citadel and swift-nio.
+  MoshpitUnitTests:
+    build:
+      targets:
+        Moshpit: all
+        MoshpitTests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - MoshpitTests
+    analyze:
+      config: Debug
+
   Moshpit:
     build:
       targets:
