@@ -1,6 +1,38 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    " ": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": " "
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": " "
+          }
+        }
+      }
+    },
+    "%@ frees %@. You can download it again later.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ を削除すると %2$@ を解放できます。後で再ダウンロードできます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "删除 %1$@ 可释放 %2$@。以后可以重新下载。"
+          }
+        }
+      }
+    },
     "%@ · runs %@": {
       "localizations": {
         "ja": {
@@ -327,6 +359,22 @@
         }
       }
     },
+    "16 kHz mono audio is unavailable on this device.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この端末では 16 kHz モノラル音声を利用できません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本设备无法提供 16 kHz 单声道音频。"
+          }
+        }
+      }
+    },
     "22": {
       "localizations": {
         "ja": {
@@ -439,6 +487,22 @@
         }
       }
     },
+    "ALL LANGUAGES": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "すべての言語"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "全部语言"
+          }
+        }
+      }
+    },
     "AUTHENTICATION": {
       "localizations": {
         "ja": {
@@ -467,6 +531,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "可用"
+          }
+        }
+      }
+    },
+    "Accept suggestion and send": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "提案を確定して送信"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "接受建议并发送"
           }
         }
       }
@@ -515,6 +595,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "添加快捷键"
+          }
+        }
+      }
+    },
+    "Adds a mic key to the terminal bar": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ショートカットバーにマイクキーを追加します"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在快捷条上加一个麦克风键"
           }
         }
       }
@@ -583,6 +679,22 @@
         }
       }
     },
+    "Another app took the microphone before anything was heard.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "何も認識されないうちに、別のアプリがマイクを使用しました。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "还没听到内容，麦克风就被别的应用抢走了。"
+          }
+        }
+      }
+    },
     "Append Return": {
       "localizations": {
         "ja": {
@@ -595,6 +707,70 @@
           "stringUnit": {
             "state": "translated",
             "value": "追加 Return"
+          }
+        }
+      }
+    },
+    "Apple (built in)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple（内蔵）"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple（内置）"
+          }
+        }
+      }
+    },
+    "Apple Dictation · %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple 音声入力 · %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple 听写 · %@"
+          }
+        }
+      }
+    },
+    "Apple Speech · %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple 音声認識 · %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple 语音识别 · %@"
+          }
+        }
+      }
+    },
+    "Apple · %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple · %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple · %@"
           }
         }
       }
@@ -663,6 +839,54 @@
         }
       }
     },
+    "Audio buffer allocation failed.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "音声バッファの確保に失敗しました。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "音频缓冲区分配失败。"
+          }
+        }
+      }
+    },
+    "Audio format conversion failed.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "音声フォーマットの変換に失敗しました。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "音频格式转换失败。"
+          }
+        }
+      }
+    },
+    "Audio format conversion unavailable.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "音声フォーマットの変換を利用できません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "音频格式转换不可用。"
+          }
+        }
+      }
+    },
     "Authentication failed — the server rejected your username and password / key. Double-check your credentials.": {
       "localizations": {
         "ja": {
@@ -675,6 +899,54 @@
           "stringUnit": {
             "state": "translated",
             "value": "认证失败——服务器拒绝了你的用户名和密码 / 密钥。请检查凭证是否正确。"
+          }
+        }
+      }
+    },
+    "Auto": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自動"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自动"
+          }
+        }
+      }
+    },
+    "Auto-detect": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自動検出"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自动检测"
+          }
+        }
+      }
+    },
+    "Automatic": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自動"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自动"
           }
         }
       }
@@ -775,50 +1047,18 @@
         }
       }
     },
-    "Moshpit": {
+    "Base": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "Moshpit"
+            "value": "Base"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "Moshpit"
-          }
-        }
-      }
-    },
-    "Moshpit needs tmux for session navigation.\nInstall it, then reconnect.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Moshpit はセッションナビゲーションに tmux を必要とします。\nインストールしてから再接続してください。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Moshpit 需要 tmux 来进行会话导航。\n请先安装，然后重新连接。"
-          }
-        }
-      }
-    },
-    "Moshpit never installs anything silently. Run the command below in your shell — sudo and its output stay fully visible.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Moshpit が黙ってインストールすることはありません。以下のコマンドをシェルで実行してください — sudo とその出力はすべて表示されます。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Moshpit 绝不会静默安装任何内容。请在你的 shell 中运行下面的命令 —— sudo 及其输出全程可见。"
+            "value": "Base"
           }
         }
       }
@@ -867,6 +1107,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "方块"
+          }
+        }
+      }
+    },
+    "Both engines run entirely on this device — your voice is never uploaded. Whisper additionally needs its model downloaded once over the network before it can be used.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "どちらのエンジンも完全にこの端末で動作し、音声がアップロードされることはありません。Whisper は利用前に一度だけモデルをネットワーク経由でダウンロードする必要があります。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "两种引擎都完全在本机运行——你的语音绝不上传。Whisper 另需先联网下载一次模型才能使用。"
           }
         }
       }
@@ -947,6 +1203,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "取消"
+          }
+        }
+      }
+    },
+    "Checking available languages…": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "利用できる言語を確認中…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在检查可用语言…"
           }
         }
       }
@@ -1271,6 +1543,22 @@
         }
       }
     },
+    "Couldn't download the speech model: %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "音声モデルをダウンロードできませんでした：%@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法下载语音模型：%@"
+          }
+        }
+      }
+    },
     "Couldn't reach the server. Check the host, port, and that it's online.": {
       "localizations": {
         "ja": {
@@ -1283,6 +1571,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "无法连接到服务器。请检查主机、端口,以及服务器是否在线。"
+          }
+        }
+      }
+    },
+    "Couldn't start the microphone: %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "マイクを開始できませんでした：%@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法启动麦克风：%@"
           }
         }
       }
@@ -1367,6 +1671,22 @@
         }
       }
     },
+    "DICTATION LANGUAGE": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "音声入力の言語"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "听写语言"
+          }
+        }
+      }
+    },
     "DISPLAY": {
       "localizations": {
         "ja": {
@@ -1379,6 +1699,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "显示"
+          }
+        }
+      }
+    },
+    "DOWNLOADING SPEECH MODEL %lld%%": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "音声モデルをダウンロード中 %lld%%"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在下载语音模型 %lld%%"
           }
         }
       }
@@ -1463,6 +1799,22 @@
         }
       }
     },
+    "Dictate commands and prompts from the mic key on the terminal bar. Speech is transcribed entirely on-device — your voice never leaves this device, and nothing is typed until you tap Insert.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ショートカットバーのマイクキーからコマンドやプロンプトを音声入力できます。書き起こしは完全に端末内で行われ、音声がこの端末を離れることはなく、「挿入」をタップするまで何も入力されません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "用快捷条上的麦克风键口述命令和 prompt。转写完全在本机完成——你的语音绝不离开这台设备，不点「插入」就不会输入任何内容。"
+          }
+        }
+      }
+    },
     "Dictate commands instead of typing. Planned for a future update.": {
       "localizations": {
         "ja": {
@@ -1475,6 +1827,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "用语音口述命令，无需打字。计划在后续版本提供。"
+          }
+        }
+      }
+    },
+    "Dictation isn't available for %@ on this device.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この端末では %@ の音声入力を利用できません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本设备不支持 %@ 的听写。"
           }
         }
       }
@@ -1495,6 +1863,22 @@
         }
       }
     },
+    "Dismiss": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "閉じる"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "关闭"
+          }
+        }
+      }
+    },
     "Done": {
       "localizations": {
         "ja": {
@@ -1507,6 +1891,70 @@
           "stringUnit": {
             "state": "translated",
             "value": "完成"
+          }
+        }
+      }
+    },
+    "Download": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ダウンロード"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "下载"
+          }
+        }
+      }
+    },
+    "Download a model": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "モデルをダウンロード"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "下载模型"
+          }
+        }
+      }
+    },
+    "Downloading %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ をダウンロード中"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在下载 %@"
+          }
+        }
+      }
+    },
+    "Downloads a model. Around 100 languages, and copes with a sentence that mixes two.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "モデルのダウンロードが必要。約 100 言語に対応し、1 つの文に 2 言語が混在しても処理できます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "需下载模型。覆盖约 100 种语言，一句话里混用两种也能听准。"
           }
         }
       }
@@ -1719,6 +2167,22 @@
         }
       }
     },
+    "FINISHING…": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "仕上げ中…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在收尾…"
+          }
+        }
+      }
+    },
     "Face ID confirmation before every signature": {
       "localizations": {
         "ja": {
@@ -1731,6 +2195,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "每次签名前需 Face ID 确认"
+          }
+        }
+      }
+    },
+    "Fast and light. Noticeably weaker outside English.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "高速・軽量。英語以外は精度が明らかに落ちます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "快且占用小。英语以外明显较弱。"
+          }
+        }
+      }
+    },
+    "Fastest, lowest accuracy. For older devices.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最速・最低精度。古い端末向け。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最快，准确度最低。适合较旧的设备。"
           }
         }
       }
@@ -1843,6 +2339,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "本地生成密钥对。私钥可选 Secure Enclave 托管，仅签名时调用，不出芯片。"
+          }
+        }
+      }
+    },
+    "Good balance of accuracy and speed.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "精度と速度のバランスが良い。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "准确度与速度较均衡。"
           }
         }
       }
@@ -2007,6 +2519,22 @@
         }
       }
     },
+    "INTERRUPTED": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "中断されました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已中断"
+          }
+        }
+      }
+    },
     "Import": {
       "localizations": {
         "ja": {
@@ -2035,6 +2563,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "Key Combo 模式下 Payload 是发往 PTY 的转义序列，可读 mosh / tmux 转写规则。"
+          }
+        }
+      }
+    },
+    "Insert": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "挿入"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "插入"
           }
         }
       }
@@ -2183,6 +2727,22 @@
         }
       }
     },
+    "Keep": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "残す"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保留"
+          }
+        }
+      }
+    },
     "Keep Connections Alive": {
       "localizations": {
         "ja": {
@@ -2195,6 +2755,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "保持连接存活"
+          }
+        }
+      }
+    },
+    "Keeps English words mixed into the sentence": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "文中に混ざる英単語もそのまま保持します"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "句子里夹的英文词也能保留"
           }
         }
       }
@@ -2259,6 +2835,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "密钥错误"
+          }
+        }
+      }
+    },
+    "Keyboard on Open": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "開いたらキーボードを表示"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打开时弹出键盘"
           }
         }
       }
@@ -2355,6 +2947,86 @@
           "stringUnit": {
             "state": "translated",
             "value": "终止窗口“%@”？"
+          }
+        }
+      }
+    },
+    "LAST ERROR": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "直近のエラー"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "上次错误"
+          }
+        }
+      }
+    },
+    "LISTENING": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "認識中"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在听"
+          }
+        }
+      }
+    },
+    "LOADING SPEECH MODEL…": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "音声モデルを読み込み中…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在加载语音模型…"
+          }
+        }
+      }
+    },
+    "Languages offered here are the ones this device can transcribe. A language's speech model downloads once on first use, then works offline. Apple's engines handle one language per session — for speech that switches between two, switch Recognition to Whisper.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ここに表示されるのは、この端末が書き起こせる言語です。各言語の音声モデルは初回利用時に一度ダウンロードされ、以降はオフラインで動作します。Apple のエンジンは 1 セッションに 1 言語のみ扱うため、2 言語を切り替えて話す場合は「認識エンジン」を Whisper に変更してください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这里列出的是本机能转写的语言。某个语言的语音模型首次使用时下载一次，之后离线可用。Apple 的引擎每次会话只处理一种语言——如果你说话会在两种语言之间切换，请把「识别引擎」换成 Whisper。"
+          }
+        }
+      }
+    },
+    "Large v3 Turbo": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Large v3 Turbo"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Large v3 Turbo"
           }
         }
       }
@@ -2503,6 +3175,70 @@
         }
       }
     },
+    "Microphone access is off. Enable it in Settings → Privacy → Microphone.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "マイクへのアクセスがオフです。「設定 → プライバシー → マイク」で許可してください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "麦克风权限已关闭。请在「设置 → 隐私 → 麦克风」中开启。"
+          }
+        }
+      }
+    },
+    "Model": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "モデル"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "模型"
+          }
+        }
+      }
+    },
+    "Models are downloaded from Hugging Face once, then everything runs on this device — no audio is ever uploaded. Every model here is multilingual; the bigger ones are markedly better outside English and on speech that switches language mid-sentence, but take longer per phrase. Only models this device can run are listed.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "モデルは Hugging Face から一度だけダウンロードされ、その後はすべてこの端末で動作します——音声がアップロードされることはありません。ここにあるモデルはすべて多言語対応で、大きいものほど英語以外や文中で言語が切り替わる音声に強い一方、1 フレーズあたりの処理時間は長くなります。この端末で動作するモデルのみを表示しています。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "模型只从 Hugging Face 下载一次，之后全部在本机运行——音频绝不上传。这里的模型都是多语种的；越大的模型在英语以外、以及一句话中途换语言时明显更准，但每句耗时更长。只列出本机跑得动的模型。"
+          }
+        }
+      }
+    },
+    "Models on this device": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この端末のモデル"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本机已下载"
+          }
+        }
+      }
+    },
     "Modifiers": {
       "localizations": {
         "ja": {
@@ -2579,6 +3315,86 @@
           "stringUnit": {
             "state": "translated",
             "value": "Mosh：%@"
+          }
+        }
+      }
+    },
+    "Moshpit": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Moshpit"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Moshpit"
+          }
+        }
+      }
+    },
+    "Moshpit needs tmux for session navigation.\nInstall it, then reconnect.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Moshpit はセッションナビゲーションに tmux を必要とします。\nインストールしてから再接続してください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Moshpit 需要 tmux 来进行会话导航。\n请先安装，然后重新连接。"
+          }
+        }
+      }
+    },
+    "Moshpit never installs anything silently. Run the command below in your shell — sudo and its output stay fully visible.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Moshpit が黙ってインストールすることはありません。以下のコマンドをシェルで実行してください — sudo とその出力はすべて表示されます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Moshpit 绝不会静默安装任何内容。请在你的 shell 中运行下面的命令 —— sudo 及其输出全程可见。"
+          }
+        }
+      }
+    },
+    "Moshpit watches the active tmux session for the terminal bell and posts a local alert when your agent needs attention.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Moshpit はアクティブな tmux セッションのターミナルベルを監視し、エージェントが注意を必要とするとローカル通知を出します。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Moshpit 会监听活动 tmux 会话的终端响铃，并在你的智能体需要关注时发出本地提醒。"
+          }
+        }
+      }
+    },
+    "Most accurate, especially on mixed-language speech. Needs a recent chip.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最も高精度。特に複数言語が混在する音声に強い。新しめのチップが必要です。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "准确度最高，尤其是多语种混说。需要较新的芯片。"
           }
         }
       }
@@ -2743,6 +3559,38 @@
         }
       }
     },
+    "No Whisper model is downloaded yet. Pick one in Settings → Voice Input → Model.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Whisper モデルがまだダウンロードされていません。「設定 → 音声入力 → モデル」で選んでください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "还没有下载 Whisper 模型。请在「设置 → 语音输入 → 模型」里选一个。"
+          }
+        }
+      }
+    },
+    "No audio input is available.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "利用できる音声入力がありません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有可用的音频输入。"
+          }
+        }
+      }
+    },
     "No connections yet": {
       "localizations": {
         "ja": {
@@ -2787,6 +3635,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "还没有设备密钥 — 点按 ＋ 生成"
+          }
+        }
+      }
+    },
+    "No download. One language per session.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ダウンロード不要。1 セッションに 1 言語。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无需下载。每次会话只识别一种语言。"
           }
         }
       }
@@ -2855,6 +3719,22 @@
         }
       }
     },
+    "One model covers around 100 languages. Naming yours transcribes it while keeping the foreign words inside a sentence intact — the English command names and library names you say mid-thought survive. Auto-detect reads the language off the audio instead, which can waver on short or heavily mixed phrases.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 つのモデルで約 100 言語をカバーします。自分の言語を指定すると、文中に混ざる外国語もそのまま保持され、話の途中で出てくる英語のコマンド名やライブラリ名も崩れません。「自動検出」は音声から言語を判定するため、短いフレーズや混在の激しいフレーズでは判定が揺れることがあります。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "一个模型覆盖约 100 种语言。指定你的语言后，句子里夹的外语词也会原样保留——你说到一半冒出来的英文命令名、库名都不会被改掉。「自动检测」则是让模型从音频里判断语言，遇到很短或混得很厉害的句子可能会摇摆。"
+          }
+        }
+      }
+    },
     "Only in tmux": {
       "localizations": {
         "ja": {
@@ -2883,6 +3763,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "打开"
+          }
+        }
+      }
+    },
+    "Open Settings": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "設定を開く"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打开设置"
           }
         }
       }
@@ -3239,6 +4135,22 @@
         }
       }
     },
+    "RECOGNITION": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "認識エンジン"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "识别引擎"
+          }
+        }
+      }
+    },
     "ROAMING · MOSH": {
       "localizations": {
         "ja": {
@@ -3271,6 +4183,22 @@
         }
       }
     },
+    "Raise the keyboard as soon as a terminal opens, instead of after you tap it": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "タップを待たず、ターミナルを開いた時点でキーボードを表示します"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打开终端就弹出键盘，而不是等你点一下之后"
+          }
+        }
+      }
+    },
     "Re-check": {
       "localizations": {
         "ja": {
@@ -3299,6 +4227,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "正在重新检测…"
+          }
+        }
+      }
+    },
+    "Recognition": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "認識エンジン"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "识别引擎"
           }
         }
       }
@@ -3347,6 +4291,54 @@
           "stringUnit": {
             "state": "translated",
             "value": "重连中…"
+          }
+        }
+      }
+    },
+    "Remove": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "削除"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "删除"
+          }
+        }
+      }
+    },
+    "Remove %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ を削除"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "删除 %@"
+          }
+        }
+      }
+    },
+    "Remove this model?": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このモデルを削除しますか？"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "删除这个模型？"
           }
         }
       }
@@ -3463,6 +4455,22 @@
         }
       }
     },
+    "Return": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Return"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "回车"
+          }
+        }
+      }
+    },
     "Roam on Cellular": {
       "localizations": {
         "ja": {
@@ -3539,6 +4547,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "会话"
+          }
+        }
+      }
+    },
+    "SETUP": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "セットアップ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "准备"
+          }
+        }
+      }
+    },
+    "SIGNAL FOR YOUR AGENTS": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "エージェントのシグナル"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "智能体信号站"
           }
         }
       }
@@ -3635,6 +4675,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "SSH 会话已关闭"
+          }
+        }
+      }
+    },
+    "STARTING…": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "開始中…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在启动…"
+          }
+        }
+      }
+    },
+    "STORAGE": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ストレージ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "存储占用"
           }
         }
       }
@@ -3911,6 +4983,86 @@
         }
       }
     },
+    "Small": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Small"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Small"
+          }
+        }
+      }
+    },
+    "Speak — the text lands here first, and Insert types it into the terminal.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "話してください——テキストはまずここに表示され、「挿入」をタップするとターミナルに入力されます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "说话吧——文字先落在这里，点「插入」才会输入到终端。"
+          }
+        }
+      }
+    },
+    "Speech recognition is off. Enable it in Settings → Privacy → Speech Recognition.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "音声認識がオフです。「設定 → プライバシー → 音声認識」で許可してください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "语音识别权限已关闭。请在「设置 → 隐私 → 语音识别」中开启。"
+          }
+        }
+      }
+    },
+    "Speech recognition is unavailable.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "音声認識を利用できません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "语音识别不可用。"
+          }
+        }
+      }
+    },
+    "Start voice input": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "音声入力を開始"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "开始语音输入"
+          }
+        }
+      }
+    },
     "Still not detected. Run the command, wait for it to finish, then re-check.": {
       "localizations": {
         "ja": {
@@ -3923,6 +5075,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "仍未检测到。请运行命令并等待其完成，然后重新检测。"
+          }
+        }
+      }
+    },
+    "Stop voice input": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "音声入力を停止"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "停止语音输入"
           }
         }
       }
@@ -4087,6 +5255,38 @@
         }
       }
     },
+    "The %@ speech model didn't download completely. Remove it and try again.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ の音声モデルを完全にダウンロードできませんでした。削除してから再試行してください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 语音模型没有下载完整。请删除后重试。"
+          }
+        }
+      }
+    },
+    "The %@ speech model isn't downloaded yet.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ の音声モデルはまだダウンロードされていません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 语音模型还没有下载。"
+          }
+        }
+      }
+    },
     "The hooks only stamp the tmux pane and exit 0 — Claude is never slowed, prompted, or interrupted.": {
       "localizations": {
         "ja": {
@@ -4179,6 +5379,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "该服务器上没有正在运行的会话。\nMoshpit 只做附加 — 创建第一个会话以开始。"
+          }
+        }
+      }
+    },
+    "Tiny": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tiny"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tiny"
           }
         }
       }
@@ -4311,6 +5527,22 @@
         }
       }
     },
+    "Unknown": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "不明"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未知"
+          }
+        }
+      }
+    },
     "Unsupported SSH key type: %@": {
       "localizations": {
         "ja": {
@@ -4391,6 +5623,38 @@
         }
       }
     },
+    "Voice Language": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "音声入力の言語"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "语音语言"
+          }
+        }
+      }
+    },
+    "Voice input": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "音声入力"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "语音输入"
+          }
+        }
+      }
+    },
     "WEAK": {
       "localizations": {
         "ja": {
@@ -4403,6 +5667,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "弱"
+          }
+        }
+      }
+    },
+    "WHISPER MODEL": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Whisper モデル"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Whisper 模型"
           }
         }
       }
@@ -4451,6 +5731,70 @@
           "stringUnit": {
             "state": "translated",
             "value": "会话附加期间，灵动岛会显示智能体正在工作、空闲，还是在等你。点按即可直接深链回到该窗格。"
+          }
+        }
+      }
+    },
+    "Whisper (local model)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Whisper（ローカルモデル）"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Whisper（本地模型）"
+          }
+        }
+      }
+    },
+    "Whisper Model": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Whisper モデル"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Whisper 模型"
+          }
+        }
+      }
+    },
+    "Whisper can't transcribe until one is on the device": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "モデルが端末にないと Whisper は書き起こせません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "设备上没有模型时 Whisper 无法转写"
+          }
+        }
+      }
+    },
+    "Whisper decides from what it hears": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Whisper が聞こえた内容から判断します"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "由 Whisper 根据听到的内容判断"
           }
         }
       }
@@ -4643,6 +5987,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "未找到 mosh-server —— 已改用 SSH 连接。"
+          }
+        }
+      }
+    },
+    "needs attention": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "要注意"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "需要关注"
           }
         }
       }
@@ -4963,6 +6323,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "−"
+          }
+        }
+      }
+    },
+    "≈%@ download": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "約 %@ のダウンロード"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "约 %@ 下载"
           }
         }
       }

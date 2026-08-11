@@ -5,7 +5,7 @@ Source language: en (the key IS the English value).
 Each entry carries complete zh-Hans + ja translations.
 SAME = identical value in every language (brand names, protocol words, glyphs).
 """
-import json, os
+import json, os, sys
 
 SAME = object()
 
@@ -147,6 +147,134 @@ add("Dictate commands instead of typing. Planned for a future update.",
     "タイプの代わりに音声でコマンドを入力。今後のアップデートで提供予定です。")
 add("Enable Voice Input", "启用语音输入", "音声入力を有効化")
 add("Coming soon", "即将推出", "近日公開")
+add("Adds a mic key to the terminal bar", "在快捷条上加一个麦克风键", "ショートカットバーにマイクキーを追加します")
+add("Dictate commands and prompts from the mic key on the terminal bar. Speech is transcribed entirely on-device — your voice never leaves this device, and nothing is typed until you tap Insert.",
+    "用快捷条上的麦克风键口述命令和 prompt。转写完全在本机完成——你的语音绝不离开这台设备，不点「插入」就不会输入任何内容。",
+    "ショートカットバーのマイクキーからコマンドやプロンプトを音声入力できます。書き起こしは完全に端末内で行われ、音声がこの端末を離れることはなく、「挿入」をタップするまで何も入力されません。")
+
+# ---------- Voice input · engine + model (Whisper) ----------
+add("Recognition", "识别引擎", "認識エンジン")
+add("RECOGNITION", "识别引擎", "認識エンジン")
+add("Apple (built in)", "Apple（内置）", "Apple（内蔵）")
+add("Whisper (local model)", "Whisper（本地模型）", "Whisper（ローカルモデル）")
+add("No download. One language per session.", "无需下载。每次会话只识别一种语言。", "ダウンロード不要。1 セッションに 1 言語。")
+add("Downloads a model. Around 100 languages, and copes with a sentence that mixes two.",
+    "需下载模型。覆盖约 100 种语言，一句话里混用两种也能听准。",
+    "モデルのダウンロードが必要。約 100 言語に対応し、1 つの文に 2 言語が混在しても処理できます。")
+add("Both engines run entirely on this device — your voice is never uploaded. Whisper additionally needs its model downloaded once over the network before it can be used.",
+    "两种引擎都完全在本机运行——你的语音绝不上传。Whisper 另需先联网下载一次模型才能使用。",
+    "どちらのエンジンも完全にこの端末で動作し、音声がアップロードされることはありません。Whisper は利用前に一度だけモデルをネットワーク経由でダウンロードする必要があります。")
+add("SETUP", "准备", "セットアップ")
+add("Download a model", "下载模型", "モデルをダウンロード")
+add("Whisper can't transcribe until one is on the device",
+    "设备上没有模型时 Whisper 无法转写", "モデルが端末にないと Whisper は書き起こせません")
+
+add("Model", "模型", "モデル")
+add("Whisper Model", "Whisper 模型", "Whisper モデル")
+add("WHISPER MODEL", "Whisper 模型", "Whisper モデル")
+# Variant names stay verbatim: they're the identifiers users match against
+# Hugging Face and Whisper's own docs, so translating them would break lookup.
+for k in ["Tiny", "Base", "Small", "Large v3 Turbo"]:
+    add(k, SAME)
+add("Most accurate, especially on mixed-language speech. Needs a recent chip.",
+    "准确度最高，尤其是多语种混说。需要较新的芯片。",
+    "最も高精度。特に複数言語が混在する音声に強い。新しめのチップが必要です。")
+add("Good balance of accuracy and speed.", "准确度与速度较均衡。", "精度と速度のバランスが良い。")
+add("Fast and light. Noticeably weaker outside English.",
+    "快且占用小。英语以外明显较弱。", "高速・軽量。英語以外は精度が明らかに落ちます。")
+add("Fastest, lowest accuracy. For older devices.",
+    "最快，准确度最低。适合较旧的设备。", "最速・最低精度。古い端末向け。")
+add("≈%@ download", "约 %@ 下载", "約 %@ のダウンロード")
+add("Download", "下载", "ダウンロード")
+add("Downloading %@", "正在下载 %@", "%@ をダウンロード中")
+add("Remove %@", "删除 %@", "%@ を削除")
+add("Remove this model?", "删除这个模型？", "このモデルを削除しますか？")
+add("Remove", "删除", "削除")
+add("Keep", "保留", "残す")
+add("%@ frees %@. You can download it again later.",
+    "删除 %1$@ 可释放 %2$@。以后可以重新下载。",
+    "%1$@ を削除すると %2$@ を解放できます。後で再ダウンロードできます。")
+add("Models on this device", "本机已下载", "この端末のモデル")
+add("STORAGE", "存储占用", "ストレージ")
+add("LAST ERROR", "上次错误", "直近のエラー")
+add("Models are downloaded from Hugging Face once, then everything runs on this device — no audio is ever uploaded. Every model here is multilingual; the bigger ones are markedly better outside English and on speech that switches language mid-sentence, but take longer per phrase. Only models this device can run are listed.",
+    "模型只从 Hugging Face 下载一次，之后全部在本机运行——音频绝不上传。这里的模型都是多语种的；越大的模型在英语以外、以及一句话中途换语言时明显更准，但每句耗时更长。只列出本机跑得动的模型。",
+    "モデルは Hugging Face から一度だけダウンロードされ、その後はすべてこの端末で動作します——音声がアップロードされることはありません。ここにあるモデルはすべて多言語対応で、大きいものほど英語以外や文中で言語が切り替わる音声に強い一方、1 フレーズあたりの処理時間は長くなります。この端末で動作するモデルのみを表示しています。")
+
+# ---------- Voice input · language picker ----------
+add("Voice Language", "语音语言", "音声入力の言語")
+add("DICTATION LANGUAGE", "听写语言", "音声入力の言語")
+add("ALL LANGUAGES", "全部语言", "すべての言語")
+add("Automatic", "自动", "自動")
+add("Auto-detect", "自动检测", "自動検出")
+add("Whisper decides from what it hears", "由 Whisper 根据听到的内容判断", "Whisper が聞こえた内容から判断します")
+add("Checking available languages…", "正在检查可用语言…", "利用できる言語を確認中…")
+add("Keeps English words mixed into the sentence", "句子里夹的英文词也能保留", "文中に混ざる英単語もそのまま保持します")
+add("Languages offered here are the ones this device can transcribe. A language's speech model downloads once on first use, then works offline. Apple's engines handle one language per session — for speech that switches between two, switch Recognition to Whisper.",
+    "这里列出的是本机能转写的语言。某个语言的语音模型首次使用时下载一次，之后离线可用。Apple 的引擎每次会话只处理一种语言——如果你说话会在两种语言之间切换，请把「识别引擎」换成 Whisper。",
+    "ここに表示されるのは、この端末が書き起こせる言語です。各言語の音声モデルは初回利用時に一度ダウンロードされ、以降はオフラインで動作します。Apple のエンジンは 1 セッションに 1 言語のみ扱うため、2 言語を切り替えて話す場合は「認識エンジン」を Whisper に変更してください。")
+add("One model covers around 100 languages. Naming yours transcribes it while keeping the foreign words inside a sentence intact — the English command names and library names you say mid-thought survive. Auto-detect reads the language off the audio instead, which can waver on short or heavily mixed phrases.",
+    "一个模型覆盖约 100 种语言。指定你的语言后，句子里夹的外语词也会原样保留——你说到一半冒出来的英文命令名、库名都不会被改掉。「自动检测」则是让模型从音频里判断语言，遇到很短或混得很厉害的句子可能会摇摆。",
+    "1 つのモデルで約 100 言語をカバーします。自分の言語を指定すると、文中に混ざる外国語もそのまま保持され、話の途中で出てくる英語のコマンド名やライブラリ名も崩れません。「自動検出」は音声から言語を判定するため、短いフレーズや混在の激しいフレーズでは判定が揺れることがあります。")
+
+# ---------- Voice input · overlay + failures ----------
+add("STARTING…", "正在启动…", "開始中…")
+add("LISTENING", "正在听", "認識中")
+add("FINISHING…", "正在收尾…", "仕上げ中…")
+add("INTERRUPTED", "已中断", "中断されました")
+add("DOWNLOADING SPEECH MODEL %lld%%", "正在下载语音模型 %lld%%", "音声モデルをダウンロード中 %lld%%")
+add("LOADING SPEECH MODEL…", "正在加载语音模型…", "音声モデルを読み込み中…")
+add("Insert", "插入", "挿入")
+add("Dismiss", "关闭", "閉じる")
+add("Open Settings", "打开设置", "設定を開く")
+add("Speak — the text lands here first, and Insert types it into the terminal.",
+    "说话吧——文字先落在这里，点「插入」才会输入到终端。",
+    "話してください——テキストはまずここに表示され、「挿入」をタップするとターミナルに入力されます。")
+add("Another app took the microphone before anything was heard.",
+    "还没听到内容，麦克风就被别的应用抢走了。",
+    "何も認識されないうちに、別のアプリがマイクを使用しました。")
+add("Apple · %@", SAME)
+add("Auto", "自动", "自動")
+# The overlay joins finalized and volatile text with a bare space; it's a
+# separator, not prose, and must not gain or lose width in translation.
+add(" ", SAME)
+add("Apple Dictation · %@", "Apple 听写 · %@", "Apple 音声入力 · %@")
+add("Apple Speech · %@", "Apple 语音识别 · %@", "Apple 音声認識 · %@")
+add("Unknown", "未知", "不明")
+add("Microphone access is off. Enable it in Settings → Privacy → Microphone.",
+    "麦克风权限已关闭。请在「设置 → 隐私 → 麦克风」中开启。",
+    "マイクへのアクセスがオフです。「設定 → プライバシー → マイク」で許可してください。")
+add("Speech recognition is off. Enable it in Settings → Privacy → Speech Recognition.",
+    "语音识别权限已关闭。请在「设置 → 隐私 → 语音识别」中开启。",
+    "音声認識がオフです。「設定 → プライバシー → 音声認識」で許可してください。")
+add("Speech recognition is unavailable.", "语音识别不可用。", "音声認識を利用できません。")
+add("Dictation isn't available for %@ on this device.", "本设备不支持 %@ 的听写。", "この端末では %@ の音声入力を利用できません。")
+add("No Whisper model is downloaded yet. Pick one in Settings → Voice Input → Model.",
+    "还没有下载 Whisper 模型。请在「设置 → 语音输入 → 模型」里选一个。",
+    "Whisper モデルがまだダウンロードされていません。「設定 → 音声入力 → モデル」で選んでください。")
+add("The %@ speech model isn't downloaded yet.", "%@ 语音模型还没有下载。", "%@ の音声モデルはまだダウンロードされていません。")
+add("The %@ speech model didn't download completely. Remove it and try again.",
+    "%@ 语音模型没有下载完整。请删除后重试。",
+    "%@ の音声モデルを完全にダウンロードできませんでした。削除してから再試行してください。")
+add("Couldn't download the speech model: %@", "无法下载语音模型：%@", "音声モデルをダウンロードできませんでした：%@")
+add("Couldn't start the microphone: %@", "无法启动麦克风：%@", "マイクを開始できませんでした：%@")
+add("No audio input is available.", "没有可用的音频输入。", "利用できる音声入力がありません。")
+add("Audio format conversion unavailable.", "音频格式转换不可用。", "音声フォーマットの変換を利用できません。")
+add("Audio format conversion failed.", "音频格式转换失败。", "音声フォーマットの変換に失敗しました。")
+add("Audio buffer allocation failed.", "音频缓冲区分配失败。", "音声バッファの確保に失敗しました。")
+add("16 kHz mono audio is unavailable on this device.",
+    "本设备无法提供 16 kHz 单声道音频。", "この端末では 16 kHz モノラル音声を利用できません。")
+add("Start voice input", "开始语音输入", "音声入力を開始")
+add("Stop voice input", "停止语音输入", "音声入力を停止")
+add("Voice input", "语音输入", "音声入力")
+add("Accept suggestion and send", "接受建议并发送", "提案を確定して送信")
+add("Return", "回车", "Return")
+
+# ---------- Behavior ----------
+add("Keyboard on Open", "打开时弹出键盘", "開いたらキーボードを表示")
+add("Raise the keyboard as soon as a terminal opens, instead of after you tap it",
+    "打开终端就弹出键盘，而不是等你点一下之后",
+    "タップを待たず、ターミナルを開いた時点でキーボードを表示します")
 # Notification info sheet
 add("Bell = attention", "响铃 = 需要关注", "ベル = 要注意")
 add("When a tmux pane rings the terminal bell (BEL) — which Claude Code and most CLIs emit when they finish or need input — Moshpit posts a local notification and flips the Vibe Island to “needs attention.”",
@@ -357,18 +485,117 @@ def entry(key, spec):
 
 
 def write_catalog(path, table):
-    catalog = {
-        "sourceLanguage": "en",
-        "strings": {k: entry(k, v) for k, v in sorted(table.items())},
-        "version": "1.0",
-    }
+    """Merge the curated table INTO the existing catalog.
+
+    Merge, not overwrite. Two things write this file: this script (the curated
+    translations below) and Xcode, which appends every key it extracts from the
+    source as you build in the IDE. A wholesale rewrite here deleted everything
+    Xcode had found — silently, since the file is generated and nobody reads the
+    diff — and the next IDE build put the keys back untranslated, which is why
+    this file was permanently dirty. Curated entries win; anything else is left
+    exactly as it was.
+    """
+    existing = {}
+    if os.path.exists(path):
+        try:
+            with open(path, encoding="utf-8") as f:
+                existing = json.load(f).get("strings") or {}
+        except (json.JSONDecodeError, OSError) as exc:
+            raise SystemExit(f"{path}: refusing to overwrite unreadable catalog ({exc})")
+
+    merged = dict(existing)
+    for key, spec in table.items():
+        merged[key] = entry(key, spec)
+
+    catalog = {"sourceLanguage": "en", "strings": merged, "version": "1.0"}
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
         json.dump(catalog, f, ensure_ascii=False, indent=2, sort_keys=True)
         f.write("\n")
-    print(f"{path}: {len(table)} keys")
+    kept = len(merged) - len(table)
+    print(f"{path}: {len(table)} curated + {kept} kept = {len(merged)} keys")
+
+
+def translated(loc):
+    """Does this catalog entry carry a real translation for a language?"""
+    unit_ = loc.get("stringUnit") or {}
+    if unit_.get("value"):
+        return True
+    # Plurals keep their values one level down, under variations.
+    return bool(loc.get("variations"))
+
+
+def check(paths):
+    """Report every string the app needs that has no zh-Hans / ja translation.
+
+    Reads the keys the compiler actually extracted (`.stringsdata` emitted by
+    SWIFT_EMIT_LOC_STRINGS) rather than grepping the source, so interpolation
+    is already normalized to %@ / %lld and nothing is missed by a regex that
+    didn't anticipate a call shape.
+    """
+    import glob
+    import plistlib
+
+    def load_stringsdata(path):
+        """Xcode writes these as JSON today and as a binary plist historically."""
+        with open(path, "rb") as f:
+            head = f.read(8)
+        try:
+            if head.startswith(b"bplist"):
+                with open(path, "rb") as f:
+                    return plistlib.load(f)
+            with open(path, encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return None
+
+    needed = {}
+    pattern = os.path.expanduser(
+        "~/Library/Developer/Xcode/DerivedData/Moshpit-*/Build/Intermediates.noindex"
+        "/*/Debug-*/*/Objects-normal/*/*.stringsdata")
+    for found in glob.glob(pattern):
+        if "AppShortcuts" in found:
+            continue
+        data = load_stringsdata(found)
+        if data is None:
+            continue
+        source = data.get("source", "")
+        if "/code/moshi/" not in source:
+            continue
+        for entries in (data.get("tables") or {}).values():
+            for item in entries:
+                if item.get("key"):
+                    needed[item["key"]] = source.split("/code/moshi/")[-1]
+    if not needed:
+        raise SystemExit("check: no .stringsdata found — build the app first")
+
+    have = {}
+    for path in paths:
+        if not os.path.exists(path):
+            continue
+        with open(path, encoding="utf-8") as f:
+            have.update(json.load(f).get("strings") or {})
+
+    gaps = []
+    for key, source in sorted(needed.items()):
+        locs = (have.get(key) or {}).get("localizations") or {}
+        missing = [lang for lang in ("zh-Hans", "ja")
+                   if not translated(locs.get(lang) or {})]
+        if missing:
+            gaps.append((key, source, missing))
+
+    for key, source, missing in gaps:
+        print(f"{source}: {'/'.join(missing)}\t{key}")
+    print(f"\n{len(needed)} keys used, {len(gaps)} without a full translation")
+    return 1 if gaps else 0
 
 
 root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-write_catalog(os.path.join(root, "Moshpit/Resources/Localizable.xcstrings"), S)
-write_catalog(os.path.join(root, "MoshpitIsland/Localizable.xcstrings"), ISLAND)
+CATALOGS = [os.path.join(root, "Moshpit/Resources/Localizable.xcstrings"),
+            os.path.join(root, "MoshpitIsland/Localizable.xcstrings")]
+
+if "--check" in sys.argv:
+    raise SystemExit(check(CATALOGS))
+
+write_catalog(CATALOGS[0], S)
+write_catalog(CATALOGS[1], ISLAND)
