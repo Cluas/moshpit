@@ -40,6 +40,16 @@ fi
 git diff --quiet HEAD 2>/dev/null || \
   echo "⚠ working tree is dirty — this archive will not match commit $(git rev-parse --short HEAD)"
 
+# Tester notes are part of shipping a build, not an afterthought: TestFlight
+# asks for "What to Test" per build, and a build uploaded without them wastes
+# testers on things we already know are broken. Warned rather than enforced —
+# a local archive you never upload doesn't need them.
+NOTES="docs/testflight/build-$BUILD.md"
+if [ ! -f "$NOTES" ]; then
+  echo "⚠ no tester notes at $NOTES — write them before uploading to TestFlight"
+  echo "  (start from the previous build's: $(ls -1 docs/testflight/build-*.md 2>/dev/null | tail -1 || echo 'none yet'))"
+fi
+
 echo "▶ Archiving Release (build $BUILD, team $TEAM)…"
 rm -rf "$ARCHIVE" "$EXPORT_DIR"
 mkdir -p build
@@ -98,3 +108,8 @@ echo "  Upload with either:"
 echo "    open $ARCHIVE          # Xcode Organizer ▸ Distribute App"
 echo "    open -a Transporter $EXPORT_DIR/Moshpit.ipa   # drag-and-drop uploader"
 echo "  (altool --upload-app is gone since Xcode 15 — don't reach for it.)"
+if [ -f "$NOTES" ]; then
+  echo
+  echo "  Tester notes for this build (paste into TestFlight ▸ What to Test):"
+  echo "    $NOTES"
+fi
