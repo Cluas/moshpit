@@ -173,6 +173,21 @@ final class AppSettings {
         set { withMutation(keyPath: \.lockScreenDetailEnabled) { defaults.set(newValue, forKey: "moshpit.settings.lockScreenDetail") } }
     }
 
+    /// Raise the software keyboard the moment a terminal opens.
+    ///
+    /// Off by default: opening a session is usually to read it, and a keyboard
+    /// that appears uninvited covers most of the scrollback you came for.
+    /// Tapping the terminal raises it, so the cost of leaving it down is one
+    /// tap — where the old always-on behavior cost a dismissal every time.
+    var raiseKeyboardOnOpen: Bool {
+        get { access(keyPath: \.raiseKeyboardOnOpen); return get("moshpit.settings.raiseKeyboardOnOpen", false) }
+        set {
+            withMutation(keyPath: \.raiseKeyboardOnOpen) {
+                defaults.set(newValue, forKey: "moshpit.settings.raiseKeyboardOnOpen")
+            }
+        }
+    }
+
     // MARK: VOICE INPUT
 
     /// Shows the mic key on the terminal shortcut bar. On by default — the

@@ -69,6 +69,25 @@ struct TerminalShortcutEncodingTests {
         #expect(sc.encodedBytes() == Data([0x61, 0x09, 0x62, 0x0D, 0x1B]))
     }
 
+    @Test("Return encodes to CR")
+    func returnKey() throws {
+        #expect(combo([], "return").encodedBytes() == Data([0x0D]))
+        #expect(combo([], "enter").encodedBytes() == Data([0x0D]))
+    }
+
+    @Test("The Claude Code two-step sends Tab then Return, in that order")
+    func tabThenEnter() throws {
+        // Accepting a suggested prompt is Tab followed by Return, and the
+        // order is the whole point — the PTY delivers a single write's bytes
+        // in sequence, so one chip can do both.
+        let sc = try #require(ShortcutStore.builtins.first { $0.chipLabel == "⇥⏎" })
+        #expect(sc.kind == .text)
+        #expect(sc.encodedBytes() == Data([0x09, 0x0D]))
+        // Must NOT append its own CR on top — that would submit twice.
+        #expect(sc.appendReturn == false)
+        #expect(sc.isBuiltin)
+    }
+
     @Test("ctrl (like dpad/scroll) has no bytes of its own — resolved by the caller")
     func ctrlKindEncodesNothing() throws {
         var sc = TerminalShortcut()

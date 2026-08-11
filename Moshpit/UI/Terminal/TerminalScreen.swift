@@ -35,8 +35,37 @@ struct TerminalScreen: View {
     /// something a stray tap should trigger.
     @State private var showProtocolSwitchConfirm = false
     @State private var showMoshDiagnostics = false
-    /// Keyboard collapsed via the bar toggle (terminal gives up first responder).
-    @State private var keyboardDismissed = false
+    /// Whether the user has asked for the keyboard yet in this session.
+    ///
+    /// Opening a session is usually to *read* it, and a keyboard that appears
+    /// uninvited covers most of the scrollback you came for — so nothing is
+    /// raised until asked. The third state is the load-bearing one: "not asked"
+    /// cannot be represented as keyboard-down, because down actively *resigns*
+    /// first responder and would undo the tap the user just made on the
+    /// terminal to start typing. See ``TerminalFocusPolicy``.
+    ///
+    /// Starts `.unasked` and is promoted in `.task` when the setting asks for
+    /// it — `AppSettings` arrives through the environment, which `init` cannot
+    /// read.
+    @State private var keyboardIntent: KeyboardIntent = .unasked
+
+    private enum KeyboardIntent {
+        /// Screen just opened; nobody has asked either way.
+        case unasked
+        case up
+        case down
+    }
+
+    /// How the hosted terminal should treat first responder right now.
+    private var focusPolicy: TerminalFocusPolicy {
+        // A sheet must never let the pane grab the keyboard back underneath it.
+        if anySheetOpen { return .resign }
+        switch keyboardIntent {
+        case .unasked: return .allow
+        case .up: return .take
+        case .down: return .resign
+        }
+    }
     /// Packages to offer in the Install Assist sheet; non-nil presents it.
     @State private var installPackages: [String]?
     /// Pane claimed from `router.paneRequest` for this connection, captured
@@ -300,12 +329,15 @@ struct TerminalScreen: View {
             // "I want to type" so the toggle state can't fight it: with the flag
             // stale, the next snapshot-driven re-render force-resigned the
             // keyboard mid-word.
-            keyboardDismissed = false
+            keyboardIntent = .up
         }
         .navigationBarHidden(true)
         .preferredColorScheme(.dark)
         .safeAreaInset(edge: .bottom, spacing: 0) { bottomAccessory }
-        .task { await connectAndAttach() }
+        .task {
+            if settings.raiseKeyboardOnOpen { keyboardIntent = .up }
+            await connectAndAttach()
+        }
         .onDisappear {
             // Back to Home keeps the connection alive but stops rendering — hand
             // our phone-grid window pin back so a desktop client sharing those
@@ -620,7 +652,7 @@ struct TerminalScreen: View {
             if let controller = active.tmuxController {
                 if controller.snapshot.isAttached {
                     TmuxPaneSplitView(controller: controller,
-                                      acceptsFocus: !anySheetOpen && !keyboardDismissed)
+                                      focusPolicy: focusPolicy)
                 } else {
                     // Unattached. Distinguish the two reasons (the design's
                     // "fix the mis-diagnosis"): tmux genuinely absent → offer
@@ -652,7 +684,7 @@ struct TerminalScreen: View {
                         cursorColorId: effectiveCursorColorId,
                         cursorBlink: settings.cursorBlink,
                         coordinator: active.coordinator,
-                        acceptsFocus: !anySheetOpen && !keyboardDismissed)
+                        focusPolicy: focusPolicy)
                         // SwiftTerminalView.updateUIView is deliberately "cosmetic
                         // only" (see its doc) — it never re-wires the underlying
                         // TerminalView's delegate to a NEW coordinator. Reconnecting
@@ -888,8 +920,8 @@ struct TerminalScreen: View {
                 ctrlArmed: ctrlArmed,
                 onArrow: sendArrow,
                 onScroll: scrollHistory,
-                keyboardDown: keyboardDismissed,
-                onToggleKeyboard: { keyboardDismissed.toggle() },
+                keyboardDown: keyboardIntent != .up,
+                onToggleKeyboard: { keyboardIntent = keyboardIntent == .up ? .down : .up },
                 micActive: dictation != nil,
                 onMic: settings.voiceInputEnabled ? { toggleDictation() } : nil)
         }
@@ -945,9 +977,9 @@ struct TerminalScreen: View {
 /// swaps which persistent `TerminalView` is shown, keyed by `activePaneId`.
 struct TmuxPaneSplitView: View {
     let controller: TmuxSessionController
-    /// False while a navigation sheet is up — the pane must not grab the
-    /// keyboard back (it would cover the sheet).
-    var acceptsFocus: Bool = true
+    /// How the pane should treat first responder — `.resign` while a
+    /// navigation sheet is up, so it can't grab the keyboard back over it.
+    var focusPolicy: TerminalFocusPolicy = .take
 
     var body: some View {
         let snapshot = controller.snapshot
@@ -955,7 +987,7 @@ struct TmuxPaneSplitView: View {
             if let paneId = snapshot.activePaneId ?? snapshot.activePanes.first?.id {
                 PaneTerminalHost(terminal: controller.terminalView(for: paneId),
                                  coordinator: controller.coordinator(for: paneId),
-                                 focused: acceptsFocus)
+                                 focusPolicy: focusPolicy)
                     // Keyed on the CONTROLLER's identity too, not just paneId:
                     // a reconnect mints a brand-new TmuxSessionController (and
                     // fresh per-pane terminals/coordinators) even when the
@@ -1009,13 +1041,13 @@ struct PaneTerminalHost: UIViewRepresentable {
     /// The pane's coordinator — hooked to the container so the keyboard
     /// frame-lock covers tmux panes too. nil-safe for previews/tests.
     var coordinator: SwiftTerminalView.Coordinator?
-    var focused: Bool = true
+    var focusPolicy: TerminalFocusPolicy = .take
 
     func makeUIView(context: Context) -> TerminalHostContainer {
         // The scroll/zoom gesture is installed by the coordinator's attach(to:)
         // when the controller mints this pane's terminal, so it's already on by
         // the time we host it here — no need (and idempotent if it weren't).
-        if focused {
+        if focusPolicy == .take {
             DispatchQueue.main.async { [weak terminal] in
                 terminal?.becomeFirstResponder()
             }
@@ -1038,14 +1070,23 @@ struct PaneTerminalHost: UIViewRepresentable {
 
     func updateUIView(_ uiView: TerminalHostContainer, context: Context) {
         guard let terminal = uiView.terminalView else { return }
-        if focused, !terminal.isFirstResponder, terminal.window != nil {
-            DispatchQueue.main.async { [weak terminal] in
-                terminal?.becomeFirstResponder()
+        switch focusPolicy {
+        case .take:
+            if !terminal.isFirstResponder, terminal.window != nil {
+                DispatchQueue.main.async { [weak terminal] in
+                    terminal?.becomeFirstResponder()
+                }
             }
-        } else if !focused, terminal.isFirstResponder {
-            // Keyboard dismissed (toggle) or a sheet is up — drop the keyboard.
-            DispatchQueue.main.async { [weak terminal] in
-                terminal?.resignFirstResponder()
+        case .allow:
+            // Nobody has asked for the keyboard: leave first responder exactly
+            // as the user left it, so a tap on the pane can raise it.
+            break
+        case .resign:
+            if terminal.isFirstResponder {
+                // Keyboard put away (toggle) or a sheet is up — drop it.
+                DispatchQueue.main.async { [weak terminal] in
+                    terminal?.resignFirstResponder()
+                }
             }
         }
     }

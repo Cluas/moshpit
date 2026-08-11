@@ -421,6 +421,17 @@ final class ShortcutStore {
             sc.inToolbar = inBar
             return sc
         }
+        func text(_ chip: String, _ name: String, payload: String,
+                  inBar: Bool = false) -> TerminalShortcut {
+            var sc = TerminalShortcut()
+            sc.kind = .text
+            sc.payload = payload
+            sc.chipLabel = chip
+            sc.summary = name
+            sc.isBuiltin = true
+            sc.inToolbar = inBar
+            return sc
+        }
         func special(_ kind: ShortcutKind, _ chip: String, _ name: String, inBar: Bool) -> TerminalShortcut {
             var sc = TerminalShortcut()
             sc.kind = kind
@@ -462,6 +473,19 @@ final class ShortcutStore {
             // because it was previously always visible — taking it away
             // silently on upgrade would read as the feature disappearing.
             special(.mic, "mic", "Voice input", inBar: true),
+            // Return, and the Claude Code two-step. Tab accepts whatever
+            // Claude Code is suggesting and Return sends it, which is two taps
+            // in the one place you least want them — so `⇥⏎` sends 0x09 0x0D
+            // as a single write. A `.text` payload rather than a new kind:
+            // `unescape` already turns these into exactly those two bytes, and
+            // the PTY delivers them in order.
+            //
+            // Both start outside the bar. Return is reachable on the software
+            // keyboard, and ⇥⏎ only means anything to an agent that suggests
+            // prompts — neither earns a default slot on a row that already has
+            // to fit on a phone.
+            combo("⏎", "Return", key: "return", inBar: false),
+            text("⇥⏎", "Accept suggestion and send", payload: #"\t\r"#),
             combo("^D", "End of file", mods: [.ctrl], key: "d", inBar: false),
             combo("^R", "Reverse search", mods: [.ctrl], key: "r", inBar: false),
             // Claude Code daily drivers: jump the transcript to the live end,

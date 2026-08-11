@@ -2,6 +2,25 @@ import SwiftUI
 import UIKit
 import SwiftTerm
 
+/// What a hosted terminal should do about first-responder status.
+///
+/// Three states rather than a Bool because "should hold the keyboard" and "may
+/// hold the keyboard" are different questions, and answering both with one flag
+/// made tapping the terminal do nothing: `false` didn't merely decline to
+/// focus, it *resigned* on every `updateUIView`, so a tap that focused the view
+/// was undone by the very next repaint.
+enum TerminalFocusPolicy {
+    /// Take first responder now, and take it back if something steals it.
+    case take
+    /// Neither take nor surrender. A tap on the terminal focuses it, and
+    /// nothing drags it back down — this is what "the keyboard hasn't been
+    /// asked for yet" has to mean.
+    case allow
+    /// Give it up: a sheet is covering the screen, or the user put the
+    /// keyboard away on purpose.
+    case resign
+}
+
 /// Hosts a ``TerminalView`` and owns the ONLY code allowed to set its frame.
 ///
 /// ### Why the terminal's frame is managed manually
@@ -94,8 +113,8 @@ struct SwiftTerminalView: UIViewRepresentable {
     /// reference and route output through ``Coordinator/feed(data:)``.
     var coordinator: Coordinator
 
-    /// When false the terminal gives up the keyboard (the dismiss toggle).
-    var acceptsFocus: Bool = true
+    /// What to do about the keyboard. See ``TerminalFocusPolicy``.
+    var focusPolicy: TerminalFocusPolicy = .take
 
     func makeCoordinator() -> Coordinator {
         // SwiftUI calls this once per representable identity. Return the
@@ -132,7 +151,7 @@ struct SwiftTerminalView: UIViewRepresentable {
             shape: cursorShape, colorId: cursorColorId, blink: cursorBlink, to: terminalView)
         // Pop the system keyboard as soon as the terminal is on screen — the
         // app's shortcut bar rides above it via safeAreaInset.
-        if acceptsFocus {
+        if focusPolicy == .take {
             DispatchQueue.main.async { [weak terminalView] in
                 terminalView?.becomeFirstResponder()
             }
@@ -161,10 +180,17 @@ struct SwiftTerminalView: UIViewRepresentable {
             shape: cursorShape, colorId: cursorColorId, blink: cursorBlink, to: terminal)
 
         // Honor the keyboard-dismiss toggle.
-        if acceptsFocus, !terminal.isFirstResponder, terminal.window != nil {
-            DispatchQueue.main.async { [weak terminal] in terminal?.becomeFirstResponder() }
-        } else if !acceptsFocus, terminal.isFirstResponder {
-            DispatchQueue.main.async { [weak terminal] in terminal?.resignFirstResponder() }
+        switch focusPolicy {
+        case .take:
+            if !terminal.isFirstResponder, terminal.window != nil {
+                DispatchQueue.main.async { [weak terminal] in terminal?.becomeFirstResponder() }
+            }
+        case .allow:
+            break
+        case .resign:
+            if terminal.isFirstResponder {
+                DispatchQueue.main.async { [weak terminal] in terminal?.resignFirstResponder() }
+            }
         }
     }
 

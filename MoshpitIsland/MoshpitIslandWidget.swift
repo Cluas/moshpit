@@ -135,7 +135,14 @@ private struct LockScreenView: View {
                 StaleHint()
             }
         }
-        .padding(14)
+        // More top and bottom than sides: the system draws this on a
+        // translucent card whose edge sits right against the text, and the
+        // vertical crowding is what reads as unfinished. Affordable only
+        // because the trailing agent rows above collapsed to one line each —
+        // padding added on its own would have pushed more content under the
+        // clip instead of framing it.
+        .padding(.horizontal, 14)
+        .padding(.vertical, 18)
     }
 
     private var summary: String {
@@ -157,17 +164,34 @@ private struct AgentRow: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 10) {
                 StateDot(state: agent.state)
-                VStack(alignment: .leading, spacing: 2) {
+                if compact {
+                    // Name and location share ONE line for the trailing agents.
+                    // Stacking them cost ~16pt each, and this activity is
+                    // already at the height iOS starts clipping (see
+                    // LockScreenView) — that budget buys the top and bottom
+                    // padding instead, which every row benefits from.
                     Text(displayCommand(agent))
-                        .font(.system(size: 14, weight: .semibold, design: .monospaced))
+                        .font(.system(size: 13, weight: .semibold, design: .monospaced))
                         .foregroundStyle(.white)
                         .lineLimit(1)
                     Text(agent.location)
-                        .font(.system(size: 11, design: .monospaced))
-                        .foregroundStyle(.white.opacity(0.55))
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundStyle(.white.opacity(0.45))
                         .lineLimit(1)
+                        .layoutPriority(-1)
+                } else {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(displayCommand(agent))
+                            .font(.system(size: 14, weight: .semibold, design: .monospaced))
+                            .foregroundStyle(.white)
+                            .lineLimit(1)
+                        Text(agent.location)
+                            .font(.system(size: 11, design: .monospaced))
+                            .foregroundStyle(.white.opacity(0.55))
+                            .lineLimit(1)
+                    }
                 }
-                Spacer()
+                Spacer(minLength: 4)
                 TrailingStatus(agent: agent)
             }
             // What the agent is doing / asking (hook @moshpit_title) — amber when

@@ -69,6 +69,10 @@ struct SettingsScreen: View {
                                 label: "Keep Connections Alive",
                                 subtitle: "Send keepalive pings so the server does not drop idle connections",
                                 isOn: $settings.keepConnectionsAlive)
+                            ToggleRow(
+                                label: "Keyboard on Open",
+                                subtitle: "Raise the keyboard as soon as a terminal opens, instead of after you tap it",
+                                isOn: $settings.raiseKeyboardOnOpen)
                         }
 
                         moshGroup(settings: $settings)
