@@ -17,8 +17,13 @@ struct WhisperModelOption: Identifiable, Equatable, Sendable {
     let approximateBytes: Int64
     /// Exact bytes on disk, or nil when the variant isn't installed.
     let installedBytes: Int64?
+    /// Bytes of an interrupted download waiting in the resume cache. Zero when
+    /// there's nothing to carry on from.
+    let partialBytes: Int64
 
     var isInstalled: Bool { installedBytes != nil }
+    /// Started but not finished — the row offers Resume rather than Download.
+    var isPartial: Bool { !isInstalled && partialBytes > 0 }
 }
 
 enum WhisperModelFailure: Error, Equatable, LocalizedError {
@@ -210,7 +215,8 @@ actor WhisperModelStore {
                 name: entry.name,
                 summary: entry.summary,
                 approximateBytes: entry.bytes,
-                installedBytes: isInstalled(entry.id) ? directorySize(folder(for: entry.id)) : nil)
+                installedBytes: isInstalled(entry.id) ? directorySize(folder(for: entry.id)) : nil,
+                partialBytes: isInstalled(entry.id) ? 0 : partialBytes(for: entry.id))
         }
     }
 
@@ -230,6 +236,49 @@ actor WhisperModelStore {
 
     nonisolated static func displayName(for variant: String) -> String {
         curated.first(where: { $0.id == variant })?.name ?? variant
+    }
+
+    /// Bytes of a half-finished download sitting in the resume cache.
+    ///
+    /// The Hub downloader appends to `<file>.<etag>.incomplete` and resumes with
+    /// a `Range: bytes=N-` header, so an interrupted transfer costs nothing but
+    /// the time already spent — provided nothing deletes these files. Surfacing
+    /// the number is what turns "it broke, start over" into "carry on".
+    nonisolated static func partialBytes(for variant: String) -> Int64 {
+        // Both halves, because a repo is fetched file by file: the one in
+        // flight sits in the resume cache as `.incomplete`, and each finished
+        // file MOVES out of that cache into the model folder. Counting only the
+        // cache made the figure fall back every time a file completed — progress
+        // appearing to go backwards is worse than no figure at all.
+        logicalSize(of: resumeCache(for: variant)) { $0.pathExtension == "incomplete" }
+            + logicalSize(of: folder(for: variant)) { _ in true }
+    }
+
+    /// Sum of logical file sizes under `url`, for files passing `include`.
+    ///
+    /// Logical, not allocated: this feeds a download-progress readout, and
+    /// allocated blocks overstate it (measured 157 MB against 140 MB actually
+    /// transferred). `directorySize` deliberately keeps using allocated,
+    /// because that one answers "how much storage is this costing me".
+    private nonisolated static func logicalSize(
+        of url: URL, include: (URL) -> Bool) -> Int64 {
+        guard let walker = FileManager.default.enumerator(
+            at: url, includingPropertiesForKeys: [.fileSizeKey]) else { return 0 }
+        var total: Int64 = 0
+        for case let file as URL in walker where include(file) {
+            let values = try? file.resourceValues(forKeys: [.fileSizeKey])
+            total += Int64(values?.fileSize ?? 0)
+        }
+        return total
+    }
+
+    /// Where the Hub downloader keeps this variant's partial files + metadata.
+    nonisolated static func resumeCache(for variant: String) -> URL {
+        downloadBase
+            .appendingPathComponent("models", isDirectory: true)
+            .appendingPathComponent(repo, isDirectory: true)
+            .appendingPathComponent(".cache/huggingface/download", isDirectory: true)
+            .appendingPathComponent(variant, isDirectory: true)
     }
 
     nonisolated static func directorySize(_ url: URL) -> Int64 {
@@ -260,16 +309,35 @@ actor WhisperModelStore {
     /// its own, so it lands as a single step rather than a fake ramp).
     func install(variant: String, onProgress: @escaping @Sendable (Double) -> Void) async throws {
         if !Self.isInstalled(variant) {
-            do {
-                _ = try await WhisperKit.download(
-                    variant: variant,
-                    downloadBase: Self.downloadBase,
-                    from: Self.repo,
-                    progressCallback: { progress in
-                        onProgress(min(0.9, progress.fractionCompleted * 0.9))
-                    })
-            } catch {
-                throw WhisperModelFailure.download(error.localizedDescription)
+            // Two attempts, because the first one after a hard kill reliably
+            // fails and the second reliably works.
+            //
+            // The Hub downloader's background-session identifier is hardcoded
+            // in the library, so it is process-wide and outlives the app. When
+            // iOS relaunches after a kill, the new session adopts the dead
+            // one's state ("will reconnect to existing state by requesting
+            // pending callbacks") and the in-flight task dies with
+            // NSURLErrorBackgroundSessionWasDisconnected (-997). Measured: the
+            // immediate retry gets a clean session and resumes from the
+            // `.incomplete` file, so this costs a moment rather than a restart.
+            var lastError: Error?
+            for attempt in 1 ... 2 {
+                do {
+                    try await downloadOnce(variant: variant, onProgress: onProgress)
+                    lastError = nil
+                    break
+                } catch is CancellationError {
+                    throw CancellationError()
+                } catch {
+                    lastError = error
+                    if attempt == 1 {
+                        Log.voice.error(
+                            "whisper download attempt 1 failed, retrying: \(error.localizedDescription)")
+                    }
+                }
+            }
+            if let lastError {
+                throw WhisperModelFailure.download(lastError.localizedDescription)
             }
             guard Self.isInstalled(variant) else {
                 throw WhisperModelFailure.incomplete(Self.displayName(for: variant))
@@ -280,13 +348,54 @@ actor WhisperModelStore {
         onProgress(1)
     }
 
+    private func downloadOnce(variant: String,
+                              onProgress: @escaping @Sendable (Double) -> Void) async throws {
+        _ = try await WhisperKit.download(
+            variant: variant,
+            downloadBase: Self.downloadBase,
+            // Deliberately NOT a background session, despite that being the
+            // obvious fix for "keep downloading while the user is elsewhere".
+            //
+            // The Hub downloader hardcodes its background-session identifier,
+            // so the session is process-wide and outlives the app. Measured: if
+            // the app is killed mid-download, the next launch's session adopts
+            // the dead one's state, the first task dies with
+            // NSURLErrorBackgroundSessionWasDisconnected (-997), and every
+            // subsequent task on that identifier *hangs indefinitely* rather
+            // than failing — no progress, no error, nothing to retry. A wedged
+            // download that reports nothing is worse than one that stopped.
+            //
+            // What makes stopping survivable instead is the resume cache: the
+            // partial `.incomplete` file persists, `WhisperDownloadCenter`
+            // outlives the screen, and Resume continues from the exact byte via
+            // a `Range` request. Interruption costs the seconds since the last
+            // byte, not the download.
+            useBackgroundSession: false,
+            from: Self.repo,
+            progressCallback: { progress in
+                onProgress(min(0.9, progress.fractionCompleted * 0.9))
+            })
+    }
+
     /// Delete a variant's weights. Unloads it first when it's the live model,
     /// so CoreML isn't holding files that just vanished underneath it.
+    ///
+    /// Also clears the resume cache. Remove means remove: leaving the
+    /// `.incomplete` files behind would keep charging the user disk for a
+    /// download they just discarded, and Storage would under-report it.
     func remove(variant: String) throws {
         if loaded?.variant == variant { loaded = nil }
-        let folder = Self.folder(for: variant)
-        guard FileManager.default.fileExists(atPath: folder.path) else { return }
-        try FileManager.default.removeItem(at: folder)
+        for folder in [Self.folder(for: variant), Self.resumeCache(for: variant)]
+        where FileManager.default.fileExists(atPath: folder.path) {
+            try FileManager.default.removeItem(at: folder)
+        }
+    }
+
+    /// Throw away a half-finished download without touching installed models.
+    func discardPartial(variant: String) throws {
+        let cache = Self.resumeCache(for: variant)
+        guard FileManager.default.fileExists(atPath: cache.path) else { return }
+        try FileManager.default.removeItem(at: cache)
     }
 
     /// Drop the loaded model. Called when dictation is disabled or the user

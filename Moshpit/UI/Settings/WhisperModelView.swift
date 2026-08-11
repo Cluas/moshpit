@@ -10,11 +10,12 @@ struct WhisperModelView: View {
     @Environment(AppSettings.self) private var settings
 
     @State private var options: [WhisperModelOption] = []
-    /// Variant → 0…1 while a download is in flight.
-    @State private var progress: [String: Double] = [:]
-    @State private var tasks: [String: Task<Void, Never>] = [:]
-    @State private var failure: String?
     @State private var pendingDelete: WhisperModelOption?
+
+    /// Downloads are owned app-wide, not by this screen — see
+    /// ``WhisperDownloadCenter``. Leaving the screen (or the app) must not
+    /// interrupt a several-hundred-megabyte transfer.
+    private var downloads: WhisperDownloadCenter { .shared }
 
     var body: some View {
         @Bindable var settings = settings
@@ -33,7 +34,7 @@ struct WhisperModelView: View {
                         }
                     }
 
-                    if let failure {
+                    if let failure = downloads.failure.values.first(where: { !$0.isEmpty }) {
                         FormGroup(title: "LAST ERROR") {
                             Text(failure)
                                 .font(Face.text(12))
@@ -58,12 +59,8 @@ struct WhisperModelView: View {
         .navigationBarTitleDisplayMode(.inline)
         .preferredColorScheme(.dark)
         .onAppear(perform: reload)
-        .onDisappear {
-            // Leaving the screen must not orphan a 950 MB transfer that
-            // nothing is left to report on.
-            tasks.values.forEach { $0.cancel() }
-            tasks.removeAll()
-        }
+        // Install state lives on disk, so re-read it whenever a download ends.
+        .onChange(of: downloads.completions) { _, _ in reload() }
         .alert("Remove this model?", isPresented: deleteBinding, presenting: pendingDelete) { option in
             Button("Remove", role: .destructive) { remove(option) }
             Button("Keep", role: .cancel) {}
@@ -77,7 +74,7 @@ struct WhisperModelView: View {
     @ViewBuilder
     private func modelRow(_ option: WhisperModelOption, settings: AppSettings) -> some View {
         let isSelected = selectedVariant == option.id
-        let inFlight = progress[option.id]
+        let inFlight = downloads.progress[option.id]
 
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 10) {
@@ -88,11 +85,12 @@ struct WhisperModelView: View {
                         .foregroundStyle(Ink.meta)
                         .fixedSize(horizontal: false, vertical: true)
                         .multilineTextAlignment(.leading)
-                    Text(option.isInstalled
-                        ? format(option.installedBytes ?? 0)
-                        : String(localized: "≈\(format(option.approximateBytes)) download"))
+                    // While a download is interrupted, say how far it got —
+                    // that number is the difference between "start over" and
+                    // "carry on", and the transfer resumes mid-file.
+                    Text(sizeLine(option))
                         .font(Face.mono(10))
-                        .foregroundStyle(Ink.tertiary)
+                        .foregroundStyle(option.isPartial ? Ink.accent : Ink.tertiary)
                 }
                 Spacer(minLength: 8)
                 trailing(option, isSelected: isSelected, inFlight: inFlight, settings: settings)
@@ -117,12 +115,10 @@ struct WhisperModelView: View {
     private func trailing(_ option: WhisperModelOption, isSelected: Bool,
                           inFlight: Double?, settings: AppSettings) -> some View {
         if inFlight != nil {
-            Button {
-                tasks[option.id]?.cancel()
-                tasks[option.id] = nil
-                progress[option.id] = nil
-            } label: {
-                Text("Cancel").font(Face.text(12, .semibold)).foregroundStyle(Ink.secondary)
+            // Pause, not cancel: the bytes already on disk stay, so tapping
+            // Resume continues from where this stopped.
+            Button { downloads.pause(option.id) } label: {
+                Text("Pause").font(Face.text(12, .semibold)).foregroundStyle(Ink.secondary)
             }
             .buttonStyle(.plain)
         } else if option.isInstalled {
@@ -143,15 +139,26 @@ struct WhisperModelView: View {
                 .accessibilityLabel("Remove \(option.name)")
             }
         } else {
-            Button { download(option, settings: settings) } label: {
-                Text("Download")
-                    .font(Face.text(12, .semibold))
-                    .foregroundStyle(Color(hex: "090B0D"))
-                    .padding(.horizontal, 12)
-                    .frame(height: 28)
-                    .background(Ink.accent, in: Capsule(style: .continuous))
+            HStack(spacing: 12) {
+                if option.isPartial {
+                    Button { Task { await downloads.discard(option.id) } } label: {
+                        Image(systemName: "trash")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(Ink.warn)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Discard the partial download of \(option.name)")
+                }
+                Button { download(option, settings: settings) } label: {
+                    Text(option.isPartial ? "Resume" : "Download")
+                        .font(Face.text(12, .semibold))
+                        .foregroundStyle(Color(hex: "090B0D"))
+                        .padding(.horizontal, 12)
+                        .frame(height: 28)
+                        .background(Ink.accent, in: Capsule(style: .continuous))
+                }
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
         }
     }
 
@@ -176,30 +183,22 @@ struct WhisperModelView: View {
         options = WhisperModelStore.catalog()
     }
 
+    /// What the size line says, which depends on how far along we are.
+    private func sizeLine(_ option: WhisperModelOption) -> String {
+        if option.isInstalled { return format(option.installedBytes ?? 0) }
+        if option.isPartial {
+            return String(localized: "\(format(option.partialBytes)) of ≈\(format(option.approximateBytes)) — paused")
+        }
+        return String(localized: "≈\(format(option.approximateBytes)) download")
+    }
+
     private func download(_ option: WhisperModelOption, settings: AppSettings) {
-        guard tasks[option.id] == nil else { return }
-        failure = nil
-        progress[option.id] = 0
-        tasks[option.id] = Task {
-            do {
-                try await WhisperModelStore.shared.install(variant: option.id) { value in
-                    Task { @MainActor in progress[option.id] = value }
-                }
-                guard !Task.isCancelled else { return }
-                // First model on the device becomes the active one — nobody
-                // downloads a model and then expects to pick it separately.
-                if settings.whisperModelId.isEmpty || selectedVariant == nil {
-                    settings.whisperModelId = option.id
-                }
-                Haptics.success()
-            } catch {
-                guard !Task.isCancelled else { return }
-                failure = error.localizedDescription
-                Log.voice.error("whisper model download failed: \(error.localizedDescription)")
+        downloads.start(option.id) { variant in
+            // First model on the device becomes the active one — nobody
+            // downloads a model and then expects to pick it separately.
+            if settings.whisperModelId.isEmpty || selectedVariant == nil {
+                settings.whisperModelId = variant
             }
-            progress[option.id] = nil
-            tasks[option.id] = nil
-            reload()
         }
     }
 
@@ -209,7 +208,7 @@ struct WhisperModelView: View {
                 try await WhisperModelStore.shared.remove(variant: option.id)
                 if settings.whisperModelId == option.id { settings.whisperModelId = "" }
             } catch {
-                failure = error.localizedDescription
+                Log.voice.error("whisper model removal failed: \(error.localizedDescription)")
             }
             reload()
         }

@@ -100,6 +100,7 @@
 		740359C94BA1B2B3004A587B /* SSHKeysView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7C27976B74D1CA4CAC3C17E /* SSHKeysView.swift */; };
 		75ABF87482B617EE95453F63 /* NIOSOCKS in Frameworks */ = {isa = PBXBuildFile; productRef = 46F87A40D4DB9113507655F4 /* NIOSOCKS */; };
 		76A2DD1366FD97C96F42C624 /* ThemeFlowUITest.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4A3016A2C0EBBE814954D82 /* ThemeFlowUITest.swift */; };
+		776C7B3B0568BF374F71297B /* WhisperDownloadCenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7854021F52C13AA28CDAF830 /* WhisperDownloadCenter.swift */; };
 		7A0CF29D7D4060F29A3F11C8 /* PlainLinkDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8FED11FE8C987A99A670E65 /* PlainLinkDetector.swift */; };
 		7ADA528E88766CAA8E87B2B7 /* AppSettingsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0703410AD5B6D980ED96C5DD /* AppSettingsTests.swift */; };
 		7B55C5D9A8E4123E2D38430A /* TerminalTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D5829C554F228E4865DB76C /* TerminalTheme.swift */; };
@@ -327,6 +328,7 @@
 		73DC469E98CB2B6D758F658A /* AttachHomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttachHomeView.swift; sourceTree = "<group>"; };
 		76715E0E8903E4784FE652CB /* TmuxControlClientEdgeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TmuxControlClientEdgeTests.swift; sourceTree = "<group>"; };
 		775EA961B59056055DADADE4 /* MultiplexerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MultiplexerTests.swift; sourceTree = "<group>"; };
+		7854021F52C13AA28CDAF830 /* WhisperDownloadCenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhisperDownloadCenter.swift; sourceTree = "<group>"; };
 		78599612F3EA2C84F9DC8490 /* MoshCrypto.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoshCrypto.swift; sourceTree = "<group>"; };
 		788B64221EE1E4CCDFC9B4E3 /* MoshWireTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoshWireTests.swift; sourceTree = "<group>"; };
 		7D5829C554F228E4865DB76C /* TerminalTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalTheme.swift; sourceTree = "<group>"; };
@@ -963,6 +965,7 @@
 				F6A46357469548D128D4A58D /* VoiceDictation.swift */,
 				6B316D989469B9708DEB3E6F /* VoiceLanguage.swift */,
 				A6EC2F3D6701224233D016C1 /* WhisperDictationEngine.swift */,
+				7854021F52C13AA28CDAF830 /* WhisperDownloadCenter.swift */,
 				8A427C067C58814F520426E2 /* WhisperModelStore.swift */,
 			);
 			path = Voice;
@@ -1061,20 +1064,20 @@
 				LastUpgradeCheck = 2600;
 				TargetAttributes = {
 					46055837F41E11FDD1BA20A8 = {
-						DevelopmentTeam = 87NXLX5B2T;
+						DevelopmentTeam = 38RWZPNDPZ;
 						ProvisioningStyle = Automatic;
 					};
 					56689BDF532EC8A013AA9CFA = {
-						DevelopmentTeam = 87NXLX5B2T;
+						DevelopmentTeam = 38RWZPNDPZ;
 						ProvisioningStyle = Automatic;
 						TestTargetID = C04339524D7C881039141416;
 					};
 					C04339524D7C881039141416 = {
-						DevelopmentTeam = 87NXLX5B2T;
+						DevelopmentTeam = 38RWZPNDPZ;
 						ProvisioningStyle = Automatic;
 					};
 					E1E5D691D44179F8887C719D = {
-						DevelopmentTeam = 87NXLX5B2T;
+						DevelopmentTeam = 38RWZPNDPZ;
 						ProvisioningStyle = Automatic;
 					};
 				};
@@ -1320,6 +1323,7 @@
 				C05C4F7F368BC50785E1D2D4 /* VoiceLanguage.swift in Sources */,
 				1F8AFF4A8B389296954AEAF3 /* VoiceLanguageView.swift in Sources */,
 				59FBED7707D5DF41C29C3C6B /* WhisperDictationEngine.swift in Sources */,
+				776C7B3B0568BF374F71297B /* WhisperDownloadCenter.swift in Sources */,
 				AF3E7DE276D795F52CA1315E /* WhisperModelStore.swift in Sources */,
 				D086E0C8605C85003E24681C /* WhisperModelView.swift in Sources */,
 			);
