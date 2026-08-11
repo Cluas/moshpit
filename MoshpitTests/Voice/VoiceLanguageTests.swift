@@ -185,7 +185,19 @@ struct WhisperModelStoreTests {
     @Test("A model that was never downloaded is not reported as installed")
     func notInstalledByDefault() {
         #expect(!WhisperModelStore.isInstalled("openai_whisper-nonexistent-variant"))
-        #expect(WhisperModelStore.resolvedVariant(preferring: "openai_whisper-nonexistent-variant") == nil)
+
+        // Deliberately not asserting nil here. The store answers from the real
+        // Application Support container, which this test process shares with the
+        // app, so on a device or simulator where a model HAS been downloaded the
+        // fallback correctly hands back that one — asserting nil made the test
+        // pass only on a machine that had never used the feature. What has to
+        // hold either way is the invariant the fallback exists for: it never
+        // returns a variant that isn't on disk.
+        let resolved = WhisperModelStore.resolvedVariant(preferring: "openai_whisper-nonexistent-variant")
+        #expect(resolved != "openai_whisper-nonexistent-variant")
+        if let resolved {
+            #expect(WhisperModelStore.isInstalled(resolved))
+        }
     }
 
     @Test("Display names fall back to the raw variant rather than going blank")
