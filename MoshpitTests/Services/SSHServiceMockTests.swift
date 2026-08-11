@@ -33,6 +33,15 @@ private struct ThrowingClientProvider: SSHClientProvider {
         capture(authenticationMethod)
         throw MockProviderError(host: host, port: port)
     }
+
+    func connect(
+        on channel: Channel,
+        authenticationMethod: SSHAuthenticationMethod,
+        hostKeyValidator: SSHHostKeyValidator
+    ) async throws -> SSHClient {
+        capture(authenticationMethod)
+        throw MockProviderError(host: "(proxied channel)", port: 0)
+    }
 }
 
 /// `SSHService` tests cover the pre-flight pipeline up to (but not through)
@@ -137,6 +146,116 @@ struct SSHServiceMockTests {
         }
         // Auth method construction failed → provider must not have been called.
         #expect(captured.wasFired == false)
+    }
+
+    // MARK: - key auth, valid keys reach the provider
+
+    @Test("ed25519 key auth assembles the right SSHAuthenticationMethod and reaches the provider")
+    func keyAuthReachesProvider() async throws {
+        let keychain = KeychainService.inMemory()
+        let ref = keychain.generateRef()
+        let generated = try SSHKeyFactory.generate(algorithm: .ed25519, comment: "test")
+        try await keychain.savePrivateKey(
+            String(decoding: generated.privateBlob, as: UTF8.self), forRef: ref, requireBiometry: false)
+
+        let captured = Captured()
+        let provider = ThrowingClientProvider { _ in captured.fire() }
+        let service = makeService(keychain: keychain, provider: provider)
+        let connection = sampleConnection(authMethod: .key, keychainRef: ref)
+
+        await #expect(throws: SSHError.self) {
+            _ = try await service.connect(connection)
+        }
+        #expect(captured.wasFired)
+    }
+
+    @Test("RSA-4096 key auth assembles the right SSHAuthenticationMethod and reaches the provider")
+    func keyAuthRSAReachesProvider() async throws {
+        let keychain = KeychainService.inMemory()
+        let ref = keychain.generateRef()
+        let generated = try SSHKeyFactory.generate(algorithm: .rsa4096, comment: "test")
+        try await keychain.savePrivateKey(
+            String(decoding: generated.privateBlob, as: UTF8.self), forRef: ref, requireBiometry: false)
+
+        let captured = Captured()
+        let provider = ThrowingClientProvider { _ in captured.fire() }
+        let service = makeService(keychain: keychain, provider: provider)
+        let connection = sampleConnection(authMethod: .key, keychainRef: ref)
+
+        await #expect(throws: SSHError.self) {
+            _ = try await service.connect(connection)
+        }
+        #expect(captured.wasFired)
+    }
+
+    /// A real ECDSA P-256 OpenSSH-format key (`ssh-keygen -t ecdsa -b 256`),
+    /// not one `SSHKeyFactory` can produce — its only P-256 generator is the
+    /// Secure-Enclave path below, which stores a raw enclave handle, not a
+    /// PEM. Test-only material: freshly generated for this file, used
+    /// nowhere else, and never touches a network.
+    private static let ecdsaP256TestPEM = """
+        -----BEGIN OPENSSH PRIVATE KEY-----
+        b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAaAAAABNlY2RzYS
+        1zaGEyLW5pc3RwMjU2AAAACG5pc3RwMjU2AAAAQQSU3szH3+AyXg+0SKakAdMPr/VNIJ9a
+        JzAe0vm5fbezzuWmCrbb6N7AsHsNUV4KbNa+eSKOpah71YzrFJNQJ2u9AAAAsHzxTrd88U
+        63AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBJTezMff4DJeD7RI
+        pqQB0w+v9U0gn1onMB7S+bl9t7PO5aYKttvo3sCwew1RXgps1r55Io6lqHvVjOsUk1Ana7
+        0AAAAgI6Alln7E7oOyHO8Hrn7/zEDksMmt/F0AQ7nm4xo+6y0AAAARdGVzdC1maXh0dXJl
+        LW9ubHkBAgMEBQYH
+        -----END OPENSSH PRIVATE KEY-----
+        """
+
+    @Test("ECDSA P-256 PEM key auth assembles the right SSHAuthenticationMethod and reaches the provider")
+    func keyAuthECDSAP256ReachesProvider() async throws {
+        let keychain = KeychainService.inMemory()
+        let ref = keychain.generateRef()
+        try await keychain.savePrivateKey(Self.ecdsaP256TestPEM, forRef: ref, requireBiometry: false)
+
+        let captured = Captured()
+        let provider = ThrowingClientProvider { _ in captured.fire() }
+        let service = makeService(keychain: keychain, provider: provider)
+        let connection = sampleConnection(authMethod: .key, keychainRef: ref)
+
+        await #expect(throws: SSHError.self) {
+            _ = try await service.connect(connection)
+        }
+        #expect(captured.wasFired)
+    }
+
+    @Test("Secure Enclave (software-fallback) key auth reaches the provider via the custom auth delegate")
+    func seP256AuthReachesProvider() async throws {
+        let keychain = KeychainService.inMemory()
+        let ref = keychain.generateRef()
+        // `generateSecureEnclaveP256` falls back to a software P-256 key with
+        // no real Secure Enclave present (simulator/CI) — this is how the app
+        // stays testable end-to-end without hardware, and is the one branch
+        // in `SSHService.connect` with no coverage anywhere before this test.
+        let generated = try SSHKeyFactory.generate(algorithm: .seP256, comment: "test")
+        try await keychain.saveSecret(generated.privateBlob, forRef: ref, requireBiometry: false)
+
+        let captured = Captured()
+        let provider = ThrowingClientProvider { _ in captured.fire() }
+        let service = makeService(keychain: keychain, provider: provider)
+        var connection = sampleConnection(authMethod: .key, keychainRef: ref)
+        connection.sshKeyAlgorithmRaw = SSHKeyAlgorithm.seP256.rawValue
+
+        await #expect(throws: SSHError.self) {
+            _ = try await service.connect(connection)
+        }
+        #expect(captured.wasFired)
+    }
+
+    @Test("connect surfaces underlying error when keychain ref does not exist, for key auth too")
+    func keyAuthWithMissingKeychainEntryThrows() async throws {
+        let service = makeService()
+        let connection = sampleConnection(authMethod: .key, keychainRef: "moshpit.secret.absent")
+
+        // Mirrors `connectWithMissingKeychainEntryThrows`, which only ever
+        // exercised `.password` — the keychain-miss path for `.key` had no
+        // test of its own.
+        await #expect(throws: SSHError.self) {
+            _ = try await service.connect(connection)
+        }
     }
 
     // MARK: - overrideSecret bypasses keychain

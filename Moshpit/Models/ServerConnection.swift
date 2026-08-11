@@ -140,6 +140,14 @@ struct ServerConnection: Identifiable, Codable, Equatable {
     /// (Secure Enclave keys are a `dataRepresentation`, not PEM).
     var sshKeyId: UUID?
     var sshKeyAlgorithmRaw: String?
+    /// Route this connection's SSH dial through a SOCKS5 proxy (Add
+    /// Connection → Proxy). Optional, like the rest of this section, so
+    /// connections saved before this field existed keep decoding — `nil`
+    /// behaves exactly like `false`, dialing `host`/`port` directly.
+    var useSOCKSProxy: Bool?
+    var socksProxyHost: String?
+    /// `nil` ⇒ 1080, the conventional SOCKS5 default.
+    var socksProxyPort: Int?
 
     var sshKeyAlgorithm: SSHKeyAlgorithm? {
         sshKeyAlgorithmRaw.flatMap(SSHKeyAlgorithm.init(rawValue:))

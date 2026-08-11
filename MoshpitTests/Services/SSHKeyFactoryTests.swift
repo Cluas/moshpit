@@ -162,6 +162,24 @@ struct SSHKeyFactoryTests {
         #expect(String(decoding: imported.privateBlob, as: UTF8.self) == core)
     }
 
+    // MARK: - Import: from file
+
+    @Test("decodeImportedText decodes valid UTF-8 bytes, e.g. a picked PEM file")
+    func decodeImportedTextDecodesUTF8() throws {
+        let pem = "-----BEGIN OPENSSH PRIVATE KEY-----\nAAAA\n-----END OPENSSH PRIVATE KEY-----\n"
+        let decoded = try SSHKeyFactory.decodeImportedText(Data(pem.utf8))
+        #expect(decoded == pem)
+    }
+
+    @Test("decodeImportedText throws on non-UTF-8 bytes instead of producing garbage text")
+    func decodeImportedTextRejectsBinary() {
+        // Lone continuation byte — never valid at the start of a UTF-8 sequence.
+        let binary = Data([0xFF, 0xFE, 0x00, 0x80])
+        #expect(throws: SSHKeyFactory.KeyError.self) {
+            _ = try SSHKeyFactory.decodeImportedText(binary)
+        }
+    }
+
     // MARK: - Passphrase strength heuristic
 
     @Test("empty passphrase scores exactly 0")

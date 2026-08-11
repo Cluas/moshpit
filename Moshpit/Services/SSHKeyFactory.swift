@@ -28,6 +28,18 @@ enum SSHKeyFactory {
         }
     }
 
+    // MARK: - Import from file
+
+    /// Decodes a picked file's raw bytes as UTF-8 text. The one part of
+    /// file-based import pure enough to unit test — the URL / security-scope
+    /// handling around it needs a real file on disk and stays in the view.
+    static func decodeImportedText(_ data: Data) throws -> String {
+        guard let text = String(data: data, encoding: .utf8) else {
+            throw KeyError.unsupported("file is not valid UTF-8 text")
+        }
+        return text
+    }
+
     // MARK: - Generate
 
     static func generate(algorithm: SSHKeyAlgorithm, comment: String) throws -> Generated {
@@ -106,6 +118,11 @@ enum SSHKeyFactory {
 
     // MARK: RSA-4096
 
+    /// `SecKeyCopyExternalRepresentation` hands back a PKCS#1 `RSAPrivateKey`
+    /// DER — that's a real key, but not one anything downstream can
+    /// authenticate with: `SSHKeyDetection.detectPrivateKeyType` (Citadel)
+    /// hard-requires the openssh-key-v1 container, and PKCS#1 isn't it. Build
+    /// that container ourselves, mirroring `generateEd25519`'s framing below.
     private static func generateRSA4096(comment: String) throws -> Generated {
         let attributes: [String: Any] = [
             kSecAttrKeyType as String: kSecAttrKeyTypeRSA,
@@ -113,24 +130,54 @@ enum SSHKeyFactory {
         ]
         var error: Unmanaged<CFError>?
         guard let secKey = SecKeyCreateRandomKey(attributes as CFDictionary, &error),
-              let publicKey = SecKeyCopyPublicKey(secKey),
-              let privDER = SecKeyCopyExternalRepresentation(secKey, &error) as Data?,
-              let pubDER = SecKeyCopyExternalRepresentation(publicKey, &error) as Data?
+              let privDER = SecKeyCopyExternalRepresentation(secKey, &error) as Data?
         else {
             let why = (error?.takeRetainedValue()).map(String.init(describing:)) ?? "SecKey failure"
             throw KeyError.generationFailed(why)
         }
 
-        guard let (modulus, exponent) = parsePKCS1RSAPublicKey(pubDER) else {
-            throw KeyError.generationFailed("could not parse RSA public key")
+        guard let fields = parsePKCS1RSAPrivateKey(privDER) else {
+            throw KeyError.generationFailed("could not parse generated RSA private key")
         }
-        let blob = sshString("ssh-rsa") + sshMPInt(exponent) + sshMPInt(modulus)
-        let pem = pemArmor(privDER, label: "RSA PRIVATE KEY")
+
+        // SSH's own (e, n) order for the public blob (RFC 4253) — already
+        // exercised by the authorized_keys line below.
+        let publicBlob = sshString("ssh-rsa") + sshMPInt(fields.e) + sshMPInt(fields.n)
+
+        var payload = Data("openssh-key-v1\0".utf8)
+        payload += sshString("none")                       // cipher
+        payload += sshString("none")                       // kdf
+        payload += sshString(Data())                       // kdf options
+        payload += uint32(1)                               // n keys
+        payload += sshString(publicBlob)
+
+        var priv = Data()
+        let check = UInt32.random(in: .min ... .max)
+        priv += uint32(check) + uint32(check)
+        priv += sshString("ssh-rsa")
+        // openssh-key-v1's own (n, e, d, iqmp, p, q) order for the private
+        // blob — NOT the same order as the public blob above, and not PKCS#1's
+        // order either. Confirmed against Citadel's own reader
+        // (`Insecure.RSA.PrivateKey.read(consuming:)`, Citadel/OpenSSHKey.swift)
+        // rather than assumed, since getting this wrong silently produces a
+        // key that just fails to authenticate.
+        priv += sshMPInt(fields.n)
+        priv += sshMPInt(fields.e)
+        priv += sshMPInt(fields.d)
+        priv += sshMPInt(fields.iqmp)
+        priv += sshMPInt(fields.p)
+        priv += sshMPInt(fields.q)
+        priv += sshString(comment)
+        var pad: UInt8 = 1
+        while priv.count % 8 != 0 { priv.append(pad); pad += 1 }
+        payload += sshString(priv)
+
+        let pem = pemArmor(payload, label: "OPENSSH PRIVATE KEY")
         return Generated(
             algorithm: .rsa4096,
             privateBlob: Data(pem.utf8),
-            publicKeyLine: "ssh-rsa \(blob.base64EncodedString()) \(comment)",
-            fingerprint: fingerprint(of: blob))
+            publicKeyLine: "ssh-rsa \(publicBlob.base64EncodedString()) \(comment)",
+            fingerprint: fingerprint(of: publicBlob))
     }
 
     // MARK: - Import
@@ -222,38 +269,81 @@ enum SSHKeyFactory {
         return "-----BEGIN \(label)-----\n\(wrapped)\n-----END \(label)-----\n"
     }
 
-    /// Minimal DER walk for PKCS#1 RSAPublicKey: SEQUENCE { INTEGER n, INTEGER e }.
-    private static func parsePKCS1RSAPublicKey(_ der: Data) -> (modulus: Data, exponent: Data)? {
-        var idx = der.startIndex
+    /// Minimal sequential DER reader — only what's needed to walk a flat
+    /// SEQUENCE of INTEGERs, which is all a PKCS#1 RSA public or private key
+    /// body is. Shared so the private-key walk added for openssh-key-v1
+    /// export runs the same, already-exercised tag/length logic as the
+    /// public-key walk below rather than a second hand-rolled copy of it.
+    private struct DERReader {
+        private let data: Data
+        private var idx: Data.Index
 
-        func readLength() -> Int? {
-            guard idx < der.endIndex else { return nil }
-            let first = der[idx]; idx = der.index(after: idx)
+        init(_ data: Data) {
+            self.data = data
+            self.idx = data.startIndex
+        }
+
+        private mutating func readLength() -> Int? {
+            guard idx < data.endIndex else { return nil }
+            let first = data[idx]; idx = data.index(after: idx)
             if first & 0x80 == 0 { return Int(first) }
             let count = Int(first & 0x7F)
-            guard count <= 4, der.distance(from: idx, to: der.endIndex) >= count else { return nil }
+            guard count <= 4, data.distance(from: idx, to: data.endIndex) >= count else { return nil }
             var length = 0
             for _ in 0..<count {
-                length = length << 8 | Int(der[idx])
-                idx = der.index(after: idx)
+                length = length << 8 | Int(data[idx])
+                idx = data.index(after: idx)
             }
             return length
         }
 
-        func expect(tag: UInt8) -> Data? {
-            guard idx < der.endIndex, der[idx] == tag else { return nil }
-            idx = der.index(after: idx)
+        /// Consumes a SEQUENCE's tag + length, leaving `idx` at its first child.
+        mutating func enterSequence() -> Bool {
+            guard idx < data.endIndex, data[idx] == 0x30 else { return false }
+            idx = data.index(after: idx)
+            return readLength() != nil
+        }
+
+        mutating func expect(tag: UInt8) -> Data? {
+            guard idx < data.endIndex, data[idx] == tag else { return nil }
+            idx = data.index(after: idx)
             guard let length = readLength(),
-                  der.distance(from: idx, to: der.endIndex) >= length else { return nil }
-            let body = der[idx..<der.index(idx, offsetBy: length)]
-            idx = der.index(idx, offsetBy: length)
+                  data.distance(from: idx, to: data.endIndex) >= length else { return nil }
+            let body = data[idx..<data.index(idx, offsetBy: length)]
+            idx = data.index(idx, offsetBy: length)
             return Data(body)
         }
 
-        guard der.first == 0x30, idx < der.endIndex else { return nil }
-        idx = der.index(after: idx)
-        guard readLength() != nil else { return nil }
-        guard let n = expect(tag: 0x02), let e = expect(tag: 0x02) else { return nil }
+        mutating func integer() -> Data? { expect(tag: 0x02) }
+    }
+
+    /// PKCS#1 RSAPublicKey: SEQUENCE { INTEGER n, INTEGER e }.
+    private static func parsePKCS1RSAPublicKey(_ der: Data) -> (modulus: Data, exponent: Data)? {
+        var reader = DERReader(der)
+        guard reader.enterSequence(), let n = reader.integer(), let e = reader.integer() else { return nil }
         return (n, e)
+    }
+
+    /// PKCS#1 RSAPrivateKey (RFC 8017 §A.1.2): SEQUENCE { version, n, e, d,
+    /// p, q, exponent1, exponent2, coefficient }. `SecKeyCopyExternalRepresentation`
+    /// emits exactly this for an RSA private key. `coefficient` here is the
+    /// same value openssh-key-v1 calls `iqmp` (q⁻¹ mod p) — Apple's SecKey
+    /// already computed it, so no modular inverse needs computing by hand.
+    private static func parsePKCS1RSAPrivateKey(
+        _ der: Data
+    ) -> (n: Data, e: Data, d: Data, p: Data, q: Data, iqmp: Data)? {
+        var reader = DERReader(der)
+        guard reader.enterSequence(),
+              reader.integer() != nil,                 // version (0)
+              let n = reader.integer(),
+              let e = reader.integer(),
+              let d = reader.integer(),
+              let p = reader.integer(),
+              let q = reader.integer(),
+              reader.integer() != nil,                 // exponent1 = d mod (p-1), unused
+              reader.integer() != nil,                 // exponent2 = d mod (q-1), unused
+              let iqmp = reader.integer()
+        else { return nil }
+        return (n, e, d, p, q, iqmp)
     }
 }

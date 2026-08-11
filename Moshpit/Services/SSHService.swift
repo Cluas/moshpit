@@ -121,6 +121,15 @@ protocol SSHClientProvider: Sendable {
         authenticationMethod: SSHAuthenticationMethod,
         hostKeyValidator: SSHHostKeyValidator
     ) async throws -> SSHClient
+
+    /// Runs the SSH handshake over an already-connected channel instead of
+    /// dialing `host:port` itself — the SOCKS-proxy path hands in a channel
+    /// that's already past the proxy's CONNECT handshake.
+    func connect(
+        on channel: Channel,
+        authenticationMethod: SSHAuthenticationMethod,
+        hostKeyValidator: SSHHostKeyValidator
+    ) async throws -> SSHClient
 }
 
 struct CitadelSSHClientProvider: SSHClientProvider {
@@ -136,6 +145,18 @@ struct CitadelSSHClientProvider: SSHClientProvider {
             authenticationMethod: authenticationMethod,
             hostKeyValidator: hostKeyValidator,
             reconnect: .never
+        )
+    }
+
+    func connect(
+        on channel: Channel,
+        authenticationMethod: SSHAuthenticationMethod,
+        hostKeyValidator: SSHHostKeyValidator
+    ) async throws -> SSHClient {
+        try await SSHClient.connect(
+            on: channel,
+            authenticationMethod: authenticationMethod,
+            hostKeyValidator: hostKeyValidator
         )
     }
 }
@@ -456,12 +477,32 @@ actor SSHService {
         let hostKeyValidator = SSHHostKeyValidator.custom(delegate)
 
         do {
-            let client = try await clientProvider.connect(
-                host: connection.host,
-                port: connection.port,
-                authenticationMethod: authMethod,
-                hostKeyValidator: hostKeyValidator
-            )
+            let client: SSHClient
+            // SOCKS proxies only speak TCP CONNECT — this affects the SSH
+            // dial only. If Mosh is also on, its UDP session still connects
+            // directly once SSH bootstraps it; the Add Connection form's
+            // PROXY footer says so up front rather than let that surface as
+            // a silent post-handshake failure.
+            if connection.useSOCKSProxy == true, let proxyHost = connection.socksProxyHost, !proxyHost.isEmpty {
+                let channel = try await SOCKSProxyDialer.connect(
+                    proxyHost: proxyHost,
+                    proxyPort: connection.socksProxyPort ?? 1080,
+                    targetHost: connection.host,
+                    targetPort: connection.port
+                )
+                client = try await clientProvider.connect(
+                    on: channel,
+                    authenticationMethod: authMethod,
+                    hostKeyValidator: hostKeyValidator
+                )
+            } else {
+                client = try await clientProvider.connect(
+                    host: connection.host,
+                    port: connection.port,
+                    authenticationMethod: authMethod,
+                    hostKeyValidator: hostKeyValidator
+                )
+            }
             return SSHSession(connection: connection, client: client)
         } catch {
             throw SSHError.map(error)
@@ -526,7 +567,7 @@ actor SSHService {
                 }
             case .ecdsaP256:
                 do {
-                    let key = try P256.Signing.PrivateKey(pemRepresentation: secret)
+                    let key = try OpenSSHECDSAKey.p256PrivateKey(fromPEM: secret)
                     return .p256(username: connection.username, privateKey: key)
                 } catch {
                     throw SSHError.underlying(error)
@@ -537,6 +578,127 @@ actor SSHService {
                 throw SSHError.unsupportedKeyType(keyType.description)
             }
         }
+    }
+}
+
+// MARK: - ECDSA-P256 OpenSSH parsing
+
+/// Parses a P-256 private key out of an openssh-key-v1 container — the
+/// counterpart Citadel doesn't provide (its own key-type enum only knows
+/// "ssh-rsa" and "ssh-ed25519"; there's no ECDSA reader to reuse). Only
+/// unencrypted (cipher "none") containers are supported, matching what
+/// `SSHKeyFactory` produces and what the ed25519/RSA paths above already
+/// assume. Format reference: https://dnaeon.github.io/openssh-private-key-binary-format/
+private enum OpenSSHECDSAKey {
+    enum ParseError: LocalizedError {
+        case malformed(String)
+
+        var errorDescription: String? {
+            switch self {
+            case .malformed(let why): return "Malformed OpenSSH private key: \(why)"
+            }
+        }
+    }
+
+    /// Sequential reader for the SSH wire format (uint32 length-prefixed
+    /// strings) — distinct from ASN.1 DER, which `SSHKeyFactory`'s reader
+    /// handles; this container is entirely SSH-native framing.
+    private struct WireReader {
+        private let data: Data
+        private var idx: Data.Index
+
+        init(_ data: Data) {
+            self.data = data
+            self.idx = data.startIndex
+        }
+
+        mutating func readUInt32() -> UInt32? {
+            guard let bytes = readBytes(4) else { return nil }
+            return bytes.reduce(0 as UInt32) { ($0 << 8) | UInt32($1) }
+        }
+
+        mutating func readBytes(_ count: Int) -> Data? {
+            guard count >= 0, data.distance(from: idx, to: data.endIndex) >= count else { return nil }
+            let slice = data[idx..<data.index(idx, offsetBy: count)]
+            idx = data.index(idx, offsetBy: count)
+            return Data(slice)
+        }
+
+        mutating func readSSHString() -> Data? {
+            guard let length = readUInt32() else { return nil }
+            return readBytes(Int(length))
+        }
+    }
+
+    static func p256PrivateKey(fromPEM pem: String) throws -> P256.Signing.PrivateKey {
+        var text = pem.trimmingCharacters(in: .whitespacesAndNewlines)
+        let begin = "-----BEGIN OPENSSH PRIVATE KEY-----"
+        let end = "-----END OPENSSH PRIVATE KEY-----"
+        guard text.hasPrefix(begin), text.hasSuffix(end) else {
+            throw ParseError.malformed("missing OpenSSH PEM boundary")
+        }
+        text.removeLast(end.count)
+        text.removeFirst(begin.count)
+        guard let raw = Data(base64Encoded: text.replacingOccurrences(of: "\n", with: "")) else {
+            throw ParseError.malformed("invalid base64 payload")
+        }
+
+        var reader = WireReader(raw)
+        guard reader.readBytes(15) == Data("openssh-key-v1\0".utf8) else {
+            throw ParseError.malformed("missing openssh-key-v1 magic")
+        }
+        guard reader.readSSHString() == Data("none".utf8) else {
+            throw ParseError.malformed("encrypted OpenSSH keys are not supported")
+        }
+        guard reader.readSSHString() == Data("none".utf8) else {
+            throw ParseError.malformed("encrypted OpenSSH keys are not supported")
+        }
+        guard let kdfOptions = reader.readSSHString(), kdfOptions.isEmpty else {
+            throw ParseError.malformed("unexpected KDF options")
+        }
+        guard reader.readUInt32() == 1 else {
+            throw ParseError.malformed("expected exactly one key in the container")
+        }
+        guard reader.readSSHString() != nil else {   // public key blob — re-derived below instead of trusted
+            throw ParseError.malformed("missing public key blob")
+        }
+        guard let privBlob = reader.readSSHString() else {
+            throw ParseError.malformed("missing private key blob")
+        }
+
+        var priv = WireReader(privBlob)
+        guard let check0 = priv.readUInt32(), priv.readUInt32() == check0 else {
+            throw ParseError.malformed("private key checksum mismatch")
+        }
+        guard priv.readSSHString() == Data("ecdsa-sha2-nistp256".utf8) else {
+            throw ParseError.malformed("not an ecdsa-sha2-nistp256 key")
+        }
+        guard priv.readSSHString() == Data("nistp256".utf8) else {
+            throw ParseError.malformed("unsupported curve — only nistp256 is handled here")
+        }
+        guard priv.readSSHString() != nil else {   // public point Q — re-derived below instead of trusted
+            throw ParseError.malformed("missing public key point")
+        }
+        guard let scalarMPInt = priv.readSSHString() else {
+            throw ParseError.malformed("missing private scalar")
+        }
+
+        return try P256.Signing.PrivateKey(rawRepresentation: fixedLength(fromMPInt: scalarMPInt, length: 32))
+    }
+
+    /// Inverse of the `sshMPInt` encoding `SSHKeyFactory` writes: mpint
+    /// encoding strips leading zero bytes from the big-endian integer (and
+    /// adds one back only as a sign guard when the high bit is set), so the
+    /// body isn't reliably exactly 32 bytes — this restores that fixed width.
+    private static func fixedLength(fromMPInt mpint: Data, length: Int) -> Data {
+        var bytes = mpint
+        if bytes.count > length, bytes.first == 0 {
+            bytes.removeFirst()
+        }
+        if bytes.count < length {
+            bytes = Data(repeating: 0, count: length - bytes.count) + bytes
+        }
+        return bytes
     }
 }
 

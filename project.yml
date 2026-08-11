@@ -102,6 +102,15 @@ packages:
   WhisperKit:
     url: https://github.com/argmaxinc/WhisperKit.git
     from: "1.1.0"
+  # SOCKS5 client handshake for the optional per-connection proxy (Add
+  # Connection → Proxy). `swift-nio-extras` ships several library products;
+  # naming the package key `NIOSOCKS` (matching the one product we want)
+  # keeps the default package→product resolution working with no explicit
+  # `product:` override — see the WhisperKit note above for what happens
+  # when the two names diverge.
+  NIOSOCKS:
+    url: https://github.com/apple/swift-nio-extras.git
+    from: "1.34.0"
 
 targets:
   Moshpit:
@@ -154,6 +163,8 @@ targets:
       - package: Citadel
       - package: WhisperKit
         product: WhisperKit
+      - package: NIOSOCKS
+        product: NIOSOCKS
       - target: MoshpitIsland
         embed: true
     info:

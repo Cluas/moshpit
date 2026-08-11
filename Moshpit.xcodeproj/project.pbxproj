@@ -62,6 +62,7 @@
 		4465520EFDF57DB5CD364D95 /* AppIcon-NoCarrier60x60@2x.png in Resources */ = {isa = PBXBuildFile; fileRef = AF1A97B67EA7182482E7969B /* AppIcon-NoCarrier60x60@2x.png */; };
 		451374A4032039D0383AB764 /* AgentControlTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3EC8EE836991DC4496E68004 /* AgentControlTests.swift */; };
 		4B654888C0E9E0F2FE9CB3C7 /* ThemeScreenshotUITest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 17B385C2A9129CBB524F9B55 /* ThemeScreenshotUITest.swift */; };
+		4BD65AEB75DD804F69E45A51 /* WhisperDictationEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B00EDD9793C847D6BEF4A25 /* WhisperDictationEngineTests.swift */; };
 		4ED97844F2BC539F51B276EC /* AppIcon60x60@2x.png in Resources */ = {isa = PBXBuildFile; fileRef = 35E61BBBCF8F233A6E1C87EC /* AppIcon60x60@2x.png */; };
 		4EDC3CBB56A3F9C9E2FA31DB /* SettingsScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA88DD878C3330D057D02B9F /* SettingsScreen.swift */; };
 		4F84118298445D665B55EEB8 /* AppearanceFlowUITest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8241037ACF44B70B6E9FCBDD /* AppearanceFlowUITest.swift */; };
@@ -74,11 +75,14 @@
 		57BE715C9AAB709B1B6D61BF /* AppIcon60x60@3x.png in Resources */ = {isa = PBXBuildFile; fileRef = D3C8C3FE40206DC3271C31B5 /* AppIcon60x60@3x.png */; };
 		58BBD96E29CFDF3CDD4354FB /* MoshpitMark.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7118E3B937405064AF5E7F3 /* MoshpitMark.swift */; };
 		58DF0A3A80B5FE077CB1A7C2 /* HerdrFrameChannelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 70465CF8A76E1EC73144DDFE /* HerdrFrameChannelTests.swift */; };
+		59FBED7707D5DF41C29C3C6B /* WhisperDictationEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = A6EC2F3D6701224233D016C1 /* WhisperDictationEngine.swift */; };
 		5C5583F916053D0036060ABB /* AppIcon-Wq83.5x83.5@2x~ipad.png in Resources */ = {isa = PBXBuildFile; fileRef = AC1E0B74116C03A161C51FF7 /* AppIcon-Wq83.5x83.5@2x~ipad.png */; };
 		5C821FCDD2E54727DF04624F /* AppIcon-Hail60x60@3x.png in Resources */ = {isa = PBXBuildFile; fileRef = 616BEFE563976733B6CC4D3D /* AppIcon-Hail60x60@3x.png */; };
 		5D55B5A61345681ABEF9198E /* VoiceDictationControllerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E468E22C8246BFACCCBBF685 /* VoiceDictationControllerTests.swift */; };
 		5D8F91769E40D5629794B5F5 /* TerminalScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F758D0947C98C6763A9DEC6 /* TerminalScreen.swift */; };
 		5DB63BB0566CF7312C514EBD /* AppIcon-Hail76x76@2x~ipad.png in Resources */ = {isa = PBXBuildFile; fileRef = 17E5BBEE6AD1CE27067DE159 /* AppIcon-Hail76x76@2x~ipad.png */; };
+		61935E43FF1E351553F4EEB3 /* VoiceLanguageTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0C756763ACBB5161902D2521 /* VoiceLanguageTests.swift */; };
+		628EE7388F6432B57A43A600 /* KeyPickerSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA34A0BAC5D767AA36A284F9 /* KeyPickerSheet.swift */; };
 		65C2373D0A4E31BECDB15418 /* TerminalShortcutTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56923C29050B3175A8A1CB3F /* TerminalShortcutTests.swift */; };
 		65F04782B30380D6C82F3456 /* AppIconGalleryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = ECD81899B7F48834C843F423 /* AppIconGalleryView.swift */; };
 		68CCE909B1AE1B551014B3F2 /* SSHKeyFactory.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC70BD2ED20CD37D034C427A /* SSHKeyFactory.swift */; };
@@ -90,9 +94,11 @@
 		6FC337C8359D046A64B84BE0 /* SSHServiceMockTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02BAB2D43A01513C3F160EA6 /* SSHServiceMockTests.swift */; };
 		717D3FE9D8D396A62CFC6A40 /* AccentGalleryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8940B24715B5E0CF15676A88 /* AccentGalleryView.swift */; };
 		7199A8FE3E93E0627F4BF2DF /* ConnectionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14C7FC723EE7DA38129E6D63 /* ConnectionStore.swift */; };
+		71D4F4288B995DDD3420E579 /* VoiceEngineView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE653787B46C83117DA1849C /* VoiceEngineView.swift */; };
 		720D3A984A6EF1C3C8B99A56 /* AppIcon-Cursor60x60@2x.png in Resources */ = {isa = PBXBuildFile; fileRef = 27F4131AC113D1AABFD85868 /* AppIcon-Cursor60x60@2x.png */; };
 		734F985ED07C38ED91DC8D1B /* AgentSectionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1CF2256C5CB122431EB9D184 /* AgentSectionTests.swift */; };
 		740359C94BA1B2B3004A587B /* SSHKeysView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7C27976B74D1CA4CAC3C17E /* SSHKeysView.swift */; };
+		75ABF87482B617EE95453F63 /* NIOSOCKS in Frameworks */ = {isa = PBXBuildFile; productRef = 46F87A40D4DB9113507655F4 /* NIOSOCKS */; };
 		76A2DD1366FD97C96F42C624 /* ThemeFlowUITest.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4A3016A2C0EBBE814954D82 /* ThemeFlowUITest.swift */; };
 		7A0CF29D7D4060F29A3F11C8 /* PlainLinkDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8FED11FE8C987A99A670E65 /* PlainLinkDetector.swift */; };
 		7ADA528E88766CAA8E87B2B7 /* AppSettingsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0703410AD5B6D980ED96C5DD /* AppSettingsTests.swift */; };
@@ -119,6 +125,7 @@
 		8F882714E92C80FEB263703F /* MoshpitIsland.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 7F599B734E01DD5B6C1CDA81 /* MoshpitIsland.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		90F124609D8A9A39545A4E67 /* AttachHomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 73DC469E98CB2B6D758F658A /* AttachHomeView.swift */; };
 		92522E25CD59E2B498F236C7 /* HerdrSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C9637BB724153F5F3CDF957 /* HerdrSnapshot.swift */; };
+		94555ED01227C0AAFA26D4D2 /* SOCKSProxyDialer.swift in Sources */ = {isa = PBXBuildFile; fileRef = DCC2B588272E33589B0EA7D9 /* SOCKSProxyDialer.swift */; };
 		95BAB1CE397B16CD241FBF83 /* AppIcon83.5x83.5@2x~ipad.png in Resources */ = {isa = PBXBuildFile; fileRef = D79FF90811F3D79099AA1C57 /* AppIcon83.5x83.5@2x~ipad.png */; };
 		968222B66CA0982A1D1E5655 /* AppIcon76x76@2x~ipad.png in Resources */ = {isa = PBXBuildFile; fileRef = FF9CF45991B4689216F297CD /* AppIcon76x76@2x~ipad.png */; };
 		97BD3BA1B2907FC58C250952 /* SessionHub.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB1A95FDA6DF8F627038AC4D /* SessionHub.swift */; };
@@ -133,6 +140,7 @@
 		A9C503B985D413319D11A101 /* AddConnectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B246336C4807C133BFB5110C /* AddConnectionView.swift */; };
 		AB6EBBE82A9175071850BCD5 /* AppIcon-Wq76x76@2x~ipad.png in Resources */ = {isa = PBXBuildFile; fileRef = 971BEFA0996092B0B90FB3B8 /* AppIcon-Wq76x76@2x~ipad.png */; };
 		ABA8E685CF0DB4EB58863C4F /* FiraCode-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = D35DBEC8A0B304BA7214C654 /* FiraCode-Regular.ttf */; };
+		AF3E7DE276D795F52CA1315E /* WhisperModelStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A427C067C58814F520426E2 /* WhisperModelStore.swift */; };
 		AFA297CD0C917AEE895A5FA6 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 1CCABA3E23F7C766E67A7174 /* Localizable.xcstrings */; };
 		B079312D3EC271B3B573FD59 /* TmuxSessionControllerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F2769DAA1147749D1BE4343 /* TmuxSessionControllerTests.swift */; };
 		B080AB4AE0144836FB056053 /* SourceCodePro-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 62314CA62CDD96A41AC62460 /* SourceCodePro-Regular.ttf */; };
@@ -147,6 +155,7 @@
 		BE3A5F62FEC9527336F8EAFE /* HerdrFrameChannel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F20F1DDFC5F02F56B1D801E /* HerdrFrameChannel.swift */; };
 		BF0F238262C679784F2F0BD5 /* HostBannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 90AE26859AF9807954DF55E1 /* HostBannerView.swift */; };
 		BFF7F693F538108FB5864B4D /* AgentActivityMonitorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A41973C55DE9E26DA106D25 /* AgentActivityMonitorTests.swift */; };
+		C05C4F7F368BC50785E1D2D4 /* VoiceLanguage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B316D989469B9708DEB3E6F /* VoiceLanguage.swift */; };
 		C1493079419813E16C7F8065 /* AppIcon-NoCarrier76x76@2x~ipad.png in Resources */ = {isa = PBXBuildFile; fileRef = 4CEE6501924E3F5B02B2B0DF /* AppIcon-NoCarrier76x76@2x~ipad.png */; };
 		C14E69324E71FE91FB9586DA /* MoshpitApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF94C284887BF4FA3FC37482 /* MoshpitApp.swift */; };
 		C19A5F4F3B566AFE2BE393E6 /* SwiftTerm in Frameworks */ = {isa = PBXBuildFile; productRef = 8BD79C95F836869D3CFFC89C /* SwiftTerm */; };
@@ -157,6 +166,7 @@
 		CC2E2D970BD4C9E60568479F /* MoshTransportStateMachineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 07629CDD9AEA2F8ABADB82FF /* MoshTransportStateMachineTests.swift */; };
 		CECFC5A26480AB40EE2C1582 /* MapleMono-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 492DAB127CE604BC318C93C4 /* MapleMono-Regular.ttf */; };
 		CFE0AF6CEB427FCDF2519ADA /* TmuxLayoutParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 077428E2011E5258C4674416 /* TmuxLayoutParser.swift */; };
+		D086E0C8605C85003E24681C /* WhisperModelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1FAF2C56D949C64D33BB3853 /* WhisperModelView.swift */; };
 		D097FBDFD96A22FB61A0405F /* BreadcrumbPlanTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6DEAF6F752EDBADB9E0F25F3 /* BreadcrumbPlanTests.swift */; };
 		D0B029DD39EC37B8C906CCBE /* TerminalScrollGesture.swift in Sources */ = {isa = PBXBuildFile; fileRef = B326D2F66528444967AA24B1 /* TerminalScrollGesture.swift */; };
 		D1A820E077C06D87BC940B22 /* AppIcon-Wq60x60@3x.png in Resources */ = {isa = PBXBuildFile; fileRef = A2FE8969CB4779E12D7B6868 /* AppIcon-Wq60x60@3x.png */; };
@@ -182,6 +192,7 @@
 		EC7B58F6C53DC0D3756050D9 /* AppIcon-Ringdown83.5x83.5@2x~ipad.png in Resources */ = {isa = PBXBuildFile; fileRef = E3114866D6E1CE18D8B44E43 /* AppIcon-Ringdown83.5x83.5@2x~ipad.png */; };
 		ED71EA4963B087CA108021E7 /* TerminalFontTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 32CA31043DA7F2B938053BA0 /* TerminalFontTests.swift */; };
 		F4136D0A378BE0F2499495D9 /* MultiplexerControlling.swift in Sources */ = {isa = PBXBuildFile; fileRef = BABE853079273BFF284461FC /* MultiplexerControlling.swift */; };
+		F53F7C44F75E5F774CE7C772 /* WhisperKit in Frameworks */ = {isa = PBXBuildFile; productRef = 8218C50280CC130CD8146599 /* WhisperKit */; };
 		F5E0FE303D8DA5E854B82AF2 /* MoshpitStatusWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6FEB9B260DD3F4822A9212A /* MoshpitStatusWidget.swift */; };
 		F64882AA4C8B1DCD666687F6 /* SSHKeyStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = D9801C556A69BDC6847847EB /* SSHKeyStore.swift */; };
 		F6B2FFDB129F6DACDD31912C /* ServerConnection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B56EE7989B4842F114C7DB4 /* ServerConnection.swift */; };
@@ -236,6 +247,7 @@
 		077428E2011E5258C4674416 /* TmuxLayoutParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TmuxLayoutParser.swift; sourceTree = "<group>"; };
 		0A0483D99AAA694DAF818012 /* ConnectionStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionStoreTests.swift; sourceTree = "<group>"; };
 		0BA40658CDEAAF41FEEB0A83 /* AgentTaskRequestTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTaskRequestTests.swift; sourceTree = "<group>"; };
+		0C756763ACBB5161902D2521 /* VoiceLanguageTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceLanguageTests.swift; sourceTree = "<group>"; };
 		0DD9FDEED7F5C0CD1FE11E06 /* OCB3Tests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OCB3Tests.swift; sourceTree = "<group>"; };
 		0E38BC2D3345D7A0B4FCCFB0 /* GoldenPathTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GoldenPathTests.swift; sourceTree = "<group>"; };
 		0F20F1DDFC5F02F56B1D801E /* HerdrFrameChannel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HerdrFrameChannel.swift; sourceTree = "<group>"; };
@@ -254,11 +266,13 @@
 		1CAFFAE2D9B95A4F0ED912AE /* Moshpit.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Moshpit.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		1CCABA3E23F7C766E67A7174 /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
 		1CF2256C5CB122431EB9D184 /* AgentSectionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentSectionTests.swift; sourceTree = "<group>"; };
+		1FAF2C56D949C64D33BB3853 /* WhisperModelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhisperModelView.swift; sourceTree = "<group>"; };
 		21157DF7F77DD89F2B9B78CA /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		21A747EB28C31A47AB2B5035 /* AppIcon-NoCarrier60x60@3x.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "AppIcon-NoCarrier60x60@3x.png"; sourceTree = "<group>"; };
 		248BF483DDC1D85D263F635A /* AddKeyView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddKeyView.swift; sourceTree = "<group>"; };
 		265B295D8ACDAA527C80014E /* DirectionPadTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DirectionPadTests.swift; sourceTree = "<group>"; };
 		27F4131AC113D1AABFD85868 /* AppIcon-Cursor60x60@2x.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "AppIcon-Cursor60x60@2x.png"; sourceTree = "<group>"; };
+		2B00EDD9793C847D6BEF4A25 /* WhisperDictationEngineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhisperDictationEngineTests.swift; sourceTree = "<group>"; };
 		2CB3B94596DDE5656197F3B0 /* SSHIntegrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SSHIntegrationTests.swift; sourceTree = "<group>"; };
 		2EA24C4652E9064A85637956 /* AppIcon-Cursor83.5x83.5@2x~ipad.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "AppIcon-Cursor83.5x83.5@2x~ipad.png"; sourceTree = "<group>"; };
 		2F8406DA5303BB024FA32971 /* TmuxControlClientParserTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TmuxControlClientParserTests.swift; sourceTree = "<group>"; };
@@ -302,6 +316,7 @@
 		6937F863672E5171992F95F5 /* AppIcon-Ringdown60x60@3x.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "AppIcon-Ringdown60x60@3x.png"; sourceTree = "<group>"; };
 		6942C851AB7E6BB41499FA8C /* AppSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSettings.swift; sourceTree = "<group>"; };
 		6A28ACE946F638391F9E5213 /* LICENSES.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = LICENSES.md; sourceTree = "<group>"; };
+		6B316D989469B9708DEB3E6F /* VoiceLanguage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceLanguage.swift; sourceTree = "<group>"; };
 		6B817532F8A189AB0A365775 /* HerdrControlClientTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HerdrControlClientTests.swift; sourceTree = "<group>"; };
 		6BBA3F94185AB0AFCD9D10A0 /* AgentNotifications.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentNotifications.swift; sourceTree = "<group>"; };
 		6BD169CBBC38F8010E3FC8F0 /* TerminalViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalViewModel.swift; sourceTree = "<group>"; };
@@ -329,6 +344,7 @@
 		88E2F74CA442EE4921B8EB1C /* TOFUHostKeyDelegateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TOFUHostKeyDelegateTests.swift; sourceTree = "<group>"; };
 		8940B24715B5E0CF15676A88 /* AccentGalleryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccentGalleryView.swift; sourceTree = "<group>"; };
 		89468952BA7A9F409046CF76 /* AppIcon-Cursor60x60@3x.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "AppIcon-Cursor60x60@3x.png"; sourceTree = "<group>"; };
+		8A427C067C58814F520426E2 /* WhisperModelStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhisperModelStore.swift; sourceTree = "<group>"; };
 		8BE5CDACBB1B8D07F5593479 /* SSHService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SSHService.swift; sourceTree = "<group>"; };
 		8C0AC25F11E515FF3A6B4AE2 /* MoshBootstrap.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoshBootstrap.swift; sourceTree = "<group>"; };
 		8F2769DAA1147749D1BE4343 /* TmuxSessionControllerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TmuxSessionControllerTests.swift; sourceTree = "<group>"; };
@@ -348,6 +364,7 @@
 		A41D45DEB209E64F8E845274 /* KeychainService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainService.swift; sourceTree = "<group>"; };
 		A47DF607D0A0BB071C864EEF /* AgentPalette.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPalette.swift; sourceTree = "<group>"; };
 		A4A3016A2C0EBBE814954D82 /* ThemeFlowUITest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThemeFlowUITest.swift; sourceTree = "<group>"; };
+		A6EC2F3D6701224233D016C1 /* WhisperDictationEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhisperDictationEngine.swift; sourceTree = "<group>"; };
 		A7118E3B937405064AF5E7F3 /* MoshpitMark.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoshpitMark.swift; sourceTree = "<group>"; };
 		A7A9E08AEC01474826CEC504 /* HerdrControlClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HerdrControlClient.swift; sourceTree = "<group>"; };
 		AB7EBF5F0934B9192518A9F8 /* MoshpitIslandWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoshpitIslandWidget.swift; sourceTree = "<group>"; };
@@ -363,6 +380,7 @@
 		B8E766A14A745773140BE129 /* TerminalCursor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalCursor.swift; sourceTree = "<group>"; };
 		BABE853079273BFF284461FC /* MultiplexerControlling.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MultiplexerControlling.swift; sourceTree = "<group>"; };
 		BD6E5F9CE5715B680872B6CA /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
+		BE653787B46C83117DA1849C /* VoiceEngineView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceEngineView.swift; sourceTree = "<group>"; };
 		C0311C1527B62E3EE5121EC1 /* TmuxIntegrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TmuxIntegrationTests.swift; sourceTree = "<group>"; };
 		C1E8158B74BCBA2450050C74 /* MoshWire.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoshWire.swift; sourceTree = "<group>"; };
 		C4C337C6AF43860E1E812E0B /* Moshpit.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Moshpit.entitlements; sourceTree = "<group>"; };
@@ -372,6 +390,7 @@
 		C688796D96A7FE8BEB0D4525 /* DesignTokens.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesignTokens.swift; sourceTree = "<group>"; };
 		C8F2DE3983CA0563FD1C0827 /* AppTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppTheme.swift; sourceTree = "<group>"; };
 		CA1DF32C2FEDCCD8BE46BAD3 /* MoshScrollKeysTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoshScrollKeysTests.swift; sourceTree = "<group>"; };
+		CA34A0BAC5D767AA36A284F9 /* KeyPickerSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyPickerSheet.swift; sourceTree = "<group>"; };
 		CA8016E1600688806FF448C5 /* Hack-Regular.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Hack-Regular.ttf"; sourceTree = "<group>"; };
 		CACE2D34A28320365A26F2A6 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		CC70BD2ED20CD37D034C427A /* SSHKeyFactory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SSHKeyFactory.swift; sourceTree = "<group>"; };
@@ -388,6 +407,7 @@
 		D8FED11FE8C987A99A670E65 /* PlainLinkDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlainLinkDetector.swift; sourceTree = "<group>"; };
 		D9801C556A69BDC6847847EB /* SSHKeyStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SSHKeyStore.swift; sourceTree = "<group>"; };
 		DA88DD878C3330D057D02B9F /* SettingsScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsScreen.swift; sourceTree = "<group>"; };
+		DCC2B588272E33589B0EA7D9 /* SOCKSProxyDialer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SOCKSProxyDialer.swift; sourceTree = "<group>"; };
 		DF94C284887BF4FA3FC37482 /* MoshpitApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoshpitApp.swift; sourceTree = "<group>"; };
 		E027D85F69386790BB369C54 /* AppIcon-Prefix83.5x83.5@2x~ipad.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "AppIcon-Prefix83.5x83.5@2x~ipad.png"; sourceTree = "<group>"; };
 		E2D6E9A63E8DD4B6955D9224 /* Signing.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Signing.xcconfig; sourceTree = "<group>"; };
@@ -421,6 +441,8 @@
 			files = (
 				C19A5F4F3B566AFE2BE393E6 /* SwiftTerm in Frameworks */,
 				15C2ED10C4D6E4A81A5A215A /* Citadel in Frameworks */,
+				F53F7C44F75E5F774CE7C772 /* WhisperKit in Frameworks */,
+				75ABF87482B617EE95453F63 /* NIOSOCKS in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -493,6 +515,7 @@
 				33C0A65F276C534B50547E88 /* Log.swift */,
 				BABE853079273BFF284461FC /* MultiplexerControlling.swift */,
 				FB1A95FDA6DF8F627038AC4D /* SessionHub.swift */,
+				DCC2B588272E33589B0EA7D9 /* SOCKSProxyDialer.swift */,
 				CC70BD2ED20CD37D034C427A /* SSHKeyFactory.swift */,
 				8BE5CDACBB1B8D07F5593479 /* SSHService.swift */,
 				5D2E3B89FC8276785CE7ACA2 /* Herdr */,
@@ -588,6 +611,7 @@
 			isa = PBXGroup;
 			children = (
 				248BF483DDC1D85D263F635A /* AddKeyView.swift */,
+				CA34A0BAC5D767AA36A284F9 /* KeyPickerSheet.swift */,
 				D7C27976B74D1CA4CAC3C17E /* SSHKeysView.swift */,
 			);
 			path = Keys;
@@ -762,6 +786,8 @@
 			isa = PBXGroup;
 			children = (
 				E468E22C8246BFACCCBBF685 /* VoiceDictationControllerTests.swift */,
+				0C756763ACBB5161902D2521 /* VoiceLanguageTests.swift */,
+				2B00EDD9793C847D6BEF4A25 /* WhisperDictationEngineTests.swift */,
 			);
 			path = Voice;
 			sourceTree = "<group>";
@@ -790,7 +816,9 @@
 				DA88DD878C3330D057D02B9F /* SettingsScreen.swift */,
 				B2361DCED84C3BDE4DEF91AF /* ThemeEditorView.swift */,
 				6C6E0E8EE7D87DC9BC55058D /* ThemeGalleryView.swift */,
+				BE653787B46C83117DA1849C /* VoiceEngineView.swift */,
 				453FC4E503E7B2EB70B5493A /* VoiceLanguageView.swift */,
+				1FAF2C56D949C64D33BB3853 /* WhisperModelView.swift */,
 			);
 			path = Settings;
 			sourceTree = "<group>";
@@ -933,6 +961,9 @@
 			children = (
 				67175EDBEC009C5FEDACA869 /* DictationEngines.swift */,
 				F6A46357469548D128D4A58D /* VoiceDictation.swift */,
+				6B316D989469B9708DEB3E6F /* VoiceLanguage.swift */,
+				A6EC2F3D6701224233D016C1 /* WhisperDictationEngine.swift */,
+				8A427C067C58814F520426E2 /* WhisperModelStore.swift */,
 			);
 			path = Voice;
 			sourceTree = "<group>";
@@ -994,6 +1025,8 @@
 			packageProductDependencies = (
 				8BD79C95F836869D3CFFC89C /* SwiftTerm */,
 				FE5F8426B11DE72AE18AAC34 /* Citadel */,
+				8218C50280CC130CD8146599 /* WhisperKit */,
+				46F87A40D4DB9113507655F4 /* NIOSOCKS */,
 			);
 			productName = Moshpit;
 			productReference = 1CAFFAE2D9B95A4F0ED912AE /* Moshpit.app */;
@@ -1028,20 +1061,20 @@
 				LastUpgradeCheck = 2600;
 				TargetAttributes = {
 					46055837F41E11FDD1BA20A8 = {
-						DevelopmentTeam = 38RWZPNDPZ;
+						DevelopmentTeam = 87NXLX5B2T;
 						ProvisioningStyle = Automatic;
 					};
 					56689BDF532EC8A013AA9CFA = {
-						DevelopmentTeam = 38RWZPNDPZ;
+						DevelopmentTeam = 87NXLX5B2T;
 						ProvisioningStyle = Automatic;
 						TestTargetID = C04339524D7C881039141416;
 					};
 					C04339524D7C881039141416 = {
-						DevelopmentTeam = 38RWZPNDPZ;
+						DevelopmentTeam = 87NXLX5B2T;
 						ProvisioningStyle = Automatic;
 					};
 					E1E5D691D44179F8887C719D = {
-						DevelopmentTeam = 38RWZPNDPZ;
+						DevelopmentTeam = 87NXLX5B2T;
 						ProvisioningStyle = Automatic;
 					};
 				};
@@ -1059,7 +1092,9 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				507682087820555A89D320AB /* XCRemoteSwiftPackageReference "Citadel" */,
+				8506E528886138E2994D4E5B /* XCRemoteSwiftPackageReference "swift-nio-extras" */,
 				C3350F84DE006B66983B6F78 /* XCRemoteSwiftPackageReference "SwiftTerm" */,
+				2CD4FDCB5964245F81A3C8D5 /* XCRemoteSwiftPackageReference "WhisperKit" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 4CA011A7B830BF55B875550E /* Products */;
@@ -1192,6 +1227,8 @@
 				B079312D3EC271B3B573FD59 /* TmuxSessionControllerTests.swift in Sources */,
 				82409C713CF692218C0D4FCF /* TmuxTypesTests.swift in Sources */,
 				5D55B5A61345681ABEF9198E /* VoiceDictationControllerTests.swift in Sources */,
+				61935E43FF1E351553F4EEB3 /* VoiceLanguageTests.swift in Sources */,
+				4BD65AEB75DD804F69E45A51 /* WhisperDictationEngineTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1231,6 +1268,7 @@
 				6E0399C29DA7C51407175B2F /* HostKeyValidator.swift in Sources */,
 				BE33B27D09A3330493D54A47 /* InstallAssistView.swift in Sources */,
 				BA26E5AABFD42001C0B69B33 /* IslandHooksInstallView.swift in Sources */,
+				628EE7388F6432B57A43A600 /* KeyPickerSheet.swift in Sources */,
 				2F4BBC78F10FCE418FD64837 /* KeychainService.swift in Sources */,
 				E683E03CE82E859E098E9F92 /* Log.swift in Sources */,
 				22A6EFA738C3CB1A00DCD747 /* MoshBootstrap.swift in Sources */,
@@ -1246,6 +1284,7 @@
 				54F3C844979EF952D82081D1 /* NewAgentTaskSheet.swift in Sources */,
 				43FBF4AD42DB057CFE48C3FB /* OCB3.swift in Sources */,
 				7A0CF29D7D4060F29A3F11C8 /* PlainLinkDetector.swift in Sources */,
+				94555ED01227C0AAFA26D4D2 /* SOCKSProxyDialer.swift in Sources */,
 				68CCE909B1AE1B551014B3F2 /* SSHKeyFactory.swift in Sources */,
 				F64882AA4C8B1DCD666687F6 /* SSHKeyStore.swift in Sources */,
 				740359C94BA1B2B3004A587B /* SSHKeysView.swift in Sources */,
@@ -1276,8 +1315,13 @@
 				2A5CA5647477E12D2FB0B481 /* TmuxTransport.swift in Sources */,
 				E5DE2728AC921175DFE38300 /* TmuxTypes.swift in Sources */,
 				D5FAB3E04B265D5AEB8FCFF7 /* VoiceDictation.swift in Sources */,
+				71D4F4288B995DDD3420E579 /* VoiceEngineView.swift in Sources */,
 				0CE0FC4BE657CA16B16817A1 /* VoiceInputOverlay.swift in Sources */,
+				C05C4F7F368BC50785E1D2D4 /* VoiceLanguage.swift in Sources */,
 				1F8AFF4A8B389296954AEAF3 /* VoiceLanguageView.swift in Sources */,
+				59FBED7707D5DF41C29C3C6B /* WhisperDictationEngine.swift in Sources */,
+				AF3E7DE276D795F52CA1315E /* WhisperModelStore.swift in Sources */,
+				D086E0C8605C85003E24681C /* WhisperModelView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1643,12 +1687,28 @@
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
+		2CD4FDCB5964245F81A3C8D5 /* XCRemoteSwiftPackageReference "WhisperKit" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/argmaxinc/WhisperKit.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.1.0;
+			};
+		};
 		507682087820555A89D320AB /* XCRemoteSwiftPackageReference "Citadel" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/orlandos-nl/Citadel.git";
 			requirement = {
 				kind = upToNextMajorVersion;
 				minimumVersion = 0.7.0;
+			};
+		};
+		8506E528886138E2994D4E5B /* XCRemoteSwiftPackageReference "swift-nio-extras" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/apple/swift-nio-extras.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.34.0;
 			};
 		};
 		C3350F84DE006B66983B6F78 /* XCRemoteSwiftPackageReference "SwiftTerm" */ = {
@@ -1662,6 +1722,16 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		46F87A40D4DB9113507655F4 /* NIOSOCKS */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 8506E528886138E2994D4E5B /* XCRemoteSwiftPackageReference "swift-nio-extras" */;
+			productName = NIOSOCKS;
+		};
+		8218C50280CC130CD8146599 /* WhisperKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 2CD4FDCB5964245F81A3C8D5 /* XCRemoteSwiftPackageReference "WhisperKit" */;
+			productName = WhisperKit;
+		};
 		8BD79C95F836869D3CFFC89C /* SwiftTerm */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = C3350F84DE006B66983B6F78 /* XCRemoteSwiftPackageReference "SwiftTerm" */;

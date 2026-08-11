@@ -36,6 +36,10 @@ struct AddConnectionView: View {
     @State private var moshServerPath = ""
     @State private var compressOutput = false
     @State private var saveError: String?
+    @State private var showKeyPicker = false
+    @State private var useSOCKSProxy = false
+    @State private var socksProxyHost = ""
+    @State private var socksProxyPort = "1080"
 
     init(store: ConnectionStore, keychain: KeychainService, existing: ServerConnection? = nil) {
         self.store = store
@@ -56,6 +60,9 @@ struct AddConnectionView: View {
             _herdrPath = State(initialValue: c.herdrPath ?? "")
             _moshServerPath = State(initialValue: c.moshServerPath ?? "")
             _compressOutput = State(initialValue: c.compression)
+            _useSOCKSProxy = State(initialValue: c.useSOCKSProxy ?? false)
+            _socksProxyHost = State(initialValue: c.socksProxyHost ?? "")
+            _socksProxyPort = State(initialValue: c.socksProxyPort.map(String.init) ?? "1080")
         }
     }
 
@@ -106,46 +113,20 @@ struct AddConnectionView: View {
                             if authMethod == .password {
                                 FieldRow(placeholder: "Password", text: $password, secure: true)
                             } else {
-                                if !connectableKeys.isEmpty {
-                                    Menu {
-                                        ForEach(connectableKeys) { key in
-                                            Button {
-                                                selectedKeyId = key.id
-                                            } label: {
-                                                Label {
-                                                    Text(verbatim: "\(key.name) · \(key.badgeText)")
-                                                } icon: {
-                                                    if selectedKeyId == key.id {
-                                                        Image(systemName: "checkmark")
-                                                    }
-                                                }
-                                            }
-                                        }
-                                        Button {
-                                            selectedKeyId = nil
-                                        } label: {
-                                            Label {
-                                                Text("Paste a PEM instead…")
-                                            } icon: {
-                                                if selectedKeyId == nil {
-                                                    Image(systemName: "checkmark")
-                                                }
-                                            }
-                                        }
-                                    } label: {
-                                        HStack(spacing: 10) {
-                                            Text("Key").font(Face.text(14)).foregroundStyle(Ink.primary)
-                                            Spacer()
-                                            Text(selectedKey.map { "\($0.name) · \($0.badgeText)" } ?? String(localized: "Paste PEM"))
-                                                .font(Face.text(14))
-                                                .foregroundStyle(Ink.meta)
-                                                .lineLimit(1)
-                                            MiniChevron()
-                                        }
-                                        .frame(minHeight: Metrics.cellMinHeight)
-                                        .contentShape(Rectangle())
-                                    }
+                                // Always rendered — even with zero saved keys — so there's
+                                // always a way into KeyPickerSheet's generate/import CTA
+                                // instead of paste-PEM being the only option. Kept as an
+                                // independent `if` from the TextEditor below (not folded
+                                // into an if/else): MainFlowUITest asserts the PEM editor
+                                // appears immediately with an empty key store, with no
+                                // extra tap first.
+                                ChevronRow(
+                                    label: "Key",
+                                    value: selectedKey.map { "\($0.name) · \($0.badgeText)" } ?? String(localized: "Paste PEM")
+                                ) {
+                                    showKeyPicker = true
                                 }
+                                .accessibilityIdentifier("key-picker-row")
                                 if selectedKey == nil {
                                     VStack(alignment: .leading, spacing: 4) {
                                         Text("Private Key (PEM)")
@@ -218,6 +199,31 @@ struct AddConnectionView: View {
                             }
                         }
                         .animation(Motion.settle, value: useMosh)
+
+                        FormGroup(
+                            title: "PROXY",
+                            footer: "Only unauthenticated SOCKS5 proxies are supported. This proxies the SSH connection only — if Mosh is also enabled above, its UDP session connects directly once bootstrapped and is not proxied."
+                        ) {
+                            ToggleRow(
+                                label: "Use SOCKS5 Proxy",
+                                subtitle: "Route this connection through a local or corporate SOCKS5 proxy",
+                                isOn: $useSOCKSProxy)
+                            if useSOCKSProxy {
+                                FieldRow(placeholder: "Proxy Host", text: $socksProxyHost)
+                                HStack {
+                                    Text("Proxy Port").font(Face.text(14)).foregroundStyle(Ink.primary)
+                                    Spacer()
+                                    TextField("1080", text: $socksProxyPort)
+                                        .keyboardType(.numberPad)
+                                        .font(Face.text(14))
+                                        .foregroundStyle(Ink.fixedValue)
+                                        .multilineTextAlignment(.trailing)
+                                        .frame(width: 80)
+                                }
+                                .frame(minHeight: Metrics.cellMinHeight)
+                            }
+                        }
+                        .animation(Motion.settle, value: useSOCKSProxy)
 
                         FormGroup(
                             title: "ADVANCED",
@@ -293,6 +299,9 @@ struct AddConnectionView: View {
                     saveError = nil
                 }
             }
+            .sheet(isPresented: $showKeyPicker) {
+                KeyPickerSheet(keys: connectableKeys, selectedKeyId: $selectedKeyId)
+            }
         }
         .preferredColorScheme(.dark)
     }
@@ -311,6 +320,9 @@ struct AddConnectionView: View {
         // Per-connection mosh-server (`--server`). Empty → nil → bootstrap uses
         // `mosh-server` on PATH (more portable than a hardcoded absolute path).
         connection.moshServerPath = moshServerPath.isEmpty ? nil : moshServerPath
+        connection.useSOCKSProxy = useSOCKSProxy
+        connection.socksProxyHost = socksProxyHost.isEmpty ? nil : socksProxyHost
+        connection.socksProxyPort = Int(socksProxyPort) ?? 1080
         connection.predictMode = predictMode
         connection.roamOnCellular = roamOnCellular
         connection.tmuxPath = tmuxPath.isEmpty ? nil : tmuxPath

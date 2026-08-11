@@ -1,15 +1,25 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// Screen 9 — Add Key modal. Generate / Import / Hardware methods,
 /// algorithm choice with REC badge, passphrase strength, Face ID + Secure
 /// Enclave toggles, optional host binding with fingerprint preview.
 struct AddKeyView: View {
     enum Method: String, CaseIterable { case generate, importKey, hardware }
+    /// Which text field a picked file's contents should land in — one
+    /// `.fileImporter` shared by both "Import File…" buttons rather than two
+    /// independent ones.
+    private enum ImportTarget { case privateKey, publicKey }
 
     @Environment(\.dismiss) private var dismiss
     @Environment(SSHKeyStore.self) private var keyStore
     @Environment(ConnectionStoreHolder.self) private var connections
     @Environment(KeychainServiceHolder.self) private var keychainHolder
+
+    /// Fired with the new record right before this view dismisses itself —
+    /// lets a caller (e.g. `KeyPickerSheet`) auto-select a key generated
+    /// inline instead of leaving the picker on whatever it showed before.
+    var onCreated: ((SSHKeyRecord) -> Void)? = nil
 
     @State private var method: Method = .generate
     @State private var name = ""
@@ -25,6 +35,7 @@ struct AddKeyView: View {
     @State private var generatedFingerprint: String?
     @State private var working = false
     @State private var errorMessage: String?
+    @State private var importTarget: ImportTarget?
 
     private var effectiveAlgorithm: SSHKeyAlgorithm {
         storeInSecureEnclave ? .seP256 : algorithm
@@ -106,8 +117,39 @@ struct AddKeyView: View {
                     errorMessage = nil
                 }
             }
+            .fileImporter(
+                isPresented: Binding(
+                    get: { importTarget != nil }, set: { if !$0 { importTarget = nil } }),
+                allowedContentTypes: [.data]
+            ) { result in
+                handleImportedFile(result)
+            }
         }
         .preferredColorScheme(.dark)
+    }
+
+    /// Reads a file picked via either "Import File…" button into the field
+    /// `importTarget` names. `.fileImporter` hands back a security-scoped
+    /// URL — SwiftUI has no `asCopy`-style option, so the access window has
+    /// to be opened and closed by hand around the read.
+    private func handleImportedFile(_ result: Result<URL, Error>) {
+        let target = importTarget
+        importTarget = nil
+        do {
+            let url = try result.get()
+            guard url.startAccessingSecurityScopedResource() else {
+                throw SSHKeyFactory.KeyError.unsupported("couldn't access the selected file")
+            }
+            defer { url.stopAccessingSecurityScopedResource() }
+            let text = try SSHKeyFactory.decodeImportedText(try Data(contentsOf: url))
+            switch target {
+            case .privateKey: importPEM = text
+            case .publicKey: importPublicLine = text
+            case nil: break
+            }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
     }
 
     // MARK: Generate
@@ -179,7 +221,27 @@ struct AddKeyView: View {
                             .allowsHitTesting(false)
                     }
                 }
-            FieldRow(placeholder: "Public key line (optional)", text: $importPublicLine, mono: true)
+            Button {
+                importTarget = .privateKey
+            } label: {
+                Label("Import File…", systemImage: "folder")
+                    .font(Face.text(13))
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(Ink.accent)
+            .padding(.bottom, 6)
+
+            HStack(spacing: 8) {
+                FieldRow(placeholder: "Public key line (optional)", text: $importPublicLine, mono: true)
+                Button {
+                    importTarget = .publicKey
+                } label: {
+                    Image(systemName: "folder")
+                        .font(.system(size: 13))
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(Ink.accent)
+            }
             ToggleRow(label: "Require Face ID", subtitle: "Face ID confirmation before every signature", isOn: $requireFaceID)
         }
     }
