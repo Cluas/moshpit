@@ -8,57 +8,75 @@ Keep it under 4000 characters (TestFlight's limit).
 
 ---
 
-## 本次重点：语音输入
+## The main thing: voice input
 
-快捷条上多了一个 **mic** 键。说话 → 文字先落在预览面板 → **Insert** 只输入，
-**Send** 输入并按回车。不点这两个按钮，什么都不会进终端。
+There's a new **mic** key on the shortcut bar. Speak, and the text lands in a
+preview panel first — **Insert** types it, **Send** types it and presses
+Return. Until you tap one of those, nothing reaches the terminal.
 
-**设置 → 语音输入 → 识别引擎**有两个选择：
+**Settings → Voice Input → Recognition** offers two engines:
 
-- **Apple（内置）** —— 免下载，但一次只认一种语言
-- **Whisper（本地模型）** —— 要先下模型，能听懂一句话里混着两种语言
+- **Apple (built in)** — nothing to download, but one language per session
+- **Whisper (local model)** — needs a model downloaded once, and understands a
+  sentence that mixes two languages
 
-请重点测 **Whisper + 中英混说**，比如「把这个 commit rebase 到 main」「帮我看下
-这个 pod 为什么 CrashLoopBackOff」。语言建议在**设置 → 语音输入 → 语言**里
-明确选「中文」，比「自动检测」稳——自动检测在短句或混杂严重时会摇摆。
+Please concentrate on **Whisper with mixed-language speech**: say a sentence in
+your own language with English command names in the middle of it, e.g.
+"把这个 commit rebase 到 main" or "帮我看下这个 pod 为什么 CrashLoopBackOff".
+Set **Settings → Voice Input → Language** explicitly to your language rather
+than leaving it on Auto-detect — detection wavers on short or heavily mixed
+phrases.
 
-模型在**设置 → 语音输入 → 模型**里下：Small 约 470 MB 够用，Large v3 Turbo
-约 954 MB 最准（需要较新芯片）。**下载中途请故意切走 App、或者上划杀掉 App**，
-回来应该显示「已下载 xxx MB — 已暂停」并能点「继续」接着下，不该从 0 重来。
+Download a model under **Settings → Voice Input → Model**: Small (~470 MB) is
+enough, Large v3 Turbo (~954 MB) is the most accurate but needs a recent chip.
+**Please interrupt a download on purpose** — switch to another app, or swipe up
+to kill Moshpit entirely. Coming back should show "xxx MB of ≈470 MB — paused"
+with a **Resume** button, and continue from there rather than starting over.
 
-## 这几个行为变了，不是坏了
+## These changed on purpose — not bugs
 
-- **打开终端不再自动弹键盘。** 点一下终端、或点快捷条右边的键盘键就升起。
-  想要旧行为：**设置 → 行为 → 打开时弹出键盘**。
-- **`^L` 不在默认快捷条里了**，给 mic 腾了位置。需要的话在快捷键编辑器里加回来。
-- **mic 键是普通 chip**，可以拖着排序、也可以移出工具栏。
-- 快捷条溢出时右边会**渐隐**，提示还能往左拖。
+- **Opening a terminal no longer raises the keyboard.** Tap the terminal, or the
+  keyboard key at the right of the shortcut bar. Want the old behaviour?
+  **Settings → Behavior → Keyboard on Open**.
+- **`^L` is no longer in the default shortcut bar** — the mic took its slot. Add
+  it back from the shortcut editor if you use it.
+- **The mic is an ordinary chip**: reorder it, or move it out of the toolbar.
+- An overflowing shortcut bar now **fades at the edge** instead of cutting a
+  chip in half, to show there's more to drag to.
 
-## 新增快捷键（默认在栏外，要自己加）
+## New shortcuts (outside the bar by default — add them yourself)
 
-- **`⏎`** —— 回车
-- **`⇥⏎`** —— 接受 Claude Code 的推荐 prompt 并发送（一次发 Tab + 回车）
+- **`⏎`** — Return
+- **`⇥⏎`** — accept Claude Code's suggested prompt and send it (Tab then Return
+  in one tap)
 
-## 界面语言
+## Interface language
 
-中文和日文现在是**全量翻译**（612 条字符串，无遗漏）。看到任何**还是英文的**、
-或者**翻得别扭/不像人话**的地方，请截图告诉我们。
+Chinese and Japanese are now **fully translated** (612 strings, no gaps). If you
+find anything **still in English**, or wording that reads badly, please
+screenshot it.
 
-主题编辑器预览里的 `git status` 输出、Whisper 模型名（Tiny/Base/Small/Large v3
-Turbo）是**故意保留英文**的，不用报。
+The `git status` output in the theme editor's preview, and the Whisper model
+names (Tiny/Base/Small/Large v3 Turbo), are **left in English deliberately** —
+no need to report those.
 
-## 已知问题 —— 请不要重复反馈
+## Known issues — please don't re-report these
 
-1. **tmux 会话重连后**，可能看到断线前输入栏里的旧内容，而且退格删不掉。
-   正在定位。如果你遇到，帮忙确认一件事：**一下一下单点退格（不长按）**，
-   那些字符会不会消失？这个答案对定位很关键。
-2. **下载模型时切到别的 App 会暂停**（切回来自动继续）。这是权衡后的选择——
-   用后台传输会在杀进程后把下载彻底卡死，不报错也不推进。
-3. **锁屏灵动岛的上下留白**调过但没在真机上验证过。挤了或空得离谱请报。
-4. **Send 按钮的字节序没在真机验证过**。如果点 Send 只插入了文字、没有提交，
-   请立刻报。
+1. **After a tmux session reconnects**, you may see whatever was in the input
+   bar before the drop, and backspace may not clear it. Being investigated. If
+   you hit it, please answer one question: pressing backspace **one tap at a
+   time (not held down)** — do those characters disappear? That answer decides
+   the fix.
+2. **A model download pauses when you switch apps** (and resumes by itself when
+   you come back). This is a deliberate trade: using background transfers wedged
+   the download permanently after the app was killed — no progress, no error.
+3. **The lock-screen Live Activity padding** was changed but never verified on a
+   real device. Report it if it looks cramped or absurdly empty.
+4. **Send's keystroke order is unverified on a real device.** If tapping Send
+   inserts the text but does not submit it, please report that immediately.
 
-## 反馈方式
+## Reporting
 
-在 TestFlight 里截图反馈，或直接发我。带上：机型、iOS 版本、连的是 SSH 还是
-mosh、tmux 还是 herdr——这四项能省掉一半来回。
+Screenshot through TestFlight, or send it to me directly. Please include: device
+model, iOS version, SSH or mosh, and tmux or herdr — those four save about half
+the back-and-forth.
