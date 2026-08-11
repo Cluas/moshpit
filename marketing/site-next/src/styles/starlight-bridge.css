@@ -11,31 +11,43 @@
 
 :root,
 :root[data-theme='dark'] {
-  /* Accent — the brand violet, in the three weights Starlight asks for. */
-  --sl-color-accent-low: #1b1b3d;
-  --sl-color-accent: var(--accent);
-  --sl-color-accent-high: #cfceff;
+  /* Accent — under the new system there is no single do-everything brand
+   * color: --citron fills primary actions only, and everything else the old
+   * brand violet did (decorative accents, current-page emphasis) is
+   * --signal. Starlight's accent slots are all non-button emphasis, so they
+   * map to --signal. Low/high are proportional tints of it — same
+   * lightness/saturation the old low/high held against the old accent,
+   * rotated to --signal's hue, not the old violet-tinted hex values. */
+  --sl-color-accent-low: #1b273d;
+  --sl-color-accent: var(--signal);
+  --sl-color-accent-high: #cedfff;
 
   /* Surfaces, from near-black up through the raised panels. */
-  --sl-color-black: var(--ink);
-  --sl-color-gray-6: var(--ink);
+  --sl-color-black: var(--pit-0);
+  --sl-color-gray-6: var(--pit-0);
   --sl-color-gray-5: var(--panel);
   --sl-color-gray-4: var(--raise);
-  --sl-color-gray-3: rgba(255, 255, 255, 0.14);
+  --sl-color-gray-3: var(--line-lit);
   --sl-color-gray-2: var(--dim);
-  --sl-color-gray-1: var(--paper);
-  --sl-color-white: var(--paper);
+  --sl-color-gray-1: var(--ink);
+  --sl-color-white: var(--ink);
 
-  --sl-color-bg: var(--ink);
-  --sl-color-bg-nav: rgba(5, 6, 10, 0.86);
-  --sl-color-bg-sidebar: var(--ink);
+  --sl-color-bg: var(--pit-0);
+  --sl-color-bg-nav: rgba(4, 5, 7, 0.86);
+  --sl-color-bg-sidebar: var(--pit-0);
   --sl-color-hairline: var(--line);
   --sl-color-hairline-light: var(--line-lit);
   --sl-color-hairline-shade: var(--line);
 
   --sl-color-text: var(--dim);
-  --sl-color-text-accent: var(--accent);
-  --sl-color-text-invert: var(--ink);
+  --sl-color-text-accent: var(--signal);
+  /* Text sitting on a bright fill (e.g. the accent-high badge background) —
+   * the old value was the page background (--ink, then near-black). The new
+   * system's own "dark text on a bright fill" tone is --panel: every filled
+   * control in shared.css (.cta, .sess, .pricecta, the dictation overlay's
+   * Insert button) pairs a bright fill with this exact shade of near-black,
+   * not the page's own darkest black. */
+  --sl-color-text-invert: var(--panel);
 
   /* Code blocks are terminal output on this site — keep them true black so a
    * screenshot of a real pane and a fenced block read as the same surface. */
@@ -47,6 +59,50 @@
 
   /* Starlight's default content column is wider than our prose measure. */
   --sl-content-width: 48rem;
+
+  /* Expressive Code (Starlight's fenced-code-block renderer) ships its own
+   * theme with fixed hex colors, independent of the --sl-color-* vars above.
+   * Frame CHROME (tab bar, terminal titlebar) already inherits our surfaces
+   * for free, because astro-expressive-code derives those from --sl-color-*
+   * — but the code area's own foreground, border, selection and scrollbar
+   * colors do not, so a fenced block would otherwise show cold blue-on-navy
+   * text that matches no other surface on the site. These rules are
+   * unlayered, which beats Expressive Code's own `@layer
+   * starlight.components` regardless of its light/dark branching — so they
+   * hold even if a visitor's OS prefers light and Starlight's (still
+   * present, unstyled) theme toggle is switched to it. The syntax token
+   * colors themselves (the per-span Shiki theme) are left alone: retheming
+   * those needs a real Shiki theme swap in astro.config.mjs, out of scope
+   * for this pass — see the retrospective note in the project handoff. */
+  --ec-brdRad: 10px;
+  --ec-brdCol: var(--line);
+  --ec-codeBg: var(--panel);
+  --ec-codeFg: var(--dim);
+  --ec-codeSelBg: rgba(122, 167, 255, 0.25);
+  --ec-uiSelBg: rgba(122, 167, 255, 0.25);
+  --ec-gtrFg: var(--meta);
+  --ec-gtrBrdCol: var(--line);
+  --ec-focusBrd: var(--citron);
+  --ec-sbThumbCol: var(--line);
+  --ec-sbThumbHoverCol: var(--line-lit);
+  /* The terminal frame's traffic-light dots: the inherited default tints
+   * them the same near-black as the panel behind them (functionally
+   * invisible). shared.css's own pre.term uses a visible light dot instead —
+   * matched here at the same alpha (0.16 of --ink, times the default 0.75
+   * --ec-frm-trmTtbDotsOpa multiplier ≈ shared.css's flat rgba(255,255,255,.12)),
+   * tinted to --ink's warm hue instead of cool white. */
+  --ec-frm-trmTtbDotsFg: rgba(244, 241, 232, 0.16);
+  /* The title bar itself: the inherited default is --sl-color-black (the
+   * PAGE background, --pit-0) — a full shade darker than --ec-codeBg
+   * (--panel) below it, so the frame reads as two stacked blocks instead of
+   * one. shared.css's pre.term .bar is barely lighter than the block it sits
+   * in (rgba(255,255,255,.02) over the same --pit-1); color-mix reproduces
+   * that same barely-there wash on top of --panel instead of swapping to a
+   * different, darker surface. The seam below the bar gets the ordinary
+   * hairline rather than the inherited gray-5-tinted one, now that the bar
+   * itself is no longer gray-5. */
+  --ec-frm-trmTtbBg: color-mix(in srgb, var(--panel), white 3%);
+  --ec-frm-trmTtbBrdBtmCol: var(--line);
 }
 
 /* The site never had a light mode and the app is dark-only; offering one here
@@ -57,7 +113,7 @@
 
 /* Links inside docs prose: our underline treatment, not Starlight's. */
 .sl-markdown-content a:not(:where(.not-content *)) {
-  color: var(--accent);
+  color: var(--signal);
   text-underline-offset: 0.18em;
 }
 
@@ -68,4 +124,107 @@
   border-radius: 14px;
   border: 1px solid var(--line);
   max-width: min(100%, 320px);
+}
+
+/* Mono headings — every h1–h6 in the redesign (design/docs.html) sets
+ * var(--mono); Starlight's own default is --sl-font (mapped to --sans
+ * above), which is right for the sidebar and UI chrome but not for
+ * headings. The page's own <h1> (Starlight's PageTitle.astro) lives outside
+ * .sl-markdown-content, in its own content-panel — but it always carries
+ * Starlight's fixed PAGE_TITLE_ID ("_top"), which is a stabler hook than a
+ * generated class would be. Unlayered, so both selectors beat Starlight's
+ * own `@layer starlight.core` / `starlight.content` heading rules regardless
+ * of those rules' own specificity. */
+h1#_top,
+.sl-markdown-content :is(h1, h2, h3, h4, h5, h6):not(:where(.not-content *)) {
+  font-family: var(--mono);
+  letter-spacing: -0.01em;
+}
+
+/* Callouts — Starlight calls them "asides" (`:::note` etc. in Markdown,
+ * compiling to `.starlight-aside`/`.starlight-aside--{note,tip,caution,
+ * danger}`). Every aside actually written in these docs is `:::note`; the
+ * other three types are themed the same way on the chance a page adds one
+ * later. design/docs.html's `.callout` is a flat panel with a colored LEFT
+ * rail and an uppercase mono label — not Starlight's default tinted-
+ * background treatment — so this replaces both the container and the title,
+ * not just the accent color slot. Two rails only, reusing the palette's own
+ * two callout-worthy colors instead of inventing new ones: --amber ("an
+ * agent needs you", i.e. attention) covers note/caution/danger, --ok
+ * (healthy/positive) covers tip. Unlayered, so it beats
+ * asides.css's `@layer starlight.components` regardless of its per-type
+ * selectors' specificity. */
+.starlight-aside {
+  background-color: var(--panel);
+  border: 1px solid var(--line);
+  border-inline-start-width: 3px;
+  border-inline-start-color: var(--sl-color-asides-border);
+  border-radius: 0 10px 10px 0;
+}
+.starlight-aside--note,
+.starlight-aside--caution,
+.starlight-aside--danger {
+  --sl-color-asides-border: var(--amber);
+  --sl-color-asides-text-accent: var(--amber);
+}
+.starlight-aside--tip {
+  --sl-color-asides-border: var(--ok);
+  --sl-color-asides-text-accent: var(--ok);
+}
+.starlight-aside__title {
+  font-family: var(--mono);
+  font-size: 13px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+/* No separate right-hand "On this page" rail: src/components/Sidebar.astro
+ * (Starlight's documented component-override mechanism) nests each page's
+ * own headings under its own active sidebar entry instead — the `.dsub`
+ * block below, matching design/docs.html's single-list pattern ("one list,
+ * one side" — see the comment on .docshell in the redesign's shared.css).
+ * Hiding the rail still leaves Starlight's own `[data-has-sidebar]
+ * [data-has-toc] .main-pane` rule reserving its width (that attribute
+ * reflects whether the page HAS a ToC, not whether the rail renders), so
+ * .main-pane is reclaimed to the full column here too — confirmed visually
+ * after building, not assumed: without this line the content column sits
+ * flush left with a dead gap on the right where the hidden rail used to be. */
+.right-sidebar-container {
+  display: none;
+}
+.main-pane {
+  width: 100%;
+}
+
+/* The `.dsub` nested table of contents itself (src/components/
+ * DocsSidebarList.astro) — this page's own headings, rail-indented under its
+ * own sidebar entry, mono like the headings they mirror. It is a real
+ * <starlight-toc>, so which link is "current" is tracked by Starlight's own
+ * scroll IntersectionObserver (components-internals/TableOfContents/
+ * starlight-toc.ts), unchanged; aria-current="true" is its doing, not new
+ * script here. <starlight-toc> is an unstyled custom element (default
+ * `display: inline`), so the flex column below is load-bearing, not
+ * decorative — without it every heading link would run together on one line. */
+.dsub {
+  display: flex;
+  flex-direction: column;
+  margin: 0.15rem 0 0.6rem 0.5rem;
+  padding-inline-start: 0.65rem;
+  border-inline-start: 1px solid var(--line);
+}
+.dsub a {
+  font: 12px var(--mono);
+  color: var(--meta);
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.25rem;
+  text-decoration: none;
+}
+.dsub a:hover {
+  color: var(--ink);
+  background: transparent;
+}
+.dsub a[aria-current='true'] {
+  color: var(--ok);
+  background: transparent;
+  font-weight: 600;
 }

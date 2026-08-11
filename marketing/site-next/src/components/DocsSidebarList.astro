@@ -1,0 +1,214 @@
+---
+/**
+ * Starlight override — starts as a verbatim copy of the stock
+ * `@astrojs/starlight/components/SidebarSublist.astro` (Starlight's
+ * documented component-override mechanism:
+ * https://starlight.astro.build/guides/overriding-components/) with exactly
+ * one addition: when a link entry is the page you're on, its own headings
+ * render nested directly beneath it — the `.dsub` block — instead of living
+ * in a separate right-hand "On this page" rail. That rail is hidden in
+ * starlight-bridge.css; this is what replaces it. `pageToc` and the heading
+ * range come from Sidebar.astro, which reads `Astro.locals.starlightRoute.toc`
+ * once and passes them down instead of every recursion re-deriving them.
+ *
+ * `.dsub` is a real `<starlight-toc>` — the same custom element the
+ * right-rail ToC uses (components-internals/TableOfContents/starlight-toc.ts)
+ * — so "which heading is on screen" is tracked by Starlight's own
+ * IntersectionObserver logic, not a second copy of it. That element only
+ * cares that it contains `<a href="#slug">` links; it does not require the
+ * `<nav>`/`<ul>` wrapper its default templates happen to use.
+ *
+ * Everything else below — groups, collapsing, badges, RTL caret flip,
+ * scroll/open-state restore via SidebarRestorePoint — is untouched stock
+ * behaviour, copied rather than wrapped so this stays a plain, readable
+ * `<ul>`/`<details>` tree with no extra indirection.
+ *
+ * `flattenSidebar` and the sidebar/badge types are internal to Starlight
+ * (not part of its public `exports` map), so they're reimplemented/loosened
+ * here rather than deep-imported from a path Node's package resolution would
+ * refuse to serve. `Icon` and `Badge` ARE public (`@astrojs/starlight/components`),
+ * so those are the real components, not stand-ins.
+ */
+import { Icon, Badge } from '@astrojs/starlight/components';
+import SidebarRestorePoint from '@astrojs/starlight/components/SidebarRestorePoint.astro';
+
+interface TocLeaf {
+	slug: string;
+	text: string;
+}
+
+interface SidebarLinkEntry {
+	type: 'link';
+	label: string;
+	href: string;
+	isCurrent: boolean;
+	badge: { text: string; variant: string; class: string } | undefined;
+	attrs: Record<string, string | boolean | undefined>;
+}
+
+interface SidebarGroupEntry {
+	type: 'group';
+	label: string;
+	entries: SidebarEntry[];
+	collapsed: boolean;
+	badge: { text: string; variant: string; class: string } | undefined;
+}
+
+type SidebarEntry = SidebarLinkEntry | SidebarGroupEntry;
+
+interface Props {
+	sublist: SidebarEntry[];
+	nested?: boolean;
+	/** This page's own headings, flattened. Empty on pages with no ToC (e.g. `template: splash`). */
+	pageToc: TocLeaf[];
+	/** `Astro.locals.starlightRoute.toc`'s own range, forwarded to the `.dsub` `<starlight-toc>` so it observes the same heading levels the right-rail instance would have. */
+	tocMinH: number;
+	tocMaxH: number;
+}
+
+const { sublist, nested, pageToc, tocMinH, tocMaxH } = Astro.props;
+
+/** Stand-in for Starlight's internal `flattenSidebar` (utils/navigation.ts) — same recursion, just not importable from outside the package. */
+function flattenSidebar(entries: SidebarEntry[]): SidebarLinkEntry[] {
+	return entries.flatMap((entry) => (entry.type === 'group' ? flattenSidebar(entry.entries) : entry));
+}
+---
+
+<ul class:list={{ 'top-level': !nested }}>
+	{
+		sublist.map((entry) => (
+			<li>
+				{entry.type === 'link' ? (
+					<>
+						<a
+							href={entry.href}
+							aria-current={entry.isCurrent ? 'page' : undefined}
+							class:list={[{ large: !nested }, entry.attrs.class]}
+							{...entry.attrs}
+						>
+							<span>{entry.label}</span>
+							{entry.badge && (
+								<Badge variant={entry.badge.variant} class={entry.badge.class} text={entry.badge.text} />
+							)}
+						</a>
+						{entry.isCurrent && pageToc.length > 0 && (
+							<starlight-toc class="dsub" data-min-h={tocMinH} data-max-h={tocMaxH}>
+								{pageToc.map((heading) => (
+									<a href={'#' + heading.slug}>{heading.text}</a>
+								))}
+							</starlight-toc>
+						)}
+					</>
+				) : (
+					<details open={flattenSidebar(entry.entries).some((i) => i.isCurrent) || !entry.collapsed}>
+						<summary>
+							<span class="group-label">
+								<span class="large">{entry.label}</span>
+								{entry.badge && (
+									<Badge variant={entry.badge.variant} class={entry.badge.class} text={entry.badge.text} />
+								)}
+							</span>
+							<Icon name="right-caret" class="caret" size="1.25rem" />
+						</summary>
+						<SidebarRestorePoint />
+						<Astro.self sublist={entry.entries} pageToc={pageToc} tocMinH={tocMinH} tocMaxH={tocMaxH} nested />
+					</details>
+				)}
+			</li>
+		))
+	}
+</ul>
+
+<style>
+	@layer starlight.core {
+		ul {
+			--sl-sidebar-item-padding-inline: 0.5rem;
+			list-style: none;
+			padding: 0;
+		}
+
+		li {
+			overflow-wrap: anywhere;
+		}
+
+		ul ul li {
+			margin-inline-start: var(--sl-sidebar-item-padding-inline);
+			border-inline-start: 1px solid var(--sl-color-hairline-light);
+			padding-inline-start: var(--sl-sidebar-item-padding-inline);
+		}
+
+		.large {
+			font-size: var(--sl-text-lg);
+			font-weight: 600;
+			color: var(--sl-color-white);
+		}
+
+		.top-level > li + li {
+			margin-top: 0.75rem;
+		}
+
+		summary {
+			display: flex;
+			align-items: center;
+			justify-content: space-between;
+			padding: 0.2em var(--sl-sidebar-item-padding-inline);
+			line-height: 1.4;
+			cursor: pointer;
+			user-select: none;
+		}
+		summary::marker,
+		summary::-webkit-details-marker {
+			display: none;
+		}
+
+		.caret {
+			transition: transform 0.2s ease-in-out;
+			flex-shrink: 0;
+		}
+		:global([dir='rtl']) .caret {
+			transform: rotateZ(180deg);
+		}
+		[open] > summary .caret {
+			transform: rotateZ(90deg);
+		}
+
+		a {
+			display: block;
+			border-radius: 0.25rem;
+			text-decoration: none;
+			color: var(--sl-color-gray-2);
+			padding: 0.3em var(--sl-sidebar-item-padding-inline);
+			line-height: 1.4;
+		}
+
+		a:hover,
+		a:focus {
+			color: var(--sl-color-white);
+		}
+
+		[aria-current='page'],
+		[aria-current='page']:hover,
+		[aria-current='page']:focus {
+			font-weight: 600;
+			color: var(--sl-color-text-invert);
+			background-color: var(--sl-color-text-accent);
+		}
+
+		a > *:not(:last-child),
+		.group-label > *:not(:last-child) {
+			margin-inline-end: 0.25em;
+		}
+
+		@media (min-width: 50rem) {
+			.top-level > li + li {
+				margin-top: 0.5rem;
+			}
+			.large {
+				font-size: var(--sl-text-base);
+			}
+			a {
+				font-size: var(--sl-text-sm);
+			}
+		}
+	}
+</style>

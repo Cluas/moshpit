@@ -6,13 +6,53 @@
  * Starlight's grid until the sidebar sat on top of the prose. The variables
  * are the part both worlds want; the layout rules stay with the pages they
  * were written for.
+ *
+ * "Signal Room" palette. Depth ladder: --pit-0 (page) < --panel < --raise.
+ * Text is --ink (warm off-white — matches the iOS app's own Ink.primary
+ * convention) at three strengths: full, --dim, --meta.
+ *
+ * Semantics split by CONTEXT, not by hue name — the old palette had one
+ * do-everything brand color (--indigo/--accent, literally aliased) plus
+ * --teal and --green both meaning "healthy/positive" under two names:
+ *   --citron  primary action fills (buttons, CTAs) only
+ *   --signal  everything else the old brand violet did: in-prose links,
+ *             kicker labels, decorative lines, emphasis
+ *   --ok      the one consolidated "healthy/positive" color
+ *   --amber   the one loud color — an agent needs you, never decoration
+ *
+ * moshpit.css used to carry an identical copy of this whole block (diffed
+ * byte-for-byte identical). Marketing.astro now imports this file first and
+ * moshpit.css's own copy is gone — this is the one source of truth.
  */
 :root{
-  --ink:#05060A; --panel:#0D1015; --raise:#141922;
-  --line:rgba(255,255,255,.07); --line-lit:rgba(255,255,255,.14);
-  --indigo:#6C6BEF; --accent:#6C6BEF; --teal:#5EE3D9; --amber:#FFB35C; --green:#83E58C;
-  --paper:rgba(244,241,232,.97); --dim:rgba(232,227,214,.64); --meta:rgba(199,193,181,.42);
-  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,monospace;
-  --sans:-apple-system,BlinkMacSystemFont,"PingFang SC",system-ui,sans-serif;
+  /* depth ladder (app: backgroundBottom/Mid/Top) */
+  --pit-0:#040507; --panel:#0B0D11; --raise:#141822;
+  --line:rgba(255,255,255,.08); --line-lit:rgba(255,255,255,.16);
+  /* text, warm off-white at three strengths (app: Ink.primary #F4F1E8) */
+  --ink:#F4F1E8; --dim:rgba(232,227,214,.66); --meta:rgba(199,193,181,.45);
+  /* semantics — see header comment for the context split */
+  --citron:#E9FF9E; --signal:#7AA7FF; --ok:#6FE0C8; --amber:#FFB35C;
+  /* decorative background grid texture (body::before) */
+  --grid:rgba(38,48,60,.22);
+  /* type: sans keeps PingFang SC for the Chinese pages — the redesign's own
+     font stack drops it, which is fine on Apple platforms (which pick a
+     correct CJK sans regardless) but leaves non-Apple visitors reading
+     zh.astro/zh/compare.astro/zh/pricing.astro with no explicit fallback.
+     mono carries two symbol fallbacks (Segoe UI Symbol, Noto Sans Symbols)
+     ahead of the generic monospace catch-all: docs/keyboard.md sets several
+     headings and inline glyphs in ⇅/✛, and none of the named coding fonts
+     above (nor a bare Windows/Linux "monospace") reliably carry that Arrows-
+     block character — the browser still substitutes it per-glyph, but only
+     from a font actually named in the stack, generic "monospace" isn't
+     enough of a hint. These two are near-ubiquitous on Windows and
+     Linux/ChromeOS respectively, so listing them by name gets the glyph
+     right there too, not just on Apple platforms where the system already
+     plugs the same gap silently. A from-scratch headless-Chrome sandbox
+     with neither font installed is the one case this can't fix. */
+  --mono:ui-monospace,"JetBrains Mono","SF Mono",Menlo,"Segoe UI Symbol","Noto Sans Symbols",monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"SF Pro Text","PingFang SC","Segoe UI",sans-serif;
+  /* shared prose-measure convenience — one number instead of the ad hoc
+     max-width:38rem/34rem/44ch the old system scattered per rule. */
+  --meas:62ch;
   color-scheme:dark;
 }

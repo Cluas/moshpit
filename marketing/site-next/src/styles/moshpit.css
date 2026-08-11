@@ -1,88 +1,302 @@
+/* This @import looks redundant next to Marketing.astro's own top-level
+   `import '../styles/tokens.css'` — it is not. tokens.css is ALSO wired into
+   astro.config.mjs's Starlight `customCss`, and when the exact same CSS file
+   is pulled in from both the Starlight integration and a normal component
+   import, Vite's chunking assigns its compiled output to the docs-side
+   shared chunk only — marketing pages end up with zero token definitions
+   despite the top-level import compiling clean. (Verified: without this
+   line, `astro build` succeeds, but the Marketing chunk's `:root` never
+   materializes.) Pulling it in again here, from inside moshpit.css's own
+   module graph, is what actually gets the definitions into the chunk
+   marketing pages load. Vite dedupes the two references cleanly — the
+   output carries exactly one copy of the :root block — so this costs
+   nothing; it just isn't safe to remove either side. */
+@import './tokens.css';
 /* ─────────────────────────────────────────────────────────────
    Moshpit — a switchboard, not a landing page.
-   Sans is the product's voice, mono is the machine's. Amber
-   appears ONLY where an agent needs a human — never as
-   decoration. That rule is the whole palette discipline, and
-   it has been broken once already: the launch-price chip, the
-   ladder's current rung and the launch note were all amber,
-   which put "sale" in the same colour as "an agent is waiting
-   for you" one hero apart. Promotional emphasis is the brand violet (--accent); teal stays semantic (working).
+   "Signal Room": warm ink on layered near-blacks, the terminal's
+   mono face doing the talking, chrome styled as a tmux status
+   line. Semantics split by CONTEXT, not by hue name — --citron
+   fills a primary action, --signal is everything the old brand
+   violet used to be (links, decorative lines, emphasis), --ok is
+   the one consolidated "healthy/positive" color (old --teal and
+   --green meant the same thing under two names), and --amber is
+   the one loud color, reserved for "an agent needs you" — never
+   decoration.
+
+   Tokens live in tokens.css now — this file used to carry an
+   identical copy of the :root block; that duplication of VALUES is
+   gone (tokens.css is the one file to edit). The @import above is a
+   bundler necessity, not a maintenance duplication.
+
+   Loaded only by Marketing.astro, i.e. only marketing pages. Real
+   Starlight docs pages never load this file — see Marketing.astro's
+   own comment for why — so nothing here should assume docs-shell
+   markup (.docshell/.dnav/.dback/.dsearch/.dsec/.dcontent/.dpager/
+   .dsub). That chrome belongs in its own stylesheet in a later pass.
    ───────────────────────────────────────────────────────────── */
-:root{
-  --ink:#05060A; --panel:#0D1015; --raise:#141922;
-  --line:rgba(255,255,255,.07); --line-lit:rgba(255,255,255,.14);
-  --indigo:#6C6BEF; --accent:#6C6BEF; --teal:#5EE3D9; --amber:#FFB35C; --green:#83E58C;
-  --paper:rgba(244,241,232,.97); --dim:rgba(232,227,214,.64); --meta:rgba(199,193,181,.42);
-  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,monospace;
-  --sans:-apple-system,BlinkMacSystemFont,"PingFang SC",system-ui,sans-serif;
-  color-scheme:dark;
-}
 *{box-sizing:border-box;margin:0;padding:0}
 html{scroll-behavior:smooth}
-body{background:var(--ink);color:var(--paper);font:17px/1.65 var(--sans);
-  -webkit-font-smoothing:antialiased;overflow-x:hidden}
+body{
+  background:linear-gradient(180deg,#0A0C10 0%,var(--pit-0) 38%),var(--pit-0);
+  color:var(--ink);
+  font:16px/1.65 var(--sans);
+  -webkit-font-smoothing:antialiased;
+  overflow-x:hidden;
+}
+body::before{
+  content:"";position:fixed;inset:0;pointer-events:none;z-index:0;
+  background-image:
+    linear-gradient(var(--grid) 1px,transparent 1px),
+    linear-gradient(90deg,var(--grid) 1px,transparent 1px);
+  background-size:56px 56px;
+  mask-image:radial-gradient(ellipse 90% 60% at 60% 0%,#000 0%,transparent 70%);
+}
 /* height:auto is not optional here: the phone shots carry width/height
    attributes (so the layout doesn't jump while they load), and without this
    the attribute height wins over the CSS width — every screenshot renders
-   squashed. */
+   squashed. Not part of the redesign — carried forward because nothing in
+   the new system replaces the job it does. */
 img{display:block;max-width:100%;height:auto}
-a{color:inherit;text-decoration:none}
-/* Links inside a sentence. The global rule above is right for navigation,
-   where position and grouping already say "this is a control", and wrong in
-   prose: it left 31 of the site's 45 in-sentence links rendering in the body
-   colour with no underline and no weight change — indistinguishable from the
-   words around them. Underlined as well as coloured, because colour alone is
-   not a signal everyone receives. Card titles are h4 > a and keep their own
-   treatment. */
-.band p a, .band li a, .band td a, .doc .txt a, .dbody p a, .dbody li a{
-  color:var(--accent);text-decoration:underline;text-underline-offset:.18em;
-  text-decoration-thickness:1px;text-decoration-color:rgba(108,107,239,.45)}
-.band p a:hover, .band li a:hover, .band td a:hover, .doc .txt a:hover,
-.dbody p a:hover, .dbody li a:hover{text-decoration-color:var(--accent)}
-:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:4px}
-.shell{max-width:66rem;margin:0 auto;padding:0 1.5rem}
+a{color:var(--signal);text-decoration:none}
+a:hover{text-decoration:underline;text-underline-offset:3px}
+:focus-visible{outline:2px solid var(--citron);outline-offset:3px;border-radius:2px}
+code{font-family:var(--mono)}
+.wrap{position:relative;z-index:1;max-width:1120px;margin:0 auto;padding:0 24px}
 
-.eyebrow{font:600 12.5px/1 var(--mono);letter-spacing:.26em;text-transform:uppercase;
-  color:var(--accent);display:flex;align-items:center;gap:.7rem}
-.eyebrow::after{content:"";flex:1;height:1px;background:var(--line);max-width:7rem}
-.eyebrow.plain::after{display:none}
+/* ── status bar (nav as tmux status line) ──────────────────────
+   Structural links live inside .status/.scrollspy/footer and are
+   scoped below with their own colors — the global `a{color:var(
+   --signal)}` above is for prose, and every non-prose link in this
+   file overrides it explicitly rather than inheriting it by accident. */
+.status{
+  position:sticky;top:0;z-index:10;
+  background:rgba(4,5,7,.86);backdrop-filter:blur(10px);
+  border-bottom:1px solid var(--line);
+  font:12px/1 var(--mono);letter-spacing:.04em;
+}
+.status .wrap{display:flex;align-items:center;gap:10px;height:44px}
+.sess{color:var(--panel);background:var(--ok);padding:4px 8px;border-radius:3px;font-weight:700;letter-spacing:.06em}
+/* min-width:0 overrides the flex-item default of refusing to shrink below
+   its content's min-content size — since every child is white-space:nowrap,
+   that min-content size equals the FULL unwrapped width of all five tabs
+   combined, so without this the row would rather blow out .status .wrap
+   (real page-level overflow) than yield an inch. With it, .win shrinks to
+   whatever .sess/.right leave behind and scrolls its own overflow instead —
+   the same contained-overflow pattern .tbl-wrap already uses for wide
+   tables, applied here so a narrow phone can still reach every tab by
+   swiping instead of losing guides/compare/pricing to display:none. */
+.win{position:relative;display:flex;gap:2px;min-width:0;overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+.win::-webkit-scrollbar{display:none}
+/* Edge hint that there's more to swipe to — the .tbl-wrap fade below exists
+   for the same reason. Harmless when a row already fits (it just tints the
+   last ~28px of already-visible content at low alpha); load-bearing when it
+   doesn't. */
+.win::after{content:"";position:absolute;top:0;bottom:0;right:0;width:28px;background:linear-gradient(to right,transparent,rgba(244,241,232,.12));pointer-events:none}
+.win a{flex:none;color:var(--meta);padding:4px 9px;border-radius:3px;white-space:nowrap}
+.win a:hover{color:var(--ink);text-decoration:none;background:rgba(255,255,255,.05)}
+.win a[aria-current]{color:var(--ink);background:rgba(255,255,255,.07)}
+.win a[aria-current]::after{content:"*";color:var(--citron)}
+.status .right{margin-left:auto;display:flex;align-items:center;gap:14px;color:var(--meta);white-space:nowrap}
+.status .beta{color:var(--amber)}
+.status .beta .full{display:inline}
+.status .beta .short{display:none}
+.status .zh{color:var(--dim)}
 
-/* phone frame — one device treatment, used everywhere */
+/* ── labels: one shared tag for a section, one for a whole page ──
+   The old system had two overlapping label conventions (a global
+   .eyebrow with a trailing hairline, and a row-scoped .kicker with
+   none). The new one has a single global .kicker, always with the
+   gradient tail — .row's own former `.kicker` override is gone, so
+   markup that already just says class="kicker" (every feature row
+   does) now picks up the shared rule automatically. */
+.kicker{
+  font:600 12px/1 var(--mono);letter-spacing:.22em;color:var(--amber);
+  display:flex;align-items:center;gap:14px;margin-bottom:22px;
+}
+.kicker::after{content:"";height:1px;flex:1;max-width:180px;background:linear-gradient(90deg,var(--amber),transparent)}
+/* .eyebrow.plain's old job (a label with no trailing line) — promoted to a
+   real base class instead of copy-pasted per section, with the option to
+   recolor via a scoped descendant selector the way .voice .k does below. */
+.k{font:600 12px/1 var(--mono);letter-spacing:.22em;color:var(--meta);margin-bottom:20px}
+
+/* ── phone frame — one device treatment for real screenshots ──── */
 .phone{border-radius:26px;border:1px solid var(--line-lit);overflow:hidden;
   background:#000;box-shadow:0 30px 80px -30px rgba(0,0,0,.95)}
-.phone.lift{box-shadow:0 40px 90px -30px rgba(0,0,0,.95),0 0 0 1px rgba(108,107,239,.12)}
+.phone.lift{box-shadow:0 40px 90px -30px rgba(0,0,0,.95),0 0 0 1px rgba(122,167,255,.12)}
 
-/* ── header ── */
-.top{display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;
-  padding:1.4rem 0;border-bottom:1px solid var(--line)}
-.brand{display:flex;align-items:center;gap:.65rem;font:700 17px var(--sans);letter-spacing:-.01em}
-.brand img{width:30px;height:30px;border-radius:8px}
-.chip{font:600 12.5px var(--mono);letter-spacing:.1em;text-transform:uppercase;
-  color:var(--dim);border:1px solid var(--line-lit);border-radius:999px;padding:.42rem .8rem}
+/* ── buttons ─────────────────────────────────────────────────── */
+.cta-row{display:flex;flex-wrap:wrap;gap:12px;align-items:center}
+.cta{font:600 15px/1 var(--sans);color:var(--panel);background:var(--citron);padding:14px 22px;border-radius:8px;border:0;cursor:pointer;display:inline-block}
+.cta:hover{filter:brightness(1.06);text-decoration:none}
+.ghost{font:600 15px/1 var(--sans);color:var(--ink);background:transparent;padding:13px 21px;border-radius:8px;border:1px solid var(--line);display:inline-block}
+.ghost:hover{border-color:rgba(255,255,255,.2);text-decoration:none}
 
-/* ── hero ── */
-.hero{padding:4.5rem 0 1rem;display:grid;grid-template-columns:1.05fr .95fr;
-  gap:3rem;align-items:center}
-.hero h1{font-size:clamp(2.4rem,5.2vw,3.6rem);font-weight:750;line-height:1.03;
-  letter-spacing:-.035em;margin:1.5rem 0 0}
-.hero h1 em{font-style:normal;color:var(--accent)}
-.lede{color:var(--dim);font-size:1.08rem;margin-top:1.15rem;max-width:31rem}
-.lede b{color:var(--paper);font-weight:600}
-.actions{display:flex;flex-wrap:wrap;align-items:center;gap:.9rem;margin-top:1.9rem}
-.price{background:var(--indigo);color:#08080f;border-radius:12px;padding:.72rem 1.15rem;
-  font-weight:700;font-size:1rem}
-.price span{opacity:.68;font-weight:500}
-.soon{font:600 14px var(--mono);letter-spacing:.04em;color:var(--meta);margin-top:1rem}
-.soon b{color:var(--paper);font-weight:700}
-.cta{display:inline-block;background:var(--accent);color:#fff;border-radius:12px;
-  padding:.78rem 1.3rem;font:700 1rem var(--sans);letter-spacing:-.01em;
-  transition:filter .15s ease}
-.cta:hover{filter:brightness(1.08)}
-.cta.ghost{background:none;color:var(--paper);border:1px solid var(--line-lit);font-weight:600}
-.cta.ghost:hover{border-color:var(--accent);color:var(--accent);filter:none}
-.band.close{text-align:center}
-.band.close .sub{margin:0 auto}
-.band.close .actions{justify-content:center;margin-top:1.6rem}
+/* ── headings ────────────────────────────────────────────────── */
+h1{font:800 clamp(40px,6.2vw,72px)/1.02 var(--mono);letter-spacing:-.035em;text-wrap:balance}
+.reach{color:var(--amber)}
+.cursor{display:inline-block;width:.5em;height:.9em;margin-left:.08em;
+  background:var(--citron);vertical-align:baseline;animation:blink 1.1s steps(1) infinite}
+h2{font:700 clamp(22px,2.6vw,30px)/1.25 var(--mono);letter-spacing:-.015em;text-wrap:balance}
+h3{font:700 18px/1.4 var(--mono);letter-spacing:-.01em;color:var(--ink)}
+
+/* ── page header (compare / pricing / docs-style landing) ──────
+   Net-new: the generic content-header used by pages that aren't
+   the home hero. */
+.pagehead{padding:56px 0 40px}
+.pagehead h1{font:800 clamp(30px,4.4vw,48px)/1.1 var(--mono);letter-spacing:-.03em;
+  text-wrap:balance;margin-bottom:18px;max-width:20ch}
+.pagehead .sub{max-width:var(--meas);color:var(--dim);font-size:17px}
+.pagehead .sub b{color:var(--ink);font-weight:600}
+
+/* ── prose (docs / compare longform) ─────────────────────────── */
+.prose{max-width:var(--meas);color:var(--dim);font-size:16px}
+.prose h3{margin:40px 0 14px}
+.prose p{margin-bottom:16px}
+.prose b{color:var(--ink);font-weight:600}
+.prose em{color:var(--ink);font-style:normal;border-bottom:1px dashed var(--meta)}
+.prose ul{list-style:none;margin-bottom:16px}
+.prose ul li{position:relative;padding-left:22px;margin-bottom:10px}
+.prose ul li::before{content:"›";position:absolute;left:0;color:var(--ok);font-family:var(--mono);font-weight:700}
+.prose code{font-size:.9em;color:var(--ink);background:rgba(255,255,255,.06);padding:2px 6px;border-radius:4px}
+.prose a{color:inherit;border-bottom:1px solid rgba(122,167,255,.3)}
+.prose a:hover{border-color:var(--signal);text-decoration:none}
+
+/* ── legacy content band (guides / privacy / support) ────────────
+   These three pages carry no bespoke mockup from this redesign —
+   the markup is still the hand-written .doc prose component from
+   the pre-Signal-Room site (.shell/.eyebrow/.grid were swapped for
+   their direct replacements .wrap/.kicker/.cellgrid in the same
+   pass that added this comment; .band/.doc have no replacement to
+   rename to yet — .pagehead/.prose/.cellgrid above are the intended
+   eventual home for this content, once someone gives these three a
+   real mockup). Ported onto the new tokens (--paper -> --ink,
+   --accent -> --signal, --teal -> --ok) rather than restyled.
+   Delete this block the day the last .band.doc section is migrated. */
+.band{padding:5rem 0;border-top:1px solid var(--line)}
+.band h2{margin:1.1rem 0 .7rem;max-width:var(--meas)}
+.band .sub{color:var(--dim);max-width:var(--meas)}
+.doc > h4{font-size:1.02rem;font-weight:650;margin:1.8rem 0 .45rem;color:var(--ink)}
+.doc h3{font-size:1.1rem;font-weight:700;letter-spacing:-.015em;margin:2.4rem 0 .55rem}
+.doc h3:first-of-type{margin-top:2rem}
+.doc .txt{color:var(--dim);max-width:var(--meas);margin-top:.85rem}
+.doc .txt b{color:var(--ink);font-weight:600}
+.doc code{overflow-wrap:anywhere;font:.87em var(--mono);background:var(--raise);
+  border-radius:5px;padding:.12rem .38rem;color:var(--signal)}
+.band.doc ul:not(.list),.band.doc ol{max-width:var(--meas);padding-left:1.25rem;
+  display:grid;gap:.4rem;margin-top:.9rem;color:var(--dim);line-height:1.7}
+.band.doc ul:not(.list) b,.band.doc ol b{color:var(--ink);font-weight:600}
+
+/* terminal-style code block (docs guides — shell transcripts) */
+pre.term{
+  background:var(--panel);border:1px solid var(--line);border-radius:10px;
+  overflow:hidden;margin:18px 0;
+}
+pre.term .bar{
+  display:flex;align-items:center;gap:6px;padding:9px 12px;
+  border-bottom:1px solid var(--line);background:rgba(255,255,255,.02);
+  font:11px var(--mono);color:var(--meta);
+}
+pre.term .bar i{width:8px;height:8px;border-radius:50%;background:rgba(255,255,255,.12)}
+pre.term code{display:block;padding:14px 16px;font:13px/1.7 var(--mono);color:var(--ok);background:none;overflow-x:auto}
+
+/* ── callouts ────────────────────────────────────────────────── */
+.callout{border:1px solid var(--line);border-left:3px solid var(--amber);background:var(--panel);border-radius:0 10px 10px 0;padding:18px 20px;margin:24px 0}
+.callout.ok{border-left-color:var(--ok)}
+.callout h4{font:700 13px/1 var(--mono);letter-spacing:.06em;color:var(--amber);text-transform:uppercase;margin-bottom:10px}
+.callout.ok h4{color:var(--ok)}
+.callout ul{list-style:none}
+.callout ul li{position:relative;padding-left:20px;margin-bottom:10px;font-size:14.5px;color:var(--dim)}
+.callout ul li::before{content:"·";position:absolute;left:4px;color:var(--meta)}
+.callout ul li b{color:var(--ink)}
+
+/* ── ledger table (comparison + pricing) ─────────────────────────
+   Every <table> in the site used to render unclassed; the new system
+   scopes everything to table.ledger with zero bare-table selector.
+   That's a markup change too (add class="ledger" to every table) —
+   out of scope for this pass, so every currently-unclassed table
+   renders unstyled until the page bodies are ported. */
+.tbl-wrap{position:relative;overflow-x:auto;margin:18px 0 8px;-webkit-overflow-scrolling:touch}
+/* Wide-table scroll is real, reachable content (verified: scrolls inside its
+   own container, page never overflows) but nothing here told a phone user
+   it was there. A quiet trailing fade is the same affordance a native
+   scroll view gives for free. */
+.tbl-wrap::after{content:"";position:absolute;top:0;bottom:0;right:0;width:32px;background:linear-gradient(to right,transparent,rgba(244,241,232,.14));pointer-events:none}
+table.ledger{width:100%;border-collapse:collapse;font-family:var(--mono);min-width:560px}
+table.ledger th{
+  text-align:left;font:600 11px/1 var(--mono);letter-spacing:.1em;color:var(--meta);
+  padding:0 10px 12px;text-transform:uppercase;
+}
+table.ledger th.us{color:var(--citron)}
+table.ledger td{padding:13px 10px;border-top:1px solid var(--line);font-size:13.5px;color:var(--dim);vertical-align:top}
+table.ledger tr:last-child td{border-bottom:1px solid var(--line)}
+table.ledger td.cap-col{color:var(--ink);width:26%;min-width:170px}
+table.ledger td.cap-col b{font-weight:600}
+table.ledger td.us{color:var(--ok);font-weight:600}
+table.ledger .yes{color:var(--ok)}
+table.ledger .no{color:var(--meta)}
+table.ledger td.us.yes,table.ledger td.us .yes{color:var(--ok)}
+/* The flat column is the argument; let it read as one figure repeated
+   rather than four separate prices. Preserved from the old system —
+   shared.css's own table.ledger doesn't happen to need it, but ours still
+   does (pricing's year-by-year comparison). */
+table.ledger .us .yes, table.ledger td.no{font-variant-numeric:tabular-nums}
+
+/* ── price card ──────────────────────────────────────────────────
+   Unifies what used to be two separate components (home's .pricebox
+   flat-rate band and pricing.astro's own .pricecard) into one. */
+.pricecard{
+  border:1px solid var(--line);border-radius:16px;
+  background:linear-gradient(180deg,var(--raise),var(--panel));
+  padding:36px 40px;margin:28px 0;max-width:420px;
+}
+.pricecard .amount{font:800 56px/1 var(--mono);letter-spacing:-.03em}
+.pricecard .once{font:600 14px var(--mono);color:var(--amber);letter-spacing:.14em;margin-left:10px}
+.pricecard .pricenote{font:13px var(--mono);color:var(--meta);margin-top:14px}
+.pricecard .pricecta{
+  display:inline-block;margin-top:18px;font:600 14px var(--sans);color:var(--panel);
+  background:var(--citron);padding:11px 20px;border-radius:8px;
+}
+.pricecard .pricefine{font-size:13px;color:var(--meta);margin-top:16px;max-width:44ch}
+
+/* ── cell grid (feature grids, guides cards, pricing FAQ detail) ──
+   The wrapper renames .grid -> .cellgrid; .cell/.ic keep their names
+   with new rule bodies. The 1px hairline-colored gap between seamless
+   cells replaces the old individually-bordered-card look. */
+.cellgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--line);border:1px solid var(--line);border-radius:10px;overflow:hidden;margin:20px 0}
+.cell{background:var(--panel);padding:20px}
+.cell .ic{font:700 10px/1 var(--mono);letter-spacing:.14em;color:var(--ok);text-transform:uppercase}
+.cell h4{font:700 15px var(--mono);color:var(--ink);margin:10px 0 8px}
+.cell p{font-size:13.5px;color:var(--dim);line-height:1.6}
+.cell p a{color:inherit;border-bottom:1px solid rgba(122,167,255,.3)}
+/* The whole card is the target, not just the title — see guides.astro's
+   three h4>a cards. Not shown in any mock (pricing.html's cellgrid usage
+   never happens to link a card), extrapolated from the old pattern onto
+   the new borderless cell: the hover cue is a background wash (there's no
+   per-cell border left to recolor) plus the usual link-color-on-hover. */
+.cell h4 a::after{content:"";position:absolute;inset:0;border-radius:inherit}
+.cell:has(h4 a){position:relative;cursor:pointer;transition:background .15s ease}
+.cell:has(h4 a):hover{background:rgba(255,255,255,.035)}
+.cell:has(h4 a):hover h4 a{color:var(--signal)}
+.cell h4 a:focus-visible::after{outline:2px solid var(--citron);outline-offset:2px}
+@media(prefers-reduced-motion:reduce){.cell:has(h4 a){transition:none}}
+
+/* ── diagram (direct-connection SVG) ─────────────────────────────
+   No new mock covers this; kept with mechanical token renaming. The
+   SVG's own fills are hardcoded hex in the markup, not read from these
+   variables — those need editing by hand wherever the diagram is used. */
+.wire{margin-top:2.4rem;background:var(--panel);border:1px solid var(--line);
+  border-radius:16px;padding:2rem 1.5rem 1.3rem}
+.wire svg{width:100%;height:auto;max-height:130px}
+.wire .legend{display:flex;flex-wrap:wrap;gap:1.4rem;justify-content:center;
+  margin-top:1.2rem;font:13px var(--mono);color:var(--meta)}
+.dash{stroke-dasharray:5 7;animation:crawl 1.1s linear infinite}
+
+/* ── real device screenshots: hero + "the moment" ────────────────
+   No new mock covers these (home.linked.html's hero uses an illustrated
+   .lockmock instead of a real screenshot — see below); kept with
+   mechanical token renaming so the option to keep real screenshots here
+   stays open for the next phase. */
 .herophone{max-width:340px;margin:0 auto;position:relative}
 .pin{position:absolute;left:-1.5rem;top:26%;background:var(--panel);
   border:1px solid rgba(255,179,92,.4);border-radius:10px;padding:.5rem .7rem;
@@ -91,37 +305,15 @@ a{color:inherit;text-decoration:none}
 .pin .lamp{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--amber);
   margin-right:.45rem;vertical-align:1px;box-shadow:0 0 10px 1px rgba(255,179,92,.8);
   animation:breathe 1.9s ease-in-out infinite}
-@keyframes breathe{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.45;transform:scale(.86)}}
-
-/* ── agent badges: who this works with, said plainly ── */
-.agents{display:flex;flex-wrap:wrap;gap:.55rem;justify-content:center;margin-top:2rem}
-.agentchip{display:inline-flex;align-items:center;gap:.45rem;border:1px solid var(--line);
-  border-radius:999px;padding:.45rem .85rem;font:600 13px var(--mono);color:var(--dim);
-  background:var(--panel)}
-.agentchip .dot{width:6px;height:6px;border-radius:50%;background:var(--teal);flex:0 0 auto}
-.agentchip.any{border-style:dashed;color:var(--meta)}
-.agentnote{text-align:center;margin-top:.9rem;font-size:.95rem;color:var(--meta)}
-
-/* ── how it works: three steps ── */
-.steps3{display:grid;grid-template-columns:repeat(3,1fr);gap:1.2rem;margin-top:2.4rem;
-  counter-reset:step}
-.step3{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:1.3rem;
-  position:relative}
-.step3::before{counter-increment:step;content:counter(step);position:absolute;top:1.1rem;
-  right:1.2rem;font:700 2rem/1 var(--sans);color:rgba(255,255,255,.05);letter-spacing:-.05em}
-.step3 h3{font-size:1rem;font-weight:650;margin-bottom:.4rem}
-.step3 p{color:var(--dim);font-size:.95rem}
-.step3 code{font:13px var(--mono);background:var(--raise);border-radius:5px;padding:.1rem .35rem;
-  color:var(--accent)}
-@media(max-width:900px){.steps3{grid-template-columns:1fr}}
-
-/* ── section rhythm ── */
-.band{padding:5rem 0;border-top:1px solid var(--line)}
-.band h2{font-size:clamp(1.6rem,3vw,2.1rem);font-weight:700;letter-spacing:-.025em;
-  margin:1.1rem 0 .7rem;max-width:34rem}
-.band .sub{color:var(--dim);max-width:37rem}
-
-/* ── the moment ── */
+.lockrow{display:grid;grid-template-columns:300px 1fr;gap:3rem;align-items:center;
+  margin-top:2.6rem}
+.lockshot{justify-self:center}
+.notes{display:grid;gap:1.3rem;max-width:32rem}
+.notes p{color:var(--dim);font-size:.98rem}
+.notes b{display:block;font:600 12.5px var(--mono);letter-spacing:.18em;text-transform:uppercase;
+  margin-bottom:.3rem}
+.notes .amber{color:var(--amber)} .notes .teal{color:var(--ok)} .notes .dimb{color:var(--meta)}
+.notes em{font-style:normal;font-family:var(--mono);font-size:.86em;color:var(--ink)}
 .moment{display:grid;gap:1.1rem;margin-top:2.4rem}
 .strip{background:var(--panel);border:1px solid var(--line);border-radius:14px;
   padding:1rem;display:grid;grid-template-columns:auto 1fr;gap:1.3rem;align-items:center}
@@ -130,143 +322,54 @@ a{color:inherit;text-decoration:none}
 .strip .cap b{display:block;font-size:12.5px;letter-spacing:.2em;text-transform:uppercase;
   margin-bottom:.3rem}
 .strip.a .cap b{color:var(--amber)}
-.strip.b .cap b{color:var(--accent)}
+.strip.b .cap b{color:var(--signal)}
 
-/* ── alternating feature rows ── */
+/* ── alternating feature rows ─────────────────────────────────────
+   No new mock covers this (home.linked.html is much shorter than
+   index.astro — see the project handoff notes on homepage content
+   scope); kept with mechanical token renaming pending real design
+   attention in a later pass. .row's own former `.kicker` override is
+   gone — the global .kicker above covers it, unchanged markup and all. */
 .rows{display:grid;gap:3.2rem;margin-top:3rem}
-/* Pillar headings group the rows under them. They are ordinary .rows children,
-   so they take the grid's full width and gap for free; the hairline above is
-   what makes a group read as a group instead of as one more feature row.
-   Note they shift .row:nth-child parity below — the shots still alternate
-   inside each pillar, which is the only thing that rule is for. */
 .pillar{border-top:1px solid var(--line);padding-top:1.7rem}
 .pillar:first-child{border-top:none;padding-top:0}
 .pillarhead{font-size:clamp(1.4rem,2.6vw,1.75rem);font-weight:750;
   letter-spacing:-.025em;margin:0 0 .5rem}
 .pillarsub{color:var(--dim);font-size:1.02rem;max-width:58ch}
 .row{display:grid;grid-template-columns:1fr 1fr;gap:3rem;align-items:center}
-/* A feature row whose screenshot does not exist yet. Full width with a held
-   measure, rather than a half-empty two-column row or a placeholder box — an
-   empty frame promises a picture, this just reads as text. Drop the class when
-   the capture lands and it becomes an ordinary row. */
 .row.solo{grid-template-columns:1fr}
 .row.solo>div{max-width:64ch}
 .row:nth-child(even) .rowshot{order:-1}
 .rowshot{max-width:340px;justify-self:center}
 .row h3{font-size:1.3rem;font-weight:700;letter-spacing:-.02em;margin:.7rem 0 .55rem}
 .row p{color:var(--dim);font-size:1rem}
-.row .kicker{font:600 12px var(--mono);letter-spacing:.2em;text-transform:uppercase;
-  color:var(--meta)}
 .row ul{list-style:none;margin-top:.9rem;display:grid;gap:.4rem;font-size:.97rem;color:var(--dim)}
-.row li::before{content:"·  ";color:var(--accent);font-weight:700}
+.row li::before{content:"·  ";color:var(--signal);font-weight:700}
 
-/* ── feature grid (the rest of the app) ── */
-.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:1.1rem;margin-top:2.4rem}
-.cell{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:1.1rem;
-  position:relative}
-.cell h4{font-size:1.02rem;font-weight:650;margin-bottom:.35rem}
-.cell p{color:var(--dim);font-size:.95rem}
-.cell .ic{font:700 12.5px var(--mono);color:var(--accent);letter-spacing:.14em;
-  text-transform:uppercase;display:block;margin-bottom:.6rem}
-
-/* The whole card is the target, not just the title.
-   These read as buttons — a bordered panel with a heading and a line of
-   description — so people click the middle of them. Only the heading was a
-   link, about 4% of the card's area, and every other click did nothing at
-   all. The overlay keeps a real anchor doing the work (focus, middle-click,
-   open-in-new-tab, copy link address all still behave), it just gives it the
-   hit area the card was already promising.
-   Cards without a link are explanatory, and must not grow a hover state. */
-.cell h4 a::after{content:"";position:absolute;inset:0;border-radius:inherit}
-.cell:has(h4 a){cursor:pointer;transition:border-color .15s ease,background .15s ease}
-.cell:has(h4 a):hover{border-color:rgba(108,107,239,.35);background:rgba(108,107,239,.045)}
-.cell:has(h4 a):hover h4 a{color:var(--accent)}
-.cell h4 a:focus-visible::after{outline:2px solid var(--accent);outline-offset:2px}
-@media(prefers-reduced-motion:reduce){.cell:has(h4 a){transition:none}}
-
-/* ── pricing ──────────────────────────────────────────────────
-   One price means no tier cards to compare, so the page leads with the
-   number itself and spends its detail on the argument around it. The
-   ledger table is the signature: a bill for a product named after a
-   telephone, where every row after the first is the same number. */
-.pricecard{margin-top:2.2rem;max-width:44rem;background:var(--panel);
-  border:1px solid rgba(108,107,239,.3);border-radius:18px;padding:1.8rem}
-.priceline{display:flex;align-items:baseline;gap:.6rem}
-.priceline .amount{font:700 3.4rem/1 var(--sans);letter-spacing:-.03em;color:var(--paper)}
-.priceline .once{font:600 1.05rem var(--mono);color:var(--accent)}
-.pricenote{margin-top:.7rem;color:var(--dim);font-size:.95rem}
-.pricecta{margin-top:1.2rem;display:inline-block;font:600 .95rem var(--sans);
-  color:#fff;background:var(--accent);border-radius:999px;padding:.55rem 1.1rem}
-.pricefine{margin-top:1.1rem;color:var(--meta);font-size:.93rem;line-height:1.6}
-/* The flat column is the argument; let it read as one figure repeated
-   rather than four separate prices. */
-.ledger .us .yes{font-variant-numeric:tabular-nums}
-.ledger td.no{font-variant-numeric:tabular-nums}
-
-/* ── diagram ── */
-.wire{margin-top:2.4rem;background:var(--panel);border:1px solid var(--line);
-  border-radius:16px;padding:2rem 1.5rem 1.3rem}
-.wire svg{width:100%;height:auto;max-height:130px}
-.wire .legend{display:flex;flex-wrap:wrap;gap:1.4rem;justify-content:center;
-  margin-top:1.2rem;font:13px var(--mono);color:var(--meta)}
-.dash{stroke-dasharray:5 7;animation:crawl 1.1s linear infinite}
-@keyframes crawl{to{stroke-dashoffset:-24}}
-
-/* ── the herdr section: two columns of what each multiplexer gives ── */
+/* ── the herdr section: two columns of what each multiplexer gives ──
+   No new mock covers this; kept with mechanical token renaming. */
 .mux{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1.2rem;margin-top:2.4rem}
 .muxcard{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:1.4rem;
   min-width:0;overflow-wrap:anywhere}
-.muxcard.lit{border-color:rgba(108,107,239,.32);background:linear-gradient(180deg,rgba(108,107,239,.045),var(--panel))}
+.muxcard.lit{border-color:rgba(122,167,255,.32);background:linear-gradient(180deg,rgba(122,167,255,.045),var(--panel))}
 .muxcard h3{font-size:1.05rem;font-weight:700;letter-spacing:-.01em;margin-bottom:.15rem}
 .muxcard .tagline{font:600 12px var(--mono);letter-spacing:.16em;text-transform:uppercase;
   color:var(--meta);margin-bottom:.9rem}
-.muxcard.lit .tagline{color:var(--accent)}
+.muxcard.lit .tagline{color:var(--signal)}
 .muxcard ul{list-style:none;display:grid;gap:.5rem;font-size:.95rem;color:var(--dim)}
-/* flex, not grid: in a grid each text run and each <b> becomes its own
-   grid item, so a bullet like "<b>lead</b> — rest" stacked one word per
-   line. Flex folds contiguous inline content into a single anonymous item. */
 .muxcard li{display:flex;gap:.5rem;align-items:baseline}
-.muxcard li::before{content:"✓";color:var(--accent);font-weight:700;font-size:.94rem;flex:0 0 auto}
+.muxcard li::before{content:"✓";color:var(--signal);font-weight:700;font-size:.94rem;flex:0 0 auto}
 .muxcard.plain li::before{content:"·";color:var(--meta)}
 .muxnote{margin-top:1.5rem;font-size:.97rem;color:var(--dim);max-width:38rem}
-@media(max-width:900px){.mux{grid-template-columns:1fr}}
 
-/* ── comparison ── */
-.tbl-wrap{margin-top:2.2rem;overflow-x:auto;border:1px solid var(--line);border-radius:14px}
-table{border-collapse:collapse;width:100%;min-width:38rem;font-size:.95rem;
-  table-layout:fixed}
-/* The capability being compared, then us, then the field. Ours is widest. */
-table th:first-child, table td:first-child{width:26%}
-table th.us, table td.us{width:22%}
-table thead th:not(.us):not(:first-child){width:17.33%}
-table td{overflow-wrap:anywhere}
-th,td{padding:.78rem 1rem;text-align:left;border-bottom:1px solid var(--line)}
-thead th{background:rgba(255,255,255,.022);font:600 12.5px var(--mono);letter-spacing:.14em;
-  text-transform:uppercase;color:var(--meta);white-space:nowrap}
-thead th.us{color:var(--accent)}
-tbody tr:last-child td{border-bottom:none}
-td.cap-col{color:var(--dim)}
-td.us{color:var(--paper);font-weight:600;background:rgba(108,107,239,.045)}
-td.no{color:var(--meta)}
-.yes{color:var(--accent)}
-
-/* ── pricing ── */
-.pricebox{margin-top:2.2rem;background:linear-gradient(180deg,var(--raise),var(--panel));
-  border:1px solid var(--line-lit);border-radius:18px;padding:2rem;
-  display:grid;grid-template-columns:auto 1fr;gap:2.4rem;align-items:center}
-.amount{font-size:3.2rem;font-weight:750;letter-spacing:-.04em;line-height:1}
-.amount small{display:block;font:600 12.5px var(--mono);letter-spacing:.18em;
-  text-transform:uppercase;color:var(--meta);margin-top:.5rem}
-.pricebox ul{list-style:none;display:grid;gap:.5rem;font-size:.98rem;color:var(--dim)}
-.pricebox li::before{content:"—  ";color:var(--meta)}
-
-/* ── proof ── */
+/* ── proof stats ── (no new mock; mechanical token renaming) */
 .facts{display:grid;grid-template-columns:repeat(4,1fr);gap:1rem;margin-top:2.2rem}
 .fact{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:1.1rem}
-.fact .big{font:700 1.45rem/1 var(--sans);letter-spacing:-.03em;color:var(--accent)}
+.fact .big{font:700 1.45rem/1 var(--sans);letter-spacing:-.03em;color:var(--signal)}
 .fact .lbl{font-size:.92rem;color:var(--dim);margin-top:.45rem}
 
-/* ── faq ── */
+/* ── faq accordion ── (no new mock; every reference here is already a
+   kept-name token, so this ports with zero value changes) */
 .faq{margin-top:2rem;display:grid;gap:.55rem}
 details{background:var(--panel);border:1px solid var(--line);border-radius:12px;
   padding:.95rem 1.1rem}
@@ -279,61 +382,9 @@ details[open] summary::after{content:"–"}
 details p{color:var(--dim);font-size:.97rem;margin-top:.7rem}
 details code{font:13.5px var(--mono);background:var(--raise);border-radius:5px;padding:.1rem .35rem}
 
-footer{border-top:1px solid var(--line);padding:3rem 0 4rem;text-align:center}
-.signoff{font:600 13.5px var(--mono);letter-spacing:.06em;color:var(--dim)}
-.fnav{margin:1.1rem 0 .9rem;font-size:14px;display:flex;gap:1.6rem;justify-content:center;
-  flex-wrap:wrap}
-.fnav a{color:var(--dim)}
-.fnav a:hover{color:var(--accent)}
-.legal{font:13px var(--mono);color:var(--meta)}
-
-/* ── launch framing ───────────────────────────────────────────
-   Urgency without a fake "was" price: we show the LADDER (what it
-   costs now, what it costs next), not a struck-through number the
-   app never actually sold at. A fictitious reference price is
-   exactly what the EU's Omnibus rules prohibit — and we ship in
-   the EU. ────────────────────────────────────────────────────── */
-.ladder{display:inline-flex;align-items:center;gap:.55rem;font:600 13px var(--mono);
-  letter-spacing:.04em;margin-top:.75rem}
-.ladder .now{color:var(--accent)}
-.ladder .arrow{color:var(--meta)}
-.ladder .next{color:var(--meta);text-decoration:line-through;text-decoration-color:rgba(199,193,181,.35)}
-.ladder .after{color:var(--meta)}
-
-.launchnote{margin-top:.55rem;font:13.5px var(--mono);color:var(--meta);line-height:1.65}
-.launchnote b{color:var(--accent);font-weight:700}
-
-.steps{display:flex;flex-wrap:wrap;gap:.5rem;margin-top:1.2rem}
-.step{border:1px solid var(--line);border-radius:10px;padding:.55rem .8rem;
-  font:600 13px var(--mono);color:var(--meta);background:rgba(255,255,255,.015)}
-.step.on{border-color:rgba(108,107,239,.5);color:var(--accent);background:rgba(108,107,239,.06)}
-.step small{display:block;font-weight:500;font-size:12px;letter-spacing:.08em;
-  text-transform:uppercase;color:var(--meta);margin-top:.25rem}
-.step.on small{color:rgba(255,179,92,.7)}
-
-/* header right side */
-.topright{display:flex;align-items:center;gap:.8rem;flex-wrap:wrap;
-  justify-content:flex-end;min-width:0}
-.chip.launch{border-color:rgba(108,107,239,.45);color:var(--accent)}
-.lang{font:600 14px var(--mono);letter-spacing:.06em;color:var(--dim);
-  border-bottom:1px solid var(--line-lit);padding-bottom:1px}
-.lang:hover{color:var(--accent);border-color:var(--accent)}
-
-/* the lock-screen row */
-.lockrow{display:grid;grid-template-columns:300px 1fr;gap:3rem;align-items:center;
-  margin-top:2.6rem}
-.lockshot{justify-self:center}
-.notes{display:grid;gap:1.3rem;max-width:32rem}
-.notes p{color:var(--dim);font-size:.98rem}
-.notes b{display:block;font:600 12.5px var(--mono);letter-spacing:.18em;text-transform:uppercase;
-  margin-bottom:.3rem}
-.notes .amber{color:var(--amber)} .notes .teal{color:var(--teal)} .notes .dimb{color:var(--meta)}
-.notes em{font-style:normal;font-family:var(--mono);font-size:.86em;color:var(--paper)}
-
 /* ── gallery: one feature, several screens ─────────────────────
-   Plain buttons + hidden/shown frames. No library, no autoplay:
-   the reader decides what to look at, and it still works with
-   JavaScript off (the first frame is just an image). ────────── */
+   Plain buttons + hidden/shown frames; Marketing.astro's gallery-tabs
+   script drives this. No new mock covers it; mechanical token renaming. */
 .gal{display:grid;gap:.7rem;justify-items:center}
 .galframes{position:relative;width:100%;max-width:340px}
 .galframes img{display:none}
@@ -343,271 +394,159 @@ footer{border-top:1px solid var(--line);padding:3rem 0 4rem;text-align:center}
   color:var(--meta);background:var(--panel);border:1px solid var(--line);
   border-radius:999px;padding:.4rem .7rem;cursor:pointer;transition:color .15s,border-color .15s}
 .galtabs button:hover{color:var(--dim)}
-.galtabs button[aria-selected="true"]{color:var(--accent);border-color:rgba(108,107,239,.45);
-  background:rgba(108,107,239,.06)}
+.galtabs button[aria-selected="true"]{color:var(--signal);border-color:rgba(122,167,255,.45);
+  background:rgba(122,167,255,.06)}
 
+/* ── home page ──────────────────────────────────────────────────
+   Everything below, through the price section, is lifted from
+   home.linked.html's own embedded <style> — centralized here so the page
+   body doesn't need its own inline styles. .phone is renamed .lockmock:
+   home.linked.html's construct is a CSS-drawn fake lock screen, unrelated
+   to the real-screenshot device frame above that the whole rest of the
+   site's .phone usages still need. */
+.hero{padding:88px 0 40px}
+.hero .wrap{display:grid;grid-template-columns:minmax(0,1fr) 400px;gap:64px;align-items:center}
+.hero h1{margin-bottom:26px}
+.lede{max-width:var(--meas);color:var(--dim);font-size:18px;margin:0 0 34px}
+.lede b{color:var(--ink);font-weight:600}
+.pricenote{font:13px/1.4 var(--mono);color:var(--meta);margin-top:18px}
+.pricenote b{color:var(--ink);font-weight:700}
+
+.lockmock{
+  position:relative;width:100%;max-width:400px;
+  border:1px solid var(--line);border-radius:42px;
+  background:
+    radial-gradient(120% 90% at 80% 0%,#1C2B45 0%,transparent 55%),
+    radial-gradient(130% 100% at 15% 90%,#0F2E2A 0%,transparent 60%),
+    linear-gradient(200deg,#12203A 0%,#0A1220 45%,#060A12 100%);
+  box-shadow:0 30px 80px rgba(0,0,0,.55), inset 0 0 0 1px rgba(255,255,255,.03);
+  padding:26px 20px 30px;overflow:hidden;
+}
+.lockmock::before{content:"";display:block;width:96px;height:26px;border-radius:14px;background:#04060A;margin:0 auto 4px;border:1px solid rgba(255,255,255,.05)}
+.needs{width:max-content;margin:14px auto 6px;display:flex;gap:8px;align-items:center;font:700 11px/1 var(--mono);letter-spacing:.14em;color:var(--amber);background:rgba(10,8,4,.8);border:1px solid rgba(255,179,92,.35);padding:8px 14px;border-radius:999px}
+.needs .dot{width:7px;height:7px;border-radius:50%;background:var(--amber);box-shadow:0 0 8px var(--amber);animation:pulse 1.6s ease-in-out infinite}
+.lockdate{font:500 15px/1 var(--sans);color:rgba(244,241,232,.75);text-align:center;margin-top:10px}
+.locktime{font:200 76px/1 var(--sans);letter-spacing:-.02em;color:rgba(244,241,232,.92);text-align:center;margin-bottom:96px;font-variant-numeric:tabular-nums}
+.agentcard{background:rgba(6,8,11,.92);border:1px solid rgba(255,255,255,.09);border-radius:18px;padding:14px 14px 12px;backdrop-filter:blur(8px);font-family:var(--mono)}
+.agentcard .row{display:flex;justify-content:space-between;align-items:baseline}
+.agentcard .who{font:700 13px/1.5 var(--mono);color:var(--ink)}
+.agentcard .who .st{color:var(--amber)}
+.agentcard .where,.agentcard .for{font:11px/1.6 var(--mono);color:var(--meta)}
+.pills{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:10px 0 8px}
+.pill{font:700 12px/1 var(--mono);text-align:center;padding:10px 0;border-radius:8px}
+.pill.allow{color:#04110D;background:var(--ok)}
+.pill.deny{color:#1A0F02;background:var(--amber)}
+.replies{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.reply{font:11px/1 var(--mono);color:var(--dim);text-align:center;padding:8px 0;border-radius:8px;border:1px solid rgba(255,255,255,.10)}
+.agentcard .second{margin-top:12px;padding-top:10px;border-top:1px solid rgba(255,255,255,.07);display:flex;justify-content:space-between}
+.agentcard .second .who{color:var(--dim)}
+.agentcard .second .ok{color:var(--ok);font-size:11px}
+
+.works{padding:64px 0 8px;text-align:center}
+.chips{display:flex;flex-wrap:wrap;gap:10px;justify-content:center;margin-bottom:14px}
+.chip{font:500 13px/1 var(--mono);color:var(--ink);border:1px solid var(--line);border-radius:999px;padding:9px 16px;display:flex;gap:8px;align-items:center;background:rgba(255,255,255,.02)}
+.chip i{width:6px;height:6px;border-radius:50%;background:var(--ok);display:inline-block}
+.chip.any{color:var(--meta);border-style:dashed}
+.works p{color:var(--meta);font-size:14px;max-width:56ch;margin:0 auto}
+
+.steps{padding:72px 0}
+.steps h2{max-width:24ch;margin-bottom:40px}
+.panes{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.pane{border:1px solid var(--line);border-radius:10px;background:var(--panel);overflow:hidden}
+.pane .title{display:flex;gap:8px;align-items:center;font:600 11px/1 var(--mono);letter-spacing:.08em;color:var(--meta);padding:10px 14px;border-bottom:1px solid var(--line);background:rgba(255,255,255,.02)}
+.pane .title b{color:var(--citron);font-weight:700}
+.pane .body{padding:16px 16px 20px;font-size:14.5px;color:var(--dim)}
+.pane .body code{font:12.5px var(--mono);color:var(--ink);background:rgba(255,255,255,.06);padding:2px 6px;border-radius:4px}
+
+.voice{padding:40px 0 72px}
+.voice .k{color:var(--ok)}
+.voice h2{margin-bottom:16px}
+.voice p{color:var(--dim);max-width:var(--meas)}
+.voice p b{color:var(--ink)}
+.overlay{border:1px solid rgba(255,255,255,.1);border-radius:14px;background:var(--raise);padding:14px 16px;font-family:var(--mono);box-shadow:0 20px 60px rgba(0,0,0,.4)}
+.overlay .head{display:flex;align-items:center;gap:8px;margin-bottom:12px}
+.overlay .rec{width:7px;height:7px;border-radius:50%;background:var(--ok);box-shadow:0 0 8px var(--ok);animation:pulse 1.4s ease-in-out infinite}
+.overlay .st{font:700 10px/1 var(--mono);letter-spacing:.18em;color:var(--ok)}
+.bars{margin-left:auto;display:flex;gap:3px;align-items:center;height:16px}
+.bars i{width:3px;border-radius:2px;background:var(--ok);animation:lvl 1s ease-in-out infinite}
+.bars i:nth-child(1){height:5px;animation-delay:.0s}
+.bars i:nth-child(2){height:9px;animation-delay:.15s}
+.bars i:nth-child(3){height:14px;animation-delay:.3s}
+.bars i:nth-child(4){height:9px;animation-delay:.45s}
+.bars i:nth-child(5){height:6px;animation-delay:.6s}
+.overlay .txt{font:13.5px/1.7 var(--mono);color:var(--ink)}
+.overlay .txt .ghosttxt{color:var(--meta)}
+.overlay .acts{display:flex;justify-content:space-between;margin-top:14px}
+.overlay .cancel{font:600 12px var(--mono);color:var(--dim);padding:8px 14px;border:1px solid var(--line);border-radius:999px}
+.overlay .insert{font:700 12px var(--mono);color:var(--panel);background:var(--citron);padding:8px 16px;border-radius:999px}
+
+.ledger{padding:0 0 80px}
+.price{padding:0 0 96px;text-align:center}
+
+/* ── footer ─────────────────────────────────────────────────────
+   A single flat row now — the sticky .status bar above replaces the
+   old footer's job of being "the only way back to nav on a long page". */
+footer{border-top:1px solid var(--line);padding:28px 0 48px}
+footer .wrap{display:flex;flex-wrap:wrap;gap:18px;align-items:center;font:12px var(--mono);color:var(--meta)}
+footer .wrap a{color:var(--dim)}
+footer .right{margin-left:auto;display:flex;gap:18px}
+
+/* ── scroll-spy status bar ────────────────────────────────────────
+   A second tmux status line, pinned to the BOTTOM, tracking scroll
+   position the way the top one tracks which page you're on. */
+.scrollspy{
+  position:fixed;left:0;right:0;bottom:0;z-index:9;
+  background:rgba(4,5,7,.9);backdrop-filter:blur(10px);
+  border-top:1px solid var(--line);
+  font:11px/1 var(--mono);letter-spacing:.03em;
+}
+/* Same shrink-then-scroll fix as .win above, and for the same reason: six
+   nowrap section links plus the tail sentence can't shrink, so without
+   overflow-x:auto here the row had to drop items via display:none instead —
+   which meant a section past the cut never got a scroll-spy indicator at
+   all, on any phone, no matter how far you scrolled. */
+.scrollspy .wrap{position:relative;display:flex;align-items:center;gap:2px;height:34px;min-width:0;overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+.scrollspy .wrap::-webkit-scrollbar{display:none}
+.scrollspy .wrap::after{content:"";position:absolute;top:0;bottom:0;right:0;width:28px;background:linear-gradient(to right,transparent,rgba(244,241,232,.12));pointer-events:none}
+.scrollspy a{flex:none;color:var(--meta);padding:4px 9px;border-radius:3px;white-space:nowrap}
+.scrollspy a:hover{color:var(--dim);text-decoration:none}
+.scrollspy a[data-current]{color:var(--ink);background:rgba(255,255,255,.06)}
+.scrollspy a[data-current]::after{content:"*";color:var(--citron);margin-left:2px}
+.scrollspy .tail{margin-left:auto;color:var(--meta);white-space:nowrap;padding-right:2px}
+body.has-scrollspy{padding-bottom:34px}
+
+@keyframes blink{50%{opacity:0}}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+@keyframes lvl{0%,100%{transform:scaleY(.5)}50%{transform:scaleY(1.4)}}
+@keyframes breathe{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.45;transform:scale(.86)}}
+@keyframes crawl{to{stroke-dashoffset:-24}}
+
+@media(max-width:960px){
+  .status .beta .full{display:none}
+  .status .beta .short{display:inline}
+  .cellgrid{grid-template-columns:1fr 1fr}
+  .hero .wrap,.voice .wrap{grid-template-columns:minmax(0,1fr);gap:44px}
+  .lockmock{margin:0 auto}
+  .panes{grid-template-columns:1fr}
+  .locktime{margin-bottom:64px}
+}
 @media(max-width:900px){
   .lockrow{grid-template-columns:1fr;gap:1.8rem}
-  .hero{grid-template-columns:1fr;gap:2.4rem;padding-top:3rem}
-  .row,.grid,.facts{grid-template-columns:1fr}
+  .row,.facts{grid-template-columns:1fr}
   .row:nth-child(even) .rowshot{order:0}
   .strip{grid-template-columns:1fr}
   .strip img{width:100%}
-  .pricebox{grid-template-columns:1fr;gap:1.4rem}
-  .band{padding:3.6rem 0}
+  .mux{grid-template-columns:1fr}
   .pin{left:0;top:-1rem}
+  .band{padding:3.6rem 0}
+}
+@media(max-width:700px){
+  .scrollspy .tail{display:none}
+}
+@media(max-width:640px){
+  .cellgrid{grid-template-columns:1fr}
 }
 @media(prefers-reduced-motion:reduce){
   *{animation:none!important;transition:none!important}
   html{scroll-behavior:auto}
-}
-
-/* ── docs pages: the gaps the .doc rules below leave ───────────
-   (added for docs-tmux.html)
-   · h4 — a long reference page needs a fourth level. Scoped with
-     `>` so it cannot reach the h4 inside a .cell card.
-   · its table cells hold real sentences, so <b> has to brighten
-     there, and a command must not wrap mid-flag.
-   · `.doc h3` below is unscoped, so it flattens the two card
-     components the landing page already styled — the last two
-     lines hand .step3 and .row their own rhythm back.
-   ─────────────────────────────────────────────────────────────── */
-.doc > h4{font-size:1.02rem;font-weight:650;margin:1.8rem 0 .45rem;color:var(--paper)}
-.doc .tbl-wrap td b{color:var(--paper);font-weight:600}
-.doc .tbl-wrap td code{white-space:nowrap}
-.doc .step3 h3{font-size:1rem;font-weight:650;margin:0 0 .4rem}
-.doc .row h3{font-size:1.3rem;font-weight:700;margin:.7rem 0 .55rem}
-
-/* ── docs pages ────────────────────────────────────────────────
-   Added for docs-herdr.html / docs-herdr.zh.html. Everything is
-   scoped under .doc so a docs page can never restyle the landing
-   page: the site only ever styled <code> inside .step3 and
-   <details>, and had no block element at all for a shell
-   transcript — a docs page needs both.
-
-   Amber is deliberately absent here. On this site amber means
-   "an agent needs a human"; a docs callout is not that, so the
-   warning boxes reuse the neutral .wire panel instead of
-   inventing a second meaning for the colour.
-   ───────────────────────────────────────────────────────────── */
-.doc h3{font-size:1.1rem;font-weight:700;letter-spacing:-.015em;margin:2.4rem 0 .55rem}
-.doc h3:first-of-type{margin-top:2rem}
-.doc .txt{color:var(--dim);max-width:38rem;margin-top:.85rem}
-.doc .txt b{color:var(--paper);font-weight:600}
-
-/* Long-form reading, not landing-page reading. Inside the docs shell the
-   prose gets more leading and a narrower measure than the marketing pages:
-   38rem at this size runs to ~85 characters, past the point where the eye
-   starts losing the line it is returning to. Brightened too — body copy set
-   in the dim tone is fine for one paragraph under a heading and tiring for
-   a page of it. */
-.dbody .doc .txt,
-.dbody .doc p{font-size:1.06rem;line-height:1.75;max-width:34rem;
-  color:rgba(232,227,214,.78)}
-.dbody .doc ul.list{font-size:1.03rem;line-height:1.7;max-width:34rem}
-/* Plain lists — the ones written as bare <ul> rather than ul.list — had no
-   measure at all, so they ran the full column while the paragraphs beside
-   them stopped at 34rem. Same reading width, same indent. */
-.band.doc ul:not(.list), .band.doc ol{max-width:34rem;padding-left:1.25rem;
-  display:grid;gap:.4rem;margin-top:.9rem;color:var(--dim);line-height:1.7}
-.band.doc ul:not(.list) b, .band.doc ol b{color:var(--paper);font-weight:600}
-.dbody .doc h3{font-size:1.25rem;margin:2.8rem 0 .6rem}
-.dbody .doc h4{font-size:1.04rem}
-/* Cards keep their own tighter setting — they are scannable units, not prose. */
-.dbody .doc .cell p{font-size:.95rem;line-height:1.55;max-width:none}
-/* A figure standing on its own in the prose, rather than paired with text in a
-   two-column row. It aligns with the paragraph it illustrates — centring it
-   left a 200px indent against the text above and below, which reads as a
-   layout mistake rather than a deliberate placement. */
-.dbody .doc > img.phone{margin:1.4rem 0 0;justify-self:start;max-width:300px;
-  border-radius:18px}
-.doc ul.list{list-style:none;margin-top:.9rem;display:grid;gap:.45rem;
-  font-size:.98rem;color:var(--dim);max-width:38rem}
-.doc ul.list li{padding-left:1.1rem;text-indent:-1.1rem}
-.doc ul.list li::before{content:"·";color:var(--accent);font-weight:700;
-  display:inline-block;width:1.1rem;text-indent:0}
-.doc ul.list b{color:var(--paper);font-weight:600}
-.doc code{overflow-wrap:anywhere;
-  font:.87em var(--mono);background:var(--raise);border-radius:5px;
-  padding:.12rem .38rem;color:var(--accent)}
-.doc pre{margin-top:1.1rem;background:var(--panel);border:1px solid var(--line);
-  border-radius:12px;padding:1rem 1.15rem;overflow-x:auto;
-  font:13.5px/1.8 var(--mono);color:var(--dim)}
-.doc pre code{background:none;padding:0;color:inherit;font-size:inherit}
-.doc pre b{color:var(--teal);font-weight:600}
-.doc pre i{font-style:normal;color:var(--meta)}
-.doc .wire{padding:1.3rem 1.4rem}
-.doc .wire p{color:var(--dim);font-size:.98rem;max-width:44rem}
-.doc .wire p+p{margin-top:.75rem}
-.doc .wire b{color:var(--paper)}
-.doc .notes{max-width:none;gap:1.15rem}
-.doc .notes p{font-size:.98rem;max-width:44rem}
-.doc .steps3{margin-top:1.8rem}
-.doc .step3 p+p{margin-top:.5rem}
-
-/* ── docs pages: one addition to the .doc rules above ──────────
-   Added for docs-agents.html, which reproduces the lock-screen
-   Live Activity as a text diagram. `.doc pre b` (teal) and
-   `.doc pre i` (dim) already exist; the missing third is amber,
-   and this is the ONE place a docs page may use it — the
-   transcript is a literal picture of an agent needing a human,
-   which is exactly what amber means everywhere else on the site.
-   Rendering that row teal or grey would misstate the screenshot
-   printed right above it. <u> because it carries no default
-   weight or spacing of its own to undo.
-   ────────────────────────────────────────────────────────────── */
-.doc pre u{text-decoration:none;color:var(--amber)}
-
-/* NOTE for whoever writes the next .muxcard bullet — no rule here on
-   purpose, because the fix belongs in the markup.
-
-   The comment on `.muxcard li` above is half right: flex folds
-   contiguous *text runs* into one anonymous item, but every inline
-   ELEMENT (<code>, <b>, <em>) still becomes its own flex item and is
-   blockified. So each one lands in its own narrow column with the
-   .5rem gap between, and because those items don't shrink the cost
-   compounds: a bullet written as running prose with <code> chips
-   pushed one card's min-content to 669px against a 494px fair share,
-   blowing the .mux grid out to 1155px inside a 1008px shell — the
-   second card's right edge landed at 1310px in a 1280px viewport,
-   i.e. off screen, with body{overflow-x:hidden} hiding the scrollbar
-   that would have revealed it.
-
-   So: write .muxcard bullets as PLAIN TEXT. index.html's tmux card is
-   the reference — its bullets have no inline elements and flow
-   correctly. (Its one `<b>Isolated tasks</b>` bullet shows the
-   two-column artifact in miniature; left alone, it is not this
-   page's to change.) Inline code belongs in a <p> or a <pre>. */
-
-/* ── documentation shell ───────────────────────────────────────
-   Injected by scripts/build-docs.py, not hand-written into the
-   pages — the sidebar has to agree with itself across twenty
-   files, and hand-maintained nav is how a docs site starts
-   lying about what it contains.
-
-   Three columns on a desktop (nav · body · contents); on a
-   phone the sidebar becomes a scrollable strip above the page
-   and the contents column disappears, because a table of
-   contents on a 390pt screen is just a second, worse menu.
-   ───────────────────────────────────────────────────────────── */
-.dwrap{max-width:82rem;margin:0 auto;padding:0 1.5rem;
-  display:grid;grid-template-columns:15rem minmax(0,1fr) 13rem;gap:2.5rem;
-  align-items:start;justify-content:center}
-/* One header width for every template. Scoping this to the docs shell aligned
-   the wordmark with the sidebar but made the header jump 128px sideways when
-   moving between /docs and a docs page — a global element that moves reads as
-   a different site. 82rem matches the docs grid; marketing pages carry a
-   header slightly wider than their 66rem text column, which is ordinary. */
-.shell:has(> .top){max-width:82rem}
-/* Pages that traded the contents rail for table width (see build-docs.py). */
-.dwrap.notoc{grid-template-columns:15rem minmax(0,1fr)}
-.dwrap.notoc > .dbody{grid-column:2}
-/* Everything that is not the nav or the contents belongs in the middle column,
-   stated explicitly rather than relying on source order. These pages are
-   hand-written (some by different authors) and one stray </div> is enough to
-   close the body wrapper early — without this, the orphaned sections became
-   grid items of their own and the page laid itself out in columns. Placing by
-   selector means a malformed page degrades to "slightly wrong markup" instead
-   of "unreadable layout". */
-.dwrap > *{grid-column:2;min-width:0}
-.dwrap > .dnav{grid-column:1;grid-row:1}
-.dwrap > .dtoc{grid-column:3;grid-row:1}
-.dwrap .shell{padding:0;max-width:none;margin:0}
-.dwrap .band{padding-top:2.4rem;border-top:none}
-
-.dnav{position:sticky;top:1.5rem;max-height:calc(100vh - 3rem);overflow-y:auto;
-  padding:1.5rem 0 2rem;font-size:.95rem}
-.dnav .dhome{display:block;font:600 13px var(--mono);letter-spacing:.06em;
-  color:var(--meta);margin-bottom:1.2rem}
-.dnav .dhome:hover{color:var(--accent)}
-.dnav .dtitle{font:700 1.05rem var(--sans);letter-spacing:-.02em;margin-bottom:1rem}
-
-/* Reads as a search field rather than a button, because that is the thing
-   people look for; it opens the modal that is the actual input. */
-.dsearchbtn{display:flex;align-items:center;justify-content:space-between;gap:.5rem;
-  width:100%;margin-bottom:1.4rem;padding:.5rem .7rem;cursor:pointer;
-  background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.1);
-  border-radius:9px;color:rgba(199,193,181,.62);font:13.5px var(--sans);text-align:left}
-.dsearchbtn:hover{border-color:rgba(108,107,239,.4);color:rgba(244,241,232,.9);
-  background:rgba(108,107,239,.06)}
-.dsearchbtn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-.dsearchbtn kbd{font:12.5px var(--mono);padding:.1rem .3rem;border-radius:4px;
-  background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.1);color:inherit}
-@media (max-width:900px){.dsearchbtn kbd{display:none}}
-.dnav .dsec{font:600 12px var(--mono);letter-spacing:.2em;text-transform:uppercase;
-  color:var(--meta);margin:1.5rem 0 .5rem}
-.dnav .dsec:first-of-type{margin-top:0}
-.dnav nav a{display:block;padding:.32rem 0 .32rem .8rem;color:var(--dim);
-  border-left:2px solid var(--line);line-height:1.45}
-.dnav nav a:hover{color:var(--paper);border-left-color:var(--line-lit)}
-.dnav nav a.on{color:var(--accent);border-left-color:var(--accent);font-weight:600}
-
-.dtoc{position:sticky;top:1.5rem;padding:4.2rem 0 2rem;font-size:.93rem}
-.dtoc .dtoclabel{font:600 12px var(--mono);letter-spacing:.2em;text-transform:uppercase;
-  color:var(--meta);margin-bottom:.7rem}
-.dtoc nav a{display:block;padding:.28rem 0;color:var(--dim);line-height:1.4}
-.dtoc nav a:hover{color:var(--accent)}
-
-/* Two cells when there is a previous and a next; one full-width cell when
-   there is only one of them. The placeholder span used to hold an empty
-   359px cell open on the first and last page of the sequence. */
-.dpager{display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin:3rem 0 4rem}
-.dpager:has(> span:empty){grid-template-columns:1fr}
-.dpager > span:empty{display:none}
-.dpager a{border:1px solid var(--line);border-radius:12px;padding:.9rem 1.1rem;
-  background:var(--panel);font-weight:600;font-size:.98rem}
-.dpager a:hover{border-color:var(--line-lit)}
-.dpager a span{display:block;font:600 12px var(--mono);letter-spacing:.16em;
-  text-transform:uppercase;color:var(--meta);margin-bottom:.3rem}
-.dpager .dnext{text-align:right}
-
-/* search */
-.dsearch{position:fixed;inset:0;background:rgba(0,0,0,.6);backdrop-filter:blur(6px);
-  z-index:50;display:flex;align-items:flex-start;justify-content:center;padding:12vh 1.2rem 0}
-/* `display:flex` beats the user-agent's [hidden]{display:none}, so without
-   this the search modal ships permanently open over every docs page. */
-.dsearch[hidden]{display:none}
-.dsearchbox{width:min(38rem,100%);background:var(--panel);border:1px solid var(--line-lit);
-  border-radius:16px;overflow:hidden;box-shadow:0 40px 90px -30px rgba(0,0,0,.95)}
-.dsearchbox input{width:100%;background:transparent;border:none;outline:none;
-  padding:1.1rem 1.2rem;font:15px var(--sans);color:var(--paper);
-  border-bottom:1px solid var(--line)}
-#dres{max-height:52vh;overflow-y:auto}
-#dres a{display:block;padding:.8rem 1.2rem;border-bottom:1px solid var(--line)}
-#dres a:hover{background:rgba(255,255,255,.03)}
-#dres a b{display:block;font-size:.98rem;color:var(--paper);margin-bottom:.2rem}
-#dres a span{font-size:.92rem;color:var(--meta);line-height:1.5}
-.dnohit{padding:1rem 1.2rem;color:var(--meta);font-size:.95rem}
-.dsearchtrigger{cursor:pointer}
-
-@media(max-width:1100px){
-  .dwrap{grid-template-columns:13rem minmax(0,1fr);gap:2rem}
-  .dtoc{display:none}
-}
-@media(max-width:640px){
-  .top{padding:1rem 0}
-  .topright{gap:.45rem .9rem;row-gap:.55rem}
-  .lang{padding:.28rem 0}
-  .fnav a{padding:.3rem 0}
-  .chip.launch{order:-1}
-}
-@media(max-width:820px){
-  .dwrap{grid-template-columns:1fr;gap:0;padding:0 1.25rem}
-  /* One column means the explicit placements above have to be undone, or the
-     nav stays pinned to a column 1 that has collapsed to 0px while the article
-     sits in an implicit column 2 — which shipped the docs to every phone with
-     no navigation and no search at all. Source order is nav, article, contents,
-     which is the reading order we want here anyway. */
-  .dwrap > *,
-  .dwrap > .dnav,
-  .dwrap > .dtoc{grid-column:1;grid-row:auto}
-  .dnav{position:static;max-height:none;padding:1.2rem 0 .5rem;
-    border-bottom:1px solid var(--line)}
-  .dnav nav{display:flex;flex-wrap:wrap;gap:.3rem .5rem}
-  .dnav nav a{border-left:none;padding:.3rem .6rem;border:1px solid var(--line);
-    border-radius:999px;font-size:.92rem}
-  .dnav nav a.on{border-color:var(--accent)}
-  .dnav .dsec{width:100%;margin:.9rem 0 .35rem}
-  .dpager{grid-template-columns:1fr}
-  .dpager .dnext{text-align:left}
 }

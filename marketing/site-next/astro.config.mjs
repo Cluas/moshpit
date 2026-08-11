@@ -57,6 +57,15 @@ export default defineConfig({
       ],
       // Shared with the /docs landing page — see src/docs-nav.mjs for why.
       sidebar,
+      // Nests each page's own headings under its own sidebar entry instead of
+      // a separate right-hand "On this page" rail (that rail is hidden in
+      // starlight-bridge.css) — the single-list pattern design/docs.html
+      // specifies. See src/components/Sidebar.astro for the override itself;
+      // it's a copy-and-extend of Starlight's stock Sidebar/SidebarSublist,
+      // per Starlight's own override mechanism, not a fork of its internals.
+      components: {
+        Sidebar: './src/components/Sidebar.astro',
+      },
     }),
   ],
 });

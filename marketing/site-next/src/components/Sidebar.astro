@@ -1,0 +1,43 @@
+---
+/**
+ * Starlight override, wired up in astro.config.mjs's `components.Sidebar`
+ * (https://starlight.astro.build/guides/overriding-components/). Otherwise a
+ * verbatim copy of the stock `@astrojs/starlight/components/Sidebar.astro`;
+ * the one change is computing this page's flattened heading list once, here,
+ * and handing it to DocsSidebarList so every page's own headings can nest
+ * under that page's own sidebar entry (see that file for why, and for the
+ * `.dsub` element itself). That replaces the separate right-hand "On this
+ * page" rail — hidden in starlight-bridge.css — with the single-list pattern
+ * design/docs.html specifies.
+ */
+import MobileMenuFooter from 'virtual:starlight/components/MobileMenuFooter';
+import SidebarPersister from '@astrojs/starlight/components/SidebarPersister.astro';
+import DocsSidebarList from './DocsSidebarList.astro';
+
+interface TocItem {
+	slug: string;
+	text: string;
+	children: TocItem[];
+}
+
+const { sidebar, toc } = Astro.locals.starlightRoute;
+
+/** `toc.items` is a one-element array (the page-title pseudo-heading) whose descendants are the real h2s/h3s. Flattened to one level, matching design/docs.html's `.dsub` — a flat list regardless of heading depth. */
+function flattenToc(items: TocItem[]): { slug: string; text: string }[] {
+	return items.flatMap(({ slug, text, children }) => [{ slug, text }, ...flattenToc(children)]);
+}
+const pageToc = toc ? flattenToc(toc.items) : [];
+---
+
+<SidebarPersister>
+	<DocsSidebarList
+		sublist={sidebar}
+		pageToc={pageToc}
+		tocMinH={toc?.minHeadingLevel ?? 2}
+		tocMaxH={toc?.maxHeadingLevel ?? 3}
+	/>
+</SidebarPersister>
+
+<div class="md:sl-hidden">
+	<MobileMenuFooter />
+</div>

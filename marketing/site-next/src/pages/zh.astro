@@ -1,537 +1,163 @@
 ---
 import Marketing from '@layouts/Marketing.astro';
-import { ctaPrimary, ctaNote, hasPrimaryCta } from '../release.mjs';
+import { ctaPrimary, ctaNote, hasPrimaryCta, RELEASE } from '../release.mjs';
 
-// Raw markup, lifted verbatim from the page this replaces.
+// Raw markup, ported from the redesign mockup (home.linked.html) the same way
+// index.astro was: hero, works, steps, voice, ledger, price — section by
+// section, using the new moshpit.css component classes (.kicker/.k, .chips,
+// .panes, .voice/.overlay, table.ledger, .pricecard) instead of the retired
+// .shell/.band/.eyebrow/.grid/.pricebox ones.
+//
+// Copy is carried over from THIS page's own prior Chinese wherever the
+// content already existed (hero, three steps, the six privacy facts) rather
+// than re-translated from the English mock. Two pieces are genuinely new
+// this pass and got fresh Chinese instead of a literal translation of the
+// English mock: the dedicated voice section (previously a bullet list buried
+// in a feature row that no longer exists on this page) and the honest-ledger
+// table (previously a 6-cell grid; the $6.99 cell is dropped here since the
+// price section below already covers it).
+//   - the hero's CTA row and price note stay driven by release.mjs, not
+//     hard-coded copy
+//   - every anchor points at a real /zh/... path, never "#"
+//   - the price card reads RELEASE.price rather than repeating the literal
+//     figure a second time in this file
 const body = `<!-- ══ HERO ══ -->
-<div class="shell">
-  <section class="hero">
+<header class="hero" id="s-home">
+  <div class="wrap">
     <div>
-      <p class="eyebrow">在锁屏上回 agent</p>
-      <h1>让你的 agent<br><em>找得到你</em>。</h1>
+      <div class="kicker">在锁屏上回 agent</div>
+      <h1>让你的 agent<br><span class="reach">找得到你</span><span class="cursor" aria-hidden="true"></span></h1>
       <p class="lede">Claude Code 在你的服务器上卡在一个权限询问。你的手机亮了。
       你在锁屏上点一下 <b>Allow</b>，它就继续跑下去——不用解锁、不用 SSH、
       不用走回工位。</p>
-      <div class="actions">
+      <div class="cta-row">
         ${ctaPrimary('zh')}
         <a class="cta ${hasPrimaryCta ? 'ghost' : ''}" href="/zh/guide/claude-code">完整跑一遍</a>
-        <a class="cta ghost" href="/zh/compare">和别的比怎么样</a>
+        <a class="ghost" href="/zh/compare">和别的比怎么样</a>
       </div>
-      <p class="soon">${ctaNote('zh')}</p>
+      <p class="pricenote">${ctaNote('zh')}</p>
     </div>
-    <div class="herophone">
-      <img class="phone lift" src="/20-lockscreen.jpg" width="440" height="956"
-           alt="iPhone 锁屏上的实时活动卡片：Claude Code 带 Allow 和 Deny 两个按钮，下面还有 codex">
-      <span class="pin"><span class="lamp"></span>1 NEEDS YOU</span>
-    </div>
-  </section>
-</div>
 
-<!-- ══ AGENTS + HOW ══ -->
-<div class="shell">
-  <section class="band">
-    <p class="eyebrow plain" style="justify-content:center">支持哪些 agent</p>
-    <div class="agents">
-      <span class="agentchip"><span class="dot"></span>Claude Code</span>
-      <span class="agentchip"><span class="dot"></span>Codex</span>
-      <span class="agentchip"><span class="dot"></span>opencode</span>
-      <span class="agentchip"><span class="dot"></span>aider</span>
-      <span class="agentchip"><span class="dot"></span>Gemini CLI</span>
-      <span class="agentchip any">……任何跑在终端里的</span>
+    <div class="lockmock" role="img" aria-label="iPhone 锁屏：一个 agent 在等你，不用解锁就能点 Allow 或 Deny">
+      <div class="needs"><span class="dot"></span> 1 NEEDS YOU</div>
+      <div class="lockdate" id="lockdate">Sat Jan 1</div>
+      <div class="locktime" id="locktime">9:41</div>
+      <div class="agentcard">
+        <div class="row">
+          <span class="who">Claude Code <span class="st">· 等你</span></span>
+          <span class="for">6h 50m</span>
+        </div>
+        <div class="where">mac-studio · 1:claude</div>
+        <div class="pills">
+          <span class="pill allow">✓ Allow</span>
+          <span class="pill deny">✕ Deny</span>
+        </div>
+        <div class="replies"><span class="reply">yes</span><span class="reply">continue</span></div>
+        <div class="second">
+          <span class="who">codex <span class="ok">· 干活中</span></span>
+          <span class="for">2h 04m</span>
+        </div>
+      </div>
     </div>
-    <p class="agentnote">没有什么"集成列表"要挤进去。Moshpit 驱动的是真正的 shell，
+  </div>
+</header>
+
+<!-- ══ WORKS WITH ══ -->
+<section class="works" id="s-agents">
+  <div class="wrap">
+    <div class="k">支持哪些 agent</div>
+    <div class="chips">
+      <span class="chip"><i></i>Claude Code</span>
+      <span class="chip"><i></i>Codex</span>
+      <span class="chip"><i></i>opencode</span>
+      <span class="chip"><i></i>aider</span>
+      <span class="chip"><i></i>Gemini CLI</span>
+      <span class="chip any">……任何跑在终端里的</span>
+    </div>
+    <p>没有什么"集成列表"要挤进去。Moshpit 驱动的是真正的 shell，
     所以它没听说过的 agent，在发布当天就能用。</p>
+  </div>
+</section>
 
-    <h2 style="margin-top:3.2rem">三步，之后它就只是你的终端。</h2>
-    <div class="steps3">
-      <div class="step3">
-        <h3>添加主机</h3>
-        <p>填 SSH 信息和密钥——也可以在手机上直接生成。选 tmux、herdr 或都不用。
-        首次连接会把主机指纹给你核对。</p>
-      </div>
-      <div class="step3">
-        <h3>照你原来的方式跑 agent</h3>
-        <p>在窗格里起 <code>claude</code>，或者让 Moshpit 开一个隔离的
-        <code>git worktree</code> 在里面起。主机上没有新东西要学。</p>
-      </div>
-      <div class="step3">
-        <h3>把手机放下</h3>
-        <p>当 agent 需要人的时候，你的锁屏会告诉你——连回答用的按钮一起给你。</p>
-      </div>
+<!-- ══ THREE STEPS ══ -->
+<section class="steps" id="s-flow">
+  <div class="wrap">
+    <h2>三步，之后它就只是你的终端。</h2>
+    <div class="panes">
+      <article class="pane">
+        <div class="title"><b>1</b> 添加主机</div>
+        <div class="body">填 SSH 信息和密钥——也可以在手机上直接生成。选 tmux、herdr
+        或都不用。首次连接会把主机指纹给你核对。</div>
+      </article>
+      <article class="pane">
+        <div class="title"><b>2</b> 起 agent</div>
+        <div class="body">在窗格里起 <code>claude</code>，或者让 Moshpit 开一个隔离的
+        <code>git worktree</code>，把第一句话交给它。主机上没有新东西要学。</div>
+      </article>
+      <article class="pane">
+        <div class="title"><b>3</b> 放下手机</div>
+        <div class="body">当 agent 需要人的时候，你的锁屏会告诉你——连回答用的按钮
+        一起给你。</div>
+      </article>
     </div>
-  </section>
-</div>
+  </div>
+</section>
 
-<!-- ══ THE MOMENT ══ -->
-<div class="shell">
-  <section class="band">
-    <p class="eyebrow">关键的那一下</p>
-    <h2>它出现在锁屏上，你就在锁屏上回它。</h2>
-    <p class="sub">这是真实的锁屏截图，不是效果图：Moshpit 能看到的每个 agent 都有一条
-    实时活动，被卡住的那个直接带上你本来就要给的答案。Allow、Deny、或者一句快捷回复
-    ——都不需要进 App。</p>
-
-    <div class="lockrow">
-      <img class="phone lift lockshot" src="/20-lockscreen.jpg" width="440" height="956"
-           alt="iPhone 锁屏上的 Moshpit 实时活动：Claude Code 带 Allow 和 Deny 按钮，下面是正在干活的 codex">
-      <div class="notes">
-        <p><b class="amber">Claude Code · 等你回话</b>
-        琥珀点，配上结束等待的两个按钮。<em>yes</em> 和 <em>continue</em> 是快捷回复
-        ——它们直接敲进那个窗格，不是发到什么聊天框里。</p>
-        <p><b class="teal">codex · 正在干活</b>
-        青色点加实时计时，所以"在思考"和"卡住了"不会长得一模一样。</p>
-        <p><b class="dimb">计时本身就是重点</b>
-        那个 agent 已经等了几个小时。等的是它，不是你——你瞥一眼手机，
-        它离继续跑只差一次点击。</p>
-      </div>
+<!-- ══ VOICE ══ -->
+<section class="voice" id="s-voice">
+  <div class="wrap">
+    <div>
+      <div class="k">语音 · 就在这台设备上</div>
+      <h2>把 prompt 说出来，看清了再发。</h2>
+      <p>终端的快捷条上有一个 mic 键。你说的话先变成文字，落在键盘上方那块预览面板里
+      ——<b>按 Insert 才会真的敲进 shell</b>。转写完全在这台设备上进行，音频不会离开手机。
+      中文、英文都可以。</p>
     </div>
-
-    <div class="moment">
-      <div class="strip a">
-        <img src="/island-blocked.jpg" alt="灵动岛显示琥珀点和感叹号：有 agent 在等你" loading="lazy">
-        <p class="cap"><b>灵动岛 · 等你回话</b>
-        解锁状态下，灵动岛替你数着。琥珀色加感叹号 = 有人被你卡住了。</p>
+    <div class="overlay" role="img" aria-label="语音输入面板：正在听写、实时转写文字，以及 Cancel、Insert 两个按钮">
+      <div class="head">
+        <span class="rec"></span><span class="st">LISTENING</span>
+        <span class="bars"><i></i><i></i><i></i><i></i><i></i></span>
       </div>
-      <div class="strip b">
-        <img src="/island-working.jpg" alt="灵动岛显示青色点和实时计时，agent 正在干活" loading="lazy">
-        <p class="cap"><b>灵动岛 · 正在干活</b>
-        干活时是青色加走动的计时——不刷通知，只给你一个瞥一眼就懂的状态。</p>
-      </div>
+      <p class="txt">tail 一下部署日志<span class="ghosttxt">，只看失败的那些</span></p>
+      <div class="acts"><span class="cancel">Cancel</span><span class="insert">⇥ Insert</span></div>
     </div>
-  </section>
-</div>
+  </div>
+</section>
 
-<!-- ══ FEATURE ROWS ══ -->
-<div class="shell">
-  <section class="band">
-    <p class="eyebrow">你会拿到什么</p>
-    <h2>先是一个真正的终端。然后才是 agent 需要的那一层。</h2>
-    <p class="sub">下面每一屏都是真机上跑的这个 App——没有效果图，没有渲染。</p>
-
-    <div class="rows">
-
-        <div class="pillar">
-          <h3 class="pillarhead">先是个真终端</h3>
-          <p class="pillarsub">它首先是个终端，其次才是别的。SSH 与 Mosh，以及被画成原生视图的 tmux——不是把桌面缩小塞进屏幕。</p>
-        </div>
-
-
-      <div class="row">
-        <div>
-          <span class="kicker">tmux · 原生控制模式</span>
-          <h3>是你的 tmux，不是缩小版桌面</h3>
-          <p>会话、窗口、窗格都是原生渲染，划一下就切。新建、重命名、关闭都在面板里。
-          Moshpit 只附着到你已有的东西上，绝不改动它的样式。</p>
-          <ul>
-            <li>窗口和会话是真正的列表，不用眯着眼找</li>
-            <li>herdr 也支持——workspace、tab、单窗格满宽</li>
-            <li>前缀键和快捷键栏跟着你用的多路复用器走</li>
-          </ul>
-        </div>
-      <div class="gal rowshot" id="gal-tmux">
-        <div class="galframes">
-          <img src="/08-tmux-windows.jpg" class="phone on" width="1320" height="2738" alt="tmux 窗口面板列出 server、tests、logs，背后是实时的 git log">
-          <img src="/06-tmux-sessions.jpg" class="phone" width="1320" height="2738" alt="tmux 会话面板列出 payments-api 和 dashboard" loading="lazy">
-          <img src="/07-tmux-terminal.jpg" class="phone" width="1320" height="2868" alt="tmux 窗格渲染彩色 git log，面包屑读作 payments-api、1:server、git" loading="lazy">
-        </div>
-        <div class="galtabs" role="tablist" aria-label="tmux 界面">
-          <button type="button" role="tab" aria-selected="true" aria-controls="gal-tmux">窗口</button>
-          <button type="button" role="tab" aria-selected="false" aria-controls="gal-tmux">会话</button>
-          <button type="button" role="tab" aria-selected="false" aria-controls="gal-tmux">终端</button>
-        </div>
-      </div>
-      </div>
-
-
-      <div class="row">
-        <div>
-          <span class="kicker">Mosh · 漫游</span>
-          <h3>命令跑一半走出大楼</h3>
-          <p>Mosh 是内建的，不是外挂：Wi-Fi/5G 切换、息屏、酒店网络都断不掉会话。
-          预测回显让你在链路还没应答时就看见自己敲的字。</p>
-          <ul>
-            <li>Wi-Fi 掉了就在会话中途漫游到蜂窝</li>
-            <li>预测回显带可见的轨迹，直到服务器确认</li>
-            <li>净室实现，用 RFC 自带的测试向量校验过</li>
-          </ul>
-        </div>
-      <div class="gal rowshot" id="gal-mosh">
-        <div class="galframes">
-          <img src="/09-mosh.jpg" class="phone on" width="1320" height="2763" alt="Mosh 会话显示 git log 输出，标题栏带 MOSH 标记">
-          <img src="/13-mosh-settings.jpg" class="phone" width="1320" height="2829" alt="设置：默认使用 Mosh、预测回显、光标轨迹选项" loading="lazy">
-        </div>
-        <div class="galtabs" role="tablist" aria-label="Mosh 界面">
-          <button type="button" role="tab" aria-selected="true" aria-controls="gal-mosh">会话</button>
-          <button type="button" role="tab" aria-selected="false" aria-controls="gal-mosh">漫游设置</button>
-        </div>
-      </div>
-      </div>
-
-
-      <div class="row">
-        <div>
-          <span class="kicker">键盘 · 你的</span>
-          <h3>你真正会按的那些键</h3>
-          <p>键盘上面那条是你自己搭的工具栏：从终端键库里挑、拖着排序、把用不到的丢掉。
-          外接硬件键盘同样支持。</p>
-          <ul>
-            <li>esc、tab、^C、^L、粘贴、方向键——或者你放的任何东西</li>
-            <li>最多 12 个键，可排序，随你的习惯</li>
-            <li>8 套终端主题、7 款等宽字体，也可以自带配色</li>
-          </ul>
-        </div>
-      <div class="gal rowshot" id="gal-keys">
-        <div class="galframes">
-          <img src="/11-shortcuts.jpg" class="phone on" width="1320" height="2868" alt="快捷键编辑器：工具栏预览和可排序的按键列表">
-          <img src="/10-themes.jpg" class="phone" width="1320" height="2868" alt="设置：强调色、App 图标、终端字体、字号和主题" loading="lazy">
-        </div>
-        <div class="galtabs" role="tablist" aria-label="自定义界面">
-          <button type="button" role="tab" aria-selected="true" aria-controls="gal-keys">快捷键栏</button>
-          <button type="button" role="tab" aria-selected="false" aria-controls="gal-keys">外观</button>
-        </div>
-      </div>
-      </div>
-
-        <div class="pillar">
-          <h3 class="pillarhead">为 agent 而生</h3>
-          <p class="pillarsub">别的 iPhone 终端不做的那部分：agent 那句「我需要人」能送到你的锁屏上，而且你能在那儿回它。</p>
-        </div>
-
-
-      <div class="row">
-        <div>
-          <span class="kicker">Agent 工作台 · herdr</span>
-          <h3>先回那个卡住的</h3>
-          <p>面包屑上带着 agent 的名字和状态点，所以你一眼知道现在轮到谁。
-          琥珀色 = 它在等你。</p>
-          <ul>
-            <li>按"谁在等你"排序，并显示等了多久</li>
-            <li>点一行直接落到那个窗格——不用在树里找</li>
-            <li>herdr 上主机零安装；tmux 上一行命令装 hook</li>
-          </ul>
-        </div>
-      <div class="gal rowshot" id="gal-agent">
-        <div class="galframes">
-          <img src="/02-agent-terminal.jpg" class="phone on" width="1320" height="2868" alt="终端里 Claude Code 的修改请求正在等待批准，面包屑用琥珀色标出 agent 名">
-          <img src="/01-agents.jpg" class="phone" width="1320" height="2868" alt="主页 Agents 区：Claude Code 等你回话、codex 正在干活、claude 闲置" loading="lazy">
-        </div>
-        <div class="galtabs" role="tablist" aria-label="Agent 工作台界面">
-          <button type="button" role="tab" aria-selected="true" aria-controls="gal-agent">窗格里</button>
-          <button type="button" role="tab" aria-selected="false" aria-controls="gal-agent">主页上</button>
-        </div>
-      </div>
-      </div>
-
-
-      <div class="row">
-        <div>
-          <span class="kicker">开新活 · git worktree</span>
-          <h3>在地铁上开一个新任务</h3>
-          <p>选仓库、起分支名、把第一句话交给它。Moshpit 在主机上建一个隔离的
-          git worktree，然后在里面把 agent 起起来——你手边的工作区一动不动。</p>
-          <ul>
-            <li>仓库自动找出来，来源是你窗格已经待着的目录</li>
-            <li>分支名先在本地校验，不用等一个来回才报错</li>
-            <li>用完长按删除 worktree，带一次真正的二次确认</li>
-          </ul>
-        </div>
-        <img class="phone rowshot" src="/06-new-task.jpg" width="1320" height="1466" loading="lazy"
-             alt="新建 agent 任务表单：仓库 payments-api、分支 fix-webhook-retry、agent claude，以及第一句话">
-      </div>
-
-        <div class="row solo">
-          <div>
-            <span class="kicker">语音 · 就在这台设备上</span>
-            <h3>把 prompt 说出来，看清了再发</h3>
-            <p>终端的快捷条上有一个 mic 键。你说的话先落到键盘上方那块面板里，
-            按 <b>Insert</b> 才会真的敲进 shell。终端恰恰是最不能容忍「听错了还自动敲进去」
-            的地方，所以在你看清之前，什么都不会到主机上。</p>
-            <ul>
-              <li>由 Apple 的语音模型完全在这台设备上转写——音频不出手机，
-              因为它根本没有一条通向服务器的路</li>
-              <li>中文可用，其他任何端侧引擎能处理的语言也一样；
-              选择器里列出的就是它真能转的那些，不会列它做不到的</li>
-              <li>「自动」跟随系统语言，也可以固定成某一种</li>
-              <li>不想要的话，可以把 mic 键整个隐藏掉</li>
-            </ul>
-          </div>
-        </div>
-
-        <div class="pillar">
-          <h3 class="pillarhead">诚实是结构决定的</h3>
-          <p class="pillarsub">这不是一页隐私政策，而是这个 app 造法的必然结果：你的流量
-          不经过我们任何服务器，所以就算我们想收集，也没有东西可收。</p>
-        </div>
-
-        <div class="grid">
-          <div class="cell">
-            <span class="ic">一次</span>
-            <h4>$6.99，买一次</h4>
-            <p>没有订阅、没有内购、没有分档。你买到的那个 app 里就是全部功能。</p>
-          </div>
-          <div class="cell">
-            <span class="ic">无人</span>
-            <h4>不用注册账号</h4>
-            <p>没有东西要注册、要登录、要取消。这个 app 根本不知道你是谁。</p>
-          </div>
-          <div class="cell">
-            <span class="ic">零</span>
-            <h4>Data Not Collected</h4>
-            <p>这是 App Store 隐私标签上的原话，也是字面意思：没有埋点、没有崩溃上报、
-            没有任何第三方 SDK。</p>
-          </div>
-          <div class="cell">
-            <span class="ic">直连</span>
-            <h4>只到你自己那台机器</h4>
-            <p>SSH 和 Mosh 从手机直接连到你写的那台主机。中间没有中转，我们的没有，
-            别人的也没有。</p>
-          </div>
-          <div class="cell">
-            <span class="ic">Enclave</span>
-            <h4>密钥留在 Secure Enclave</h4>
-            <p>私钥由手机硬件生成和保管，用 Face ID 解锁。它导不出来——我们导不出，
-            你也导不出。</p>
-          </div>
-          <div class="cell">
-            <span class="ic">本机</span>
-            <h4>口述不出本机</h4>
-            <p>语音输入由 Apple 的语音模型在这台设备上转写。音频不会上传到任何地方——
-            它没有一条通向服务器的路。</p>
-          </div>
-        </div>
-
-      </div>
-  </section>
-</div>
-
-<!-- ══ REST OF THE APP ══ -->
-<div class="shell">
-  <section class="band">
-    <p class="eyebrow plain">盒子里还有</p>
-    <div class="grid">
-      <div class="cell"><span class="ic">密钥</span>
-        <h4>钥匙串 + Face ID</h4>
-        <p>SSH 密钥在设备上生成或导入，存在 Secure Enclave 里，用 Face ID 解锁。</p></div>
-      <div class="cell"><span class="ic">主题</span>
-        <h4>长得像你的桌面</h4>
-        <p>8 套终端主题加自定义编辑器、7 款内置字体、8 个 App 图标，强调色自己定。</p></div>
-      <div class="cell"><span class="ic">安装</span>
-        <h4>有引导，但绝不静默</h4>
-        <p>主机缺 mosh、tmux 或 herdr？Moshpit 把命令摆出来，你点了才执行。</p></div>
-      <div class="cell"><span class="ic">滚动</span>
-        <h4>滚动是对的</h4>
-        <p>划动翻的是真实历史——而抢了鼠标的全屏程序收到的是滚轮，不是莫名其妙的复制模式。</p></div>
-      <div class="cell"><span class="ic">主机</span>
-        <h4>指纹可以核对</h4>
-        <p>首次连接把主机密钥和核对命令一起给你。密钥变了，警告很大声。</p></div>
-      <div class="cell"><span class="ic">重连</span>
-        <h4>自己会回来</h4>
-        <p>息屏、飞行模式、隧道断了——Moshpit 自己重连，并把你放回原来那个窗格。</p></div>
-    </div>
-  </section>
-</div>
-
-<!-- ══ HERDR ══ -->
-<div class="shell">
-  <section class="band">
-    <p class="eyebrow">选你的多路复用器</p>
-    <h2>唯一会说 herdr 的 iPhone 终端。</h2>
-    <p class="sub">tmux 撑了世界上的服务器二十年，Moshpit 原生渲染它。但
-    <a href="https://github.com/herdrdev/herdr">herdr</a> 是专为 coding agent 写的多路复用器，
-    它把这个 App 最难的那件事——知道 agent 到底在干嘛——从「猜」变成了「查」。</p>
-
-    <div class="mux">
-      <div class="muxcard plain">
-        <h3>tmux</h3>
-        <p class="tagline">成熟 · 你机器上已经有了</p>
-        <ul>
-          <li>原生控制模式：会话、窗口、窗格都能切</li>
-          <li>只附着到你已有的东西，绝不改它的样式</li>
-          <li>agent 状态靠一行命令装 hook——准确，但要你装</li>
-          <li>回滚、复制模式、前缀键都按你熟悉的方式来</li>
-        </ul>
-      </div>
-      <div class="muxcard lit">
-        <h3>herdr</h3>
-        <p class="tagline">为 coding agent 而生</p>
-        <ul>
-          <li><b>agent 状态是协议字段</b>——主机上什么都不用装</li>
-          <li>单窗格占满手机宽度：没有侧边栏，没有缩小版布局</li>
-          <li>你手机的尺寸永远不会挤压笔记本上的窗口</li>
-          <li>滚动由服务端判定——抢了鼠标的程序收到的是滚轮</li>
-          <li><b>隔离任务</b>：一个表单搞定 git worktree + workspace + agent</li>
-        </ul>
-      </div>
-    </div>
-
-    <p class="muxnote">Moshpit 用各自的语言说话：herdr 连接说 <em>workspace</em> 和 <em>tab</em>，
-    并且打印 herdr 真实的键位——因为 <code>⌃ b q</code> 在 tmux 里是列窗格，
-    在 herdr 里是<b>断开会话</b>，印错的 App 会把你踢下线。按连接各选各的，
-    绝不在背后替你切换。</p>
-  </section>
-</div>
-
-<!-- ══ DIRECT CONNECTION ══ -->
-<div class="shell">
-  <section class="band">
-    <p class="eyebrow">一条专线，没有接线员</p>
-    <h2>你的手机直接连你的服务器。整张图就这么多。</h2>
-    <p class="sub">没有 Moshpit 账号、没有中转、中间没有云——因为根本没有 Moshpit 服务器。
-    没有可以被攻破的东西，没有要订阅的东西，也没有哪天挂掉就把你的终端一起带走的东西。</p>
-
-    <div class="wire">
-      <svg viewBox="0 0 720 120" role="img" aria-label="示意图：你的 iPhone 通过 SSH 或 Mosh 直连你自己的服务器，中间没有任何东西">
-        <rect x="34" y="24" width="52" height="86" rx="11" fill="#141922" stroke="rgba(255,255,255,.16)"/>
-        <rect x="46" y="38" width="28" height="4" rx="2" fill="#6C6BEF"/>
-        <circle cx="50" cy="54" r="3" fill="#FFB35C"/>
-        <rect x="58" y="51" width="18" height="4" rx="2" fill="rgba(255,255,255,.2)"/>
-        <circle cx="50" cy="68" r="3" fill="#5EE3D9"/>
-        <rect x="58" y="65" width="14" height="4" rx="2" fill="rgba(255,255,255,.14)"/>
-        <text x="60" y="20" fill="rgba(199,193,181,.55)" font-family="ui-monospace,Menlo,monospace" font-size="10.5" text-anchor="middle">你的 iPhone</text>
-        <line x1="98" y1="67" x2="608" y2="67" stroke="rgba(255,255,255,.1)" stroke-width="2"/>
-        <line class="dash" x1="98" y1="67" x2="608" y2="67" stroke="#5EE3D9" stroke-width="2" opacity=".85"/>
-        <rect x="292" y="46" width="122" height="20" rx="10" fill="#0D1015" stroke="rgba(94,227,217,.35)"/>
-        <text x="353" y="60" fill="#5EE3D9" font-family="ui-monospace,Menlo,monospace" font-size="10.5" text-anchor="middle">SSH · MOSH</text>
-        <text x="353" y="86" fill="rgba(199,193,181,.45)" font-family="ui-monospace,Menlo,monospace" font-size="10" text-anchor="middle">端到端，密钥不离开设备</text>
-        <rect x="620" y="30" width="66" height="24" rx="5" fill="#141922" stroke="rgba(255,255,255,.16)"/>
-        <rect x="620" y="58" width="66" height="24" rx="5" fill="#141922" stroke="rgba(255,255,255,.16)"/>
-        <circle cx="632" cy="42" r="3" fill="#83E58C"/><circle cx="632" cy="70" r="3" fill="#83E58C"/>
-        <rect x="642" y="39" width="32" height="5" rx="2.5" fill="rgba(255,255,255,.13)"/>
-        <rect x="642" y="67" width="32" height="5" rx="2.5" fill="rgba(255,255,255,.13)"/>
-        <text x="653" y="102" fill="rgba(199,193,181,.55)" font-family="ui-monospace,Menlo,monospace" font-size="10.5" text-anchor="middle">你的服务器</text>
-      </svg>
-      <div class="legend">
-        <span>无账号</span><span>无遥测</span><span>无第三方端点</span>
-        <span>密钥在 Secure Enclave</span>
-      </div>
-    </div>
-  </section>
-</div>
-
-<!-- ══ COMPARISON ══ -->
-<div class="shell">
-  <section class="band">
-    <p class="eyebrow">差在哪</p>
-    <h2>价格是 tmux 客户端的价格。做的是已经变了的那件事。</h2>
-    <p class="sub">iPhone 上的终端已经很挤了。这是差别的诚实形状——比能力，不比形容词。</p>
-
+<!-- ══ HONEST LEDGER ══ -->
+<section class="ledger" id="s-honest">
+  <div class="wrap">
+    <div class="k">诚实是结构决定的</div>
     <div class="tbl-wrap">
-      <table>
-        <thead>
-          <tr><th>能力</th><th class="us">Moshpit</th>
-              <th>一般 tmux 客户端</th><th>订阅制终端</th></tr>
-        </thead>
+      <table class="ledger">
+        <thead><tr><th>事项</th><th class="us">答案</th><th>原因</th></tr></thead>
         <tbody>
-          <tr><td class="cap-col">在锁屏上回复 agent</td>
-              <td class="us"><span class="yes">Allow · Deny · Reply</span></td>
-              <td class="no">只有连接提醒</td><td class="no">—</td></tr>
-          <tr><td class="cap-col">agent 状态，主机零安装</td>
-              <td class="us"><span class="yes">内建（herdr）</span></td>
-              <td class="no">—</td><td class="no">看情况</td></tr>
-          <tr><td class="cap-col">Mosh——扛切换和丢包</td>
-              <td class="us"><span class="yes">原生</span></td>
-              <td class="no">通常没有</td><td class="no">有的有</td></tr>
-          <tr><td class="cap-col">手机上开隔离任务（git worktree）</td>
-              <td class="us"><span class="yes">一个表单</span></td>
-              <td class="no">—</td><td class="no">—</td></tr>
-          <tr><td class="cap-col">价格</td>
-              <td class="us"><span class="yes">$6.99 一次</span></td>
-              <td class="no">几美元一次</td><td class="no">$20–120 / 年，一直付</td></tr>
-          <tr><td class="cap-col">收集的数据</td>
-              <td class="us"><span class="yes">没有</span></td>
-              <td class="no">看情况</td><td class="no">要注册账号</td></tr>
+          <tr><td class="cap-col">要注册账号</td><td class="us yes">不用</td>
+              <td>没有账号可注册，也就没有账号能泄露。</td></tr>
+          <tr><td class="cap-col">埋点与统计</td><td class="us yes">零</td>
+              <td>隐私标签上写着 "Data Not Collected"，因为确实什么都没收集。</td></tr>
+          <tr><td class="cap-col">你的流量</td><td class="us yes">只到你自己的服务器</td>
+              <td>没有中转、没有云端——我们根本不运营服务器。</td></tr>
+          <tr><td class="cap-col">语音数据</td><td class="us yes">不出这台手机</td>
+              <td>由 Apple 的语音模型在本机转写，没有一条通向服务器的路。</td></tr>
+          <tr><td class="cap-col">SSH 密钥</td><td class="us yes">留在 Secure Enclave</td>
+              <td>由手机硬件生成并保管，用 Face ID 解锁。</td></tr>
         </tbody>
       </table>
     </div>
-  </section>
-</div>
+  </div>
+</section>
 
 <!-- ══ PRICE ══ -->
-<div class="shell">
-  <section class="band">
-    <p class="eyebrow">一口价</p>
-    <h2>买一次。整个定价页就这一句。</h2>
-    <div class="pricebox">
-      <div class="amount">$6.99<small>首发价</small></div>
-      <ul>
-        <li>一次购买，全部功能。没有分档、没有主机数限制、没有加购。</li>
-        <li>不到订阅制终端一个月的钱——而且不会再来第二次。</li>
-        <li>首发价会随版本成长上调。早买的就一直是买断的。</li>
-        <li>不用注册、不用登录、不用取消。</li>
-      </ul>
-      <div class="steps">
-        <span class="step on">$6.99<small>现在 · 首发</small></span>
-        <span class="step">$9.99<small>标准价</small></span>
-      </div>
+<section class="price" id="s-price">
+  <div class="wrap">
+    <div class="pricecard" style="margin:0 auto;text-align:left">
+      <div><span class="amount">${RELEASE.price}</span><span class="once">一次性</span></div>
+      <p class="pricefine" style="margin-top:14px">没有订阅、没有内购。
+      价格会随 App 成熟往上调，早买就是折扣。</p>
     </div>
-  </section>
-</div>
-
-<!-- ══ PROOF ══ -->
-<div class="shell">
-  <section class="band">
-    <p class="eyebrow">底下是什么</p>
-    <h2>还没有评价。这是已经造好的东西。</h2>
-    <p class="sub">Moshpit 是新的。与其借别人的好话，不如给你上线后可以自己核验的东西。</p>
-    <div class="facts">
-      <div class="fact"><div class="big">465</div><div class="lbl">单元测试，每次构建都跑</div></div>
-      <div class="fact"><div class="big">RFC 7253</div><div class="lbl">Mosh 加密用规范自带的向量校验过</div></div>
-      <div class="fact"><div class="big">0</div><div class="lbl">第三方端点、SDK、跟踪器</div></div>
-      <div class="fact"><div class="big">8 / 7</div><div class="lbl">终端主题 / 等宽字体，还可以自带</div></div>
-    </div>
-  </section>
-</div>
-
-<!-- ══ FAQ ══ -->
-<div class="shell">
-  <section class="band">
-    <p class="eyebrow plain">常见问题</p>
-    <h2>大家最先问的几件事。</h2>
-    <div class="faq">
-      <details>
-        <summary>需要在我的服务器上装东西吗？</summary>
-        <p>不需要——开箱就是标准 SSH 客户端。<code>mosh</code>、<code>tmux</code>、
-        <code>herdr</code> 都是可选的。缺哪个，Moshpit 会直说、把安装命令摆出来，
-        你点了才执行。它绝不静默安装，也绝不偷偷换成你没选的那个多路复用器。</p>
-      </details>
-      <details>
-        <summary>它怎么知道 agent 在等我？</summary>
-        <p>在 <code>herdr</code> 上，agent 状态是协议里的一个字段——什么都不用配。
-        在 <code>tmux</code> 上，App 里提供一行命令装 hook，让 agent 主动上报状态；
-        不装的话，Moshpit 退回到读输出来判断。</p>
-      </details>
-      <details>
-        <summary>支持哪些 agent？</summary>
-        <p>任何跑在终端里的——Claude Code、Codex 等等。状态检测在 herdr 上是协议级、
-        在 tmux 上靠 hook，所以出了新 agent 通常不需要我们做什么。</p>
-      </details>
-      <details>
-        <summary>App 关掉之后还能叫醒我吗？</summary>
-        <p>老实说：只在会话还活着的时候。Moshpit 没有推送服务器——这是"中间什么都没有"
-        的代价。iOS 最终会挂起连接，在你回来之前状态就不再更新了。</p>
-      </details>
-      <details>
-        <summary>为什么叫 Moshpit？</summary>
-        <p>两个理由，其实是同一个。<b>Mosh</b> 就是这个 app 说的协议——过隧道、
-        合上盖子都还活着的那一个。而一屏 agent 同时开工的样子，本来就是个 mosh pit：
-        密、吵、全都在动。图标画的是 crowd surf——一个人被许多只手托着，
-        这正是你的 agent 提出的交易。中文不另起名字，就叫 Moshpit。</p>
-      </details>
-    </div>
-  </section>
-</div>
-
-<!-- ══ CLOSE ══ -->
-<div class="shell">
-  <section class="band close">
-    <h2>你的服务器，一直在线上。</h2>
-    <p class="sub">一次买断，没有账号。如果它不适合你，对比页会直说。</p>
-    <div class="actions">
-      <a class="cta" href="/zh/guide/claude-code">完整跑一遍</a>
-      <a class="cta ghost" href="/zh/pricing">多少钱</a>
-    </div>
-  </section>
-</div>`;
+  </div>
+</section>`;
 ---
 
 <Marketing
@@ -539,6 +165,37 @@ const body = `<!-- ══ HERO ══ -->
   description="为 AI coding agent 打造的 iOS 终端。锁屏上批准 Claude Code、一眼看清每个 agent 在等谁、手机上直接开隔离任务。SSH · Mosh · tmux · herdr。一次性买断，零数据收集。"
   path=""
   lang="zh"
+  scrollspy={[
+    { id: 's-home', label: '首页' },
+    { id: 's-agents', label: '支持' },
+    { id: 's-flow', label: '流程' },
+    { id: 's-voice', label: '语音' },
+    { id: 's-honest', label: '诚实' },
+    { id: 's-price', label: '价格' },
+  ]}
 >
   <Fragment set:html={body} />
+
+  <script>
+    // The lock screen keeps real time — the one ambient detail that makes the
+    // hero mock feel alive. Frozen under prefers-reduced-motion, same as every
+    // other animation on this page (see moshpit.css's own blanket rule).
+    if (!matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      const t = document.getElementById('locktime');
+      const d = document.getElementById('lockdate');
+      const tick = () => {
+        const now = new Date();
+        if (t) {
+          t.textContent = now
+            .toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+            .replace(/\s?[AP]M/i, '');
+        }
+        if (d) {
+          d.textContent = now.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+        }
+      };
+      tick();
+      setInterval(tick, 15000);
+    }
+  </script>
 </Marketing>
