@@ -17,6 +17,102 @@
         }
       }
     },
+    "\"%@\" has uncommitted changes": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「%@」に未コミットの変更があります"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "“%@” 有未提交的改动"
+          }
+        }
+      }
+    },
+    "%@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@"
+          }
+        }
+      }
+    },
+    "%@ %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ %@"
+          }
+        }
+      }
+    },
+    "%@ %@ \"%@\"?": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ %@ \"%@\"?"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ %@ \"%@\"?"
+          }
+        }
+      }
+    },
+    "%@ %@ %@? Every pane in it dies.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ %2$@ %3$@？その中のすべてのペインが終了します。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ %2$@ %3$@？其中每个窗格都会终止。"
+          }
+        }
+      }
+    },
+    "%@ %@ %@? Everything in it dies.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ %2$@ %3$@？その中のすべてが終了します。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ %2$@ %3$@？其中的一切都会终止。"
+          }
+        }
+      }
+    },
     "%@ frees %@. You can download it again later.": {
       "localizations": {
         "ja": {
@@ -29,6 +125,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "删除 %1$@ 可释放 %2$@。以后可以重新下载。"
+          }
+        }
+      }
+    },
+    "%@ not installed on this host": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このホストに %@ がインストールされていません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这台主机上没装 %@"
+          }
+        }
+      }
+    },
+    "%@ pane %lld?": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ ペイン %lld？"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 窗格 %lld？"
           }
         }
       }
@@ -97,6 +225,86 @@
         }
       }
     },
+    "%@@%@:%lld": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@@%@:%lld"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@@%@:%lld"
+          }
+        }
+      }
+    },
+    "%lld": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld"
+          }
+        }
+      }
+    },
+    "%lld NEED YOU": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 件が要対応"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 个待处理"
+          }
+        }
+      }
+    },
+    "%lld agents need you": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "エージェント %lld 体があなたを待っています"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 个智能体需要你"
+          }
+        }
+      }
+    },
+    "%lld hosts saved · all quiet": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ホスト %lld 台を保存 · 静かです"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已保存 %lld 台主机 · 一切安静"
+          }
+        }
+      }
+    },
     "%lld keys": {
       "localizations": {
         "en": {
@@ -127,6 +335,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "%lld 个密钥"
+          }
+        }
+      }
+    },
+    "%lld live connections · agents quiet": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "接続 %lld 件 · エージェントは静かです"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 个在线连接 · 智能体安静"
           }
         }
       }
@@ -279,6 +503,22 @@
         }
       }
     },
+    "%llu": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%llu"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%llu"
+          }
+        }
+      }
+    },
     "(optional)": {
       "localizations": {
         "ja": {
@@ -307,6 +547,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "+"
+          }
+        }
+      }
+    },
+    "+ ": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "+ "
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "+ "
+          }
+        }
+      }
+    },
+    "- ": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "- "
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "- "
           }
         }
       }
@@ -343,6 +615,54 @@
         }
       }
     },
+    "1 agent needs you": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "エージェント 1 体があなたを待っています"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 个智能体需要你"
+          }
+        }
+      }
+    },
+    "1 host saved · all quiet": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ホスト 1 台を保存 · 静かです"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已保存 1 台主机 · 一切安静"
+          }
+        }
+      }
+    },
+    "1 live connection · agents quiet": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "接続 1 件 · エージェントは静かです"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 个在线连接 · 智能体安静"
+          }
+        }
+      }
+    },
     "1.1s cadence, follows the iOS system default": {
       "localizations": {
         "ja": {
@@ -359,6 +679,22 @@
         }
       }
     },
+    "1080": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1080"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1080"
+          }
+        }
+      }
+    },
     "16 kHz mono audio is unavailable on this device.": {
       "localizations": {
         "ja": {
@@ -371,6 +707,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "本设备无法提供 16 kHz 单声道音频。"
+          }
+        }
+      }
+    },
+    "2 files changed": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "2 files changed"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "2 files changed"
           }
         }
       }
@@ -439,6 +791,22 @@
         }
       }
     },
+    "A custom accent tints controls, highlights and the faint background wash. Status colors (warning, success, error) stay fixed so they never get mistaken for the accent.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "カスタムアクセントはコントロール・ハイライト・背景のごく淡い色に適用されます。ステータス色（警告・成功・エラー）は固定で、アクセントと混同されることはありません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自定义强调色会作用于控件、高亮和背景微光。状态色（警告、成功、错误）保持固定，避免和强调色混淆。"
+          }
+        }
+      }
+    },
     "ABCdef 012 ~/ssh $": {
       "localizations": {
         "ja": {
@@ -487,6 +855,38 @@
         }
       }
     },
+    "AGENT": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "エージェント"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "智能体"
+          }
+        }
+      }
+    },
+    "AGENTS": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "エージェント"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "智能体"
+          }
+        }
+      }
+    },
     "ALL LANGUAGES": {
       "localizations": {
         "ja": {
@@ -499,6 +899,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "全部语言"
+          }
+        }
+      }
+    },
+    "ANSI COLORS": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ANSI カラー"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ANSI 颜色"
+          }
+        }
+      }
+    },
+    "APPEARANCE": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "外観"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "外观"
           }
         }
       }
@@ -535,6 +967,54 @@
         }
       }
     },
+    "Accent": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アクセント"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "强调色"
+          }
+        }
+      }
+    },
+    "Accent name": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アクセント名"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "强调色名称"
+          }
+        }
+      }
+    },
+    "Accent preview": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アクセントのプレビュー"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "强调色预览"
+          }
+        }
+      }
+    },
     "Accept suggestion and send": {
       "localizations": {
         "ja": {
@@ -547,6 +1027,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "接受建议并发送"
+          }
+        }
+      }
+    },
+    "Action": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "操作"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "操作"
           }
         }
       }
@@ -599,6 +1095,22 @@
         }
       }
     },
+    "Add theme": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "テーマを追加"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "添加主题"
+          }
+        }
+      }
+    },
     "Adds a mic key to the terminal bar": {
       "localizations": {
         "ja": {
@@ -615,6 +1127,22 @@
         }
       }
     },
+    "Agent": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "エージェント"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "智能体"
+          }
+        }
+      }
+    },
     "Agent needs your input — %@": {
       "localizations": {
         "ja": {
@@ -627,6 +1155,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "Agent 需要你的输入 — %@"
+          }
+        }
+      }
+    },
+    "Alert sound": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "通知音"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "提示音"
+          }
+        }
+      }
+    },
+    "Alert when an agent needs you": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "エージェントがあなたを必要とするとき通知"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "智能体需要你时提醒"
           }
         }
       }
@@ -679,6 +1239,22 @@
         }
       }
     },
+    "Allow": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "許可"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "允许"
+          }
+        }
+      }
+    },
     "Another app took the microphone before anything was heard.": {
       "localizations": {
         "ja": {
@@ -691,6 +1267,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "还没听到内容，麦克风就被别的应用抢走了。"
+          }
+        }
+      }
+    },
+    "Another client is using this pane — retrying shortly": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "別のクライアントがこのペインを使用中です——しばらくして再試行します"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "另一个客户端正在使用这个窗格——稍后重试"
+          }
+        }
+      }
+    },
+    "App Icon": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アプリアイコン"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "应用图标"
           }
         }
       }
@@ -803,6 +1411,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "方向键"
+          }
+        }
+      }
+    },
+    "Attach didn't complete — tmux never confirmed.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アタッチが完了しませんでした——tmux の確認が返りませんでした。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "附加未完成——tmux 始终没有确认。"
+          }
+        }
+      }
+    },
+    "Attaching %@…": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ にアタッチ中…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在附加到 %@…"
           }
         }
       }
@@ -1015,6 +1655,38 @@
         }
       }
     },
+    "BRIGHT COLORS": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "明るいカラー"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "高亮颜色"
+          }
+        }
+      }
+    },
+    "BUILT-IN": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "内蔵"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "内置"
+          }
+        }
+      }
+    },
     "Backs up settings.json": {
       "localizations": {
         "ja": {
@@ -1027,6 +1699,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "备份 settings.json"
+          }
+        }
+      }
+    },
+    "Backs up your config": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "設定をバックアップします"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "会备份你的配置"
           }
         }
       }
@@ -1127,6 +1815,86 @@
         }
       }
     },
+    "Branch": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ブランチ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "分支"
+          }
+        }
+      }
+    },
+    "Bright slots are derived from the eight above by default. Override them only if you want exact control — many tools paint dim text with bright black, so keeping it distinct from black matters.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "明るいカラーは既定で上記 8 色から算出されます。厳密に制御したい場合のみ上書きしてください——多くのツールは淡色テキストを明るい黒で描くため、黒と区別できることが重要です。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "高亮档位默认由上面八色推导。只有你想精确控制时才需要自定义——很多工具用「亮黑」画灰字，所以它和纯黑必须能区分开。"
+          }
+        }
+      }
+    },
+    "Built for coding agents — agent status needs no hooks": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "コーディングエージェント向け——エージェントの状態にフックは不要"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "为编码智能体而生——智能体状态无需 hook"
+          }
+        }
+      }
+    },
+    "COLOR": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "カラー"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "颜色"
+          }
+        }
+      }
+    },
+    "CONNECT": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "接続"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "连接"
+          }
+        }
+      }
+    },
     "CONNECTION": {
       "localizations": {
         "ja": {
@@ -1175,6 +1943,22 @@
         }
       }
     },
+    "Can't end with “.lock”": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「.lock」で終わることはできません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "不能以 “.lock” 结尾"
+          }
+        }
+      }
+    },
     "Can't re-check over this transport — reconnect to apply.": {
       "localizations": {
         "ja": {
@@ -1187,6 +1971,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "当前传输方式无法重新检测 — 请重新连接以生效。"
+          }
+        }
+      }
+    },
+    "Can't start with “-” or “/”, or end with “/”": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「-」「/」で始めたり、「/」で終わることはできません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "不能以 “-” 或 “/” 开头，也不能以 “/” 结尾"
           }
         }
       }
@@ -1251,6 +2051,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "Chip Label 最多 6 字符；Description 会出现在编辑列表里方便辨认。"
+          }
+        }
+      }
+    },
+    "Choose": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "選択"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选择"
+          }
+        }
+      }
+    },
+    "Close": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "閉じる"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "关闭"
           }
         }
       }
@@ -1415,6 +2247,22 @@
         }
       }
     },
+    "Connection": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "接続"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "连接"
+          }
+        }
+      }
+    },
     "Connection Error": {
       "localizations": {
         "ja": {
@@ -1447,6 +2295,22 @@
         }
       }
     },
+    "Connection lost — tap to reconnect": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "接続が切れました——タップで再接続"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "连接已断开——点按重连"
+          }
+        }
+      }
+    },
     "Continue": {
       "localizations": {
         "ja": {
@@ -1459,6 +2323,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "继续"
+          }
+        }
+      }
+    },
+    "Control": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Control キー"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Control 键"
+          }
+        }
+      }
+    },
+    "Control armed": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Control キー待機中"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Control 已就绪"
           }
         }
       }
@@ -1479,6 +2375,22 @@
         }
       }
     },
+    "Copies the agent's config to a timestamped backup before merging Moshpit's hook groups.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Moshpit のフックを統合する前に、エージェントの設定をタイムスタンプ付きでバックアップします。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在合入 Moshpit 的 hook 组之前，先把智能体配置复制成带时间戳的备份。"
+          }
+        }
+      }
+    },
     "Copies ~/.claude/settings.json to a timestamped backup before merging the four hook groups.": {
       "localizations": {
         "ja": {
@@ -1491,6 +2403,86 @@
           "stringUnit": {
             "state": "translated",
             "value": "在合并这四组钩子之前，先把 ~/.claude/settings.json 复制为带时间戳的备份。"
+          }
+        }
+      }
+    },
+    "Copy": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "コピー"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "复制"
+          }
+        }
+      }
+    },
+    "Copy Fingerprint": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "フィンガープリントをコピー"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "复制指纹"
+          }
+        }
+      }
+    },
+    "Copy JSON": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "JSON をコピー"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "复制 JSON"
+          }
+        }
+      }
+    },
+    "Copy Public Key": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "公開鍵をコピー"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "复制公钥"
+          }
+        }
+      }
+    },
+    "Copy as JSON": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "JSON としてコピー"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "复制为 JSON"
           }
         }
       }
@@ -1527,6 +2519,22 @@
         }
       }
     },
+    "Couldn't change the icon: %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アイコンを変更できませんでした：%@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法更换图标：%@"
+          }
+        }
+      }
+    },
     "Couldn't detect a package manager.": {
       "localizations": {
         "ja": {
@@ -1559,6 +2567,22 @@
         }
       }
     },
+    "Couldn't reach the host": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ホストに到達できませんでした"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法连到主机"
+          }
+        }
+      }
+    },
     "Couldn't reach the server. Check the host, port, and that it's online.": {
       "localizations": {
         "ja": {
@@ -1571,6 +2595,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "无法连接到服务器。请检查主机、端口,以及服务器是否在线。"
+          }
+        }
+      }
+    },
+    "Couldn't read the saved credential. After re-installing or re-signing the app (e.g. via SideStore), open Edit and re-enter your password / re-select your key.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保存された認証情報を読み取れませんでした。アプリを再インストールまたは再署名した後（SideStore 経由など）は、「編集」を開いてパスワードを再入力するか、キーを選び直してください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "读不出已保存的凭据。重装或重签名 App（例如通过 SideStore）之后，请打开「编辑」重新输入密码 / 重新选择密钥。"
+          }
+        }
+      }
+    },
+    "Couldn't remove the worktree": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ワークツリーを削除できませんでした"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法删除工作树"
           }
         }
       }
@@ -1607,6 +2663,22 @@
         }
       }
     },
+    "Create %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ を作成"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新建 %@"
+          }
+        }
+      }
+    },
     "Create Session": {
       "localizations": {
         "ja": {
@@ -1619,6 +2691,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "创建会话"
+          }
+        }
+      }
+    },
+    "Creates a git worktree on the host, then starts the agent inside it. Your working tree is untouched.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ホスト上に git ワークツリーを作成し、その中でエージェントを起動します。あなたの作業ツリーはそのままです。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在主机上创建一个 git worktree，然后在里面启动智能体。你的工作树不受影响。"
+          }
+        }
+      }
+    },
+    "Creating the worktree failed": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ワークツリーの作成に失敗しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "创建工作树失败"
           }
         }
       }
@@ -1651,6 +2755,54 @@
           "stringUnit": {
             "state": "translated",
             "value": "当前会话 · 漫游态自动切换为 amber"
+          }
+        }
+      }
+    },
+    "Currently derived automatically": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "現在は自動で算出"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "当前自动推导"
+          }
+        }
+      }
+    },
+    "Custom": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "カスタム"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自定义"
+          }
+        }
+      }
+    },
+    "Custom herdr Path": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "herdr のカスタムパス"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自定义 herdr 路径"
           }
         }
       }
@@ -1783,6 +2935,54 @@
         }
       }
     },
+    "Delete anyway": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "それでも削除"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "仍然删除"
+          }
+        }
+      }
+    },
+    "Deletes the branch checkout under ~/.herdr/worktrees. %@ itself is untouched.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "~/.herdr/worktrees 配下のブランチのチェックアウトのみを削除します。%@ 自体はそのままです。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "只删除 ~/.herdr/worktrees 下的分支检出，%@ 本身不受影响。"
+          }
+        }
+      }
+    },
+    "Deny": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "拒否"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "拒绝"
+          }
+        }
+      }
+    },
     "Description": {
       "localizations": {
         "ja": {
@@ -1863,6 +3063,22 @@
         }
       }
     },
+    "Disconnecting…": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "切断中…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在断开…"
+          }
+        }
+      }
+    },
     "Dismiss": {
       "localizations": {
         "ja": {
@@ -1879,6 +3095,22 @@
         }
       }
     },
+    "Display what the agent is running/asking — off keeps it private": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "エージェントが実行中の内容や問いかけを表示します——オフにすると非表示のままです"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "显示智能体正在跑什么、在问什么——关掉则保持私密"
+          }
+        }
+      }
+    },
     "Done": {
       "localizations": {
         "ja": {
@@ -1891,6 +3123,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "完成"
+          }
+        }
+      }
+    },
+    "Double tap to switch between SSH and Mosh": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ダブルタップで SSH と Mosh を切り替えます"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "双击可在 SSH 与 Mosh 之间切换"
           }
         }
       }
@@ -1975,6 +3223,22 @@
         }
       }
     },
+    "Drag up or down to scroll the terminal scrollback": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "上下にドラッグしてターミナルの履歴をスクロールします"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "上下拖动可滚动终端历史"
+          }
+        }
+      }
+    },
     "Drag ≡ to reorder; the red − removes it from the toolbar. 12 items max.": {
       "localizations": {
         "ja": {
@@ -1987,6 +3251,54 @@
           "stringUnit": {
             "state": "translated",
             "value": "拖动 ≡ 排序，红色 − 移出工具条。最多 12 项。"
+          }
+        }
+      }
+    },
+    "Duplicate": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "複製"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "复制"
+          }
+        }
+      }
+    },
+    "Duplicate & Edit": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "複製して編集"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "复制并编辑"
+          }
+        }
+      }
+    },
+    "Duplicate a built-in theme to start from its palette, or import one as JSON. Long-press a theme for more.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "内蔵テーマを複製してその配色から始めるか、JSON で読み込みます。テーマを長押しすると他の操作が表示されます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "复制一个内置主题即可基于它的配色开始，也可以导入 JSON。长按主题可看到更多操作。"
           }
         }
       }
@@ -2071,6 +3383,22 @@
         }
       }
     },
+    "Edit %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ を編集"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "编辑 %@"
+          }
+        }
+      }
+    },
     "Edit Connection": {
       "localizations": {
         "ja": {
@@ -2103,6 +3431,22 @@
         }
       }
     },
+    "Edits %@ (a timestamped backup is written first).": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ を編集します（先にタイムスタンプ付きのバックアップを書き出します）。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "会修改 %@（先写一份带时间戳的备份）。"
+          }
+        }
+      }
+    },
     "Edits ~/.claude/settings.json (a timestamped backup is written first).": {
       "localizations": {
         "ja": {
@@ -2131,6 +3475,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "启用语音输入"
+          }
+        }
+      }
+    },
+    "Enter a private key by hand": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "秘密鍵を手入力"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "手动输入私钥"
           }
         }
       }
@@ -2183,6 +3543,22 @@
         }
       }
     },
+    "FIRST MESSAGE": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最初のメッセージ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "首条消息"
+          }
+        }
+      }
+    },
     "Face ID confirmation before every signature": {
       "localizations": {
         "ja": {
@@ -2227,6 +3603,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "最快，准确度最低。适合较旧的设备。"
+          }
+        }
+      }
+    },
+    "First connection to %@:%@. Verify this fingerprint matches the server before you trust it.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@:%@ への初回接続です。信頼する前に、このフィンガープリントがサーバーと一致することを確認してください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "首次连接 %@:%@。信任之前请先核对这个指纹与服务器一致。"
           }
         }
       }
@@ -2323,6 +3715,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "生成"
+          }
+        }
+      }
+    },
+    "Generate SSH Key": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SSH キーを生成"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "生成 SSH 密钥"
           }
         }
       }
@@ -2471,6 +3879,22 @@
         }
       }
     },
+    "Host Key Changed": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ホストキーが変更されました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "主机密钥已变更"
+          }
+        }
+      }
+    },
     "How notifications work": {
       "localizations": {
         "ja": {
@@ -2535,6 +3959,22 @@
         }
       }
     },
+    "Idempotent: re-running de-dupes Moshpit's hooks instead of stacking them.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "冪等です。再実行すると Moshpit のフックは重複除去され、積み重なりません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "幂等：重复运行会去重 Moshpit 的 hook，而不是层层堆叠。"
+          }
+        }
+      }
+    },
     "Import": {
       "localizations": {
         "ja": {
@@ -2547,6 +3987,54 @@
           "stringUnit": {
             "state": "translated",
             "value": "导入"
+          }
+        }
+      }
+    },
+    "Import File…": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ファイルを読み込む…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "导入文件…"
+          }
+        }
+      }
+    },
+    "Import JSON…": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "JSON を読み込む…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "导入 JSON…"
+          }
+        }
+      }
+    },
+    "Import Theme": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "テーマを読み込む"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "导入主题"
           }
         }
       }
@@ -2567,6 +4055,22 @@
         }
       }
     },
+    "In Key Combo mode the payload is the escape sequence sent to the PTY, honoring the transport transcription rules.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「キーの組み合わせ」モードでは、ペイロードは PTY に送るエスケープシーケンスであり、トランスポートの変換ルールに従います。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在「组合键」模式下，payload 就是发给 PTY 的转义序列，并遵循传输层的转写规则。"
+          }
+        }
+      }
+    },
     "Insert": {
       "localizations": {
         "ja": {
@@ -2583,6 +4087,38 @@
         }
       }
     },
+    "Install %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ をインストール"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "安装 %@"
+          }
+        }
+      }
+    },
+    "Install Moshpit's hooks so the Vibe Island shows exactly when your agent is working, what it's running, when it needs you, and when it's done — instead of guessing from output. Moshpit backs up your config first and never blocks the agent.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Moshpit のフックをインストールすると、Vibe Island はエージェントがいつ作業中か、何を実行しているか、いつあなたを必要としているか、いつ完了したかを正確に表示します——出力から推測する必要はありません。Moshpit は先に設定をバックアップし、エージェントを妨げることはありません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "安装 Moshpit 的 hook，让 Vibe Island 准确显示智能体何时在工作、在跑什么、何时需要你、何时完成——而不是靠输出去猜。Moshpit 会先备份你的配置，且绝不阻塞智能体。"
+          }
+        }
+      }
+    },
     "Install agent hooks": {
       "localizations": {
         "ja": {
@@ -2595,6 +4131,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "安装 Agent 钩子"
+          }
+        }
+      }
+    },
+    "Install herdr": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "herdr をインストール"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "安装 herdr"
           }
         }
       }
@@ -2679,6 +4231,22 @@
         }
       }
     },
+    "Installs to ~/.local/bin. Moshpit looks there when probing and launching, so you don't need to change PATH.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "~/.local/bin にインストールされます。Moshpit は検出時も起動時もそこを参照するため、PATH を変更する必要はありません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "安装到 ~/.local/bin。Moshpit 探测和启动时都会去那里找，所以你不用改 PATH。"
+          }
+        }
+      }
+    },
     "Invalid range": {
       "localizations": {
         "ja": {
@@ -2755,6 +4323,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "保持连接存活"
+          }
+        }
+      }
+    },
+    "Keep it": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "残す"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保留"
           }
         }
       }
@@ -2851,6 +4435,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "打开时弹出键盘"
+          }
+        }
+      }
+    },
+    "Kill": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "強制終了"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "终止"
           }
         }
       }
@@ -2999,6 +4599,22 @@
         }
       }
     },
+    "Language": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "言語"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "语言"
+          }
+        }
+      }
+    },
     "Languages offered here are the ones this device can transcribe. A language's speech model downloads once on first use, then works offline. Apple's engines handle one language per session — for speech that switches between two, switch Recognition to Whisper.": {
       "localizations": {
         "ja": {
@@ -3031,6 +4647,54 @@
         }
       }
     },
+    "Leave blank for an automatic name.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "空欄にすると自動で名前が付きます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "留空则自动命名。"
+          }
+        }
+      }
+    },
+    "Leave blank to let the program name it.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "空欄にするとプログラムが名前を付けます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "留空则由程序命名。"
+          }
+        }
+      }
+    },
+    "Leaves a signal trail behind the cursor while mosh predicts ahead of the server": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "mosh がサーバーより先に予測している間、カーソルの後ろに軌跡を残します"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "mosh 抢先于服务器预测时，在光标后留下一道轨迹"
+          }
+        }
+      }
+    },
     "Leaves a teal trail behind the cursor while mosh predicts ahead of the server": {
       "localizations": {
         "ja": {
@@ -3043,6 +4707,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "mosh 预测领先服务端时光标后留青色拖尾"
+          }
+        }
+      }
+    },
+    "Line dropped — retrying": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "接続が切れました——再試行中"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "链路中断——正在重试"
           }
         }
       }
@@ -3095,6 +4775,22 @@
         }
       }
     },
+    "Looking for repositories…": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "リポジトリを検索中…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在查找仓库…"
+          }
+        }
+      }
+    },
     "METHOD": {
       "localizations": {
         "ja": {
@@ -3123,6 +4819,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "MOSH"
+          }
+        }
+      }
+    },
+    "MOSH DIAGNOSTICS": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MOSH 診断"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MOSH 诊断"
           }
         }
       }
@@ -3159,6 +4871,38 @@
         }
       }
     },
+    "MY ACCENTS": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "マイアクセント"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "我的强调色"
+          }
+        }
+      }
+    },
+    "MY THEMES": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "マイテーマ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "我的主题"
+          }
+        }
+      }
+    },
     "Main key": {
       "localizations": {
         "ja": {
@@ -3171,6 +4915,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "主键"
+          }
+        }
+      }
+    },
+    "Mature, already on nearly every host": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "成熟しており、ほぼすべてのホストに導入済み"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "成熟，几乎每台主机上都有"
           }
         }
       }
@@ -3271,6 +5031,22 @@
         }
       }
     },
+    "Mosh isn't receiving data — your network may be blocking UDP (VPN, proxy, or firewall).": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mosh がデータを受信できていません——ネットワークが UDP を遮断している可能性があります（VPN・プロキシ・ファイアウォール）。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mosh 收不到数据——你的网络可能在拦 UDP（VPN、代理或防火墙）。"
+          }
+        }
+      }
+    },
     "Mosh keeps the session alive across Wi-Fi / 5G handoff and sleep/wake. UDP must be open server-side; the client picks an unused port within range. With tmux, Moshpit attaches to your existing sessions and never creates or restyles them; only sessions you create through Moshpit get its native look (status bar hidden, restored on disconnect).": {
       "localizations": {
         "ja": {
@@ -3319,6 +5095,22 @@
         }
       }
     },
+    "MoshTransport.swift": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MoshTransport.swift"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MoshTransport.swift"
+          }
+        }
+      }
+    },
     "Moshpit": {
       "localizations": {
         "ja": {
@@ -3331,6 +5123,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "Moshpit"
+          }
+        }
+      }
+    },
+    "Moshpit needs %@ for %@ navigation.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ のナビゲーションには %@ が必要です。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 导航需要 %@。"
+          }
+        }
+      }
+    },
+    "Moshpit needs %@ for %@ navigation.\nInstall it, then reconnect.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ のナビゲーションには %@ が必要です。\nインストール後に再接続してください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 导航需要 %@。\n装好之后重新连接。"
           }
         }
       }
@@ -3367,6 +5191,22 @@
         }
       }
     },
+    "Moshpit watches the active session for agent activity and posts a local alert when your agent needs attention — natively on herdr, via the bell and hooks on tmux.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Moshpit はアクティブなセッションのエージェントの動きを監視し、対応が必要になるとローカル通知を送ります——herdr ではネイティブに、tmux ではベルとフックを介して行います。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Moshpit 会盯着当前会话里的智能体活动，需要你处理时发本地通知——herdr 上是原生支持，tmux 上靠响铃和 hook。"
+          }
+        }
+      }
+    },
     "Moshpit watches the active tmux session for the terminal bell and posts a local alert when your agent needs attention.": {
       "localizations": {
         "ja": {
@@ -3379,6 +5219,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "Moshpit 会监听活动 tmux 会话的终端响铃，并在你的智能体需要关注时发出本地提醒。"
+          }
+        }
+      }
+    },
+    "MoshpitMark.swift": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MoshpitMark.swift"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MoshpitMark.swift"
           }
         }
       }
@@ -3463,6 +5319,38 @@
         }
       }
     },
+    "Multiplexer": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "マルチプレクサ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "多路复用器"
+          }
+        }
+      }
+    },
+    "NAME": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "名前"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "名称"
+          }
+        }
+      }
+    },
     "NOTIFICATIONS": {
       "localizations": {
         "ja": {
@@ -3511,6 +5399,22 @@
         }
       }
     },
+    "Name the branch": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ブランチ名を入力してください"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "给分支起个名字"
+          }
+        }
+      }
+    },
     "Never blocks Claude": {
       "localizations": {
         "ja": {
@@ -3523,6 +5427,54 @@
           "stringUnit": {
             "state": "translated",
             "value": "绝不阻塞 Claude"
+          }
+        }
+      }
+    },
+    "Never blocks the agent": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "エージェントを妨げません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "绝不阻塞智能体"
+          }
+        }
+      }
+    },
+    "New %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新規 %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新建 %@"
+          }
+        }
+      }
+    },
+    "New Agent Task": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新規エージェントタスク"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新建智能体任务"
           }
         }
       }
@@ -3555,6 +5507,86 @@
           "stringUnit": {
             "state": "translated",
             "value": "新建会话"
+          }
+        }
+      }
+    },
+    "New Theme": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新規テーマ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新建主题"
+          }
+        }
+      }
+    },
+    "New accent": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新規アクセント"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新建强调色"
+          }
+        }
+      }
+    },
+    "Next instruction…": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "次の指示…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "下一条指令…"
+          }
+        }
+      }
+    },
+    "No %@ %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ %@ がありません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有 %@ %@"
+          }
+        }
+      }
+    },
+    "No %@ yet": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ がありません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "还没有 %@"
           }
         }
       }
@@ -3607,6 +5639,38 @@
         }
       }
     },
+    "No control characters in a branch name": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ブランチ名に制御文字は使えません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "分支名不能有控制字符"
+          }
+        }
+      }
+    },
+    "No custom accents yet.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "カスタムアクセントはまだありません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "还没有自定义强调色。"
+          }
+        }
+      }
+    },
     "No custom shortcuts yet": {
       "localizations": {
         "ja": {
@@ -3619,6 +5683,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "还没有自定义快捷键"
+          }
+        }
+      }
+    },
+    "No custom themes yet.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "カスタムテーマはまだありません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "还没有自定义主题。"
+          }
+        }
+      }
+    },
+    "No datagrams yet.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "まだデータグラムを受信していません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "还没有收到数据报。"
           }
         }
       }
@@ -3671,6 +5767,54 @@
         }
       }
     },
+    "No keys yet — generate or import one with ＋": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "キーがありません——＋ で生成または読み込みます"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "还没有密钥——用 ＋ 生成或导入"
+          }
+        }
+      }
+    },
+    "No spaces in a branch name": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ブランチ名に空白は使えません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "分支名不能有空格"
+          }
+        }
+      }
+    },
+    "No themes found in that JSON.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "その JSON にテーマが見つかりませんでした。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "那段 JSON 里没有找到主题。"
+          }
+        }
+      }
+    },
     "No tmux sessions": {
       "localizations": {
         "ja": {
@@ -3683,6 +5827,118 @@
           "stringUnit": {
             "state": "translated",
             "value": "没有 tmux 会话"
+          }
+        }
+      }
+    },
+    "No ~ ^ : ? * [ \\ in a branch name": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ブランチ名に ~ ^ : ? * [ \\ は使えません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "分支名不能含 ~ ^ : ? * [ \\"
+          }
+        }
+      }
+    },
+    "No “..” in a branch name": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ブランチ名に「..」は使えません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "分支名不能含 “..”"
+          }
+        }
+      }
+    },
+    "None": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "使用しない"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "不使用"
+          }
+        }
+      }
+    },
+    "None found — no panes in repos, and nothing under ~": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "見つかりません——リポジトリ内のペインがなく、ホーム直下にもありません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没找到——窗格都不在仓库里，主目录下也没有"
+          }
+        }
+      }
+    },
+    "Not delivered": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "送信されませんでした"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未送达"
+          }
+        }
+      }
+    },
+    "Not run": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未実行"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未运行"
+          }
+        }
+      }
+    },
+    "Nothing running — start a task to isolate one": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "実行中のものはありません——タスクを開始して分離してください"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有在跑的任务——新建一个任务来隔离出工作区"
           }
         }
       }
@@ -3719,6 +5975,70 @@
         }
       }
     },
+    "OPEN": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "開く"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打开"
+          }
+        }
+      }
+    },
+    "OR": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "または"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "或"
+          }
+        }
+      }
+    },
+    "Offered now": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "今回提示された値"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本次提供"
+          }
+        }
+      }
+    },
+    "On branch ": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "On branch "
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "On branch "
+          }
+        }
+      }
+    },
     "One model covers around 100 languages. Naming yours transcribes it while keeping the foreign words inside a sentence intact — the English command names and library names you say mid-thought survive. Auto-detect reads the language off the audio instead, which can waver on short or heavily mixed phrases.": {
       "localizations": {
         "ja": {
@@ -3735,6 +6055,22 @@
         }
       }
     },
+    "Only in a multiplexer": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "マルチプレクサ内のみ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "仅在多路复用器内显示"
+          }
+        }
+      }
+    },
     "Only in tmux": {
       "localizations": {
         "ja": {
@@ -3747,6 +6083,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "仅在 tmux 中"
+          }
+        }
+      }
+    },
+    "Only unauthenticated SOCKS5 proxies are supported. This proxies the SSH connection only — if Mosh is also enabled above, its UDP session connects directly once bootstrapped and is not proxied.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "認証なしの SOCKS5 プロキシのみ対応しています。プロキシ経由になるのは SSH 接続のみです——上で Mosh も有効な場合、その UDP セッションは確立後は直接接続され、プロキシを経由しません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "仅支持免认证的 SOCKS5 代理。它只代理 SSH 连接——如果上面同时开了 Mosh，其 UDP 会话在建立后直连，不走代理。"
           }
         }
       }
@@ -3795,6 +6147,70 @@
           "stringUnit": {
             "state": "translated",
             "value": "打开终端"
+          }
+        }
+      }
+    },
+    "Opening the pit": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "接続中"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在打开"
+          }
+        }
+      }
+    },
+    "Optional. Sent to the agent once it's running — leave blank to type it yourself.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "任意。エージェントの起動後に送信されます——空欄にすると自分で入力できます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "可选。智能体启动后会发给它——留空则你自己手输。"
+          }
+        }
+      }
+    },
+    "Other…": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "その他…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "其他…"
+          }
+        }
+      }
+    },
+    "Override bright colors": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "明るいカラーを上書き"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自定义高亮颜色"
           }
         }
       }
@@ -3863,6 +6279,22 @@
         }
       }
     },
+    "PROXY": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プロキシ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "代理"
+          }
+        }
+      }
+    },
     "PTY has not been opened yet — call requestPTY first": {
       "localizations": {
         "ja": {
@@ -3875,6 +6307,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "尚未打开 PTY——请先调用 requestPTY"
+          }
+        }
+      }
+    },
+    "Pane": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ペイン"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "窗格"
           }
         }
       }
@@ -3927,6 +6375,22 @@
         }
       }
     },
+    "Paste": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "貼り付け"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "粘贴"
+          }
+        }
+      }
+    },
     "Paste PEM": {
       "localizations": {
         "ja": {
@@ -3959,6 +6423,22 @@
         }
       }
     },
+    "Paste a theme exported from Moshpit, or any JSON object with \"background\", \"foreground\" and the eight ANSI color names (\"black\", \"red\", …). Bright colors are optional.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Moshpit から書き出したテーマ、または \"background\"・\"foreground\" と 8 つの ANSI カラー名（\"black\"、\"red\" …）を持つ JSON オブジェクトを貼り付けます。明るいカラーは任意です。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "粘贴从 Moshpit 导出的主题，或任何带 “background”、“foreground” 和八个 ANSI 颜色名（“black”、“red” …）的 JSON 对象。高亮颜色可选。"
+          }
+        }
+      }
+    },
     "Paste an OpenSSH / PEM private key; the public key line is used to compute the fingerprint (optional).": {
       "localizations": {
         "ja": {
@@ -3975,6 +6455,22 @@
         }
       }
     },
+    "Paste from Clipboard": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "クリップボードから貼り付け"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "从剪贴板粘贴"
+          }
+        }
+      }
+    },
     "Payload (text or command)": {
       "localizations": {
         "ja": {
@@ -3987,6 +6483,54 @@
           "stringUnit": {
             "state": "translated",
             "value": "Payload（文本或命令）"
+          }
+        }
+      }
+    },
+    "Pick a repository": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "リポジトリを選択してください"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选一个仓库"
+          }
+        }
+      }
+    },
+    "Pick an agent": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "エージェントを選択してください"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选一个智能体"
+          }
+        }
+      }
+    },
+    "Play a sound when the agent needs you": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "エージェントがあなたを必要とするとき音を鳴らします"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "智能体需要你时播放提示音"
           }
         }
       }
@@ -4103,6 +6647,70 @@
         }
       }
     },
+    "Prompt": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プロンプト"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "提示词"
+          }
+        }
+      }
+    },
+    "Prompt already gone": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "問いかけは既にありません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "该提问已不存在"
+          }
+        }
+      }
+    },
+    "Proxy Host": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プロキシのホスト"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "代理主机"
+          }
+        }
+      }
+    },
+    "Proxy Port": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プロキシのポート"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "代理端口"
+          }
+        }
+      }
+    },
     "Public key line (optional)": {
       "localizations": {
         "ja": {
@@ -4115,6 +6723,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "公钥行（可选）"
+          }
+        }
+      }
+    },
+    "QUICK KEYS": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "クイックキー"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "快捷键预设"
           }
         }
       }
@@ -4147,6 +6771,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "识别引擎"
+          }
+        }
+      }
+    },
+    "RETRY": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "再試行"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重试"
           }
         }
       }
@@ -4295,6 +6935,22 @@
         }
       }
     },
+    "Reconnects this session over %@.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このセッションを %@ で再接続します。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "用 %@ 重新连接这个会话。"
+          }
+        }
+      }
+    },
     "Remove": {
       "localizations": {
         "ja": {
@@ -4323,6 +6979,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "删除 %@"
+          }
+        }
+      }
+    },
+    "Remove Worktree": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ワークツリーを削除"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "删除工作树"
+          }
+        }
+      }
+    },
+    "Remove the worktree for \"%@\"?": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「%@」のワークツリーを削除しますか？"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "删除 “%@” 的工作树？"
           }
         }
       }
@@ -4359,6 +7047,22 @@
         }
       }
     },
+    "Removing the worktree failed": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ワークツリーの削除に失敗しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "删除工作树失败"
+          }
+        }
+      }
+    },
     "Rename": {
       "localizations": {
         "ja": {
@@ -4371,6 +7075,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "重命名"
+          }
+        }
+      }
+    },
+    "Rename %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ の名前を変更"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重命名 %@"
           }
         }
       }
@@ -4439,6 +7159,54 @@
         }
       }
     },
+    "Reply": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "返信"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "回复"
+          }
+        }
+      }
+    },
+    "Repo": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "リポジトリ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "仓库"
+          }
+        }
+      }
+    },
+    "Repository path": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "リポジトリのパス"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "仓库路径"
+          }
+        }
+      }
+    },
     "Require Face ID": {
       "localizations": {
         "ja": {
@@ -4451,6 +7219,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "需要 Face ID"
+          }
+        }
+      }
+    },
+    "Respond to agent": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "エージェントに応答"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "回应智能体"
           }
         }
       }
@@ -4471,6 +7255,22 @@
         }
       }
     },
+    "Riding the handoff": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ハンドオフ中"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在跨网切换"
+          }
+        }
+      }
+    },
     "Roam on Cellular": {
       "localizations": {
         "ja": {
@@ -4483,6 +7283,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "蜂窝网络漫游"
+          }
+        }
+      }
+    },
+    "Route this connection through a local or corporate SOCKS5 proxy": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この接続をローカルまたは社内の SOCKS5 プロキシ経由にします"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "让这个连接走本地或公司的 SOCKS5 代理"
           }
         }
       }
@@ -4503,6 +7319,22 @@
         }
       }
     },
+    "Run an agent turn in any pane, then re-check.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "任意のペインでエージェントを 1 ターン実行し、再確認してください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在任意窗格里跑一轮智能体，然后重新检查。"
+          }
+        }
+      }
+    },
     "Run in terminal": {
       "localizations": {
         "ja": {
@@ -4515,6 +7347,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "在终端运行"
+          }
+        }
+      }
+    },
+    "SAVED KEYS": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保存済みのキー"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已保存的密钥"
           }
         }
       }
@@ -4567,6 +7415,22 @@
         }
       }
     },
+    "SHA256 fingerprint": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SHA256 フィンガープリント"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SHA256 指纹"
+          }
+        }
+      }
+    },
     "SIGNAL FOR YOUR AGENTS": {
       "localizations": {
         "ja": {
@@ -4611,6 +7475,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "SRTT"
+          }
+        }
+      }
+    },
+    "SSH": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SSH"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SSH"
           }
         }
       }
@@ -4759,6 +7639,54 @@
         }
       }
     },
+    "Scroll down": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "下にスクロール"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "向下滚动"
+          }
+        }
+      }
+    },
+    "Scroll history": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "履歴をスクロール"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "滚动历史"
+          }
+        }
+      }
+    },
+    "Scroll up": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "上にスクロール"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "向上滚动"
+          }
+        }
+      }
+    },
     "Secure Enclave keys are limited to ECDSA-P256; the algorithm adjusts automatically when SE is enabled.": {
       "localizations": {
         "ja": {
@@ -4775,6 +7703,22 @@
         }
       }
     },
+    "Select Key": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "キーを選択"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选择密钥"
+          }
+        }
+      }
+    },
     "Select Pane": {
       "localizations": {
         "ja": {
@@ -4787,6 +7731,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "选择窗格"
+          }
+        }
+      }
+    },
+    "Send": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "送信"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "发送"
           }
         }
       }
@@ -4835,6 +7795,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "服务器程序"
+          }
+        }
+      }
+    },
+    "Session": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "セッション"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "会话"
           }
         }
       }
@@ -4903,6 +7879,22 @@
         }
       }
     },
+    "Share Public Key": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "公開鍵を共有"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "分享公钥"
+          }
+        }
+      }
+    },
     "Shortcuts": {
       "localizations": {
         "ja": {
@@ -4931,6 +7923,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "在灵动岛显示智能体会话状态"
+          }
+        }
+      }
+    },
+    "Show detail on lock screen": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ロック画面に詳細を表示"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在锁屏上显示详情"
           }
         }
       }
@@ -4967,6 +7975,22 @@
         }
       }
     },
+    "Show only while the session runs tmux or herdr": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "セッションが tmux または herdr を実行中のときのみ表示します"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "仅当会话在跑 tmux 或 herdr 时显示"
+          }
+        }
+      }
+    },
     "Show typed characters locally before server confirms": {
       "localizations": {
         "ja": {
@@ -4979,6 +8003,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "在服务器确认前先在本地显示输入的字符"
+          }
+        }
+      }
+    },
+    "Single shell, no session persistence": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "シェル 1 つのみ、セッションは保持されません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "单个 shell，会话不持久"
           }
         }
       }
@@ -5047,6 +8087,22 @@
         }
       }
     },
+    "Start": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "開始"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "开始"
+          }
+        }
+      }
+    },
     "Start voice input": {
       "localizations": {
         "ja": {
@@ -5063,6 +8119,22 @@
         }
       }
     },
+    "Starting…": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "開始中…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在启动…"
+          }
+        }
+      }
+    },
     "Still not detected. Run the command, wait for it to finish, then re-check.": {
       "localizations": {
         "ja": {
@@ -5075,6 +8147,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "仍未检测到。请运行命令并等待其完成，然后重新检测。"
+          }
+        }
+      }
+    },
+    "Stop": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "停止"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "停止"
           }
         }
       }
@@ -5111,6 +8199,22 @@
         }
       }
     },
+    "Stored": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保存済み"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已存储"
+          }
+        }
+      }
+    },
     "Swipe to switch": {
       "localizations": {
         "ja": {
@@ -5123,6 +8227,118 @@
           "stringUnit": {
             "state": "translated",
             "value": "滑动切换"
+          }
+        }
+      }
+    },
+    "Switch": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "切り替え"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "切换"
+          }
+        }
+      }
+    },
+    "Switch agent": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "エージェントを切り替え"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "切换智能体"
+          }
+        }
+      }
+    },
+    "Switch to %@?": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ に切り替えますか？"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "切换到 %@？"
+          }
+        }
+      }
+    },
+    "Switch to SSH": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SSH に切り替え"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "切换到 SSH"
+          }
+        }
+      }
+    },
+    "TASK": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "タスク"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "任务"
+          }
+        }
+      }
+    },
+    "TERMINAL": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ターミナル"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "终端"
+          }
+        }
+      }
+    },
+    "THE PIT NEVER CLOSES": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ピットは閉じない"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "机器不眠"
           }
         }
       }
@@ -5175,6 +8391,54 @@
         }
       }
     },
+    "Tab": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "タブ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "标签页"
+          }
+        }
+      }
+    },
+    "Tabs": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "タブ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "标签页"
+          }
+        }
+      }
+    },
+    "Tap a preset to fill the trigger — tmux prefixes, control chords, special & navigation keys, F-keys. Then tweak the chip label / color below.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プリセットをタップするとトリガーが入力されます——tmux プレフィックス、Control コード、特殊キーと移動キー、F キー。その後、下でチップのラベルと色を調整します。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "点一个预设即可填入触发键——tmux 前缀、Control 组合、特殊键与方向键、F 键。之后在下面调整键帽文字和颜色。"
+          }
+        }
+      }
+    },
     "Tap modifiers to toggle them and enter a single character as the main key; the mobile keyboard triggers the raw scancode automatically.": {
       "localizations": {
         "ja": {
@@ -5203,6 +8467,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "点按聚焦窗格"
+          }
+        }
+      }
+    },
+    "Tap to focus · %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "タップでフォーカス · %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "点按聚焦 · %@"
+          }
+        }
+      }
+    },
+    "Tap to switch": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "タップで切り替え"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "点按切换"
           }
         }
       }
@@ -5255,6 +8551,38 @@
         }
       }
     },
+    "That doesn't look like theme JSON. Paste an exported theme, or an object with \"background\", \"foreground\" and the eight ANSI color names.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "テーマの JSON ではないようです。書き出したテーマ、または \"background\"・\"foreground\" と 8 つの ANSI カラー名を持つオブジェクトを貼り付けてください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这看起来不是主题 JSON。请粘贴导出的主题，或一个带 “background”、“foreground” 和八个 ANSI 颜色名的对象。"
+          }
+        }
+      }
+    },
+    "That request was already answered or has changed — nothing was sent. Open Moshpit to see the current state.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "そのリクエストは既に回答済みか変化しています——何も送信されていません。Moshpit を開いて現在の状態を確認してください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "那个请求已经被回应过、或者状态变了——什么都没发出去。打开 Moshpit 看当前状态。"
+          }
+        }
+      }
+    },
     "The %@ speech model didn't download completely. Remove it and try again.": {
       "localizations": {
         "ja": {
@@ -5287,6 +8615,38 @@
         }
       }
     },
+    "The accent color tints the app's controls and highlights. The home-screen icon is a separate choice. Both are separate from the terminal color scheme (Display → Theme, below).": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アクセントカラーはアプリのコントロールとハイライトに適用されます。ホーム画面のアイコンは別の設定です。どちらもターミナルの配色（下の「表示 → テーマ」）とは無関係です。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "强调色作用于 App 的控件和高亮。主屏图标是另一项独立选择。两者都与终端配色无关（终端配色在下面的「显示 → 主题」）。"
+          }
+        }
+      }
+    },
+    "The connection failed for a reason Moshpit didn't recognise. Check the host, port and that the server is reachable, then try again.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Moshpit が識別できない理由で接続に失敗しました。ホスト・ポート・サーバーに到達できるかを確認して、もう一度お試しください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "连接失败，原因 Moshpit 没能识别。请检查主机、端口以及服务器是否可达，然后重试。"
+          }
+        }
+      }
+    },
     "The hooks only stamp the tmux pane and exit 0 — Claude is never slowed, prompted, or interrupted.": {
       "localizations": {
         "ja": {
@@ -5299,6 +8659,54 @@
           "stringUnit": {
             "state": "translated",
             "value": "钩子只会给 tmux 窗格打标记并以 exit 0 退出——绝不会拖慢、打断 Claude 或弹出提示。"
+          }
+        }
+      }
+    },
+    "The hooks only stamp the tmux pane and exit 0 — the agent is never slowed, prompted, or interrupted.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "フックは tmux ペインに印を付けて exit 0 するだけです——エージェントが遅くなったり、確認を求められたり、中断されることはありません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这些 hook 只在 tmux 窗格上打个标记然后 exit 0——不会让智能体变慢、不会弹提示、也不会打断它。"
+          }
+        }
+      }
+    },
+    "The icon is separate from the accent color, because iOS only allows switching between icons bundled with the app — a custom accent can't have matching artwork generated for it.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アイコンとアクセントカラーは別の設定です。iOS はアプリに同梱されたアイコン間の切り替えしか許可しないため、カスタムアクセントに合わせた画像を生成することはできません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "图标和强调色是分开的，因为 iOS 只允许在随 App 打包的图标之间切换——自定义强调色没法自动生成配套图稿。"
+          }
+        }
+      }
+    },
+    "The key for %@:%@ does **not** match what's stored here. The server may have been reinstalled — or the connection is being intercepted.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@:%@ のキーは、ここに保存されているものと**一致しません**。サーバーが再インストールされた可能性——あるいは接続が傍受されている可能性があります。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@:%@ 的密钥与此处存储的**不一致**。可能是服务器重装了——也可能连接正被中间人截获。"
           }
         }
       }
@@ -5335,6 +8743,38 @@
         }
       }
     },
+    "The pressed state and the background wash are derived from this one color.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "押下時の状態と背景のごく淡い色は、この 1 色から算出されます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "按下态和背景微光都由这一个颜色推导。"
+          }
+        }
+      }
+    },
+    "The server closed the connection while setting up SSH. Check that the port really is an SSH server, and that a firewall or proxy isn't cutting the connection.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SSH の確立中にサーバーが接続を閉じました。そのポートが本当に SSH サーバーであること、ファイアウォールやプロキシが接続を切断していないことを確認してください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "服务器在建立 SSH 的过程中关闭了连接。请确认该端口确实是 SSH 服务，并且没有防火墙或代理在切断连接。"
+          }
+        }
+      }
+    },
     "The server rejected this sign-in method. Try a different one (e.g. a key instead of a password).": {
       "localizations": {
         "ja": {
@@ -5347,6 +8787,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "服务器拒绝了这种登录方式。请换一种(例如用密钥代替密码)。"
+          }
+        }
+      }
+    },
+    "The worktree was created but has no pane": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ワークツリーは作成されましたが、ペインがありません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "工作树已创建，但没有窗格"
           }
         }
       }
@@ -5367,6 +8823,102 @@
         }
       }
     },
+    "Theme name": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "テーマ名"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "主题名称"
+          }
+        }
+      }
+    },
+    "Theme preview": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "テーマのプレビュー"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "主题预览"
+          }
+        }
+      }
+    },
+    "These eight are what shells, diffs and TUIs paint with.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "シェル・diff・TUI が使うのはこの 8 色です。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "shell、diff 和 TUI 用的就是这八种颜色。"
+          }
+        }
+      }
+    },
+    "This accent will be removed. Built-in accents are unaffected.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このアクセントを削除します。内蔵アクセントには影響しません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "该强调色会被移除。内置强调色不受影响。"
+          }
+        }
+      }
+    },
+    "This server has no running %@.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このサーバーで実行中の %@ はありません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这台服务器上没有正在运行的 %@。"
+          }
+        }
+      }
+    },
+    "This server has no running %@.\nMoshpit only attaches — create the first one to start.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このサーバーで実行中の %@ はありません。\nMoshpit はアタッチのみ行います——まず 1 つ作成してください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这台服务器上没有正在运行的 %@。\nMoshpit 只做附加——先创建第一个才能开始。"
+          }
+        }
+      }
+    },
     "This server has no running sessions.\nMoshpit only attaches — create the first one to start.": {
       "localizations": {
         "ja": {
@@ -5379,6 +8931,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "该服务器上没有正在运行的会话。\nMoshpit 只做附加 — 创建第一个会话以开始。"
+          }
+        }
+      }
+    },
+    "This theme will be removed. Built-in themes are unaffected.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このテーマを削除します。内蔵テーマには影響しません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "该主题会被移除。内置主题不受影响。"
+          }
+        }
+      }
+    },
+    "Those changes exist nowhere else. Removing the worktree throws them away.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "これらの変更は他のどこにも存在しません。ワークツリーを削除すると失われます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这些改动别处没有副本。删掉工作树就等于丢弃它们。"
           }
         }
       }
@@ -5459,6 +9043,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "信任新密钥"
+          }
+        }
+      }
+    },
+    "Type a response…": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "返信を入力…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "输入回复…"
           }
         }
       }
@@ -5559,6 +9159,22 @@
         }
       }
     },
+    "Untitled": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "無題"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未命名"
+          }
+        }
+      }
+    },
     "Use Mosh": {
       "localizations": {
         "ja": {
@@ -5571,6 +9187,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "使用 Mosh"
+          }
+        }
+      }
+    },
+    "Use SOCKS5 Proxy": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SOCKS5 プロキシを使用"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "使用 SOCKS5 代理"
           }
         }
       }
@@ -5603,6 +9235,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "语音输入"
+          }
+        }
+      }
+    },
+    "Verify on server": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サーバー側で確認"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在服务器上核对"
           }
         }
       }
@@ -5651,6 +9299,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "语音输入"
+          }
+        }
+      }
+    },
+    "WAIT": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "待機"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "等待"
           }
         }
       }
@@ -5815,6 +9479,22 @@
         }
       }
     },
+    "Window": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ウィンドウ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "窗口"
+          }
+        }
+      }
+    },
     "Windows": {
       "localizations": {
         "ja": {
@@ -5827,6 +9507,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "窗口"
+          }
+        }
+      }
+    },
+    "Workspace": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ワークスペース"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "工作区"
+          }
+        }
+      }
+    },
+    "Workspaces": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ワークスペース"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "工作区"
           }
         }
       }
@@ -5879,6 +9591,54 @@
         }
       }
     },
+    "Your tap didn't reach the agent — open Moshpit and answer there.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "タップがエージェントに届きませんでした——Moshpit を開いて操作してください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你的点按没有送达智能体——请打开 Moshpit 在里面回应。"
+          }
+        }
+      }
+    },
+    "active": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "使用中"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "使用中"
+          }
+        }
+      }
+    },
+    "agent": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "エージェント"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "智能体"
+          }
+        }
+      }
+    },
     "attached": {
       "localizations": {
         "ja": {
@@ -5907,6 +9667,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "连接"
+          }
+        }
+      }
+    },
+    "ctrl": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ctrl"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ctrl"
           }
         }
       }
@@ -5943,6 +9719,86 @@
         }
       }
     },
+    "err": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "エラー"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "错误"
+          }
+        }
+      }
+    },
+    "git ": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "git "
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "git "
+          }
+        }
+      }
+    },
+    "herdr isn't installed on this host.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このホストに herdr がインストールされていません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这台主机上没装 herdr。"
+          }
+        }
+      }
+    },
+    "herdr not found on this host — plain shell session.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このホストに herdr が見つかりません——通常のシェルセッションになります。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这台主机上找不到 herdr——按普通 shell 会话运行。"
+          }
+        }
+      }
+    },
+    "hint: use --staged": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "hint: use --staged"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "hint: use --staged"
+          }
+        }
+      }
+    },
     "idle": {
       "localizations": {
         "ja": {
@@ -5955,6 +9811,54 @@
           "stringUnit": {
             "state": "translated",
             "value": "空闲"
+          }
+        }
+      }
+    },
+    "linking": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "接続処理中"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "连接中"
+          }
+        }
+      }
+    },
+    "live": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "接続中"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在线"
+          }
+        }
+      }
+    },
+    "main": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "main"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "main"
           }
         }
       }
@@ -5975,6 +9879,38 @@
         }
       }
     },
+    "mosh isn't installed on this host.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このホストに mosh がインストールされていません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这台主机上没装 mosh。"
+          }
+        }
+      }
+    },
+    "mosh keeps the line up · sessions survive the handoff": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "mosh が接続を維持 · セッションはハンドオフを乗り切ります"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "mosh 保持链路 · 会话扛得住网络切换"
+          }
+        }
+      }
+    },
     "mosh-server not found — connected over SSH instead.": {
       "localizations": {
         "ja": {
@@ -5987,6 +9923,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "未找到 mosh-server —— 已改用 SSH 连接。"
+          }
+        }
+      }
+    },
+    "mosh-server path": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "mosh-server のパス"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "mosh-server 路径"
+          }
+        }
+      }
+    },
+    "multiplexer prefix": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "マルチプレクサのプレフィックス"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "多路复用器前缀"
           }
         }
       }
@@ -6023,6 +9991,22 @@
         }
       }
     },
+    "no hosts yet": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ホストがありません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "还没有主机"
+          }
+        }
+      }
+    },
     "no panes": {
       "localizations": {
         "ja": {
@@ -6039,6 +10023,22 @@
         }
       }
     },
+    "now": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "たった今"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "刚刚"
+          }
+        }
+      }
+    },
     "offline": {
       "localizations": {
         "ja": {
@@ -6051,6 +10051,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "已断开"
+          }
+        }
+      }
+    },
+    "ok": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ok"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ok"
+          }
+        }
+      }
+    },
+    "pane %lld": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ペイン %lld"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "窗格 %lld"
           }
         }
       }
@@ -6103,6 +10135,86 @@
         }
       }
     },
+    "saved": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保存済み"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已保存"
+          }
+        }
+      }
+    },
+    "selected row": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "選択中の行"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选中行"
+          }
+        }
+      }
+    },
+    "stalled": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "停滞"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已停滞"
+          }
+        }
+      }
+    },
+    "status": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "status"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "status"
+          }
+        }
+      }
+    },
+    "the pit never closes · your sessions wait for you": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ピットは閉じない · セッションはあなたを待っています"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "机器不眠 · 会话一直等着你"
+          }
+        }
+      }
+    },
     "tmux": {
       "localizations": {
         "ja": {
@@ -6131,6 +10243,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "此主机未安装 tmux 与 mosh。"
+          }
+        }
+      }
+    },
+    "tmux and herdr hold separate, unrelated sessions. If the host doesn't have the one you pick, Moshpit says so and drops to a plain shell — it never quietly attaches the other. With Mosh, herdr runs its own terminal UI; native rendering needs SSH.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "tmux と herdr はそれぞれ独立した無関係のセッションを保持します。選んだ方がホストにない場合、Moshpit はそれを明示して通常のシェルに切り替えます——もう一方に黙ってアタッチすることはありません。Mosh と併用する場合、herdr は独自のターミナル UI を表示します。ネイティブ描画には SSH が必要です。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "tmux 和 herdr 各自持有互不相关的会话。如果主机上没有你选的那个，Moshpit 会明确告知并退回普通 shell——绝不会悄悄连上另一个。搭配 Mosh 时 herdr 跑它自己的终端界面；原生渲染需要 SSH。"
           }
         }
       }
@@ -6211,6 +10339,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "自 %@ 起未使用"
+          }
+        }
+      }
+    },
+    "warn": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "警告"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "警告"
+          }
+        }
+      }
+    },
+    "warning: ": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "warning: "
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "warning: "
           }
         }
       }
@@ -6375,6 +10535,22 @@
         }
       }
     },
+    "█": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "█"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "█"
+          }
+        }
+      }
+    },
     "▸": {
       "localizations": {
         "ja": {
@@ -6439,6 +10615,54 @@
         }
       }
     },
+    "✓ %@ finished": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "✓ %@ が完了しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "✓ %@ 已完成"
+          }
+        }
+      }
+    },
+    "❯": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "❯"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "❯"
+          }
+        }
+      }
+    },
+    "❯ ": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "❯ "
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "❯ "
+          }
+        }
+      }
+    },
     "➜": {
       "localizations": {
         "ja": {
@@ -6467,6 +10691,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "＋"
+          }
+        }
+      }
+    },
+    "＋ splits a new pane": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "＋ で新しいペインを分割"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "＋ 新建一个窗格"
           }
         }
       }

@@ -450,6 +450,405 @@ add("no panes", "没有窗格", "ペインなし")
 add("attached", "已附加", "アタッチ済み")
 add("detached", "已分离", "デタッチ済み")
 
+# ---------- Backfill ----------
+# Strings that shipped untranslated: they were in the app but never in this
+# table, so a zh-Hans or ja user saw English. Found with `--check`, which reads
+# the keys the compiler extracted rather than trusting this file to be complete.
+# Kept as one block per screen rather than merged into the sections above so the
+# backfill stays reviewable as a unit.
+
+# Home (AttachHomeView)
+add("THE PIT NEVER CLOSES", "机器不眠", "ピットは閉じない")
+add("the pit never closes · your sessions wait for you",
+    "机器不眠 · 会话一直等着你", "ピットは閉じない · セッションはあなたを待っています")
+add("SSH", SAME)
+add("AGENTS", "智能体", "エージェント")
+add("OPEN", "打开", "開く")
+add("RETRY", "重试", "再試行")
+add("WAIT", "等待", "待機")
+add("%@", SAME)
+add("no hosts yet", "还没有主机", "ホストがありません")
+add("No %@ yet", "还没有 %@", "%@ がありません")
+add("saved", "已保存", "保存済み")
+add("live", "在线", "接続中")
+add("linking", "连接中", "接続処理中")
+add("stalled", "已停滞", "停滞")
+add("now", "刚刚", "たった今")
+add("agent", "智能体", "エージェント")
+add("1 host saved · all quiet", "已保存 1 台主机 · 一切安静", "ホスト 1 台を保存 · 静かです")
+add("%lld hosts saved · all quiet", "已保存 %lld 台主机 · 一切安静", "ホスト %lld 台を保存 · 静かです")
+add("1 live connection · agents quiet", "1 个在线连接 · 智能体安静", "接続 1 件 · エージェントは静かです")
+add("%lld live connections · agents quiet",
+    "%lld 个在线连接 · 智能体安静", "接続 %lld 件 · エージェントは静かです")
+add("1 agent needs you", "1 个智能体需要你", "エージェント 1 体があなたを待っています")
+add("%lld agents need you", "%lld 个智能体需要你", "エージェント %lld 体があなたを待っています")
+add("%lld NEED YOU", "%lld 个待处理", "%lld 件が要対応")
+add("Connection lost — tap to reconnect", "连接已断开——点按重连", "接続が切れました——タップで再接続")
+add("Disconnecting…", "正在断开…", "切断中…")
+add("Attach didn't complete — tmux never confirmed.",
+    "附加未完成——tmux 始终没有确认。", "アタッチが完了しませんでした——tmux の確認が返りませんでした。")
+add("Nothing running — start a task to isolate one",
+    "没有在跑的任务——新建一个任务来隔离出工作区", "実行中のものはありません——タスクを開始して分離してください")
+add("Leave blank for an automatic name.", "留空则自动命名。", "空欄にすると自動で名前が付きます。")
+add("Remove Worktree", "删除工作树", "ワークツリーを削除")
+add("Remove the worktree for \"%@\"?", "删除 “%@” 的工作树？", "「%@」のワークツリーを削除しますか？")
+add("Deletes the branch checkout under ~/.herdr/worktrees. %@ itself is untouched.",
+    "只删除 ~/.herdr/worktrees 下的分支检出，%@ 本身不受影响。",
+    "~/.herdr/worktrees 配下のブランチのチェックアウトのみを削除します。%@ 自体はそのままです。")
+add("\"%@\" has uncommitted changes", "“%@” 有未提交的改动", "「%@」に未コミットの変更があります")
+add("Those changes exist nowhere else. Removing the worktree throws them away.",
+    "这些改动别处没有副本。删掉工作树就等于丢弃它们。",
+    "これらの変更は他のどこにも存在しません。ワークツリーを削除すると失われます。")
+add("Delete anyway", "仍然删除", "それでも削除")
+add("Keep it", "保留", "残す")
+add("Couldn't remove the worktree", "无法删除工作树", "ワークツリーを削除できませんでした")
+add("%@ %@ \"%@\"?", SAME)
+add("%@ pane %lld?", "%@ 窗格 %lld？", "%@ ペイン %lld？")
+
+# Terminal
+add("Opening the pit", "正在打开", "接続中")
+add("Riding the handoff", "正在跨网切换", "ハンドオフ中")
+add("mosh keeps the line up · sessions survive the handoff",
+    "mosh 保持链路 · 会话扛得住网络切换", "mosh が接続を維持 · セッションはハンドオフを乗り切ります")
+add("%@@%@:%lld", SAME)
+add("%llu", SAME)
+add("Attaching %@…", "正在附加到 %@…", "%@ にアタッチ中…")
+add("ctrl", SAME)
+add("Control", "Control 键", "Control キー")
+add("Control armed", "Control 已就绪", "Control キー待機中")
+add("Paste", "粘贴", "貼り付け")
+add("Scroll up", "向上滚动", "上にスクロール")
+add("Scroll down", "向下滚动", "下にスクロール")
+add("Scroll history", "滚动历史", "履歴をスクロール")
+add("Drag up or down to scroll the terminal scrollback",
+    "上下拖动可滚动终端历史", "上下にドラッグしてターミナルの履歴をスクロールします")
+add("Double tap to switch between SSH and Mosh",
+    "双击可在 SSH 与 Mosh 之间切换", "ダブルタップで SSH と Mosh を切り替えます")
+add("Switch", "切换", "切り替え")
+add("Switch to %@?", "切换到 %@？", "%@ に切り替えますか？")
+add("Reconnects this session over %@.", "用 %@ 重新连接这个会话。", "このセッションを %@ で再接続します。")
+add("Line dropped — retrying", "链路中断——正在重试", "接続が切れました——再試行中")
+add("MOSH DIAGNOSTICS", "MOSH 诊断", "MOSH 診断")
+add("No datagrams yet.", "还没有收到数据报。", "まだデータグラムを受信していません。")
+add("%@ not installed on this host", "这台主机上没装 %@", "このホストに %@ がインストールされていません")
+add("Install %@", "安装 %@", "%@ をインストール")
+add("Create %@", "新建 %@", "%@ を作成")
+add("This server has no running %@.\nMoshpit only attaches — create the first one to start.",
+    "这台服务器上没有正在运行的 %@。\nMoshpit 只做附加——先创建第一个才能开始。",
+    "このサーバーで実行中の %@ はありません。\nMoshpit はアタッチのみ行います——まず 1 つ作成してください。")
+add("No %@ %@", "没有 %@ %@", "%@ %@ がありません")
+add("Moshpit needs %@ for %@ navigation.\nInstall it, then reconnect.",
+    "%@ 导航需要 %@。\n装好之后重新连接。",
+    "%@ のナビゲーションには %@ が必要です。\nインストール後に再接続してください。")
+
+# Theme editor. The preview pane paints a MOCK terminal session — real git
+# output, a prompt glyph, a block cursor. Every one of those stays verbatim:
+# translating simulated `git status` output would misrepresent what a terminal
+# shows, and the preview exists precisely to be checked against reality.
+for k in ["git ", "status", "main", "On branch ", "warning: ", "hint: use --staged",
+          "MoshTransport.swift", "MoshpitMark.swift", "2 files changed",
+          "❯ ", "❯", "█", "+ ", "- "]:
+    add(k, SAME)
+add("TERMINAL", "终端", "ターミナル")
+add("Theme name", "主题名称", "テーマ名")
+add("Theme preview", "主题预览", "テーマのプレビュー")
+add("ANSI COLORS", "ANSI 颜色", "ANSI カラー")
+add("BRIGHT COLORS", "高亮颜色", "明るいカラー")
+add("These eight are what shells, diffs and TUIs paint with.",
+    "shell、diff 和 TUI 用的就是这八种颜色。",
+    "シェル・diff・TUI が使うのはこの 8 色です。")
+add("Override bright colors", "自定义高亮颜色", "明るいカラーを上書き")
+add("Currently derived automatically", "当前自动推导", "現在は自動で算出")
+add("Bright slots are derived from the eight above by default. Override them only if you want exact control — many tools paint dim text with bright black, so keeping it distinct from black matters.",
+    "高亮档位默认由上面八色推导。只有你想精确控制时才需要自定义——很多工具用「亮黑」画灰字，所以它和纯黑必须能区分开。",
+    "明るいカラーは既定で上記 8 色から算出されます。厳密に制御したい場合のみ上書きしてください——多くのツールは淡色テキストを明るい黒で描くため、黒と区別できることが重要です。")
+add("Copy as JSON", "复制为 JSON", "JSON としてコピー")
+
+# Theme gallery
+add("BUILT-IN", "内置", "内蔵")
+add("MY THEMES", "我的主题", "マイテーマ")
+add("New Theme", "新建主题", "新規テーマ")
+add("Add theme", "添加主题", "テーマを追加")
+add("Edit %@", "编辑 %@", "%@ を編集")
+add("Duplicate", "复制", "複製")
+add("Duplicate & Edit", "复制并编辑", "複製して編集")
+add("Copy JSON", "复制 JSON", "JSON をコピー")
+add("Import JSON…", "导入 JSON…", "JSON を読み込む…")
+add("Import Theme", "导入主题", "テーマを読み込む")
+add("Paste from Clipboard", "从剪贴板粘贴", "クリップボードから貼り付け")
+add("No custom themes yet.", "还没有自定义主题。", "カスタムテーマはまだありません。")
+add("This theme will be removed. Built-in themes are unaffected.",
+    "该主题会被移除。内置主题不受影响。", "このテーマを削除します。内蔵テーマには影響しません。")
+add("Duplicate a built-in theme to start from its palette, or import one as JSON. Long-press a theme for more.",
+    "复制一个内置主题即可基于它的配色开始，也可以导入 JSON。长按主题可看到更多操作。",
+    "内蔵テーマを複製してその配色から始めるか、JSON で読み込みます。テーマを長押しすると他の操作が表示されます。")
+add("Paste a theme exported from Moshpit, or any JSON object with \"background\", \"foreground\" and the eight ANSI color names (\"black\", \"red\", …). Bright colors are optional.",
+    "粘贴从 Moshpit 导出的主题，或任何带 “background”、“foreground” 和八个 ANSI 颜色名（“black”、“red” …）的 JSON 对象。高亮颜色可选。",
+    "Moshpit から書き出したテーマ、または \"background\"・\"foreground\" と 8 つの ANSI カラー名（\"black\"、\"red\" …）を持つ JSON オブジェクトを貼り付けます。明るいカラーは任意です。")
+
+# Accent gallery
+add("MY ACCENTS", "我的强调色", "マイアクセント")
+add("New accent", "新建强调色", "新規アクセント")
+add("Accent name", "强调色名称", "アクセント名")
+add("Accent preview", "强调色预览", "アクセントのプレビュー")
+add("NAME", "名称", "名前")
+add("COLOR", "颜色", "カラー")
+add("CONNECT", "连接", "接続")
+add("No custom accents yet.", "还没有自定义强调色。", "カスタムアクセントはまだありません。")
+add("The pressed state and the background wash are derived from this one color.",
+    "按下态和背景微光都由这一个颜色推导。", "押下時の状態と背景のごく淡い色は、この 1 色から算出されます。")
+add("This accent will be removed. Built-in accents are unaffected.",
+    "该强调色会被移除。内置强调色不受影响。", "このアクセントを削除します。内蔵アクセントには影響しません。")
+add("A custom accent tints controls, highlights and the faint background wash. Status colors (warning, success, error) stay fixed so they never get mistaken for the accent.",
+    "自定义强调色会作用于控件、高亮和背景微光。状态色（警告、成功、错误）保持固定，避免和强调色混淆。",
+    "カスタムアクセントはコントロール・ハイライト・背景のごく淡い色に適用されます。ステータス色（警告・成功・エラー）は固定で、アクセントと混同されることはありません。")
+add("selected row", "选中行", "選択中の行")
+add("ok", SAME)
+add("warn", "警告", "警告")
+add("err", "错误", "エラー")
+
+# New agent task (herdr)
+add("New Agent Task", "新建智能体任务", "新規エージェントタスク")
+add("TASK", "任务", "タスク")
+add("Repo", "仓库", "リポジトリ")
+add("Repository path", "仓库路径", "リポジトリのパス")
+add("Branch", "分支", "ブランチ")
+add("Agent", "智能体", "エージェント")
+add("Prompt", "提示词", "プロンプト")
+add("FIRST MESSAGE", "首条消息", "最初のメッセージ")
+add("Choose", "选择", "選択")
+add("Custom", "自定义", "カスタム")
+add("Other…", "其他…", "その他…")
+add("Start", "开始", "開始")
+add("Starting…", "正在启动…", "開始中…")
+add("Looking for repositories…", "正在查找仓库…", "リポジトリを検索中…")
+add("None found — no panes in repos, and nothing under ~",
+    "没找到——窗格都不在仓库里，主目录下也没有", "見つかりません——リポジトリ内のペインがなく、ホーム直下にもありません")
+add("Creates a git worktree on the host, then starts the agent inside it. Your working tree is untouched.",
+    "在主机上创建一个 git worktree，然后在里面启动智能体。你的工作树不受影响。",
+    "ホスト上に git ワークツリーを作成し、その中でエージェントを起動します。あなたの作業ツリーはそのままです。")
+add("Optional. Sent to the agent once it's running — leave blank to type it yourself.",
+    "可选。智能体启动后会发给它——留空则你自己手输。",
+    "任意。エージェントの起動後に送信されます——空欄にすると自分で入力できます。")
+
+# Settings
+add("APPEARANCE", "外观", "外観")
+add("Accent", "强调色", "アクセント")
+add("App Icon", "应用图标", "アプリアイコン")
+add("Language", "语言", "言語")
+add("Copy", "复制", "コピー")
+add("The accent color tints the app's controls and highlights. The home-screen icon is a separate choice. Both are separate from the terminal color scheme (Display → Theme, below).",
+    "强调色作用于 App 的控件和高亮。主屏图标是另一项独立选择。两者都与终端配色无关（终端配色在下面的「显示 → 主题」）。",
+    "アクセントカラーはアプリのコントロールとハイライトに適用されます。ホーム画面のアイコンは別の設定です。どちらもターミナルの配色（下の「表示 → テーマ」）とは無関係です。")
+add("Leaves a signal trail behind the cursor while mosh predicts ahead of the server",
+    "mosh 抢先于服务器预测时，在光标后留下一道轨迹",
+    "mosh がサーバーより先に予測している間、カーソルの後ろに軌跡を残します")
+add("Alert when an agent needs you", "智能体需要你时提醒", "エージェントがあなたを必要とするとき通知")
+add("Alert sound", "提示音", "通知音")
+add("Play a sound when the agent needs you", "智能体需要你时播放提示音", "エージェントがあなたを必要とするとき音を鳴らします")
+add("Show detail on lock screen", "在锁屏上显示详情", "ロック画面に詳細を表示")
+add("Display what the agent is running/asking — off keeps it private",
+    "显示智能体正在跑什么、在问什么——关掉则保持私密",
+    "エージェントが実行中の内容や問いかけを表示します——オフにすると非表示のままです")
+add("Moshpit watches the active session for agent activity and posts a local alert when your agent needs attention — natively on herdr, via the bell and hooks on tmux.",
+    "Moshpit 会盯着当前会话里的智能体活动，需要你处理时发本地通知——herdr 上是原生支持，tmux 上靠响铃和 hook。",
+    "Moshpit はアクティブなセッションのエージェントの動きを監視し、対応が必要になるとローカル通知を送ります——herdr ではネイティブに、tmux ではベルとフックを介して行います。")
+
+# Add Connection
+add("Multiplexer", "多路复用器", "マルチプレクサ")
+add("mosh-server path", "mosh-server 路径", "mosh-server のパス")
+add("Custom herdr Path", "自定义 herdr 路径", "herdr のカスタムパス")
+add("tmux and herdr hold separate, unrelated sessions. If the host doesn't have the one you pick, Moshpit says so and drops to a plain shell — it never quietly attaches the other. With Mosh, herdr runs its own terminal UI; native rendering needs SSH.",
+    "tmux 和 herdr 各自持有互不相关的会话。如果主机上没有你选的那个，Moshpit 会明确告知并退回普通 shell——绝不会悄悄连上另一个。搭配 Mosh 时 herdr 跑它自己的终端界面；原生渲染需要 SSH。",
+    "tmux と herdr はそれぞれ独立した無関係のセッションを保持します。選んだ方がホストにない場合、Moshpit はそれを明示して通常のシェルに切り替えます——もう一方に黙ってアタッチすることはありません。Mosh と併用する場合、herdr は独自のターミナル UI を表示します。ネイティブ描画には SSH が必要です。")
+# SOCKS5 proxy
+add("PROXY", "代理", "プロキシ")
+add("Use SOCKS5 Proxy", "使用 SOCKS5 代理", "SOCKS5 プロキシを使用")
+add("Route this connection through a local or corporate SOCKS5 proxy",
+    "让这个连接走本地或公司的 SOCKS5 代理",
+    "この接続をローカルまたは社内の SOCKS5 プロキシ経由にします")
+add("Proxy Host", "代理主机", "プロキシのホスト")
+add("Proxy Port", "代理端口", "プロキシのポート")
+add("1080", SAME)
+add("Only unauthenticated SOCKS5 proxies are supported. This proxies the SSH connection only — if Mosh is also enabled above, its UDP session connects directly once bootstrapped and is not proxied.",
+    "仅支持免认证的 SOCKS5 代理。它只代理 SSH 连接——如果上面同时开了 Mosh，其 UDP 会话在建立后直连，不走代理。",
+    "認証なしの SOCKS5 プロキシのみ対応しています。プロキシ経由になるのは SSH 接続のみです——上で Mosh も有効な場合、その UDP セッションは確立後は直接接続され、プロキシを経由しません。")
+
+# Agent notifications (actionable, from the Island / lock screen)
+add("Allow", "允许", "許可")
+add("Deny", "拒绝", "拒否")
+add("Reply", "回复", "返信")
+add("Send", "发送", "送信")
+add("Stop", "停止", "停止")
+add("Type a response…", "输入回复…", "返信を入力…")
+add("Next instruction…", "下一条指令…", "次の指示…")
+add("Not delivered", "未送达", "送信されませんでした")
+add("Your tap didn't reach the agent — open Moshpit and answer there.",
+    "你的点按没有送达智能体——请打开 Moshpit 在里面回应。",
+    "タップがエージェントに届きませんでした——Moshpit を開いて操作してください。")
+add("Prompt already gone", "该提问已不存在", "問いかけは既にありません")
+add("That request was already answered or has changed — nothing was sent. Open Moshpit to see the current state.",
+    "那个请求已经被回应过、或者状态变了——什么都没发出去。打开 Moshpit 看当前状态。",
+    "そのリクエストは既に回答済みか変化しています——何も送信されていません。Moshpit を開いて現在の状態を確認してください。")
+
+# Island hooks installer
+add("AGENT", "智能体", "エージェント")
+add("Not run", "未运行", "未実行")
+add("Run an agent turn in any pane, then re-check.",
+    "在任意窗格里跑一轮智能体，然后重新检查。", "任意のペインでエージェントを 1 ターン実行し、再確認してください。")
+add("Backs up your config", "会备份你的配置", "設定をバックアップします")
+add("Copies the agent's config to a timestamped backup before merging Moshpit's hook groups.",
+    "在合入 Moshpit 的 hook 组之前，先把智能体配置复制成带时间戳的备份。",
+    "Moshpit のフックを統合する前に、エージェントの設定をタイムスタンプ付きでバックアップします。")
+add("Never blocks the agent", "绝不阻塞智能体", "エージェントを妨げません")
+add("The hooks only stamp the tmux pane and exit 0 — the agent is never slowed, prompted, or interrupted.",
+    "这些 hook 只在 tmux 窗格上打个标记然后 exit 0——不会让智能体变慢、不会弹提示、也不会打断它。",
+    "フックは tmux ペインに印を付けて exit 0 するだけです——エージェントが遅くなったり、確認を求められたり、中断されることはありません。")
+add("Idempotent: re-running de-dupes Moshpit's hooks instead of stacking them.",
+    "幂等：重复运行会去重 Moshpit 的 hook，而不是层层堆叠。",
+    "冪等です。再実行すると Moshpit のフックは重複除去され、積み重なりません。")
+add("Edits %@ (a timestamped backup is written first).",
+    "会修改 %@（先写一份带时间戳的备份）。", "%@ を編集します（先にタイムスタンプ付きのバックアップを書き出します）。")
+add("Install Moshpit's hooks so the Vibe Island shows exactly when your agent is working, what it's running, when it needs you, and when it's done — instead of guessing from output. Moshpit backs up your config first and never blocks the agent.",
+    "安装 Moshpit 的 hook，让 Vibe Island 准确显示智能体何时在工作、在跑什么、何时需要你、何时完成——而不是靠输出去猜。Moshpit 会先备份你的配置，且绝不阻塞智能体。",
+    "Moshpit のフックをインストールすると、Vibe Island はエージェントがいつ作業中か、何を実行しているか、いつあなたを必要としているか、いつ完了したかを正確に表示します——出力から推測する必要はありません。Moshpit は先に設定をバックアップし、エージェントを妨げることはありません。")
+
+# Host key verification (Components)
+add("%lld", SAME)
+add("active", "使用中", "使用中")
+add("SHA256 fingerprint", "SHA256 指纹", "SHA256 フィンガープリント")
+add("Stored", "已存储", "保存済み")
+add("Offered now", "本次提供", "今回提示された値")
+add("Verify on server", "在服务器上核对", "サーバー側で確認")
+add("Host Key Changed", "主机密钥已变更", "ホストキーが変更されました")
+add("First connection to %@:%@. Verify this fingerprint matches the server before you trust it.",
+    "首次连接 %@:%@。信任之前请先核对这个指纹与服务器一致。",
+    "%@:%@ への初回接続です。信頼する前に、このフィンガープリントがサーバーと一致することを確認してください。")
+add("The key for %@:%@ does **not** match what's stored here. The server may have been reinstalled — or the connection is being intercepted.",
+    "%@:%@ 的密钥与此处存储的**不一致**。可能是服务器重装了——也可能连接正被中间人截获。",
+    "%@:%@ のキーは、ここに保存されているものと**一致しません**。サーバーが再インストールされた可能性——あるいは接続が傍受されている可能性があります。")
+
+# Multiplexer vocabulary (tmux vs herdr wording)
+add("Session", "会话", "セッション")
+add("Window", "窗口", "ウィンドウ")
+add("Workspace", "工作区", "ワークスペース")
+add("Workspaces", "工作区", "ワークスペース")
+add("Tab", "标签页", "タブ")
+add("Tabs", "标签页", "タブ")
+add("Kill", "终止", "強制終了")
+add("Close", "关闭", "閉じる")
+add("＋ splits a new pane", "＋ 新建一个窗格", "＋ で新しいペインを分割")
+
+# Branch-name validation (new agent task)
+add("Pick a repository", "选一个仓库", "リポジトリを選択してください")
+add("Pick an agent", "选一个智能体", "エージェントを選択してください")
+add("Name the branch", "给分支起个名字", "ブランチ名を入力してください")
+add("No spaces in a branch name", "分支名不能有空格", "ブランチ名に空白は使えません")
+add("No control characters in a branch name", "分支名不能有控制字符", "ブランチ名に制御文字は使えません")
+add("No “..” in a branch name", "分支名不能含 “..”", "ブランチ名に「..」は使えません")
+add("No ~ ^ : ? * [ \\ in a branch name", "分支名不能含 ~ ^ : ? * [ \\", "ブランチ名に ~ ^ : ? * [ \\ は使えません")
+add("Can't start with “-” or “/”, or end with “/”",
+    "不能以 “-” 或 “/” 开头，也不能以 “/” 结尾", "「-」「/」で始めたり、「/」で終わることはできません")
+add("Can't end with “.lock”", "不能以 “.lock” 结尾", "「.lock」で終わることはできません")
+
+# tmux / herdr sheets. The nouns are substituted from MultiplexerVocabulary
+# (window vs tab, session vs workspace), so the verb has to sit in an order
+# that reads correctly for either.
+add("%@ %@", SAME)
+add("New %@", "新建 %@", "新規 %@")
+add("Rename %@", "重命名 %@", "%@ の名前を変更")
+add("Leave blank to let the program name it.", "留空则由程序命名。", "空欄にするとプログラムが名前を付けます。")
+add("Tap to switch", "点按切换", "タップで切り替え")
+add("Tap to focus · %@", "点按聚焦 · %@", "タップでフォーカス · %@")
+add("%@ %@ %@? Every pane in it dies.", "%1$@ %2$@ %3$@？其中每个窗格都会终止。",
+    "%1$@ %2$@ %3$@？その中のすべてのペインが終了します。")
+add("%@ %@ %@? Everything in it dies.", "%1$@ %2$@ %3$@？其中的一切都会终止。",
+    "%1$@ %2$@ %3$@？その中のすべてが終了します。")
+
+# Island controls (accessibility labels on the Live Activity buttons)
+add("Action", "操作", "操作")
+add("Connection", "连接", "接続")
+add("Pane", "窗格", "ペイン")
+add("Respond to agent", "回应智能体", "エージェントに応答")
+add("Switch agent", "切换智能体", "エージェントを切り替え")
+add("✓ %@ finished", "✓ %@ 已完成", "✓ %@ が完了しました")
+add("pane %lld", "窗格 %lld", "ペイン %lld")
+
+# Multiplexer choice (Add Connection)
+add("None", "不使用", "使用しない")
+add("Single shell, no session persistence", "单个 shell，会话不持久", "シェル 1 つのみ、セッションは保持されません")
+add("Mature, already on nearly every host", "成熟，几乎每台主机上都有", "成熟しており、ほぼすべてのホストに導入済み")
+add("Built for coding agents — agent status needs no hooks",
+    "为编码智能体而生——智能体状态无需 hook", "コーディングエージェント向け——エージェントの状態にフックは不要")
+
+# Host / install banners
+add("Install herdr", "安装 herdr", "herdr をインストール")
+add("herdr not found on this host — plain shell session.",
+    "这台主机上找不到 herdr——按普通 shell 会话运行。",
+    "このホストに herdr が見つかりません——通常のシェルセッションになります。")
+add("herdr isn't installed on this host.", "这台主机上没装 herdr。", "このホストに herdr がインストールされていません。")
+add("mosh isn't installed on this host.", "这台主机上没装 mosh。", "このホストに mosh がインストールされていません。")
+add("Installs to ~/.local/bin. Moshpit looks there when probing and launching, so you don't need to change PATH.",
+    "安装到 ~/.local/bin。Moshpit 探测和启动时都会去那里找，所以你不用改 PATH。",
+    "~/.local/bin にインストールされます。Moshpit は検出時も起動時もそこを参照するため、PATH を変更する必要はありません。")
+add("Mosh isn't receiving data — your network may be blocking UDP (VPN, proxy, or firewall).",
+    "Mosh 收不到数据——你的网络可能在拦 UDP（VPN、代理或防火墙）。",
+    "Mosh がデータを受信できていません——ネットワークが UDP を遮断している可能性があります（VPN・プロキシ・ファイアウォール）。")
+add("Switch to SSH", "切换到 SSH", "SSH に切り替え")
+
+# SSH keys
+add("Select Key", "选择密钥", "キーを選択")
+add("SAVED KEYS", "已保存的密钥", "保存済みのキー")
+add("No keys yet — generate or import one with ＋", "还没有密钥——用 ＋ 生成或导入", "キーがありません——＋ で生成または読み込みます")
+add("Generate SSH Key", "生成 SSH 密钥", "SSH キーを生成")
+add("Enter a private key by hand", "手动输入私钥", "秘密鍵を手入力")
+add("Import File…", "导入文件…", "ファイルを読み込む…")
+add("OR", "或", "または")
+add("Copy Public Key", "复制公钥", "公開鍵をコピー")
+add("Share Public Key", "分享公钥", "公開鍵を共有")
+add("Copy Fingerprint", "复制指纹", "フィンガープリントをコピー")
+
+# Shortcut editor
+add("QUICK KEYS", "快捷键预设", "クイックキー")
+add("multiplexer prefix", "多路复用器前缀", "マルチプレクサのプレフィックス")
+add("Only in a multiplexer", "仅在多路复用器内显示", "マルチプレクサ内のみ")
+add("Show only while the session runs tmux or herdr",
+    "仅当会话在跑 tmux 或 herdr 时显示", "セッションが tmux または herdr を実行中のときのみ表示します")
+add("Tap a preset to fill the trigger — tmux prefixes, control chords, special & navigation keys, F-keys. Then tweak the chip label / color below.",
+    "点一个预设即可填入触发键——tmux 前缀、Control 组合、特殊键与方向键、F 键。之后在下面调整键帽文字和颜色。",
+    "プリセットをタップするとトリガーが入力されます——tmux プレフィックス、Control コード、特殊キーと移動キー、F キー。その後、下でチップのラベルと色を調整します。")
+add("In Key Combo mode the payload is the escape sequence sent to the PTY, honoring the transport transcription rules.",
+    "在「组合键」模式下，payload 就是发给 PTY 的转义序列，并遵循传输层的转写规则。",
+    "「キーの組み合わせ」モードでは、ペイロードは PTY に送るエスケープシーケンスであり、トランスポートの変換ルールに従います。")
+
+# Themes / icons
+add("Untitled", "未命名", "無題")
+add("No themes found in that JSON.", "那段 JSON 里没有找到主题。", "その JSON にテーマが見つかりませんでした。")
+add("That doesn't look like theme JSON. Paste an exported theme, or an object with \"background\", \"foreground\" and the eight ANSI color names.",
+    "这看起来不是主题 JSON。请粘贴导出的主题，或一个带 “background”、“foreground” 和八个 ANSI 颜色名的对象。",
+    "テーマの JSON ではないようです。書き出したテーマ、または \"background\"・\"foreground\" と 8 つの ANSI カラー名を持つオブジェクトを貼り付けてください。")
+add("Couldn't change the icon: %@", "无法更换图标：%@", "アイコンを変更できませんでした：%@")
+add("The icon is separate from the accent color, because iOS only allows switching between icons bundled with the app — a custom accent can't have matching artwork generated for it.",
+    "图标和强调色是分开的，因为 iOS 只允许在随 App 打包的图标之间切换——自定义强调色没法自动生成配套图稿。",
+    "アイコンとアクセントカラーは別の設定です。iOS はアプリに同梱されたアイコン間の切り替えしか許可しないため、カスタムアクセントに合わせた画像を生成することはできません。")
+
+# Connection / session failures
+add("Another client is using this pane — retrying shortly",
+    "另一个客户端正在使用这个窗格——稍后重试", "別のクライアントがこのペインを使用中です——しばらくして再試行します")
+add("Couldn't reach the host", "无法连到主机", "ホストに到達できませんでした")
+add("Creating the worktree failed", "创建工作树失败", "ワークツリーの作成に失敗しました")
+add("Removing the worktree failed", "删除工作树失败", "ワークツリーの削除に失敗しました")
+add("The worktree was created but has no pane", "工作树已创建，但没有窗格", "ワークツリーは作成されましたが、ペインがありません")
+add("Couldn't read the saved credential. After re-installing or re-signing the app (e.g. via SideStore), open Edit and re-enter your password / re-select your key.",
+    "读不出已保存的凭据。重装或重签名 App（例如通过 SideStore）之后，请打开「编辑」重新输入密码 / 重新选择密钥。",
+    "保存された認証情報を読み取れませんでした。アプリを再インストールまたは再署名した後（SideStore 経由など）は、「編集」を開いてパスワードを再入力するか、キーを選び直してください。")
+add("The connection failed for a reason Moshpit didn't recognise. Check the host, port and that the server is reachable, then try again.",
+    "连接失败，原因 Moshpit 没能识别。请检查主机、端口以及服务器是否可达，然后重试。",
+    "Moshpit が識別できない理由で接続に失敗しました。ホスト・ポート・サーバーに到達できるかを確認して、もう一度お試しください。")
+add("The server closed the connection while setting up SSH. Check that the port really is an SSH server, and that a firewall or proxy isn't cutting the connection.",
+    "服务器在建立 SSH 的过程中关闭了连接。请确认该端口确实是 SSH 服务，并且没有防火墙或代理在切断连接。",
+    "SSH の確立中にサーバーが接続を閉じました。そのポートが本当に SSH サーバーであること、ファイアウォールやプロキシが接続を切断していないことを確認してください。")
+
 # ---------- Vibe Island (shared with widget) ----------
 ISLAND = {}
 def island(key, zh, ja):
