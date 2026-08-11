@@ -44,6 +44,9 @@ struct DictationOverlayView: View {
                 ProgressView().controlSize(.mini).tint(Ink.accent)
                 statusLabel(String(localized: "DOWNLOADING SPEECH MODEL \(Int(progress * 100))%"),
                             tint: Ink.secondary)
+            case .loadingModel:
+                ProgressView().controlSize(.mini).tint(Ink.accent)
+                statusLabel(String(localized: "LOADING SPEECH MODEL…"), tint: Ink.secondary)
             case .listening:
                 PulsingDot()
                 statusLabel(String(localized: "LISTENING"), tint: Ink.accent)
@@ -62,6 +65,20 @@ struct DictationOverlayView: View {
                 statusLabel(String(localized: "VOICE INPUT"), tint: Ink.warn)
             }
             Spacer(minLength: 0)
+            // The engine and language actually in use, shown from the moment
+            // one is picked. This is the fix for the failure that leaves no
+            // trace: dictation running in the wrong language doesn't error,
+            // it just returns confident nonsense, and until it was on screen
+            // there was nothing to tell you that "Automatic" had resolved to
+            // English while you were speaking Chinese.
+            if !controller.engineLabel.isEmpty, controller.phase != .failed(.microphoneDenied) {
+                Text(controller.engineLabel)
+                    .font(Face.mono(9, .medium))
+                    .foregroundStyle(Ink.tertiary)
+                    .lineLimit(1)
+                    .truncationMode(.head)
+                    .accessibilityIdentifier("dictation-engine-label")
+            }
             if controller.phase == .listening {
                 DictationLevelMeter(level: controller.level)
             }

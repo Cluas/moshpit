@@ -24,6 +24,30 @@ Both the upstream project and the fork are distributed under the MIT License.
 
 Citadel provides the SSH client implementation used by Moshpit.
 
+### WhisperKit
+
+- Source: https://github.com/argmaxinc/WhisperKit
+- License: MIT (Copyright © 2024 Argmax, Inc.)
+
+WhisperKit provides the on-device Whisper inference used by the optional local
+speech engine under Settings ▸ Voice Input ▸ Recognition. Only its `WhisperKit`
+library product is linked; the package's CLI target and that target's
+`swift-argument-parser` dependency are not built.
+
+## Downloaded Speech Models
+
+Moshpit ships **no** speech model weights. When you choose the Whisper engine
+and download a model, the files are fetched at runtime from the
+[`argmaxinc/whisperkit-coreml`](https://huggingface.co/argmaxinc/whisperkit-coreml)
+repository on Hugging Face and stored in the app's Application Support
+directory. They are Core ML conversions of OpenAI's Whisper models, which are
+released by OpenAI under the MIT License; the conversions are distributed by
+Argmax under the MIT License. No audio or transcript is uploaded by this
+download — it only fetches model files.
+
+Apple's own speech models (the default engine) are part of iOS and are managed
+by the system, not by Moshpit.
+
 ## Bundled Fonts
 
 Moshpit bundles several programmer monospace fonts, selectable under

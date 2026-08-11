@@ -80,6 +80,23 @@ struct TerminalShortcutEncodingTests {
 @Suite("ShortcutStore")
 struct ShortcutStoreTests {
 
+    /// A persisted set as it looked before the mic became a chip: today's
+    /// builtins minus the mic, with ^L put back in the bar where it was.
+    ///
+    /// Reconstructed rather than taken from `builtins` as-is — ^L now ships
+    /// out of the bar, so a plain filter would seed a toolbar that already
+    /// lacks it and every assertion about the migration would pass without
+    /// the migration doing anything.
+    private static func preMicDefaults() -> [TerminalShortcut] {
+        ShortcutStore.builtins
+            .filter { $0.kind != .mic }
+            .map { shortcut in
+                var restored = shortcut
+                if restored.summary == "Clear screen" { restored.inToolbar = true }
+                return restored
+            }
+    }
+
     private func freshStore() -> ShortcutStore {
         let suite = "test.shortcuts.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
@@ -87,7 +104,7 @@ struct ShortcutStoreTests {
         return ShortcutStore(defaults: defaults)
     }
 
-    @Test("seeds a lean default toolbar: esc, tab, interrupt, clear, paste, arrows")
+    @Test("seeds a lean default toolbar: esc, tab, interrupt, paste, arrows, mic")
     func defaultToolbar() throws {
         let store = freshStore()
         let labels = store.toolbar.map(\.chipLabel)
@@ -95,12 +112,28 @@ struct ShortcutStoreTests {
         // The handful of keys actually reached for constantly. Ctrl and the
         // scroll thumb start outside the bar (available to add back), along
         // with everything else that used to be a default (^D, ^R, ⌃End, ⇧Tab).
+        // The mic trails the row: it used to be pinned outside the scroll at
+        // the trailing edge, so this is where it already appeared.
         #expect(store.toolbarCount == 6)
-        #expect(labels == ["esc", "tab", "^C", "^L", "paste", "✛"])
-        #expect(store.toolbar.last?.kind == .dpad)
+        #expect(labels == ["esc", "tab", "^C", "paste", "✛", "mic"])
+        #expect(store.toolbar.last?.kind == .mic)
         #expect(store.available.contains { $0.kind == .ctrl })
         #expect(store.available.contains { $0.kind == .scroll })
         #expect(allBuiltin)
+    }
+
+    @Test("the default bar stays within a phone-width row")
+    func defaultToolbarFitsOnScreen() throws {
+        // Measured on a 402pt iPhone: chips are 46pt (the D-pad 42) with 6pt
+        // gaps and an 8pt leading inset, and the pinned keyboard toggle takes
+        // the last 50pt. Seven chips overflowed by ~10pt, which is what a
+        // half-cut chip at the right edge looks like. Recomputed here so a
+        // future default can't silently reintroduce it.
+        let store = freshStore()
+        let width = store.toolbar.reduce(CGFloat(8)) { total, shortcut in
+            total + (shortcut.kind == .dpad ? 42 : 46) + 6
+        }
+        #expect(width <= 402 - 50, "default toolbar overflows: \(width)pt")
     }
 
     @Test("migration injects ctrl + the D-pad for a persisted set that predates them")
@@ -122,6 +155,94 @@ struct ShortcutStoreTests {
         #expect(store.shortcuts.contains { $0.kind == .ctrl })
         #expect(store.available.contains { $0.kind == .ctrl })
         #expect(store.toolbar.contains { $0.chipLabel == "esc" })
+    }
+
+    @Test("migration moves the mic into the bar for a set that predates the chip")
+    func migratesMic() throws {
+        let suite = "test.shortcuts.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+        defaults.set(try JSONEncoder().encode(Self.preMicDefaults()),
+                     forKey: "moshpit.shortcuts.v1")
+
+        let store = ShortcutStore(defaults: defaults)
+        // It has to arrive IN the bar: the key was always visible before, and
+        // an upgrade that quietly hides it reads as the feature being removed.
+        #expect(store.toolbar.contains { $0.kind == .mic })
+        // At the trailing edge, which is where the pinned key already sat — so
+        // no existing chip shifts under the user's thumb.
+        #expect(store.toolbar.last?.kind == .mic)
+        // And it makes room for itself rather than overflowing the row.
+        #expect(!store.toolbar.contains { $0.chipLabel == "^L" })
+        #expect(store.available.contains { $0.chipLabel == "^L" })
+    }
+
+    @Test("a bar that already grew a mic still gets its slot freed")
+    func clearScreenLeavesEvenWhenMicAlreadyPresent() throws {
+        let suite = "test.shortcuts.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+        // The intermediate state: mic already injected, ^L still in the bar,
+        // seven chips wide. Reachable by anyone who ran a build between the
+        // two changes, and the reason the ^L step can't hang off the mic
+        // injection — that branch never runs again once a mic exists.
+        var previous = Self.preMicDefaults()
+        var mic = try #require(ShortcutStore.builtins.first { $0.kind == .mic })
+        mic.inToolbar = true
+        previous.append(mic)
+        defaults.set(try JSONEncoder().encode(previous), forKey: "moshpit.shortcuts.v1")
+
+        let store = ShortcutStore(defaults: defaults)
+        #expect(store.toolbarCount == 6)
+        #expect(!store.toolbar.contains { $0.chipLabel == "^L" })
+        #expect(store.toolbar.last?.kind == .mic)
+    }
+
+    @Test("a customized toolbar keeps every key the user put in it")
+    func micMigrationSparesCustomizedBars() throws {
+        let suite = "test.shortcuts.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+        // Same era as the migration above, but the user rearranged it: ^L
+        // moved to the front and a custom chip added. Freeing a slot by
+        // deleting a shortcut someone deliberately placed is worse than a row
+        // they have to drag, so the ^L removal must not fire here.
+        var previous = Self.preMicDefaults()
+        if let clear = previous.firstIndex(where: { $0.summary == "Clear screen" }) {
+            previous.insert(previous.remove(at: clear), at: 0)
+        }
+        var custom = TerminalShortcut()
+        custom.kind = .command; custom.payload = "claude"; custom.chipLabel = "clm"
+        custom.isBuiltin = false; custom.inToolbar = true
+        previous.append(custom)
+        defaults.set(try JSONEncoder().encode(previous), forKey: "moshpit.shortcuts.v1")
+
+        let store = ShortcutStore(defaults: defaults)
+        #expect(store.toolbar.contains { $0.chipLabel == "^L" })
+        #expect(store.toolbar.contains { $0.chipLabel == "clm" })
+        #expect(store.toolbar.contains { $0.kind == .mic })
+    }
+
+    @Test("a full toolbar keeps the mic out of the bar rather than over-filling it")
+    func micRespectsToolbarCap() throws {
+        let suite = "test.shortcuts.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+        // 12 chips already in the bar — the cap — and no mic.
+        let full = (0 ..< ShortcutStore.toolbarLimit).map { i -> TerminalShortcut in
+            var sc = TerminalShortcut()
+            sc.kind = .keyCombo; sc.key = "\(i)"; sc.chipLabel = "k\(i)"
+            sc.isBuiltin = false; sc.inToolbar = true
+            return sc
+        }
+        defaults.set(try JSONEncoder().encode(full), forKey: "moshpit.shortcuts.v1")
+
+        let store = ShortcutStore(defaults: defaults)
+        #expect(store.toolbarCount == ShortcutStore.toolbarLimit)
+        #expect(!store.toolbar.contains { $0.kind == .mic })
+        // Present but parked, so the editor can offer it rather than it
+        // vanishing without trace.
+        #expect(store.shortcuts.contains { $0.kind == .mic })
     }
 
     @Test("toolbar is capped at 12 slots")

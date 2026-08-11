@@ -23,6 +23,9 @@ struct VoiceDictationControllerTests {
         /// While true, `prepare` idles after reporting progress — lets a test
         /// observe the `.downloadingModel` phase instead of racing past it.
         var holdPrepare = false
+        /// Report a `.loading` step after any download progress.
+        var reportsLoading = false
+        var label = "Fake · Test"
 
         private(set) var started = false
         private(set) var appended = 0
@@ -33,9 +36,10 @@ struct VoiceDictationControllerTests {
             (updates, continuation) = AsyncThrowingStream.makeStream()
         }
 
-        func prepare(onDownloadProgress: @escaping @Sendable (Double) -> Void) async throws {
+        func prepare(onProgress: @escaping @Sendable (DictationPreparation) -> Void) async throws {
             if let prepareError { throw prepareError }
-            for value in downloadProgress { onDownloadProgress(value) }
+            for value in downloadProgress { onProgress(.downloading(progress: value)) }
+            if reportsLoading { onProgress(.loading) }
             while holdPrepare {
                 try? await Task.sleep(for: .milliseconds(10))
             }
@@ -80,12 +84,12 @@ struct VoiceDictationControllerTests {
 
     private func makeController(engine: FakeEngine,
                                 audio: FakeAudioSource) -> VoiceDictationController {
-        VoiceDictationController(engineFactory: { _ in [engine] }, audioSource: audio)
+        VoiceDictationController(engineFactory: { _, _ in [engine] }, audioSource: audio)
     }
 
     private func makeController(engines: [FakeEngine],
                                 audio: FakeAudioSource) -> VoiceDictationController {
-        VoiceDictationController(engineFactory: { _ in engines }, audioSource: audio)
+        VoiceDictationController(engineFactory: { _, _ in engines }, audioSource: audio)
     }
 
     /// Main-actor-friendly poll: updates arrive via tasks the controller
@@ -110,7 +114,7 @@ struct VoiceDictationControllerTests {
         audio.permission = false
         let controller = makeController(engine: engine, audio: audio)
 
-        await controller.start(localeId: "")
+        await controller.start(DictationRequest())
 
         #expect(controller.phase == .failed(.microphoneDenied))
         #expect(!audio.started)
@@ -123,7 +127,7 @@ struct VoiceDictationControllerTests {
         let audio = FakeAudioSource()
         let controller = makeController(engine: engine, audio: audio)
 
-        await controller.start(localeId: "")
+        await controller.start(DictationRequest())
         #expect(controller.phase == .listening)
         #expect(audio.started)
 
@@ -147,7 +151,7 @@ struct VoiceDictationControllerTests {
         let audio = FakeAudioSource()
         let controller = makeController(engine: engine, audio: audio)
 
-        await controller.start(localeId: "")
+        await controller.start(DictationRequest())
         engine.continuation.yield(DictationUpdate(finalizedText: "rm -rf", volatileText: ""))
         _ = await waitUntil(controller.finalizedText == "rm -rf")
 
@@ -166,7 +170,7 @@ struct VoiceDictationControllerTests {
         let audio = FakeAudioSource()
         let controller = makeController(engine: engine, audio: audio)
 
-        let startTask = Task { await controller.start(localeId: "") }
+        let startTask = Task { await controller.start(DictationRequest()) }
         #expect(await waitUntil(controller.phase == .downloadingModel(progress: 0.4)))
 
         engine.holdPrepare = false
@@ -182,7 +186,7 @@ struct VoiceDictationControllerTests {
         let audio = FakeAudioSource()
         let controller = makeController(engines: [broken, working], audio: audio)
 
-        await controller.start(localeId: "")
+        await controller.start(DictationRequest())
 
         #expect(controller.phase == .listening)
         #expect(broken.cancelCalled)
@@ -201,7 +205,7 @@ struct VoiceDictationControllerTests {
         let audio = FakeAudioSource()
         let controller = makeController(engines: [denied, next], audio: audio)
 
-        await controller.start(localeId: "")
+        await controller.start(DictationRequest())
 
         #expect(controller.phase == .failed(.speechRecognitionDenied))
         #expect(!next.started)
@@ -214,7 +218,7 @@ struct VoiceDictationControllerTests {
         let audio = FakeAudioSource()
         let controller = makeController(engine: engine, audio: audio)
 
-        await controller.start(localeId: "tlh")
+        await controller.start(DictationRequest(appleLocaleId: "tlh"))
 
         #expect(controller.phase == .failed(.unsupportedLanguage("Klingon")))
     }
@@ -225,7 +229,7 @@ struct VoiceDictationControllerTests {
         let audio = FakeAudioSource()
         let controller = makeController(engine: engine, audio: audio)
 
-        await controller.start(localeId: "")
+        await controller.start(DictationRequest())
         let text = await controller.finish()
 
         #expect(text == nil)
@@ -238,7 +242,7 @@ struct VoiceDictationControllerTests {
         let audio = FakeAudioSource()
         let controller = makeController(engine: engine, audio: audio)
 
-        await controller.start(localeId: "")
+        await controller.start(DictationRequest())
         let format = try #require(AVAudioFormat(standardFormatWithSampleRate: 16_000, channels: 1))
         let buffer = try #require(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 160))
         audio.onBuffer?(buffer)
@@ -253,7 +257,7 @@ struct VoiceDictationControllerTests {
         let audio = FakeAudioSource()
         let controller = makeController(engine: engine, audio: audio)
 
-        await controller.start(localeId: "")
+        await controller.start(DictationRequest())
         engine.continuation.yield(DictationUpdate(finalizedText: "tail the logs", volatileText: ""))
         _ = await waitUntil(controller.finalizedText == "tail the logs")
 
@@ -271,7 +275,7 @@ struct VoiceDictationControllerTests {
         let audio = FakeAudioSource()
         let controller = makeController(engine: engine, audio: audio)
 
-        await controller.start(localeId: "")
+        await controller.start(DictationRequest())
         engine.continuation.finish(throwing: DictationFailure.engine("asset gone"))
 
         #expect(await waitUntil(controller.phase == .failed(.engine("asset gone"))))

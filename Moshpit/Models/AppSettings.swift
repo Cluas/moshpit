@@ -184,9 +184,52 @@ final class AppSettings {
     }
 
     /// BCP-47 identifier of the dictation language ("en-US", "zh-CN"…).
-    /// Empty = follow the system language.
+    /// Empty = Automatic. Applies to the Apple engines only — Whisper has its
+    /// own code list and its own setting, because the two catalogs neither
+    /// overlap nor use the same identifiers.
     var voiceInputLocaleId: String {
         get { access(keyPath: \.voiceInputLocaleId); return get("moshpit.settings.voiceInputLocale", "") }
         set { withMutation(keyPath: \.voiceInputLocaleId) { defaults.set(newValue, forKey: "moshpit.settings.voiceInputLocale") } }
+    }
+
+    /// Which speech engine dictation runs on. Defaults to Apple: it needs no
+    /// download and works on a fresh install, whereas Whisper is only usable
+    /// once several hundred megabytes have been fetched deliberately.
+    var voiceEngine: VoiceEngineKind {
+        get {
+            access(keyPath: \.voiceEngine)
+            return VoiceEngineKind(rawValue: get("moshpit.settings.voiceEngine", VoiceEngineKind.apple.rawValue))
+                ?? .apple
+        }
+        set {
+            withMutation(keyPath: \.voiceEngine) {
+                defaults.set(newValue.rawValue, forKey: "moshpit.settings.voiceEngine")
+            }
+        }
+    }
+
+    /// Whisper language code ("zh", "en"…). Empty = let Whisper detect it
+    /// from the audio, which is a better default than any guess from system
+    /// configuration.
+    var whisperLanguage: String {
+        get { access(keyPath: \.whisperLanguage); return get("moshpit.settings.whisperLanguage", "") }
+        set { withMutation(keyPath: \.whisperLanguage) { defaults.set(newValue, forKey: "moshpit.settings.whisperLanguage") } }
+    }
+
+    /// WhisperKit model variant. Empty = use whichever supported model is
+    /// installed, so deleting the chosen one degrades instead of breaking.
+    var whisperModelId: String {
+        get { access(keyPath: \.whisperModelId); return get("moshpit.settings.whisperModel", "") }
+        set { withMutation(keyPath: \.whisperModelId) { defaults.set(newValue, forKey: "moshpit.settings.whisperModel") } }
+    }
+
+    /// Snapshot of everything a dictation session needs, taken when the mic
+    /// key is tapped.
+    var dictationRequest: DictationRequest {
+        DictationRequest(
+            engine: voiceEngine,
+            appleLocaleId: voiceInputLocaleId,
+            whisperLanguage: whisperLanguage,
+            whisperModelId: whisperModelId)
     }
 }

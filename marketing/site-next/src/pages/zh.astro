@@ -111,7 +111,7 @@ const body = `<!-- ══ HERO ══ -->
       <h2>把 prompt 说出来，看清了再发。</h2>
       <p>终端的快捷条上有一个 mic 键。你说的话先变成文字，落在键盘上方那块预览面板里
       ——<b>按 Insert 才会真的敲进 shell</b>。转写完全在这台设备上进行，音频不会离开手机。
-      中文、英文都可以。</p>
+      开启本地 Whisper 模型后支持约 100 种语言，<b>一句话里中英夹杂也能听准</b>。</p>
     </div>
     <div class="overlay" role="img" aria-label="语音输入面板：正在听写、实时转写文字，以及 Cancel、Insert 两个按钮">
       <div class="head">
@@ -139,7 +139,7 @@ const body = `<!-- ══ HERO ══ -->
           <tr><td class="cap-col">你的流量</td><td class="us yes">只到你自己的服务器</td>
               <td>没有中转、没有云端——我们根本不运营服务器。</td></tr>
           <tr><td class="cap-col">语音数据</td><td class="us yes">不出这台手机</td>
-              <td>由 Apple 的语音模型在本机转写，没有一条通向服务器的路。</td></tr>
+              <td>由 Apple 的语音模型或本地 Whisper 在本机转写，没有一条通向服务器的路。</td></tr>
           <tr><td class="cap-col">SSH 密钥</td><td class="us yes">留在 Secure Enclave</td>
               <td>由手机硬件生成并保管，用 Face ID 解锁。</td></tr>
         </tbody>

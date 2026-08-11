@@ -101,9 +101,11 @@ const body = `<!-- ══ HERO ══ -->
     <div>
       <div class="k">VOICE · ON THIS DEVICE</div>
       <h2>Dictate the prompt, read it, then send it.</h2>
-      <p>A mic key sits on the terminal bar. Speech becomes text in a preview —
+      <p>A mic chip sits on the terminal bar. Speech becomes text in a preview —
       <b>nothing is typed until you tap Insert</b> — and transcription runs
-      entirely on the phone. The audio never leaves it. English and 中文 both.</p>
+      entirely on the phone. The audio never leaves it. Switch on a local
+      Whisper model for ~100 languages, and <b>sentences that don't stay in
+      one of them</b>.</p>
     </div>
     <div class="overlay" role="img" aria-label="Dictation overlay: listening, live transcript, Cancel and Insert">
       <div class="head">
@@ -131,7 +133,7 @@ const body = `<!-- ══ HERO ══ -->
           <tr><td class="cap-col">Your traffic</td><td class="us yes">your servers only</td>
               <td>No relay, no cloud middleman — we don't operate servers at all.</td></tr>
           <tr><td class="cap-col">Dictation audio</td><td class="us yes">never leaves the phone</td>
-              <td>Apple's on-device models; server recognition is not in the app.</td></tr>
+              <td>Apple's on-device models or a local Whisper one; server recognition is not in the app.</td></tr>
           <tr><td class="cap-col">SSH keys</td><td class="us yes">Secure Enclave</td>
               <td>Generated and stored in the iOS Keychain, Face ID gated.</td></tr>
         </tbody>

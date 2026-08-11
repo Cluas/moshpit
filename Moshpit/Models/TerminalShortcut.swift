@@ -24,6 +24,13 @@ enum ShortcutKind: String, Codable, CaseIterable {
     /// flag on the typing coordinator) — not user-creatable, there's one
     /// builtin.
     case ctrl
+    /// Starts/stops voice input. A normal, reorderable/removable chip
+    /// (resolved by the caller, which drives the dictation controller) — not
+    /// user-creatable. It used to be pinned beside the keyboard toggle,
+    /// outside the scroll; that permanent slot cost bar width on every
+    /// session whether or not dictation was ever used, and made the one
+    /// shortcut nobody could reorder or hide out of the way.
+    case mic
 }
 
 enum ShortcutModifier: String, Codable, CaseIterable, Comparable {
@@ -97,6 +104,11 @@ struct TerminalShortcut: Identifiable, Codable, Equatable, Hashable {
             return nil
         case .paste:
             // Resolved by the caller from UIPasteboard.
+            return nil
+        case .mic:
+            // Resolved by the caller (opens/closes the dictation overlay).
+            // Dictation deliberately never writes to the PTY on its own —
+            // the transcript goes out on Insert, as one paste.
             return nil
         }
     }
@@ -331,6 +343,38 @@ final class ShortcutStore {
             shortcuts.append(paste)
             changed = true
         }
+        // The mic moved out of its pinned slot beside the keyboard toggle and
+        // became a normal chip. Append rather than insert: it lands at the
+        // trailing end of the bar, which is where it already appeared, so an
+        // upgrade doesn't shuffle the keys under anyone's thumb.
+        if !shortcuts.contains(where: { $0.kind == .mic }),
+           let mic = Self.builtins.first(where: { $0.kind == .mic }) {
+            var injected = mic
+            if shortcuts.filter({ $0.inToolbar }).count >= Self.toolbarLimit {
+                injected.inToolbar = false
+            }
+            shortcuts.append(injected)
+            changed = true
+        }
+        // The mic makes the old six-chip default a seventh, which overflows a
+        // phone-width bar by about ten points — a half-cut chip rather than a
+        // row that reads as scrollable. ^L gives up its slot (it is the only
+        // one of those defaults you can also just type: `clear`).
+        //
+        // Deliberately its OWN step rather than a branch of the mic injection
+        // above: written there it would silently skip anyone whose toolbar
+        // already grew a mic, and a migration that only fires on one exact
+        // upgrade path is a migration that mostly doesn't fire. Guarded on the
+        // toolbar still being the untouched default — someone who arranged
+        // their own bar keeps every key they put in it, because quietly
+        // deleting a shortcut you chose is far worse than a row you can drag.
+        let staleDefault = ["Escape", "Tab", "Interrupt (SIGINT)",
+                            "Clear screen", "Paste clipboard", "Arrow keys", "Voice input"]
+        if toolbar.map(\.summary) == staleDefault,
+           let clear = shortcuts.firstIndex(where: { $0.summary == "Clear screen" }) {
+            shortcuts[clear].inToolbar = false
+            changed = true
+        }
         // The scroll thumb is a builtin; inject it for users who predate it,
         // just after the D-pad.
         if !shortcuts.contains(where: { $0.kind == .scroll }),
@@ -394,7 +438,14 @@ final class ShortcutStore {
             combo("esc", "Escape", key: "esc"),
             combo("tab", "Tab", key: "tab"),
             combo("^C", "Interrupt (SIGINT)", mods: [.ctrl], key: "c"),
-            combo("^L", "Clear screen", mods: [.ctrl], key: "l"),
+            // Out of the bar since the mic joined it: seven chips overflow a
+            // phone-width row by about ten points, which reads as a broken
+            // half-chip rather than a scrollable row. ^L is the default that
+            // gives up its slot most cheaply — it is the only one with a
+            // plain-text equivalent you can just type (`clear`), whereas esc,
+            // tab and ^C have none on a software keyboard. Still a builtin,
+            // one tap away in the shortcut editor.
+            combo("^L", "Clear screen", mods: [.ctrl], key: "l", inBar: false),
             // Paste is a normal chip (reorderable / removable), not forced
             // to the end of the bar.
             special(.paste, "paste", "Paste clipboard", inBar: true),
@@ -406,6 +457,11 @@ final class ShortcutStore {
             // element pinned ahead of everything else.
             special(.ctrl, "ctrl", "Control", inBar: false),
             special(.scroll, "⇅", "Scroll history", inBar: false),
+            // Voice input: a normal chip like paste, so it can be reordered,
+            // moved out of the bar, or scrolled past. Starts in the bar
+            // because it was previously always visible — taking it away
+            // silently on upgrade would read as the feature disappearing.
+            special(.mic, "mic", "Voice input", inBar: true),
             combo("^D", "End of file", mods: [.ctrl], key: "d", inBar: false),
             combo("^R", "Reverse search", mods: [.ctrl], key: "r", inBar: false),
             // Claude Code daily drivers: jump the transcript to the live end,

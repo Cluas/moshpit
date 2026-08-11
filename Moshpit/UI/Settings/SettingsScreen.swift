@@ -334,19 +334,32 @@ struct SettingsScreen: View {
     // MARK: VOICE INPUT
 
     /// What the picked dictation language is called, for the Language row's
-    /// value slot. "" (automatic) reads as the word Automatic, not the
-    /// resolved language — the row's own detail line in the picker explains.
+    /// value slot. The two engines keep separate language settings, so this
+    /// reads whichever one is live. "" reads as Automatic / Auto-detect, not
+    /// the resolved language — the picker's own detail line spells that out.
     private func voiceLanguageName(_ settings: AppSettings) -> String {
+        if settings.voiceEngine == .whisper {
+            return WhisperLanguageCatalog.displayName(for: settings.whisperLanguage)
+        }
         let id = settings.voiceInputLocaleId
         guard !id.isEmpty else { return String(localized: "Automatic") }
         return Locale.current.localizedString(forIdentifier: id) ?? id
+    }
+
+    /// The Model row's value: the model that would actually be used, or a
+    /// prompt when there is none. Never shows a stored-but-deleted variant.
+    private func voiceModelName(_ settings: AppSettings) -> String {
+        guard let variant = WhisperModelStore.resolvedVariant(preferring: settings.whisperModelId) else {
+            return String(localized: "None")
+        }
+        return WhisperModelStore.displayName(for: variant)
     }
 
     @ViewBuilder
     private func voiceGroup(settings: Bindable<AppSettings>) -> some View {
         FormGroup(
             title: "VOICE INPUT",
-            footer: "Dictate commands and prompts from the mic key on the terminal bar. Speech is transcribed by Apple's models entirely on-device — your voice never leaves this device, and nothing is typed until you tap Insert."
+            footer: "Dictate commands and prompts from the mic key on the terminal bar. Speech is transcribed entirely on-device — your voice never leaves this device, and nothing is typed until you tap Insert."
         ) {
             ToggleRow(
                 label: "Enable Voice Input",
@@ -354,21 +367,47 @@ struct SettingsScreen: View {
                 isOn: settings.voiceInputEnabled)
             if settings.wrappedValue.voiceInputEnabled {
                 NavigationLink {
+                    VoiceEngineView()
+                } label: {
+                    settingsValueRow(
+                        title: String(localized: "Recognition"),
+                        value: settings.wrappedValue.voiceEngine.displayName)
+                }
+                .buttonStyle(.plain)
+
+                if settings.wrappedValue.voiceEngine == .whisper {
+                    NavigationLink {
+                        WhisperModelView()
+                    } label: {
+                        settingsValueRow(
+                            title: String(localized: "Model"),
+                            value: voiceModelName(settings.wrappedValue))
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                NavigationLink {
                     VoiceLanguageView()
                 } label: {
-                    HStack(spacing: 10) {
-                        Text("Language").font(Face.text(14)).foregroundStyle(Ink.primary)
-                        Spacer()
-                        Text(voiceLanguageName(settings.wrappedValue))
-                            .font(Face.text(14)).foregroundStyle(Ink.meta).lineLimit(1)
-                        MiniChevron()
-                    }
-                    .frame(minHeight: Metrics.cellMinHeight)
-                    .contentShape(Rectangle())
+                    settingsValueRow(
+                        title: String(localized: "Language"),
+                        value: voiceLanguageName(settings.wrappedValue))
                 }
                 .buttonStyle(.plain)
             }
         }
+    }
+
+    private func settingsValueRow(title: String, value: String) -> some View {
+        HStack(spacing: 10) {
+            Text(title).font(Face.text(14)).foregroundStyle(Ink.primary)
+            Spacer()
+            Text(value)
+                .font(Face.text(14)).foregroundStyle(Ink.meta).lineLimit(1)
+            MiniChevron()
+        }
+        .frame(minHeight: Metrics.cellMinHeight)
+        .contentShape(Rectangle())
     }
 
     // MARK: MOSH · ROAMING

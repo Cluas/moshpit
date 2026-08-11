@@ -86,6 +86,22 @@ packages:
   Citadel:
     url: https://github.com/orlandos-nl/Citadel.git
     from: "0.7.0"
+  # Local Whisper for dictation (Settings → VOICE INPUT → Recognition).
+  # Apple's own transcribers take exactly ONE locale and have no
+  # code-switching mode, so a sentence carrying English command names inside
+  # another language — the normal way this app's users talk to a terminal —
+  # comes out mangled whichever locale you pick. Whisper covers ~100
+  # languages in a single model and handles that mixing natively, so it ships
+  # as an alternative engine rather than a replacement.
+  #
+  # The library target pulls in NOTHING but its own ArgmaxCore (the
+  # swift-argument-parser dependency in its manifest belongs to the CLI
+  # executable target, which we don't build). Keep `product:` explicit —
+  # the package is named `argmax-oss-swift`, not `WhisperKit`, and XcodeGen
+  # would otherwise look for a product matching the key.
+  WhisperKit:
+    url: https://github.com/argmaxinc/WhisperKit.git
+    from: "1.1.0"
 
 targets:
   Moshpit:
@@ -136,6 +152,8 @@ targets:
     dependencies:
       - package: SwiftTerm
       - package: Citadel
+      - package: WhisperKit
+        product: WhisperKit
       - target: MoshpitIsland
         embed: true
     info:
@@ -280,12 +298,17 @@ targets:
         # BOTH keys are required or App Review rejects the binary: the mic key
         # for the recording session, the speech key because the iOS 18–25 path
         # goes through SFSpeechRecognizer (which gates on that permission).
+        #
         # The "on-device / never uploaded" wording is a real, load-bearing
-        # promise: DictationEngineFactory refuses the server recognition path
-        # outright (on-device only, all OS versions), so keep code and copy in
-        # lockstep if either ever changes.
-        NSMicrophoneUsageDescription: "Voice input uses the microphone so you can dictate commands and prompts into your terminal. Audio is transcribed by Apple's speech models entirely on this device and is never uploaded anywhere."
-        NSSpeechRecognitionUsageDescription: "Dictation runs Apple's on-device speech recognition. Your voice and transcripts never leave this device — Moshpit does not use server-based recognition."
+        # promise about AUDIO, and it holds for both engines: Apple's path
+        # refuses server recognition outright (DictationEngineFactory, all OS
+        # versions), and the Whisper path runs a CoreML model locally. What
+        # does touch the network is the one-time Whisper MODEL download from
+        # Hugging Face — weights in, nothing out — which is why the strings
+        # below say "audio" rather than a blanket "nothing leaves the device".
+        # Keep code and copy in lockstep if either ever changes.
+        NSMicrophoneUsageDescription: "Voice input uses the microphone so you can dictate commands and prompts into your terminal. Your audio is transcribed on this device — by Apple's speech models or by a Whisper model you download — and is never uploaded anywhere."
+        NSSpeechRecognitionUsageDescription: "Dictation runs on-device speech recognition. Your voice and transcripts never leave this device — Moshpit does not use server-based recognition."
         # MUST live here, not just in Info.plist: XcodeGen regenerates that file
         # from this block, so a key added to the plist by hand silently vanishes
         # at the next `xcodegen generate`. Without this key iOS drops UDP to LAN

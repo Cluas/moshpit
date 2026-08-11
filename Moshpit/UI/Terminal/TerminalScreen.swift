@@ -912,7 +912,7 @@ struct TerminalScreen: View {
         Haptics.tap()
         let controller = VoiceDictationController()
         dictation = controller
-        Task { await controller.start(localeId: settings.voiceInputLocaleId) }
+        Task { await controller.start(settings.dictationRequest) }
     }
 
     /// Stop the mic, wait for the engine's final words, and type the result
@@ -1114,12 +1114,31 @@ struct ShortcutBarView: View {
         return min(0, max(minOffset, proposed))
     }
 
+    /// Mask that fades an edge only when content is actually hidden past it.
+    ///
+    /// Opaque on both sides when everything fits, so the common case keeps
+    /// full opacity and — since a SwiftUI mask also gates hit-testing —
+    /// undiminished tap targets.
+    private func chipRowFade(viewportWidth: CGFloat) -> some View {
+        let offset = clampedChipRowOffset(chipRowOffset + chipRowDragTranslation,
+                                          viewportWidth: viewportWidth)
+        let hiddenLeading = offset < -0.5
+        let hiddenTrailing = chipRowContentWidth + offset > viewportWidth + 0.5
+        let fade: CGFloat = viewportWidth > 0 ? min(0.09, 26 / viewportWidth) : 0
+        return LinearGradient(
+            stops: [
+                .init(color: .black.opacity(hiddenLeading ? 0 : 1), location: 0),
+                .init(color: .black, location: hiddenLeading ? fade : 0),
+                .init(color: .black, location: hiddenTrailing ? 1 - fade : 1),
+                .init(color: .black.opacity(hiddenTrailing ? 0 : 1), location: 1),
+            ],
+            startPoint: .leading,
+            endPoint: .trailing)
+    }
+
     var body: some View {
         HStack(spacing: 0) {
             chipRow
-            if let onMic {
-                micKey(onMic)
-            }
             if let onToggleKeyboard {
                 keyboardToggle(onToggleKeyboard)
             }
@@ -1140,15 +1159,16 @@ struct ShortcutBarView: View {
         }
     }
 
-    /// The voice-input key — pinned beside the keyboard toggle (outside the
-    /// scroll) so dictation is always one tap away. Accent-filled while a
-    /// session is live, mirroring the armed-ctrl treatment.
-    private func micKey(_ action: @escaping () -> Void) -> some View {
+    /// The voice-input chip. Lives inside the scrolling row like any other
+    /// shortcut — reorderable, removable, and free to scroll off-screen —
+    /// rather than holding a permanent slot at the trailing edge. Accent-filled
+    /// while a session is live, mirroring the armed-ctrl treatment.
+    private func micChip(_ action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: micActive ? "mic.fill" : "mic")
-                .font(.system(size: 14, weight: .semibold))
+                .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(micActive ? Color(hex: "090B0D") : Ink.primary)
-                .frame(minWidth: 42, minHeight: 30)
+                .frame(width: Metrics.shortcutKeyWidth, height: 30)
                 .background(
                     micActive ? AnyShapeStyle(Ink.shortcutKeyActiveBG) : AnyShapeStyle(Ink.shortcutKeyBG),
                     in: RoundedRectangle(cornerRadius: Metrics.controlRadius, style: .continuous))
@@ -1159,7 +1179,6 @@ struct ShortcutBarView: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .padding(.leading, 4)
         .accessibilityLabel(Text(micActive ? "Stop voice input" : "Start voice input"))
         .accessibilityIdentifier("voice-input")
     }
@@ -1222,6 +1241,12 @@ struct ShortcutBarView: View {
             }
             .frame(width: viewport.size.width, height: viewport.size.height, alignment: .leading)
             .clipped()
+            // Soften whichever edge has content hidden past it. A hard clip
+            // makes a chip that merely scrolled off look broken — the row is
+            // allowed twelve chips, so overflow is the normal state, not a
+            // layout bug — while a fade is the standard "there's more this
+            // way" cue and is the only affordance this hand-rolled pan has.
+            .mask(chipRowFade(viewportWidth: viewport.size.width))
             .contentShape(Rectangle())
             .gesture(
                 // minimumDistance keeps a plain tap from ever engaging this
@@ -1250,6 +1275,10 @@ struct ShortcutBarView: View {
                     if let onArrow { DirectionPad(onArrow: onArrow) }
                 } else if shortcut.kind == .scroll {
                     if let onScroll { ScrollPad(onScroll: onScroll) }
+                } else if shortcut.kind == .mic {
+                    // nil when voice input is off in Settings — the chip
+                    // disappears rather than sitting there doing nothing.
+                    if let onMic { micChip(onMic) }
                 } else if shortcut.kind == .ctrl {
                     // Highlightable while armed — the only chip whose look
                     // depends on live state rather than just its label.

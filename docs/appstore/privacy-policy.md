@@ -28,6 +28,17 @@ The Local Network permission is requested only so SSH/Mosh can reach hosts on
 your own LAN (e.g. 192.168.x.x); iOS would otherwise silently drop that
 traffic.
 
+## Voice input
+
+Dictation is optional and off the network. Your **audio is transcribed on your
+device** — either by Apple's built-in speech models or by a Whisper model you
+choose to download — and neither the recording nor the transcript is ever sent
+anywhere. Nothing is typed into your terminal until you tap Insert.
+
+The one network request the feature can make is downloading a Whisper model
+from Hugging Face, if you turn that engine on. That transfer only fetches model
+files; it carries no audio, no transcripts, and nothing about you.
+
 ## Notifications & Live Activities
 
 Agent-status notifications and the Dynamic Island Live Activity are generated
@@ -56,6 +67,9 @@ SDK、无跟踪、无账号，也没有任何我们自己的服务器。
 - 连接信息存于你的设备；密码与私钥存于 iOS 钥匙串（有 Secure Enclave 则由其
   保护），除与你自己配置的服务器做 SSH/Mosh 握手外绝不离开设备。
 - 终端内容只在你的设备与你的服务器之间加密传输（SSH / Mosh AES-128-OCB3）。
+- 语音输入的音频只在本机转写——由 Apple 内置语音模型，或你自行下载的 Whisper
+  模型完成——录音与转写文本都不会上传；不点「插入」就不会输入到终端。唯一会
+  走网络的是你主动下载 Whisper 模型（只下载模型文件，不上传任何内容）。
 - App 只连接你添加的服务器；本地网络权限仅用于访问局域网主机。
 - 通知与灵动岛均在设备本地生成，不经任何推送服务器。
 - 购买由 Apple App Store 处理，我们接触不到任何支付信息。

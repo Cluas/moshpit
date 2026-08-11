@@ -99,12 +99,8 @@ struct ShortcutsView: View {
             HStack(spacing: 5) {
                 ForEach(store.toolbar) { shortcut in
                     Group {
-                        if shortcut.kind == .dpad {
-                            Image(systemName: "arrow.up.and.down.and.arrow.left.and.right")
-                                .font(.system(size: 12, weight: .semibold))
-                                .foregroundStyle(Ink.primary)
-                        } else if shortcut.kind == .scroll {
-                            Image(systemName: "arrow.up.and.down")
+                        if let symbol = ShortcutEditRow.glyphSymbol(for: shortcut.kind) {
+                            Image(systemName: symbol)
                                 .font(.system(size: 12, weight: .semibold))
                                 .foregroundStyle(Ink.primary)
                         } else {
@@ -171,12 +167,22 @@ struct ShortcutEditRow: View {
     let onAction: () -> Void
     let onTap: (() -> Void)?
 
-    /// The joystick renders as its 4-arrow symbol (matching the bar), not the
-    /// "✛" text, so the editor and the terminal look the same.
+    /// SF Symbol for the kinds the toolbar draws as an icon; nil for kinds
+    /// that render as a text chip.
+    static func glyphSymbol(for kind: ShortcutKind) -> String? {
+        switch kind {
+        case .dpad: return "arrow.up.and.down.and.arrow.left.and.right"
+        case .scroll: return "arrow.up.and.down"
+        case .mic: return "mic"
+        default: return nil
+        }
+    }
+
+    /// Glyph-rendered kinds show their symbol (matching the bar) rather than
+    /// their text label, so the editor and the terminal look the same.
     @ViewBuilder private var glyph: some View {
-        if shortcut.kind == .dpad || shortcut.kind == .scroll {
-            Image(systemName: shortcut.kind == .dpad
-                  ? "arrow.up.and.down.and.arrow.left.and.right" : "arrow.up.and.down")
+        if let symbol = Self.glyphSymbol(for: shortcut.kind) {
+            Image(systemName: symbol)
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(Ink.primary)
                 .padding(EdgeInsets(top: 4, leading: 6, bottom: 4, trailing: 6))

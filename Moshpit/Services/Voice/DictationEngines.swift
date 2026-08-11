@@ -4,7 +4,11 @@ import Speech
 
 // MARK: - Engine selection
 
-/// Picks the best speech engine for a locale. Preference order:
+/// Builds the ordered list of engines a session should try.
+///
+/// With Whisper selected the local model leads and Apple's engines stay
+/// behind it as a fallback — a model that failed to load should cost accuracy,
+/// not the ability to dictate at all. With Apple selected, the preference is:
 ///
 /// 1. **SpeechTranscriber** (iOS 26+) — Apple's large on-device speech model
 ///    (the SpeechAnalyzer stack). Best accuracy, fully local, no speech-
@@ -17,13 +21,44 @@ import Speech
 ///    without on-device support reads as unavailable rather than silently
 ///    shipping audio to Apple.
 enum DictationEngineFactory {
-    /// All engines that claim the locale, best first. The controller works
-    /// down the list at prepare/start time: a transcriber whose locale is
-    /// *listed* can still fail to obtain assets in a given environment
+    /// All engines that can serve the request, best first. The controller
+    /// works down the list at prepare/start time: a transcriber whose locale
+    /// is *listed* can still fail to obtain assets in a given environment
     /// (Simulators can't install the large-model assets at all, and a
     /// device can hit the reserved-locales cap), and the session should
     /// degrade to the next engine rather than die with a daemon error.
-    static func candidates(locale: Locale) async throws -> [DictationEngine] {
+    ///
+    /// `spokenLanguages` is the caller's ordered guess at what the user
+    /// speaks — see `VoiceLanguageResolver`. It only matters when the stored
+    /// language is Automatic.
+    static func candidates(request: DictationRequest,
+                           spokenLanguages: [String]) async throws -> [DictationEngine] {
+        var engines: [DictationEngine] = []
+        if request.engine == .whisper,
+           let variant = WhisperModelStore.resolvedVariant(preferring: request.whisperModelId) {
+            let language = VoiceLanguageResolver.whisperCode(stored: request.whisperLanguage)
+            engines.append(WhisperDictationEngine(
+                store: WhisperModelStore.shared,
+                variant: variant,
+                language: language,
+                label: whisperLabel(variant: variant, language: language)))
+        }
+        let locale = await appleLocale(request: request, spokenLanguages: spokenLanguages)
+        engines.append(contentsOf: await appleEngines(locale: locale))
+        guard !engines.isEmpty else {
+            if request.engine == .whisper, request.whisperModelId.isEmpty,
+               WhisperModelStore.resolvedVariant(preferring: "") == nil {
+                throw DictationFailure.noWhisperModel
+            }
+            throw DictationFailure.unsupportedLanguage(
+                Locale.current.localizedString(forIdentifier: locale.identifier) ?? locale.identifier)
+        }
+        return engines
+    }
+
+    /// Apple's transcribers for a locale, best first. Empty when none of them
+    /// can do that language on this device.
+    private static func appleEngines(locale: Locale) async -> [DictationEngine] {
         var engines: [DictationEngine] = []
         if #available(iOS 26.0, *) {
             if let match = await SpeechTranscriber.supportedLocale(equivalentTo: locale) {
@@ -42,11 +77,30 @@ enum DictationEngineFactory {
            recognizer.supportsOnDeviceRecognition {
             engines.append(LegacyDictationEngine(recognizer: recognizer))
         }
-        guard !engines.isEmpty else {
-            throw DictationFailure.unsupportedLanguage(
-                Locale.current.localizedString(forIdentifier: locale.identifier) ?? locale.identifier)
-        }
         return engines
+    }
+
+    /// Resolve Automatic against what Apple can actually transcribe here.
+    ///
+    /// The check is a real capability probe rather than a lookup table: asking
+    /// each candidate language whether *some* engine claims it is the only way
+    /// to avoid picking a language the device would then refuse.
+    private static func appleLocale(request: DictationRequest,
+                                    spokenLanguages: [String]) async -> Locale {
+        if !request.appleLocaleId.isEmpty { return Locale(identifier: request.appleLocaleId) }
+        for identifier in spokenLanguages {
+            let locale = Locale(identifier: identifier)
+            if await !appleEngines(locale: locale).isEmpty { return locale }
+        }
+        return spokenLanguages.first.map(Locale.init(identifier:)) ?? Locale.current
+    }
+
+    private static func whisperLabel(variant: String, language: String?) -> String {
+        let model = WhisperModelStore.displayName(for: variant)
+        let languageName = language.flatMap {
+            Locale.current.localizedString(forLanguageCode: $0)
+        } ?? String(localized: "Auto")
+        return "\(model) · \(languageName)"
     }
 }
 
@@ -76,6 +130,16 @@ final class ModernDictationEngine: DictationEngine {
 
     let updates: AsyncThrowingStream<DictationUpdate, Error>
 
+    var label: String {
+        let name = selectedLocale.flatMap {
+            Locale.current.localizedString(forIdentifier: $0.identifier(.bcp47))
+        } ?? String(localized: "Unknown")
+        switch module {
+        case .advanced: return String(localized: "Apple · \(name)")
+        case .dictation: return String(localized: "Apple Dictation · \(name)")
+        }
+    }
+
     private let module: Module
     private let updateContinuation: AsyncThrowingStream<DictationUpdate, Error>.Continuation
     private let converter = DictationBufferConverter()
@@ -104,7 +168,7 @@ final class ModernDictationEngine: DictationEngine {
         }
     }
 
-    func prepare(onDownloadProgress: @escaping @Sendable (Double) -> Void) async throws {
+    func prepare(onProgress: @escaping @Sendable (DictationPreparation) -> Void) async throws {
         if await AssetInventory.status(forModules: [module.speechModule]) == .installed {
             return
         }
@@ -130,7 +194,7 @@ final class ModernDictationEngine: DictationEngine {
         let progress = request.progress
         let poll = Task {
             while !Task.isCancelled {
-                onDownloadProgress(progress.fractionCompleted)
+                onProgress(.downloading(progress: progress.fractionCompleted))
                 try? await Task.sleep(for: .milliseconds(200))
             }
         }
@@ -272,6 +336,12 @@ final class DictationBufferConverter {
 final class LegacyDictationEngine: DictationEngine {
     let updates: AsyncThrowingStream<DictationUpdate, Error>
 
+    var label: String {
+        let name = Locale.current.localizedString(forIdentifier: recognizer.locale.identifier)
+            ?? recognizer.locale.identifier
+        return String(localized: "Apple Speech · \(name)")
+    }
+
     private let recognizer: SFSpeechRecognizer
     private let updateContinuation: AsyncThrowingStream<DictationUpdate, Error>.Continuation
     private var request: SFSpeechAudioBufferRecognitionRequest?
@@ -283,7 +353,7 @@ final class LegacyDictationEngine: DictationEngine {
         (updates, updateContinuation) = AsyncThrowingStream.makeStream()
     }
 
-    func prepare(onDownloadProgress _: @escaping @Sendable (Double) -> Void) async throws {
+    func prepare(onProgress _: @escaping @Sendable (DictationPreparation) -> Void) async throws {
         let status = await withCheckedContinuation { continuation in
             SFSpeechRecognizer.requestAuthorization { continuation.resume(returning: $0) }
         }
