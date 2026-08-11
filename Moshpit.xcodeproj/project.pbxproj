@@ -377,6 +377,7 @@
 		B246336C4807C133BFB5110C /* AddConnectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddConnectionView.swift; sourceTree = "<group>"; };
 		B326D2F66528444967AA24B1 /* TerminalScrollGesture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalScrollGesture.swift; sourceTree = "<group>"; };
 		B3E62BB39AF55389EA2A9650 /* TmuxTypes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TmuxTypes.swift; sourceTree = "<group>"; };
+		B6A3C9605CD1DB4232C29163 /* Signing.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Signing.xcconfig; sourceTree = "<group>"; };
 		B6FEB9B260DD3F4822A9212A /* MoshpitStatusWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoshpitStatusWidget.swift; sourceTree = "<group>"; };
 		B7D3EAACF9EEEE35EF8E2B76 /* MoshpitIsland.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = MoshpitIsland.entitlements; sourceTree = "<group>"; };
 		B8E766A14A745773140BE129 /* TerminalCursor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalCursor.swift; sourceTree = "<group>"; };
@@ -412,7 +413,6 @@
 		DCC2B588272E33589B0EA7D9 /* SOCKSProxyDialer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SOCKSProxyDialer.swift; sourceTree = "<group>"; };
 		DF94C284887BF4FA3FC37482 /* MoshpitApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoshpitApp.swift; sourceTree = "<group>"; };
 		E027D85F69386790BB369C54 /* AppIcon-Prefix83.5x83.5@2x~ipad.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "AppIcon-Prefix83.5x83.5@2x~ipad.png"; sourceTree = "<group>"; };
-		E2D6E9A63E8DD4B6955D9224 /* Signing.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Signing.xcconfig; sourceTree = "<group>"; };
 		E3114866D6E1CE18D8B44E43 /* AppIcon-Ringdown83.5x83.5@2x~ipad.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "AppIcon-Ringdown83.5x83.5@2x~ipad.png"; sourceTree = "<group>"; };
 		E468E22C8246BFACCCBBF685 /* VoiceDictationControllerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceDictationControllerTests.swift; sourceTree = "<group>"; };
 		E4F3EB0C0463CCB6037118A9 /* MultiplexerVocabulary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MultiplexerVocabulary.swift; sourceTree = "<group>"; };
@@ -535,15 +535,6 @@
 				B326D2F66528444967AA24B1 /* TerminalScrollGesture.swift */,
 			);
 			path = Terminal;
-			sourceTree = "<group>";
-		};
-		2CB87ABC90A0B977A414627C /* moshi */ = {
-			isa = PBXGroup;
-			children = (
-				E2D6E9A63E8DD4B6955D9224 /* Signing.xcconfig */,
-			);
-			name = moshi;
-			path = .;
 			sourceTree = "<group>";
 		};
 		35351ED7CFC7D8488A7DB91D /* Island */ = {
@@ -689,8 +680,8 @@
 		5F333CF12F0D5F4944D98B4C = {
 			isa = PBXGroup;
 			children = (
-				2CB87ABC90A0B977A414627C /* moshi */,
 				E00A84E937456F17CED173D2 /* Moshpit */,
+				BC50CE39FDC801B29EF0E171 /* moshpit */,
 				5DFF4BCFD2A815020E92D22E /* MoshpitIsland */,
 				551EDE0077A0F226D497ADB5 /* MoshpitTests */,
 				F3BE57DB48E9E89F211C488D /* MoshpitUITests */,
@@ -823,6 +814,15 @@
 				1FAF2C56D949C64D33BB3853 /* WhisperModelView.swift */,
 			);
 			path = Settings;
+			sourceTree = "<group>";
+		};
+		BC50CE39FDC801B29EF0E171 /* moshpit */ = {
+			isa = PBXGroup;
+			children = (
+				B6A3C9605CD1DB4232C29163 /* Signing.xcconfig */,
+			);
+			name = moshpit;
+			path = .;
 			sourceTree = "<group>";
 		};
 		BC78EB337482383A34F69E93 /* IconFiles */ = {
@@ -1445,7 +1445,7 @@
 		};
 		89C8028E46D93F5FFE6E292B /* Debug */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = E2D6E9A63E8DD4B6955D9224 /* Signing.xcconfig */;
+			baseConfigurationReference = B6A3C9605CD1DB4232C29163 /* Signing.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				CLANG_ANALYZER_NONNULL = YES;
@@ -1563,7 +1563,7 @@
 		};
 		DA8E09E1D65F185225AB3028 /* Release */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = E2D6E9A63E8DD4B6955D9224 /* Signing.xcconfig */;
+			baseConfigurationReference = B6A3C9605CD1DB4232C29163 /* Signing.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				CLANG_ANALYZER_NONNULL = YES;
@@ -1720,7 +1720,7 @@
 			repositoryURL = "https://github.com/Cluas/SwiftTerm.git";
 			requirement = {
 				kind = revision;
-				revision = 866078a3831fecc8bccb170a9855bc9b551745c4;
+				revision = b4bd2c48f338d0712cbe08dd5957898a5d384f41;
 			};
 		};
 /* End XCRemoteSwiftPackageReference section */

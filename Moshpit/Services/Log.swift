@@ -37,4 +37,17 @@ enum Log {
 
     /// Voice input: engine selection, model downloads, capture failures.
     static let voice = Logger(subsystem: subsystem, category: "voice")
+
+    /// Keyboard input reaching the terminal. Added for one question that could
+    /// not be answered by reading code: when hold-to-repeat backspace "stops
+    /// working", did UIKit stop delivering the repeats, or did we send them and
+    /// the screen not follow? Those have opposite fixes. The answer was the
+    /// former (see SwiftTerm fork patch 12 in `docs/PATCHES.md`), and the
+    /// counter stays because it is how that answer is re-checked: a hold should
+    /// tick steadily for as long as the key is down, whatever put the text on
+    /// the line.
+    ///
+    /// Deliberately `info`, not `debug`: it has to survive in a Release
+    /// TestFlight build, which is where these get reproduced.
+    static let input = Logger(subsystem: subsystem, category: "input")
 }

@@ -690,6 +690,7 @@ struct SwiftTerminalView: UIViewRepresentable {
             // down = keeps deleting" feel (the OS's repeat cadence outruns the
             // redraw, so it stutters instead of deleting continuously).
             let isLoneEraseByte = data.count == 1 && (data.first == 0x7f || data.first == 0x08)
+            if isLoneEraseByte { noteEraseByte() }
             if !isLoneEraseByte {
                 source.getTerminal().updateFullScreen()
                 source.setNeedsDisplay()
@@ -699,6 +700,42 @@ struct SwiftTerminalView: UIViewRepresentable {
             }
             guard let onInput else { return }
             onInput(Data(data))
+        }
+
+        /// Erase bytes seen in the current burst, and when the last one landed.
+        private var eraseBurstCount = 0
+        private var lastEraseAt: ContinuousClock.Instant?
+
+        /// Record one backspace/delete byte on its way to the PTY.
+        ///
+        /// This separates two failures that look identical on screen —
+        /// "holding backspace stops deleting":
+        ///
+        /// - the log goes **quiet** while the key is still held ⇒ UIKit stopped
+        ///   calling `deleteBackward()`, so the fault is upstream of us (a
+        ///   `hasText` gate, an empty shadow document, or a marked-text
+        ///   composition swallowing the repeats before they become bytes);
+        /// - the log keeps **ticking** but the screen doesn't move ⇒ the bytes
+        ///   left the app, so the fault is downstream — tmux `send-keys` is one
+        ///   control-mode round trip PER BYTE through a serialized write chain,
+        ///   or the local screen is out of sync with what the server holds.
+        ///
+        /// It was the first: a three-second hold over 20 pasted characters sent
+        /// one byte, and over 10 characters typed on the same line sent exactly
+        /// ten and then stopped — UIKit measures the shadow document between
+        /// ticks and quits when nothing sits in front of the caret. Fixed in the
+        /// SwiftTerm fork (patch 12, `docs/PATCHES.md`); the same hold now sends
+        /// 25. Keep the counter: it is the cheapest way to tell a regression
+        /// here from a tmux stall, which look the same to a tester.
+        ///
+        /// A gap longer than a second starts a new burst, so each hold reads as
+        /// its own run of counts rather than one number climbing forever.
+        private func noteEraseByte() {
+            let now = ContinuousClock.now
+            if let last = lastEraseAt, now - last > .seconds(1) { eraseBurstCount = 0 }
+            lastEraseAt = now
+            eraseBurstCount += 1
+            Log.input.info("erase byte #\(self.eraseBurstCount, privacy: .public) in this burst")
         }
 
         func sizeChanged(source: TerminalView, newCols: Int, newRows: Int) {
