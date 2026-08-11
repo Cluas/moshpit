@@ -186,6 +186,10 @@ add("Fastest, lowest accuracy. For older devices.",
     "最快，准确度最低。适合较旧的设备。", "最速・最低精度。古い端末向け。")
 add("≈%@ download", "约 %@ 下载", "約 %@ のダウンロード")
 add("Download", "下载", "ダウンロード")
+add("Resume", "继续", "再開")
+add("Pause", "暂停", "一時停止")
+add("%@ of ≈%@ — paused", "已下载 %1$@ / 约 %2$@ — 已暂停", "%1$@ / 約 %2$@ — 一時停止中")
+add("Discard the partial download of %@", "丢弃 %@ 已下载的部分", "%@ の途中までのダウンロードを破棄")
 add("Downloading %@", "正在下载 %@", "%@ をダウンロード中")
 add("Remove %@", "删除 %@", "%@ を削除")
 add("Remove this model?", "删除这个模型？", "このモデルを削除しますか？")
@@ -227,9 +231,10 @@ add("LOADING SPEECH MODEL…", "正在加载语音模型…", "音声モデル�
 add("Insert", "插入", "挿入")
 add("Dismiss", "关闭", "閉じる")
 add("Open Settings", "打开设置", "設定を開く")
-add("Speak — the text lands here first, and Insert types it into the terminal.",
-    "说话吧——文字先落在这里，点「插入」才会输入到终端。",
-    "話してください——テキストはまずここに表示され、「挿入」をタップするとターミナルに入力されます。")
+add("Speak — the text lands here first. Insert types it; Send types it and presses Return.",
+    "说话吧——文字先落在这里。「插入」只输入，「发送」输入并按回车。",
+    "話してください——テキストはまずここに表示されます。「挿入」は入力のみ、「送信」は入力して Return を押します。")
+add("Send", "发送", "送信")
 add("Another app took the microphone before anything was heard.",
     "还没听到内容，麦克风就被别的应用抢走了。",
     "何も認識されないうちに、別のアプリがマイクを使用しました。")

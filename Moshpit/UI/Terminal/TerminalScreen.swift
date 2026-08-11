@@ -909,7 +909,8 @@ struct TerminalScreen: View {
                 DictationOverlayView(
                     controller: dictation,
                     onCancel: { cancelDictation() },
-                    onInsert: { finishDictation() })
+                    onInsert: { finishDictation() },
+                    onSend: { finishDictation(submit: true) })
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
             ShortcutBarView(
@@ -951,11 +952,25 @@ struct TerminalScreen: View {
     /// into the live session. `sendPaste` (not raw bytes) so bracketed-paste
     /// apps — Claude Code prompts being the whole point — receive multi-line
     /// dictation as one block instead of executing it line by line.
-    private func finishDictation() {
+    ///
+    /// `submit` appends the Return that actually sends it, so dictating a
+    /// prompt is one tap rather than Insert-then-find-the-Enter-key. It stays a
+    /// separate action from Insert on purpose: the same keystroke that submits
+    /// a Claude Code prompt EXECUTES a shell command, and a mis-heard word is
+    /// exactly what you want the chance to read first. Insert keeps that
+    /// chance; Send is for when you have already read it.
+    private func finishDictation(submit: Bool = false) {
         guard let dictation else { return }
         Task {
             if let text = await dictation.finish() {
                 active?.sendPaste(text)
+                if submit {
+                    // After the paste, not bundled into it: a bracketed-paste
+                    // app treats bytes inside the ESC[200~…ESC[201~ wrapper as
+                    // literal text, so a CR in there would be inserted as a
+                    // newline instead of submitting.
+                    active?.sendInput(Data([0x0D]))
+                }
                 Haptics.success()
             }
             self.dictation = nil

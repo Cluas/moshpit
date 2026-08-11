@@ -10,6 +10,9 @@ struct DictationOverlayView: View {
     let controller: VoiceDictationController
     let onCancel: () -> Void
     let onInsert: () -> Void
+    /// Insert AND press Return. Separate from `onInsert` because the keystroke
+    /// that submits a Claude Code prompt executes a shell command.
+    let onSend: () -> Void
 
     /// Measured height of the transcript text, so the scroll area hugs a
     /// one-liner instead of reserving its full max height (which parked a
@@ -105,7 +108,7 @@ struct DictationOverlayView: View {
         } else if controller.finalizedText.isEmpty && controller.volatileText.isEmpty {
             Text(controller.phase == .interrupted
                 ? "Another app took the microphone before anything was heard."
-                : "Speak — the text lands here first, and Insert types it into the terminal.")
+                : "Speak — the text lands here first. Insert types it; Send types it and presses Return.")
                 .font(Face.text(13))
                 .foregroundStyle(Ink.placeholder)
                 .fixedSize(horizontal: false, vertical: true)
@@ -152,11 +155,21 @@ struct DictationOverlayView: View {
             HStack(spacing: 8) {
                 pillButton(String(localized: "Cancel"), prominent: false, action: onCancel)
                 Spacer(minLength: 0)
-                pillButton(String(localized: "Insert"), prominent: true,
+                // Insert leaves the text on the prompt to read and edit; Send
+                // presses Return too. Both are offered because they are
+                // different amounts of trust: Send on a shell prompt runs the
+                // command, and dictation is the input most likely to contain a
+                // word you did not say.
+                pillButton(String(localized: "Insert"), prominent: false,
                            systemImage: "text.insert",
                            disabled: !insertable,
                            action: onInsert)
                     .accessibilityIdentifier("dictation-insert")
+                pillButton(String(localized: "Send"), prominent: true,
+                           systemImage: "return",
+                           disabled: !insertable,
+                           action: onSend)
+                    .accessibilityIdentifier("dictation-send")
             }
         }
     }

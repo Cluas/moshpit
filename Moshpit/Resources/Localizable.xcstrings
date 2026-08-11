@@ -145,6 +145,22 @@
         }
       }
     },
+    "%@ of ≈%@ — paused": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ / 約 %2$@ — 一時停止中"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已下载 %1$@ / 约 %2$@ — 已暂停"
+          }
+        }
+      }
+    },
     "%@ pane %lld?": {
       "localizations": {
         "ja": {
@@ -3043,6 +3059,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "本设备不支持 %@ 的听写。"
+          }
+        }
+      }
+    },
+    "Discard the partial download of %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ の途中までのダウンロードを破棄"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "丢弃 %@ 已下载的部分"
           }
         }
       }
@@ -6471,6 +6503,22 @@
         }
       }
     },
+    "Pause": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "一時停止"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "暂停"
+          }
+        }
+      }
+    },
     "Payload (text or command)": {
       "localizations": {
         "ja": {
@@ -7235,6 +7283,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "回应智能体"
+          }
+        }
+      }
+    },
+    "Resume": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "再開"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "继续"
           }
         }
       }
@@ -8051,6 +8115,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "说话吧——文字先落在这里，点「插入」才会输入到终端。"
+          }
+        }
+      }
+    },
+    "Speak — the text lands here first. Insert types it; Send types it and presses Return.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "話してください——テキストはまずここに表示されます。「挿入」は入力のみ、「送信」は入力して Return を押します。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "说话吧——文字先落在这里。「插入」只输入，「发送」输入并按回车。"
           }
         }
       }
