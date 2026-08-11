@@ -78,14 +78,20 @@ struct SSHKeyFactoryTests {
 
     // MARK: - Generate: RSA-4096
 
-    @Test("RSA-4096 generation emits an ssh-rsa line wrapping a real PKCS#1 key")
+    @Test("RSA-4096 generation emits an ssh-rsa line over an openssh-key-v1 key")
     func generateRSA4096() throws {
         let gen = try SSHKeyFactory.generate(algorithm: .rsa4096, comment: "server")
         #expect(gen.algorithm == .rsa4096)
         #expect(gen.publicKeyLine.hasPrefix("ssh-rsa "))
         #expect(gen.fingerprint.hasPrefix("SHA256:"))
         let pem = String(decoding: gen.privateBlob, as: UTF8.self)
-        #expect(pem.contains("-----BEGIN RSA PRIVATE KEY-----"))
+        // openssh-key-v1, NOT the PKCS#1 container SecKey hands back: Citadel's
+        // detectPrivateKeyType hard-requires the former, so a PKCS#1 key can
+        // never authenticate. That is the bug this armor exists to fix, which
+        // makes the container the thing worth asserting.
+        #expect(pem.contains("-----BEGIN OPENSSH PRIVATE KEY-----"))
+        #expect(pem.contains("-----END OPENSSH PRIVATE KEY-----"))
+        #expect(!pem.contains("-----BEGIN RSA PRIVATE KEY-----"))
         // The middle field must be valid base64 of the ssh-rsa blob.
         let parts = gen.publicKeyLine.split(separator: " ")
         #expect(parts.count == 3)
