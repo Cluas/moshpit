@@ -661,6 +661,8 @@ struct TerminalScreen: View {
                     MultiplexerEmptyStateView(
                         multiplexer: .tmux,
                         binaryMissing: active.capabilities?.hasTmux == false,
+                        connection: connection,
+                        connectionState: connState,
                         onCreate: { active.createFirstTmuxSession() },
                         onInstall: { installPackages = ["tmux"] })
                 }
@@ -672,6 +674,8 @@ struct TerminalScreen: View {
                 MultiplexerEmptyStateView(
                     multiplexer: .herdr,
                     binaryMissing: active.capabilities?.hasHerdr == false,
+                    connection: connection,
+                    connectionState: connState,
                     onCreate: { herdr.newSession(named: nil) },
                     onInstall: { installPackages = ["herdr"] })
             } else {
@@ -1971,6 +1975,10 @@ private struct PulseDots: View {
 private struct MultiplexerEmptyStateView: View {
     let multiplexer: Multiplexer
     let binaryMissing: Bool
+    /// Identity for the shared connecting view, so the wait before this screen
+    /// decides anything looks like the SAME wait the connection already showed.
+    let connection: ServerConnection
+    let connectionState: TransportConnState
     let onCreate: () -> Void
     let onInstall: () -> Void
     @State private var settled = false
@@ -1985,15 +1993,15 @@ private struct MultiplexerEmptyStateView: View {
                     noSessionsState
                 }
             } else {
-                ProgressView().tint(Ink.accent)
-                Text("Attaching \(multiplexer.label)…")
-                    .font(Face.mono(11, .bold))
-                    .kerning(0.7)
-                    .foregroundStyle(Ink.meta)
+                // The SAME view the connection itself showed, not a second
+                // spinner with its own label. Attaching is a phase of opening
+                // the session, not a new thing to wait for, and two
+                // back-to-back loading states read as one stall that restarted.
+                TerminalConnectingView(connection: connection, state: connectionState)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .padding(24)
+        .padding(settled ? 24 : 0)
         .background(Ink.terminalBG)
         .task {
             try? await Task.sleep(nanoseconds: 4_000_000_000)
