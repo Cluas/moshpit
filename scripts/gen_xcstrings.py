@@ -963,13 +963,19 @@ def check(paths):
         data = load_stringsdata(found)
         if data is None:
             continue
+        # Keep only this checkout's own sources — the same DerivedData holds
+        # stringsdata for SwiftTerm, Citadel and every other package, whose
+        # keys are not ours to translate. Matched against the repo root rather
+        # than a hardcoded folder name, so renaming the checkout doesn't turn
+        # this into a silent "no .stringsdata found".
+        prefix = root + os.sep
         source = data.get("source", "")
-        if "/code/moshi/" not in source:
+        if not source.startswith(prefix):
             continue
         for entries in (data.get("tables") or {}).values():
             for item in entries:
                 if item.get("key"):
-                    needed[item["key"]] = source.split("/code/moshi/")[-1]
+                    needed[item["key"]] = source[len(prefix):]
     if not needed:
         raise SystemExit("check: no .stringsdata found — build the app first")
 
