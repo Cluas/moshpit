@@ -69,6 +69,17 @@ struct TerminalShortcutEncodingTests {
         #expect(sc.encodedBytes() == Data([0x61, 0x09, 0x62, 0x0D, 0x1B]))
     }
 
+    @Test("the bulk-clear keys encode to their readline control bytes")
+    func killLineKeys() throws {
+        // ^U kills to line start, ^K to line end — one keystroke each, versus
+        // holding backspace for one tmux round trip PER character.
+        #expect(combo([.ctrl], "u").encodedBytes() == Data([0x15]))
+        #expect(combo([.ctrl], "k").encodedBytes() == Data([0x0B]))
+        let builtins = ShortcutStore.builtins
+        #expect(builtins.contains { $0.chipLabel == "^U" })
+        #expect(builtins.contains { $0.chipLabel == "^K" })
+    }
+
     @Test("Return encodes to CR")
     func returnKey() throws {
         #expect(combo([], "return").encodedBytes() == Data([0x0D]))

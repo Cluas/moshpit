@@ -497,6 +497,18 @@ final class ShortcutStore {
             // they're kept out of the chip row to avoid duplication.
             combo("↑", "History prev", key: "up", repeats: true, inBar: false),
             combo("↓", "History next", key: "down", repeats: true, inBar: false),
+            // Bulk clear. Holding backspace is the only other way to empty a
+            // long line, and that depends on the OS repeat cadence outrunning a
+            // control-mode round trip PER KEYSTROKE (TmuxSessionController
+            // .sendInput sends one `send-keys` command per byte, serialized
+            // through writeChain) — which it does not on a slow link, and least
+            // of all just after a reconnect. ^U is one command whatever the
+            // length. Verified against Claude Code 2.1.227: its input handler
+            // maps ctrl-u to deleteToLineStart and ctrl-k to deleteToLineEnd,
+            // the readline meaning. (Its ctrl+u → scroll:halfPageUp binding is
+            // the transcript/settings context, not the prompt.)
+            combo("^U", "Clear line before cursor", mods: [.ctrl], key: "u", inBar: false),
+            combo("^K", "Clear line after cursor", mods: [.ctrl], key: "k", inBar: false),
             combo("^A", "Beginning of line", mods: [.ctrl], key: "a", inBar: false),
             combo("^E", "End of line", mods: [.ctrl], key: "e", inBar: false),
             combo("^W", "Delete word", mods: [.ctrl], key: "w", inBar: false),
