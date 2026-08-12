@@ -55,7 +55,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   or two characters onto the next line and pushing box-drawn tables past the
   edge. Tapping the terminal fixed it, because that resize was the only thing
   that ever claimed the window. Moshpit now claims it as the panes are
-  discovered, which is what the connect path had always assumed happened.
+  discovered, which is what the connect path had always assumed happened — and
+  claims it at the grid the app's own layout reports rather than at the rough
+  pre-connect estimate, which on a modern phone is a column and a good ten rows
+  out.
 - **A tmux pane paints on connect instead of waiting for you to raise the
   keyboard.** On some phones the first connect showed nothing but a cursor
   until you tapped the terminal, and then the whole screen appeared at once.

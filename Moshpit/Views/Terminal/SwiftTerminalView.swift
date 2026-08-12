@@ -62,12 +62,24 @@ final class TerminalHostContainer: UIView {
         clipsToBounds = true
     }
 
+    /// Called once the hosted terminal has been given this container's real
+    /// bounds. This is the app's OWN layout talking, which is the only reliable
+    /// answer to "how big is the grid actually": SwiftTerm reports a size only
+    /// when the grid *changes* (`processSizeChange` returns early otherwise), so
+    /// a terminal that was minted at the right grid never reports at all — and
+    /// the owner is left believing whatever it estimated before connecting.
+    /// Installed by the ``SwiftTerminalView/Coordinator`` that owns this
+    /// container.
+    var onTerminalLaidOut: ((TerminalView) -> Void)?
+
     override func layoutSubviews() {
         super.layoutSubviews()
         guard let terminalView, !frameLocked else { return }
         if terminalView.frame != bounds {
             terminalView.frame = bounds
         }
+        guard bounds.width > 0, bounds.height > 0 else { return }
+        onTerminalLaidOut?(terminalView)
     }
 }
 
@@ -520,8 +532,44 @@ struct SwiftTerminalView: UIViewRepresentable {
 
         /// The container whose layout we may freeze. Set by whichever host
         /// embeds the terminal (`SwiftTerminalView.makeUIView` /
-        /// `PaneTerminalHost.makeUIView`).
-        weak var hostContainer: TerminalHostContainer?
+        /// `PaneTerminalHost.makeUIView`). Assigning it also wires
+        /// ``onGridReport``.
+        weak var hostContainer: TerminalHostContainer? {
+            didSet {
+                hostContainer?.onTerminalLaidOut = { [weak self] terminal in
+                    self?.reportGrid(of: terminal)
+                }
+            }
+        }
+
+        /// The grid the app's own layout implies, reported every time the host
+        /// has given the terminal its real bounds.
+        ///
+        /// This exists because ``TerminalViewDelegate/sizeChanged`` cannot be
+        /// used to learn the size — only to learn about a *change*. SwiftTerm
+        /// returns early when the recomputed grid matches what the terminal
+        /// already has, so a terminal minted at the right grid never reports at
+        /// all, and an owner that seeded itself from an estimate keeps believing
+        /// the estimate. (`SessionHub.estimateGrid` is a rough
+        /// `fontSize × 0.6 / × 1.2` guess with a fudge factor for the chrome; it
+        /// is routinely a column and a good ten rows off.) A tmux window pinned
+        /// to that estimate renders the pane at a width this view does not have,
+        /// and every line comes out wrapped short.
+        var onGridReport: ((_ cols: Int, _ rows: Int) -> Void)?
+
+        /// Compute the grid from the laid-out bounds and hand it to
+        /// ``onGridReport``. Measured the same way SwiftTerm measures (the cell
+        /// box from the font, then truncating division) so the two agree.
+        private func reportGrid(of terminal: TerminalView) {
+            guard let onGridReport else { return }
+            let scale = terminal.window?.screen.scale ?? UITraitCollection.current.displayScale
+            let cell = TerminalCellGeometry.measuredCell(font: terminal.font, scale: scale)
+            guard cell.width > 0, cell.height > 0 else { return }
+            let cols = Int(terminal.bounds.width / cell.width)
+            let rows = Int(terminal.bounds.height / cell.height)
+            guard cols > 0, rows > 0 else { return }
+            onGridReport(cols, rows)
+        }
         private var frameLockTimeout: DispatchWorkItem?
 
         /// Keep the terminal at its current size through a keyboard
