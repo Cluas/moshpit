@@ -289,6 +289,26 @@ struct TmuxSessionControllerTests {
                 "intermediate sizes must be coalesced away")
     }
 
+    @Test("a fresh attach pins the active window to the client grid without waiting for a size report")
+    func freshAttachPinsTheWindow() async throws {
+        let transport = MockTmuxTransport()
+        let controller = TmuxSessionController(sshSession: transport)
+        controller.setInitialClientSize(cols: 69, rows: 60)
+        await controller.attach()
+        _ = await waitUntil { await transport.recordedCommands().count >= 3 }
+        pushOneWindowDiscovery(transport)
+
+        // No resizeClient() here on purpose: `window-size latest` leaves the
+        // window at whatever an already-attached desktop client made it, and
+        // nothing else claims it on a fresh attach — the pane's program would
+        // render to that width while this narrower client hard-wraps every line.
+        #expect(await waitUntil(timeout: 2.0) {
+            await transport.recordedCommands().contains {
+                $0.hasPrefix("resize-window -t @0 -x 69 -y 60")
+            }
+        }, "discovery must pin the active window to the phone grid on its own")
+    }
+
     @Test("the terminal view's FIRST size report commits even when it matches the seeded estimate")
     func firstSizeReportCommitsEvenWhenItMatchesTheEstimate() async throws {
         let transport = MockTmuxTransport()

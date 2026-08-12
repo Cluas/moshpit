@@ -37,6 +37,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The first connect no longer wraps every line a character or two short.**
+  Connecting to a session a desktop terminal is also attached to left the tmux
+  window at the desktop's width: the program in the pane rendered to that width
+  while the phone hard-wrapped each line to its own narrower grid, spilling one
+  or two characters onto the next line and pushing box-drawn tables past the
+  edge. Tapping the terminal fixed it, because that resize was the only thing
+  that ever claimed the window. Moshpit now claims it as the panes are
+  discovered, which is what the connect path had always assumed happened.
 - **A tmux pane paints on connect instead of waiting for you to raise the
   keyboard.** On some phones the first connect showed nothing but a cursor
   until you tapped the terminal, and then the whole screen appeared at once.

@@ -1877,7 +1877,37 @@ final class TmuxSessionController: MultiplexerControlling {
         if isFreshAttach, let activePaneId = snapshot.activePaneId {
             paneCoordinators[activePaneId]?.veilForSwitch()
             paneCoordinators[activePaneId]?.extendCoverTimeout(by: 2.0)
+            // Claim the window for the phone grid HERE, which is what
+            // `connectAndAttach`'s "the normal flow pins as windows are
+            // discovered" always assumed happened — it didn't. The only other
+            // `fitWindowToClient` call is in `commitClientSize()`, which is
+            // driven by a size REPORT from the terminal view, and SwiftTerm only
+            // reports when the grid actually CHANGES: a pane whose first layout
+            // matches the grid it was minted at reports nothing at all, and even
+            // before panes were minted at that grid, a phone whose pre-connect
+            // estimate happened to be exact reported the same numbers and was
+            // deduped away.
+            //
+            // Unclaimed, `window-size latest` leaves the window at whatever an
+            // already-attached desktop client made it. The pane's program then
+            // renders to THAT width while this narrower view hard-wraps every
+            // line, spilling a character or two onto the next one — reported as
+            // "the first connect wraps everything wrong until I tap the
+            // terminal", where the tap resized the grid and finally pinned it.
+            if !pinsReleased, let win = snapshot.activeWindowId {
+                fitWindowToClient(win)
+            }
             resyncPane(activePaneId)
+            // The pin makes the pane's program repaint, and a capture taken now
+            // can catch it mid-redraw — take a second one once it has settled,
+            // for the same reason `commitClientSize()` does.
+            pendingSettleResync?.cancel()
+            pendingSettleResync = Task { [weak self] in
+                try? await Task.sleep(for: .milliseconds(700))
+                guard !Task.isCancelled else { return }
+                self?.extendActiveCoverTimeout(by: 2.0)
+                self?.resyncActivePane()
+            }
         }
     }
 
