@@ -241,9 +241,17 @@ struct AddConnectionView: View {
                                             Text(mux.label)
                                             Text(mux.subtitle)
                                         } icon: {
-                                            if multiplexer == mux {
-                                                Image(systemName: "checkmark")
-                                            }
+                                            // Checkmark on the active row, the
+                                            // multiplexer's own symbol on the
+                                            // others: selection stays legible
+                                            // (the menu used to give no clue)
+                                            // and the rest become recognisable
+                                            // without reading two lowercase
+                                            // tool names. The collapsed row
+                                            // below carries the current one's
+                                            // symbol, so it is never hidden.
+                                            Image(systemName: multiplexer == mux
+                                                  ? "checkmark" : mux.symbol)
                                         }
                                     }
                                 }
@@ -251,7 +259,12 @@ struct AddConnectionView: View {
                                 HStack(spacing: 10) {
                                     Text("Multiplexer").font(Face.text(14)).foregroundStyle(Ink.primary)
                                     Spacer()
-                                    Text(multiplexer.label).font(Face.text(14)).foregroundStyle(Ink.meta)
+                                    HStack(spacing: 5) {
+                                        Image(systemName: multiplexer.symbol)
+                                            .font(.system(size: 12, weight: .medium))
+                                        Text(multiplexer.label).font(Face.text(14))
+                                    }
+                                    .foregroundStyle(Ink.meta)
                                     MiniChevron()
                                 }
                                 .frame(minHeight: Metrics.cellMinHeight)

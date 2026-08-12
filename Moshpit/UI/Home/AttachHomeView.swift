@@ -315,7 +315,7 @@ struct AttachHomeView: View {
 
     private var emptyState: some View {
         VStack(spacing: 12) {
-            MoshpitMark(size: 52)
+            AppIconMark(size: 52)
                 .opacity(0.85)
                 .padding(.bottom, 4)
             Text("No connections yet")
@@ -354,7 +354,7 @@ private struct HomeHeader: View {
         VStack(alignment: .leading, spacing: 18) {
             HStack(alignment: .top) {
                 HStack(spacing: 12) {
-                    MoshpitMark(size: 46)
+                    AppIconMark(size: 46)
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Moshpit")
                             .font(Face.display(38, .bold))

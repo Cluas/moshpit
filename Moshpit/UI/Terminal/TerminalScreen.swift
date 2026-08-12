@@ -1943,7 +1943,7 @@ struct TerminalConnectingView: View {
                 .ignoresSafeArea()
 
             VStack(spacing: 0) {
-                PitLoaderGlyph(side: 112, accent: accent)
+                PitLoaderMark(side: 112, accent: accent)
 
                 Text(connection.displayName)
                     .font(Face.display(24, .bold))
@@ -1990,6 +1990,52 @@ struct TerminalConnectingView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+/// The connecting screen's mark, following whichever app icon the user picked.
+///
+/// The default icon keeps its bespoke choreography — the surfer bobs, the crowd
+/// pulses — because that animation is authored against the crowd-surf geometry
+/// itself. None of the alternates HAS a surfer or a crowd (one is a handset,
+/// one is a house, one is the characters `:wq`), so animating them the same way
+/// is not merely wrong, it is undefined. They breathe instead: the same tempo
+/// as the surfer, carried by the artwork the user chose.
+private struct PitLoaderMark: View {
+    var side: CGFloat
+    var accent: SwiftUI.Color
+    @Environment(AppSettings.self) private var settings
+
+    var body: some View {
+        let option = AppIconCatalog.option(for: settings.appIconId)
+        if option.isPrimary {
+            PitLoaderGlyph(side: side, accent: accent)
+        } else {
+            BreathingIconMark(option: option, side: side, accent: accent)
+        }
+    }
+}
+
+/// An alternate icon, alive while the session connects.
+private struct BreathingIconMark: View {
+    let option: AppIconOption
+    var side: CGFloat
+    var accent: SwiftUI.Color
+    @State private var breathing = false
+
+    var body: some View {
+        AppIconThumb(option: option, side: side)
+            .scaleEffect(breathing ? 1.04 : 0.96)
+            // The glow is the accent, not the artwork's own colours: it is the
+            // connection state talking, and it has to read the same whichever
+            // icon is underneath.
+            .shadow(color: accent.opacity(breathing ? 0.55 : 0.2),
+                    radius: side * (breathing ? 0.16 : 0.09))
+            // Matches PitLoaderGlyph's surfer, so the two loaders keep time.
+            .animation(.easeInOut(duration: 1.15).repeatForever(autoreverses: true),
+                       value: breathing)
+            .frame(width: side, height: side)
+            .onAppear { breathing = true }
     }
 }
 

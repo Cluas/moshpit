@@ -34,6 +34,34 @@ struct MoshpitMark: View {
     }
 }
 
+/// The app's mark **as the user has chosen it**: the crowd-surf logo, or
+/// whichever alternate they picked from the icon gallery.
+///
+/// Picking an easter-egg icon used to change the home screen and nothing else,
+/// so the app went on showing a mark the user had just replaced. The gallery
+/// already bundles each icon's artwork for its own previews, so following the
+/// choice costs no new assets — and at 180×180 (@3x) the PNG is sharp well past
+/// the sizes used here.
+///
+/// For placements that mean "this app" to the user. Anywhere demonstrating the
+/// THEME keeps ``MoshpitMark``, whose accent colour is the whole point.
+struct AppIconMark: View {
+    var size: CGFloat = 32
+    @Environment(AppSettings.self) private var settings
+
+    var body: some View {
+        let option = AppIconCatalog.option(for: settings.appIconId)
+        // The primary icon IS this vector, drawn from shared geometry — always
+        // prefer it over its own PNG, which would only be a lower-resolution
+        // copy that ignores the accent colour.
+        if option.isPrimary {
+            MoshpitMark(size: size)
+        } else {
+            AppIconThumb(option: option, side: size)
+        }
+    }
+}
+
 /// The bare crowd-surf glyph, without the tile behind it. Split out so the
 /// mark, and anywhere else that needs the raw logo, share one geometry.
 struct MoshpitGlyph: View {

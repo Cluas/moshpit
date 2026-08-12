@@ -61,6 +61,20 @@ enum Multiplexer: String, Codable, CaseIterable, Sendable {
         }
     }
 
+    /// SF Symbol standing in for this choice, so the picker reads at a glance
+    /// instead of asking you to parse two lowercase tool names.
+    ///
+    /// Each one says what the thing IS rather than decorating it: a single
+    /// shell, a split grid, and the agent sparkle the workbench already uses
+    /// for every agent row — herdr's whole point is that it tracks agents.
+    var symbol: String {
+        switch self {
+        case .none:  return "terminal"
+        case .tmux:  return "rectangle.split.2x2"
+        case .herdr: return "sparkles"
+        }
+    }
+
     /// Binary probed on PATH and used to boot the session. `nil` for `.none`.
     var binaryName: String? {
         switch self {
