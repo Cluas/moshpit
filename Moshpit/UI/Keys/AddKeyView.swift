@@ -35,7 +35,17 @@ struct AddKeyView: View {
     @State private var generatedFingerprint: String?
     @State private var working = false
     @State private var errorMessage: String?
-    @State private var importTarget: ImportTarget?
+    /// Presentation and destination are deliberately SEPARATE pieces of state.
+    ///
+    /// Driving `.fileImporter(isPresented:)` off `importTarget != nil` looks
+    /// tidier and silently loses every file: SwiftUI sets `isPresented` false
+    /// as it dismisses the picker, which ran the binding's setter and cleared
+    /// the target BEFORE the completion handler read it — so the file was read
+    /// and then thrown away with no destination and no error. Keeping the flag
+    /// separate means the target cannot be clobbered by the dismissal, and the
+    /// handler has no "nowhere to put this" case left to swallow.
+    @State private var isImportingFile = false
+    @State private var importTarget: ImportTarget = .privateKey
 
     private var effectiveAlgorithm: SSHKeyAlgorithm {
         storeInSecureEnclave ? .seP256 : algorithm
@@ -118,8 +128,7 @@ struct AddKeyView: View {
                 }
             }
             .fileImporter(
-                isPresented: Binding(
-                    get: { importTarget != nil }, set: { if !$0 { importTarget = nil } }),
+                isPresented: $isImportingFile,
                 allowedContentTypes: [.data]
             ) { result in
                 handleImportedFile(result)
@@ -133,8 +142,6 @@ struct AddKeyView: View {
     /// URL — SwiftUI has no `asCopy`-style option, so the access window has
     /// to be opened and closed by hand around the read.
     private func handleImportedFile(_ result: Result<URL, Error>) {
-        let target = importTarget
-        importTarget = nil
         do {
             let url = try result.get()
             guard url.startAccessingSecurityScopedResource() else {
@@ -142,10 +149,9 @@ struct AddKeyView: View {
             }
             defer { url.stopAccessingSecurityScopedResource() }
             let text = try SSHKeyFactory.decodeImportedText(try Data(contentsOf: url))
-            switch target {
+            switch importTarget {
             case .privateKey: importPEM = text
             case .publicKey: importPublicLine = text
-            case nil: break
             }
         } catch {
             errorMessage = error.localizedDescription
@@ -223,6 +229,7 @@ struct AddKeyView: View {
                 }
             Button {
                 importTarget = .privateKey
+                isImportingFile = true
             } label: {
                 Label("Import File…", systemImage: "folder")
                     .font(Face.text(13))
@@ -235,6 +242,7 @@ struct AddKeyView: View {
                 FieldRow(placeholder: "Public key line (optional)", text: $importPublicLine, mono: true)
                 Button {
                     importTarget = .publicKey
+                    isImportingFile = true
                 } label: {
                     Image(systemName: "folder")
                         .font(.system(size: 13))
