@@ -1,0 +1,161 @@
+# Standby demo hosts for App Review.
+#
+# The primary (demo.yaml) is a single pod on a single node, and the review
+# notes hand Apple exactly one address. A node blip during review therefore
+# reads to the reviewer as "the app cannot connect to its own demo server" —
+# guideline 2.1, and a rejection that costs a full review cycle to undo. That
+# is not hypothetical: on 2026-08-12 the primary's node went NotReady and the
+# host was unreachable from the public internet for about seven minutes.
+#
+# These are cold spares, always running, on their own nodes and their own
+# hostPort 2222. The reviewer is given all three; any one of them is a complete
+# demo. They deliberately share the primary's Secrets, so:
+#   - the SAME host key is presented everywhere. The fingerprint published in
+#     the review notes matches whichever address the reviewer picks, and the
+#     app never shows its (correct, but alarming) host-key-changed warning.
+#   - the SAME credentials work everywhere, so the notes carry one username and
+#     one password rather than three pairs to mistype.
+#
+# Placement:
+#   phx-01 — the primary's own region, one node over. Covers the failure we
+#            actually saw (a single node dropping), with the same latency to a
+#            California reviewer.
+#   kix-01 — Japan. Covers the case phx-01 cannot: the whole Phoenix region or
+#            tenancy going away. Slower from California, but a working slow
+#            demo beats an unreachable fast one.
+# Both are amd64 because the staged herdr binary is x86_64.
+#
+# NOT merged into demo.yaml: that file is the thing under review, pinned and
+# commented for one node. Keeping the spares separate means teardown after the
+# review is `kubectl delete -f backups.yaml` and the primary is untouched.
+---
+# The primary Deployment selects on `app: review-demo` alone. Pods carrying
+# that label anywhere in the namespace would be adopted by it — and scaled
+# straight back down to its replicas: 1. Hence a distinct app label here, which
+# in turn needs its own copy of the egress policy.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: review-demo-backup-egress
+  namespace: moshpit-demo
+spec:
+  podSelector:
+    matchLabels: { app: review-demo-backup }
+  policyTypes: ["Egress"]
+  egress:
+    - ports:
+        - { protocol: UDP, port: 53 }
+        - { protocol: TCP, port: 53 }
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+              - 100.64.0.0/10
+              - 169.254.0.0/16
+      ports:
+        - { protocol: TCP, port: 443 }
+        - { protocol: TCP, port: 80 }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: review-demo-phx01
+  namespace: moshpit-demo
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate          # one hostPort, so never two pods at once
+  selector:
+    matchLabels: { app: review-demo-backup, instance: phx01 }
+  template:
+    metadata:
+      labels: { app: review-demo-backup, instance: phx01 }
+    spec:
+      automountServiceAccountToken: false
+      nodeSelector:
+        kubernetes.io/hostname: ysl-phx-amd-01
+        topology.kubernetes.io/zone: phx
+        kubernetes.io/arch: amd64
+      containers:
+        - name: sshd
+          image: alpine:3.21
+          command: ["/bin/sh", "/boot/boot.sh"]
+          ports:
+            - name: ssh
+              containerPort: 22
+              hostPort: 2222
+          env:
+            - name: DEMO_USER
+              valueFrom: { secretKeyRef: { name: review-demo-creds, key: username } }
+            - name: DEMO_PASSWORD
+              valueFrom: { secretKeyRef: { name: review-demo-creds, key: password } }
+          volumeMounts:
+            - { name: boot, mountPath: /boot }
+            - { name: hostkeys, mountPath: /hostkeys, readOnly: true }
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits:   { cpu: 500m, memory: 256Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+              # SYS_CHROOT is not optional — see demo.yaml.
+              add: ["CHOWN", "SETUID", "SETGID", "DAC_OVERRIDE", "SYS_CHROOT"]
+      volumes:
+        - name: boot
+          configMap: { name: demo-boot, defaultMode: 0755 }
+        - name: hostkeys
+          secret: { secretName: review-demo-hostkeys, defaultMode: 0600 }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: review-demo-kix01
+  namespace: moshpit-demo
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels: { app: review-demo-backup, instance: kix01 }
+  template:
+    metadata:
+      labels: { app: review-demo-backup, instance: kix01 }
+    spec:
+      automountServiceAccountToken: false
+      nodeSelector:
+        kubernetes.io/hostname: cls-kix-amd-01
+        topology.kubernetes.io/zone: kix
+        kubernetes.io/arch: amd64
+      containers:
+        - name: sshd
+          image: alpine:3.21
+          command: ["/bin/sh", "/boot/boot.sh"]
+          ports:
+            - name: ssh
+              containerPort: 22
+              hostPort: 2222
+          env:
+            - name: DEMO_USER
+              valueFrom: { secretKeyRef: { name: review-demo-creds, key: username } }
+            - name: DEMO_PASSWORD
+              valueFrom: { secretKeyRef: { name: review-demo-creds, key: password } }
+          volumeMounts:
+            - { name: boot, mountPath: /boot }
+            - { name: hostkeys, mountPath: /hostkeys, readOnly: true }
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits:   { cpu: 500m, memory: 256Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+              add: ["CHOWN", "SETUID", "SETGID", "DAC_OVERRIDE", "SYS_CHROOT"]
+      volumes:
+        - name: boot
+          configMap: { name: demo-boot, defaultMode: 0755 }
+        - name: hostkeys
+          secret: { secretName: review-demo-hostkeys, defaultMode: 0600 }
