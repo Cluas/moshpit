@@ -218,6 +218,12 @@ struct TerminalScreen: View {
     /// Live connection state for the transport pill — so a dropped/reconnecting
     /// session is visible, not silent.
     private var connState: TransportConnState {
+        // One state for the whole automatic reconnect, however many attempts it
+        // takes. The status underneath flips connecting → failed → connecting on
+        // every keepalive tick, and letting that through made the screen alternate
+        // between "opening the pit" and "line dropped" while a modal error card
+        // came and went on top — three ways of saying the line is down.
+        if active?.viewModel.isAutoReconnectInFlight == true { return .offline }
         switch active?.viewModel.status {
         case .connected: return .live
         case .reconnecting: return .reconnecting
@@ -710,12 +716,20 @@ struct TerminalScreen: View {
                     // SwiftTerm stays attached and never misses buffered output.
                     // Reconnecting is deliberately excluded: mosh keeps a useful
                     // last frame + predictive echo we shouldn't hide.
-                    if active.viewModel.status == .connecting {
+                    //
+                    // An automatic reconnect keeps it up for the WHOLE cycle,
+                    // including the wait between failed attempts. Otherwise the
+                    // cover dropped away every time an attempt failed, flashing
+                    // the dead terminal underneath for twelve seconds until the
+                    // next tick put it back.
+                    if active.viewModel.status == .connecting
+                        || active.viewModel.isAutoReconnectInFlight {
                         TerminalConnectingView(connection: connection, state: connState)
                             .transition(.opacity)
                     }
                 }
                 .animation(.easeOut(duration: 0.28), value: active.viewModel.status)
+                .animation(.easeOut(duration: 0.28), value: active.viewModel.isAutoReconnectInFlight)
             }
         } else {
             TerminalConnectingView(connection: connection, state: connState)
@@ -1855,7 +1869,10 @@ struct TerminalConnectingView: View {
                     .foregroundStyle(Ink.primary)
                     .padding(.top, 28)
 
-                Text("\(connection.username)@\(connection.host):\(connection.port)")
+                // `String(port)`, not interpolation: Text reads its argument as a
+                // LocalizedStringKey and puts a grouping separator in an Int, so
+                // port 2222 rendered as "2,222".
+                Text(verbatim: "\(connection.username)@\(connection.host):\(String(connection.port))")
                     .font(Face.mono(12.5))
                     .foregroundStyle(Ink.tertiary)
                     .padding(.top, 6)
