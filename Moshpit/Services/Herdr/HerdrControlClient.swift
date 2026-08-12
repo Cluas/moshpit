@@ -525,6 +525,25 @@ final class HerdrControlClient: MultiplexerControlling {
     /// both versions). So the error is about the reply, not the action; we
     /// discard it deliberately rather than treating it as a failure.
     func selectPane(_ paneId: String) {
+        // Drive the renderer from the id we already hold instead of waiting to
+        // rediscover it. Left to the poll, a switch costs two sequential SSH
+        // execs before the frame channel even learns its new target — `agent
+        // focus`, then the `api snapshot` that reports the focus moved — and
+        // the old pane stays painted for all of it (the "I still see the
+        // previous agent" report).
+        //
+        // The frame channel needs neither exec: its start command names the
+        // target explicitly and takes it over, so it can be pointed at a pane
+        // the server has not focused yet. Retargeting here runs the reattach
+        // concurrently with telling the server where focus went.
+        //
+        // The poll's own retarget stays the self-healing path — it repeats the
+        // focused pane every tick and the receiver ignores a target it is
+        // already rendering, so the confirmation costs nothing. If `agent
+        // focus` fails outright, that same repeat corrects both the snapshot
+        // and the channel on the next tick.
+        snapshot.activePaneId = paneId
+        onFocusedPaneChanged?(paneId)
         send("agent focus \(HerdrLaunch.quote(paneId)) 2>/dev/null || true")
     }
 

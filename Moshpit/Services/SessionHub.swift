@@ -338,6 +338,14 @@ final class SessionHub {
         /// them: output keeps flowing, typing dies. (Found exactly that way.)
         @ObservationIgnored private var herdrExpectedCloses = 0
 
+        /// Set while a retarget's veil is up, waiting for the new pane's first
+        /// FULL frame to reveal on. Incremental frames are absolutely-positioned
+        /// cell updates, so painting one over the pane we just left would show
+        /// the old agent's screen with a few new cells stamped into it — worse
+        /// than the veil it replaced. A full frame carries its own clear+home,
+        /// which is the first moment the screen is honestly the new pane's.
+        @ObservationIgnored private var herdrAwaitingFullFrame = false
+
         /// The SwiftTerm terminal backing whichever pane is on screen right now —
         /// tmux resolves the zoomed active pane's view; mosh/plain SSH have just
         /// the one coordinator view.
@@ -853,16 +861,23 @@ final class SessionHub {
                     if Task.isCancelled { break }
                     for frame in parser.consume(chunk) {
                         switch frame {
-                        case .screen(_, _, _, _, let bytes):
+                        case .screen(_, _, _, let full, let bytes):
                             // Frames are ready-to-write escape sequences, and a
                             // `full` one already starts with its own clear +
-                            // home — so both kinds just get fed. The flag
-                            // matters to a future resync, not to painting.
+                            // home — so both kinds just get fed.
                             coordinator.feed(data: bytes)
-                            // Painting again means we hold the channel, so any
-                            // contention warning is stale.
                             await MainActor.run {
+                                // Painting again means we hold the channel, so
+                                // any contention warning is stale.
                                 if self?.herdrNotice != nil { self?.herdrNotice = nil }
+                                // A retarget's veil lifts on the first full
+                                // repaint — the frame we just fed IS the new
+                                // pane's screen, so there is nothing stale left
+                                // to hide.
+                                if full, self?.herdrAwaitingFullFrame == true {
+                                    self?.herdrAwaitingFullFrame = false
+                                    self?.coordinator.reveal()
+                                }
                             }
                         case .closed:
                             await MainActor.run {
@@ -880,6 +895,16 @@ final class SessionHub {
                                     // Re-attaching rides the control poll, so
                                     // don't let it wait out an idle interval.
                                     self.herdrControl?.quicken()
+                                    // The full frame this retarget was veiling
+                                    // for is never coming — the attach is gone.
+                                    // Same principle as the cover's own safety
+                                    // timeout: a beat of stale text beats a
+                                    // black rectangle sitting over a session
+                                    // that is now backing off for 30 seconds.
+                                    if self.herdrAwaitingFullFrame {
+                                        self.herdrAwaitingFullFrame = false
+                                        self.coordinator.reveal()
+                                    }
                                 }
                             }
                         }
@@ -923,6 +948,27 @@ final class SessionHub {
             guard herdrFrameSSH != nil, paneId != herdrFrameTarget else { return }
             let hadTarget = herdrFrameTarget != nil
             herdrFrameTarget = paneId
+            // Cover the pane we're leaving for the length of the swap. The
+            // release, the settle, the reattach and herdr's repaint are all
+            // round trips, and until the last one lands the emulator still
+            // holds the PREVIOUS agent's screen — fully painted, indis-
+            // tinguishable from live. Same treatment tmux's selectPane gives
+            // the identical hazard: a clean veil reads as a transition, stale
+            // content reads as a bug.
+            //
+            // Only when there was a target to leave. The first attach of a
+            // session has nothing stale to hide, and veiling it would just
+            // delay the first paint.
+            if hadTarget {
+                coordinator.veilForSwitch()
+                // The 0.8s default assumes a near-instant resync. This swap
+                // spends 0.4s settling before it even asks for the new pane,
+                // then waits out a round trip and a full repaint — on a real
+                // link that routinely outruns 0.8s, and the timeout firing
+                // early is exactly the stale frame we're hiding.
+                coordinator.extendCoverTimeout(by: 1.6)
+                herdrAwaitingFullFrame = true
+            }
             herdrRetargetTask?.cancel()
             herdrRetargetTask = Task { [weak self] in
                 guard let self else { return }

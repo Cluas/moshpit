@@ -338,6 +338,26 @@ struct HerdrControlClientTests {
         #expect(sent.contains("agent focus 'w1:p1' 2>/dev/null || true"))
     }
 
+    @Test("Focusing a pane retargets the renderer without waiting for the round trip")
+    func selectPaneRetargetsBeforeTheExec() async {
+        let runner = FakeRunner(response: Self.twoWorkspaces)
+        let client = await started(runner)
+        // Wedge the focus command. If the retarget rode `agent focus` — or the
+        // poll queued behind it — nothing below would ever fire, which is
+        // exactly the delay this behaviour exists to remove.
+        runner.setScript { $0.contains("agent focus") ? .hang : .reply(Self.twoWorkspaces) }
+
+        final class Box: @unchecked Sendable { var seen: [String] = [] }
+        let box = Box()
+        client.onFocusedPaneChanged = { box.seen.append($0) }
+
+        client.selectPane("w1:p1")
+
+        // Synchronously, on the same turn as the tap.
+        #expect(box.seen == ["w1:p1"])
+        #expect(client.snapshot.activePaneId == "w1:p1")
+    }
+
     @Test("Every mutation re-reads immediately instead of waiting for the tick")
     func mutationsRefresh() async {
         let runner = FakeRunner(response: Self.twoWorkspaces)
