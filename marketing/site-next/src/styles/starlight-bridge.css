@@ -188,12 +188,23 @@ h1#_top,
  * reflects whether the page HAS a ToC, not whether the rail renders), so
  * .main-pane is reclaimed to the full column here too — confirmed visually
  * after building, not assumed: without this line the content column sits
- * flush left with a dead gap on the right where the hidden rail used to be. */
+ * flush left with a dead gap on the right where the hidden rail used to be.
+ *
+ * That same Starlight rule ALSO sets --sl-content-margin-inline: auto 0 on
+ * .main-pane, which .sl-container (a descendant, holding the actual prose
+ * column) reads via `margin-inline: var(--sl-content-margin-inline, auto)`.
+ * The width fix above doesn't touch this custom property, so on any viewport
+ * wide enough that .sl-container's max-width (--sl-content-width, 48rem)
+ * doesn't fill .main-pane, the leftover space collapsed entirely onto the
+ * left margin instead of splitting evenly — confirmed at 2000px: an ~884px
+ * gap before the content, hugging the right edge. Resetting the variable
+ * back to plain `auto` is what actually centers it. */
 .right-sidebar-container {
   display: none;
 }
 .main-pane {
   width: 100%;
+  --sl-content-margin-inline: auto;
 }
 
 /* The `.dsub` nested table of contents itself (src/components/
