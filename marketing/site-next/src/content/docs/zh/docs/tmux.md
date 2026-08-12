@@ -5,7 +5,7 @@ description: "Moshpit 以 tmux 控制客户端的身份 attach 上去，把你�
 
 前提是主机上有 tmux，在 `PATH` 里——或者你在连接表单的 **Custom tmux Path** 里填了路径。没别的了。下面[装 hook](#agents) 那节是可选的， 跟连接本身无关。
 
-没有 tmux 的话，连接不会失败，只会降级：一个纯 SSH 的单 pane，加一条横幅 <b>“tmux not found on this host — plain SSH session.”</b>，旁边的 **Install tmux** 会按你的包管理器把命令摆出来，你点了才执行。Moshpit 绝不会偷偷把你切到另一个多路复用器 ——tmux 和 herdr 各自持有互不相干的 session。另外，一旦你填了自定义 tmux 路径，这套探测整个 跳过：探测只走 `PATH`，而你亲手填路径本身就是为那个二进制背书。
+没有 tmux 的话，连接不会失败，只会降级：一个纯 SSH 的单 pane，加一条横幅 <b>「tmux not found on this host — plain SSH session.」</b>，旁边的 **Install tmux** 会按你的包管理器把命令摆出来，你点了才执行。Moshpit 绝不会偷偷把你切到另一个多路复用器 ——tmux 和 herdr 各自持有互不相干的 session。另外，一旦你填了自定义 tmux 路径，这套探测整个 跳过：探测只走 `PATH`，而你亲手填路径本身就是为那个二进制背书。
 
 ## 只往登录 shell 里写一行
 
