@@ -38,27 +38,8 @@ const body = `<!-- ══ HERO ══ -->
       <p class="pricenote">${ctaNote('zh')}</p>
     </div>
 
-    <div class="lockmock" role="img" aria-label="iPhone 锁屏：一个 agent 在等你，不用解锁就能点 Allow 或 Deny">
-      <div class="needs"><span class="dot"></span> 1 NEEDS YOU</div>
-      <div class="lockdate" id="lockdate">Sat Jan 1</div>
-      <div class="locktime" id="locktime">9:41</div>
-      <div class="agentcard">
-        <div class="row">
-          <span class="who">Claude Code <span class="st">· 等你</span></span>
-          <span class="for">6h 50m</span>
-        </div>
-        <div class="where">mac-studio · 1:claude</div>
-        <div class="pills">
-          <span class="pill allow">✓ Allow</span>
-          <span class="pill deny">✕ Deny</span>
-        </div>
-        <div class="replies"><span class="reply">yes</span><span class="reply">continue</span></div>
-        <div class="second">
-          <span class="who">codex <span class="ok">· 干活中</span></span>
-          <span class="for">2h 04m</span>
-        </div>
-      </div>
-    </div>
+    <img class="phone lift herolock" src="/20-lockscreen.jpg" width="440" height="956" loading="eager"
+         alt="iPhone 锁屏：一个 agent 在等你，不用解锁就能点 Allow 或 Deny">
   </div>
 </header>
 
@@ -179,6 +160,8 @@ const body = `<!-- ══ HERO ══ -->
       <div><span class="amount">${RELEASE.price}</span><span class="once">一次性</span></div>
       <p class="pricefine" style="margin-top:14px">没有订阅、没有内购。
       价格会随 App 成熟往上调，早买就是折扣。</p>
+      <p class="pricefine" style="margin-top:8px">首发覆盖大部分地区。受当地政策限制，
+      中国大陆和法国暂时还不在首发范围内，后续会支持。<a href="/zh/pricing#s-faq">详情</a>。</p>
     </div>
   </div>
 </section>`;
@@ -200,27 +183,4 @@ const body = `<!-- ══ HERO ══ -->
   ]}
 >
   <Fragment set:html={body} />
-
-  <script>
-    // The lock screen keeps real time — the one ambient detail that makes the
-    // hero mock feel alive. Frozen under prefers-reduced-motion, same as every
-    // other animation on this page (see moshpit.css's own blanket rule).
-    if (!matchMedia('(prefers-reduced-motion: reduce)').matches) {
-      const t = document.getElementById('locktime');
-      const d = document.getElementById('lockdate');
-      const tick = () => {
-        const now = new Date();
-        if (t) {
-          t.textContent = now
-            .toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
-            .replace(/\s?[AP]M/i, '');
-        }
-        if (d) {
-          d.textContent = now.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
-        }
-      };
-      tick();
-      setInterval(tick, 15000);
-    }
-  </script>
 </Marketing>

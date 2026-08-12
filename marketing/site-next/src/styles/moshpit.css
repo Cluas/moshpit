@@ -437,35 +437,12 @@ details code{font:13.5px var(--mono);background:var(--raise);border-radius:5px;p
 .pricenote{font:13px/1.4 var(--mono);color:var(--meta);margin-top:18px}
 .pricenote b{color:var(--ink);font-weight:700}
 
-.lockmock{
-  position:relative;width:100%;max-width:400px;
-  border:1px solid var(--line);border-radius:42px;
-  background:
-    radial-gradient(120% 90% at 80% 0%,#1C2B45 0%,transparent 55%),
-    radial-gradient(130% 100% at 15% 90%,#0F2E2A 0%,transparent 60%),
-    linear-gradient(200deg,#12203A 0%,#0A1220 45%,#060A12 100%);
-  box-shadow:0 30px 80px rgba(0,0,0,.55), inset 0 0 0 1px rgba(255,255,255,.03);
-  padding:26px 20px 30px;overflow:hidden;
-}
-.lockmock::before{content:"";display:block;width:96px;height:26px;border-radius:14px;background:#04060A;margin:0 auto 4px;border:1px solid rgba(255,255,255,.05)}
-.needs{width:max-content;margin:14px auto 6px;display:flex;gap:8px;align-items:center;font:700 11px/1 var(--mono);letter-spacing:.14em;color:var(--amber);background:rgba(10,8,4,.8);border:1px solid rgba(255,179,92,.35);padding:8px 14px;border-radius:999px}
-.needs .dot{width:7px;height:7px;border-radius:50%;background:var(--amber);box-shadow:0 0 8px var(--amber);animation:pulse 1.6s ease-in-out infinite}
-.lockdate{font:500 15px/1 var(--sans);color:rgba(244,241,232,.75);text-align:center;margin-top:10px}
-.locktime{font:200 76px/1 var(--sans);letter-spacing:-.02em;color:rgba(244,241,232,.92);text-align:center;margin-bottom:96px;font-variant-numeric:tabular-nums}
-.agentcard{background:rgba(6,8,11,.92);border:1px solid rgba(255,255,255,.09);border-radius:18px;padding:14px 14px 12px;backdrop-filter:blur(8px);font-family:var(--mono)}
-.agentcard .row{display:flex;justify-content:space-between;align-items:baseline}
-.agentcard .who{font:700 13px/1.5 var(--mono);color:var(--ink)}
-.agentcard .who .st{color:var(--amber)}
-.agentcard .where,.agentcard .for{font:11px/1.6 var(--mono);color:var(--meta)}
-.pills{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:10px 0 8px}
-.pill{font:700 12px/1 var(--mono);text-align:center;padding:10px 0;border-radius:8px}
-.pill.allow{color:#04110D;background:var(--ok)}
-.pill.deny{color:#1A0F02;background:var(--amber)}
-.replies{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-.reply{font:11px/1 var(--mono);color:var(--dim);text-align:center;padding:8px 0;border-radius:8px;border:1px solid rgba(255,255,255,.10)}
-.agentcard .second{margin-top:12px;padding-top:10px;border-top:1px solid rgba(255,255,255,.07);display:flex;justify-content:space-between}
-.agentcard .second .who{color:var(--dim)}
-.agentcard .second .ok{color:var(--ok);font-size:11px}
+/* Replaced the CSS-drawn lock-screen mock with the real device screenshot
+   (20-lockscreen.jpg, already used elsewhere as evidence-grade proof) — a
+   hand-drawn approximation in the hero read as a wireframe next to every
+   other section's real content. .phone/.phone.lift already give it a device
+   frame and shadow; this just caps the width to the hero's 400px column. */
+.herolock{max-width:400px;margin:0 auto}
 
 .works{padding:64px 0 8px;text-align:center}
 .chips{display:flex;flex-wrap:wrap;gap:10px;justify-content:center;margin-bottom:14px}
