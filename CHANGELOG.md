@@ -30,6 +30,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Swiping the app away no longer types an arrow key into your session.** With
+  the keyboard collapsed the shortcut bar sits at its lowest, a finger's width
+  above the home indicator, and iOS's swipe-up-to-background could begin on the
+  arrow-key joystick rather than below it — which fired a real `←`/`↑` at the
+  remote on its way off screen. In Claude Code `←` opens the session switcher,
+  so backgrounding the app appeared to navigate the agent by itself. The
+  joystick and the scroll thumb now engage only once a touch has held still for
+  a moment, which a push against them does and a swipe passing through never
+  does. Sessions with the keyboard up were never affected: the bar rides above
+  the keyboard, out of the swipe's way.
 - **Dictation no longer guesses the wrong language from the interface
   language.** "Automatic" resolved to `Locale.current`, so an English-language
   iPhone loaded an English acoustic model and returned confident nonsense for

@@ -1411,6 +1411,56 @@ struct ShortcutBarView: View {
     }
 }
 
+/// The press-then-push gesture the bar's two drag chips (``DirectionPad``,
+/// ``ScrollPad``) engage on.
+///
+/// ### Why a push has to be told apart from a swipe passing through
+///
+/// These chips sit at the bottom of the screen — with the keyboard collapsed
+/// the bar is at its lowest, and the chip row's underside is a finger's width
+/// (~44pt) above the home indicator. That is close enough that iOS's
+/// swipe-up-to-background can BEGIN on a chip rather than below it, and a bare
+/// `DragGesture(minimumDistance: 0)` fires the instant such a swipe clears the
+/// dead-zone: swiping the app away typed a real arrow key into whatever was on
+/// screen. Reported as "Claude Code jumps to its session switcher by itself
+/// when I background the app" — `←` is exactly that key, and the joystick
+/// resolves a push to its dominant axis, so a thumb leaving the bottom edge
+/// with any sideways lean sends `←` rather than `↑`. The keyboard being up hid
+/// it: the bar rides above the keyboard, nowhere near the swipe.
+///
+/// Position can't tell the two apart (they begin on the same pixels), but
+/// *settling* can: a push against a 42×30 stick lands and stays — it never has
+/// to travel further than the dead-zone plus a nudge — while a swipe on its way
+/// off the screen is already moving. So the stick only engages once the touch
+/// has held still briefly, which is `LongPressGesture`'s exact contract:
+/// `maximumDistance` fails it for a moving touch, and a failed gesture sends
+/// nothing at all. The dwell is deliberately short — long enough that no swipe
+/// survives it (anything iOS reads as a system swipe covers `engageSlop` well
+/// inside `engageDelay`), short enough that a human press-then-push doesn't
+/// notice it.
+private enum StickGesture {
+    /// How long the touch must hold still before the stick engages.
+    static let engageDelay: Double = 0.08
+    /// How far it may drift during that dwell without failing (SwiftUI's own
+    /// "did the finger stay put" rule).
+    static let engageSlop: CGFloat = 12
+
+    typealias Value = SequenceGesture<LongPressGesture, DragGesture>.Value
+
+    static var gesture: SequenceGesture<LongPressGesture, DragGesture> {
+        LongPressGesture(minimumDuration: engageDelay, maximumDistance: engageSlop)
+            .sequenced(before: DragGesture(minimumDistance: 0))
+    }
+
+    /// The push so far, or `.zero` while still in the dwell. Also the value the
+    /// chips watch for cancellation: `@GestureState` resets it to `.zero` even
+    /// when the system steals the touch without ever calling `.onEnded`.
+    static func translation(of value: Value) -> CGSize {
+        if case .second(_, let drag) = value, let drag { return drag.translation }
+        return .zero
+    }
+}
+
 /// Aggregated arrow-key control — a single key (same footprint as a shortcut
 /// chip) you drag like a tiny joystick/thumbstick: push toward a direction to
 /// send that arrow, hold to key-repeat, release to stop. Replaces both the
@@ -1442,9 +1492,15 @@ struct DirectionPad: View {
             )
             .contentShape(Rectangle())
             .gesture(
-                DragGesture(minimumDistance: 0)
-                    .updating($drag) { value, state, _ in state = value.translation }
-                    .onChanged { value in repeater.set(direction(for: value.translation)) }
+                // Press-then-push, so iOS's swipe-to-background can't type an
+                // arrow key on its way past this chip — see ``StickGesture``.
+                StickGesture.gesture
+                    .updating($drag) { value, state, _ in
+                        state = StickGesture.translation(of: value)
+                    }
+                    .onChanged { value in
+                        repeater.set(direction(for: StickGesture.translation(of: value)))
+                    }
                     .onEnded { _ in repeater.stop() }
             )
             // `.onEnded` doesn't reliably fire when the SYSTEM cancels the drag
@@ -1523,9 +1579,16 @@ struct ScrollPad: View {
             )
             .contentShape(Rectangle())
             .gesture(
-                DragGesture(minimumDistance: 0)
-                    .updating($drag) { value, state, _ in state = value.translation }
-                    .onChanged { value in repeater.set(verticalDirection(for: value.translation)) }
+                // Same press-then-push gate as the D-pad: a swipe-to-background
+                // starting on this chip used to page the scrollback (and put a
+                // tmux pane into copy-mode) on its way off screen.
+                StickGesture.gesture
+                    .updating($drag) { value, state, _ in
+                        state = StickGesture.translation(of: value)
+                    }
+                    .onChanged { value in
+                        repeater.set(verticalDirection(for: StickGesture.translation(of: value)))
+                    }
                     .onEnded { _ in repeater.stop() }
             )
             // See DirectionPad's matching modifiers — same stuck-repeat bug
