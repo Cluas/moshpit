@@ -645,9 +645,14 @@ final class SessionHub {
         /// Open SSH, request a PTY, then either pump bytes into the single
         /// terminal or boot tmux control mode. Mosh connections take a
         /// separate path (SSH only bootstraps the UDP transport).
+        /// - Parameter automatic: true when nobody asked for this — the transport
+        ///   dropped or the app woke to a dead socket and we're rebuilding it
+        ///   behind their back. Those failures stay inside the connecting screen
+        ///   instead of raising a modal; see `TerminalViewModel`'s
+        ///   `isAutoReconnectInFlight`.
         func start(theme: TerminalTheme, fontSize: Double, fontName: String = "system",
                    cursorShape: CursorShape = .block, cursorColorId: String = "teal",
-                   cursorBlink: Bool = true) async {
+                   cursorBlink: Bool = true, automatic: Bool = false) async {
             // Idempotent for live sessions: re-entering the Terminal screen
             // while connecting/connected must not re-run the bootstrap (the
             // mosh path would exec a second mosh-server). Dead sessions
@@ -660,6 +665,7 @@ final class SessionHub {
             case .idle:
                 break
             }
+            viewModel.beginAttempt(automatic: automatic)
             // Fresh attempt — clear any stale degrade/stall notices so a retry
             // (or a reused-but-reset session) doesn't inherit the last run's
             // banner before it has re-earned it.
@@ -1498,7 +1504,7 @@ final class SessionHub {
             viewModel.resetForReconnect()
             await start(theme: lastTheme, fontSize: lastFontSize, fontName: lastFontName,
                         cursorShape: lastCursorShape, cursorColorId: lastCursorColorId,
-                        cursorBlink: lastCursorBlink)
+                        cursorBlink: lastCursorBlink, automatic: true)
         }
 
         /// Unconditional resume after a long suspension — skip the (unreliable
@@ -1586,7 +1592,7 @@ final class SessionHub {
             viewModel.resetForReconnect()
             await start(theme: lastTheme, fontSize: lastFontSize, fontName: lastFontName,
                         cursorShape: lastCursorShape, cursorColorId: lastCursorColorId,
-                        cursorBlink: lastCursorBlink)
+                        cursorBlink: lastCursorBlink, automatic: true)
         }
 
         /// True if a trivial command round-trips within `timeout`. A dead

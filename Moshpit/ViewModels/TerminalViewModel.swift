@@ -39,6 +39,22 @@ final class TerminalViewModel {
     let connection: ServerConnection
     private(set) var status: Status = .idle
     var errorMessage: String?
+
+    /// True from the moment the app starts re-establishing a transport the user
+    /// didn't ask to re-establish, until it's back.
+    ///
+    /// A failure the user asked for is news — they tapped connect and it didn't
+    /// happen, so a modal saying why is right. A failure inside an automatic
+    /// retry is not news: the hub is already trying again on the next keepalive
+    /// tick, and the connecting screen has copy for exactly this. Surfacing both
+    /// meant a dropped line showed a modal error card over the terminal, then
+    /// the card vanished and "opening the pit" took its place, then the card
+    /// came back — two things saying the same thing, in a loop, neither of them
+    /// dismissable in any way that helped.
+    ///
+    /// Set by ``SessionHub/ActiveSession/start(theme:fontSize:fontName:cursorShape:cursorColorId:cursorBlink:automatic:)``,
+    /// cleared here the moment a transport comes up.
+    private(set) var isAutoReconnectInFlight = false
     private(set) var session: SSHSession?
     /// Pending TOFU confirmation; the Terminal screen presents it as an alert.
     var hostKeyPrompt: HostKeyPrompt?
@@ -123,6 +139,12 @@ final class TerminalViewModel {
         }
     }
 
+    /// Declare who asked for the attempt about to run — see
+    /// ``isAutoReconnectInFlight``. Call once, before `start`/`connectForExec`.
+    func beginAttempt(automatic: Bool) {
+        isAutoReconnectInFlight = automatic
+    }
+
     /// Opens the SSH connection and requests a PTY of the given size. Safe to
     /// call only once per view-model lifetime; subsequent calls while not
     /// `.idle` are no-ops so re-renders don't trigger duplicate connects.
@@ -136,6 +158,7 @@ final class TerminalViewModel {
             try await newSession.requestPTY(rows: rows, cols: cols)
             self.session = newSession
             self.status = .connected
+            self.isAutoReconnectInFlight = false
         } catch {
             let message: String
             if let sshError = error as? SSHError {
@@ -144,7 +167,9 @@ final class TerminalViewModel {
                 message = error.localizedDescription
             }
             self.status = .failed(message)
-            self.errorMessage = message
+            // The status carries the reason either way; only a connect the user
+            // asked for earns a modal on top of it.
+            if !isAutoReconnectInFlight { self.errorMessage = message }
         }
     }
 
@@ -163,18 +188,21 @@ final class TerminalViewModel {
         } catch {
             let message = (error as? SSHError)?.description ?? error.localizedDescription
             self.status = .failed(message)
-            self.errorMessage = message
+            if !isAutoReconnectInFlight { self.errorMessage = message }
             return nil
         }
     }
 
     /// Mark the session live once the mosh UDP transport is up.
-    func markConnected() { status = .connected }
+    func markConnected() {
+        status = .connected
+        isAutoReconnectInFlight = false
+    }
 
     /// Surface a fatal mosh error through the same path as SSH failures.
     func fail(_ message: String) {
         status = .failed(message)
-        errorMessage = message
+        if !isAutoReconnectInFlight { errorMessage = message }
     }
 
     /// Forwards bytes from the input bar / terminal coordinator down to the
