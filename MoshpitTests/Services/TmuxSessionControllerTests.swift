@@ -289,6 +289,54 @@ struct TmuxSessionControllerTests {
                 "intermediate sizes must be coalesced away")
     }
 
+    @Test("the terminal view's FIRST size report commits even when it matches the seeded estimate")
+    func firstSizeReportCommitsEvenWhenItMatchesTheEstimate() async throws {
+        let transport = MockTmuxTransport()
+        let controller = TmuxSessionController(sshSession: transport)
+        // Pre-attach seed: a GUESS at the phone grid, not a view's report.
+        controller.setInitialClientSize(cols: 69, rows: 60)
+        await controller.attach()
+        _ = await waitUntil { await transport.recordedCommands().count >= 3 }
+        pushOneWindowDiscovery(transport)
+        #expect(await waitUntil { controller.snapshot.activeWindowId == "@0" })
+
+        // The view finishes layout and reports EXACTLY the guessed grid. This
+        // has to still commit: the commit is what re-paints the pane from
+        // tmux's model, and tmux never repaints on its own for a size it
+        // already has. Treating it as "nothing changed" left a pane painted
+        // before layout (i.e. at the wrong grid) stranded until the user
+        // resized the app themselves by raising the keyboard.
+        controller.resizeClient(rows: 60, cols: 69)
+
+        #expect(await waitUntil(timeout: 2.0) {
+            await transport.recordedCommands().contains { $0.hasPrefix("refresh-client -C 69x60") }
+        }, "the first report from a real view must commit, estimate or not")
+    }
+
+    @Test("a repeat of an already-confirmed size is still deduped")
+    func confirmedSizeStillDedupes() async throws {
+        let transport = MockTmuxTransport()
+        let controller = TmuxSessionController(sshSession: transport)
+        controller.setInitialClientSize(cols: 69, rows: 60)
+        await controller.attach()
+        _ = await waitUntil { await transport.recordedCommands().count >= 3 }
+        pushOneWindowDiscovery(transport)
+        #expect(await waitUntil { controller.snapshot.activeWindowId == "@0" })
+
+        controller.resizeClient(rows: 60, cols: 69)   // confirms
+        #expect(await waitUntil(timeout: 2.0) {
+            await transport.recordedCommands().contains { $0.hasPrefix("refresh-client -C 69x60") }
+        })
+        controller.resizeClient(rows: 60, cols: 69)   // a no-op report
+        controller.resizeClient(rows: 60, cols: 69)
+        try? await Task.sleep(for: .milliseconds(400))
+
+        let commits = await transport.recordedCommands()
+            .filter { $0.hasPrefix("refresh-client -C 69x60") }
+        #expect(commits.count == 1,
+                "only the first report is a confirmation; the rest are still redundant")
+    }
+
     @Test("repeated foreign-width layout-change drift backs off after a few reclaims (tug-of-war guard)")
     func layoutDriftReclaimBacksOffDuringTugOfWar() async throws {
         let (controller, transport) = await makeAttachedController()

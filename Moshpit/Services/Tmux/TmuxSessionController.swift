@@ -1185,7 +1185,20 @@ final class TmuxSessionController: MultiplexerControlling {
     /// the final size, then `resyncActivePane()` repaints from tmux's
     /// authoritative screen so any divergence is erased.
     func resizeClient(rows: Int, cols: Int) {
-        guard (cols, rows) != lastClientSize else { return }
+        // The dedupe must not swallow the FIRST report from a real terminal
+        // view. Until one arrives, `lastClientSize` is only a GUESS
+        // (``setInitialClientSize``, from an estimated grid), and a guess that
+        // happens to be right looked exactly like "nothing changed" — so
+        // `commitClientSize()` never ran for the initial layout: no
+        // `refresh-client`, no window pin, and above all no `resyncActivePane`.
+        // Anything painted before the view was laid out therefore stood
+        // uncorrected until the user changed the layout themselves, which is
+        // what "the tmux screen doesn't render until I tap to raise the
+        // keyboard" was — the tap resized the grid, which finally differed and
+        // repainted. A wrong guess self-healed (the sizes differ), so this only
+        // ever bit the phones whose estimate was exact.
+        guard (cols, rows) != lastClientSize || !clientSizeConfirmed else { return }
+        clientSizeConfirmed = true
         lastClientSize = (cols, rows)
         pendingResize?.cancel()
         pendingResize = Task { [weak self] in
@@ -1251,12 +1264,21 @@ final class TmuxSessionController: MultiplexerControlling {
     @ObservationIgnored
     private var lastClientSize: (cols: Int, rows: Int) = (80, 24)
 
+    /// Whether a real terminal view has reported its grid yet, as opposed to
+    /// ``setInitialClientSize``'s estimate. Gates the first
+    /// ``resizeClient(rows:cols:)`` through even when the estimate turns out to
+    /// be exactly right — see the guard there for what silently broke without
+    /// it.
+    @ObservationIgnored
+    private var clientSizeConfirmed = false
+
     /// Seed the client size before control mode starts, so the very first
     /// `refresh-client -C` carries a phone-sized grid instead of 80×24 —
     /// otherwise programs render wide and a late resize can't reflow
     /// already-emitted lines (worse the higher the link's RTT).
     func setInitialClientSize(cols: Int, rows: Int) {
         lastClientSize = (cols, rows)
+        clientSizeConfirmed = false   // this is a guess, not a view's report
     }
 
     /// Panes whose pre-attach screen contents have been replayed into their
@@ -1324,12 +1346,24 @@ final class TmuxSessionController: MultiplexerControlling {
             if fields.count >= 2, fields[1] == "1" {
                 self.send(rawCommand: "send-keys -t \(paneId) -X cancel")
             }
-            // Primary-screen panes: tmux repaints the VISIBLE screen via
-            // %output on attach, so only backfill the scrollback ABOVE it
-            // (`-E -1`) — otherwise the visible screen (incl. the prompt) is
-            // drawn twice, leaving a phantom extra prompt that looked like a
-            // stray Return. Alternate-screen TUIs aren't repainted by tmux,
-            // so capture their visible frame.
+            // Primary-screen panes stop at the scrollback ABOVE the visible
+            // screen (`-E -1`), because the visible screen itself arrives from
+            // the fresh-attach resync in ``ensureTerminalsForAllPanes`` —
+            // capturing it here too draws it twice, leaving a phantom extra
+            // prompt that looked like a stray Return.
+            //
+            // Do NOT reintroduce "tmux repaints the visible screen on attach"
+            // here. Measured against tmux 3.6a with a raw control client: a
+            // `-CC attach` emits no `%output` at all, and neither does a
+            // `refresh-client -C` that names the size the window already has.
+            // tmux only repaints when the size actually CHANGES — which is why
+            // the app's own resync is what paints a fresh attach, and why a
+            // paint fed before the terminal view was laid out went uncorrected
+            // (see `resizeClient`'s guard).
+            //
+            // Alternate-screen TUIs get their visible frame captured here as
+            // well: tmux does not re-emit an already-drawn TUI, and replaying
+            // scrollback into one corrupts it.
             let range = isAlternate ? "" : "-S -\(self.backfillHistoryLines) -E -1"
             self.sendCommand("capture-pane -p -e \(range) -t \(paneId)") { [weak self] response in
                 guard let self else { return }
@@ -2077,7 +2111,26 @@ final class TmuxSessionController: MultiplexerControlling {
             return existing
         }
         let font = TerminalFont.font(id: currentFontName, size: CGFloat(currentFontSize))
-        let terminal = TerminalView(frame: .zero, font: font)
+        // Born at the client's grid, not at `.zero`.
+        //
+        // A pane terminal is minted during discovery — before SwiftUI has laid
+        // it out even once — and `TerminalView(frame: .zero)` derives its grid
+        // from that frame, so it starts one column wide. Everything tmux hands
+        // us at attach (the authoritative screen from `resyncPane`, the
+        // backfill, any `%output` that beats the first layout) was then parsed
+        // into a one-column terminal: a full-screen TUI's repaint collapses
+        // into a column of single characters and a diff-rendered agent frame
+        // into nothing at all — "the tmux screen is blank except for a cursor
+        // until I tap". Sizing it from `lastClientSize` (already the phone grid
+        // by the time any pane is minted) means a pre-layout feed lands in the
+        // shape tmux drew it for; the first real layout then agrees and costs
+        // no reflow.
+        let cell = TerminalCellGeometry.measuredCell(
+            font: font, scale: UITraitCollection.current.displayScale)
+        let birthFrame = CGRect(x: 0, y: 0,
+                                width: cell.width * CGFloat(max(1, lastClientSize.cols)),
+                                height: cell.height * CGFloat(max(1, lastClientSize.rows)))
+        let terminal = TerminalView(frame: birthFrame, font: font)
         terminal.inputAccessoryView = nil   // we render our own shortcut bar
         TerminalKeyboard.enableComposingInput(on: terminal)
         TerminalScrollback.enlarge(terminal)

@@ -37,6 +37,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A tmux pane paints on connect instead of waiting for you to raise the
+  keyboard.** On some phones the first connect showed nothing but a cursor
+  until you tapped the terminal, and then the whole screen appeared at once.
+  Two things had to line up. A pane's terminal is created during discovery,
+  before the app has laid it out even once, and it was created at a zero frame —
+  which is a one-column grid, so the authoritative screen tmux hands over at
+  attach was parsed into a single column: a shell prompt collapsed into
+  stacked characters, a full-screen agent frame into nothing. Panes are now
+  born at the grid the client already reports, so a paint that beats the first
+  layout still lands in the shape tmux drew it for. The repair path was
+  disabled too: the size a view reports once laid out was compared against the
+  pre-connect *estimate* and dropped as "unchanged" whenever the estimate had
+  been exactly right, so the repaint that follows a settled size never ran —
+  on the phones whose estimate was off by a row it always had, which is why
+  this only bit some. The first report from a real view now always commits.
+  (Measured while fixing this: tmux emits nothing at all to a control client on
+  attach, and nothing for a `refresh-client` that names the size it already
+  has — it repaints only when the size actually changes. Nothing in the app may
+  assume otherwise.)
 - **Swiping the app away no longer types an arrow key into your session.** With
   the keyboard collapsed the shortcut bar sits at its lowest, a finger's width
   above the home indicator, and iOS's swipe-up-to-background could begin on the
