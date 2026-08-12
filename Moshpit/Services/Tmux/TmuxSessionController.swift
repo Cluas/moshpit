@@ -777,6 +777,11 @@ final class TmuxSessionController: MultiplexerControlling {
     /// the stale callback must not re-size the window back to the desktop.
     @ObservationIgnored private var pinsReleased = false
 
+    /// Per-pane bell scanners, used only while ``pinsReleased`` keeps output out
+    /// of SwiftTerm's parser. See ``BellDetector`` for why a plain byte scan is
+    /// wrong (it turns every title update into a notification).
+    @ObservationIgnored private var bellDetectors: [String: BellDetector] = [:]
+
     /// Hand our pinned windows back to a desktop client sharing this session,
     /// WITHOUT tearing the connection down. Called when the terminal leaves the
     /// foreground (user returned Home) — a plain Back keeps the connection alive
@@ -815,6 +820,10 @@ final class TmuxSessionController: MultiplexerControlling {
             send(rawCommand: "set-option -u -w -t \(win) window-size")
         }
         resizedWindows.removeAll()
+        // From here output goes to the bell scanners instead of SwiftTerm's
+        // parser; start them clean so a sequence split across this boundary
+        // can't leave one stuck mid-string.
+        for key in bellDetectors.keys { bellDetectors[key]?.reset() }
     }
 
     /// Re-pin the active window to our client size when the terminal comes back
@@ -1958,7 +1967,10 @@ final class TmuxSessionController: MultiplexerControlling {
         // agent-needs-you signal, and it normally reaches us through SwiftTerm's
         // parser, which this path skips.
         if pinsReleased {
-            if data.contains(0x07) { onPaneBell?(paneId) }
+            var detector = bellDetectors[paneId] ?? BellDetector()
+            let rang = detector.containsBell(data)
+            bellDetectors[paneId] = detector
+            if rang { onPaneBell?(paneId) }
             return
         }
         if let coordinator = paneCoordinators[paneId] {
@@ -2228,6 +2240,17 @@ final class TmuxSessionController: MultiplexerControlling {
             Task { @MainActor [weak self] in
                 self?.sendInput(data, paneId: paneId)
             }
+        }
+        // The app's own layout reporting its grid — the only reliable answer to
+        // "what size is this really", since `onSizeChange` fires only on a
+        // CHANGE and a pane minted at the right grid never changes. Without it
+        // the client size stays whatever `estimateGrid` guessed, and the window
+        // gets pinned to a width this view does not have.
+        coordinator.onGridReport = { [weak self, paneId] cols, rows in
+            guard let self else { return }
+            guard self.snapshot.activePaneId == paneId
+                    || self.snapshot.activePanes.count <= 1 else { return }
+            self.resizeClient(rows: rows, cols: cols)
         }
         coordinator.onSizeChange = { [weak self, paneId] cols, rows in
             Task { @MainActor [weak self] in

@@ -92,6 +92,7 @@
 		6C945FA49905D6FEFCEEDAC6 /* AppIcon-Cursor76x76@2x~ipad.png in Resources */ = {isa = PBXBuildFile; fileRef = CCC2C90FBD547665AE4EAFD8 /* AppIcon-Cursor76x76@2x~ipad.png */; };
 		6D8BFC9085145C9A7B09FB85 /* TmuxSessionController.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB2B6B9A8D91D2560F868B00 /* TmuxSessionController.swift */; };
 		6E0399C29DA7C51407175B2F /* HostKeyValidator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F0598BDB2392EFCA70A71BF /* HostKeyValidator.swift */; };
+		6EEEA5A097BCFB52D13D3497 /* BellDetectorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8EFBC5F3B803DE629BB4B7A5 /* BellDetectorTests.swift */; };
 		6FC337C8359D046A64B84BE0 /* SSHServiceMockTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02BAB2D43A01513C3F160EA6 /* SSHServiceMockTests.swift */; };
 		717D3FE9D8D396A62CFC6A40 /* AccentGalleryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8940B24715B5E0CF15676A88 /* AccentGalleryView.swift */; };
 		7199A8FE3E93E0627F4BF2DF /* ConnectionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14C7FC723EE7DA38129E6D63 /* ConnectionStore.swift */; };
@@ -129,6 +130,7 @@
 		92522E25CD59E2B498F236C7 /* HerdrSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C9637BB724153F5F3CDF957 /* HerdrSnapshot.swift */; };
 		94555ED01227C0AAFA26D4D2 /* SOCKSProxyDialer.swift in Sources */ = {isa = PBXBuildFile; fileRef = DCC2B588272E33589B0EA7D9 /* SOCKSProxyDialer.swift */; };
 		95BAB1CE397B16CD241FBF83 /* AppIcon83.5x83.5@2x~ipad.png in Resources */ = {isa = PBXBuildFile; fileRef = D79FF90811F3D79099AA1C57 /* AppIcon83.5x83.5@2x~ipad.png */; };
+		961E4BA0AAC0C395C0B3CC86 /* BellDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 074AD174E5FEE78C99079463 /* BellDetector.swift */; };
 		968222B66CA0982A1D1E5655 /* AppIcon76x76@2x~ipad.png in Resources */ = {isa = PBXBuildFile; fileRef = FF9CF45991B4689216F297CD /* AppIcon76x76@2x~ipad.png */; };
 		97BD3BA1B2907FC58C250952 /* SessionHub.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB1A95FDA6DF8F627038AC4D /* SessionHub.swift */; };
 		9B2776563FEBBE6167F9E64D /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 1910EC4A03BC0F6F4B69EAE9 /* PrivacyInfo.xcprivacy */; };
@@ -246,6 +248,7 @@
 		02BAB2D43A01513C3F160EA6 /* SSHServiceMockTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SSHServiceMockTests.swift; sourceTree = "<group>"; };
 		03321C1B66E351CB60EA8A73 /* MainFlowUITest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainFlowUITest.swift; sourceTree = "<group>"; };
 		0703410AD5B6D980ED96C5DD /* AppSettingsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSettingsTests.swift; sourceTree = "<group>"; };
+		074AD174E5FEE78C99079463 /* BellDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BellDetector.swift; sourceTree = "<group>"; };
 		07629CDD9AEA2F8ABADB82FF /* MoshTransportStateMachineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoshTransportStateMachineTests.swift; sourceTree = "<group>"; };
 		077428E2011E5258C4674416 /* TmuxLayoutParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TmuxLayoutParser.swift; sourceTree = "<group>"; };
 		0A0483D99AAA694DAF818012 /* ConnectionStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionStoreTests.swift; sourceTree = "<group>"; };
@@ -353,6 +356,7 @@
 		8A427C067C58814F520426E2 /* WhisperModelStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhisperModelStore.swift; sourceTree = "<group>"; };
 		8BE5CDACBB1B8D07F5593479 /* SSHService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SSHService.swift; sourceTree = "<group>"; };
 		8C0AC25F11E515FF3A6B4AE2 /* MoshBootstrap.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoshBootstrap.swift; sourceTree = "<group>"; };
+		8EFBC5F3B803DE629BB4B7A5 /* BellDetectorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BellDetectorTests.swift; sourceTree = "<group>"; };
 		8F2769DAA1147749D1BE4343 /* TmuxSessionControllerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TmuxSessionControllerTests.swift; sourceTree = "<group>"; };
 		8FF800018D44B5A3253CB177 /* HerdrSnapshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HerdrSnapshotTests.swift; sourceTree = "<group>"; };
 		9073DF5729B0210D679D3EC9 /* TerminalTheme+SwiftTerm.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "TerminalTheme+SwiftTerm.swift"; sourceTree = "<group>"; };
@@ -577,6 +581,7 @@
 		425B8916F6F46179A4E7F8DC /* Tmux */ = {
 			isa = PBXGroup;
 			children = (
+				074AD174E5FEE78C99079463 /* BellDetector.swift */,
 				88086A946C54C70DF256DDAE /* TmuxControlClient.swift */,
 				077428E2011E5258C4674416 /* TmuxLayoutParser.swift */,
 				EB2B6B9A8D91D2560F868B00 /* TmuxSessionController.swift */,
@@ -918,6 +923,7 @@
 		E8354F152B2797AD27A57856 /* Services */ = {
 			isa = PBXGroup;
 			children = (
+				8EFBC5F3B803DE629BB4B7A5 /* BellDetectorTests.swift */,
 				E5C92CF8642AF6FB22B89F4C /* HostCapabilitiesTests.swift */,
 				F1B0C0CC62DFD21594A9C5B9 /* HostKeyValidatorTests.swift */,
 				64A66C2F760B34B2E375CE41 /* KeychainServiceTests.swift */,
@@ -1199,6 +1205,7 @@
 				02E0EB673CA5B0366115CF73 /* AgentTaskRequestTests.swift in Sources */,
 				7ADA528E88766CAA8E87B2B7 /* AppSettingsTests.swift in Sources */,
 				0D3AC8BFAFBA5C6731A330E5 /* AppThemeTests.swift in Sources */,
+				6EEEA5A097BCFB52D13D3497 /* BellDetectorTests.swift in Sources */,
 				D097FBDFD96A22FB61A0405F /* BreadcrumbPlanTests.swift in Sources */,
 				FE0748E1611A74FAB893CB1F /* ConnectionStoreTests.swift in Sources */,
 				3BD1012BC0500FFE6CAD1BFB /* DirectionPadTests.swift in Sources */,
@@ -1263,6 +1270,7 @@
 				7D3F14D0C693344070CCFCF8 /* AppTheme.swift in Sources */,
 				CB13AC1195B96A5DA6FA62E1 /* AppThemeStore.swift in Sources */,
 				90F124609D8A9A39545A4E67 /* AttachHomeView.swift in Sources */,
+				961E4BA0AAC0C395C0B3CC86 /* BellDetector.swift in Sources */,
 				8337A3FCC46748CA17BF9320 /* BreadcrumbPlan.swift in Sources */,
 				879842603F47A81C056CE926 /* CaptureScreen.swift in Sources */,
 				37A06670A3855AFD7097FD13 /* Components.swift in Sources */,
