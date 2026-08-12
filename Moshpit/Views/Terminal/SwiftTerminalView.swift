@@ -304,6 +304,13 @@ struct SwiftTerminalView: UIViewRepresentable {
         /// the active window when it has more than one, else cycles windows.
         var onSwitch: ((_ forward: Bool) -> Void)?
 
+        /// Set for tmux panes: a tap asked for the cursor to move to a cell, and
+        /// the controller forwards a click to the pane's program when that
+        /// program wants the mouse. nil for a plain shell / local terminal,
+        /// where ``click(col:row:)`` reports it through SwiftTerm's own encoder.
+        /// Cells are 0-based, viewport-relative.
+        var onClick: ((_ col: Int, _ row: Int) -> Void)?
+
         /// True when the LOCAL terminal's app has mouse reporting on (DECSET
         /// 1000/1002/1003). Only meaningful when there's no tmux indirection
         /// (plain SSH / mosh degraded to a bare shell): tmux's own `mouse on`
@@ -392,6 +399,28 @@ struct SwiftTerminalView: UIViewRepresentable {
             for _ in 0..<count {
                 terminal.sendEvent(buttonFlags: button, x: x, y: y, pixelX: x, pixelY: y)
             }
+        }
+
+        /// Report a left click at a 0-based, viewport-relative cell — "put the
+        /// cursor here" to a program that grabbed the mouse.
+        ///
+        /// Routing mirrors ``scroll(lines:)``: a tmux pane hands off to the
+        /// controller (which consults the pane's `#{mouse_any_flag}`), and a
+        /// plain shell lets SwiftTerm encode the press/release in whatever mouse
+        /// protocol the local app negotiated — the same path a typed key takes.
+        ///
+        /// Does nothing when nothing on screen asked for the mouse: a bare shell
+        /// would print the report as text (`0;12;3M` into the command line).
+        func click(col: Int, row: Int) {
+            if let onClick {
+                onClick(col, row)
+                return
+            }
+            guard localAppWantsMouse, let terminal = terminalView?.getTerminal() else { return }
+            // 0 = left button press, 3 = release (SwiftTerm's `encodeButton`
+            // convention, which its own tap handler uses).
+            terminal.sendEvent(buttonFlags: 0, x: col, y: row, pixelX: col, pixelY: row)
+            terminal.sendEvent(buttonFlags: 3, x: col, y: row, pixelX: col, pixelY: row)
         }
 
         /// Page the LOCAL SwiftTerm scrollback (plain non-tmux shell, or a mosh

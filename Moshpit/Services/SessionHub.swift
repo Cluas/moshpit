@@ -541,6 +541,47 @@ final class SessionHub {
             }
         }
 
+        /// Report a click at a 0-based, viewport-relative cell to whatever is on
+        /// screen — a tap asking a mouse-aware program (Claude Code's prompt,
+        /// vim) to move its cursor there.
+        ///
+        /// Same routing tree as ``scrollActiveTerminal(lines:)``, and the same
+        /// `#{mouse_any_flag}` gate: a pane running a plain shell gets nothing,
+        /// because the report would land in its command line as text. herdr is
+        /// the one path with nothing to send — its frame protocol has no click
+        /// command, so a tap there still just focuses.
+        func clickActiveTerminal(col: Int, row: Int) {
+            if herdrFrameTarget != nil {
+                return
+            } else if let transport = moshTransport, let control = moshControl {
+                guard control.activePaneWantsMouse else { return }
+                // Leave copy-mode first if a scroll put us there, on the SAME
+                // channel so it's strictly ordered before the click (see
+                // scrollActiveTerminal).
+                var out = Data()
+                if moshInCopyMode { out += Self.moshCopyExitKey; moshInCopyMode = false }
+                out += Self.clickBytes(col: col, row: row)
+                sendOverMosh(transport, out)
+            } else if let control = tmuxController {
+                control.click(col: col, row: row)
+            } else {
+                // No tmux (plain SSH, or mosh degraded to a bare shell): let the
+                // local terminal encode it in the app's negotiated protocol.
+                coordinator.click(col: col, row: row)
+            }
+        }
+
+        /// SGR press-then-release for a left click at a 0-based cell — what a
+        /// program with the mouse on reads as "the pointer was clicked here", and
+        /// what moves its cursor. Button 0 = left; the release repeats the
+        /// position with a lowercase `m`, which is how SGR distinguishes it.
+        /// Pure + nonisolated for unit testing.
+        nonisolated static func clickBytes(col: Int, row: Int) -> Data {
+            // SGR coordinates are 1-based on the wire.
+            let c = max(1, col + 1), r = max(1, row + 1)
+            return Data("\u{1b}[<0;\(c);\(r)M\u{1b}[<0;\(c);\(r)m".utf8)
+        }
+
         /// Page the tmux scrollback over the mosh transport by sending copy-mode
         /// keystrokes to the mosh client. Throttled to page granularity so a
         /// fast-repeating thumb/swipe doesn't rip through history.
@@ -1058,6 +1099,15 @@ final class SessionHub {
                 // in-place, with no pane switch to refresh it).
                 coordinator.onScrollBegin = { [weak self] in
                     self?.moshControl?.refreshActivePaneMouse()
+                }
+                // Tap-to-position over mosh: the click rides the mosh transport
+                // (the renderer IS the tmux client), gated on the -CC sidecar's
+                // view of the pane's mouse flag. Refreshed alongside, same as
+                // the scroll path, so an app launched in-place is caught.
+                coordinator.onClick = { [weak self] col, row in
+                    guard let self else { return }
+                    self.clickActiveTerminal(col: col, row: row)
+                    self.moshControl?.refreshActivePaneMouse()
                 }
                 // Horizontal swipe: switch pane/window via the -CC sidecar, which
                 // moves the mosh-rendered client too (same session, shared current

@@ -106,6 +106,29 @@ struct MoshScrollKeysTests {
     }
 }
 
+/// Tap-to-position sends a mouse-aware program (Claude Code's prompt, vim) the
+/// click that moves its cursor to the tapped cell. This pins the exact bytes;
+/// `scripts/verify-tmux-click.py` independently proves tmux delivers them to the
+/// pane's program past its own mouse handling.
+@Suite("Tap-to-position click bytes")
+struct ClickBytesTests {
+
+    typealias S = SessionHub.ActiveSession
+
+    @Test("a click is an SGR button-0 press followed by its release")
+    func pressThenRelease() {
+        // 0-based cell in, 1-based on the wire; `M` = press, `m` = release.
+        #expect(S.clickBytes(col: 8, row: 29)
+                == Data("\u{1b}[<0;9;30M\u{1b}[<0;9;30m".utf8))
+    }
+
+    @Test("the top-left cell is 1;1, and negative cells clamp there")
+    func origin() {
+        #expect(S.clickBytes(col: 0, row: 0) == Data("\u{1b}[<0;1;1M\u{1b}[<0;1;1m".utf8))
+        #expect(S.clickBytes(col: -3, row: -1) == Data("\u{1b}[<0;1;1M\u{1b}[<0;1;1m".utf8))
+    }
+}
+
 /// Horizontal-swipe pane/window switching cycles ordered ids with wrap-around.
 /// `TmuxSessionController.switchPaneOrWindow` feeds pane ids (when the window
 /// has splits) or window ids into this pure helper.

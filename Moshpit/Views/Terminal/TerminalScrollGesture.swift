@@ -67,6 +67,29 @@ final class TerminalScrollGesture: NSObject, UIGestureRecognizerDelegate {
         pinch.delegate = handler
         terminal.addGestureRecognizer(pinch)
 
+        // Tap-to-position. A mouse-aware program (Claude Code's prompt, vim,
+        // less) reads a click as "put the cursor here" — the only way to reach a
+        // character in the middle of a long line without walking the arrow keys
+        // one cell at a time, which is how it had to be done here before.
+        //
+        // SwiftTerm's own single-tap does report the click, but only behind
+        // `allowMouseReporting`, which is off (see `SwiftTerminalView.makeUIView`)
+        // because the same flag ALSO turns every pan into mouse motion — leaking
+        // drags to the remote mid-scroll. Recognising the tap separately keeps
+        // that off and forwards nothing but the click.
+        let tap = UITapGestureRecognizer(target: handler, action: #selector(handleTap(_:)))
+        tap.cancelsTouchesInView = false
+        tap.delegate = handler
+        // SwiftTerm's double/triple taps select a word/line; a click must not
+        // also go out for those, so wait for them to fail first.
+        for existing in terminal.gestureRecognizers ?? [] {
+            if let existingTap = existing as? UITapGestureRecognizer,
+               existingTap.numberOfTapsRequired > 1 {
+                tap.require(toFail: existingTap)
+            }
+        }
+        terminal.addGestureRecognizer(tap)
+
         // The built-in scroll-view pan reveals blank space (SwiftTerm draws the
         // current buffer view, not the scrolled content), so leave it off.
         terminal.panGestureRecognizer.isEnabled = false
@@ -109,6 +132,25 @@ final class TerminalScrollGesture: NSObject, UIGestureRecognizerDelegate {
         default:
             axisLock = nil
         }
+    }
+
+    /// Forward a tap as a click at the tapped cell, so a mouse-aware program
+    /// moves its cursor there.
+    @objc private func handleTap(_ gesture: UITapGestureRecognizer) {
+        guard gesture.state == .ended,
+              let terminal = gesture.view as? TerminalView else { return }
+        // A tap on an unfocused terminal means "give me the keyboard" — that's
+        // all SwiftTerm does with it, and positioning shouldn't ride along on
+        // it: tapping to start typing would otherwise also move the cursor
+        // wherever the thumb happened to land. Once focused, taps position.
+        guard terminal.isFirstResponder else { return }
+        // A live selection: the tap clears it (SwiftTerm's job), not a click.
+        // `copy:` is permitted exactly when a selection is active.
+        if terminal.canPerformAction(#selector(UIResponder.copy(_:)), withSender: nil) {
+            return
+        }
+        let cell = TerminalCellGeometry.cell(at: gesture.location(in: terminal), in: terminal)
+        coordinator?.click(col: cell.col, row: cell.row)
     }
 
     @objc private func handlePinch(_ gesture: UIPinchGestureRecognizer) {

@@ -27,6 +27,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   English-only `.en` and distil builds would defeat the purpose. For CJK
   languages the session also primes the model to keep Latin-script technical
   words as-is, and Chinese to emit Simplified rather than Traditional.
+- **Tap to put the cursor where you tapped.** A tap on the terminal now sends
+  the click that a mouse-aware program — Claude Code's prompt, vim, less —
+  reads as "the cursor goes here", so reaching a character in the middle of a
+  long prompt is one tap instead of walking the arrow keys one cell at a time.
+  Only programs that asked for the mouse get it: a plain shell would print the
+  report into its command line, so it sends nothing there. The first tap on an
+  unfocused terminal still just brings up the keyboard, as before.
 
 ### Fixed
 

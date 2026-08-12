@@ -627,6 +627,21 @@ final class TmuxSessionController: MultiplexerControlling {
         }
     }
 
+    /// Forward a click at a 0-based, viewport-relative cell to the active pane's
+    /// program — a tap asking it to move its cursor there.
+    ///
+    /// Gated on the same `#{mouse_any_flag}` as the wheel, and for the same
+    /// reason: `send-keys` puts these bytes straight into the pane, past tmux's
+    /// own mouse handling, so a pane running a plain shell would simply echo
+    /// `0;12;3M` into its command line. Under `mouse on` tmux would otherwise
+    /// keep the click for itself (pane focus, selection) and the program would
+    /// never see it.
+    func click(col: Int, row: Int) {
+        guard activePaneWantsMouse,
+              let paneId = snapshot.activePaneId ?? snapshot.activePanes.first?.id else { return }
+        sendInput(SessionHub.ActiveSession.clickBytes(col: col, row: row), paneId: paneId)
+    }
+
     /// Scroll the active pane's scrollback through tmux **copy-mode**, over the
     /// control channel. This is the only correct scrollback for a plain-shell
     /// tmux pane: the local SwiftTerm buffer is just framebuffer repaints over
@@ -2113,6 +2128,15 @@ final class TmuxSessionController: MultiplexerControlling {
         }
         coordinator.onScrollBegin = { [weak self] in
             self?.refreshActivePaneMouse()
+        }
+        // Tap-to-position: forwarded as a click when the pane's program wants
+        // the mouse. Refresh the flag alongside it so a program launched
+        // in-place (no pane switch, no scroll since) is recognised by the next
+        // tap rather than the one after it.
+        coordinator.onClick = { [weak self] col, row in
+            guard let self else { return }
+            self.click(col: col, row: row)
+            self.refreshActivePaneMouse()
         }
         // Horizontal swipe: switch pane (if the window has splits) or window.
         coordinator.onSwitch = { [weak self] forward in

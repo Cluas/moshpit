@@ -71,6 +71,7 @@
 		54B4A3A9CEB88844B17341E4 /* TerminalCursorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 122B953C374766877E8701DB /* TerminalCursorTests.swift */; };
 		54F3C844979EF952D82081D1 /* NewAgentTaskSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = C54259C373F05459B1700975 /* NewAgentTaskSheet.swift */; };
 		55A5F2BFB7A48B04DDA7E824 /* AppIcon-Ringdown76x76@2x~ipad.png in Resources */ = {isa = PBXBuildFile; fileRef = 82601765CCDF85F6D1BFF989 /* AppIcon-Ringdown76x76@2x~ipad.png */; };
+		560B311A8E579F9C909E8156 /* TerminalCellGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 562C7F05AD0F711413756F3D /* TerminalCellGeometry.swift */; };
 		57569725FD1827A86DC2F2A0 /* MoshCompression.swift in Sources */ = {isa = PBXBuildFile; fileRef = F38264331A2B3B69AB9B8375 /* MoshCompression.swift */; };
 		57BE715C9AAB709B1B6D61BF /* AppIcon60x60@3x.png in Resources */ = {isa = PBXBuildFile; fileRef = D3C8C3FE40206DC3271C31B5 /* AppIcon60x60@3x.png */; };
 		58BBD96E29CFDF3CDD4354FB /* MoshpitMark.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7118E3B937405064AF5E7F3 /* MoshpitMark.swift */; };
@@ -183,6 +184,7 @@
 		E241C85CD6F8A5AE6B95BBC5 /* AppIcon-NoCarrier83.5x83.5@2x~ipad.png in Resources */ = {isa = PBXBuildFile; fileRef = D3435C4B9CE5927CE24471A4 /* AppIcon-NoCarrier83.5x83.5@2x~ipad.png */; };
 		E2DB2615474322E499FFBD64 /* AppIcon-Cursor83.5x83.5@2x~ipad.png in Resources */ = {isa = PBXBuildFile; fileRef = 2EA24C4652E9064A85637956 /* AppIcon-Cursor83.5x83.5@2x~ipad.png */; };
 		E4259D5CDDE97AADD0F10A64 /* MoshTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 616F4A0AEF0539B428EB5ABD /* MoshTransport.swift */; };
+		E5C5F0CD8F9BC52F38DBB415 /* TerminalCellGeometryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 531EA0682BFA85B0E6B9656C /* TerminalCellGeometryTests.swift */; };
 		E5DE2728AC921175DFE38300 /* TmuxTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3E62BB39AF55389EA2A9650 /* TmuxTypes.swift */; };
 		E683E03CE82E859E098E9F92 /* Log.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33C0A65F276C534B50547E88 /* Log.swift */; };
 		E76143A343B0509B99B7A133 /* AppIcon-Localhost60x60@2x.png in Resources */ = {isa = PBXBuildFile; fileRef = 39E9B528A6B2D2D266F2D379 /* AppIcon-Localhost60x60@2x.png */; };
@@ -300,7 +302,9 @@
 		4E9EDA5ECCBE5ABBFA79EA7E /* MoshpitTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = MoshpitTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		4F7D960D32A76F0660F1F28E /* VoiceInputOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceInputOverlay.swift; sourceTree = "<group>"; };
 		5026177CCB80D4BC832576CE /* CaptureScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureScreen.swift; sourceTree = "<group>"; };
+		531EA0682BFA85B0E6B9656C /* TerminalCellGeometryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalCellGeometryTests.swift; sourceTree = "<group>"; };
 		55C4E67A13B0D810E9DF11AE /* AgentControl.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentControl.swift; sourceTree = "<group>"; };
+		562C7F05AD0F711413756F3D /* TerminalCellGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalCellGeometry.swift; sourceTree = "<group>"; };
 		56923C29050B3175A8A1CB3F /* TerminalShortcutTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalShortcutTests.swift; sourceTree = "<group>"; };
 		598FD3115EE12240E8D59354 /* AgentSignal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentSignal.swift; sourceTree = "<group>"; };
 		5A83DB3B946049F315FD3F7C /* SwiftTerminalView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SwiftTerminalView.swift; sourceTree = "<group>"; };
@@ -532,6 +536,7 @@
 			isa = PBXGroup;
 			children = (
 				5A83DB3B946049F315FD3F7C /* SwiftTerminalView.swift */,
+				562C7F05AD0F711413756F3D /* TerminalCellGeometry.swift */,
 				B326D2F66528444967AA24B1 /* TerminalScrollGesture.swift */,
 			);
 			path = Terminal;
@@ -721,6 +726,7 @@
 				1CF2256C5CB122431EB9D184 /* AgentSectionTests.swift */,
 				6DEAF6F752EDBADB9E0F25F3 /* BreadcrumbPlanTests.swift */,
 				265B295D8ACDAA527C80014E /* DirectionPadTests.swift */,
+				531EA0682BFA85B0E6B9656C /* TerminalCellGeometryTests.swift */,
 			);
 			path = UI;
 			sourceTree = "<group>";
@@ -1218,6 +1224,7 @@
 				6FC337C8359D046A64B84BE0 /* SSHServiceMockTests.swift in Sources */,
 				14540354A5DD580B6E190E90 /* SessionMetricsTests.swift in Sources */,
 				E1207E83E8F72A5F3B02C8BC /* TOFUHostKeyDelegateTests.swift in Sources */,
+				E5C5F0CD8F9BC52F38DBB415 /* TerminalCellGeometryTests.swift in Sources */,
 				54B4A3A9CEB88844B17341E4 /* TerminalCursorTests.swift in Sources */,
 				ED71EA4963B087CA108021E7 /* TerminalFontTests.swift in Sources */,
 				1F877ACDBB8A3D93C120DB71 /* TerminalScrollbackTests.swift in Sources */,
@@ -1298,6 +1305,7 @@
 				4EDC3CBB56A3F9C9E2FA31DB /* SettingsScreen.swift in Sources */,
 				A6C9C7E9B28C4772AA299851 /* ShortcutsView.swift in Sources */,
 				7F1519A9442763EBA23B9E05 /* SwiftTerminalView.swift in Sources */,
+				560B311A8E579F9C909E8156 /* TerminalCellGeometry.swift in Sources */,
 				A0AEB0F49BB6DC81A2B3DD63 /* TerminalCursor.swift in Sources */,
 				8B994199098445F5354B44FB /* TerminalFont.swift in Sources */,
 				1E6457CEE2D4F37078C08058 /* TerminalKeyboard.swift in Sources */,
