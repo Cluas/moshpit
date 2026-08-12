@@ -194,6 +194,15 @@ spec:
     spec:
       automountServiceAccountToken: false
       nodeSelector:
+        # Pinned to the exact node, not just zone+arch: demo.moshpit.cluas.eu.org
+        # resolves to a static backend address outside Kubernetes (nothing here
+        # is a LoadBalancer Service or has an external-dns annotation), so that
+        # mapping does not follow the pod if it reschedules to a different node
+        # in the same zone. A 2026-08-12 NotReady blip on this node moved the pod
+        # to ysl-phx-amd-01 for ~7 minutes and the hostname was unreachable
+        # (from the public internet, not just locally — checked against 8.8.8.8
+        # and 1.1.1.1) for the whole gap, even though the pod itself was healthy.
+        kubernetes.io/hostname: ysl-phx-amd-02
         topology.kubernetes.io/zone: phx
         kubernetes.io/arch: amd64
       containers:
