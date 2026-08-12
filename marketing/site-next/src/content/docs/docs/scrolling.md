@@ -8,6 +8,8 @@ description: "A swipe up means two completely different things depending on what
 - **In a plain shell** — you move through real scrollback. On tmux that is tmux's own buffer, entered and left cleanly.
 - **In a full-screen app** — the swipe becomes a wheel event, forwarded to the app so it scrolls itself. Typing keeps working the whole time.
 
+![Scrolled back in a plain shell pane: several minutes of a webhook server's request log](/32-scrollback.jpg)
+
 ## How it decides
 
 On tmux, Moshpit asks tmux whether the pane's program has grabbed the mouse, and routes accordingly. On [herdr](/docs/herdr) it does not have to ask: scrolling is a protocol action and the *server* decides whether it becomes a mouse report or scrollback movement. That is one of the quiet places herdr is simply better.

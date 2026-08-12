@@ -9,6 +9,8 @@ The paste key sits on the shortcut bar by default. Moshpit checks whether the ru
 
 If the program did not ask for bracketed paste, the text is sent as plain keystrokes — which is what that program expects, and why the check is worth doing rather than always wrapping.
 
+![A three-line clipboard paste landing in a plain shell as three complete commands, not fragmented keystrokes](/33-paste.jpg)
+
 ## Copying out
 
 Select text in the terminal with a long press and drag, then copy. URLs are linkified — including ones that wrapped across two rows, which Moshpit joins using the emulator's own soft-wrap bit rather than guessing from row width.

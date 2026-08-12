@@ -7,6 +7,14 @@ description: "Moshpit 以 tmux 控制客户端的身份 attach 上去，把你�
 
 没有 tmux 的话，连接不会失败，只会降级：一个纯 SSH 的单 pane，加一条横幅 <b>「tmux not found on this host — plain SSH session.」</b>，旁边的 **Install tmux** 会按你的包管理器把命令摆出来，你点了才执行。Moshpit 绝不会偷偷把你切到另一个多路复用器 ——tmux 和 herdr 各自持有互不相干的 session。另外，一旦你填了自定义 tmux 路径，这套探测整个 跳过：探测只走 `PATH`，而你亲手填路径本身就是为那个二进制背书。
 
+## 切 session 和 window
+
+终端上方那条面包屑不是标签，是真的能点：点 session 名字看服务器上全部 session 并切换；点 window 那一段看这个 session 里的所有 window。
+
+![Session 切换面板：服务器上的每个 tmux session，各自的窗口数和是否被别处占用](/06-tmux-sessions.jpg)
+
+![Window 切换面板：当前 session 里每个窗口的面板数、当前命令，以及哪个在等你](/08-tmux-windows.jpg)
+
 ## 只往登录 shell 里写一行
 
 Moshpit 不是把 tmux 那套字符界面塞进一块小屏幕，而是以控制客户端的身份 attach——`tmux -CC`，跟 iTerm2 用的是同一套控制模式——然后自己渲染。连上那一刻 写进去的就是这行：

@@ -41,6 +41,8 @@ The editor has four groups. **PREVIEW** renders the bar as it will look. **IN TO
 
 Two of these exist specifically for coding agents: `⌃End` jumps a long Claude Code transcript to the live end, and `⇧Tab` is its mode toggle. Neither is typeable on a software keyboard — there is no End key, and Shift-Tab needs a hardware Tab.
 
+![The AVAILABLE list in the Shortcuts editor: built-in keys not currently on the bar, each with a green + to add it back](/12-shortcuts-library.jpg)
+
 | Key | What it does |
 | --- | --- |
 | **ctrl** | Control — sticky, one-shot |
@@ -237,7 +239,7 @@ Four built-in accents ship: **Signal Room** (the default indigo), **Teal Line**,
 
 ## App icon
 
-Eight icons: Moshpit, Teal, Green, Amber, Daylight, Mono, Cursor and Hail. Two of them are not the app's mark at all — the set is meant to be genuinely different artwork, not eight recolours. The picker renders the real bundled image rather than redrawing it, so what you see is what lands on your home screen.
+Eight icons: Moshpit, Ringdown, :wq, Prefix, Localhost, No Carrier, Cursor and Hail. Two of them are not the app's mark at all — the set is meant to be genuinely different artwork, not eight recolours. The picker renders the real bundled image rather than redrawing it, so what you see is what lands on your home screen.
 
 :::note
 The app says the limit on that screen, and it is worth repeating: <b>the icon is separate from the accent colour, because iOS only allows switching between icons bundled with the app.</b> A custom accent cannot have matching artwork generated for it. Nothing can create an app icon at runtime.

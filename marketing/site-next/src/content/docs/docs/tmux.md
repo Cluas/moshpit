@@ -7,6 +7,14 @@ You need tmux on the host, on `PATH` — or a path in the connection form's **Cu
 
 If tmux is missing the session degrades instead of failing: a plain SSH single pane plus a banner reading <b>"tmux not found on this host — plain SSH session."</b>, and an **Install tmux** action that shows the command for your package manager and runs it only when you tap it. Moshpit never silently swaps in a different multiplexer — tmux and herdr hold unrelated sessions. A custom tmux path skips the check entirely, since the probe only walks `PATH`.
 
+## Switching sessions and windows
+
+The breadcrumb above the terminal is live navigation, not a label. Tap the session name to see every session on the server and switch; tap the window segment to see that session's windows.
+
+![The session switcher sheet: every tmux session on the server, each showing its window count and whether it is attached elsewhere](/06-tmux-sessions.jpg)
+
+![The window switcher sheet for one session: each window's pane count, current command, and which one needs you](/08-tmux-windows.jpg)
+
 ## One line into your login shell
 
 Moshpit doesn't shrink tmux's own text UI onto a phone. It attaches as a control client — `tmux -CC`, the same control mode iTerm2 uses — and renders the result itself. On connect it writes exactly this:

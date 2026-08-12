@@ -7,7 +7,7 @@ description: "一条连接的两头各有一个信任问题：向服务器证明
 
 **设置 → SSH Keys** 里可以在设备上生成密钥，或导入你已有的。 生成是本地完成的；什么都不会上传，因为压根没有可上传的地方。
 
-![The SSH Keys screen in Settings, before any key exists: a THIS DEVICE · SECURE ENCLAVE section reading ](/30-ssh-keys.jpg)
+![设置里的 SSH Keys 页面，还没有任何密钥时的样子：THIS DEVICE · SECURE ENCLAVE 一栏写着"No device key yet — generate one with +"，IMPORTED 一栏写着"No imported keys"](/30-ssh-keys.jpg)
 
 要用生成的密钥，把它的公钥部分复制出来，追加到主机的 `~/.ssh/authorized_keys` 里，和别的密钥一样。
 

@@ -7,7 +7,7 @@ description: "Two different trust problems sit at either end of a connection: pr
 
 Under **Settings → SSH Keys** you can generate a key on the device or import one you already have. Generation happens locally; nothing is uploaded, because there is nowhere to upload it to.
 
-![The SSH Keys screen in Settings, before any key exists: a THIS DEVICE · SECURE ENCLAVE section reading ](/30-ssh-keys.jpg)
+![The SSH Keys screen in Settings, before any key exists: a THIS DEVICE · SECURE ENCLAVE section reading "No device key yet — generate one with +", and an IMPORTED section reading "No imported keys"](/30-ssh-keys.jpg)
 
 To use a generated key, copy its public half and append it to `~/.ssh/authorized_keys` on the host, the same as any other key.
 

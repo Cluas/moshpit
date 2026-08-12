@@ -51,10 +51,6 @@ MIN_KEEP = 0.32
 WITHHELD = {
     "09-mosh": "pane is a bare prompt — the staged run never reaches a plain "
                "login shell, and the pasteboard route did not land",
-    "32-scrollback": "identical to 07-tmux-terminal to within 0.02% of pixels — "
-                     "the swipe did not scroll the pane",
-    "33-paste": "identical to 07-tmux-terminal — the paste control never opened; "
-                "an earlier attempt captured iOS's own permission alert instead",
 }
 
 

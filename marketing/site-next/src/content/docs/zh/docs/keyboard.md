@@ -41,6 +41,8 @@ description: "键盘上方那条快捷键栏，是 Moshpit 里你按得最多的
 
 其中两个是专门为 coding agent 放的：`⌃End` 把 Claude Code 长长的对话跳到最新一行，`⇧Tab` 是它的模式切换。这两个在软键盘上根本打不出来—— 没有 End 键，Shift-Tab 也需要一个实体 Tab。
 
+![Shortcuts 编辑器里的 AVAILABLE 列表：没在栏上的内置键，每个都带一个绿色 + 可以加回去](/12-shortcuts-library.jpg)
+
 | 键 | 作用 |
 | --- | --- |
 | **ctrl** | Control，粘滞、只生效一次 |
@@ -237,7 +239,7 @@ Fira Code 和 JetBrains Mono 都在列表里，但你拿不到它们的连字。
 
 ## App 图标
 
-八个：Moshpit、Teal、Green、Amber、Daylight、Mono、Cursor、Hail。 其中有两个根本不是 app 那个标志——这一组做的是真的不同的图，不是同一张图换八个颜色。 选择器里显示的是打包进去的那张真图，不是重新画一遍，所以你看到的就是桌面上会出现的。
+八个：Moshpit、Ringdown、:wq、Prefix、Localhost、No Carrier、Cursor、Hail。 其中有两个根本不是 app 那个标志——这一组做的是真的不同的图，不是同一张图换八个颜色。 选择器里显示的是打包进去的那张真图，不是重新画一遍，所以你看到的就是桌面上会出现的。
 
 :::note
 这条限制 app 自己在那一页就写了，这里再说一遍：<b>图标和强调色是分开的， 因为 iOS 只允许在随 app 打包好的图标之间切换。</b> 自定义的强调色没法配一张自动生成的图。运行时创造一个 App 图标，这件事做不到。

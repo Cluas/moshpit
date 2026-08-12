@@ -28,4 +28,6 @@ CJK coverage in these faces is uneven; characters they lack fall back to the sys
 
 Eight home-screen icons and a custom accent colour. These are separate choices on purpose: iOS can only switch to icons that were bundled at build time, so an icon could never follow an arbitrary accent — pretending otherwise would mean either forbidding custom colours or silently picking an approximate icon.
 
+![The App Icon picker: Moshpit, Ringdown, :wq, Prefix, Localhost, No Carrier, Cursor and Hail](/12-icons.jpg)
+
 One thing the accent deliberately does *not* touch: the agent state colours. Amber means “needs you” and teal means “working” on every screen and on the lock screen, whatever accent you choose. State colours that move with taste stop being state colours.
