@@ -2,66 +2,51 @@
 import Marketing from '@layouts/Marketing.astro';
 
 // Raw markup, lifted verbatim from the page this replaces.
-const body = `<!-- ══ INTRO ══ -->
-<div class="dwrap">
-<!--DOCSHELL:BEGIN-->
-<aside class="dnav" id="dnav">
-  <a class="dhome" href="/">← Back to the app</a>
-  <p class="dtitle">Docs</p>
-  <button class="dsearchbtn" type="button" data-docsearch><span>Search the docs…</span><kbd>⌘K</kbd></button>
-  <nav><p class="dsec">Start</p><a href="/docs/intro">What Moshpit does</a><a href="/docs/setup">Set up a connection</a><a href="/docs/first-session">Run your first session</a><p class="dsec">Connections</p><a href="/docs/keys">SSH keys and host trust</a><a href="/docs/mosh">Mosh and roaming</a><a href="/guide/remote-access">Reach your machine from anywhere</a><p class="dsec">Multiplexers</p><a href="/docs/multiplexers">Choosing tmux or herdr</a><a href="/docs/tmux">Using tmux</a><a href="/docs/herdr">Using herdr</a><p class="dsec">Agents</p><a href="/docs/agents">Agent status and the lock screen</a><a href="/docs/worktrees">Isolated tasks with git worktrees</a><a href="/guide/claude-code" class="on" aria-current="page">Run Claude Code from your iPhone</a><p class="dsec">Input</p><a href="/docs/keyboard">Keyboard and shortcuts</a><a href="/docs/scrolling">Scrolling and scrollback</a><a href="/docs/clipboard">Clipboard and paste</a><a href="/docs/ime">CJK and IME input</a><p class="dsec">Appearance</p><a href="/docs/appearance">Themes, fonts and icons</a><p class="dsec">Help</p><a href="/docs/troubleshooting">Troubleshooting</a><a href="/compare">How Moshpit compares</a></nav>
-</aside>
-<!--DOCSHELL:END-->
-<div class="dbody">
-<div class="shell">
-  <section class="band doc" style="border-top:none">
-    <p class="eyebrow">Guide</p>
-    <h2>Run Claude Code from your iPhone</h2>
+const body = `<header class="pagehead">
+  <div class="wrap">
+    <div class="kicker">Guide</div>
+    <h1>Run Claude Code from your iPhone</h1>
     <p class="sub">This is the walkthrough the app exists for. Four steps: get a host
     reachable, put herdr on it, start Claude Code, and answer its permission prompts from
     the lock screen. Everything here is a real string from the shipping app or a real
     command Moshpit runs.</p>
+  </div>
+</header>
 
-    <div class="steps3">
-      <div class="step3">
-        <h3 id="s1">Reach the host</h3>
-        <p>Add the SSH details, check the host fingerprint once, pick
-        <b>herdr</b> as the multiplexer for that connection.</p>
-      </div>
-      <div class="step3">
-        <h3 id="s2">Start the agent</h3>
-        <p>Type <code>claude</code> in a herdr pane, or let Moshpit cut a fresh
-        <code>git worktree</code> and start Claude Code inside it.</p>
-      </div>
-      <div class="step3">
-        <h3 id="s3">Put the phone down</h3>
-        <p>When Claude Code asks permission, the lock screen says so and carries the
-        buttons that answer it.</p>
-      </div>
-    </div>
+<main class="wrap">
+  <div class="panes">
+    <article class="pane">
+      <div class="title" id="s1"><b>1</b> Reach the host</div>
+      <div class="body">Add the SSH details, check the host fingerprint once, pick
+      <b>herdr</b> as the multiplexer for that connection.</div>
+    </article>
+    <article class="pane">
+      <div class="title" id="s2"><b>2</b> Start the agent</div>
+      <div class="body">Type <code>claude</code> in a herdr pane, or let Moshpit cut a fresh
+      <code>git worktree</code> and start Claude Code inside it.</div>
+    </article>
+    <article class="pane">
+      <div class="title" id="s3"><b>3</b> Put the phone down</div>
+      <div class="body">When Claude Code asks permission, the lock screen says so and carries the
+      buttons that answer it.</div>
+    </article>
+  </div>
 
-    <div class="wire" style="margin-top:2.2rem">
-      <p><b>What you need before you start.</b> A server you can already reach over SSH,
-      an iPhone running iOS 18 or later, and Claude Code installed on the server. Moshpit
-      does not install Claude Code and does not talk to Anthropic — it drives a shell, and
-      Claude Code is just a program running in it.</p>
-      <p><b>herdr is optional.</b> It is what makes agent status a fact instead of a guess,
-      so this guide uses it. The tmux route works too and is covered in
-      <a href="/docs/tmux" style="color:var(--teal)">Using tmux</a> and
-      <a href="/docs/agents" style="color:var(--teal)">Answering agents</a>.</p>
-    </div>
-  </section>
-</div>
+  <div class="wire" style="margin-top:2.2rem">
+    <p><b>What you need before you start.</b> A server you can already reach over SSH,
+    an iPhone running iOS 18 or later, and Claude Code installed on the server. Moshpit
+    does not install Claude Code and does not talk to Anthropic — it drives a shell, and
+    Claude Code is just a program running in it.</p>
+    <p><b>herdr is optional.</b> It is what makes agent status a fact instead of a guess,
+    so this guide uses it. The tmux route works too and is covered in
+    <a href="/docs/tmux" style="color:var(--teal)">Using tmux</a> and
+    <a href="/docs/agents" style="color:var(--teal)">Answering agents</a>.</p>
+  </div>
 
-
-
-</div>
-
-<!-- ══ STEP 1 ══ -->
-<div class="shell">
+  <!-- ══ STEP 1 ══ -->
   <section class="band doc">
-    <p class="eyebrow">Step 1</p>
-    <h2>Get the host reachable</h2>
+    <p class="kicker">Step 1</p>
+    <h2 id="s-step1">Get the host reachable</h2>
     <p class="sub">Four fields and one fingerprint check. If you can already
     <code>ssh</code> into the box from a laptop, this part takes a minute.</p>
 
@@ -113,13 +98,11 @@ Verify it matches the server (e.g. \`ssh-keygen -lf /etc/ssh/ssh_host_ed25519_ke
       on every read. Passphrase-encrypted private keys are not supported at all.</p>
     </div>
   </section>
-</div>
 
-<!-- ══ STEP 2 ══ -->
-<div class="shell">
+  <!-- ══ STEP 2 ══ -->
   <section class="band doc">
-    <p class="eyebrow">Step 2</p>
-    <h2>Put herdr on the host</h2>
+    <p class="kicker">Step 2</p>
+    <h2 id="s-step2">Put herdr on the host</h2>
     <p class="sub">herdr is a single Rust binary written for CLI coding agents. It reports
     <code>agent_status</code> as a protocol field on every pane, which is why Moshpit needs
     nothing installed on your host to know that Claude Code is waiting on you.</p>
@@ -174,13 +157,11 @@ curl -fsSL https://herdr.dev/install.sh | sh</pre>
       sidecar.</p>
     </div>
   </section>
-</div>
 
-<!-- ══ STEP 3 ══ -->
-<div class="shell">
+  <!-- ══ STEP 3 ══ -->
   <section class="band doc">
-    <p class="eyebrow">Step 3</p>
-    <h2>Start Claude Code</h2>
+    <p class="kicker">Step 3</p>
+    <h2 id="s-step3">Start Claude Code</h2>
     <p class="sub">Two ways in. Run it in a pane you already have, or let Moshpit cut an
     isolated git worktree and start it there. The second is the one worth reaching for from
     a phone.</p>
@@ -306,13 +287,11 @@ curl -fsSL https://herdr.dev/install.sh | sh</pre>
       guaranteed by compilation and unit tests, without a device recording.</p>
     </div>
   </section>
-</div>
 
-<!-- ══ STEP 4 ══ -->
-<div class="shell">
+  <!-- ══ STEP 4 ══ -->
   <section class="band doc">
-    <p class="eyebrow">Step 4</p>
-    <h2>Answer the permission prompt from the lock screen</h2>
+    <p class="kicker">Step 4</p>
+    <h2 id="s-step4">Answer the permission prompt from the lock screen</h2>
     <p class="sub">Claude Code stops and asks whether it may run a command. Amber is the
     only colour on this site that means "an agent needs a human", and this is where it
     shows up.</p>
@@ -340,7 +319,7 @@ curl -fsSL https://herdr.dev/install.sh | sh</pre>
     nothing clever.</p>
 
     <div class="tbl-wrap">
-      <table>
+      <table class="ledger">
         <thead>
           <tr><th>Button</th><th class="us">Bytes into the pane</th><th>Shown when</th></tr>
         </thead>
@@ -422,12 +401,10 @@ curl -fsSL https://herdr.dev/install.sh | sh</pre>
       </div>
     </div>
   </section>
-</div>
 
-<!-- ══ THE LIMITS ══ -->
-<div class="shell">
+  <!-- ══ THE LIMITS ══ -->
   <section class="band doc" id="background">
-    <p class="eyebrow">The honest part</p>
+    <p class="kicker">The honest part</p>
     <h2>What happens when you background the app</h2>
     <p class="sub">This is the section to read before you rely on any of the above. It is
     the trade for having no server in the middle, and it is not something a setting can
@@ -488,13 +465,11 @@ Moshpit            <i>paused — open Moshpit to refresh</i></pre>
     attach slot, so laptop-plus-phone should be safe, but <b>that combination has not been
     tested</b>.</p>
   </section>
-</div>
 
-<!-- ══ FAQ ══ -->
-<div class="shell">
+  <!-- ══ FAQ ══ -->
   <section class="band doc">
-    <p class="eyebrow plain">Loose ends</p>
-    <h2>Questions this guide usually raises</h2>
+    <p class="k">Loose ends</p>
+    <h2 id="s-faq">Questions this guide usually raises</h2>
     <div class="faq">
       <details>
         <summary>Do I have to use herdr?</summary>
@@ -551,150 +526,11 @@ Moshpit            <i>paused — open Moshpit to refresh</i></pre>
       </details>
     </div>
   </section>
-</div>
-<!--DOCNEXT:BEGIN-->
-<div class="dpager"><a class="dprev" href="/docs/worktrees"><span>Previous</span>Isolated tasks with git worktrees</a><a class="dnext" href="/docs/keyboard"><span>Next</span>Keyboard and shortcuts</a></div>
-<!--DOCNEXT:END-->
-</div><!--dbody-->
-<!--DOCTOC:BEGIN-->
-<aside class="dtoc">
-  <p class="dtoclabel">On this page</p>
-  <nav><a href="#s1">Reach the host</a><a href="#s2">Start the agent</a><a href="#s3">Put the phone down</a><a href="#s4">Add the connection</a><a href="#s5">Check the fingerprint once</a><a href="#s6">Install it</a><a href="#s7">If it is missing, the app says so</a><a href="#s8">In a pane you already have</a><a href="#s9">New Agent Task</a><a href="#s10">The sheet, field by field</a><a href="#s11">What Start actually runs</a><a href="#s12">What you will see first</a><a href="#s13">Cleaning up afterwards</a><a href="#s14">What each button types</a><a href="#s15">When the tap cannot land</a><a href="#s16">The four switches that control it</a><a href="#s17">iOS suspends the connection, and state stops updating</a><a href="#s18">So the app says &quot;paused&quot; instead of lying</a><a href="#s19">Even in the foreground, out-of-band changes lag</a><a href="#s20">Two Moshpit clients on the same pane will fight</a></nav>
-</aside>
-<!--DOCTOC:END-->
-</div><!--/dwrap-->
 
-
-
-</div>
-
-
-
-</div>
-
-
-
-</div>
-
-
-
-</div>
-
-
-
-</div>
-
-
-
-</div>
-
-
-
-</div>
-
-
-
-</div>
-
-
-
-</div>
-
-
-
-</div>
-
-
-
-</div>
-
-
-
-</div>
-
-
-
-</div>
-
-
-
-</div>
-
-
-
-</div>
-
-
-
-</div>
-
-
-
-</div>
-
-
-
-</div>
-
-
-
-</div>
-
-
-
-</div>
-
-
-
-</div>
-
-
-
-</div>
-
-
-
-</div>
-
-
-
-</div>
-
-
-
-</div>
-
-
-
-</div>
-
-
-
-</div>
-
-
-
-</div>
-
-
-
-</div>
-
-
-
-</div>
-
-
-
-</div>
-
-
-
-</div>
-
-
-
-</div>`;
+  <p class="prose" style="margin:32px 0 60px">Continue with
+  <a href="/guide/remote-access">Reach your machine from anywhere</a> ·
+  <a href="/guides">Back to guides</a></p>
+</main>`;
 ---
 
 <Marketing
@@ -702,6 +538,14 @@ Moshpit            <i>paused — open Moshpit to refresh</i></pre>
   description="End to end: get a host reachable, install herdr, start Claude Code in a pane or on a fresh git worktree, and answer its permission prompts from the lock screen."
   path="guide/claude-code"
   lang="en"
+  scrollspy={[
+    { id: 's-step1', label: 'step1' },
+    { id: 's-step2', label: 'step2' },
+    { id: 's-step3', label: 'step3' },
+    { id: 's-step4', label: 'step4' },
+    { id: 'background', label: 'limits' },
+    { id: 's-faq', label: 'faq' },
+  ]}
 >
   <Fragment set:html={body} />
 </Marketing>

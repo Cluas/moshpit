@@ -162,15 +162,19 @@ h3{font:700 18px/1.4 var(--mono);letter-spacing:-.01em;color:var(--ink)}
 .prose a{color:inherit;border-bottom:1px solid rgba(122,167,255,.3)}
 .prose a:hover{border-color:var(--signal);text-decoration:none}
 
-/* ── legacy content band (guides / privacy / support) ────────────
-   These three pages carry no bespoke mockup from this redesign —
-   the markup is still the hand-written .doc prose component from
-   the pre-Signal-Room site (.shell/.eyebrow/.grid were swapped for
-   their direct replacements .wrap/.kicker/.cellgrid in the same
-   pass that added this comment; .band/.doc have no replacement to
-   rename to yet — .pagehead/.prose/.cellgrid above are the intended
-   eventual home for this content, once someone gives these three a
-   real mockup). Ported onto the new tokens (--paper -> --ink,
+/* ── legacy content band (guides / privacy / support / the two
+   long-form guide walkthroughs) ─────────────────────────────────
+   These pages carry no bespoke mockup from this redesign — the markup is
+   still the hand-written .doc prose component from the pre-Signal-Room
+   site (.shell/.eyebrow/.grid are the OLD names; their direct replacements
+   are .wrap/.kicker/.cellgrid — guides.astro/privacy.astro/support.astro
+   already used the new names, and guide/claude-code.astro and
+   guide/remote-access.astro were ported onto them too once it turned out
+   their still-.shell/.eyebrow markup was why "Guide"/"Step N" labels and
+   the outer column width were silently unstyled; .band/.doc have no
+   replacement to rename to yet — .pagehead/.prose/.cellgrid above are the
+   intended eventual home for this content, once someone gives these pages
+   a real mockup). Ported onto the new tokens (--paper -> --ink,
    --accent -> --signal, --teal -> --ok) rather than restyled.
    Delete this block the day the last .band.doc section is migrated. */
 .band{padding:5rem 0;border-top:1px solid var(--line)}
@@ -199,6 +203,24 @@ pre.term .bar{
 }
 pre.term .bar i{width:8px;height:8px;border-radius:50%;background:rgba(255,255,255,.12)}
 pre.term code{display:block;padding:14px 16px;font:13px/1.7 var(--mono);color:var(--ok);background:none;overflow-x:auto}
+
+/* Bare <pre> — the same shell-transcript job as pre.term above, minus the
+   fake window bar, for the mockups in the two long-form guides (a "New
+   Host" dialog, install commands, MOSH DIAGNOSTICS, etc.) that never carry
+   a .bar div. Without this, a plain <pre> had zero rules anywhere in this
+   file — no background, no border, and critically no overflow-x, which is
+   exactly what forced 390px-wide pages to overflow horizontally. Kept as a
+   separate selector rather than folded into pre.term so pre.term's own
+   overflow:hidden (the inner .term code does the scrolling there) is
+   untouched. */
+pre{
+  background:var(--panel);border:1px solid var(--line);border-radius:10px;
+  overflow-x:auto;margin:18px 0;padding:14px 16px;
+  font:13px/1.7 var(--mono);color:var(--ok);
+}
+pre b{color:var(--ink);font-weight:700}
+pre i{color:var(--meta);font-style:normal}
+pre u{color:var(--amber);text-decoration:none}
 
 /* ── callouts ────────────────────────────────────────────────── */
 .callout{border:1px solid var(--line);border-left:3px solid var(--amber);background:var(--panel);border-radius:0 10px 10px 0;padding:18px 20px;margin:24px 0}
@@ -397,6 +419,9 @@ details code{font:13.5px var(--mono);background:var(--raise);border-radius:5px;p
 .galtabs button[aria-selected="true"]{color:var(--signal);border-color:rgba(122,167,255,.45);
   background:rgba(122,167,255,.06)}
 
+.shots{padding:64px 0;text-align:center}
+.shots h2{max-width:26ch;margin:0 auto 32px}
+
 /* ── home page ──────────────────────────────────────────────────
    Everything below, through the price section, is lifted from
    home.linked.html's own embedded <style> — centralized here so the page
@@ -457,6 +482,12 @@ details code{font:13.5px var(--mono);background:var(--raise);border-radius:5px;p
 .pane .title b{color:var(--citron);font-weight:700}
 .pane .body{padding:16px 16px 20px;font-size:14.5px;color:var(--dim)}
 .pane .body code{font:12.5px var(--mono);color:var(--ink);background:rgba(255,255,255,.06);padding:2px 6px;border-radius:4px}
+/* The home page's own .pane .body is always a single block of text. The
+   guide pages' step grids (steps3/step3 renamed onto this exact pattern —
+   see moshpit.css's header note on .panes/.pane reuse) sometimes need two
+   paragraphs per pane; without this the reset at the top of this file zeroes
+   both margins and they run together with no gap. */
+.pane .body p+p{margin-top:10px}
 
 .voice{padding:40px 0 72px}
 .voice .k{color:var(--ok)}

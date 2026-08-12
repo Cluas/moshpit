@@ -2,63 +2,48 @@
 import Marketing from '@layouts/Marketing.astro';
 
 // Raw markup, lifted verbatim from the page this replaces.
-const body = `<!-- ══ 开头 ══ -->
-<div class="dwrap">
-<!--DOCSHELL:BEGIN-->
-<aside class="dnav" id="dnav">
-  <a class="dhome" href="/zh">← 回到首页</a>
-  <p class="dtitle">文档</p>
-  <button class="dsearchbtn" type="button" data-docsearch><span>搜索文档…</span><kbd>⌘K</kbd></button>
-  <nav><p class="dsec">开始</p><a href="/zh/docs/intro">Moshpit 是做什么的</a><a href="/zh/docs/setup">配置一个连接</a><a href="/zh/docs/first-session">跑通第一个会话</a><p class="dsec">连接</p><a href="/zh/docs/keys">SSH 密钥与主机信任</a><a href="/zh/docs/mosh">Mosh 与漫游</a><a href="/zh/guide/remote-access">在任何地方连上你的机器</a><p class="dsec">多路复用器</p><a href="/zh/docs/multiplexers">选 tmux 还是 herdr</a><a href="/zh/docs/tmux">使用 tmux</a><a href="/zh/docs/herdr">使用 herdr</a><p class="dsec">Agent</p><a href="/zh/docs/agents">Agent 状态与锁屏</a><a href="/zh/docs/worktrees">用 git worktree 开隔离任务</a><a href="/zh/guide/claude-code" class="on" aria-current="page">用 iPhone 跑 Claude Code</a><p class="dsec">输入</p><a href="/zh/docs/keyboard">键盘与快捷键</a><a href="/zh/docs/scrolling">滚动与回滚</a><a href="/zh/docs/clipboard">剪贴板与粘贴</a><a href="/zh/docs/ime">中日韩与输入法</a><p class="dsec">外观</p><a href="/zh/docs/appearance">主题、字体与图标</a><p class="dsec">帮助</p><a href="/zh/docs/troubleshooting">排障</a><a href="/zh/compare">和别的比怎么样</a></nav>
-</aside>
-<!--DOCSHELL:END-->
-<div class="dbody">
-<div class="shell">
-  <section class="band doc" style="border-top:none">
-    <p class="eyebrow">指南</p>
-    <h2>在 iPhone 上跑 Claude Code</h2>
+const body = `<header class="pagehead">
+  <div class="wrap">
+    <div class="kicker">指南</div>
+    <h1>在 iPhone 上跑 Claude Code</h1>
     <p class="sub">这个 App 就是为这条路存在的。四步：连上主机、把 herdr 装上、起 Claude Code、
     在锁屏上回它的权限询问。这一页里出现的每一条命令和每一句提示，都是 App 里真实的那一份，
     不是示意。</p>
+  </div>
+</header>
 
-    <div class="steps3">
-      <div class="step3">
-        <h3 id="s1">连上主机</h3>
-        <p>填 SSH 信息、核一次主机指纹、把这条连接的 <b>Multiplexer</b> 选成
-        <b>herdr</b>。</p>
-      </div>
-      <div class="step3">
-        <h3 id="s2">把 agent 起起来</h3>
-        <p>在 herdr 的 pane 里敲 <code>claude</code>；或者让 Moshpit 现开一个
-        <code>git worktree</code>，在里面起 Claude Code。</p>
-      </div>
-      <div class="step3">
-        <h3 id="s3">把手机放下</h3>
-        <p>Claude Code 要人点头的时候，锁屏会告诉你，并且直接给你回它的按钮。</p>
-      </div>
-    </div>
+<main class="wrap">
+  <div class="panes">
+    <article class="pane">
+      <div class="title" id="s1"><b>1</b> 连上主机</div>
+      <div class="body">填 SSH 信息、核一次主机指纹、把这条连接的 <b>Multiplexer</b> 选成
+      <b>herdr</b>。</div>
+    </article>
+    <article class="pane">
+      <div class="title" id="s2"><b>2</b> 把 agent 起起来</div>
+      <div class="body">在 herdr 的 pane 里敲 <code>claude</code>；或者让 Moshpit 现开一个
+      <code>git worktree</code>，在里面起 Claude Code。</div>
+    </article>
+    <article class="pane">
+      <div class="title" id="s3"><b>3</b> 把手机放下</div>
+      <div class="body">Claude Code 要人点头的时候，锁屏会告诉你，并且直接给你回它的按钮。</div>
+    </article>
+  </div>
 
-    <div class="wire" style="margin-top:2.2rem">
-      <p><b>开始之前你得有什么。</b>一台你本来就能 SSH 上去的服务器、一台 iOS 18 以上的
-      iPhone、以及服务器上已经装好的 Claude Code。Moshpit 不负责装 Claude Code，也不和
-      Anthropic 通信——它驱动的是一个真实的 shell，Claude Code 只是跑在里面的一个程序。</p>
-      <p><b>herdr 不是必需的。</b>它的价值在于把「agent 现在什么状态」从猜变成读，所以这份
-      指南用它。走 tmux 那条路一样能成，见
-      <a href="/zh/docs/tmux" style="color:var(--teal)">用 tmux</a> 和
-      <a href="/zh/docs/agents" style="color:var(--teal)">在锁屏上回应 agent</a>。</p>
-    </div>
-  </section>
-</div>
+  <div class="wire" style="margin-top:2.2rem">
+    <p><b>开始之前你得有什么。</b>一台你本来就能 SSH 上去的服务器、一台 iOS 18 以上的
+    iPhone、以及服务器上已经装好的 Claude Code。Moshpit 不负责装 Claude Code，也不和
+    Anthropic 通信——它驱动的是一个真实的 shell，Claude Code 只是跑在里面的一个程序。</p>
+    <p><b>herdr 不是必需的。</b>它的价值在于把「agent 现在什么状态」从猜变成读，所以这份
+    指南用它。走 tmux 那条路一样能成，见
+    <a href="/zh/docs/tmux" style="color:var(--teal)">用 tmux</a> 和
+    <a href="/zh/docs/agents" style="color:var(--teal)">在锁屏上回应 agent</a>。</p>
+  </div>
 
-
-
-</div>
-
-<!-- ══ 第一步 ══ -->
-<div class="shell">
+  <!-- ══ 第一步 ══ -->
   <section class="band doc">
-    <p class="eyebrow">第一步</p>
-    <h2>先把主机连上</h2>
+    <p class="kicker">第一步</p>
+    <h2 id="s-step1">先把主机连上</h2>
     <p class="sub">四个字段加一次指纹核对。如果你在电脑上本来就能 <code>ssh</code> 上这台机器，
     这一步一分钟就完了。</p>
 
@@ -103,13 +88,11 @@ Verify it matches the server (e.g. \`ssh-keygen -lf /etc/ssh/ssh_host_ed25519_ke
       带密码短语加密的私钥则完全用不了。</p>
     </div>
   </section>
-</div>
 
-<!-- ══ 第二步 ══ -->
-<div class="shell">
+  <!-- ══ 第二步 ══ -->
   <section class="band doc">
-    <p class="eyebrow">第二步</p>
-    <h2>把 herdr 装到主机上</h2>
+    <p class="kicker">第二步</p>
+    <h2 id="s-step2">把 herdr 装到主机上</h2>
     <p class="sub">herdr 是专门为 CLI coding agent 写的 Rust 单二进制。它把
     <code>agent_status</code> 做成了每个 pane 上的协议字段——这就是为什么 Moshpit
     不用你在主机上装任何东西，也知道 Claude Code 正等着你。</p>
@@ -157,13 +140,11 @@ curl -fsSL https://herdr.dev/install.sh | sh</pre>
       herdr 的侧栏大概要吃掉三分之一屏宽。控制面的那些 sheet 仍然可用，走的是另一条 SSH 旁路。</p>
     </div>
   </section>
-</div>
 
-<!-- ══ 第三步 ══ -->
-<div class="shell">
+  <!-- ══ 第三步 ══ -->
   <section class="band doc">
-    <p class="eyebrow">第三步</p>
-    <h2>起 Claude Code</h2>
+    <p class="kicker">第三步</p>
+    <h2 id="s-step3">起 Claude Code</h2>
     <p class="sub">两条路。在你已有的 pane 里跑，或者让 Moshpit 开一个隔离的 git worktree
     在里面跑。后一条才是在手机上真正值得用的那条。</p>
 
@@ -278,13 +259,11 @@ curl -fsSL https://herdr.dev/install.sh | sh</pre>
       所以「菜单 → 对话框 → 对话框」这段只有编译和单测保证，没有设备录像。</p>
     </div>
   </section>
-</div>
 
-<!-- ══ 第四步 ══ -->
-<div class="shell">
+  <!-- ══ 第四步 ══ -->
   <section class="band doc">
-    <p class="eyebrow">第四步</p>
-    <h2>在锁屏上回它的权限询问</h2>
+    <p class="kicker">第四步</p>
+    <h2 id="s-step4">在锁屏上回它的权限询问</h2>
     <p class="sub">Claude Code 停下来问你能不能跑某条命令。琥珀色在这个站上只有一个意思——
     「有 agent 在等人」——它出现的地方就是这里。</p>
 
@@ -308,7 +287,7 @@ curl -fsSL https://herdr.dev/install.sh | sh</pre>
     <p class="txt">就是往 Claude Code 那个 pane 里发原始按键。没有别的，也没有什么聪明操作。</p>
 
     <div class="tbl-wrap">
-      <table>
+      <table class="ledger">
         <thead>
           <tr><th>按钮</th><th class="us">发进 pane 的字节</th><th>什么状态下出现</th></tr>
         </thead>
@@ -388,12 +367,10 @@ curl -fsSL https://herdr.dev/install.sh | sh</pre>
       </div>
     </div>
   </section>
-</div>
 
-<!-- ══ 边界 ══ -->
-<div class="shell">
+  <!-- ══ 边界 ══ -->
   <section class="band doc" id="background">
-    <p class="eyebrow">诚实的那一段</p>
+    <p class="kicker">诚实的那一段</p>
     <h2>你把 App 切到后台之后会怎样</h2>
     <p class="sub">在你打算依赖上面那一切之前，这一段才是该读的。它是「中间不放服务器」这个决定的
     必然代价，也不是任何一个设置能关掉的。</p>
@@ -446,13 +423,11 @@ Moshpit            <i>paused — open Moshpit to refresh</i></pre>
     等画面重新出帧就自动消失。你电脑上跑 herdr 自己的 <b>TUI</b> 不占 attach 名额，
     所以「电脑 TUI + 手机」理论上是安全的，但<b>这个组合没有被验证过</b>。</p>
   </section>
-</div>
 
-<!-- ══ FAQ ══ -->
-<div class="shell">
+  <!-- ══ FAQ ══ -->
   <section class="band doc">
-    <p class="eyebrow plain">零碎问题</p>
-    <h2>这份指南通常会引出的几个问题</h2>
+    <p class="k">零碎问题</p>
+    <h2 id="s-faq">这份指南通常会引出的几个问题</h2>
     <div class="faq">
       <details>
         <summary>非得用 herdr 吗？</summary>
@@ -499,150 +474,11 @@ Moshpit            <i>paused — open Moshpit to refresh</i></pre>
       </details>
     </div>
   </section>
-</div>
-<!--DOCNEXT:BEGIN-->
-<div class="dpager"><a class="dprev" href="/zh/docs/worktrees"><span>上一页</span>用 git worktree 开隔离任务</a><a class="dnext" href="/zh/docs/keyboard"><span>下一页</span>键盘与快捷键</a></div>
-<!--DOCNEXT:END-->
-</div><!--dbody-->
-<!--DOCTOC:BEGIN-->
-<aside class="dtoc">
-  <p class="dtoclabel">本页内容</p>
-  <nav><a href="#s1">连上主机</a><a href="#s2">把 agent 起起来</a><a href="#s3">把手机放下</a><a href="#s4">新建连接</a><a href="#s5">指纹核一次</a><a href="#s6">装它</a><a href="#s7">没装的话，App 会直说</a><a href="#s8">在已有的 pane 里跑</a><a href="#s9">New Agent Task</a><a href="#s10">这张表单，一栏一栏说</a><a href="#s11">点 Start 之后实际跑的是什么</a><a href="#s12">你会先看到什么</a><a href="#s13">用完之后怎么收</a><a href="#s14">每个按钮到底敲进去什么</a><a href="#s15">点了却送不到的时候</a><a href="#s16">控制它的四个开关</a><a href="#s17">iOS 会挂起连接，状态就停在那了</a><a href="#s18">所以它选择说「暂停了」，而不是骗你</a><a href="#s19">就算在前台，外面的改动也会滞后</a><a href="#s20">两个 Moshpit 连同一个 pane 会打架</a></nav>
-</aside>
-<!--DOCTOC:END-->
-</div><!--/dwrap-->
 
-
-
-</div>
-
-
-
-</div>
-
-
-
-</div>
-
-
-
-</div>
-
-
-
-</div>
-
-
-
-</div>
-
-
-
-</div>
-
-
-
-</div>
-
-
-
-</div>
-
-
-
-</div>
-
-
-
-</div>
-
-
-
-</div>
-
-
-
-</div>
-
-
-
-</div>
-
-
-
-</div>
-
-
-
-</div>
-
-
-
-</div>
-
-
-
-</div>
-
-
-
-</div>
-
-
-
-</div>
-
-
-
-</div>
-
-
-
-</div>
-
-
-
-</div>
-
-
-
-</div>
-
-
-
-</div>
-
-
-
-</div>
-
-
-
-</div>
-
-
-
-</div>
-
-
-
-</div>
-
-
-
-</div>
-
-
-
-</div>
-
-
-
-</div>
-
-
-
-</div>`;
+  <p class="prose" style="margin:32px 0 60px">接下来看
+  <a href="/zh/guide/remote-access">在任何地方连回自己的机器</a> ·
+  <a href="/zh/guides">回到指南列表</a></p>
+</main>`;
 ---
 
 <Marketing
@@ -650,6 +486,14 @@ Moshpit            <i>paused — open Moshpit to refresh</i></pre>
   description="从头到尾走一遍：连上主机、装好 herdr、在 pane 里或用一个全新的 git worktree 起 Claude Code，然后在锁屏上回它的权限询问。"
   path="guide/claude-code"
   lang="zh"
+  scrollspy={[
+    { id: 's-step1', label: '第一步' },
+    { id: 's-step2', label: '第二步' },
+    { id: 's-step3', label: '第三步' },
+    { id: 's-step4', label: '第四步' },
+    { id: 'background', label: '边界' },
+    { id: 's-faq', label: '问答' },
+  ]}
 >
   <Fragment set:html={body} />
 </Marketing>
