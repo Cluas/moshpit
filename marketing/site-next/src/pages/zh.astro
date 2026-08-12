@@ -103,6 +103,30 @@ const body = `<!-- ══ HERO ══ -->
   </div>
 </section>
 
+<!-- ══ SCREENSHOTS ══ -->
+<section class="shots" id="s-shots">
+  <div class="wrap">
+    <div class="k">眼见为实</div>
+    <h2>是真终端，不是演示视频。</h2>
+    <div class="gal">
+      <div class="galframes">
+        <img class="on" src="/02-agent-terminal.jpg" width="1320" height="2763" loading="lazy" alt="终端会话，带 agent 状态面包屑">
+        <img src="/07-tmux-terminal.jpg" width="1320" height="2815" loading="lazy" alt="原生渲染的 tmux 会话，支持窗口和面板切换">
+        <img src="/06-new-task.jpg" width="1320" height="1466" loading="lazy" alt="New Agent Task 表单：仓库、分支、agent 与首条消息">
+        <img src="/20-lockscreen.jpg" width="440" height="956" loading="lazy" alt="iPhone 锁屏：agent 在等你，不解锁就能 Allow 或 Deny">
+        <img src="/10-themes.jpg" width="1320" height="2868" loading="lazy" alt="主题选择器：四套 App 主题和多个内置终端配色">
+      </div>
+      <div class="galtabs" role="tablist">
+        <button type="button" aria-selected="true">终端</button>
+        <button type="button" aria-selected="false">tmux</button>
+        <button type="button" aria-selected="false">新建任务</button>
+        <button type="button" aria-selected="false">锁屏</button>
+        <button type="button" aria-selected="false">主题</button>
+      </div>
+    </div>
+  </div>
+</section>
+
 <!-- ══ VOICE ══ -->
 <section class="voice" id="s-voice">
   <div class="wrap">
@@ -169,6 +193,7 @@ const body = `<!-- ══ HERO ══ -->
     { id: 's-home', label: '首页' },
     { id: 's-agents', label: '支持' },
     { id: 's-flow', label: '流程' },
+    { id: 's-shots', label: '截图' },
     { id: 's-voice', label: '语音' },
     { id: 's-honest', label: '诚实' },
     { id: 's-price', label: '价格' },
