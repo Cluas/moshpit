@@ -831,6 +831,31 @@ final class TmuxSessionController: MultiplexerControlling {
         send(rawCommand: "refresh-client -C \(lastClientSize.cols)x\(lastClientSize.rows)")
         send(rawCommand: "resize-window -t \(win) -x \(lastClientSize.cols) -y \(lastClientSize.rows)")
         resizedWindows.insert(win)
+        // Cover the beat between the re-pin and the program's repaint.
+        //
+        // `releaseWindowPins()` deliberately hands the window back while we're
+        // away (else a desktop client attaching meanwhile is stranded at phone
+        // width) — and `%output` keeps flowing the whole time, so lines laid out
+        // for whatever width the window took while we were gone were being fed
+        // into this narrower grid. Returning therefore lands on one visibly
+        // mis-wrapped frame that fixes itself a moment later, once the resize
+        // above reaches the program and it redraws. Reuse the pane-switch cover:
+        // an immediate capture silently corrects the buffer under it (it can
+        // catch a diffing TUI mid-redraw, so it must not reveal), and the
+        // settled capture is the one the user actually sees.
+        guard rendersOutput else { return }
+        if let paneId = snapshot.activePaneId ?? snapshot.activePanes.first?.id {
+            paneCoordinators[paneId]?.veilForSwitch()
+            paneCoordinators[paneId]?.extendCoverTimeout(by: 2.0)
+        }
+        resyncActivePane(reveal: false)
+        pendingSettleResync?.cancel()
+        pendingSettleResync = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(700))
+            guard !Task.isCancelled else { return }
+            self?.extendActiveCoverTimeout(by: 2.0)
+            self?.resyncActivePane()
+        }
     }
 
     /// Split the active window to add a pane, then show that new pane

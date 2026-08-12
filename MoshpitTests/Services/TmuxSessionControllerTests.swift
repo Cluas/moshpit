@@ -289,6 +289,47 @@ struct TmuxSessionControllerTests {
                 "intermediate sizes must be coalesced away")
     }
 
+    @Test("coming back to the foreground re-pins AND repaints, not just re-pins")
+    func repinRepaintsTheActivePane() async throws {
+        let (controller, transport) = await makeAttachedController()
+        _ = await waitUntil { await transport.recordedCommands().count >= 3 }
+        pushOneWindowDiscovery(transport)
+        #expect(await waitUntil { controller.snapshot.activeWindowId == "@0" })
+        // Answer the fresh attach's backfill probe + dump so nothing is left in
+        // flight to park the repaint behind (see `backfillsInFlight`). tmux
+        // answers every command in send order, so the FIFO here is: the probe,
+        // the window pin (no callback, but it still takes a reply slot), then
+        // the dump the probe's reply enqueued.
+        transport.pushText("""
+        %begin 4 4 0
+        0 0
+        %end 4 4 0
+        %begin 5 5 0
+        %end 5 5 0
+        %begin 6 6 0
+        hello
+        %end 6 6 0
+
+        """)
+        _ = await waitUntil {
+            await transport.recordedCommands().contains { $0.hasPrefix("capture-pane -p -e -S") }
+        }
+        let before = await transport.recordedCommands().count
+
+        // `%output` kept flowing while backgrounded, laid out for whatever width
+        // the window took once we handed it back — so returning has to repaint,
+        // not just re-pin, or the stale mis-wrapped frame is what's on screen.
+        controller.repinActiveWindow()
+
+        #expect(await waitUntil(timeout: 2.0) {
+            let cmds = await transport.recordedCommands()
+            guard cmds.count > before else { return false }
+            let after = cmds[before...]
+            return after.contains { $0.hasPrefix("resize-window -t @0") }
+                && after.contains { $0.hasPrefix("capture-pane -p -e -t %0") }
+        }, "the re-pin must be followed by a repaint of the active pane")
+    }
+
     @Test("a fresh attach pins the active window to the client grid without waiting for a size report")
     func freshAttachPinsTheWindow() async throws {
         let transport = MockTmuxTransport()
