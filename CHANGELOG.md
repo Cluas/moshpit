@@ -40,10 +40,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Returning from the background no longer flashes a mis-wrapped frame.**
   Moshpit hands the tmux window back while it is away, so a desktop client
   attaching meanwhile isn't stranded at phone width — but output kept arriving
-  the whole time, laid out for whatever width the window then took. Coming back
-  showed one visibly wrong frame until the program redrew. The pane is now
-  covered across the re-pin and revealed on the repaint, the same way a pane
-  switch and a keyboard resize already were.
+  the whole time, laid out for whatever width the window then took, and painting
+  it into the phone's grid is what made coming back land on one visibly wrong
+  frame. That output is no longer painted at all: the screen keeps the last
+  frame it drew — a few seconds stale, but correctly wrapped — and is repainted
+  from tmux once the window is ours again. Nothing is lost, because a tmux
+  pane's scrollback lives on the server and that is what the scroll gesture
+  pages. Agent bells still come through while away, so "needs your input" still
+  reaches you.
 - **The first connect no longer wraps every line a character or two short.**
   Connecting to a session a desktop terminal is also attached to left the tmux
   window at the desktop's width: the program in the pane rendered to that width

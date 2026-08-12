@@ -289,6 +289,39 @@ struct TmuxSessionControllerTests {
                 "intermediate sizes must be coalesced away")
     }
 
+    @Test("output arriving while the window pin is handed back is not painted, but its bell still is")
+    func outputWhilePinReleasedIsDropped() async throws {
+        let (controller, transport) = await makeAttachedController()
+        _ = await waitUntil { await transport.recordedCommands().count >= 3 }
+        pushOneWindowDiscovery(transport)
+        #expect(await waitUntil { controller.snapshot.activePaneId == "%0" })
+        await settleControlChatter(transport, answered: 3)
+
+        let terminal = controller.terminalView(for: "%0").getTerminal()
+        transport.pushText("%output %0 abc\n")
+        #expect(await waitUntil { terminal.getCursorLocation().x == 3 },
+                "output must paint while the pin is ours")
+
+        // Off screen / backgrounded: tmux has handed the window to whatever else
+        // is attached, so these bytes are laid out for someone else's width.
+        controller.releaseWindowPins()
+
+        @MainActor final class Bells { var count = 0 }
+        let bells = Bells()
+        controller.onPaneBell = { _ in bells.count += 1 }
+
+        transport.pushText("%output %0 defghij\n")
+        try? await Task.sleep(for: .milliseconds(150))
+        #expect(terminal.getCursorLocation().x == 3,
+                "a released pin means these bytes must not reach the grid")
+
+        // The bell has to survive: it's the agent-needs-you signal, and the
+        // parser that normally raises it is exactly what's being skipped.
+        transport.pushText("%output %0 \\007\n")   // tmux escapes BEL octally
+        #expect(await waitUntil { bells.count == 1 }, "a bell must still get through")
+        #expect(terminal.getCursorLocation().x == 3)
+    }
+
     @Test("coming back to the foreground re-pins AND repaints, not just re-pins")
     func repinRepaintsTheActivePane() async throws {
         let (controller, transport) = await makeAttachedController()

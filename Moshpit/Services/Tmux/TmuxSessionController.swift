@@ -831,29 +831,25 @@ final class TmuxSessionController: MultiplexerControlling {
         send(rawCommand: "refresh-client -C \(lastClientSize.cols)x\(lastClientSize.rows)")
         send(rawCommand: "resize-window -t \(win) -x \(lastClientSize.cols) -y \(lastClientSize.rows)")
         resizedWindows.insert(win)
-        // Cover the beat between the re-pin and the program's repaint.
+        // Catch the screen up to everything that happened while we were away.
         //
-        // `releaseWindowPins()` deliberately hands the window back while we're
-        // away (else a desktop client attaching meanwhile is stranded at phone
-        // width) — and `%output` keeps flowing the whole time, so lines laid out
-        // for whatever width the window took while we were gone were being fed
-        // into this narrower grid. Returning therefore lands on one visibly
-        // mis-wrapped frame that fixes itself a moment later, once the resize
-        // above reaches the program and it redraws. Reuse the pane-switch cover:
-        // an immediate capture silently corrects the buffer under it (it can
-        // catch a diffing TUI mid-redraw, so it must not reveal), and the
-        // settled capture is the one the user actually sees.
+        // `handlePaneOutput` drops `%output` for as long as the pin is handed
+        // back (it's laid out for someone else's width), so the buffer still
+        // holds the last frame we painted — stale, but correctly wrapped, which
+        // is a perfectly good thing to look at for the one round trip this
+        // takes. NO cover here on purpose: a veil is a flat fill, and blanking
+        // content that is merely a few seconds out of date reads worse than the
+        // brief staleness it hides.
+        //
+        // One pass, not the immediate + settled pair `commitClientSize()` uses:
+        // with nothing covering the terminal, a capture that raced the
+        // program's post-resize redraw would be shown rather than silently
+        // corrected, so it's better to wait for the settle and repaint once.
         guard rendersOutput else { return }
-        if let paneId = snapshot.activePaneId ?? snapshot.activePanes.first?.id {
-            paneCoordinators[paneId]?.veilForSwitch()
-            paneCoordinators[paneId]?.extendCoverTimeout(by: 2.0)
-        }
-        resyncActivePane(reveal: false)
         pendingSettleResync?.cancel()
         pendingSettleResync = Task { [weak self] in
-            try? await Task.sleep(for: .milliseconds(700))
+            try? await Task.sleep(for: .milliseconds(300))
             guard !Task.isCancelled else { return }
-            self?.extendActiveCoverTimeout(by: 2.0)
             self?.resyncActivePane()
         }
     }
@@ -1944,6 +1940,27 @@ final class TmuxSessionController: MultiplexerControlling {
         // came back), mint a terminal on demand so we never drop bytes.
         onPaneActivity?(paneId)
         guard rendersOutput else { return }
+        // While our window pin is handed back, don't paint.
+        //
+        // `releaseWindowPins()` gives the window up whenever the terminal goes
+        // off screen or the app leaves the foreground, so that a desktop client
+        // attaching meanwhile isn't stranded at phone width — and tmux keeps
+        // sending `%output` throughout. Those bytes are laid out for whatever
+        // width the window then took, and feeding them into this phone-sized
+        // grid is what made coming back land on a visibly mis-wrapped screen.
+        // Covering that up only traded it for a blank one; not painting it at
+        // all is what actually fixes it. `repinActiveWindow()` repaints from
+        // tmux on the way back.
+        //
+        // Nothing is lost by dropping these: a tmux pane's scrollback lives on
+        // the server and the scroll gesture pages THAT, never this local buffer.
+        // The bell is the exception that has to get through — it's the
+        // agent-needs-you signal, and it normally reaches us through SwiftTerm's
+        // parser, which this path skips.
+        if pinsReleased {
+            if data.contains(0x07) { onPaneBell?(paneId) }
+            return
+        }
         if let coordinator = paneCoordinators[paneId] {
             coordinator.feed(data: data)
             return
