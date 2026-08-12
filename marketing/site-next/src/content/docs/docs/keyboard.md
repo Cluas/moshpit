@@ -61,7 +61,7 @@ Two of these exist specifically for coding agents: `⌃End` jumps a long Claude 
 
 ### Drag, don't tap
 
-<b>✛ D-pad.</b> A joystick with a dead zone and a dominant axis: it fires once when you enter a direction, then repeats while you hold. Plain arrows go out through the D-pad's own encoder, so application-cursor-key mode is respected and shell history search keeps working.
+<b>✛ D-pad.</b> A joystick with a dead zone and a dominant axis: press it, then push — it fires once when you enter a direction and repeats while you hold. Plain arrows go out through the D-pad's own encoder, so application-cursor-key mode is respected and shell history search keeps working. The brief press before it engages is deliberate: the bar sits close enough to the home indicator that a swipe-up-to-background can begin on this chip, and a stick that fired on any moving touch would send that swipe's direction to the remote as a real arrow key.
 
 ### Three lines a step
 

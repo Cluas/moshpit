@@ -23,6 +23,8 @@ Without a multiplexer there is no tree to show, so the bar shows the connection 
 
 Tap the terminal to raise the keyboard. Above it sits the shortcut bar: `esc`, `tab`, `^C`, `^L`, paste and a D-pad by default — all of it replaceable, see [Keyboard and shortcuts](/docs/keyboard). A hardware keyboard works too, with the usual control chords going straight through.
 
+Once the terminal has the keyboard, a tap puts the cursor where you tapped — the tap goes out as the click that a mouse-aware program (Claude Code's prompt, vim, less) reads as "cursor goes here", so a character in the middle of a long prompt is one tap rather than a run of arrow keys. A plain shell gets nothing, because a shell would print the click into its command line instead of acting on it.
+
 ## Move around
 
 - **Switch windows or panes** — tap the matching breadcrumb segment and pick from the sheet. On tmux you can also swipe horizontally across the terminal.
