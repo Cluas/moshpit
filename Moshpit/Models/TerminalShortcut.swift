@@ -176,6 +176,36 @@ struct TerminalShortcut: Identifiable, Codable, Equatable, Hashable {
         return data.isEmpty ? nil : data
     }
 
+    /// True when the payload is a run of discrete key PRESSES rather than text
+    /// to type.
+    ///
+    /// The rule is the payload's own bytes: C0 controls are keys (Tab, Return,
+    /// Esc), printable characters are text. So `\t\r` is two keystrokes while
+    /// `git status` stays one string — which is what each actually is to the
+    /// program on the other end.
+    var sendsDiscreteKeys: Bool {
+        guard kind == .text else { return false }
+        let bytes = Array(Self.unescape(payload).utf8)
+        return bytes.count > 1 && bytes.allSatisfy { $0 < 0x20 || $0 == 0x7F }
+    }
+
+    /// The write(s) this shortcut makes, in order.
+    ///
+    /// Normally one — a shortcut is one chunk of bytes. Key sequences are the
+    /// exception, and the reason is the receiver, not the wire: a TUI that gets
+    /// content and a carriage return in the SAME read commonly treats the whole
+    /// chunk as a PASTE, so the `\r` becomes a literal newline in the input box
+    /// instead of submitting. That is exactly the reported "⇥⏎ only did the
+    /// tab" — the completion was accepted, then the Return landed as a newline.
+    ///
+    /// Ordering was never the problem; atomicity was. Splitting the writes lets
+    /// the remote see two key presses, the same shape a human's two taps make.
+    func encodedStages() -> [Data] {
+        guard let data = encodedBytes(), !data.isEmpty else { return [] }
+        guard sendsDiscreteKeys else { return [data] }
+        return data.map { Data([$0]) }
+    }
+
     /// Interpret `\r` `\n` `\t` `\e` escapes typed in the payload editor.
     static func unescape(_ s: String) -> String {
         s.replacingOccurrences(of: "\\r", with: "\r")
@@ -476,9 +506,12 @@ final class ShortcutStore {
             // Return, and the Claude Code two-step. Tab accepts whatever
             // Claude Code is suggesting and Return sends it, which is two taps
             // in the one place you least want them — so `⇥⏎` sends 0x09 0x0D
-            // as a single write. A `.text` payload rather than a new kind:
-            // `unescape` already turns these into exactly those two bytes, and
-            // the PTY delivers them in order.
+            // from one chip. A `.text` payload rather than a new kind:
+            // `unescape` already turns these into exactly those two bytes.
+            //
+            // They go out as two SEPARATE writes — see `encodedStages()`. This
+            // shipped as a single write, which is what made the Return land as
+            // a newline instead of submitting.
             //
             // Both start outside the bar. Return is reachable on the software
             // keyboard, and ⇥⏎ only means anything to an agent that suggests

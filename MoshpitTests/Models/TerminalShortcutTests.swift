@@ -89,14 +89,37 @@ struct TerminalShortcutEncodingTests {
     @Test("The Claude Code two-step sends Tab then Return, in that order")
     func tabThenEnter() throws {
         // Accepting a suggested prompt is Tab followed by Return, and the
-        // order is the whole point — the PTY delivers a single write's bytes
-        // in sequence, so one chip can do both.
+        // order is the whole point — so one chip can do both.
         let sc = try #require(ShortcutStore.builtins.first { $0.chipLabel == "⇥⏎" })
         #expect(sc.kind == .text)
         #expect(sc.encodedBytes() == Data([0x09, 0x0D]))
         // Must NOT append its own CR on top — that would submit twice.
         #expect(sc.appendReturn == false)
         #expect(sc.isBuiltin)
+        // …and as TWO writes. Reported as "tab + enter only did the tab":
+        // arriving in one read, the Return reads as pasted text and lands as a
+        // newline in the input box instead of submitting.
+        #expect(sc.encodedStages() == [Data([0x09]), Data([0x0D])])
+    }
+
+    @Test("only control-byte payloads split; text stays one write")
+    func onlyKeySequencesSplit() {
+        func text(_ payload: String) -> TerminalShortcut {
+            var sc = TerminalShortcut()
+            sc.kind = .text
+            sc.payload = payload
+            return sc
+        }
+        // Typing a command IS one string to the shell — splitting it would put
+        // 120ms between every character.
+        #expect(text("git status").encodedStages() == [Data("git status".utf8)])
+        #expect(text("git status").sendsDiscreteKeys == false)
+        // A lone key has nothing to pace against.
+        #expect(text(#"\r"#).encodedStages() == [Data([0x0D])])
+        // Mixed content is text with a submit on the end, not a key run.
+        #expect(text(#"deploy\r"#).sendsDiscreteKeys == false)
+        // Escape-then-key runs split like ⇥⏎ does.
+        #expect(text(#"\e\r"#).encodedStages() == [Data([0x1B]), Data([0x0D])])
     }
 
     @Test("ctrl (like dpad/scroll) has no bytes of its own — resolved by the caller")

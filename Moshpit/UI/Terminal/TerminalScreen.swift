@@ -878,12 +878,30 @@ struct TerminalScreen: View {
             sendArrow(shortcut.key.lowercased())
             return
         }
-        guard let data = shortcut.encodedBytes() else { return }
         // Unified routing handles tmux / mosh / plain SSH (the mosh path
         // previously fell through to a closed SSH session and silently
         // dropped every shortcut).
-        active?.sendInput(data)
+        let stages = shortcut.encodedStages()
+        guard let first = stages.first else { return }
+        active?.sendInput(first)
+        guard stages.count > 1 else { return }
+        let rest = stages.dropFirst()
+        Task {
+            for stage in rest {
+                try? await Task.sleep(for: Self.keySequenceGap)
+                active?.sendInput(stage)
+            }
+        }
     }
+
+    /// Gap between the key presses of a multi-key shortcut (`⇥⏎`).
+    ///
+    /// Long enough that the remote reads them separately rather than as one
+    /// pasted chunk, and long enough for the first key's effect to render —
+    /// accepting a completion is a re-render on the other end, and a Return
+    /// evaluated against the pre-accept state does nothing. Short enough that
+    /// one tap still feels like one action.
+    private static let keySequenceGap: Duration = .milliseconds(120)
 
     /// Send an arrow key from the D-pad as a CSI sequence (ESC [ A/B/C/D in
     /// normal mode, ESC O A/B/C/D in application cursor-key mode — matching
