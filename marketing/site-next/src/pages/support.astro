@@ -5,14 +5,13 @@ import Marketing from '@layouts/Marketing.astro';
 const body = `<div class="wrap">
   <section class="band doc" style="border-top:none">
 <h2>Support</h2>
+<p class="meta">Contact: GitHub Issues · see <a href="/privacy">Privacy</a></p>
 
 <h3>Get in touch</h3>
-<p class="txt">Questions, bug reports and feature requests all go to the same place, and
-the address opens with the App Store listing.
-<!-- BLOCKER: App Store Connect requires a working support URL and contact at
-     submission. Put the real address here before submitting; the previous
-     placeholder (support@moshpit.example) was a live mailto to a domain that
-     does not exist, which is worse than saying nothing. --></p>
+<p class="txt">Questions, bug reports and feature requests all go through GitHub Issues:
+<a href="https://github.com/Cluas/moshpit/issues">github.com/Cluas/moshpit/issues</a>.
+Moshpit is a one-person project, so replies take a bit — but every issue gets read,
+and it's the same place the code lives.</p>
 
 <h3>Common questions</h3>
 
@@ -35,6 +34,27 @@ Deny it and internet hosts still work fine.</p>
 <h4>Is my data collected?</h4>
 <p class="txt">No — nothing is. See the <a href="/privacy">privacy policy</a>;
 the App Store label is <em>Data Not Collected</em>.</p>
+
+<hr>
+
+<h3>支持</h3>
+
+<h4>反馈渠道</h4>
+<p class="txt">问题反馈、bug 报告和功能建议都走 GitHub Issues：
+<a href="https://github.com/Cluas/moshpit/issues">github.com/Cluas/moshpit/issues</a>。
+Moshpit 是个人开发，回复可能不会很快，但每一条 issue 都会被看到——而且这也是代码本身所在的地方。</p>
+
+<h4>常见问题</h4>
+<p class="txt"><b>我的服务器需要装什么吗？</b> 不需要，开箱即用就是标准 SSH 客户端。
+<code>mosh</code>、<code>tmux</code>、<code>herdr</code> 都是可选项——缺哪个，
+Moshpit 会告诉你并给出安装命令；它不会静默安装任何东西，也不会偷偷换成别的多路复用器。</p>
+<p class="txt"><b>Agent 状态是怎么识别的？</b> 在 <code>herdr</code> 上，agent 状态是协议自带的
+字段——零配置。在 <code>tmux</code> 上，装一行 hook（设置里就有）能让 Claude Code 等主动上报
+状态；不装的话，Moshpit 会退化成从输出内容猜。</p>
+<p class="txt"><b>为什么 iOS 会弹本地网络权限？</b> 只是为了让 SSH/Mosh 能连到你局域网里的主机
+（192.168.x.x 之类）。拒绝也不影响连接公网主机。</p>
+<p class="txt"><b>我的数据会被收集吗？</b> 不会，什么都不收集。见
+<a href="/privacy">隐私政策</a>；App Store 隐私标签写的是 <em>Data Not Collected</em>。</p>
   </section>
 </div>`;
 ---

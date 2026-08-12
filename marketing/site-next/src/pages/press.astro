@@ -1,0 +1,83 @@
+---
+import Marketing from '@layouts/Marketing.astro';
+
+// EN only — press/HN audience is English, and there is no separate press
+// cycle for the zh-reading regions this launch also covers. Boilerplate is
+// condensed from docs/appstore/metadata.md's App Store description, not
+// re-written from scratch, so this page can't drift from what's actually
+// submitted.
+const body = `<header class="pagehead">
+  <div class="wrap">
+    <div class="kicker">Press</div>
+    <h1>Moshpit, in one page.</h1>
+    <p class="sub">Boilerplate, facts and screenshots for anyone writing about the app —
+    a review, a newsletter, a Show HN comment. Everything below is a real figure or a real
+    screenshot, not a mockup.</p>
+  </div>
+</header>
+
+<main class="wrap">
+  <div class="prose" style="max-width:none">
+    <h3 id="s-boilerplate" style="margin-top:0">Boilerplate</h3>
+    <p>Moshpit is an SSH / Mosh / tmux terminal for iPhone and iPad, built for developers
+    who run AI coding agents — Claude Code, Codex, or anything else that lives in a shell —
+    on a remote machine. Its headline feature is Vibe Island: a Live Activity that puts a
+    remote agent's status on the Lock Screen and in the Dynamic Island, so a permission
+    prompt can be answered — Allow, Deny, or a quick reply — without unlocking the phone.
+    It's a one-time purchase: no subscription, no account, no telemetry.</p>
+
+    <h3 id="s-facts">Fact sheet</h3>
+  </div>
+
+  <div class="tbl-wrap">
+    <table>
+      <tbody>
+        <tr><td class="cap-col"><b>Price</b></td><td>$6.99, one-time — rises to $9.99 once the first wave of buyers is in; nobody who already bought pays again</td></tr>
+        <tr><td class="cap-col"><b>Platforms</b></td><td>iPhone and iPad, iOS 18 or later</td></tr>
+        <tr><td class="cap-col"><b>Regions</b></td><td>Most App Store regions at launch — mainland China and France are excluded in this release (see <a href="/pricing#s-faq">pricing FAQ</a>)</td></tr>
+        <tr><td class="cap-col"><b>Category</b></td><td>Developer Tools</td></tr>
+        <tr><td class="cap-col"><b>Data collected</b></td><td>None — no accounts, no analytics, no crash reporting, no servers of ours (App Store privacy label: <em>Data Not Collected</em>)</td></tr>
+        <tr><td class="cap-col"><b>License</b></td><td>MIT — source, and a guide to <a href="https://github.com/Cluas/moshpit">building/sideloading it yourself</a> with a free Apple ID</td></tr>
+        <tr><td class="cap-col"><b>Contact</b></td><td><a href="https://github.com/Cluas/moshpit/issues">github.com/Cluas/moshpit/issues</a></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="prose" style="max-width:none">
+    <h3 id="s-shots">Screenshots</h3>
+    <p>Right-click / long-press to save. Full-resolution device captures, not staged renders.</p>
+  </div>
+
+  <div class="cellgrid">
+    <div class="cell" style="text-align:center">
+      <a href="/20-lockscreen.jpg" download><img class="phone" src="/20-lockscreen.jpg" width="180" style="width:180px;height:auto" alt="iPhone lock screen: Claude Code needs you, Allow and Deny buttons"></a>
+      <h4>Lock screen</h4>
+      <p>Answering an agent's permission prompt without unlocking the phone.</p>
+    </div>
+    <div class="cell" style="text-align:center">
+      <a href="/07-tmux-terminal.jpg" download><img class="phone" src="/07-tmux-terminal.jpg" width="180" style="width:180px;height:auto" alt="tmux session rendered natively in the Moshpit terminal"></a>
+      <h4>tmux, rendered natively</h4>
+      <p>Real window and pane switching, not a shrunken desktop.</p>
+    </div>
+    <div class="cell" style="text-align:center">
+      <a href="/10-themes.jpg" download><img class="phone" src="/10-themes.jpg" width="180" style="width:180px;height:auto" alt="Moshpit theme picker showing several terminal color schemes"></a>
+      <h4>Themes</h4>
+      <p>Four app themes, and built-in terminal schemes including Dracula and Nord.</p>
+    </div>
+  </div>
+
+  <p class="prose" style="margin:32px 0 60px">Looking for the app icon or additional assets
+  not shown here? <a href="https://github.com/Cluas/moshpit/issues">Open an issue</a> and
+  they'll be added.</p>
+</main>`;
+---
+
+<Marketing
+  title="Press — Moshpit"
+  description="Boilerplate, facts and screenshots for anyone writing about Moshpit."
+  path="press"
+  lang="en"
+  translated={false}
+>
+  <Fragment set:html={body} />
+</Marketing>

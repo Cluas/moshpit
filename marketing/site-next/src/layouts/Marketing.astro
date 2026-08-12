@@ -88,6 +88,7 @@ const footerNav =
     : [
         { href: '/privacy', label: 'Privacy' },
         { href: '/support', label: 'Support' },
+        { href: '/press', label: 'Press' },
       ];
 
 // mosh/tmux/herdr are href="#" placeholders in every mock. Pointing them at
@@ -152,7 +153,8 @@ const legal = '© 2026 Moshpit · SSH · Mosh · tmux · herdr · iPhone';
     <meta name="description" content={description} />
     <meta property="og:title" content={title} />
     <meta property="og:description" content={description} />
-    <meta property="og:image" content={`${SITE}/icon-192.png`} />
+    <meta property="og:image" content={`${SITE}/21-lockscreen-card.jpg`} />
+    <meta name="twitter:card" content="summary_large_image" />
     <meta name="theme-color" content="#040507" />
     <link rel="icon" type="image/png" href="/icon-192.png" />
     <link rel="alternate" hreflang="en" href={`${SITE}${enHref}`} />
