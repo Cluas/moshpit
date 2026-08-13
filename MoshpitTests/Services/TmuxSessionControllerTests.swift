@@ -752,6 +752,75 @@ struct TmuxSessionControllerTests {
         }, "pane switches must use select-pane -Z so the zoom never drops")
     }
 
+    /// Drive `activePaneWantsMouse` true by answering the flag probe with "1".
+    /// `settleControlChatter`'s generic "0 0" reply would leave it false.
+    private func armMouseApp(_ controller: TmuxSessionController,
+                             _ transport: MockTmuxTransport,
+                             answered: Int) async -> Int {
+        controller.refreshActivePaneMouse()
+        var count = answered
+        _ = await waitUntil { await transport.recordedCommands().count > count }
+        transport.pushText("%begin 900 900 0\n1\n%end 900 900 0\n\n")
+        count += 1
+        _ = await waitUntil { controller.activePaneWantsMouse }
+        return count
+    }
+
+    @Test("a swipe while the pane is streaming goes to copy-mode, not the app's wheel")
+    func scrollWhileStreamingUsesCopyMode() async throws {
+        let (controller, transport) = await makeAttachedController()
+        _ = await waitUntil { await transport.recordedCommands().count >= 3 }
+        pushOneWindowDiscovery(transport)
+        #expect(await waitUntil { controller.snapshot.activePaneId == "%0" })
+        let answered = await settleControlChatter(transport, answered: 3)
+        _ = await armMouseApp(controller, transport, answered: answered)
+
+        // Hold the pane "streaming" for the whole test rather than racing the
+        // real 0.5s window, which a loaded full-suite run loses.
+        controller.streamingWindow = 60
+
+        // The agent is mid-answer. Wait for the bytes to actually land, since
+        // that is what stamps the pane as painting.
+        let terminal = controller.terminalView(for: "%0").getTerminal()
+        transport.pushText("%output %0 thinking\n")
+        #expect(await waitUntil { terminal.getCursorLocation().x == 8 },
+                "the output must be processed before the swipe")
+
+        let before = await transport.recordedCommands().count
+        controller.scroll(lines: 3)
+
+        #expect(await waitUntil {
+            await transport.recordedCommands().dropFirst(before)
+                .contains { $0.hasPrefix("copy-mode -t %0") }
+        }, """
+        a pane that is painting right now must be scrolled through copy-mode: \
+        forwarding the wheel makes the app scroll and its next frame pin back \
+        to the bottom, which is the judder testers reported
+        """)
+        let sent = await transport.recordedCommands().dropFirst(before)
+        #expect(!sent.contains { $0.contains("send-keys -t %0 -H") },
+                "no wheel may be forwarded while the app is repainting")
+    }
+
+    @Test("a swipe on an idle mouse app still forwards the wheel")
+    func scrollWhenIdleForwardsWheel() async throws {
+        let (controller, transport) = await makeAttachedController()
+        _ = await waitUntil { await transport.recordedCommands().count >= 3 }
+        pushOneWindowDiscovery(transport)
+        #expect(await waitUntil { controller.snapshot.activePaneId == "%0" })
+        let answered = await settleControlChatter(transport, answered: 3)
+        _ = await armMouseApp(controller, transport, answered: answered)
+
+        // No %output has ever arrived for this pane, so it is not streaming.
+        let before = await transport.recordedCommands().count
+        controller.scroll(lines: 3)
+
+        #expect(await waitUntil {
+            await transport.recordedCommands().dropFirst(before)
+                .contains { $0.contains("send-keys -t %0 -H") }
+        }, "an idle mouse app keeps scrolling itself — copy-mode would break its own paging")
+    }
+
     /// Interleaved %output and command replies must be handled in byte-stream
     /// order. The old wiring hopped each parser callback to the main actor in
     /// its own Task — Swift doesn't guarantee FIFO between independent tasks,

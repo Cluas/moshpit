@@ -583,6 +583,24 @@ final class TmuxSessionController: MultiplexerControlling {
     /// through history (matches the mosh path's 0.18s page granularity).
     @ObservationIgnored private var lastCopyPageAt: Date = .distantPast
 
+    /// When each pane last produced `%output`.
+    @ObservationIgnored private var lastPaneOutputAt: [String: Date] = [:]
+
+    /// How recently a pane must have written to count as still streaming.
+    ///
+    /// Long enough to bridge the gaps between an agent's tokens, short enough
+    /// that a finished answer stops being "busy" while the user is still
+    /// deciding to scroll. Settable so tests assert the BEHAVIOUR without
+    /// racing a wall clock — a test that has to beat 0.5s passes alone and
+    /// fails under a full-suite load.
+    @ObservationIgnored var streamingWindow: TimeInterval = 0.5
+
+    /// True while this pane is actively painting — see ``scroll(lines:)``.
+    private func isStreaming(_ paneId: String) -> Bool {
+        guard let last = lastPaneOutputAt[paneId] else { return false }
+        return Date().timeIntervalSince(last) < streamingWindow
+    }
+
     /// Whether the ACTIVE pane's program has the mouse on (`#{mouse_any_flag}`).
     /// The signal that decides scroll strategy for a tmux pane: a mouse app
     /// (Claude Code, vim --mouse, less --mouse) gets a forwarded wheel; a plain
@@ -612,7 +630,21 @@ final class TmuxSessionController: MultiplexerControlling {
     func scroll(lines: Int) {
         guard lines != 0,
               let paneId = snapshot.activePaneId ?? snapshot.activePanes.first?.id else { return }
-        if activePaneWantsMouse {
+        // Forwarding the wheel to an app that is CURRENTLY repainting makes the
+        // two fight over the same viewport: the app scrolls where we asked, then
+        // its next frame pins back to the bottom, then the next swipe scrolls
+        // again — the reported judder while an agent streams its answer. Reading
+        // history is exactly what you want to do at that moment, so hand it to
+        // copy-mode instead, which parks the viewport server-side where the
+        // app's repaints cannot reach it.
+        //
+        // Sticky on `inCopyMode`: once parked, a lull in output must NOT flip
+        // the next swipe back to the wheel — `sendInput` exits copy-mode first,
+        // which would snap the reader to the bottom mid-read.
+        let appDrivesItsOwnScroll = activePaneWantsMouse
+            && !inCopyMode
+            && !isStreaming(paneId)
+        if appDrivesItsOwnScroll {
             // sendInput() exits copy-mode first — which self-heals the first-swipe
             // race: if a tick fired before the mouse flag refreshed we may have
             // wrongly entered copy-mode here, and `-X cancel` (consumed by
@@ -1948,6 +1980,9 @@ final class TmuxSessionController: MultiplexerControlling {
         // coordinator doesn't exist yet (output arrived before list-panes
         // came back), mint a terminal on demand so we never drop bytes.
         onPaneActivity?(paneId)
+        // Stamped before every early return below: "is this pane painting right
+        // now" is about bytes arriving, not about whether we chose to draw them.
+        lastPaneOutputAt[paneId] = Date()
         guard rendersOutput else { return }
         // While our window pin is handed back, don't paint.
         //
