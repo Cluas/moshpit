@@ -84,49 +84,58 @@ api PATCH "/v1/builds/$BUILD_ID" \
   > /dev/null
 echo "✓ usesNonExemptEncryption = false"
 
-[ "${1:-}" = "--no-groups" ] && { echo "▶ Skipping beta review and distribution."; exit 0; }
+[ "${1:-}" = "--no-groups" ] && { echo "▶ Stopping before test info, groups and review."; exit 0; }
 
-# Beta review comes BEFORE the groups, and skipping it is not a shortcut.
-# Every group here is external, and an external group may only carry a build
-# Apple has passed. Adding one to a group directly does go through, but it
-# lands in a state App Store Connect then reports as wrong, and the way out is
-# to pull the build back out by hand and submit it properly — which is exactly
-# what happened when this script first did the POST on its own.
-echo "▶ Submitting for Beta App Review…"
-api POST "/v1/betaAppReviewSubmissions" \
-  "{\"data\":{\"type\":\"betaAppReviewSubmissions\",\"relationships\":{\"build\":{\"data\":{\"type\":\"builds\",\"id\":\"$BUILD_ID\"}}}}}" \
-  | python3 -c "
-import json, sys
-d = json.load(sys.stdin)
-if 'errors' in d:
-    # Already submitted is a normal state to re-run into, not a failure.
-    print('  ·', '; '.join(e.get('detail') or e.get('title', '') for e in d['errors']))
+# The rest mirrors, in order, what the App Store Connect UI makes you do:
+# pick the build for the group, fill in what testers are told, then press
+# Submit for Review. All three have API equivalents, and the last one is the
+# step that was missing when this script first ran — a build sitting in an
+# external group with no review submission behind it is the "status problem"
+# that had to be undone by hand on 336.
+
+NOTES="docs/testflight/build-$VERSION.md"
+if [ -f "$NOTES" ]; then
+  echo "▶ Test information (What to Test)…"
+  # Everything after the first bare `---`: the file's header explains where the
+  # text goes and is not part of what testers read.
+  NOTES_FILE="$NOTES" BUILD_ID="$BUILD_ID" JWT="$JWT" python3 - <<'PY'
+import json, os, urllib.request, urllib.error
+BASE = "https://api.appstoreconnect.apple.com"
+H = {"Authorization": "Bearer " + os.environ["JWT"], "Content-Type": "application/json"}
+bid = os.environ["BUILD_ID"]
+text = open(os.environ["NOTES_FILE"]).read().split("\n---\n", 1)[1].strip()
+
+def call(method, path, body=None):
+    req = urllib.request.Request(BASE + path, method=method, headers=H)
+    try:
+        with urllib.request.urlopen(req, json.dumps(body).encode() if body else None) as r:
+            raw = r.read()
+            return True, (json.loads(raw) if raw else {})
+    except urllib.error.HTTPError as e:
+        try: return False, json.loads(e.read())
+        except Exception: return False, {"errors": [{"title": "HTTP %d" % e.code}]}
+
+ok, existing = call("GET", "/v1/builds/%s/betaBuildLocalizations" % bid)
+target = next((l["id"] for l in (existing.get("data", []) if ok else [])
+               if l["attributes"].get("locale") == "en-US"), None)
+if target:
+    ok, res = call("PATCH", "/v1/betaBuildLocalizations/" + target,
+                   {"data": {"type": "betaBuildLocalizations", "id": target,
+                             "attributes": {"whatsNew": text}}})
 else:
-    print('  ✓ submitted:', d['data']['attributes'].get('betaReviewState'))
-"
-
-echo "▶ Waiting for Beta App Review…"
-APPROVED=""
-for _ in $(seq 1 30); do
-  STATE="$(api GET "/v1/builds/$BUILD_ID/betaAppReviewSubmission" | python3 -c "
-import json, sys
-d = json.load(sys.stdin)
-print((d.get('data') or {}).get('attributes', {}).get('betaReviewState', ''))
-" || true)"
-  [ "$STATE" = "APPROVED" ] && { APPROVED=1; break; }
-  [ "$STATE" = "REJECTED" ] && { echo "✘ beta review rejected — see App Store Connect" >&2; exit 1; }
-  sleep 60
-  JWT="$(mint_jwt)"
-done
-
-if [ -z "$APPROVED" ]; then
-  echo "⚠ still waiting on beta review — NOT touching the groups."
-  echo "  Re-run this script once it is approved, or add the build in App Store"
-  echo "  Connect. Distributing before approval is what creates the bad state."
-  exit 0
+    ok, res = call("POST", "/v1/betaBuildLocalizations",
+                   {"data": {"type": "betaBuildLocalizations",
+                             "attributes": {"locale": "en-US", "whatsNew": text},
+                             "relationships": {"build": {"data": {"type": "builds", "id": bid}}}}})
+print("  %s %d chars" % ("✓" if ok else "✘", len(text)))
+if not ok:
+    for e in res.get("errors", []): print("     ", e.get("title"), e.get("detail", ""))
+PY
+else
+  echo "⚠ no $NOTES — testers will see an empty What to Test."
 fi
 
-echo "▶ Distributing to beta groups…"
+echo "▶ Adding to beta groups…"
 api GET "/v1/apps/$APP_ID/betaGroups?limit=20" | python3 -c "
 import json, sys
 print('\n'.join('%s %s' % (g['id'], g['attributes'].get('name', '?'))
@@ -138,6 +147,31 @@ print('\n'.join('%s %s' % (g['id'], g['attributes'].get('name', '?'))
   echo "  ✓ $gname"
 done
 
+# The Submit for Review button, bottom right. External groups need it, and it
+# usually comes back approved within moments.
+echo "▶ Submitting for Beta App Review…"
+api POST "/v1/betaAppReviewSubmissions" \
+  "{\"data\":{\"type\":\"betaAppReviewSubmissions\",\"relationships\":{\"build\":{\"data\":{\"type\":\"builds\",\"id\":\"$BUILD_ID\"}}}}}" \
+  | python3 -c "
+import json, sys
+d = json.load(sys.stdin)
+if 'errors' in d:
+    # Re-running over an already-submitted build is expected, not a failure.
+    print('  ·', '; '.join(e.get('detail') or e.get('title', '') for e in d['errors']))
+else:
+    print('  ✓', d['data']['attributes'].get('betaReviewState'))
+"
+
+for _ in $(seq 1 10); do
+  STATE="$(api GET "/v1/builds/$BUILD_ID/betaAppReviewSubmission" | python3 -c "
+import json, sys
+print((json.load(sys.stdin).get('data') or {}).get('attributes', {}).get('betaReviewState', ''))
+" || true)"
+  [ "$STATE" = "APPROVED" ] && { echo "✓ beta review approved"; break; }
+  [ "$STATE" = "REJECTED" ] && { echo "✘ beta review rejected — see App Store Connect" >&2; exit 1; }
+  sleep 20
+done
+
 echo
-echo "Build $VERSION is uploaded, compliant, approved, and distributed."
-echo "Still yours to do: paste docs/testflight/build-$VERSION.md into What to Test."
+echo "Build $VERSION: uploaded, compliant, described, distributed, submitted."
+[ "$STATE" = "APPROVED" ] || echo "Review is still $STATE — testers get it once that turns APPROVED."
