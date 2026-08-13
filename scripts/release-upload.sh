@@ -84,7 +84,47 @@ api PATCH "/v1/builds/$BUILD_ID" \
   > /dev/null
 echo "✓ usesNonExemptEncryption = false"
 
-[ "${1:-}" = "--no-groups" ] && { echo "▶ Skipping group distribution."; exit 0; }
+[ "${1:-}" = "--no-groups" ] && { echo "▶ Skipping beta review and distribution."; exit 0; }
+
+# Beta review comes BEFORE the groups, and skipping it is not a shortcut.
+# Every group here is external, and an external group may only carry a build
+# Apple has passed. Adding one to a group directly does go through, but it
+# lands in a state App Store Connect then reports as wrong, and the way out is
+# to pull the build back out by hand and submit it properly — which is exactly
+# what happened when this script first did the POST on its own.
+echo "▶ Submitting for Beta App Review…"
+api POST "/v1/betaAppReviewSubmissions" \
+  "{\"data\":{\"type\":\"betaAppReviewSubmissions\",\"relationships\":{\"build\":{\"data\":{\"type\":\"builds\",\"id\":\"$BUILD_ID\"}}}}}" \
+  | python3 -c "
+import json, sys
+d = json.load(sys.stdin)
+if 'errors' in d:
+    # Already submitted is a normal state to re-run into, not a failure.
+    print('  ·', '; '.join(e.get('detail') or e.get('title', '') for e in d['errors']))
+else:
+    print('  ✓ submitted:', d['data']['attributes'].get('betaReviewState'))
+"
+
+echo "▶ Waiting for Beta App Review…"
+APPROVED=""
+for _ in $(seq 1 30); do
+  STATE="$(api GET "/v1/builds/$BUILD_ID/betaAppReviewSubmission" | python3 -c "
+import json, sys
+d = json.load(sys.stdin)
+print((d.get('data') or {}).get('attributes', {}).get('betaReviewState', ''))
+" || true)"
+  [ "$STATE" = "APPROVED" ] && { APPROVED=1; break; }
+  [ "$STATE" = "REJECTED" ] && { echo "✘ beta review rejected — see App Store Connect" >&2; exit 1; }
+  sleep 60
+  JWT="$(mint_jwt)"
+done
+
+if [ -z "$APPROVED" ]; then
+  echo "⚠ still waiting on beta review — NOT touching the groups."
+  echo "  Re-run this script once it is approved, or add the build in App Store"
+  echo "  Connect. Distributing before approval is what creates the bad state."
+  exit 0
+fi
 
 echo "▶ Distributing to beta groups…"
 api GET "/v1/apps/$APP_ID/betaGroups?limit=20" | python3 -c "
@@ -99,5 +139,5 @@ print('\n'.join('%s %s' % (g['id'], g['attributes'].get('name', '?'))
 done
 
 echo
-echo "Build $VERSION is uploaded, compliant, and distributed."
+echo "Build $VERSION is uploaded, compliant, approved, and distributed."
 echo "Still yours to do: paste docs/testflight/build-$VERSION.md into What to Test."
