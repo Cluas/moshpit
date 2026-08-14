@@ -129,6 +129,16 @@ struct TerminalShortcutEncodingTests {
         #expect(sc.encodedBytes() == nil)
     }
 
+    @Test("modifiers sort ⌃⌥⇧⌘, the order macOS writes them")
+    func modifierOrder() {
+        // Pins the order now that `<` reads it off an exhaustive switch instead
+        // of searching a lookup table with a force-unwrapped firstIndex.
+        let scrambled: [ShortcutModifier] = [.cmd, .shift, .alt, .ctrl]
+        let expected: [ShortcutModifier] = [.ctrl, .alt, .shift, .cmd]
+        #expect(scrambled.sorted() == expected)
+        #expect(ShortcutModifier.allCases.sorted() == expected)
+    }
+
     @Test("the arrow cluster has no bytes of its own — its zones route through onArrow")
     func arrowsKindEncodesNothing() throws {
         var sc = TerminalShortcut()

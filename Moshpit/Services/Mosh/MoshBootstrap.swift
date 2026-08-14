@@ -3,7 +3,18 @@ import Foundation
 /// Result of starting `mosh-server` over SSH.
 struct MoshCredentials: Equatable {
     let host: String
-    let udpPort: Int
+    /// `UInt16`, not `Int`, so a value that cannot be a port cannot reach the
+    /// socket layer at all. It used to be `Int` straight out of `Int(parts[2])`
+    /// with no range check, and `MoshTransport.init` narrowed it with
+    /// `UInt16(udpPort)` — which **traps** on anything negative or above 65535.
+    /// A remote printing `MOSH CONNECT 70000 …` crashed the app at connect time.
+    ///
+    /// Zero is a different case and worth not confusing with that one:
+    /// `NWEndpoint.Port(rawValue: 0)` is `Optional(0)`, not nil, so port 0 never
+    /// crashed — it just cannot connect. It is rejected at parse time anyway, so
+    /// the failure reads as "the host reported an unusable port" instead of an
+    /// opaque socket error minutes later.
+    let udpPort: UInt16
     /// 16-byte AES-128 session key.
     let key: Data
 }
@@ -15,12 +26,21 @@ enum MoshBootstrap {
 
     enum BootstrapError: Error, CustomStringConvertible {
         case noConnectLine(String)
+        /// The connect line's port field parsed as a number but is not a port.
+        /// Deliberately separate from ``noConnectLine``: "the host said 0" and
+        /// "the host never said anything" are different diagnoses, and this one
+        /// used to be a crash rather than any diagnosis at all.
+        case unusablePort(Int)
         case badKey
 
         var description: String {
             switch self {
             case .noConnectLine(let out):
                 return "mosh-server did not print a MOSH CONNECT line. Output: \(Self.sanitizedExcerpt(of: out))"
+            case .unusablePort(let port):
+                // An Int needs no sanitizing — it cannot carry the control
+                // sequences `sanitizedExcerpt` exists to defang.
+                return "mosh-server reported UDP port \(port), which is not a usable port"
             case .badKey:
                 return "mosh-server returned a malformed session key"
             }
@@ -142,8 +162,21 @@ enum MoshBootstrap {
         guard parts.count >= 4, let port = Int(parts[2]) else {
             throw BootstrapError.noConnectLine(output)
         }
+        // `Int(parts[2])` only rejects non-numbers, and "numeric but not a port"
+        // is reachable without a hostile server: a login banner or stderr
+        // interleaving with mosh-server's own line moves which token lands in
+        // `parts[2]`, and a PID, timestamp or version number parses just fine.
+        //
+        // Out of range is the crash: `MoshTransport.init` narrowed this with
+        // `UInt16(udpPort)`, which traps. Catching it here turns a crash at
+        // connect time into the recoverable error the caller already degrades on
+        // (fall back to plain SSH). Zero is folded in for tidiness rather than
+        // safety — it cannot connect, so failing now beats failing opaquely.
+        guard let udpPort = UInt16(exactly: port), udpPort != 0 else {
+            throw BootstrapError.unusablePort(port)
+        }
         let key = try decodeKey(String(parts[3]))
-        return MoshCredentials(host: host, udpPort: port, key: key)
+        return MoshCredentials(host: host, udpPort: udpPort, key: key)
     }
 
     /// mosh prints the key as 22 unpadded base64 chars = 16 bytes.

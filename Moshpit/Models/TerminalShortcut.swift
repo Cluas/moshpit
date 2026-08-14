@@ -57,9 +57,25 @@ enum ShortcutModifier: String, Codable, CaseIterable, Comparable {
         }
     }
 
+    /// Display order for a chip's caption — ⌃⌥⇧⌘, the order macOS writes
+    /// modifiers in.
+    ///
+    /// A `switch` rather than the `[ShortcutModifier]` lookup table this
+    /// replaces. That table was searched with a force-unwrapped
+    /// `firstIndex(of:)`, so a case added to the enum and forgotten in the table
+    /// crashed while *sorting* — nowhere near the edit that caused it. Here the
+    /// same omission is a compile error.
+    private var sortRank: Int {
+        switch self {
+        case .ctrl: return 0
+        case .alt: return 1
+        case .shift: return 2
+        case .cmd: return 3
+        }
+    }
+
     static func < (lhs: ShortcutModifier, rhs: ShortcutModifier) -> Bool {
-        let order: [ShortcutModifier] = [.ctrl, .alt, .shift, .cmd]
-        return order.firstIndex(of: lhs)! < order.firstIndex(of: rhs)!
+        lhs.sortRank < rhs.sortRank
     }
 }
 

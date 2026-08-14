@@ -84,6 +84,44 @@ struct MoshPipelineTests {
         }
     }
 
+    /// A well-formed connect line carrying `port`, for the range tests below.
+    private static func connectLine(port: String) -> String {
+        let keyB64 = Data((0..<16).map { UInt8($0) }).base64EncodedString()
+            .trimmingCharacters(in: CharacterSet(charactersIn: "="))
+        return "MOSH CONNECT \(port) \(keyB64)\r\n"
+    }
+
+    @Test("a port that parses but cannot be a port is an error, not a crash",
+          arguments: ["0", "-1", "65536", "70000", "99999999999"])
+    func bootstrapRejectsUnusablePort(_ port: String) {
+        // The out-of-range ones used to reach `MoshTransport.init` and trap in
+        // `UInt16(udpPort)` — an actual crash at connect time, reachable without
+        // a hostile server: a banner interleaving with mosh-server's line shifts
+        // which token lands in `parts[2]`, and a PID or timestamp parses as an
+        // Int perfectly well. "0" is here for completeness rather than crash
+        // safety (`NWEndpoint.Port(rawValue: 0)` is `Optional(0)`, not nil) — it
+        // simply cannot connect, so it should fail here and say so.
+        #expect(throws: MoshBootstrap.BootstrapError.self) {
+            try MoshBootstrap.parse(output: Self.connectLine(port: port), host: "h")
+        }
+    }
+
+    @Test("the edges of the usable range still parse",
+          arguments: [("1", UInt16(1)), ("65535", UInt16(65535)), ("60001", UInt16(60001))])
+    func bootstrapAcceptsPortRange(_ input: String, _ expected: UInt16) throws {
+        let creds = try MoshBootstrap.parse(output: Self.connectLine(port: input), host: "h")
+        #expect(creds.udpPort == expected)
+    }
+
+    @Test("a non-numeric port field is still the missing-line error")
+    func bootstrapNonNumericPort() {
+        // Unchanged behaviour, pinned so the new range guard doesn't quietly
+        // reclassify it: this one never had a number to range-check.
+        #expect(throws: MoshBootstrap.BootstrapError.self) {
+            try MoshBootstrap.parse(output: Self.connectLine(port: "sixty"), host: "h")
+        }
+    }
+
     // MARK: Bootstrap command construction
 
     /// The probe's PATH extension, prepended for bare binary names so the

@@ -139,9 +139,19 @@ actor MoshTransport {
     // MARK: Init
 
     init(credentials: MoshCredentials) throws {
+        // This replaces `UInt16(credentials.udpPort)` on an `Int` port, which is
+        // where an out-of-range value from the remote's connect line trapped.
+        // `udpPort` is a `UInt16` now, so the narrowing is gone entirely and
+        // this resolution cannot actually fail — `NWEndpoint.Port(rawValue:)` is
+        // total over `UInt16`, zero included. It is written as a guard rather
+        // than a `!` so the channel below can take an already-resolved port and
+        // the file carries no force unwrap to re-examine later.
+        guard let port = NWEndpoint.Port(rawValue: credentials.udpPort) else {
+            throw MoshBootstrap.BootstrapError.unusablePort(Int(credentials.udpPort))
+        }
         try self.init(
             credentials: credentials,
-            channel: NWConnectionChannel(host: credentials.host, port: UInt16(credentials.udpPort)))
+            channel: NWConnectionChannel(host: credentials.host, port: port))
     }
 
     /// Designated init taking an injectable `DatagramChannel`. Production goes
@@ -530,12 +540,17 @@ final class NWConnectionChannel: DatagramChannel, @unchecked Sendable {
     var onStateChange: (@Sendable (NWConnection.State) -> Void)?
     var onBetterPath: (@Sendable (Bool) -> Void)?
 
-    init(host: String, port: UInt16) {
+    /// Takes an already-resolved `NWEndpoint.Port` rather than the `UInt16` it
+    /// used to force-unwrap. That `!` was in fact safe —
+    /// `NWEndpoint.Port(rawValue:)` is total over `UInt16` — but the caller has
+    /// to resolve the port anyway now that the range check moved to parse time,
+    /// so passing the resolved value leaves nothing here to audit.
+    init(host: String, port: NWEndpoint.Port) {
         let params = NWParameters.udp
         params.serviceClass = .interactiveVoice          // low-latency hint
         self.connection = NWConnection(
             host: NWEndpoint.Host(host),
-            port: NWEndpoint.Port(rawValue: port)!,
+            port: port,
             using: params)
     }
 
