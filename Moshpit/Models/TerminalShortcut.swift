@@ -10,7 +10,19 @@ enum ShortcutKind: String, Codable, CaseIterable {
     case command
     /// The aggregated arrow joystick. Renders as the drag D-pad in the bar
     /// (not a tap chip) and isn't user-creatable — there's one builtin.
+    ///
+    /// Superseded in the default bar by ``arrows``: resolving a direction from
+    /// a *push* is what made a single arrow key cost a press-and-drag. Kept a
+    /// builtin (out of the bar) because pushing one chip is still the most
+    /// compact way to reach four directions, and people who arranged their bar
+    /// around it shouldn't lose it.
     case dpad
+    /// Four tappable arrow zones in one chip-height control: tap sends one
+    /// arrow, hold repeats it. The default arrow control. Renders as its own
+    /// cluster rather than a tap chip, and isn't user-creatable — there's one
+    /// builtin. Individual `←`/`↑`/`↓`/`→` keyCombo builtins exist too, for a
+    /// bar arranged one direction at a time.
+    case arrows
     /// Pastes the clipboard into the PTY. A normal, reorderable/removable chip
     /// (resolved by the caller, which reads UIPasteboard) — not user-creatable.
     case paste
@@ -98,6 +110,12 @@ struct TerminalShortcut: Identifiable, Codable, Equatable, Hashable {
         case .dpad, .scroll:
             // The joystick / scroll thumb act through their own drag gesture
             // (arrows to the PTY, scrollback locally), not a tap.
+            return nil
+        case .arrows:
+            // The cluster's four zones each send their own arrow through the
+            // bar's `onArrow` hook, which encodes for the remote's current
+            // cursor-key mode — a fixed CSI here would break history search
+            // in application-cursor-mode shells. See `TerminalScreen.sendArrow`.
             return nil
         case .ctrl:
             // Resolved by the caller (arms sticky-Ctrl on the typing coordinator).
@@ -342,13 +360,22 @@ final class ShortcutStore {
     /// after a user already has a persisted set.
     private func reconcileBuiltins() {
         var changed = false
-        // Arrow keys moved to the dedicated D-pad — drop the old ↑/↓ chips.
+        // Arrow keys moved to a dedicated arrow control — drop the old ↑/↓
+        // chips, which duplicated it.
         for i in shortcuts.indices where shortcuts[i].isBuiltin
             && (shortcuts[i].key == "up" || shortcuts[i].key == "down")
             && shortcuts[i].inToolbar {
             shortcuts[i].inToolbar = false
             changed = true
         }
+        // The tap-first `.arrows` cluster needs no migration step of its own:
+        // it ships out of the bar under a summary ("Tap arrows") that no
+        // persisted set can contain, so the summary-keyed catch-all at the
+        // bottom injects it as an available builtin for everyone, and nobody's
+        // arranged toolbar moves. Giving the joystick the summary it always had
+        // is what keeps that true — rename it and the catch-all would read the
+        // joystick as new and inject a second copy.
+        //
         // The D-pad is now a builtin shortcut; inject it for users whose set
         // predates it, at the front of the toolbar.
         if !shortcuts.contains(where: { $0.kind == .dpad }),
@@ -491,8 +518,17 @@ final class ShortcutStore {
             // to the end of the bar.
             special(.paste, "paste", "Paste clipboard", inBar: true),
             // The arrow joystick is a first-class shortcut: reorder it, or move
-            // it out of the toolbar, like any other.
+            // it out of the toolbar, like any other. One chip reaching four
+            // directions is why it holds the default slot — see `StickGesture`
+            // for the dwell it owes, and why it only owes it with the keyboard
+            // down.
             special(.dpad, "✛", "Arrow keys", inBar: true),
+            // The tap-first alternative: four zones, tap sends one arrow, hold
+            // repeats. Out of the bar because it costs ~2.5 slots to the
+            // joystick's one, which overflows a phone-width row — but a tap on
+            // the joystick cannot carry a direction at all, so anyone who wants
+            // one-tap-one-arrow adds this instead.
+            special(.arrows, "←↑↓→", "Tap arrows", inBar: false),
             // Sticky-Ctrl: reorder it, hide it, or move it out of the toolbar
             // like any other chip — it used to be a fixed, non-configurable
             // element pinned ahead of everything else.
@@ -526,10 +562,17 @@ final class ShortcutStore {
             // keyboard (there is no End key, and ⇧Tab needs a hardware Tab).
             combo("⌃End", "Jump to end", mods: [.ctrl], key: "end", inBar: false),
             combo("⇧Tab", "Back-tab / toggle mode", mods: [.shift], key: "tab", inBar: false),
-            // Arrow keys live in the dedicated D-pad on the shortcut bar, so
-            // they're kept out of the chip row to avoid duplication.
+            // The four arrows as individual chips. The joystick reaches all four
+            // in one slot, so these stay out of the bar by default — they're
+            // here for a bar arranged around one or two directions (↑ on its
+            // own, for history recall, is the common one), and for anyone who
+            // wants a plain tap-to-send arrow without spending 2.5 slots on the
+            // whole cluster. ← and → had no chip at all before: the joystick was
+            // the only way to move a cursor sideways.
             combo("↑", "History prev", key: "up", repeats: true, inBar: false),
             combo("↓", "History next", key: "down", repeats: true, inBar: false),
+            combo("←", "Cursor left", key: "left", repeats: true, inBar: false),
+            combo("→", "Cursor right", key: "right", repeats: true, inBar: false),
             // Bulk clear. Holding backspace is the only other way to empty a
             // long line, and that depends on the OS repeat cadence outrunning a
             // control-mode round trip PER KEYSTROKE (TmuxSessionController

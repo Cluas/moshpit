@@ -1361,10 +1361,13 @@ struct ShortcutBarView: View {
     private var chipRowContent: some View {
         HStack(spacing: 6) {
             ForEach(shortcuts) { shortcut in
-                // The joystick is a shortcut too — render it as the drag
-                // D-pad wherever the user positioned it in the toolbar.
-                if shortcut.kind == .dpad {
-                    if let onArrow { DirectionPad(onArrow: onArrow) }
+                // Both arrow controls are shortcuts too — rendered wherever the
+                // user positioned them. The cluster is the default; the
+                // joystick stays available for anyone who preferred pushing it.
+                if shortcut.kind == .arrows {
+                    if let onArrow { ArrowCluster(onArrow: onArrow) }
+                } else if shortcut.kind == .dpad {
+                    if let onArrow { DirectionPad(onArrow: onArrow, keyboardDown: keyboardDown) }
                 } else if shortcut.kind == .scroll {
                     if let onScroll { ScrollPad(onScroll: onScroll) }
                 } else if shortcut.kind == .mic {
@@ -1456,17 +1459,48 @@ struct ShortcutBarView: View {
 /// survives it (anything iOS reads as a system swipe covers `engageSlop` well
 /// inside `engageDelay`), short enough that a human press-then-push doesn't
 /// notice it.
+/// **The dwell is only owed when the keyboard is down.** Everything above
+/// describes the bar at its lowest, a finger's width above the home indicator.
+/// With the keyboard up the bar rides above it, nowhere near where a system
+/// swipe can begin — which is exactly why the bug only ever reproduced with the
+/// keyboard collapsed. Charging every push an 80ms settle in the state where the
+/// hazard cannot occur is pure tax, and that state is most of typing. So callers
+/// pass the dwell they actually owe: `engageDelay` with the keyboard down, none
+/// with it up, where the stick engages on touch-down like a plain drag.
+/// **The two constants are one number.** `LongPressGesture` fails as soon as the
+/// touch travels past `engageSlop` before `engageDelay` elapses, so what the gate
+/// actually enforces is a *speed*: every swipe faster than `engageSlop /
+/// engageDelay` is rejected, and anything slower slips through. Shortening the
+/// dwell alone therefore makes the gate weaker, not just quicker — 12pt/0.08s
+/// rejects everything above 150pt/s, but 12pt/0.05s only catches 240pt/s and up.
+/// Trim both together to keep the ratio.
+///
+/// The ratio has margin: a real swipe-up-to-background covers several hundred
+/// points in a couple of tenths, i.e. ~1000pt/s and up, so 150pt/s was already
+/// an order of magnitude conservative. The floor is `engageSlop`, not the ratio —
+/// a thumb landing rolls onto the glass and its centroid can wander several
+/// points before it settles, and a slop tighter than that turns an honest press
+/// into a key that didn't respond.
 private enum StickGesture {
-    /// How long the touch must hold still before the stick engages.
-    static let engageDelay: Double = 0.08
+    /// How long the touch must hold still before the stick engages, in the one
+    /// state that needs it (keyboard down — see the note above).
+    ///
+    /// 0.05s, down from 0.08. Paired with the slop trim below it holds the
+    /// rejection speed at ~160pt/s — the same order of conservatism as before —
+    /// while cutting what a thumb waits through by a third.
+    static let engageDelay: Double = 0.05
     /// How far it may drift during that dwell without failing (SwiftUI's own
-    /// "did the finger stay put" rule).
-    static let engageSlop: CGFloat = 12
+    /// "did the finger stay put" rule). 8pt: enough for a thumb's roll-on,
+    /// little enough to hold the ratio at the shorter dwell.
+    static let engageSlop: CGFloat = 8
 
     typealias Value = SequenceGesture<LongPressGesture, DragGesture>.Value
 
-    static var gesture: SequenceGesture<LongPressGesture, DragGesture> {
-        LongPressGesture(minimumDuration: engageDelay, maximumDistance: engageSlop)
+    /// - Parameter dwell: seconds the touch must settle before the stick
+    ///   engages. `0` engages immediately; only safe where a system
+    ///   swipe-to-background cannot start on the control.
+    static func gesture(dwell: Double = engageDelay) -> SequenceGesture<LongPressGesture, DragGesture> {
+        LongPressGesture(minimumDuration: dwell, maximumDistance: engageSlop)
             .sequenced(before: DragGesture(minimumDistance: 0))
     }
 
@@ -1486,13 +1520,29 @@ private enum StickGesture {
 /// actions so the drag isn't the only way in.
 struct DirectionPad: View {
     let onArrow: (String) -> Void
+    /// Whether the software keyboard is collapsed. Drives the engage dwell:
+    /// only a collapsed keyboard puts this control within reach of iOS's
+    /// swipe-up-to-background, so only then is the settle owed. See
+    /// ``StickGesture``.
+    var keyboardDown: Bool = true
 
     @StateObject private var repeater = JoystickRepeater()
     @GestureState private var drag: CGSize = .zero
     @Environment(\.scenePhase) private var scenePhase
 
     /// Travel before a push registers as a direction (keeps a tap inert).
-    private let threshold: CGFloat = 11
+    ///
+    /// 7pt, down from 11. The larger number was chosen while the dwell was
+    /// unconditional and the two costs compounded — settle, *then* travel far
+    /// enough to be sure. With the dwell gone whenever the keyboard is up, the
+    /// dead-zone only has to beat a still thumb's jitter, and 7pt does that while
+    /// cutting the distance a push has to cover by a third.
+    ///
+    /// `static` so the tests can assert against the shipping value instead of
+    /// copying the number behind a "matches DirectionPad" comment — the comment
+    /// stayed at 11 through this change, and a duplicated constant that lies is
+    /// how a dead-zone test quietly stops testing the dead zone.
+    static let dragThreshold: CGFloat = 7
 
     var body: some View {
         // Same footprint/skin as a shortcut chip — it IS one, just dragged.
@@ -1510,9 +1560,11 @@ struct DirectionPad: View {
             )
             .contentShape(Rectangle())
             .gesture(
-                // Press-then-push, so iOS's swipe-to-background can't type an
-                // arrow key on its way past this chip — see ``StickGesture``.
-                StickGesture.gesture
+                // Press-then-push ONLY while the keyboard is down, which is the
+                // only state where iOS's swipe-to-background can begin on this
+                // chip and type an arrow key on its way past. Keyboard up, the
+                // push registers on touch-down — see ``StickGesture``.
+                StickGesture.gesture(dwell: keyboardDown ? StickGesture.engageDelay : 0)
                     .updating($drag) { value, state, _ in
                         state = StickGesture.translation(of: value)
                     }
@@ -1550,7 +1602,7 @@ struct DirectionPad: View {
     /// Dominant-axis direction for the current push, or nil inside the
     /// dead-zone (so a stray tap sends nothing).
     private func direction(for t: CGSize) -> String? {
-        JoystickRepeater.direction(dx: t.width, dy: t.height, threshold: threshold)
+        JoystickRepeater.direction(dx: t.width, dy: t.height, threshold: Self.dragThreshold)
     }
 
     /// Nudge the glyph toward the push for tactile feedback.
@@ -1563,6 +1615,130 @@ struct DirectionPad: View {
         case "left":  return CGSize(width: -d, height: 0)
         default:      return CGSize(width: d, height: 0)
         }
+    }
+}
+
+/// The default arrow control: four tappable zones in one chip-height pill.
+/// A tap sends exactly one arrow, a hold repeats it — a hardware keyboard's
+/// cadence, and the thing ``DirectionPad`` structurally cannot offer. Reading a
+/// direction out of a *push* means the cheapest possible single arrow is
+/// press → dwell → drag 11pt → release, which is the reported "I have to hold
+/// it just to nudge the cursor one column".
+///
+/// It gets there without reopening the bug the joystick's dwell defends against
+/// (iOS's swipe-up-to-background starting on the chip and typing a real `←` on
+/// its way off screen — see ``StickGesture``). The dwell was only ever needed
+/// because the joystick fires on movement; here movement fails ``KeyRepeatGesture``
+/// outright, which both keeps a system swipe from typing and leaves a horizontal
+/// drag to the shortcut bar's own pan.
+///
+/// Four zones cost ~140pt against a single chip's 46pt. The bar pans, so the
+/// width is affordable; a tap that does nothing is not.
+struct ArrowCluster: View {
+    /// "up" / "down" / "left" / "right", per tap and per repeat tick.
+    let onArrow: (String) -> Void
+
+    /// Reading order flattened onto one row. ←→ sit at the outer edges with the
+    /// vertical pair between them, so the two directions used for *editing* a
+    /// line are the two easiest to hit without looking.
+    private static let zones: [(direction: String, symbol: String, label: String)] = [
+        ("left",  "arrow.left",  "Move left"),
+        ("up",    "arrow.up",    "Move up"),
+        ("down",  "arrow.down",  "Move down"),
+        ("right", "arrow.right", "Move right"),
+    ]
+
+    /// Narrower than a full chip (46pt) so four zones plus their hairlines come
+    /// to 131pt — about 2.5 slots rather than four. The full 30pt chip height is
+    /// kept: that is the axis a thumb misses on, and every other key in the bar
+    /// is already 30pt tall.
+    ///
+    /// The exact number is load-bearing, and `ShortcutStore` has the test that
+    /// says so: at the cluster's default third slot, 32pt zones put its right
+    /// edge inside even a 375pt phone's chip viewport. Widening these without
+    /// re-checking that clips `→` at rest on small phones.
+    static let zoneWidth: CGFloat = 32
+
+    /// Total laid-out width: four zones plus the three hairlines between them.
+    /// Mirrored by the toolbar-width test, which can't measure a live view.
+    static var totalWidth: CGFloat { zoneWidth * CGFloat(zones.count) + CGFloat(zones.count - 1) }
+
+    var body: some View {
+        HStack(spacing: 0) {
+            ForEach(Array(Self.zones.enumerated()), id: \.element.direction) { index, zone in
+                if index > 0 {
+                    // Hairline between zones: four arrows in one pill need to
+                    // read as four keys, not one wide key with four glyphs.
+                    Rectangle()
+                        .fill(Ink.groupBorder)
+                        .frame(width: 1, height: 18)
+                }
+                ArrowZone(direction: zone.direction,
+                          symbol: zone.symbol,
+                          label: zone.label,
+                          width: Self.zoneWidth,
+                          onArrow: onArrow)
+            }
+        }
+        .frame(height: 30)
+        .background(Ink.shortcutKeyBG, in: RoundedRectangle(cornerRadius: Metrics.controlRadius, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: Metrics.controlRadius, style: .continuous)
+                .strokeBorder(Ink.groupBorder, lineWidth: 1)
+        )
+        // `.contain`, not `.combine`: each zone is its own VoiceOver element, so
+        // the four arrows stay four separately-activatable keys.
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("arrow-cluster")
+    }
+}
+
+/// One arrow inside ``ArrowCluster``. Same tap-once / hold-to-repeat contract as
+/// an ordinary chip — it *is* one, minus the pill (the cluster draws that once
+/// around all four).
+private struct ArrowZone: View {
+    let direction: String
+    let symbol: String
+    let label: String
+    let width: CGFloat
+    let onArrow: (String) -> Void
+
+    @StateObject private var repeater = HoldRepeater()
+    @GestureState private var isPressing = false
+    @Environment(\.scenePhase) private var scenePhase
+
+    var body: some View {
+        Image(systemName: symbol)
+            .font(.system(size: 12, weight: .semibold))
+            .foregroundStyle(isPressing ? Ink.accent : Ink.primary)
+            .frame(width: width, height: 30)
+            .contentShape(Rectangle())
+            .gesture(
+                KeyRepeatGesture.gesture
+                    .updating($isPressing) { value, state, _ in
+                        state = KeyRepeatGesture.isRepeatPhase(value)
+                    }
+                    .onEnded { value in
+                        if KeyRepeatGesture.isTap(value) { onArrow(direction) }
+                        repeater.stop()
+                    }
+            )
+            // Same stuck-repeat guard as HoldRepeatChip/DirectionPad: `.onEnded`
+            // can miss a system-cancelled gesture, but `@GestureState` still
+            // auto-resets `isPressing`, so watching it stops a repeat that would
+            // otherwise hold an arrow key down indefinitely. Doubles as the
+            // repeat-START signal — it flips true exactly when the long press
+            // clears its minimum duration.
+            .onChange(of: isPressing) { _, pressing in
+                if pressing { repeater.start { onArrow(direction) } } else { repeater.stop() }
+            }
+            .onChange(of: scenePhase) { _, phase in
+                if phase != .active { repeater.stop() }
+            }
+            .onDisappear { repeater.stop() }
+            .accessibilityElement()
+            .accessibilityLabel(Text(label))
+            .accessibilityIdentifier("arrow-\(direction)")
     }
 }
 
@@ -1600,7 +1776,10 @@ struct ScrollPad: View {
                 // Same press-then-push gate as the D-pad: a swipe-to-background
                 // starting on this chip used to page the scrollback (and put a
                 // tmux pane into copy-mode) on its way off screen.
-                StickGesture.gesture
+                // Keeps the unconditional dwell: unlike the arrows, scrolling
+                // isn't something you reach for mid-sentence with the keyboard
+                // up, so there's no friction worth trading a guarantee for.
+                StickGesture.gesture()
                     .updating($drag) { value, state, _ in
                         state = StickGesture.translation(of: value)
                     }
@@ -1640,27 +1819,68 @@ struct ScrollPad: View {
     }
 }
 
+/// The tap-once / hold-to-repeat recognizer every *tappable* key in the bar
+/// uses — ordinary chips (``HoldRepeatChip``) and the arrow cluster's zones
+/// (``ArrowCluster``) alike.
+///
+/// A separate `.onTapGesture` alongside a `.gesture(...)` used to compete for
+/// the same touch uncoordinated — no priority/failure relationship between
+/// them, so a quick tap could occasionally get swallowed by neither recognizer
+/// (the reported "this key sometimes doesn't respond" feel on ordinary chips
+/// like Tab/Esc/Ctrl/Backspace). `.exclusively` makes them one recognizer with
+/// a defined resolution instead of two independent ones.
+///
+/// The long press supplies the initial delay before auto-repeat; its
+/// `maximumDistance` fails it for a *moving* touch, and that single property
+/// buys two things at once:
+///
+///   - a horizontal drag is left to the shortcut bar's own pan instead of being
+///     swallowed by the key it started on, and
+///   - iOS's swipe-up-to-background can't type into the bar on its way past.
+///     That is the same bug ``StickGesture`` exists to prevent, but a tap key
+///     needs no dwell to be safe from it: a swipe is movement, movement fails
+///     both halves here, and a failed gesture sends nothing. (A drag-resolved
+///     control like ``DirectionPad`` cannot use this rule — movement is how it
+///     reads a direction in the first place, which is exactly why a single
+///     arrow used to cost a press-and-push.)
+private enum KeyRepeatGesture {
+    /// How long a stationary press must hold before auto-repeat starts.
+    static let holdDelay: Double = 0.3
+
+    typealias Value = ExclusiveGesture<TapGesture, SequenceGesture<LongPressGesture, DragGesture>>.Value
+
+    /// The trailing `DragGesture` isn't there to track a drag — it's there to
+    /// give the hold a release event to stop on.
+    static var gesture: ExclusiveGesture<TapGesture, SequenceGesture<LongPressGesture, DragGesture>> {
+        TapGesture()
+            .exclusively(before: LongPressGesture(minimumDuration: holdDelay)
+                .sequenced(before: DragGesture(minimumDistance: 0)))
+    }
+
+    /// Whether the long-press has cleared its minimum duration and the
+    /// trailing drag is now tracking — the signal to (keep) firing repeats.
+    static func isRepeatPhase(_ value: Value) -> Bool {
+        if case .second(.second(true, _)) = value { return true }
+        return false
+    }
+
+    /// Whether this ended as a plain tap (fire exactly once) rather than a hold.
+    static func isTap(_ value: Value) -> Bool {
+        if case .first = value { return true }
+        return false
+    }
+}
+
 /// A single-key shortcut chip that auto-repeats while held — so holding ⌫
 /// deletes continuously (the reported "have to tap one by one" bug), like a
-/// hardware keyboard. A quick tap still sends exactly once. The repeat is gated
-/// behind a long press so a horizontal drag still scrolls the shortcut bar
-/// instead of being swallowed.
+/// hardware keyboard. A quick tap still sends exactly once. See
+/// ``KeyRepeatGesture`` for why the repeat is gated behind a long press.
 private struct HoldRepeatChip: View {
     let shortcut: TerminalShortcut
     let onTap: (TerminalShortcut) -> Void
     @StateObject private var repeater = HoldRepeater()
     @GestureState private var isPressing = false
     @Environment(\.scenePhase) private var scenePhase
-
-    private typealias ChipGestureValue =
-        ExclusiveGesture<TapGesture, SequenceGesture<LongPressGesture, DragGesture>>.Value
-
-    /// Whether the long-press has cleared its minimum duration and the
-    /// trailing drag is now tracking — the signal to (keep) firing repeats.
-    private static func isRepeatPhase(_ value: ChipGestureValue) -> Bool {
-        if case .second(.second(true, _)) = value { return true }
-        return false
-    }
 
     var body: some View {
         Text(shortcut.chipLabel)
@@ -1674,28 +1894,16 @@ private struct HoldRepeatChip: View {
             )
             .contentShape(Rectangle())
             .gesture(
-                // A separate `.onTapGesture` alongside this `.gesture(...)`
-                // used to compete for the same touch uncoordinated — no
-                // priority/failure relationship between them, so a quick tap
-                // could occasionally get swallowed by neither recognizer (the
-                // reported "this key sometimes doesn't respond" feel on
-                // ordinary chips like Tab/Esc/Ctrl/Backspace). `.exclusively`
-                // makes them one recognizer with a defined resolution instead
-                // of two independent ones.
-                //
-                // Long press supplies the initial delay; a moving touch fails it,
-                // leaving the horizontal scroll to the bar. The trailing drag
-                // gives us a release event to stop on.
-                TapGesture()
-                    .exclusively(before: LongPressGesture(minimumDuration: 0.3)
-                        .sequenced(before: DragGesture(minimumDistance: 0)))
+                KeyRepeatGesture.gesture
                     // `.onChanged` needs `Value: Equatable`, which this
                     // combined gesture's Value can't be (it carries
                     // TapGesture's Void) — driving the repeat start off the
                     // `isPressing` GestureState change below instead.
-                    .updating($isPressing) { value, state, _ in state = Self.isRepeatPhase(value) }
+                    .updating($isPressing) { value, state, _ in
+                        state = KeyRepeatGesture.isRepeatPhase(value)
+                    }
                     .onEnded { value in
-                        if case .first = value { onTap(shortcut) }
+                        if KeyRepeatGesture.isTap(value) { onTap(shortcut) }
                         repeater.stop()
                     }
             )

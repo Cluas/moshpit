@@ -7,13 +7,28 @@ import Testing
 @Suite("DirectionPad joystick")
 struct DirectionPadTests {
 
-    private let t: CGFloat = 11   // matches DirectionPad's threshold
+    /// The shipping value, not a copy of it. This used to be a hardcoded `11`
+    /// behind a "matches DirectionPad's threshold" comment; when the threshold
+    /// dropped to 7 the comment went stale and the dead-zone samples below —
+    /// picked to sit just inside 11 — kept passing against a number the app no
+    /// longer used, testing nothing.
+    private let t: CGFloat = DirectionPad.dragThreshold
 
     @Test("a push shorter than the threshold is the dead-zone (sends nothing)")
     func deadZone() {
         #expect(JoystickRepeater.direction(dx: 0, dy: 0, threshold: t) == nil)
-        #expect(JoystickRepeater.direction(dx: 10, dy: -8, threshold: t) == nil)
-        #expect(JoystickRepeater.direction(dx: -10.9, dy: 10.9, threshold: t) == nil)
+        // Expressed relative to the threshold so these stay just-inside samples
+        // whatever it is tuned to.
+        #expect(JoystickRepeater.direction(dx: t - 1, dy: -(t - 3), threshold: t) == nil)
+        #expect(JoystickRepeater.direction(dx: -(t - 0.1), dy: t - 0.1, threshold: t) == nil)
+    }
+
+    @Test("a push just past the threshold leaves the dead-zone")
+    func justOutsideDeadZone() {
+        // The other half of the contract: the samples above must be inside a
+        // boundary that actually exists, or a threshold of ∞ would pass too.
+        #expect(JoystickRepeater.direction(dx: t, dy: 0, threshold: t) == "right")
+        #expect(JoystickRepeater.direction(dx: 0, dy: -t, threshold: t) == "up")
     }
 
     @Test("dominant axis wins")

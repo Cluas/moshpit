@@ -128,6 +128,16 @@ struct TerminalShortcutEncodingTests {
         sc.kind = .ctrl
         #expect(sc.encodedBytes() == nil)
     }
+
+    @Test("the arrow cluster has no bytes of its own — its zones route through onArrow")
+    func arrowsKindEncodesNothing() throws {
+        var sc = TerminalShortcut()
+        sc.kind = .arrows
+        // Deliberately nil rather than a CSI: the bar's `onArrow` encodes for
+        // the remote's *current* cursor-key mode, and a fixed sequence here
+        // would break history search in application-cursor-mode shells.
+        #expect(sc.encodedBytes() == nil)
+    }
 }
 
 @Suite("ShortcutStore")
@@ -140,9 +150,15 @@ struct ShortcutStoreTests {
     /// out of the bar, so a plain filter would seed a toolbar that already
     /// lacks it and every assertion about the migration would pass without
     /// the migration doing anything.
+    ///
+    /// Note the `.arrows` filter: the cluster postdates this era entirely. It
+    /// ships out of the bar, so leaving it in wouldn't disturb the toolbar
+    /// order — but the `staleDefault` check this fixture exists to trip compares
+    /// toolbar summaries **in order**, and seeding a set with an entry that era
+    /// never had is how a fixture stops describing the thing it's named after.
     private static func preMicDefaults() -> [TerminalShortcut] {
         ShortcutStore.builtins
-            .filter { $0.kind != .mic }
+            .filter { $0.kind != .mic && $0.kind != .arrows }
             .map { shortcut in
                 var restored = shortcut
                 if restored.summary == "Clear screen" { restored.inToolbar = true }
@@ -189,6 +205,37 @@ struct ShortcutStoreTests {
         #expect(width <= 402 - 50, "default toolbar overflows: \(width)pt")
     }
 
+    @Test("the tap-first cluster ships available but out of the bar")
+    func tapArrowsAvailableNotDefault() throws {
+        let store = freshStore()
+        // The joystick keeps the default slot: one chip for four directions,
+        // where the cluster's four zones cost ~2.5 and overflow a phone row.
+        // The cluster is the answer to "a tap can't carry a direction", so it
+        // has to be reachable — just not at the cost of the default layout.
+        let cluster = try #require(store.shortcuts.first { $0.kind == .arrows })
+        #expect(!cluster.inToolbar)
+        #expect(store.available.contains { $0.kind == .arrows })
+        #expect(store.toolbar.contains { $0.kind == .dpad })
+        // Distinct summaries, because summary is the identity the builtin
+        // catch-all migration keys on — two "Arrow keys" would make it inject
+        // duplicates for anyone upgrading.
+        #expect(cluster.summary != store.toolbar.first { $0.kind == .dpad }?.summary)
+    }
+
+    @Test("all four arrows exist as individual chips, outside the bar")
+    func individualArrowBuiltinsExist() throws {
+        let store = freshStore()
+        // ← and → had no chip at all before the cluster landed — the joystick
+        // was the only way to move a cursor sideways, which is the press-and-
+        // hold complaint in its purest form.
+        for key in ["up", "down", "left", "right"] {
+            let sc = try #require(store.shortcuts.first { $0.kind == .keyCombo && $0.key == key },
+                                  "no builtin chip for \(key)")
+            #expect(sc.repeatOnHold, "\(key) should hold-to-repeat like a hardware key")
+            #expect(!sc.inToolbar, "the cluster covers all four; single chips stay available")
+        }
+    }
+
     @Test("migration injects ctrl + the D-pad for a persisted set that predates them")
     func migratesDpad() throws {
         let suite = "test.shortcuts.\(UUID().uuidString)"
@@ -208,6 +255,9 @@ struct ShortcutStoreTests {
         #expect(store.shortcuts.contains { $0.kind == .ctrl })
         #expect(store.available.contains { $0.kind == .ctrl })
         #expect(store.toolbar.contains { $0.chipLabel == "esc" })
+        // And the tap-first cluster arrives as an available alternative, without
+        // touching the bar — no migration step of its own, just the catch-all.
+        #expect(store.available.contains { $0.kind == .arrows })
     }
 
     @Test("migration moves the mic into the bar for a set that predates the chip")
