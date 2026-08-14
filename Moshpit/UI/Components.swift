@@ -325,17 +325,45 @@ enum TransportPillKind {
 /// reconnecting session is never silent.
 enum TransportConnState { case live, connecting, reconnecting, offline }
 
+extension TransportConnState {
+    /// The one colour for this state, for every surface that shows it.
+    ///
+    /// There used to be three independent mappings — the pill painted
+    /// connecting *and* reconnecting amber, ``TerminalConnectingView`` painted
+    /// them accent and blue, and the home card's row painted both amber with a
+    /// "WAIT" caption. One event, three colours, and on the connecting screen
+    /// the reconnect visibly changed hue partway through. A state that means one
+    /// thing has to look like one thing, so the mapping lives here and the
+    /// surfaces read it.
+    ///
+    /// Amber is deliberately not in this list. It is the app's "an agent needs
+    /// you" colour, and spending it on a transport hiccup is what made a
+    /// reconnect shout as loudly as an agent waiting on a human.
+    /// `nil` for ``live``: a healthy session's colour belongs to its transport
+    /// (SSH and mosh read differently on the pill), so callers keep their own.
+    var transientTint: Color? {
+        switch self {
+        // The user's own accent: a first connect is the app doing what it was
+        // asked, not a fault.
+        case .connecting: return Ink.accent
+        // Fixed transport blue, theme or no theme — the same hue the mosh roam
+        // banner uses, because a reconnect is that same story: the line is
+        // moving, not gone.
+        case .reconnecting: return Ink.signal
+        // Nothing is being attempted. This is the only one that earns red.
+        case .offline: return Ink.danger
+        case .live: return nil
+        }
+    }
+}
+
 struct TransportPill: View {
     let kind: TransportPillKind
     var connState: TransportConnState = .live
     @State private var pulsing = false
 
     private var dotColor: Color {
-        switch connState {
-        case .live: return kind.dotColor
-        case .connecting, .reconnecting: return Ink.warn
-        case .offline: return Ink.danger
-        }
+        connState.transientTint ?? kind.dotColor
     }
 
     private var label: String {

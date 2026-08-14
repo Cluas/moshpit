@@ -1763,12 +1763,20 @@ struct ConnectionCard: View {
             : String(localized: "Connecting…")
     }
 
+    /// The same colour the Terminal screen and the transport pill give this
+    /// state — see ``TransportConnState/transientTint``. This row used to be
+    /// amber whatever was happening, which made a reconnect read as a third
+    /// colour for an event the other two surfaces were already disagreeing about.
+    private var connectingTint: Color {
+        active?.viewModel.connState.transientTint ?? Ink.accent
+    }
+
     private var connectingRow: some View {
         VStack(alignment: .leading, spacing: 0) {
             Rectangle().fill(Ink.cardDivider).frame(height: 1)
                 .padding(.bottom, 12)
             HStack(spacing: 9) {
-                ProgressView().tint(Ink.warn).controlSize(.small)
+                ProgressView().tint(connectingTint).controlSize(.small)
                 Text(connectingLabel)
                     .font(Face.mono(11, .semibold))
                     .foregroundStyle(Ink.secondary)
@@ -1776,11 +1784,11 @@ struct ConnectionCard: View {
                 Text("WAIT")
                     .font(Face.mono(9, .bold))
                     .kerning(0.8)
-                    .foregroundStyle(Ink.warn)
+                    .foregroundStyle(connectingTint)
             }
             .padding(.horizontal, 10)
             .frame(minHeight: 36)
-            .background(Ink.warn.opacity(0.07), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+            .background(connectingTint.opacity(0.07), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
         }
         .padding(EdgeInsets(top: 0, leading: 14, bottom: 12, trailing: 14))
         .accessibilityIdentifier("card-connecting-\(connection.displayName)")

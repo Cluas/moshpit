@@ -217,20 +217,11 @@ struct TerminalScreen: View {
 
     /// Live connection state for the transport pill — so a dropped/reconnecting
     /// session is visible, not silent.
+    /// Delegated to the view model so the pill, this screen and the home card's
+    /// row cannot disagree — see ``TerminalViewModel/connState``. No session yet
+    /// reads as connecting: the screen exists because one is being opened.
     private var connState: TransportConnState {
-        // One state for the whole automatic reconnect, however many attempts it
-        // takes. The status underneath flips connecting → failed → connecting on
-        // every keepalive tick, and letting that through made the screen alternate
-        // between "opening the pit" and "line dropped" while a modal error card
-        // came and went on top — three ways of saying the line is down.
-        if active?.viewModel.isAutoReconnectInFlight == true { return .offline }
-        switch active?.viewModel.status {
-        case .connected: return .live
-        case .reconnecting: return .reconnecting
-        case .connecting, .none: return .connecting
-        case .failed, .disconnected: return .offline
-        case .idle: return .connecting
-        }
+        active?.viewModel.connState ?? .connecting
     }
 
     /// The single top-of-screen banner. The dead-mosh-return-path warning wins
@@ -2112,18 +2103,28 @@ struct TerminalConnectingView: View {
     let connection: ServerConnection
     let state: TransportConnState
 
+    /// Shared with the transport pill and the home card's row — see
+    /// ``TransportConnState/transientTint``. This screen recolours everything it
+    /// draws (the mark, the pulse dots, the accent pool, the capsule border), so
+    /// a state whose colour disagreed with the pill's did not read as a detail:
+    /// the whole screen changed hue mid-reconnect.
     private var accent: SwiftUI.Color {
-        switch state {
-        case .reconnecting: return Ink.signal   // mosh roam — transport blue
-        case .offline: return Ink.danger
-        default: return Ink.accent
-        }
+        state.transientTint ?? Ink.accent
     }
 
     private var statusText: String {
         switch state {
-        case .reconnecting: return String(localized: "Riding the handoff")
-        case .offline: return String(localized: "Line dropped — retrying")
+        case .reconnecting:
+            // mosh's reconnect really is a handoff — the session is roaming, not
+            // being redialled. Plain SSH has no such story: it dropped and we
+            // are dialling again, and calling that a handoff overclaims.
+            return connection.connectionProtocol == .mosh
+                ? String(localized: "Riding the handoff")
+                : String(localized: "Reconnecting")
+        // No retry is in flight in this state — `connState` routes an automatic
+        // reconnect to `.reconnecting` now, so promising "retrying" here would be
+        // the screen saying something the app is not doing.
+        case .offline: return String(localized: "Line dropped")
         default: return String(localized: "Opening the pit")
         }
     }

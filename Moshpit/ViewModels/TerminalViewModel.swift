@@ -40,6 +40,34 @@ final class TerminalViewModel {
     private(set) var status: Status = .idle
     var errorMessage: String?
 
+    /// What every surface showing this session's health should read.
+    ///
+    /// Lives here because it used to live in three places — the Terminal
+    /// screen, the transport pill and the home card's row each derived it, and
+    /// each derived it differently, so one reconnect could be blue on one
+    /// surface, red on another and amber on a third. `status` alone is not
+    /// enough to derive it (see the collapse below), which is exactly why
+    /// duplicating the derivation went wrong.
+    var connState: TransportConnState {
+        // One state for the whole automatic reconnect, however many attempts it
+        // takes: `status` flips connecting → failed → connecting on every
+        // keepalive tick, and letting that through made the screen alternate
+        // between "opening the pit" and "line dropped".
+        //
+        // It collapses to `.reconnecting` and not `.offline` because the app is
+        // dialling — `.offline` means nothing is being attempted. Reporting
+        // offline here turned the connecting screen red mid-reconnect, and since
+        // this flag and `status` change on their own schedules, a single
+        // reconnect crossed from blue to red partway through.
+        if isAutoReconnectInFlight { return .reconnecting }
+        switch status {
+        case .connected: return .live
+        case .reconnecting: return .reconnecting
+        case .connecting, .idle: return .connecting
+        case .failed, .disconnected: return .offline
+        }
+    }
+
     /// True from the moment the app starts re-establishing a transport the user
     /// didn't ask to re-establish, until it's back.
     ///
