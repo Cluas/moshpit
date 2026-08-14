@@ -381,11 +381,26 @@ actor SSHService {
     private var secretCache: [UUID: String] = [:]
     private var seBlobCache: [UUID: Data] = [:]
 
+    /// Keychain reads currently in flight, keyed by connection id, so
+    /// concurrent resolutions of the same connection share ONE read — and
+    /// therefore one Face ID prompt. This actor is reentrant: without this,
+    /// two `connect`s racing for the same connection both see an empty
+    /// `secretCache`, both suspend into the keychain, and the user gets two
+    /// biometry sheets for one tap. Not hypothetical — the mosh+tmux
+    /// dual-transport design authenticates two SSH connections (bootstrap +
+    /// `-CC` sidecar) with the same credential, and a parallel `resumeAll`
+    /// resumes them together.
+    private var secretResolutions: [UUID: Task<String, Error>] = [:]
+
     /// Forget a cached credential (called when the user disconnects), so the
     /// next connect re-authenticates against the keychain.
     func clearCachedSecret(for id: UUID) {
         secretCache[id] = nil
         seBlobCache[id] = nil
+        // Detach (don't cancel) any in-flight read: connects already awaiting
+        // it still get their value, but its result no longer lands in the
+        // cache — see `resolveSecret`'s identity check.
+        secretResolutions[id] = nil
     }
 
     /// Forget every cached credential. Called when the app backgrounds (see
@@ -400,6 +415,11 @@ actor SSHService {
     func clearAllCachedSecrets() {
         secretCache.removeAll()
         seBlobCache.removeAll()
+        // Same detach as `clearCachedSecret`: a read that finishes AFTER this
+        // wipe must not repopulate the cache, or the background-wipe guarantee
+        // ("authenticate on every read" survives backgrounding) is quietly
+        // undone by whichever reconnect happened to be mid-keychain.
+        secretResolutions.removeAll()
     }
 
     init(keychain: KeychainService,
@@ -515,25 +535,50 @@ actor SSHService {
                                override: String?) async throws -> String {
         if let override { return override }
         if let cached = secretCache[connection.id] { return cached }
+        // Join a read already in flight instead of starting a second one —
+        // this is what keeps one user action at one Face ID prompt when two
+        // connects race for the same connection (see `secretResolutions`).
+        if let inFlight = secretResolutions[connection.id] {
+            return try await inFlight.value
+        }
         guard let ref = connection.keychainRef else {
             throw SSHError.missingKeychainRef
         }
-        let secret: String
-        do {
-            switch connection.authMethod {
-            case .password:
-                secret = try await keychain.loadPassword(forRef: ref,
-                                                         reason: "Authenticate to connect to \(connection.host)")
-            case .key:
-                secret = try await keychain.loadPrivateKey(forRef: ref,
-                                                           reason: "Authenticate to use SSH key for \(connection.host)")
+        let keychain = self.keychain
+        let task = Task<String, Error> {
+            do {
+                switch connection.authMethod {
+                case .password:
+                    return try await keychain.loadPassword(forRef: ref,
+                                                           reason: "Authenticate to connect to \(connection.host)")
+                case .key:
+                    return try await keychain.loadPrivateKey(forRef: ref,
+                                                             reason: "Authenticate to use SSH key for \(connection.host)")
+                }
+            } catch is KeychainError {
+                // Item missing / unreadable (often after a re-sign) → actionable.
+                throw SSHError.credentialUnavailable
             }
-        } catch is KeychainError {
-            // Item missing / unreadable (often after a re-sign) → actionable.
-            throw SSHError.credentialUnavailable
         }
-        secretCache[connection.id] = secret
-        return secret
+        secretResolutions[connection.id] = task
+        do {
+            let secret = try await task.value
+            // Cache only if this read is still the registered one. A background
+            // wipe (`clearAllCachedSecrets`) between start and finish detaches
+            // it, and a late write here would silently undo the wipe.
+            if secretResolutions[connection.id] == task {
+                secretResolutions[connection.id] = nil
+                secretCache[connection.id] = secret
+            }
+            return secret
+        } catch {
+            // A failed read must not pin the failure: the next attempt gets a
+            // fresh keychain call (and a fresh prompt) rather than this error.
+            if secretResolutions[connection.id] == task {
+                secretResolutions[connection.id] = nil
+            }
+            throw error
+        }
     }
 
     private func makeAuthMethod(connection: ServerConnection,

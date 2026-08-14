@@ -196,6 +196,7 @@
 		E9FF6D95F3DAE0480DF792E6 /* HostKeyValidatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1B0C0CC62DFD21594A9C5B9 /* HostKeyValidatorTests.swift */; };
 		EA634C97DDAD7D88F19EB013 /* HerdrLaunch.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62EB730C4DE65227A4CF5774 /* HerdrLaunch.swift */; };
 		EA932A4B143CCF7C1B0E0581 /* MultiplexerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 775EA961B59056055DADADE4 /* MultiplexerTests.swift */; };
+		EC5107F02FC003CF5BC1CFDF /* SecretCoalescingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01C8A890ED83C38778DBA9E5 /* SecretCoalescingTests.swift */; };
 		EC7B58F6C53DC0D3756050D9 /* AppIcon-Ringdown83.5x83.5@2x~ipad.png in Resources */ = {isa = PBXBuildFile; fileRef = E3114866D6E1CE18D8B44E43 /* AppIcon-Ringdown83.5x83.5@2x~ipad.png */; };
 		ED71EA4963B087CA108021E7 /* TerminalFontTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 32CA31043DA7F2B938053BA0 /* TerminalFontTests.swift */; };
 		F4136D0A378BE0F2499495D9 /* MultiplexerControlling.swift in Sources */ = {isa = PBXBuildFile; fileRef = BABE853079273BFF284461FC /* MultiplexerControlling.swift */; };
@@ -247,6 +248,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		01C8A890ED83C38778DBA9E5 /* SecretCoalescingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecretCoalescingTests.swift; sourceTree = "<group>"; };
 		02BAB2D43A01513C3F160EA6 /* SSHServiceMockTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SSHServiceMockTests.swift; sourceTree = "<group>"; };
 		03321C1B66E351CB60EA8A73 /* MainFlowUITest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainFlowUITest.swift; sourceTree = "<group>"; };
 		0703410AD5B6D980ED96C5DD /* AppSettingsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSettingsTests.swift; sourceTree = "<group>"; };
@@ -938,6 +940,7 @@
 				07629CDD9AEA2F8ABADB82FF /* MoshTransportStateMachineTests.swift */,
 				788B64221EE1E4CCDFC9B4E3 /* MoshWireTests.swift */,
 				0DD9FDEED7F5C0CD1FE11E06 /* OCB3Tests.swift */,
+				01C8A890ED83C38778DBA9E5 /* SecretCoalescingTests.swift */,
 				982AC6883DA1A312AF55E9CD /* SSHErrorMappingTests.swift */,
 				9A7E4E7C98ADBC7F87A89AE1 /* SSHKeyFactoryTests.swift */,
 				02BAB2D43A01513C3F160EA6 /* SSHServiceMockTests.swift */,
@@ -1236,6 +1239,7 @@
 				32218A54776DF3E885C6E086 /* SSHIntegrationTests.swift in Sources */,
 				E1C05A5A8071B89350E11BFB /* SSHKeyFactoryTests.swift in Sources */,
 				6FC337C8359D046A64B84BE0 /* SSHServiceMockTests.swift in Sources */,
+				EC5107F02FC003CF5BC1CFDF /* SecretCoalescingTests.swift in Sources */,
 				14540354A5DD580B6E190E90 /* SessionMetricsTests.swift in Sources */,
 				E1207E83E8F72A5F3B02C8BC /* TOFUHostKeyDelegateTests.swift in Sources */,
 				E5C5F0CD8F9BC52F38DBB415 /* TerminalCellGeometryTests.swift in Sources */,

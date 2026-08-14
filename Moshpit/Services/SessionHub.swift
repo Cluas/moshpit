@@ -1806,9 +1806,17 @@ final class SessionHub {
         }
     }
 
+    /// Concurrent for the same reason as ``resumeAll(force:)`` — and it bites
+    /// harder here: `keepAlive`'s liveness probe is a timeout race, so one
+    /// half-open socket serially burning its timeout used to delay every
+    /// session behind it in the dictionary by that much per 12s tick.
     private func keepAliveAll() async {
-        for session in sessions.values {
-            await session.keepAlive()
+        await withTaskGroup(of: Void.self) { group in
+            for session in sessions.values {
+                group.addTask { @MainActor in
+                    await session.keepAlive()
+                }
+            }
         }
     }
 
@@ -1897,12 +1905,26 @@ final class SessionHub {
     }
 
     /// Probe every live session after the app returns to the foreground.
+    /// Resume every session **concurrently**. This used to be a serial loop,
+    /// which made returning to the foreground wait for the SUM of every
+    /// session's reconnect instead of the slowest one — with a mosh+tmux
+    /// bootstrap allowed ~15s and a tmux attach 22s, a second connection could
+    /// sit visibly dead for that long purely because it was second in the
+    /// dictionary. Everything here is main-actor state, so "concurrent" means
+    /// the network waits overlap; the state mutations still interleave on one
+    /// actor, exactly as before. Concurrent secret reads are safe now:
+    /// `SSHService.resolveSecret` coalesces per-connection, so this can't fan
+    /// one foreground-return into a stack of Face ID prompts.
     func resumeAll(force: Bool = false) async {
-        for session in sessions.values {
-            if force {
-                await session.forceResume()
-            } else {
-                await session.resumeIfNeeded()
+        await withTaskGroup(of: Void.self) { group in
+            for session in sessions.values {
+                group.addTask { @MainActor in
+                    if force {
+                        await session.forceResume()
+                    } else {
+                        await session.resumeIfNeeded()
+                    }
+                }
             }
         }
     }
