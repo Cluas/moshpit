@@ -204,6 +204,19 @@ final class SessionHub {
             moshControl?.releaseWindowPins()
         }
 
+        /// Wait for the commands ``releaseWindowPinsForBackground()`` queued to
+        /// actually reach the server.
+        ///
+        /// Queueing them is not sending them — they ride the control-mode write
+        /// chain and need a round trip. On the way to the background that gap is
+        /// where iOS suspends us, and the pins stay applied: a desktop attaching
+        /// later gets the phone grid, which is the bug the release exists to
+        /// prevent. Awaited under a ``BackgroundAssertion``.
+        func flushBackgroundTeardown() async {
+            await tmuxController?.flushPendingWrites()
+            await moshControl?.flushPendingWrites()
+        }
+
         /// Re-pin the active window to the phone grid when the terminal returns to
         /// the foreground after `releaseWindowPinsForBackground()`.
         func repinForeground() {
@@ -1763,14 +1776,32 @@ final class SessionHub {
             // memory across backgrounding. Live sessions are unaffected: this
             // only forces the NEXT resolveSecret() (e.g. on resume/reconnect)
             // back through the keychain.
-            Task { await SSHService.shared.clearAllCachedSecrets() }
             // iOS may suspend or kill us at ANY point from here — hand every
             // window pin back to the server NOW (and take our clients out of
             // `window-size latest` sizing), so a desktop attaching while we're
             // gone gets its full size instead of the phone grid. Verified: this
             // doesn't stop %output, so background monitoring keeps working.
+            //
+            // Queue them synchronously, then hold a background assertion while
+            // they drain. "NOW" was aspirational before: these are control-mode
+            // commands with a round trip, and a suspension between queueing and
+            // flushing left the pins applied — exactly the stranded-desktop bug
+            // the release is here to prevent. The assertion is not a keepalive
+            // (iOS has none to give); it is tens of seconds to finish what we
+            // already started. See ``BackgroundAssertion``.
             for session in sessions.values {
                 session.releaseWindowPinsForBackground()
+            }
+            let teardown = BackgroundAssertion(name: "moshpit.background-teardown")
+            let draining = Array(sessions.values)
+            Task { @MainActor in
+                // Secrets first: it is the cheap half, and dropping plaintext
+                // sooner is worth more than draining sockets sooner.
+                await SSHService.shared.clearAllCachedSecrets()
+                for session in draining {
+                    await session.flushBackgroundTeardown()
+                }
+                teardown.end()
             }
         }
     }

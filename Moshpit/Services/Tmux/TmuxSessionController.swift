@@ -2192,6 +2192,17 @@ final class TmuxSessionController: MultiplexerControlling {
     /// Fire-and-forget write to the SSH transport. Used for `send-keys`,
     /// `select-window`, `refresh-client` and similar. Still occupies a
     /// (nil) response slot — tmux replies to every command.
+    /// Wait until every command queued so far has reached the socket.
+    ///
+    /// `writeChain` is what gives control-mode writes their FIFO order; awaiting
+    /// its tail is what turns "these commands were queued" into "these commands
+    /// are out". Needed when the app is backgrounding: the window-pin release
+    /// has to land on the server before iOS suspends us, and queueing it is not
+    /// the same as sending it. See ``BackgroundAssertion``.
+    func flushPendingWrites() async {
+        await writeChain?.value
+    }
+
     private func send(rawCommand command: String) {
         enqueue(command, callback: nil)
     }

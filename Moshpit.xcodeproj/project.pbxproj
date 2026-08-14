@@ -138,6 +138,7 @@
 		A09DB81C6F1E53A3F6314A80 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 86B361E8F1A8288F5F612988 /* Assets.xcassets */; };
 		A0AEB0F49BB6DC81A2B3DD63 /* TerminalCursor.swift in Sources */ = {isa = PBXBuildFile; fileRef = B8E766A14A745773140BE129 /* TerminalCursor.swift */; };
 		A0B84B20CCBDA86A0A1F05D8 /* MultiplexerVocabulary.swift in Sources */ = {isa = PBXBuildFile; fileRef = E4F3EB0C0463CCB6037118A9 /* MultiplexerVocabulary.swift */; };
+		A3974F02439E9A26EC4ECD40 /* BackgroundAssertion.swift in Sources */ = {isa = PBXBuildFile; fileRef = C06DEA01A1514F54E17F3024 /* BackgroundAssertion.swift */; };
 		A41FA6933B8A3DF6FEC084A2 /* ThemeGalleryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C6E0E8EE7D87DC9BC55058D /* ThemeGalleryView.swift */; };
 		A6C9C7E9B28C4772AA299851 /* ShortcutsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1405C76BEA08827669966449 /* ShortcutsView.swift */; };
 		A9C0F3410C4AA1E286789123 /* HerdrControlClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7A9E08AEC01474826CEC504 /* HerdrControlClient.swift */; };
@@ -394,6 +395,7 @@
 		BD6E5F9CE5715B680872B6CA /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
 		BE653787B46C83117DA1849C /* VoiceEngineView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceEngineView.swift; sourceTree = "<group>"; };
 		C0311C1527B62E3EE5121EC1 /* TmuxIntegrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TmuxIntegrationTests.swift; sourceTree = "<group>"; };
+		C06DEA01A1514F54E17F3024 /* BackgroundAssertion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackgroundAssertion.swift; sourceTree = "<group>"; };
 		C1E8158B74BCBA2450050C74 /* MoshWire.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoshWire.swift; sourceTree = "<group>"; };
 		C4C337C6AF43860E1E812E0B /* Moshpit.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Moshpit.entitlements; sourceTree = "<group>"; };
 		C54259C373F05459B1700975 /* NewAgentTaskSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewAgentTaskSheet.swift; sourceTree = "<group>"; };
@@ -521,6 +523,7 @@
 		2306B15FFB2A19D895E42CF6 /* Services */ = {
 			isa = PBXGroup;
 			children = (
+				C06DEA01A1514F54E17F3024 /* BackgroundAssertion.swift */,
 				B1429CD4403113AA94F8D187 /* HostCapabilities.swift */,
 				3F0598BDB2392EFCA70A71BF /* HostKeyValidator.swift */,
 				A41D45DEB209E64F8E845274 /* KeychainService.swift */,
@@ -1274,6 +1277,7 @@
 				7D3F14D0C693344070CCFCF8 /* AppTheme.swift in Sources */,
 				CB13AC1195B96A5DA6FA62E1 /* AppThemeStore.swift in Sources */,
 				90F124609D8A9A39545A4E67 /* AttachHomeView.swift in Sources */,
+				A3974F02439E9A26EC4ECD40 /* BackgroundAssertion.swift in Sources */,
 				961E4BA0AAC0C395C0B3CC86 /* BellDetector.swift in Sources */,
 				8337A3FCC46748CA17BF9320 /* BreadcrumbPlan.swift in Sources */,
 				879842603F47A81C056CE926 /* CaptureScreen.swift in Sources */,
