@@ -25,7 +25,11 @@ xcodebuild -project Moshpit.xcodeproj -scheme Moshpit -configuration "$CONFIG" \
 SHA="$(git rev-parse --short HEAD 2>/dev/null || echo unknown)"
 git diff --quiet HEAD 2>/dev/null || SHA="${SHA}+"
 STAMP="$SHA · $(date '+%m-%d %H:%M')"
-BUILDNUM="$(git rev-list --count HEAD 2>/dev/null || echo 1)"
+# Same source as release-archive.sh: the hand-bumped BUILD_NUMBER file, so a
+# sideloaded build and an App Store build cut from the same commit carry the
+# same number. Falls back to 1 outside a checkout (e.g. a source tarball).
+BUILDNUM="$(tr -cd '0-9' < "$(dirname "${BASH_SOURCE[0]}")/../BUILD_NUMBER" 2>/dev/null || echo 1)"
+[ -n "$BUILDNUM" ] || BUILDNUM=1
 /usr/libexec/PlistBuddy -c "Add :MoshpitBuildStamp string $STAMP" "$APP/Info.plist" 2>/dev/null \
   || /usr/libexec/PlistBuddy -c "Set :MoshpitBuildStamp $STAMP" "$APP/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILDNUM" "$APP/Info.plist" 2>/dev/null || true

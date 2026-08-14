@@ -40,8 +40,12 @@ exports a signed `build/AppStore/Moshpit.ipa`. Upload it with Xcode's Organizer
 (**Window ▸ Organizer ▸ Distribute App**), or from the CLI once you have an
 App Store Connect API key.
 
-Build numbers come from `git rev-list --count HEAD`, so they always increase.
-To re-upload without a dummy commit: `MOSHPIT_BUILD=n ./scripts/release-archive.sh`.
+The build number lives in `BUILD_NUMBER` at the repo root and names the build
+the **next** archive will be. Bump it by hand (+1) when preparing a release and
+commit it with the changes it ships. (Builds through 342 used the commit count
+instead — monotonic on one branch and nowhere else, and any commit at all moved
+it, including committing a build's own tester notes.) One-off override without
+touching the file: `MOSHPIT_BUILD=n ./scripts/release-archive.sh`.
 
 ## Internal vs external testers
 

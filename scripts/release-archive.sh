@@ -12,16 +12,32 @@ ARCHIVE="build/Moshpit.xcarchive"
 EXPORT_DIR="build/AppStore"
 OPTS="build/ExportOptions.plist"
 
-# The build number is the commit count — unique and monotonically increasing by
-# construction, so a release never depends on someone remembering to bump it
-# (App Store Connect rejects a build number it has already seen for a version).
+# The build number lives in BUILD_NUMBER at the repo root, holding the number
+# the NEXT archive will carry. Bump it by hand (+1) as part of preparing a
+# release and commit it with the changes it ships — the number and the source
+# it names then live in the same commit.
+#
+# It used to be the commit count. That is monotonic on one branch and nowhere
+# else: a build cut from main after working on v2 counts LOWER and App Store
+# Connect rejects it outright; a rebase or squash moves it; and any commit at
+# all advances it — writing a build's own tester notes changed the number the
+# notes were named after. Forgetting to bump this file fails loudly instead:
+# ASC rejects a (version, build) pair it has already seen, at validate time.
+#
+# (The file is BUILD_NUMBER, not BUILD, because the default macOS filesystem is
+# case-insensitive and build/ already exists.)
 #
 # It is passed as a command-line build setting rather than written into
 # project.yml because command-line settings apply to EVERY target in the build:
 # that is what makes the app and the MoshpitIsland extension come out with the
 # identical CFBundleVersion that App Store validation insists on. Override with
-# MOSHPIT_BUILD=n to re-upload after a rejection without a dummy commit.
-BUILD="${MOSHPIT_BUILD:-$(git rev-list --count HEAD)}"
+# MOSHPIT_BUILD=n to re-upload after a rejection without touching the file.
+BUILD="${MOSHPIT_BUILD:-$(tr -cd '0-9' < BUILD_NUMBER 2>/dev/null || true)}"
+if ! [[ "$BUILD" =~ ^[1-9][0-9]*$ ]]; then
+  echo "✘ BUILD_NUMBER must hold a positive integer (got '${BUILD:-nothing}')." >&2
+  echo "  It names the build the next archive will be — bump it by hand, +1 per release." >&2
+  exit 1
+fi
 
 TEAM="$(sed -n 's/^[[:space:]]*DEVELOPMENT_TEAM[[:space:]]*=[[:space:]]*//p' Signing.xcconfig | tr -d '[:space:]')"
 if [ -z "$TEAM" ]; then
