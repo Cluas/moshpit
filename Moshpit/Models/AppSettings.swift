@@ -188,6 +188,24 @@ final class AppSettings {
         }
     }
 
+    /// Answer OSC 52 clipboard READ queries from remote programs with the
+    /// phone's clipboard text.
+    ///
+    /// Off by default, and this is a security posture, not a preference:
+    /// with it on, any program on any connected server can silently read
+    /// whatever is on the clipboard — passwords, 2FA codes, the works.
+    /// Off answers every query with an empty clipboard (the conventional
+    /// refusal), so remote programs get an answer instead of a hang, just
+    /// never the contents.
+    var remoteClipboardReadEnabled: Bool {
+        get { access(keyPath: \.remoteClipboardReadEnabled); return get("moshpit.settings.remoteClipboardRead", false) }
+        set {
+            withMutation(keyPath: \.remoteClipboardReadEnabled) {
+                defaults.set(newValue, forKey: "moshpit.settings.remoteClipboardRead")
+            }
+        }
+    }
+
     // MARK: VOICE INPUT
 
     /// Shows the mic key on the terminal shortcut bar. On by default — the

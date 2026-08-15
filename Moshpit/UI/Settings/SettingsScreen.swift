@@ -73,6 +73,10 @@ struct SettingsScreen: View {
                                 label: "Keyboard on Open",
                                 subtitle: "Raise the keyboard as soon as a terminal opens, instead of after you tap it",
                                 isOn: $settings.raiseKeyboardOnOpen)
+                            ToggleRow(
+                                label: "Remote Clipboard Read",
+                                subtitle: "Let remote programs read your clipboard text (OSC 52) — off answers with an empty clipboard",
+                                isOn: $settings.remoteClipboardReadEnabled)
                         }
 
                         moshGroup(settings: $settings)

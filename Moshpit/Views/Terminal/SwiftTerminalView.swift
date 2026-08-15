@@ -855,6 +855,32 @@ struct SwiftTerminalView: UIViewRepresentable {
             // no-op for M1; OSC 52 paste-from-remote disabled by default.
         }
 
+        func clipboardRequest(source: TerminalView) {
+            // OSC 52 read query — the remote is asking for the phone's
+            // clipboard. Gated on an off-by-default setting because this is
+            // an exfiltration channel: with it off we still ANSWER, with an
+            // empty clipboard (the conventional refusal), so a remote program
+            // waiting on the reply unblocks without learning anything.
+            //
+            // Text only for now; images wait on the ecosystem picking a
+            // protocol (kitty OSC 5522 — see Claude Code #42712). Pasteboard
+            // reads can block the main thread for over a second (see the
+            // paste chip), so the read happens off it.
+            let allowed = AppSettings.shared.remoteClipboardReadEnabled
+            Task { [weak source] in
+                let content: Data?
+                if allowed {
+                    let text = await Task.detached { UIPasteboard.general.string }.value
+                    content = text?.data(using: .utf8)
+                } else {
+                    content = nil
+                }
+                await MainActor.run { [weak source] in
+                    source?.getTerminal().sendClipboardResponse(content: content)
+                }
+            }
+        }
+
         func iTermContent(source: TerminalView, content: ArraySlice<UInt8>) {
             // no-op: iTerm2-specific OSC 1337 escapes are out of scope.
         }

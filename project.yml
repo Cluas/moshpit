@@ -90,10 +90,15 @@ packages:
     # becoming first responder: on iOS focus is the keyboard, and (4)'s
     # focus-grab meant tapping a link with the keyboard dismissed popped it
     # over the very output being read (and left it up on return from the
-    # browser). Revert to the upstream URL if/when these land there and a
+    # browser) — and (14) OSC 52 read queries (`ESC ] 52 ; c ; ?`) now reach
+    # the host through a clipboardRequest delegate hook and are answered via
+    # Terminal.sendClipboardResponse, instead of being mis-parsed as base64
+    # and dropped; whether the remote gets the clipboard is the host's call
+    # (groundwork for clipboard-image paste over SSH, Claude Code #42712).
+    # Revert to the upstream URL if/when these land there and a
     # release picks them up.
     url: https://github.com/Cluas/SwiftTerm.git
-    revision: f8d2ddee753ad85214a284b04825fb527674ad2c
+    revision: a5198e8f2a9b7be050030f78476d506f41dc2d58
   Citadel:
     url: https://github.com/orlandos-nl/Citadel.git
     from: "0.7.0"
