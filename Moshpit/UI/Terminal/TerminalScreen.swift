@@ -1,3 +1,4 @@
+import PhotosUI
 import SwiftUI
 import SwiftTerm
 import UIKit
@@ -88,6 +89,15 @@ struct TerminalScreen: View {
     /// Minted on mic tap (not at screen init) so idle terminals never touch
     /// audio plumbing.
     @State private var dictation: VoiceDictationController?
+    /// Live image-attachment flow; non-nil while its overlay is up. Minted
+    /// when the picker returns (not on chip tap) so cancelling the picker
+    /// leaves no state behind.
+    @State private var imageAttachment: ImageAttachmentController?
+    @State private var photoPickerPresented = false
+    @State private var photoSelection: [PhotosPickerItem] = []
+    /// Pure-mosh has no SSH channel to carry an upload — the chip explains
+    /// itself instead of failing silently. See `ActiveSession.fileTransferSSH`.
+    @State private var showImageChannelNotice = false
 
     private var theme: TerminalTheme {
         themes.theme(id: settings.themeId)
@@ -402,6 +412,24 @@ struct TerminalScreen: View {
                     session: active,
                     packages: target.packages,
                     onReconnect: { reconnect() })
+            }
+        }
+        .photosPicker(isPresented: $photoPickerPresented,
+                      selection: $photoSelection,
+                      maxSelectionCount: 10,
+                      matching: .images)
+        .onChange(of: photoSelection) { _, items in
+            guard !items.isEmpty else { return }
+            photoSelection = []
+            beginImageAttachment(items)
+        }
+        .moshpitCard(isPresented: $showImageChannelNotice) {
+            MoshpitNoticeCard(
+                icon: "photo.badge.exclamationmark",
+                title: "No Upload Channel",
+                message: "Attaching an image rides the session's SSH connection, and a pure-mosh session closes it after handoff. Switch this connection to SSH (or add tmux) to attach images."
+            ) {
+                showImageChannelNotice = false
             }
         }
     }
@@ -853,6 +881,18 @@ struct TerminalScreen: View {
             return
         }
         disarmStickyCtrlIfNeeded()
+        if shortcut.kind == .image {
+            guard active?.fileTransferSSH != nil else {
+                // Pure mosh: the bootstrap SSH is closed after handoff, so
+                // there is no channel to carry an upload. Say so — the same
+                // honest-degrade stance as DegradeNotice — rather than dialling
+                // a connection this tap didn't ask for.
+                showImageChannelNotice = true
+                return
+            }
+            photoPickerPresented = true
+            return
+        }
         if shortcut.kind == .paste {
             // UIPasteboard reads are synchronous and can block for well over a
             // second: a cross-app paste triggers iOS's "Allow Paste?" prompt,
@@ -956,6 +996,14 @@ struct TerminalScreen: View {
                     onSend: { finishDictation(submit: true) })
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
+            if let imageAttachment {
+                ImageAttachmentOverlayView(
+                    controller: imageAttachment,
+                    onCancel: { cancelImageAttachment() },
+                    onInsert: { finishImageAttachment() },
+                    onSend: { finishImageAttachment(submit: true) })
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
             ShortcutBarView(
                 shortcuts: shortcutStore.toolbar(
                     forHost: connection.displayName,
@@ -970,6 +1018,56 @@ struct TerminalScreen: View {
                 onMic: settings.voiceInputEnabled ? { toggleDictation() } : nil)
         }
         .animation(.easeOut(duration: 0.2), value: dictation == nil)
+        .animation(.easeOut(duration: 0.2), value: imageAttachment == nil)
+    }
+
+    // MARK: - Image attachment
+
+    /// Load the picked items' bytes and start the process → upload flow.
+    /// `loadTransferable(type: Data.self)` hands over the original file bytes
+    /// (HEIC included) without a photo-library permission prompt — PHPicker
+    /// runs out of process and only the selection crosses back.
+    private func beginImageAttachment(_ items: [PhotosPickerItem]) {
+        guard let uploader = active?.fileTransferSSH else {
+            showImageChannelNotice = true
+            return
+        }
+        let controller = ImageAttachmentController(uploader: uploader)
+        imageAttachment = controller
+        Task {
+            var picked: [Data] = []
+            for item in items {
+                if let data = try? await item.loadTransferable(type: Data.self) {
+                    picked.append(data)
+                }
+            }
+            guard !picked.isEmpty else {
+                imageAttachment = nil
+                UINotificationFeedbackGenerator().notificationOccurred(.warning)
+                return
+            }
+            controller.start(pickedData: picked)
+        }
+    }
+
+    /// Paste the uploaded paths at the prompt. `sendPaste` (not raw bytes) so
+    /// bracketed-paste apps receive them as one block; `submit` appends the
+    /// Return AFTER the paste for the same reason dictation does — a CR inside
+    /// the ESC[200~…201~ wrapper is a literal newline, not a submit.
+    private func finishImageAttachment(submit: Bool = false) {
+        guard let controller = imageAttachment,
+              let text = controller.insertText() else { return }
+        active?.sendPaste(text)
+        if submit {
+            active?.sendInput(Data([0x0D]))
+        }
+        Haptics.success()
+        imageAttachment = nil
+    }
+
+    private func cancelImageAttachment() {
+        imageAttachment?.cancel()
+        imageAttachment = nil
     }
 
     /// Mic key: no session → start one; session live → stop-and-insert (the
@@ -1409,10 +1507,13 @@ struct ShortcutBarView: View {
                         // One uniform key style — built-in and custom keys
                         // both render as the dark-grey pill (no accent-tinted
                         // custom variant), matching the keyboard toggle.
-                        // Paste shows the clipboard glyph instead of a label.
+                        // Paste and image show glyphs instead of labels.
                         Group {
                             if shortcut.kind == .paste {
                                 Image(systemName: "doc.on.clipboard")
+                                    .font(.system(size: 13, weight: .semibold))
+                            } else if shortcut.kind == .image {
+                                Image(systemName: "photo")
                                     .font(.system(size: 13, weight: .semibold))
                             } else {
                                 Text(shortcut.chipLabel)
@@ -1431,7 +1532,10 @@ struct ShortcutBarView: View {
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel(shortcut.kind == .paste
-                                        ? Text("Paste") : Text(shortcut.chipLabel))
+                                        ? Text("Paste")
+                                        : shortcut.kind == .image
+                                        ? Text("Attach image") : Text(shortcut.chipLabel))
+                    .accessibilityIdentifier(shortcut.kind == .image ? "attach-image" : "")
                 }
             }
         }

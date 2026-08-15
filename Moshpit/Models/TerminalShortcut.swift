@@ -43,6 +43,12 @@ enum ShortcutKind: String, Codable, CaseIterable {
     /// session whether or not dictation was ever used, and made the one
     /// shortcut nobody could reorder or hide out of the way.
     case mic
+    /// Attach an image: opens the photo picker, uploads over the session's
+    /// SSH channel, and pastes the remote path — how a screenshot reaches a
+    /// CLI agent that can only read files. A normal, reorderable/removable
+    /// chip (resolved by the caller, which drives the attachment flow) — not
+    /// user-creatable.
+    case image
 }
 
 enum ShortcutModifier: String, Codable, CaseIterable, Comparable {
@@ -143,6 +149,11 @@ struct TerminalShortcut: Identifiable, Codable, Equatable, Hashable {
             // Resolved by the caller (opens/closes the dictation overlay).
             // Dictation deliberately never writes to the PTY on its own —
             // the transcript goes out on Insert, as one paste.
+            return nil
+        case .image:
+            // Resolved by the caller (opens the photo picker / attachment
+            // overlay). Like dictation, nothing reaches the PTY until the
+            // user commits with Insert or Send.
             return nil
         }
     }
@@ -555,6 +566,15 @@ final class ShortcutStore {
             // because it was previously always visible — taking it away
             // silently on upgrade would read as the feature disappearing.
             special(.mic, "mic", "Voice input", inBar: true),
+            // Attach image: in the bar because the chip IS the feature's only
+            // entry point — outside it, sending a screenshot to an agent
+            // doesn't exist. Yes, a seventh chip overflows a phone-width row
+            // by a few points where the mic upgrade evicted ^L to avoid
+            // exactly that — but ^L had a typeable equivalent (`clear`) and
+            // this has none, so it rides the row's drag-scroll + edge fade
+            // instead of costing anyone a key. Trailing end like the mic, so
+            // nothing shuffles under an upgrading user's thumb.
+            special(.image, "img", "Attach image", inBar: true),
             // Return, and the Claude Code two-step. Tab accepts whatever
             // Claude Code is suggesting and Return sends it, which is two taps
             // in the one place you least want them — so `⇥⏎` sends 0x09 0x0D

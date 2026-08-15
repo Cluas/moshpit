@@ -114,6 +114,14 @@ final class SessionHub {
         /// The active tmux control surface, whichever transport is in use.
         var tmuxControl: TmuxSessionController? { tmuxController ?? moshControl }
 
+        /// SSH channel available for file transfer — SFTP rides the already-
+        /// authenticated connection, so no re-auth and no Face ID. The in-band
+        /// SSH session when there is one; the mosh sidecar otherwise (same
+        /// pick as `recheckCapabilities`). nil on pure mosh: `startMosh`
+        /// closes the bootstrap SSH right after handoff, so there is nothing
+        /// to ride — callers degrade honestly instead of dialling on their own.
+        var fileTransferSSH: SSHSession? { viewModel.session ?? sidecarSSH }
+
         nonisolated var id: UUID { connection.id }
 
         @ObservationIgnored private var pumpTask: Task<Void, Never>?

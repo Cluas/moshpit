@@ -312,6 +312,66 @@ actor SSHSession {
         }
     }
 
+    /// Upload one file into `~/.moshpit/uploads/` over an SFTP subchannel on
+    /// this already-authenticated connection, returning the absolute remote
+    /// path. Does not touch the PTY channel, so the terminal stays usable
+    /// while bytes move.
+    ///
+    /// The home directory is resolved with `realpath .` because SFTP starts
+    /// in `$HOME` but never expands `~` itself — an upload addressed to a
+    /// literal `~/…` lands in a directory named `~`. `mkdir` has no `-p` and
+    /// errors on an existing directory, so both creates are best-effort; a
+    /// genuinely un-creatable directory still fails loudly at the open.
+    /// Directory 700 / file 600: screenshots on a shared host are nobody
+    /// else's to read.
+    func uploadToUploadsDirectory(
+        _ data: Data,
+        named filename: String,
+        progress: (@Sendable (Double) -> Void)? = nil) async throws -> String {
+        guard !closed else { throw SSHError.sessionClosed }
+        // SFTPFileAttributes' public init doesn't take permissions — set the
+        // field after construction.
+        func attributes(permissions: UInt32) -> SFTPFileAttributes {
+            var attrs = SFTPFileAttributes()
+            attrs.permissions = permissions
+            return attrs
+        }
+        do {
+            return try await client.withSFTP { sftp in
+                let home = try await sftp.getRealPath(atPath: ".")
+                let appDir = home + "/.moshpit"
+                let uploads = appDir + "/uploads"
+                try? await sftp.createDirectory(
+                    atPath: appDir, attributes: attributes(permissions: 0o700))
+                try? await sftp.createDirectory(
+                    atPath: uploads, attributes: attributes(permissions: 0o700))
+                let path = uploads + "/" + filename
+                try await sftp.withFile(
+                    filePath: path,
+                    flags: [.write, .create, .truncate],
+                    attributes: attributes(permissions: 0o600)) { file in
+                    // Chunked so a cancel lands between writes and progress
+                    // moves during the transfer, not just at its end.
+                    let chunkSize = 128 * 1024
+                    var offset = 0
+                    while offset < data.count {
+                        try Task.checkCancellation()
+                        let end = min(offset + chunkSize, data.count)
+                        try await file.write(
+                            ByteBuffer(bytes: data[offset..<end]), at: UInt64(offset))
+                        offset = end
+                        progress?(Double(offset) / Double(data.count))
+                    }
+                }
+                return path
+            }
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            throw SSHError.underlying(error)
+        }
+    }
+
     func resize(rows: Int, cols: Int) async throws {
         guard !closed else { throw SSHError.sessionClosed }
         self.rows = rows
