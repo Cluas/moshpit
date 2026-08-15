@@ -98,44 +98,70 @@ enum AgentNotifications {
 /// Notification-center delegate for the control surface. Each tapped action
 /// (Allow / Deny / Reply) or a body tap resolves the target pane from
 /// `userInfo` and hands off to `AgentControlBridge` (which lives in the app
-/// process and owns the live session). Uses the async delegate variants so the
-/// hop to the `@MainActor` bridge is clean.
+/// process and owns the live session).
+///
+/// Deliberately the completion-HANDLER delegate variants, not the async ones.
+/// The async variants read cleaner, but the ObjC bridge invokes their
+/// auto-generated completion on the concurrency pool's thread — and
+/// UNUserNotificationCenter's own completion for `didReceive` runs UIKit
+/// state-restoration/snapshot work (`_updateStateRestorationArchive…`) that
+/// NSAsserts the main thread. Tapping a notification while Moshpit was
+/// backgrounded crashed on exactly that assert (TestFlight 344, thread 17
+/// SIGABRT). Here every completion is invoked from a `@MainActor` task, so
+/// UIKit's continuation runs where it insists on running.
 final class AgentNotificationHandler: NSObject, UNUserNotificationCenterDelegate {
+    /// (connectionId, paneId) out of a notification's userInfo, or nil for
+    /// notifications that aren't ours.
+    private func target(of info: [AnyHashable: Any]) -> (UUID, String)? {
+        guard let cidString = info[AgentNotifications.connectionKey] as? String,
+              let connectionId = UUID(uuidString: cidString),
+              let paneId = info[AgentNotifications.paneKey] as? String
+        else { return nil }
+        return (connectionId, paneId)
+    }
+
     func userNotificationCenter(_ center: UNUserNotificationCenter,
-                                willPresent notification: UNNotification) async
-        -> UNNotificationPresentationOptions {
+                                willPresent notification: UNNotification,
+                                withCompletionHandler completionHandler:
+                                    @escaping (UNNotificationPresentationOptions) -> Void) {
         // Surface attention even while Moshpit is foreground (the user may be on
         // a different screen than the agent's pane) — EXCEPT when the user is
         // looking at that exact pane: a banner + chime over the prompt you are
         // already reading is triple noise. Keep it in the list only.
-        let info = notification.request.content.userInfo
-        if let cidString = info[AgentNotifications.connectionKey] as? String,
-           let connectionId = UUID(uuidString: cidString),
-           let paneId = info[AgentNotifications.paneKey] as? String {
-            let visible = await MainActor.run {
-                AgentControlBridge.shared.isPaneVisible?(connectionId, paneId) == true
+        let target = target(of: notification.request.content.userInfo)
+        Task { @MainActor in
+            if let (connectionId, paneId) = target,
+               AgentControlBridge.shared.isPaneVisible?(connectionId, paneId) == true {
+                completionHandler([.list])
+            } else {
+                completionHandler([.banner, .sound, .list])
             }
-            if visible { return [.list] }
         }
-        return [.banner, .sound, .list]
     }
 
     func userNotificationCenter(_ center: UNUserNotificationCenter,
-                                didReceive response: UNNotificationResponse) async {
-        let info = response.notification.request.content.userInfo
-        guard let cidString = info[AgentNotifications.connectionKey] as? String,
-              let connectionId = UUID(uuidString: cidString),
-              let paneId = info[AgentNotifications.paneKey] as? String
-        else { return }
-
-        // Body tap (or "open") → jump to the pane, same as the island deep link.
-        if response.actionIdentifier == UNNotificationDefaultActionIdentifier {
-            await AgentControlBridge.shared.open(connectionId: connectionId, paneId: paneId)
-            return
-        }
-        guard let action = AgentAction(rawValue: response.actionIdentifier) else { return }
+                                didReceive response: UNNotificationResponse,
+                                withCompletionHandler completionHandler: @escaping () -> Void) {
+        // Everything needed is extracted HERE, on the delegate's queue —
+        // UNNotificationResponse isn't Sendable and shouldn't cross into the
+        // main-actor task.
+        let target = target(of: response.notification.request.content.userInfo)
+        let actionIdentifier = response.actionIdentifier
         let text = (response as? UNTextInputNotificationResponse)?.userText
-        await AgentControlBridge.shared.dispatch(action, connectionId: connectionId,
-                                                 paneId: paneId, text: text)
+
+        Task { @MainActor in
+            defer { completionHandler() }
+            guard let (connectionId, paneId) = target else { return }
+
+            // Body tap (or "open") → jump to the pane, same as the island
+            // deep link.
+            if actionIdentifier == UNNotificationDefaultActionIdentifier {
+                AgentControlBridge.shared.open(connectionId: connectionId, paneId: paneId)
+                return
+            }
+            guard let action = AgentAction(rawValue: actionIdentifier) else { return }
+            await AgentControlBridge.shared.dispatch(action, connectionId: connectionId,
+                                                     paneId: paneId, text: text)
+        }
     }
 }
