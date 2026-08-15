@@ -617,14 +617,25 @@ final class TmuxSessionController: MultiplexerControlling {
     /// Refreshed on pane/window switch and at the start of each scroll drag.
     @ObservationIgnored private(set) var activePaneWantsMouse = false
 
-    /// Re-read the active pane's `#{mouse_any_flag}` and cache it. Cheap; one
-    /// control round-trip. No-op until attached / with no active pane.
+    /// Whether the active pane is on the ALTERNATE screen (`#{alternate_on}`).
+    /// Decisive for scroll strategy: an alt-screen pane has NO tmux history
+    /// (`history_size` 0 — measured on Claude Code 2.1.233), so copy-mode has
+    /// literally nothing to scroll. Every alt-screen TUI must get the wheel
+    /// and only the wheel.
+    @ObservationIgnored private(set) var activePaneOnAltScreen = false
+
+    /// Re-read the active pane's `#{mouse_any_flag}` + `#{alternate_on}` and
+    /// cache them. Cheap; one control round-trip. No-op until attached / with
+    /// no active pane.
     func refreshActivePaneMouse() {
         guard snapshot.isAttached,
               let paneId = snapshot.activePaneId ?? snapshot.activePanes.first?.id else { return }
-        sendCommand("display-message -p -t \(paneId) '#{mouse_any_flag}'") { [weak self] response in
-            self?.activePaneWantsMouse =
-                response.lines.first?.trimmingCharacters(in: .whitespaces) == "1"
+        sendCommand("display-message -p -t \(paneId) '#{mouse_any_flag} #{alternate_on}'") { [weak self] response in
+            let flags = response.lines.first?
+                .trimmingCharacters(in: .whitespaces)
+                .split(separator: " ") ?? []
+            self?.activePaneWantsMouse = flags.first == "1"
+            self?.activePaneOnAltScreen = flags.count > 1 && flags[1] == "1"
         }
     }
 
@@ -638,13 +649,26 @@ final class TmuxSessionController: MultiplexerControlling {
     func scroll(lines: Int) {
         guard lines != 0,
               let paneId = snapshot.activePaneId ?? snapshot.activePanes.first?.id else { return }
-        // Forwarding the wheel to an app that is CURRENTLY repainting makes the
-        // two fight over the same viewport: the app scrolls where we asked, then
-        // its next frame pins back to the bottom, then the next swipe scrolls
-        // again — the reported judder while an agent streams its answer. Reading
-        // history is exactly what you want to do at that moment, so hand it to
-        // copy-mode instead, which parks the viewport server-side where the
-        // app's repaints cannot reach it.
+        // An ALT-SCREEN mouse app (Claude Code) gets the wheel unconditionally:
+        // its pane has zero tmux history, so copy-mode has nothing to show —
+        // and its own repaint after a wheel updated `lastPaneOutputAt`, which
+        // read as "streaming" and flipped the NEXT tick into copy-mode, where
+        // the sticky latch kept every later swipe. First swipe scrolled, the
+        // rest were dead (the 347 report). If an earlier misfire already
+        // parked the pane, leave copy-mode and hand the app its wheel back.
+        if activePaneWantsMouse && activePaneOnAltScreen {
+            if inCopyMode { exitCopyMode() }
+            sendWheel(lines: lines, paneId: paneId)
+            return
+        }
+        // NON-alt panes: forwarding the wheel to an app that is CURRENTLY
+        // repainting makes the two fight over the same viewport: the app
+        // scrolls where we asked, then its next frame pins back to the
+        // bottom, then the next swipe scrolls again — the reported judder
+        // while output streams. Reading history is exactly what you want to
+        // do at that moment, so hand it to copy-mode instead (these panes
+        // HAVE history), which parks the viewport server-side where the
+        // repaints cannot reach it.
         //
         // Sticky on `inCopyMode`: once parked, a lull in output must NOT flip
         // the next swipe back to the wheel — `sendInput` exits copy-mode first,
@@ -653,18 +677,23 @@ final class TmuxSessionController: MultiplexerControlling {
             && !inCopyMode
             && !isStreaming(paneId)
         if appDrivesItsOwnScroll {
-            // sendInput() exits copy-mode first — which self-heals the first-swipe
-            // race: if a tick fired before the mouse flag refreshed we may have
-            // wrongly entered copy-mode here, and `-X cancel` (consumed by
-            // copy-mode, never the app) leaves it before the wheel is forwarded.
-            let terminal = paneTerminals[paneId]?.getTerminal()
-            let col = max(1, (terminal?.cols ?? 80) / 2)
-            let row = max(1, (terminal?.rows ?? 24) / 2)
-            let wheel = SessionHub.ActiveSession.wheelBytes(lines: lines, col: col, row: row)
-            if !wheel.isEmpty { sendInput(wheel, paneId: paneId) }
+            sendWheel(lines: lines, paneId: paneId)
         } else {
             copyModeScroll(lines: lines)
         }
+    }
+
+    /// Synthesize SGR wheel bytes into the pane's program.
+    private func sendWheel(lines: Int, paneId: String) {
+        // sendInput() exits copy-mode first — which self-heals the first-swipe
+        // race: if a tick fired before the mouse flag refreshed we may have
+        // wrongly entered copy-mode here, and `-X cancel` (consumed by
+        // copy-mode, never the app) leaves it before the wheel is forwarded.
+        let terminal = paneTerminals[paneId]?.getTerminal()
+        let col = max(1, (terminal?.cols ?? 80) / 2)
+        let row = max(1, (terminal?.rows ?? 24) / 2)
+        let wheel = SessionHub.ActiveSession.wheelBytes(lines: lines, col: col, row: row)
+        if !wheel.isEmpty { sendInput(wheel, paneId: paneId) }
     }
 
     /// Forward a click at a 0-based, viewport-relative cell to the active pane's
