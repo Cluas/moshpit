@@ -21,6 +21,7 @@ struct ImageAttachmentTests {
     /// dictionary — the metadata the pipeline exists to remove.
     private func makeImageData(width: Int, height: Int,
                                opaque: Bool,
+                               clearRegion: Bool? = nil,
                                gps: Bool = false) -> Data {
         let format = UIGraphicsImageRendererFormat()
         format.opaque = opaque
@@ -29,7 +30,7 @@ struct ImageAttachmentTests {
         let image = UIGraphicsImageRenderer(size: size, format: format).image { ctx in
             UIColor.systemTeal.setFill()
             ctx.fill(CGRect(origin: .zero, size: size))
-            if !opaque {
+            if clearRegion ?? !opaque {
                 ctx.cgContext.clear(CGRect(x: 0, y: 0, width: width / 2, height: height / 2))
             }
         }
@@ -106,6 +107,16 @@ struct ImageAttachmentTests {
         #expect(processed.filename.hasSuffix(".png"))
     }
 
+    @Test("An alpha channel with no transparent pixels becomes JPEG")
+    func opaqueAlphaChannelBecomesJPEG() throws {
+        // RGBA format, every pixel fully opaque — the simulator-screenshot /
+        // camera-pipeline shape that used to ship megabytes of needless PNG.
+        let raw = makeImageData(width: 400, height: 400, opaque: false, clearRegion: false)
+        #expect(properties(of: raw)[kCGImagePropertyHasAlpha] as? Bool == true)
+        let processed = try ImageAttachmentPipeline.process(raw, date: fixedDate, suffix: "a3f2")
+        #expect(processed.filename.hasSuffix(".jpg"))
+    }
+
     @Test("Undecodable bytes throw rather than upload garbage")
     func rejectsGarbage() {
         #expect(throws: ImageAttachmentPipeline.PipelineError.self) {
@@ -178,5 +189,44 @@ struct ImageAttachmentTests {
     func clipboardTypeOrder() {
         #expect(ClipboardImageReader.preferredTypes.first == "public.heic")
         #expect(ClipboardImageReader.preferredTypes.last == "public.tiff")
+    }
+
+    // MARK: Exec-channel fallback commands
+
+    @Test("Exec upload plan pins the exact command strings")
+    func execUploadPlan() {
+        let plan = ExecUploadCommands.plan(home: "/home/dev", filename: "IMG-1.jpg")
+        #expect(plan.finalPath == "/home/dev/.moshpit/uploads/IMG-1.jpg")
+        #expect(plan.begin ==
+            "mkdir -p '/home/dev/.moshpit/uploads' && chmod 700 '/home/dev/.moshpit' '/home/dev/.moshpit/uploads' && rm -f '/home/dev/.moshpit/uploads/IMG-1.jpg.b64part'")
+        #expect(plan.append("QUJD") ==
+            "printf %s 'QUJD' >> '/home/dev/.moshpit/uploads/IMG-1.jpg.b64part'")
+        #expect(plan.finish.contains("base64 -d <"))
+        #expect(plan.finish.contains("|| base64 -D <"))
+        #expect(plan.finish.contains("chmod 600 '/home/dev/.moshpit/uploads/IMG-1.jpg'"))
+        #expect(plan.finish.hasSuffix("echo MOSHPIT_UPLOAD_OK"))
+    }
+
+    @Test("Exec upload quoting survives a home with a space and a quote")
+    func execUploadQuoting() {
+        let plan = ExecUploadCommands.plan(home: "/Users/dev o'brien", filename: "IMG-1.jpg")
+        #expect(plan.begin.contains(#"'/Users/dev o'\''brien/.moshpit/uploads'"#))
+        #expect(plan.finalPath == "/Users/dev o'brien/.moshpit/uploads/IMG-1.jpg")
+    }
+
+    @Test("Retention sweep command is pinned exactly")
+    @MainActor
+    func cleanupCommand() {
+        #expect(SessionHub.ActiveSession.uploadCleanupCommand(days: 7) ==
+            #"find "$HOME/.moshpit/uploads" -type f -mtime +7 -delete 2>/dev/null || true"#)
+    }
+
+    @Test("Chunk size stays inside a conservative argument budget")
+    func execUploadChunkBudget() {
+        // 48KB raw → 64KB base64 → plus the printf wrapper, safely under the
+        // ~128KB floor of ARG_MAX-style limits seen on small sshd targets.
+        #expect(ExecUploadCommands.chunkBytes == 48 * 1024)
+        let encoded = (ExecUploadCommands.chunkBytes + 2) / 3 * 4
+        #expect(encoded < 128 * 1024)
     }
 }

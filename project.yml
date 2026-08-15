@@ -342,6 +342,10 @@ targets:
         # addresses on the floor, which presents as "SSH connects but mosh
         # black-screens" against a 192.168.x.x host.
         NSLocalNetworkUsageDescription: "Moshpit connects to servers on your local network over SSH and mosh (UDP). Without this permission, connections to LAN hosts (e.g. 192.168.x.x) will fail."
+        # Camera is an attach-image SOURCE (photograph a whiteboard, hand it
+        # to the agent) — the shot is processed like any picked image: scaled,
+        # EXIF/GPS-stripped on device, uploaded only to YOUR server. Say so.
+        NSCameraUsageDescription: "The camera lets you photograph something — a whiteboard, a sketch, a screen — and attach it to your terminal session. Photos are stripped of location data on this device and uploaded only to your own server."
         CFBundleURLTypes:
           - CFBundleURLSchemes:
               - moshpit

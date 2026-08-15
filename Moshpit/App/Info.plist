@@ -204,6 +204,8 @@
 	</array>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>NSCameraUsageDescription</key>
+	<string>The camera lets you photograph something — a whiteboard, a sketch, a screen — and attach it to your terminal session. Photos are stripped of location data on this device and uploaded only to your own server.</string>
 	<key>NSFaceIDUsageDescription</key>
 	<string>Use Face ID to unlock SSH keys</string>
 	<key>NSLocalNetworkUsageDescription</key>

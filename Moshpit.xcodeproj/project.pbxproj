@@ -198,6 +198,7 @@
 		E9FF6D95F3DAE0480DF792E6 /* HostKeyValidatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1B0C0CC62DFD21594A9C5B9 /* HostKeyValidatorTests.swift */; };
 		EA634C97DDAD7D88F19EB013 /* HerdrLaunch.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62EB730C4DE65227A4CF5774 /* HerdrLaunch.swift */; };
 		EA932A4B143CCF7C1B0E0581 /* MultiplexerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 775EA961B59056055DADADE4 /* MultiplexerTests.swift */; };
+		EAA30E8F1B73C5416FDFB397 /* CameraCapture.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2CA8C9BFE20C58CFABEAFD8E /* CameraCapture.swift */; };
 		EC5107F02FC003CF5BC1CFDF /* SecretCoalescingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01C8A890ED83C38778DBA9E5 /* SecretCoalescingTests.swift */; };
 		EC7B58F6C53DC0D3756050D9 /* AppIcon-Ringdown83.5x83.5@2x~ipad.png in Resources */ = {isa = PBXBuildFile; fileRef = E3114866D6E1CE18D8B44E43 /* AppIcon-Ringdown83.5x83.5@2x~ipad.png */; };
 		ED71EA4963B087CA108021E7 /* TerminalFontTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 32CA31043DA7F2B938053BA0 /* TerminalFontTests.swift */; };
@@ -286,6 +287,7 @@
 		265B295D8ACDAA527C80014E /* DirectionPadTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DirectionPadTests.swift; sourceTree = "<group>"; };
 		27F4131AC113D1AABFD85868 /* AppIcon-Cursor60x60@2x.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "AppIcon-Cursor60x60@2x.png"; sourceTree = "<group>"; };
 		2B00EDD9793C847D6BEF4A25 /* WhisperDictationEngineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhisperDictationEngineTests.swift; sourceTree = "<group>"; };
+		2CA8C9BFE20C58CFABEAFD8E /* CameraCapture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraCapture.swift; sourceTree = "<group>"; };
 		2CB3B94596DDE5656197F3B0 /* SSHIntegrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SSHIntegrationTests.swift; sourceTree = "<group>"; };
 		2EA24C4652E9064A85637956 /* AppIcon-Cursor83.5x83.5@2x~ipad.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "AppIcon-Cursor83.5x83.5@2x~ipad.png"; sourceTree = "<group>"; };
 		2F8406DA5303BB024FA32971 /* TmuxControlClientParserTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TmuxControlClientParserTests.swift; sourceTree = "<group>"; };
@@ -574,6 +576,7 @@
 			isa = PBXGroup;
 			children = (
 				63899F38DC22080C52BD078C /* BreadcrumbPlan.swift */,
+				2CA8C9BFE20C58CFABEAFD8E /* CameraCapture.swift */,
 				90AE26859AF9807954DF55E1 /* HostBannerView.swift */,
 				AD21E26EF5255957DE389C48 /* ImageAttachmentOverlay.swift */,
 				D20A3B0D13C63AA0E26D1920 /* InstallAssistView.swift */,
@@ -1294,6 +1297,7 @@
 				A3974F02439E9A26EC4ECD40 /* BackgroundAssertion.swift in Sources */,
 				961E4BA0AAC0C395C0B3CC86 /* BellDetector.swift in Sources */,
 				8337A3FCC46748CA17BF9320 /* BreadcrumbPlan.swift in Sources */,
+				EAA30E8F1B73C5416FDFB397 /* CameraCapture.swift in Sources */,
 				879842603F47A81C056CE926 /* CaptureScreen.swift in Sources */,
 				37A06670A3855AFD7097FD13 /* Components.swift in Sources */,
 				7199A8FE3E93E0627F4BF2DF /* ConnectionStore.swift in Sources */,

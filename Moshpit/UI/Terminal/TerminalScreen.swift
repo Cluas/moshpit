@@ -95,9 +95,6 @@ struct TerminalScreen: View {
     @State private var imageAttachment: ImageAttachmentController?
     @State private var photoPickerPresented = false
     @State private var photoSelection: [PhotosPickerItem] = []
-    /// Pure-mosh has no SSH channel to carry an upload — the chip explains
-    /// itself instead of failing silently. See `ActiveSession.fileTransferSSH`.
-    @State private var showImageChannelNotice = false
     /// Whether the clipboard currently carries an image — drives the chip
     /// menu's "Paste image" entry. Type metadata only (`hasImages`), which is
     /// cheap and never triggers the system paste prompt; the actual data read
@@ -107,6 +104,9 @@ struct TerminalScreen: View {
     /// `.live`, so it fades out over a painted terminal instead of over the
     /// black not-yet-attached pane. See the `.onChange(of: connState)`.
     @State private var settleGrace = false
+    /// Camera capture sheet (an attach-image source; menu entry hidden where
+    /// there is no camera, e.g. the simulator).
+    @State private var showCamera = false
 
     private var theme: TerminalTheme {
         themes.theme(id: settings.themeId)
@@ -442,19 +442,22 @@ struct TerminalScreen: View {
                       selection: $photoSelection,
                       maxSelectionCount: 10,
                       matching: .images)
+        .fullScreenCover(isPresented: $showCamera) {
+            // Full screen, not a sheet — the camera IS a full-screen surface,
+            // and UIImagePickerController inside a medium sheet misplaces its
+            // controls.
+            CameraCaptureView { data in
+                showCamera = false
+                guard let data else { return }
+                guard let controller = makeImageAttachmentController() else { return }
+                controller.start(pickedData: [data])
+            }
+            .ignoresSafeArea()
+        }
         .onChange(of: photoSelection) { _, items in
             guard !items.isEmpty else { return }
             photoSelection = []
             beginImageAttachment(items)
-        }
-        .moshpitCard(isPresented: $showImageChannelNotice) {
-            MoshpitNoticeCard(
-                icon: "photo.badge.exclamationmark",
-                title: "No Upload Channel",
-                message: "Attaching an image rides the session's SSH connection, and a pure-mosh session closes it after handoff. Switch this connection to SSH (or add tmux) to attach images."
-            ) {
-                showImageChannelNotice = false
-            }
         }
     }
 
@@ -929,14 +932,6 @@ struct TerminalScreen: View {
         }
         disarmStickyCtrlIfNeeded()
         if shortcut.kind == .image {
-            guard active?.fileTransferSSH != nil else {
-                // Pure mosh: the bootstrap SSH is closed after handoff, so
-                // there is no channel to carry an upload. Say so — the same
-                // honest-degrade stance as DegradeNotice — rather than dialling
-                // a connection this tap didn't ask for.
-                showImageChannelNotice = true
-                return
-            }
             photoPickerPresented = true
             return
         }
@@ -1057,6 +1052,7 @@ struct TerminalScreen: View {
                 ImageAttachmentOverlayView(
                     controller: imageAttachment,
                     onCancel: { cancelImageAttachment() },
+                    onRetry: { imageAttachment.retry() },
                     onInsert: { finishImageAttachment() },
                     onSend: { finishImageAttachment(submit: true) })
                     .transition(.move(edge: .bottom).combined(with: .opacity))
@@ -1074,8 +1070,13 @@ struct TerminalScreen: View {
                 micActive: dictation != nil,
                 onMic: settings.voiceInputEnabled ? { toggleDictation() } : nil,
                 imageHistory: active?.imageUploads.entries ?? [],
-                clipboardHasImage: clipboardHasImage,
+                // Belt and suspenders with the state var: the notification
+                // doesn't fire for pasteboard changes made while we're
+                // backgrounded, and `hasImages` is a cheap metadata check
+                // that never triggers the system paste prompt.
+                clipboardHasImage: clipboardHasImage || UIPasteboard.general.hasImages,
                 onImagePasteboard: { beginClipboardImageAttachment() },
+                onImageCamera: CameraCaptureView.isAvailable ? { showCamera = true } : nil,
                 onImageHistory: { insertUploadedImage($0) })
         }
         .animation(.easeOut(duration: 0.2), value: dictation == nil)
@@ -1124,14 +1125,17 @@ struct TerminalScreen: View {
         }
     }
 
-    /// Shared start: channel guard, controller, and the session-log hookup
-    /// that assigns #N numbers the moment every upload lands.
+    /// Shared start: controller + the session-log hookup that assigns #N
+    /// numbers the moment every upload lands. The transport resolves lazily
+    /// inside the flow — pure mosh dials an SSH connection on demand (no
+    /// second Face ID; credentials are cached), and a dial failure surfaces
+    /// in the overlay's failed state with a Retry, not a dead chip.
     private func makeImageAttachmentController() -> ImageAttachmentController? {
-        guard let active, let uploader = active.fileTransferSSH else {
-            showImageChannelNotice = true
-            return nil
-        }
-        let controller = ImageAttachmentController(uploader: uploader)
+        guard let active else { return nil }
+        let controller = ImageAttachmentController(uploaderProvider: { [weak active] in
+            guard let active else { throw SSHError.sessionClosed }
+            return try await active.acquireFileTransferSSH()
+        })
         controller.onReady = { [weak active] paths in
             guard let active else { return [] }
             return paths.map { active.imageUploads.record(remotePath: $0).number }
@@ -1396,6 +1400,9 @@ struct ShortcutBarView: View {
     var clipboardHasImage: Bool = false
     /// Upload the clipboard image(s). nil hides the menu entry.
     var onImagePasteboard: (() -> Void)?
+    /// Photograph something and attach it. nil (no camera — simulator,
+    /// iPod-class hardware) hides the menu entry.
+    var onImageCamera: (() -> Void)?
     /// Re-insert a previously uploaded image's path.
     var onImageHistory: ((ImageUploadLog.Entry) -> Void)?
 
@@ -1499,6 +1506,11 @@ struct ShortcutBarView: View {
                 Button(action: onImagePasteboard) {
                     Label(String(localized: "Paste image from clipboard"),
                           systemImage: "doc.on.clipboard")
+                }
+            }
+            if let onImageCamera {
+                Button(action: onImageCamera) {
+                    Label(String(localized: "Take photo"), systemImage: "camera")
                 }
             }
             if !imageHistory.isEmpty, let onImageHistory {

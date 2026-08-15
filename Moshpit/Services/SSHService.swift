@@ -312,10 +312,23 @@ actor SSHSession {
         }
     }
 
+    /// Remembered evidence that this host's SFTP subsystem is unavailable
+    /// (an upload already fell back to exec and succeeded there). Session-
+    /// scoped on purpose: a reconnect probes fresh, and sshd config changes
+    /// are rare enough that re-learning once per connection is cheap.
+    private var sftpKnownUnavailable = false
+
     /// Upload one file into `~/.moshpit/uploads/` over an SFTP subchannel on
     /// this already-authenticated connection, returning the absolute remote
     /// path. Does not touch the PTY channel, so the terminal stays usable
     /// while bytes move.
+    ///
+    /// Hosts with `Subsystem sftp` disabled fall back to landing the bytes
+    /// over exec channels alone (base64 chunks appended to a temp file, one
+    /// decode at the end — see ``ExecUploadCommands``). The fallback runs on
+    /// ANY SFTP failure rather than trying to classify Citadel's errors; if
+    /// both paths fail, the exec error is the one surfaced, and SFTP is only
+    /// remembered as unavailable once exec has actually succeeded.
     ///
     /// The home directory is resolved with `realpath .` because SFTP starts
     /// in `$HOME` but never expands `~` itself — an upload addressed to a
@@ -329,6 +342,25 @@ actor SSHSession {
         named filename: String,
         progress: (@Sendable (Double) -> Void)? = nil) async throws -> String {
         guard !closed else { throw SSHError.sessionClosed }
+        if !sftpKnownUnavailable {
+            do {
+                return try await sftpUpload(data, named: filename, progress: progress)
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                // Fall through to the exec path; its error wins if it also
+                // fails, since it is the one still standing.
+            }
+        }
+        let path = try await execUpload(data, named: filename, progress: progress)
+        sftpKnownUnavailable = true
+        return path
+    }
+
+    private func sftpUpload(
+        _ data: Data,
+        named filename: String,
+        progress: (@Sendable (Double) -> Void)?) async throws -> String {
         // SFTPFileAttributes' public init doesn't take permissions — set the
         // field after construction.
         func attributes(permissions: UInt32) -> SFTPFileAttributes {
@@ -370,6 +402,45 @@ actor SSHSession {
         } catch {
             throw SSHError.underlying(error)
         }
+    }
+
+    /// The no-SFTP path: base64 chunks appended over exec channels, decoded
+    /// once at the end. ~45 round trips for a 2MB image — a fallback, not
+    /// the fast path, but it works against nothing more than a shell.
+    private func execUpload(
+        _ data: Data,
+        named filename: String,
+        progress: (@Sendable (Double) -> Void)?) async throws -> String {
+        let homeData = try await executeCommand("printf %s \"$HOME\"")
+        guard let home = String(data: homeData, encoding: .utf8),
+              home.hasPrefix("/") else {
+            throw SSHError.underlying(ExecUploadError.homeUnresolvable)
+        }
+        let plan = ExecUploadCommands.plan(home: home, filename: filename)
+
+        _ = try await executeCommand(plan.begin)
+        var offset = 0
+        while offset < data.count {
+            try Task.checkCancellation()
+            let end = min(offset + ExecUploadCommands.chunkBytes, data.count)
+            let chunk = data[offset..<end].base64EncodedString()
+            _ = try await executeCommand(plan.append(chunk))
+            offset = end
+            // Cap below 1.0 — the decode round trip is still ahead.
+            progress?(0.95 * Double(offset) / Double(data.count))
+        }
+        let reply = try await executeCommand(plan.finish)
+        guard String(data: reply, encoding: .utf8)?
+            .contains(ExecUploadCommands.successMarker) == true else {
+            throw SSHError.underlying(ExecUploadError.decodeFailed)
+        }
+        progress?(1)
+        return plan.finalPath
+    }
+
+    enum ExecUploadError: Error {
+        case homeUnresolvable
+        case decodeFailed
     }
 
     func resize(rows: Int, cols: Int) async throws {
@@ -851,4 +922,54 @@ extension SSHService {
         let hkv = HostKeyValidator()
         return SSHService(keychain: kc, hostKeyValidator: hkv)
     }()
+}
+
+// MARK: - Exec-channel upload commands
+
+/// The command lines for the no-SFTP upload fallback. Pure builders, unit
+/// tested — a quoting bug here writes bytes to the wrong path on someone
+/// else's server, so every path goes through one shell-quoter and the tests
+/// pin the exact strings.
+///
+/// Strict POSIX sh: the exec channel runs a non-login shell on whatever
+/// /bin/sh the host has (see HostCapabilities' PATH notes), and `base64 -d`
+/// vs `-D` differs across ages of BSD — the finish line tries both orders.
+enum ExecUploadCommands {
+    /// Raw bytes per exec round trip. 48KB of payload is 64KB of base64 —
+    /// comfortably inside every sshd/shell argument limit encountered in
+    /// the wild, while keeping a 2MB image to ~45 round trips.
+    static let chunkBytes = 48 * 1024
+
+    static let successMarker = "MOSHPIT_UPLOAD_OK"
+
+    struct Plan {
+        let begin: String
+        let append: (String) -> String
+        let finish: String
+        let finalPath: String
+    }
+
+    static func plan(home: String, filename: String) -> Plan {
+        let dirParent = home + "/.moshpit"
+        let dir = dirParent + "/uploads"
+        let finalPath = dir + "/" + filename
+        let tempPath = finalPath + ".b64part"
+        let qDirParent = quote(dirParent), qDir = quote(dir)
+        let qFinal = quote(finalPath), qTemp = quote(tempPath)
+        return Plan(
+            begin: "mkdir -p \(qDir) && chmod 700 \(qDirParent) \(qDir) && rm -f \(qTemp)",
+            // The base64 alphabet (A–Za–z0–9+/=) is inert inside single
+            // quotes — no escaping needed for the payload itself.
+            append: { chunk in "printf %s '\(chunk)' >> \(qTemp)" },
+            finish: "{ base64 -d < \(qTemp) > \(qFinal) 2>/dev/null"
+                + " || base64 -D < \(qTemp) > \(qFinal); }"
+                + " && chmod 600 \(qFinal) && rm -f \(qTemp) && echo \(successMarker)",
+            finalPath: finalPath)
+    }
+
+    /// POSIX single-quoting: close, escaped quote, reopen. The only
+    /// character that needs anything is the quote itself.
+    static func quote(_ path: String) -> String {
+        "'" + path.replacingOccurrences(of: "'", with: "'\\''") + "'"
+    }
 }

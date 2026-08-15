@@ -206,6 +206,22 @@ final class AppSettings {
         }
     }
 
+    /// How long uploaded images stay in the server's `~/.moshpit/uploads/`
+    /// before the connect-time sweep deletes them. Days; 0 = never delete.
+    ///
+    /// Default 7: uploads are working files for an agent, not a photo
+    /// backup, and a short retention is the right privacy posture on a
+    /// server other people may read. 1 (≈24h) for shared boxes, 0 for
+    /// people who treat the folder as their own.
+    var uploadRetentionDays: Int {
+        get { access(keyPath: \.uploadRetentionDays); return get("moshpit.settings.uploadRetentionDays", 7) }
+        set {
+            withMutation(keyPath: \.uploadRetentionDays) {
+                defaults.set(newValue, forKey: "moshpit.settings.uploadRetentionDays")
+            }
+        }
+    }
+
     // MARK: VOICE INPUT
 
     /// Shows the mic key on the terminal shortcut bar. On by default — the

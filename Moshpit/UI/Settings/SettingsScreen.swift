@@ -79,6 +79,20 @@ struct SettingsScreen: View {
                                 isOn: $settings.remoteClipboardReadEnabled)
                         }
 
+                        FormGroup(
+                            title: "ATTACHED IMAGES",
+                            footer: "Images you attach are uploaded to ~/.moshpit/uploads on the server. Each connect deletes uploads older than this — they are working files for an agent, not a backup."
+                        ) {
+                            PillSegmentedControl(
+                                items: [
+                                    SegItem(value: 1, label: "24 hours"),
+                                    SegItem(value: 7, label: "7 days"),
+                                    SegItem(value: 0, label: "Keep forever"),
+                                ],
+                                selection: $settings.uploadRetentionDays)
+                            .padding(EdgeInsets(top: 8, leading: 10, bottom: 8, trailing: 10))
+                        }
+
                         moshGroup(settings: $settings)
 
                         FormGroup(title: "KEYBOARD · KEYS") {

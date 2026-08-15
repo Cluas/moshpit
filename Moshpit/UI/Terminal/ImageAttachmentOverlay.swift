@@ -7,6 +7,9 @@ import SwiftUI
 struct ImageAttachmentOverlayView: View {
     let controller: ImageAttachmentController
     let onCancel: () -> Void
+    /// Re-attempt a failed upload — transport re-acquired, already-landed
+    /// files kept, pipeline not re-run.
+    let onRetry: () -> Void
     let onInsert: () -> Void
     /// Insert AND press Return. Separate from `onInsert` because the
     /// keystroke that submits a Claude Code prompt executes a shell command.
@@ -144,23 +147,35 @@ struct ImageAttachmentOverlayView: View {
 
     // MARK: Actions
 
+    @ViewBuilder
     private var actions: some View {
-        HStack(spacing: 8) {
-            pillButton(String(localized: "Cancel"), prominent: false, action: onCancel)
-            Spacer(minLength: 0)
-            // Insert leaves the paths on the prompt so the user can add the
-            // words around them; Send presses Return too. Two levels of trust,
-            // same as dictation — a Return at a shell prompt runs the line.
-            pillButton(String(localized: "Insert"), prominent: false,
-                       systemImage: "text.insert",
-                       disabled: !insertable,
-                       action: onInsert)
-                .accessibilityIdentifier("image-attach-insert")
-            pillButton(String(localized: "Send"), prominent: true,
-                       systemImage: "return",
-                       disabled: !insertable,
-                       action: onSend)
-                .accessibilityIdentifier("image-attach-send")
+        if case .failed = controller.phase {
+            HStack(spacing: 8) {
+                pillButton(String(localized: "Dismiss"), prominent: false, action: onCancel)
+                Spacer(minLength: 0)
+                pillButton(String(localized: "Retry"), prominent: true,
+                           systemImage: "arrow.clockwise",
+                           action: onRetry)
+                    .accessibilityIdentifier("image-attach-retry")
+            }
+        } else {
+            HStack(spacing: 8) {
+                pillButton(String(localized: "Cancel"), prominent: false, action: onCancel)
+                Spacer(minLength: 0)
+                // Insert leaves the paths on the prompt so the user can add the
+                // words around them; Send presses Return too. Two levels of trust,
+                // same as dictation — a Return at a shell prompt runs the line.
+                pillButton(String(localized: "Insert"), prominent: false,
+                           systemImage: "text.insert",
+                           disabled: !insertable,
+                           action: onInsert)
+                    .accessibilityIdentifier("image-attach-insert")
+                pillButton(String(localized: "Send"), prominent: true,
+                           systemImage: "return",
+                           disabled: !insertable,
+                           action: onSend)
+                    .accessibilityIdentifier("image-attach-send")
+            }
         }
     }
 

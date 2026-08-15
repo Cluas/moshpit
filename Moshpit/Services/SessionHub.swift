@@ -122,6 +122,34 @@ final class SessionHub {
         /// to ride — callers degrade honestly instead of dialling on their own.
         var fileTransferSSH: SSHSession? { viewModel.session ?? sidecarSSH }
 
+        /// On-demand SSH dialled for file transfer when the session has no
+        /// live SSH at all — pure mosh, where `startMosh` closes its
+        /// bootstrap connection after handoff. Cached rather than
+        /// closed-per-upload: an idle authenticated channel costs almost
+        /// nothing, iOS suspends it with the app anyway, and the second
+        /// upload gets it for free. Closed in `stop()`.
+        @ObservationIgnored private var onDemandTransferSSH: SSHSession?
+
+        /// The retention sweep for `~/.moshpit/uploads/`. `-mtime +N` is
+        /// "strictly older than N days", matching the setting's promise.
+        /// Static and pure so the exact line is pinned by a unit test —
+        /// a quoting slip in a `find … -delete` is not a bug to discover
+        /// on someone's server.
+        nonisolated static func uploadCleanupCommand(days: Int) -> String {
+            "find \"$HOME/.moshpit/uploads\" -type f -mtime +\(days) -delete 2>/dev/null || true"
+        }
+
+        /// The SSH channel an upload should ride, dialling one if the
+        /// session has none. Credentials come from the in-memory secret
+        /// cache, so the dial never re-prompts Face ID mid-flow.
+        func acquireFileTransferSSH() async throws -> SSHSession {
+            if let ssh = fileTransferSSH, await ssh.isConnected { return ssh }
+            if let cached = onDemandTransferSSH, await cached.isConnected { return cached }
+            let fresh = try await SSHService.shared.connect(connection)
+            onDemandTransferSSH = fresh
+            return fresh
+        }
+
         /// Numbered log of images uploaded this session (#1, #2, …). Lives on
         /// the session — not the screen — so navigating Home and back keeps
         /// every number addressable from the image chip's long-press menu.
@@ -784,6 +812,15 @@ final class SessionHub {
             // locations). Otherwise a missing multiplexer degrades to a plain
             // pane with a banner instead of stalling on a failing attach.
             let caps = await probeCapabilities(over: session)
+            // Retention sweep for uploaded images, on the channel that's
+            // already warm. Fire-and-forget and silent on failure — a host
+            // without the folder, or without `find`, owes nobody an error.
+            // POSIX tools only, so no PATH prefix needed.
+            let retentionDays = AppSettings.shared.uploadRetentionDays
+            if retentionDays > 0 {
+                let sweep = Self.uploadCleanupCommand(days: retentionDays)
+                Task { _ = try? await session.executeCommand(sweep) }
+            }
             let chosen = connection.multiplexer
             let muxDegraded = connection.multiplexerPath == nil && !caps.has(chosen)
             if muxDegraded { degrade = DegradeNotice.forMissing(chosen) }
@@ -1581,6 +1618,10 @@ final class SessionHub {
                 await ssh.close()
             }
             sidecarSSH = nil
+            if let ssh = onDemandTransferSSH {
+                await ssh.close()
+            }
+            onDemandTransferSSH = nil
             if let transport = moshTransport {
                 await transport.close()
             }
