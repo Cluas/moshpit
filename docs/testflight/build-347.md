@@ -12,6 +12,21 @@ sharp edges filed off. **334 is the build in App Review** — TestFlight only.
 
 ---
 
+## Scrolling agent history works again — flicks included
+
+Swiping up through a streaming agent's history barely moved: the scroll
+pacer was DROPPING the gesture's movement between its ticks, so a fast
+flick landed a couple of lines and a slow drag worked fine — the reported
+"unstable" scrolling. Movement now accumulates and lands in full (measured:
+the same three flicks that moved 5 lines now move 38+). A per-frame
+clipboard check that was starving touch delivery during heavy output is
+also gone.
+
+Please try: while an agent streams output, flick up hard several times,
+read something a few screens back, then flick back down. Worth reporting:
+a flick that visibly moves less than your finger did, or scroll-back
+snapping to the bottom while you're still reading.
+
 ## Attach images on mosh connections
 
 Pure-mosh sessions used to show an apology instead of an upload. Moshpit now

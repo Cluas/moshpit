@@ -26,6 +26,7 @@ struct TerminalScreen: View {
     @Environment(DeepLinkRouter.self) private var router
     @Environment(ConnectionStoreHolder.self) private var connectionHolder
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.scenePhase) private var scenePhase
 
     @State private var active: SessionHub.ActiveSession?
     @State private var showWindowsSheet = false
@@ -341,6 +342,15 @@ struct TerminalScreen: View {
             Task { await detectCopiedURL() }
         }
         .onAppear { clipboardHasImage = UIPasteboard.general.hasImages }
+        // The change notification doesn't fire for copies made while we were
+        // backgrounded — one metadata check per foreground return covers it.
+        // Deliberately NOT read per-render: `hasImages` is a synchronous XPC
+        // to pasteboardd, and doing it in the bar's render path while Claude
+        // Code streams output starved the scrollback swipe of touch events
+        // (the reported "can't scroll history" jank).
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { clipboardHasImage = UIPasteboard.general.hasImages }
+        }
         .onReceive(NotificationCenter.default.publisher(
             for: UIResponder.keyboardWillShowNotification)) { _ in
             // Tapping the terminal raises the keyboard directly — treat that as
@@ -752,6 +762,12 @@ struct TerminalScreen: View {
                     // next frame cover); only the removal fades, revealing the
                     // fresh session underneath.
                     .transition(.asymmetric(insertion: .identity, removal: .opacity))
+                    // During the settle grace the session is LIVE and the
+                    // cover is only waiting for paint — a swipe in that
+                    // window belongs to the terminal, not to a poster.
+                    // While genuinely connecting, the cover keeps its
+                    // touches (there is nothing usable beneath).
+                    .allowsHitTesting(connState != .live)
             }
         }
         .animation(.easeOut(duration: 0.28), value: connState)
@@ -1070,11 +1086,7 @@ struct TerminalScreen: View {
                 micActive: dictation != nil,
                 onMic: settings.voiceInputEnabled ? { toggleDictation() } : nil,
                 imageHistory: active?.imageUploads.entries ?? [],
-                // Belt and suspenders with the state var: the notification
-                // doesn't fire for pasteboard changes made while we're
-                // backgrounded, and `hasImages` is a cheap metadata check
-                // that never triggers the system paste prompt.
-                clipboardHasImage: clipboardHasImage || UIPasteboard.general.hasImages,
+                clipboardHasImage: clipboardHasImage,
                 onImagePasteboard: { beginClipboardImageAttachment() },
                 onImageCamera: CameraCaptureView.isAvailable ? { showCamera = true } : nil,
                 onImageHistory: { insertUploadedImage($0) })

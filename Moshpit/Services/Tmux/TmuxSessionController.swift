@@ -582,6 +582,14 @@ final class TmuxSessionController: MultiplexerControlling {
     /// Throttle for copy-mode paging so a fast-repeating swipe/thumb doesn't rip
     /// through history (matches the mosh path's 0.18s page granularity).
     @ObservationIgnored private var lastCopyPageAt: Date = .distantPast
+    /// Scroll lines accumulated while the copy-mode pacer is in its window.
+    /// The pacer used to DROP these — a pan gesture reports 1–3 lines per
+    /// frame, so on a fast flick only the one tick per 0.18s survived and a
+    /// full-screen swipe moved ~2 lines ("can't scroll Claude Code history").
+    /// Accumulate and flush instead: same command pacing on the -CC channel,
+    /// zero lines lost.
+    @ObservationIgnored private var pendingCopyScrollLines = 0
+    @ObservationIgnored private var copyScrollFlushTask: Task<Void, Never>?
 
     /// When each pane last produced `%output`.
     @ObservationIgnored private var lastPaneOutputAt: [String: Date] = [:]
@@ -683,11 +691,36 @@ final class TmuxSessionController: MultiplexerControlling {
     /// auto-enters copy-mode; `exitCopyMode()` returns to the live bottom on the
     /// next input.
     func copyModeScroll(lines: Int) {
+        guard lines != 0 else { return }
+        pendingCopyScrollLines += lines
+        flushCopyScrollWhenPacerAllows()
+    }
+
+    /// Flush the accumulated lines if the pacer's window has elapsed;
+    /// otherwise schedule exactly one deferred flush for when it does — a
+    /// flick's final ticks must land even though no further tick follows
+    /// them.
+    private func flushCopyScrollWhenPacerAllows() {
+        let elapsed = Date().timeIntervalSince(lastCopyPageAt)
+        if elapsed >= 0.18 {
+            flushCopyScroll()
+        } else if copyScrollFlushTask == nil {
+            let wait = 0.18 - elapsed
+            copyScrollFlushTask = Task { [weak self] in
+                try? await Task.sleep(for: .seconds(wait))
+                guard let self, !Task.isCancelled else { return }
+                self.copyScrollFlushTask = nil
+                self.flushCopyScroll()
+            }
+        }
+    }
+
+    private func flushCopyScroll() {
+        let lines = pendingCopyScrollLines
+        pendingCopyScrollLines = 0
         guard lines != 0,
               let paneId = snapshot.activePaneId ?? snapshot.activePanes.first?.id else { return }
-        let now = Date()
-        guard now.timeIntervalSince(lastCopyPageAt) >= 0.18 else { return }
-        lastCopyPageAt = now
+        lastCopyPageAt = Date()
         if lines > 0 {
             // Re-issue copy-mode every up-burst (a no-op in tmux when already in
             // copy-mode) so a dropped/failed first entry self-heals instead of
@@ -712,6 +745,11 @@ final class TmuxSessionController: MultiplexerControlling {
     /// forwarding user input so keystrokes reach the shell, not copy-mode, and
     /// on pane/window switches.
     func exitCopyMode() {
+        // A deferred scroll flush landing AFTER this would re-enter copy-mode
+        // right under the user's keystrokes — leaving means leaving.
+        copyScrollFlushTask?.cancel()
+        copyScrollFlushTask = nil
+        pendingCopyScrollLines = 0
         guard inCopyMode else { return }
         inCopyMode = false
         guard let paneId = snapshot.activePaneId ?? snapshot.activePanes.first?.id else { return }
