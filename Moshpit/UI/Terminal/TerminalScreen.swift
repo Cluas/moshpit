@@ -98,6 +98,10 @@ struct TerminalScreen: View {
     /// Pure-mosh has no SSH channel to carry an upload — the chip explains
     /// itself instead of failing silently. See `ActiveSession.fileTransferSSH`.
     @State private var showImageChannelNotice = false
+    /// Keeps the connecting cover up for a beat after `connState` reaches
+    /// `.live`, so it fades out over a painted terminal instead of over the
+    /// black not-yet-attached pane. See the `.onChange(of: connState)`.
+    @State private var settleGrace = false
 
     private var theme: TerminalTheme {
         themes.theme(id: settings.themeId)
@@ -368,6 +372,19 @@ struct TerminalScreen: View {
             // instead — the connecting screen plays out in the keyboard-down
             // layout and stays there; tapping the terminal raises it again.
             if state == .reconnecting { keyboardIntent = .down }
+            // `.live` means the TRANSPORT is up, not that anything has
+            // painted: on tmux the -CC re-attach and first backfill land a
+            // few hundred ms later, and dropping the cover at transport-up
+            // revealed a black pane for exactly that window (measured
+            // frame-by-frame on the rig). Hold the cover briefly past
+            // `.live`, then fade it out over content instead of over void.
+            if state == .live {
+                settleGrace = true
+                Task {
+                    try? await Task.sleep(for: .milliseconds(500))
+                    withAnimation(.easeOut(duration: 0.28)) { settleGrace = false }
+                }
+            }
         }
     }
 
@@ -687,8 +704,51 @@ struct TerminalScreen: View {
 
     // MARK: - Terminal body
 
-    @ViewBuilder
+    /// The terminal area: live content underneath, and ONE hoisted connecting
+    /// cover above every branch of it.
+    ///
+    /// The cover used to live inside the plain-SSH branch only, keyed on
+    /// `status == .connecting || isAutoReconnectInFlight`. That left two black
+    /// frames on the tmux path's reconnect: `markReconnecting()` sets status
+    /// `.reconnecting` (not `.connecting`), and the flag only flips once
+    /// `start(automatic:)` runs — AFTER `stop()` has already torn the pane
+    /// view out of the tree. In that window the branch below swapped from the
+    /// pane to an empty terminal with no cover up yet: the reported one-frame
+    /// black flash between the keyboard collapse and the connecting
+    /// animation. Hoisted and keyed on `connState` (which folds status and
+    /// flag into one value that's already `.reconnecting` BEFORE teardown),
+    /// the cover fades in over the still-live pane and the branch swap
+    /// happens underneath it, invisibly.
+    ///
+    /// Kept as an OVERLAY, not a replacement, so SwiftTerm stays attached and
+    /// never misses buffered output. An automatic reconnect keeps it up for
+    /// the WHOLE cycle, including waits between failed attempts. Mosh roaming
+    /// is naturally excluded — a roam never sets `.connecting`/`.reconnecting`
+    /// (SSP heals itself), so mosh keeps its useful last frame + predictive
+    /// echo. `.offline` also shows no cover: nothing is being attempted, and
+    /// the dead terminal with the red pill is the honest picture.
     private var terminalBody: some View {
+        ZStack {
+            terminalContent
+            if active == nil || settleGrace
+                || connState == .connecting || connState == .reconnecting {
+                TerminalConnectingView(connection: connection, state: connState)
+                    // Asymmetric on purpose, measured frame-by-frame: a fade-IN
+                    // still flashed black, because the pane below is torn down
+                    // within milliseconds of the cover starting its fade — for
+                    // the first ~200ms the screen was a few-percent-opaque
+                    // cover over an already-black hole. Insertion is therefore
+                    // a hard cut to the fully-opaque cover (one frame pane,
+                    // next frame cover); only the removal fades, revealing the
+                    // fresh session underneath.
+                    .transition(.asymmetric(insertion: .identity, removal: .opacity))
+            }
+        }
+        .animation(.easeOut(duration: 0.28), value: connState)
+    }
+
+    @ViewBuilder
+    private var terminalContent: some View {
         if let active {
             if let controller = active.tmuxController {
                 if controller.snapshot.isAttached {
@@ -720,54 +780,34 @@ struct TerminalScreen: View {
                     onCreate: { herdr.newSession(named: nil) },
                     onInstall: { installPackages = ["herdr"] })
             } else {
-                ZStack {
-                    SwiftTerminalView(
-                        theme: theme,
-                        fontSize: settings.fontSize,
-                        fontName: settings.fontName,
-                        cursorShape: settings.cursorShape,
-                        cursorColorId: effectiveCursorColorId,
-                        cursorBlink: settings.cursorBlink,
-                        coordinator: active.coordinator,
-                        focusPolicy: focusPolicy)
-                        // SwiftTerminalView.updateUIView is deliberately "cosmetic
-                        // only" (see its doc) — it never re-wires the underlying
-                        // TerminalView's delegate to a NEW coordinator. Reconnecting
-                        // onto a brand-new ActiveSession (switchProtocol(), Install
-                        // Assist) mints a brand-new coordinator, and without this
-                        // `.id()` the view keeps its old identity, so SwiftUI calls
-                        // updateUIView (not makeUIView) and the screen goes stale —
-                        // frozen on the old session's last frame, deaf to new input,
-                        // while the new session's output sits buffered in a
-                        // coordinator that never got attached. Keying on the
-                        // coordinator's identity forces a fresh makeUIView exactly
-                        // when (and only when) it actually changes.
-                        .id(ObjectIdentifier(active.coordinator))
-
-                    // The initial handshake would otherwise be a black void
-                    // (SwiftTerm is attached but has no output yet). Cover it
-                    // with the branded waiting screen and fade out once the
-                    // shell is live — kept as an OVERLAY, not a replacement, so
-                    // SwiftTerm stays attached and never misses buffered output.
-                    // Reconnecting is deliberately excluded: mosh keeps a useful
-                    // last frame + predictive echo we shouldn't hide.
-                    //
-                    // An automatic reconnect keeps it up for the WHOLE cycle,
-                    // including the wait between failed attempts. Otherwise the
-                    // cover dropped away every time an attempt failed, flashing
-                    // the dead terminal underneath for twelve seconds until the
-                    // next tick put it back.
-                    if active.viewModel.status == .connecting
-                        || active.viewModel.isAutoReconnectInFlight {
-                        TerminalConnectingView(connection: connection, state: connState)
-                            .transition(.opacity)
-                    }
-                }
-                .animation(.easeOut(duration: 0.28), value: active.viewModel.status)
-                .animation(.easeOut(duration: 0.28), value: active.viewModel.isAutoReconnectInFlight)
+                SwiftTerminalView(
+                    theme: theme,
+                    fontSize: settings.fontSize,
+                    fontName: settings.fontName,
+                    cursorShape: settings.cursorShape,
+                    cursorColorId: effectiveCursorColorId,
+                    cursorBlink: settings.cursorBlink,
+                    coordinator: active.coordinator,
+                    focusPolicy: focusPolicy)
+                    // SwiftTerminalView.updateUIView is deliberately "cosmetic
+                    // only" (see its doc) — it never re-wires the underlying
+                    // TerminalView's delegate to a NEW coordinator. Reconnecting
+                    // onto a brand-new ActiveSession (switchProtocol(), Install
+                    // Assist) mints a brand-new coordinator, and without this
+                    // `.id()` the view keeps its old identity, so SwiftUI calls
+                    // updateUIView (not makeUIView) and the screen goes stale —
+                    // frozen on the old session's last frame, deaf to new input,
+                    // while the new session's output sits buffered in a
+                    // coordinator that never got attached. Keying on the
+                    // coordinator's identity forces a fresh makeUIView exactly
+                    // when (and only when) it actually changes.
+                    .id(ObjectIdentifier(active.coordinator))
             }
         } else {
-            TerminalConnectingView(connection: connection, state: connState)
+            // No session yet (the screen exists because one is being opened) —
+            // the hoisted cover in `terminalBody` is showing; keep the ground
+            // beneath it the terminal's own colour.
+            Ink.terminalBG
         }
     }
 
