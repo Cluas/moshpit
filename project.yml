@@ -85,10 +85,15 @@ packages:
     # tick, it measures the document one character back from the caret and
     # quits the moment that comes back empty, which (10) alone did not change.
     # Holding delete over 20 pasted characters used to send ONE backspace;
-    # it now sends one per tick for as long as the key is down. Revert to the
-    # upstream URL if/when these land there and a release picks them up.
+    # it now sends one per tick for as long as the key is down — and (13)
+    # a not-yet-focused tap that lands on a link now opens it WITHOUT
+    # becoming first responder: on iOS focus is the keyboard, and (4)'s
+    # focus-grab meant tapping a link with the keyboard dismissed popped it
+    # over the very output being read (and left it up on return from the
+    # browser). Revert to the upstream URL if/when these land there and a
+    # release picks them up.
     url: https://github.com/Cluas/SwiftTerm.git
-    revision: b4bd2c48f338d0712cbe08dd5957898a5d384f41
+    revision: f8d2ddee753ad85214a284b04825fb527674ad2c
   Citadel:
     url: https://github.com/orlandos-nl/Citadel.git
     from: "0.7.0"
