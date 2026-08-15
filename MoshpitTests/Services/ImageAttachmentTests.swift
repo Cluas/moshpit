@@ -172,6 +172,37 @@ struct ImageAttachmentTests {
         #expect(ImageAttachmentPipeline.insertText(forRemotePaths: []) == "")
     }
 
+    // MARK: Agent-aware insert styles
+
+    @Test("Agent classification: bare for claude/codex/goose, @ for gemini/qwen, /add for aider")
+    func insertStyleClassification() {
+        #expect(ImageInsertStyle.forAgent(nil) == .barePath)
+        #expect(ImageInsertStyle.forAgent("zsh") == .barePath)
+        #expect(ImageInsertStyle.forAgent("claude") == .barePath)
+        #expect(ImageInsertStyle.forAgent("2.1.227") == .barePath)   // claude's version-title comm
+        #expect(ImageInsertStyle.forAgent("codex") == .barePath)
+        #expect(ImageInsertStyle.forAgent("goose") == .barePath)
+        #expect(ImageInsertStyle.forAgent("gemini") == .atMention)
+        #expect(ImageInsertStyle.forAgent("qwen") == .atMention)
+        #expect(ImageInsertStyle.forAgent("aider") == .aiderAdd)
+    }
+
+    @Test("@-mention style prefixes clean paths and falls back on quoted ones")
+    func atMentionStyle() {
+        #expect(ImageAttachmentPipeline.insertText(
+            forRemotePaths: ["/a/1.jpg"], style: .atMention) == " @/a/1.jpg ")
+        // A path needing quotes can't be an @-token — shell-safe fallback.
+        #expect(ImageAttachmentPipeline.insertText(
+            forRemotePaths: ["/a b/1.jpg"], style: .atMention) == " '/a b/1.jpg' ")
+    }
+
+    @Test("aider style leads with /add and no padding")
+    func aiderStyle() {
+        #expect(ImageAttachmentPipeline.insertText(
+            forRemotePaths: ["/a/1.jpg", "/a/2.png"], style: .aiderAdd)
+            == "/add /a/1.jpg /a/2.png")
+    }
+
     // MARK: Session log
 
     @Test("Upload log numbers sequentially from 1 and keeps order")

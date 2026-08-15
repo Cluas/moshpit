@@ -1148,8 +1148,24 @@ struct TerminalScreen: View {
     /// long-press menu) — no re-upload, the file is already on the server.
     private func insertUploadedImage(_ entry: ImageUploadLog.Entry) {
         disarmStickyCtrlIfNeeded()
-        active?.sendPaste(ImageAttachmentPipeline.insertText(forRemotePaths: [entry.remotePath]))
+        active?.sendPaste(ImageAttachmentPipeline.insertText(
+            forRemotePaths: [entry.remotePath], style: activePaneInsertStyle))
         Haptics.tap()
+    }
+
+    /// The insert format the ACTIVE pane's agent understands best — the
+    /// hook-stamped agent name when Vibe Island hooks are installed, else
+    /// the pane's foreground command. Plain SSH (no pane data) reads nil →
+    /// the universal bare-path default.
+    private var activePaneInsertStyle: ImageInsertStyle {
+        guard let control = active?.tmuxControl,
+              let paneId = control.snapshot.activePaneId
+                ?? control.snapshot.activePanes.first?.id else {
+            return .barePath
+        }
+        let agent = control.agentHooks[paneId]?.agent
+            ?? control.snapshot.panes[paneId]?.command
+        return .forAgent(agent)
     }
 
     /// Paste the uploaded paths at the prompt. `sendPaste` (not raw bytes) so
@@ -1158,7 +1174,7 @@ struct TerminalScreen: View {
     /// the ESC[200~…201~ wrapper is a literal newline, not a submit.
     private func finishImageAttachment(submit: Bool = false) {
         guard let controller = imageAttachment,
-              let text = controller.insertText() else { return }
+              let text = controller.insertText(style: activePaneInsertStyle) else { return }
         active?.sendPaste(text)
         if submit {
             active?.sendInput(Data([0x0D]))

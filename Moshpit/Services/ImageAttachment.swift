@@ -132,26 +132,81 @@ enum ImageAttachmentPipeline {
         String(format: "%04x", UInt16.random(in: .min ... .max))
     }
 
-    /// The text pasted at the prompt for uploaded paths, padded with spaces
-    /// so it lands cleanly between whatever the user already typed.
+    /// The text pasted at the prompt for uploaded paths.
     ///
-    /// Bare paths, not `@`-mentions — `@` triggers Claude Code's completion
-    /// menu when typed blind, and a bare path reads the same to every agent.
-    /// Quoted ONLY when the path actually needs it: Codex's pasted-image-path
-    /// detector and the `@`-style parsers in other agents don't strip quotes,
-    /// so a quoted path breaks their native auto-attach — and our filenames
-    /// are space-free by construction, making the bare form the common case.
-    /// A home directory carrying a space (or a quote) still gets the
-    /// shell-safe single-quoted form.
-    static func insertText(forRemotePaths paths: [String]) -> String {
+    /// The default is a bare path padded with spaces: it reads the same to
+    /// every agent, Codex's pasted-image-path detector auto-attaches it
+    /// (quotes break that detector, so quoting happens ONLY when a path
+    /// actually carries a space or quote — our filenames never do), and `@`
+    /// typed blind would trigger Claude Code's completion menu. The other
+    /// styles exist because two agent families genuinely differ — see
+    /// ``ImageInsertStyle``.
+    static func insertText(forRemotePaths paths: [String],
+                           style: ImageInsertStyle = .barePath) -> String {
         guard !paths.isEmpty else { return "" }
-        let rendered = paths.map { path in
-            if path.contains(where: { $0 == " " || $0 == "'" || $0 == "\"" }) {
-                return "'" + path.replacingOccurrences(of: "'", with: "'\\''") + "'"
+        switch style {
+        case .barePath:
+            return " " + paths.map(Self.quotedIfNeeded).joined(separator: " ") + " "
+        case .atMention:
+            // @-parsers read to whitespace and do NOT strip quotes, so a
+            // path that needs quoting can't be @-mentioned at all — those
+            // fall back to the shell-safe bare form (the model may still
+            // read it; a mis-parsed @-token helps nobody).
+            let rendered = paths.map { path in
+                needsQuoting(path) ? Self.quotedIfNeeded(path) : "@" + path
             }
-            return path
+            return " " + rendered.joined(separator: " ") + " "
+        case .aiderAdd:
+            // aider attaches only through its /add command, which must lead
+            // the message — no padding. Insert leaves it for review; Send's
+            // Return submits it, same trust split as everywhere else.
+            return "/add " + paths.map(Self.quotedIfNeeded).joined(separator: " ")
         }
-        return " " + rendered.joined(separator: " ") + " "
+    }
+
+    private static func needsQuoting(_ path: String) -> Bool {
+        path.contains(where: { $0 == " " || $0 == "'" || $0 == "\"" })
+    }
+
+    private static func quotedIfNeeded(_ path: String) -> String {
+        guard needsQuoting(path) else { return path }
+        return "'" + path.replacingOccurrences(of: "'", with: "'\\''") + "'"
+    }
+}
+
+// MARK: - Agent-aware insert format
+
+/// How the active pane's agent best receives an image path — from the
+/// 2026-08 cross-agent survey (the design doc carries the full matrix):
+///
+/// - `barePath`: Claude Code reads it with its Read tool, Codex's TUI
+///   auto-attaches a pasted image path as native `[image N]`, Goose has
+///   `read_image`. The universal default, also for plain shells.
+/// - `atMention`: Gemini CLI and Qwen Code only read files
+///   deterministically through `@path` (a bare path is left to the model's
+///   discretion there).
+/// - `aiderAdd`: aider attaches images ONLY via its `/add` command — bare
+///   paths and @-mentions are ignored.
+enum ImageInsertStyle: Equatable {
+    case barePath
+    case atMention
+    case aiderAdd
+
+    /// Classify from the pane's agent signal: the hook-stamped
+    /// `@moshpit_agent` when Vibe Island hooks are installed, else the
+    /// pane's foreground command. nil / unrecognized → the universal
+    /// default.
+    static func forAgent(_ agent: String?) -> ImageInsertStyle {
+        guard var name = agent?.lowercased(), !name.isEmpty else { return .barePath }
+        // Claude Code sets a process title that starts with its version —
+        // a bare semver comm is claude (same normalization as the Home
+        // screen's pane rows).
+        if name.range(of: #"^\d+\.\d+\.\d+$"#, options: .regularExpression) != nil {
+            name = "claude"
+        }
+        if name.contains("gemini") || name.contains("qwen") { return .atMention }
+        if name.contains("aider") { return .aiderAdd }
+        return .barePath
     }
 }
 
@@ -296,12 +351,13 @@ final class ImageAttachmentController {
         work?.cancel()
     }
 
-    /// The paste payload — nil until every upload landed.
-    func insertText() -> String? {
+    /// The paste payload — nil until every upload landed. `style` follows
+    /// the active pane's agent (see `ImageInsertStyle`).
+    func insertText(style: ImageInsertStyle = .barePath) -> String? {
         guard phase == .ready else { return nil }
         let paths = attachments.compactMap(\.remotePath)
         guard !paths.isEmpty else { return nil }
-        return ImageAttachmentPipeline.insertText(forRemotePaths: paths)
+        return ImageAttachmentPipeline.insertText(forRemotePaths: paths, style: style)
     }
 
     private func run(pickedData: [Data]) async {
