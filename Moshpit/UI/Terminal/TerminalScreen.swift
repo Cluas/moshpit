@@ -348,6 +348,17 @@ struct TerminalScreen: View {
         .onChange(of: active?.viewModel.errorMessage) { _, message in
             showError = message?.isEmpty == false
         }
+        .onChange(of: connState) { _, state in
+            // A reconnect replaces the hosted terminal (tmux mints a fresh
+            // controller per reconnect — see TmuxPaneSplitView's `.id`), so
+            // first responder dies with the old view: the keyboard slides
+            // away uninvited mid-cycle, then pops back the moment the new
+            // pane takes focus. Two keyboard animations sandwiching one
+            // connecting animation. Collapse deliberately at cycle start
+            // instead — the connecting screen plays out in the keyboard-down
+            // layout and stays there; tapping the terminal raises it again.
+            if state == .reconnecting { keyboardIntent = .down }
+        }
     }
 
     var body: some View {
@@ -423,6 +434,11 @@ struct TerminalScreen: View {
     /// so a now-present tmux / mosh-server is picked up automatically.
     private func reconnect() {
         guard let active else { return }
+        // Manual reconnects (protocol switch, Install Assist) swap in a
+        // brand-new session whose connState opens .connecting, so the
+        // .reconnecting onChange never fires for them — collapse the keyboard
+        // here for the same reason it collapses there.
+        keyboardIntent = .down
         Task {
             await hub.disconnect(connection.id)
             let session = hub.prepare(connection)
