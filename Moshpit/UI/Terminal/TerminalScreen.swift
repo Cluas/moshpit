@@ -98,6 +98,11 @@ struct TerminalScreen: View {
     /// Pure-mosh has no SSH channel to carry an upload — the chip explains
     /// itself instead of failing silently. See `ActiveSession.fileTransferSSH`.
     @State private var showImageChannelNotice = false
+    /// Whether the clipboard currently carries an image — drives the chip
+    /// menu's "Paste image" entry. Type metadata only (`hasImages`), which is
+    /// cheap and never triggers the system paste prompt; the actual data read
+    /// happens off-main when the user commits.
+    @State private var clipboardHasImage = false
     /// Keeps the connecting cover up for a beat after `connState` reaches
     /// `.live`, so it fades out over a painted terminal instead of over the
     /// black not-yet-attached pane. See the `.onChange(of: connState)`.
@@ -332,8 +337,10 @@ struct TerminalScreen: View {
         .animation(.easeOut(duration: 0.2), value: active?.tmuxControl?.notice)
         .onReceive(NotificationCenter.default.publisher(
             for: UIPasteboard.changedNotification)) { _ in
+            clipboardHasImage = UIPasteboard.general.hasImages
             Task { await detectCopiedURL() }
         }
+        .onAppear { clipboardHasImage = UIPasteboard.general.hasImages }
         .onReceive(NotificationCenter.default.publisher(
             for: UIResponder.keyboardWillShowNotification)) { _ in
             // Tapping the terminal raises the keyboard directly — treat that as
@@ -945,6 +952,16 @@ struct TerminalScreen: View {
             Task {
                 let text = await Task.detached { UIPasteboard.general.string }.value
                 guard let text, !text.isEmpty else {
+                    // No text — an image-only clipboard routes into the attach
+                    // flow instead (copy a screenshot, tap paste: the Ctrl+V
+                    // mental model, arriving as an uploaded path). Text keeps
+                    // priority when both are present: pasting text is this
+                    // chip's core job.
+                    let images = await Task.detached { ClipboardImageReader.read() }.value
+                    if !images.isEmpty, let controller = makeImageAttachmentController() {
+                        controller.start(pickedData: images)
+                        return
+                    }
                     // Empty clipboard used to be a silent no-op — at least say "no".
                     UINotificationFeedbackGenerator().notificationOccurred(.warning)
                     return
@@ -1055,7 +1072,11 @@ struct TerminalScreen: View {
                 keyboardDown: keyboardIntent != .up,
                 onToggleKeyboard: { keyboardIntent = keyboardIntent == .up ? .down : .up },
                 micActive: dictation != nil,
-                onMic: settings.voiceInputEnabled ? { toggleDictation() } : nil)
+                onMic: settings.voiceInputEnabled ? { toggleDictation() } : nil,
+                imageHistory: active?.imageUploads.entries ?? [],
+                clipboardHasImage: clipboardHasImage,
+                onImagePasteboard: { beginClipboardImageAttachment() },
+                onImageHistory: { insertUploadedImage($0) })
         }
         .animation(.easeOut(duration: 0.2), value: dictation == nil)
         .animation(.easeOut(duration: 0.2), value: imageAttachment == nil)
@@ -1068,12 +1089,7 @@ struct TerminalScreen: View {
     /// (HEIC included) without a photo-library permission prompt — PHPicker
     /// runs out of process and only the selection crosses back.
     private func beginImageAttachment(_ items: [PhotosPickerItem]) {
-        guard let uploader = active?.fileTransferSSH else {
-            showImageChannelNotice = true
-            return
-        }
-        let controller = ImageAttachmentController(uploader: uploader)
-        imageAttachment = controller
+        guard let controller = makeImageAttachmentController() else { return }
         Task {
             var picked: [Data] = []
             for item in items {
@@ -1088,6 +1104,48 @@ struct TerminalScreen: View {
             }
             controller.start(pickedData: picked)
         }
+    }
+
+    /// Clipboard route into the same flow — the Ctrl+V mental model from
+    /// Claude Code's local image paste, delivered as an uploaded path (its
+    /// native [Image #N] cannot exist over SSH; the placeholder only triggers
+    /// on a clipboard the Claude Code PROCESS can read, i.e. the server's).
+    private func beginClipboardImageAttachment() {
+        disarmStickyCtrlIfNeeded()
+        guard let controller = makeImageAttachmentController() else { return }
+        Task {
+            let images = await Task.detached { ClipboardImageReader.read() }.value
+            guard !images.isEmpty else {
+                imageAttachment = nil
+                UINotificationFeedbackGenerator().notificationOccurred(.warning)
+                return
+            }
+            controller.start(pickedData: images)
+        }
+    }
+
+    /// Shared start: channel guard, controller, and the session-log hookup
+    /// that assigns #N numbers the moment every upload lands.
+    private func makeImageAttachmentController() -> ImageAttachmentController? {
+        guard let active, let uploader = active.fileTransferSSH else {
+            showImageChannelNotice = true
+            return nil
+        }
+        let controller = ImageAttachmentController(uploader: uploader)
+        controller.onReady = { [weak active] paths in
+            guard let active else { return [] }
+            return paths.map { active.imageUploads.record(remotePath: $0).number }
+        }
+        imageAttachment = controller
+        return controller
+    }
+
+    /// Re-insert a previously uploaded image's path (from the chip's
+    /// long-press menu) — no re-upload, the file is already on the server.
+    private func insertUploadedImage(_ entry: ImageUploadLog.Entry) {
+        disarmStickyCtrlIfNeeded()
+        active?.sendPaste(ImageAttachmentPipeline.insertText(forRemotePaths: [entry.remotePath]))
+        Haptics.tap()
     }
 
     /// Paste the uploaded paths at the prompt. `sendPaste` (not raw bytes) so
@@ -1330,6 +1388,16 @@ struct ShortcutBarView: View {
     /// Start/stop voice input. nil (voice input disabled in Settings) hides
     /// the mic key entirely.
     var onMic: (() -> Void)?
+    /// Images already uploaded this session — the chip's long-press menu
+    /// offers each for re-insertion by number, no re-upload.
+    var imageHistory: [ImageUploadLog.Entry] = []
+    /// Whether the clipboard currently carries an image (adds the menu's
+    /// "Paste image" entry).
+    var clipboardHasImage: Bool = false
+    /// Upload the clipboard image(s). nil hides the menu entry.
+    var onImagePasteboard: (() -> Void)?
+    /// Re-insert a previously uploaded image's path.
+    var onImageHistory: ((ImageUploadLog.Entry) -> Void)?
 
     /// Committed horizontal pan of the chip row, plus the in-flight drag
     /// delta. A plain `ScrollView(.horizontal)` here measurably has its
@@ -1418,6 +1486,51 @@ struct ShortcutBarView: View {
         .buttonStyle(.plain)
         .accessibilityLabel(Text(micActive ? "Stop voice input" : "Start voice input"))
         .accessibilityIdentifier("voice-input")
+    }
+
+    /// The attach-image chip: tap opens the photo picker (the common case,
+    /// kept at one tap); long-press opens a menu with the clipboard image
+    /// (when there is one) and this session's already-uploaded images for
+    /// re-insertion by number — Claude Code's [Image #N] mental model, held
+    /// on our side of the wire because over SSH there is no other side.
+    private func imageChip(_ shortcut: TerminalShortcut) -> some View {
+        Menu {
+            if clipboardHasImage, let onImagePasteboard {
+                Button(action: onImagePasteboard) {
+                    Label(String(localized: "Paste image from clipboard"),
+                          systemImage: "doc.on.clipboard")
+                }
+            }
+            if !imageHistory.isEmpty, let onImageHistory {
+                Section(String(localized: "Sent this session")) {
+                    // Newest first: the image you just sent is the one you
+                    // most likely want to reference again.
+                    ForEach(imageHistory.reversed()) { entry in
+                        Button { onImageHistory(entry) } label: {
+                            Label("#\(entry.number) · \(entry.filename)", systemImage: "photo")
+                        }
+                    }
+                }
+            }
+        } label: {
+            Image(systemName: "photo")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(Ink.primary)
+                .frame(width: Metrics.shortcutKeyWidth, height: 30)
+                .background(
+                    Ink.shortcutKeyBG,
+                    in: RoundedRectangle(cornerRadius: Metrics.controlRadius, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: Metrics.controlRadius, style: .continuous)
+                        .strokeBorder(Ink.groupBorder, lineWidth: 1)
+                )
+                .contentShape(Rectangle())
+        } primaryAction: {
+            onTap(shortcut)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(Text("Attach image"))
+        .accessibilityIdentifier("attach-image")
     }
 
     /// Pinned at the trailing edge (outside the scroll) so it's always reachable
@@ -1519,6 +1632,8 @@ struct ShortcutBarView: View {
                     // nil when voice input is off in Settings — the chip
                     // disappears rather than sitting there doing nothing.
                     if let onMic { micChip(onMic) }
+                } else if shortcut.kind == .image {
+                    imageChip(shortcut)
                 } else if shortcut.kind == .ctrl {
                     // Highlightable while armed — the only chip whose look
                     // depends on live state rather than just its label.
@@ -1547,13 +1662,10 @@ struct ShortcutBarView: View {
                         // One uniform key style — built-in and custom keys
                         // both render as the dark-grey pill (no accent-tinted
                         // custom variant), matching the keyboard toggle.
-                        // Paste and image show glyphs instead of labels.
+                        // Paste shows the clipboard glyph instead of a label.
                         Group {
                             if shortcut.kind == .paste {
                                 Image(systemName: "doc.on.clipboard")
-                                    .font(.system(size: 13, weight: .semibold))
-                            } else if shortcut.kind == .image {
-                                Image(systemName: "photo")
                                     .font(.system(size: 13, weight: .semibold))
                             } else {
                                 Text(shortcut.chipLabel)
@@ -1572,10 +1684,7 @@ struct ShortcutBarView: View {
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel(shortcut.kind == .paste
-                                        ? Text("Paste")
-                                        : shortcut.kind == .image
-                                        ? Text("Attach image") : Text(shortcut.chipLabel))
-                    .accessibilityIdentifier(shortcut.kind == .image ? "attach-image" : "")
+                                        ? Text("Paste") : Text(shortcut.chipLabel))
                 }
             }
         }

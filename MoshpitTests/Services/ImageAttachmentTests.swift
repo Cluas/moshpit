@@ -134,8 +134,15 @@ struct ImageAttachmentTests {
 
     // MARK: Paste text
 
-    @Test("Paths are single-quoted and space-padded")
-    func insertTextQuoting() {
+    @Test("Clean paths stay bare — quotes break agents' path auto-attach")
+    func insertTextBareWhenClean() {
+        let text = ImageAttachmentPipeline.insertText(
+            forRemotePaths: ["/home/dev/.moshpit/uploads/IMG-1.jpg"])
+        #expect(text == " /home/dev/.moshpit/uploads/IMG-1.jpg ")
+    }
+
+    @Test("A path with a space gets the shell-safe quoted form")
+    func insertTextQuotesSpaces() {
         let text = ImageAttachmentPipeline.insertText(
             forRemotePaths: ["/home/dev user/.moshpit/uploads/IMG-1.jpg"])
         #expect(text == " '/home/dev user/.moshpit/uploads/IMG-1.jpg' ")
@@ -150,7 +157,26 @@ struct ImageAttachmentTests {
     @Test("Multiple paths join with spaces; none yields empty")
     func insertTextJoins() {
         let text = ImageAttachmentPipeline.insertText(forRemotePaths: ["/a/1.jpg", "/a/2.png"])
-        #expect(text == " '/a/1.jpg' '/a/2.png' ")
+        #expect(text == " /a/1.jpg /a/2.png ")
         #expect(ImageAttachmentPipeline.insertText(forRemotePaths: []) == "")
+    }
+
+    // MARK: Session log
+
+    @Test("Upload log numbers sequentially from 1 and keeps order")
+    func uploadLogNumbers() {
+        var log = ImageUploadLog()
+        let first = log.record(remotePath: "/u/.moshpit/uploads/IMG-a.jpg")
+        let second = log.record(remotePath: "/u/.moshpit/uploads/IMG-b.png")
+        #expect(first.number == 1)
+        #expect(second.number == 2)
+        #expect(log.entries.map(\.number) == [1, 2])
+        #expect(second.filename == "IMG-b.png")
+    }
+
+    @Test("Clipboard type preference starts with originals, ends with TIFF")
+    func clipboardTypeOrder() {
+        #expect(ClipboardImageReader.preferredTypes.first == "public.heic")
+        #expect(ClipboardImageReader.preferredTypes.last == "public.tiff")
     }
 }

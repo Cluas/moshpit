@@ -122,6 +122,11 @@ final class SessionHub {
         /// to ride — callers degrade honestly instead of dialling on their own.
         var fileTransferSSH: SSHSession? { viewModel.session ?? sidecarSSH }
 
+        /// Numbered log of images uploaded this session (#1, #2, …). Lives on
+        /// the session — not the screen — so navigating Home and back keeps
+        /// every number addressable from the image chip's long-press menu.
+        var imageUploads = ImageUploadLog()
+
         nonisolated var id: UUID { connection.id }
 
         @ObservationIgnored private var pumpTask: Task<Void, Never>?

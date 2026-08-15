@@ -128,6 +128,18 @@ struct ImageAttachmentOverlayView: View {
                     .offset(x: 3, y: 3)
             }
         }
+        .overlay(alignment: .topLeading) {
+            // The session number this image is addressable by afterwards —
+            // the chip's long-press menu re-inserts #N without re-uploading.
+            if let number = attachment.sessionNumber {
+                Text("#\(number)")
+                    .font(Face.mono(8, .bold))
+                    .foregroundStyle(Ink.primary)
+                    .padding(.horizontal, 3).padding(.vertical, 1)
+                    .background(Ink.modalBG.opacity(0.9), in: Capsule())
+                    .offset(x: -2, y: -2)
+            }
+        }
     }
 
     // MARK: Actions

@@ -100,17 +100,80 @@ enum ImageAttachmentPipeline {
         String(format: "%04x", UInt16.random(in: .min ... .max))
     }
 
-    /// The text pasted at the prompt for uploaded paths: each path
-    /// single-quoted (a home directory can contain a space), padded with
-    /// spaces so it lands cleanly between whatever the user already typed.
+    /// The text pasted at the prompt for uploaded paths, padded with spaces
+    /// so it lands cleanly between whatever the user already typed.
+    ///
     /// Bare paths, not `@`-mentions — `@` triggers Claude Code's completion
     /// menu when typed blind, and a bare path reads the same to every agent.
+    /// Quoted ONLY when the path actually needs it: Codex's pasted-image-path
+    /// detector and the `@`-style parsers in other agents don't strip quotes,
+    /// so a quoted path breaks their native auto-attach — and our filenames
+    /// are space-free by construction, making the bare form the common case.
+    /// A home directory carrying a space (or a quote) still gets the
+    /// shell-safe single-quoted form.
     static func insertText(forRemotePaths paths: [String]) -> String {
         guard !paths.isEmpty else { return "" }
-        let quoted = paths.map { path in
-            "'" + path.replacingOccurrences(of: "'", with: "'\\''") + "'"
+        let rendered = paths.map { path in
+            if path.contains(where: { $0 == " " || $0 == "'" || $0 == "\"" }) {
+                return "'" + path.replacingOccurrences(of: "'", with: "'\\''") + "'"
+            }
+            return path
         }
-        return " " + quoted.joined(separator: " ") + " "
+        return " " + rendered.joined(separator: " ") + " "
+    }
+}
+
+// MARK: - Session upload log
+
+/// Numbered record of every image this session has uploaded, so a picture can
+/// be re-referenced (#1, #2, …) and re-inserted without re-uploading — the
+/// terminal-side equivalent of Claude Code's `[Image #N]` mental model, which
+/// itself can't exist over SSH (its placeholder only triggers on a LOCAL
+/// clipboard paste; remote reads go through file paths).
+struct ImageUploadLog: Equatable {
+    struct Entry: Identifiable, Equatable {
+        let id: UUID
+        /// 1-based session number — stable once assigned.
+        let number: Int
+        let remotePath: String
+        var filename: String { (remotePath as NSString).lastPathComponent }
+    }
+
+    private(set) var entries: [Entry] = []
+
+    @discardableResult
+    mutating func record(remotePath: String) -> Entry {
+        let entry = Entry(id: UUID(), number: entries.count + 1, remotePath: remotePath)
+        entries.append(entry)
+        return entry
+    }
+}
+
+// MARK: - Clipboard reading
+
+/// Raw image bytes off the pasteboard, originals preferred over re-encodes.
+enum ClipboardImageReader {
+    /// Preference order per item: HEIC and PNG are what screenshots and
+    /// camera copies actually carry; TIFF is the lowest-fidelity fallback
+    /// UIKit synthesizes.
+    static let preferredTypes = [UTType.heic, UTType.png, UTType.jpeg, UTType.tiff]
+        .map(\.identifier)
+
+    /// One Data per clipboard item that carries an image. Synchronous
+    /// pasteboard reads can block for over a second (cross-app paste prompt +
+    /// pasteboardd round trip) — call OFF the main thread.
+    static func read(from pasteboard: UIPasteboard = .general) -> [Data] {
+        var out: [Data] = []
+        for index in 0..<pasteboard.numberOfItems {
+            let item = IndexSet(integer: index)
+            for type in preferredTypes {
+                if let data = pasteboard.data(forPasteboardType: type, inItemSet: item)?.first {
+                    out.append(data)
+                    break
+                }
+            }
+        }
+        return out
     }
 }
 
@@ -152,10 +215,18 @@ final class ImageAttachmentController {
         var thumbnail: UIImage?
         var byteCount = 0
         var remotePath: String?
+        /// 1-based number in the session's upload log, assigned at `.ready`.
+        var sessionNumber: Int?
     }
 
     private(set) var phase: Phase = .processing
     private(set) var attachments: [Attachment] = []
+
+    /// Called once when every upload has landed, with the remote paths in
+    /// attachment order; returns the session numbers the host assigned
+    /// (empty to skip numbering). Lets the session's upload log own the
+    /// counter while the overlay still shows #N on each thumbnail.
+    @ObservationIgnored var onReady: (([String]) -> [Int])?
 
     @ObservationIgnored private let uploader: any FileUploader
     @ObservationIgnored private var work: Task<Void, Never>?
@@ -228,6 +299,12 @@ final class ImageAttachmentController {
                 phase = .uploading(Double(doneBytes) / Double(totalBytes))
             }
             phase = .ready
+            let paths = attachments.compactMap(\.remotePath)
+            if let numbers = onReady?(paths), numbers.count == attachments.count {
+                for (index, number) in numbers.enumerated() {
+                    attachments[index].sessionNumber = number
+                }
+            }
         } catch is CancellationError {
             // The overlay is already gone; nothing to show.
         } catch {
