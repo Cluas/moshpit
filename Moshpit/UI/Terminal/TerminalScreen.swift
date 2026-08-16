@@ -1448,32 +1448,18 @@ struct ShortcutBarView: View {
 
     /// Clamp a proposed pan so the row can't be dragged past its start or
     /// past its last chip. No-ops (returns 0) when everything already fits.
+    ///
+    /// ROUNDED to whole points. The drag's translation is a raw finger
+    /// coordinate — fractional — and offsetting the row by it leaves every
+    /// chip resting on a half-pixel: each glyph then renders antialiased
+    /// across two pixel rows, which on thin strokes (the ^ of ^C) reads as
+    /// "the key is blurry" (user report, 2026-08-16). Whole points are crisp
+    /// at every display scale; 1pt granularity during the drag itself is
+    /// imperceptible.
     private func clampedChipRowOffset(_ proposed: CGFloat, viewportWidth: CGFloat) -> CGFloat {
         guard chipRowContentWidth > viewportWidth else { return 0 }
         let minOffset = viewportWidth - chipRowContentWidth
-        return min(0, max(minOffset, proposed))
-    }
-
-    /// Mask that fades an edge only when content is actually hidden past it.
-    ///
-    /// Opaque on both sides when everything fits, so the common case keeps
-    /// full opacity and — since a SwiftUI mask also gates hit-testing —
-    /// undiminished tap targets.
-    private func chipRowFade(viewportWidth: CGFloat) -> some View {
-        let offset = clampedChipRowOffset(chipRowOffset + chipRowDragTranslation,
-                                          viewportWidth: viewportWidth)
-        let hiddenLeading = offset < -0.5
-        let hiddenTrailing = chipRowContentWidth + offset > viewportWidth + 0.5
-        let fade: CGFloat = viewportWidth > 0 ? min(0.09, 26 / viewportWidth) : 0
-        return LinearGradient(
-            stops: [
-                .init(color: .black.opacity(hiddenLeading ? 0 : 1), location: 0),
-                .init(color: .black, location: hiddenLeading ? fade : 0),
-                .init(color: .black, location: hiddenTrailing ? 1 - fade : 1),
-                .init(color: .black.opacity(hiddenTrailing ? 0 : 1), location: 1),
-            ],
-            startPoint: .leading,
-            endPoint: .trailing)
+        return min(0, max(minOffset, proposed)).rounded()
     }
 
     var body: some View {
@@ -1630,13 +1616,21 @@ struct ShortcutBarView: View {
                                                      viewportWidth: viewport.size.width))
             }
             .frame(width: viewport.size.width, height: viewport.size.height, alignment: .leading)
-            .clipped()
-            // Soften whichever edge has content hidden past it. A hard clip
-            // makes a chip that merely scrolled off look broken — the row is
-            // allowed twelve chips, so overflow is the normal state, not a
-            // layout bug — while a fade is the standard "there's more this
-            // way" cue and is the only affordance this hand-rolled pan has.
-            .mask(chipRowFade(viewportWidth: viewport.size.width))
+            // A hard clip, deliberately — this used to be a 26pt edge fade.
+            // With the default row one chip wider than a 402pt viewport, the
+            // fade sat ON the straddling chip's glyph at rest, permanently,
+            // and half-transparent keys read as a rendering bug, not as
+            // "there's more this way" (user report: "快捷键模糊"). A partially
+            // clipped chip is itself the standard scroll affordance — same as
+            // every horizontally scrolling chip row in iOS.
+            //
+            // A mask, not `.clipped()`: clipped() trims only the drawing, and
+            // the offset row's hidden tail would still HIT-TEST beyond the
+            // viewport — stealing taps under the pinned keyboard toggle. A
+            // mask gates hit-testing along with the pixels (the property the
+            // old fade relied on); a full-opacity rectangle keeps that and
+            // drops only the glyph-blurring gradient.
+            .mask(Rectangle())
             .contentShape(Rectangle())
             .gesture(
                 // minimumDistance keeps a plain tap from ever engaging this
