@@ -39,3 +39,22 @@ xcuserdata/
 # those, not a real directory that happens to start with the app's name.
 # Unquoted: .gitignore has no quoting, and a space in a pattern is just a space.
 /Moshpit 20*/
+
+# The Xcode project is a GENERATED artifact — project.yml is the source of
+# truth and CI regenerates it from scratch (`xcodegen generate`). Only the
+# SwiftPM lockfile inside it is real state worth versioning: it pins the
+# TRANSITIVE dependency graph that project.yml's from:-ranges cannot.
+# (gitignore can't re-include inside an ignored directory, hence the
+# parent-by-parent dance.)
+/Moshpit.xcodeproj/*
+!/Moshpit.xcodeproj/project.xcworkspace
+/Moshpit.xcodeproj/project.xcworkspace/*
+!/Moshpit.xcodeproj/project.xcworkspace/xcshareddata
+/Moshpit.xcodeproj/project.xcworkspace/xcshareddata/*
+!/Moshpit.xcodeproj/project.xcworkspace/xcshareddata/swiftpm
+/Moshpit.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/*
+!/Moshpit.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
+
+# App Store Connect screenshot uploads — 30MB of regenerable renders
+# (scripts produce them, ASC is their home; the repo is not).
+/marketing/shots-appstore/
