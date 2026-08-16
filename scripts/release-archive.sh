@@ -66,13 +66,45 @@ if [ ! -f "$NOTES" ]; then
   echo "  (start from the previous build's: $(ls -1 docs/testflight/build-*.md 2>/dev/null | tail -1 || echo 'none yet'))"
 fi
 
+# Both xcodebuild steps authenticate with the App Store Connect API key, not
+# with whatever Apple ID happens to be signed into Xcode.
+#
+# The distribution certificate is Cloud Managed, so signing has to ASK Apple
+# for things — and with no account in Xcode's settings that fails with errors
+# that name neither cause nor cure:
+#     error: exportArchive No Accounts
+#     error: No signing certificate "iOS Distribution" found
+#     error: Provisioning profile … doesn't include the App Groups capability
+# (Hit on build 336 at export, when an Xcode account session expired; hit again
+# on build 349 at ARCHIVE, when the new share-extension bundle id needed a
+# profile minted on the spot. The key must be on both commands.) It can also
+# register new bundle ids and their capabilities, which makes adding an app
+# extension releasable without ever opening the developer portal.
+#
+# Credentials live outside the repo — the key id and issuer id identify the
+# account, so they are not committed. Falls back to the account path if the
+# config is absent, which is exactly the old behaviour.
+AUTH=()
+# shellcheck disable=SC1090
+[ -f "$HOME/.appstoreconnect/asc.env" ] && . "$HOME/.appstoreconnect/asc.env"
+KEY_FILE="$HOME/.appstoreconnect/private_keys/AuthKey_${ASC_KEY_ID:-}.p8"
+if [ -n "${ASC_KEY_ID:-}" ] && [ -n "${ASC_ISSUER_ID:-}" ] && [ -f "$KEY_FILE" ]; then
+  AUTH=(-authenticationKeyPath "$KEY_FILE"
+        -authenticationKeyID "$ASC_KEY_ID"
+        -authenticationKeyIssuerID "$ASC_ISSUER_ID")
+else
+  echo "⚠ no ASC API key config — signing via Xcode's signed-in account instead."
+  echo "  If this fails with 'No Accounts', write ~/.appstoreconnect/asc.env with"
+  echo "  ASC_KEY_ID and ASC_ISSUER_ID, and put the .p8 in private_keys/."
+fi
+
 echo "▶ Archiving Release (build $BUILD, team $TEAM)…"
 rm -rf "$ARCHIVE" "$EXPORT_DIR"
 mkdir -p build
 xcodebuild -project Moshpit.xcodeproj -scheme Moshpit \
   -configuration Release -destination 'generic/platform=iOS' \
   -archivePath "$ARCHIVE" \
-  -allowProvisioningUpdates \
+  -allowProvisioningUpdates "${AUTH[@]}" \
   CURRENT_PROJECT_VERSION="$BUILD" \
   archive
 
@@ -112,35 +144,6 @@ cat > "$OPTS" <<PLIST
 </dict>
 </plist>
 PLIST
-
-# Export authenticates with the App Store Connect API key, not with whatever
-# Apple ID happens to be signed into Xcode.
-#
-# The distribution certificate is Cloud Managed, so exporting has to ASK Apple
-# for it — and with no account in Xcode's settings that fails with a pair of
-# errors that name neither cause nor cure:
-#     error: exportArchive No Accounts
-#     error: exportArchive No signing certificate "iOS Distribution" found
-# (Hit on build 336, after two releases had exported fine: an Xcode account
-# session simply expired.) The key we already use to upload can fetch the
-# certificate too, which makes releasing independent of an interactive login.
-#
-# Credentials live outside the repo — the key id and issuer id identify the
-# account, so they are not committed. Falls back to the account path if the
-# config is absent, which is exactly the old behaviour.
-AUTH=()
-# shellcheck disable=SC1090
-[ -f "$HOME/.appstoreconnect/asc.env" ] && . "$HOME/.appstoreconnect/asc.env"
-KEY_FILE="$HOME/.appstoreconnect/private_keys/AuthKey_${ASC_KEY_ID:-}.p8"
-if [ -n "${ASC_KEY_ID:-}" ] && [ -n "${ASC_ISSUER_ID:-}" ] && [ -f "$KEY_FILE" ]; then
-  AUTH=(-authenticationKeyPath "$KEY_FILE"
-        -authenticationKeyID "$ASC_KEY_ID"
-        -authenticationKeyIssuerID "$ASC_ISSUER_ID")
-else
-  echo "⚠ no ASC API key config — exporting via Xcode's signed-in account instead."
-  echo "  If this fails with 'No Accounts', write ~/.appstoreconnect/asc.env with"
-  echo "  ASC_KEY_ID and ASC_ISSUER_ID, and put the .p8 in private_keys/."
-fi
 
 echo "▶ Exporting for App Store Connect…"
 xcodebuild -exportArchive -archivePath "$ARCHIVE" \
