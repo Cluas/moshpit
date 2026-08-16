@@ -399,6 +399,17 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.cluas.moshpit.share
+        # Manual signing, unlike every other target: with no Apple ID signed
+        # into Xcode, archive-time automatic signing cannot mint the managed
+        # dev profile for a new bundle id (developerservices2 rejects ASC API
+        # keys — see scripts/release-archive.sh). This profile was created via
+        # the ASC API after the App Group association was made once by hand at
+        # developer.apple.com; recreate with a new one if it expires or a new
+        # device/cert is added. Simulator builds ignore it; export re-signs
+        # with a cloud-minted App Store profile as usual.
+        CODE_SIGN_STYLE: Manual
+        PROVISIONING_PROFILE_SPECIFIER: Moshpit Share Dev
+        CODE_SIGN_IDENTITY: Apple Development
     info:
       path: MoshpitShare/Info.plist
       properties:
