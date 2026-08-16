@@ -167,8 +167,14 @@ struct ShortcutStoreTests {
     /// toolbar summaries **in order**, and seeding a set with an entry that era
     /// never had is how a fixture stops describing the thing it's named after.
     private static func preMicDefaults() -> [TerminalShortcut] {
+        // A persisted set from BEFORE the mic joined the bar. Built by
+        // filtering today's builtins, which means every builtin added since
+        // must be filtered out here too — when the image chip joined the
+        // defaults it silently appeared in this "old" fixture, the toolbar
+        // stopped matching the migration's stale-default guard, and both
+        // migration tests failed against migration code that was fine.
         ShortcutStore.builtins
-            .filter { $0.kind != .mic && $0.kind != .arrows }
+            .filter { $0.kind != .mic && $0.kind != .arrows && $0.kind != .image }
             .map { shortcut in
                 var restored = shortcut
                 if restored.summary == "Clear screen" { restored.inToolbar = true }
@@ -203,18 +209,34 @@ struct ShortcutStoreTests {
         #expect(allBuiltin)
     }
 
-    @Test("the default bar stays within a phone-width row")
-    func defaultToolbarFitsOnScreen() throws {
-        // Measured on a 402pt iPhone: chips are 46pt (the D-pad 42) with 6pt
-        // gaps and an 8pt leading inset, and the pinned keyboard toggle takes
-        // the last 50pt. Seven chips overflowed by ~10pt, which is what a
-        // half-cut chip at the right edge looks like. Recomputed here so a
-        // future default can't silently reintroduce it.
+    @Test("the core editing keys always fit a phone-width row")
+    func defaultToolbarCoreKeysFitOnScreen() throws {
+        // The contract CHANGED when the image chip joined the defaults: the
+        // full default row now deliberately exceeds a 402pt phone, because
+        // every honest alternative was worse — no default chip is evictable
+        // the way ^L was (each is a feature's only always-visible door), and
+        // shaving chip metrics couldn't recover the 52pt a chip costs. What
+        // made the overflow acceptable is the bar's edge behaviour: a crisply
+        // hard-clipped chip that pans into reach (the old edge FADE sat mid-
+        // glyph at rest and read as a rendering bug — user report, 2026-08-16).
+        //
+        // The invariant that remains load-bearing: the CORE editing keys —
+        // everything up to and including the D-pad — must sit fully inside
+        // the row at rest, so nothing you type/steer with ever needs a
+        // scroll. Trailing feature chips (mic, img) are allowed past the
+        // edge. Widths mirror the layout: chips 46pt (D-pad 42), 6pt gaps,
+        // 8pt leading inset; the pinned keyboard toggle occupies 54pt
+        // (4 + 42 + 8) of a 402pt screen.
         let store = freshStore()
-        let width = store.toolbar.reduce(CGFloat(8)) { total, shortcut in
+        let dpad = try #require(store.toolbar.firstIndex { $0.kind == .dpad })
+        let core = store.toolbar[...dpad]
+        let width = core.reduce(CGFloat(8)) { total, shortcut in
             total + (shortcut.kind == .dpad ? 42 : 46) + 6
         }
-        #expect(width <= 402 - 50, "default toolbar overflows: \(width)pt")
+        #expect(width <= 402 - 54, "core keys overflow: \(width)pt")
+        // And the feature chips are where the contract expects them — at the
+        // trailing edge, where clipping only ever hides a re-openable door.
+        #expect(store.toolbar.last?.kind == .image)
     }
 
     @Test("the tap-first cluster ships available but out of the bar")
@@ -285,8 +307,10 @@ struct ShortcutStoreTests {
         // an upgrade that quietly hides it reads as the feature being removed.
         #expect(store.toolbar.contains { $0.kind == .mic })
         // At the trailing edge, which is where the pinned key already sat — so
-        // no existing chip shifts under the user's thumb.
-        #expect(store.toolbar.last?.kind == .mic)
+        // no existing chip shifts under the user's thumb. The image chip (a
+        // later builtin, injected by the summary-keyed catch-all AFTER this
+        // migration) lands behind it, so the tail reads [mic, img].
+        #expect(store.toolbar.suffix(2).map(\.kind) == [.mic, .image])
         // And it makes room for itself rather than overflowing the row.
         #expect(!store.toolbar.contains { $0.chipLabel == "^L" })
         #expect(store.available.contains { $0.chipLabel == "^L" })
@@ -308,9 +332,11 @@ struct ShortcutStoreTests {
         defaults.set(try JSONEncoder().encode(previous), forKey: "moshpit.shortcuts.v1")
 
         let store = ShortcutStore(defaults: defaults)
-        #expect(store.toolbarCount == 6)
+        // Six after ^L leaves, plus the image chip the catch-all injects
+        // behind the mic (it postdates this whole migration era).
+        #expect(store.toolbarCount == 7)
         #expect(!store.toolbar.contains { $0.chipLabel == "^L" })
-        #expect(store.toolbar.last?.kind == .mic)
+        #expect(store.toolbar.suffix(2).map(\.kind) == [.mic, .image])
     }
 
     @Test("a customized toolbar keeps every key the user put in it")

@@ -74,14 +74,19 @@ struct VoiceLanguageTests {
         // Automatic skips languages no engine can transcribe rather than
         // stopping at the first preferred one — the bug that left a Chinese
         // speaker on an English phone with an English acoustic model.
-        let chinese = VoiceLanguageResolver.appleLocale(stored: "") { locale in
+        // Candidates are pinned: the default list is the HOST's language
+        // settings, and this assertion was green only on machines with
+        // Chinese configured (red on the en-only CI runner).
+        let chinese = VoiceLanguageResolver.appleLocale(
+            stored: "", candidates: ["en-US", "zh-CN"]) { locale in
             locale.language.languageCode?.identifier == "zh"
         }
         #expect(chinese.language.languageCode?.identifier == "zh")
 
         // Nothing supported: still returns a real locale so the error message
         // can name a language instead of substituting one.
-        let fallback = VoiceLanguageResolver.appleLocale(stored: "", isSupported: { _ in false })
+        let fallback = VoiceLanguageResolver.appleLocale(
+            stored: "", candidates: ["en-US"], isSupported: { _ in false })
         #expect(fallback.language.languageCode != nil)
     }
 

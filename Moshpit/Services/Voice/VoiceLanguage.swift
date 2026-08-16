@@ -86,10 +86,17 @@ enum VoiceLanguageResolver {
     /// catalog's answer; when nothing matches we hand back the top candidate
     /// anyway so the failure the user sees names a real language rather than
     /// silently substituting another one.
+    ///
+    /// `candidates` defaults to the device's spoken languages; tests pass an
+    /// explicit list because the default reads the host's language settings —
+    /// an assertion built on it means "passes on machines configured like the
+    /// author's" (it did: green locally, red on the en-only CI runner).
     @MainActor
-    static func appleLocale(stored: String, isSupported: (Locale) -> Bool) -> Locale {
+    static func appleLocale(stored: String,
+                            candidates: [String]? = nil,
+                            isSupported: (Locale) -> Bool) -> Locale {
         if !stored.isEmpty { return Locale(identifier: stored) }
-        let candidates = spokenLanguageCandidates()
+        let candidates = candidates ?? spokenLanguageCandidates()
         for identifier in candidates {
             let locale = Locale(identifier: identifier)
             if isSupported(locale) { return locale }
