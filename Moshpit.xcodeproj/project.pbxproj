@@ -91,6 +91,7 @@
 		6944A02F52E6E51216DDEA13 /* HostCapabilities.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1429CD4403113AA94F8D187 /* HostCapabilities.swift */; };
 		6BCA2DA0B4C2AD2C7FF13995 /* TerminalTheme+SwiftTerm.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9073DF5729B0210D679D3EC9 /* TerminalTheme+SwiftTerm.swift */; };
 		6C945FA49905D6FEFCEEDAC6 /* AppIcon-Cursor76x76@2x~ipad.png in Resources */ = {isa = PBXBuildFile; fileRef = CCC2C90FBD547665AE4EAFD8 /* AppIcon-Cursor76x76@2x~ipad.png */; };
+		6D5BDF7328912EA9EA4B6732 /* AgentWidgetState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 91C7B6E5DB5DDEC7E4BB7D12 /* AgentWidgetState.swift */; };
 		6D8BFC9085145C9A7B09FB85 /* TmuxSessionController.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB2B6B9A8D91D2560F868B00 /* TmuxSessionController.swift */; };
 		6E0399C29DA7C51407175B2F /* HostKeyValidator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F0598BDB2392EFCA70A71BF /* HostKeyValidator.swift */; };
 		6EEEA5A097BCFB52D13D3497 /* BellDetectorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8EFBC5F3B803DE629BB4B7A5 /* BellDetectorTests.swift */; };
@@ -112,6 +113,7 @@
 		7ED45CB4CCFB6D79E83EFE60 /* MoshWire.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1E8158B74BCBA2450050C74 /* MoshWire.swift */; };
 		7EE6B4353B9D42CA241E5AD2 /* AppIcon-Prefix60x60@3x.png in Resources */ = {isa = PBXBuildFile; fileRef = 4A97E67F617F8FFB8148D308 /* AppIcon-Prefix60x60@3x.png */; };
 		7F1519A9442763EBA23B9E05 /* SwiftTerminalView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A83DB3B946049F315FD3F7C /* SwiftTerminalView.swift */; };
+		7F6C5DC98B9BC644F859E8EC /* ShareQueue.swift in Sources */ = {isa = PBXBuildFile; fileRef = 95D8F22B4ACFE6B06CC9F2F1 /* ShareQueue.swift */; };
 		82409C713CF692218C0D4FCF /* TmuxTypesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9DE1ACA383168D67122C9795 /* TmuxTypesTests.swift */; };
 		8337A3FCC46748CA17BF9320 /* BreadcrumbPlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63899F38DC22080C52BD078C /* BreadcrumbPlan.swift */; };
 		847B35CFF26B0A989AEC17F5 /* TmuxLayoutParserTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3AA61629339F802343A0ECC9 /* TmuxLayoutParserTests.swift */; };
@@ -202,11 +204,15 @@
 		EC5107F02FC003CF5BC1CFDF /* SecretCoalescingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01C8A890ED83C38778DBA9E5 /* SecretCoalescingTests.swift */; };
 		EC7B58F6C53DC0D3756050D9 /* AppIcon-Ringdown83.5x83.5@2x~ipad.png in Resources */ = {isa = PBXBuildFile; fileRef = E3114866D6E1CE18D8B44E43 /* AppIcon-Ringdown83.5x83.5@2x~ipad.png */; };
 		ED71EA4963B087CA108021E7 /* TerminalFontTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 32CA31043DA7F2B938053BA0 /* TerminalFontTests.swift */; };
+		EFC9F2BFF579244D6C2B9C23 /* MoshpitShare.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = CC39CD9B28BA26A391C4A62A /* MoshpitShare.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		F24077CFA085D6B788A1B8CD /* ShareQueueDrainer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5085A7F787D1257ADDF49969 /* ShareQueueDrainer.swift */; };
 		F4136D0A378BE0F2499495D9 /* MultiplexerControlling.swift in Sources */ = {isa = PBXBuildFile; fileRef = BABE853079273BFF284461FC /* MultiplexerControlling.swift */; };
 		F53F7C44F75E5F774CE7C772 /* WhisperKit in Frameworks */ = {isa = PBXBuildFile; productRef = 8218C50280CC130CD8146599 /* WhisperKit */; };
 		F5E0FE303D8DA5E854B82AF2 /* MoshpitStatusWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6FEB9B260DD3F4822A9212A /* MoshpitStatusWidget.swift */; };
 		F64882AA4C8B1DCD666687F6 /* SSHKeyStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = D9801C556A69BDC6847847EB /* SSHKeyStore.swift */; };
 		F6B2FFDB129F6DACDD31912C /* ServerConnection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B56EE7989B4842F114C7DB4 /* ServerConnection.swift */; };
+		F7266501A2D259F83C18159E /* ShareViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = D58FECA2A86592D8F18FA26A /* ShareViewController.swift */; };
+		F7DCB9074B856EF6E603E34B /* ShareQueue.swift in Sources */ = {isa = PBXBuildFile; fileRef = 95D8F22B4ACFE6B06CC9F2F1 /* ShareQueue.swift */; };
 		FC1A69586E357E0C77C31832 /* ImageAttachment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5927B92D8B3ADDE4FBD6C886 /* ImageAttachment.swift */; };
 		FE0748E1611A74FAB893CB1F /* ConnectionStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A0483D99AAA694DAF818012 /* ConnectionStoreTests.swift */; };
 		FE41829FAB949F609857B8C8 /* AgentTaskRequest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45E7CD1C68C74101335B817F /* AgentTaskRequest.swift */; };
@@ -228,6 +234,13 @@
 			remoteGlobalIDString = C04339524D7C881039141416;
 			remoteInfo = Moshpit;
 		};
+		708BA07E6AEADF28F0360EE7 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = B0CCEEDF870DD15214DC1714 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 117CB637E73B3D680C82CEC6;
+			remoteInfo = MoshpitShare;
+		};
 		B0C433617B35325F011318C2 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = B0CCEEDF870DD15214DC1714 /* Project object */;
@@ -245,6 +258,7 @@
 			dstSubfolderSpec = 13;
 			files = (
 				8F882714E92C80FEB263703F /* MoshpitIsland.appex in Embed Foundation Extensions */,
+				EFC9F2BFF579244D6C2B9C23 /* MoshpitShare.appex in Embed Foundation Extensions */,
 			);
 			name = "Embed Foundation Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -314,6 +328,7 @@
 		4E9EDA5ECCBE5ABBFA79EA7E /* MoshpitTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = MoshpitTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		4F7D960D32A76F0660F1F28E /* VoiceInputOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceInputOverlay.swift; sourceTree = "<group>"; };
 		5026177CCB80D4BC832576CE /* CaptureScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureScreen.swift; sourceTree = "<group>"; };
+		5085A7F787D1257ADDF49969 /* ShareQueueDrainer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareQueueDrainer.swift; sourceTree = "<group>"; };
 		531EA0682BFA85B0E6B9656C /* TerminalCellGeometryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalCellGeometryTests.swift; sourceTree = "<group>"; };
 		55C4E67A13B0D810E9DF11AE /* AgentControl.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentControl.swift; sourceTree = "<group>"; };
 		562C7F05AD0F711413756F3D /* TerminalCellGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalCellGeometry.swift; sourceTree = "<group>"; };
@@ -373,6 +388,7 @@
 		90AE26859AF9807954DF55E1 /* HostBannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostBannerView.swift; sourceTree = "<group>"; };
 		9142F7A03ECAEA872CAAACF4 /* TmuxTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TmuxTransport.swift; sourceTree = "<group>"; };
 		91C7B6E5DB5DDEC7E4BB7D12 /* AgentWidgetState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentWidgetState.swift; sourceTree = "<group>"; };
+		95D8F22B4ACFE6B06CC9F2F1 /* ShareQueue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareQueue.swift; sourceTree = "<group>"; };
 		971BEFA0996092B0B90FB3B8 /* AppIcon-Wq76x76@2x~ipad.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "AppIcon-Wq76x76@2x~ipad.png"; sourceTree = "<group>"; };
 		972E95607F15115064C3330A /* AppThemeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppThemeTests.swift; sourceTree = "<group>"; };
 		982AC6883DA1A312AF55E9CD /* SSHErrorMappingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SSHErrorMappingTests.swift; sourceTree = "<group>"; };
@@ -387,6 +403,7 @@
 		A6EC2F3D6701224233D016C1 /* WhisperDictationEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhisperDictationEngine.swift; sourceTree = "<group>"; };
 		A7118E3B937405064AF5E7F3 /* MoshpitMark.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoshpitMark.swift; sourceTree = "<group>"; };
 		A7A9E08AEC01474826CEC504 /* HerdrControlClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HerdrControlClient.swift; sourceTree = "<group>"; };
+		A7F0AD637969BC4F4776BA4D /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		AB7EBF5F0934B9192518A9F8 /* MoshpitIslandWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoshpitIslandWidget.swift; sourceTree = "<group>"; };
 		AC1E0B74116C03A161C51FF7 /* AppIcon-Wq83.5x83.5@2x~ipad.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "AppIcon-Wq83.5x83.5@2x~ipad.png"; sourceTree = "<group>"; };
 		AD21E26EF5255957DE389C48 /* ImageAttachmentOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageAttachmentOverlay.swift; sourceTree = "<group>"; };
@@ -399,6 +416,7 @@
 		B3E62BB39AF55389EA2A9650 /* TmuxTypes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TmuxTypes.swift; sourceTree = "<group>"; };
 		B6A3C9605CD1DB4232C29163 /* Signing.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Signing.xcconfig; sourceTree = "<group>"; };
 		B6FEB9B260DD3F4822A9212A /* MoshpitStatusWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoshpitStatusWidget.swift; sourceTree = "<group>"; };
+		B7A6FFC5912E9C064590F3F7 /* MoshpitShare.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = MoshpitShare.entitlements; sourceTree = "<group>"; };
 		B7D3EAACF9EEEE35EF8E2B76 /* MoshpitIsland.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = MoshpitIsland.entitlements; sourceTree = "<group>"; };
 		B8E766A14A745773140BE129 /* TerminalCursor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalCursor.swift; sourceTree = "<group>"; };
 		BABE853079273BFF284461FC /* MultiplexerControlling.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MultiplexerControlling.swift; sourceTree = "<group>"; };
@@ -417,6 +435,7 @@
 		CA34A0BAC5D767AA36A284F9 /* KeyPickerSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyPickerSheet.swift; sourceTree = "<group>"; };
 		CA8016E1600688806FF448C5 /* Hack-Regular.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Hack-Regular.ttf"; sourceTree = "<group>"; };
 		CACE2D34A28320365A26F2A6 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		CC39CD9B28BA26A391C4A62A /* MoshpitShare.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = MoshpitShare.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		CC70BD2ED20CD37D034C427A /* SSHKeyFactory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SSHKeyFactory.swift; sourceTree = "<group>"; };
 		CCC2C90FBD547665AE4EAFD8 /* AppIcon-Cursor76x76@2x~ipad.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "AppIcon-Cursor76x76@2x~ipad.png"; sourceTree = "<group>"; };
 		CE3671C028514857611FF2CC /* ThemeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThemeTests.swift; sourceTree = "<group>"; };
@@ -424,6 +443,7 @@
 		D3435C4B9CE5927CE24471A4 /* AppIcon-NoCarrier83.5x83.5@2x~ipad.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "AppIcon-NoCarrier83.5x83.5@2x~ipad.png"; sourceTree = "<group>"; };
 		D35DBEC8A0B304BA7214C654 /* FiraCode-Regular.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "FiraCode-Regular.ttf"; sourceTree = "<group>"; };
 		D3C8C3FE40206DC3271C31B5 /* AppIcon60x60@3x.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "AppIcon60x60@3x.png"; sourceTree = "<group>"; };
+		D58FECA2A86592D8F18FA26A /* ShareViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareViewController.swift; sourceTree = "<group>"; };
 		D79FF90811F3D79099AA1C57 /* AppIcon83.5x83.5@2x~ipad.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "AppIcon83.5x83.5@2x~ipad.png"; sourceTree = "<group>"; };
 		D7C27976B74D1CA4CAC3C17E /* SSHKeysView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SSHKeysView.swift; sourceTree = "<group>"; };
 		D7C900B2C8680EB47280BA6F /* AppIcon-Hail60x60@2x.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "AppIcon-Hail60x60@2x.png"; sourceTree = "<group>"; };
@@ -541,6 +561,7 @@
 				33C0A65F276C534B50547E88 /* Log.swift */,
 				BABE853079273BFF284461FC /* MultiplexerControlling.swift */,
 				FB1A95FDA6DF8F627038AC4D /* SessionHub.swift */,
+				5085A7F787D1257ADDF49969 /* ShareQueueDrainer.swift */,
 				DCC2B588272E33589B0EA7D9 /* SOCKSProxyDialer.swift */,
 				CC70BD2ED20CD37D034C427A /* SSHKeyFactory.swift */,
 				8BE5CDACBB1B8D07F5593479 /* SSHService.swift */,
@@ -587,6 +608,16 @@
 			path = Terminal;
 			sourceTree = "<group>";
 		};
+		37E01F5994811310BD37C613 /* MoshpitShare */ = {
+			isa = PBXGroup;
+			children = (
+				A7F0AD637969BC4F4776BA4D /* Info.plist */,
+				B7A6FFC5912E9C064590F3F7 /* MoshpitShare.entitlements */,
+				D58FECA2A86592D8F18FA26A /* ShareViewController.swift */,
+			);
+			path = MoshpitShare;
+			sourceTree = "<group>";
+		};
 		38D4F1BE089C4F1EB455B580 /* Shortcuts */ = {
 			isa = PBXGroup;
 			children = (
@@ -622,6 +653,7 @@
 			children = (
 				1CAFFAE2D9B95A4F0ED912AE /* Moshpit.app */,
 				7F599B734E01DD5B6C1CDA81 /* MoshpitIsland.appex */,
+				CC39CD9B28BA26A391C4A62A /* MoshpitShare.appex */,
 				4E9EDA5ECCBE5ABBFA79EA7E /* MoshpitTests.xctest */,
 				4D1086DD88F4B50D0E9861B3 /* MoshpitUITests.xctest */,
 			);
@@ -711,6 +743,7 @@
 				E00A84E937456F17CED173D2 /* Moshpit */,
 				BC50CE39FDC801B29EF0E171 /* moshpit */,
 				5DFF4BCFD2A815020E92D22E /* MoshpitIsland */,
+				37E01F5994811310BD37C613 /* MoshpitShare */,
 				551EDE0077A0F226D497ADB5 /* MoshpitTests */,
 				F3BE57DB48E9E89F211C488D /* MoshpitUITests */,
 				4CA011A7B830BF55B875550E /* Products */,
@@ -764,6 +797,7 @@
 				6BBA3F94185AB0AFCD9D10A0 /* AgentNotifications.swift */,
 				A47DF607D0A0BB071C864EEF /* AgentPalette.swift */,
 				91C7B6E5DB5DDEC7E4BB7D12 /* AgentWidgetState.swift */,
+				95D8F22B4ACFE6B06CC9F2F1 /* ShareQueue.swift */,
 			);
 			path = Island;
 			sourceTree = "<group>";
@@ -1007,6 +1041,23 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		117CB637E73B3D680C82CEC6 /* MoshpitShare */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 9A59D7179896D1356CDB5806 /* Build configuration list for PBXNativeTarget "MoshpitShare" */;
+			buildPhases = (
+				6AF33D3A09DC5783B764AA60 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = MoshpitShare;
+			packageProductDependencies = (
+			);
+			productName = MoshpitShare;
+			productReference = CC39CD9B28BA26A391C4A62A /* MoshpitShare.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 		46055837F41E11FDD1BA20A8 /* MoshpitIsland */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = D9515B211DB86F86F3C8C5FA /* Build configuration list for PBXNativeTarget "MoshpitIsland" */;
@@ -1056,6 +1107,7 @@
 			);
 			dependencies = (
 				36150FBB540E31439180E76A /* PBXTargetDependency */,
+				FE33C7B57BDB664D57A38233 /* PBXTargetDependency */,
 			);
 			name = Moshpit;
 			packageProductDependencies = (
@@ -1096,6 +1148,10 @@
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 2600;
 				TargetAttributes = {
+					117CB637E73B3D680C82CEC6 = {
+						DevelopmentTeam = 38RWZPNDPZ;
+						ProvisioningStyle = Automatic;
+					};
 					46055837F41E11FDD1BA20A8 = {
 						DevelopmentTeam = 38RWZPNDPZ;
 						ProvisioningStyle = Automatic;
@@ -1139,6 +1195,7 @@
 			targets = (
 				C04339524D7C881039141416 /* Moshpit */,
 				46055837F41E11FDD1BA20A8 /* MoshpitIsland */,
+				117CB637E73B3D680C82CEC6 /* MoshpitShare */,
 				E1E5D691D44179F8887C719D /* MoshpitTests */,
 				56689BDF532EC8A013AA9CFA /* MoshpitUITests */,
 			);
@@ -1339,6 +1396,8 @@
 				97BD3BA1B2907FC58C250952 /* SessionHub.swift in Sources */,
 				BB0B54F62E21972C1A050039 /* SessionMetrics.swift in Sources */,
 				4EDC3CBB56A3F9C9E2FA31DB /* SettingsScreen.swift in Sources */,
+				7F6C5DC98B9BC644F859E8EC /* ShareQueue.swift in Sources */,
+				F24077CFA085D6B788A1B8CD /* ShareQueueDrainer.swift in Sources */,
 				A6C9C7E9B28C4772AA299851 /* ShortcutsView.swift in Sources */,
 				7F1519A9442763EBA23B9E05 /* SwiftTerminalView.swift in Sources */,
 				560B311A8E579F9C909E8156 /* TerminalCellGeometry.swift in Sources */,
@@ -1386,6 +1445,16 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		6AF33D3A09DC5783B764AA60 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				6D5BDF7328912EA9EA4B6732 /* AgentWidgetState.swift in Sources */,
+				F7DCB9074B856EF6E603E34B /* ShareQueue.swift in Sources */,
+				F7266501A2D259F83C18159E /* ShareViewController.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		E43DAA9AC2A66357912FE10F /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -1415,9 +1484,30 @@
 			target = C04339524D7C881039141416 /* Moshpit */;
 			targetProxy = 39BAF196272B9EE197BC705B /* PBXContainerItemProxy */;
 		};
+		FE33C7B57BDB664D57A38233 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 117CB637E73B3D680C82CEC6 /* MoshpitShare */;
+			targetProxy = 708BA07E6AEADF28F0360EE7 /* PBXContainerItemProxy */;
+		};
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
+		095B6FC5097834579459DD80 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = MoshpitShare/MoshpitShare.entitlements;
+				INFOPLIST_FILE = MoshpitShare/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.cluas.moshpit.share;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
 		2235150924EFD0ECE604DD50 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -1572,6 +1662,22 @@
 			};
 			name = Release;
 		};
+		A2396E0977934A5F342695B4 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = MoshpitShare/MoshpitShare.entitlements;
+				INFOPLIST_FILE = MoshpitShare/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.cluas.moshpit.share;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
 		A732A5BEE4BE46096BF3C6D8 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -1710,6 +1816,15 @@
 			buildConfigurations = (
 				2235150924EFD0ECE604DD50 /* Debug */,
 				A0BBC011D3D41F1EAB6798A6 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		9A59D7179896D1356CDB5806 /* Build configuration list for PBXNativeTarget "MoshpitShare" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				095B6FC5097834579459DD80 /* Debug */,
+				A2396E0977934A5F342695B4 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;

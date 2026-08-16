@@ -100,6 +100,10 @@ struct MoshpitApp: App {
                 AgentControlBridge.shared.cycler = { [weak monitor] in
                     monitor?.cycleHeadline()
                 }
+                AgentControlBridge.shared.drainShareQueue = { [weak hub] in
+                    guard let hub else { return }
+                    await ShareQueueDrainer.drain(hub: hub)
+                }
                 // "Is this exact pane on screen?" — lets willPresent skip the
                 // banner + chime when the user is already looking at the prompt.
                 AgentControlBridge.shared.isPaneVisible = { connectionId, paneId in
@@ -124,7 +128,12 @@ struct MoshpitApp: App {
                 // long-background force-reconnect. .inactive (app switcher,
                 // notification shade) is transient — ignore it.
                 switch phase {
-                case .active:     hub.setForeground(true)
+                case .active:
+                    hub.setForeground(true)
+                    // Images queued from the share sheet while we were away:
+                    // deliver the ones whose sessions are live, leave the
+                    // rest for the next drain (session start re-drains too).
+                    Task { await ShareQueueDrainer.drain(hub: hub) }
                 case .background: hub.setForeground(false)
                 case .inactive:   break
                 @unknown default: break

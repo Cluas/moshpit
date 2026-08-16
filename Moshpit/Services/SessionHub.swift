@@ -483,6 +483,20 @@ final class SessionHub {
         /// Returns false when the pane could not be focused in time (eviction
         /// backoff, dead poller), so the caller can say "open the app" rather
         /// than pretend the tap worked.
+        /// Paste text into one SPECIFIC pane — bracketed like `sendPaste`,
+        /// but judged by the TARGET pane's mode rather than the active one's.
+        /// The Home card's per-agent image entry delivers here without ever
+        /// opening the terminal screen.
+        func deliverPaste(_ text: String, toPane paneId: String) async -> Bool {
+            var payload = Data(text.utf8)
+            let bracketed = tmuxControl?.paneUsesBracketedPaste(paneId)
+                ?? (activeTerminal?.bracketedPasteMode == true)
+            if bracketed {
+                payload = Data("\u{1b}[200~".utf8) + payload + Data("\u{1b}[201~".utf8)
+            }
+            return await deliverInput(payload, toPane: paneId)
+        }
+
         func deliverInput(_ data: Data, toPane paneId: String) async -> Bool {
             guard !data.isEmpty else { return false }
             if let control = tmuxControl {
@@ -1944,6 +1958,12 @@ final class SessionHub {
         // Reflect a mosh→SSH fallback on the home card's transport pill.
         m.moshDegraded = active.degrade?.missing == .moshServer
         metrics.metrics[active.connection.id] = m
+
+        // Images the share extension queued for THIS connection can be
+        // delivered now that it's live.
+        if case .connected = active.viewModel.status {
+            Task { await ShareQueueDrainer.drain(hub: self) }
+        }
     }
 
     /// Returns the existing live session or creates + starts a new one.

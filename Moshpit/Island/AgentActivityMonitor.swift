@@ -607,7 +607,8 @@ final class AgentActivityMonitor {
         let items = state.agents.map {
             AgentWidgetState.Item(id: $0.id, command: $0.command, location: $0.location,
                                   detail: $0.detail,
-                                  state: $0.state.rawValue, startedAt: $0.startedAt)
+                                  state: $0.state.rawValue, startedAt: $0.startedAt,
+                                  deepLink: "moshpit://connection/\($0.connectionId)?pane=\($0.paneId)")
         }
         AgentWidgetStore.write(AgentWidgetState(
             items: items,

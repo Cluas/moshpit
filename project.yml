@@ -183,6 +183,8 @@ targets:
         product: NIOSOCKS
       - target: MoshpitIsland
         embed: true
+      - target: MoshpitShare
+        embed: true
     info:
       path: Moshpit/App/Info.plist
       properties:
@@ -379,6 +381,38 @@ targets:
         CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
+
+  MoshpitShare:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: MoshpitShare
+      # The share sheet's target list is the same App Group snapshot the
+      # widget reads, and the queue types are shared with the app's drainer.
+      - path: Moshpit/Island/AgentWidgetState.swift
+      - path: Moshpit/Island/ShareQueue.swift
+    entitlements:
+      path: MoshpitShare/MoshpitShare.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.com.cluas.moshpit
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.cluas.moshpit.share
+    info:
+      path: MoshpitShare/Info.plist
+      properties:
+        CFBundleDisplayName: Moshpit
+        # Version lockstep with the app, same as MoshpitIsland — a mismatch
+        # is an App Store rejection.
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.share-services
+          NSExtensionPrincipalClass: "$(PRODUCT_MODULE_NAME).ShareViewController"
+          NSExtensionAttributes:
+            NSExtensionActivationRule:
+              NSExtensionActivationSupportsImageWithMaxCount: 10
 
   MoshpitUITests:
     type: bundle.ui-testing

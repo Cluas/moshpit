@@ -770,6 +770,15 @@ final class TmuxSessionController: MultiplexerControlling {
         }
     }
 
+    /// Whether a SPECIFIC pane's program turned on bracketed paste (DECSET
+    /// 2004) — for pastes addressed to a pane other than the active one (the
+    /// Home card's per-agent image entry). Defaults to true when the pane has
+    /// no local terminal (the mosh+tmux control-only pool doesn't render):
+    /// the callers target AGENT panes, and every mainstream agent brackets.
+    func paneUsesBracketedPaste(_ paneId: String) -> Bool {
+        paneTerminals[paneId]?.getTerminal().bracketedPasteMode ?? true
+    }
+
     /// Leave copy-mode (back to the live bottom) if we entered it. Called before
     /// forwarding user input so keystrokes reach the shell, not copy-mode, and
     /// on pane/window switches.

@@ -17,6 +17,10 @@ struct AgentWidgetState: Codable, Equatable {
         var detail: String?
         var state: String        // AgentActivityAttributes.AgentState rawValue
         var startedAt: Date
+        /// Deep link to THIS agent's pane (`moshpit://connection/<uuid>?pane=%N`)
+        /// — how the share extension addresses a queued image at a specific
+        /// pane. Optional so older snapshots still decode.
+        var deepLink: String?
     }
     var items: [Item]
     var attentionCount: Int

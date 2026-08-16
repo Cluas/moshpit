@@ -1,3 +1,4 @@
+import PhotosUI
 import SwiftUI
 
 /// Home command board. Saved hosts stay scannable offline; live hosts expand
@@ -580,6 +581,18 @@ struct ConnectionCard: View {
     /// Pending New agent task sheet. Boxed like `NewSessionTarget` so the
     /// non-generic sheet can call back into the concrete controller.
     @State private var agentTaskTarget: AgentTaskTarget?
+    /// The agent row whose photo button was tapped — the picker and the
+    /// attachment sheet both address this pane, not "whatever is active".
+    @State private var agentImageTarget: AgentImageTarget?
+    @State private var agentImageController: ImageAttachmentController?
+    @State private var agentPhotoSelection: [PhotosPickerItem] = []
+    @State private var agentPickerPresented = false
+
+    /// A specific pane on this card's connection, as an image destination.
+    struct AgentImageTarget: Equatable {
+        let paneId: String
+        let agentName: String
+    }
     /// Pending worktree removal. Two stages: the plain confirm, then — only if
     /// the checkout turns out to be dirty — a second one that says so.
     @State private var worktreeTarget: WorktreeTarget?
@@ -793,6 +806,46 @@ struct ConnectionCard: View {
         .sheet(item: $agentTaskTarget) { target in
             NewAgentTaskSheet(initialRepos: target.initialRepos,
                               load: target.load, start: target.start)
+        }
+        .photosPicker(isPresented: $agentPickerPresented,
+                      selection: $agentPhotoSelection,
+                      maxSelectionCount: 10,
+                      matching: .images)
+        .onChange(of: agentPhotoSelection) { _, items in
+            guard !items.isEmpty else { return }
+            agentPhotoSelection = []
+            beginAgentImageAttachment(items)
+        }
+        .sheet(isPresented: Binding(
+            get: { agentImageController != nil },
+            set: { if !$0 { cancelAgentImageAttachment() } }
+        )) {
+            if let controller = agentImageController, let target = agentImageTarget {
+                VStack(spacing: 0) {
+                    // Same panel as the terminal's, hosted in a sheet: the
+                    // destination line is the one thing the terminal version
+                    // never needs to say (there, the pane is on screen).
+                    HStack(spacing: 6) {
+                        Image(systemName: "sparkle")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(Ink.accent)
+                        Text(verbatim: String(localized: "To \(target.agentName) · \(connection.displayName)"))
+                            .font(Face.mono(11, .semibold))
+                            .foregroundStyle(Ink.secondary)
+                            .lineLimit(1)
+                        Spacer(minLength: 0)
+                    }
+                    .padding(EdgeInsets(top: 14, leading: 20, bottom: 2, trailing: 20))
+                    ImageAttachmentOverlayView(
+                        controller: controller,
+                        onCancel: { cancelAgentImageAttachment() },
+                        onRetry: { controller.retry() },
+                        onInsert: { finishAgentImageAttachment(submit: false) },
+                        onSend: { finishAgentImageAttachment(submit: true) })
+                }
+                .presentationDetents([.height(230)])
+                .presentationBackground(Ink.modalBG)
+            }
         }
         .modifier(WorktreeRemovalDialogs(
             target: $worktreeTarget, forceTarget: $worktreeForceTarget, error: $worktreeError))
@@ -1056,6 +1109,58 @@ struct ConnectionCard: View {
         }
     }
 
+    // MARK: Per-agent image attach (the "send it a picture" entry that
+    // never opens the terminal — upload over this card's channel, deliver
+    // the path to THAT pane, in that agent's dialect).
+
+    private func beginAgentImageAttachment(_ items: [PhotosPickerItem]) {
+        guard let active, agentImageTarget != nil else { return }
+        let controller = ImageAttachmentController(uploaderProvider: { [weak active] in
+            guard let active else { throw SSHError.sessionClosed }
+            return try await active.acquireFileTransferSSH()
+        })
+        controller.onReady = { [weak active] paths in
+            guard let active else { return [] }
+            return paths.map { active.imageUploads.record(remotePath: $0).number }
+        }
+        agentImageController = controller
+        Task {
+            var picked: [Data] = []
+            for item in items {
+                if let data = try? await item.loadTransferable(type: Data.self) {
+                    picked.append(data)
+                }
+            }
+            guard !picked.isEmpty else {
+                agentImageController = nil
+                return
+            }
+            controller.start(pickedData: picked)
+        }
+    }
+
+    private func finishAgentImageAttachment(submit: Bool) {
+        guard let active, let target = agentImageTarget,
+              let controller = agentImageController,
+              let text = controller.insertText(style: .forAgent(target.agentName))
+        else { return }
+        Task {
+            let delivered = await active.deliverPaste(text, toPane: target.paneId)
+            if delivered, submit {
+                _ = await active.deliverInput(Data([0x0D]), toPane: target.paneId)
+            }
+            if delivered { Haptics.success() }
+        }
+        agentImageController = nil
+        agentImageTarget = nil
+    }
+
+    private func cancelAgentImageAttachment() {
+        agentImageController?.cancel()
+        agentImageController = nil
+        agentImageTarget = nil
+    }
+
     /// One agent, in the same row grammar as the tree below: identity +
     /// status in the middle, an explicit enter affordance on the right.
     /// needs-you is the only badge; every other state is a dot and the meta
@@ -1088,6 +1193,25 @@ struct ConnectionCard: View {
                 }
 
                 Spacer()
+
+                // Hand this agent a picture without opening the terminal —
+                // picker → upload over this card's channel → path delivered
+                // to THIS pane. Nested button; the row's own tap still enters.
+                Button {
+                    Haptics.tap()
+                    agentImageTarget = AgentImageTarget(paneId: entry.paneId,
+                                                        agentName: entry.name)
+                    agentPickerPresented = true
+                } label: {
+                    Image(systemName: "photo")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Ink.secondary)
+                        .frame(width: 26, height: 26)
+                        .background(Ink.neutralFill,
+                                    in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(Text(verbatim: String(localized: "Send image to \(entry.name)")))
 
                 if attention {
                     Text("OPEN")

@@ -37,6 +37,12 @@ final class AgentControlBridge {
     var isPaneVisible: ((UUID, String) -> Bool)?
     var cycler: (() -> Void)?
 
+    /// Set by the app at launch. Drains the share-extension image queue —
+    /// the AttachImage intent calls it so a Shortcuts run delivers
+    /// immediately when the target session is live. nil in the widget
+    /// process (which never runs the intent's perform()).
+    var drainShareQueue: (() async -> Void)?
+
     func dispatch(_ action: AgentAction, connectionId: UUID, paneId: String, text: String?) async {
         await handler?(action, connectionId, paneId, text)
     }
