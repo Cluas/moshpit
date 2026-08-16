@@ -178,6 +178,10 @@ struct ChevronRow: View {
 struct ToggleRow: View {
     let label: LocalizedStringKey
     var subtitle: LocalizedStringKey?
+    /// Stable handle for UI tests. The row's Toggle carries an EMPTY label
+    /// (the visible text is our own views), so to XCUI it is an anonymous
+    /// switch — unaddressable without this.
+    var identifier: String?
     @Binding var isOn: Bool
 
     var body: some View {
@@ -197,6 +201,7 @@ struct ToggleRow: View {
                 .labelsHidden()
                 .tint(Ink.accent)
                 .scaleEffect(0.82, anchor: .trailing)
+                .accessibilityIdentifier(identifier ?? "")
         }
         .frame(minHeight: Metrics.cellMinHeight)
         .padding(.vertical, 4)

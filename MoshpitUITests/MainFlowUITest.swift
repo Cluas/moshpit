@@ -30,9 +30,17 @@ final class MainFlowUITest: XCTestCase {
         XCTAssertTrue(saveButton.waitForExistence(timeout: 2))
         XCTAssertFalse(saveButton.isEnabled, "Save must be disabled while the form is empty")
 
-        // 4. Mosh group present
+        // 4. Mosh group present — and progressively disclosed: the tuning
+        // rows (roam, ports, prediction) only exist while the toggle is ON.
+        // "Roam on Cellular: ON" under a disabled Mosh was a lie about what
+        // would happen, so their absence here is the designed state.
         XCTAssertTrue(app.staticTexts["Use Mosh"].exists)
-        XCTAssertTrue(app.staticTexts["Roam on Cellular"].exists)
+        XCTAssertFalse(app.staticTexts["Roam on Cellular"].exists,
+                       "mosh tuning rows must stay hidden while Use Mosh is off")
+        app.switches["toggle-use-mosh"].tap()
+        XCTAssertTrue(app.staticTexts["Roam on Cellular"].waitForExistence(timeout: 3),
+                      "enabling Use Mosh should reveal the tuning rows")
+        app.switches["toggle-use-mosh"].tap()
 
         // 5. SSH Key auth reveals the PEM editor
         app.buttons["SSH Key"].firstMatch.tap()

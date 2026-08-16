@@ -157,6 +157,7 @@ struct AddConnectionView: View {
                             ToggleRow(
                                 label: "Use Mosh",
                                 subtitle: "Wrap SSH with mosh-server (UDP)",
+                                identifier: "toggle-use-mosh",
                                 isOn: $useMosh)
                             // The tuning rows only exist when Mosh does. With
                             // the toggle off they were pure expert noise — and

@@ -144,10 +144,12 @@ final class ThemeFlowUITest: XCTestCase {
         let deleteButton = app.buttons["Delete"]
         XCTAssertTrue(deleteButton.waitForExistence(timeout: 3))
         deleteButton.tap()
-        // Confirm the destructive alert.
-        let confirm = app.alerts.buttons["Delete"]
-        XCTAssertTrue(confirm.waitForExistence(timeout: 3))
-        confirm.tap()
+        // Confirm in the app's own modal (the redesign replaced UIKit alerts
+        // with the in-app modal system — XCUI's `app.alerts` no longer sees
+        // it). The title wait doubles as proof the modal is up and the
+        // context menu's identically-labelled Delete is gone.
+        XCTAssertTrue(app.staticTexts["Delete Monokai Copy?"].waitForExistence(timeout: 3))
+        app.buttons["Delete"].firstMatch.tap()
 
         XCTAssertTrue(app.staticTexts["No custom themes yet."].waitForExistence(timeout: 3))
         // Deleting the *selected* theme has to move the selection, or the

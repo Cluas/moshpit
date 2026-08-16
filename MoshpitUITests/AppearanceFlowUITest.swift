@@ -72,9 +72,11 @@ final class AppearanceFlowUITest: XCTestCase {
         app.staticTexts["App Icon"].tap()
         XCTAssertTrue(app.navigationBars["App Icon"].waitForExistence(timeout: 3))
 
-        // The gallery includes the two non-mark figures, which is the point of
-        // "the icon is its own choice".
-        for id in ["default", "teal", "daylight", "mono", "cursor", "hail"] {
+        // The current gallery, as AppIconOption.all defines it — the rebrand
+        // replaced the old teal/daylight/mono set wholesale (this list went
+        // stale once already; it mirrors AppTheme.swift, not a design intent).
+        for id in ["default", "ringdown", "wq", "prefix", "localhost",
+                   "nocarrier", "cursor", "hail"] {
             XCTAssertTrue(app.buttons["app-icon-\(id)"].exists, "missing icon option \(id)")
         }
 
