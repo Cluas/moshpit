@@ -183,7 +183,7 @@ struct ShortcutStoreTests {
         return ShortcutStore(defaults: defaults)
     }
 
-    @Test("seeds a lean default toolbar: esc, tab, interrupt, paste, arrows, mic")
+    @Test("seeds a lean default toolbar: esc, tab, interrupt, paste, arrows, mic, img")
     func defaultToolbar() throws {
         let store = freshStore()
         let labels = store.toolbar.map(\.chipLabel)
@@ -192,10 +192,12 @@ struct ShortcutStoreTests {
         // scroll thumb start outside the bar (available to add back), along
         // with everything else that used to be a default (^D, ^R, ⌃End, ⇧Tab).
         // The mic trails the row: it used to be pinned outside the scroll at
-        // the trailing edge, so this is where it already appeared.
-        #expect(store.toolbarCount == 6)
-        #expect(labels == ["esc", "tab", "^C", "paste", "✛", "mic"])
-        #expect(store.toolbar.last?.kind == .mic)
+        // the trailing edge, so this is where it already appeared. The image
+        // chip trails even that — same "attach something" family as the mic,
+        // added to the defaults with the M1 image-attach feature.
+        #expect(store.toolbarCount == 7)
+        #expect(labels == ["esc", "tab", "^C", "paste", "✛", "mic", "img"])
+        #expect(store.toolbar.last?.kind == .image)
         #expect(store.available.contains { $0.kind == .ctrl })
         #expect(store.available.contains { $0.kind == .scroll })
         #expect(allBuiltin)

@@ -174,6 +174,17 @@ final class TmuxSessionController: MultiplexerControlling {
     @ObservationIgnored
     private var writeChain: Task<Void, Never>?
 
+    /// "Is the transport under this controller live right now?" — set by the
+    /// session that owns it. Gates GESTURE-shaped input (pane keyboard) the
+    /// same way ActiveSession.sendInput gates the shortcut bar: a keystroke
+    /// while the reconnect poster is up is accidental, and the write chain
+    /// can deliver it late, after resume, into a pane the user never saw.
+    /// Deliberately NOT consulted by programmatic delivery (`sendInput` from
+    /// the lock-screen Allow/Deny path), which reconnects first and must not
+    /// race the state flip. nil (tests, sidecar) means "always live".
+    @ObservationIgnored
+    var transportIsLive: (() -> Bool)?
+
     // MARK: - Init
 
     /// `sshSession` is typed as the narrow ``TmuxTransport`` protocol so tests
@@ -2360,7 +2371,11 @@ final class TmuxSessionController: MultiplexerControlling {
         coordinator.enforcedCursor = desiredCursor
         coordinator.onInput = { [weak self, paneId] data in
             Task { @MainActor [weak self] in
-                self?.sendInput(data, paneId: paneId)
+                guard let self else { return }
+                // See transportIsLive — drop keystrokes while not live so
+                // they can't queue up and replay into the pane after resume.
+                guard self.transportIsLive?() ?? true else { return }
+                self.sendInput(data, paneId: paneId)
             }
         }
         // The app's own layout reporting its grid — the only reliable answer to

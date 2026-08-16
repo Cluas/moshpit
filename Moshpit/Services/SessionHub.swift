@@ -440,6 +440,18 @@ final class SessionHub {
         /// whether this session is tmux / mosh / plain SSH.
         func sendInput(_ data: Data) {
             guard !data.isEmpty else { return }
+            // No input unless live. While the connecting poster is up the pane
+            // is invisible, so every touch that lands here is accidental — and
+            // some transports make accidents durable: mosh QUEUES keystrokes
+            // typed while disconnected and replays them after resume (its
+            // type-ahead feature, useful only when you can SEE the terminal).
+            // The reported shape: a stray brush of the shortcut bar's arrows
+            // during a reconnect popped Claude Code's prompt history after the
+            // session came back. The bar sits OUTSIDE the cover overlay, so it
+            // must be gated here, at the single choke point, not in the UI.
+            // (deliverInput/deliverPaste stay ungated on purpose — the lock
+            // screen and share-queue paths do their own reconnect-first dance.)
+            guard viewModel.connState == .live else { return }
             // If we scrolled the pane into tmux copy-mode, leave it first so the
             // keystrokes reach the shell (in copy-mode tmux would eat them).
             tmuxControl?.exitCopyMode()
@@ -572,6 +584,18 @@ final class SessionHub {
         /// scrollback via copy-mode over the control channel; a plain shell pages
         /// the local SwiftTerm buffer. Positive = older output, negative = newer.
         func scrollActiveTerminal(lines: Int) {
+            // Same gate as sendInput, with one exception: a swipe on a NOT-live
+            // session must never write to the wire (mosh would queue wheel or
+            // copy-mode bytes and replay them after resume — the same accident
+            // as stray arrows, wearing mouse clothes), but paging the LOCAL
+            // buffer is read-only and stays useful — an offline plain shell's
+            // scrollback is still readable under the red pill.
+            guard viewModel.connState == .live else {
+                if herdrFrameTarget == nil, moshTransport == nil, tmuxController == nil {
+                    coordinator.scrollLocal(lines: lines)
+                }
+                return
+            }
             if herdrFrameTarget != nil {
                 // The one place herdr strictly beats tmux here: the SERVER
                 // decides whether a wheel becomes a mouse report (an app that
@@ -793,7 +817,11 @@ final class SessionHub {
             lastCursorShape = cursorShape
             lastCursorColorId = cursorColorId
             lastCursorBlink = cursorBlink
-            coordinator.onInput = { [viewModel] data in viewModel.send(data) }
+            // Through sendInput, not straight to viewModel.send — it is the
+            // documented single entry point for user input, and the not-live
+            // gate lives there. (For a plain shell the tmux/mosh branches
+            // inside are all nil and the bytes land on viewModel.send anyway.)
+            coordinator.onInput = { [weak self] data in self?.sendInput(data) }
             coordinator.onSizeChange = { [viewModel] cols, rows in
                 viewModel.resize(rows: rows, cols: cols)
             }
@@ -843,6 +871,9 @@ final class SessionHub {
 
             if multiplexer == .tmux {
                 let controller = TmuxSessionController(sshSession: session)
+                controller.transportIsLive = { [weak viewModel] in
+                    viewModel?.connState == .live
+                }
                 controller.pendingRestore = lastSelection   // land back on our pane
                 controller.configureAppearance(theme: theme, fontSize: fontSize, fontName: fontName,
                                                 cursorShape: cursorShape, cursorColorId: cursorColorId,
@@ -1306,7 +1337,8 @@ final class SessionHub {
         /// the SSH path so multiplexing still works over the fallback.
         private func fallbackToSSH(over session: SSHSession,
                                    capabilities caps: HostCapabilities) async {
-            coordinator.onInput = { [viewModel] data in viewModel.send(data) }
+            // Same routing note as attempt(): sendInput is the choke point.
+            coordinator.onInput = { [weak self] data in self?.sendInput(data) }
             coordinator.onSizeChange = { [viewModel] cols, rows in
                 viewModel.resize(rows: rows, cols: cols)
             }
@@ -1331,6 +1363,9 @@ final class SessionHub {
             let multiplexer: Multiplexer = available ? chosen : .none
             if multiplexer == .tmux {
                 let controller = TmuxSessionController(sshSession: session)
+                controller.transportIsLive = { [weak viewModel] in
+                    viewModel?.connState == .live
+                }
                 controller.pendingRestore = lastSelection
                 controller.configureAppearance(theme: lastTheme, fontSize: lastFontSize, fontName: lastFontName,
                                                 cursorShape: lastCursorShape, cursorColorId: lastCursorColorId,
