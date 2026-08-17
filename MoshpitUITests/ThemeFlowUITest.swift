@@ -63,9 +63,8 @@ final class ThemeFlowUITest: XCTestCase {
 
         // Long-press a built-in → Duplicate & Edit (the only route from a
         // read-only built-in to something editable).
-        app.buttons["theme-row-nord"].firstMatch.press(forDuration: 1.1)
         let duplicate = app.buttons["Duplicate & Edit"]
-        XCTAssertTrue(duplicate.waitForExistence(timeout: 3))
+        pressForMenu(app.buttons["theme-row-nord"].firstMatch, until: duplicate)
         duplicate.tap()
 
         // The editor opens on a copy, pre-named and previewing live.
@@ -132,7 +131,8 @@ final class ThemeFlowUITest: XCTestCase {
         _ = openGallery(app)
 
         // Make a custom theme to delete.
-        app.buttons["theme-row-monokai"].firstMatch.press(forDuration: 1.1)
+        pressForMenu(app.buttons["theme-row-monokai"].firstMatch,
+                     until: app.buttons["Duplicate & Edit"])
         app.buttons["Duplicate & Edit"].tap()
         XCTAssertTrue(app.navigationBars["Monokai Copy"].waitForExistence(timeout: 3))
         app.buttons["theme-editor-save"].tap()
@@ -140,9 +140,8 @@ final class ThemeFlowUITest: XCTestCase {
         let copyRow = app.staticTexts["Monokai Copy"]
         XCTAssertTrue(copyRow.waitForExistence(timeout: 3))
 
-        copyRow.press(forDuration: 1.1)
         let deleteButton = app.buttons["Delete"]
-        XCTAssertTrue(deleteButton.waitForExistence(timeout: 3))
+        pressForMenu(copyRow, until: deleteButton)
         deleteButton.tap()
         // Confirm in the app's own modal (the redesign replaced UIKit alerts
         // with the in-app modal system — XCUI's `app.alerts` no longer sees

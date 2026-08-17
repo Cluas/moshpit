@@ -37,8 +37,8 @@ final class ThemeScreenshotUITest: XCTestCase {
         attach(app, "03-gallery-scrolled")
 
         // Editor, opened on a duplicate of a built-in.
-        app.buttons["theme-row-dracula"].firstMatch.press(forDuration: 1.1)
-        XCTAssertTrue(app.buttons["Duplicate & Edit"].waitForExistence(timeout: 3))
+        pressForMenu(app.buttons["theme-row-dracula"].firstMatch,
+                     until: app.buttons["Duplicate & Edit"])
         app.buttons["Duplicate & Edit"].tap()
         XCTAssertTrue(app.navigationBars["Dracula Copy"].waitForExistence(timeout: 3))
         attach(app, "04-editor-preview")

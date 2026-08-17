@@ -130,9 +130,8 @@ final class MainFlowUITest: XCTestCase {
         XCTAssertTrue(card.waitForExistence(timeout: 3), "new connection card should appear")
 
         // Long-press → context menu → Delete Connection → confirm.
-        card.press(forDuration: 1.1)
         let deleteItem = app.buttons["Delete Connection"]
-        XCTAssertTrue(deleteItem.waitForExistence(timeout: 3), "context menu should offer delete")
+        pressForMenu(card, until: deleteItem, "context menu should offer delete")
         deleteItem.tap()
 
         // confirmationDialog's destructive button is labelled just "Delete".
