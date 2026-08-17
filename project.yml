@@ -56,7 +56,12 @@ packages:
     # second separate caret or tracking a mid-composition insertion offset
     # (which jittered back to the front — phonetic IMEs replace the whole
     # marked string per keystroke and candidate paging can report a stale
-    # selectedRange), (7) deleteBackward() during active composition
+    # selectedRange), (8) wide-char hygiene on the WRITE side — overwriting
+    # half a CJK char clears the other half (Buffer.insertCharacter +
+    # insertAsciiRun), plus a renderer belt treating a visited width-0 cell
+    # as the default blank it is: kills the permanent white blocks over mosh
+    # (an orphaned continuation stub renders inverted-default, and mosh never
+    # repaints a cell its model says is already blank), (7) deleteBackward() during active composition
     # removes one character from the end of the marked text and sends
     # nothing to the terminal, instead of nuking the whole composition in
     # one shot with real (wrong) backspace keypresses — fixes hold-to-repeat
@@ -98,7 +103,7 @@ packages:
     # Revert to the upstream URL if/when these land there and a
     # release picks them up.
     url: https://github.com/Cluas/SwiftTerm.git
-    revision: a5198e8f2a9b7be050030f78476d506f41dc2d58
+    revision: 740e797eaa1677ca7f17492125226e085ab51beb
   Citadel:
     url: https://github.com/orlandos-nl/Citadel.git
     from: "0.7.0"

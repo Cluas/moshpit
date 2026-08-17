@@ -287,20 +287,27 @@ actor MoshTransport {
     /// This is the self-heal for the "white blocks" class of report: this
     /// client renders host bytes straight into SwiftTerm with no framebuffer
     /// model of its own, so if SwiftTerm's idea of a cell ever diverges from
-    /// mosh-server's (the prime suspect is a wide-glyph width disagreement —
-    /// the blocks cluster at the ends of CJK-wrapped lines), the divergence
-    /// PERSISTS: the server never resends cells it believes are already
-    /// right, and no amount of new output repaints them. Stock mosh cannot
-    /// have the bug (it renders from its own synced framebuffer). The
-    /// protocol hands us the remedy for free — acking state 0 is always
-    /// valid, and the server answers by diffing from blank: clear + full
-    /// redraw, divergence erased. Loopback never reproduces the report
-    /// because a loss-free link ships complete frames that mask divergence;
-    /// only a lossy link's partial diffs leave it standing.
+    /// mosh-server's (root-caused: an orphaned wide-char continuation cell —
+    /// see MoshSwitchReplayTests), the divergence PERSISTS: the server never
+    /// resends cells it believes are already right.
+    ///
+    /// The remedy is a WIDTH NUDGE, not an ack rewind. The first shipped
+    /// version acked display state 0, betting the server would re-diff from
+    /// blank — but a stock mosh-server CULLS sent states once acked past and
+    /// silently ignores an ack naming a culled one (verified against 1.4.0:
+    /// zero bytes come back), and rewinding `appliedHostNum` is actively
+    /// harmful — every subsequent in-order diff then lands in the gap branch
+    /// and the screen freezes until reconnect. What DOES work: mosh's
+    /// `Display::new_frame` resets its `initialized` flag on ANY size change
+    /// and emits a complete repaint. So: one column narrower, then back —
+    /// two resize events in one user state, applied in order server-side.
+    /// Costs a visible reflow; repaints every cell, orphans included.
     func requestFullRedraw() {
         guard !closed else { return }
-        appliedHostNum = 0
-        receiveAssembler = FragmentAssembler()
+        appendUserState([
+            .resize(width: max(2, cols - 1), height: rows),
+            .resize(width: cols, height: rows),
+        ])
         flush()
     }
 

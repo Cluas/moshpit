@@ -1,0 +1,12 @@
+{
+  "cols": 90,
+  "rows": 50,
+  "redraw": "redraw.bin",
+  "reference": "reference.bin",
+  "phases": [
+    { "index": 0, "bytes": "phase0.bin", "truth": "truth0.txt", "pane": "%0", "what": "initial sync (report says CLEAN)" },
+    { "index": 1, "bytes": "phase1.bin", "truth": "truth1.txt", "pane": "%1", "what": "select-pane -Z to pane 2" },
+    { "index": 2, "bytes": "phase2.bin", "truth": "truth2.txt", "pane": "%0", "what": "select-pane -Z back to pane 1" },
+    { "index": 3, "bytes": "phase3.bin", "truth": "truth3.txt", "pane": "%1", "what": "select-pane -Z to pane 2 again" }
+  ]
+}

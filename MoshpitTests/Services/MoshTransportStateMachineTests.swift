@@ -160,40 +160,45 @@ struct MoshTransportStateMachineTests {
         #expect(diag.datagramsReceived == 1)
     }
 
-    @Test("requestFullRedraw resets to the blank baseline and re-applies a from-scratch diff")
+    @Test("requestFullRedraw nudges the width and never rewinds the applied state")
     func fullRedrawResync() async throws {
-        let (transport, _, crypto) = try makeTransport()
+        let (transport, channel, crypto) = try makeTransport()
+        await transport.start(cols: 80, rows: 24)
 
         // Screen at state 3.
         let first = try makeDatagram(
-            crypto: crypto, seq: 0, id: 1, oldNum: 0, newNum: 3, diff: hostDiff("diverged"))
+            crypto: crypto, seq: 0, id: 1, oldNum: 0, newNum: 3, diff: hostDiff("screen"))
         await transport.handleDatagram(first)
         #expect(await transport.currentDiagnostics.appliedHostNum == 3)
 
-        // The self-heal: forget the screen, ack the empty baseline. The
-        // server answers a 0-ack by diffing from blank — a complete repaint
-        // that erases any render divergence (the white-block class).
+        let before = channel.sent.count
         await transport.requestFullRedraw()
-        #expect(await transport.currentDiagnostics.appliedHostNum == 0)
 
-        // A stale in-flight increment (old 3 → new 4) is now a gap, not an
-        // apply — it would paint on top of the state we just disowned.
-        let stale = try makeDatagram(
-            crypto: crypto, seq: 1, id: 2, oldNum: 3, newNum: 4, diff: hostDiff("stale"))
-        await transport.handleDatagram(stale)
-        #expect(await transport.currentDiagnostics.appliedHostNum == 0)
-        #expect(await transport.currentDiagnostics.gapEvents == 1)
+        // A resize-pair flush went out (the width nudge that makes mosh's
+        // Display reset `initialized` and repaint every cell)…
+        #expect(channel.sent.count > before)
+        let diff = try clientDiff(of: channel.sent[channel.sent.count - 1], crypto: crypto)
+        #expect(!diff.isEmpty, "the nudge must carry the resize events")
 
-        // The server's from-blank repaint applies cleanly.
-        let repaint = try makeDatagram(
-            crypto: crypto, seq: 2, id: 3, oldNum: 0, newNum: 5, diff: hostDiff("fresh"))
-        await transport.handleDatagram(repaint)
+        // …and the applied state is UNTOUCHED. The first shipped version
+        // acked state 0 instead; a stock server culls old states and ignores
+        // that ack, while the rewind turned every subsequent in-order diff
+        // into a gap — a frozen screen. This is the regression guard.
+        #expect(await transport.currentDiagnostics.appliedHostNum == 3)
+
+        // In-order diffs keep applying — no gap, no freeze.
+        let next = try makeDatagram(
+            crypto: crypto, seq: 1, id: 2, oldNum: 3, newNum: 4, diff: hostDiff("more"))
+        await transport.handleDatagram(next)
         let diag = await transport.currentDiagnostics
-        #expect(diag.appliedHostNum == 5)
+        #expect(diag.appliedHostNum == 4)
+        #expect(diag.gapEvents == 0)
 
-        var iterator = transport.hostStream.makeAsyncIterator()
-        #expect(await iterator.next() == Data("diverged".utf8))
-        #expect(await iterator.next() == Data("fresh".utf8))
+        // The transport's own idea of its size survived the nudge round trip:
+        // a same-size resize is still de-duped into silence.
+        let quiet = channel.sent.count
+        await transport.resize(cols: 80, rows: 24)
+        #expect(channel.sent.count == quiet)
     }
 
     @Test("consecutive in-order diffs apply in sequence")
