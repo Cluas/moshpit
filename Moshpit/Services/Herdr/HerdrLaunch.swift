@@ -86,12 +86,21 @@ enum HerdrLaunch {
     /// The loop also self-heals an eviction (another client's --takeover):
     /// the attach exits, the loop attaches again a beat later.
 
-    static func moshTargetPath(connectionId: UUID) -> String {
-        "$HOME/.moshpit/mosh-\(connectionId.uuidString).target"
+    /// State-file key: connection id ++ a per-BOOT nonce. The nonce is the
+    /// generation fence — a loop only ever watches its own generation's
+    /// target file, and retargets only write the live generation's, so an
+    /// orphaned loop (mosh-server survives disconnects by design) can idle
+    /// on its stale file forever without ever re-entering the fight.
+    static func moshRendererKey(connectionId: UUID, nonce: String) -> String {
+        "\(connectionId.uuidString)-\(nonce)"
     }
 
-    static func moshPidPath(connectionId: UUID) -> String {
-        "$HOME/.moshpit/mosh-\(connectionId.uuidString).pid"
+    static func moshTargetPath(rendererKey: String) -> String {
+        "$HOME/.moshpit/mosh-\(rendererKey).target"
+    }
+
+    static func moshPidPath(rendererKey: String) -> String {
+        "$HOME/.moshpit/mosh-\(rendererKey).pid"
     }
 
     /// The renderer loop, typed into the mosh shell (append `\r` at the call
@@ -103,9 +112,9 @@ enum HerdrLaunch {
     /// while typing died (found exactly that way, on-device shape). The pid
     /// the retarget needs is captured by a wrapper that writes its own `$$`
     /// and then `exec`s into the attach: same pid, still foreground.
-    static func rawAttachLoopCommand(connectionId: UUID, customPath: String?) -> String {
-        let target = moshTargetPath(connectionId: connectionId)
-        let pid = moshPidPath(connectionId: connectionId)
+    static func rawAttachLoopCommand(rendererKey: String, customPath: String?) -> String {
+        let target = moshTargetPath(rendererKey: rendererKey)
+        let pid = moshPidPath(rendererKey: rendererKey)
         // Inner wrapper body, double-quoted for the OUTER shell: $HOME/… in
         // the pid path expands out there; `\$\$` and `\$0` survive into the
         // wrapper. `$0` carries the terminal id so it never re-enters shell
@@ -118,22 +127,50 @@ enum HerdrLaunch {
             launch = "export PATH=\\\"$PATH:\(HostCapabilities.extraPathDirs)\\\"; "
                 + "exec herdr terminal attach \\\"\\$0\\\" --takeover"
         }
+        // Exit-status discrimination is what stops takeover storms: a
+        // retarget kills the attach (signal death, $? ≥ 128) and the loop
+        // re-attaches; an attach that exits ON ITS OWN — evicted by another
+        // client's --takeover, server stopped, pane gone — BREAKS the loop
+        // instead of grabbing the pane back. mosh-server survives app
+        // disconnects by design (that's roaming), so every reconnect used to
+        // leave an orphaned loop fistfighting the live one over the same
+        // target file, 0.3s per round ("页面一直在跳", report, build 360).
+        // An orphan that loses once now stays down.
         return "mkdir -p \"$HOME/.moshpit\"; while :; do "
             + "tid=$(cat \"\(target)\" 2>/dev/null); "
             + "if [ -n \"$tid\" ]; then "
             + "sh -c \"echo \\$\\$ > \\\"\(pid)\\\"; \(launch)\" \"$tid\"; "
+            + "[ $? -ge 128 ] || break; "
             + "else sleep 0.5; fi; sleep 0.3; done"
+    }
+
+    /// Pre-boot cleanup, run on the bootstrap SSH before the new renderer
+    /// starts: for every PREVIOUS generation of this connection (all nonces),
+    /// kill any attach it still holds and remove the state files. The kill is
+    /// signal-death — the orphan loop survives it by design — but with its
+    /// generation's target file gone and never written again (retargets only
+    /// write the LIVE generation's), it wakes up to "no target" and idles
+    /// forever instead of ever re-entering the fight.
+    static func staleRendererCleanupCommand(connectionId: UUID) -> String {
+        let prefix = "$HOME/.moshpit/mosh-\(connectionId.uuidString)-"
+        return "for f in \"\(prefix)\"*.pid; do kill $(cat \"$f\" 2>/dev/null) 2>/dev/null; done; "
+            + "rm -f \"\(prefix)\"*.pid \"\(prefix)\"*.target; true"
     }
 
     /// Point the loop at a new terminal: publish the target, bounce the
     /// running attach. Runs on the sidecar's exec channel. Idempotence is the
     /// caller's job (skip when the target hasn't changed) — the bounce itself
     /// costs a visible reattach flicker.
-    static func retargetCommand(terminalId: String, connectionId: UUID) -> String {
-        let target = moshTargetPath(connectionId: connectionId)
-        let pid = moshPidPath(connectionId: connectionId)
+    static func retargetCommand(terminalId: String, rendererKey: String) -> String {
+        let target = moshTargetPath(rendererKey: rendererKey)
+        let pid = moshPidPath(rendererKey: rendererKey)
+        // -9 is load-bearing: herdr handles SIGTERM gracefully and exits
+        // BELOW 128, which the loop's discrimination reads as "evicted, stay
+        // down" — a plain kill would make every retarget the renderer's
+        // last. SIGKILL is uncatchable, so the loop sees 137 and re-attaches
+        // (verified live both ways).
         return "printf '%s' \(quote(terminalId)) > \"\(target)\"; "
-            + "kill $(cat \"\(pid)\" 2>/dev/null) 2>/dev/null || true"
+            + "kill -9 $(cat \"\(pid)\" 2>/dev/null) 2>/dev/null || true"
     }
 
     /// Does this herdr know `terminal attach`? Prints the marker on yes;

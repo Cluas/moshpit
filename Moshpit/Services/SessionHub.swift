@@ -244,6 +244,11 @@ final class SessionHub {
         /// idempotence guard for `retargetMoshRawAttach` (apply() re-reports
         /// focus every poll; only a real change should bounce the attach).
         @ObservationIgnored private var moshRawAttachTarget: String?
+        /// This boot's renderer generation (connection id + per-boot nonce).
+        /// Retargets only ever write THIS generation's state files, which is
+        /// what keeps orphaned loops from previous mosh sessions out of the
+        /// takeover fight — see `HerdrLaunch.moshRendererKey`.
+        @ObservationIgnored private var moshRendererKey: String?
 
         /// True while the user is intentionally tearing this session down, so a
         /// concurrent keepalive / death callback doesn't fight it by reconnecting.
@@ -1289,13 +1294,14 @@ final class SessionHub {
         /// target it wrote and only pays the exec — and the reattach flicker —
         /// on a real change.
         func retargetMoshRawAttach(to paneId: String) {
-            guard herdrRawAttach, moshTransport != nil else { return }
+            guard herdrRawAttach, moshTransport != nil,
+                  let rendererKey = moshRendererKey else { return }
             guard let terminalId = herdrControl?.terminalIds[paneId],
                   terminalId != moshRawAttachTarget else { return }
             moshRawAttachTarget = terminalId
             guard let ssh = sidecarSSH else { return }
             let command = HerdrLaunch.retargetCommand(
-                terminalId: terminalId, connectionId: connection.id)
+                terminalId: terminalId, rendererKey: rendererKey)
             Task { _ = try? await ssh.executeCommand(command) }
         }
 
@@ -1437,6 +1443,13 @@ final class SessionHub {
                         HerdrLaunch.rawAttachProbeCommand(customPath: connection.herdrPath)))
                         .map { String(decoding: $0, as: UTF8.self) } ?? ""
                     herdrRawAttach = probe.contains("MOSHPIT_RAW_ATTACH_OK")
+                    if herdrRawAttach {
+                        // Retire previous generations' renderers before this
+                        // one boots — orphaned loops (mosh-server survives
+                        // disconnects by design) must not contest the pane.
+                        _ = try? await ssh.executeCommand(
+                            HerdrLaunch.staleRendererCleanupCommand(connectionId: connection.id))
+                    }
                 }
                 await ssh.close()   // mosh-server has daemonized; UDP from here
 
@@ -1554,10 +1567,17 @@ final class SessionHub {
                     // Raw-attach loop when the host's herdr supports it: the
                     // mosh screen becomes ONE pane's raw stream (the sidecar
                     // steers which one); otherwise the classic full TUI.
-                    let boot = (herdrRawAttach
-                        ? HerdrLaunch.rawAttachLoopCommand(
-                            connectionId: connection.id, customPath: connection.herdrPath)
-                        : HerdrLaunch.attachCommand(customPath: connection.herdrPath)) + "\r"
+                    let boot: String
+                    if herdrRawAttach {
+                        let key = HerdrLaunch.moshRendererKey(
+                            connectionId: connection.id,
+                            nonce: String(UUID().uuidString.prefix(8)))
+                        moshRendererKey = key
+                        boot = HerdrLaunch.rawAttachLoopCommand(
+                            rendererKey: key, customPath: connection.herdrPath) + "\r"
+                    } else {
+                        boot = HerdrLaunch.attachCommand(customPath: connection.herdrPath) + "\r"
+                    }
                     // Straight onto the transport, NOT through sendInput: this
                     // runs before markConnected(), and sendInput drops
                     // everything while connState isn't .live (the reconnect
@@ -1865,6 +1885,7 @@ final class SessionHub {
             // The raw-attach loop dies with the mosh shell; only the local
             // steering state needs resetting so a reconnect re-targets.
             moshRawAttachTarget = nil
+            moshRendererKey = nil
             herdrRawAttach = false
             herdrPushTask?.cancel()
             herdrPushTask = nil
