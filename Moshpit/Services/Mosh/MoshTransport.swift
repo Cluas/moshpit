@@ -280,11 +280,35 @@ actor MoshTransport {
             flush()
             startHeartbeat()
             startReturnPathWatchdog()
-        case .failed, .cancelled:
+        case .cancelled:
+            // Deliberate close() — the only way this stream should ever end.
             hostContinuation.finish()
+        case .failed:
+            // A UDP "connection" failing is a fiction worth ignoring — mosh's
+            // whole contract is that the session survives network death.
+            // Finishing the host stream here made any transient failure
+            // PERMANENT: the render pump ended, the screen froze, and the only
+            // visible way back was a manual full reconnect with the connecting
+            // cover mosh exists to avoid ("mosh doesn't feel fast" — user
+            // report, 2026-08-17). Restart the flow instead; the heartbeat and
+            // foreground resume() re-arm delivery, and the server re-sends
+            // whatever the client hasn't acked. Delayed a beat so a persistent
+            // failure (airplane mode) can't spin restart→failed→restart hot.
+            guard !closed else { hostContinuation.finish(); return }
+            Task { [weak self] in
+                try? await Task.sleep(for: .seconds(1))
+                await self?.restartAfterFailure()
+            }
         default:
             break
         }
+    }
+
+    /// The delayed half of the `.failed` handling above — isolated so the
+    /// closed-flag read and the restart happen on the actor.
+    private func restartAfterFailure() {
+        guard !closed else { return }
+        channel.restart()
     }
 
     private func setRoaming(_ value: Bool) {

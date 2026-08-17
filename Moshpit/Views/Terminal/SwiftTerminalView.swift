@@ -136,8 +136,31 @@ struct SwiftTerminalView: UIViewRepresentable {
     }
 
     func makeUIView(context: Context) -> TerminalHostContainer {
+        // Reuse the coordinator's own terminal when it has one: this is a
+        // REMOUNT of a live session (left the screen, came back), and the
+        // existing view's buffer is the only complete copy of the screen —
+        // mosh in particular never resends what it believes the client
+        // already has. See `Coordinator.ownedTerminal`.
+        if let existing = coordinator.ownedTerminal {
+            let container = TerminalHostContainer()
+            existing.removeFromSuperview()
+            container.host(existing)
+            existing.terminalDelegate = coordinator
+            coordinator.attach(to: existing)   // gesture attach is idempotent
+            coordinator.hostContainer = container
+            theme.apply(to: existing)
+            coordinator.enforcedCursor = TerminalCursor.apply(
+                shape: cursorShape, colorId: cursorColorId, blink: cursorBlink, to: existing)
+            if focusPolicy == .take {
+                DispatchQueue.main.async { [weak existing] in
+                    existing?.becomeFirstResponder()
+                }
+            }
+            return container
+        }
         let font = TerminalFont.font(id: fontName, size: CGFloat(fontSize))
         let terminalView = TerminalView(frame: .zero, font: font)
+        coordinator.ownedTerminal = terminalView
         terminalView.inputAccessoryView = nil   // the app renders its own shortcut bar
         TerminalKeyboard.enableComposingInput(on: terminalView)
         TerminalScrollback.enlarge(terminalView)
@@ -219,8 +242,23 @@ struct SwiftTerminalView: UIViewRepresentable {
     /// that the representable doesn't need.
     final class Coordinator: NSObject, TerminalViewDelegate {
         /// Weak so the coordinator never extends the terminal view's
-        /// lifetime past the SwiftUI view tree.
+        /// lifetime past the SwiftUI view tree — EXCEPT for the view the
+        /// representable itself minted, held strongly in `ownedTerminal`
+        /// below. tmux panes keep their persistent views in the controller;
+        /// this reference tracks whichever view is currently attached.
         private(set) weak var terminalView: TerminalView?
+
+        /// The plain-path terminal (mosh, plain SSH), owned HERE so it
+        /// survives the screen unmounting. It has to: mosh's screen model
+        /// lives server-side and only diffs arrive, so a freshly minted
+        /// empty view after re-entering the same session stays empty — the
+        /// server has no idea the client discarded its framebuffer. Leaving
+        /// the terminal screen and tapping back into the SAME pane showed a
+        /// bare cursor (user report, 2026-08-17). Keeping the view alive
+        /// keeps its buffer current (feeds continue while unmounted), so a
+        /// remount re-parents a fully painted, up-to-date screen — the same
+        /// persistence tmux panes have always had via mintTerminal.
+        var ownedTerminal: TerminalView?
 
         /// Output that arrived before the terminal view attached (e.g. mosh's
         /// first screen diffs land within ~50ms, before `makeUIView` runs).
