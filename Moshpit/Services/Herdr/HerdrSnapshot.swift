@@ -110,6 +110,18 @@ enum HerdrSnapshot {
                 isZoomed: zoomedTabs.contains(id))
         }
 
+        // herdr 0.8 moved the agent's IDENTITY off the pane objects: a pane
+        // still carries `agent_status`, but `agent`/`display_agent` now live
+        // only in a top-level `agents` array keyed by pane_id. Without this
+        // overlay a running claude decoded to a hook with a state and no
+        // name, and the Home agents tree rendered nothing (user report,
+        // 2026-08-17, first device run against a 0.8 server).
+        var agentsByPane: [String: [String: Any]] = [:]
+        for agent in body["agents"] as? [[String: Any]] ?? [] {
+            guard let paneId = agent["pane_id"] as? String else { continue }
+            agentsByPane[paneId] = agent
+        }
+
         var hooks: [String: AgentHook] = [:]
         var cwds: [String: String] = [:]
         for pane in panes {
@@ -129,7 +141,7 @@ enum HerdrSnapshot {
                 width: size?.width ?? 80,
                 height: size?.height ?? 24,
                 isActive: (pane["focused"] as? Bool) ?? false)
-            if let hook = agentHook(from: pane) { hooks[id] = hook }
+            if let hook = agentHook(from: pane, agentEntry: agentsByPane[id]) { hooks[id] = hook }
         }
 
         snapshot.activeSessionId = body["focused_workspace_id"] as? String
@@ -178,16 +190,21 @@ enum HerdrSnapshot {
     /// agent sitting at its prompt is one you can hand work to, and a list
     /// that hides it reads as "nothing here" to the person who just saw
     /// claude running in that pane.
-    private static func agentHook(from pane: [String: Any]) -> AgentHook? {
+    private static func agentHook(from pane: [String: Any],
+                                  agentEntry: [String: Any]? = nil) -> AgentHook? {
         let state: String?
-        switch pane["agent_status"] as? String {
+        // 0.8's agents-array entry carries its own agent_status too; prefer
+        // it, since the pane-level one can lag a revision behind.
+        switch (agentEntry?["agent_status"] as? String) ?? (pane["agent_status"] as? String) {
         case "working": state = "working"
         case "blocked": state = "attention"
         case "done":    state = "done"
         case "idle":    state = "idle"
         default:        state = nil
         }
+        // Identity: pane fields first (0.7), then the 0.8 agents-array entry.
         let agent = (pane["display_agent"] as? String) ?? (pane["agent"] as? String)
+            ?? (agentEntry?["display_agent"] as? String) ?? (agentEntry?["agent"] as? String)
         let title = (pane["terminal_title_stripped"] as? String) ?? (pane["title"] as? String)
         guard state != nil || agent != nil || title != nil else { return nil }
         // No `since`: herdr reports no transition timestamp, so the monitor

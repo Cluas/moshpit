@@ -1405,7 +1405,15 @@ final class SessionHub {
                     // and one focus, so the poller simply reports whatever the
                     // TUI is showing, whenever it comes up.
                     let boot = HerdrLaunch.attachCommand(customPath: connection.herdrPath) + "\r"
-                    sendInput(Data(boot.utf8))
+                    // Straight onto the transport, NOT through sendInput: this
+                    // runs before markConnected(), and sendInput drops
+                    // everything while connState isn't .live (the reconnect
+                    // input gate). The gate eating this boot line meant herdr's
+                    // TUI never launched over mosh — the session sat at a bare
+                    // shell with an empty agents tree (user report,
+                    // 2026-08-17). Same direct-send the mosh+tmux renderer
+                    // attach already uses.
+                    await transport.send(Data(boot.utf8))
                     herdrSidecarTask = Task { [weak self] in await self?.startHerdrSidecar() }
                 case .none:
                     break

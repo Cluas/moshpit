@@ -170,6 +170,42 @@ struct HerdrSnapshotTests {
         #expect(HerdrSnapshot.decode(raw) == nil)
     }
 
+    @Test("0.8's agents array supplies the identity the pane no longer carries")
+    func agentsArrayOverlay() throws {
+        // Shape verbatim from `herdr api snapshot` against a real 0.8.0
+        // server: the pane has agent_status but NO agent/display_agent —
+        // identity moved to the top-level agents array, keyed by pane_id.
+        // Decoding the panes alone produced hooks with a state and no name,
+        // and the Home agents tree rendered nothing.
+        let raw = """
+        {"result":{"snapshot":{
+         "workspaces":[{"workspace_id":"wP","label":"rugisland","focused":true}],
+         "tabs":[{"tab_id":"wP:t1","workspace_id":"wP","label":"claude","number":1,"focused":true}],
+         "panes":[{"pane_id":"wP:p1","tab_id":"wP:t1","workspace_id":"wP","focused":true,
+                   "agent_status":"idle","cwd":"/Users/u/code/rugisland",
+                   "terminal_title_stripped":"claude --resume 7d04"}],
+         "layouts":[],
+         "agents":[{"agent":"claude","agent_status":"idle","pane_id":"wP:p1",
+                    "workspace_id":"wP","tab_id":"wP:t1","focused":true}],
+         "focused_workspace_id":"wP","focused_tab_id":"wP:t1","focused_pane_id":"wP:p1"}}}
+        """
+        let decoded = try #require(HerdrSnapshot.decode(raw))
+        let hook = try #require(decoded.agentHooks["wP:p1"])
+        #expect(hook.agent == "claude")
+        #expect(hook.state == "idle")
+        // And a 0.7-style pane that carries its own agent field keeps working
+        // without any agents array at all.
+        let old = """
+        {"result":{"snapshot":{
+         "workspaces":[{"workspace_id":"w1","label":"x"}],
+         "tabs":[],"layouts":[],
+         "panes":[{"pane_id":"w1:p1","tab_id":"w1:t1","agent":"codex","agent_status":"working"}]}}}
+        """
+        let legacy = try #require(HerdrSnapshot.decode(old))
+        #expect(legacy.agentHooks["w1:p1"]?.agent == "codex")
+        #expect(legacy.agentHooks["w1:p1"]?.state == "working")
+    }
+
     @Test("server_not_running is recognized as its own state")
     func serverNotRunning() {
         let raw = """
