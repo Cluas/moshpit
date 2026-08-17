@@ -160,6 +160,42 @@ struct MoshTransportStateMachineTests {
         #expect(diag.datagramsReceived == 1)
     }
 
+    @Test("requestFullRedraw resets to the blank baseline and re-applies a from-scratch diff")
+    func fullRedrawResync() async throws {
+        let (transport, _, crypto) = try makeTransport()
+
+        // Screen at state 3.
+        let first = try makeDatagram(
+            crypto: crypto, seq: 0, id: 1, oldNum: 0, newNum: 3, diff: hostDiff("diverged"))
+        await transport.handleDatagram(first)
+        #expect(await transport.currentDiagnostics.appliedHostNum == 3)
+
+        // The self-heal: forget the screen, ack the empty baseline. The
+        // server answers a 0-ack by diffing from blank — a complete repaint
+        // that erases any render divergence (the white-block class).
+        await transport.requestFullRedraw()
+        #expect(await transport.currentDiagnostics.appliedHostNum == 0)
+
+        // A stale in-flight increment (old 3 → new 4) is now a gap, not an
+        // apply — it would paint on top of the state we just disowned.
+        let stale = try makeDatagram(
+            crypto: crypto, seq: 1, id: 2, oldNum: 3, newNum: 4, diff: hostDiff("stale"))
+        await transport.handleDatagram(stale)
+        #expect(await transport.currentDiagnostics.appliedHostNum == 0)
+        #expect(await transport.currentDiagnostics.gapEvents == 1)
+
+        // The server's from-blank repaint applies cleanly.
+        let repaint = try makeDatagram(
+            crypto: crypto, seq: 2, id: 3, oldNum: 0, newNum: 5, diff: hostDiff("fresh"))
+        await transport.handleDatagram(repaint)
+        let diag = await transport.currentDiagnostics
+        #expect(diag.appliedHostNum == 5)
+
+        var iterator = transport.hostStream.makeAsyncIterator()
+        #expect(await iterator.next() == Data("diverged".utf8))
+        #expect(await iterator.next() == Data("fresh".utf8))
+    }
+
     @Test("consecutive in-order diffs apply in sequence")
     func inOrderSequence() async throws {
         let (transport, _, crypto) = try makeTransport()

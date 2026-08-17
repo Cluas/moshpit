@@ -37,7 +37,7 @@ api() { curl -sg -X "${1}" -H "Authorization: Bearer $JWT" \
         -H "Content-Type: application/json" \
         ${3:+-d "$3"} "https://api.appstoreconnect.apple.com${2}"; }
 
-echo "▶ Locating build $VERSION…"
+echo "▶ Locating build ${VERSION}…"
 BUILD_ID="$(api GET "/v1/builds?filter[app]=$APP_ID&limit=10" | WANT="$VERSION" python3 -c '
 import json, os, sys
 want = os.environ["WANT"]

@@ -594,8 +594,16 @@ struct TerminalScreen: View {
                 }
             )
             .popover(isPresented: $showMoshDiagnostics) {
-                MoshDiagnosticsView(diagnostics: metrics?.moshDiagnostics)
-                    .presentationCompactAdaptation(.popover)
+                MoshDiagnosticsView(diagnostics: metrics?.moshDiagnostics) {
+                    // Repaint = ack state 0 → the server rediffs from blank,
+                    // a complete redraw. Doubles as the field diagnostic for
+                    // the white-block reports: blocks that VANISH on repaint
+                    // are render divergence (SwiftTerm vs mosh-server state),
+                    // not lost content.
+                    Task { await active?.moshTransport?.requestFullRedraw() }
+                    showMoshDiagnostics = false
+                }
+                .presentationCompactAdaptation(.popover)
             }
             .confirmationDialog(
                 "Switch to \(connection.connectionProtocol == .mosh ? "SSH" : "Mosh")?",
@@ -2750,6 +2758,8 @@ private struct MultiplexerEmptyStateView: View {
 /// be screenshotted and sent back, not read as a polished UI.
 struct MoshDiagnosticsView: View {
     let diagnostics: MoshDiagnostics?
+    /// Ask the server for a from-scratch repaint (see the popover call site).
+    var onRepaint: (() -> Void)?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -2783,6 +2793,21 @@ struct MoshDiagnosticsView: View {
         }
         .padding(14)
         .accessibilityIdentifier("mosh-diagnostics-overlay")
+        .safeAreaInset(edge: .bottom) {
+            if let onRepaint {
+                Button(action: onRepaint) {
+                    Text("Repaint screen")
+                        .font(Face.mono(12, .bold))
+                        .foregroundStyle(Ink.accent)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
+                        .background(Ink.accent.opacity(0.11),
+                                    in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .padding(EdgeInsets(top: 0, leading: 14, bottom: 12, trailing: 14))
+            }
+        }
     }
 
     private func row(_ label: String, _ value: UInt64) -> some View {

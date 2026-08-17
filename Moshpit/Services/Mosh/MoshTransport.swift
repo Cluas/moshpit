@@ -279,6 +279,31 @@ actor MoshTransport {
         hostContinuation.finish()
     }
 
+    /// Throw away everything we believe about the screen and ask the server
+    /// to paint it from scratch: reset the applied display state to 0 (the
+    /// empty baseline every SSP session starts from), so the next ack makes
+    /// the server's next diff a COMPLETE repaint rather than an increment.
+    ///
+    /// This is the self-heal for the "white blocks" class of report: this
+    /// client renders host bytes straight into SwiftTerm with no framebuffer
+    /// model of its own, so if SwiftTerm's idea of a cell ever diverges from
+    /// mosh-server's (the prime suspect is a wide-glyph width disagreement —
+    /// the blocks cluster at the ends of CJK-wrapped lines), the divergence
+    /// PERSISTS: the server never resends cells it believes are already
+    /// right, and no amount of new output repaints them. Stock mosh cannot
+    /// have the bug (it renders from its own synced framebuffer). The
+    /// protocol hands us the remedy for free — acking state 0 is always
+    /// valid, and the server answers by diffing from blank: clear + full
+    /// redraw, divergence erased. Loopback never reproduces the report
+    /// because a loss-free link ships complete frames that mask divergence;
+    /// only a lossy link's partial diffs leave it standing.
+    func requestFullRedraw() {
+        guard !closed else { return }
+        appliedHostNum = 0
+        receiveAssembler = FragmentAssembler()
+        flush()
+    }
+
     /// Called when the app returns to the foreground. mosh's SSP is
     /// connectionless, so a suspended session usually heals by itself — but
     /// the NWConnection may have entered `.failed`/`.waiting` while iOS had
@@ -289,7 +314,10 @@ actor MoshTransport {
         if force {
             // Returning from a REAL suspension (hub saw >20s of background):
             // don't diagnose the socket — replace it. See rebuildFlow().
+            // And repaint from scratch: a long suspension is also peak
+            // render-divergence risk, and the full redraw costs one screen.
             rebuildFlow()
+            requestFullRedraw()
             return
         }
         switch channel.state {
