@@ -209,6 +209,12 @@ final class HerdrControlClient: MultiplexerControlling {
             }
             lastDecoded = decoded
             apply(decoded)
+            // A tab/workspace switch (or the initial attach) lands here with
+            // the target's own focused pane finally named — zoom it now.
+            if zoomAfterNextApply, immersiveZoom, let paneId = snapshot.activePaneId {
+                zoomAfterNextApply = false
+                sendImmersiveZoom(paneId)
+            }
         } else if let mismatch = HerdrSnapshot.protocolMismatch(output) {
             // The server IS running — it just refuses our client's protocol.
             // Naming that beats the empty state's "create a session" advice,
@@ -521,11 +527,52 @@ final class HerdrControlClient: MultiplexerControlling {
         }
     }
 
+    // MARK: Immersive zoom (mosh renderer)
+
+    /// mosh+herdr's answer to mosh+tmux's `ensureImmersiveZoom`. Over mosh
+    /// the renderer is herdr's own TUI, one shared screen — the phone can't
+    /// swap views the way the SSH frame channel does, so "one pane,
+    /// full-screen" has to be produced SERVER-side, exactly like the tmux
+    /// path zooms the selected pane. `pane zoom --pane <id> --on` is a
+    /// better primitive than tmux's: it is an idempotent SET (no blind
+    /// toggle), it moves focus in the same call (verified live: zooming B
+    /// while A is zoomed transfers both in one step), and it sidesteps
+    /// `agent focus`'s agent_not_found noise entirely.
+    ///
+    /// Same shared-state tradeoff as mosh+tmux: zoom is server state, so a
+    /// desktop TUI on the same workspace sees the zoom too (`prefix z`
+    /// brings the splits back, there as here). Never set on the SSH path —
+    /// native frame rendering swaps views client-side and needs no zoom.
+    var immersiveZoom = false
+
+    /// Zoom whatever pane the NEXT successful snapshot says is focused.
+    /// Covers the moves whose target pane this client doesn't know yet: the
+    /// initial attach, and tab/workspace switches (herdr focuses that tab's
+    /// own focused pane, which only the follow-up snapshot names).
+    private var zoomAfterNextApply = false
+
+    /// Arm the initial zoom — called by the hub once the mosh renderer has
+    /// herdr's TUI on screen, so the first thing the user sees is the
+    /// focused pane full-screen rather than the stacked mobile layout.
+    func requestImmersiveZoom() {
+        zoomAfterNextApply = true
+        quicken()
+    }
+
+    private func sendImmersiveZoom(_ paneId: String) {
+        // stderr dropped and rc forced for the same reason `agent focus`
+        // does it: a pane that vanished mid-flight is a stale tap, not a
+        // broken channel, and the next poll self-heals the tree anyway.
+        send("pane zoom --pane \(HerdrLaunch.quote(paneId)) --on 2>/dev/null || true")
+    }
+
     func selectSession(_ sessionId: String) {
+        if immersiveZoom { zoomAfterNextApply = true }
         send("workspace focus \(HerdrLaunch.quote(sessionId))")
     }
 
     func selectWindow(_ windowId: String) {
+        if immersiveZoom { zoomAfterNextApply = true }
         send("tab focus \(HerdrLaunch.quote(windowId))")
     }
 
@@ -561,7 +608,13 @@ final class HerdrControlClient: MultiplexerControlling {
         // and the channel on the next tick.
         snapshot.activePaneId = paneId
         onFocusedPaneChanged?(paneId)
-        send("agent focus \(HerdrLaunch.quote(paneId)) 2>/dev/null || true")
+        if immersiveZoom {
+            // Focus AND fill the mosh screen in one idempotent command —
+            // see `immersiveZoom` for why this replaces `agent focus` here.
+            sendImmersiveZoom(paneId)
+        } else {
+            send("agent focus \(HerdrLaunch.quote(paneId)) 2>/dev/null || true")
+        }
     }
 
     /// Create a session — or, on a host with no server at all, start one.

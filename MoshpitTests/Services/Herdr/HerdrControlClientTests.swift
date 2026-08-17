@@ -338,6 +338,58 @@ struct HerdrControlClientTests {
         #expect(sent.contains("agent focus 'w1:p1' 2>/dev/null || true"))
     }
 
+    // MARK: - Immersive zoom (the mosh renderer)
+
+    @Test("Immersive mode: picking a pane zooms it — focus and fill in one command")
+    func immersiveSelectPaneZooms() async {
+        let runner = FakeRunner(response: Self.twoWorkspaces)
+        let client = await started(runner)
+        client.immersiveZoom = true
+        let before = runner.commands.count
+
+        client.selectPane("w1:p1")
+        await settle()
+
+        // `pane zoom --on` is an idempotent SET that also moves focus
+        // (verified live: zooming B while A is zoomed transfers both), so
+        // immersive mode never needs `agent focus` and its error noise.
+        let sent = Array(runner.commands[before...])
+        #expect(sent.contains { $0.contains("pane zoom --pane 'w1:p1' --on 2>/dev/null || true") })
+        #expect(!sent.contains { $0.contains("agent focus") })
+    }
+
+    @Test("Immersive mode: a tab switch zooms whatever pane the next snapshot names")
+    func immersiveWindowSwitchZoomsFocusedPane() async {
+        let runner = FakeRunner(response: Self.twoWorkspaces)
+        let client = await started(runner)
+        client.immersiveZoom = true
+        let before = runner.commands.count
+
+        client.selectWindow("w1:t1")
+        await settle()
+        await settle()   // zoom rides the poll AFTER the focus command
+
+        let sent = Array(runner.commands[before...])
+        #expect(sent.contains { $0.contains("tab focus 'w1:t1'") })
+        // The fixture's focused pane is w1:p2 — the zoom follows the
+        // snapshot's answer, not a guess made before the switch landed.
+        #expect(sent.contains { $0.contains("pane zoom --pane 'w1:p2' --on") })
+    }
+
+    @Test("Without immersive mode nothing zooms — the SSH frame path swaps views client-side")
+    func nonImmersiveNeverZooms() async {
+        let runner = FakeRunner(response: Self.twoWorkspaces)
+        let client = await started(runner)
+        let before = runner.commands.count
+
+        client.selectPane("w1:p1")
+        client.selectWindow("w1:t1")
+        await settle()
+        await settle()
+
+        #expect(!runner.commands[before...].contains { $0.contains("pane zoom") })
+    }
+
     @Test("Focusing a pane retargets the renderer without waiting for the round trip")
     func selectPaneRetargetsBeforeTheExec() async {
         let runner = FakeRunner(response: Self.twoWorkspaces)

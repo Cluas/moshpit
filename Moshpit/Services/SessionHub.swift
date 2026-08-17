@@ -1253,6 +1253,12 @@ final class SessionHub {
             guard !isStopping else { await ssh.close(); return }
             sidecarSSH = ssh
             startHerdrControlPlane(over: ssh)
+            // mosh renders herdr's own TUI, one shared screen — so "one pane,
+            // full-screen" is produced server-side, mirroring mosh+tmux's
+            // immersive zoom. The first snapshot zooms the focused pane; every
+            // native pane/tab/workspace pick keeps the zoom following.
+            herdrControl?.immersiveZoom = true
+            herdrControl?.requestImmersiveZoom()
             startHerdrPushUpgrade()
         }
 
