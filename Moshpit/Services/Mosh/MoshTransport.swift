@@ -88,7 +88,11 @@ actor MoshTransport {
     // MARK: Connection
 
     private let credentials: MoshCredentials
-    private let channel: DatagramChannel
+    private var channel: DatagramChannel
+    /// Builds a REPLACEMENT datagram channel — flow rebuild's raw material.
+    /// nil (tests without a factory) means rebuildFlow() re-wires the same
+    /// injected fake, which still exercises the sequencing.
+    private let makeChannel: (() -> DatagramChannel)?
     private var started = false
     private var closed = false
 
@@ -144,6 +148,24 @@ actor MoshTransport {
     /// (a different, roaming-recoverable case) is left alone.
     private var sawAnyDatagram = false
     private var returnPathWatchdog: Task<Void, Never>?
+
+    // MARK: Mid-session liveness (Plan B — the "typing died after a while")
+
+    /// Monotonic ms of the last datagram that arrived / the last flush that
+    /// sent. "Sent since heard" for longer than the liveness deadline is the
+    /// zombie-flow signature: we're talking, nobody's answering, and
+    /// NWConnection still claims .ready.
+    private var lastInboundMs: UInt64 = 0
+    private var lastSendMs: UInt64 = 0
+    /// Flow rebuilds since the last inbound datagram — Plan C's dryness
+    /// counter. 0 the moment anything arrives.
+    private var rebuildsSinceInbound = 0
+    private var flowRebuilds: UInt64 = 0
+    private var livenessMonitor: Task<Void, Never>?
+    /// How long "sent but heard nothing" may last before the flow is
+    /// declared a zombie and rebuilt. Heartbeats flush every few seconds, so
+    /// a healthy link never goes this long silent in both directions.
+    static let livenessDeadlineMs: UInt64 = 9_000
     /// How long to keep flushing with no reply before declaring the return path
     /// dead. Generous: the first reply is one RTT after our first flush, so
     /// even a multi-second-latency link answers well inside this; only a link
@@ -167,7 +189,8 @@ actor MoshTransport {
         }
         try self.init(
             credentials: credentials,
-            channel: NWConnectionChannel(host: credentials.host, port: port))
+            channel: NWConnectionChannel(host: credentials.host, port: port),
+            makeChannel: { NWConnectionChannel(host: credentials.host, port: port) })
     }
 
     /// Designated init taking an injectable `DatagramChannel`. Production goes
@@ -176,11 +199,13 @@ actor MoshTransport {
     /// machine with synthetic datagrams and no live UDP socket.
     init(credentials: MoshCredentials,
          channel: DatagramChannel,
+         makeChannel: (() -> DatagramChannel)? = nil,
          returnPathDeadlineNanos: UInt64 = MoshTransport.defaultReturnPathDeadlineNanos,
          keystrokeTTLMs: UInt64 = MoshTransport.defaultKeystrokeTTLMs) throws {
         self.credentials = credentials
         self.crypto = try MoshCrypto(key: credentials.key)
         self.channel = channel
+        self.makeChannel = makeChannel
         self.returnPathDeadlineNanos = returnPathDeadlineNanos
         self.keystrokeTTLMs = keystrokeTTLMs
 
@@ -203,6 +228,12 @@ actor MoshTransport {
         // any later call with the same size.
         appendUserState([.resize(width: cols, height: rows)])
 
+        wireChannel()
+    }
+
+    /// Wire handlers into the CURRENT channel and start it — shared by
+    /// start() and rebuildFlow(), which swaps the channel out underneath.
+    private func wireChannel() {
         channel.onStateChange = { [weak self] state in
             guard let self else { return }
             Task { await self.handleState(state) }
@@ -216,6 +247,25 @@ actor MoshTransport {
         receiveNext()
     }
 
+    /// Throw the UDP flow away and dial a fresh one — same crypto, same
+    /// session, new socket. The one lesson every mosh bug this week taught:
+    /// after an iOS suspension the NWConnection can sit in a ZOMBIE .ready —
+    /// state says fine, flow is gone, every send blackholes, and restart()
+    /// (legal only from .failed/.waiting) does nothing. mosh doesn't care
+    /// about socket identity — the first flush announces the new source and
+    /// the server re-homes, exactly like a roam — so on any real doubt the
+    /// honest move is to stop diagnosing the socket and replace it.
+    private func rebuildFlow() {
+        guard !closed else { return }
+        flowRebuilds &+= 1
+        channel.onStateChange = nil
+        channel.onBetterPath = nil
+        channel.cancel()
+        if let makeChannel { channel = makeChannel() }
+        wireChannel()
+        // .ready → handleState → flush() announces us from the new socket.
+    }
+
     func close() {
         guard !closed else { return }
         closed = true
@@ -223,6 +273,8 @@ actor MoshTransport {
         heartbeat = nil
         returnPathWatchdog?.cancel()
         returnPathWatchdog = nil
+        livenessMonitor?.cancel()
+        livenessMonitor = nil
         channel.cancel()
         hostContinuation.finish()
     }
@@ -232,8 +284,14 @@ actor MoshTransport {
     /// the NWConnection may have entered `.failed`/`.waiting` while iOS had
     /// the sockets. Restart it if so, and nudge a packet out immediately so
     /// the server re-homes to our (possibly new) address.
-    func resume() {
+    func resume(force: Bool = false) {
         guard !closed else { return }
+        if force {
+            // Returning from a REAL suspension (hub saw >20s of background):
+            // don't diagnose the socket — replace it. See rebuildFlow().
+            rebuildFlow()
+            return
+        }
         switch channel.state {
         case .failed, .waiting:
             channel.restart()
@@ -392,10 +450,46 @@ actor MoshTransport {
             sendSeq += 1
             channel.send(packet)
         }
+        lastSendMs = Self.nowMs()
+        startLivenessMonitor()
         // Send-side vitals refresh on every flush — deliberately not only on
         // receive, because "typing does nothing" is exactly the state where
         // nothing is being received, and the popover must stay honest there.
         publishDiagnostics()
+    }
+
+    /// Plan B: a repeating check that catches the flow dying MID-SESSION —
+    /// the "typing stopped working after a while" report. The signature is
+    /// asymmetric silence: we've sent within the window, heard nothing for
+    /// the whole deadline, yet the channel still claims .ready (a zombie
+    /// left by suspension or a path change NWConnection never surfaced).
+    /// Response: rebuild the flow (cheap, roam-equivalent). Plan C: after 3
+    /// consecutive rebuilds with still nothing inbound, surface the dead-
+    /// return-path banner — but keep trying, because this also self-heals
+    /// the moment the network comes back.
+    private func startLivenessMonitor() {
+        guard livenessMonitor == nil, !closed else { return }
+        livenessMonitor = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(3))
+                await self?.checkLiveness()
+            }
+        }
+    }
+
+    private func checkLiveness() {
+        guard !closed, sawAnyDatagram else { return }
+        let now = Self.nowMs()
+        guard lastSendMs > 0,
+              now &- lastInboundMs > Self.livenessDeadlineMs,
+              lastSendMs > lastInboundMs else { return }
+        rebuildsSinceInbound += 1
+        if rebuildsSinceInbound == 3 {
+            Task { @MainActor in onReturnPathDead?() }
+        }
+        rebuildFlow()
+        // Give the fresh flow something to announce itself with.
+        flush()
     }
 
     // MARK: Receive path
@@ -428,6 +522,8 @@ actor MoshTransport {
         // The return path is alive the moment ANY datagram lands — even one we
         // can't decrypt/parse — so retire the watchdog on first sight, before
         // the direction/parse guards below can `return` early.
+        lastInboundMs = Self.nowMs()
+        rebuildsSinceInbound = 0
         if !sawAnyDatagram {
             sawAnyDatagram = true
             returnPathWatchdog?.cancel()

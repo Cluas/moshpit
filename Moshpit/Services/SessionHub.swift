@@ -1819,7 +1819,15 @@ final class SessionHub {
         /// UDP resume path.
         func forceResume() async {
             guard !isStopping else { return }
-            if moshTransport != nil { await resumeIfNeeded(); return }
+            if let transport = moshTransport {
+                // A REAL suspension (>20s background). The UDP flow may be a
+                // zombie — .ready in name, blackhole in practice — so replace
+                // it outright (roam-equivalent, server re-homes on the first
+                // flush) before the sidecar rebuild runs.
+                await transport.resume(force: true)
+                await resumeIfNeeded()
+                return
+            }
             viewModel.markReconnecting()
             await reconnect()
         }

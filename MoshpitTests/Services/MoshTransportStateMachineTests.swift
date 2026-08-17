@@ -27,9 +27,11 @@ struct MoshTransportStateMachineTests {
         private(set) var sent: [Data] = []
         private var pendingReceive: (@Sendable (Data?, Error?) -> Void)?
 
-        func start() {}
+        private(set) var startCalls = 0
+        private(set) var cancelCalls = 0
+        func start() { startCalls += 1 }
         func restart() {}
-        func cancel() {}
+        func cancel() { cancelCalls += 1 }
         func send(_ datagram: Data) { sent.append(datagram) }
         func receive(_ completion: @escaping @Sendable (Data?, Error?) -> Void) {
             pendingReceive = completion
@@ -377,5 +379,31 @@ struct MoshTransportStateMachineTests {
         let afterSpike = await transport.currentSRTT
         #expect(afterSpike > converged, "the spike should pull SRTT upward")
         #expect(afterSpike < 360, "but the EWMA should damp it well below the 600ms sample, got \(afterSpike)")
+    }
+
+    @Test("a forced resume replaces the flow instead of diagnosing it")
+    func forcedResumeRebuildsFlow() async throws {
+        // The zombie-ready case: after a real suspension NWConnection can
+        // report .ready over a flow iOS already reclaimed, so restart() (legal
+        // only from .failed/.waiting) does nothing and every send blackholes.
+        // resume(force:) must not consult the state at all — cancel, redial,
+        // rewire. The factory hands back a fresh channel; both the teardown of
+        // the old and the start of the new are the observable contract.
+        let creds = MoshCredentials(host: "127.0.0.1", udpPort: 60001, key: key)
+        let old = FakeDatagramChannel()
+        let fresh = FakeDatagramChannel()
+        let transport = try MoshTransport(credentials: creds, channel: old,
+                                          makeChannel: { fresh })
+        await transport.start(cols: 80, rows: 24)
+        #expect(old.startCalls == 1)
+
+        await transport.resume(force: true)
+        #expect(old.cancelCalls == 1, "the zombie flow must be torn down")
+        #expect(fresh.startCalls == 1, "the replacement flow must be started")
+
+        // The un-forced path stays conservative: a .ready channel is left
+        // alone (restart is a no-op there anyway), only flushed.
+        await transport.resume()
+        #expect(fresh.cancelCalls == 0)
     }
 }
