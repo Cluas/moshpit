@@ -366,6 +366,9 @@ final class SessionHub {
         /// UI can say so instead of flickering silently. Cleared once we hold
         /// the channel again.
         private(set) var herdrNotice: String?
+        /// Label for the notice's one-tap remedy, when the notice has one
+        /// (herdr version skew → restart the server). nil = plain notice.
+        private(set) var herdrNoticeAction: String?
         /// When the eviction storm subsides enough to retry. herdr's direct
         /// attach is exclusive per terminal, so two Moshpits on the same pane
         /// evict each other forever — each re-asserting every poll. Backing
@@ -938,12 +941,45 @@ final class SessionHub {
             }
             // Version skew (protocol_mismatch) reads as a banner, not as the
             // "no server running" empty state — the server IS running, and
-            // the remedy (restart/upgrade herdr on the host) is the user's.
+            // the remedy (restart/upgrade herdr on the host) is the user's,
+            // offered as the banner's one-tap action.
             client.onProtocolMismatch = { [weak self] message in
-                self?.herdrNotice = message
+                self?.offerHerdrServerRestart(message: message)
             }
             client.start()
             herdrControl = client
+        }
+
+        /// Put the skew notice up with its remedy attached. Never runs the
+        /// remedy itself — `server stop` exits pane processes, and only the
+        /// user knows whether what's in them survives a restart.
+        func offerHerdrServerRestart(message: String) {
+            herdrNotice = message
+            herdrNoticeAction = String(localized: "Restart herdr server")
+        }
+
+        /// The banner button's tap — restart the host's herdr server with the
+        /// binary our own commands resolve to (guaranteeing the protocol we
+        /// speak afterwards), then let the poller re-attach everything.
+        func runHerdrNoticeAction() {
+            guard herdrNoticeAction != nil, let client = herdrControl else { return }
+            herdrNoticeAction = nil
+            herdrNotice = String(localized: "Restarting herdr server…")
+            Task { [weak self] in
+                let ok = await client.restartServer()
+                guard let self else { return }
+                if ok {
+                    self.herdrNotice = nil
+                    self.herdrRetryAfter = nil
+                    // Frame target was cleared by the fault; the next focus
+                    // poll re-asserts it against the fresh server.
+                    client.quicken()
+                } else {
+                    self.herdrNotice = String(
+                        localized: "Restart didn't take — on the host, run: herdr server stop && herdr")
+                    self.herdrNoticeAction = String(localized: "Retry")
+                }
+            }
         }
 
         // MARK: - herdr frame channel
@@ -989,6 +1025,7 @@ final class SessionHub {
                                 // Painting again means we hold the channel, so
                                 // any contention warning is stale.
                                 if self?.herdrNotice != nil { self?.herdrNotice = nil }
+                                if self?.herdrNoticeAction != nil { self?.herdrNoticeAction = nil }
                                 // A retarget's veil lifts on the first full
                                 // repaint — the frame we just fed IS the new
                                 // pane's screen, so there is nothing stale left
@@ -1035,7 +1072,11 @@ final class SessionHub {
                                 // this doesn't heal until a human restarts the
                                 // server, so re-attaching every poll would
                                 // just harvest the same refusal forever.
-                                self.herdrNotice = message
+                                if HerdrSnapshot.looksLikeVersionSkew(message) {
+                                    self.offerHerdrServerRestart(message: message)
+                                } else {
+                                    self.herdrNotice = message
+                                }
                                 self.herdrFrameTarget = nil
                                 self.herdrRetryAfter = Date()
                                     .addingTimeInterval(Self.herdrContentionBackoff)

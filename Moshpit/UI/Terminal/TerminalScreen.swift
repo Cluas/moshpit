@@ -302,13 +302,32 @@ struct TerminalScreen: View {
             // Transient tmux command failures (create/rename/kill) — these were
             // silently dropped before; a quiet capsule beats a modal alert.
             if let notice = active?.tmuxControl?.notice ?? active?.herdrNotice {
-                Text(notice)
-                    .font(Face.mono(11))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 12).padding(.vertical, 6)
-                    .background(Ink.warn.opacity(0.92), in: Capsule())
-                    .padding(.top, 112)
-                    .transition(.move(edge: .top).combined(with: .opacity))
+                VStack(spacing: 6) {
+                    Text(notice)
+                        .font(Face.mono(11))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 12).padding(.vertical, 6)
+                        .background(Ink.warn.opacity(0.92), in: Capsule())
+                    // Some notices carry their own remedy (herdr version skew →
+                    // restart the server). One tap, but never automatic: a
+                    // server restart exits pane processes, and only 0.8+
+                    // restores sessions — the skew case is BY DEFINITION an
+                    // old server, so the kill is real. The user decides.
+                    if let action = active?.herdrNoticeAction {
+                        Button {
+                            active?.runHerdrNoticeAction()
+                        } label: {
+                            Text(action)
+                                .font(Face.mono(11, .semibold))
+                                .foregroundStyle(.black)
+                                .padding(.horizontal, 12).padding(.vertical, 6)
+                                .background(Ink.accent, in: Capsule())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.top, 112)
+                .transition(.move(edge: .top).combined(with: .opacity))
             }
 
             if let url = copiedURL {

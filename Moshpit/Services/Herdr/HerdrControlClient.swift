@@ -194,6 +194,7 @@ final class HerdrControlClient: MultiplexerControlling {
         let output = result.output
         if let decoded = HerdrSnapshot.decode(output) {
             serverNotRunning = false
+            lastPollMismatched = false
             // Ease off only while the answer keeps coming back identical, and
             // snap straight back the moment anything moves.
             if decoded == lastDecoded {
@@ -212,6 +213,7 @@ final class HerdrControlClient: MultiplexerControlling {
             // Naming that beats the empty state's "create a session" advice,
             // which could never attach. Keep the last good tree: the panes
             // still exist server-side, and blanking them reads as data loss.
+            lastPollMismatched = true
             onProtocolMismatch?(mismatch)
             unchangedPolls = 0
             pollInterval = Self.idlePollInterval   // it won't heal until a human restarts it
@@ -575,6 +577,23 @@ final class HerdrControlClient: MultiplexerControlling {
         if let name, !name.isEmpty { command += " --label \(HerdrLaunch.quote(name))" }
         send(command)
     }
+
+    /// The protocol_mismatch remedy, on the user's explicit tap — never
+    /// automatic, because `server stop` exits pane processes and only 0.8+
+    /// restores sessions (the skew case is by definition an OLD server, so
+    /// the kill is real; herdr's own error text prescribes exactly this).
+    /// `server stop` is exempt from the version gate — the same message that
+    /// reports the mismatch instructs running it.
+    func restartServer() async -> Bool {
+        _ = try? await runner.run(HerdrLaunch.command("server stop", customPath: customPath))
+        try? await Task.sleep(for: .seconds(1))
+        await bootstrapServer()
+        return !serverNotRunning && !lastPollMismatched
+    }
+
+    /// Whether the most recent poll came back as a protocol mismatch —
+    /// restartServer()'s success check.
+    @ObservationIgnored private var lastPollMismatched = false
 
     /// Start the headless server, wait for it to answer, then make sure there
     /// is actually a workspace to attach to.

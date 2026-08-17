@@ -257,4 +257,14 @@ enum HerdrSnapshot {
         let message = (error["message"] as? String) ?? "herdr client/server protocol mismatch"
         return message.components(separatedBy: ";").first ?? message
     }
+
+    /// Whether a surfaced herdr message describes client/server version skew
+    /// — the case whose remedy (restart the server) the app can offer as an
+    /// action. Matches both wire shapes: the API's "client protocol 19 is
+    /// newer than server protocol 16" and the attach CLI's plain-text
+    /// "server rejected handshake (version 16): …".
+    static func looksLikeVersionSkew(_ message: String) -> Bool {
+        message.contains("rejected handshake")
+            || (message.contains("protocol") && message.contains("newer"))
+    }
 }
