@@ -96,6 +96,14 @@ echo "✓ usesNonExemptEncryption = false"
 NOTES="docs/testflight/build-$VERSION.md"
 if [ -f "$NOTES" ]; then
   echo "▶ Test information (What to Test)…"
+  # TestFlight renders What to Test as PLAIN TEXT — markdown reaches testers
+  # as literal ## and ** (user report, build 352). Refuse rather than ship
+  # symbols: the tester-facing half is everything after the first bare ---.
+  if sed '1,/^---$/d' "$NOTES" | grep -qE '^#|\*\*|^```'; then
+    echo "✘ $NOTES contains markdown (##/**/\`\`\`) in the What to Test section." >&2
+    echo "  TestFlight shows it verbatim — rewrite as plain text (see the file header)." >&2
+    exit 1
+  fi
   # Everything after the first bare `---`: the file's header explains where the
   # text goes and is not part of what testers read.
   NOTES_FILE="$NOTES" BUILD_ID="$BUILD_ID" JWT="$JWT" python3 - <<'PY'
