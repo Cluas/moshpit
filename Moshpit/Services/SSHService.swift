@@ -6,7 +6,7 @@ import NIOSSH
 
 // MARK: - Errors
 
-enum SSHError: Error, CustomStringConvertible {
+enum SSHError: Error, CustomStringConvertible, LocalizedError {
     case missingKeychainRef
     case missingSecret
     case unsupportedKeyType(String)
@@ -58,6 +58,12 @@ enum SSHError: Error, CustomStringConvertible {
         }
         return .underlying(error)
     }
+
+    /// NSError bridging shows "SSHError error 1." unless we hand Foundation
+    /// the sentence ourselves — which is exactly what an upload-failure
+    /// banner displayed to a user (2026-08-17). Any code path that shows
+    /// `localizedDescription` now gets `description` for free.
+    var errorDescription: String? { description }
 
     /// The raw error text, for logs and bug reports. Never shown in the UI —
     /// `description` is what a user sees, and it is a sentence.

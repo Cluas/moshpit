@@ -142,12 +142,29 @@ final class SessionHub {
         /// The SSH channel an upload should ride, dialling one if the
         /// session has none. Credentials come from the in-memory secret
         /// cache, so the dial never re-prompts Face ID mid-flow.
+        ///
+        /// PROBED, not trusted: `isConnected` is a local `!closed` flag and
+        /// lies after a suspension (iOS kills TCP without NIO seeing a
+        /// close — the same lesson `isTransportAlive` documents). Trusting
+        /// it handed uploads a half-open sidecar and failed them with an
+        /// opaque SSHError; a retry minutes later worked because keepalive
+        /// had rebuilt the sidecar by then ("时好时坏", user report,
+        /// 2026-08-17). A dead channel either errors fast or times out, and
+        /// the flow moves on to dialling a fresh one — the false-dead cost
+        /// is one redundant dial, far cheaper than a failed upload.
         func acquireFileTransferSSH() async throws -> SSHSession {
-            if let ssh = fileTransferSSH, await ssh.isConnected { return ssh }
-            if let cached = onDemandTransferSSH, await cached.isConnected { return cached }
+            if let ssh = fileTransferSSH, await answersQuickly(ssh) { return ssh }
+            if let cached = onDemandTransferSSH, await answersQuickly(cached) { return cached }
             let fresh = try await SSHService.shared.connect(connection)
             onDemandTransferSSH = fresh
             return fresh
+        }
+
+        /// True if a trivial command round-trips within 4s. Shorter than
+        /// `isTransportAlive`'s 8s: a false "dead" there tears down a whole
+        /// session, here it only costs an extra dial.
+        private func answersQuickly(_ ssh: SSHSession) async -> Bool {
+            await withTimeoutValue(4) { try await ssh.executeCommand("true") } != nil
         }
 
         /// Numbered log of images uploaded this session (#1, #2, …). Lives on

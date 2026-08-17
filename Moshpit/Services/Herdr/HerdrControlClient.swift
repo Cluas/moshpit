@@ -195,6 +195,7 @@ final class HerdrControlClient: MultiplexerControlling {
         if let decoded = HerdrSnapshot.decode(output) {
             serverNotRunning = false
             lastPollMismatched = false
+            protocolMismatch = nil
             // Ease off only while the answer keeps coming back identical, and
             // snap straight back the moment anything moves.
             if decoded == lastDecoded {
@@ -214,6 +215,7 @@ final class HerdrControlClient: MultiplexerControlling {
             // which could never attach. Keep the last good tree: the panes
             // still exist server-side, and blanking them reads as data loss.
             lastPollMismatched = true
+            protocolMismatch = mismatch
             onProtocolMismatch?(mismatch)
             unchangedPolls = 0
             pollInterval = Self.idlePollInterval   // it won't heal until a human restarts it
@@ -585,6 +587,8 @@ final class HerdrControlClient: MultiplexerControlling {
     /// `server stop` is exempt from the version gate — the same message that
     /// reports the mismatch instructs running it.
     func restartServer() async -> Bool {
+        isRestartingServer = true
+        defer { isRestartingServer = false }
         _ = try? await runner.run(HerdrLaunch.command("server stop", customPath: customPath))
         try? await Task.sleep(for: .seconds(1))
         await bootstrapServer()
@@ -594,6 +598,17 @@ final class HerdrControlClient: MultiplexerControlling {
     /// Whether the most recent poll came back as a protocol mismatch —
     /// restartServer()'s success check.
     @ObservationIgnored private var lastPollMismatched = false
+
+    /// The mismatch as OBSERVABLE state, for surfaces with no terminal
+    /// banner — the Home card's workspace tree said "No workspaces yet"
+    /// while every command was being refused over version skew, and its
+    /// New Workspace sheet failed silently (user report, 2026-08-17).
+    /// nil while healthy; the message while refused.
+    private(set) var protocolMismatch: String?
+
+    /// True while restartServer() is in flight — drives the Home row's
+    /// spinner so a tap doesn't look ignored.
+    private(set) var isRestartingServer = false
 
     /// Start the headless server, wait for it to answer, then make sure there
     /// is actually a workspace to attach to.

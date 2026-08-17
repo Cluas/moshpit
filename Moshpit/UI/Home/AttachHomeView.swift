@@ -1531,7 +1531,14 @@ struct ConnectionCard: View {
             .padding(.bottom, 8)
 
             VStack(alignment: .leading, spacing: 4) {
-                if sessions.isEmpty {
+                if let herdr = control as? HerdrControlClient,
+                   let mismatch = herdr.protocolMismatch {
+                    // Version skew: every command is being refused, so "No
+                    // workspaces yet" would be a lie and the + button a trap
+                    // (its create fails silently). Name the problem and offer
+                    // the one remedy, same as the terminal banner.
+                    herdrMismatchRow(mismatch, client: herdr)
+                } else if sessions.isEmpty {
                     sessionsEmptyRow(control.multiplexer.vocabulary)
                 } else {
                     ForEach(sessions) { session in
@@ -1556,6 +1563,42 @@ struct ConnectionCard: View {
     /// The last tmux-only string on this screen: a herdr connection with an
     /// empty tree was telling the user "No tmux sessions", which names the
     /// wrong program AND the wrong noun (herdr has workspaces).
+    /// herdr refused every command over client/server version skew — the row
+    /// says so and carries the one-tap remedy (same consent story as the
+    /// terminal banner: restarting exits pane processes, so it always asks).
+    private func herdrMismatchRow(_ message: String, client: HerdrControlClient) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Ink.warn)
+            Text(message)
+                .font(Face.mono(10))
+                .foregroundStyle(Ink.meta)
+                .lineLimit(3)
+            Spacer(minLength: 8)
+            Button {
+                Task { await client.restartServer() }
+            } label: {
+                Group {
+                    if client.isRestartingServer {
+                        ProgressView().controlSize(.mini).tint(Ink.accent)
+                    } else {
+                        Text("Restart server")
+                            .font(Face.mono(10, .semibold))
+                            .foregroundStyle(Ink.accent)
+                    }
+                }
+                .padding(.horizontal, 10).padding(.vertical, 6)
+                .background(Ink.accent.opacity(0.12), in: Capsule())
+            }
+            .buttonStyle(.plain)
+            .disabled(client.isRestartingServer)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(Color.white.opacity(0.035), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+    }
+
     private func sessionsEmptyRow(_ vocab: MultiplexerVocabulary) -> some View {
         HStack(spacing: 8) {
             Image(systemName: "square.stack.3d.up.slash")
