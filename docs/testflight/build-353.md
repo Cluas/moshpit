@@ -17,8 +17,30 @@ RULES for this section (learned the hard way):
 
 ---
 
-353 fixes a regression that 352 introduced — if you're on 352, update
-before anything else.
+353 fixes a regression that 352 introduced, plus two more device
+reports — if you're on 352, update before anything else.
+
+
+IMAGE UPLOAD OVER MOSH STOPPED FAILING RANDOMLY:
+
+Sending an image over a mosh connection could fail with an unhelpful
+"SSHError error 1" — usually right after the app had been in the
+background. The upload was riding a side connection iOS had silently
+killed; it now checks the channel is actually alive first and dials a
+fresh one when it isn't. Errors that do happen name the problem in a
+sentence now.
+
+Please try: background the app for a minute mid-session, come back,
+send an image immediately. Worth reporting: any upload failure — the
+message is readable now, include it.
+
+
+HERDR VERSION CONFLICTS SHOW UP ON HOME TOO:
+
+If your herdr server needs a restart after an upgrade, the Home card
+used to claim "No workspaces yet" and the new-workspace button failed
+silently. The card now shows the version conflict itself, with the same
+one-tap Restart server button the terminal banner has.
 
 
 THE SHREDDED-SCREEN REGRESSION IS FIXED:
