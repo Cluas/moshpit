@@ -73,6 +73,39 @@ struct HerdrFrameChannelTests {
         #expect(frames.count == 1)
     }
 
+    @Test("A rejected handshake reaches the app as a fault, not silence")
+    func parsesPlainTextHandshakeRejection() throws {
+        // Verbatim from herdr 0.8.0 talking to a 0.7.3 server (protocol 19 vs
+        // 16) — plain text, not JSON, CRLF line ending. Dropping it left a
+        // black pane with no story.
+        var parser = HerdrFrameParser()
+        let blob = "herdr: server rejected handshake (version 16): client version 19 "
+            + "is newer than server version 16; please upgrade the herdr server\r\n"
+        let frames = parser.consume(Data(blob.utf8))
+        let fault = try #require(frames.first)
+        guard case .fault(let message) = fault else {
+            Issue.record("expected .fault, got \(fault)"); return
+        }
+        #expect(message.hasPrefix("server rejected handshake"))
+        #expect(!message.hasSuffix("\r"))
+    }
+
+    @Test("A JSON error envelope is a fault too — protocol_mismatch is the live case")
+    func parsesErrorEnvelope() throws {
+        var parser = HerdrFrameParser()
+        let blob = #"{"id":"cli:api:snapshot","error":{"code":"protocol_mismatch","#
+            + #""message":"client protocol 19 is newer than server protocol 16\nRun herdr server stop"}}"#
+            + "\n"
+        let frames = parser.consume(Data(blob.utf8))
+        let fault = try #require(frames.first)
+        guard case .fault(let message) = fault else {
+            Issue.record("expected .fault, got \(fault)"); return
+        }
+        // First line only: the CLI's remediation prose is sized for a
+        // terminal, the banner is one line.
+        #expect(message == "client protocol 19 is newer than server protocol 16")
+    }
+
     @Test("A prompt glued to the front of a frame line still parses")
     func promptPrefix() {
         var parser = HerdrFrameParser()

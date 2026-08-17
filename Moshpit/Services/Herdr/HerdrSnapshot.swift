@@ -239,4 +239,22 @@ enum HerdrSnapshot {
               let error = json["error"] as? [String: Any] else { return false }
         return (error["code"] as? String) == "server_not_running"
     }
+
+    /// herdr's client/server version-skew refusal, worth naming to the user
+    /// because its remedy is theirs alone: restart (or upgrade) the herdr
+    /// server on the HOST. Seen live when a host's herdr binary was upgraded
+    /// under a still-running older server (protocol 16 vs 19, herdr 0.7→0.8):
+    /// every `api` call answers `{"error":{"code":"protocol_mismatch",…}}`,
+    /// which decode() rejects — and without this check the UI called it
+    /// "no server running" and offered to create a session that could never
+    /// attach.
+    static func protocolMismatch(_ raw: String) -> String? {
+        guard let json = firstJSONObject(in: raw),
+              let error = json["error"] as? [String: Any],
+              (error["code"] as? String) == "protocol_mismatch" else { return nil }
+        // First sentence only — the CLI's full message includes multi-line
+        // remediation prose sized for a terminal, not a banner.
+        let message = (error["message"] as? String) ?? "herdr client/server protocol mismatch"
+        return message.components(separatedBy: ";").first ?? message
+    }
 }

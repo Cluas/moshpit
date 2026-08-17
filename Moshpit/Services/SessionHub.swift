@@ -665,9 +665,14 @@ final class SessionHub {
             } else if let control = tmuxController {
                 control.click(col: col, row: row)
             } else {
-                // No tmux (plain SSH, or mosh degraded to a bare shell): let the
-                // local terminal encode it in the app's negotiated protocol.
-                coordinator.click(col: col, row: row)
+                // No multiplexer route: let the local terminal encode it in
+                // the app's negotiated protocol. clickLocal, NOT click — the
+                // mosh path wires coordinator.onClick to THIS method, and
+                // click() consults onClick first, so calling it from here is
+                // unbounded mutual recursion. Hit for real when a herdr frame
+                // channel failed to attach (herdrFrameTarget nil, no mosh
+                // sidecar, no tmux): one tap, 9000 frames, SIGSEGV.
+                coordinator.clickLocal(col: col, row: row)
             }
         }
 
@@ -931,6 +936,12 @@ final class SessionHub {
             client.onFocusedPaneChanged = { [weak self] paneId in
                 self?.retargetHerdrFrames(to: paneId)
             }
+            // Version skew (protocol_mismatch) reads as a banner, not as the
+            // "no server running" empty state — the server IS running, and
+            // the remedy (restart/upgrade herdr on the host) is the user's.
+            client.onProtocolMismatch = { [weak self] message in
+                self?.herdrNotice = message
+            }
             client.start()
             herdrControl = client
         }
@@ -1013,6 +1024,24 @@ final class SessionHub {
                                         self.herdrAwaitingFullFrame = false
                                         self.coordinator.reveal()
                                     }
+                                }
+                            }
+                        case .fault(let message):
+                            await MainActor.run {
+                                guard let self else { return }
+                                // herdr refused the attach and said why —
+                                // version skew is the live example. Show the
+                                // words, stop claiming the pane, and back off:
+                                // this doesn't heal until a human restarts the
+                                // server, so re-attaching every poll would
+                                // just harvest the same refusal forever.
+                                self.herdrNotice = message
+                                self.herdrFrameTarget = nil
+                                self.herdrRetryAfter = Date()
+                                    .addingTimeInterval(Self.herdrContentionBackoff)
+                                if self.herdrAwaitingFullFrame {
+                                    self.herdrAwaitingFullFrame = false
+                                    self.coordinator.reveal()
                                 }
                             }
                         }

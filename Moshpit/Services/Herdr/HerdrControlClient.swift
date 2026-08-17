@@ -92,6 +92,11 @@ final class HerdrControlClient: MultiplexerControlling {
     /// that produced a tree, since agent state rides the same snapshot.
     @ObservationIgnored var onAgentHooksUpdated: (() -> Void)?
 
+    /// Fired when the server refuses us over version skew (protocol
+    /// mismatch) — the hub routes it to the terminal banner, because the fix
+    /// (restart/upgrade the herdr server on the host) belongs to the user.
+    @ObservationIgnored var onProtocolMismatch: ((String) -> Void)?
+
     /// The interval the next tick will wait. Readable so tests can assert the
     /// backoff without waiting on real time.
     private(set) var pollInterval: Duration = HerdrControlClient.fastPollInterval
@@ -202,6 +207,14 @@ final class HerdrControlClient: MultiplexerControlling {
             }
             lastDecoded = decoded
             apply(decoded)
+        } else if let mismatch = HerdrSnapshot.protocolMismatch(output) {
+            // The server IS running — it just refuses our client's protocol.
+            // Naming that beats the empty state's "create a session" advice,
+            // which could never attach. Keep the last good tree: the panes
+            // still exist server-side, and blanking them reads as data loss.
+            onProtocolMismatch?(mismatch)
+            unchangedPolls = 0
+            pollInterval = Self.idlePollInterval   // it won't heal until a human restarts it
         } else if result.failed || HerdrSnapshot.isServerNotRunning(output) {
             // Not a failure: the host has herdr but no session yet. Empty the
             // tree so the UI can say so instead of showing a stale one.

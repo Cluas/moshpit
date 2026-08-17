@@ -428,6 +428,19 @@ struct SwiftTerminalView: UIViewRepresentable {
                 onClick(col, row)
                 return
             }
+            clickLocal(col: col, row: row)
+        }
+
+        /// The local half of ``click(col:row:)`` — SwiftTerm encodes the
+        /// press/release itself. Never consults `onClick`, so an onClick
+        /// closure whose routing falls back here can't recurse. That is not
+        /// hypothetical: the mosh onClick wiring routes to
+        /// `clickActiveTerminal`, whose no-multiplexer fallback used to call
+        /// `click` — with a herdr frame channel that failed to attach, one
+        /// tap on the terminal recursed 9000 frames deep and segfaulted
+        /// (TestFlight 351 crash, 2026-08-17). `scrollLocal` learned this
+        /// same lesson first; the click path just hadn't caught up.
+        func clickLocal(col: Int, row: Int) {
             guard localAppWantsMouse, let terminal = terminalView?.getTerminal() else { return }
             // 0 = left button press, 3 = release (SwiftTerm's `encodeButton`
             // convention, which its own tap handler uses).
