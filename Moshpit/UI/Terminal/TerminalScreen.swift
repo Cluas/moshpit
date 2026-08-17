@@ -368,7 +368,24 @@ struct TerminalScreen: View {
         // Code streams output starved the scrollback swipe of touch events
         // (the reported "can't scroll history" jank).
         .onChange(of: scenePhase) { _, phase in
-            if phase == .active { clipboardHasImage = UIPasteboard.general.hasImages }
+            if phase == .active {
+                clipboardHasImage = UIPasteboard.general.hasImages
+                // Foreground return can land with stale keyboard-avoidance
+                // geometry (an IME was up when the app left; iOS restores the
+                // scene before the keyboard story settles) — reported on
+                // device as the terminal missing its bottom chunk. Re-run
+                // layout against the CURRENT bounds once things settle, and
+                // repaint the full screen the way the IME-switch observer
+                // already does. Cheap and idempotent when nothing is stale.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                    guard let coordinator = active?.coordinator else { return }
+                    coordinator.hostContainer?.setNeedsLayout()
+                    if let terminal = coordinator.terminalView {
+                        terminal.getTerminal().updateFullScreen()
+                        terminal.setNeedsDisplay()
+                    }
+                }
+            }
         }
         .onReceive(NotificationCenter.default.publisher(
             for: UIResponder.keyboardWillShowNotification)) { _ in
@@ -2750,6 +2767,19 @@ struct MoshDiagnosticsView: View {
                 row("applied", d.appliedHostNum)
                 row("parse fails", d.parseFailures)
                 row("gaps", d.gapEvents)
+                // Send side — for "typing does nothing": type once, reopen,
+                // and compare. sent/user frozen = input never leaves the app;
+                // user climbing with ack stuck = it dies on the wire; channel
+                // anything but "ready" = the UDP flow itself is wedged.
+                row("sent", d.packetsSent)
+                row("user", d.lastUserNum)
+                row("acked", d.serverAckedUserNum)
+                HStack {
+                    Text("channel").font(Face.mono(12)).foregroundStyle(Ink.meta)
+                    Spacer(minLength: 20)
+                    Text(d.channelState).font(Face.mono(12, .bold))
+                        .foregroundStyle(d.channelState == "ready" ? Ink.primary : Ink.warn)
+                }
             } else {
                 Text("No datagrams yet.")
                     .font(Face.mono(12))

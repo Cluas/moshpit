@@ -26,6 +26,22 @@ struct MoshDiagnostics: Hashable {
     /// arriving means every diff so far has hit the gap or parse-failure
     /// branch — the server has content queued that we've never accepted.
     var appliedHostNum: UInt64 = 0
+
+    // Send side — the input path's vitals, added for the "typing stopped
+    // working over mosh" report (2026-08-17) that no loopback rig
+    // reproduces. Screenshot the popover while it's happening:
+    /// Encrypted datagrams sent. Frozen while typing = flush isn't reaching
+    /// the socket (channel wedged / send loop broken).
+    var packetsSent: UInt64 = 0
+    /// Newest queued user state vs the newest the server acked. `lastUserNum`
+    /// climbing with keystrokes while `serverAckedUserNum` stands still =
+    /// input is leaving the app and dying on the wire (or the server's acks
+    /// are dying on the way back).
+    var lastUserNum: UInt64 = 0
+    var serverAckedUserNum: UInt64 = 0
+    /// NWConnection state, verbatim. Anything but "ready" while the pill
+    /// says live is the story.
+    var channelState: String = "?"
 }
 
 /// The mosh State Synchronization Protocol client over UDP.
@@ -376,6 +392,10 @@ actor MoshTransport {
             sendSeq += 1
             channel.send(packet)
         }
+        // Send-side vitals refresh on every flush — deliberately not only on
+        // receive, because "typing does nothing" is exactly the state where
+        // nothing is being received, and the popover must stay honest there.
+        publishDiagnostics()
     }
 
     // MARK: Receive path
@@ -498,7 +518,11 @@ actor MoshTransport {
             datagramsReceived: datagramsReceived,
             parseFailures: parseFailures,
             gapEvents: gapEvents,
-            appliedHostNum: appliedHostNum)
+            appliedHostNum: appliedHostNum,
+            packetsSent: sendSeq,
+            lastUserNum: userStates.last?.num ?? 0,
+            serverAckedUserNum: serverAckedUserNum,
+            channelState: String(describing: channel.state))
         Task { @MainActor in onDiagnostics?(d) }
     }
 
