@@ -2042,7 +2042,7 @@ final class SessionHub {
                     // (herdr's focus lives on the server) and no window to
                     // re-pin, so just replace the dead connection under the
                     // poller. Retried every keepalive tick while it's down.
-                    let alive = await sidecarSSH?.isConnected ?? false
+                    let alive = await isSidecarAlive()
                     if !alive || herdrControl == nil {
                         herdrControl?.stop()
                         herdrControl = nil
@@ -2058,7 +2058,7 @@ final class SessionHub {
                     // snapshot, so a failed re-establish would otherwise leave it
                     // blank until the app restarts. Since keepalive funnels
                     // through here, a nil controller is retried every cycle.
-                    let alive = await sidecarSSH?.isConnected ?? false
+                    let alive = await isSidecarAlive()
                     if !alive || moshControl == nil {
                         captureSelection()   // remember window/pane before rebuild
                         let preferred = moshControl.flatMap { c in
@@ -2110,6 +2110,19 @@ final class SessionHub {
         /// rare; truly dead sockets still fail fast (write error / RST).
         func isTransportAlive(timeout: Double = 8) async -> Bool {
             guard let ssh = viewModel.session else { return false }
+            return await withTimeoutValue(timeout) { try await ssh.executeCommand("true") } != nil
+        }
+
+        /// Same real round-trip probe, aimed at the mosh sidecar. This must
+        /// never be `sidecarSSH?.isConnected`: that is a local `!closed` flag
+        /// and iOS kills TCP during suspension without NIO seeing a close, so
+        /// after a LONG background it reports a corpse as alive — the rebuild
+        /// in `resumeIfNeeded` then never fires and the breadcrumb/sheets stay
+        /// dead until app restart ("tmux 控制切换不见了", report, build 362).
+        /// Short suspensions sometimes got away with it because the resume
+        /// occasionally surfaces an RST that flips the flag; long ones don't.
+        func isSidecarAlive(timeout: Double = 8) async -> Bool {
+            guard let ssh = sidecarSSH else { return false }
             return await withTimeoutValue(timeout) { try await ssh.executeCommand("true") } != nil
         }
     }
