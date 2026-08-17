@@ -68,6 +68,82 @@ enum HerdrLaunch {
             + "nohup herdr server >/dev/null 2>&1 </dev/null &"
     }
 
+    // MARK: mosh raw-attach renderer (docs/design/roaming-transport.md)
+
+    /// `herdr terminal attach <terminal_id> --takeover` renders ONE pane's
+    /// raw stream straight to the tty — no sidebar, no header, and the pane
+    /// PTY sized to THIS client alone (verified: `stty size` inside reports
+    /// the phone grid; the desktop layout is untouched). It is the herdr
+    /// analogue of the mosh+tmux renderer's zoomed attach, and strictly
+    /// better than driving the shared TUI: nothing about the desktop user's
+    /// view changes. Requires a herdr with the `terminal attach` subcommand
+    /// (0.8.0 has it) — ``rawAttachProbeCommand`` decides, and hosts without
+    /// it keep the full-TUI + immersive-zoom fallback.
+    ///
+    /// The renderer is a LOOP around the attach: the target lives in a file,
+    /// and switching panes means writing the file and bouncing the current
+    /// attach (``retargetCommand``) — the loop re-reads and re-attaches.
+    /// The loop also self-heals an eviction (another client's --takeover):
+    /// the attach exits, the loop attaches again a beat later.
+
+    static func moshTargetPath(connectionId: UUID) -> String {
+        "$HOME/.moshpit/mosh-\(connectionId.uuidString).target"
+    }
+
+    static func moshPidPath(connectionId: UUID) -> String {
+        "$HOME/.moshpit/mosh-\(connectionId.uuidString).pid"
+    }
+
+    /// The renderer loop, typed into the mosh shell (append `\r` at the call
+    /// site). Single line; waits for the sidecar to publish the first target.
+    ///
+    /// The attach MUST run in the foreground: backgrounding it (`… & wait`)
+    /// leaves the loop shell as the tty's foreground process, and every
+    /// keystroke lands there instead of in the pane — output kept flowing
+    /// while typing died (found exactly that way, on-device shape). The pid
+    /// the retarget needs is captured by a wrapper that writes its own `$$`
+    /// and then `exec`s into the attach: same pid, still foreground.
+    static func rawAttachLoopCommand(connectionId: UUID, customPath: String?) -> String {
+        let target = moshTargetPath(connectionId: connectionId)
+        let pid = moshPidPath(connectionId: connectionId)
+        // Inner wrapper body, double-quoted for the OUTER shell: $HOME/… in
+        // the pid path expands out there; `\$\$` and `\$0` survive into the
+        // wrapper. `$0` carries the terminal id so it never re-enters shell
+        // parsing. exec drops the wrapper; PATH rides an `export` because an
+        // assignment prefix does not survive `exec`.
+        let launch: String
+        if let customPath, !customPath.isEmpty {
+            launch = "exec \(customPath) terminal attach \\\"\\$0\\\" --takeover"
+        } else {
+            launch = "export PATH=\\\"$PATH:\(HostCapabilities.extraPathDirs)\\\"; "
+                + "exec herdr terminal attach \\\"\\$0\\\" --takeover"
+        }
+        return "mkdir -p \"$HOME/.moshpit\"; while :; do "
+            + "tid=$(cat \"\(target)\" 2>/dev/null); "
+            + "if [ -n \"$tid\" ]; then "
+            + "sh -c \"echo \\$\\$ > \\\"\(pid)\\\"; \(launch)\" \"$tid\"; "
+            + "else sleep 0.5; fi; sleep 0.3; done"
+    }
+
+    /// Point the loop at a new terminal: publish the target, bounce the
+    /// running attach. Runs on the sidecar's exec channel. Idempotence is the
+    /// caller's job (skip when the target hasn't changed) — the bounce itself
+    /// costs a visible reattach flicker.
+    static func retargetCommand(terminalId: String, connectionId: UUID) -> String {
+        let target = moshTargetPath(connectionId: connectionId)
+        let pid = moshPidPath(connectionId: connectionId)
+        return "printf '%s' \(quote(terminalId)) > \"\(target)\"; "
+            + "kill $(cat \"\(pid)\" 2>/dev/null) 2>/dev/null || true"
+    }
+
+    /// Does this herdr know `terminal attach`? Prints the marker on yes;
+    /// anything else (old herdr, no herdr) prints nothing and the mosh
+    /// renderer falls back to the full TUI + immersive zoom.
+    static func rawAttachProbeCommand(customPath: String?) -> String {
+        "\(attachCommand(customPath: customPath)) terminal attach --help >/dev/null 2>&1 "
+            + "&& echo MOSHPIT_RAW_ATTACH_OK"
+    }
+
     /// POSIX single-quote a value destined for the remote shell.
     ///
     /// Workspace and tab labels can come from the user or from another client

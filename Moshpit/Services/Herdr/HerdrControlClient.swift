@@ -109,6 +109,9 @@ final class HerdrControlClient: MultiplexerControlling {
     /// Working directory per pane, from the same poll — the raw material for
     /// ``gitRoots()``.
     @ObservationIgnored private var paneCwds: [String: String] = [:]
+    /// herdr terminal id per pane — what the mosh raw-attach renderer targets
+    /// (`terminal attach` refuses pane ids; see HerdrSnapshot.Decoded).
+    @ObservationIgnored private(set) var terminalIds: [String: String] = [:]
     /// Workspaces that are git worktrees → the repo they came from.
     private var worktreeRepos: [String: String] = [:]
     /// Consecutive polls that returned exactly what we already had.
@@ -254,6 +257,7 @@ final class HerdrControlClient: MultiplexerControlling {
         snapshot = next
         agentHooks = decoded.agentHooks
         paneCwds = decoded.paneCwds
+        terminalIds = decoded.terminalIds
         worktreeRepos = decoded.worktreeRepos
         if let pane = next.activePaneId {
             onFocusedPaneChanged?(pane)

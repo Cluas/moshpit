@@ -252,12 +252,22 @@ struct SelectPaneSheet<C: MultiplexerControlling>: View {
                 // list that reshuffles under the user's thumb is worse than
                 // one that is slightly stale.
                 ForEach(snapshot.activePanes.sorted { $0.index < $1.index }) { pane in
-                    let signal = AgentSignal(controller.agentHooks[pane.id]?.state)
+                    let hook = controller.agentHooks[pane.id]
+                    let signal = AgentSignal(hook?.state)
+                    // Agent name first — the same source the Home tree and
+                    // the breadcrumb use. `pane_current_command` is the raw
+                    // process name, and Claude Code's versioned install makes
+                    // that a bare version number ("2.1.227") — the tree said
+                    // "claude" while this sheet said digits (report, build
+                    // 359). The process name demotes to the meta line so the
+                    // version is still findable, not the identity.
+                    let agentName = hook?.agent
                     SheetListRow(
                         icon: pane.index <= 50 ? "\(pane.index).square" : "number.square",
-                        name: pane.command.isEmpty
-                            ? String(localized: "pane \(pane.index)") : pane.command,
-                        meta: "",
+                        name: agentName
+                            ?? (pane.command.isEmpty
+                                ? String(localized: "pane \(pane.index)") : pane.command),
+                        meta: agentName != nil ? pane.command : "",
                         isActive: pane.id == snapshot.activePaneId,
                         statusColor: signal?.color,
                         statusLabel: signal?.label

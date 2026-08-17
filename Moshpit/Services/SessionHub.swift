@@ -235,6 +235,16 @@ final class SessionHub {
         @ObservationIgnored private var herdrPushPump: Task<Void, Never>?
         @ObservationIgnored private var herdrPushTask: Task<Void, Never>?
 
+        // MARK: mosh+herdr raw-attach renderer
+
+        /// Host's herdr supports `terminal attach` (probed at mosh bootstrap).
+        /// Decides the mosh renderer: raw single-pane loop vs full TUI + zoom.
+        @ObservationIgnored private var herdrRawAttach = false
+        /// The terminal id the raw-attach loop was last pointed at — the
+        /// idempotence guard for `retargetMoshRawAttach` (apply() re-reports
+        /// focus every poll; only a real change should bounce the attach).
+        @ObservationIgnored private var moshRawAttachTarget: String?
+
         /// True while the user is intentionally tearing this session down, so a
         /// concurrent keepalive / death callback doesn't fight it by reconnecting.
         @ObservationIgnored var isStopping = false
@@ -998,7 +1008,10 @@ final class SessionHub {
             // whether that came from our own sheet, a keystroke inside the
             // pane, or the user's laptop client.
             client.onFocusedPaneChanged = { [weak self] paneId in
+                // SSH renders per-pane frames; mosh steers the raw-attach
+                // loop. Each is a no-op on the other transport.
                 self?.retargetHerdrFrames(to: paneId)
+                self?.retargetMoshRawAttach(to: paneId)
             }
             // Version skew (protocol_mismatch) reads as a banner, not as the
             // "no server running" empty state — the server IS running, and
@@ -1253,13 +1266,37 @@ final class SessionHub {
             guard !isStopping else { await ssh.close(); return }
             sidecarSSH = ssh
             startHerdrControlPlane(over: ssh)
-            // mosh renders herdr's own TUI, one shared screen — so "one pane,
-            // full-screen" is produced server-side, mirroring mosh+tmux's
-            // immersive zoom. The first snapshot zooms the focused pane; every
-            // native pane/tab/workspace pick keeps the zoom following.
-            herdrControl?.immersiveZoom = true
-            herdrControl?.requestImmersiveZoom()
+            if herdrRawAttach {
+                // The renderer is a raw-attach loop showing exactly one pane;
+                // focus changes steer it through `retargetMoshRawAttach`
+                // (wired via onFocusedPaneChanged, which apply() repeats on
+                // every poll — the last-target guard makes repeats free).
+                // Nothing server-shared changes: no zoom, no TUI chrome.
+            } else {
+                // Old herdr (no `terminal attach`): mosh renders the full
+                // TUI, one shared screen — so "one pane, full-screen" is
+                // produced server-side, mirroring mosh+tmux's immersive
+                // zoom. Shared-state tradeoff documented on `immersiveZoom`.
+                herdrControl?.immersiveZoom = true
+                herdrControl?.requestImmersiveZoom()
+            }
             startHerdrPushUpgrade()
+        }
+
+        /// Steer the mosh raw-attach loop at a pane's terminal. Idempotent by
+        /// design: apply() re-reports the focused pane on every poll (the
+        /// takeover-recovery pattern), so this compares against the last
+        /// target it wrote and only pays the exec — and the reattach flicker —
+        /// on a real change.
+        func retargetMoshRawAttach(to paneId: String) {
+            guard herdrRawAttach, moshTransport != nil else { return }
+            guard let terminalId = herdrControl?.terminalIds[paneId],
+                  terminalId != moshRawAttachTarget else { return }
+            moshRawAttachTarget = terminalId
+            guard let ssh = sidecarSSH else { return }
+            let command = HerdrLaunch.retargetCommand(
+                terminalId: terminalId, connectionId: connection.id)
+            Task { _ = try? await ssh.executeCommand(command) }
         }
 
         /// Try to upgrade the herdr control plane from polling to push.
@@ -1389,6 +1426,18 @@ final class SessionHub {
                     serverBinary: connection.moshServerPath ?? "mosh-server",
                     portRangeStart: connection.moshPortRangeStart,
                     portRangeEnd: connection.moshPortRangeEnd)
+                // mosh+herdr renderer probe, while the bootstrap channel is
+                // still open (zero extra connections): does this herdr know
+                // `terminal attach`? That raw single-pane stream — no
+                // sidebar, no header, pane PTY sized to this client alone —
+                // is the renderer the phone wants; an older herdr keeps the
+                // full-TUI + immersive-zoom fallback.
+                if connection.multiplexer == .herdr {
+                    let probe = (try? await ssh.executeCommand(
+                        HerdrLaunch.rawAttachProbeCommand(customPath: connection.herdrPath)))
+                        .map { String(decoding: $0, as: UTF8.self) } ?? ""
+                    herdrRawAttach = probe.contains("MOSHPIT_RAW_ATTACH_OK")
+                }
                 await ssh.close()   // mosh-server has daemonized; UDP from here
 
                 let transport = try MoshTransport(credentials: creds)
@@ -1502,7 +1551,13 @@ final class SessionHub {
                     // clients land on the same session. herdr has one server
                     // and one focus, so the poller simply reports whatever the
                     // TUI is showing, whenever it comes up.
-                    let boot = HerdrLaunch.attachCommand(customPath: connection.herdrPath) + "\r"
+                    // Raw-attach loop when the host's herdr supports it: the
+                    // mosh screen becomes ONE pane's raw stream (the sidecar
+                    // steers which one); otherwise the classic full TUI.
+                    let boot = (herdrRawAttach
+                        ? HerdrLaunch.rawAttachLoopCommand(
+                            connectionId: connection.id, customPath: connection.herdrPath)
+                        : HerdrLaunch.attachCommand(customPath: connection.herdrPath)) + "\r"
                     // Straight onto the transport, NOT through sendInput: this
                     // runs before markConnected(), and sendInput drops
                     // everything while connState isn't .live (the reconnect
@@ -1807,6 +1862,10 @@ final class SessionHub {
             herdrFrameTarget = nil
             herdrFrameSSH = nil
             herdrWriteChain = nil
+            // The raw-attach loop dies with the mosh shell; only the local
+            // steering state needs resetting so a reconnect re-targets.
+            moshRawAttachTarget = nil
+            herdrRawAttach = false
             herdrPushTask?.cancel()
             herdrPushTask = nil
             herdrPushPump?.cancel()

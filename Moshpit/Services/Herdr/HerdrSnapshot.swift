@@ -36,6 +36,11 @@ enum HerdrSnapshot {
         /// is this host working on" can be answered without another round trip
         /// (see `HerdrControlClient.gitRoots`).
         var paneCwds: [String: String] = [:]
+        /// herdr terminal id per pane. `herdr terminal attach` — the mosh
+        /// renderer's raw single-pane stream — resolves ONLY these (verified:
+        /// a pane id gets "terminal w1:p1 not found"), unlike `terminal
+        /// session control`, which resolves pane ids too.
+        var terminalIds: [String: String] = [:]
         /// Workspaces that ARE a git worktree, mapped to the repo they came
         /// from. Only these can be removed as a task; a plain workspace has
         /// no checkout to delete.
@@ -124,6 +129,7 @@ enum HerdrSnapshot {
 
         var hooks: [String: AgentHook] = [:]
         var cwds: [String: String] = [:]
+        var terminalIds: [String: String] = [:]
         for pane in panes {
             guard let id = pane["pane_id"] as? String else { continue }
             // `foreground_cwd` follows `cd` inside the shell; `cwd` is where
@@ -131,6 +137,9 @@ enum HerdrSnapshot {
             if let cwd = (pane["foreground_cwd"] as? String) ?? (pane["cwd"] as? String),
                !cwd.isEmpty {
                 cwds[id] = cwd
+            }
+            if let terminalId = pane["terminal_id"] as? String, !terminalId.isEmpty {
+                terminalIds[id] = terminalId
             }
             let size = rects[id]
             snapshot.panes[id] = PaneInfo(
@@ -153,7 +162,8 @@ enum HerdrSnapshot {
         snapshot.everAttached = snapshot.isAttached
 
         return Decoded(snapshot: snapshot, agentHooks: hooks,
-                       paneCwds: cwds, worktreeRepos: worktreeRepos)
+                       paneCwds: cwds, terminalIds: terminalIds,
+                       worktreeRepos: worktreeRepos)
     }
 
     // MARK: - Field mapping
