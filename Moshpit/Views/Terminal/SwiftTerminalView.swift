@@ -58,7 +58,20 @@ final class TerminalHostContainer: UIView {
         guard terminal.superview !== self else { return }
         terminalView = terminal
         addSubview(terminal)
-        terminal.frame = bounds
+        // Only adopt the container's bounds when the container HAS bounds. A
+        // freshly created container is .zero until its first layout pass, and
+        // framing a REUSED terminal to .zero makes SwiftTerm reflow the whole
+        // buffer to a one-column grid — an xterm.js-style reflow that does not
+        // round-trip, so when the real size lands the screen stays garbled
+        // (2-character-wide shards of Claude Code's status line down the left
+        // edge; user screenshot, 2026-08-17). mosh then patches diffs against
+        // the server's un-resized model and the mess never self-corrects.
+        // Keeping the terminal's previous frame until layoutSubviews delivers
+        // real bounds means the common case (same device, same size) never
+        // reflows at all.
+        if bounds != .zero {
+            terminal.frame = bounds
+        }
         clipsToBounds = true
     }
 
