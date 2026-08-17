@@ -5,17 +5,47 @@ import UIKit
 
 /// Run `op`, returning its value, or nil if it throws or doesn't finish within
 /// `seconds`. Used for liveness probes where a dead half-open socket can hang.
+///
+/// The contract that matters: **this function RETURNS at the deadline no
+/// matter what `op` does.** The previous implementation raced inside a
+/// `withTaskGroup`, whose scope waits for every child — `cancelAll()` only
+/// REQUESTS cancellation, and an op that never checks it (an SSH exec bridged
+/// off a NIO future, awaiting a reply that a half-open socket will never
+/// deliver) kept the whole group, and therefore this function, hanging. That
+/// single hang wedged `isResuming` forever, which then gate-blocked every
+/// keepalive, sidecar rebuild, reconnect, and protocol switch for the rest of
+/// the session — the "control plane never comes back after a long
+/// background" family of reports, on the exact builds that were supposed to
+/// fix it. Unstructured race instead: the deadline arm resumes the caller
+/// unconditionally; a straggler op task is cancelled best-effort and, if it
+/// ignores that, LEAKS as a parked task that dies with its dead connection —
+/// harmless, and infinitely better than parking the caller.
 func withTimeoutValue<T: Sendable>(_ seconds: Double,
                                    _ op: @Sendable @escaping () async throws -> T) async -> T? {
-    await withTaskGroup(of: T?.self) { group in
-        group.addTask { try? await op() }
-        group.addTask {
+    await withCheckedContinuation { (continuation: CheckedContinuation<T?, Never>) in
+        let once = OnceContinuation<T?>(continuation)
+        let work = Task { once.resume(try? await op()) }
+        Task {
             try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
-            return nil
+            once.resume(nil)
+            work.cancel()
         }
-        let first = await group.next() ?? nil
-        group.cancelAll()
-        return first
+    }
+}
+
+/// First resume wins, the loser is dropped — the once-guard that lets the
+/// deadline arm and the (possibly cancellation-ignoring) op arm both try to
+/// answer without a double-resume crash.
+private final class OnceContinuation<V>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<V, Never>?
+    init(_ continuation: CheckedContinuation<V, Never>) { self.continuation = continuation }
+    func resume(_ value: V) {
+        lock.lock()
+        let taken = continuation
+        continuation = nil
+        lock.unlock()
+        taken?.resume(returning: value)
     }
 }
 
