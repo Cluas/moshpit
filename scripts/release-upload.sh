@@ -14,11 +14,12 @@
 #      needs an ITSEncryptionExportComplianceCode, and the not-in-France path
 #      issues no code, so `true` fails the upload outright with ITMS-90592.
 #
-#   2. Distribution. Builds do NOT reach beta groups on their own — verified on
-#      336, which sat uploaded and processed while both groups still listed 334
-#      as their newest. Testers simply never see it.
+#   2. What to Test. Written from docs/testflight/build-N.md so testers know
+#      what changed. (EXTERNAL distribution + Beta App Review moved to
+#      scripts/release-promote.sh — the internal Canary group has
+#      hasAccessToAllBuilds and needs neither.)
 #
-# Usage:  scripts/release-upload.sh [--no-groups]
+# Usage:  scripts/release-upload.sh [--no-notes]
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
@@ -84,7 +85,7 @@ api PATCH "/v1/builds/$BUILD_ID" \
   > /dev/null
 echo "✓ usesNonExemptEncryption = false"
 
-[ "${1:-}" = "--no-groups" ] && { echo "▶ Stopping before test info, groups and review."; exit 0; }
+[ "${1:-}" = "--no-notes" ] && { echo "▶ Stopping before test info."; exit 0; }
 
 # The rest mirrors, in order, what the App Store Connect UI makes you do:
 # pick the build for the group, fill in what testers are told, then press
@@ -143,43 +144,17 @@ else
   echo "⚠ no $NOTES — testers will see an empty What to Test."
 fi
 
-echo "▶ Adding to beta groups…"
-api GET "/v1/apps/$APP_ID/betaGroups?limit=20" | python3 -c "
-import json, sys
-print('\n'.join('%s %s' % (g['id'], g['attributes'].get('name', '?'))
-                for g in json.load(sys.stdin).get('data', [])))
-" | while read -r gid gname; do
-  [ -n "$gid" ] || continue
-  api POST "/v1/betaGroups/$gid/relationships/builds" \
-    "{\"data\":[{\"type\":\"builds\",\"id\":\"$BUILD_ID\"}]}" > /dev/null
-  echo "  ✓ $gname"
-done
-
-# The Submit for Review button, bottom right. External groups need it, and it
-# usually comes back approved within moments.
-echo "▶ Submitting for Beta App Review…"
-api POST "/v1/betaAppReviewSubmissions" \
-  "{\"data\":{\"type\":\"betaAppReviewSubmissions\",\"relationships\":{\"build\":{\"data\":{\"type\":\"builds\",\"id\":\"$BUILD_ID\"}}}}}" \
-  | python3 -c "
-import json, sys
-d = json.load(sys.stdin)
-if 'errors' in d:
-    # Re-running over an already-submitted build is expected, not a failure.
-    print('  ·', '; '.join(e.get('detail') or e.get('title', '') for e in d['errors']))
-else:
-    print('  ✓', d['data']['attributes'].get('betaReviewState'))
-"
-
-for _ in $(seq 1 10); do
-  STATE="$(api GET "/v1/builds/$BUILD_ID/betaAppReviewSubmission" | python3 -c "
-import json, sys
-print((json.load(sys.stdin).get('data') or {}).get('attributes', {}).get('betaReviewState', ''))
-" || true)"
-  [ "$STATE" = "APPROVED" ] && { echo "✓ beta review approved"; break; }
-  [ "$STATE" = "REJECTED" ] && { echo "✘ beta review rejected — see App Store Connect" >&2; exit 1; }
-  sleep 20
-done
-
+# DELIBERATELY NO GROUPS AND NO REVIEW HERE — that moved to
+# scripts/release-promote.sh (build 353 era). The internal "Canary" group has
+# hasAccessToAllBuilds, so the moment processing finished above, our own
+# devices could already install this build with no beta review. External
+# testers only get builds that survived Canary:
+#
+#   scripts/release-promote.sh $VERSION
+#
+# One button's worth of ceremony, in exchange for the external groups never
+# receiving the builds we would have pulled an hour later (350→353 all
+# shipped same-day fixes for things a Canary pass would have caught).
 echo
-echo "Build $VERSION: uploaded, compliant, described, distributed, submitted."
-[ "$STATE" = "APPROVED" ] || echo "Review is still $STATE — testers get it once that turns APPROVED."
+echo "Build $VERSION: uploaded, compliant, described — live for Canary now."
+echo "After device testing:  scripts/release-promote.sh $VERSION"
