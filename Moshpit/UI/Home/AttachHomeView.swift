@@ -108,12 +108,10 @@ struct AttachHomeView: View {
             await hub.start(session, theme: theme, fontSize: settings.fontSize, fontName: settings.fontName,
                             cursorShape: settings.cursorShape, cursorColorId: settings.cursorColorId,
                             cursorBlink: settings.cursorBlink)
-            if let controller = session.tmuxController {
-                monitor.track(connection: connection, controller: controller)
-            } else if let herdr = session.herdrControl {
-                // herdr reports agent status natively — no host-side hooks.
-                monitor.track(connection: connection, controller: herdr)
-            }
+            // When-ready, not right-now: over mosh the control plane is wired
+            // by a detached task after start() returns, so a one-shot read
+            // here left the island blind on that transport.
+            monitor.trackWhenReady(connection: connection, session: session)
             // Keep failed sessions queued so the error alert (which reads
             // erroredSession) has its message; its OK button dequeues them.
             if session.viewModel.errorMessage == nil {

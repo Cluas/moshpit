@@ -191,7 +191,6 @@ enum Metrics {
     /// presented over it look like they belong to the same app.
     static let homeMaxWidth: CGFloat = 640
     static let sheetMaxFraction: CGFloat = 0.68
-    static let paneBoardHeight: CGFloat = 168
 }
 
 enum Motion {

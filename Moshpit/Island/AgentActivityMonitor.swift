@@ -135,6 +135,25 @@ final class AgentActivityMonitor {
         requestNotificationAuthorizationIfNeeded()
     }
 
+    /// Track a connection once its multiplexer control plane exists.
+    ///
+    /// Views used to sample `session.tmuxController` right after
+    /// `hub.start()` returned and wire nothing when it was nil. Over mosh
+    /// that is always: both control planes come up in detached tasks seconds
+    /// later, so mosh+tmux never fed the island at all — no Live Activity,
+    /// no lock-screen alerts, an empty Agents section — while the same
+    /// connection over SSH lit up fine. Waiting on the session makes the
+    /// wiring transport-agnostic; `track` still applies the tmux-vs-herdr
+    /// distinction (heuristics vs native `agent_status`) once the concrete
+    /// controller is known.
+    func trackWhenReady(connection: ServerConnection, session: SessionHub.ActiveSession) {
+        guard settings.liveActivityEnabled || settings.notificationsEnabled else { return }
+        Task { [weak self] in
+            guard let controller = await session.awaitMultiplexerControl() else { return }
+            self?.track(connection: connection, controller: controller)
+        }
+    }
+
     func untrack(connectionId: UUID) {
         conns[connectionId] = nil
         panes = panes.filter { $0.key.conn != connectionId }

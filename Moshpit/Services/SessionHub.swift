@@ -114,6 +114,33 @@ final class SessionHub {
         /// The active tmux control surface, whichever transport is in use.
         var tmuxControl: TmuxSessionController? { tmuxController ?? moshControl }
 
+        /// The multiplexer control plane, whenever it materializes — for
+        /// callers that need "the control plane, once it exists" rather than
+        /// "the control plane right now". Over SSH the controller is assigned
+        /// inside `start()` and the first check resolves; over mosh both
+        /// control planes are wired by DETACHED tasks (`attachMoshTmux` /
+        /// `startHerdrSidecar`) that can spend ~15s on a second SSH handshake
+        /// and attach retries after `start()` has returned — exactly the
+        /// window a one-shot read samples nil in, which is how mosh+tmux
+        /// shipped with the island never tracking (and mosh+herdr raced the
+        /// same gap). Returns nil once the session stops/fails or after
+        /// `timeout` — a degraded session with no multiplexer on the host has
+        /// nothing to wait for.
+        func awaitMultiplexerControl(timeout: TimeInterval = 60) async -> (any MultiplexerControlling)? {
+            let deadline = Date().addingTimeInterval(timeout)
+            while Date() < deadline {
+                if isStopping { return nil }
+                switch viewModel.status {
+                case .disconnected, .failed: return nil
+                default: break
+                }
+                if let control = tmuxControl { return control }
+                if let herdr = herdrControl { return herdr }
+                try? await Task.sleep(nanoseconds: 500_000_000)
+            }
+            return nil
+        }
+
         /// SSH channel available for file transfer — SFTP rides the already-
         /// authenticated connection, so no re-auth and no Face ID. The in-band
         /// SSH session when there is one; the mosh sidecar otherwise (same
@@ -194,6 +221,19 @@ final class SessionHub {
         /// teardown mid-handshake must be able to cancel it instead of letting
         /// it wire a fresh connection onto a dead session.
         @ObservationIgnored private var herdrSidecarTask: Task<Void, Never>?
+
+        // MARK: herdr push upgrade (Phase 0 of docs/design/roaming-transport.md)
+
+        /// Push-mode upgrade for the herdr control plane: a dedicated SSH
+        /// connection whose PTY hosts the socket pump (`HerdrPushBoot`), with
+        /// the driver turning `events.subscribe` pushes into `quicken()`
+        /// calls. nil = polling only (no python3 on the host, pipe never came
+        /// up, or the upgrade hasn't run yet) — polling is never interrupted
+        /// either way, push only narrows its latency.
+        @ObservationIgnored private var herdrPush: HerdrPushDriver?
+        @ObservationIgnored private var herdrPushSSH: SSHSession?
+        @ObservationIgnored private var herdrPushPump: Task<Void, Never>?
+        @ObservationIgnored private var herdrPushTask: Task<Void, Never>?
 
         /// True while the user is intentionally tearing this session down, so a
         /// concurrent keepalive / death callback doesn't fight it by reconnecting.
@@ -932,6 +972,10 @@ final class SessionHub {
                 // starts the very first one.
                 startHerdrFrames(over: session)
                 startHerdrControlPlane(over: session)
+                // The frame channel owns this connection's PTY, so push rides
+                // a dedicated connection — same cost mosh mode already pays
+                // for its sidecar, and Phase 1's bridge collapses them all.
+                startHerdrPushUpgrade()
             } else {
                 let coordinator = self.coordinator
                 pumpTask = Task { [weak self] in
@@ -1209,6 +1253,54 @@ final class SessionHub {
             guard !isStopping else { await ssh.close(); return }
             sidecarSSH = ssh
             startHerdrControlPlane(over: ssh)
+            startHerdrPushUpgrade()
+        }
+
+        /// Try to upgrade the herdr control plane from polling to push.
+        ///
+        /// Fire-and-forget and strictly additive: on any failure the poller
+        /// keeps its 2–8s cadence and nothing is surfaced — push is an
+        /// upgrade, not a dependency. Gated on the python3 probe only when
+        /// the probe has actually said no; the optimistic-unknown case costs
+        /// one subscribe timeout and then settles on polling.
+        private func startHerdrPushUpgrade() {
+            guard herdrPushTask == nil, herdrPush == nil else { return }
+            guard capabilities?.hasPython3 != false else { return }
+            herdrPushTask = Task { [weak self] in await self?.connectHerdrPush() }
+        }
+
+        private func connectHerdrPush() async {
+            guard let ssh = try? await SSHService.shared.connect(connection) else { return }
+            guard !isStopping, herdrControl != nil else { await ssh.close(); return }
+            // The pump needs a PTY: Citadel's exec channels have no writable
+            // stdin (re-verified on 0.12.1 — `ExecCommandStream` is
+            // stdout/stderr only), and the PTY + `stty raw -echo` shape is
+            // the one the frame channel already proved out.
+            try? await ssh.requestPTY(rows: 24, cols: 80)
+            let driver = HerdrPushDriver(
+                write: { data in try await ssh.write(data) },
+                onInvalidate: { [weak self] in self?.herdrControl?.quicken() })
+            herdrPushSSH = ssh
+            herdrPushPump = Task { [weak driver] in
+                for await chunk in ssh.dataStream {
+                    if Task.isCancelled { break }
+                    await driver?.feed(chunk)
+                }
+                // Transport gone (drop, teardown): the driver goes inactive;
+                // the poller underneath never stopped.
+                await driver?.shutdown()
+            }
+            try? await ssh.write(Data((HerdrPushBoot.bootLine() + "\r").utf8))
+            if await driver.activate() {
+                herdrPush = driver
+                // Fold the subscribe's bootstrap replay into one fresh read.
+                herdrControl?.quicken()
+            } else {
+                herdrPushPump?.cancel()
+                herdrPushPump = nil
+                herdrPushSSH = nil
+                await ssh.close()
+            }
         }
 
         /// Probe (or read cached) host capabilities and publish them on the
@@ -1709,6 +1801,14 @@ final class SessionHub {
             herdrFrameTarget = nil
             herdrFrameSSH = nil
             herdrWriteChain = nil
+            herdrPushTask?.cancel()
+            herdrPushTask = nil
+            herdrPushPump?.cancel()
+            herdrPushPump = nil
+            if let push = herdrPush { await push.shutdown() }
+            herdrPush = nil
+            if let ssh = herdrPushSSH { await ssh.close() }
+            herdrPushSSH = nil
             // Just a poll timer — nothing to hand back to the server the way
             // tmux's pinned window sizes have to be.
             herdrControl?.stop()

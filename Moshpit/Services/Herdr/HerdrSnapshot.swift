@@ -102,8 +102,8 @@ enum HerdrSnapshot {
                 sessionId: (tab["workspace_id"] as? String) ?? "",
                 name: (tab["label"] as? String) ?? id,
                 index: (tab["number"] as? Int) ?? 0,
-                // herdr has no tmux-style layout string; `TmuxLayoutParser`
-                // never sees a herdr window. Geometry comes from `layouts`.
+                // herdr has no tmux-style layout string; the field is kept
+                // verbatim-empty. Pane geometry comes from `layouts`.
                 layout: "",
                 isActive: (tab["focused"] as? Bool) ?? false,
                 paneCount: (tab["pane_count"] as? Int) ?? 1,

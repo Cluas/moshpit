@@ -548,12 +548,10 @@ struct TerminalScreen: View {
                         cursorShape: settings.cursorShape, cursorColorId: effectiveCursorColorId,
                         cursorBlink: settings.cursorBlink)
             applyAppearance()
-            if let controller = session.tmuxController {
-                monitor.track(connection: connection, controller: controller)
-            } else if let herdr = session.herdrControl {
-                // herdr reports agent status natively — no host-side hooks.
-                monitor.track(connection: connection, controller: herdr)
-            }
+            // When-ready, not right-now: over mosh the control plane is wired
+            // by a detached task after start() returns, so a one-shot read
+            // here left the island blind on that transport.
+            monitor.trackWhenReady(connection: connection, session: session)
             _ = active
         }
     }
@@ -966,11 +964,8 @@ struct TerminalScreen: View {
         // appearance pass snapped the size straight back.
         session.coordinator.onFontSizeCommit = { size in settings.fontSize = size }
         session.tmuxController?.onFontSizeCommitted = { size in settings.fontSize = size }
-        if let controller = session.tmuxController {
-            monitor.track(connection: connection, controller: controller)
-        } else if let herdr = session.herdrControl {
-            monitor.track(connection: connection, controller: herdr)
-        }
+        // When-ready, not right-now — see the connect-path call for why.
+        monitor.trackWhenReady(connection: connection, session: session)
         // Deep-link path: if already attached with the pane present, land on
         // it now; otherwise the .onChange below retries as snapshots arrive.
         claimPendingPaneRequestIfNeeded()

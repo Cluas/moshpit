@@ -18,14 +18,20 @@ struct HostCapabilities: Codable, Equatable, Sendable {
     var packageManager: PackageManager?
     /// herdr on PATH — the alternative multiplexer (see ``Multiplexer``).
     var hasHerdr: Bool
+    /// python3 on PATH — gates the herdr push pump (`HerdrPushBoot`), which
+    /// bridges to herdr's socket through a python one-liner. Missing just
+    /// means the control plane stays on polling; nothing degrades visibly.
+    var hasPython3: Bool
 
     init(hasTmux: Bool, hasMoshServer: Bool, os: String,
-         packageManager: PackageManager?, hasHerdr: Bool = false) {
+         packageManager: PackageManager?, hasHerdr: Bool = false,
+         hasPython3: Bool = false) {
         self.hasTmux = hasTmux
         self.hasMoshServer = hasMoshServer
         self.os = os
         self.packageManager = packageManager
         self.hasHerdr = hasHerdr
+        self.hasPython3 = hasPython3
     }
 
     /// Hand-written so a cache entry written by an older build — which had no
@@ -42,13 +48,17 @@ struct HostCapabilities: Codable, Equatable, Sendable {
         // that the in-session re-probe clears; a stale "present" would boot
         // herdr on a host without it.
         hasHerdr = try c.decodeIfPresent(Bool.self, forKey: .hasHerdr) ?? false
+        // Same fallback, cheaper stakes: a stale "missing" just delays push
+        // mode until the re-probe lands; polling covers the gap.
+        hasPython3 = try c.decodeIfPresent(Bool.self, forKey: .hasPython3) ?? false
     }
 
     /// "Everything present" — the optimistic default used before the first
     /// probe completes, so a cold session behaves exactly as it does today and
     /// only degrades if the probe actually finds something missing.
     static let unknown = HostCapabilities(
-        hasTmux: true, hasMoshServer: true, os: "", packageManager: nil, hasHerdr: true)
+        hasTmux: true, hasMoshServer: true, os: "", packageManager: nil, hasHerdr: true,
+        hasPython3: true)
 
     /// Whether the host can run the multiplexer this connection picked.
     /// `.none` needs nothing, so it is always satisfied.
@@ -92,7 +102,7 @@ struct HostCapabilities: Codable, Equatable, Sendable {
     /// unambiguous (`::os::pkgPath`) so parsing never confuses it with a tool
     /// path. `2>/dev/null` keeps a noisy shell from polluting the marker.
     static let probeCommand =
-        "PATH=\"$PATH:\(extraPathDirs)\" command -v tmux mosh-server herdr; " +
+        "PATH=\"$PATH:\(extraPathDirs)\" command -v tmux mosh-server herdr python3; " +
         "echo \"::$(uname -s)::$(PATH=\"$PATH:\(extraPathDirs)\" command -v apt-get dnf yum pacman apk brew 2>/dev/null | head -1)\""
 
     /// Parse the probe stdout. Lines before the `::os::pkg` marker are the
@@ -104,6 +114,7 @@ struct HostCapabilities: Codable, Equatable, Sendable {
         var hasTmux = false
         var hasMoshServer = false
         var hasHerdr = false
+        var hasPython3 = false
         var os = ""
         var packageManager: PackageManager?
 
@@ -128,11 +139,13 @@ struct HostCapabilities: Codable, Equatable, Sendable {
             if name == "tmux" { hasTmux = true }
             if name == "mosh-server" { hasMoshServer = true }
             if name == "herdr" { hasHerdr = true }
+            if name == "python3" { hasPython3 = true }
         }
 
         return HostCapabilities(
             hasTmux: hasTmux, hasMoshServer: hasMoshServer,
-            os: os, packageManager: packageManager, hasHerdr: hasHerdr)
+            os: os, packageManager: packageManager, hasHerdr: hasHerdr,
+            hasPython3: hasPython3)
     }
 }
 
