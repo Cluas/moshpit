@@ -321,8 +321,8 @@ struct HerdrControlClientTests {
             .contains("pane split 'w1:p2' --direction right --focus"))
     }
 
-    @Test("Focusing a pane goes through agent focus, whose error is discarded")
-    func selectPaneUsesAgentFocus() async {
+    @Test("Focusing a pane tries agent focus, with the zoom-bounce fallback in the same exec")
+    func selectPaneUsesAgentFocus() async throws {
         let runner = FakeRunner(response: Self.twoWorkspaces)
         let client = await started(runner)
         let before = runner.commands.count
@@ -330,12 +330,19 @@ struct HerdrControlClientTests {
         client.selectPane("w1:p1")
         await settle()
 
-        // `herdr pane focus` is directional-only in every released version, so
-        // this is the one command that takes a pane id. It reports
-        // `agent_not_found` for a plain shell but still moves the focus, so the
-        // error is swallowed rather than treated as failure.
+        // `herdr pane focus` is directional-only in every released version.
+        // `agent focus` is the fast path — but current herdr fails it
+        // OUTRIGHT on a plain shell pane (the old errors-but-moves behavior
+        // is gone), so the same exec carries the fallback: a zoom bounce,
+        // which moves focus on --on and keeps it through --off.
         let sent = runner.commands[before]
-        #expect(sent.contains("agent focus 'w1:p1' 2>/dev/null || true"))
+        #expect(sent.contains("agent focus 'w1:p1' 2>/dev/null || {"))
+        #expect(sent.contains("pane zoom --pane 'w1:p1' --on"))
+        #expect(sent.contains("pane zoom --pane 'w1:p1' --off"))
+        // --on before --off, or the bounce un-zooms panes that were zoomed.
+        let on = try #require(sent.range(of: "--on"))
+        let off = try #require(sent.range(of: "--off"))
+        #expect(on.lowerBound < off.lowerBound)
     }
 
     // MARK: - Immersive zoom (the mosh renderer)
@@ -376,8 +383,8 @@ struct HerdrControlClientTests {
         #expect(sent.contains { $0.contains("pane zoom --pane 'w1:p2' --on") })
     }
 
-    @Test("Without immersive mode nothing zooms — the SSH frame path swaps views client-side")
-    func nonImmersiveNeverZooms() async {
+    @Test("Without immersive mode, zooms only ever come as a bounce — never left on")
+    func nonImmersiveNeverLeavesZoomOn() async {
         let runner = FakeRunner(response: Self.twoWorkspaces)
         let client = await started(runner)
         let before = runner.commands.count
@@ -387,7 +394,15 @@ struct HerdrControlClientTests {
         await settle()
         await settle()
 
-        #expect(!runner.commands[before...].contains { $0.contains("pane zoom") })
+        let sent = Array(runner.commands[before...])
+        // The immersive zoom-follow's shape (a lone --on, mosh renderer only)
+        // must never appear on the SSH path — it restyles the desktop.
+        #expect(!sent.contains { $0.contains("--on 2>/dev/null || true") })
+        // The focus fallback's bounce is fine, but every --on must carry its
+        // --off in the same exec.
+        for command in sent where command.contains("--on") {
+            #expect(command.contains("--off"), "a bounce without its --off leaves the desktop zoomed")
+        }
     }
 
     @Test("Focusing a pane retargets the renderer without waiting for the round trip")

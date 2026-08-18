@@ -617,7 +617,22 @@ final class HerdrControlClient: MultiplexerControlling {
             // see `immersiveZoom` for why this replaces `agent focus` here.
             sendImmersiveZoom(paneId)
         } else {
-            send("agent focus \(HerdrLaunch.quote(paneId)) 2>/dev/null || true")
+            // Two rungs in one exec. `agent focus` is the fast path — but on
+            // current herdr it FAILS OUTRIGHT on a plain shell pane: the old
+            // "prints agent_not_found but still moves the focus" behavior is
+            // GONE (verified live: focused_pane_id does not move), which is
+            // exactly the "two panes in a tab, can't switch to the shell one"
+            // report. Rung two is a zoom bounce: `pane zoom --on` moves focus
+            // as part of zooming and `--off` restores the layout while the
+            // focus STAYS on the target (both verified live). The socket's
+            // id-based `pane.focus` was considered and rejected: on 0.8.0's
+            // headless server it acts but never replies, so every call would
+            // eat a full client timeout.
+            let target = HerdrLaunch.quote(paneId)
+            let herdr = HerdrLaunch.attachCommand(customPath: customPath)
+            send("agent focus \(target) 2>/dev/null || { "
+                + "\(herdr) pane zoom --pane \(target) --on >/dev/null 2>&1; "
+                + "\(herdr) pane zoom --pane \(target) --off >/dev/null 2>&1; }")
         }
     }
 
