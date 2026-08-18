@@ -229,8 +229,28 @@ final class TmuxSessionController: MultiplexerControlling {
     /// `tmux -CC new` line is written to the shell *after* this returns) —
     /// discovery fires automatically once `%session-changed` arrives.
     func beginControlMode() async {
+        expectBootBlock()
         await installCallbacks()
         startPumping()
+    }
+
+    /// Reserve the head of the callback queue for a BOOT command's reply
+    /// block. The line that enters control mode (`tmux -CC attach` /
+    /// `-CC new`) is a command this controller never sent through
+    /// `enqueue`, yet tmux answers it with the connection's first
+    /// `%begin…%end` block like any other. Pairing is positional
+    /// (``handleCommandResponse`` pops FIFO), so without a reserved slot
+    /// the pairing silently relied on that block arriving while the queue
+    /// was still empty — and over a weak network it routinely arrived
+    /// AFTER discovery had enqueued, popping `list-sessions`' callback and
+    /// shifting every later response one command back: capture frames
+    /// delivered to cursor callbacks, and the agent-hook poll's
+    /// `%0||||…` payload fed into a visible pane as its "frame"
+    /// (user screenshots, 2026-08-19). Also called before the
+    /// `tmux -CC new` fallback boots a second control session on this
+    /// same stream, whose own banner block needs its own slot.
+    func expectBootBlock() {
+        pendingCallbacks.append(nil)
     }
 
     /// Wire up parser callbacks, start pumping SSH bytes, and run the
@@ -312,7 +332,7 @@ final class TmuxSessionController: MultiplexerControlling {
                 // See the matching comment in selectPane — the resync capture
                 // can queue behind a reconnect's discovery backlog and easily
                 // outlast the veil's default 0.8s safety timeout.
-                paneCoordinators[pane.id]?.extendCoverTimeout(by: 2.0)
+                paneCoordinators[pane.id]?.extendCoverTimeout(by: coverGrace())
                 // Explicit withAnimation, not a view-side `.animation(value:)` —
                 // this mutation originates from a UIKit gesture-recognizer
                 // callback (TerminalScrollGesture), not a native SwiftUI action,
@@ -344,7 +364,10 @@ final class TmuxSessionController: MultiplexerControlling {
         // carries new bytes; resizes reflow the local buffer independently of
         // tmux). Repaint it from tmux's model — FIFO ordering puts the capture
         // after the select/resize above, so the frame arrives at the new size.
-        resyncActivePane()
+        // Two passes, because the resize above just triggered the target
+        // app's own SIGWINCH repaint and the immediate capture races it —
+        // see resyncActivePaneSettling.
+        resyncActivePaneSettling()
     }
 
     /// Windows we forced to the phone's size so full-screen TUIs reflow to
@@ -509,7 +532,7 @@ final class TmuxSessionController: MultiplexerControlling {
         // timeout was firing and revealing stale/incomplete content before
         // resyncPane's own reveal() arrived (the reported garbled flash on
         // switch-during-reconnect). Same fix as commitClientSize's resize path.
-        paneCoordinators[paneId]?.extendCoverTimeout(by: 2.0)
+        paneCoordinators[paneId]?.extendCoverTimeout(by: coverGrace())
         // Explicit withAnimation — see the matching comment in selectWindow.
         withAnimation(.easeInOut(duration: 0.22)) {
             snapshot.activePaneId = paneId
@@ -520,7 +543,10 @@ final class TmuxSessionController: MultiplexerControlling {
         send(rawCommand: "select-pane -Z -t \(paneId)")
         ensureImmersiveZoom()                          // first landing on an unzoomed split
         refreshActivePaneMouse()                       // wheel-vs-copy-mode signal
-        resyncPane(paneId)                             // repaint from tmux's model (see selectWindow)
+        // Repaint from tmux's model, two passes — activePaneId is this pane
+        // by now, and the resize/zoom above race its SIGWINCH redraw exactly
+        // like selectWindow's (see resyncActivePaneSettling).
+        resyncActivePaneSettling()
     }
 
     /// Horizontal-swipe navigation: cycle the active window's panes when it has
@@ -1380,20 +1406,46 @@ final class TmuxSessionController: MultiplexerControlling {
         if !pinsReleased, let win = snapshot.activeWindowId {
             fitWindowToClient(win)
         }
+        resyncActivePaneSettling()
+    }
+
+    /// The two-pass repaint from ``commitClientSize()``'s doc, shared with the
+    /// window/pane switch paths — which issue the very same
+    /// `resize-window`/`resize-pane -Z` and therefore race the very same
+    /// SIGWINCH redraw, but used to get a single immediate `reveal: true`
+    /// capture: over a weak network that capture is reliably mid-redraw, and
+    /// with no settled pass behind it the garble stood until %output slowly
+    /// caught up ("切 window 先乱几秒再自己好").
+    private func resyncActivePaneSettling() {
         resyncActivePane(reveal: false)
         // The settled pass lands a debounce PLUS a full round trip from now —
         // give an active keyboard-freeze/pane-switch cover enough rope to
         // survive until then instead of its default 0.8s cap, which a real
         // connection's RTT can easily outlast (see extendCoverTimeout's doc
         // and resyncPane's `reveal` doc for what happens when it doesn't).
-        extendActiveCoverTimeout(by: 1.5)
+        extendActiveCoverTimeout(by: coverGrace())
         pendingSettleResync?.cancel()
         pendingSettleResync = Task { [weak self] in
             try? await Task.sleep(for: .milliseconds(700))
             guard !Task.isCancelled else { return }
-            self?.extendActiveCoverTimeout(by: 2.0)
+            self?.extendActiveCoverTimeout(by: self?.coverGrace() ?? 2.0)
             self?.resyncActivePane()
         }
+    }
+
+    /// Round trip of the most recent resync capture, measured send→frame-fed.
+    /// The veil timeouts below scale from it: a fixed cap tuned on a fast
+    /// link expires while the weak-network frame is still in flight — the
+    /// cover lifts exactly onto the mid-redraw garble it existed to hide.
+    @ObservationIgnored private var lastResyncRoundTrip: TimeInterval = 0
+
+    /// How long a cover may outlive its default cap while a resync is in
+    /// flight: generous against the measured round trip, floored at the old
+    /// fixed 2s for the first capture, ceilinged so a dead connection can't
+    /// pin a veil to the screen indefinitely (the frame's own arrival is
+    /// what normally lifts it — this is only the safety cap).
+    private func coverGrace() -> TimeInterval {
+        min(max(2.0, lastResyncRoundTrip * 1.5 + 0.5), 8.0)
     }
 
     /// See ``commitClientSize()``. Resolves the same "active pane" as
@@ -1558,9 +1610,17 @@ final class TmuxSessionController: MultiplexerControlling {
         backfillTimeouts.removeValue(forKey: paneId)?.cancel()
         guard backfillsInFlight.remove(paneId) != nil,
               let reveal = deferredResyncs.removeValue(forKey: paneId) else { return }
-        // The wait cost an extra round trip — re-arm the veil's safety cap from
-        // NOW so it can't expire mid-resync and flash the dump we're covering.
-        paneCoordinators[paneId]?.extendCoverTimeout(by: 2.0)
+        // The wait cost an extra round trip — re-arm the veil's safety cap
+        // from NOW so it can't expire mid-resync and flash the dump we're
+        // covering. Over a weak network the 2 000-line dump routinely
+        // outlives the original cap entirely, and extendCoverTimeout on an
+        // already-lifted cover is a silent no-op — so if the veil is gone,
+        // raise it again first: without one, the dump plus resync frame play
+        // out in the open ("重连出现上次输入的内容" in slow motion).
+        if let coordinator = paneCoordinators[paneId] {
+            if !coordinator.isCoverPresented { coordinator.veilForSwitch() }
+            coordinator.extendCoverTimeout(by: coverGrace())
+        }
         resyncPane(paneId, reveal: reveal)
     }
 
@@ -1611,8 +1671,15 @@ final class TmuxSessionController: MultiplexerControlling {
         // post-resize app repaint raced in between the two replies, so the
         // frame included it but the restored cursor predated it — the "cursor
         // drifts after an IME switch" bug.)
+        // The capture's own round trip is the best live probe of what "the
+        // network right now" means for every veil cap above (coverGrace) —
+        // it rides the same FIFO the reveal-bearing frame does.
+        let sentAt = ContinuousClock.now
         sendCommand("capture-pane -p -e -t \(paneId)") { [weak self] response in
             guard let self else { return }
+            let elapsed = ContinuousClock.now - sentAt
+            self.lastResyncRoundTrip = Double(elapsed.components.seconds)
+                + Double(elapsed.components.attoseconds) / 1e18
             var lines = response.lines
             while let last = lines.last, last.trimmingCharacters(in: .whitespaces).isEmpty {
                 lines.removeLast()
@@ -1721,6 +1788,7 @@ final class TmuxSessionController: MultiplexerControlling {
         case sessionWindowChanged(sessionId: String, windowId: String)
         case activePaneChanged(windowId: String, paneId: String)
         case pause(String)
+        case continued(String)
         case exit
         case commandResponse(TmuxCommandResponse)
     }
@@ -1744,7 +1812,7 @@ final class TmuxSessionController: MultiplexerControlling {
             onSessionWindowChanged: { emit.yield(.sessionWindowChanged(sessionId: $0, windowId: $1)) },
             onActivePaneChanged: { emit.yield(.activePaneChanged(windowId: $0, paneId: $1)) },
             onPause: { emit.yield(.pause($0)) },
-            onContinue: nil,
+            onContinue: { emit.yield(.continued($0)) },
             // NOTE: do NOT touch isAttached here. `%client-detached` is a
             // server-wide broadcast about SOME client on the server — often
             // an unrelated one (e.g. a desktop client on another session).
@@ -1828,8 +1896,19 @@ final class TmuxSessionController: MultiplexerControlling {
             }
         case .pause(let paneId):
             guard Self.isValidTmuxId(paneId) else { return }
-            // Auto-resume; we don't throttle output yet.
-            send(rawCommand: "refresh-client -A \(paneId):+")
+            // Auto-resume; we don't throttle output yet. The argument's
+            // vocabulary is `on/off/continue/pause` — the `:+` this used to
+            // send is not in it, so tmux answered %error and the pane stayed
+            // paused with its output stopped for good. %pause only fires when
+            // the client is seconds behind (`pause-after` flag), which makes a
+            // weak network the one place the wrong verb actually bit.
+            send(rawCommand: "refresh-client -A \(paneId):continue")
+        case .continued(let paneId):
+            guard Self.isValidTmuxId(paneId) else { return }
+            // tmux dropped this pane's output on the floor while it was
+            // paused; %continue only means "streaming again", not "caught
+            // up". Repaint from tmux's model to close the gap.
+            resyncPane(paneId)
         case .exit:
             snapshot.isAttached = false
         case .commandResponse(let response):

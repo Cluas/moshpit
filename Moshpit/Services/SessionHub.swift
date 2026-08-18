@@ -977,6 +977,13 @@ final class SessionHub {
             // (or a reused-but-reset session) doesn't inherit the last run's
             // banner before it has re-earned it.
             moshReturnPathDead = false
+            // Same hygiene for the terminal's input parser: this coordinator
+            // is reused across reconnects, and a weak-network drop routinely
+            // cuts the old stream mid-character or mid-OSC — parse state that
+            // would otherwise poison the new stream's first bytes (see
+            // resetInputParser's doc). Covers mosh, plain SSH and the SSH
+            // degrade path; tmux panes mint fresh terminals per attach.
+            coordinator.resetInputParser()
             lastTheme = theme
             lastFontSize = fontSize
             lastFontName = fontName
@@ -1484,6 +1491,10 @@ final class SessionHub {
         func createFirstTmuxSession() {
             guard let controller = tmuxController, !controller.snapshot.isAttached else { return }
             let tmux = connection.tmuxPath ?? "tmux"
+            // `-CC new` boots a fresh control session on the SAME stream, and
+            // its own banner block needs its own reserved head slot — see
+            // expectBootBlock's doc for the pairing shift it prevents.
+            controller.expectBootBlock()
             viewModel.send(Data("\(tmux) -CC new\r".utf8))
         }
 

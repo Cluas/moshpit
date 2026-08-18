@@ -212,9 +212,19 @@ actor TmuxControlClient {
         if openBlock != nil {
             let blockLine = String(data: raw, encoding: .utf8)
                 ?? String(decoding: raw, as: UTF8.self)
-            if blockLine.hasPrefix("%end ") || blockLine == "%end" {
+            // A terminator must carry the OPEN block's ids to count. tmux
+            // always echoes `%end <cid> <num>` matching its `%begin`, so a
+            // "%end"-shaped line with different ids is pane CONTENT — a
+            // capture-pane frame of a pane that itself displays control-mode
+            // text (someone developing against tmux -CC — this app included —
+            // has exactly that on screen). Taking one of those as the
+            // terminator cut the frame short, spilled its remaining lines
+            // into the notification parser, and let a content "%begin" open
+            // a phantom block that swallowed the NEXT real reply — from
+            // there, command↔response pairing was shifted for good.
+            if terminatesOpenBlock(blockLine, prefix: "%end") {
                 handleBlockEnd(line: blockLine, isError: false)
-            } else if blockLine.hasPrefix("%error ") || blockLine == "%error" {
+            } else if terminatesOpenBlock(blockLine, prefix: "%error") {
                 handleBlockEnd(line: blockLine, isError: true)
             } else {
                 openBlock?.lines.append(blockLine)
@@ -301,6 +311,21 @@ actor TmuxControlClient {
 
     // MARK: - Block lifecycle
 
+    /// True when `line` is the OPEN block's own terminator: `%end`/`%error`
+    /// echoing the ids from its `%begin` (or the bare keyword, kept for
+    /// defensive symmetry — tmux always sends the ids). Anything else that
+    /// merely starts with the keyword is content. See dispatchLine.
+    private func terminatesOpenBlock(_ line: String, prefix: String) -> Bool {
+        guard let block = openBlock else { return false }
+        if line == prefix { return true }
+        guard line.hasPrefix(prefix + " ") else { return false }
+        let parts = line.split(separator: " ", maxSplits: 4, omittingEmptySubsequences: false)
+        guard parts.count >= 3, let cid = Int(parts[1]), let num = Int(parts[2]) else {
+            return false
+        }
+        return cid == block.commandId && num == block.commandNum
+    }
+
     /// `%begin <commandId> <commandNum> [flags]`
     private func handleBegin(_ line: String) {
         let parts = line.split(separator: " ", maxSplits: 4, omittingEmptySubsequences: false)
@@ -310,10 +335,20 @@ actor TmuxControlClient {
             onProtocolError?(.malformedLine(line))
             return
         }
-        // If a previous block was still open, surface it as an error so the
-        // caller can see the desync, then start fresh.
+        // A previous block still open means its terminator never came (or
+        // was mangled in transit). Surface the desync, but ALSO deliver the
+        // stale block as an error response: its sender's callback occupies a
+        // FIFO slot, and silently discarding the block would leave that slot
+        // forever unpopped — every later response then lands one command
+        // back (the same pairing shift expectBootBlock's doc describes).
         if let stale = openBlock {
+            openBlock = nil
             onProtocolError?(.malformedLine("orphan %begin while block #\(stale.commandId) open"))
+            onCommandResponse?(TmuxCommandResponse(
+                commandId: stale.commandId,
+                commandNum: stale.commandNum,
+                isError: true,
+                lines: stale.lines))
         }
         openBlock = (commandId: cid, commandNum: num, lines: [])
     }

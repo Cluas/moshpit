@@ -30,6 +30,11 @@ private func makeAttachedController() async -> (TmuxSessionController, MockTmuxT
     let transport = MockTmuxTransport()
     let controller = TmuxSessionController(sshSession: transport)
     await controller.attach()
+    // Real tmux answers the boot line (`-CC attach`) with the connection's
+    // first reply block; beginControlMode reserves the head callback slot
+    // for it (see expectBootBlock). The mock must send it too, or every
+    // later reply pops one slot early.
+    transport.pushText("%begin 100 0 0\n%end 100 0 0\n\n")
     return (controller, transport)
 }
 
@@ -369,6 +374,9 @@ struct TmuxSessionControllerTests {
         let controller = TmuxSessionController(sshSession: transport)
         controller.setInitialClientSize(cols: 69, rows: 60)
         await controller.attach()
+        // Real tmux answers the boot line with the connection's first reply
+        // block; the reserved boot slot needs it (see makeAttachedController).
+        transport.pushText("%begin 100 0 0\n%end 100 0 0\n\n")
         _ = await waitUntil { await transport.recordedCommands().count >= 3 }
         pushOneWindowDiscovery(transport)
 
@@ -390,6 +398,9 @@ struct TmuxSessionControllerTests {
         // Pre-attach seed: a GUESS at the phone grid, not a view's report.
         controller.setInitialClientSize(cols: 69, rows: 60)
         await controller.attach()
+        // Real tmux answers the boot line with the connection's first reply
+        // block; the reserved boot slot needs it (see makeAttachedController).
+        transport.pushText("%begin 100 0 0\n%end 100 0 0\n\n")
         _ = await waitUntil { await transport.recordedCommands().count >= 3 }
         pushOneWindowDiscovery(transport)
         #expect(await waitUntil { controller.snapshot.activeWindowId == "@0" })
@@ -413,6 +424,9 @@ struct TmuxSessionControllerTests {
         let controller = TmuxSessionController(sshSession: transport)
         controller.setInitialClientSize(cols: 69, rows: 60)
         await controller.attach()
+        // Real tmux answers the boot line with the connection's first reply
+        // block; the reserved boot slot needs it (see makeAttachedController).
+        transport.pushText("%begin 100 0 0\n%end 100 0 0\n\n")
         _ = await waitUntil { await transport.recordedCommands().count >= 3 }
         pushOneWindowDiscovery(transport)
         #expect(await waitUntil { controller.snapshot.activeWindowId == "@0" })
@@ -617,6 +631,105 @@ struct TmuxSessionControllerTests {
             else { return false }
             return select < capture
         }, "the switched-to pane must be repainted from tmux's model after activation")
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // Weak-network protocol hardening (2026-08-19 garble evidence)
+    // ─────────────────────────────────────────────────────────────
+
+    @Test("a late boot banner must not shift command↔response pairing")
+    func lateBootBannerKeepsPairingAligned() async throws {
+        let transport = MockTmuxTransport()
+        let controller = TmuxSessionController(sshSession: transport)
+        await controller.attach()
+        _ = await waitUntil { await transport.recordedCommands().count >= 3 }
+
+        // The boot line's own reply block arrives AFTER discovery already
+        // enqueued — routine over a weak network. It must pop the reserved
+        // boot slot, not list-sessions' callback: when it popped the wrong
+        // slot, every later response landed one command back — capture
+        // frames delivered to cursor callbacks, and the agent-hook poll's
+        // "%0||||" payload painted into a visible pane as its "frame".
+        transport.pushText("%begin 100 0 0\n%end 100 0 0\n\n")
+        transport.pushText("""
+        %begin 1 1 0
+        $0 1 main
+        %end 1 1 0
+        %begin 2 2 0
+        $0 @0 0 81x24,0,0,0 1 1 main
+        %end 2 2 0
+        %begin 3 3 0
+        %0 @0 0 80 24 1 bash
+        %end 3 3 0
+
+        """)
+
+        #expect(await waitUntil { controller.snapshot.sessions["$0"] != nil },
+                "list-sessions' reply must reach list-sessions' callback")
+        #expect(await waitUntil { controller.snapshot.activeWindowId == "@0" })
+        #expect(await waitUntil { controller.snapshot.activePaneId == "%0" })
+    }
+
+    @Test("%pause resumes with tmux's real verb, and %continue repaints the paused pane")
+    func pauseUsesContinueVerbAndResyncs() async throws {
+        let (controller, transport) = await makeAttachedController()
+        _ = await waitUntil { await transport.recordedCommands().count >= 3 }
+        pushOneWindowDiscovery(transport)
+        #expect(await waitUntil { controller.snapshot.activePaneId == "%0" })
+        await settleControlChatter(transport, answered: 3)
+
+        transport.pushText("%pause %0\n")
+        #expect(await waitUntil {
+            await transport.recordedCommands().contains { $0.hasPrefix("refresh-client -A %0:continue") }
+        }, """
+        the resume verb must be in tmux's vocabulary (on/off/continue/pause) — the old `:+` \
+        earned an %error and the pane stayed paused, output stopped for good
+        """)
+
+        let before = await transport.recordedCommands()
+            .filter { $0.hasPrefix("capture-pane -p -e -t %0") }.count
+        transport.pushText("%continue %0\n")
+        #expect(await waitUntil {
+            await transport.recordedCommands()
+                .filter { $0.hasPrefix("capture-pane -p -e -t %0") }.count > before
+        }, "tmux dropped output while paused — %continue must trigger a repaint from its model")
+    }
+
+    @Test("selectWindow runs a two-pass resync: an immediate silent capture plus a settled one")
+    func selectWindowRunsSettlingResync() async throws {
+        let (controller, transport) = await makeAttachedController()
+        _ = await waitUntil { await transport.recordedCommands().count >= 3 }
+        transport.pushText("""
+        %begin 1 1 0
+        $0 1 main
+        %end 1 1 0
+        %begin 2 2 0
+        $0 @0 0 81x24,0,0,0 1 1 main
+        $0 @1 1 81x24,0,0,1 0 1 work
+        %end 2 2 0
+        %begin 3 3 0
+        %0 @0 0 80 24 1 bash
+        %1 @1 0 80 24 1 vim
+        %end 3 3 0
+
+        """)
+        #expect(await waitUntil { controller.snapshot.windows.count == 2 })
+        await settleControlChatter(transport, answered: 3)
+
+        controller.selectWindow("@1")
+
+        #expect(await waitUntil {
+            await transport.recordedCommands()
+                .filter { $0.hasPrefix("capture-pane -p -e -t %1") }.count >= 1
+        }, "the immediate pass must capture right away")
+        #expect(await waitUntil(timeout: 2.5) {
+            await transport.recordedCommands()
+                .filter { $0.hasPrefix("capture-pane -p -e -t %1") }.count >= 2
+        }, """
+        the settled pass (~700ms) must follow — the switch's resize-window triggers the target \
+        app's SIGWINCH repaint, the immediate capture races it, and without a second capture the \
+        mid-redraw frame stood for seconds over a weak network
+        """)
     }
 
     @Test("backfill cancels a stale copy-mode left over from a dead connection")

@@ -468,4 +468,36 @@ struct TmuxControlClientParserTests {
         // ignored. The subsequent %window-add must still fire.
         #expect(rec.events == [.windowAdd("@1")])
     }
+
+    @Test("a content line shaped like %end with foreign ids stays inside the block")
+    func mismatchedTerminatorStaysContent() async throws {
+        // A capture-pane frame of a pane that itself displays control-mode
+        // text (developing against tmux -CC — this app included) contains
+        // literal "%end …" lines. Only the terminator echoing the OPEN
+        // block's ids may close it; a foreign one is frame content. Taking
+        // it as the terminator truncated the frame and shifted every later
+        // command↔response pairing.
+        let client = TmuxControlClient()
+        let rec = CallbackRecorder()
+        await rec.install(on: client)
+
+        let payload = """
+        %begin 1234 7 0
+        %end 999 42 0
+        still the same frame
+        %end 1234 7 0
+
+        """
+        await client.feed(bytes(payload))
+
+        #expect(rec.events == [
+            .commandResponse(
+                commandId: 1234,
+                commandNum: 7,
+                isError: false,
+                lines: ["%end 999 42 0", "still the same frame"]
+            )
+        ])
+    }
+
 }

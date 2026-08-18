@@ -171,23 +171,28 @@ struct TmuxControlClientEdgeTests {
         %begin 2 2 0
         second content line
         %end 2 2 0
+        %end 1 1 0
 
         """
         await client.feed(bytes(payload))
 
-        // Block 1 closes via `%end 2 2 0` — terminator id mismatch (1 vs 2)
-        // surfaces as a protocol error, but the block still completes with
-        // all three captured payload lines.
+        // Only the terminator echoing the OPEN block's ids closes it: tmux
+        // guarantees `%end` repeats its `%begin`'s ids, so `%end 2 2 0` here
+        // is pane CONTENT (a capture of a pane that displays control-mode
+        // text — e.g. developing against tmux -CC), not a terminator. The
+        // old contract closed the block on ANY `%end`-shaped line, which
+        // truncated such frames and shifted command↔response pairing for
+        // every later reply (the 2026-08-19 weak-network garble evidence).
         let responses = rec.events.compactMap { event -> EdgeRecorder.Event? in
             if case .commandResponse = event { return event }
             return nil
         }
         #expect(responses.count == 1, "exactly one block should close")
-        #expect(responses.first == .commandResponse(commandId: 1, commandNum: 1, isError: false, lineCount: 3),
-                "block 1 captures the `%begin 2 ...` line as part of its 3 payload lines")
+        #expect(responses.first == .commandResponse(commandId: 1, commandNum: 1, isError: false, lineCount: 4),
+                "all four payload lines — including both %-shaped ones — belong to block 1")
 
         let errors = rec.events.filter { if case .protocolError = $0 { return true } else { return false } }
-        #expect(errors.count == 1, "terminator id mismatch (1 vs 2) emits one protocol error")
+        #expect(errors.isEmpty, "nothing about this frame is a protocol violation under id-matched termination")
     }
 
     @Test("%end without a matching %begin surfaces as a protocol error")
