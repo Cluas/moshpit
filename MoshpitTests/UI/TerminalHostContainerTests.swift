@@ -56,28 +56,24 @@ struct TerminalHostContainerTests {
         #expect(terminal.frame == real)
     }
 
-    /// The mosh path installs no `onGridReport` handler but reads
-    /// `lastReportedSize` when the transport starts. A terminal minted at the
-    /// right grid never fires `sizeChanged`, so the layout report is the only
-    /// writer — without it the server is told `estimateGrid`'s guess.
-    @Test("layout records lastReportedSize even with no onGridReport handler")
+    /// `lastReportedSize` is fed ONLY by `sizeChanged` — a layout pass with
+    /// no grid change must leave it untouched. Recording the layout-implied
+    /// grid there shipped in 368 and pinned tmux windows to a junk grid from
+    /// a transient pass (the 499×62 "SSH+tmux 满屏乱码" regression); this
+    /// pins the revert.
+    @Test("a layout pass alone never writes lastReportedSize")
     @MainActor
-    func layoutRecordsLastReportedSize() {
+    func layoutAloneDoesNotWriteLastReportedSize() {
         let coordinator = SwiftTerminalView.Coordinator()
         let container = TerminalHostContainer()
         let terminal = makeTerminalView()
         container.host(terminal)
         coordinator.hostContainer = container
 
-        #expect(coordinator.lastReportedSize == nil)
-
         container.frame = CGRect(x: 0, y: 0, width: 390, height: 600)
         container.layoutSubviews()
 
-        let cell = TerminalCellGeometry.measuredCell(
-            font: terminal.font, scale: UITraitCollection.current.displayScale)
-        let reported = try? #require(coordinator.lastReportedSize)
-        #expect(reported?.cols == Int(390 / cell.width))
-        #expect(reported?.rows == Int(600 / cell.height))
+        #expect(coordinator.lastReportedSize == nil,
+                "only sizeChanged may write this — see the 368 junk-grid regression")
     }
 }
