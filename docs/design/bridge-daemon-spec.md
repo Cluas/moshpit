@@ -92,7 +92,7 @@ ciphertext = AES-128-GCM(key, nonce = dir||seq 扩展到 12B, aad = 首 7 字节
 |---|---|---|
 | 0 `null` | — | 回声(握手自检 & 测试) |
 | 1 `herdr-api` | session utf8(空=默认) | connect `${HERDR_SOCKET}`(路径解析同 herdr CLI:env → 默认);字节双向直通 |
-| 2 `herdr-attach` | target utf8, cols u16, rows u16, takeover u8 | spawn `herdr terminal session control <target> --cols C --rows R [--takeover]`,stdio 直通;进程退出 → FIN(exit code 进 FIN 前的最后一个 DATA?否——FIN 载荷已有 seq;退出码走 OPEN_ERR 语义不适用,**决定:进程退出即 FIN,退出码不传**,app 靠 herdr 自己的 `terminal.closed` JSON 已含 reason) |
+| 2 `herdr-attach` | target utf8, cols u16, rows u16, takeover u8 | spawn `herdr terminal session control <target> --cols C --rows R [--takeover]`,stdio 直通;进程退出 → FIN(exit code 进 FIN 前的最后一个 DATA?否——FIN 载荷已有 seq;退出码走 OPEN_ERR 语义不适用,**决定:进程退出即 FIN,退出码不传**,app 靠 herdr 自己的 `terminal.closed` JSON 已含 reason)。**预测回显扩展(S4 需要,见 predictive-echo.md)**:daemon 给每条注入 pane 的 input 打单调 `input_seq`,写入 pty 后等 50ms(mosh 论文的服务端语义),在其后第一帧的通道边带里携带 `echo_ack`;同时轮询/透传 herdr 的 `InputState`(alternate_screen/application_cursor/bracketed_paste——结构已存在已可序列化,只是 herdr API 没暴露),作为模式门控。一次 daemon 改动同时解锁 ack 与模式两件事 |
 | 3 `herdr-observe` | 同 2 减 takeover | spawn observe(sheet 缩略图预览,只读不抢) |
 
 - 无通用 exec。herdr 二进制解析:`$PATH` + Homebrew 补全目录(HostCapabilities 同款列表,
