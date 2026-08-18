@@ -212,7 +212,7 @@ final class SessionHub {
         func acquireFileTransferSSH() async throws -> SSHSession {
             if let ssh = fileTransferSSH, await answersQuickly(ssh) { return ssh }
             if let cached = onDemandTransferSSH, await answersQuickly(cached) { return cached }
-            let fresh = try await SSHService.shared.connect(connection)
+            let fresh = try await sidecarConnect(connection)
             onDemandTransferSSH = fresh
             return fresh
         }
@@ -264,6 +264,30 @@ final class SessionHub {
         @ObservationIgnored private var herdrPushSSH: SSHSession?
         @ObservationIgnored private var herdrPushPump: Task<Void, Never>?
         @ObservationIgnored private var herdrPushTask: Task<Void, Never>?
+
+        // MARK: Lifecycle-test seams
+
+        /// How side connections (mosh sidecars, the herdr push pump, the
+        /// on-demand transfer connection) are dialed. Production goes through
+        /// the shared service; lifecycle tests inject a factory yielding
+        /// sessions built over a scripted `SSHClientTransport` — which is
+        /// how "half-open socket after a long suspension" becomes a unit
+        /// test instead of a field report.
+        @ObservationIgnored var sidecarConnect:
+            @Sendable (ServerConnection) async throws -> SSHSession =
+            { try await SSHService.shared.connect($0) }
+
+        /// Test-only state installation: lifecycle scenarios need a session
+        /// that BELIEVES it is a live mosh connection without running the
+        /// network bootstrap. Production never calls this.
+        func installForTesting(moshTransport transport: MoshTransport?,
+                               sidecarSSH ssh: SSHSession? = nil,
+                               herdrControl control: HerdrControlClient? = nil) {
+            self.moshTransport = transport
+            self.sidecarSSH = ssh
+            self.herdrControl = control
+            if transport != nil { viewModel.markConnected() }
+        }
 
         // MARK: mosh+herdr raw-attach renderer
 
@@ -1329,7 +1353,7 @@ final class SessionHub {
         /// we lose the breadcrumb rather than silently trusting a new key.
         private func startHerdrSidecar() async {
             guard herdrControl == nil else { return }
-            guard let ssh = try? await SSHService.shared.connect(connection) else { return }
+            guard let ssh = try? await sidecarConnect(connection) else { return }
             guard !isStopping else { await ssh.close(); return }
             sidecarSSH = ssh
             startHerdrControlPlane(over: ssh)
@@ -1381,7 +1405,7 @@ final class SessionHub {
         }
 
         private func connectHerdrPush() async {
-            guard let ssh = try? await SSHService.shared.connect(connection) else { return }
+            guard let ssh = try? await sidecarConnect(connection) else { return }
             guard !isStopping, herdrControl != nil else { await ssh.close(); return }
             // The pump needs a PTY: Citadel's exec channels have no writable
             // stdin (re-verified on 0.12.1 — `ExecCommandStream` is
@@ -1864,7 +1888,7 @@ final class SessionHub {
             // invariant is ever violated by a future change, the sidecar
             // fails closed (no control-plane breadcrumb) instead of silently
             // auto-trusting a host key nobody actually confirmed.
-            guard let ssh = try? await SSHService.shared.connect(connection) else { return }
+            guard let ssh = try? await sidecarConnect(connection) else { return }
             // The session may have been torn down (stop()) while this SSH
             // handshake was in flight — don't wire a fresh connection onto a
             // dead session (leaked, never-closed, and racing the NEW
@@ -2170,9 +2194,17 @@ final class SessionHub {
         /// re-handshake (6–9s on that same link). 8s stays under the 12s
         /// keepalive tick while making slow-link false positives vanishingly
         /// rare; truly dead sockets still fail fast (write error / RST).
-        func isTransportAlive(timeout: Double = 8) async -> Bool {
+        /// Probe deadline for `isTransportAlive`/`isSidecarAlive`. 8s absorbs
+        /// a genuinely slow link (see the rationale above `isTransportAlive`);
+        /// lifecycle tests shrink it so a scripted hang resolves in
+        /// milliseconds instead of a wall-clock wait.
+        @ObservationIgnored var probeTimeout: Double = 8
+
+        func isTransportAlive(timeout: Double? = nil) async -> Bool {
             guard let ssh = viewModel.session else { return false }
-            return await withTimeoutValue(timeout) { try await ssh.executeCommand("true") } != nil
+            return await withTimeoutValue(timeout ?? probeTimeout) {
+                try await ssh.executeCommand("true")
+            } != nil
         }
 
         /// Same real round-trip probe, aimed at the mosh sidecar. This must
@@ -2183,9 +2215,11 @@ final class SessionHub {
         /// dead until app restart ("tmux 控制切换不见了", report, build 362).
         /// Short suspensions sometimes got away with it because the resume
         /// occasionally surfaces an RST that flips the flag; long ones don't.
-        func isSidecarAlive(timeout: Double = 8) async -> Bool {
+        func isSidecarAlive(timeout: Double? = nil) async -> Bool {
             guard let ssh = sidecarSSH else { return false }
-            return await withTimeoutValue(timeout) { try await ssh.executeCommand("true") } != nil
+            return await withTimeoutValue(timeout ?? probeTimeout) {
+                try await ssh.executeCommand("true")
+            } != nil
         }
     }
 

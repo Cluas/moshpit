@@ -179,13 +179,23 @@ struct CitadelSSHClientProvider: SSHClientProvider {
 ///     with `resize(rows:cols:)`.
 ///  4. Caller terminates with `close()` (or by deinit — `close()` is safe to
 ///     call twice).
+///
+/// Internally the session talks to its SSH client through the
+/// ``SSHClientTransport`` seam, so lifecycle tests can run a REAL session
+/// over a scripted fake — same pattern as `MoshTransport`'s
+/// `DatagramChannel`.
 actor SSHSession {
     nonisolated let connection: ServerConnection
     nonisolated let dataStream: AsyncStream<Data>
 
-    private let client: SSHClient
+    private let transport: any SSHClientTransport
+    /// The concrete Citadel client, kept ONLY for the SFTP subsystem — SFTP
+    /// is deliberately outside the ``SSHClientTransport`` seam. A session
+    /// built over an injected transport (tests) has none, and uploads then
+    /// exercise the exec/base64 fallback, which the fake CAN run.
+    private let sftpClient: SSHClient?
     private let continuation: AsyncStream<Data>.Continuation
-    private var writer: TTYStdinWriter?
+    private var writer: (any SSHPTYWriter)?
     private var ptyOpened = false
     private(set) var rows: Int = 24
     private(set) var cols: Int = 80
@@ -195,8 +205,20 @@ actor SSHSession {
     private var onUnexpectedClose: (@Sendable () -> Void)?
 
     init(connection: ServerConnection, client: SSHClient) {
+        self.init(connection: connection,
+                  transport: CitadelClientTransport(client: client),
+                  sftpClient: client)
+    }
+
+    /// The lifecycle-test entry: a REAL session over a scripted transport
+    /// (hung execs on half-open sockets, refused PTYs, dead writers) — the
+    /// same seam pattern `MoshTransport` gets from `DatagramChannel`.
+    init(connection: ServerConnection,
+         transport: any SSHClientTransport,
+         sftpClient: SSHClient? = nil) {
         self.connection = connection
-        self.client = client
+        self.transport = transport
+        self.sftpClient = sftpClient
 
         var captured: AsyncStream<Data>.Continuation!
         self.dataStream = AsyncStream<Data>(bufferingPolicy: .unbounded) { cont in
@@ -223,67 +245,15 @@ actor SSHSession {
         self.rows = rows
         self.cols = cols
 
-        let request = SSHChannelRequestEvent.PseudoTerminalRequest(
-            wantReply: true,
-            term: "xterm-256color",
-            terminalCharacterWidth: cols,
-            terminalRowHeight: rows,
-            terminalPixelWidth: 0,
-            terminalPixelHeight: 0,
-            terminalModes: SSHTerminalModes([:])
-        )
-        // Ask for a UTF-8 locale on the remote PTY, same value the mosh
-        // bootstrap forwards (`-l LANG=…`). Without it many Linux hosts start
-        // the session in the C locale and CJK input/output turns into
-        // mojibake ("？？？"/<ffff>) — the classic "输入中文乱码" report.
-        // OpenSSH accepts LANG by default (`AcceptEnv LANG LC_*`); servers
-        // that refuse env requests just ignore this (wantReply: false).
-        let environment = [
-            SSHChannelRequestEvent.EnvironmentRequest(
-                wantReply: false, name: "LANG", value: "en_US.UTF-8")
-        ]
-
-        // Handshake: `requestPTY()` should return only after Citadel has
-        // accepted the PTY request and handed us a writer, but the
-        // surrounding read-loop must keep running for the lifetime of the
-        // session. We bridge with a CheckedContinuation. Closing the
-        // underlying client breaks `withPTY`'s read loop, so we don't need
-        // to hold the Task handle for cancellation.
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            Task { [client] in
-                var resumed = false
-                do {
-                    try await client.withPTY(request, environment: environment) { output, writer in
-                        await self.installWriter(writer)
-                        if !resumed {
-                            resumed = true
-                            continuation.resume()
-                        }
-                        do {
-                            for try await chunk in output {
-                                let buffer: ByteBuffer
-                                switch chunk {
-                                case .stdout(let buf): buffer = buf
-                                case .stderr(let buf): buffer = buf
-                                }
-                                let bytes = Array(buffer.readableBytesView)
-                                if !bytes.isEmpty {
-                                    await self.deliver(Data(bytes))
-                                }
-                            }
-                        } catch {
-                            // Read loop ended in error — fall through.
-                        }
-                    }
-                } catch {
-                    if !resumed {
-                        resumed = true
-                        continuation.resume(throwing: error)
-                    }
-                }
-                await self.markClosed()
-            }
-        }
+        let w = try await transport.openPTY(
+            rows: rows, cols: cols,
+            onOutput: { [weak self] data in
+                Task { await self?.deliver(data) }
+            },
+            onEnd: { [weak self] in
+                Task { await self?.markClosed() }
+            })
+        installWriter(w)
     }
 
     // MARK: - I/O
@@ -291,10 +261,8 @@ actor SSHSession {
     func write(_ data: Data) async throws {
         guard !closed else { throw SSHError.sessionClosed }
         guard let writer else { throw SSHError.ptyNotReady }
-        var buffer = ByteBuffer()
-        buffer.writeBytes(data)
         do {
-            try await writer.write(buffer)
+            try await writer.write(data)
         } catch {
             throw SSHError.underlying(error)
         }
@@ -311,8 +279,7 @@ actor SSHSession {
     func executeCommand(_ command: String) async throws -> Data {
         guard !closed else { throw SSHError.sessionClosed }
         do {
-            let buffer = try await client.executeCommand(command, mergeStreams: true)
-            return Data(buffer.readableBytesView)
+            return try await transport.run(command)
         } catch {
             throw SSHError.underlying(error)
         }
@@ -375,7 +342,11 @@ actor SSHSession {
             return attrs
         }
         do {
-            return try await client.withSFTP { sftp in
+            // A transport-injected session (tests) has no Citadel client and
+            // therefore no SFTP — throw into the exec/base64 fallback, which
+            // is exactly the path such a session wants exercised.
+            guard let sftpClient else { throw SSHError.sessionClosed }
+            return try await sftpClient.withSFTP { sftp in
                 let home = try await sftp.getRealPath(atPath: ".")
                 let appDir = home + "/.moshpit"
                 let uploads = appDir + "/uploads"
@@ -455,7 +426,7 @@ actor SSHSession {
         self.cols = cols
         guard let writer else { throw SSHError.ptyNotReady }
         do {
-            try await writer.changeSize(cols: cols, rows: rows, pixelWidth: 0, pixelHeight: 0)
+            try await writer.resize(cols: cols, rows: rows)
         } catch {
             throw SSHError.underlying(error)
         }
@@ -466,14 +437,14 @@ actor SSHSession {
         closed = true
         writer = nil
         continuation.finish()
-        // Closing the SSHClient cancels in-flight PTY reads via channel
-        // close → withPTY exits → markClosed is a no-op.
-        try? await client.close()
+        // Shutting the transport cancels in-flight PTY reads via channel
+        // close → the read loop exits → its markClosed is a no-op.
+        await transport.shutdown()
     }
 
     // MARK: - Private actor-isolated helpers
 
-    private func installWriter(_ w: TTYStdinWriter) {
+    private func installWriter(_ w: any SSHPTYWriter) {
         self.writer = w
     }
 
@@ -492,6 +463,132 @@ actor SSHSession {
         let handler = onUnexpectedClose
         onUnexpectedClose = nil
         handler?()
+    }
+}
+
+// MARK: - Client transport seam
+
+/// The slice of the SSH client that ``SSHSession`` consumes, as a protocol —
+/// the seam that lets lifecycle tests run a real session over a scripted
+/// fake: a hung exec on a half-open socket, a refused PTY, a dead writer —
+/// the exact shapes behind this week's suspension/recovery bugs, none of
+/// which loopback networking can produce. Production is
+/// ``CitadelClientTransport``. SFTP is deliberately NOT part of the seam
+/// (see `SSHSession.sftpClient`).
+protocol SSHClientTransport: AnyObject, Sendable {
+    /// One-shot exec channel: stderr merged, buffered to completion.
+    func run(_ command: String) async throws -> Data
+    /// Open the interactive PTY. Returns once the server accepted it,
+    /// handing back the stdin writer; `onOutput` then streams host bytes for
+    /// the channel's lifetime, and `onEnd` fires when the read loop finishes
+    /// — cleanly or not; the session turns that into `markClosed`.
+    func openPTY(rows: Int, cols: Int,
+                 onOutput: @escaping @Sendable (Data) -> Void,
+                 onEnd: @escaping @Sendable () -> Void) async throws -> any SSHPTYWriter
+    /// Tear the connection down; must also end an open PTY's read loop
+    /// (which makes the session's `close()` race-free against `markClosed`).
+    func shutdown() async
+}
+
+/// The PTY stdin surface the session writes through.
+protocol SSHPTYWriter: Sendable {
+    func write(_ data: Data) async throws
+    func resize(cols: Int, rows: Int) async throws
+}
+
+/// Production ``SSHClientTransport`` over a Citadel `SSHClient`.
+final class CitadelClientTransport: SSHClientTransport {
+    private let client: SSHClient
+
+    init(client: SSHClient) {
+        self.client = client
+    }
+
+    func run(_ command: String) async throws -> Data {
+        let buffer = try await client.executeCommand(command, mergeStreams: true)
+        return Data(buffer.readableBytesView)
+    }
+
+    func openPTY(rows: Int, cols: Int,
+                 onOutput: @escaping @Sendable (Data) -> Void,
+                 onEnd: @escaping @Sendable () -> Void) async throws -> any SSHPTYWriter {
+        let request = SSHChannelRequestEvent.PseudoTerminalRequest(
+            wantReply: true,
+            term: "xterm-256color",
+            terminalCharacterWidth: cols,
+            terminalRowHeight: rows,
+            terminalPixelWidth: 0,
+            terminalPixelHeight: 0,
+            terminalModes: SSHTerminalModes([:])
+        )
+        // Ask for a UTF-8 locale on the remote PTY, same value the mosh
+        // bootstrap forwards (`-l LANG=…`). Without it many Linux hosts start
+        // the session in the C locale and CJK input/output turns into
+        // mojibake ("？？？"/<ffff>) — the classic "输入中文乱码" report.
+        // OpenSSH accepts LANG by default (`AcceptEnv LANG LC_*`); servers
+        // that refuse env requests just ignore this (wantReply: false).
+        let environment = [
+            SSHChannelRequestEvent.EnvironmentRequest(
+                wantReply: false, name: "LANG", value: "en_US.UTF-8")
+        ]
+
+        // Handshake: return only after Citadel has accepted the PTY request
+        // and handed us a writer, while the surrounding read loop keeps
+        // running for the lifetime of the session. Bridged with a
+        // CheckedContinuation; closing the client breaks `withPTY`'s read
+        // loop, so no Task handle needs holding for cancellation.
+        return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<any SSHPTYWriter, Error>) in
+            Task { [client] in
+                var resumed = false
+                do {
+                    try await client.withPTY(request, environment: environment) { output, writer in
+                        if !resumed {
+                            resumed = true
+                            continuation.resume(returning: CitadelPTYWriter(writer: writer))
+                        }
+                        do {
+                            for try await chunk in output {
+                                let buffer: ByteBuffer
+                                switch chunk {
+                                case .stdout(let buf): buffer = buf
+                                case .stderr(let buf): buffer = buf
+                                }
+                                let bytes = Array(buffer.readableBytesView)
+                                if !bytes.isEmpty {
+                                    onOutput(Data(bytes))
+                                }
+                            }
+                        } catch {
+                            // Read loop ended in error — fall through to onEnd.
+                        }
+                    }
+                } catch {
+                    if !resumed {
+                        resumed = true
+                        continuation.resume(throwing: error)
+                    }
+                }
+                onEnd()
+            }
+        }
+    }
+
+    func shutdown() async {
+        try? await client.close()
+    }
+}
+
+private struct CitadelPTYWriter: SSHPTYWriter {
+    let writer: TTYStdinWriter
+
+    func write(_ data: Data) async throws {
+        var buffer = ByteBuffer()
+        buffer.writeBytes(data)
+        try await writer.write(buffer)
+    }
+
+    func resize(cols: Int, rows: Int) async throws {
+        try await writer.changeSize(cols: cols, rows: rows, pixelWidth: 0, pixelHeight: 0)
     }
 }
 
