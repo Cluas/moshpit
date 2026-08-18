@@ -345,6 +345,37 @@ struct HerdrControlClientTests {
         #expect(on.lowerBound < off.lowerBound)
     }
 
+    // MARK: - Semantic keys
+
+    @Test("Arrow keys ride pane send-keys with no trailing snapshot poll")
+    func sendKeyIsQuiet() async {
+        let runner = FakeRunner(response: Self.twoWorkspaces)
+        let client = await started(runner)
+        let before = runner.commands.count
+
+        client.sendKey("up", paneId: "w1:p1")
+        await settle()
+
+        let sent = Array(runner.commands[before...])
+        #expect(sent.contains { $0.contains("pane send-keys 'w1:p1' up") })
+        // Keystroke-rate traffic must not drag a snapshot read behind every
+        // keypress — a cursor move changes nothing the sheets care about.
+        #expect(!sent.contains { $0.contains("api snapshot") })
+    }
+
+    @Test("Only a lone arrow sequence maps to a key name — both DECCKM variants")
+    func arrowKeyNameMapping() {
+        typealias S = SessionHub.ActiveSession
+        #expect(S.arrowKeyName(Data([0x1B, 0x5B, 0x41])) == "up")      // ESC[A
+        #expect(S.arrowKeyName(Data([0x1B, 0x4F, 0x42])) == "down")    // ESC OB
+        #expect(S.arrowKeyName(Data([0x1B, 0x5B, 0x43])) == "right")
+        #expect(S.arrowKeyName(Data([0x1B, 0x4F, 0x44])) == "left")
+        // Not arrows: plain text, batched sequences, other CSI.
+        #expect(S.arrowKeyName(Data("A".utf8)) == nil)
+        #expect(S.arrowKeyName(Data([0x1B, 0x5B, 0x41, 0x1B, 0x5B, 0x41])) == nil)
+        #expect(S.arrowKeyName(Data([0x1B, 0x5B, 0x48])) == nil)       // Home
+    }
+
     // MARK: - Immersive zoom (the mosh renderer)
 
     @Test("Immersive mode: picking a pane zooms it — focus and fill in one command")

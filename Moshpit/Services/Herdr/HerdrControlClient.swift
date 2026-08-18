@@ -531,6 +531,30 @@ final class HerdrControlClient: MultiplexerControlling {
         }
     }
 
+    /// `send` without the trailing snapshot poll — for keystroke-rate traffic
+    /// (arrow keys), where a poll per keypress is churn with nothing to learn:
+    /// a cursor move changes no tree state the sheets care about.
+    private func sendQuiet(_ subcommand: String) {
+        Task { [weak self] in
+            _ = try? await self?.run(subcommand)
+        }
+    }
+
+    /// Send a SEMANTIC key to a pane — herdr encodes it server-side against
+    /// the pane's REAL terminal modes. This exists because the client cannot
+    /// know those modes over herdr: arrow variants (`ESC[A` vs `ESC OA`,
+    /// DECCKM) are chosen from the LOCAL emulator's state everywhere else,
+    /// but the frame channel feeds that emulator absolutely-positioned
+    /// repaints that never carry mode changes — so the flag never flips, the
+    /// app keeps sending the normal-mode variant, and zsh widgets bound via
+    /// terminfo (`kcuu1` IS the application-mode sequence) never fire: the
+    /// "no up/down history under herdr" report. `pane send-keys up` recalls
+    /// history against the live server (verified, both directions), because
+    /// the encoder that honors application_cursor lives where the truth is.
+    func sendKey(_ key: String, paneId: String) {
+        sendQuiet("pane send-keys \(HerdrLaunch.quote(paneId)) \(key)")
+    }
+
     // MARK: Immersive zoom (mosh renderer)
 
     /// mosh+herdr's answer to mosh+tmux's `ensureImmersiveZoom`. Over mosh

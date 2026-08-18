@@ -1063,6 +1063,10 @@ struct TerminalScreen: View {
     /// `SessionHub.ActiveSession.applicationCursorKeys`).
     private func sendArrow(_ direction: String) {
         disarmStickyCtrlIfNeeded()
+        // Over herdr these bytes are intercepted in sendInput and rerouted as
+        // SEMANTIC keys (`pane send-keys`) — the local DECCKM below is stale
+        // there (frames never carry mode changes), and sendInput is the one
+        // choke point both this D-pad and a hardware keyboard flow through.
         let appMode = active?.applicationCursorKeys ?? false
         let csi: [UInt8]
         switch direction {

@@ -557,6 +557,21 @@ final class SessionHub {
             // (deliverInput/deliverPaste stay ungated on purpose — the lock
             // screen and share-queue paths do their own reconnect-first dance.)
             guard viewModel.connState == .live else { return }
+            // herdr (either transport): a lone arrow sequence reroutes as a
+            // SEMANTIC key, encoded server-side against the pane's REAL
+            // terminal modes. The client-side variant choice (ESC[A vs
+            // ESC OA) reads the local emulator's DECCKM — but over herdr
+            // that emulator is fed repaint frames that never carry mode
+            // changes, so the flag never flips and the normal-mode variant
+            // goes out forever; zsh widgets bound via terminfo (kcuu1 IS the
+            // application-mode sequence) then never fire — the "no up/down
+            // history under herdr" report. One choke point catches both the
+            // D-pad and a hardware keyboard's arrows.
+            if let herdr = herdrControl, let key = Self.arrowKeyName(data),
+               let paneId = herdr.snapshot.activePaneId {
+                herdr.sendKey(key, paneId: paneId)
+                return
+            }
             // If we scrolled the pane into tmux copy-mode, leave it first so the
             // keystrokes reach the shell (in copy-mode tmux would eat them).
             tmuxControl?.exitCopyMode()
@@ -583,6 +598,23 @@ final class SessionHub {
                 sendOverMosh(transport, out)
             } else {
                 viewModel.send(data)
+            }
+        }
+
+        /// A payload that is exactly one arrow-key sequence, as its herdr
+        /// key name — either DECCKM variant, since the sender's guess is
+        /// exactly what can't be trusted here. Anything else (batched keys,
+        /// other sequences, plain text) returns nil and flows unmodified.
+        static func arrowKeyName(_ data: Data) -> String? {
+            guard data.count == 3, data[data.startIndex] == 0x1B else { return nil }
+            let second = data[data.startIndex + 1]
+            guard second == UInt8(ascii: "[") || second == UInt8(ascii: "O") else { return nil }
+            switch data[data.startIndex + 2] {
+            case UInt8(ascii: "A"): return "up"
+            case UInt8(ascii: "B"): return "down"
+            case UInt8(ascii: "C"): return "right"
+            case UInt8(ascii: "D"): return "left"
+            default: return nil
             }
         }
 
