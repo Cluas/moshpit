@@ -1548,6 +1548,15 @@ final class SessionHub {
                             HerdrLaunch.staleRendererCleanupCommand(connectionId: connection.id))
                     }
                 }
+                if connection.multiplexer == .tmux {
+                    // Same hygiene for the tmux renderer: previous connects'
+                    // renderer stacks (shell + tmux client, kept alive by
+                    // their surviving mosh-servers) must not stay attached —
+                    // each one is a phone-sized client contesting
+                    // `window-size latest` against every live client.
+                    _ = try? await ssh.executeCommand(
+                        Self.tmuxRendererCleanupCommand(connectionId: connection.id))
+                }
                 await ssh.close()   // mosh-server has daemonized; UDP from here
 
                 let transport = try MoshTransport(credentials: creds)
@@ -1839,6 +1848,45 @@ final class SessionHub {
             // session explicitly and the retrying sidecar follows.
         }
 
+        // MARK: mosh+tmux renderer hygiene
+
+        /// Pidfile the renderer attach line writes before exec'ing tmux.
+        /// `echo $$` runs pre-exec and `exec` preserves the pid, so the
+        /// recorded pid IS the tmux client — killing it detaches the
+        /// renderer, and the shell having been replaced, its mosh-server
+        /// dies with it.
+        static func tmuxRendererPidPath(connectionId: UUID, nonce: String) -> String {
+            "$HOME/.moshpit/tmuxr-\(connectionId.uuidString)-\(nonce).pid"
+        }
+
+        /// The line typed into the mosh shell to attach the renderer. ^U
+        /// first (see attachMoshRenderer). `exec`, because the pre-exec shape
+        /// leaked one IMMORTAL renderer per connect: mosh-server survives
+        /// disconnects by design, so its shell — and the tmux client the
+        /// shell spawned — outlived every session. Nine of them were found
+        /// attached at 75×61, fighting the desktop client over
+        /// `window-size latest` and flooding redraws ("SSH 乱码" resize war,
+        /// 2026-08-19). `has-session` gates the exec so a vanished session
+        /// leaves the shell alive for the retry loop instead of killing the
+        /// whole mosh connection on a failed attach.
+        static func tmuxRendererAttachLine(tmux: String, session name: String,
+                                           connectionId: UUID, nonce: String) -> String {
+            let pid = tmuxRendererPidPath(connectionId: connectionId, nonce: nonce)
+            return "\u{15}mkdir -p \"$HOME/.moshpit\"; echo $$ > \"\(pid)\"; "
+                + "\(tmux) has-session -t \(shellQuote(name)) 2>/dev/null && "
+                + "exec \(tmux) attach -t \(shellQuote(name))\r"
+        }
+
+        /// Kill any previous connect's renderer stack for this connection —
+        /// the boot-time hygiene HerdrLaunch.staleRendererCleanupCommand
+        /// already gives the herdr renderer loop.
+        static func tmuxRendererCleanupCommand(connectionId: UUID) -> String {
+            let base = "$HOME/.moshpit/tmuxr-\(connectionId.uuidString)"
+            return "for f in \"\(base)-\"*.pid; do "
+                + "kill $(cat \"$f\" 2>/dev/null) 2>/dev/null; done; "
+                + "rm -f \"\(base)-\"*.pid; true"
+        }
+
         /// Type the attach line into the mosh shell and VERIFY — via the
         /// sidecar, whose `list-clients` is authoritative — that a new
         /// non-control client actually appeared. A login shell that is still
@@ -1852,9 +1900,12 @@ final class SessionHub {
                                         control: TmuxSessionController,
                                         tmux: String, session name: String) async {
             let baseline = await nonControlClientCount(control)
+            let nonce = String(UUID().uuidString.prefix(8))
+            let line = Self.tmuxRendererAttachLine(
+                tmux: tmux, session: name, connectionId: connection.id, nonce: nonce)
             for _ in 0..<4 {
                 guard !isStopping else { return }
-                await transport.send(Data("\u{15}\(tmux) attach -t \(Self.shellQuote(name))\r".utf8))
+                await transport.send(Data(line.utf8))
                 try? await Task.sleep(nanoseconds: 1_500_000_000)
                 let now = await nonControlClientCount(control)
                 if now < 0 || now > max(baseline, 0) { return }   // attached (or sidecar gone — stop)
