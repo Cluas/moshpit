@@ -90,6 +90,9 @@ struct TmuxControlClientParserTests {
         let client = TmuxControlClient()
         let rec = CallbackRecorder()
         await rec.install(on: client)
+        // Boot banner: every control session's first block is the boot
+        // line's own reply and is swallowed by the client (no event).
+        await client.feed(bytes("%begin 900 500 0\n%end 900 500 0\n"))
 
         await client.feed(bytes("%output %0 hello world\n"))
 
@@ -101,6 +104,9 @@ struct TmuxControlClientParserTests {
         let client = TmuxControlClient()
         let rec = CallbackRecorder()
         await rec.install(on: client)
+        // Boot banner: every control session's first block is the boot
+        // line's own reply and is swallowed by the client (no event).
+        await client.feed(bytes("%begin 900 500 0\n%end 900 500 0\n"))
 
         // `\033` = ESC (0x1B), `\007` = BEL (0x07).
         await client.feed(bytes(#"%output %1 \033[31mred\033[0m\007"# + "\n"))
@@ -120,6 +126,9 @@ struct TmuxControlClientParserTests {
         let client = TmuxControlClient()
         let rec = CallbackRecorder()
         await rec.install(on: client)
+        // Boot banner: every control session's first block is the boot
+        // line's own reply and is swallowed by the client (no event).
+        await client.feed(bytes("%begin 900 500 0\n%end 900 500 0\n"))
 
         await client.feed(bytes(#"%output %2 path\\to\\file"# + "\n"))
 
@@ -137,6 +146,9 @@ struct TmuxControlClientParserTests {
         let client = TmuxControlClient()
         let rec = CallbackRecorder()
         await rec.install(on: client)
+        // Boot banner: every control session's first block is the boot
+        // line's own reply and is swallowed by the client (no event).
+        await client.feed(bytes("%begin 900 500 0\n%end 900 500 0\n"))
 
         var first = Data("%output %5 ".utf8)
         first.append(contentsOf: [0xE2, 0x94, 0x80, 0xE2, 0x94])  // ─ + partial ─
@@ -165,6 +177,9 @@ struct TmuxControlClientParserTests {
         let client = TmuxControlClient()
         let rec = CallbackRecorder()
         await rec.install(on: client)
+        // Boot banner: every control session's first block is the boot
+        // line's own reply and is swallowed by the client (no event).
+        await client.feed(bytes("%begin 900 500 0\n%end 900 500 0\n"))
 
         var line = Data("%output %6 ".utf8)
         line.append(contentsOf: Data("测试中文".utf8))
@@ -181,6 +196,9 @@ struct TmuxControlClientParserTests {
         let client = TmuxControlClient()
         let rec = CallbackRecorder()
         await rec.install(on: client)
+        // Boot banner: every control session's first block is the boot
+        // line's own reply and is swallowed by the client (no event).
+        await client.feed(bytes("%begin 900 500 0\n%end 900 500 0\n"))
 
         let payload = """
         %begin 1234 7 0
@@ -213,6 +231,9 @@ struct TmuxControlClientParserTests {
         let client = TmuxControlClient()
         let rec = CallbackRecorder()
         await rec.install(on: client)
+        // Boot banner: every control session's first block is the boot
+        // line's own reply and is swallowed by the client (no event).
+        await client.feed(bytes("%begin 900 500 0\n%end 900 500 0\n"))
 
         let payload = """
         %begin 5 2 0
@@ -245,6 +266,9 @@ struct TmuxControlClientParserTests {
         let client = TmuxControlClient()
         let rec = CallbackRecorder()
         await rec.install(on: client)
+        // Boot banner: every control session's first block is the boot
+        // line's own reply and is swallowed by the client (no event).
+        await client.feed(bytes("%begin 900 500 0\n%end 900 500 0\n"))
 
         let payload = """
         %begin 6 3 0
@@ -269,6 +293,9 @@ struct TmuxControlClientParserTests {
         let client = TmuxControlClient()
         let rec = CallbackRecorder()
         await rec.install(on: client)
+        // Boot banner: every control session's first block is the boot
+        // line's own reply and is swallowed by the client (no event).
+        await client.feed(bytes("%begin 900 500 0\n%end 900 500 0\n"))
 
         let payload = """
         %begin 99 1 0
@@ -293,6 +320,9 @@ struct TmuxControlClientParserTests {
         let client = TmuxControlClient()
         let rec = CallbackRecorder()
         await rec.install(on: client)
+        // Boot banner: every control session's first block is the boot
+        // line's own reply and is swallowed by the client (no event).
+        await client.feed(bytes("%begin 900 500 0\n%end 900 500 0\n"))
 
         // list-panes returns lines like `%160 @84 …`.
         let payload = """
@@ -324,6 +354,9 @@ struct TmuxControlClientParserTests {
         let client = TmuxControlClient()
         let rec = CallbackRecorder()
         await rec.install(on: client)
+        // Boot banner: every control session's first block is the boot
+        // line's own reply and is swallowed by the client (no event).
+        await client.feed(bytes("%begin 900 500 0\n%end 900 500 0\n"))
 
         let payload = """
         %session-changed $0 main
@@ -353,6 +386,9 @@ struct TmuxControlClientParserTests {
         let client = TmuxControlClient()
         let rec = CallbackRecorder()
         await rec.install(on: client)
+        // Boot banner: every control session's first block is the boot
+        // line's own reply and is swallowed by the client (no event).
+        await client.feed(bytes("%begin 900 500 0\n%end 900 500 0\n"))
 
         await client.feed(bytes("%pause %4\n%continue %4\n"))
 
@@ -364,6 +400,9 @@ struct TmuxControlClientParserTests {
         let client = TmuxControlClient()
         let rec = CallbackRecorder()
         await rec.install(on: client)
+        // Boot banner: every control session's first block is the boot
+        // line's own reply and is swallowed by the client (no event).
+        await client.feed(bytes("%begin 900 500 0\n%end 900 500 0\n"))
 
         await client.feed(bytes("%exit\n%exit detached\n"))
 
@@ -377,6 +416,9 @@ struct TmuxControlClientParserTests {
         let client = TmuxControlClient()
         let rec = CallbackRecorder()
         await rec.install(on: client)
+        // Boot banner: every control session's first block is the boot
+        // line's own reply and is swallowed by the client (no event).
+        await client.feed(bytes("%begin 900 500 0\n%end 900 500 0\n"))
 
         await client.feed(bytes("%this-is-from-the-future @0 some payload\n"))
 
@@ -389,6 +431,9 @@ struct TmuxControlClientParserTests {
         let client = TmuxControlClient()
         let rec = CallbackRecorder()
         await rec.install(on: client)
+        // Boot banner: every control session's first block is the boot
+        // line's own reply and is swallowed by the client (no event).
+        await client.feed(bytes("%begin 900 500 0\n%end 900 500 0\n"))
 
         await client.feed(bytes("%output without-pane-id\n"))
 
@@ -409,6 +454,9 @@ struct TmuxControlClientParserTests {
         let client = TmuxControlClient()
         let rec = CallbackRecorder()
         await rec.install(on: client)
+        // Boot banner: every control session's first block is the boot
+        // line's own reply and is swallowed by the client (no event).
+        await client.feed(bytes("%begin 900 500 0\n%end 900 500 0\n"))
 
         // Split in the middle of the payload — first chunk has no newline.
         await client.feed(bytes("%output %0 hel"))
@@ -423,6 +471,9 @@ struct TmuxControlClientParserTests {
         let client = TmuxControlClient()
         let rec = CallbackRecorder()
         await rec.install(on: client)
+        // Boot banner: every control session's first block is the boot
+        // line's own reply and is swallowed by the client (no event).
+        await client.feed(bytes("%begin 900 500 0\n%end 900 500 0\n"))
 
         await client.feed(bytes("%window-add @9\r\n"))
 
@@ -458,6 +509,9 @@ struct TmuxControlClientParserTests {
         let client = TmuxControlClient()
         let rec = CallbackRecorder()
         await rec.install(on: client)
+        // Boot banner: every control session's first block is the boot
+        // line's own reply and is swallowed by the client (no event).
+        await client.feed(bytes("%begin 900 500 0\n%end 900 500 0\n"))
 
         await client.feed(bytes("%output %0 nev"))
         await client.reset()
@@ -480,6 +534,9 @@ struct TmuxControlClientParserTests {
         let client = TmuxControlClient()
         let rec = CallbackRecorder()
         await rec.install(on: client)
+        // Boot banner: every control session's first block is the boot
+        // line's own reply and is swallowed by the client (no event).
+        await client.feed(bytes("%begin 900 500 0\n%end 900 500 0\n"))
 
         let payload = """
         %begin 1234 7 0
@@ -500,4 +557,40 @@ struct TmuxControlClientParserTests {
         ])
     }
 
+    @Test("every control session's boot block is swallowed — including after a failed preferred attach")
+    func failedPreferredAttachChainKeepsPairing() async throws {
+        // A preferred-session boot chain (`tmux -CC attach -t 'x' || …`)
+        // emits a full %begin/%error/%exit for the failed attach and a
+        // fresh banner for the attach that succeeds — verified against tmux
+        // 3.6a, 2026-08-19. Both are replies to boot lines nobody queued a
+        // callback for; surfacing either shifts command↔response pairing by
+        // one for the rest of the connection (the mosh sidecar's wrong
+        // `list-clients` answers, and the renderer re-typing its attach
+        // line into a live pane).
+        let client = TmuxControlClient()
+        let rec = CallbackRecorder()
+        // Deliberately no banner prefix — this test IS about the boot blocks.
+        await rec.install(on: client)
+
+        await client.feed(bytes("""
+        %begin 100 530 0
+        can't find session: nonexistent
+        %error 100 530 0
+        %exit
+        %begin 100 532 0
+        %end 100 532 0
+        %session-changed $0 real
+        %begin 100 535 1
+        real reply
+        %end 100 535 1
+
+        """))
+
+        #expect(rec.events == [
+            .exit(nil),
+            .sessionChanged("$0", "real"),
+            .commandResponse(commandId: 100, commandNum: 535, isError: false,
+                             lines: ["real reply"])
+        ])
+    }
 }

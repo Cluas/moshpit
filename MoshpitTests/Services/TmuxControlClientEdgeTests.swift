@@ -71,6 +71,9 @@ struct TmuxControlClientEdgeTests {
         let client = TmuxControlClient()
         let rec = EdgeRecorder()
         await rec.install(on: client)
+        // Boot banner: every control session's first block is the boot
+        // line's own reply and is swallowed by the client (no event).
+        await client.feed(bytes("%begin 900 500 0\n%end 900 500 0\n"))
 
         // tmux escapes any byte < 0x20 or > 0x7E. Embedded newline is `\012`.
         await client.feed(bytes(#"%output %0 first\012second"# + "\n"))
@@ -83,6 +86,9 @@ struct TmuxControlClientEdgeTests {
         let client = TmuxControlClient()
         let rec = EdgeRecorder()
         await rec.install(on: client)
+        // Boot banner: every control session's first block is the boot
+        // line's own reply and is swallowed by the client (no event).
+        await client.feed(bytes("%begin 900 500 0\n%end 900 500 0\n"))
 
         await client.feed(bytes(#"%output %0 alpha\015\012beta"# + "\n"))
 
@@ -96,6 +102,9 @@ struct TmuxControlClientEdgeTests {
         let client = TmuxControlClient()
         let rec = EdgeRecorder()
         await rec.install(on: client)
+        // Boot banner: every control session's first block is the boot
+        // line's own reply and is swallowed by the client (no event).
+        await client.feed(bytes("%begin 900 500 0\n%end 900 500 0\n"))
 
         let full = bytes("%window-add @42\n")
         for byte in full {
@@ -110,6 +119,9 @@ struct TmuxControlClientEdgeTests {
         let client = TmuxControlClient()
         let rec = EdgeRecorder()
         await rec.install(on: client)
+        // Boot banner: every control session's first block is the boot
+        // line's own reply and is swallowed by the client (no event).
+        await client.feed(bytes("%begin 900 500 0\n%end 900 500 0\n"))
 
         let payload = """
         %window-add @1
@@ -135,6 +147,9 @@ struct TmuxControlClientEdgeTests {
         let client = TmuxControlClient()
         let rec = EdgeRecorder()
         await rec.install(on: client)
+        // Boot banner: every control session's first block is the boot
+        // line's own reply and is swallowed by the client (no event).
+        await client.feed(bytes("%begin 900 500 0\n%end 900 500 0\n"))
 
         await client.feed(bytes("%output %0 \n"))
 
@@ -146,6 +161,9 @@ struct TmuxControlClientEdgeTests {
         let client = TmuxControlClient()
         let rec = EdgeRecorder()
         await rec.install(on: client)
+        // Boot banner: every control session's first block is the boot
+        // line's own reply and is swallowed by the client (no event).
+        await client.feed(bytes("%begin 900 500 0\n%end 900 500 0\n"))
 
         await client.feed(bytes("%session-changed $7\n"))
 
@@ -164,6 +182,9 @@ struct TmuxControlClientEdgeTests {
         let client = TmuxControlClient()
         let rec = EdgeRecorder()
         await rec.install(on: client)
+        // Boot banner: every control session's first block is the boot
+        // line's own reply and is swallowed by the client (no event).
+        await client.feed(bytes("%begin 900 500 0\n%end 900 500 0\n"))
 
         let payload = """
         %begin 1 1 0
@@ -200,6 +221,9 @@ struct TmuxControlClientEdgeTests {
         let client = TmuxControlClient()
         let rec = EdgeRecorder()
         await rec.install(on: client)
+        // Boot banner: every control session's first block is the boot
+        // line's own reply and is swallowed by the client (no event).
+        await client.feed(bytes("%begin 900 500 0\n%end 900 500 0\n"))
 
         await client.feed(bytes("%end 0 0 0\n"))
 
@@ -211,6 +235,9 @@ struct TmuxControlClientEdgeTests {
         let client = TmuxControlClient()
         let rec = EdgeRecorder()
         await rec.install(on: client)
+        // Boot banner: every control session's first block is the boot
+        // line's own reply and is swallowed by the client (no event).
+        await client.feed(bytes("%begin 900 500 0\n%end 900 500 0\n"))
 
         // list-windows can return rows that incidentally start with %.
         let payload = """
@@ -234,6 +261,9 @@ struct TmuxControlClientEdgeTests {
         let client = TmuxControlClient()
         let rec = EdgeRecorder()
         await rec.install(on: client)
+        // Boot banner: every control session's first block is the boot
+        // line's own reply and is swallowed by the client (no event).
+        await client.feed(bytes("%begin 900 500 0\n%end 900 500 0\n"))
 
         // Real tmux: %layout-change <window-id> <window-layout> [visible_layout] [<flags>]
         await client.feed(bytes("%layout-change @5 81x24,0,0,8 81x24,0,0,8 *Z\n"))
@@ -246,6 +276,9 @@ struct TmuxControlClientEdgeTests {
         let client = TmuxControlClient()
         let rec = EdgeRecorder()
         await rec.install(on: client)
+        // Boot banner: every control session's first block is the boot
+        // line's own reply and is swallowed by the client (no event).
+        await client.feed(bytes("%begin 900 500 0\n%end 900 500 0\n"))
 
         await client.feed(bytes("%layout-change @5 81x24,0,0,8\n"))
 
@@ -259,6 +292,9 @@ struct TmuxControlClientEdgeTests {
         let client = TmuxControlClient()
         let rec = EdgeRecorder()
         await rec.install(on: client)
+        // Boot banner: every control session's first block is the boot
+        // line's own reply and is swallowed by the client (no event).
+        await client.feed(bytes("%begin 900 500 0\n%end 900 500 0\n"))
 
         // Some transports prepend `\eP1000p` before the first tmux notification.
         let dcs = Data([0x1B, 0x50, 0x31, 0x30, 0x30, 0x30, 0x70])  // ESC P 1000 p
@@ -276,6 +312,9 @@ struct TmuxControlClientEdgeTests {
         let client = TmuxControlClient()
         let rec = EdgeRecorder()
         await rec.install(on: client)
+        // Boot banner: every control session's first block is the boot
+        // line's own reply and is swallowed by the client (no event).
+        await client.feed(bytes("%begin 900 500 0\n%end 900 500 0\n"))
 
         let big = String(repeating: "x", count: 16 * 1024)
         await client.feed(bytes("%output %0 \(big)\n"))
@@ -290,6 +329,9 @@ struct TmuxControlClientEdgeTests {
         let client = TmuxControlClient()
         let rec = EdgeRecorder()
         await rec.install(on: client)
+        // Boot banner: every control session's first block is the boot
+        // line's own reply and is swallowed by the client (no event).
+        await client.feed(bytes("%begin 900 500 0\n%end 900 500 0\n"))
 
         await client.feed(bytes("%client-detached\n%client-detached client-7\n"))
 
@@ -303,6 +345,9 @@ struct TmuxControlClientEdgeTests {
         let client = TmuxControlClient()
         let rec = EdgeRecorder()
         await rec.install(on: client)
+        // Boot banner: every control session's first block is the boot
+        // line's own reply and is swallowed by the client (no event).
+        await client.feed(bytes("%begin 900 500 0\n%end 900 500 0\n"))
 
         let payload = """
         %window-add @1
@@ -323,6 +368,9 @@ struct TmuxControlClientEdgeTests {
         let client = TmuxControlClient()
         let rec = EdgeRecorder()
         await rec.install(on: client)
+        // Boot banner: every control session's first block is the boot
+        // line's own reply and is swallowed by the client (no event).
+        await client.feed(bytes("%begin 900 500 0\n%end 900 500 0\n"))
 
         // Open a block but never close it.
         await client.feed(bytes("%begin 5 5 0\nline-one\n"))

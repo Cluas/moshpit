@@ -31,9 +31,9 @@ private func makeAttachedController() async -> (TmuxSessionController, MockTmuxT
     let controller = TmuxSessionController(sshSession: transport)
     await controller.attach()
     // Real tmux answers the boot line (`-CC attach`) with the connection's
-    // first reply block; beginControlMode reserves the head callback slot
-    // for it (see expectBootBlock). The mock must send it too, or every
-    // later reply pops one slot early.
+    // first reply block; TmuxControlClient swallows each control session's
+    // boot block (see awaitingBootBlock). The mock sends it so the tests
+    // exercise the same stream shape real tmux produces.
     transport.pushText("%begin 100 0 0\n%end 100 0 0\n\n")
     return (controller, transport)
 }
@@ -375,7 +375,7 @@ struct TmuxSessionControllerTests {
         controller.setInitialClientSize(cols: 69, rows: 60)
         await controller.attach()
         // Real tmux answers the boot line with the connection's first reply
-        // block; the reserved boot slot needs it (see makeAttachedController).
+        // block; the client swallows it (see makeAttachedController).
         transport.pushText("%begin 100 0 0\n%end 100 0 0\n\n")
         _ = await waitUntil { await transport.recordedCommands().count >= 3 }
         pushOneWindowDiscovery(transport)
@@ -399,7 +399,7 @@ struct TmuxSessionControllerTests {
         controller.setInitialClientSize(cols: 69, rows: 60)
         await controller.attach()
         // Real tmux answers the boot line with the connection's first reply
-        // block; the reserved boot slot needs it (see makeAttachedController).
+        // block; the client swallows it (see makeAttachedController).
         transport.pushText("%begin 100 0 0\n%end 100 0 0\n\n")
         _ = await waitUntil { await transport.recordedCommands().count >= 3 }
         pushOneWindowDiscovery(transport)
@@ -425,7 +425,7 @@ struct TmuxSessionControllerTests {
         controller.setInitialClientSize(cols: 69, rows: 60)
         await controller.attach()
         // Real tmux answers the boot line with the connection's first reply
-        // block; the reserved boot slot needs it (see makeAttachedController).
+        // block; the client swallows it (see makeAttachedController).
         transport.pushText("%begin 100 0 0\n%end 100 0 0\n\n")
         _ = await waitUntil { await transport.recordedCommands().count >= 3 }
         pushOneWindowDiscovery(transport)

@@ -1491,10 +1491,10 @@ final class SessionHub {
         func createFirstTmuxSession() {
             guard let controller = tmuxController, !controller.snapshot.isAttached else { return }
             let tmux = connection.tmuxPath ?? "tmux"
-            // `-CC new` boots a fresh control session on the SAME stream, and
-            // its own banner block needs its own reserved head slot — see
-            // expectBootBlock's doc for the pairing shift it prevents.
-            controller.expectBootBlock()
+            // `-CC new` boots a fresh control session on the SAME stream; its
+            // banner block is swallowed by TmuxControlClient's boot-block
+            // tracking (re-armed by the failed attach's %exit) — see
+            // `awaitingBootBlock` for the pairing shift that prevents.
             viewModel.send(Data("\(tmux) -CC new\r".utf8))
         }
 

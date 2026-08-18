@@ -117,6 +117,23 @@ actor TmuxControlClient {
     /// `%begin` data captured at block open; cleared at `%end` / `%error`.
     private var openBlock: (commandId: Int, commandNum: Int, lines: [String])?
 
+    /// True while the NEXT completed block is the boot command's own reply —
+    /// the block tmux emits for the line that entered control mode
+    /// (`-CC attach` / `-CC new`), which no caller ever sent through the
+    /// command queue. Swallowed here rather than paired positionally
+    /// upstream, because ONE stream can carry SEVERAL control sessions:
+    /// a preferred-session boot chain
+    /// (`tmux -CC attach -t 'x' || while ! tmux -CC attach; do sleep 2; done`)
+    /// emits a full `%begin/%error/%exit` for EVERY failed attach and a
+    /// fresh banner for the one that succeeds (verified against tmux 3.6a,
+    /// 2026-08-19) — a fixed one-slot reservation upstream shifts
+    /// command↔response pairing by one per extra banner, which is how the
+    /// mosh sidecar's `list-clients` answers came back wrong and the
+    /// renderer re-typed its attach line into a live pane. Re-armed by
+    /// `%exit`: whatever block follows a control session's end belongs to
+    /// the next session's boot line.
+    private var awaitingBootBlock = true
+
     // MARK: - Init
 
     init() {}
@@ -136,6 +153,7 @@ actor TmuxControlClient {
     func reset() {
         buffer.removeAll(keepingCapacity: false)
         openBlock = nil
+        awaitingBootBlock = true
     }
 
     // MARK: - Callback installers
@@ -368,6 +386,12 @@ actor TmuxControlClient {
            cid != block.commandId {
             onProtocolError?(.malformedLine("mismatched terminator id \(cid) for block #\(block.commandId)"))
         }
+        // The boot line's own reply never had a queued callback — deliver it
+        // upstream and it pops someone else's. See `awaitingBootBlock`.
+        if awaitingBootBlock {
+            awaitingBootBlock = false
+            return
+        }
         let response = TmuxCommandResponse(
             commandId: block.commandId,
             commandNum: block.commandNum,
@@ -514,6 +538,11 @@ actor TmuxControlClient {
     }
 
     private func handleExit(_ line: String) {
+        // A control session just ended on this stream. If another one boots
+        // behind it (a failed preferred attach falling through its `||`
+        // chain, the `-CC new` fallback), its first block is that boot
+        // line's own reply — swallow it too. See `awaitingBootBlock`.
+        awaitingBootBlock = true
         if line == "%exit" {
             onExit?(nil)
             return

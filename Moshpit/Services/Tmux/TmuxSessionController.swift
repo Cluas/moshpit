@@ -229,28 +229,8 @@ final class TmuxSessionController: MultiplexerControlling {
     /// `tmux -CC new` line is written to the shell *after* this returns) —
     /// discovery fires automatically once `%session-changed` arrives.
     func beginControlMode() async {
-        expectBootBlock()
         await installCallbacks()
         startPumping()
-    }
-
-    /// Reserve the head of the callback queue for a BOOT command's reply
-    /// block. The line that enters control mode (`tmux -CC attach` /
-    /// `-CC new`) is a command this controller never sent through
-    /// `enqueue`, yet tmux answers it with the connection's first
-    /// `%begin…%end` block like any other. Pairing is positional
-    /// (``handleCommandResponse`` pops FIFO), so without a reserved slot
-    /// the pairing silently relied on that block arriving while the queue
-    /// was still empty — and over a weak network it routinely arrived
-    /// AFTER discovery had enqueued, popping `list-sessions`' callback and
-    /// shifting every later response one command back: capture frames
-    /// delivered to cursor callbacks, and the agent-hook poll's
-    /// `%0||||…` payload fed into a visible pane as its "frame"
-    /// (user screenshots, 2026-08-19). Also called before the
-    /// `tmux -CC new` fallback boots a second control session on this
-    /// same stream, whose own banner block needs its own slot.
-    func expectBootBlock() {
-        pendingCallbacks.append(nil)
     }
 
     /// Wire up parser callbacks, start pumping SSH bytes, and run the
