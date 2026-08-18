@@ -88,10 +88,13 @@ final class TerminalHostContainer: UIView {
     override func layoutSubviews() {
         super.layoutSubviews()
         guard let terminalView, !frameLocked else { return }
+        // Same guard as host(): a transient zero-bounds pass (sheet
+        // transitions, remounts) must not squeeze a live buffer through the
+        // minimum grid — that reflow doesn't round-trip.
+        guard bounds.width > 0, bounds.height > 0 else { return }
         if terminalView.frame != bounds {
             terminalView.frame = bounds
         }
-        guard bounds.width > 0, bounds.height > 0 else { return }
         onTerminalLaidOut?(terminalView)
     }
 }
@@ -172,7 +175,20 @@ struct SwiftTerminalView: UIViewRepresentable {
             return container
         }
         let font = TerminalFont.font(id: fontName, size: CGFloat(fontSize))
-        let terminalView = TerminalView(frame: .zero, font: font)
+        // Born at the screen's size, not `.zero` — the mosh-path twin of
+        // TmuxSessionController.mintTerminal's birthFrame. A `.zero` frame
+        // derives a MINIMUM_COLS grid (two columns), and everything fed
+        // before the first layout pass — mosh's first screen diffs, herdr's
+        // raw-attach repaint, both beat `makeUIView` by design (see
+        // `pendingFeed`) — gets wrapped at two columns. Those shards sink
+        // into the enlarged scrollback, and SwiftTerm's reflow does not
+        // round-trip (see TerminalHostContainer.host), so scrolling up shows
+        // a column of 1–2 character fragments forever while the visible
+        // screen self-corrects (user screenshot, 2026-08-18). The screen
+        // bounds are within a row/column of what layout will deliver, so the
+        // pre-layout feed lands in the shape the server drew it for.
+        let birthFrame = CGRect(origin: .zero, size: UIScreen.main.bounds.size)
+        let terminalView = TerminalView(frame: birthFrame, font: font)
         coordinator.ownedTerminal = terminalView
         terminalView.inputAccessoryView = nil   // the app renders its own shortcut bar
         TerminalKeyboard.enableComposingInput(on: terminalView)
@@ -330,11 +346,16 @@ struct SwiftTerminalView: UIViewRepresentable {
         /// remote side via `SSHService.resize` / `tmux refresh-client -C`.
         var onSizeChange: ((_ cols: Int, _ rows: Int) -> Void)?
 
-        /// Last grid size the view reported via `sizeChanged`. SwiftTerm only
-        /// fires that on actual bounds changes, so a transport that comes up
-        /// AFTER layout has settled (mosh bootstrap, reconnects) must read
-        /// this and push it explicitly — waiting for the next event means
-        /// waiting forever, leaving the remote PTY at its 80×24 default.
+        /// Last known grid size: whatever `sizeChanged` reported most
+        /// recently, else the grid implied by the host's own layout
+        /// (``reportGrid``). SwiftTerm only fires `sizeChanged` on actual
+        /// grid CHANGES — a terminal minted at the right grid never fires it
+        /// — so the layout report is what keeps this truthful. A transport
+        /// that comes up AFTER layout has settled (mosh bootstrap,
+        /// reconnects) must read this and push it explicitly — waiting for
+        /// the next event means waiting forever, leaving the remote PTY at
+        /// its 80×24 default (or at `estimateGrid`'s guess, a column and a
+        /// good ten rows off).
         private(set) var lastReportedSize: (cols: Int, rows: Int)?
 
         /// Called for OSC 0/2 title changes (e.g. shell prompts that set
@@ -621,18 +642,23 @@ struct SwiftTerminalView: UIViewRepresentable {
         /// and every line comes out wrapped short.
         var onGridReport: ((_ cols: Int, _ rows: Int) -> Void)?
 
-        /// Compute the grid from the laid-out bounds and hand it to
-        /// ``onGridReport``. Measured the same way SwiftTerm measures (the cell
-        /// box from the font, then truncating division) so the two agree.
+        /// Compute the grid from the laid-out bounds, record it as
+        /// ``lastReportedSize``, and hand it to ``onGridReport``. Measured the
+        /// same way SwiftTerm measures (the cell box from the font, then
+        /// truncating division) so the two agree. Recording happens even with
+        /// no handler installed: the mosh path has none, but reads
+        /// ``lastReportedSize`` when the transport starts — without this a
+        /// terminal born at the right grid never fires `sizeChanged`, and the
+        /// server is told `estimateGrid`'s guess instead of the laid-out size.
         private func reportGrid(of terminal: TerminalView) {
-            guard let onGridReport else { return }
             let scale = terminal.window?.screen.scale ?? UITraitCollection.current.displayScale
             let cell = TerminalCellGeometry.measuredCell(font: terminal.font, scale: scale)
             guard cell.width > 0, cell.height > 0 else { return }
             let cols = Int(terminal.bounds.width / cell.width)
             let rows = Int(terminal.bounds.height / cell.height)
             guard cols > 0, rows > 0 else { return }
-            onGridReport(cols, rows)
+            lastReportedSize = (cols, rows)
+            onGridReport?(cols, rows)
         }
         private var frameLockTimeout: DispatchWorkItem?
 
