@@ -39,15 +39,20 @@ struct HerdrLaunchTests {
         #expect(line.contains("[ $? -ge 128 ] || break"))
     }
 
-    @Test("Cleanup retires every previous generation of this connection, and only this connection")
-    func cleanupShape() {
+    @Test("Cleanup retires every previous generation, including the immortal 360/361 layout")
+    func cleanupShape() throws {
         let cmd = HerdrLaunch.staleRendererCleanupCommand(connectionId: id)
-        // All nonces of THIS connection id — wildcard after the id…
-        #expect(cmd.contains("mosh-\(id.uuidString)-\""))
-        #expect(cmd.contains("*.pid"))
-        #expect(cmd.contains("rm -f"))
-        // …kill whatever attach each generation still holds.
-        #expect(cmd.contains("kill $(cat \"$f\""))
+        // Both layouts: nonce-less (360/361 — loops with no lose-gracefully
+        // logic, immortal fighters) and the nonced generations.
+        #expect(cmd.contains("mosh-\(id.uuidString)\".target"))
+        #expect(cmd.contains("mosh-\(id.uuidString)-\"*.target"))
+        #expect(cmd.contains("mosh-\(id.uuidString)\".pid"))
+        #expect(cmd.contains("mosh-\(id.uuidString)-\"*.pid"))
+        // Targets are removed BEFORE the kill: the orphan loop must wake to
+        // "no target" and idle, not re-read its old pane and re-attach.
+        let rmTargets = try #require(cmd.range(of: ".target"))
+        let kill = try #require(cmd.range(of: "kill -9"))
+        #expect(rmTargets.lowerBound < kill.lowerBound)
         // Never fails the bootstrap channel it runs on.
         #expect(cmd.hasSuffix("true"))
     }

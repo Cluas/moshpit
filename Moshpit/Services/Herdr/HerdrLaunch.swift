@@ -145,16 +145,25 @@ enum HerdrLaunch {
     }
 
     /// Pre-boot cleanup, run on the bootstrap SSH before the new renderer
-    /// starts: for every PREVIOUS generation of this connection (all nonces),
-    /// kill any attach it still holds and remove the state files. The kill is
-    /// signal-death — the orphan loop survives it by design — but with its
-    /// generation's target file gone and never written again (retargets only
-    /// write the LIVE generation's), it wakes up to "no target" and idles
-    /// forever instead of ever re-entering the fight.
+    /// starts: for every PREVIOUS generation of this connection, remove the
+    /// state files and kill any attach it still holds.
+    ///
+    /// Covers BOTH file layouts. Builds 360/361 used nonce-less paths
+    /// (`mosh-<id>.target`) and their loops never learned to lose — they are
+    /// IMMORTAL fighters that re-attach 0.3s after any eviction, which kept
+    /// "terminal attach taken over" alive on hosts that ever ran those
+    /// builds, and stole the screen back from the current session's retarget
+    /// (picked a claude-less tab, saw the claude pane — report, build 364).
+    /// Order is load-bearing: targets are removed FIRST, then the attach is
+    /// killed — the orphan loop wakes from the kill, re-reads a now-missing
+    /// target, and idles forever. Kill -9 because a TERM-graceful attach
+    /// exit gives the old loop a head start on re-reading before the rm.
     static func staleRendererCleanupCommand(connectionId: UUID) -> String {
-        let prefix = "$HOME/.moshpit/mosh-\(connectionId.uuidString)-"
-        return "for f in \"\(prefix)\"*.pid; do kill $(cat \"$f\" 2>/dev/null) 2>/dev/null; done; "
-            + "rm -f \"\(prefix)\"*.pid \"\(prefix)\"*.target; true"
+        let base = "$HOME/.moshpit/mosh-\(connectionId.uuidString)"
+        return "rm -f \"\(base)\".target \"\(base)-\"*.target; "
+            + "for f in \"\(base)\".pid \"\(base)-\"*.pid; do "
+            + "kill -9 $(cat \"$f\" 2>/dev/null) 2>/dev/null; done; "
+            + "rm -f \"\(base)\".pid \"\(base)-\"*.pid; true"
     }
 
     /// Point the loop at a new terminal: publish the target, bounce the
