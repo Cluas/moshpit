@@ -19,6 +19,20 @@ struct MoshpitIslandBundle: WidgetBundle {
 // app's "working" was the theme accent rather than this teal).
 private let teal = AgentPalette.working
 private let amber = AgentPalette.attention
+private let green = AgentPalette.done
+
+// MARK: - Typography
+//
+// One rule, applied everywhere below: the agent's NAME and its STATE are the
+// thing you glance at the lock screen for, so they get the system's default
+// font at real weight/size. Everything else — a location breadcrumb, a raw
+// command line, a hook's detail string — is auxiliary and stays small,
+// monospaced and muted, the same voice the in-app pane rows already use for
+// that kind of content. Before this split, the card ran one flavour of
+// cramped monospace top to bottom and nothing told the eye where to land.
+// Ticking numbers (the live timers) get `.monospacedDigit()` instead of a
+// full mono font — that keeps digits from jittering sideways without
+// dragging the rest of the type family along with them.
 
 struct MoshpitIslandLiveActivity: Widget {
     var body: some WidgetConfiguration {
@@ -41,16 +55,17 @@ struct MoshpitIslandLiveActivity: Widget {
                 }
                 DynamicIslandExpandedRegion(.trailing) {
                     if let headline {
-                        TrailingStatus(agent: headline).padding(.trailing, 4)
+                        StatusBadge(agent: headline, compact: true).padding(.trailing, 4)
                     }
                 }
                 DynamicIslandExpandedRegion(.center) {
                     // Prime real estate for the headline's state label + where
                     // it lives — previously this whole region was empty.
                     if let headline {
-                        VStack(spacing: 1) {
-                            Text(headline.state.label)
-                                .font(.system(size: 11, weight: .semibold))
+                        VStack(spacing: 2) {
+                            Text(headline.state.label.uppercased())
+                                .font(.system(size: 10, weight: .bold))
+                                .kerning(0.5)
                                 .foregroundStyle(stateColor(headline.state))
                             Text(headline.location)
                                 .font(.system(size: 10, design: .monospaced))
@@ -63,11 +78,13 @@ struct MoshpitIslandLiveActivity: Widget {
                     VStack(alignment: .leading, spacing: 4) {
                         // What the headline agent is doing / asking — the actual
                         // content; give it room instead of a single clipped line.
+                        // Smart-truncated: a raw "claude --resume <uuid>" hook
+                        // title used to just get chopped mid-UUID by lineLimit.
                         if let headline, let detail = headline.detail, !detail.isEmpty {
-                            Text(detail)
+                            Text(smartTruncate(detail))
                                 .font(.system(size: 11, design: .monospaced))
                                 .foregroundStyle(headline.state == .attention ? amber : .white.opacity(0.7))
-                                .lineLimit(2)
+                                .lineLimit(1)
                         }
                         // The OTHER agents as real rows (dot · name · live timer),
                         // not an opaque "+N more".
@@ -96,7 +113,8 @@ struct MoshpitIslandLiveActivity: Widget {
                 // in amber, else the working dot.
                 if context.state.attentionCount > 0 {
                     Text("\(context.state.attentionCount)")
-                        .font(.system(size: 12, weight: .heavy, design: .monospaced))
+                        .font(.system(size: 12, weight: .heavy))
+                        .monospacedDigit()
                         .foregroundStyle(amber)
                 } else {
                     StateDot(state: headline?.state ?? .idle)
@@ -121,8 +139,10 @@ private struct LockScreenView: View {
                     .font(.system(size: 13, weight: .bold))
                     .foregroundStyle(.white)
                 Spacer()
+                // A phrase ("1 needs you · 2 working"), not a code fragment —
+                // default font, not the mono the rest of the old header ran.
                 Text(summary)
-                    .font(.system(size: 11, weight: .medium, design: .monospaced))
+                    .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(.white.opacity(0.6))
             }
             // Full controls only for the most-urgent agent — a tall activity
@@ -171,42 +191,47 @@ private struct AgentRow: View {
                     // LockScreenView) — that budget buys the top and bottom
                     // padding instead, which every row benefits from.
                     Text(displayCommand(agent))
-                        .font(.system(size: 13, weight: .semibold, design: .monospaced))
+                        .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(.white)
                         .lineLimit(1)
                     Text(agent.location)
                         .font(.system(size: 10, design: .monospaced))
-                        .foregroundStyle(.white.opacity(0.45))
+                        .foregroundStyle(.white.opacity(0.4))
                         .lineLimit(1)
                         .layoutPriority(-1)
                 } else {
                     VStack(alignment: .leading, spacing: 2) {
+                        // The name — bigger and NOT monospaced, so it reads as
+                        // the headline of the row rather than one more line of
+                        // code alongside the location/command text below it.
                         Text(displayCommand(agent))
-                            .font(.system(size: 14, weight: .semibold, design: .monospaced))
+                            .font(.system(size: 16, weight: .semibold))
                             .foregroundStyle(.white)
                             .lineLimit(1)
                         Text(agent.location)
                             .font(.system(size: 11, design: .monospaced))
-                            .foregroundStyle(.white.opacity(0.55))
+                            .foregroundStyle(.white.opacity(0.45))
                             .lineLimit(1)
                     }
                 }
-                Spacer(minLength: 4)
-                TrailingStatus(agent: agent)
+                Spacer(minLength: 6)
+                StatusBadge(agent: agent, compact: compact)
             }
-            // What the agent is doing / asking (hook @moshpit_title) — amber when
-            // it's the thing you're being asked to approve.
+            // What the agent is doing / asking (hook @moshpit_title) — amber
+            // when it's the thing you're being asked to approve. Smart-
+            // truncated so a long shell command survives as something
+            // readable instead of getting chopped mid-token by lineLimit.
             if !compact, let detail = agent.detail, !detail.isEmpty {
-                Text(detail)
+                Text(smartTruncate(detail))
                     .font(.system(size: 11, design: .monospaced))
                     .foregroundStyle(agent.state == .attention ? amber : .white.opacity(0.6))
-                    .lineLimit(2)
+                    .lineLimit(1)
                     .padding(.leading, 18)
             }
             // T1 control surface — answer the prompt (Allow/Deny/quick-reply) or
             // stop a running agent, from the lock screen, without opening the app.
             if !compact {
-                AgentControls(agent: agent).padding(.leading, 18)
+                AgentControls(agent: agent).padding(.leading, 18).padding(.top, 2)
             }
         }
     }
@@ -223,42 +248,34 @@ private struct ApprovalButtons: View {
     let agent: AgentActivityAttributes.Agent
 
     var body: some View {
-        VStack(spacing: 6) {
+        VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
                 Button(intent: AgentApprovalIntent(action: .allow,
                                                    connectionId: agent.connectionId,
                                                    paneId: agent.paneId)) {
-                    Label("Allow", systemImage: "checkmark")
-                        .font(.system(size: 12, weight: .semibold))
-                        .frame(maxWidth: .infinity)
+                    PrimaryPill(title: String(localized: "Allow"), systemImage: "checkmark.circle.fill", tint: teal)
                 }
-                .tint(teal)
                 Button(intent: AgentApprovalIntent(action: .deny,
                                                    connectionId: agent.connectionId,
                                                    paneId: agent.paneId)) {
-                    Label("Deny", systemImage: "xmark")
-                        .font(.system(size: 12, weight: .semibold))
-                        .frame(maxWidth: .infinity)
+                    PrimaryPill(title: String(localized: "Deny"), systemImage: "xmark.circle.fill", tint: amber)
                 }
-                .tint(amber)
             }
+            // Quick replies ride below Allow/Deny, sized to their own label
+            // instead of stretched to match — a one-tap shortcut for the
+            // common answer, not a second row of primary actions.
             HStack(spacing: 6) {
                 ForEach(quickReplies, id: \.self) { reply in
                     Button(intent: AgentApprovalIntent(action: .reply,
                                                        connectionId: agent.connectionId,
                                                        paneId: agent.paneId,
                                                        text: reply)) {
-                        Text(reply)
-                            .font(.system(size: 11, weight: .medium))
-                            .frame(maxWidth: .infinity)
+                        GhostChip(title: reply)
                     }
-                    .tint(.white.opacity(0.22))
                 }
             }
         }
-        .buttonStyle(.borderedProminent)
-        .controlSize(.small)
-        .foregroundStyle(.white)
+        .buttonStyle(.plain)
     }
 }
 
@@ -270,14 +287,9 @@ private struct InterruptButton: View {
         Button(intent: AgentApprovalIntent(action: .interrupt,
                                            connectionId: agent.connectionId,
                                            paneId: agent.paneId)) {
-            Label("Stop", systemImage: "stop.fill")
-                .font(.system(size: 12, weight: .semibold))
-                .frame(maxWidth: .infinity)
+            PrimaryPill(title: String(localized: "Stop"), systemImage: "stop.fill", tint: amber)
         }
-        .tint(amber)
-        .buttonStyle(.borderedProminent)
-        .controlSize(.small)
-        .foregroundStyle(.white)
+        .buttonStyle(.plain)
     }
 }
 
@@ -285,13 +297,18 @@ private struct InterruptButton: View {
 private struct SwitchAgentButton: View {
     var body: some View {
         Button(intent: AgentCycleIntent()) {
-            Label("Switch", systemImage: "arrow.left.arrow.right")
-                .font(.system(size: 11, weight: .medium))
+            HStack(spacing: 4) {
+                Image(systemName: "arrow.left.arrow.right")
+                    .font(.system(size: 9, weight: .semibold))
+                Text(String(localized: "Switch"))
+                    .font(.system(size: 11, weight: .medium))
+            }
+            .foregroundStyle(.white.opacity(0.75))
+            .padding(.horizontal, 10)
+            .padding(.vertical, 4)
+            .overlay(Capsule().strokeBorder(.white.opacity(0.22), lineWidth: 1))
         }
-        .tint(.white.opacity(0.22))
-        .buttonStyle(.borderedProminent)
-        .controlSize(.small)
-        .foregroundStyle(.white)
+        .buttonStyle(.plain)
     }
 }
 
@@ -309,24 +326,83 @@ private struct AgentControls: View {
     }
 }
 
+// MARK: - Buttons
+
+/// One primary action — Allow / Deny / Stop. A thin system material plus a
+/// low-opacity state tint, not a flat saturated fill: colour reads as this
+/// button's ACCENT, the same tonal-pill language the in-app chips already
+/// use (see `Ink.roamPillBG` etc.), rather than a solid teal/amber block
+/// sitting on top of the card instead of belonging to it.
+private struct PrimaryPill: View {
+    let title: String
+    let systemImage: String
+    let tint: Color
+
+    var body: some View {
+        HStack(spacing: 5) {
+            Image(systemName: systemImage)
+                .font(.system(size: 11, weight: .bold))
+            Text(title)
+                .font(.system(size: 13, weight: .semibold))
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 7)
+        .foregroundStyle(tint)
+        .background(.thinMaterial, in: Capsule())
+        .background(tint.opacity(0.24), in: Capsule())
+        .overlay(Capsule().strokeBorder(tint.opacity(0.5), lineWidth: 1))
+    }
+}
+
+/// A de-emphasised quick-reply — text inside a hairline outline, sized to its
+/// own label rather than stretched to match Allow/Deny. Quick replies are a
+/// shortcut for the common answer, not a second pair of primary actions, so
+/// they shouldn't carry the same visual weight.
+private struct GhostChip: View {
+    let title: String
+
+    var body: some View {
+        Text(title)
+            .font(.system(size: 12, weight: .medium))
+            .foregroundStyle(.white.opacity(0.75))
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .overlay(Capsule().strokeBorder(.white.opacity(0.22), lineWidth: 1))
+    }
+}
+
 // MARK: - Shared bits
 
-private struct TrailingStatus: View {
+/// The name row's trailing signal. For the two live states this is a
+/// labelled, live-updating timer — a small uppercase caption ABOVE the
+/// number so a system-rendered timer (which iOS sizes generously for
+/// legibility, bigger than the surrounding text) reads as a deliberate
+/// stopwatch instead of a stray oversized numeral with nothing around it.
+/// For the two quiet states it's a plain tonal badge.
+private struct StatusBadge: View {
     let agent: AgentActivityAttributes.Agent
+    var compact: Bool = false
 
     var body: some View {
         switch agent.state {
         case .working, .attention:
-            // Live elapsed timer, counting up since the state began.
-            Text(agent.startedAt, style: .timer)
-                .font(.system(size: 12, weight: .medium, design: .monospaced))
-                .foregroundStyle(stateColor(agent.state))
-                .monospacedDigit()
-                .frame(minWidth: 44, alignment: .trailing)
+            VStack(alignment: .trailing, spacing: 0) {
+                Text(agent.state.label.uppercased())
+                    .font(.system(size: compact ? 7 : 8, weight: .bold))
+                    .kerning(0.4)
+                    .foregroundStyle(stateColor(agent.state).opacity(0.8))
+                Text(agent.startedAt, style: .timer)
+                    .font(.system(size: compact ? 11 : 13, weight: .semibold))
+                    .monospacedDigit()
+                    .foregroundStyle(stateColor(agent.state))
+            }
         case .done, .idle:
             Text(agent.state.label)
-                .font(.system(size: 11, weight: .medium, design: .monospaced))
+                .font(.system(size: compact ? 10 : 11, weight: .semibold))
                 .foregroundStyle(stateColor(agent.state))
+                .padding(.horizontal, 7)
+                .padding(.vertical, 3)
+                .background(stateColor(agent.state).opacity(0.14), in: Capsule())
         }
     }
 }
@@ -342,7 +418,8 @@ private struct CompactTrailing: View {
                     Image(systemName: "exclamationmark").font(.system(size: 13, weight: .heavy))
                 } else {
                     Text("\(state.attentionCount)")
-                        .font(.system(size: 13, weight: .bold, design: .monospaced))
+                        .font(.system(size: 13, weight: .bold))
+                        .monospacedDigit()
                 }
             }
             .foregroundStyle(amber)
@@ -351,20 +428,24 @@ private struct CompactTrailing: View {
             // A LIVE ticking timer — the pill actually shows something happening
             // (the old 4-char command prefix told you nothing you didn't know).
             Text(headline.startedAt, style: .timer)
-                .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                .foregroundStyle(teal)
+                .font(.system(size: 12, weight: .semibold))
                 .monospacedDigit()
+                .foregroundStyle(teal)
                 .frame(maxWidth: 48)
                 .multilineTextAlignment(.trailing)
         } else if state.workingCount > 1 {
             Text("\(state.workingCount)")
-                .font(.system(size: 13, weight: .bold, design: .monospaced))
+                .font(.system(size: 13, weight: .bold))
+                .monospacedDigit()
                 .foregroundStyle(.white)
         } else if let headline = state.headline, headline.state == .done {
             Image(systemName: "checkmark")
                 .font(.system(size: 12, weight: .bold))
                 .foregroundStyle(stateColor(.done))
         } else if let headline = state.headline {
+            // The pill's smallest slot — a bare 4-char fragment of the raw
+            // command is the one place a code-flavoured mono clip is actually
+            // the right call, since there's no room for anything else.
             Text(String(headline.command.prefix(4)))
                 .font(.system(size: 12, weight: .bold, design: .monospaced))
                 .foregroundStyle(.white)
@@ -385,7 +466,7 @@ private struct OtherAgentRows: View {
             HStack(spacing: 6) {
                 StateDot(state: agent.state)
                 Text(displayCommand(agent))
-                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                    .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(.white.opacity(0.85))
                     .lineLimit(1)
                 Text(agent.location)
@@ -396,21 +477,21 @@ private struct OtherAgentRows: View {
                 switch agent.state {
                 case .working, .attention:
                     Text(agent.startedAt, style: .timer)
-                        .font(.system(size: 10, weight: .medium, design: .monospaced))
-                        .foregroundStyle(stateColor(agent.state))
+                        .font(.system(size: 10, weight: .medium))
                         .monospacedDigit()
+                        .foregroundStyle(stateColor(agent.state))
                         .frame(maxWidth: 44)
                         .multilineTextAlignment(.trailing)
                 case .done, .idle:
                     Text(agent.state.label)
-                        .font(.system(size: 10, weight: .medium, design: .monospaced))
+                        .font(.system(size: 10, weight: .medium))
                         .foregroundStyle(stateColor(agent.state))
                 }
             }
         }
         if others.count > 2 {
             Text("+\(others.count - 2) more")
-                .font(.system(size: 10, design: .monospaced))
+                .font(.system(size: 10, weight: .medium))
                 .foregroundStyle(.white.opacity(0.4))
         }
     }
@@ -425,8 +506,10 @@ private struct StaleHint: View {
         HStack(spacing: 4) {
             Image(systemName: "pause.circle")
                 .font(.system(size: 10))
+            // A sentence, not a code fragment — default font, matching the
+            // header summary this sits directly under.
             Text("paused — open Moshpit to refresh")
-                .font(.system(size: 10, design: .monospaced))
+                .font(.system(size: 10, weight: .medium))
         }
         .foregroundStyle(.white.opacity(0.45))
     }
@@ -445,6 +528,14 @@ private struct StateDot: View {
             .frame(width: 8, height: 8)
             .shadow(color: stateColor(state).opacity(active ? 0.9 : 0.5),
                     radius: active ? 5 : 2)
+            .overlay(
+                // Attention gets a ring on top of the glow — the one state
+                // that's actually waiting on a human shouldn't lean on the
+                // same "dot + colour" language as a dot that's merely running.
+                Circle()
+                    .strokeBorder(amber.opacity(state == .attention ? 0.55 : 0), lineWidth: 1.5)
+                    .frame(width: 14, height: 14)
+            )
     }
 }
 
@@ -452,7 +543,7 @@ private func stateColor(_ state: AgentActivityAttributes.AgentState) -> Color {
     switch state {
     case .working:   return teal
     case .attention: return amber
-    case .done:      return AgentPalette.done
+    case .done:      return green
     case .idle:      return Color.white.opacity(0.45)
     }
 }
@@ -461,3 +552,101 @@ private func displayCommand(_ agent: AgentActivityAttributes.Agent) -> String {
     agent.command.isEmpty ? "shell" : agent.command
 }
 
+/// Shortens long opaque tokens — session ids, hashes, absolute paths —
+/// inside a command/detail string instead of letting `.lineLimit` chop
+/// wherever the text happened to run out of room. That's exactly how
+/// "claude --resume e7463a11-2235-4ac4-930f-dff3202cd64e" turned into a
+/// truncated UUID with nothing readable in front of it on the lock screen:
+/// the short, meaningful words (the command, its flags) got pushed off by
+/// one long unbroken token. Short words pass through untouched; only words
+/// past the budget get shortened, head + tail, since the middle of a UUID or
+/// hash carries no information anyone reads at a glance.
+private func smartTruncate(_ text: String, tokenBudget: Int = 14) -> String {
+    guard text.count > tokenBudget else { return text }
+    return text
+        .split(separator: " ", omittingEmptySubsequences: false)
+        .map { word -> String in
+            guard word.count > tokenBudget else { return String(word) }
+            if word.contains("/") {
+                // Path-like: the filename at the end is what identifies it —
+                // the directories in front of it usually aren't.
+                let name = word.split(separator: "/").last.map(String.init) ?? String(word)
+                return name.count < word.count ? "…/\(name)" : name
+            }
+            return "\(word.prefix(6))…\(word.suffix(4))"
+        }
+        .joined(separator: " ")
+}
+
+// MARK: - Previews
+//
+// Xcode Previews for a Live Activity render this exact widget against a
+// fabricated attributes/content-state pair — no device, no real tmux session
+// needed to see whether a layout change holds up. `previewAttention` is the
+// bug report itself: a long "claude --resume <uuid>" hook title, which is
+// what `smartTruncate` above exists to keep readable.
+#if DEBUG
+private extension AgentActivityAttributes {
+    static let preview = AgentActivityAttributes()
+}
+
+private extension AgentActivityAttributes.Agent {
+    static func preview(state: AgentActivityAttributes.AgentState,
+                         command: String = "claude",
+                         detail: String? = nil,
+                         location: String = "herdr · ~ · wQ · Tab 1",
+                         secondsAgo: TimeInterval = 90) -> Self {
+        .init(id: UUID().uuidString, connectionId: UUID().uuidString, paneId: "%1",
+              command: command, location: location, detail: detail, state: state,
+              startedAt: Date().addingTimeInterval(-secondsAgo))
+    }
+}
+
+private extension AgentActivityAttributes.ContentState {
+    static let previewAttention = AgentActivityAttributes.ContentState(
+        agents: [.preview(state: .attention, command: "claude",
+                          detail: "claude --resume e7463a11-2235-4ac4-930f-dff3202cd64e",
+                          secondsAgo: 313)],
+        workingCount: 0, attentionCount: 1, headlineDeepLink: nil)
+
+    static let previewWorking = AgentActivityAttributes.ContentState(
+        agents: [.preview(state: .working, command: "cargo",
+                          detail: "Bash: cargo test --workspace", secondsAgo: 47)],
+        workingCount: 1, attentionCount: 0, headlineDeepLink: nil)
+
+    static let previewMulti = AgentActivityAttributes.ContentState(
+        agents: [
+            .preview(state: .attention, command: "claude", detail: "Edit: Package.swift", secondsAgo: 20),
+            .preview(state: .working, command: "codex", location: "work · 2:rednote", secondsAgo: 340),
+            .preview(state: .done, command: "node", location: "home · ~/api", secondsAgo: 900),
+        ],
+        workingCount: 1, attentionCount: 1, headlineDeepLink: nil)
+}
+
+#Preview("Lock Screen", as: .content, using: AgentActivityAttributes.preview) {
+    MoshpitIslandLiveActivity()
+} contentStates: {
+    AgentActivityAttributes.ContentState.previewAttention
+    AgentActivityAttributes.ContentState.previewWorking
+    AgentActivityAttributes.ContentState.previewMulti
+}
+
+#Preview("Dynamic Island Compact", as: .dynamicIsland(.compact), using: AgentActivityAttributes.preview) {
+    MoshpitIslandLiveActivity()
+} contentStates: {
+    AgentActivityAttributes.ContentState.previewAttention
+    AgentActivityAttributes.ContentState.previewWorking
+}
+
+#Preview("Dynamic Island Minimal", as: .dynamicIsland(.minimal), using: AgentActivityAttributes.preview) {
+    MoshpitIslandLiveActivity()
+} contentStates: {
+    AgentActivityAttributes.ContentState.previewAttention
+}
+
+#Preview("Dynamic Island Expanded", as: .dynamicIsland(.expanded), using: AgentActivityAttributes.preview) {
+    MoshpitIslandLiveActivity()
+} contentStates: {
+    AgentActivityAttributes.ContentState.previewMulti
+}
+#endif
