@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import SwiftTerm
 @testable import Moshpit
 
 // MARK: - Helpers
@@ -693,6 +694,90 @@ struct TmuxSessionControllerTests {
             await transport.recordedCommands()
                 .filter { $0.hasPrefix("capture-pane -p -e -t %0") }.count > before
         }, "tmux dropped output while paused — %continue must trigger a repaint from its model")
+    }
+
+    @Test("output for a foreign-width window is gated (bell-only) until our width returns, then resynced")
+    func foreignWidthOutputGated() async throws {
+        let transport = MockTmuxTransport()
+        let controller = TmuxSessionController(sshSession: transport)
+        controller.setInitialClientSize(cols: 69, rows: 60)
+        await controller.attach()
+        transport.pushText("%begin 100 0 0\n%end 100 0 0\n\n")
+        _ = await waitUntil { await transport.recordedCommands().count >= 3 }
+        pushOneWindowDiscovery(transport)
+        #expect(await waitUntil { controller.snapshot.activePaneId == "%0" })
+        await settleControlChatter(transport, answered: 3)
+
+        let terminal = controller.terminalView(for: "%0").getTerminal()
+        transport.pushText("%output %0 abc\n")
+        #expect(await waitUntil { terminal.getCursorLocation().x == 3 })
+
+        // A desktop client just won `window-size latest`: the window flips to
+        // its grid. Everything the pane now emits is laid out 499 wide —
+        // painting it into this 69-column terminal is the shredded-fragments
+        // garble (phone byte capture, 2026-08-19).
+        transport.pushText("%layout-change @0 c71d,499x62,0,0,0 c71d,499x62,0,0,0 *\n")
+        transport.pushText("%output %0 defghij\n")
+        try? await Task.sleep(for: .milliseconds(150))
+        #expect(terminal.getCursorLocation().x == 3,
+                "foreign-width output must not reach the grid")
+
+        transport.pushText("%output %0 \\007\n")
+        @MainActor final class Bells { var count = 0 }
+        let bells = Bells()
+        controller.onPaneBell = { _ in bells.count += 1 }
+        transport.pushText("%output %0 \\007\n")
+        #expect(await waitUntil { bells.count >= 1 },
+                "the agent-needs-you bell must survive the gate")
+
+        // Our reclaim (or the desktop detaching) brings the width back:
+        // the gate lifts and the gap is repainted from tmux's model.
+        let before = await transport.recordedCommands()
+            .filter { $0.hasPrefix("capture-pane -p -e -t %0") }.count
+        transport.pushText("%layout-change @0 c71d,69x60,0,0,0 c71d,69x60,0,0,0 *\n")
+        #expect(await waitUntil {
+            await transport.recordedCommands()
+                .filter { $0.hasPrefix("capture-pane -p -e -t %0") }.count > before
+        }, "returning to our width must trigger the gap repaint")
+    }
+
+    @Test("a resync frame captured at a foreign size is rejected, not painted")
+    func foreignSizeFrameRejected() async throws {
+        let transport = MockTmuxTransport()
+        let controller = TmuxSessionController(sshSession: transport)
+        controller.setInitialClientSize(cols: 69, rows: 60)
+        await controller.attach()
+        transport.pushText("%begin 100 0 0\n%end 100 0 0\n\n")
+        _ = await waitUntil { await transport.recordedCommands().count >= 3 }
+        pushOneWindowDiscovery(transport)
+        #expect(await waitUntil { controller.snapshot.activePaneId == "%0" })
+        await settleControlChatter(transport, answered: 3)
+
+        let terminal = controller.terminalView(for: "%0").getTerminal()
+        transport.pushText("%output %0 sentinel\n")
+        #expect(await waitUntil { terminal.getCursorLocation().x == 8 })
+
+        // Resync races a desktop-size flap: the capture comes back 70 rows
+        // tall — authoritative for a grid this terminal doesn't have.
+        let before = await transport.recordedCommands().count
+        controller.resyncActivePane()
+        _ = await waitUntil { await transport.recordedCommands().count > before }
+        var reply = "%begin 200 200 0\n"
+        for i in 1...70 { reply += "wide-frame-row-\(i)\n" }
+        reply += "%end 200 200 0\n%begin 201 201 0\n0 0\n%end 201 201 0\n\n"
+        transport.pushText(reply)
+        try? await Task.sleep(for: .milliseconds(200))
+        // The paired cursor reply still applies (a bare CUP — harmless); the
+        // CONTENT is what must survive untouched.
+        let row0 = terminal.getText(start: Position(col: 0, row: 0),
+                                    end: Position(col: 20, row: 0))
+        #expect(row0.contains("sentinel"), """
+                the oversized frame must be dropped — feeding a 70-row/499-column capture into a \
+                60-row/69-column grid wraps every line sevenfold (the 2026-08-19 garble); got: \(row0)
+                """)
+        #expect(await waitUntil {
+            await transport.recordedCommands().contains { $0.hasPrefix("resize-window -t @0 -x 69") }
+        }, "the reject must re-pin the window so a good capture can follow")
     }
 
     @Test("selectWindow runs a two-pass resync: an immediate silent capture plus a settled one")

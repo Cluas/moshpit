@@ -167,7 +167,35 @@ final class TmuxSessionController: MultiplexerControlling {
     /// command must occupy a slot (`nil` = response intentionally ignored)
     /// or the FIFO desyncs and replies land in the wrong parser.
     @ObservationIgnored
-    private var pendingCallbacks: [((TmuxCommandResponse) -> Void)?] = []
+    private var pendingCallbacks: [(command: String, callback: ((TmuxCommandResponse) -> Void)?)] = []
+
+    // MARK: - Diagnostic tap
+    //
+    // `-MOSHPIT_CC_TAP <dir>` (Debug tooling, simulator e2e): append-only
+    // traces of the raw -CC stream, every command↔response pairing, and every
+    // frame fed to a pane — the ground truth for chasing pairing shifts
+    // ("protocol text painted into a pane") without guessing from screenshots.
+    static let ccTapDir: String? = {
+        let args = ProcessInfo.processInfo.arguments
+        guard let i = args.firstIndex(of: "-MOSHPIT_CC_TAP"), i + 1 < args.count else { return nil }
+        return args[i + 1]
+    }()
+
+    nonisolated static func ccTap(_ file: String, _ data: Data) {
+        guard let dir = ccTapDir else { return }
+        let url = URL(fileURLWithPath: dir).appendingPathComponent(file)
+        if let h = try? FileHandle(forWritingTo: url) {
+            defer { try? h.close() }
+            _ = try? h.seekToEnd()
+            try? h.write(contentsOf: data)
+        } else {
+            try? data.write(to: url)
+        }
+    }
+
+    private func ccTapLine(_ text: String) {
+        Self.ccTap("cc-pairing.log", Data((text + "\n").utf8))
+    }
 
     /// Serializes writes so commands hit tmux in the same order their
     /// callback slots were queued. A detached Task per send() can reorder.
@@ -1664,9 +1692,26 @@ final class TmuxSessionController: MultiplexerControlling {
             while let last = lines.last, last.trimmingCharacters(in: .whitespaces).isEmpty {
                 lines.removeLast()
             }
+            // A capture taken while the window sat at ANOTHER client's size is
+            // authoritative for a grid this terminal doesn't have — feeding a
+            // 62-row/499-column frame into a 46-row/70-column view wraps every
+            // line sevenfold (phone byte capture, 2026-08-19: one of seven
+            // resync frames was captured mid-flap at the desktop's size).
+            // More rows than our grid is the cheap, reliable tell (fewer is
+            // normal — trailing blanks are trimmed above). Drop it; the
+            // return-to-our-width layout-change re-resyncs, and the cover's
+            // safety cap bounds how long a pending reveal can wait.
+            guard lines.count <= self.lastClientSize.rows else {
+                self.ccTapLine("FRAME-REJECT pane=\(paneId) rows=\(lines.count) "
+                    + "ours=\(self.lastClientSize.rows)")
+                if let win = self.snapshot.activeWindowId { self.fitWindowToClient(win) }
+                return
+            }
             // Home + erase-display (ED 2 leaves scrollback intact), the
             // frame, SGR reset. No cursor move yet — that's step two.
             let text = "\u{1b}[H\u{1b}[2J" + lines.joined(separator: "\r\n") + "\u{1b}[0m"
+            self.ccTapLine("FRAME pane=\(paneId) reveal=\(reveal) lines=\(lines.count) "
+                + "first=\(lines.first?.prefix(60) ?? "")")
             self.paneCoordinators[paneId]?.feed(data: Data(text.utf8))
             // The frame is on screen — reveal the terminal if a keyboard-freeze
             // or pane-switch veil is covering it, UNLESS this capture is known
@@ -1903,6 +1948,7 @@ final class TmuxSessionController: MultiplexerControlling {
         pumpTask = Task.detached(priority: .userInitiated) {
             for await chunk in stream {
                 if Task.isCancelled { break }
+                Self.ccTap("cc-raw.bin", chunk)
                 await client.feed(chunk)
             }
         }
@@ -2154,6 +2200,19 @@ final class TmuxSessionController: MultiplexerControlling {
             if rang { onPaneBell?(paneId) }
             return
         }
+        // Same gate MID-SESSION while the active window sits at a foreign
+        // width (a desktop client on the same session + `window-size latest`):
+        // these bytes are laid out for the other client's grid, and painting
+        // them here is the shredded-fragments garble. The return-to-our-width
+        // layout-change triggers the repaint that covers the gap.
+        if activeWindowAtForeignWidth,
+           snapshot.panes[paneId]?.windowId == snapshot.activeWindowId {
+            var detector = bellDetectors[paneId] ?? BellDetector()
+            let rang = detector.containsBell(data)
+            bellDetectors[paneId] = detector
+            if rang { onPaneBell?(paneId) }
+            return
+        }
         if let coordinator = paneCoordinators[paneId] {
             coordinator.feed(data: data)
             return
@@ -2187,10 +2246,36 @@ final class TmuxSessionController: MultiplexerControlling {
         // the window to the desktop client's size there, and our own resize emits
         // a layout-change — re-pinning would immediately cramp it back.
         if rendersOutput, !pinsReleased, windowId == snapshot.activeWindowId,
-           let width = Self.windowWidth(fromLayout: layout), width != lastClientSize.cols {
-            reclaimWindowOnDrift(windowId)
+           let width = Self.windowWidth(fromLayout: layout) {
+            let foreign = width != lastClientSize.cols
+            if foreign {
+                // While the window sits at the other client's width, its
+                // %output is laid out for THAT grid — handlePaneOutput gates
+                // it (bell-only) exactly like the backgrounded case, because
+                // painting 499-column repaints into a 70-column terminal is
+                // the shredded-fragments garble (phone byte capture,
+                // 2026-08-19: layout flapped 70×46 ↔ 499×62 thirteen times
+                // in one scroll session — every app background/foreground
+                // hands the pin back and forth against a desktop client on
+                // the same session).
+                activeWindowAtForeignWidth = true
+                reclaimWindowOnDrift(windowId)
+            } else if activeWindowAtForeignWidth {
+                // Back at our width: repaint the gap the gate dropped, with
+                // the settling double-pass — this transition usually follows
+                // our own fitWindowToClient, so the immediate capture races
+                // the pane app's SIGWINCH repaint like every other resize.
+                activeWindowAtForeignWidth = false
+                resyncActivePaneSettling()
+            }
         }
     }
+
+    /// True while the ACTIVE window's layout reports a width other than ours
+    /// — a desktop client and `window-size latest` mid-fight. Cleared the
+    /// moment a layout-change reports our width again. See
+    /// `handleLayoutChange` / `handlePaneOutput`.
+    @ObservationIgnored private var activeWindowAtForeignWidth = false
 
     /// Gate for `handleLayoutChange`'s reclaim — see `recentReclaimTimestamps`.
     /// `selectWindow`/`commitClientSize` call `fitWindowToClient` directly and
@@ -2328,9 +2413,16 @@ final class TmuxSessionController: MultiplexerControlling {
 
     private func handleCommandResponse(_ response: TmuxCommandResponse) {
         // tmux responds in strict send order; pop the head of the queue.
-        guard !pendingCallbacks.isEmpty else { return }
-        let callback = pendingCallbacks.removeFirst()
-        callback?(response)
+        guard !pendingCallbacks.isEmpty else {
+            ccTapLine("POP!  num=\(response.commandNum) err=\(response.isError) "
+                + "lines=\(response.lines.count) QUEUE-EMPTY first=\(response.lines.first?.prefix(60) ?? "")")
+            return
+        }
+        let entry = pendingCallbacks.removeFirst()
+        ccTapLine("POP   num=\(response.commandNum) err=\(response.isError) "
+            + "lines=\(response.lines.count) for=[\(entry.command.prefix(50))] "
+            + "first=\(response.lines.first?.prefix(60) ?? "")")
+        entry.callback?(response)
     }
 
     // MARK: - Sending commands
@@ -2365,9 +2457,13 @@ final class TmuxSessionController: MultiplexerControlling {
         // callback slot that desyncs the response FIFO for the entire
         // session. Drop commands until control mode is live. (Layout-driven
         // resizeClient calls are the usual pre-attach offender.)
-        guard snapshot.isAttached else { return }
+        guard snapshot.isAttached else {
+            ccTapLine("DROP  (pre-attach) [\(command.prefix(50))]")
+            return
+        }
         guard let data = (command + "\n").data(using: .utf8) else { return }
-        pendingCallbacks.append(callback)
+        pendingCallbacks.append((command: command, callback: callback))
+        ccTapLine("SEND  depth=\(pendingCallbacks.count) [\(command.prefix(50))]")
         let session = sshSession
         let previous = writeChain
         writeChain = Task(priority: .userInitiated) {
