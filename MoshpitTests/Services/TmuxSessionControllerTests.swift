@@ -324,7 +324,9 @@ struct TmuxSessionControllerTests {
 
         let terminal = controller.terminalView(for: "%0").getTerminal()
         transport.pushText("%output %0 abc\n")
-        #expect(await waitUntil { terminal.getCursorLocation().x == 3 },
+        // Generous: a loaded 68-suite run delays main-actor processing well
+        // past the default 1s (recurring full-suite flake, isolated-pass).
+        #expect(await waitUntil(timeout: 5.0) { terminal.getCursorLocation().x == 3 },
                 "output must paint while the pin is ours")
 
         // Off screen / backgrounded: tmux has handed the window to whatever else
@@ -853,7 +855,7 @@ struct TmuxSessionControllerTests {
         // Generous window: a loaded full-suite run delays both the 700ms
         // settled pass and main-actor processing (same reason
         // `streamingWindow` is injectable).
-        let flowed = await waitUntil(timeout: 4.0) { terminal.getCursorLocation().x == 16 }
+        let flowed = await waitUntil(timeout: 10.0) { terminal.getCursorLocation().x == 16 }
         if !flowed {
             let cmds = await transport.recordedCommands()
             print("[quiet-test] cursor=\(terminal.getCursorLocation()) "

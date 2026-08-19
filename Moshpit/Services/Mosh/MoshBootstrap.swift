@@ -17,6 +17,14 @@ struct MoshCredentials: Equatable {
     let udpPort: UInt16
     /// 16-byte AES-128 session key.
     let key: Data
+    /// PID from mosh-server's own `[mosh-server detached, pid = N]` stderr
+    /// line, when the exec channel interleaved it into the output. Lets the
+    /// session REAP the server after a dead-return-path bootstrap: a server
+    /// whose client never completed first contact waits forever, and every
+    /// failed attempt used to leave one behind (7 zombies on one host,
+    /// 2026-08-19). nil when the line wasn't captured — reaping is then
+    /// skipped, never guessed.
+    var serverPid: Int? = nil
 }
 
 /// Starts `mosh-server` on the remote host over an existing SSH session and
@@ -176,7 +184,14 @@ enum MoshBootstrap {
             throw BootstrapError.unusablePort(port)
         }
         let key = try decodeKey(String(parts[3]))
-        return MoshCredentials(host: host, udpPort: udpPort, key: key)
+        // mosh-server announces "[mosh-server detached, pid = N]" on stderr;
+        // the exec channel interleaves it with stdout, so it is usually here.
+        var pid: Int?
+        if let range = output.range(of: #"pid\s*=\s*(\d+)"#, options: .regularExpression) {
+            pid = Int(output[range].split(separator: "=").last?
+                .trimmingCharacters(in: .whitespaces) ?? "")
+        }
+        return MoshCredentials(host: host, udpPort: udpPort, key: key, serverPid: pid)
     }
 
     /// mosh prints the key as 22 unpadded base64 chars = 16 bytes.

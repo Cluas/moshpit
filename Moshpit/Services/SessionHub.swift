@@ -1581,6 +1581,22 @@ final class SessionHub {
                     }
                     transport.onReturnPathDead = { [weak self] in
                         self?.moshReturnPathDead = true
+                        // This fires only when ZERO datagrams ever arrived —
+                        // the server we just spawned will wait forever for a
+                        // first contact that isn't coming. Reap it over a
+                        // short exec connection, or every dead-UDP attempt
+                        // leaves a zombie (7 on one host, 2026-08-19). A
+                        // mid-session stall never reaches here (sawAnyDatagram
+                        // gates it), so a resumable session is never killed.
+                        if let pid = creds.serverPid {
+                            Task { [weak self] in
+                                guard let self else { return }
+                                if let ssh = try? await self.sidecarConnect(self.connection) {
+                                    _ = try? await ssh.executeCommand("kill \(pid) 2>/dev/null")
+                                    await ssh.close()
+                                }
+                            }
+                        }
                     }
                 }
 
