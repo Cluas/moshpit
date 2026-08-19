@@ -715,8 +715,8 @@ struct TmuxSessionControllerTests {
         }, "tmux dropped output while paused — %continue must trigger a repaint from its model")
     }
 
-    @Test("output for a foreign-width window is gated (bell-only) until our width returns, then resynced")
-    func foreignWidthOutputGated() async throws {
+    @Test("foreign-width output paints (334-model, no mid-session drops) and our width's return repaints")
+    func foreignWidthOutputPaintsAndRepairs() async throws {
         let transport = MockTmuxTransport()
         let controller = TmuxSessionController(sshSession: transport)
         controller.setInitialClientSize(cols: 69, rows: 60)
@@ -732,22 +732,14 @@ struct TmuxSessionControllerTests {
         #expect(await waitUntil { terminal.getCursorLocation().x == 3 })
 
         // A desktop client just won `window-size latest`: the window flips to
-        // its grid. Everything the pane now emits is laid out 499 wide —
-        // painting it into this 69-column terminal is the shredded-fragments
-        // garble (phone byte capture, 2026-08-19).
+        // its grid. 334-model: those bytes PAINT (briefly mis-wrapped) — the
+        // return-to-our-width repaint is what makes the grid right. Dropping
+        // them instead turned every repair-chain slip into a permanent
+        // diff-peer divergence (user-verified A/B, 2026-08-19).
         transport.pushText("%layout-change @0 c71d,499x62,0,0,0 c71d,499x62,0,0,0 *\n")
         transport.pushText("%output %0 defghij\n")
-        try? await Task.sleep(for: .milliseconds(150))
-        #expect(terminal.getCursorLocation().x == 3,
-                "foreign-width output must not reach the grid")
-
-        transport.pushText("%output %0 \\007\n")
-        @MainActor final class Bells { var count = 0 }
-        let bells = Bells()
-        controller.onPaneBell = { _ in bells.count += 1 }
-        transport.pushText("%output %0 \\007\n")
-        #expect(await waitUntil { bells.count >= 1 },
-                "the agent-needs-you bell must survive the gate")
+        #expect(await waitUntil { terminal.getCursorLocation().x == 10 },
+                "foreign-width output paints — no mid-session drops")
 
         // Our reclaim (or the desktop detaching) brings the width back:
         // the gate lifts and the gap is repainted from tmux's model.
@@ -797,105 +789,6 @@ struct TmuxSessionControllerTests {
         #expect(await waitUntil {
             await transport.recordedCommands().contains { $0.hasPrefix("resize-window -t @0 -x 69") }
         }, "the reject must re-pin the window so a good capture can follow")
-    }
-
-    @Test("after a foreign-width cycle, output stays gated until the repair frame lands — a split sequence's tail must never paint")
-    func gateHoldsUntilRepairFrame() async throws {
-        let transport = MockTmuxTransport()
-        let controller = TmuxSessionController(sshSession: transport)
-        controller.setInitialClientSize(cols: 69, rows: 60)
-        await controller.attach()
-        transport.pushText("%begin 100 0 0\n%end 100 0 0\n\n")
-        _ = await waitUntil { await transport.recordedCommands().count >= 3 }
-        pushOneWindowDiscovery(transport)
-        #expect(await waitUntil { controller.snapshot.activePaneId == "%0" })
-        // Mint the terminal FIRST so its backfill probe + dump are among the
-        // chatter the settle loop answers — the FIFO is then quiet.
-        let terminal = controller.terminalView(for: "%0").getTerminal()
-        var answered = await settleControlChatter(transport, answered: 3)
-
-        transport.pushText("%output %0 abc\n")
-        #expect(await waitUntil { terminal.getCursorLocation().x == 3 })
-
-        // Desktop wins the size; the pane app repaints 499 wide, its bytes
-        // split MID escape sequence across %output events (real chunking —
-        // phone byte capture, 2026-08-19). The head is gated with the rest.
-        transport.pushText("%layout-change @0 c71d,499x62,0,0,0 c71d,499x62,0,0,0 *\n")
-        transport.pushText("%output %0 WIDE-REPAINT\\033[38;\n")
-        // Our re-pin brings the width back — but the app's in-flight bytes
-        // straggle in AFTER the flip, starting with the TAIL of the split
-        // sequence. The gate must hold until the repair frame, or that tail
-        // paints as literal text.
-        transport.pushText("%layout-change @0 c71d,69x60,0,0,0 c71d,69x60,0,0,0 *\n")
-        transport.pushText("%output %0 5;210mTAIL-GARBAGE\n")
-        try? await Task.sleep(for: .milliseconds(150))
-        #expect(terminal.getCursorLocation().x == 3,
-                "output between the width's return and the repair frame must stay gated")
-
-        // The agent-needs-you bell still rings through the held gate.
-        @MainActor final class Bells { var count = 0 }
-        let bells = Bells()
-        controller.onPaneBell = { _ in bells.count += 1 }
-        transport.pushText("%output %0 \\007\n")
-        #expect(await waitUntil { bells.count >= 1 },
-                "the bell must survive the held gate")
-
-        // Answer the FIFO: the reclaim's resize-window, then the settling
-        // pass's IMMEDIATE capture (reveal: false).
-        #expect(await waitUntil {
-            await transport.recordedCommands().dropFirst(answered)
-                .contains { $0.hasPrefix("capture-pane") }
-        }, "the return to our width must dispatch a repair capture")
-        answered = await answerPending(transport, answered: answered) { cmd, n in
-            if cmd.hasPrefix("capture-pane") { return block(300 + n, "IMMEDIATE-ROW") }
-            if cmd.hasPrefix("display-message") { return block(300 + n, "0 0") }
-            return block(300 + n, "")
-        }
-        #expect(await waitUntil {
-            let row0 = terminal.getText(start: Position(col: 0, row: 0),
-                                        end: Position(col: 13, row: 0))
-            return row0.contains("IMMEDIATE-ROW")
-        }, "the immediate frame still paints (it silently corrects the buffer)")
-
-        // The immediate frame must NOT reopen the gate: it races the pane
-        // app's SIGWINCH redraw and the lab's capturerace scenario shows it
-        // can be a cropped STALE image that passes every size check. The
-        // app's foreign-width bytes keep draining for ~700ms after it.
-        transport.pushText("%output %0 STILL-FOREIGN\n")
-        try? await Task.sleep(for: .milliseconds(100))
-        #expect(!terminal.getText(start: Position(col: 0, row: 0),
-                                  end: Position(col: 68, row: 1)).contains("STILL-FOREIGN"),
-                "output after the immediate frame must stay gated until the settled frame")
-
-        // The SETTLED pass (~700ms later) is the real repair point.
-        let beforeSettle = answered
-        #expect(await waitUntil(timeout: 2.0) {
-            await transport.recordedCommands().dropFirst(beforeSettle)
-                .contains { $0.hasPrefix("capture-pane") }
-        }, "the settled repair capture must follow the immediate one")
-        answered = await answerPending(transport, answered: answered) { cmd, n in
-            if cmd.hasPrefix("capture-pane") { return block(400 + n, "REPAIRED-ROW") }
-            if cmd.hasPrefix("display-message") { return block(400 + n, "0 0") }
-            return block(400 + n, "")
-        }
-        #expect(await waitUntil {
-            let row0 = terminal.getText(start: Position(col: 0, row: 0),
-                                        end: Position(col: 12, row: 0))
-            return row0.contains("REPAIRED-ROW")
-        }, "the settled repair frame must paint")
-
-        // Settled frame landed → the gate reopens: live output flows again.
-        transport.pushText("%output %0 live-again\n")
-        #expect(await waitUntil { terminal.getCursorLocation().x == 10 },
-                "output after the settled repair frame must paint")
-        let head = terminal.getText(start: Position(col: 0, row: 0),
-                                    end: Position(col: 68, row: 2))
-        #expect(!head.contains("5;210m"),
-                "the split-sequence tail painted as literal text: \(head)")
-        #expect(!head.contains("TAIL-GARBAGE"),
-                "straggling foreign bytes painted before the repair frame: \(head)")
-        #expect(!head.contains("STILL-FOREIGN"),
-                "stragglers after the immediate frame painted before the settled frame: \(head)")
     }
 
     @Test("a war that ends at the desktop's width re-pins after a quiet spell — the pane must not freeze forever")

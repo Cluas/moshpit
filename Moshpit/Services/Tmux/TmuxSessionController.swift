@@ -304,9 +304,6 @@ final class TmuxSessionController: MultiplexerControlling {
         // Same reasoning for the foreign-width gate: a repair frame that will
         // never arrive must not keep the next connection's output gated.
         activeWindowAtForeignWidth = false
-        awaitingGateRepairFrame = false
-        gateRepairDeadline?.cancel()
-        gateRepairDeadline = nil
         foreignQuietRepinTask?.cancel()
         foreignQuietRepinTask = nil
         resyncRetryTask?.cancel()
@@ -1041,11 +1038,9 @@ final class TmuxSessionController: MultiplexerControlling {
         // program's post-resize redraw would be shown rather than silently
         // corrected, so it's better to wait for the settle and repaint once.
         guard rendersOutput else { return }
-        // Keep the output gate closed until that repaint actually lands: the
-        // first %output after a foreground is the tail of whatever the pane
-        // app was writing at the desktop's width — same split-sequence hazard
-        // as the mid-session war (see `awaitingGateRepairFrame`).
-        beginGateRepairAwait()
+        // 334-model: no gate — stragglers paint and the settle repaint plus
+        // the convergence capture make the grid right (see handlePaneOutput).
+        armConvergenceResync()
         pendingSettleResync?.cancel()
         pendingSettleResync = Task { [weak self] in
             try? await Task.sleep(for: .milliseconds(300))
@@ -1452,12 +1447,9 @@ final class TmuxSessionController: MultiplexerControlling {
         if !pinsReleased, let win = snapshot.activeWindowId {
             fitWindowToClient(win)
         }
-        // Our OWN resize is a size war of one: until the settle frame lands,
-        // the pane app's in-flight bytes are laid out for the PREVIOUS grid
-        // (真机取证 2026-08-19: a keyboard show/hide resize interleaved a
-        // 70-column diff stream into a 65-column grid, no desktop client
-        // involved). Same gate, same repair contract as the war path.
-        if rendersOutput { beginGateRepairAwait() }
+        // 334-model: our own resize's in-flight bytes paint at the previous
+        // grid's layout (briefly mis-wrapped) and the settling double-pass +
+        // convergence capture repaint — no gate (see handlePaneOutput).
         resyncActivePaneSettling()
     }
 
@@ -1783,18 +1775,6 @@ final class TmuxSessionController: MultiplexerControlling {
             self.ccTapLine("FRAME pane=\(paneId) reveal=\(reveal) lines=\(lines.count) "
                 + "first=\(lines.first?.prefix(60) ?? "")")
             self.paneCoordinators[paneId]?.feed(data: Data(text.utf8))
-            // The SETTLED frame is the gate's repair point: everything tmux
-            // emitted before its reply is already baked into it, so output may
-            // flow again for the window it belongs to. The immediate pass
-            // (reveal: false) must NOT reopen the gate: it deliberately races
-            // the pane app's SIGWINCH redraw, and the lab's capturerace
-            // scenario shows that frame is a cropped STALE image whose rows
-            // and widths all pass the size checks — opening on it lets the
-            // app's still-draining foreign-width bytes (up to ~700ms of them)
-            // paint the exact garble the gate exists to stop.
-            if reveal, self.snapshot.panes[paneId]?.windowId == self.snapshot.activeWindowId {
-                self.clearGateRepairAwait()
-            }
             // The frame is on screen — reveal the terminal if a keyboard-freeze
             // or pane-switch veil is covering it, UNLESS this capture is known
             // to race the app's own redraw (reveal == false): the buffer is
@@ -2353,30 +2333,25 @@ final class TmuxSessionController: MultiplexerControlling {
             if rang { onPaneBell?(paneId) }
             return
         }
-        // Same gate MID-SESSION while the active window sits at a foreign
-        // width (a desktop client on the same session + `window-size latest`):
-        // these bytes are laid out for the other client's grid, and painting
-        // them here is the shredded-fragments garble. The return-to-our-width
-        // layout-change triggers the repaint that covers the gap — and the
-        // gate STAYS closed until that repair frame actually lands
-        // (`awaitingGateRepairFrame`): the pane app's in-flight foreign-width
-        // bytes keep arriving after the width flips back, and because the
-        // gate cuts at %output-event boundaries, the first of them can be the
-        // TAIL of a split escape sequence — painting it writes literal
-        // `5;210m…` into the grid (phone byte capture, 2026-08-19). The
-        // repair capture is ordered after those stragglers on the single -CC
-        // channel, so dropping them loses nothing the frame won't repaint.
-        if activeWindowAtForeignWidth || awaitingGateRepairFrame,
-           snapshot.panes[paneId]?.windowId == snapshot.activeWindowId {
-            var detector = bellDetectors[paneId] ?? BellDetector()
-            let rang = detector.containsBell(data)
-            bellDetectors[paneId] = detector
-            if rang { onPaneBell?(paneId) }
-            return
-        }
-        // Post-war convergence: while a gate reopen is awaiting its closing
-        // capture, every fed byte for the visible window restarts the quiet
-        // debounce (see `clearGateRepairAwait`).
+        // NO mid-session gate. Build 373-375 dropped output here while the
+        // window sat at a foreign width (and until a repair frame landed),
+        // relying on a capture choreography to repaint the gap — and every
+        // bug anywhere in that chain became a PERMANENT diff-peer divergence
+        // (weeks of them: stale immediate frames, starved retries, false
+        // width rejects). Build 334 — user-verified clean under identical
+        // conditions (desktop client attached, heavy streaming, background
+        // cycles) — never dropped a mid-session byte: foreign-width bytes
+        // paint (briefly mis-wrapped, usually under a veil), and the
+        // reclaim + resync repaint makes the grid right again. Painting
+        // wrong-then-repaired beats dropped-then-maybe-repaired: the former
+        // is transient by construction, the latter is permanent on any slip.
+        // (The BACKGROUND drop above stays — 334 had it too: while
+        // suspended we cannot paint anyway, and the foreground repin's
+        // resync is a single, well-tested repair point.)
+        //
+        // Post-disruption convergence: while a capture is pending as the
+        // last word, every fed byte for the visible window restarts the
+        // quiet debounce (see `armConvergenceResync`).
         if convergenceResyncPending,
            snapshot.panes[paneId]?.windowId == snapshot.activeWindowId {
             scheduleConvergenceResync()
@@ -2436,11 +2411,9 @@ final class TmuxSessionController: MultiplexerControlling {
                 // the settling double-pass — this transition usually follows
                 // our own fitWindowToClient, so the immediate capture races
                 // the pane app's SIGWINCH repaint like every other resize.
-                // Keep gating output until that repair frame lands (see
-                // `awaitingGateRepairFrame`), with a deadline so a capture
-                // that never returns can't freeze the pane forever.
+                // 334-model: no gate — the settling repaint + convergence
+                // capture cover whatever the war painted (handlePaneOutput).
                 activeWindowAtForeignWidth = false
-                beginGateRepairAwait()
                 resyncActivePaneSettling()
             }
         }
@@ -2481,50 +2454,11 @@ final class TmuxSessionController: MultiplexerControlling {
         }
     }
 
-    /// True from the moment the active window returns to our width until the
-    /// repair capture is actually FED — the second half of the foreign-width
-    /// gate. Without it, %output between the width flip and the capture reply
-    /// paints straight away, and those bytes are the pane app's in-flight
-    /// foreign-width frame — often starting with the tail of an escape
-    /// sequence the gate already cut in half. See `handlePaneOutput`.
-    @ObservationIgnored private var awaitingGateRepairFrame = false
-    /// Fail-open deadline for `awaitingGateRepairFrame`: if every repair
-    /// capture is rejected or lost, painting SOMETHING beats a frozen pane.
-    @ObservationIgnored private var gateRepairDeadline: Task<Void, Never>?
     /// Consecutive rejected resync captures per pane — bounds the reject →
     /// re-pin → recapture loop (see `scheduleResyncRetry`).
     @ObservationIgnored private var resyncRejectStreak: [String: Int] = [:]
     @ObservationIgnored private var resyncRetryTask: Task<Void, Never>?
 
-    private func beginGateRepairAwait() {
-        awaitingGateRepairFrame = true
-        if let pane = snapshot.activePaneId { resyncRejectStreak[pane] = 0 }
-        gateRepairDeadline?.cancel()
-        gateRepairDeadline = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(4))
-            guard !Task.isCancelled, let self, self.awaitingGateRepairFrame else { return }
-            // No acceptable frame in 4s (war still raging, or replies lost):
-            // fail open to live output and take one more shot at a repaint.
-            self.awaitingGateRepairFrame = false
-            self.resyncActivePane()
-        }
-    }
-
-    /// A repair-quality frame landed for a pane of the active window — reopen
-    /// the output gate.
-    private func clearGateRepairAwait() {
-        guard awaitingGateRepairFrame else { return }
-        awaitingGateRepairFrame = false
-        gateRepairDeadline?.cancel()
-        gateRepairDeadline = nil
-        // The frame is authoritative only up to its reply. The pane app's
-        // in-flight foreign-width bytes can keep DRAINING long past it (a
-        // 499×62 repaint over SSH takes seconds; 真机取证 2026-08-19: literal
-        // "2m"/"1h" sequence tails painted after the settled frame) — and
-        // painting them diverges a diff-rendering peer for good. One more
-        // capture after the disruption makes a frame the last word.
-        armConvergenceResync()
-    }
 
     /// True from a disruption (gate reopen, resize settle) until the closing
     /// convergence capture has run. `handlePaneOutput` restarts the quiet
