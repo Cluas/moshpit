@@ -194,7 +194,16 @@ actor SSHSession {
     /// built over an injected transport (tests) has none, and uploads then
     /// exercise the exec/base64 fallback, which the fake CAN run.
     private let sftpClient: SSHClient?
-    private let continuation: AsyncStream<Data>.Continuation
+    // nonisolated: the PTY read loop yields into it DIRECTLY, synchronously,
+    // preserving chunk order. It used to hop through `Task { await deliver }`
+    // per chunk — an UNORDERED task per chunk, so under load chunk N+1 could
+    // reach the actor before chunk N and the terminal byte stream arrived
+    // REORDERED: split escape sequences, protocol lines glued into %output
+    // payloads, characters at wrong positions. Bisected to b941818 against a
+    // user-verified-good build 334 (2026-08-19); every rendering symptom
+    // since traced back to this. `yield` is thread-safe, and yield-after-
+    // finish is a documented no-op, so no `closed` guard is needed.
+    private nonisolated let continuation: AsyncStream<Data>.Continuation
     private var writer: (any SSHPTYWriter)?
     private var ptyOpened = false
     private(set) var rows: Int = 24
@@ -248,7 +257,10 @@ actor SSHSession {
         let w = try await transport.openPTY(
             rows: rows, cols: cols,
             onOutput: { [weak self] data in
-                Task { await self?.deliver(data) }
+                // Synchronous, in-order: the read loop is the only caller and
+                // it is sequential. See `continuation`'s doc for the
+                // reordering bug the old per-chunk Task caused.
+                self?.continuation.yield(data)
             },
             onEnd: { [weak self] in
                 Task { await self?.markClosed() }
@@ -446,11 +458,6 @@ actor SSHSession {
 
     private func installWriter(_ w: any SSHPTYWriter) {
         self.writer = w
-    }
-
-    private func deliver(_ data: Data) {
-        guard !closed else { return }
-        continuation.yield(data)
     }
 
     private func markClosed() {
