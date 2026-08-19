@@ -177,8 +177,12 @@ final class TmuxSessionController: MultiplexerControlling {
     // ("protocol text painted into a pane") without guessing from screenshots.
     static let ccTapDir: String? = {
         let args = ProcessInfo.processInfo.arguments
-        guard let i = args.firstIndex(of: "-MOSHPIT_CC_TAP"), i + 1 < args.count else { return nil }
-        return args[i + 1]
+        if let i = args.firstIndex(of: "-MOSHPIT_CC_TAP"), i + 1 < args.count {
+            return args[i + 1]
+        }
+        // Test runners can't add launch arguments, but TEST_RUNNER_-prefixed
+        // env vars pass straight through (the tmux-cc-lab e2e uses this).
+        return ProcessInfo.processInfo.environment["MOSHPIT_CC_TAP"]
     }()
 
     nonisolated static func ccTap(_ file: String, _ data: Data) {
@@ -285,6 +289,15 @@ final class TmuxSessionController: MultiplexerControlling {
         deferredResyncs.removeAll()
         for task in backfillTimeouts.values { task.cancel() }
         backfillTimeouts.removeAll()
+        // Same reasoning for the foreign-width gate: a repair frame that will
+        // never arrive must not keep the next connection's output gated.
+        activeWindowAtForeignWidth = false
+        awaitingGateRepairFrame = false
+        gateRepairDeadline?.cancel()
+        gateRepairDeadline = nil
+        resyncRetryTask?.cancel()
+        resyncRetryTask = nil
+        resyncRejectStreak.removeAll()
     }
 
     /// Returns the persistent ``TerminalView`` for `paneId`. If one does not
@@ -313,7 +326,6 @@ final class TmuxSessionController: MultiplexerControlling {
         // See the matching comment in selectPane: a manual switch must not
         // get silently overridden by a still-pending reconnect restore.
         pendingRestore = nil
-        exitCopyMode()
         releaseScrollHolds()
         // Cross-session: the tree shows every session's windows, so the target
         // may live in a session we're not attached to — switch there first.
@@ -513,7 +525,6 @@ final class TmuxSessionController: MultiplexerControlling {
         // second veil→resync cycle on top of this one (the reported garbled
         // flash on switch-during-reconnect).
         pendingRestore = nil
-        exitCopyMode()
         releaseScrollHolds()
         let oldWindow = snapshot.activeWindowId
         let newWindow = snapshot.panes[paneId]?.windowId ?? oldWindow
@@ -612,29 +623,62 @@ final class TmuxSessionController: MultiplexerControlling {
         return !digits.isEmpty && digits.allSatisfy { $0.isASCII && $0.isNumber }
     }
 
+    /// True when any capture-pane line is laid out for a grid WIDER than
+    /// `cols` — the tell of a frame captured mid-flap at another client's
+    /// size. Width is estimated conservatively (combining marks 0, only
+    /// unambiguously-wide East Asian ranges 2, everything else 1), so a
+    /// legitimate our-width line can never be overestimated past `cols`:
+    /// tmux never captures a line wider than the pane it captured at.
+    /// SGR sequences from `capture-pane -e` are skipped by a tiny CSI scan.
+    nonisolated static func frameExceedsWidth(_ lines: [String], cols: Int) -> Bool {
+        for line in lines {
+            var width = 0
+            var scalars = line.unicodeScalars[...]
+            while let scalar = scalars.first {
+                scalars = scalars.dropFirst()
+                if scalar.value == 0x1b {                     // ESC …
+                    if scalars.first?.value == 0x5b {         // CSI: params, final
+                        scalars = scalars.dropFirst()
+                        while let p = scalars.first, (0x20...0x3f).contains(p.value) {
+                            scalars = scalars.dropFirst()
+                        }
+                        if scalars.first != nil { scalars = scalars.dropFirst() }
+                    }
+                    continue
+                }
+                width += Self.estimatedColumns(scalar)
+                if width > cols { return true }
+            }
+        }
+        return false
+    }
+
+    /// Conservative wcwidth: 0 for combining/zero-width, 2 only for
+    /// unambiguously wide ranges, else 1. Under-counting is safe here (the
+    /// caller only needs "definitely wider than our grid"); over-counting
+    /// a legitimate line is what must never happen.
+    private nonisolated static func estimatedColumns(_ s: Unicode.Scalar) -> Int {
+        switch s.value {
+        case 0x0300...0x036f, 0x200b...0x200f, 0xfe00...0xfe0f, 0x20d0...0x20ff:
+            return 0
+        case 0x1100...0x115f, 0x2e80...0x303e, 0x3041...0x33ff,
+             0x3400...0x4dbf, 0x4e00...0x9fff, 0xa000...0xa4cf,
+             0xac00...0xd7a3, 0xf900...0xfaff, 0xfe30...0xfe4f,
+             0xff00...0xff60, 0xffe0...0xffe6,
+             0x1f300...0x1f64f, 0x1f900...0x1f9ff,
+             0x20000...0x2fffd, 0x30000...0x3fffd:
+            return 2
+        default:
+            return 1
+        }
+    }
+
     /// Flush any output held for scrollback reading across every pane. Called on
     /// pane/window switches so a pane left scrolled-up doesn't sit frozen
     /// (buffering output it never shows) when the user comes back to it.
     func releaseScrollHolds() {
         for coordinator in paneCoordinators.values { coordinator.releaseScrollHold() }
     }
-
-    /// Whether WE put the active pane into tmux copy-mode for scrollback.
-    /// Meaningful only on the copy-mode (shell) scroll path — a wheel forwarded
-    /// to a mouse app never touches copy-mode.
-    @ObservationIgnored private var inCopyMode = false
-
-    /// Throttle for copy-mode paging so a fast-repeating swipe/thumb doesn't rip
-    /// through history (matches the mosh path's 0.18s page granularity).
-    @ObservationIgnored private var lastCopyPageAt: Date = .distantPast
-    /// Scroll lines accumulated while the copy-mode pacer is in its window.
-    /// The pacer used to DROP these — a pan gesture reports 1–3 lines per
-    /// frame, so on a fast flick only the one tick per 0.18s survived and a
-    /// full-screen swipe moved ~2 lines ("can't scroll Claude Code history").
-    /// Accumulate and flush instead: same command pacing on the -CC channel,
-    /// zero lines lost.
-    @ObservationIgnored private var pendingCopyScrollLines = 0
-    @ObservationIgnored private var copyScrollFlushTask: Task<Void, Never>?
 
     /// When each pane last produced `%output`.
     @ObservationIgnored private var lastPaneOutputAt: [String: Date] = [:]
@@ -689,20 +733,27 @@ final class TmuxSessionController: MultiplexerControlling {
     ///  - mouse app → synthesize a wheel into the pane (`send-keys` the SGR
     ///    bytes); the app scrolls itself and tmux never enters copy-mode, so
     ///    typing keeps working.
-    ///  - plain shell → ``copyModeScroll`` (the only correct scrollback for a
-    ///    tmux pane). Positive = older (up), negative = newer (down).
+    ///  - plain shell → page the LOCAL SwiftTerm scrollback (seeded by
+    ///    ``backfill``, appended by `%output`). Positive = older (up),
+    ///    negative = newer (down).
+    ///
+    /// Copy-mode is NEVER driven from here. This controller is a control-mode
+    /// (-CC) client, and tmux draws copy-mode only for regular tty clients: a
+    /// `-CC` client receives ZERO `%output` while copy-mode scrolls (measured
+    /// against tmux 3.6a, scripts/tmux-cc-lab `copymode` scenario,
+    /// 2026-08-19). Driving copy-mode from this path scrolled a screen the
+    /// phone can never see — and hijacked any desktop client sharing the
+    /// window into copy-mode. (The mosh+tmux path is different: its renderer
+    /// IS a regular client, so SessionHub's copy-mode driver stays correct.)
     func scroll(lines: Int) {
         guard lines != 0,
               let paneId = snapshot.activePaneId ?? snapshot.activePanes.first?.id else { return }
         // An ALT-SCREEN mouse app (Claude Code) gets the wheel unconditionally:
-        // its pane has zero tmux history, so copy-mode has nothing to show —
-        // and its own repaint after a wheel updated `lastPaneOutputAt`, which
-        // read as "streaming" and flipped the NEXT tick into copy-mode, where
-        // the sticky latch kept every later swipe. First swipe scrolled, the
-        // rest were dead (the 347 report). If an earlier misfire already
-        // parked the pane, leave copy-mode and hand the app its wheel back.
+        // its own repaint after a wheel updated `lastPaneOutputAt`, which
+        // read as "streaming" and flipped the NEXT tick into the parked path,
+        // where the sticky latch kept every later swipe. First swipe scrolled,
+        // the rest were dead (the 347 report).
         if activePaneWantsMouse && activePaneOnAltScreen {
-            if inCopyMode { exitCopyMode() }
             sendWheel(lines: lines, paneId: paneId)
             return
         }
@@ -710,30 +761,19 @@ final class TmuxSessionController: MultiplexerControlling {
         // repainting makes the two fight over the same viewport: the app
         // scrolls where we asked, then its next frame pins back to the
         // bottom, then the next swipe scrolls again — the reported judder
-        // while output streams. Reading history is exactly what you want to
-        // do at that moment, so hand it to copy-mode instead (these panes
-        // HAVE history), which parks the viewport server-side where the
-        // repaints cannot reach it.
-        //
-        // Sticky on `inCopyMode`: once parked, a lull in output must NOT flip
-        // the next swipe back to the wheel — `sendInput` exits copy-mode first,
-        // which would snap the reader to the bottom mid-read.
-        let appDrivesItsOwnScroll = activePaneWantsMouse
-            && !inCopyMode
-            && !isStreaming(paneId)
+        // while output streams. Park the viewport in the LOCAL scrollback
+        // instead: the coordinator's scroll-hold buffers live output while
+        // the user reads, exactly like the plain-SSH path.
+        let appDrivesItsOwnScroll = activePaneWantsMouse && !isStreaming(paneId)
         if appDrivesItsOwnScroll {
             sendWheel(lines: lines, paneId: paneId)
         } else {
-            copyModeScroll(lines: lines)
+            paneCoordinators[paneId]?.scrollLocal(lines: lines)
         }
     }
 
     /// Synthesize SGR wheel bytes into the pane's program.
     private func sendWheel(lines: Int, paneId: String) {
-        // sendInput() exits copy-mode first — which self-heals the first-swipe
-        // race: if a tick fired before the mouse flag refreshed we may have
-        // wrongly entered copy-mode here, and `-X cancel` (consumed by
-        // copy-mode, never the app) leaves it before the wheel is forwarded.
         let terminal = paneTerminals[paneId]?.getTerminal()
         let col = max(1, (terminal?.cols ?? 80) / 2)
         let row = max(1, (terminal?.rows ?? 24) / 2)
@@ -756,57 +796,6 @@ final class TmuxSessionController: MultiplexerControlling {
         sendInput(SessionHub.ActiveSession.clickBytes(col: col, row: row), paneId: paneId)
     }
 
-    /// Scroll the active pane's scrollback through tmux **copy-mode**, over the
-    /// control channel. This is the only correct scrollback for a plain-shell
-    /// tmux pane: the local SwiftTerm buffer is just framebuffer repaints over
-    /// mosh (and empty for alt-screen apps), whereas copy-mode pages tmux's real
-    /// history and the rendering client (the SSH pane terminal, or the mosh-drawn
-    /// TUI) repaints from it. Positive = older (up), negative = newer (down). Up
-    /// auto-enters copy-mode; `exitCopyMode()` returns to the live bottom on the
-    /// next input.
-    func copyModeScroll(lines: Int) {
-        guard lines != 0 else { return }
-        pendingCopyScrollLines += lines
-        flushCopyScrollWhenPacerAllows()
-    }
-
-    /// Flush the accumulated lines if the pacer's window has elapsed;
-    /// otherwise schedule exactly one deferred flush for when it does — a
-    /// flick's final ticks must land even though no further tick follows
-    /// them.
-    private func flushCopyScrollWhenPacerAllows() {
-        let elapsed = Date().timeIntervalSince(lastCopyPageAt)
-        if elapsed >= 0.18 {
-            flushCopyScroll()
-        } else if copyScrollFlushTask == nil {
-            let wait = 0.18 - elapsed
-            copyScrollFlushTask = Task { [weak self] in
-                try? await Task.sleep(for: .seconds(wait))
-                guard let self, !Task.isCancelled else { return }
-                self.copyScrollFlushTask = nil
-                self.flushCopyScroll()
-            }
-        }
-    }
-
-    private func flushCopyScroll() {
-        let lines = pendingCopyScrollLines
-        pendingCopyScrollLines = 0
-        guard lines != 0,
-              let paneId = snapshot.activePaneId ?? snapshot.activePanes.first?.id else { return }
-        lastCopyPageAt = Date()
-        if lines > 0 {
-            // Re-issue copy-mode every up-burst (a no-op in tmux when already in
-            // copy-mode) so a dropped/failed first entry self-heals instead of
-            // latching `inCopyMode` true while the pane never actually entered.
-            send(rawCommand: "copy-mode -t \(paneId)")
-            inCopyMode = true
-            send(rawCommand: "send-keys -t \(paneId) -N \(lines) -X scroll-up")
-        } else if inCopyMode {
-            send(rawCommand: "send-keys -t \(paneId) -N \(-lines) -X scroll-down")
-        }
-    }
-
     /// Look up the server's tmux `prefix` (e.g. "C-b") so the mosh copy-mode
     /// driver can enter copy-mode with `prefix [` on the mosh-rendered client.
     func queryPrefixKey(_ completion: @escaping (String) -> Void) {
@@ -822,21 +811,6 @@ final class TmuxSessionController: MultiplexerControlling {
     /// the callers target AGENT panes, and every mainstream agent brackets.
     func paneUsesBracketedPaste(_ paneId: String) -> Bool {
         paneTerminals[paneId]?.getTerminal().bracketedPasteMode ?? true
-    }
-
-    /// Leave copy-mode (back to the live bottom) if we entered it. Called before
-    /// forwarding user input so keystrokes reach the shell, not copy-mode, and
-    /// on pane/window switches.
-    func exitCopyMode() {
-        // A deferred scroll flush landing AFTER this would re-enter copy-mode
-        // right under the user's keystrokes — leaving means leaving.
-        copyScrollFlushTask?.cancel()
-        copyScrollFlushTask = nil
-        pendingCopyScrollLines = 0
-        guard inCopyMode else { return }
-        inCopyMode = false
-        guard let paneId = snapshot.activePaneId ?? snapshot.activePanes.first?.id else { return }
-        send(rawCommand: "send-keys -t \(paneId) -X cancel")
     }
 
     /// Cancel a stale copy-mode on the ACTIVE pane — a leftover from a
@@ -1008,6 +982,11 @@ final class TmuxSessionController: MultiplexerControlling {
         // program's post-resize redraw would be shown rather than silently
         // corrected, so it's better to wait for the settle and repaint once.
         guard rendersOutput else { return }
+        // Keep the output gate closed until that repaint actually lands: the
+        // first %output after a foreground is the tail of whatever the pane
+        // app was writing at the desktop's width — same split-sequence hazard
+        // as the mid-session war (see `awaitingGateRepairFrame`).
+        beginGateRepairAwait()
         pendingSettleResync?.cancel()
         pendingSettleResync = Task { [weak self] in
             try? await Task.sleep(for: .milliseconds(300))
@@ -1344,10 +1323,10 @@ final class TmuxSessionController: MultiplexerControlling {
     /// other than tmux's own `%<digits>` shape.
     func sendInput(_ data: Data, paneId: String) {
         guard !data.isEmpty, Self.isValidTmuxId(paneId) else { return }
-        // Any real keystroke leaves copy-mode first (keyboard input lands here
-        // directly), so typing after a scroll reaches the shell and isn't eaten
-        // by copy-mode — and the user can always type to get out.
-        exitCopyMode()
+        // A real keystroke snaps a scrolled-up reader back to the live bottom
+        // first (releasing the local scroll-hold replays everything buffered),
+        // so the echo of what they type is actually visible.
+        paneCoordinators[paneId]?.releaseScrollHold()
         let hex = data.map { String(format: "%02x", $0) }.joined(separator: " ")
         send(rawCommand: "send-keys -t \(paneId) -H \(hex)")
     }
@@ -1697,22 +1676,36 @@ final class TmuxSessionController: MultiplexerControlling {
             // 62-row/499-column frame into a 46-row/70-column view wraps every
             // line sevenfold (phone byte capture, 2026-08-19: one of seven
             // resync frames was captured mid-flap at the desktop's size).
-            // More rows than our grid is the cheap, reliable tell (fewer is
-            // normal — trailing blanks are trimmed above). Drop it; the
-            // return-to-our-width layout-change re-resyncs, and the cover's
-            // safety cap bounds how long a pending reveal can wait.
-            guard lines.count <= self.lastClientSize.rows else {
+            // More rows than our grid is one tell (fewer is normal — trailing
+            // blanks are trimmed above); a LINE wider than our columns is the
+            // other, and it catches the rows-check's blind spot: a desktop
+            // frame whose bottom rows are blank trims to fewer rows than ours
+            // and sails through, then wraps sevenfold anyway. Drop it, re-pin,
+            // and RETRY — rejecting without a follow-up capture starved the
+            // repair whenever both settling passes hit mid-flap moments, and
+            // the gate's dropped span then stayed missing until the app
+            // happened to repaint those exact cells.
+            guard lines.count <= self.lastClientSize.rows,
+                  !Self.frameExceedsWidth(lines, cols: self.lastClientSize.cols) else {
                 self.ccTapLine("FRAME-REJECT pane=\(paneId) rows=\(lines.count) "
-                    + "ours=\(self.lastClientSize.rows)")
+                    + "ours=\(self.lastClientSize.rows)x\(self.lastClientSize.cols)")
                 if let win = self.snapshot.activeWindowId { self.fitWindowToClient(win) }
+                self.scheduleResyncRetry(paneId, reveal: reveal)
                 return
             }
+            self.resyncRejectStreak[paneId] = 0
             // Home + erase-display (ED 2 leaves scrollback intact), the
             // frame, SGR reset. No cursor move yet — that's step two.
             let text = "\u{1b}[H\u{1b}[2J" + lines.joined(separator: "\r\n") + "\u{1b}[0m"
             self.ccTapLine("FRAME pane=\(paneId) reveal=\(reveal) lines=\(lines.count) "
                 + "first=\(lines.first?.prefix(60) ?? "")")
             self.paneCoordinators[paneId]?.feed(data: Data(text.utf8))
+            // The frame is the gate's repair point: everything tmux emitted
+            // before this reply is already baked into it, so output may flow
+            // again for the window it belongs to.
+            if self.snapshot.panes[paneId]?.windowId == self.snapshot.activeWindowId {
+                self.clearGateRepairAwait()
+            }
             // The frame is on screen — reveal the terminal if a keyboard-freeze
             // or pane-switch veil is covering it, UNLESS this capture is known
             // to race the app's own redraw (reveal == false): the buffer is
@@ -2204,8 +2197,16 @@ final class TmuxSessionController: MultiplexerControlling {
         // width (a desktop client on the same session + `window-size latest`):
         // these bytes are laid out for the other client's grid, and painting
         // them here is the shredded-fragments garble. The return-to-our-width
-        // layout-change triggers the repaint that covers the gap.
-        if activeWindowAtForeignWidth,
+        // layout-change triggers the repaint that covers the gap — and the
+        // gate STAYS closed until that repair frame actually lands
+        // (`awaitingGateRepairFrame`): the pane app's in-flight foreign-width
+        // bytes keep arriving after the width flips back, and because the
+        // gate cuts at %output-event boundaries, the first of them can be the
+        // TAIL of a split escape sequence — painting it writes literal
+        // `5;210m…` into the grid (phone byte capture, 2026-08-19). The
+        // repair capture is ordered after those stragglers on the single -CC
+        // channel, so dropping them loses nothing the frame won't repaint.
+        if activeWindowAtForeignWidth || awaitingGateRepairFrame,
            snapshot.panes[paneId]?.windowId == snapshot.activeWindowId {
             var detector = bellDetectors[paneId] ?? BellDetector()
             let rang = detector.containsBell(data)
@@ -2265,7 +2266,11 @@ final class TmuxSessionController: MultiplexerControlling {
                 // the settling double-pass — this transition usually follows
                 // our own fitWindowToClient, so the immediate capture races
                 // the pane app's SIGWINCH repaint like every other resize.
+                // Keep gating output until that repair frame lands (see
+                // `awaitingGateRepairFrame`), with a deadline so a capture
+                // that never returns can't freeze the pane forever.
                 activeWindowAtForeignWidth = false
+                beginGateRepairAwait()
                 resyncActivePaneSettling()
             }
         }
@@ -2276,6 +2281,62 @@ final class TmuxSessionController: MultiplexerControlling {
     /// moment a layout-change reports our width again. See
     /// `handleLayoutChange` / `handlePaneOutput`.
     @ObservationIgnored private var activeWindowAtForeignWidth = false
+
+    /// True from the moment the active window returns to our width until the
+    /// repair capture is actually FED — the second half of the foreign-width
+    /// gate. Without it, %output between the width flip and the capture reply
+    /// paints straight away, and those bytes are the pane app's in-flight
+    /// foreign-width frame — often starting with the tail of an escape
+    /// sequence the gate already cut in half. See `handlePaneOutput`.
+    @ObservationIgnored private var awaitingGateRepairFrame = false
+    /// Fail-open deadline for `awaitingGateRepairFrame`: if every repair
+    /// capture is rejected or lost, painting SOMETHING beats a frozen pane.
+    @ObservationIgnored private var gateRepairDeadline: Task<Void, Never>?
+    /// Consecutive rejected resync captures per pane — bounds the reject →
+    /// re-pin → recapture loop (see `scheduleResyncRetry`).
+    @ObservationIgnored private var resyncRejectStreak: [String: Int] = [:]
+    @ObservationIgnored private var resyncRetryTask: Task<Void, Never>?
+
+    private func beginGateRepairAwait() {
+        awaitingGateRepairFrame = true
+        if let pane = snapshot.activePaneId { resyncRejectStreak[pane] = 0 }
+        gateRepairDeadline?.cancel()
+        gateRepairDeadline = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(4))
+            guard !Task.isCancelled, let self, self.awaitingGateRepairFrame else { return }
+            // No acceptable frame in 4s (war still raging, or replies lost):
+            // fail open to live output and take one more shot at a repaint.
+            self.awaitingGateRepairFrame = false
+            self.resyncActivePane()
+        }
+    }
+
+    /// A repair-quality frame landed for a pane of the active window — reopen
+    /// the output gate.
+    private func clearGateRepairAwait() {
+        guard awaitingGateRepairFrame else { return }
+        awaitingGateRepairFrame = false
+        gateRepairDeadline?.cancel()
+        gateRepairDeadline = nil
+    }
+
+    /// A resync capture came back at a size this grid can't hold. Re-pinning
+    /// alone (the 373 seal) starved the repair when BOTH settling passes hit
+    /// mid-flap moments: the gate's dropped span then stayed missing forever,
+    /// and the pane app's later diffs — computed against its own model —
+    /// left stale cells sitting in the scrolled content ("部分字符没有滚动").
+    /// Keep recapturing, bounded, until one lands at our size.
+    private func scheduleResyncRetry(_ paneId: String, reveal: Bool) {
+        let streak = (resyncRejectStreak[paneId] ?? 0) + 1
+        resyncRejectStreak[paneId] = streak
+        guard streak <= 4 else { return }   // deadline task fails open past here
+        resyncRetryTask?.cancel()
+        resyncRetryTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(300))
+            guard !Task.isCancelled else { return }
+            self?.resyncPane(paneId, reveal: reveal)
+        }
+    }
 
     /// Gate for `handleLayoutChange`'s reclaim — see `recentReclaimTimestamps`.
     /// `selectWindow`/`commitClientSize` call `fitWindowToClient` directly and

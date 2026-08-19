@@ -58,3 +58,6 @@ xcuserdata/
 # App Store Connect screenshot uploads — 30MB of regenerable renders
 # (scripts produce them, ASC is their home; the repo is not).
 /marketing/shots-appstore/
+
+# tmux -CC lab runtime recordings (lab.py writes a dir per run)
+/scripts/tmux-cc-lab/runs/

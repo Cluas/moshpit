@@ -596,9 +596,11 @@ final class SessionHub {
                 herdr.sendKey(key, paneId: paneId)
                 return
             }
-            // If we scrolled the pane into tmux copy-mode, leave it first so the
-            // keystrokes reach the shell (in copy-mode tmux would eat them).
-            tmuxControl?.exitCopyMode()
+            // (SSH+tmux scrollback is LOCAL now — copy-mode is invisible to a
+            // -CC client, so nothing server-side needs leaving here. The
+            // controller's sendInput releases the pane's local scroll-hold so
+            // typing snaps the reader back to live. Mosh copy-mode is handled
+            // on its own branch below.)
             if herdrFrameTarget != nil {
                 // Frame mode: keystrokes are a protocol message, not raw bytes
                 // on the wire. base64 so escape sequences and partial UTF-8

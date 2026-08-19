@@ -257,6 +257,25 @@ struct TmuxSessionControllerTests {
         return answered
     }
 
+    /// Answer every command recorded past `answered`, in FIFO order, using
+    /// `reply(command)` to build each response block. Returns the new count.
+    private func answerPending(_ transport: MockTmuxTransport, answered: Int,
+                               _ reply: (String, Int) -> String) async -> Int {
+        var answered = answered
+        let cmds = await transport.recordedCommands()
+        while answered < cmds.count {
+            transport.pushText(reply(cmds[answered], answered))
+            answered += 1
+        }
+        return answered
+    }
+
+    private func block(_ num: Int, _ body: String) -> String {
+        body.isEmpty
+            ? "%begin \(num) \(num) 0\n%end \(num) \(num) 0\n\n"
+            : "%begin \(num) \(num) 0\n\(body)\n%end \(num) \(num) 0\n\n"
+    }
+
     /// Discovery replies that resolve one session/window/pane (@0/%0 active).
     private func pushOneWindowDiscovery(_ transport: MockTmuxTransport) {
         transport.pushText("""
@@ -780,6 +799,162 @@ struct TmuxSessionControllerTests {
         }, "the reject must re-pin the window so a good capture can follow")
     }
 
+    @Test("after a foreign-width cycle, output stays gated until the repair frame lands — a split sequence's tail must never paint")
+    func gateHoldsUntilRepairFrame() async throws {
+        let transport = MockTmuxTransport()
+        let controller = TmuxSessionController(sshSession: transport)
+        controller.setInitialClientSize(cols: 69, rows: 60)
+        await controller.attach()
+        transport.pushText("%begin 100 0 0\n%end 100 0 0\n\n")
+        _ = await waitUntil { await transport.recordedCommands().count >= 3 }
+        pushOneWindowDiscovery(transport)
+        #expect(await waitUntil { controller.snapshot.activePaneId == "%0" })
+        // Mint the terminal FIRST so its backfill probe + dump are among the
+        // chatter the settle loop answers — the FIFO is then quiet.
+        let terminal = controller.terminalView(for: "%0").getTerminal()
+        var answered = await settleControlChatter(transport, answered: 3)
+
+        transport.pushText("%output %0 abc\n")
+        #expect(await waitUntil { terminal.getCursorLocation().x == 3 })
+
+        // Desktop wins the size; the pane app repaints 499 wide, its bytes
+        // split MID escape sequence across %output events (real chunking —
+        // phone byte capture, 2026-08-19). The head is gated with the rest.
+        transport.pushText("%layout-change @0 c71d,499x62,0,0,0 c71d,499x62,0,0,0 *\n")
+        transport.pushText("%output %0 WIDE-REPAINT\\033[38;\n")
+        // Our re-pin brings the width back — but the app's in-flight bytes
+        // straggle in AFTER the flip, starting with the TAIL of the split
+        // sequence. The gate must hold until the repair frame, or that tail
+        // paints as literal text.
+        transport.pushText("%layout-change @0 c71d,69x60,0,0,0 c71d,69x60,0,0,0 *\n")
+        transport.pushText("%output %0 5;210mTAIL-GARBAGE\n")
+        try? await Task.sleep(for: .milliseconds(150))
+        #expect(terminal.getCursorLocation().x == 3,
+                "output between the width's return and the repair frame must stay gated")
+
+        // The agent-needs-you bell still rings through the held gate.
+        @MainActor final class Bells { var count = 0 }
+        let bells = Bells()
+        controller.onPaneBell = { _ in bells.count += 1 }
+        transport.pushText("%output %0 \\007\n")
+        #expect(await waitUntil { bells.count >= 1 },
+                "the bell must survive the held gate")
+
+        // Answer the FIFO: the reclaim's resize-window, then the settling
+        // pass's capture (the repair frame) and cursor probe.
+        #expect(await waitUntil {
+            await transport.recordedCommands().dropFirst(answered)
+                .contains { $0.hasPrefix("capture-pane") }
+        }, "the return to our width must dispatch a repair capture")
+        answered = await answerPending(transport, answered: answered) { cmd, n in
+            if cmd.hasPrefix("capture-pane") { return block(300 + n, "REPAIRED-ROW") }
+            if cmd.hasPrefix("display-message") { return block(300 + n, "0 0") }
+            return block(300 + n, "")
+        }
+        #expect(await waitUntil {
+            let row0 = terminal.getText(start: Position(col: 0, row: 0),
+                                        end: Position(col: 12, row: 0))
+            return row0.contains("REPAIRED-ROW")
+        }, "the repair frame must paint")
+
+        // Frame landed → the gate reopens: live output flows again.
+        transport.pushText("%output %0 live-again\n")
+        #expect(await waitUntil { terminal.getCursorLocation().x == 10 },
+                "output after the repair frame must paint")
+        let head = terminal.getText(start: Position(col: 0, row: 0),
+                                    end: Position(col: 68, row: 2))
+        #expect(!head.contains("5;210m"),
+                "the split-sequence tail painted as literal text: \(head)")
+        #expect(!head.contains("TAIL-GARBAGE"),
+                "straggling foreign bytes painted before the repair frame: \(head)")
+    }
+
+    @Test("a rejected repair frame is recaptured until one lands at our size")
+    func rejectedFrameIsRetried() async throws {
+        let transport = MockTmuxTransport()
+        let controller = TmuxSessionController(sshSession: transport)
+        controller.setInitialClientSize(cols: 69, rows: 60)
+        await controller.attach()
+        transport.pushText("%begin 100 0 0\n%end 100 0 0\n\n")
+        _ = await waitUntil { await transport.recordedCommands().count >= 3 }
+        pushOneWindowDiscovery(transport)
+        #expect(await waitUntil { controller.snapshot.activePaneId == "%0" })
+        let terminal = controller.terminalView(for: "%0").getTerminal()
+        var answered = await settleControlChatter(transport, answered: 3)
+
+        transport.pushText("%output %0 sentinel\n")
+        #expect(await waitUntil { terminal.getCursorLocation().x == 8 })
+
+        // One full war cycle drives the repair machinery.
+        transport.pushText("%layout-change @0 c71d,499x62,0,0,0 c71d,499x62,0,0,0 *\n")
+        transport.pushText("%layout-change @0 c71d,69x60,0,0,0 c71d,69x60,0,0,0 *\n")
+
+        // Every capture comes back mid-flap (70 rows tall) TWICE — the exact
+        // storm that starved the old reject-without-retry: its only shots
+        // were the two settling passes. The third capture gets a good frame;
+        // pre-fix, no third capture is ever sent and the repair never lands.
+        var oversized = 0
+        let deadline = Date().addingTimeInterval(4.0)
+        var repaired = false
+        while Date() < deadline, !repaired {
+            answered = await answerPending(transport, answered: answered) { cmd, n in
+                if cmd.hasPrefix("capture-pane") {
+                    if oversized < 2 {
+                        oversized += 1
+                        let rows = (1...70).map { "flap-row-\($0)" }.joined(separator: "\n")
+                        return block(400 + n, rows)
+                    }
+                    return block(400 + n, "REPAIRED-AFTER-RETRY")
+                }
+                if cmd.hasPrefix("display-message") { return block(400 + n, "0 0") }
+                return block(400 + n, "")
+            }
+            let row0 = terminal.getText(start: Position(col: 0, row: 0),
+                                        end: Position(col: 24, row: 0))
+            repaired = row0.contains("REPAIRED-AFTER-RETRY")
+            try? await Task.sleep(for: .milliseconds(40))
+        }
+        #expect(repaired, """
+                two rejected captures must not starve the repair — the reject \
+                path has to keep recapturing until a frame lands at our size
+                """)
+    }
+
+    @Test("a resync frame with foreign-WIDTH lines is rejected even when its row count fits")
+    func foreignWidthLinesRejected() async throws {
+        let transport = MockTmuxTransport()
+        let controller = TmuxSessionController(sshSession: transport)
+        controller.setInitialClientSize(cols: 69, rows: 60)
+        await controller.attach()
+        transport.pushText("%begin 100 0 0\n%end 100 0 0\n\n")
+        _ = await waitUntil { await transport.recordedCommands().count >= 3 }
+        pushOneWindowDiscovery(transport)
+        #expect(await waitUntil { controller.snapshot.activePaneId == "%0" })
+        let terminal = controller.terminalView(for: "%0").getTerminal()
+        _ = await settleControlChatter(transport, answered: 3)
+
+        transport.pushText("%output %0 sentinel\n")
+        #expect(await waitUntil { terminal.getCursorLocation().x == 8 })
+
+        // A desktop-width frame whose bottom rows were blank: the trim leaves
+        // 30 rows (fits!) of 200-column lines — the rows-check's blind spot.
+        let before = await transport.recordedCommands().count
+        controller.resyncActivePane()
+        _ = await waitUntil { await transport.recordedCommands().count > before }
+        let wide = String(repeating: "W", count: 200)
+        var reply = "%begin 200 200 0\n"
+        for _ in 1...30 { reply += wide + "\n" }
+        reply += "%end 200 200 0\n%begin 201 201 0\n0 0\n%end 201 201 0\n\n"
+        transport.pushText(reply)
+        try? await Task.sleep(for: .milliseconds(200))
+        let row0 = terminal.getText(start: Position(col: 0, row: 0),
+                                    end: Position(col: 20, row: 0))
+        #expect(row0.contains("sentinel"), """
+                a 200-column line can only come from a foreign-size capture — \
+                feeding it into a 69-column grid wraps every line threefold; got: \(row0)
+                """)
+    }
+
     @Test("selectWindow runs a two-pass resync: an immediate silent capture plus a settled one")
     func selectWindowRunsSettlingResync() async throws {
         let (controller, transport) = await makeAttachedController()
@@ -964,8 +1139,8 @@ struct TmuxSessionControllerTests {
         return count
     }
 
-    @Test("a swipe while the pane is streaming goes to copy-mode, not the app's wheel")
-    func scrollWhileStreamingUsesCopyMode() async throws {
+    @Test("a swipe while the pane is streaming parks the LOCAL scrollback — never copy-mode, never the wheel")
+    func scrollWhileStreamingParksLocally() async throws {
         let (controller, transport) = await makeAttachedController()
         _ = await waitUntil { await transport.recordedCommands().count >= 3 }
         pushOneWindowDiscovery(transport)
@@ -977,27 +1152,45 @@ struct TmuxSessionControllerTests {
         // real 0.5s window, which a loaded full-suite run loses.
         controller.streamingWindow = 60
 
-        // The agent is mid-answer. Wait for the bytes to actually land, since
-        // that is what stamps the pane as painting.
+        // The agent is mid-answer; give the pane real scrollback so a local
+        // park has history to show.
         let terminal = controller.terminalView(for: "%0").getTerminal()
+        for chunk in 0..<6 {
+            var blob = ""
+            for i in 0..<20 { blob += "%output %0 stream-line-\(chunk * 20 + i)\\015\\012\n" }
+            transport.pushText(blob)
+        }
         transport.pushText("%output %0 thinking\n")
         #expect(await waitUntil { terminal.getCursorLocation().x == 8 },
                 "the output must be processed before the swipe")
 
         let before = await transport.recordedCommands().count
         controller.scroll(lines: 3)
+        try? await Task.sleep(for: .milliseconds(300))
 
-        #expect(await waitUntil {
-            await transport.recordedCommands().dropFirst(before)
-                .contains { $0.hasPrefix("copy-mode -t %0") }
-        }, """
-        a pane that is painting right now must be scrolled through copy-mode: \
-        forwarding the wheel makes the app scroll and its next frame pin back \
-        to the bottom, which is the judder testers reported
-        """)
+        // Copy-mode is drawn only for regular tty clients — a -CC client
+        // receives ZERO %output while it scrolls (tmux 3.6a, tmux-cc-lab
+        // `copymode` scenario, 2026-08-19). Driving it from here scrolled an
+        // invisible screen and hijacked any desktop client on the window.
         let sent = await transport.recordedCommands().dropFirst(before)
+        #expect(!sent.contains { $0.hasPrefix("copy-mode") },
+                "copy-mode must never be driven from the -CC renderer")
+        #expect(!sent.contains { $0.contains("-X scroll-up") },
+                "copy-mode paging must never be driven from the -CC renderer")
         #expect(!sent.contains { $0.contains("send-keys -t %0 -H") },
                 "no wheel may be forwarded while the app is repainting")
+
+        // The park holds live output away from the viewport…
+        let xBefore = terminal.getCursorLocation().x
+        transport.pushText("%output %0 while-scrolled\n")
+        try? await Task.sleep(for: .milliseconds(150))
+        #expect(terminal.getCursorLocation().x == xBefore,
+                "output while parked must be held, not yank the viewport")
+
+        // …and typing snaps back to live: the hold replays in order.
+        controller.sendInput(Data("k".utf8), paneId: "%0")
+        #expect(await waitUntil { terminal.getCursorLocation().x == xBefore + 14 },
+                "the held output must replay when the user types")
     }
 
     @Test("a swipe on an idle mouse app still forwards the wheel")

@@ -432,12 +432,16 @@ struct SwiftTerminalView: UIViewRepresentable {
         func feed(data: Data) {
             guard let terminalView else {
                 // Buffer until a view attaches so no early output is lost.
+                TmuxSessionController.ccTap("cc-pairing.log",
+                    Data("FEED-PENDING bytes=\(data.count)\n".utf8))
                 pendingFeed.append(data)
                 return
             }
             // While the user reads scrollback, hold new output instead of
             // letting it yank the viewport to the bottom. Replay on release.
             if scrollHeld {
+                TmuxSessionController.ccTap("cc-pairing.log",
+                    Data("FEED-HELD bytes=\(data.count)\n".utf8))
                 heldFeed.append(data)
                 heldBytes += data.count
                 if heldBytes > heldByteLimit { releaseScrollHold() }
