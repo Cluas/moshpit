@@ -122,6 +122,27 @@ struct SessionLifecycleTests {
         return counter
     }
 
+    /// A mosh session that BELIEVES it has a server pid to reap, with a
+    /// caller-chosen first-contact state — the two inputs `stop()`'s
+    /// fallback reap branches on.
+    private func makeMoshSession(pid: Int?, hadFirstContact: Bool) -> SessionHub.ActiveSession {
+        let connection = ServerConnection(
+            name: "lifecycle-mosh",
+            host: "192.0.2.1",   // RFC5737 TEST-NET-1 — guaranteed non-routable
+            port: 22,
+            username: "tester",
+            authMethod: .password)
+        let session = SessionHub.ActiveSession(connection: connection)
+        let key = Data((0..<16).map { UInt8($0) })
+        let mosh = try! MoshTransport(
+            credentials: MoshCredentials(host: "192.0.2.1", udpPort: 60001, key: key),
+            channel: IdleDatagramChannel())
+        session.installForTesting(moshTransport: mosh,
+                                  moshServerPid: pid,
+                                  moshHadFirstContact: hadFirstContact)
+        return session
+    }
+
     /// Bound a lifecycle call so a regression to the wedge bug fails the
     /// test instead of hanging the suite.
     private func bounded(_ seconds: Double = 5,
@@ -180,5 +201,40 @@ struct SessionLifecycleTests {
 
         #expect(await bounded { await session.keepAlive() })
         #expect(connects.count == 1, "keepAlive on mosh must reach the sidecar rebuild")
+    }
+
+    // MARK: - stop()'s mosh-server reap fallback
+
+    /// The gap `onReturnPathDead`'s watchdog can't cover: it only fires a few
+    /// seconds after bootstrap, so a user who backs out (or kills the app)
+    /// before then leaves a mosh-server waiting forever for a client that's
+    /// never coming (7 zombies on one host, 2026-08-19). `stop()` is the
+    /// backstop — this pins it to a pid that never got a reply.
+    @Test("stop() reaps a mosh-server pid that never made first contact")
+    func stopReapsUncontactedMoshServer() async {
+        let session = makeMoshSession(pid: 4242, hadFirstContact: false)
+        let reapTransport = ScriptedTransport(.reply(""))
+        session.sidecarConnect = { connection in
+            SSHSession(connection: connection, transport: reapTransport)
+        }
+
+        #expect(await bounded { await session.stop() },
+                "stop() must return promptly even while reaping — the timeout exists precisely so a dark host can't hang teardown")
+        #expect(reapTransport.commands.contains { $0.contains("kill 4242") },
+                "a mosh-server that never got a reply back must be killed on teardown")
+    }
+
+    /// The critical trap this whole feature has to avoid: a session that
+    /// really did talk to its server must NEVER be killed just because
+    /// `stop()` happens to run — mosh's entire point is that the server
+    /// outlives a torn-down client so a later reconnect can resume it.
+    @Test("stop() never kills a mosh-server that already made first contact")
+    func stopLeavesContactedMoshServerAlone() async {
+        let session = makeMoshSession(pid: 4242, hadFirstContact: true)
+        let connects = wireConnector(session, replacement: .reply(""))
+
+        #expect(await bounded { await session.stop() })
+        #expect(connects.count == 0,
+                "first contact must latch stop() off the reap path entirely — no sidecar should even be dialed")
     }
 }

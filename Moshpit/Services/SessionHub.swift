@@ -280,12 +280,22 @@ final class SessionHub {
         /// Test-only state installation: lifecycle scenarios need a session
         /// that BELIEVES it is a live mosh connection without running the
         /// network bootstrap. Production never calls this.
+        ///
+        /// `moshServerPid`/`moshHadFirstContact` default to nil/false — the
+        /// same "no pid captured" state a non-mosh (or bootstrap-less) test
+        /// session has today — so every EXISTING call site is unaffected:
+        /// `stop()`'s fallback reap is gated on `moshServerPid != nil` and
+        /// stays inert unless a test deliberately opts in.
         func installForTesting(moshTransport transport: MoshTransport?,
                                sidecarSSH ssh: SSHSession? = nil,
-                               herdrControl control: HerdrControlClient? = nil) {
+                               herdrControl control: HerdrControlClient? = nil,
+                               moshServerPid pid: Int? = nil,
+                               moshHadFirstContact hadContact: Bool = false) {
             self.moshTransport = transport
             self.sidecarSSH = ssh
             self.herdrControl = control
+            self.moshServerPid = pid
+            self.moshHadFirstContact = hadContact
             if transport != nil { viewModel.markConnected() }
         }
 
@@ -429,6 +439,43 @@ final class SessionHub {
         /// banner that offers a one-tap switch to SSH (which rides TCP and
         /// works through the same proxy). Fires at most once per transport.
         var moshReturnPathDead = false
+
+        /// The remote mosh-server's PID for the CURRENT mosh bootstrap, from
+        /// `MoshCredentials.serverPid` — set the moment `startMosh()` gets the
+        /// creds back, which is also the earliest point a reap is possible.
+        /// `onReturnPathDead` (see `startMosh()`) is the primary reaper, but
+        /// its watchdog only fires a few seconds after bootstrap; a user who
+        /// backs out or kills the app before then — including during the
+        /// bootstrap's own remaining awaits (herdr/tmux renderer probes,
+        /// `MoshTransport` construction) — races past it, and that
+        /// mosh-server waits forever for a client that is never coming (7
+        /// zombies on one host, 2026-08-19). `stop()` is the backstop: see
+        /// its use of this alongside `moshHadFirstContact`. nil once reaped
+        /// (or never captured, or not a mosh session) — never re-armed for
+        /// an old bootstrap by a later one; `startMosh()` overwrites it.
+        @ObservationIgnored private var moshServerPid: Int?
+
+        /// True once this mosh session's transport has heard back from its
+        /// server at least once (`MoshDiagnostics.datagramsReceived > 0` —
+        /// the same signal `MoshTransport.sawAnyDatagram` gates its own
+        /// watchdog on). This is the one-way latch that makes `stop()`'s
+        /// fallback reap safe: mosh's whole point is that the server
+        /// OUTLIVES a torn-down client so a later reconnect can resume, so
+        /// once real contact has happened `stop()` must never touch its pid
+        /// again, no matter how or why `stop()` runs.
+        ///
+        /// That holds for both ways `stop()` can run against a session that
+        /// actually worked: an automatic `reconnect()` — reachable only via
+        /// `connectionDropped()`, which by construction fires for a session
+        /// that WAS live (a drop presupposes a prior connect, which
+        /// presupposes contact) — and a manual teardown (protocol switch,
+        /// disconnect from `TerminalScreen`), which tears down whatever this
+        /// `ActiveSession` actually was: if it had been talking to its
+        /// server, this flag is already true by the time that `stop()` call
+        /// reaches here. The only sessions this flag is still false for at
+        /// teardown are ones that never got a reply at all — exactly the
+        /// case the reap exists for.
+        @ObservationIgnored private var moshHadFirstContact = false
 
         /// Bounds the wait started by `beginAttachTimeout`. Stored (not
         /// fire-and-forget) so `stop()` can cancel it — a stalled watcher
@@ -1539,6 +1586,22 @@ final class SessionHub {
                     serverBinary: connection.moshServerPath ?? "mosh-server",
                     portRangeStart: connection.moshPortRangeStart,
                     portRangeEnd: connection.moshPortRangeEnd)
+                // Captured as early as possible: every await between here and
+                // `onReturnPathDead` being wired below (the herdr/tmux
+                // renderer probes, `ssh.close()`, `MoshTransport(credentials:)`)
+                // is a window where a user backing out reaches `stop()` with
+                // no reaper armed at all otherwise. See `moshServerPid`'s doc
+                // comment for the fallback that covers it.
+                //
+                // `moshHadFirstContact` resets alongside it — this session
+                // (an `ActiveSession` reused across a `reconnect()`) may carry
+                // `true` from a PREVIOUS bootstrap's transport, and this new
+                // pid's own contact status starts over at false exactly like
+                // the fresh `MoshTransport` below starts `sawAnyDatagram` at
+                // false. Safe to reset here, before this new pid is even
+                // reapable: nothing between here and `stop()` reads this flag.
+                moshServerPid = creds.serverPid
+                moshHadFirstContact = false
                 // mosh+herdr renderer probe, while the bootstrap channel is
                 // still open (zero extra connections): does this herdr know
                 // `terminal attach`? That raw single-pane stream — no
@@ -1578,6 +1641,14 @@ final class SessionHub {
                     }
                     transport.onDiagnostics = { [weak self] diagnostics in
                         self?.diagnosticsSink?(diagnostics)
+                        // First real contact — see `moshHadFirstContact`'s
+                        // doc comment. Mirrors `sawAnyDatagram` exactly
+                        // (`datagramsReceived` only increments where that
+                        // flips), so this can never disagree with the
+                        // watchdog `onReturnPathDead` below is gated on.
+                        if diagnostics.datagramsReceived > 0 {
+                            self?.moshHadFirstContact = true
+                        }
                     }
                     transport.onReturnPathDead = { [weak self] in
                         self?.moshReturnPathDead = true
@@ -1589,6 +1660,7 @@ final class SessionHub {
                         // mid-session stall never reaches here (sawAnyDatagram
                         // gates it), so a resumable session is never killed.
                         if let pid = creds.serverPid {
+                            self?.moshServerPid = nil   // handled; stop()'s fallback need not repeat it
                             Task { [weak self] in
                                 guard let self else { return }
                                 if let ssh = try? await self.sidecarConnect(self.connection) {
@@ -2138,6 +2210,29 @@ final class SessionHub {
                 await transport.close()
             }
             moshTransport = nil
+            // Fallback reap for a mosh-server this session's own
+            // `onReturnPathDead` watchdog never got the chance to reach —
+            // see `moshServerPid`'s doc comment for the exact window (this
+            // covers it AND the watchdog's own few remaining seconds, since
+            // nothing here checks how much of it elapsed). Gated on
+            // `moshHadFirstContact` being false, not on anything about WHY
+            // `stop()` is running — see that flag's doc comment for why an
+            // automatic `reconnect()` or a manual teardown of a session that
+            // actually worked can never reach this branch with a pid still
+            // set. `withTimeoutValue` bounds it so a host that's gone dark
+            // can't hang teardown; `sidecarConnect`/`connection` are copied
+            // out rather than capturing `self` into the escaping closure.
+            if let pid = moshServerPid, !moshHadFirstContact {
+                moshServerPid = nil   // best-effort, once — a second kill is harmless but pointless
+                let reap = sidecarConnect
+                let target = connection
+                _ = await withTimeoutValue(4) {
+                    if let ssh = try? await reap(target) {
+                        _ = try? await ssh.executeCommand("kill \(pid) 2>/dev/null")
+                        await ssh.close()
+                    }
+                }
+            }
             await viewModel.disconnect()
         }
 
