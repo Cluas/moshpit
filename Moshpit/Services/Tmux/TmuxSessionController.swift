@@ -3,6 +3,7 @@ import Observation
 import SwiftTerm
 import SwiftUI
 import UIKit
+import os
 
 /// One pane's raw `@moshpit_*` hook stamp, as read off the tmux control channel
 /// (Phase B "hook stamp" bridge). Deliberately framework-free and string-typed:
@@ -289,6 +290,8 @@ final class TmuxSessionController: MultiplexerControlling {
         pumpTask = nil
         eventPump?.cancel()
         eventPump = nil
+        channelWatchdogTask?.cancel()
+        channelWatchdogTask = nil
         await client.reset()
         snapshot.isAttached = false
         // Replies for anything still queued will never arrive, so nothing
@@ -1997,11 +2000,75 @@ final class TmuxSessionController: MultiplexerControlling {
         pumpTask?.cancel()
         let stream = sshSession.dataStream
         let client = self.client
-        pumpTask = Task.detached(priority: .userInitiated) {
+        pumpTask = Task.detached(priority: .userInitiated) { [weak self] in
             for await chunk in stream {
                 if Task.isCancelled { break }
                 Self.ccTap("cc-raw.bin", chunk)
+                self?.noteIncoming()
                 await client.feed(chunk)
+            }
+            // The stream ENDING is a transport death, not an idle state —
+            // without this the pump used to just return and the controller
+            // kept queueing commands into the void forever.
+            guard !Task.isCancelled, let self else { return }
+            await self.reportChannelDead(reason: "stream-ended")
+        }
+        startChannelWatchdog()
+    }
+
+    // MARK: - Dead-channel detection
+
+    /// Wall-clock of the last chunk the -CC stream delivered — written from
+    /// the pump (detached task), read by the watchdog (main). A lock, not an
+    /// actor hop: one hop per chunk would be pure churn.
+    private nonisolated let lastIncomingAt =
+        OSAllocatedUnfairLock<Date>(initialState: .distantPast)
+    private nonisolated func noteIncoming() {
+        lastIncomingAt.withLock { $0 = Date() }
+    }
+
+    /// Fired once when the -CC channel is judged dead — the hub tears the
+    /// transport down and reconnects. This exists because the hub's
+    /// keepAlive probe (`executeCommand "true"`) opens a FRESH channel: a
+    /// half-dead link or a wedged tmux can stall only the -CC channel while
+    /// that probe keeps passing (真机取证 2026-08-19: 381 commands piled up
+    /// unanswered over minutes, screen frozen, no reconnect).
+    @ObservationIgnored var onChannelSilent: (() -> Void)?
+    @ObservationIgnored private var channelWatchdogTask: Task<Void, Never>?
+
+    /// Declare the channel dead: log, mark detached, notify the hub once.
+    private func reportChannelDead(reason: String) {
+        ccTapLine("CHANNEL-DEAD reason=\(reason) pending=\(pendingCallbacks.count)")
+        channelWatchdogTask?.cancel()
+        channelWatchdogTask = nil
+        onChannelSilent?()
+    }
+
+    /// Watch for commands piling up while the stream delivers nothing. The
+    /// silence is counted in OBSERVED ticks, not wall clock, so an app
+    /// suspension (tasks frozen, timestamps stale) can't fake a death the
+    /// moment we foreground: the strikes only accumulate while the process
+    /// is actually running and the channel is actually silent.
+    private func startChannelWatchdog() {
+        channelWatchdogTask?.cancel()
+        channelWatchdogTask = Task { [weak self] in
+            var strikes = 0
+            var lastSeen = Date.distantPast
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(4))
+                guard let self, !Task.isCancelled else { return }
+                let incoming = self.lastIncomingAt.withLock { $0 }
+                if self.snapshot.isAttached, !self.pendingCallbacks.isEmpty,
+                   incoming == lastSeen {
+                    strikes += 1
+                } else {
+                    strikes = 0
+                }
+                lastSeen = incoming
+                if strikes >= 3 {   // 3 ticks ≈ 12s of silence with pendings
+                    self.reportChannelDead(reason: "silent")
+                    return
+                }
             }
         }
     }

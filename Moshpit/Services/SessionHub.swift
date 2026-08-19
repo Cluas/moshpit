@@ -1049,6 +1049,14 @@ final class SessionHub {
                 controller.transportIsLive = { [weak viewModel] in
                     viewModel?.connState == .live
                 }
+                // A half-dead link or a wedged tmux stalls only the -CC
+                // channel; the keepAlive exec-probe opens a fresh channel and
+                // keeps passing, so the controller's own watchdog is the one
+                // that notices (真机取证 2026-08-19: frozen screen, 381
+                // unanswered commands, no reconnect).
+                controller.onChannelSilent = { [weak self] in
+                    Task { @MainActor [weak self] in await self?.connectionDropped() }
+                }
                 controller.pendingRestore = lastSelection   // land back on our pane
                 controller.configureAppearance(theme: theme, fontSize: fontSize, fontName: fontName,
                                                 cursorShape: cursorShape, cursorColorId: cursorColorId,
@@ -1741,6 +1749,14 @@ final class SessionHub {
                 let controller = TmuxSessionController(sshSession: session)
                 controller.transportIsLive = { [weak viewModel] in
                     viewModel?.connState == .live
+                }
+                // A half-dead link or a wedged tmux stalls only the -CC
+                // channel; the keepAlive exec-probe opens a fresh channel and
+                // keeps passing, so the controller's own watchdog is the one
+                // that notices (真机取证 2026-08-19: frozen screen, 381
+                // unanswered commands, no reconnect).
+                controller.onChannelSilent = { [weak self] in
+                    Task { @MainActor [weak self] in await self?.connectionDropped() }
                 }
                 controller.pendingRestore = lastSelection
                 controller.configureAppearance(theme: lastTheme, fontSize: lastFontSize, fontName: lastFontName,
