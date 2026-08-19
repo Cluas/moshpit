@@ -52,12 +52,24 @@ final class TmuxScrollForensicsUITest: XCTestCase {
             from.press(forDuration: 0.05, thenDragTo: to,
                        withVelocity: .default, thenHoldForDuration: 0.05)
         }
-        for cycle in 1...6 {
+        for cycle in 1...3 {
             for _ in 1...3 { drag(fromY: 0.35, toY: 0.65) }   // finger down = older
             shot(app, String(format: "%02d-cycle%d-up", 3 + cycle * 2 - 1, cycle))
             for _ in 1...3 { drag(fromY: 0.65, toY: 0.35) }   // finger up = newer
             shot(app, String(format: "%02d-cycle%d-down", 3 + cycle * 2, cycle))
             sleep(1)
+        }
+
+        // The reported shape (2026-08-19): "scrolling down is fine at first,
+        // KEEP scrolling and the overlap appears" — a sustained same-direction
+        // run without pauses, deep enough to cross several repaint cycles.
+        for burst in 1...4 {
+            for _ in 1...6 { drag(fromY: 0.65, toY: 0.35) }   // sustained newer
+            shot(app, String(format: "10-sustained-down%d", burst))
+        }
+        for burst in 1...2 {
+            for _ in 1...6 { drag(fromY: 0.35, toY: 0.65) }   // sustained older
+            shot(app, String(format: "14-sustained-up%d", burst))
         }
 
         // Let repairs/settles land, then the closing states.

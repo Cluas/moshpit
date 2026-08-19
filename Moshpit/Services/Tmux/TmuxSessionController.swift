@@ -648,7 +648,14 @@ final class TmuxSessionController: MultiplexerControlling {
     /// unambiguously-wide East Asian ranges 2, everything else 1), so a
     /// legitimate our-width line can never be overestimated past `cols`:
     /// tmux never captures a line wider than the pane it captured at.
-    /// SGR sequences from `capture-pane -e` are skipped by a tiny CSI scan.
+    /// Escape sequences from `capture-pane -e` are skipped: CSI (SGR), and —
+    /// critically — OSC/DCS strings, whose PAYLOAD is invisible: Claude Code
+    /// emits OSC 8 hyperlinks whose file:// URL made a 65-column line
+    /// estimate as 128 and every repair frame containing one got falsely
+    /// rejected, starving the repair loop until the fail-open opened the
+    /// gate with nothing repainted (真机取证 2026-08-19, 42 consecutive
+    /// rejects — the sustained-scroll overlap). Under-skipping is unsafe,
+    /// over-skipping merely under-counts, which this check tolerates.
     nonisolated static func frameExceedsWidth(_ lines: [String], cols: Int) -> Bool {
         for line in lines {
             var width = 0
@@ -656,9 +663,29 @@ final class TmuxSessionController: MultiplexerControlling {
             while let scalar = scalars.first {
                 scalars = scalars.dropFirst()
                 if scalar.value == 0x1b {                     // ESC …
-                    if scalars.first?.value == 0x5b {         // CSI: params, final
+                    guard let intro = scalars.first else { continue }
+                    if intro.value == 0x5b {                  // CSI: params, final
                         scalars = scalars.dropFirst()
                         while let p = scalars.first, (0x20...0x3f).contains(p.value) {
+                            scalars = scalars.dropFirst()
+                        }
+                        if scalars.first != nil { scalars = scalars.dropFirst() }
+                    } else if intro.value == 0x5d || intro.value == 0x50 {
+                        // OSC / DCS: payload runs to BEL or ST (ESC \) and
+                        // renders as NOTHING.
+                        scalars = scalars.dropFirst()
+                        while let p = scalars.first {
+                            scalars = scalars.dropFirst()
+                            if p.value == 0x07 { break }
+                            if p.value == 0x1b {
+                                if scalars.first?.value == 0x5c { scalars = scalars.dropFirst() }
+                                break
+                            }
+                        }
+                    } else {
+                        // ESC + intermediates (0x20–0x2F) + one final byte
+                        // (charset selects like ESC ( B, and ST's ESC \).
+                        while let p = scalars.first, (0x20...0x2f).contains(p.value) {
                             scalars = scalars.dropFirst()
                         }
                         if scalars.first != nil { scalars = scalars.dropFirst() }

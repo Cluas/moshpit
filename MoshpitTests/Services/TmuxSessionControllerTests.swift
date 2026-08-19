@@ -1025,6 +1025,23 @@ struct TmuxSessionControllerTests {
                 """)
     }
 
+    @Test("OSC 8 hyperlink payloads don't count toward frame width — 真机 42 连拒的根因")
+    func hyperlinkPayloadNotCounted() {
+        // The exact shape from the device capture: an OSC 8 hyperlink whose
+        // file:// URL dwarfs the visible text. Real width ≈ 14 columns.
+        let osc = "\u{1b}[38;5;246m  ⎿ \u{1b}[39m"
+            + "\u{1b}]8;id=1qrnb37;file:///Users/cluas/.claude-account-b/image-cache/5d263c4f/1.jpeg\u{1b}\\"
+            + "[Image #1]\u{1b}]8;;\u{1b}\\"
+        #expect(!TmuxSessionController.frameExceedsWidth([osc], cols: 65),
+                "an invisible OSC payload must not reject a legitimate frame")
+        // BEL-terminated OSC too.
+        let bel = "\u{1b}]0;window title that is quite long indeed\u{7}visible"
+        #expect(!TmuxSessionController.frameExceedsWidth([bel], cols: 20))
+        // And genuinely wide lines are still caught.
+        let wide = String(repeating: "W", count: 80)
+        #expect(TmuxSessionController.frameExceedsWidth([wide], cols: 65))
+    }
+
     @Test("a %begin glued onto a truncated %output is recovered — protocol text must not paint, pairing must not shift")
     func gluedBeginRecovered() async throws {
         let transport = MockTmuxTransport()
