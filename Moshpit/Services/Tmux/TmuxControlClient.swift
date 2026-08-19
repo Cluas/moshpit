@@ -265,11 +265,8 @@ actor TmuxControlClient {
                 openBlock = nil
                 onProtocolError?(.malformedLine(
                     "block #\(block.commandId) exceeded \(maxBlockLines) lines — forcing close"))
-                onCommandResponse?(TmuxCommandResponse(
-                    commandId: block.commandId,
-                    commandNum: block.commandNum,
-                    isError: true,
-                    lines: block.lines))
+                deliverBlock(commandId: block.commandId, commandNum: block.commandNum,
+                             isError: true, lines: block.lines)
                 dispatchLine(raw)
                 return
             }
@@ -449,11 +446,8 @@ actor TmuxControlClient {
         if let stale = openBlock {
             openBlock = nil
             onProtocolError?(.malformedLine("orphan %begin while block #\(stale.commandId) open"))
-            onCommandResponse?(TmuxCommandResponse(
-                commandId: stale.commandId,
-                commandNum: stale.commandNum,
-                isError: true,
-                lines: stale.lines))
+            deliverBlock(commandId: stale.commandId, commandNum: stale.commandNum,
+                         isError: true, lines: stale.lines)
         }
         lastBlockCid = cid
         lastBlockNum = num
@@ -475,19 +469,26 @@ actor TmuxControlClient {
            cid != block.commandId {
             onProtocolError?(.malformedLine("mismatched terminator id \(cid) for block #\(block.commandId)"))
         }
-        // The boot line's own reply never had a queued callback — deliver it
-        // upstream and it pops someone else's. See `awaitingBootBlock`.
+        deliverBlock(commandId: block.commandId, commandNum: block.commandNum,
+                     isError: isError, lines: block.lines)
+    }
+
+    /// Single exit for EVERY completed block — normal, orphaned, or
+    /// force-closed. The boot line's own reply never had a queued callback:
+    /// delivering it upstream pops someone else's slot, so whichever path a
+    /// boot block leaves through, it must be swallowed here exactly once.
+    /// See `awaitingBootBlock`.
+    private func deliverBlock(commandId: Int, commandNum: Int,
+                              isError: Bool, lines: [String]) {
         if awaitingBootBlock {
             awaitingBootBlock = false
             return
         }
-        let response = TmuxCommandResponse(
-            commandId: block.commandId,
-            commandNum: block.commandNum,
+        onCommandResponse?(TmuxCommandResponse(
+            commandId: commandId,
+            commandNum: commandNum,
             isError: isError,
-            lines: block.lines
-        )
-        onCommandResponse?(response)
+            lines: lines))
     }
 
     // MARK: - Notification handlers
