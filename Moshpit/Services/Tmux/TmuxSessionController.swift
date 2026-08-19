@@ -178,6 +178,15 @@ final class TmuxSessionController: MultiplexerControlling {
     static let ccTapDir: String? = {
         let args = ProcessInfo.processInfo.arguments
         if let i = args.firstIndex(of: "-MOSHPIT_CC_TAP"), i + 1 < args.count {
+            // On a real device no host path is writable — the literal value
+            // "documents" resolves to the app sandbox's Documents directory,
+            // which `devicectl device copy from --domain-type appDataContainer`
+            // can pull afterwards.
+            if args[i + 1] == "documents" {
+                return FileManager.default
+                    .urls(for: .documentDirectory, in: .userDomainMask)
+                    .first?.path
+            }
             return args[i + 1]
         }
         // Test runners can't add launch arguments, but TEST_RUNNER_-prefixed
@@ -300,6 +309,11 @@ final class TmuxSessionController: MultiplexerControlling {
         resyncRetryTask?.cancel()
         resyncRetryTask = nil
         resyncRejectStreak.removeAll()
+        convergenceResyncPending = false
+        convergenceResyncTask?.cancel()
+        convergenceResyncTask = nil
+        convergenceDeadlineTask?.cancel()
+        convergenceDeadlineTask = nil
     }
 
     /// Returns the persistent ``TerminalView`` for `paneId`. If one does not
@@ -769,6 +783,19 @@ final class TmuxSessionController: MultiplexerControlling {
         let appDrivesItsOwnScroll = activePaneWantsMouse && !isStreaming(paneId)
         if appDrivesItsOwnScroll {
             sendWheel(lines: lines, paneId: paneId)
+        } else if activePaneOnAltScreen {
+            // Alt-screen pane whose wheel we can't forward (no mouse, or the
+            // flags haven't settled): the LOCAL buffer holds no real history
+            // for it — tmux never replays an already-drawn TUI on attach, so
+            // local scrollback is just backfill's single stale seed frame.
+            // Paging it shows an old screenshot overlapping the live screen
+            // (真机取证 2026-08-19), and the scroll-hold it engages can never
+            // release by scrolling (the remote is alt-screen; there is no
+            // local bottom to return to that means anything), freezing live
+            // output until the next keystroke. Drop the ticks instead: for a
+            // mouse app the next tick forwards the wheel once the flags
+            // settle.
+            return
         } else {
             paneCoordinators[paneId]?.scrollLocal(lines: lines)
         }
@@ -1395,6 +1422,12 @@ final class TmuxSessionController: MultiplexerControlling {
         if !pinsReleased, let win = snapshot.activeWindowId {
             fitWindowToClient(win)
         }
+        // Our OWN resize is a size war of one: until the settle frame lands,
+        // the pane app's in-flight bytes are laid out for the PREVIOUS grid
+        // (真机取证 2026-08-19: a keyboard show/hide resize interleaved a
+        // 70-column diff stream into a 65-column grid, no desktop client
+        // involved). Same gate, same repair contract as the war path.
+        if rendersOutput { beginGateRepairAwait() }
         resyncActivePaneSettling()
     }
 
@@ -1406,6 +1439,10 @@ final class TmuxSessionController: MultiplexerControlling {
     /// with no settled pass behind it the garble stood until %output slowly
     /// caught up ("切 window 先乱几秒再自己好").
     private func resyncActivePaneSettling() {
+        // Every settling disruption (resize, war repair, window/pane switch)
+        // ends with a convergence capture once the pane app's own redraw has
+        // drained — see `armConvergenceResync`.
+        armConvergenceResync()
         resyncActivePane(reveal: false)
         // The settled pass lands a debounce PLUS a full round trip from now —
         // give an active keyboard-freeze/pane-switch cover enough rope to
@@ -1565,6 +1602,20 @@ final class TmuxSessionController: MultiplexerControlling {
                     lines.removeLast()
                 }
                 guard !lines.isEmpty else { return }
+                // A dump captured while the pane sits at ANOTHER client's
+                // width (真机取证 2026-08-19: 62-row desktop frames fed
+                // straight into background panes) is laid out for a grid
+                // this terminal doesn't have — feeding it wraps every line
+                // and seeds the local scrollback with permanent garble.
+                // Skip it and un-claim the pane so a later discovery pass
+                // retries once the sizes settle; the parked resync (which
+                // validates its own frame) still runs via the defer.
+                guard !Self.frameExceedsWidth(lines, cols: self.lastClientSize.cols) else {
+                    self.ccTapLine("BACKFILL-REJECT pane=\(paneId) lines=\(lines.count) "
+                        + "ours=\(self.lastClientSize.rows)x\(self.lastClientSize.cols)")
+                    self.backfilledPanes.remove(paneId)
+                    return
+                }
                 // History is followed by %output's visible repaint, which
                 // repositions the cursor — terminate with CRLF so the two
                 // don't run together, but add nothing after a bare frame.
@@ -2222,6 +2273,13 @@ final class TmuxSessionController: MultiplexerControlling {
             if rang { onPaneBell?(paneId) }
             return
         }
+        // Post-war convergence: while a gate reopen is awaiting its closing
+        // capture, every fed byte for the visible window restarts the quiet
+        // debounce (see `clearGateRepairAwait`).
+        if convergenceResyncPending,
+           snapshot.panes[paneId]?.windowId == snapshot.activeWindowId {
+            scheduleConvergenceResync()
+        }
         if let coordinator = paneCoordinators[paneId] {
             coordinator.feed(data: data)
             return
@@ -2358,6 +2416,59 @@ final class TmuxSessionController: MultiplexerControlling {
         awaitingGateRepairFrame = false
         gateRepairDeadline?.cancel()
         gateRepairDeadline = nil
+        // The frame is authoritative only up to its reply. The pane app's
+        // in-flight foreign-width bytes can keep DRAINING long past it (a
+        // 499×62 repaint over SSH takes seconds; 真机取证 2026-08-19: literal
+        // "2m"/"1h" sequence tails painted after the settled frame) — and
+        // painting them diverges a diff-rendering peer for good. One more
+        // capture after the disruption makes a frame the last word.
+        armConvergenceResync()
+    }
+
+    /// True from a disruption (gate reopen, resize settle) until the closing
+    /// convergence capture has run. `handlePaneOutput` restarts the quiet
+    /// debounce on every fed byte so the capture lands once the pane app has
+    /// actually finished writing — and a hard deadline fires it anyway under
+    /// CONTINUOUS streaming (an agent pane never goes quiet; 真机取证
+    /// 2026-08-19: the debounce alone starved and the divergence sat on
+    /// screen). A mid-stream capture is safe: the -CC channel is ordered, so
+    /// the frame bakes everything before it and later diffs apply to a base
+    /// that matches the app's model.
+    @ObservationIgnored private var convergenceResyncPending = false
+    @ObservationIgnored private var convergenceResyncTask: Task<Void, Never>?
+    @ObservationIgnored private var convergenceDeadlineTask: Task<Void, Never>?
+
+    private func armConvergenceResync() {
+        convergenceResyncPending = true
+        scheduleConvergenceResync()
+        if convergenceDeadlineTask == nil {
+            convergenceDeadlineTask = Task { [weak self] in
+                try? await Task.sleep(for: .seconds(3))
+                guard !Task.isCancelled else { return }
+                self?.fireConvergenceResync()
+            }
+        }
+    }
+
+    /// Restart the quiet debounce (no-op unless armed).
+    private func scheduleConvergenceResync() {
+        guard convergenceResyncPending else { return }
+        convergenceResyncTask?.cancel()
+        convergenceResyncTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(600))
+            guard !Task.isCancelled else { return }
+            self?.fireConvergenceResync()
+        }
+    }
+
+    private func fireConvergenceResync() {
+        guard convergenceResyncPending else { return }
+        convergenceResyncPending = false
+        convergenceResyncTask?.cancel()
+        convergenceResyncTask = nil
+        convergenceDeadlineTask?.cancel()
+        convergenceDeadlineTask = nil
+        resyncActivePane()
     }
 
     /// A resync capture came back at a size this grid can't hold. Re-pinning
