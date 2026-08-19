@@ -18,9 +18,7 @@ truth and `Moshpit.xcodeproj` is generated from it.
 
 - **A one-time purchase, not a subscription.** One price unlocks every feature —
   no subscription, no in-app purchases, no feature tiers, no per-host limits, and
-  no upsell for the parts you actually came for. Moshpit is MIT-licensed as well,
-  so [building and sideloading it yourself](docs/install-free-account.md) with a
-  free Apple ID is a first-class path rather than a loophole.
+  no upsell for the parts you actually came for.
 - **Mosh with roaming.** Sessions survive network handoff (Wi-Fi ↔ cellular) and IP
   changes, reconnecting automatically instead of dropping your shell.
 - **tmux integration.** Attach to existing tmux sessions with native window and pane
@@ -70,14 +68,6 @@ In Xcode, select the **Moshpit** scheme, pick a simulator or your device, and pr
 **⌘R**. The app's bundle identifier is `com.cluas.moshpit` (the Vibe Island widget
 extension is `com.cluas.moshpit.island`). Swift Package dependencies — SwiftTerm and
 Citadel — are resolved automatically on first build.
-
-### Installing on your own iPhone
-
-You do **not** need a paid Apple Developer account. A free Apple ID is enough to
-sideload Moshpit onto your own device, and there's a step-by-step guide covering
-signing, on-device install, and optional auto-resigning with AltStore / SideStore:
-
-➡️ **[Install on iPhone with a free Apple ID](docs/install-free-account.md)**
 
 ## Architecture
 
