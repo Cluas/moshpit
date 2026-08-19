@@ -2053,20 +2053,27 @@ final class TmuxSessionController: MultiplexerControlling {
         channelWatchdogTask?.cancel()
         channelWatchdogTask = Task { [weak self] in
             var strikes = 0
+            var popStrikes = 0
             var lastSeen = Date.distantPast
+            var lastPops: UInt64 = 0
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(4))
                 guard let self, !Task.isCancelled else { return }
                 let incoming = self.lastIncomingAt.withLock { $0 }
-                if self.snapshot.isAttached, !self.pendingCallbacks.isEmpty,
-                   incoming == lastSeen {
-                    strikes += 1
-                } else {
-                    strikes = 0
-                }
+                let hasPendings = self.snapshot.isAttached && !self.pendingCallbacks.isEmpty
+                strikes = (hasPendings && incoming == lastSeen) ? strikes + 1 : 0
+                // A wedged parser keeps bytes flowing while replies stop —
+                // track pop PROGRESS separately, with more patience (a slow
+                // link's capture can legitimately take several seconds).
+                popStrikes = (hasPendings && self.popCounter == lastPops) ? popStrikes + 1 : 0
                 lastSeen = incoming
-                if strikes >= 3 {   // 3 ticks ≈ 12s of silence with pendings
+                lastPops = self.popCounter
+                if strikes >= 3 {        // ≈12s of silence with pendings
                     self.reportChannelDead(reason: "silent")
+                    return
+                }
+                if popStrikes >= 8 {     // ≈32s with pendings and zero replies
+                    self.reportChannelDead(reason: "no-pops")
                     return
                 }
             }
@@ -2698,11 +2705,18 @@ final class TmuxSessionController: MultiplexerControlling {
             return
         }
         let entry = pendingCallbacks.removeFirst()
+        popCounter &+= 1
         ccTapLine("POP   num=\(response.commandNum) err=\(response.isError) "
             + "lines=\(response.lines.count) for=[\(entry.command.prefix(50))] "
             + "first=\(response.lines.first?.prefix(60) ?? "")")
         entry.callback?(response)
     }
+
+    /// Total replies popped — the watchdog's progress probe. A wedged parser
+    /// (a reply block whose terminator was lost in transit) keeps INCOMING
+    /// bytes flowing while pops stop dead, which the silence check alone
+    /// can't see.
+    @ObservationIgnored private var popCounter: UInt64 = 0
 
     // MARK: - Sending commands
 

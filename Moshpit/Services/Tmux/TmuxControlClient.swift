@@ -117,6 +117,22 @@ actor TmuxControlClient {
     /// `%begin` data captured at block open; cleared at `%end` / `%error`.
     private var openBlock: (commandId: Int, commandNum: Int, lines: [String])?
 
+    /// Ids of the most recent REAL `%begin`, for the truncated-line recovery
+    /// below: command numbers increment per command on a connection, so a
+    /// protocol line glued onto a truncated one carries the NEXT number,
+    /// while pane content quoting old dumps carries stale ones.
+    private var lastBlockCid = 0
+    private var lastBlockNum = 0
+
+    /// A reply block cannot legitimately hold more lines than the biggest
+    /// capture this app ever requests (a 2 000-line backfill plus a screen).
+    /// Past this, the block's terminator was lost in transit (a lossy hop —
+    /// e.g. a pty-based tap wrapper under load — can drop the tail of a
+    /// line, gluing the next protocol line onto it; 真机取证 2026-08-19) and
+    /// the block would otherwise swallow every reply and %output forever:
+    /// the frozen-screen, 381-pending-commands failure. Force-close it.
+    private let maxBlockLines = 5000
+
     /// True while the NEXT completed block is the boot command's own reply —
     /// the block tmux emits for the line that entered control mode
     /// (`-CC attach` / `-CC new`), which no caller ever sent through the
@@ -230,6 +246,33 @@ actor TmuxControlClient {
         if openBlock != nil {
             let blockLine = String(data: raw, encoding: .utf8)
                 ?? String(decoding: raw, as: UTF8.self)
+            // Truncated-line recovery, in-block half: a lossy hop can drop a
+            // content line's tail, gluing the block's OWN terminator onto it
+            // ("<content>%end <cid> <num> 1" as one line). The prefix checks
+            // below then miss it and the block never closes. The suffix must
+            // echo the open block's EXACT ids to count — content quoting some
+            // other dump can't match a live command's unique pair.
+            if let (content, terminator) = splitEmbeddedTerminator(blockLine) {
+                if !content.isEmpty { openBlock?.lines.append(content) }
+                handleBlockEnd(line: terminator, isError: terminator.hasPrefix("%error"))
+                return
+            }
+            // Runaway block: its terminator was lost outright. Deliver what
+            // accumulated as an error (the sender's callback occupies a FIFO
+            // slot — silence would shift pairing forever) and re-dispatch the
+            // current line as if the block had closed.
+            if let block = openBlock, block.lines.count >= maxBlockLines {
+                openBlock = nil
+                onProtocolError?(.malformedLine(
+                    "block #\(block.commandId) exceeded \(maxBlockLines) lines — forcing close"))
+                onCommandResponse?(TmuxCommandResponse(
+                    commandId: block.commandId,
+                    commandNum: block.commandNum,
+                    isError: true,
+                    lines: block.lines))
+                dispatchLine(raw)
+                return
+            }
             // A terminator must carry the OPEN block's ids to count. tmux
             // always echoes `%end <cid> <num>` matching its `%begin`, so a
             // "%end"-shaped line with different ids is pane CONTENT — a
@@ -329,6 +372,50 @@ actor TmuxControlClient {
 
     // MARK: - Block lifecycle
 
+    /// Truncated-line recovery helpers. A lossy transport hop (measured:
+    /// a server-side script(1) tap wrapper dropping pty bytes at 1024-byte
+    /// boundaries under load) can cut a line WITHOUT its newline, so the
+    /// next protocol line arrives glued to the truncated one and every
+    /// prefix-based check misses it. These recover the two glue shapes that
+    /// break command↔response pairing for good; pure content damage needs no
+    /// recovery (the next repair frame repaints it).
+
+    /// `"<content>%end <cid> <num> …"` where cid/num are the OPEN block's own
+    /// ids → `(content, terminator)`. nil when no such suffix.
+    private func splitEmbeddedTerminator(_ line: String) -> (String, String)? {
+        guard let block = openBlock else { return nil }
+        for keyword in ["%end ", "%error "] {
+            guard let range = line.range(of: "\(keyword)\(block.commandId) \(block.commandNum)",
+                                         options: .backwards) else { continue }
+            // Must run to end-of-line (allowing trailing flags) — a mention
+            // mid-line is content.
+            let tail = line[range.upperBound...]
+            guard tail.count <= 8, !tail.contains(where: { !$0.isNumber && $0 != " " }) else { continue }
+            // The prefix checks in dispatchLine already handled range at
+            // line start; here we only accept a strictly embedded suffix.
+            guard range.lowerBound != line.startIndex else { return nil }
+            return (String(line[..<range.lowerBound]), String(line[range.lowerBound...]))
+        }
+        return nil
+    }
+
+    /// `"…%begin <cid> <num> <flags>"` suffix whose num is a PLAUSIBLE next
+    /// command number (strictly after the last real block, within a small
+    /// window) → the byte offset where the `%begin` starts. Content quoting
+    /// old dumps carries stale numbers and fails the window.
+    private func embeddedBeginOffset(in raw: Data) -> Data.Index? {
+        let marker = Data("%begin ".utf8)
+        guard let range = raw.lastRange(of: marker), range.lowerBound != raw.startIndex else { return nil }
+        guard let suffix = String(data: raw[range.lowerBound...], encoding: .utf8) else { return nil }
+        let parts = suffix.split(separator: " ", omittingEmptySubsequences: false)
+        guard parts.count == 4,
+              let cid = Int(parts[1]), let num = Int(parts[2]),
+              parts[3].count == 1, parts[3].allSatisfy(\.isNumber) else { return nil }
+        guard num > lastBlockNum, num - lastBlockNum <= 200,
+              abs(cid - lastBlockCid) <= 86_400 else { return nil }
+        return range.lowerBound
+    }
+
     /// True when `line` is the OPEN block's own terminator: `%end`/`%error`
     /// echoing the ids from its `%begin` (or the bare keyword, kept for
     /// defensive symmetry — tmux always sends the ids). Anything else that
@@ -368,6 +455,8 @@ actor TmuxControlClient {
                 isError: true,
                 lines: stale.lines))
         }
+        lastBlockCid = cid
+        lastBlockNum = num
         openBlock = (commandId: cid, commandNum: num, lines: [])
     }
 
@@ -418,8 +507,26 @@ actor TmuxControlClient {
             onProtocolError?(.malformedLine(String(decoding: raw, as: UTF8.self)))
             return
         }
-        let payload = body[body.index(after: sep)...]
-        let decoded = Self.decodeOctalEscapes(Data(payload))
+        // One fresh, zero-based copy used for BOTH the offset search and the
+        // slicing below — Data slice indices are parent-relative, and mixing
+        // instances here once produced an empty prefix.
+        let payload = Data(body[body.index(after: sep)...])
+        // Truncated-line recovery, output half: a lossy hop cut this %output
+        // line's tail and the newline, gluing the NEXT protocol line onto it
+        // ("%output %0 …<cut>%begin 1787125682 81830 1" as one line — 真机取证
+        // 2026-08-19). Without the split, the %begin paints as literal pane
+        // text and its reply block is swallowed — pairing shifts by one for
+        // good. The number-window check keeps pane content that merely QUOTES
+        // an old dump intact.
+        if let beginAt = embeddedBeginOffset(in: payload) {
+            let beginLine = String(decoding: payload.suffix(from: beginAt), as: UTF8.self)
+            onProtocolError?(.malformedLine("recovered %begin glued to truncated %output"))
+            let decoded = Self.decodeOctalEscapes(Data(payload.prefix(upTo: beginAt)))
+            onPaneOutput?(paneId, decoded)
+            handleBegin(beginLine)
+            return
+        }
+        let decoded = Self.decodeOctalEscapes(payload)
         onPaneOutput?(paneId, decoded)
     }
 

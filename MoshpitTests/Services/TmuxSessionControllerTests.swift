@@ -1025,6 +1025,98 @@ struct TmuxSessionControllerTests {
                 """)
     }
 
+    @Test("a %begin glued onto a truncated %output is recovered — protocol text must not paint, pairing must not shift")
+    func gluedBeginRecovered() async throws {
+        let transport = MockTmuxTransport()
+        let controller = TmuxSessionController(sshSession: transport)
+        controller.setInitialClientSize(cols: 69, rows: 60)
+        await controller.attach()
+        transport.pushText("%begin 100 0 0\n%end 100 0 0\n\n")
+        _ = await waitUntil { await transport.recordedCommands().count >= 3 }
+        pushOneWindowDiscovery(transport)
+        #expect(await waitUntil { controller.snapshot.activePaneId == "%0" })
+        let terminal = controller.terminalView(for: "%0").getTerminal()
+        _ = await settleControlChatter(transport, answered: 3)
+
+        // A lossy hop cut the %output line's tail (no newline!) and the next
+        // reply block's %begin arrived glued on. The number is the next
+        // plausible command number → must be recognised as protocol.
+        transport.pushText("%output %0 visible%begin 900 950 1\n%end 900 950 1\n")
+        let painted = await waitUntil { terminal.getCursorLocation().x == 7 }
+        if !painted {
+            print("[glue-test] cursor=\(terminal.getCursorLocation()) row0=\(terminal.getText(start: Position(col: 0, row: 0), end: Position(col: 40, row: 0)))")
+        }
+        #expect(painted, "the truncated payload before the glue must still paint")
+        let row0 = terminal.getText(start: Position(col: 0, row: 0),
+                                    end: Position(col: 40, row: 0))
+        #expect(!row0.contains("%begin"),
+                "the glued %begin painted as literal pane text: \(row0)")
+
+        // Parser must be fully alive afterwards: live output still paints.
+        transport.pushText("%output %0 -after\n")
+        #expect(await waitUntil { terminal.getCursorLocation().x == 13 },
+                "output after the recovered glue must keep flowing")
+    }
+
+    @Test("pane content QUOTING an old %begin dump is left intact — stale numbers fail the recovery window")
+    func quotedStaleBeginNotSplit() async throws {
+        let transport = MockTmuxTransport()
+        let controller = TmuxSessionController(sshSession: transport)
+        controller.setInitialClientSize(cols: 69, rows: 60)
+        await controller.attach()
+        transport.pushText("%begin 100 0 0\n%end 100 0 0\n\n")
+        _ = await waitUntil { await transport.recordedCommands().count >= 3 }
+        pushOneWindowDiscovery(transport)
+        #expect(await waitUntil { controller.snapshot.activePaneId == "%0" })
+        let terminal = controller.terminalView(for: "%0").getTerminal()
+        _ = await settleControlChatter(transport, answered: 3)
+
+        // This pane displays a -CC dump (this very app's forensics do): the
+        // quoted %begin carries a STALE number and must stay content.
+        transport.pushText("%output %0 quote:%begin 100 5 1\n")
+        #expect(await waitUntil {
+            let row0 = terminal.getText(start: Position(col: 0, row: 0),
+                                        end: Position(col: 40, row: 0))
+            return row0.contains("quote:%begin 100 5 1")
+        }, "a stale quoted %begin must paint verbatim")
+    }
+
+    @Test("a block terminator glued onto a truncated content line still closes the block")
+    func gluedTerminatorClosesBlock() async throws {
+        let transport = MockTmuxTransport()
+        let controller = TmuxSessionController(sshSession: transport)
+        controller.setInitialClientSize(cols: 69, rows: 60)
+        await controller.attach()
+        transport.pushText("%begin 100 0 0\n%end 100 0 0\n\n")
+        _ = await waitUntil { await transport.recordedCommands().count >= 3 }
+        pushOneWindowDiscovery(transport)
+        #expect(await waitUntil { controller.snapshot.activePaneId == "%0" })
+        let terminal = controller.terminalView(for: "%0").getTerminal()
+        var answered = await settleControlChatter(transport, answered: 3)
+
+        // Ask for a capture; its reply's LAST content line lost its newline
+        // and the block's own %end arrived glued on. The ids match the open
+        // block exactly, so the block must close and the frame must paint.
+        let before = await transport.recordedCommands().count
+        controller.resyncActivePane()
+        _ = await waitUntil { await transport.recordedCommands().count > before }
+        transport.pushText("%begin 400 400 0\nROW-A%end 400 400 0\n")
+        answered = await answerPending(transport, answered: before + 1) { cmd, n in
+            if cmd.hasPrefix("display-message") { return block(500 + n, "0 0") }
+            return block(500 + n, "")
+        }
+        _ = answered
+        #expect(await waitUntil {
+            terminal.getText(start: Position(col: 0, row: 0),
+                             end: Position(col: 10, row: 0)).contains("ROW-A")
+        }, "the frame from the glue-terminated block must paint")
+
+        // And the parser is not wedged: further output flows.
+        transport.pushText("%output %0 alive\n")
+        #expect(await waitUntil { terminal.getCursorLocation().x == 5 },
+                "output after the glue-terminated block must keep flowing")
+    }
+
     @Test("a resync frame with foreign-WIDTH lines is rejected even when its row count fits")
     func foreignWidthLinesRejected() async throws {
         let transport = MockTmuxTransport()
