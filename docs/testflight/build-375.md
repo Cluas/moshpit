@@ -7,41 +7,50 @@ Canary-only until it survives device testing; then release-promote.sh.
 
 ---
 
-375 closes two escape hatches 374's repair gate still had — both
-found by re-auditing the diffs against the protocol lab's own
-measurements, both able to reproduce "still broken" on a device.
+375 ends the scroll-garble saga at its true root, found by on-device
+bisection against build 334 (the last release testers called clean).
 
-WHAT WAS STILL WRONG IN 374:
+THE ROOT CAUSE:
 
-• The gate reopened on the FIRST repaint after a size flap. That
-  repaint is taken deliberately early and can be a cropped stale
-  image that passes every size check — so the gate held for one
-  round trip instead of until the real repaired frame, and the pane
-  app's still-draining desktop-width bytes (up to ~0.7s of them,
-  often starting mid escape sequence) painted the same old garble.
-  Now only the settled repaint reopens the gate.
-• If the size war ended with the DESKTOP holding the width — easy:
-  our anti-flicker backoff swallows a re-pin right as the desktop
-  goes quiet — nothing ever brought the width back. The gate stayed
-  closed forever: the pane froze on its last frame, only the agent
-  bell got through. Now a quiet spell (2s without a size change)
-  forces one re-pin and the normal repair runs.
+• Since build 368, every chunk of SSH terminal output was handed to
+  the screen through its own detached task — and detached tasks
+  don't keep their order. Under load (fast scrolling, an agent
+  streaming) chunk N+1 could land before chunk N: the terminal BYTE
+  STREAM itself arrived shuffled. Every symptom reported since —
+  literal escape-code fragments, overlapping rows, characters in
+  wrong positions, screens that garbled only after sustained
+  scrolling — was this one line. Output is now delivered
+  synchronously, in order, by construction.
 
-TEST (desktop terminal on the same tmux session):
+ALSO IN 375:
 
-• The same war dance: scroll a busy pane, app-switch away and back,
-  type on the desktop, stop typing, watch the phone. Within ~2s of
-  the desktop going quiet the pane must repaint phone-width and
-  resume live updates — no permanent freeze, no shredded fragments,
-  no literal escape-code text.
-• Type on the desktop CONTINUOUSLY for ten seconds: the phone may
-  hold a still frame while the desktop owns the size (that is the
-  design), but must recover on its own once the typing stops.
+• The renderer returns to 334's law: mid-session output is never
+  dropped. A desktop terminal fighting over window size may cause a
+  brief mis-wrapped flash that repaints clean — but no more
+  permanent divergence from a missed repair.
+• Scrolling a tmux pane never touches copy-mode (it is invisible to
+  the app's tmux channel and hijacked desktop clients).
+• A dead or silently-stalled connection now notices itself: piled-up
+  unanswered commands or a finished stream trigger an automatic
+  reattach within seconds (tmux keeps the session).
+• The protocol parser survives lossy or reordered transit: glued
+  protocol lines are recovered, runaway reply blocks are force-
+  closed, pairing can no longer shift for good.
+• Frame-size validation no longer counts invisible OSC hyperlink
+  payloads as width (it was rejecting legitimate repaints).
 
-IF YOUR SERVER SAW BUILDS BEFORE 372: run "tmux list-clients" there
-and detach stale phone-sized clients (or restart the tmux server)
-once — pre-372 builds leaked clients that keep fighting for the
-window size and will make ANY build look broken.
+TEST:
+
+• The old torture: scroll a busy pane hard and long, app-switch and
+  back, type on a desktop terminal attached to the same session,
+  open/close the keyboard. Everything rendered must stay coherent —
+  transient one-beat flashes are acceptable, anything that STAYS
+  wrong is a bug.
+• After killing the network (airplane mode 30s), the session must
+  reattach by itself within ~15s of connectivity returning.
+• mosh users: if mosh won't connect after updating, check
+  Settings → Privacy & Security → Local Network → Moshpit is ON
+  (iOS resets it sometimes); report if it fails with it on.
 
 KNOWN ISSUES — DON'T RE-REPORT:
 
