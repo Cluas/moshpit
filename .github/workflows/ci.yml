@@ -1,12 +1,13 @@
 name: CI
 
-# Build + test on every push and pull request. Moshpit is an iOS 18 app whose
-# Xcode project is generated from project.yml by xcodegen (project.yml is the
-# source of truth; Moshpit.xcodeproj is a generated artifact), so CI regenerates
-# it from scratch rather than trusting the checked-in copy.
+# MANUAL ONLY — Actions minutes are tight (2026-08-19), so nothing triggers
+# automatically; run it from the Actions tab (workflow_dispatch) when a run
+# is worth the quota. Moshpit is an iOS 18 app whose Xcode project is
+# generated from project.yml by xcodegen (project.yml is the source of
+# truth; Moshpit.xcodeproj is a generated artifact), so CI regenerates it
+# from scratch rather than trusting the checked-in copy.
 on:
-  push:
-  pull_request:
+  workflow_dispatch:
 
 # Cancel superseded runs on the same ref so a fast-follow push doesn't pay for
 # a stale build.
