@@ -639,6 +639,60 @@ final class TmuxSessionController: MultiplexerControlling {
         return !digits.isEmpty && digits.allSatisfy { $0.isASCII && $0.isNumber }
     }
 
+    /// Render `text` as a double-quoted tmux COMMAND-STRING literal, safe to
+    /// splice into a `-CC` control-mode line (used by ``sendPaste(_:paneId:)``
+    /// to build `set-buffer`'s `data` argument).
+    ///
+    /// Control mode is line-framed and parses each line with tmux's own
+    /// command-string grammar — the SAME parser `.tmux.conf` and
+    /// `command-prompt` use (`man tmux`, COMMAND PARSING AND EXECUTION) —
+    /// which is NOT the parser that applies when argv is already split by a
+    /// shell before a CLI process sees it. That distinction bit the first
+    /// version of this escaper: piping the identical escaped string through
+    /// `tmux set-buffer -b x "<arg>"` as pre-split argv left every backslash
+    /// untouched (argv splitting bypasses tmux's command-string parser
+    /// entirely), while running the exact same line through `source-file`
+    /// (which — like control mode — DOES run that parser) decoded it
+    /// correctly (verified against tmux 3.6a, private `-L` lab socket,
+    /// 2026-08-19).
+    ///
+    /// Inside that grammar, double-quoted text still performs `$VAR`
+    /// expansion, leading-`~` expansion, and recognizes `\n \r \t \e`,
+    /// `\uXXXX`, `\ooo` — so every character that could trigger one of those,
+    /// plus the quote/backslash delimiting the string itself, is escaped
+    /// here. A raw newline byte can never appear in the output at all: the
+    /// control channel reads one line as one command, so an un-escaped
+    /// newline would truncate the command rather than land inside the
+    /// buffer. Everything else — including multi-byte Unicode and emoji —
+    /// passes through as literal UTF-8; `#` and `#{...}` are safe unescaped
+    /// too (comments only trigger on an UNQUOTED `#`, and `set-buffer`'s
+    /// `data` argument is not treated as a format string, so `#{pane_id}`
+    /// does not expand). All of this was checked round-trip against tmux
+    /// 3.6a, not just read off the man page: `$`, leading and mid-string `~`,
+    /// `"`, `'`, `\`, tab, `#{...}`, CJK, and emoji all survived intact.
+    nonisolated static func tmuxCommandStringLiteral(_ text: String) -> String {
+        var out = "\""
+        for scalar in text.unicodeScalars {
+            switch scalar {
+            case "\\": out += "\\\\"
+            case "\"": out += "\\\""
+            case "\n": out += "\\n"
+            case "\r": out += "\\r"
+            case "\t": out += "\\t"
+            case "$": out += "\\$"
+            case "~": out += "\\~"
+            default:
+                if scalar.value < 0x20 || scalar.value == 0x7f {
+                    out += String(format: "\\u%04x", scalar.value)
+                } else {
+                    out.unicodeScalars.append(scalar)
+                }
+            }
+        }
+        out += "\""
+        return out
+    }
+
     /// True when any capture-pane line is laid out for a grid WIDER than
     /// `cols` — the tell of a frame captured mid-flap at another client's
     /// size. Width is estimated conservatively (combining marks 0, only
@@ -860,14 +914,18 @@ final class TmuxSessionController: MultiplexerControlling {
         }
     }
 
-    /// Whether a SPECIFIC pane's program turned on bracketed paste (DECSET
-    /// 2004) — for pastes addressed to a pane other than the active one (the
-    /// Home card's per-agent image entry). Defaults to true when the pane has
-    /// no local terminal (the mosh+tmux control-only pool doesn't render):
-    /// the callers target AGENT panes, and every mainstream agent brackets.
-    func paneUsesBracketedPaste(_ paneId: String) -> Bool {
-        paneTerminals[paneId]?.getTerminal().bracketedPasteMode ?? true
-    }
+    // A pane-targeted paste (e.g. the Home card's per-agent image entry)
+    // used to decide bracketing HERE, by reading back
+    // `paneTerminals[paneId]?.getTerminal().bracketedPasteMode` — the local
+    // SwiftTerm's memory of having SEEN the pane's own `ESC[?2004h` go by.
+    // That memory is permanently wrong after a fresh SSH+tmux attach: tmux
+    // does not replay mode-setting sequences on `-CC attach` (lab-verified,
+    // `scripts/tmux-cc-lab`, 2026-08-19), so the flag starts (and stays)
+    // false even for a pane whose program has bracketed paste on — Claude
+    // Code then read a pasted image path as hand-typed text instead of
+    // `[Image #N]`. `sendPaste(_:paneId:)` (near `sendInput(_:paneId:)`)
+    // asks tmux itself instead (`paste-buffer -p`), which tracks the real
+    // per-pane state server-side.
 
     /// Cancel a stale copy-mode on the ACTIVE pane — a leftover from a
     /// connection that died mid-scroll (the exit keystroke never got sent, and
@@ -1383,6 +1441,41 @@ final class TmuxSessionController: MultiplexerControlling {
         paneCoordinators[paneId]?.releaseScrollHold()
         let hex = data.map { String(format: "%02x", $0) }.joined(separator: " ")
         send(rawCommand: "send-keys -t \(paneId) -H \(hex)")
+    }
+
+    /// Paste `text` into `paneId` by round-tripping it through a tmux paste
+    /// buffer instead of bracket-wrapping it ourselves and forwarding raw
+    /// bytes through ``sendInput(_:paneId:)``.
+    ///
+    /// Claude Code only turns a pasted path into `[Image #N]` when it arrives
+    /// wrapped in bracketed-paste markers (`ESC[200~ … ESC[201~`); bare bytes
+    /// read as hand-typed text. Whether to wrap is the pane's OWN DECSET 2004
+    /// state, which this controller has no reliable way to read locally: the
+    /// local SwiftTerm's `bracketedPasteMode` flag only ever gets set by
+    /// OBSERVING that escape go by, and tmux does not replay mode-setting
+    /// sequences on a fresh `-CC` attach (lab-verified, `scripts/tmux-cc-lab`,
+    /// 2026-08-19) — nor is there a format to read it instead:
+    /// `#{pane_bracket_paste}` doesn't exist in tmux 3.6a (checked live; an
+    /// unknown format silently expands to empty rather than erroring, so
+    /// this was confirmed, not assumed off the man page). `paste-buffer -p`
+    /// asks tmux to make the call itself, from the state it already tracks
+    /// server-side (`man tmux`: "paste bracket control codes are inserted
+    /// around the buffer if the application has requested bracketed paste
+    /// mode") — verified live against tmux 3.6a on a private `-L` lab
+    /// socket: a pane with 2004 on received a multi-line payload wrapped
+    /// exactly once around the whole block, newlines intact; the identical
+    /// paste into a plain-shell pane arrived bare.
+    ///
+    /// One fixed buffer name is safe to reuse: `set-buffer` and `paste-buffer
+    /// -d` below are two back-to-back ``send(rawCommand:)`` calls with no
+    /// `await` between them, so on this controller's single write chain no
+    /// other command can land in between and no other call can observe the
+    /// buffer mid-use.
+    func sendPaste(_ text: String, paneId: String) {
+        guard !text.isEmpty, Self.isValidTmuxId(paneId) else { return }
+        let literal = Self.tmuxCommandStringLiteral(text)
+        send(rawCommand: "set-buffer -b moshpit-paste -- \(literal)")
+        send(rawCommand: "paste-buffer -p -b moshpit-paste -d -t \(paneId)")
     }
 
     /// Tell tmux the client viewport changed size. Driven by the container

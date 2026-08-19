@@ -1675,6 +1675,100 @@ struct TmuxSessionControllerTests {
     }
 
     // ─────────────────────────────────────────────────────────────
+    // sendPaste — bracketing decided by tmux (`paste-buffer -p`), not by a
+    // local SwiftTerm flag that a fresh -CC attach never sets (373's root
+    // cause: Claude Code only images a pasted path when it arrives inside
+    // ESC[200~ … ESC[201~; the local flag stays false forever after a fresh
+    // attach because tmux never replays ESC[?2004h on attach).
+    // ─────────────────────────────────────────────────────────────
+
+    @Test("sendPaste emits set-buffer then paste-buffer -p -d, in order, targeting the given pane")
+    func sendPasteEmitsBufferThenPaste() async throws {
+        let (controller, transport) = await makeAttachedController()
+        _ = await waitUntil { await transport.recordedCommands().count >= 3 }
+        let baseline = await transport.recordedCommands().count
+
+        controller.sendPaste("hello world", paneId: "%0")
+
+        let landed = await waitUntil(timeout: 0.5) {
+            await transport.recordedCommands().count >= baseline + 2
+        }
+        #expect(landed)
+        // `enqueue` (the one write chokepoint) appends the control channel's
+        // own line terminator to every command it sends — that trailing
+        // "\n" is transport framing, not part of the command string
+        // `send(rawCommand:)` was called with, so it's trimmed before
+        // comparing (every other exact-match assertion in this file dodges
+        // it via `hasPrefix`/`contains` instead).
+        let cmds = await transport.recordedCommands().map { $0.trimmingCharacters(in: .newlines) }
+        #expect(cmds[baseline] == "set-buffer -b moshpit-paste -- \"hello world\"")
+        #expect(cmds[baseline + 1] == "paste-buffer -p -b moshpit-paste -d -t %0")
+    }
+
+    @Test("sendPaste escapes a multi-line payload with quotes/backslash/$/~ into ONE set-buffer argument, no raw newline on the wire")
+    func sendPasteEscapesTrickyTextAsOneLine() async throws {
+        let (controller, transport) = await makeAttachedController()
+        _ = await waitUntil { await transport.recordedCommands().count >= 3 }
+        let baseline = await transport.recordedCommands().count
+
+        // Every character class the -CC control channel's line-based framing
+        // and tmux's own command-string grammar could otherwise mangle:
+        // embedded newline, a literal '$' and leading '~' (both normally
+        // expanded inside a double-quoted tmux argument), a double quote, a
+        // backslash, and non-ASCII text.
+        let text = "line1\nline2 has $HOME, ~root, \"quote\", back\\slash, 中文🎉"
+        controller.sendPaste(text, paneId: "%0")
+
+        let landed = await waitUntil(timeout: 0.5) {
+            await transport.recordedCommands().count >= baseline + 2
+        }
+        #expect(landed)
+        // Trim the control channel's own line terminator (see the comment in
+        // `sendPasteEmitsBufferThenPaste`) — what's left is exactly the
+        // string `send(rawCommand:)` was called with.
+        let cmds = await transport.recordedCommands().map { $0.trimmingCharacters(in: .newlines) }
+        let setCmd = cmds[baseline]
+
+        // The escaper is exercised directly in TmuxPasteEscapingTests below;
+        // here we only need the INTEGRATION property: sendPaste must hand it
+        // exactly what set-buffer receives.
+        #expect(setCmd == "set-buffer -b moshpit-paste -- " + TmuxSessionController.tmuxCommandStringLiteral(text))
+        // The whole point: no raw newline byte crosses the wire (the -CC
+        // channel is line-framed — a raw newline here would truncate the
+        // command before paste-buffer ever ran). `trimmingCharacters` above
+        // only strips a LEADING/TRAILING run, so an embedded one — the bug
+        // this guards against — would still show up here.
+        #expect(setCmd.filter { $0 == "\n" }.isEmpty)
+        #expect(cmds[baseline + 1] == "paste-buffer -p -b moshpit-paste -d -t %0")
+    }
+
+    @Test("sendPaste with empty text is a no-op (no write)")
+    func sendPasteEmptyIsNoOp() async throws {
+        let (controller, transport) = await makeAttachedController()
+        _ = await waitUntil { await transport.recordedCommands().count >= 3 }
+        let baseline = await transport.recordedCommands().count
+
+        controller.sendPaste("", paneId: "%0")
+
+        try? await Task.sleep(for: .milliseconds(80))
+        let after = await transport.recordedCommands().count
+        #expect(after == baseline, "an empty paste must not produce set-buffer/paste-buffer")
+    }
+
+    @Test("sendPaste with a malformed pane id is a no-op (no write)")
+    func sendPasteInvalidPaneIdIsNoOp() async throws {
+        let (controller, transport) = await makeAttachedController()
+        _ = await waitUntil { await transport.recordedCommands().count >= 3 }
+        let baseline = await transport.recordedCommands().count
+
+        controller.sendPaste("hello", paneId: "not-a-pane")
+
+        try? await Task.sleep(for: .milliseconds(80))
+        let after = await transport.recordedCommands().count
+        #expect(after == baseline, "a malformed pane id must never reach the control channel")
+    }
+
+    // ─────────────────────────────────────────────────────────────
     // selectWindow optimistic update
     // ─────────────────────────────────────────────────────────────
 
@@ -1942,6 +2036,92 @@ struct TmuxLayoutWidthTests {
     func malformed() {
         #expect(C.windowWidth(fromLayout: "") == nil)
         #expect(C.windowWidth(fromLayout: "justchecksum") == nil)
+    }
+}
+
+/// `tmuxCommandStringLiteral` builds the `set-buffer` argument `sendPaste`
+/// sends over the line-framed -CC channel. Every case here was checked
+/// round-trip against real tmux 3.6a on a private `-L` lab socket (piped
+/// through `source-file`, which parses text exactly like control mode does —
+/// NOT the CLI-with-pre-split-argv path, which bypasses tmux's own
+/// command-string parser and would make an escaper look correct here while
+/// doing nothing on the wire).
+@Suite("tmux paste escaping")
+struct TmuxPasteEscapingTests {
+    typealias C = TmuxSessionController
+
+    @Test("plain ASCII passes through, just quoted")
+    func plainAscii() {
+        #expect(C.tmuxCommandStringLiteral("hello world") == ##""hello world""##)
+    }
+
+    @Test("backslash is doubled")
+    func backslash() {
+        #expect(C.tmuxCommandStringLiteral("a\\b") == ##""a\\b""##)
+    }
+
+    @Test("a double quote is escaped so it can't close the argument early")
+    func doubleQuote() {
+        #expect(C.tmuxCommandStringLiteral("a\"b") == ##""a\"b""##)
+    }
+
+    @Test("a single quote needs no escaping inside a double-quoted argument")
+    func singleQuote() {
+        #expect(C.tmuxCommandStringLiteral("a'b") == ##""a'b""##)
+    }
+
+    @Test("newline becomes the two-character \\n escape — never a raw byte")
+    func newline() {
+        #expect(C.tmuxCommandStringLiteral("a\nb") == ##""a\nb""##)
+        #expect(!C.tmuxCommandStringLiteral("a\nb").contains("\n"))
+    }
+
+    @Test("carriage return and tab get their own shorthand escapes")
+    func carriageReturnAndTab() {
+        #expect(C.tmuxCommandStringLiteral("a\rb") == ##""a\rb""##)
+        #expect(C.tmuxCommandStringLiteral("a\tb") == ##""a\tb""##)
+    }
+
+    @Test("$ is escaped so tmux doesn't expand it as an environment variable")
+    func dollarSign() {
+        #expect(C.tmuxCommandStringLiteral("$HOME") == ##""\$HOME""##)
+    }
+
+    @Test("~ is escaped whether leading or mid-string, so tmux never expands it to a home directory")
+    func tilde() {
+        #expect(C.tmuxCommandStringLiteral("~root") == ##""\~root""##)
+        #expect(C.tmuxCommandStringLiteral("a~b") == ##""a\~b""##)
+    }
+
+    @Test("other control bytes fall back to \\uXXXX")
+    func controlByte() {
+        #expect(C.tmuxCommandStringLiteral("\u{0001}") == "\"\\u0001\"")
+        #expect(C.tmuxCommandStringLiteral("\u{007f}") == "\"\\u007f\"")
+    }
+
+    @Test("# and #{...} pass through unescaped — quoted # isn't a comment, and set-buffer's data isn't a format")
+    func hashAndFormat() {
+        #expect(C.tmuxCommandStringLiteral("#{pane_id}") == ##""#{pane_id}""##)
+    }
+
+    @Test("CJK and emoji pass through as literal UTF-8, untouched")
+    func nonASCII() {
+        #expect(C.tmuxCommandStringLiteral("中文🎉") == ##""中文🎉""##)
+    }
+
+    @Test("a real multi-line, multi-special-character payload escapes to one line with no raw newline")
+    func combinedPayload() {
+        let text = "line1\nline2 has $HOME, ~root, \"quote\", back\\slash, 中文🎉"
+        let out = C.tmuxCommandStringLiteral(text)
+        #expect(out.hasPrefix("\""))
+        #expect(out.hasSuffix("\""))
+        #expect(!out.contains("\n"), "no raw newline may reach the -CC wire")
+        #expect(out.contains("\\n"), "the newline must survive as the two-char escape")
+        #expect(out.contains("\\$HOME"))
+        #expect(out.contains("\\~root"))
+        #expect(out.contains("\\\"quote\\\""))
+        #expect(out.contains("back\\\\slash"))
+        #expect(out.contains("中文🎉"))
     }
 }
 

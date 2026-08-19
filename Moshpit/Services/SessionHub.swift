@@ -603,7 +603,31 @@ final class SessionHub {
         /// when the active terminal's app requested them (DECSET 2004 — Claude
         /// Code, vim, modern shells). Raw bytes executed a multi-line prompt
         /// line by line; bracketed, the app receives it as one paste block.
+        /// Bracketing also decides whether Claude Code images a pasted path
+        /// (`[Image #N]`) or reads it as hand-typed text.
+        ///
+        /// SSH+tmux routes through the controller's own `paste-buffer -p`
+        /// instead of the `activeTerminal?.bracketedPasteMode` check below:
+        /// that flag is only ever set by OBSERVING the pane's `ESC[?2004h`
+        /// go by, and tmux does not replay mode-setting sequences on a fresh
+        /// `-CC` attach (lab-verified, `scripts/tmux-cc-lab`, 2026-08-19) — so
+        /// after a fresh attach it is permanently false, and every pasted
+        /// image path landed as literal text instead of `[Image #N]`. Mosh
+        /// does not have this problem (its renderer is a regular tmux
+        /// client, not a fresh `-CC` attach each time), so that path is
+        /// untouched. Gated on `connState == .live` for the same reason
+        /// `sendInput` is — a paste triggered while the cover overlay is up
+        /// (e.g. a queued Home-card action firing mid-reconnect) must not
+        /// become durable input on a transport that queues it (mosh
+        /// type-ahead).
         func sendPaste(_ text: String) {
+            guard viewModel.connState == .live else { return }
+            if let controller = tmuxController,
+               let paneId = controller.snapshot.activePaneId
+                    ?? controller.snapshot.activePanes.first?.id {
+                controller.sendPaste(text, paneId: paneId)
+                return
+            }
             var payload = Data(text.utf8)
             if activeTerminal?.bracketedPasteMode == true {
                 payload = Data("\u{1b}[200~".utf8) + payload + Data("\u{1b}[201~".utf8)
@@ -709,11 +733,21 @@ final class SessionHub {
         /// but judged by the TARGET pane's mode rather than the active one's.
         /// The Home card's per-agent image entry delivers here without ever
         /// opening the terminal screen.
+        ///
+        /// tmux-controlled sessions (SSH+tmux via `tmuxController`, mosh+tmux
+        /// via the `moshControl` sidecar) go through the controller's own
+        /// `paste-buffer -p` — the same server-side-truth fix as
+        /// ``sendPaste(_:)`` — rather than guessing from a local terminal
+        /// that, for a pane other than the active one, usually doesn't even
+        /// exist to guess from.
         func deliverPaste(_ text: String, toPane paneId: String) async -> Bool {
+            guard !text.isEmpty else { return false }
+            if let control = tmuxControl {
+                control.sendPaste(text, paneId: paneId)
+                return true
+            }
             var payload = Data(text.utf8)
-            let bracketed = tmuxControl?.paneUsesBracketedPaste(paneId)
-                ?? (activeTerminal?.bracketedPasteMode == true)
-            if bracketed {
+            if activeTerminal?.bracketedPasteMode == true {
                 payload = Data("\u{1b}[200~".utf8) + payload + Data("\u{1b}[201~".utf8)
             }
             return await deliverInput(payload, toPane: paneId)

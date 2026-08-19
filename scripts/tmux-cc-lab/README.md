@@ -68,6 +68,21 @@ python3 scripts/tmux-cc-lab/lab.py analyze <bin> # 分析任意 -CC 字节流录
 6. **lab 自身的坑**：pane 在 copy-mode 时外部客户端 `send-keys -l` 可能挂死
    等回包（`ext()` 已加 5s 超时兜底）；真机录制用 `~/.local/bin/moshpit-cc-tap`
    （script(1) 插 pty；管道会让 -CC 拒载）。
+7. **`-CC` attach 不重播括号粘贴模式**：一个开着 DECSET 2004 的 pane，fresh
+   attach 之后本地看不到任何 `ESC[?2004h` 重放——`bracketedPasteMode` 之类
+   本地标志永远读到 false（373 号 bug 根因：SSH+tmux 下粘贴图片路径给
+   Claude Code 读成手打文本，[Image #N] 从不出现；mosh 不受影响，因为它的
+   渲染端是常规 tty 客户端而非每次 fresh 的 -CC attach）。也没有格式变量能
+   代替这次观察：私有 socket 上 `display-message -p '#{pane_bracket_paste}'`
+   直接解析成空串，tmux 3.6a 就是没有这个 pane_* 格式。正确做法是让 tmux
+   自己判断：`paste-buffer -p` 会按 pane 的真实状态决定是否包裹（`man tmux`
+   已经写明），私有 socket 验证：开 2004 的 pane 收到完整包裹的多行 payload
+   （换行、引号、反斜杠、`$`、`~`、CJK、emoji 全部原样），未开 2004 的 pane
+   收到裸文本。唯一的坑是参数怎么送进去——argv 预分割会绕开 tmux 自己的
+   command-string 转义层（`\n \$ \~ \" \\` 都不会被解析），必须走
+   `source-file`/控制模式实际吃的那条解析路径才算数（见
+   `TmuxSessionController.tmuxCommandStringLiteral` 和
+   `TmuxSessionControllerTests`）。
 
 ### 3. 全链路 e2e（真 tmux ↔ 真控制器）— `run-e2e.sh`
 
