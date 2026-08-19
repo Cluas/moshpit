@@ -841,32 +841,137 @@ struct TmuxSessionControllerTests {
                 "the bell must survive the held gate")
 
         // Answer the FIFO: the reclaim's resize-window, then the settling
-        // pass's capture (the repair frame) and cursor probe.
+        // pass's IMMEDIATE capture (reveal: false).
         #expect(await waitUntil {
             await transport.recordedCommands().dropFirst(answered)
                 .contains { $0.hasPrefix("capture-pane") }
         }, "the return to our width must dispatch a repair capture")
         answered = await answerPending(transport, answered: answered) { cmd, n in
-            if cmd.hasPrefix("capture-pane") { return block(300 + n, "REPAIRED-ROW") }
+            if cmd.hasPrefix("capture-pane") { return block(300 + n, "IMMEDIATE-ROW") }
             if cmd.hasPrefix("display-message") { return block(300 + n, "0 0") }
             return block(300 + n, "")
         }
         #expect(await waitUntil {
             let row0 = terminal.getText(start: Position(col: 0, row: 0),
+                                        end: Position(col: 13, row: 0))
+            return row0.contains("IMMEDIATE-ROW")
+        }, "the immediate frame still paints (it silently corrects the buffer)")
+
+        // The immediate frame must NOT reopen the gate: it races the pane
+        // app's SIGWINCH redraw and the lab's capturerace scenario shows it
+        // can be a cropped STALE image that passes every size check. The
+        // app's foreign-width bytes keep draining for ~700ms after it.
+        transport.pushText("%output %0 STILL-FOREIGN\n")
+        try? await Task.sleep(for: .milliseconds(100))
+        #expect(!terminal.getText(start: Position(col: 0, row: 0),
+                                  end: Position(col: 68, row: 1)).contains("STILL-FOREIGN"),
+                "output after the immediate frame must stay gated until the settled frame")
+
+        // The SETTLED pass (~700ms later) is the real repair point.
+        let beforeSettle = answered
+        #expect(await waitUntil(timeout: 2.0) {
+            await transport.recordedCommands().dropFirst(beforeSettle)
+                .contains { $0.hasPrefix("capture-pane") }
+        }, "the settled repair capture must follow the immediate one")
+        answered = await answerPending(transport, answered: answered) { cmd, n in
+            if cmd.hasPrefix("capture-pane") { return block(400 + n, "REPAIRED-ROW") }
+            if cmd.hasPrefix("display-message") { return block(400 + n, "0 0") }
+            return block(400 + n, "")
+        }
+        #expect(await waitUntil {
+            let row0 = terminal.getText(start: Position(col: 0, row: 0),
                                         end: Position(col: 12, row: 0))
             return row0.contains("REPAIRED-ROW")
-        }, "the repair frame must paint")
+        }, "the settled repair frame must paint")
 
-        // Frame landed → the gate reopens: live output flows again.
+        // Settled frame landed → the gate reopens: live output flows again.
         transport.pushText("%output %0 live-again\n")
         #expect(await waitUntil { terminal.getCursorLocation().x == 10 },
-                "output after the repair frame must paint")
+                "output after the settled repair frame must paint")
         let head = terminal.getText(start: Position(col: 0, row: 0),
                                     end: Position(col: 68, row: 2))
         #expect(!head.contains("5;210m"),
                 "the split-sequence tail painted as literal text: \(head)")
         #expect(!head.contains("TAIL-GARBAGE"),
                 "straggling foreign bytes painted before the repair frame: \(head)")
+        #expect(!head.contains("STILL-FOREIGN"),
+                "stragglers after the immediate frame painted before the settled frame: \(head)")
+    }
+
+    @Test("a war that ends at the desktop's width re-pins after a quiet spell — the pane must not freeze forever")
+    func foreignQuietRepins() async throws {
+        let transport = MockTmuxTransport()
+        let controller = TmuxSessionController(sshSession: transport)
+        controller.setInitialClientSize(cols: 69, rows: 60)
+        controller.foreignQuietRepinDelay = 0.15
+        await controller.attach()
+        transport.pushText("%begin 100 0 0\n%end 100 0 0\n\n")
+        _ = await waitUntil { await transport.recordedCommands().count >= 3 }
+        pushOneWindowDiscovery(transport)
+        #expect(await waitUntil { controller.snapshot.activePaneId == "%0" })
+        let terminal = controller.terminalView(for: "%0").getTerminal()
+        var answered = await settleControlChatter(transport, answered: 3)
+
+        // A live tug-of-war: enough foreign flaps to exhaust the anti-flash
+        // reclaim backoff (3 inside 5s → suspended), then the desktop goes
+        // QUIET while the window is still at ITS width. No further
+        // layout-change will ever arrive on its own.
+        for _ in 0..<4 {
+            transport.pushText("%layout-change @0 c71d,499x62,0,0,0 c71d,499x62,0,0,0 *\n")
+            try? await Task.sleep(for: .milliseconds(30))
+        }
+        answered = await answerPending(transport, answered: answered) { _, n in
+            block(500 + n, "")
+        }
+
+        // The quiet-spell deadline must force one more resize-window even
+        // though the reclaim backoff swallowed the last drift's reclaim.
+        let beforeQuiet = answered
+        #expect(await waitUntil(timeout: 2.0) {
+            await transport.recordedCommands().dropFirst(beforeQuiet)
+                .contains { $0.hasPrefix("resize-window") }
+        }, "a war ending at the desktop's width must trigger a quiet-spell re-pin")
+
+        // The re-pin's own layout-change comes back at our width → the normal
+        // repair cycle runs and the gate reopens. Keep answering the FIFO
+        // until the settled repair frame paints (immediate + settled passes).
+        transport.pushText("%layout-change @0 c71d,69x60,0,0,0 c71d,69x60,0,0,0 *\n")
+        // Answer BOTH settling passes — only the settled (second) frame
+        // reopens the gate, so stopping after the first would leave the live
+        // probe below gated.
+        var capturesAnswered = 0
+        let deadline = Date().addingTimeInterval(6.0)
+        while Date() < deadline, capturesAnswered < 2 {
+            answered = await answerPending(transport, answered: answered) { cmd, i in
+                if cmd.hasPrefix("capture-pane") {
+                    capturesAnswered += 1
+                    return block(600 + i, "QUIET-REPAIRED")
+                }
+                if cmd.hasPrefix("display-message") { return block(600 + i, "0 0") }
+                return block(600 + i, "")
+            }
+            try? await Task.sleep(for: .milliseconds(40))
+        }
+        #expect(await waitUntil {
+            terminal.getText(start: Position(col: 0, row: 0),
+                             end: Position(col: 14, row: 0)).contains("QUIET-REPAIRED")
+        }, "the return layout-change must repair the screen")
+        transport.pushText("%output %0 live-after-quiet\n")
+        // Generous window: a loaded full-suite run delays both the 700ms
+        // settled pass and main-actor processing (same reason
+        // `streamingWindow` is injectable).
+        let flowed = await waitUntil(timeout: 4.0) { terminal.getCursorLocation().x == 16 }
+        if !flowed {
+            let cmds = await transport.recordedCommands()
+            print("[quiet-test] cursor=\(terminal.getCursorLocation()) "
+                + "capturesAnswered=\(capturesAnswered) answered=\(answered) "
+                + "cmds=\(cmds.count)")
+            for (i, c) in cmds.enumerated().dropFirst(beforeQuiet) {
+                print("[quiet-test] cmd[\(i)]=\(c.prefix(60))")
+            }
+            print("[quiet-test] row0=\(terminal.getText(start: Position(col: 0, row: 0), end: Position(col: 30, row: 0)))")
+        }
+        #expect(flowed, "output must flow again after the quiet-spell repair")
     }
 
     @Test("a rejected repair frame is recaptured until one lands at our size")

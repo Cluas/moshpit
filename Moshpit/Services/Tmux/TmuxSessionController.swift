@@ -295,6 +295,8 @@ final class TmuxSessionController: MultiplexerControlling {
         awaitingGateRepairFrame = false
         gateRepairDeadline?.cancel()
         gateRepairDeadline = nil
+        foreignQuietRepinTask?.cancel()
+        foreignQuietRepinTask = nil
         resyncRetryTask?.cancel()
         resyncRetryTask = nil
         resyncRejectStreak.removeAll()
@@ -1700,10 +1702,16 @@ final class TmuxSessionController: MultiplexerControlling {
             self.ccTapLine("FRAME pane=\(paneId) reveal=\(reveal) lines=\(lines.count) "
                 + "first=\(lines.first?.prefix(60) ?? "")")
             self.paneCoordinators[paneId]?.feed(data: Data(text.utf8))
-            // The frame is the gate's repair point: everything tmux emitted
-            // before this reply is already baked into it, so output may flow
-            // again for the window it belongs to.
-            if self.snapshot.panes[paneId]?.windowId == self.snapshot.activeWindowId {
+            // The SETTLED frame is the gate's repair point: everything tmux
+            // emitted before its reply is already baked into it, so output may
+            // flow again for the window it belongs to. The immediate pass
+            // (reveal: false) must NOT reopen the gate: it deliberately races
+            // the pane app's SIGWINCH redraw, and the lab's capturerace
+            // scenario shows that frame is a cropped STALE image whose rows
+            // and widths all pass the size checks — opening on it lets the
+            // app's still-draining foreign-width bytes (up to ~700ms of them)
+            // paint the exact garble the gate exists to stop.
+            if reveal, self.snapshot.panes[paneId]?.windowId == self.snapshot.activeWindowId {
                 self.clearGateRepairAwait()
             }
             // The frame is on screen — reveal the terminal if a keyboard-freeze
@@ -2261,7 +2269,10 @@ final class TmuxSessionController: MultiplexerControlling {
                 // the same session).
                 activeWindowAtForeignWidth = true
                 reclaimWindowOnDrift(windowId)
+                armForeignQuietRepin(windowId)
             } else if activeWindowAtForeignWidth {
+                foreignQuietRepinTask?.cancel()
+                foreignQuietRepinTask = nil
                 // Back at our width: repaint the gap the gate dropped, with
                 // the settling double-pass — this transition usually follows
                 // our own fitWindowToClient, so the immediate capture races
@@ -2281,6 +2292,35 @@ final class TmuxSessionController: MultiplexerControlling {
     /// moment a layout-change reports our width again. See
     /// `handleLayoutChange` / `handlePaneOutput`.
     @ObservationIgnored private var activeWindowAtForeignWidth = false
+
+    /// One-shot re-pin for a war that ENDS at the other client's width. The
+    /// only exit from `activeWindowAtForeignWidth` is a return-to-our-width
+    /// layout-change — and if the last reclaim was swallowed by the
+    /// anti-flash backoff just as the desktop went quiet, no further
+    /// layout-change ever comes: the gate stays closed forever and the pane
+    /// freezes on its last frame, bell-only. Re-armed on every foreign
+    /// layout-change, so it fires only once the war has actually gone quiet;
+    /// bypasses the reclaim backoff on purpose (one resize after a quiet
+    /// spell is not the flash-fight the backoff exists to stop).
+    @ObservationIgnored private var foreignQuietRepinTask: Task<Void, Never>?
+    /// Injectable for tests (production: seconds of layout quiet before the
+    /// forced re-pin).
+    @ObservationIgnored var foreignQuietRepinDelay: TimeInterval = 2.0
+
+    private func armForeignQuietRepin(_ windowId: String) {
+        foreignQuietRepinTask?.cancel()
+        foreignQuietRepinTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(self?.foreignQuietRepinDelay ?? 2.0))
+            guard !Task.isCancelled, let self, self.activeWindowAtForeignWidth,
+                  self.rendersOutput, !self.pinsReleased, self.snapshot.isAttached,
+                  self.snapshot.activeWindowId == windowId else { return }
+            self.fitWindowToClient(windowId)
+            // The resize's own layout-change (at our width) is what clears
+            // the state and repairs the screen; if that notification is lost
+            // on a weak link, keep trying at the same quiet cadence.
+            self.armForeignQuietRepin(windowId)
+        }
+    }
 
     /// True from the moment the active window returns to our width until the
     /// repair capture is actually FED — the second half of the foreign-width
