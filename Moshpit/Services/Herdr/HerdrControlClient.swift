@@ -65,6 +65,13 @@ final class HerdrControlClient: MultiplexerControlling {
     /// (type, watch, type) at full speed.
     static let idlePollThreshold = 3
 
+    /// When a poll last came back with something we could read. The hub's
+    /// keepalive consults this instead of spending its own exec channel: a
+    /// control plane that is answering has already proved the connection is
+    /// alive, and on this transport its replies never touch the PTY stream
+    /// the hub otherwise watches.
+    private(set) var lastSuccessfulPoll: Date?
+
     private(set) var snapshot = TmuxSnapshot()
     private(set) var agentHooks: [String: AgentHook] = [:]
     private(set) var isRefreshing = false
@@ -195,6 +202,7 @@ final class HerdrControlClient: MultiplexerControlling {
         guard let result = try? await run("api snapshot")
         else { return }   // channel hiccup — keep what we have
         let output = result.output
+        lastSuccessfulPoll = Date()   // the channel answered — see the property
         if let decoded = HerdrSnapshot.decode(output) {
             serverNotRunning = false
             lastPollMismatched = false

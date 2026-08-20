@@ -144,7 +144,18 @@ final class TerminalHostContainer: UIView {
                             width: bounds.width.rounded(),
                             height: bounds.height.rounded())
         if terminalView.frame != target {
+            // Every grid change the user can see passes through here. Left
+            // unlogged, "the picture jumped" is unanswerable after the fact —
+            // and this path has already produced two of those (a third of a
+            // point of layout jitter flipping the column count; a keyboard
+            // hold that slid the content further than the resize would).
+            let before = terminalView.frame.size
             terminalView.frame = target
+            if before != target.size {
+                let w0 = Double(before.width), h0 = Double(before.height)
+                let w1 = Double(target.width), h1 = Double(target.height)
+                Log.ssh.notice("layout: terminal \(w0, privacy: .public)x\(h0, privacy: .public) -> \(w1, privacy: .public)x\(h1, privacy: .public)")
+            }
         }
         onTerminalLaidOut?(terminalView)
     }

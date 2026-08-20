@@ -2128,6 +2128,11 @@ final class TmuxSessionController: MultiplexerControlling {
         lastIncomingAt.withLock { $0 = Date() }
     }
 
+    /// When the -CC stream last delivered anything. The hub reads this to
+    /// answer "is this connection alive" without spending a probe channel —
+    /// a control stream that is still talking has already answered.
+    nonisolated var lastInboundAt: Date { lastIncomingAt.withLock { $0 } }
+
     /// Fired once when the -CC channel is judged dead — the hub tears the
     /// transport down and reconnects. This exists because the hub's
     /// keepAlive probe (`executeCommand "true"`) opens a FRESH channel: a
@@ -2169,7 +2174,15 @@ final class TmuxSessionController: MultiplexerControlling {
                 popStrikes = (hasPendings && self.popCounter == lastPops) ? popStrikes + 1 : 0
                 lastSeen = incoming
                 lastPops = self.popCounter
-                if strikes >= 3 {        // ≈12s of silence with pendings
+                // ≈12s of silence with pendings — but scaled by what this
+                // link's round trips actually cost. A fixed 12s is generous on
+                // a LAN and trigger-happy on a lossy cellular path, where one
+                // stalled retransmit can swallow that long without the channel
+                // being dead at all; declaring death there costs a full
+                // re-handshake and lands the session in a reconnect loop
+                // exactly when the network can least afford it.
+                let silenceStrikes = max(3, Int((self.lastResyncRoundTrip * 6 / 4).rounded(.up)))
+                if strikes >= silenceStrikes {
                     self.reportChannelDead(reason: "silent")
                     return
                 }
