@@ -78,6 +78,13 @@ final class TerminalHostContainer: UIView {
     /// unlock; nil means "no transition — apply immediately".
     var keyboardTransition: (duration: TimeInterval, options: UIView.AnimationOptions)?
 
+    /// Whether this transition has already taken its one resize. Bounded to
+    /// once because an interactive drag-dismiss re-lays-out repeatedly, and
+    /// resizing per pass is the buffer-reflow storm the hold exists to stop.
+    private var transitionResized = false
+
+    func beginKeyboardTransition() { transitionResized = false }
+
     func host(_ terminal: TerminalView) {
         guard terminal.superview !== self else { return }
         terminalView = terminal
@@ -206,8 +213,31 @@ final class TerminalHostContainer: UIView {
             // scrollback has, the new rows are blanks appended below.
             shiftRows = min(newRows - rows, max(0, terminal.buffer.yDisp))
         }
+        let target = CGRect(x: 0, y: 0,
+                            width: bounds.width.rounded(), height: bounds.height.rounded())
+        var rest: CGFloat = 0
+
+        if !transitionResized, target.height > terminalView.frame.height + 0.5 {
+            // The container GREW: the keyboard is uncovering space, and until
+            // the terminal grows into it that space is an empty band the user
+            // watches for the whole animation and then sees fill in one step
+            // — "从展开到收起还是会有一次闪跳". So take the resize NOW, while
+            // the keyboard is still moving, and offset the view by exactly
+            // what the resize moved the content so nothing appears to jump.
+            // The slide below then walks that offset back to zero on the
+            // keyboard's own curve.
+            transitionResized = true
+            terminalView.frame = CGRect(x: 0, y: (-CGFloat(shiftRows) * cell.height).rounded(),
+                                        width: target.width, height: target.height)
+        } else if target.height < terminalView.frame.height - 0.5 {
+            // The container SHRANK: hold the old size and slide. Resizing
+            // early here would open a band at the TOP instead — the space
+            // being taken away is under the rising keyboard, so nobody sees
+            // the oversized view hanging past the bottom.
+            rest = (CGFloat(shiftRows) * cell.height).rounded()
+        }
+
         var frame = terminalView.frame
-        let rest = (CGFloat(shiftRows) * cell.height).rounded()
         guard abs(frame.origin.y - rest) > 0.5 else { return }
         frame.origin.y = rest
         guard let transition = keyboardTransition else {
@@ -844,6 +874,7 @@ struct SwiftTerminalView: UIViewRepresentable {
                 hostContainer.keyboardTransition = (
                     duration, UIView.AnimationOptions(rawValue: UInt(curve.rawValue) << 16))
             }
+            hostContainer.beginKeyboardTransition()
             hostContainer.frameLocked = true
             frameLockTimeout?.cancel()
             let work = DispatchWorkItem { [weak self] in self?.unlockFrame() }
