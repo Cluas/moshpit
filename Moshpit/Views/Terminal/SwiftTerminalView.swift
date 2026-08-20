@@ -116,7 +116,17 @@ final class TerminalHostContainer: UIView {
         // transitions, remounts) must not squeeze a live buffer through the
         // minimum grid — that reflow doesn't round-trip.
         guard bounds.width > 0, bounds.height > 0 else { return }
-        if frameLocked || geometryHeld {
+        // A modal hold freezes the frame outright: the terminal keeps the
+        // position AND size it had, and the space the keyboard vacated stays
+        // empty — which is fine, because the sheet is sitting on it.
+        //
+        // It must NOT bottom-follow the way a keyboard transition does. A
+        // sheet does not cover the whole screen (its top edge is around 40%
+        // down), so pushing the terminal to the container's bottom edge left
+        // the top HALF of the visible screen blank behind the list — user
+        // screenshot, and a regression from the keyboard work.
+        if geometryHeld { return }
+        if frameLocked {
             followBottomEdge(terminalView)
             return
         }
@@ -139,44 +149,56 @@ final class TerminalHostContainer: UIView {
         onTerminalLaidOut?(terminalView)
     }
 
-    /// While the frame is held, keep the terminal's BOTTOM on the container's
-    /// bottom rather than its top on the top.
+    /// While a KEYBOARD transition is in flight, slide the terminal to where
+    /// the pending resize is actually going to leave the content.
     ///
     /// Holding the frame is what stops the resize storm, but held *how* is
-    /// the whole difference between a transition and a jolt. Anchored at the
-    /// top, a rising keyboard clips away the bottom of the screen — the
-    /// prompt, the cursor, the line being typed, i.e. the only part anyone is
-    /// looking at — and then the unlock reflows and slams it back into view.
-    /// The keyboard glides; the terminal cuts. ("输入法是动画收起的，我们的画面
-    /// 是重画那种很突兀", report.)
+    /// the whole difference between a transition and a jolt. Held still, a
+    /// rising keyboard clips the bottom of the screen away — the prompt, the
+    /// cursor, the line being typed — and the unlock's reflow slams it back
+    /// into view: measured at 60fps, the keyboard glided for fifteen frames
+    /// and the content teleported in one.
     ///
-    /// Anchored at the bottom, the same transition is a slide: the content
-    /// the user is watching stays exactly where it is while the space above
-    /// it opens or closes, which is also what the resize itself will do —
-    /// a height-only change re-wraps nothing, and SwiftTerm keeps the bottom
-    /// line at the bottom. So the final unlock has almost nothing left to
-    /// move, and the cut disappears.
+    /// So move it during the glide instead — but by the RIGHT amount, which
+    /// is not the keyboard's height. SwiftTerm shrinks a buffer by popping
+    /// the blank lines below the cursor first and only scrolling once they
+    /// run out (`Buffer.resize`), and grows it by pulling from scrollback
+    /// where there is any and appending blanks below where there isn't. So
+    /// the content typically moves a fraction of the keyboard's height, and
+    /// on a screen with room to spare it does not move at all. Sliding by the
+    /// keyboard's height instead overshot by 213pt on a real measurement and
+    /// the resize yanked it back — the "还是会跳动一下最后" report. Predicting
+    /// the same arithmetic the resize will do makes the unlock a no-op.
     ///
-    /// This rides the keyboard's own curve for free: the bounds change is
-    /// committed inside SwiftUI's animation transaction, so a frame set from
-    /// here animates on the same duration and timing function.
+    /// Only the ORIGIN is animated, never the size: a layer translation, with
+    /// nothing for SwiftTerm to reflow mid-slide. The timing comes from the
+    /// keyboard's own notification, so the two move as one thing.
     private func followBottomEdge(_ terminalView: TerminalView) {
-        // The band that opens above the terminal must not read as a hole —
-        // paint it the terminal's own background rather than whatever the
-        // host view happens to be.
+        // The band that opens up must not read as a hole — paint it the
+        // terminal's own background rather than whatever the host view is.
         if let background = terminalView.backgroundColor, backgroundColor != background {
             backgroundColor = background
         }
+        let cell = TerminalCellGeometry.cellSize(of: terminalView)
+        guard cell.height > 0 else { return }
+        let terminal = terminalView.getTerminal()
+        let rows = terminal.rows
+        let newRows = TerminalCellGeometry.grid(for: CGSize(width: bounds.width.rounded(),
+                                                            height: bounds.height.rounded()),
+                                                cell: cell).rows
+        var shiftRows = 0
+        if newRows < rows {
+            // Only the rows that cannot be popped scroll the content up.
+            shiftRows = -max(0, terminal.buffer.y + 1 - newRows)
+        } else if newRows > rows {
+            // Refilling from scrollback pushes the content down; past what
+            // scrollback has, the new rows are blanks appended below.
+            shiftRows = min(newRows - rows, max(0, terminal.buffer.yDisp))
+        }
         var frame = terminalView.frame
-        let bottomAligned = (bounds.height - frame.height).rounded()
-        guard abs(frame.origin.y - bottomAligned) > 0.5 else { return }
-        frame.origin.y = bottomAligned
-        // Ride the keyboard's own curve. Without this the follow is a single
-        // assignment inside a SwiftUI layout pass — measured at 60fps, the
-        // content teleported 242px in ONE frame while the keyboard glided for
-        // fifteen. Only the ORIGIN moves here, never the size, so this is a
-        // layer translation: no reflow, no repaint, nothing for SwiftTerm to
-        // recompute mid-slide.
+        let rest = (CGFloat(shiftRows) * cell.height).rounded()
+        guard abs(frame.origin.y - rest) > 0.5 else { return }
+        frame.origin.y = rest
         guard let transition = keyboardTransition else {
             terminalView.frame = frame
             return
