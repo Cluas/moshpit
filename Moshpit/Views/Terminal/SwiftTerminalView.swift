@@ -72,6 +72,12 @@ final class TerminalHostContainer: UIView {
         }
     }
 
+    /// Timing of the keyboard transition in flight, so ``followBottomEdge``
+    /// can move with it instead of cutting. Set by
+    /// ``SwiftTerminalView/Coordinator/lockFrame(for:curve:)`` and cleared on
+    /// unlock; nil means "no transition — apply immediately".
+    var keyboardTransition: (duration: TimeInterval, options: UIView.AnimationOptions)?
+
     func host(_ terminal: TerminalView) {
         guard terminal.superview !== self else { return }
         terminalView = terminal
@@ -105,15 +111,80 @@ final class TerminalHostContainer: UIView {
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        guard let terminalView, !frameLocked, !geometryHeld else { return }
+        guard let terminalView else { return }
         // Same guard as host(): a transient zero-bounds pass (sheet
         // transitions, remounts) must not squeeze a live buffer through the
         // minimum grid — that reflow doesn't round-trip.
         guard bounds.width > 0, bounds.height > 0 else { return }
-        if terminalView.frame != bounds {
-            terminalView.frame = bounds
+        if frameLocked || geometryHeld {
+            followBottomEdge(terminalView)
+            return
+        }
+        // Whole points, not whatever fraction the layout arrived at. SwiftUI
+        // hands this view widths that oscillate by a THIRD of a point across
+        // consecutive passes (402.0 → 402.333 → 402.0, logged on a keyboard
+        // toggle), and a third of a point is enough to move
+        // floor(width / cellWidth) from 70 columns to 71 and back. Each flip
+        // is a full buffer reflow, a resize sent to the remote and a repaint
+        // of the whole screen — three of them for one keyboard toggle, and a
+        // width change re-wraps every line. Rounding is safe: a real width
+        // change is many points wide, and the grid floors to whole cells
+        // anyway.
+        let target = CGRect(x: 0, y: 0,
+                            width: bounds.width.rounded(),
+                            height: bounds.height.rounded())
+        if terminalView.frame != target {
+            terminalView.frame = target
         }
         onTerminalLaidOut?(terminalView)
+    }
+
+    /// While the frame is held, keep the terminal's BOTTOM on the container's
+    /// bottom rather than its top on the top.
+    ///
+    /// Holding the frame is what stops the resize storm, but held *how* is
+    /// the whole difference between a transition and a jolt. Anchored at the
+    /// top, a rising keyboard clips away the bottom of the screen — the
+    /// prompt, the cursor, the line being typed, i.e. the only part anyone is
+    /// looking at — and then the unlock reflows and slams it back into view.
+    /// The keyboard glides; the terminal cuts. ("输入法是动画收起的，我们的画面
+    /// 是重画那种很突兀", report.)
+    ///
+    /// Anchored at the bottom, the same transition is a slide: the content
+    /// the user is watching stays exactly where it is while the space above
+    /// it opens or closes, which is also what the resize itself will do —
+    /// a height-only change re-wraps nothing, and SwiftTerm keeps the bottom
+    /// line at the bottom. So the final unlock has almost nothing left to
+    /// move, and the cut disappears.
+    ///
+    /// This rides the keyboard's own curve for free: the bounds change is
+    /// committed inside SwiftUI's animation transaction, so a frame set from
+    /// here animates on the same duration and timing function.
+    private func followBottomEdge(_ terminalView: TerminalView) {
+        // The band that opens above the terminal must not read as a hole —
+        // paint it the terminal's own background rather than whatever the
+        // host view happens to be.
+        if let background = terminalView.backgroundColor, backgroundColor != background {
+            backgroundColor = background
+        }
+        var frame = terminalView.frame
+        let bottomAligned = (bounds.height - frame.height).rounded()
+        guard abs(frame.origin.y - bottomAligned) > 0.5 else { return }
+        frame.origin.y = bottomAligned
+        // Ride the keyboard's own curve. Without this the follow is a single
+        // assignment inside a SwiftUI layout pass — measured at 60fps, the
+        // content teleported 242px in ONE frame while the keyboard glided for
+        // fifteen. Only the ORIGIN moves here, never the size, so this is a
+        // layer translation: no reflow, no repaint, nothing for SwiftTerm to
+        // recompute mid-slide.
+        guard let transition = keyboardTransition else {
+            terminalView.frame = frame
+            return
+        }
+        UIView.animate(withDuration: transition.duration, delay: 0,
+                       options: [transition.options, .beginFromCurrentState,
+                                 .allowUserInteraction],
+                       animations: { terminalView.frame = frame })
     }
 }
 
@@ -731,8 +802,15 @@ struct SwiftTerminalView: UIViewRepresentable {
         /// duration; the safety timeout adds headroom for the settle. An
         /// interactive drag-dismiss keeps re-arming this until its final
         /// notification, so the lock follows the gesture.
-        func lockFrame(for duration: TimeInterval) {
+        func lockFrame(for duration: TimeInterval, curve: UIView.AnimationCurve? = nil) {
             guard let hostContainer else { return }
+            // The keyboard publishes its own duration and curve; matching them
+            // is what makes the terminal look attached to the keyboard rather
+            // than repainted after it (see `followBottomEdge`).
+            if let curve {
+                hostContainer.keyboardTransition = (
+                    duration, UIView.AnimationOptions(rawValue: UInt(curve.rawValue) << 16))
+            }
             hostContainer.frameLocked = true
             frameLockTimeout?.cancel()
             let work = DispatchWorkItem { [weak self] in self?.unlockFrame() }
@@ -747,6 +825,7 @@ struct SwiftTerminalView: UIViewRepresentable {
             frameLockTimeout?.cancel()
             frameLockTimeout = nil
             guard let hostContainer else { return }
+            hostContainer.keyboardTransition = nil
             hostContainer.frameLocked = false
         }
 
@@ -850,7 +929,9 @@ struct SwiftTerminalView: UIViewRepresentable {
                 else { return }
                 let duration = (note.userInfo?[UIResponder.keyboardAnimationDurationUserInfoKey]
                                 as? TimeInterval) ?? 0.25
-                self?.lockFrame(for: duration)
+                let curve = (note.userInfo?[UIResponder.keyboardAnimationCurveUserInfoKey] as? Int)
+                    .flatMap(UIView.AnimationCurve.init(rawValue:))
+                self?.lockFrame(for: duration, curve: curve)
             }
             if let keyboardDidObserver {
                 NotificationCenter.default.removeObserver(keyboardDidObserver)
