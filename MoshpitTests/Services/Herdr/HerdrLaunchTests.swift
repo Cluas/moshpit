@@ -37,6 +37,12 @@ struct HerdrLaunchTests {
         // its own (evicted by --takeover, server gone) BREAKS instead of
         // grabbing the pane back. Orphan loops lose once and stay down.
         #expect(line.contains("[ $? -ge 128 ] || break"))
+        // The re-attach pause is switch latency the user watches the PREVIOUS
+        // pane through, so it stays small — but not zero: this line is only
+        // reached after a signal death, and one we didn't send would respawn
+        // `herdr` as fast as it can die.
+        #expect(line.contains("sleep 0.05"))
+        #expect(!line.contains("sleep 0.3"))
     }
 
     @Test("Cleanup retires every previous generation, including the immortal 360/361 layout")

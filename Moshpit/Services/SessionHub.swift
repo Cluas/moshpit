@@ -308,6 +308,14 @@ final class SessionHub {
         /// idempotence guard for `retargetMoshRawAttach` (apply() re-reports
         /// focus every poll; only a real change should bounce the attach).
         @ObservationIgnored private var moshRawAttachTarget: String?
+        /// The switch veil the mosh renderer puts up while it re-attaches, and
+        /// the last time bytes arrived under it — see `beginMoshSwitchCover`.
+        @ObservationIgnored private var moshSwitchCoverTask: Task<Void, Never>?
+        @ObservationIgnored private var moshSwitchLastPaint: Date?
+        /// How long the repaint must stay quiet before the veil lifts.
+        private static let moshSwitchQuiet: TimeInterval = 0.15
+        /// And the cap, for a pane that never paints at all.
+        private static let moshSwitchCoverCap: TimeInterval = 3
         /// This boot's renderer generation (connection id + per-boot nonce).
         /// Retargets only ever write THIS generation's state files, which is
         /// what keeps orphaned loops from previous mosh sessions out of the
@@ -576,6 +584,44 @@ final class SessionHub {
         /// which is the first moment the screen is honestly the new pane's.
         @ObservationIgnored private var herdrAwaitingFullFrame = false
 
+        /// Whether the boot line has been written for this channel. The first
+        /// attach IS the boot line (it carries its own target), so this also
+        /// answers "has anything been asked of this channel yet".
+        @ObservationIgnored private var herdrChannelBooted = false
+        /// Whether the retarget loop announced itself. False means either
+        /// "not yet" or "this host's shell couldn't take the boot shape", and
+        /// switches fall back to the one-shot start line either way — correct
+        /// in both cases, just slower in the second.
+        @ObservationIgnored private var herdrLoopReady = false
+        /// When the current attach was asked for, and whether anything has
+        /// been painted since. Together they make the poller's repeated
+        /// focus report a RECOVERY: a target that never painted gets asked
+        /// for again instead of being assumed live (see `retargetHerdrFrames`).
+        @ObservationIgnored private var herdrAttachAskedAt: Date?
+        @ObservationIgnored private var herdrFramePainted = false
+        /// Measured switch cost: the retarget's first byte out to the new
+        /// pane's first full frame in. The veil's safety cap scales off it.
+        @ObservationIgnored private var herdrLastSwitch: TimeInterval = 0
+        /// Resumed when the release we sent comes back as `terminal.closed` —
+        /// the moment the old attach has let go of stdin and the next target
+        /// can be written. Replaces a fixed sleep with the actual event.
+        @ObservationIgnored private var herdrReleaseAck: CheckedContinuation<Void, Never>?
+        /// Watches for a boot that produced neither the loop marker nor a
+        /// frame, and falls back to the one-shot line.
+        @ObservationIgnored private var herdrBootFallbackTask: Task<Void, Never>?
+        /// How long an asked-for attach may stay unpainted before the next
+        /// focus report is allowed to re-drive it.
+        private static let herdrAttachTimeout: TimeInterval = 3
+        /// How long to wait for the retarget loop to announce itself before
+        /// assuming this host can't run it.
+        private static let herdrLoopProbe: Duration = .milliseconds(2500)
+        /// Home, erase display, erase scrollback. Fed to the emulator the
+        /// moment a switch starts, so the buffer stops holding the pane we
+        /// are leaving. The veil hides the swap either way — this is about
+        /// what is underneath it if the swap goes wrong: an empty screen is
+        /// honest, the previous agent's screen is a lie the user acts on.
+        private static let herdrClearScreen = Data("\u{1b}[H\u{1b}[2J\u{1b}[3J".utf8)
+
         /// The SwiftTerm terminal backing whichever pane is on screen right now —
         /// tmux resolves the zoomed active pane's view; mosh/plain SSH have just
         /// the one coordinator view.
@@ -768,10 +814,11 @@ final class SessionHub {
                                               condition: { [weak self] in self?.herdrFrameTarget == paneId })
                         else { return false }
                     }
-                    // The retarget task writes `release`, sleeps, then writes the
-                    // new `start` line. A keystroke enqueued inside that gap
-                    // lands on the bare shell and dies — so wait the task out;
-                    // the write chain then orders our input after the start.
+                    // The retarget task writes `release`, waits for the old
+                    // attach to let go, then names the new target. A keystroke
+                    // enqueued inside that gap lands on the bare shell (or the
+                    // reader loop) and dies — so wait the task out; the write
+                    // chain then orders our input after the attach.
                     await herdrRetargetTask?.value
                     guard herdrFrameTarget == paneId else { return false }
                     writeFrameCommand(HerdrFrameCommand.input(data))
@@ -1262,6 +1309,12 @@ final class SessionHub {
         /// so mosh+herdr keeps running herdr's own TUI.
         private func startHerdrFrames(over session: SSHSession) {
             herdrFrameSSH = session
+            // A fresh PTY, so a fresh reader loop: whatever the previous
+            // channel had booted died with it.
+            herdrChannelBooted = false
+            herdrLoopReady = false
+            herdrFramePainted = false
+            herdrExpectedCloses = 0
             let coordinator = self.coordinator
 
             // Keystrokes, size and scroll all become protocol messages now.
@@ -1285,18 +1338,30 @@ final class SessionHub {
                             // home — so both kinds just get fed.
                             coordinator.feed(data: bytes)
                             await MainActor.run {
+                                guard let self else { return }
                                 // Painting again means we hold the channel, so
                                 // any contention warning is stale.
-                                if self?.herdrNotice != nil { self?.herdrNotice = nil }
-                                if self?.herdrNoticeAction != nil { self?.herdrNoticeAction = nil }
+                                if self.herdrNotice != nil { self.herdrNotice = nil }
+                                if self.herdrNoticeAction != nil { self.herdrNoticeAction = nil }
+                                self.herdrFramePainted = true
                                 // A retarget's veil lifts on the first full
                                 // repaint — the frame we just fed IS the new
                                 // pane's screen, so there is nothing stale left
                                 // to hide.
-                                if full, self?.herdrAwaitingFullFrame == true {
-                                    self?.herdrAwaitingFullFrame = false
-                                    self?.coordinator.reveal()
+                                if full, self.herdrAwaitingFullFrame {
+                                    self.herdrAwaitingFullFrame = false
+                                    if let asked = self.herdrAttachAskedAt {
+                                        self.herdrLastSwitch = Date().timeIntervalSince(asked)
+                                    }
+                                    self.coordinator.reveal()
                                 }
+                            }
+                        case .loopReady:
+                            await MainActor.run {
+                                guard let self else { return }
+                                self.herdrLoopReady = true
+                                self.herdrBootFallbackTask?.cancel()
+                                self.herdrBootFallbackTask = nil
                             }
                         case .closed:
                             await MainActor.run {
@@ -1305,6 +1370,11 @@ final class SessionHub {
                                     // Our own release during a retarget — the
                                     // new target is already set, leave it be.
                                     self.herdrExpectedCloses -= 1
+                                    // …and this is the moment the retarget was
+                                    // waiting for: the old attach has let go of
+                                    // stdin, so the next target can be written
+                                    // without being swallowed by it.
+                                    self.signalHerdrReleaseAck()
                                 } else {
                                     // Somebody else took the pane, or it went
                                     // away. Either way stop claiming to render
@@ -1317,9 +1387,10 @@ final class SessionHub {
                                     // The full frame this retarget was veiling
                                     // for is never coming — the attach is gone.
                                     // Same principle as the cover's own safety
-                                    // timeout: a beat of stale text beats a
-                                    // black rectangle sitting over a session
-                                    // that is now backing off for 30 seconds.
+                                    // timeout: an empty terminal (the switch
+                                    // wiped the buffer) beats a black rectangle
+                                    // sitting over a session that is now
+                                    // backing off for 30 seconds.
                                     if self.herdrAwaitingFullFrame {
                                         self.herdrAwaitingFullFrame = false
                                         self.coordinator.reveal()
@@ -1341,6 +1412,10 @@ final class SessionHub {
                                     self.herdrNotice = message
                                 }
                                 self.herdrFrameTarget = nil
+                                // A refusal ends the swap too — don't leave a
+                                // retarget parked on a release that has just
+                                // been overtaken by events.
+                                self.signalHerdrReleaseAck()
                                 self.herdrRetryAfter = Date()
                                     .addingTimeInterval(Self.herdrContentionBackoff)
                                 if self.herdrAwaitingFullFrame {
@@ -1355,19 +1430,6 @@ final class SessionHub {
             }
         }
 
-        /// Point the frame channel at a different pane.
-        ///
-        /// The channel is one long-lived shell, so switching means: release the
-        /// current attach (herdr's direct attach is exclusive per terminal),
-        /// let the command exit and the shell come back, then start it again
-        /// with the new target. The pause is timing, not ceremony — verified
-        /// against a real server, where the released command's `terminal.closed`
-        /// lands first and the shell prompt follows.
-        /// Called on every poll, not just on a focus change — see
-        /// `HerdrControlClient.onFocusedPaneChanged`. The equality guard makes
-        /// the repeat free, and the repeat is what recovers a channel that was
-        /// evicted by another client's `--takeover` (herdr's direct attach is
-        /// exclusive per terminal, so that can happen with the focus unchanged).
         /// Record a channel close we didn't ask for and decide whether to keep
         /// re-attaching. Repeated evictions mean another client wants this
         /// exact pane, and only one of us can have it.
@@ -1381,50 +1443,174 @@ final class SessionHub {
             herdrNotice = String(localized: "Another client is using this pane — retrying shortly")
         }
 
+        /// Point the frame channel at a different pane.
+        ///
+        /// herdr's direct attach is exclusive per terminal and the channel is
+        /// one PTY, so a switch is necessarily: release the current attach,
+        /// wait for it to let go of stdin, ask for the new one. What used to
+        /// make that expensive was *how* the asking happened — a command line
+        /// typed at the remote login shell's prompt, which meant waiting out
+        /// a fixed 400ms settle and then the user's own prompt machinery.
+        /// Measured against a real herdr 0.8.0 over a local PTY: 545ms per
+        /// switch, of which ~500ms was ceremony.
+        ///
+        /// Both halves are gone. The settle is now the `terminal.closed` the
+        /// release itself produces (the actual event, not a guess at it), and
+        /// the asking is one word into the boot line's reader loop
+        /// (`HerdrFrameCommand.boot`) instead of a command at a prompt. Same
+        /// measurement: 40ms. What's left is the two round trips the protocol
+        /// genuinely costs.
+        ///
+        /// Called on every poll, not just on a focus change — see
+        /// `HerdrControlClient.onFocusedPaneChanged`. The equality guard makes
+        /// the repeat free, and the repeat is what recovers a channel that was
+        /// evicted by another client's `--takeover` (herdr's direct attach is
+        /// exclusive per terminal, so that can happen with the focus unchanged).
         private func retargetHerdrFrames(to paneId: String) {
             if let retryAfter = herdrRetryAfter {
                 guard Date() >= retryAfter else { return }
                 herdrRetryAfter = nil
             }
-            guard herdrFrameSSH != nil, paneId != herdrFrameTarget else { return }
+            guard herdrFrameSSH != nil else { return }
+            if paneId == herdrFrameTarget {
+                // Normally free: we're already rendering it. It stops being
+                // free when the attach we asked for never painted anything —
+                // a target line the shell ate, a boot the host couldn't run —
+                // because then nothing else will ever ask again. Past the
+                // timeout, the poller's repeat IS the recovery.
+                guard !herdrFramePainted,
+                      let askedAt = herdrAttachAskedAt,
+                      Date().timeIntervalSince(askedAt) > Self.herdrAttachTimeout
+                else { return }
+            }
             let hadTarget = herdrFrameTarget != nil
             herdrFrameTarget = paneId
+            herdrFramePainted = false
+            herdrAttachAskedAt = Date()
             // Cover the pane we're leaving for the length of the swap. The
-            // release, the settle, the reattach and herdr's repaint are all
-            // round trips, and until the last one lands the emulator still
-            // holds the PREVIOUS agent's screen — fully painted, indis-
-            // tinguishable from live. Same treatment tmux's selectPane gives
-            // the identical hazard: a clean veil reads as a transition, stale
-            // content reads as a bug.
+            // release, the reattach and herdr's repaint are all round trips,
+            // and until the last one lands the emulator still holds the
+            // PREVIOUS agent's screen — fully painted, indistinguishable from
+            // live. Same treatment tmux's selectPane gives the identical
+            // hazard: a clean veil reads as a transition, stale content reads
+            // as a bug.
             //
             // Only when there was a target to leave. The first attach of a
             // session has nothing stale to hide, and veiling it would just
             // delay the first paint.
             if hadTarget {
                 coordinator.veilForSwitch()
-                // The 0.8s default assumes a near-instant resync. This swap
-                // spends 0.4s settling before it even asks for the new pane,
-                // then waits out a round trip and a full repaint — on a real
-                // link that routinely outruns 0.8s, and the timeout firing
-                // early is exactly the stale frame we're hiding.
-                coordinator.extendCoverTimeout(by: 1.6)
+                // Wipe the buffer under the veil, don't just hide it. The
+                // cover is a promise about timing that the network can break —
+                // it has a safety timeout, the attach can be refused, another
+                // client can evict us mid-swap — and every one of those paths
+                // ends with the cover coming off. What it comes off ONTO is
+                // the whole question: the previous agent's screen, sitting
+                // under the new agent's breadcrumb, is the "上一个 agent 的画面"
+                // report. An empty screen for a beat is the honest version.
+                coordinator.discardScrollHold()
+                coordinator.feed(data: Self.herdrClearScreen)
+                coordinator.extendCoverTimeout(by: herdrCoverGrace())
                 herdrAwaitingFullFrame = true
             }
             herdrRetargetTask?.cancel()
+            // The task we just cancelled may be parked on the release ack;
+            // cancellation alone never resumes a continuation.
+            signalHerdrReleaseAck()
             herdrRetargetTask = Task { [weak self] in
                 guard let self else { return }
                 if hadTarget {
                     herdrExpectedCloses += 1
                     writeFrameCommand(HerdrFrameCommand.release)
-                    try? await Task.sleep(for: .milliseconds(400))
+                    // Whoever reads stdin next — the reader loop or the login
+                    // shell — only gets to read it once the attach that owns
+                    // it has exited. Anything written before that is consumed
+                    // by the dying client and lost (verified: pipelining the
+                    // next target with the release drops it every time). The
+                    // close IS that moment; the timeout is only for a channel
+                    // that has stopped answering at all.
+                    await awaitHerdrReleaseAck(timeout: .milliseconds(1500))
                     guard !Task.isCancelled else { return }
+                    if !herdrLoopReady {
+                        // The one-shot line is typed at an interactive prompt,
+                        // which is not ready the instant the client exits —
+                        // this is the settle that shape was verified with.
+                        try? await Task.sleep(for: .milliseconds(400))
+                        guard !Task.isCancelled else { return }
+                    }
                 }
                 // No parser reset needed: a truncated line from the old target
                 // fails to parse and is dropped, and the new target opens with
                 // a full repaint — so at worst one dead line is skipped.
                 let grid = coordinator.lastReportedSize ?? Self.estimateGrid(fontSize: lastFontSize)
+                if herdrLoopReady {
+                    writeFrameCommand(HerdrFrameCommand.retarget(
+                        target: paneId, cols: grid.cols, rows: grid.rows))
+                } else if !herdrChannelBooted {
+                    herdrChannelBooted = true
+                    writeFrameCommand(HerdrFrameCommand.boot(
+                        target: paneId, cols: grid.cols, rows: grid.rows,
+                        customPath: connection.herdrPath))
+                    armHerdrBootFallback()
+                } else {
+                    writeFrameCommand(HerdrFrameCommand.start(
+                        target: paneId, cols: grid.cols, rows: grid.rows,
+                        customPath: connection.herdrPath))
+                }
+            }
+        }
+
+        /// How long the switch veil may stay up before its safety timeout
+        /// lifts it, scaled off the last switch we actually measured rather
+        /// than a fixed guess. A fixed 1.6s was both too long (a fast link
+        /// stares at a black rectangle long after the pane is ready) and, on
+        /// a bad one, too short — and the cover lifting early was itself the
+        /// stale-screen report. Floored so the first switch has room,
+        /// ceilinged so a dead channel can't pin the veil up.
+        private func herdrCoverGrace() -> TimeInterval {
+            min(max(0.8, herdrLastSwitch * 2 + 0.4), 6.0)
+        }
+
+        /// Wait for the release we just wrote to come back as
+        /// `terminal.closed`. Returns immediately if there is nothing to wait
+        /// for, and gives up after `timeout` so a wedged channel can't park a
+        /// switch forever.
+        private func awaitHerdrReleaseAck(timeout: Duration) async {
+            guard herdrExpectedCloses > 0 else { return }
+            let deadline = Task { [weak self] in
+                try? await Task.sleep(for: timeout)
+                guard !Task.isCancelled else { return }
+                self?.signalHerdrReleaseAck()
+            }
+            defer { deadline.cancel() }
+            await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                herdrReleaseAck = continuation
+            }
+        }
+
+        /// Wake whatever switch is waiting on the release ack. Idempotent, and
+        /// safe to call from every path that ends a swap — a continuation that
+        /// is never resumed hangs its task for good.
+        private func signalHerdrReleaseAck() {
+            herdrReleaseAck?.resume()
+            herdrReleaseAck = nil
+        }
+
+        /// Boot wrote the reader loop; if neither its marker nor a frame shows
+        /// up, this host's login shell couldn't take that shape. Fall back to
+        /// the one-shot start line — the channel then behaves exactly as it
+        /// did before the loop existed, switches just cost a prompt again.
+        private func armHerdrBootFallback() {
+            herdrBootFallbackTask?.cancel()
+            herdrBootFallbackTask = Task { [weak self] in
+                try? await Task.sleep(for: Self.herdrLoopProbe)
+                guard let self, !Task.isCancelled,
+                      !herdrLoopReady, !herdrFramePainted,
+                      let target = herdrFrameTarget else { return }
+                Log.ssh.error("herdr retarget loop never answered — one-shot attach")
+                let grid = coordinator.lastReportedSize ?? Self.estimateGrid(fontSize: lastFontSize)
                 writeFrameCommand(HerdrFrameCommand.start(
-                    target: paneId, cols: grid.cols, rows: grid.rows,
+                    target: target, cols: grid.cols, rows: grid.rows,
                     customPath: connection.herdrPath))
             }
         }
@@ -1482,11 +1668,61 @@ final class SessionHub {
                   let rendererKey = moshRendererKey else { return }
             guard let terminalId = herdrControl?.terminalIds[paneId],
                   terminalId != moshRawAttachTarget else { return }
+            let hadTarget = moshRawAttachTarget != nil
             moshRawAttachTarget = terminalId
             guard let ssh = sidecarSSH else { return }
+            // Cover the pane we're leaving, same reason the SSH frame channel
+            // does — the exec channel, the kill, the re-attach and the repaint
+            // are all round trips, and until the last one lands the screen is
+            // still the PREVIOUS agent's, fully painted.
+            //
+            // The veil is ALL we may do here. The SSH path also wipes the
+            // emulator's buffer underneath, which over mosh would be
+            // corruption: mosh diffs against its own model of this screen and
+            // never resends a cell it believes unchanged, so cells we clear
+            // behind its back stay clear forever. A UIView on top touches no
+            // cells and is invisible to that model.
+            if hadTarget {
+                coordinator.veilForSwitch()
+                beginMoshSwitchCover()
+            }
             let command = HerdrLaunch.retargetCommand(
                 terminalId: terminalId, rendererKey: rendererKey)
             Task { _ = try? await ssh.executeCommand(command) }
+        }
+
+        /// Hold the switch veil until the new pane has finished painting.
+        ///
+        /// There is no frame protocol here to say "this is the new screen" —
+        /// mosh ships screen diffs, not messages — so the signal is the
+        /// repaint itself: the re-attach redraws the whole pane, and the veil
+        /// lifts once those bytes stop arriving. Capped, because a pane that
+        /// paints nothing at all (a dead shell, a lost attach) must not leave
+        /// a rectangle sitting over the session.
+        private func beginMoshSwitchCover() {
+            moshSwitchLastPaint = nil
+            moshSwitchCoverTask?.cancel()
+            coordinator.extendCoverTimeout(by: Self.moshSwitchCoverCap)
+            moshSwitchCoverTask = Task { [weak self] in
+                let deadline = Date().addingTimeInterval(Self.moshSwitchCoverCap)
+                while !Task.isCancelled, Date() < deadline {
+                    try? await Task.sleep(for: .milliseconds(60))
+                    guard let self, !Task.isCancelled else { return }
+                    guard let last = moshSwitchLastPaint else { continue }
+                    if Date().timeIntervalSince(last) >= Self.moshSwitchQuiet { break }
+                }
+                guard let self, !Task.isCancelled else { return }
+                moshSwitchCoverTask = nil
+                moshSwitchLastPaint = nil
+                coordinator.reveal()
+            }
+        }
+
+        /// Called from the mosh pump for every chunk while a switch veil is
+        /// up — the "still painting" heartbeat `beginMoshSwitchCover` waits on.
+        private func noteMoshPaint() {
+            guard moshSwitchCoverTask != nil else { return }
+            moshSwitchLastPaint = Date()
         }
 
         /// Try to upgrade the herdr control plane from polling to push.
@@ -1755,10 +1991,13 @@ final class SessionHub {
                     self?.moshControl?.switchPaneOrWindow(forward: forward)
                 }
                 let coordinator = self.coordinator
-                pumpTask = Task {
+                pumpTask = Task { [weak self] in
                     for await chunk in transport.hostStream {
                         if Task.isCancelled { break }
                         coordinator.feed(data: chunk)
+                        // Bytes arriving IS the switch veil's only progress
+                        // signal on this transport — see noteMoshPaint().
+                        self?.noteMoshPaint()
                     }
                 }
                 // The view usually finishes layout during the SSH bootstrap,
@@ -2158,6 +2397,9 @@ final class SessionHub {
             herdrSidecarTask = nil
             herdrRetargetTask?.cancel()
             herdrRetargetTask = nil
+            herdrBootFallbackTask?.cancel()
+            herdrBootFallbackTask = nil
+            signalHerdrReleaseAck()   // never strand a switch on a dead channel
             if herdrFrameTarget != nil {
                 // Hand the attach back: herdr's direct attach is exclusive per
                 // terminal, so leaving it claimed would make the next connect
@@ -2170,6 +2412,16 @@ final class SessionHub {
             herdrFrameTarget = nil
             herdrFrameSSH = nil
             herdrWriteChain = nil
+            // The reader loop lives inside the PTY we're about to drop, so a
+            // reconnect boots a fresh one rather than inheriting this state.
+            herdrChannelBooted = false
+            herdrLoopReady = false
+            herdrFramePainted = false
+            herdrAttachAskedAt = nil
+            herdrExpectedCloses = 0
+            moshSwitchCoverTask?.cancel()
+            moshSwitchCoverTask = nil
+            moshSwitchLastPaint = nil
             // The raw-attach loop dies with the mosh shell; only the local
             // steering state needs resetting so a reconnect re-targets.
             moshRawAttachTarget = nil

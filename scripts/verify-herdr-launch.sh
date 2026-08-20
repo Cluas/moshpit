@@ -284,9 +284,13 @@ try: data = json.load(sys.stdin)
 except Exception: sys.exit(0)
 labels = [el.get('AXLabel') for el in (data if isinstance(data, list) else [data])
           if isinstance(el, dict) and el.get('type') == 'Button' and el.get('AXLabel')]
-# The window crumb is 'index:name', the pane crumb 'pane N' — either proves a
-# decoded tree, while a session name alone could be coincidence.
-print(next((l for l in labels if l.startswith('pane ') or (':' in l and l[0].isdigit())), ''))
+# The window crumb is the tab's INDEX, plus its name when the name says
+# something the number doesn't (see BreadcrumbPlan.make) — so 'n' or 'n:name'.
+# Either way it can only come from a decoded tree, while a session name alone
+# could be coincidence. Matching 'pane N' too, which is the crumb herdr 0.7.3
+# produces (its panes carry no command).
+import re
+print(next((l for l in labels if l.startswith('pane ') or re.fullmatch(r'\d+(:.+)?', l)), ''))
 ")"
 if [ -n "$CRUMBS" ]; then
   echo "  ✓ app is reading the tree (crumb: $CRUMBS)"

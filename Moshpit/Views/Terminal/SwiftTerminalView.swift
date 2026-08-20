@@ -54,6 +54,24 @@ final class TerminalHostContainer: UIView {
         }
     }
 
+    /// A second, independent hold on the frame, for a modal that is going to
+    /// give the space back.
+    ///
+    /// Presenting one of the navigation sheets collapses the keyboard, and
+    /// the terminal behind the sheet grows into the space it left: a full
+    /// buffer reflow and a resize sent to the remote, both undone again the
+    /// moment the sheet closes and the keyboard comes back. Nobody ever saw
+    /// either size — the sheet covered the screen for both — but the pane
+    /// came back re-flowed, and the user's grid changed twice for a switch
+    /// that was never about the size ("切 window 会自动重画布局", report).
+    /// Separate from ``frameLocked`` because that one is a *timed* lock owned
+    /// by the keyboard transition; this one lasts as long as the modal does.
+    var geometryHeld = false {
+        didSet {
+            if !geometryHeld { setNeedsLayout() }
+        }
+    }
+
     func host(_ terminal: TerminalView) {
         guard terminal.superview !== self else { return }
         terminalView = terminal
@@ -87,7 +105,7 @@ final class TerminalHostContainer: UIView {
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        guard let terminalView, !frameLocked else { return }
+        guard let terminalView, !frameLocked, !geometryHeld else { return }
         // Same guard as host(): a transient zero-bounds pass (sheet
         // transitions, remounts) must not squeeze a live buffer through the
         // minimum grid — that reflow doesn't round-trip.
@@ -144,6 +162,11 @@ struct SwiftTerminalView: UIViewRepresentable {
     /// What to do about the keyboard. See ``TerminalFocusPolicy``.
     var focusPolicy: TerminalFocusPolicy = .take
 
+    /// Hold the terminal at the size it has right now — see
+    /// ``TerminalHostContainer/geometryHeld``. True while a navigation sheet
+    /// is up, so the pane keeps the grid it had across the switch.
+    var geometryHeld: Bool = false
+
     func makeCoordinator() -> Coordinator {
         // SwiftUI calls this once per representable identity. Return the
         // caller-owned coordinator so SwiftUI's internal bookkeeping matches
@@ -164,6 +187,7 @@ struct SwiftTerminalView: UIViewRepresentable {
             existing.terminalDelegate = coordinator
             coordinator.attach(to: existing)   // gesture attach is idempotent
             coordinator.hostContainer = container
+            container.geometryHeld = geometryHeld
             theme.apply(to: existing)
             coordinator.enforcedCursor = TerminalCursor.apply(
                 shape: cursorShape, colorId: cursorColorId, blink: cursorBlink, to: existing)
@@ -236,6 +260,7 @@ struct SwiftTerminalView: UIViewRepresentable {
         let container = TerminalHostContainer()
         container.host(terminalView)
         coordinator.hostContainer = container
+        container.geometryHeld = geometryHeld
         return container
     }
 
@@ -243,6 +268,7 @@ struct SwiftTerminalView: UIViewRepresentable {
         // === COSMETIC ONLY ===
         // No feed(), no buffer clear, no delegate swap. See type doc.
         guard let terminal = uiView.terminalView else { return }
+        if uiView.geometryHeld != geometryHeld { uiView.geometryHeld = geometryHeld }
 
         let targetSize = CGFloat(fontSize)
         let desired = TerminalFont.font(id: fontName, size: targetSize)

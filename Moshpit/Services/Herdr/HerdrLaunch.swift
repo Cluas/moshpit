@@ -136,12 +136,21 @@ enum HerdrLaunch {
         // leave an orphaned loop fistfighting the live one over the same
         // target file, 0.3s per round ("页面一直在跳", report, build 360).
         // An orphan that loses once now stays down.
+        // The pause before re-attaching is the switch's visible cost — it is
+        // spent AFTER our own `kill -9` and before the new attach paints, with
+        // the previous pane still on screen the whole time. 0.3s was a round
+        // number from when orphaned loops fought over the target file; the
+        // nonce fence (see `moshRendererKey`) is what actually settled that,
+        // so this is now pure latency. Not zero, though: the loop only ever
+        // reaches it after a SIGNAL death, and a signal we didn't send (a
+        // supervisor, an OOM killer) would otherwise respawn `herdr` as fast
+        // as it can die.
         return "mkdir -p \"$HOME/.moshpit\"; while :; do "
             + "tid=$(cat \"\(target)\" 2>/dev/null); "
             + "if [ -n \"$tid\" ]; then "
             + "sh -c \"echo \\$\\$ > \\\"\(pid)\\\"; \(launch)\" \"$tid\"; "
             + "[ $? -ge 128 ] || break; "
-            + "else sleep 0.5; fi; sleep 0.3; done"
+            + "else sleep 0.5; fi; sleep 0.05; done"
     }
 
     /// Pre-boot cleanup, run on the bootstrap SSH before the new renderer

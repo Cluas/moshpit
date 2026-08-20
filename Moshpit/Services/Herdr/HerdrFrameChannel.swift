@@ -13,6 +13,12 @@ enum HerdrFrame: Equatable {
     case screen(seq: UInt64, width: Int, height: Int, full: Bool, bytes: Data)
     /// The channel ended server-side (pane closed, server stopped).
     case closed(reason: String?)
+    /// Our own retarget loop announcing that it is up and reading targets
+    /// (``HerdrFrameCommand/readyMarker``). Not herdr's — ours, printed by
+    /// the boot line before its first attach. Seeing it is what licenses the
+    /// one-word retarget; not seeing it is what triggers the fallback to the
+    /// one-shot start line.
+    case loopReady
     /// herdr refused or aborted the attach and SAID SO — a diagnostic that
     /// must reach the user, not the byte stream. Two wire shapes produce it
     /// (both observed live against herdr 0.7/0.8 version skew): a JSON
@@ -107,6 +113,8 @@ struct HerdrFrameParser {
                 bytes: bytes)
         case "terminal.closed":
             return .closed(reason: json["reason"] as? String)
+        case HerdrFrameCommand.readyType:
+            return .loopReady
         default:
             return nil
         }
@@ -135,6 +143,65 @@ enum HerdrFrameCommand {
         let herdr = HerdrLaunch.attachCommand(customPath: customPath)
         return "stty raw -echo; \(herdr) terminal session control "
             + "\(HerdrLaunch.quote(target)) --cols \(cols) --rows \(rows) --takeover"
+    }
+
+    /// The `type` of ``readyMarker``, in herdr's own frame namespace-by-
+    /// convention. Prefixed `moshpit.` precisely because it is NOT herdr's:
+    /// nothing on the server ever emits it.
+    static let readyType = "moshpit.ready"
+
+    /// Printed by ``boot(target:cols:rows:customPath:)`` before its first
+    /// attach, so the app can tell "the retarget loop is running" from "the
+    /// login shell couldn't take that shape".
+    static let readyMarker = #"{"type":"\#(readyType)"}"#
+
+    /// Boot line for a channel that can be **retargeted in one word**.
+    ///
+    /// The one-shot ``start(target:cols:rows:customPath:)`` above is written
+    /// at the remote login shell's prompt, and a switch therefore has to wait
+    /// for that prompt to come back: on a stock zsh with a themed prompt and
+    /// precmd hooks that is ~250ms of pure ceremony per switch, on top of the
+    /// round trips (measured against a real herdr 0.8.0: 545ms per switch,
+    /// of which ~500ms was the settle and the prompt).
+    ///
+    /// So the channel runs a reader loop instead. It attaches, and when the
+    /// attach ends it reads ONE line — `<target> <cols> <rows>` — and attaches
+    /// again. No prompt, no rc files, no `stty` re-negotiation with a line
+    /// editor. Same measurement: 40ms per switch.
+    ///
+    /// Load-bearing details:
+    ///
+    /// * **The first target rides in as `$1`.** Writing it as a second line
+    ///   would race the outer shell, which is still reading the boot line and
+    ///   would happily run the target id as a command.
+    /// * **`sh -c`, not the login shell's own syntax.** A `while` loop typed
+    ///   into fish or csh is a syntax error; a single-quoted argument to `sh`
+    ///   is not. The whole script is quoted with ``HerdrLaunch/quote(_:)``, so
+    ///   a custom herdr path containing a quote can't break out of it.
+    /// * **`stty raw -echo` inside the loop**, not just once: the attach we
+    ///   just ran owned the tty and is under no obligation to hand it back in
+    ///   the mode we need. Same two hazards as the one-shot line documents.
+    /// * **`read … || break`** — EOF means the channel is gone; anything else
+    ///   (a failed attach, an unknown target) loops back to read, so one bad
+    ///   switch can't strand the session.
+    static func boot(target: String, cols: Int, rows: Int, customPath: String?) -> String {
+        let herdr = HerdrLaunch.attachCommand(customPath: customPath)
+        let script = "printf '%s\\n' '\(readyMarker)'; while :; do "
+            + "if [ -n \"$1\" ]; then stty raw -echo; "
+            + "\(herdr) terminal session control \"$1\" "
+            + "--cols \"${2:-80}\" --rows \"${3:-24}\" --takeover; fi; "
+            + "read -r t c r || break; set -- \"$t\" \"$c\" \"$r\"; done"
+        return "stty raw -echo; /bin/sh -c \(HerdrLaunch.quote(script)) "
+            + "moshpit-herdr \(HerdrLaunch.quote(target)) \(cols) \(rows)"
+    }
+
+    /// One line for the loop's `read`: where to point next, at what size.
+    /// Only valid after ``boot(target:cols:rows:customPath:)`` announced
+    /// itself with ``readyMarker`` — and only once the previous attach has
+    /// released, because until then the attach still owns stdin and swallows
+    /// this line whole (verified: pipelining it with the release loses it).
+    static func retarget(target: String, cols: Int, rows: Int) -> String {
+        "\(target) \(max(1, cols)) \(max(1, rows))"
     }
 
     /// Keystrokes. Sent as base64 so arbitrary bytes — escape sequences, UTF-8

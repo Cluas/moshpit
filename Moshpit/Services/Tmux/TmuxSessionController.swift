@@ -310,6 +310,7 @@ final class TmuxSessionController: MultiplexerControlling {
         resyncRetryTask = nil
         resyncRejectStreak.removeAll()
         convergenceResyncPending = false
+        convergenceSawOutput = false
         convergenceResyncTask?.cancel()
         convergenceResyncTask = nil
         convergenceDeadlineTask?.cancel()
@@ -2447,6 +2448,9 @@ final class TmuxSessionController: MultiplexerControlling {
         // quiet debounce (see `armConvergenceResync`).
         if convergenceResyncPending,
            snapshot.panes[paneId]?.windowId == snapshot.activeWindowId {
+            // First byte of a redraw switches the debounce from "is one even
+            // coming?" to "let it drain" — see convergenceFirstDebounce().
+            convergenceSawOutput = true
             scheduleConvergenceResync()
         }
         if let coordinator = paneCoordinators[paneId] {
@@ -2565,9 +2569,36 @@ final class TmuxSessionController: MultiplexerControlling {
     @ObservationIgnored private var convergenceResyncPending = false
     @ObservationIgnored private var convergenceResyncTask: Task<Void, Never>?
     @ObservationIgnored private var convergenceDeadlineTask: Task<Void, Never>?
+    /// Whether the visible window has painted anything since this convergence
+    /// pass was armed — i.e. whether there is a redraw to wait for at all.
+    @ObservationIgnored private var convergenceSawOutput = false
+
+    /// Quiet debounce once output IS flowing: long enough for a full-screen
+    /// app's post-SIGWINCH repaint to drain before the last-word capture.
+    private static let convergenceDrainDebounce: Duration = .milliseconds(600)
+
+    /// Quiet debounce before anything has painted.
+    ///
+    /// This is what a switch normally hits, and the 600ms drain window is the
+    /// wrong answer for it: a pane switch on an idle shell or a settled agent
+    /// produces NO output at all (measured against a real tmux: zero %output
+    /// lines, capture reply in single-digit ms), so the veil sat over a pane
+    /// that had been ready for half a second. Waiting for a redraw to drain
+    /// only makes sense once a redraw has started.
+    ///
+    /// Scaled off the measured capture round trip rather than fixed at some
+    /// small number: the -CC stream is ordered, so a repaint tmux has already
+    /// forwarded is in hand within a round trip, and the 1.5× buys the pane
+    /// app its scheduling slack. An app that paints later than this still
+    /// self-corrects — its bytes are live `%output`, and the settling pass
+    /// re-captures behind them.
+    private func convergenceFirstDebounce() -> Duration {
+        .milliseconds(Int(min(0.6, max(0.2, lastResyncRoundTrip * 1.5)) * 1000))
+    }
 
     private func armConvergenceResync() {
         convergenceResyncPending = true
+        convergenceSawOutput = false
         scheduleConvergenceResync()
         if convergenceDeadlineTask == nil {
             convergenceDeadlineTask = Task { [weak self] in
@@ -2582,8 +2613,11 @@ final class TmuxSessionController: MultiplexerControlling {
     private func scheduleConvergenceResync() {
         guard convergenceResyncPending else { return }
         convergenceResyncTask?.cancel()
+        let debounce = convergenceSawOutput
+            ? Self.convergenceDrainDebounce
+            : convergenceFirstDebounce()
         convergenceResyncTask = Task { [weak self] in
-            try? await Task.sleep(for: .milliseconds(600))
+            try? await Task.sleep(for: debounce)
             guard !Task.isCancelled else { return }
             self?.fireConvergenceResync()
         }

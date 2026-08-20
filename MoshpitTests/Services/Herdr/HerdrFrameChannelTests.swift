@@ -214,4 +214,53 @@ struct HerdrFrameChannelTests {
         let json = try #require(object as? [String: Any])
         #expect(json["type"] as? String == "terminal.release")
     }
+
+    // MARK: - The retarget loop
+
+    @Test("The boot line carries its first target and keeps reading for more")
+    func bootLineShape() {
+        let command = HerdrFrameCommand.boot(target: "term_abc", cols: 52, rows: 30,
+                                             customPath: nil)
+        // Same two PTY hazards the one-shot line documents — and again inside
+        // the loop, because the attach that just exited owned the tty.
+        #expect(command.hasPrefix("stty raw -echo; "))
+        #expect(command.components(separatedBy: "stty raw -echo").count - 1 == 2)
+        // `sh -c`, so a login shell that can't parse a `while` loop (fish,
+        // csh) still just sees one quoted argument.
+        #expect(command.contains("/bin/sh -c "))
+        // The first target rides in as an argument. Writing it as a second
+        // line would race the outer shell, which would run it as a command.
+        #expect(command.hasSuffix("'term_abc' 52 30"))
+        #expect(command.contains("terminal session control \"$1\""))
+        #expect(command.contains("--takeover"))
+        // EOF ends the loop; a failed attach does not.
+        #expect(command.contains("read -r t c r || break"))
+        // The marker is what tells the app the loop is really there.
+        #expect(command.contains(HerdrFrameCommand.readyMarker))
+    }
+
+    @Test("A custom herdr path can't break out of the boot line's quoting")
+    func bootLineQuotesCustomPath() {
+        let command = HerdrFrameCommand.boot(target: "t", cols: 10, rows: 10,
+                                             customPath: "/opt/o'clock/herdr")
+        // Every literal quote inside the script is closed, escaped, reopened —
+        // otherwise a path with an apostrophe would end the `sh -c` argument
+        // and run the rest of the loop as commands.
+        #expect(command.contains("/opt/o'\\''clock/herdr terminal session control"))
+    }
+
+    @Test("The loop's ready marker parses as a frame of its own")
+    func parsesReadyMarker() {
+        var parser = HerdrFrameParser()
+        let frames = parser.consume(Data((HerdrFrameCommand.readyMarker + "\n").utf8))
+        #expect(frames == [.loopReady])
+    }
+
+    @Test("A retarget is one line the loop's `read` can split")
+    func retargetLine() {
+        let line = HerdrFrameCommand.retarget(target: "term_abc", cols: 52, rows: 30)
+        #expect(line == "term_abc 52 30")
+        // The loop passes these straight to --cols/--rows, which reject 0.
+        #expect(HerdrFrameCommand.retarget(target: "t", cols: 0, rows: -3) == "t 1 1")
+    }
 }

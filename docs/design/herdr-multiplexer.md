@@ -324,6 +324,49 @@ ADVANCED
 
 ---
 
+**Phase 4 — 切换成本** ✅ **已完成**(2026-08-20)
+用户报"切 agent 慢,而且能看到上一个 agent 的画面一闪而过"。实测拆开来是三件事:
+
+*量出来的账*(本机 PTY,RTT≈0,herdr 0.8.0,`scripts/` 之外的一次性 harness):
+
+| 形态 | 每次切换 |
+|---|---|
+| 原来:登录 shell 提示符 + 固定 400ms settle | **545 ms** |
+| 只把 settle 换成 `terminal.closed` 事件 | 292 ms |
+| 再把"在提示符前敲命令"换成 reader loop | **40 ms** |
+
+也就是说 500ms 里几乎没有一毫秒花在协议上:400ms 是我们自己睡的,~250ms 是用户
+zsh 的提示符 / precmd 钩子。真实链路上再叠 2 个 RTT,那是协议本身要的
+(release 出去、`terminal.closed` 回来、target 出去、full frame 回来)。
+
+1. **固定 400ms settle → 等 `terminal.closed`。** 那 400ms 是在猜"旧 attach 什么时候
+   放开 stdin",而这件事服务端自己会告诉我们。猜短了更糟:target 行会被正在退出的
+   client 吞掉(实测 pipeline 到 release 后面必丢),于是切换直接卡死到下一次轮询。
+2. **boot 行改成 reader loop**(`HerdrFrameCommand.boot`)。attach 结束后读一行
+   `<target> <cols> <rows>` 再 attach,不回提示符。`sh -c` 包住,fish/csh 也只看到一个
+   带引号的参数;整段脚本过 `HerdrLaunch.quote`,自定义 herdr 路径里的引号跑不出来。
+   loop 起来时先打一行 `{"type":"moshpit.ready"}` —— **没收到就退回原来的一次性
+   start 行**,那台主机只是慢回去,不是坏掉。
+3. **切换时先擦本地缓冲区**,不只是盖住它。veil 是个关于时间的承诺,而网络会毁约:
+   安全超时、attach 被拒、被别的客户端抢走 —— 每条路径最后都会把盖子掀开。掀开后
+   底下是什么才是问题:上一个 agent 的画面配着新 agent 的面包屑,就是那个"一闪而过"
+   的报告。空屏幕才是诚实的。veil 的超时也不再是固定 1.6s,而是按实测切换耗时缩放。
+
+顺带把 tmux 那边同一个问题量了一遍:切窗口的命令本身是白送的,但 veil 要等
+**600ms(convergence 静默去抖)或 700ms(settling pass)**才掀开。实测一个空闲
+pane 切过去 **一行 `%output` 都没有**,capture 回包只要个位数毫秒 —— 也就是说那
+600ms 是在等一个根本不会来的重绘。改成:**没画过东西之前用一个按测得 RTT 缩放的
+短去抖(≥200ms),第一个字节到了才切回 600ms 的排空窗口**。会重绘的场景一字未改。
+
+**另一处同源的抖动**(同日,用户报"切 window 会自动重画布局、把输入法收起来"):
+弹出 Windows/Sessions/Pane sheet 会主动收起键盘(否则挡住列表),空出来的高度立刻
+交给终端 —— 缓冲区重排一次、`terminal.resize` 发一次;sheet 一关键盘回来,再来一次。
+实测(pane 里跑 `stty size` 监视循环当见证):**开+关一次 sheet = 2 次 SIGWINCH**
+(`71x33 → 71x61 → 71x33`)。两个尺寸用户一个都没看见 —— sheet 全屏盖着 —— 但 agent
+被 resize 了两次,pane 也重排了两次。修法是 `TerminalHostContainer.geometryHeld`:
+模态期间把终端钉在它当前的尺寸上,等键盘回到原位再放开。同一个 harness 复测:
+**0 次**。
+
 ## 6. 未决 / 需实机验证
 
 1. ~~**Citadel 能不能在 exec channel 上写 stdin**~~ —— 已验:**不能**,公开 API 里没有。走方案 B(PTY + `stty raw -echo`),见 Phase 2。

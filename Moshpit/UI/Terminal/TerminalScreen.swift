@@ -218,14 +218,49 @@ struct TerminalScreen: View {
         showWindowsSheet || showSessionsSheet || showPaneSheet
     }
 
+    /// Whether the pane behind a modal is pinned to the size it already has.
+    /// See ``TerminalHostContainer/geometryHeld`` for what this is protecting
+    /// against; `presentSheet` sets it and `releaseGeometryHold` clears it.
+    @State private var geometryHold = false
+    @State private var geometryHoldRelease: Task<Void, Never>?
+
     /// Collapse the keyboard before presenting a sheet so it doesn't cover
     /// the sheet's content (the window / session / pane lists sit at the
     /// bottom). Paired with `anySheetOpen` gating focus so the terminal
     /// doesn't immediately pop the keyboard back up.
+    ///
+    /// The keyboard's space is NOT handed to the terminal while this happens.
+    /// It is about to be handed straight back — the sheet dismissing restores
+    /// focus — and letting the pane grow into it means reflowing the buffer
+    /// and resizing the remote twice, for a switch that never changed the
+    /// size. Nobody sees the intermediate size either way; the sheet is over
+    /// the whole screen.
     private func presentSheet(_ open: @escaping () -> Void) {
+        geometryHoldRelease?.cancel()
+        geometryHoldRelease = nil
+        geometryHold = true
         UIApplication.shared.sendAction(
             #selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
         open()
+    }
+
+    /// Let the pane adopt the container's bounds again, once the sheet is
+    /// gone AND the keyboard has had time to come back into the space it
+    /// left. If the keyboard isn't coming back (it was down before the
+    /// sheet), the release is immediate and costs the one resize that is
+    /// genuinely owed.
+    private func releaseGeometryHold() {
+        guard geometryHold else { return }
+        geometryHoldRelease?.cancel()
+        guard keyboardIntent == .up else {
+            geometryHold = false
+            return
+        }
+        geometryHoldRelease = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(550))
+            guard !Task.isCancelled else { return }
+            geometryHold = false
+        }
     }
 
     private var transportKind: TransportPillKind {
@@ -386,6 +421,9 @@ struct TerminalScreen: View {
                     }
                 }
             }
+        }
+        .onChange(of: anySheetOpen) { _, open in
+            if !open { releaseGeometryHold() }
         }
         .onReceive(NotificationCenter.default.publisher(
             for: UIResponder.keyboardWillShowNotification)) { _ in
@@ -821,7 +859,8 @@ struct TerminalScreen: View {
             if let controller = active.tmuxController {
                 if controller.snapshot.isAttached {
                     TmuxPaneSplitView(controller: controller,
-                                      focusPolicy: focusPolicy)
+                                      focusPolicy: focusPolicy,
+                                      geometryHeld: geometryHold)
                 } else {
                     // Unattached. Distinguish the two reasons (the design's
                     // "fix the mis-diagnosis"): tmux genuinely absent → offer
@@ -856,7 +895,8 @@ struct TerminalScreen: View {
                     cursorColorId: effectiveCursorColorId,
                     cursorBlink: settings.cursorBlink,
                     coordinator: active.coordinator,
-                    focusPolicy: focusPolicy)
+                    focusPolicy: focusPolicy,
+                    geometryHeld: geometryHold)
                     // SwiftTerminalView.updateUIView is deliberately "cosmetic
                     // only" (see its doc) — it never re-wires the underlying
                     // TerminalView's delegate to a NEW coordinator. Reconnecting
@@ -1309,6 +1349,9 @@ struct TmuxPaneSplitView: View {
     /// How the pane should treat first responder — `.resign` while a
     /// navigation sheet is up, so it can't grab the keyboard back over it.
     var focusPolicy: TerminalFocusPolicy = .take
+    /// Hold the shown pane at its current size across a modal — see
+    /// ``TerminalHostContainer/geometryHeld``.
+    var geometryHeld: Bool = false
 
     var body: some View {
         let snapshot = controller.snapshot
@@ -1316,7 +1359,8 @@ struct TmuxPaneSplitView: View {
             if let paneId = snapshot.activePaneId ?? snapshot.activePanes.first?.id {
                 PaneTerminalHost(terminal: controller.terminalView(for: paneId),
                                  coordinator: controller.coordinator(for: paneId),
-                                 focusPolicy: focusPolicy)
+                                 focusPolicy: focusPolicy,
+                                 geometryHeld: geometryHeld)
                     // Keyed on the CONTROLLER's identity too, not just paneId:
                     // a reconnect mints a brand-new TmuxSessionController (and
                     // fresh per-pane terminals/coordinators) even when the
@@ -1371,6 +1415,9 @@ struct PaneTerminalHost: UIViewRepresentable {
     /// frame-lock covers tmux panes too. nil-safe for previews/tests.
     var coordinator: SwiftTerminalView.Coordinator?
     var focusPolicy: TerminalFocusPolicy = .take
+    /// Hold this pane at the size it has — see
+    /// ``TerminalHostContainer/geometryHeld``.
+    var geometryHeld: Bool = false
 
     func makeUIView(context: Context) -> TerminalHostContainer {
         // The scroll/zoom gesture is installed by the coordinator's attach(to:)
@@ -1394,11 +1441,13 @@ struct PaneTerminalHost: UIViewRepresentable {
         let container = TerminalHostContainer()
         container.host(terminal)
         coordinator?.hostContainer = container
+        container.geometryHeld = geometryHeld
         return container
     }
 
     func updateUIView(_ uiView: TerminalHostContainer, context: Context) {
         guard let terminal = uiView.terminalView else { return }
+        if uiView.geometryHeld != geometryHeld { uiView.geometryHeld = geometryHeld }
         switch focusPolicy {
         case .take:
             if !terminal.isFirstResponder, terminal.window != nil {
