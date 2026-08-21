@@ -138,6 +138,23 @@ struct SettingsScreen: View {
 
                         voiceGroup(settings: $settings)
 
+                        FormGroup(
+                            title: "DIAGNOSTICS",
+                            footer: "What the app logged about this session: every terminal resize with its before-and-after size, and the cause of every reconnect. Screenshot it — or copy it — when something looks wrong."
+                        ) {
+                            NavigationLink { DiagnosticsLogView() } label: {
+                                HStack(spacing: 10) {
+                                    Text("Recent Log")
+                                        .font(Face.text(14)).foregroundStyle(Ink.primary)
+                                    Spacer()
+                                    MiniChevron()
+                                }
+                                .frame(minHeight: 44)
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                        }
+
                         // Build identity — long-press to copy (for bug reports).
                         Text(Self.versionLine)
                             .font(Face.mono(11))
