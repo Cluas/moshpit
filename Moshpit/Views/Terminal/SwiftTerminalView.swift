@@ -493,6 +493,7 @@ struct SwiftTerminalView: UIViewRepresentable {
         /// any thread — SwiftTerm explicitly documents `feed` as
         /// background-thread safe.
         func feed(data: Data) {
+            lastFedAt = Date()
             guard let terminalView else {
                 // Buffer until a view attaches so no early output is lost.
                 TmuxSessionController.ccTap("cc-pairing.log",
@@ -776,6 +777,99 @@ struct SwiftTerminalView: UIViewRepresentable {
         /// duration; the safety timeout adds headroom for the settle. An
         /// interactive drag-dismiss keeps re-arming this until its final
         /// notification, so the lock follows the gesture.
+        // MARK: Keyboard cover
+
+        /// A still image of the pane, laid over it for the length of a
+        /// keyboard transition.
+        ///
+        /// The flicker a keyboard resize produces is NOT ours to fix in the
+        /// renderer. Measured server-side against a real Claude Code pane: on
+        /// resize, tmux's OWN copy of the pane loses its footer for about
+        /// 50ms while the app redraws — and our immediate capture-pane lands
+        /// inside that window, so we faithfully paint a screen the app had
+        /// half-erased, and the corrected one arrives with the settled pass
+        /// ~700ms later. Every attempt to hold or reorder the local resize
+        /// left that intact, because the repaint we were waiting for was
+        /// itself the broken frame.
+        ///
+        /// So stop showing the transition. A snapshot costs one frame to
+        /// take, slides with the keyboard on the keyboard's own curve — which
+        /// is the motion the user asked for, and the one Messages has — and
+        /// comes off once the pane has stopped repainting underneath it. What
+        /// happens in between is nobody's business.
+        private var keyboardCover: UIView?
+        private var coverRelease: DispatchWorkItem?
+        private var lastFedAt = Date.distantPast
+
+        /// Quiet this long under the cover and the pane is done repainting.
+        private static let coverQuiet: TimeInterval = 0.2
+        /// …but never hold the cover longer than this, whatever the pane does
+        /// (an agent that streams forever must not be hidden forever).
+        private static let coverCap: TimeInterval = 1.6
+
+        /// Put the cover up (or keep the existing one) for a keyboard move.
+        ///
+        /// The snapshot does not MOVE, and that is a deliberate correction.
+        /// Sliding it to track the container's bottom edge — the Messages
+        /// motion, and the one that was asked for — assumes the content is
+        /// bottom-anchored. A TUI's is not: Claude Code pins its footer to
+        /// the bottom but keeps the conversation at the top with blank filler
+        /// between, so bottom-aligning the old picture slid that blank filler
+        /// into view and looked exactly like the content vanishing (verified
+        /// frame by frame — the first attempt at this made the flash worse,
+        /// not better). No rigid transform can stand in for a reflow, so the
+        /// cover holds still and cross-fades to the settled screen instead:
+        /// no flicker, and no motion that lies about what happened.
+        func coverForKeyboard(duration: TimeInterval, options: UIView.AnimationOptions) {
+            guard let terminalView, let container = hostContainer else { return }
+            if keyboardCover == nil {
+                guard let snapshot = terminalView.snapshotView(afterScreenUpdates: false)
+                else { return }
+                // A backing plate under the snapshot, filling the container.
+                // When the keyboard LEAVES, the container grows past what the
+                // snapshot covers, and the strip below it would show the live
+                // pane mid-redraw — the very thing the cover exists to hide.
+                // Flat background there instead.
+                let plate = UIView(frame: container.bounds)
+                plate.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+                plate.backgroundColor = terminalView.backgroundColor ?? .black
+                plate.isUserInteractionEnabled = false
+                snapshot.frame = terminalView.frame
+                plate.addSubview(snapshot)
+                container.addSubview(plate)
+                keyboardCover = plate
+            }
+            _ = options
+            scheduleCoverRelease(after: duration + Self.coverQuiet)
+        }
+
+        /// Take the cover down once the pane has been quiet for a beat.
+        private func scheduleCoverRelease(after delay: TimeInterval) {
+            coverRelease?.cancel()
+            guard keyboardCover != nil else { return }
+            let deadline = Date().addingTimeInterval(Self.coverCap)
+            let work = DispatchWorkItem { [weak self] in
+                guard let self, self.keyboardCover != nil else { return }
+                let quietFor = Date().timeIntervalSince(self.lastFedAt)
+                if quietFor < Self.coverQuiet, Date() < deadline {
+                    self.scheduleCoverRelease(after: Self.coverQuiet - quietFor)
+                    return
+                }
+                self.releaseKeyboardCover()
+            }
+            coverRelease = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + max(delay, 0.05), execute: work)
+        }
+
+        func releaseKeyboardCover() {
+            coverRelease?.cancel()
+            coverRelease = nil
+            guard let cover = keyboardCover else { return }
+            keyboardCover = nil
+            UIView.animate(withDuration: 0.18, animations: { cover.alpha = 0 },
+                           completion: { _ in cover.removeFromSuperview() })
+        }
+
         func lockFrame(for duration: TimeInterval) {
             guard let hostContainer else { return }
             hostContainer.frameLocked = true
@@ -906,7 +1000,11 @@ struct SwiftTerminalView: UIViewRepresentable {
                 else { return }
                 let duration = (note.userInfo?[UIResponder.keyboardAnimationDurationUserInfoKey]
                                 as? TimeInterval) ?? 0.25
+                let curve = (note.userInfo?[UIResponder.keyboardAnimationCurveUserInfoKey] as? Int)
+                    .flatMap(UIView.AnimationCurve.init(rawValue:)) ?? .easeInOut
+                let options = UIView.AnimationOptions(rawValue: UInt(curve.rawValue) << 16)
                 self?.lockFrame(for: duration)
+                self?.coverForKeyboard(duration: duration, options: options)
             }
             if let keyboardDidObserver {
                 NotificationCenter.default.removeObserver(keyboardDidObserver)
