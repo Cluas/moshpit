@@ -741,14 +741,42 @@ struct TerminalScreen: View {
             .foregroundStyle(Ink.meta)
     }
 
+    /// The last breadcrumb we could build, kept so a reconnect does not throw
+    /// the navigation away.
+    ///
+    /// `BreadcrumbPlan.make` needs an ATTACHED tree, and an automatic
+    /// reconnect rebuilds the controller from scratch — so for the seconds it
+    /// takes, the bar fell back to `user@host · tmux` and then snapped back to
+    /// session/window/pane. Nothing about the user's session actually changed:
+    /// the windows are still on the server, we are just not attached to them
+    /// this instant. Showing the identity of the machine instead reads as
+    /// "your session is gone" at the exact moment the user is worried it
+    /// might be.
+    @State private var lastBreadcrumb: BreadcrumbPlan?
+
+    /// The plan for the live tree, if there is one.
+    private var livePlan: BreadcrumbPlan? {
+        guard let snapshot = tmuxSnapshot else { return nil }
+        return BreadcrumbPlan.make(snapshot: snapshot, hooks: multiplexerAgentHooks)
+    }
+
+    /// What to draw while the tree is gone: the last one we had, but only
+    /// while the connection is coming back. Once it is genuinely offline the
+    /// machine's identity is the honest thing to show again.
+    private var retainedPlan: BreadcrumbPlan? {
+        switch connState {
+        case .connecting, .reconnecting: return lastBreadcrumb
+        case .live, .offline: return nil
+        }
+    }
+
     private var breadcrumb: some View {
         HStack(spacing: 6) {
             // Read the snapshot through concrete types (not the existential) so
             // SwiftUI Observation tracks updates from either controller/sidecar.
             // The strings and the squeeze rule live in `BreadcrumbPlan` — pure,
             // tested — this just lays the segments out.
-            if let snapshot = tmuxSnapshot,
-               let plan = BreadcrumbPlan.make(snapshot: snapshot, hooks: multiplexerAgentHooks) {
+            if let plan = livePlan ?? retainedPlan {
                 Button {
                     presentSheet { showSessionsSheet = true }
                 } label: {
@@ -799,6 +827,15 @@ struct TerminalScreen: View {
                         .foregroundStyle(Ink.mosh)
                 }
             }
+        }
+        // Dimmed and inert while it is the remembered tree rather than the
+        // live one: it still tells you where you are, without pretending you
+        // can navigate a controller that is being rebuilt.
+        .opacity(livePlan == nil && retainedPlan != nil ? 0.45 : 1)
+        .disabled(livePlan == nil && retainedPlan != nil)
+        .animation(.easeOut(duration: 0.2), value: livePlan == nil)
+        .onChange(of: livePlan) { _, plan in
+            if let plan { lastBreadcrumb = plan }
         }
     }
 
