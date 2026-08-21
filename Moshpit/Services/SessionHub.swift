@@ -619,8 +619,12 @@ final class SessionHub {
         /// The grid we last told herdr about, so the local size report that
         /// follows doesn't send it a second time.
         @ObservationIgnored private var herdrSentGrid: Grid?
-        /// A resize is held, waiting for the repaint that goes with it.
-        @ObservationIgnored private var herdrAwaitingResizeRepaint = false
+        /// The grid a held resize is waiting to see repainted. A frame that
+        /// was already in flight when we asked carries the OLD size, and
+        /// releasing on it feeds a small screen into a buffer we just made
+        /// big — the leftovers below it are then a second, stale copy of the
+        /// UI sitting under the live one (user screenshot, build 382).
+        @ObservationIgnored private var herdrAwaitingResizeRepaint: Grid?
         @ObservationIgnored private var herdrResizeReleaseTask: Task<Void, Never>?
         /// How long a held resize may wait for its repaint. Past this the
         /// local resize is taken anyway — a stale-but-correct-size screen
@@ -629,9 +633,11 @@ final class SessionHub {
 
         /// Claim the pending release, if there is one. Returns true exactly
         /// once per held resize.
-        func takeResizeRelease() -> Bool {
-            guard herdrAwaitingResizeRepaint else { return false }
-            herdrAwaitingResizeRepaint = false
+        func takeResizeRelease(width: Int, height: Int) -> Bool {
+            guard let awaited = herdrAwaitingResizeRepaint else { return false }
+            // Only the repaint for the size we asked for will do.
+            guard awaited == Grid(cols: width, rows: height) else { return false }
+            herdrAwaitingResizeRepaint = nil
             herdrResizeReleaseTask?.cancel()
             herdrResizeReleaseTask = nil
             return true
@@ -641,8 +647,8 @@ final class SessionHub {
             herdrResizeReleaseTask?.cancel()
             herdrResizeReleaseTask = Task { [weak self] in
                 try? await Task.sleep(for: Self.herdrResizeRepaintTimeout)
-                guard let self, !Task.isCancelled, herdrAwaitingResizeRepaint else { return }
-                herdrAwaitingResizeRepaint = false
+                guard let self, !Task.isCancelled, herdrAwaitingResizeRepaint != nil else { return }
+                herdrAwaitingResizeRepaint = nil
                 coordinator.applyDeferredResize()
             }
         }
@@ -1370,7 +1376,7 @@ final class SessionHub {
                 guard let self, herdrFrameTarget != nil else { return false }
                 herdrSentGrid = Grid(cols: cols, rows: rows)
                 writeFrameCommand(HerdrFrameCommand.resize(cols: cols, rows: rows))
-                herdrAwaitingResizeRepaint = true
+                herdrAwaitingResizeRepaint = Grid(cols: cols, rows: rows)
                 armHerdrResizeRelease()
                 return true
             }
@@ -1385,15 +1391,19 @@ final class SessionHub {
                     await MainActor.run { self?.noteInbound() }
                     for frame in parser.consume(chunk) {
                         switch frame {
-                        case .screen(_, _, _, let full, let bytes):
+                        case .screen(_, let width, let height, let full, let bytes):
                             // A held-back resize and the repaint that answers
                             // it must land in ONE turn: resize first (which
                             // is where the buffer loses its bottom rows), then
                             // paint the server's full screen over the result,
-                            // with nothing drawn in between.
+                            // with nothing drawn in between. Matched on SIZE,
+                            // because a frame already in flight when we asked
+                            // describes the old one.
                             if full {
                                 await MainActor.run {
-                                    guard let self, self.takeResizeRelease() else { return }
+                                    guard let self,
+                                          self.takeResizeRelease(width: width, height: height)
+                                    else { return }
                                     self.coordinator.applyDeferredResize()
                                 }
                             }
