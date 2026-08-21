@@ -1825,10 +1825,14 @@ final class SessionHub {
             }
             try? await ssh.write(Data((HerdrPushBoot.bootLine() + "\r").utf8))
             if await driver.activate() {
+                Log.ssh.notice("push: active — herdr events over a persistent channel")
                 herdrPush = driver
+                // The poll steps back to being a safety net now.
+                herdrControl?.pushActive = true
                 // Fold the subscribe's bootstrap replay into one fresh read.
                 herdrControl?.quicken()
             } else {
+                Log.ssh.notice("push: unavailable — staying on the poll")
                 herdrPushPump?.cancel()
                 herdrPushPump = nil
                 herdrPushSSH = nil
