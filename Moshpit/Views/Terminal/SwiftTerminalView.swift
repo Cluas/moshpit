@@ -802,7 +802,7 @@ struct SwiftTerminalView: UIViewRepresentable {
         private var lastFedAt = Date.distantPast
 
         /// Quiet this long under the cover and the pane is done repainting.
-        private static let coverQuiet: TimeInterval = 0.2
+        private static let coverQuiet: TimeInterval = 0.15
         /// …but never hold the cover longer than this, whatever the pane does
         /// (an agent that streams forever must not be hidden forever).
         private static let coverCap: TimeInterval = 1.6
@@ -821,6 +821,7 @@ struct SwiftTerminalView: UIViewRepresentable {
         /// cover holds still and cross-fades to the settled screen instead:
         /// no flicker, and no motion that lies about what happened.
         func coverForKeyboard(duration: TimeInterval, options: UIView.AnimationOptions) {
+            coverRequests += 1
             guard let terminalView, let container = hostContainer else { return }
             if keyboardCover == nil {
                 guard let snapshot = terminalView.snapshotView(afterScreenUpdates: false)
@@ -840,7 +841,10 @@ struct SwiftTerminalView: UIViewRepresentable {
                 keyboardCover = plate
             }
             _ = options
-            scheduleCoverRelease(after: duration + Self.coverQuiet)
+            // Start checking when the keyboard lands; the quiet test below is
+            // what actually decides, so checking sooner only helps the case
+            // where nothing repaints at all.
+            scheduleCoverRelease(after: duration)
         }
 
         /// Take the cover down once the pane has been quiet for a beat.
@@ -860,6 +864,15 @@ struct SwiftTerminalView: UIViewRepresentable {
             coverRelease = work
             DispatchQueue.main.asyncAfter(deadline: .now() + max(delay, 0.05), execute: work)
         }
+
+        /// Whether a keyboard cover is up right now.
+        var hasKeyboardCover: Bool { keyboardCover != nil }
+
+        /// How many keyboard moves have been judged worth covering. The
+        /// DECISION is what matters and what the test pins; whether a
+        /// snapshot could actually be taken depends on having a rendered
+        /// window, which a test host does not.
+        private(set) var coverRequests = 0
 
         func releaseKeyboardCover() {
             coverRelease?.cancel()
@@ -1004,6 +1017,21 @@ struct SwiftTerminalView: UIViewRepresentable {
                     .flatMap(UIView.AnimationCurve.init(rawValue:)) ?? .easeInOut
                 let options = UIView.AnimationOptions(rawValue: UInt(curve.rawValue) << 16)
                 self?.lockFrame(for: duration)
+                // Only cover a move that actually changes how much room the
+                // terminal has. Switching input method (globe key) fires this
+                // notification with the SAME frame on both ends — CN and EN
+                // are the same height — and covering that costs the user
+                // half a second of frozen picture to hide a transition that
+                // never happens ("切换输入法有点慢", report). A begin frame is
+                // not always supplied; when it isn't, assume it changed.
+                let begin = (note.userInfo?[UIResponder.keyboardFrameBeginUserInfoKey]
+                             as? NSValue)?.cgRectValue
+                let end = (note.userInfo?[UIResponder.keyboardFrameEndUserInfoKey]
+                           as? NSValue)?.cgRectValue
+                if let begin, let end, abs(begin.minY - end.minY) < 1,
+                   abs(begin.height - end.height) < 1 {
+                    return
+                }
                 self?.coverForKeyboard(duration: duration, options: options)
             }
             if let keyboardDidObserver {
