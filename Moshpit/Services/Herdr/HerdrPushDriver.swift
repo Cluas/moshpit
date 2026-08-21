@@ -21,11 +21,28 @@ enum HerdrPushBoot {
     ///     rides inside shell single quotes;
     ///   - `exec` replaces the shell, so channel teardown kills the pump
     ///     rather than orphaning it behind a login shell.
+    /// Printed by the pump the moment it holds a socket.
+    ///
+    /// Load-bearing, not decoration. Writing to this channel before python
+    /// has replaced the shell means writing to the SHELL, which swallows the
+    /// bytes — and the subscribe that gets swallowed is never retried, so the
+    /// request simply times out and push is written off as unavailable for
+    /// the whole session. Measured locally: subscribing immediately after the
+    /// boot line failed every time, at 3s it succeeded every time. That is
+    /// how push came to be silently dead on every host while still costing a
+    /// second SSH connection and a 10s timeout per connect.
+    ///
+    /// A bare word, not JSON: the whole python body rides inside shell single
+    /// quotes inside a python string, and every `"` in it needs two levels of
+    /// escaping. A marker with no quotes in it cannot get that wrong.
+    static let readyMarker = "MOSHPIT_PUMP_READY"
+
     static func bootLine() -> String {
         let script =
             "import os,socket,threading\\n" +
             "s=socket.socket(socket.AF_UNIX,socket.SOCK_STREAM)\\n" +
             "s.connect(os.path.expanduser(\\\"~/.config/herdr/herdr.sock\\\"))\\n" +
+            "os.write(1,b\\\"\(readyMarker)\\\\n\\\")\\n" +
             "def up():\\n" +
             " while True:\\n" +
             "  d=os.read(0,65536)\\n" +
@@ -83,11 +100,22 @@ final class HerdrPushDriver {
         "pane.agent_status_changed", "pane.scroll_changed", "pane.output_matched",
     ]
 
-    /// Trailing debounce for the invalidate signal. The subscribe handshake
-    /// replays the entire current state as a burst (one synthetic event per
-    /// existing workspace/tab/pane — verified live), and firing a snapshot
-    /// read per event would turn one bootstrap into a dozen redundant polls.
-    static let debounce: Duration = .milliseconds(200)
+    /// Trailing debounce for the invalidate signal — each event RESETS it, so
+    /// a burst costs one read after the burst goes quiet.
+    ///
+    /// It used to only look like a debounce: the guard was "is a timer already
+    /// running", which fires once per interval for as long as events keep
+    /// coming. Measured against a real server the moment push actually came
+    /// up: the subscribe's own bootstrap replay (one synthetic event per
+    /// existing workspace/tab/pane, by design) produced **37 snapshot reads in
+    /// 8 seconds**, each one a fresh exec channel and a fork on the host.
+    /// Push is supposed to REMOVE polling, not amplify it.
+    static let debounce: Duration = .milliseconds(250)
+
+    /// …but a debounce that only ever resets starves under a stream that
+    /// never stops (an agent printing output bumps its pane on every chunk).
+    /// Never let a burst defer the read longer than this.
+    static let maxDeferral: TimeInterval = 2
 
     private let client: HerdrSocketClient
     private let onInvalidate: @MainActor () -> Void
@@ -103,10 +131,17 @@ final class HerdrPushDriver {
     /// the host" failure shows up as silence (the boot line's error text is
     /// skipped as shell noise), so this deadline IS that failure's detector.
     /// Injectable so tests can exercise the failure path without a 10s wait.
+    /// How long to wait for the pump to say it is connected. Generous: it
+    /// covers a login shell's rc files plus a python start on a slow host,
+    /// and the cost of being wrong is losing push for the session.
+    private let pumpTimeout: Duration
+
     init(requestTimeout: Duration = .seconds(10),
+         pumpTimeout: Duration = .seconds(15),
          write: @escaping @Sendable (Data) async throws -> Void,
          onInvalidate: @escaping @MainActor () -> Void) {
         self.client = HerdrSocketClient(requestTimeout: requestTimeout, write: write)
+        self.pumpTimeout = pumpTimeout
         self.onInvalidate = onInvalidate
     }
 
@@ -121,6 +156,10 @@ final class HerdrPushDriver {
     /// owner stays on pure polling. Never throws: push is an upgrade, not a
     /// dependency.
     func activate() async -> Bool {
+        // The pump has to own stdin before anything we write reaches herdr;
+        // until then the login shell is still there, and it eats whatever it
+        // is given. See `HerdrPushBoot.readyMarker`.
+        guard await client.waitForPump(timeout: pumpTimeout) else { return false }
         do {
             try await client.subscribe(Self.globalKinds)
         } catch {
@@ -138,14 +177,30 @@ final class HerdrPushDriver {
         return true
     }
 
+    /// Start of the burst the current debounce belongs to, for the cap above.
+    private var burstStartedAt: Date?
+
     private func scheduleInvalidate() {
-        guard pendingInvalidate == nil else { return }
+        let now = Date()
+        let started = burstStartedAt ?? now
+        burstStartedAt = started
+        guard now.timeIntervalSince(started) < Self.maxDeferral else {
+            fireInvalidate()
+            return
+        }
+        pendingInvalidate?.cancel()
         pendingInvalidate = Task { [weak self] in
             try? await Task.sleep(for: Self.debounce)
             guard let self, !Task.isCancelled else { return }
-            self.pendingInvalidate = nil
-            self.onInvalidate()
+            self.fireInvalidate()
         }
+    }
+
+    private func fireInvalidate() {
+        pendingInvalidate?.cancel()
+        pendingInvalidate = nil
+        burstStartedAt = nil
+        onInvalidate()
     }
 
     func shutdown() async {

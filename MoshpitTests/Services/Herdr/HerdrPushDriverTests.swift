@@ -52,6 +52,10 @@ struct HerdrPushDriverTests {
             },
             onInvalidate: invalidations)
         box.driver = driver
+        // activate() waits for the pump's readiness marker before writing —
+        // see HerdrPushBoot.readyMarker. A test server that never says it is
+        // there would (correctly) never be subscribed to.
+        await driver.feed(Data((HerdrPushBoot.readyMarker + "\n").utf8))
         return driver
     }
 
@@ -100,6 +104,58 @@ struct HerdrPushDriverTests {
         await driver.shutdown()
     }
 
+    /// The bug this pins was invisible to the burst test above, because the
+    /// broken guard ("is a timer already running?") DOES collapse events that
+    /// arrive in one gulp. It only shows when they are spread out: it then
+    /// fires once per interval for as long as the stream lasts. Measured
+    /// against a real server the first time push actually came up — the
+    /// subscribe's own replay produced 37 snapshot reads in 8 seconds.
+    @Test("A stream of events spread over time is still ONE invalidation")
+    func debounceResetsRatherThanRepeating() async throws {
+        final class Counter: @unchecked Sendable {
+            private let lock = NSLock()
+            private var value = 0
+            func bump() { lock.withLock { value += 1 } }
+            var count: Int { lock.withLock { value } }
+        }
+        let counter = Counter()
+        let driver = await makeActivatedDriver { counter.bump() }
+        #expect(await driver.activate())
+
+        let event = #"{"event":"pane_updated","data":{}}"# + "\n"
+        // 9 events over ~900ms: longer than the debounce, shorter than the cap.
+        for _ in 0..<9 {
+            await driver.feed(Data(event.utf8))
+            try await Task.sleep(for: .milliseconds(100))
+        }
+        try await Task.sleep(for: .milliseconds(500))
+        #expect(counter.count == 1, "a spread-out stream must not fire per interval")
+        await driver.shutdown()
+    }
+
+    /// …and the cap that keeps the reset from starving a read forever, for a
+    /// stream that never stops (an agent printing output bumps its pane on
+    /// every chunk).
+    @Test("A stream longer than the cap still gets read")
+    func debounceCapPreventsStarvation() async throws {
+        final class Counter: @unchecked Sendable {
+            private let lock = NSLock()
+            private var value = 0
+            func bump() { lock.withLock { value += 1 } }
+            var count: Int { lock.withLock { value } }
+        }
+        let counter = Counter()
+        let driver = await makeActivatedDriver { counter.bump() }
+        #expect(await driver.activate())
+        let event = #"{"event":"pane_updated","data":{}}"# + "\n"
+        for _ in 0..<26 {
+            await driver.feed(Data(event.utf8))
+            try await Task.sleep(for: .milliseconds(100))
+        }
+        #expect(counter.count >= 1, "a never-ending stream must not defer the read forever")
+        await driver.shutdown()
+    }
+
     // MARK: - Capability gate
 
     @Test("The probe covers python3 and parses it")
@@ -122,3 +178,4 @@ struct HerdrPushDriverTests {
         #expect(HostCapabilities.unknown.hasPython3)
     }
 }
+

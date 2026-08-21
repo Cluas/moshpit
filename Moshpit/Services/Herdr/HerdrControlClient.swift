@@ -61,9 +61,30 @@ final class HerdrControlClient: MultiplexerControlling {
     /// this poll is also how agent state reaches the Vibe Island. 8s is the
     /// most staleness that felt honest for a "needs you" prompt.
     static let idlePollInterval: Duration = .seconds(8)
+    /// Cadence once the push channel is carrying events. The poll stops being
+    /// the update mechanism at that point — every change arrives as an event
+    /// and is answered by an immediate read — so the timer is left as a pure
+    /// safety net against a pump that dies quietly. Measured: this is the
+    /// difference between ~7 exec channels a minute at idle and about one.
+    static let pushedPollInterval: Duration = .seconds(45)
+
+    /// Set by the hub when the push channel comes up (and false when it dies).
+    var pushActive = false {
+        didSet {
+            guard pushActive != oldValue else { return }
+            if !pushActive { unchangedPolls = 0; pollInterval = Self.fastPollInterval }
+        }
+    }
     /// Identical polls before easing off. Three keeps a quick back-and-forth
     /// (type, watch, type) at full speed.
     static let idlePollThreshold = 3
+
+    /// When a poll last came back with something we could read. The hub's
+    /// keepalive consults this instead of spending its own exec channel: a
+    /// control plane that is answering has already proved the connection is
+    /// alive, and on this transport its replies never touch the PTY stream
+    /// the hub otherwise watches.
+    private(set) var lastSuccessfulPoll: Date?
 
     private(set) var snapshot = TmuxSnapshot()
     private(set) var agentHooks: [String: AgentHook] = [:]
@@ -195,6 +216,7 @@ final class HerdrControlClient: MultiplexerControlling {
         guard let result = try? await run("api snapshot")
         else { return }   // channel hiccup — keep what we have
         let output = result.output
+        lastSuccessfulPoll = Date()   // the channel answered — see the property
         if let decoded = HerdrSnapshot.decode(output) {
             serverNotRunning = false
             lastPollMismatched = false
@@ -204,7 +226,7 @@ final class HerdrControlClient: MultiplexerControlling {
             if decoded == lastDecoded {
                 unchangedPolls += 1
                 if unchangedPolls >= Self.idlePollThreshold {
-                    pollInterval = Self.idlePollInterval
+                    pollInterval = pushActive ? Self.pushedPollInterval : Self.idlePollInterval
                 }
             } else {
                 unchangedPolls = 0
