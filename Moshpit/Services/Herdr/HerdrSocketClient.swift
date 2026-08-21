@@ -69,12 +69,6 @@ actor HerdrSocketClient {
     private static let maxBufferBytes = 16 * 1024 * 1024
     private var buffer = Data()
 
-    /// Resolved when the transport's pump announces it is connected — see
-    /// ``HerdrPushBoot/readyMarker``. Until then anything written to the pipe
-    /// may be going to a login shell that eats it.
-    private var pumpReady = false
-    private var pumpWaiters: [CheckedContinuation<Bool, Never>] = []
-
     private var nextId = 1
     private var pending: [String: CheckedContinuation<String, Error>] = [:]
     private var closed = false
@@ -108,7 +102,6 @@ actor HerdrSocketClient {
     func finishInput() {
         guard !closed else { return }
         closed = true
-        failPumpWaiters()
         for (_, continuation) in pending {
             continuation.resume(throwing: HerdrSocketError.connectionClosed)
         }
@@ -116,50 +109,7 @@ actor HerdrSocketClient {
         eventContinuation.finish()
     }
 
-    /// Wait for the pump's readiness marker. `false` on timeout — the caller
-    /// treats that as "this transport never came up" rather than writing into
-    /// a pipe nobody is reading.
-    func waitForPump(timeout: Duration) async -> Bool {
-        if pumpReady { return true }
-        let deadline = Task { [weak self] in
-            try? await Task.sleep(for: timeout)
-            await self?.failPumpWaiters()
-        }
-        defer { deadline.cancel() }
-        return await withCheckedContinuation { continuation in
-            pumpWaiters.append(continuation)
-        }
-    }
-
-    private func failPumpWaiters() {
-        let waiters = pumpWaiters
-        pumpWaiters.removeAll()
-        for waiter in waiters { waiter.resume(returning: false) }
-    }
-
-    private func notePumpReady() {
-        guard !pumpReady else { return }
-        pumpReady = true
-        let waiters = pumpWaiters
-        pumpWaiters.removeAll()
-        for waiter in waiters { waiter.resume(returning: true) }
-    }
-
     private func route(_ line: String) {
-        // At the END of a line, never merely `contains`: the boot line carries
-        // the marker inside its own python source and the shell echoes that
-        // whole line back before `stty -echo` takes effect, so a loose match
-        // would take our own echo as proof the pump is up — the exact failure
-        // this handshake exists to prevent. Not line-EQUAL either: zsh emits
-        // a window-title escape (`ESC k stty ESC \`) with no newline after
-        // it, so the marker arrives glued to that prefix (observed on a real
-        // login shell). The echoed command line ends in `")'`, never in the
-        // marker, so the suffix is unambiguous.
-        if line.trimmingCharacters(in: .whitespacesAndNewlines)
-            .hasSuffix(HerdrPushBoot.readyMarker) {
-            notePumpReady()
-            return
-        }
         guard let object = HerdrSnapshot.firstJSONObject(in: line) else { return }
         if let kind = object["event"] as? String {
             eventContinuation.yield(HerdrSocketEvent(kind: kind, raw: line))

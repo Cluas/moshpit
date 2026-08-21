@@ -290,16 +290,6 @@ actor SSHSession {
     /// port + session key, then daemonizes). Does not touch the PTY channel.
     func executeCommand(_ command: String) async throws -> Data {
         guard !closed else { throw SSHError.sessionClosed }
-        // Debug level, so it costs nothing unless someone is listening — but
-        // when they are, this is the only way to see channel churn, which is
-        // what a flaky link actually pays for (one exec = one channel = a
-        // fork on the server and a couple of round trips).
-        // The PATH prefix is 60 characters of boilerplate on every herdr
-        // command — log what actually differs.
-        let logged = command.hasPrefix("PATH=")
-            ? String(command.drop(while: { $0 != " " }).dropFirst())
-            : command
-        Log.ssh.debug("exec: \(logged.prefix(60), privacy: .public)")
         do {
             return try await transport.run(command)
         } catch {

@@ -203,37 +203,6 @@ struct SessionLifecycleTests {
         #expect(connects.count == 1, "keepAlive on mosh must reach the sidecar rebuild")
     }
 
-    // MARK: - Liveness probing
-
-    /// A dead socket and a slow one look identical to a boolean probe, and
-    /// treating them alike is what tore down working sessions on a lossy link:
-    /// the reconnect that follows costs a full re-handshake, so a false
-    /// positive is far more expensive than a late true one.
-    @Test("The probe tells a refusal apart from a silence")
-    func probeDistinguishesFailureFromTimeout() async {
-        func session(_ behavior: ScriptedTransport.Behavior) -> SSHSession {
-            let connection = ServerConnection(name: "probe", host: "192.0.2.1", port: 22,
-                                              username: "tester", authMethod: .password)
-            return SSHSession(connection: connection, transport: ScriptedTransport(behavior))
-        }
-        #expect(await SessionHub.ActiveSession.probe(session(.reply("")), timeout: 0.2) == .alive)
-        #expect(await SessionHub.ActiveSession.probe(session(.fail), timeout: 0.2) == .failed)
-        #expect(await SessionHub.ActiveSession.probe(session(.hangIgnoringCancellation),
-                                                     timeout: 0.2) == .timedOut)
-    }
-
-    /// Traffic is better evidence than a probe, and free. A connection that
-    /// just delivered bytes must not be asked to prove itself — that costs a
-    /// fresh exec channel every tick on exactly the links least able to
-    /// spare one.
-    @Test("Recent inbound traffic counts as proof of life")
-    func inboundTrafficIsProofOfLife() async {
-        let session = makeSession(ScriptedTransport(.reply("")))
-        #expect(session.inboundAge() > 60, "a session that never read anything is stale")
-        session.noteInbound()
-        #expect(session.inboundAge() < 1)
-    }
-
     // MARK: - stop()'s mosh-server reap fallback
 
     /// The gap `onReturnPathDead`'s watchdog can't cover: it only fires a few

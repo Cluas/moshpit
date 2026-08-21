@@ -299,10 +299,6 @@ final class TmuxSessionController: MultiplexerControlling {
         // leave the panes permanently unable to repaint.
         backfillsInFlight.removeAll()
         deferredResyncs.removeAll()
-        for task in deferredResizeTimeouts.values { task.cancel() }
-        deferredResizeTimeouts.removeAll()
-        for paneId in paneResizeAwaitingCapture { paneCoordinators[paneId]?.applyDeferredResize() }
-        paneResizeAwaitingCapture.removeAll()
         for task in backfillTimeouts.values { task.cancel() }
         backfillTimeouts.removeAll()
         // Same reasoning for the foreign-width gate: a repair frame that will
@@ -1498,8 +1494,7 @@ final class TmuxSessionController: MultiplexerControlling {
     /// its own model, so the garble never self-corrects. Collapse the storm to
     /// the final size, then `resyncActivePane()` repaints from tmux's
     /// authoritative screen so any divergence is erased.
-    @discardableResult
-    func resizeClient(rows: Int, cols: Int) -> Bool {
+    func resizeClient(rows: Int, cols: Int) {
         // The dedupe must not swallow the FIRST report from a real terminal
         // view. Until one arrives, `lastClientSize` is only a GUESS
         // (``setInitialClientSize``, from an estimated grid), and a guess that
@@ -1512,7 +1507,7 @@ final class TmuxSessionController: MultiplexerControlling {
         // keyboard" was — the tap resized the grid, which finally differed and
         // repainted. A wrong guess self-healed (the sizes differ), so this only
         // ever bit the phones whose estimate was exact.
-        guard (cols, rows) != lastClientSize || !clientSizeConfirmed else { return false }
+        guard (cols, rows) != lastClientSize || !clientSizeConfirmed else { return }
         clientSizeConfirmed = true
         lastClientSize = (cols, rows)
         pendingResize?.cancel()
@@ -1521,7 +1516,6 @@ final class TmuxSessionController: MultiplexerControlling {
             guard !Task.isCancelled else { return }
             self?.commitClientSize()
         }
-        return true
     }
 
     /// Apply the settled client size: one `refresh-client -C`, re-pin the
@@ -1874,11 +1868,6 @@ final class TmuxSessionController: MultiplexerControlling {
             let text = "\u{1b}[H\u{1b}[2J" + lines.joined(separator: "\r\n") + "\u{1b}[0m"
             self.ccTapLine("FRAME pane=\(paneId) reveal=\(reveal) lines=\(lines.count) "
                 + "first=\(lines.first?.prefix(60) ?? "")")
-            // A held resize and the capture that answers it land in ONE turn:
-            // resize (which is where the buffer loses its bottom rows), then
-            // paint tmux's full screen over the result, with nothing in
-            // between ever drawn.
-            self.releaseDeferredResize(paneId)
             self.paneCoordinators[paneId]?.feed(data: Data(text.utf8))
             // The frame is on screen — reveal the terminal if a keyboard-freeze
             // or pane-switch veil is covering it, UNLESS this capture is known
@@ -2139,11 +2128,6 @@ final class TmuxSessionController: MultiplexerControlling {
         lastIncomingAt.withLock { $0 = Date() }
     }
 
-    /// When the -CC stream last delivered anything. The hub reads this to
-    /// answer "is this connection alive" without spending a probe channel —
-    /// a control stream that is still talking has already answered.
-    nonisolated var lastInboundAt: Date { lastIncomingAt.withLock { $0 } }
-
     /// Fired once when the -CC channel is judged dead — the hub tears the
     /// transport down and reconnects. This exists because the hub's
     /// keepAlive probe (`executeCommand "true"`) opens a FRESH channel: a
@@ -2185,15 +2169,7 @@ final class TmuxSessionController: MultiplexerControlling {
                 popStrikes = (hasPendings && self.popCounter == lastPops) ? popStrikes + 1 : 0
                 lastSeen = incoming
                 lastPops = self.popCounter
-                // ≈12s of silence with pendings — but scaled by what this
-                // link's round trips actually cost. A fixed 12s is generous on
-                // a LAN and trigger-happy on a lossy cellular path, where one
-                // stalled retransmit can swallow that long without the channel
-                // being dead at all; declaring death there costs a full
-                // re-handshake and lands the session in a reconnect loop
-                // exactly when the network can least afford it.
-                let silenceStrikes = max(3, Int((self.lastResyncRoundTrip * 6 / 4).rounded(.up)))
-                if strikes >= silenceStrikes {
+                if strikes >= 3 {        // ≈12s of silence with pendings
                     self.reportChannelDead(reason: "silent")
                     return
                 }
@@ -2620,32 +2596,6 @@ final class TmuxSessionController: MultiplexerControlling {
         .milliseconds(Int(min(0.6, max(0.2, lastResyncRoundTrip * 1.5)) * 1000))
     }
 
-    /// Panes whose local resize is held, waiting for their capture.
-    @ObservationIgnored private var paneResizeAwaitingCapture: Set<String> = []
-    @ObservationIgnored private var deferredResizeTimeouts: [String: Task<Void, Never>] = [:]
-
-    /// A capture that never comes must not leave the view frozen at a size the
-    /// server has already left. Generous, because the capture rides the same
-    /// FIFO as everything else and a busy reconnect can queue it behind
-    /// discovery.
-    private static let deferredResizeTimeout: Duration = .milliseconds(1500)
-
-    private func scheduleDeferredResizeTimeout(_ paneId: String) {
-        deferredResizeTimeouts[paneId]?.cancel()
-        deferredResizeTimeouts[paneId] = Task { [weak self] in
-            try? await Task.sleep(for: Self.deferredResizeTimeout)
-            guard let self, !Task.isCancelled else { return }
-            self.releaseDeferredResize(paneId)
-        }
-    }
-
-    /// Apply a pane's held resize, if it has one. Idempotent.
-    private func releaseDeferredResize(_ paneId: String) {
-        deferredResizeTimeouts.removeValue(forKey: paneId)?.cancel()
-        guard paneResizeAwaitingCapture.remove(paneId) != nil else { return }
-        paneCoordinators[paneId]?.applyDeferredResize()
-    }
-
     private func armConvergenceResync() {
         convergenceResyncPending = true
         convergenceSawOutput = false
@@ -2974,31 +2924,6 @@ final class TmuxSessionController: MultiplexerControlling {
             guard self.snapshot.activePaneId == paneId
                     || self.snapshot.activePanes.count <= 1 else { return }
             self.resizeClient(rows: rows, cols: cols)
-        }
-        // Hold a resize until the capture that replaces what it destroys.
-        //
-        // Shrinking a buffer is LOSSY: SwiftTerm removes rows by popping the
-        // lines BELOW the cursor, and a full-screen TUI keeps its own
-        // furniture there — Claude Code's input box sits two rows above its
-        // own footer, and raising the keyboard simply deleted that footer
-        // until a repaint came back (user screenshots, 379 through 382).
-        // tmux's own reflow does NOT lose those rows, so the capture this
-        // path always takes after a resize has them; all that was needed is
-        // to not apply the local resize until that capture is in hand.
-        //
-        // The grid has to be reported from HERE too: the layout callback that
-        // normally reports it runs after the frame change being held, so
-        // otherwise the client would never resize and the capture never come.
-        coordinator.shouldDeferResize = { [weak self, paneId] cols, rows in
-            guard let self, self.rendersOutput, self.snapshot.isAttached else { return false }
-            guard self.snapshot.activePaneId == paneId
-                    || self.snapshot.activePanes.count <= 1 else { return false }
-            // No client resize means no capture is coming, and holding for
-            // one that never arrives just stalls the frame until the timeout.
-            guard self.resizeClient(rows: rows, cols: cols) else { return false }
-            self.paneResizeAwaitingCapture.insert(paneId)
-            self.scheduleDeferredResizeTimeout(paneId)
-            return true
         }
         coordinator.onSizeChange = { [weak self, paneId] cols, rows in
             Task { @MainActor [weak self] in

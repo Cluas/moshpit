@@ -615,44 +615,6 @@ final class SessionHub {
         /// How long to wait for the retarget loop to announce itself before
         /// assuming this host can't run it.
         private static let herdrLoopProbe: Duration = .milliseconds(2500)
-        struct Grid: Equatable { var cols: Int; var rows: Int }
-        /// The grid we last told herdr about, so the local size report that
-        /// follows doesn't send it a second time.
-        @ObservationIgnored private var herdrSentGrid: Grid?
-        /// The grid a held resize is waiting to see repainted. A frame that
-        /// was already in flight when we asked carries the OLD size, and
-        /// releasing on it feeds a small screen into a buffer we just made
-        /// big — the leftovers below it are then a second, stale copy of the
-        /// UI sitting under the live one (user screenshot, build 382).
-        @ObservationIgnored private var herdrAwaitingResizeRepaint: Grid?
-        @ObservationIgnored private var herdrResizeReleaseTask: Task<Void, Never>?
-        /// How long a held resize may wait for its repaint. Past this the
-        /// local resize is taken anyway — a stale-but-correct-size screen
-        /// beats a view frozen at a size the remote has already left.
-        private static let herdrResizeRepaintTimeout: Duration = .milliseconds(1200)
-
-        /// Claim the pending release, if there is one. Returns true exactly
-        /// once per held resize.
-        func takeResizeRelease(width: Int, height: Int) -> Bool {
-            guard let awaited = herdrAwaitingResizeRepaint else { return false }
-            // Only the repaint for the size we asked for will do.
-            guard awaited == Grid(cols: width, rows: height) else { return false }
-            herdrAwaitingResizeRepaint = nil
-            herdrResizeReleaseTask?.cancel()
-            herdrResizeReleaseTask = nil
-            return true
-        }
-
-        private func armHerdrResizeRelease() {
-            herdrResizeReleaseTask?.cancel()
-            herdrResizeReleaseTask = Task { [weak self] in
-                try? await Task.sleep(for: Self.herdrResizeRepaintTimeout)
-                guard let self, !Task.isCancelled, herdrAwaitingResizeRepaint != nil else { return }
-                herdrAwaitingResizeRepaint = nil
-                coordinator.applyDeferredResize()
-            }
-        }
-
         /// Home, erase display, erase scrollback. Fed to the emulator the
         /// moment a switch starts, so the buffer stops holding the pane we
         /// are leaving. The veil hides the swap either way — this is about
@@ -1183,9 +1145,7 @@ final class SessionHub {
             // Auto-reconnect the moment the transport drops on its own (server
             // reboot, network change, NIO seeing the socket die on resume).
             await session.setOnUnexpectedClose { [weak self] in
-                Task { @MainActor [weak self] in
-                    await self?.connectionDropped(reason: "transport-closed")
-                }
+                Task { @MainActor [weak self] in await self?.connectionDropped() }
             }
             if let size = coordinator.lastReportedSize {
                 viewModel.resize(rows: size.rows, cols: size.cols)
@@ -1223,9 +1183,7 @@ final class SessionHub {
                 // that notices (真机取证 2026-08-19: frozen screen, 381
                 // unanswered commands, no reconnect).
                 controller.onChannelSilent = { [weak self] in
-                    Task { @MainActor [weak self] in
-                        await self?.connectionDropped(reason: "tmux-channel-silent")
-                    }
+                    Task { @MainActor [weak self] in await self?.connectionDropped() }
                 }
                 controller.pendingRestore = lastSelection   // land back on our pane
                 controller.configureAppearance(theme: theme, fontSize: fontSize, fontName: fontName,
@@ -1270,8 +1228,6 @@ final class SessionHub {
                     for await chunk in session.dataStream {
                         if Task.isCancelled { break }
                         coordinator.feed(data: chunk)
-                        // Proof of life for the keepalive — see noteInbound().
-                        await MainActor.run { self?.noteInbound() }
                     }
                     _ = self
                 }
@@ -1364,21 +1320,7 @@ final class SessionHub {
             // Keystrokes, size and scroll all become protocol messages now.
             coordinator.onInput = { [weak self] data in self?.sendInput(data) }
             coordinator.onSizeChange = { [weak self] cols, rows in
-                guard let self else { return }
-                // Skip the echo of a resize we already sent from the gate.
-                guard herdrSentGrid != Grid(cols: cols, rows: rows) else { return }
-                herdrSentGrid = Grid(cols: cols, rows: rows)
-                writeFrameCommand(HerdrFrameCommand.resize(cols: cols, rows: rows))
-            }
-            // Hold every shrink until the repaint that replaces what it
-            // destroys — see `TerminalHostContainer.shouldDeferResize`.
-            coordinator.shouldDeferResize = { [weak self] cols, rows in
-                guard let self, herdrFrameTarget != nil else { return false }
-                herdrSentGrid = Grid(cols: cols, rows: rows)
-                writeFrameCommand(HerdrFrameCommand.resize(cols: cols, rows: rows))
-                herdrAwaitingResizeRepaint = Grid(cols: cols, rows: rows)
-                armHerdrResizeRelease()
-                return true
+                self?.writeFrameCommand(HerdrFrameCommand.resize(cols: cols, rows: rows))
             }
             coordinator.onScroll = { [weak self] lines in
                 self?.scrollActiveTerminal(lines: lines)
@@ -1388,25 +1330,9 @@ final class SessionHub {
                 var parser = HerdrFrameParser()
                 for await chunk in session.dataStream {
                     if Task.isCancelled { break }
-                    await MainActor.run { self?.noteInbound() }
                     for frame in parser.consume(chunk) {
                         switch frame {
-                        case .screen(_, let width, let height, let full, let bytes):
-                            // A held-back resize and the repaint that answers
-                            // it must land in ONE turn: resize first (which
-                            // is where the buffer loses its bottom rows), then
-                            // paint the server's full screen over the result,
-                            // with nothing drawn in between. Matched on SIZE,
-                            // because a frame already in flight when we asked
-                            // describes the old one.
-                            if full {
-                                await MainActor.run {
-                                    guard let self,
-                                          self.takeResizeRelease(width: width, height: height)
-                                    else { return }
-                                    self.coordinator.applyDeferredResize()
-                                }
-                            }
+                        case .screen(_, _, _, let full, let bytes):
                             // Frames are ready-to-write escape sequences, and a
                             // `full` one already starts with its own clear +
                             // home — so both kinds just get fed.
@@ -1835,14 +1761,10 @@ final class SessionHub {
             }
             try? await ssh.write(Data((HerdrPushBoot.bootLine() + "\r").utf8))
             if await driver.activate() {
-                Log.ssh.notice("push: active — herdr events over a persistent channel")
                 herdrPush = driver
-                // The poll steps back to being a safety net now.
-                herdrControl?.pushActive = true
                 // Fold the subscribe's bootstrap replay into one fresh read.
                 herdrControl?.quicken()
             } else {
-                Log.ssh.notice("push: unavailable — staying on the poll")
                 herdrPushPump?.cancel()
                 herdrPushPump = nil
                 herdrPushSSH = nil
@@ -2195,9 +2117,7 @@ final class SessionHub {
                 // that notices (真机取证 2026-08-19: frozen screen, 381
                 // unanswered commands, no reconnect).
                 controller.onChannelSilent = { [weak self] in
-                    Task { @MainActor [weak self] in
-                        await self?.connectionDropped(reason: "tmux-channel-silent")
-                    }
+                    Task { @MainActor [weak self] in await self?.connectionDropped() }
                 }
                 controller.pendingRestore = lastSelection
                 controller.configureAppearance(theme: lastTheme, fontSize: lastFontSize, fontName: lastFontName,
@@ -2218,8 +2138,6 @@ final class SessionHub {
                     for await chunk in session.dataStream {
                         if Task.isCancelled { break }
                         coordinator.feed(data: chunk)
-                        // Proof of life for the keepalive — see noteInbound().
-                        await MainActor.run { self?.noteInbound() }
                     }
                     _ = self
                 }
@@ -2605,13 +2523,8 @@ final class SessionHub {
         }
 
         /// The transport died on its own — flag the UI and reconnect.
-        /// `reason` is for the log, not for logic: when a user reports "the
-        /// connection is unstable", the only useful question is WHICH of the
-        /// several death detectors fired, and that is unanswerable after the
-        /// fact unless each one says so at the time.
-        func connectionDropped(reason: String = "unspecified") async {
+        func connectionDropped() async {
             guard !isStopping else { return }
-            Log.ssh.notice("health: dropped (\(reason, privacy: .public)) — reconnecting")
             viewModel.markReconnecting()
             await reconnect()
         }
@@ -2625,32 +2538,7 @@ final class SessionHub {
             if moshTransport != nil { await resumeIfNeeded(); return }
             switch viewModel.status {
             case .connected:
-                // Bytes arrived recently: the connection is demonstrably
-                // working, so don't spend a channel asking.
-                guard inboundAge() >= Self.inboundProofWindow else {
-                    probeTimeouts = 0
-                    return
-                }
-                switch await probeTransport() {
-                case .alive:
-                    probeTimeouts = 0
-                case .failed:
-                    Log.ssh.notice("health: probe failed — reconnecting")
-                    probeTimeouts = 0
-                    viewModel.markReconnecting()
-                    await reconnect()
-                case .timedOut:
-                    probeTimeouts += 1
-                    guard probeTimeouts >= 2 else {
-                        // One silent probe is not proof of death. Hold the
-                        // session and ask again on the next tick; a genuinely
-                        // dead socket errors rather than going quiet, and that
-                        // path above still reconnects immediately.
-                        Log.ssh.notice("health: probe timed out (1) — holding")
-                        return
-                    }
-                    Log.ssh.notice("health: probe timed out twice — reconnecting")
-                    probeTimeouts = 0
+                if !(await isTransportAlive()) {
                     viewModel.markReconnecting()
                     await reconnect()
                 }
@@ -2783,43 +2671,6 @@ final class SessionHub {
         /// re-handshake (6–9s on that same link). 8s stays under the 12s
         /// keepalive tick while making slow-link false positives vanishingly
         /// rare; truly dead sockets still fail fast (write error / RST).
-        /// Wall clock of the last bytes this connection delivered, from any of
-        /// its pumps. A connection that is demonstrably carrying data does not
-        /// need to be asked whether it is alive — and asking costs a whole
-        /// fresh exec channel every 12s on top of whatever the control plane
-        /// is already doing (herdr polls one per 2-8s), which is real load on
-        /// exactly the flaky links where it hurts most.
-        @ObservationIgnored private var lastInboundAt: Date?
-
-        /// Stamp inbound traffic. Called from every pump that reads this
-        /// connection; cheap enough to call per chunk.
-        func noteInbound() { lastInboundAt = Date() }
-
-        /// Seconds since this connection last delivered anything, across the
-        /// hub's own pumps AND the tmux -CC controller's (which has its own
-        /// stamp, written from a detached pump).
-        func inboundAge() -> TimeInterval {
-            var newest = lastInboundAt ?? .distantPast
-            if let controlStream = tmuxController?.lastInboundAt, controlStream > newest {
-                newest = controlStream
-            }
-            // herdr's control plane answers on its OWN exec channels, which
-            // never touch the PTY stream the pumps above watch — an idle pane
-            // would look silent while the poller is happily round-tripping.
-            if let poll = herdrControl?.lastSuccessfulPoll, poll > newest {
-                newest = poll
-            }
-            return Date().timeIntervalSince(newest)
-        }
-
-        /// Traffic newer than this counts as proof of life, so the probe is
-        /// skipped entirely. Just under the keepalive tick, so a connection
-        /// that goes quiet is still probed on the very next one.
-        private static let inboundProofWindow: TimeInterval = 11
-
-        /// Consecutive probe TIMEOUTS (not failures) — see `keepAlive`.
-        @ObservationIgnored private var probeTimeouts = 0
-
         /// Probe deadline for `isTransportAlive`/`isSidecarAlive`. 8s absorbs
         /// a genuinely slow link (see the rationale above `isTransportAlive`);
         /// lifecycle tests shrink it so a scripted hang resolves in
@@ -2827,35 +2678,10 @@ final class SessionHub {
         @ObservationIgnored var probeTimeout: Double = 8
 
         func isTransportAlive(timeout: Double? = nil) async -> Bool {
-            await probeTransport(timeout: timeout) == .alive
-        }
-
-        /// What a liveness probe actually found. The distinction matters:
-        /// a dead socket ERRORS (write failure, RST) and that is proof, while
-        /// a timeout is only an absence of evidence — and on a lossy link the
-        /// absence is routine. Treating the two the same is what makes a
-        /// working session get torn down and re-handshaked (6-9s on the link
-        /// where it happens) because one probe was slow.
-        enum ProbeResult { case alive, failed, timedOut }
-
-        func probeTransport(timeout: Double? = nil) async -> ProbeResult {
-            guard let ssh = viewModel.session else { return .failed }
-            return await Self.probe(ssh, timeout: timeout ?? probeTimeout)
-        }
-
-        /// The probe itself, over any session — a trivial command and a
-        /// deadline. Static so a test can drive all three outcomes without
-        /// standing up a whole connection.
-        static func probe(_ ssh: SSHSession, timeout: Double) async -> ProbeResult {
-            let answered = await withTimeoutValue(timeout) { () -> Bool in
-                do { _ = try await ssh.executeCommand("true"); return true }
-                catch { return false }
-            }
-            switch answered {
-            case .some(true): return .alive
-            case .some(false): return .failed
-            case .none: return .timedOut
-            }
+            guard let ssh = viewModel.session else { return false }
+            return await withTimeoutValue(timeout ?? probeTimeout) {
+                try await ssh.executeCommand("true")
+            } != nil
         }
 
         /// Same real round-trip probe, aimed at the mosh sidecar. This must
@@ -2868,7 +2694,9 @@ final class SessionHub {
         /// occasionally surfaces an RST that flips the flag; long ones don't.
         func isSidecarAlive(timeout: Double? = nil) async -> Bool {
             guard let ssh = sidecarSSH else { return false }
-            return await Self.probe(ssh, timeout: timeout ?? probeTimeout) == .alive
+            return await withTimeoutValue(timeout ?? probeTimeout) {
+                try await ssh.executeCommand("true")
+            } != nil
         }
     }
 

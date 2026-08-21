@@ -72,48 +72,6 @@ final class TerminalHostContainer: UIView {
         }
     }
 
-    /// Timing of the keyboard transition in flight, so ``followBottomEdge``
-    /// can move with it instead of cutting. Set by
-    /// ``SwiftTerminalView/Coordinator/lockFrame(for:curve:)`` and cleared on
-    /// unlock; nil means "no transition — apply immediately".
-    var keyboardTransition: (duration: TimeInterval, options: UIView.AnimationOptions)?
-
-    /// Whether this transition has already taken its one resize. Bounded to
-    /// once because an interactive drag-dismiss re-lays-out repeatedly, and
-    /// resizing per pass is the buffer-reflow storm the hold exists to stop.
-    private var transitionResized = false
-
-    func beginKeyboardTransition() { transitionResized = false }
-
-    /// Asked before a size change is applied to the terminal. Returning true
-    /// means "hold it — I will call ``applyDeferredResize()`` when the repaint
-    /// that belongs with it has arrived."
-    ///
-    /// Why anyone would want that: shrinking a buffer is LOSSY. SwiftTerm
-    /// removes rows by popping the lines below the cursor first
-    /// (`Buffer.resize`), and a full-screen TUI puts its own furniture down
-    /// there — Claude Code's separator and its "bypass permissions" line sit
-    /// under the input box, and the keyboard coming up simply deleted them
-    /// (user screenshots). They come back only when the remote repaints, one
-    /// round trip later, and that gap is the jitter. Nothing local can fix
-    /// it: those rows are gone and only the server knows what was in them.
-    /// So don't take the loss until the replacement is in hand.
-    var shouldDeferResize: ((_ cols: Int, _ rows: Int) -> Bool)?
-    private var deferredResize: CGRect?
-
-    /// Apply the size change that ``shouldDeferResize`` held back. Call this
-    /// immediately BEFORE feeding the repaint that goes with it, so the two
-    /// land in one turn and the lossy moment is never drawn.
-    func applyDeferredResize() {
-        guard let target = deferredResize, let terminalView else { return }
-        deferredResize = nil
-        terminalView.frame = target
-        onTerminalLaidOut?(terminalView)
-    }
-
-    /// Whether a size change is being held back right now.
-    var hasDeferredResize: Bool { deferredResize != nil }
-
     func host(_ terminal: TerminalView) {
         guard terminal.superview !== self else { return }
         terminalView = terminal
@@ -147,153 +105,15 @@ final class TerminalHostContainer: UIView {
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        guard let terminalView else { return }
+        guard let terminalView, !frameLocked, !geometryHeld else { return }
         // Same guard as host(): a transient zero-bounds pass (sheet
         // transitions, remounts) must not squeeze a live buffer through the
         // minimum grid — that reflow doesn't round-trip.
         guard bounds.width > 0, bounds.height > 0 else { return }
-        // A modal hold freezes the frame outright: the terminal keeps the
-        // position AND size it had, and the space the keyboard vacated stays
-        // empty — which is fine, because the sheet is sitting on it.
-        //
-        // It must NOT bottom-follow the way a keyboard transition does. A
-        // sheet does not cover the whole screen (its top edge is around 40%
-        // down), so pushing the terminal to the container's bottom edge left
-        // the top HALF of the visible screen blank behind the list — user
-        // screenshot, and a regression from the keyboard work.
-        if geometryHeld { return }
-        if frameLocked {
-            followBottomEdge(terminalView)
-            return
-        }
-        // Whole points, not whatever fraction the layout arrived at. SwiftUI
-        // hands this view widths that oscillate by a THIRD of a point across
-        // consecutive passes (402.0 → 402.333 → 402.0, logged on a keyboard
-        // toggle), and a third of a point is enough to move
-        // floor(width / cellWidth) from 70 columns to 71 and back. Each flip
-        // is a full buffer reflow, a resize sent to the remote and a repaint
-        // of the whole screen — three of them for one keyboard toggle, and a
-        // width change re-wraps every line. Rounding is safe: a real width
-        // change is many points wide, and the grid floors to whole cells
-        // anyway.
-        let target = CGRect(x: 0, y: 0,
-                            width: bounds.width.rounded(),
-                            height: bounds.height.rounded())
-        if terminalView.frame != target {
-            if terminalView.frame.size != target.size, let shouldDeferResize {
-                let cell = TerminalCellGeometry.cellSize(of: terminalView)
-                let grid = TerminalCellGeometry.grid(for: target.size, cell: cell)
-                if grid.cols > 0, grid.rows > 0, shouldDeferResize(grid.cols, grid.rows) {
-                    deferredResize = target
-                    return
-                }
-            }
-            // Every grid change the user can see passes through here. Left
-            // unlogged, "the picture jumped" is unanswerable after the fact —
-            // and this path has already produced two of those (a third of a
-            // point of layout jitter flipping the column count; a keyboard
-            // hold that slid the content further than the resize would).
-            let before = terminalView.frame.size
-            terminalView.frame = target
-            if before != target.size {
-                let w0 = Double(before.width), h0 = Double(before.height)
-                let w1 = Double(target.width), h1 = Double(target.height)
-                Log.ssh.notice("layout: terminal \(w0, privacy: .public)x\(h0, privacy: .public) -> \(w1, privacy: .public)x\(h1, privacy: .public)")
-            }
+        if terminalView.frame != bounds {
+            terminalView.frame = bounds
         }
         onTerminalLaidOut?(terminalView)
-    }
-
-    /// While a KEYBOARD transition is in flight, slide the terminal to where
-    /// the pending resize is actually going to leave the content.
-    ///
-    /// Holding the frame is what stops the resize storm, but held *how* is
-    /// the whole difference between a transition and a jolt. Held still, a
-    /// rising keyboard clips the bottom of the screen away — the prompt, the
-    /// cursor, the line being typed — and the unlock's reflow slams it back
-    /// into view: measured at 60fps, the keyboard glided for fifteen frames
-    /// and the content teleported in one.
-    ///
-    /// So move it during the glide instead — but by the RIGHT amount, which
-    /// is not the keyboard's height. SwiftTerm shrinks a buffer by popping
-    /// the blank lines below the cursor first and only scrolling once they
-    /// run out (`Buffer.resize`), and grows it by pulling from scrollback
-    /// where there is any and appending blanks below where there isn't. So
-    /// the content typically moves a fraction of the keyboard's height, and
-    /// on a screen with room to spare it does not move at all. Sliding by the
-    /// keyboard's height instead overshot by 213pt on a real measurement and
-    /// the resize yanked it back — the "还是会跳动一下最后" report. Predicting
-    /// the same arithmetic the resize will do makes the unlock a no-op.
-    ///
-    /// Only the ORIGIN is animated, never the size: a layer translation, with
-    /// nothing for SwiftTerm to reflow mid-slide. The timing comes from the
-    /// keyboard's own notification, so the two move as one thing.
-    private func followBottomEdge(_ terminalView: TerminalView) {
-        // The band that opens up must not read as a hole — paint it the
-        // terminal's own background rather than whatever the host view is.
-        if let background = terminalView.backgroundColor, backgroundColor != background {
-            backgroundColor = background
-        }
-        let cell = TerminalCellGeometry.cellSize(of: terminalView)
-        guard cell.height > 0 else { return }
-        let terminal = terminalView.getTerminal()
-        let rows = terminal.rows
-        let newRows = TerminalCellGeometry.grid(for: CGSize(width: bounds.width.rounded(),
-                                                            height: bounds.height.rounded()),
-                                                cell: cell).rows
-        var shiftRows = 0
-        if newRows < rows {
-            // Only the rows that cannot be popped scroll the content up.
-            shiftRows = -max(0, terminal.buffer.y + 1 - newRows)
-        } else if newRows > rows {
-            // Refilling from scrollback pushes the content down; past what
-            // scrollback has, the new rows are blanks appended below.
-            shiftRows = min(newRows - rows, max(0, terminal.buffer.yDisp))
-        }
-        let target = CGRect(x: 0, y: 0,
-                            width: bounds.width.rounded(), height: bounds.height.rounded())
-        var rest: CGFloat = 0
-
-        if !transitionResized, target.height > terminalView.frame.height + 0.5 {
-            // The container GREW: the keyboard is uncovering space, and until
-            // the terminal grows into it that space is an empty band the user
-            // watches for the whole animation and then sees fill in one step.
-            //
-            // Offer it to the gate first. A transport that repaints on resize
-            // (the herdr frame channel) would rather hold the size until that
-            // repaint is in hand, because everything this side could put in
-            // the new rows — scrollback above, blanks below — is a guess the
-            // repaint then has to rearrange, and the rearranging is its own
-            // visible step. Transports that never repaint (a plain shell has
-            // no reason to) decline, and for them filling now with the
-            // local guess is the best there is.
-            transitionResized = true
-            let grid = TerminalCellGeometry.grid(for: target.size, cell: cell)
-            if grid.cols > 0, grid.rows > 0, shouldDeferResize?(grid.cols, grid.rows) == true {
-                deferredResize = target
-            } else {
-                terminalView.frame = CGRect(x: 0, y: (-CGFloat(shiftRows) * cell.height).rounded(),
-                                            width: target.width, height: target.height)
-            }
-        } else if target.height < terminalView.frame.height - 0.5 {
-            // The container SHRANK: hold the old size and slide. Resizing
-            // early here would open a band at the TOP instead — the space
-            // being taken away is under the rising keyboard, so nobody sees
-            // the oversized view hanging past the bottom.
-            rest = (CGFloat(shiftRows) * cell.height).rounded()
-        }
-
-        var frame = terminalView.frame
-        guard abs(frame.origin.y - rest) > 0.5 else { return }
-        frame.origin.y = rest
-        guard let transition = keyboardTransition else {
-            terminalView.frame = frame
-            return
-        }
-        UIView.animate(withDuration: transition.duration, delay: 0,
-                       options: [transition.options, .beginFromCurrentState,
-                                 .allowUserInteraction],
-                       animations: { terminalView.frame = frame })
     }
 }
 
@@ -367,7 +187,6 @@ struct SwiftTerminalView: UIViewRepresentable {
             existing.terminalDelegate = coordinator
             coordinator.attach(to: existing)   // gesture attach is idempotent
             coordinator.hostContainer = container
-        container.shouldDeferResize = coordinator.shouldDeferResize
             container.geometryHeld = geometryHeld
             theme.apply(to: existing)
             coordinator.enforcedCursor = TerminalCursor.apply(
@@ -441,7 +260,6 @@ struct SwiftTerminalView: UIViewRepresentable {
         let container = TerminalHostContainer()
         container.host(terminalView)
         coordinator.hostContainer = container
-        container.shouldDeferResize = coordinator.shouldDeferResize
         container.geometryHeld = geometryHeld
         return container
     }
@@ -913,16 +731,8 @@ struct SwiftTerminalView: UIViewRepresentable {
         /// duration; the safety timeout adds headroom for the settle. An
         /// interactive drag-dismiss keeps re-arming this until its final
         /// notification, so the lock follows the gesture.
-        func lockFrame(for duration: TimeInterval, curve: UIView.AnimationCurve? = nil) {
+        func lockFrame(for duration: TimeInterval) {
             guard let hostContainer else { return }
-            // The keyboard publishes its own duration and curve; matching them
-            // is what makes the terminal look attached to the keyboard rather
-            // than repainted after it (see `followBottomEdge`).
-            if let curve {
-                hostContainer.keyboardTransition = (
-                    duration, UIView.AnimationOptions(rawValue: UInt(curve.rawValue) << 16))
-            }
-            hostContainer.beginKeyboardTransition()
             hostContainer.frameLocked = true
             frameLockTimeout?.cancel()
             let work = DispatchWorkItem { [weak self] in self?.unlockFrame() }
@@ -931,24 +741,12 @@ struct SwiftTerminalView: UIViewRepresentable {
                                           execute: work)
         }
 
-        /// See ``TerminalHostContainer/shouldDeferResize``. Installed by the
-        /// owner of the transport; nil means resizes apply immediately.
-        var shouldDeferResize: ((_ cols: Int, _ rows: Int) -> Bool)? {
-            didSet { hostContainer?.shouldDeferResize = shouldDeferResize }
-        }
-
-        /// Apply a held-back resize, immediately before feeding its repaint.
-        func applyDeferredResize() { hostContainer?.applyDeferredResize() }
-
-        var hasDeferredResize: Bool { hostContainer?.hasDeferredResize ?? false }
-
         /// Let the terminal adopt the container's (now settled) bounds — one
         /// resize, one reflow, one remote size report. Idempotent.
         func unlockFrame() {
             frameLockTimeout?.cancel()
             frameLockTimeout = nil
             guard let hostContainer else { return }
-            hostContainer.keyboardTransition = nil
             hostContainer.frameLocked = false
         }
 
@@ -1052,9 +850,7 @@ struct SwiftTerminalView: UIViewRepresentable {
                 else { return }
                 let duration = (note.userInfo?[UIResponder.keyboardAnimationDurationUserInfoKey]
                                 as? TimeInterval) ?? 0.25
-                let curve = (note.userInfo?[UIResponder.keyboardAnimationCurveUserInfoKey] as? Int)
-                    .flatMap(UIView.AnimationCurve.init(rawValue:))
-                self?.lockFrame(for: duration, curve: curve)
+                self?.lockFrame(for: duration)
             }
             if let keyboardDidObserver {
                 NotificationCenter.default.removeObserver(keyboardDidObserver)
