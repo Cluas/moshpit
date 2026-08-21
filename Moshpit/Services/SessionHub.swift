@@ -615,6 +615,38 @@ final class SessionHub {
         /// How long to wait for the retarget loop to announce itself before
         /// assuming this host can't run it.
         private static let herdrLoopProbe: Duration = .milliseconds(2500)
+        struct Grid: Equatable { var cols: Int; var rows: Int }
+        /// The grid we last told herdr about, so the local size report that
+        /// follows doesn't send it a second time.
+        @ObservationIgnored private var herdrSentGrid: Grid?
+        /// A resize is held, waiting for the repaint that goes with it.
+        @ObservationIgnored private var herdrAwaitingResizeRepaint = false
+        @ObservationIgnored private var herdrResizeReleaseTask: Task<Void, Never>?
+        /// How long a held resize may wait for its repaint. Past this the
+        /// local resize is taken anyway — a stale-but-correct-size screen
+        /// beats a view frozen at a size the remote has already left.
+        private static let herdrResizeRepaintTimeout: Duration = .milliseconds(1200)
+
+        /// Claim the pending release, if there is one. Returns true exactly
+        /// once per held resize.
+        func takeResizeRelease() -> Bool {
+            guard herdrAwaitingResizeRepaint else { return false }
+            herdrAwaitingResizeRepaint = false
+            herdrResizeReleaseTask?.cancel()
+            herdrResizeReleaseTask = nil
+            return true
+        }
+
+        private func armHerdrResizeRelease() {
+            herdrResizeReleaseTask?.cancel()
+            herdrResizeReleaseTask = Task { [weak self] in
+                try? await Task.sleep(for: Self.herdrResizeRepaintTimeout)
+                guard let self, !Task.isCancelled, herdrAwaitingResizeRepaint else { return }
+                herdrAwaitingResizeRepaint = false
+                coordinator.applyDeferredResize()
+            }
+        }
+
         /// Home, erase display, erase scrollback. Fed to the emulator the
         /// moment a switch starts, so the buffer stops holding the pane we
         /// are leaving. The veil hides the swap either way — this is about
@@ -1326,7 +1358,21 @@ final class SessionHub {
             // Keystrokes, size and scroll all become protocol messages now.
             coordinator.onInput = { [weak self] data in self?.sendInput(data) }
             coordinator.onSizeChange = { [weak self] cols, rows in
-                self?.writeFrameCommand(HerdrFrameCommand.resize(cols: cols, rows: rows))
+                guard let self else { return }
+                // Skip the echo of a resize we already sent from the gate.
+                guard herdrSentGrid != Grid(cols: cols, rows: rows) else { return }
+                herdrSentGrid = Grid(cols: cols, rows: rows)
+                writeFrameCommand(HerdrFrameCommand.resize(cols: cols, rows: rows))
+            }
+            // Hold every shrink until the repaint that replaces what it
+            // destroys — see `TerminalHostContainer.shouldDeferResize`.
+            coordinator.shouldDeferResize = { [weak self] cols, rows in
+                guard let self, herdrFrameTarget != nil else { return false }
+                herdrSentGrid = Grid(cols: cols, rows: rows)
+                writeFrameCommand(HerdrFrameCommand.resize(cols: cols, rows: rows))
+                herdrAwaitingResizeRepaint = true
+                armHerdrResizeRelease()
+                return true
             }
             coordinator.onScroll = { [weak self] lines in
                 self?.scrollActiveTerminal(lines: lines)
@@ -1340,6 +1386,17 @@ final class SessionHub {
                     for frame in parser.consume(chunk) {
                         switch frame {
                         case .screen(_, _, _, let full, let bytes):
+                            // A held-back resize and the repaint that answers
+                            // it must land in ONE turn: resize first (which
+                            // is where the buffer loses its bottom rows), then
+                            // paint the server's full screen over the result,
+                            // with nothing drawn in between.
+                            if full {
+                                await MainActor.run {
+                                    guard let self, self.takeResizeRelease() else { return }
+                                    self.coordinator.applyDeferredResize()
+                                }
+                            }
                             // Frames are ready-to-write escape sequences, and a
                             // `full` one already starts with its own clear +
                             // home — so both kinds just get fed.

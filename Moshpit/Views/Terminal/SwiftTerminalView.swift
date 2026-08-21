@@ -85,6 +85,35 @@ final class TerminalHostContainer: UIView {
 
     func beginKeyboardTransition() { transitionResized = false }
 
+    /// Asked before a size change is applied to the terminal. Returning true
+    /// means "hold it — I will call ``applyDeferredResize()`` when the repaint
+    /// that belongs with it has arrived."
+    ///
+    /// Why anyone would want that: shrinking a buffer is LOSSY. SwiftTerm
+    /// removes rows by popping the lines below the cursor first
+    /// (`Buffer.resize`), and a full-screen TUI puts its own furniture down
+    /// there — Claude Code's separator and its "bypass permissions" line sit
+    /// under the input box, and the keyboard coming up simply deleted them
+    /// (user screenshots). They come back only when the remote repaints, one
+    /// round trip later, and that gap is the jitter. Nothing local can fix
+    /// it: those rows are gone and only the server knows what was in them.
+    /// So don't take the loss until the replacement is in hand.
+    var shouldDeferResize: ((_ cols: Int, _ rows: Int) -> Bool)?
+    private var deferredResize: CGRect?
+
+    /// Apply the size change that ``shouldDeferResize`` held back. Call this
+    /// immediately BEFORE feeding the repaint that goes with it, so the two
+    /// land in one turn and the lossy moment is never drawn.
+    func applyDeferredResize() {
+        guard let target = deferredResize, let terminalView else { return }
+        deferredResize = nil
+        terminalView.frame = target
+        onTerminalLaidOut?(terminalView)
+    }
+
+    /// Whether a size change is being held back right now.
+    var hasDeferredResize: Bool { deferredResize != nil }
+
     func host(_ terminal: TerminalView) {
         guard terminal.superview !== self else { return }
         terminalView = terminal
@@ -151,6 +180,14 @@ final class TerminalHostContainer: UIView {
                             width: bounds.width.rounded(),
                             height: bounds.height.rounded())
         if terminalView.frame != target {
+            if terminalView.frame.size != target.size, let shouldDeferResize {
+                let cell = TerminalCellGeometry.cellSize(of: terminalView)
+                let grid = TerminalCellGeometry.grid(for: target.size, cell: cell)
+                if grid.cols > 0, grid.rows > 0, shouldDeferResize(grid.cols, grid.rows) {
+                    deferredResize = target
+                    return
+                }
+            }
             // Every grid change the user can see passes through here. Left
             // unlogged, "the picture jumped" is unanswerable after the fact —
             // and this path has already produced two of those (a third of a
@@ -220,15 +257,24 @@ final class TerminalHostContainer: UIView {
         if !transitionResized, target.height > terminalView.frame.height + 0.5 {
             // The container GREW: the keyboard is uncovering space, and until
             // the terminal grows into it that space is an empty band the user
-            // watches for the whole animation and then sees fill in one step
-            // — "从展开到收起还是会有一次闪跳". So take the resize NOW, while
-            // the keyboard is still moving, and offset the view by exactly
-            // what the resize moved the content so nothing appears to jump.
-            // The slide below then walks that offset back to zero on the
-            // keyboard's own curve.
+            // watches for the whole animation and then sees fill in one step.
+            //
+            // Offer it to the gate first. A transport that repaints on resize
+            // (the herdr frame channel) would rather hold the size until that
+            // repaint is in hand, because everything this side could put in
+            // the new rows — scrollback above, blanks below — is a guess the
+            // repaint then has to rearrange, and the rearranging is its own
+            // visible step. Transports that never repaint (a plain shell has
+            // no reason to) decline, and for them filling now with the
+            // local guess is the best there is.
             transitionResized = true
-            terminalView.frame = CGRect(x: 0, y: (-CGFloat(shiftRows) * cell.height).rounded(),
-                                        width: target.width, height: target.height)
+            let grid = TerminalCellGeometry.grid(for: target.size, cell: cell)
+            if grid.cols > 0, grid.rows > 0, shouldDeferResize?(grid.cols, grid.rows) == true {
+                deferredResize = target
+            } else {
+                terminalView.frame = CGRect(x: 0, y: (-CGFloat(shiftRows) * cell.height).rounded(),
+                                            width: target.width, height: target.height)
+            }
         } else if target.height < terminalView.frame.height - 0.5 {
             // The container SHRANK: hold the old size and slide. Resizing
             // early here would open a band at the TOP instead — the space
@@ -321,6 +367,7 @@ struct SwiftTerminalView: UIViewRepresentable {
             existing.terminalDelegate = coordinator
             coordinator.attach(to: existing)   // gesture attach is idempotent
             coordinator.hostContainer = container
+        container.shouldDeferResize = coordinator.shouldDeferResize
             container.geometryHeld = geometryHeld
             theme.apply(to: existing)
             coordinator.enforcedCursor = TerminalCursor.apply(
@@ -394,6 +441,7 @@ struct SwiftTerminalView: UIViewRepresentable {
         let container = TerminalHostContainer()
         container.host(terminalView)
         coordinator.hostContainer = container
+        container.shouldDeferResize = coordinator.shouldDeferResize
         container.geometryHeld = geometryHeld
         return container
     }
@@ -882,6 +930,17 @@ struct SwiftTerminalView: UIViewRepresentable {
             DispatchQueue.main.asyncAfter(deadline: .now() + max(duration, 0.1) + 0.15,
                                           execute: work)
         }
+
+        /// See ``TerminalHostContainer/shouldDeferResize``. Installed by the
+        /// owner of the transport; nil means resizes apply immediately.
+        var shouldDeferResize: ((_ cols: Int, _ rows: Int) -> Bool)? {
+            didSet { hostContainer?.shouldDeferResize = shouldDeferResize }
+        }
+
+        /// Apply a held-back resize, immediately before feeding its repaint.
+        func applyDeferredResize() { hostContainer?.applyDeferredResize() }
+
+        var hasDeferredResize: Bool { hostContainer?.hasDeferredResize ?? false }
 
         /// Let the terminal adopt the container's (now settled) bounds — one
         /// resize, one reflow, one remote size report. Idempotent.
