@@ -419,6 +419,150 @@ final class TmuxSessionController: MultiplexerControlling {
     @ObservationIgnored
     private(set) var resizedWindows: Set<String> = []
 
+    /// A window's pane layout as it was BEFORE we touched it: the raw
+    /// `#{window_layout}` string, the pane the USER had zoomed (nil when the
+    /// window wasn't zoomed) and the pane count that string describes.
+    private struct PristineLayout {
+        let layout: String
+        let zoomedPane: String?
+        let paneCount: Int
+    }
+
+    /// Pre-Moshpit layouts for the windows we pinned or zoomed, put back
+    /// verbatim when we hand a window over (leave / background / disconnect).
+    ///
+    /// Why this is needed: the phone-sized pin is not free. tmux's
+    /// `resize_window()` unzooms, runs `layout_resize()` over the WHOLE layout
+    /// tree, then re-zooms — so pinning a split window to the phone grid
+    /// squashes the user's real layout, and once panes hit their minimum size
+    /// the proportions are gone for good (measured on tmux 3.6: an 8-pane
+    /// 203x60 layout round-tripped through 39x20 comes back with completely
+    /// different splits). The zoom itself is lossless; the PIN is what
+    /// destroys the layout, which is why the record must predate it.
+    ///
+    /// Re-captured on every re-pin (a restore consumes the record), so a layout
+    /// the user rearranged from the desktop while we were backgrounded becomes
+    /// the new pristine state instead of being clobbered by a stale one.
+    @ObservationIgnored
+    private var pristineLayouts: [String: PristineLayout] = [:]
+
+    /// Windows whose capture round-trip is still in flight — stops a pin
+    /// followed immediately by a zoom from firing two queries (the second would
+    /// read the already-squashed layout back).
+    @ObservationIgnored
+    private var pristineCapturesInFlight: Set<String> = []
+
+    /// Remember a window's layout before we pin or zoom it. MUST be called
+    /// BEFORE the command that changes it — tmux processes control-channel
+    /// commands in FIFO order, so a query queued ahead of the pin reports the
+    /// pre-pin state even though its reply lands later.
+    ///
+    /// `#{window_layout}` is the UNZOOMED layout even while a pane is zoomed
+    /// (verified on tmux 3.6), so a zoom we already applied can't corrupt the
+    /// record — a pin would, hence the `resizedWindows` guard: a layout
+    /// captured at phone size must never be replayed at a desktop client.
+    private func capturePristineLayout(_ windowId: String) {
+        guard snapshot.isAttached,
+              pristineLayouts[windowId] == nil,
+              !pristineCapturesInFlight.contains(windowId),
+              !resizedWindows.contains(windowId) else { return }
+        pristineCapturesInFlight.insert(windowId)
+        sendCommand("display-message -p -t '\(windowId)' '\(Self.pristineProbeFormat)'") { [weak self] response in
+            guard let self else { return }
+            self.pristineCapturesInFlight.remove(windowId)
+            guard !response.isError, let line = response.lines.first else { return }
+            self.notePristineLayout(windowId, fields: line.split(separator: " ").map(String.init))
+        }
+    }
+
+    /// `#{window_panes} #{window_zoomed_flag} #{pane_id} #{window_layout}` —
+    /// shared by ``capturePristineLayout`` and ``ensureImmersiveZoom`` so
+    /// landing on a window costs ONE probe, not two (the zoom needs the first
+    /// two fields, the record needs all four).
+    static let pristineProbeFormat =
+        "#{window_panes} #{window_zoomed_flag} #{pane_id} #{window_layout}"
+
+    /// File a probe reply as a window's pristine record, if it qualifies.
+    ///
+    /// Callers own the "is this reply pre-pin?" question: ``capturePristineLayout``
+    /// queues its probe ahead of the pin, so its reply always is; a probe queued
+    /// after one (``ensureImmersiveZoom``'s) describes the already-squashed
+    /// layout and must be filed only when no pin is in effect.
+    private func notePristineLayout(_ windowId: String, fields: [String]) {
+        guard pristineLayouts[windowId] == nil else { return }
+        // Single-pane windows have nothing to restore, and an unrecognisable
+        // layout must never be spliced into `select-layout`.
+        guard fields.count >= 4, let panes = Int(fields[0]), panes > 1,
+              Self.isPlausibleLayout(fields[3]) else { return }
+        let zoomedPane = (fields[1] == "1" && Self.isValidTmuxId(fields[2])) ? fields[2] : nil
+        pristineLayouts[windowId] = PristineLayout(layout: fields[3],
+                                                   zoomedPane: zoomedPane,
+                                                   paneCount: panes)
+    }
+
+    /// A tmux layout string: four hex checksum digits, a comma, then nothing but
+    /// digits and layout punctuation. Cheap sanity gate so a surprise reply (an
+    /// error line, a truncated field) can't reach `select-layout`. nonisolated
+    /// so it's unit-testable without a live tmux server.
+    nonisolated static func isPlausibleLayout(_ layout: String) -> Bool {
+        guard layout.count > 6, layout.count < 4096 else { return false }
+        let parts = layout.split(separator: ",", maxSplits: 1)
+        guard parts.count == 2, parts[0].count == 4,
+              parts[0].allSatisfy(\.isHexDigit) else { return false }
+        return parts[1].allSatisfy { $0.isNumber || "x,[]{}".contains($0) }
+    }
+
+    /// True when the captured record still describes the window we'd replay it
+    /// at. Panes coming or going since the capture (a split from the phone, a
+    /// shell exiting) makes it describe a window that no longer exists —
+    /// replaying it would rearrange panes the user never asked us to touch.
+    private func pristineStillApplies(_ windowId: String, _ pristine: PristineLayout) -> Bool {
+        guard let window = snapshot.windows[windowId] else { return true }
+        return window.paneCount == pristine.paneCount
+    }
+
+    /// Put a window's captured layout (and the user's own zoom) back, consuming
+    /// the record.
+    ///
+    /// Order is the CALLER's job: the phone-sized pin must already be released,
+    /// or tmux refits the layout we just replayed straight back down to the
+    /// phone grid (measured: restoring while still pinned is a no-op).
+    /// `select-layout` with an explicit string resizes the window to the
+    /// layout's own size, so the pre-Moshpit state comes back byte-identical
+    /// even with no other client attached — and it unzooms, which is why the
+    /// zoom is re-applied afterwards only when the user had zoomed it
+    /// themselves (`resize-pane -Z` on a pane target also re-selects it, which
+    /// is exactly the state they left).
+    private func restorePristineLayout(_ windowId: String) {
+        guard let pristine = pristineLayouts.removeValue(forKey: windowId) else { return }
+        guard pristineStillApplies(windowId, pristine) else { return }
+        send(rawCommand: "select-layout -t '\(windowId)' '\(pristine.layout)'")
+        if let pane = pristine.zoomedPane {
+            send(rawCommand: "resize-pane -Z -t '\(pane)'")
+        }
+    }
+
+    /// The same restore as ``restorePristineLayout``, handed out as commands for
+    /// teardown paths that must run OUTSIDE the -CC channel: an in-band write
+    /// races the detach and gets lost (the reason pin release moved to a
+    /// one-shot exec channel too). Consumes the records. Targets are `@id`/
+    /// `%id`, which survive the login shell that channel goes through (a `$id`
+    /// would not — see ``restoreSuppressedStatusAndFlush``), and the layout
+    /// string is single-quoted so its `{}` reach tmux intact.
+    func pristineLayoutRestoreCommands() -> [String] {
+        defer { pristineLayouts.removeAll() }
+        var commands: [String] = []
+        for windowId in pristineLayouts.keys.sorted() {
+            guard let pristine = pristineLayouts[windowId],
+                  pristineStillApplies(windowId, pristine) else { continue }
+            commands.append("select-layout -t \(windowId) '\(pristine.layout)'")
+            if let pane = pristine.zoomedPane {
+                commands.append("resize-pane -Z -t \(pane)")
+            }
+        }
+        return commands
+    }
+
     /// Which window `recentReclaimTimestamps` is currently tracking — reset
     /// (along with the timestamps and any suspension) the moment a DIFFERENT
     /// window drifts, so one window's tug-of-war can't suppress reclaiming a
@@ -450,6 +594,7 @@ final class TmuxSessionController: MultiplexerControlling {
     /// width. No-op in control-plane mode (mosh sidecar renders nothing).
     private func fitWindowToClient(_ windowId: String) {
         guard rendersOutput else { return }
+        capturePristineLayout(windowId)
         send(rawCommand: "resize-window -t \(windowId) -x \(lastClientSize.cols) -y \(lastClientSize.rows)")
         resizedWindows.insert(windowId)
     }
@@ -483,6 +628,7 @@ final class TmuxSessionController: MultiplexerControlling {
         lastClientSize = (cols, rows)
         send(rawCommand: "refresh-client -C \(cols)x\(rows)")
         if let win = snapshot.activeWindowId {
+            capturePristineLayout(win)
             send(rawCommand: "resize-window -t \(win) -x \(cols) -y \(rows)")
             resizedWindows.insert(win)
         }
@@ -1002,10 +1148,9 @@ final class TmuxSessionController: MultiplexerControlling {
     /// back. Only the currently-active window stays pinned to our size; on
     /// return, fitWindowToClient re-pins it.
     ///
-    /// Deliberately does NOT restore zoom/split state. Moshpit's presentation is
-    /// one full-screen pane — whichever pane the user selects gets zoomed —
-    /// and the original split layout is not ours to curate; anyone who wants
-    /// the split back is one `prefix z` away.
+    /// The split layout and zoom state we found are restored too — see
+    /// ``pristineLayouts`` for why the pin destroys the layout and
+    /// ``restorePristineLayout`` for why the unpin has to come first.
     private func releaseWindowPin(_ windowId: String) {
         if resizedWindows.contains(windowId) {
             resizedWindows.remove(windowId)
@@ -1014,6 +1159,7 @@ final class TmuxSessionController: MultiplexerControlling {
             // manual, which kept stranding desktop clients.)
             send(rawCommand: "set-option -u -w -t \(windowId) window-size")
         }
+        restorePristineLayout(windowId)
     }
 
     /// True between `releaseWindowPins()` and the next `repinActiveWindow()` —
@@ -1066,6 +1212,11 @@ final class TmuxSessionController: MultiplexerControlling {
             send(rawCommand: "set-option -u -w -t \(win) window-size")
         }
         resizedWindows.removeAll()
+        //  3. Our phone-sized pin also squashed any split layout it covered,
+        //     and our immersive zoom hid it. Both go back now — AFTER the
+        //     unpin above, or the replayed layout is just refitted to the
+        //     phone grid. `repinActiveWindow()` re-captures and re-zooms.
+        for win in Array(pristineLayouts.keys) { restorePristineLayout(win) }
         // From here output goes to the bell scanners instead of SwiftTerm's
         // parser; start them clean so a sequence split across this boundary
         // can't leave one stuck mid-string.
@@ -1084,8 +1235,13 @@ final class TmuxSessionController: MultiplexerControlling {
         guard snapshot.isAttached, let win = snapshot.activeWindowId else { return }
         send(rawCommand: "refresh-client -f !ignore-size")
         send(rawCommand: "refresh-client -C \(lastClientSize.cols)x\(lastClientSize.rows)")
+        capturePristineLayout(win)
         send(rawCommand: "resize-window -t \(win) -x \(lastClientSize.cols) -y \(lastClientSize.rows)")
         resizedWindows.insert(win)
+        // `releaseWindowPins` handed the split layout back (which unzooms), so
+        // the single-pane presentation has to be re-established here — it is no
+        // longer left standing while we're away.
+        ensureImmersiveZoom()
         // Catch the screen up to everything that happened while we were away.
         //
         // `handlePaneOutput` drops `%output` for as long as the pin is handed
@@ -1243,15 +1399,23 @@ final class TmuxSessionController: MultiplexerControlling {
 
     /// Moshpit shows ONE pane full-screen (both SSH and mosh). If the active
     /// window has splits and isn't zoomed, zoom its active pane so it uses the
-    /// full width. Single-pane windows need nothing. The zoom is left in place
-    /// on leave/disconnect — the split layout is not ours to curate (the user
-    /// always picks one pane; `prefix z` brings the split back anywhere).
+    /// full width. Single-pane windows need nothing. Undone when we hand the
+    /// window back (leave / background / disconnect), together with the layout
+    /// the pin squashed — see ``pristineLayouts``.
     private func ensureImmersiveZoom() {
         guard let windowId = snapshot.activeWindowId else { return }
-        sendCommand("display-message -p -t '\(windowId)' '#{window_zoomed_flag} #{window_panes}'") { [weak self] response in
+        sendCommand("display-message -p -t '\(windowId)' '\(Self.pristineProbeFormat)'") { [weak self] response in
             guard let self, let line = response.lines.first else { return }
-            let parts = line.split(separator: " ")
-            guard parts.count >= 2, parts[0] == "0", (Int(parts[1]) ?? 1) > 1 else { return }
+            let fields = line.split(separator: " ").map(String.init)
+            // Same reply, two jobs: the pane count and zoom flag this needs,
+            // and the pristine record — but only on the paths where the zoom is
+            // all we do (mosh sidecar, a window we never pinned). Behind a pin,
+            // this reply already describes the squashed layout, and the probe
+            // `fitWindowToClient` queued ahead of that pin is the real record.
+            if !self.resizedWindows.contains(windowId) {
+                self.notePristineLayout(windowId, fields: fields)
+            }
+            guard fields.count >= 2, (Int(fields[0]) ?? 1) > 1, fields[1] == "0" else { return }
             self.send(rawCommand: "resize-pane -Z -t '\(windowId)'")
         }
     }

@@ -2460,15 +2460,21 @@ final class SessionHub {
                 // in-band -CC write, which raced the teardown and left windows
                 // stuck at the phone size (`resize-window -A` clears the manual
                 // size override; tmux then re-sizes to the desktop client).
-                // Zoom is deliberately left as-is: Moshpit's model is "the user
-                // picks one pane, full-screen" — the split layout isn't ours
-                // to restore (`prefix z` brings it back anywhere).
+                // The split layout our pin squashed (and the zoom that hid
+                // it) go back over the same channel, AFTER the unpin — see
+                // TmuxSessionController.pristineLayouts.
                 if let ssh = viewModel.session {
                     let tmux = connection.tmuxPath ?? "tmux"
                     for win in controller.resizedWindows {
                         // Unset the per-window override — the real "back to
                         // automatic" (`resize-window -A` re-pins, still manual).
                         _ = try? await ssh.executeCommand("\(tmux) set-option -u -w -t \(win) window-size")
+                    }
+                    // Strictly after the loop above: replayed while the window
+                    // is still pinned, the layout is just refitted to the phone
+                    // grid and the restore is lost.
+                    for command in controller.pristineLayoutRestoreCommands() {
+                        _ = try? await ssh.executeCommand("\(tmux) \(command)")
                     }
                 }
                 await controller.detach()
@@ -2483,7 +2489,7 @@ final class SessionHub {
                 await control.restoreSuppressedStatusAndFlush()
                 // Restore window sizes over a ONE-SHOT exec channel on the
                 // sidecar SSH connection (these target windows by `@id`, which
-                // survives the shell). Zoom is left as-is — see the SSH path.
+                // survives the shell), then the layout/zoom — see the SSH path.
                 if let ssh = sidecarSSH {
                     let tmux = connection.tmuxPath ?? "tmux"
                     // Un-pin the windows we resized to the phone grid so other
@@ -2493,6 +2499,10 @@ final class SessionHub {
                     // it can't race teardown (same as the SSH path above).
                     for win in control.resizedWindows {
                         _ = try? await ssh.executeCommand("\(tmux) set-option -u -w -t \(win) window-size")
+                    }
+                    // After the unpin, never before: see the SSH path.
+                    for command in control.pristineLayoutRestoreCommands() {
+                        _ = try? await ssh.executeCommand("\(tmux) \(command)")
                     }
                 }
                 await control.detach()

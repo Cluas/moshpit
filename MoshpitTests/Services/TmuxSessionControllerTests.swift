@@ -358,17 +358,21 @@ struct TmuxSessionControllerTests {
         // Answer the fresh attach's backfill probe + dump so nothing is left in
         // flight to park the repaint behind (see `backfillsInFlight`). tmux
         // answers every command in send order, so the FIFO here is: the probe,
-        // the window pin (no callback, but it still takes a reply slot), then
-        // the dump the probe's reply enqueued.
+        // the pin's own layout probe (`pristineLayouts` — one pane, so nothing
+        // is recorded), the window pin (no callback, but it still takes a reply
+        // slot), then the dump the first probe's reply enqueued.
         transport.pushText("""
         %begin 4 4 0
         0 0
         %end 4 4 0
         %begin 5 5 0
+        1 0 %0 81x24,0,0,0
         %end 5 5 0
         %begin 6 6 0
-        hello
         %end 6 6 0
+        %begin 7 7 0
+        hello
+        %end 7 7 0
 
         """)
         _ = await waitUntil {
@@ -1917,7 +1921,9 @@ struct TmuxSessionControllerTests {
         // the %window-add notification below, so it's all one FIFO batch):
         // backfill probe ×2, auto-resync frame, auto-resync cursor,
         // backfill capture ×2 — matching send order after a 2-pane fresh
-        // attach.
+        // attach — PLUS the layout probe the window pin queues ahead of itself
+        // (see `pristineLayouts`), which is why there is one filler more than
+        // commands listed above.
         transport.pushText("""
         %begin 4 4 0
         0 0
@@ -1934,6 +1940,8 @@ struct TmuxSessionControllerTests {
         %end 8 8 0
         %begin 9 9 0
         %end 9 9 0
+        %begin 10 10 0
+        %end 10 10 0
 
         """)
 
@@ -1943,14 +1951,14 @@ struct TmuxSessionControllerTests {
         transport.pushText("%window-add @9\n")
         _ = await waitUntil { controller.snapshot.windows["@9"] != nil }
         transport.pushText("""
-        %begin 10 10 0
+        %begin 11 11 0
         $0 @0 0 81x24,0,0,0 0 1 main
         $0 @1 1 81x24,0,0,1 1 1 logs
-        %end 10 10 0
-        %begin 11 11 0
+        %end 11 11 0
+        %begin 12 12 0
         %0 @0 0 80 24 1 zsh
         %1 @1 0 80 24 1 vim
-        %end 11 11 0
+        %end 12 12 0
 
         """)
 
@@ -2011,6 +2019,223 @@ struct TmuxSessionControllerTests {
         let newCommands = after.dropFirst(baseline)
         #expect(!newCommands.contains { $0.hasPrefix("select-window") },
                 "local fallback must not move tmux's shared current window")
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // Pristine split layout: captured before the pin, replayed after it
+    // ─────────────────────────────────────────────────────────────
+
+    /// The layout a three-pane window is discovered with — and the exact string
+    /// the restore must replay.
+    private var splitLayout: String {
+        "4b9d,203x60,0,0[203x30,0,0,0,203x29,0,31{101x29,0,31,1,101x29,102,31,2}]"
+    }
+
+    /// Discovery for one session whose single window @0 holds THREE panes —
+    /// the case where our phone-sized pin squashes a real layout.
+    private func pushThreePaneDiscovery(_ transport: MockTmuxTransport) {
+        transport.pushText("""
+        %begin 1 1 0
+        $0 1 main
+        %end 1 1 0
+        %begin 2 2 0
+        $0 @0 0 \(splitLayout) 1 3 main
+        %end 2 2 0
+        %begin 3 3 0
+        %0 @0 0 203 30 1 bash
+        %1 @0 1 101 29 0 bash
+        %2 @0 2 101 29 0 bash
+        %end 3 3 0
+
+        """)
+    }
+
+    /// Attach, discover a three-pane window, pin it to the phone grid, and
+    /// answer the capture probe with `panes zoomed activePane layout`.
+    /// Returns the controller, the transport and the reply count so far.
+    private func pinnedSplitWorld(
+        capture: String
+    ) async -> (TmuxSessionController, MockTmuxTransport, Int) {
+        let (controller, transport) = await makeAttachedController()
+        _ = await waitUntil { await transport.recordedCommands().count >= 3 }
+        pushThreePaneDiscovery(transport)
+        #expect(await waitUntil { controller.snapshot.activeWindowId == "@0" })
+        var answered = 3
+
+        controller.resizeClient(rows: 35, cols: 70)
+        _ = await waitUntil {
+            await transport.recordedCommands().contains { $0.hasPrefix("resize-window -t @0") }
+        }
+        // Answer everything in FIFO order, feeding the capture probe the
+        // pre-pin state a real tmux would report.
+        for _ in 0..<3 {
+            answered = await answerPending(transport, answered: answered) { cmd, i in
+                cmd.contains("#{window_layout}") ? block(i + 10, capture) : block(i + 10, "")
+            }
+            try? await Task.sleep(for: .milliseconds(20))
+        }
+        return (controller, transport, answered)
+    }
+
+    @Test("the layout probe is queued BEFORE the pin that would squash it")
+    func captureProbePrecedesThePin() async throws {
+        let (controller, transport) = await makeAttachedController()
+        _ = await waitUntil { await transport.recordedCommands().count >= 3 }
+        pushThreePaneDiscovery(transport)
+        #expect(await waitUntil { controller.snapshot.activeWindowId == "@0" })
+
+        controller.resizeClient(rows: 35, cols: 70)
+        #expect(await waitUntil {
+            await transport.recordedCommands().contains { $0.hasPrefix("resize-window -t @0") }
+        })
+
+        let cmds = await transport.recordedCommands()
+        let probe = cmds.firstIndex { $0.contains("#{window_layout}") && $0.contains("@0") }
+        let pin = cmds.firstIndex { $0.hasPrefix("resize-window -t @0") }
+        #expect(probe != nil, "pinning a window must first ask tmux for its layout")
+        // tmux answers in FIFO order, so ordering here IS the guarantee that the
+        // captured layout predates the squash.
+        #expect(probe! < pin!, "the probe must be queued ahead of the pin")
+    }
+
+    @Test("backgrounding replays the captured layout, and only after the unpin")
+    func releaseRestoresLayoutAfterUnpin() async throws {
+        let (controller, transport, _) = await pinnedSplitWorld(capture: "3 0 %0 \(splitLayout)")
+
+        controller.releaseWindowPins()
+        #expect(await waitUntil {
+            await transport.recordedCommands().contains { $0.hasPrefix("select-layout -t '@0'") }
+        }, "the split layout our pin squashed must be replayed on release")
+
+        let cmds = await transport.recordedCommands()
+        let unpin = cmds.firstIndex { $0.hasPrefix("set-option -u -w -t @0 window-size") }
+        let restore = cmds.firstIndex { $0.hasPrefix("select-layout -t '@0'") }
+        #expect(unpin != nil)
+        // Replayed while the window is still pinned, tmux just refits the
+        // layout back down to the phone grid and the restore is lost.
+        #expect(unpin! < restore!, "the unpin must land before the layout replay")
+        #expect(cmds[restore!].trimmingCharacters(in: .whitespacesAndNewlines)
+                == "select-layout -t '@0' '\(splitLayout)'",
+                "the layout must go back byte-identical")
+        // The user had NOT zoomed, so nothing may re-zoom a pane afterwards.
+        #expect(!cmds.dropFirst(restore!).contains { $0.hasPrefix("resize-pane -Z -t '%") },
+                "an unzoomed window must come back unzoomed")
+    }
+
+    @Test("a zoom the user made themselves is restored with the layout")
+    func releaseRestoresUserZoom() async throws {
+        let (controller, transport, _) = await pinnedSplitWorld(capture: "3 1 %2 \(splitLayout)")
+
+        controller.releaseWindowPins()
+        #expect(await waitUntil {
+            await transport.recordedCommands().contains { $0.hasPrefix("resize-pane -Z -t '%2'") }
+        }, "the pane the user had zoomed must be zoomed again")
+
+        let cmds = await transport.recordedCommands()
+        let restore = cmds.firstIndex { $0.hasPrefix("select-layout -t '@0'") }!
+        let rezoom = cmds.firstIndex { $0.hasPrefix("resize-pane -Z -t '%2'") }!
+        // select-layout unzooms, so the zoom can only be re-applied after it.
+        #expect(restore < rezoom, "re-zoom must follow the layout replay")
+    }
+
+    @Test("a single-pane window has nothing to restore")
+    func singlePaneWindowIsNotRestored() async throws {
+        let (controller, transport, _) = await pinnedSplitWorld(capture: "1 0 %0 \(splitLayout)")
+
+        controller.releaseWindowPins()
+        _ = await waitUntil {
+            await transport.recordedCommands().contains { $0.hasPrefix("set-option -u -w -t @0") }
+        }
+        try? await Task.sleep(for: .milliseconds(60))
+        #expect(!(await transport.recordedCommands().contains { $0.hasPrefix("select-layout") }),
+                "one pane means no layout was ever squashed")
+    }
+
+    @Test("a stale record (panes came or went since the capture) is dropped, not replayed")
+    func paneCountChangeDropsTheRecord() async throws {
+        let (controller, transport, answered) = await pinnedSplitWorld(capture: "3 0 %0 \(splitLayout)")
+
+        // A pane died while we were attached: re-discovery reports two.
+        var next = answered
+        controller.refresh()
+        for _ in 0..<3 {
+            next = await answerPending(transport, answered: next) { cmd, i in
+                if cmd.hasPrefix("list-windows") {
+                    return block(i + 40, "$0 @0 0 \(splitLayout) 1 2 main")
+                }
+                if cmd.hasPrefix("list-sessions") { return block(i + 40, "$0 1 main") }
+                return block(i + 40, "")
+            }
+            try? await Task.sleep(for: .milliseconds(20))
+        }
+        #expect(await waitUntil { controller.snapshot.windows["@0"]?.paneCount == 2 })
+
+        controller.releaseWindowPins()
+        _ = await waitUntil {
+            await transport.recordedCommands().contains { $0.hasPrefix("set-option -u -w -t @0") }
+        }
+        try? await Task.sleep(for: .milliseconds(60))
+        #expect(!(await transport.recordedCommands().contains { $0.hasPrefix("select-layout") }),
+                "a record describing a window that no longer exists must not be replayed")
+    }
+
+    @Test("teardown hands the restore out as exec commands, once")
+    func teardownRestoreCommandsAreConsumed() async throws {
+        let (controller, _, _) = await pinnedSplitWorld(capture: "3 1 %1 \(splitLayout)")
+
+        let commands = controller.pristineLayoutRestoreCommands()
+        // Unquoted @/% targets: these run through the login shell of the
+        // one-shot exec channel, and the layout string is single-quoted so its
+        // braces survive it.
+        #expect(commands == ["select-layout -t @0 '\(splitLayout)'", "resize-pane -Z -t %1"])
+        #expect(controller.pristineLayoutRestoreCommands().isEmpty,
+                "records are consumed — a second teardown pass must not replay them")
+    }
+
+    @Test("re-pinning after a release re-captures, so a desktop rearrange isn't clobbered")
+    func repinRecapturesTheLayout() async throws {
+        let (controller, transport, answered) = await pinnedSplitWorld(capture: "3 0 %0 \(splitLayout)")
+        controller.releaseWindowPins()
+        _ = await waitUntil {
+            await transport.recordedCommands().contains { $0.hasPrefix("select-layout -t '@0'") }
+        }
+        let baseline = await transport.recordedCommands().count
+        _ = answered
+
+        controller.repinActiveWindow()
+        #expect(await waitUntil {
+            let fresh = await transport.recordedCommands().dropFirst(baseline)
+            return fresh.contains { $0.contains("#{window_layout}") && $0.contains("@0") }
+        }, "the re-pin must ask again — the desktop may have rearranged the window")
+
+        let fresh = Array(await transport.recordedCommands().dropFirst(baseline))
+        let probe = fresh.firstIndex { $0.contains("#{window_layout}") }!
+        let pin = fresh.firstIndex { $0.hasPrefix("resize-window -t @0") }!
+        #expect(probe < pin)
+        // Release unzooms, so coming back has to re-establish the one-pane view.
+        #expect(fresh.contains { $0.contains("#{window_zoomed_flag}") },
+                "return from background must re-assert the immersive zoom")
+    }
+}
+
+/// The gate that keeps a surprise control reply out of `select-layout`.
+@Suite("tmux layout string sanity")
+struct TmuxPlausibleLayoutTests {
+    @Test("accepts a real tmux layout string")
+    func acceptsRealLayouts() {
+        #expect(TmuxSessionController.isPlausibleLayout("21be,200x50,0,0"))
+        #expect(TmuxSessionController.isPlausibleLayout(
+            "4b9d,203x60,0,0[203x30,0,0,0,203x29,0,31{101x29,0,31,1,101x29,102,31,2}]"))
+    }
+
+    @Test("rejects error lines, truncated fields and shell metacharacters")
+    func rejectsJunk() {
+        #expect(!TmuxSessionController.isPlausibleLayout(""))
+        #expect(!TmuxSessionController.isPlausibleLayout("can't find window: @9"))
+        #expect(!TmuxSessionController.isPlausibleLayout("21be"))
+        #expect(!TmuxSessionController.isPlausibleLayout("21bez,200x50,0,0"))
+        #expect(!TmuxSessionController.isPlausibleLayout("21be,200x50,0,0; rm -rf /"))
+        #expect(!TmuxSessionController.isPlausibleLayout("21be,200x50,0,0'"))
     }
 }
 
