@@ -5,6 +5,8 @@ description: "herdr is a terminal multiplexer written for CLI coding agents. On 
 
 [herdr](https://github.com/herdrdev/herdr) is a single Rust binary. Moshpit supports it because it moves three jobs off the phone and onto the server — jobs the tmux path still does by hand.
 
+![Moshpit's home screen: an Agents section listing Claude Code needing you, codex working and an idle claude, above a tree of workspaces](/01-agents.jpg)
+
 ### A protocol field
 
 <b>Agent status.</b> `agent_status` sits on every pane and rolls up pane → tab → workspace. On tmux, Moshpit needs you to install hooks that stamp `@moshpit_*` options.

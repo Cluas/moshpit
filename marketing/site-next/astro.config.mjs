@@ -47,6 +47,13 @@ export default defineConfig({
       // Starlight ships its own theme; ours is already written. `customCss`
       // loads last, so moshpit.css wins wherever the two disagree.
       customCss: ['./src/styles/tokens.css', './src/styles/starlight-bridge.css'],
+      // Without this Starlight defaults to /favicon.svg — a leftover file
+      // from before this redesign that isn't actually the app icon (it
+      // traces to an unrelated mountain/rocket mark). Marketing.astro's
+      // pages already use this real icon via Astro's own <link> convention;
+      // this is Starlight's equivalent for /docs, so the browser tab shows
+      // the same icon everywhere on the site rather than switching at /docs.
+      favicon: '/icon-192.png',
       // No `locales` here on purpose: Starlight adopts the Astro `i18n` config
       // above, and declaring both is a hard error. One source of truth for
       // which languages exist, shared with the marketing pages.
@@ -63,8 +70,16 @@ export default defineConfig({
       // specifies. See src/components/Sidebar.astro for the override itself;
       // it's a copy-and-extend of Starlight's stock Sidebar/SidebarSublist,
       // per Starlight's own override mechanism, not a fork of its internals.
+      //
+      // Header restyles the top bar as the same tmux-status-line system
+      // Marketing.astro uses, wrapping Starlight's own <Search /> rather than
+      // reimplementing it — see src/components/Header.astro for the full
+      // rationale, including why the language switcher is a plain link
+      // instead of Starlight's <LanguageSelect /> and why the theme toggle is
+      // dropped rather than restyled.
       components: {
         Sidebar: './src/components/Sidebar.astro',
+        Header: './src/components/Header.astro',
       },
     }),
   ],

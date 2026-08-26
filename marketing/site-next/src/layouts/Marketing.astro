@@ -13,6 +13,7 @@
  * plumbing in one step with no way to tell which broke the layout.
  */
 import { RELEASE } from '../release.mjs';
+import Logo from '../components/Logo.astro';
 
 interface Props {
   title: string;
@@ -164,12 +165,12 @@ const legal = '© 2026 Moshpit · SSH · Mosh · tmux · herdr · iPhone';
   <body class={hasScrollspy ? 'has-scrollspy' : undefined}>
     <nav class="status" aria-label="Site">
       <div class="wrap">
-        <span class="sess">moshpit</span>
+        <a class="sess" href={lang === 'zh' ? '/zh' : '/'}><Logo />moshpit</a>
         <div class="win">
           {
-            nav.map((n, i) => (
+            nav.map((n) => (
               <a href={n.href} aria-current={n.href === currentHref ? 'page' : undefined}>
-                {i}:{n.label}
+                {n.label}
               </a>
             ))
           }
@@ -177,7 +178,8 @@ const legal = '© 2026 Moshpit · SSH · Mosh · tmux · herdr · iPhone';
         <div class="right">
           {beta && (
             <span class="beta">
-              ⏻ <span class="full">{beta.full}</span><span class="short">{beta.short}</span>
+              <span class="dot" aria-hidden="true"></span>
+              <span class="full">{beta.full}</span><span class="short">{beta.short}</span>
             </span>
           )}
           {
@@ -209,10 +211,8 @@ const legal = '© 2026 Moshpit · SSH · Mosh · tmux · herdr · iPhone';
       hasScrollspy && (
         <nav class="scrollspy" aria-label="Section">
           <div class="wrap">
-            {scrollspy!.map((s, i) => (
-              <a href={`#${s.id}`}>
-                {i}:{s.label}
-              </a>
+            {scrollspy!.map((s) => (
+              <a href={`#${s.id}`}>{s.label}</a>
             ))}
             <span class="tail">{scrollspyTail ?? scrollspyTailDefault}</span>
           </div>
@@ -245,7 +245,7 @@ const legal = '© 2026 Moshpit · SSH · Mosh · tmux · herdr · iPhone';
       const links = Array.from(document.querySelectorAll<HTMLAnchorElement>('.scrollspy a'));
       const sections = links.map((a) => document.querySelector(a.getAttribute('href')!));
       function update() {
-        const line = 54; // just under the sticky top bar
+        const line = 82; // just under the sticky top bar (now 72px + border)
         let active = 0;
         for (let i = 0; i < sections.length; i++) {
           const el = sections[i];

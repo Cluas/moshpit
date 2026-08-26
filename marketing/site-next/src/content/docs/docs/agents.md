@@ -1,22 +1,31 @@
 ---
-title: "Answering agents from the lock screen"
-description: "An agent on your server stops and asks for permission. This page traces the whole path: how that state gets to your phone, exactly what each button types back, which settings change it, and the point where iOS stops all of it."
+title: "Agent notifications, end to end"
+description: "An agent on your server stops and asks for permission. This page traces the whole path: how that state reaches your phone — even locked, even with the app closed — what gets encrypted where, and the rules that keep it from nagging you."
 ---
 
 ## The agent reports
 
-On **herdr**, `agent_status` is a field on every pane — nothing to install. On **tmux**, hooks you install stamp four `@moshpit_*` options onto the pane the agent runs in.
+On **herdr**, `agent_status` is a field on every pane — nothing to install. On **tmux**, hooks you install stamp four `@moshpit_*` options onto the pane the agent runs in. A real question (a permission prompt, mid-turn) and an idle reminder on an agent you deliberately parked are different things, and the hooks tell them apart — a parked agent never lights anything up.
+
+![The Dynamic Island collapsed to a single teal dot next to a running 0:10 timer, showing an agent still working](/island-working.jpg)
 
 ## Moshpit reads it
 
 While Moshpit is running it sweeps every tracked session every `2s`. On herdr the control poll is 2s while things move, easing to 8s once the tree goes quiet.
 
-## Your tap types back
+![The Dynamic Island collapsed to an amber dot next to an exclamation mark, showing an agent that needs you](/island-blocked.jpg)
 
-The lock-screen buttons run inside Moshpit, not in the widget. Each sends raw bytes into that pane — Enter, Esc, Ctrl-C, or your text. Nothing else.
+## When the app is closed, your host pushes
 
-:::note
-<b>There is no Moshpit server in this picture.</b> Every alert on your phone is a local notification the running app generated from the live session. That is the trade for having nothing in the middle, and it has a cost you should know before you rely on it.
+The part a suspended iPhone can't do for itself, your dev host does: it seals the alert with a key **only your device holds** and hands the ciphertext to Moshpit's push relay, which passes it to Apple. Neither the relay nor Apple can read a byte of it — agent names, commands, everything decrypts inside a notification extension on your phone, even on the lock screen. Pairing happens automatically the first time you enable notifications on a host; the relay is part of Moshpit, with nothing to configure.
 
-Read [where this stops working](#limits) before you decide to walk away from your desk.
-:::
+The notification's job is to get you to the pane: tap it and you land in the exact pane that asked. Reading the question before answering it is the point of a terminal in your pocket — there are no blind Allow/Deny buttons to press from the lock screen, on purpose.
+
+## Quiet by design
+
+Notifying on everything is the same as notifying on nothing, so four rules stand between an agent and your attention:
+
+- A question must **stand for 30 seconds** before any phone hears about it. Answered at your desk means never announced.
+- All waiting agents on a host share **one summary card** ("claude +2"). Only the moment *nobody was waiting → someone is* rings and may break through Focus; everything after updates the card silently.
+- A finished turn only chimes if it ran **three minutes or more**. Short turns file into the list without lighting the screen.
+- **Parked agents stay silent.** An agent idling at its prompt because you left it there is not asking you anything.

@@ -7,6 +7,8 @@ description: "Everything between tapping ＋ and having a live shell: the fields
 
 Name, Host, Port, Username. **Save** turns on the moment Name and Host both have text — everything else has a working default.
 
+![The Add Connection sheet: Name review-demo, Host demo.moshpit.cluas.eu.org, Port 2222, Username review, with the Password tab selected under Authentication](/34-add-connection.jpg)
+
 ## Pick how you sign in
 
 A password, a key you generate on the phone, or a PEM you paste. The secret goes to the iOS Keychain; the connection record only holds a reference to it.

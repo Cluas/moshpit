@@ -20,6 +20,8 @@ herdr 连接的 AGENTS 区右上角那个 <b>+</b> 打开它。四个字段：
 
 checkout 落在 `~/.herdr/worktrees/<仓库>/<分支>`， 不在你的仓库旁边——你的工作目录完全不受影响。
 
+![Workspaces 表单：payments-api 被勾选，1 tabs 在 1:claude——正是 New Agent Task 刚建出来的那个 workspace，下面列着 dashboard 和 infra，都是 detached](/04-workspaces-sheet.jpg)
+
 ## 清理
 
 在树里长按那个 workspace，选 **Remove Worktree**。 它只出现在 herdr 从仓库建出来的 workspace 上，因为普通 workspace 没有目录可删。

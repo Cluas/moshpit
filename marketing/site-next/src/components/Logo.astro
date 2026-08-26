@@ -1,0 +1,17 @@
+---
+/**
+ * The nav wordmark's icon. This used to inline public/favicon.svg, on the
+ * assumption it was a trace of the real app icon — it is not: rendered at
+ * any size it's a mountain/rocket silhouette, unrelated to the actual
+ * Moshpit/App/Assets.xcassets/AppIcon.appiconset/AppIcon.png (a tilted
+ * glowing key over three idle ones — the app's own "one agent needs you"
+ * motif). public/icon-192.png is that real icon, already exported at
+ * 192×192 — plenty of headroom for the ~20px display size this renders at,
+ * so no extra export step. The rounded-square mask is applied here via
+ * border-radius rather than baked into the PNG, matching how the source
+ * asset itself ships flat-square (iOS applies the squircle mask at the
+ * OS/App-Store display layer, not in the icon file).
+ */
+---
+
+<img class="mark" src="/icon-192.png" width="192" height="192" alt="" />

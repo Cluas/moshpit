@@ -60,6 +60,17 @@
   /* Starlight's default content column is wider than our prose measure. */
   --sl-content-width: 48rem;
 
+  /* The top bar (src/components/Header.astro) matches Marketing.astro's own
+   * .status bar height exactly, so switching from a marketing page into docs
+   * doesn't read as a different, unfinished product. Pinned to one value at
+   * every width: unlike --sl-nav-pad-x, Starlight never redeclares
+   * --sl-nav-height beyond its own 50em breakpoint, and everything that reads
+   * it (main-frame's padding-top, the mobile-menu-button's centering math,
+   * the search dialog's top margin) derives from the variable, so tightening
+   * it here doesn't need a matching change anywhere else. */
+  --sl-nav-height: 73px;
+  --sl-nav-pad-y: 10px;
+
   /* Expressive Code (Starlight's fenced-code-block renderer) ships its own
    * theme with fixed hex colors, independent of the --sl-color-* vars above.
    * Frame CHROME (tab bar, terminal titlebar) already inherits our surfaces
@@ -126,10 +137,10 @@
   max-width: min(100%, 320px);
 }
 
-/* Mono headings — every h1–h6 in the redesign (design/docs.html) sets
- * var(--mono); Starlight's own default is --sl-font (mapped to --sans
- * above), which is right for the sidebar and UI chrome but not for
- * headings. The page's own <h1> (Starlight's PageTitle.astro) lives outside
+/* Headings match moshpit.css's own h1/h2/h3 — --sans, tight tracking — so a
+ * docs page reads as the same product as the marketing pages around it,
+ * not a mono-set terminal readout next to sans-set everything else. The
+ * page's own <h1> (Starlight's PageTitle.astro) lives outside
  * .sl-markdown-content, in its own content-panel — but it always carries
  * Starlight's fixed PAGE_TITLE_ID ("_top"), which is a stabler hook than a
  * generated class would be. Unlayered, so both selectors beat Starlight's
@@ -137,8 +148,9 @@
  * of those rules' own specificity. */
 h1#_top,
 .sl-markdown-content :is(h1, h2, h3, h4, h5, h6):not(:where(.not-content *)) {
-  font-family: var(--mono);
-  letter-spacing: -0.01em;
+  font-family: var(--sans);
+  font-weight: 650;
+  letter-spacing: -0.02em;
 }
 
 /* Callouts — Starlight calls them "asides" (`:::note` etc. in Markdown,
@@ -172,9 +184,10 @@ h1#_top,
   --sl-color-asides-text-accent: var(--ok);
 }
 .starlight-aside__title {
-  font-family: var(--mono);
+  font-family: var(--sans);
+  font-weight: 650;
   font-size: 13px;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.03em;
   text-transform: uppercase;
 }
 
@@ -224,7 +237,7 @@ h1#_top,
   border-inline-start: 1px solid var(--line);
 }
 .dsub a {
-  font: 12px var(--mono);
+  font: 12px var(--sans);
   color: var(--meta);
   padding: 0.25rem 0.5rem;
   border-radius: 0.25rem;

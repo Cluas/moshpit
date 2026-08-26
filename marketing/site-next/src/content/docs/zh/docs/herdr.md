@@ -5,6 +5,8 @@ description: "herdr 是专门为 CLI coding agent 写的多路复用器。连 he
 
 [herdr](https://github.com/herdrdev/herdr) 是一个 Rust 单二进制。Moshpit 支持它，是因为它把三件苦活从手机搬到了服务端——而 tmux 那条路上， 这三件事还得 Moshpit 自己扛。
 
+![Moshpit 的主屏：Agents 区列着需要你处理的 Claude Code、正在跑的 codex 和一个空闲的 claude，下面是一棵 workspace 树](/01-agents.jpg)
+
 ### 协议里的一等字段
 
 <b>Agent 状态。</b>每个 pane 上都有 `agent_status`，并自动从 pane 上卷到 tab、再到 workspace。tmux 上要你先装 hook，往 `@moshpit_*` 里写状态。

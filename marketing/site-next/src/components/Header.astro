@@ -1,0 +1,326 @@
+---
+/**
+ * Starlight override, wired up in astro.config.mjs's `components.Header`
+ * (https://starlight.astro.build/guides/overriding-components/). Restyles the
+ * docs top bar to read as the same nav system Marketing.astro renders
+ * (`.status`/`.sess`/`.win`/`.beta`/`.zh` in moshpit.css) instead of
+ * Starlight's stock light-ish toolbar — see this repo's own retrospective:
+ * going from the marketing pages into docs read as switching products.
+ *
+ * Philosophy, matching src/components/Sidebar.astro: extend/wrap Starlight's
+ * real subcomponents through its own override mechanism, don't fork their
+ * internals. Per sub-piece of the stock Header
+ * (node_modules/@astrojs/starlight/components/Header.astro):
+ *
+ *   - Search: Starlight's own `<Search />`, imported by file path exactly
+ *     like Sidebar.astro imports SidebarPersister. Untouched — Pagefind
+ *     wiring, the ⌘K/Ctrl+K shortcut and the dialog are entirely its own;
+ *     only the trigger button's CSS is restyled below.
+ *
+ *   - Language switcher: NOT Starlight's `<LanguageSelect />` (a native
+ *     <select> of locale options). Replaced with a single link matching
+ *     Marketing.astro's own `.zh` EN/中文 toggle, after confirming the target
+ *     URL is exactly what Starlight's own switcher would compute. Starlight's
+ *     algorithm (node_modules/@astrojs/starlight/utils/localizedUrl.ts:
+ *     replace the current path's locale segment, or strip/prepend `/zh`
+ *     when the current or target locale is the unprefixed default) collapses,
+ *     for this site's specific two-locale / prefixDefaultLocale:false /
+ *     trailingSlash:'never' config, to exactly the strip-or-prepend-`/zh`
+ *     logic below — verified by diffing against Starlight's OWN rendered
+ *     <option value> on both `/docs` (→ "/zh/docs") and `/zh/docs/herdr` (→
+ *     "/docs/herdr") in `dist/` before this change, and docs-nav.mjs's own
+ *     comment that every English slug has a `zh/<slug>` counterpart with no
+ *     exceptions (unlike Marketing.astro's `translated` flag for
+ *     Privacy/Support). `localizedUrl` itself isn't part of Starlight's
+ *     public `exports` map, so it can't be imported directly — this is a
+ *     verified-equivalent reimplementation, not a fork of the general
+ *     N-locale case.
+ *
+ *   - Theme toggle: dropped, not restyled. tokens.css pins `color-scheme:
+ *     dark` unconditionally and starlight-bridge.css's UNLAYERED `:root`
+ *     block sets every `--sl-color-*` variable regardless of `data-theme`
+ *     (Starlight's own light/dark palettes live inside `@layer
+ *     starlight.base`, which unlayered rules always beat) — so flipping
+ *     Starlight's stock theme picker already had zero visible effect before
+ *     this file existed. The marketing pages have no toggle either. Dropping
+ *     it here does not touch a single `--sl-color-*`/dark-mode declaration;
+ *     starlight-bridge.css is untouched. Note: Sidebar.astro's mobile-drawer
+ *     footer (MobileMenuFooter, out of scope for this change) still renders
+ *     Starlight's own stock ThemeSelect — same reasoning applies there, it's
+ *     just not this file's place to remove it.
+ *
+ * The center nav (home/docs/guides/compare/pricing) and the beta chip
+ * duplicate small pieces of Marketing.astro (its `nav` array and
+ * `betaCopy()`) rather than importing them — Marketing.astro is out of
+ * scope to edit for this change. Keep these two in sync by hand if either
+ * file's copy changes.
+ */
+import Search from '@astrojs/starlight/components/Search.astro';
+import { RELEASE } from '../release.mjs';
+import Logo from './Logo.astro';
+
+const { starlightRoute } = Astro.locals;
+const { siteTitleHref, lang } = starlightRoute;
+const isZh = lang === 'zh';
+
+// Mirrors Marketing.astro's own `nav` array. This header only ever renders on
+// /docs pages, so "docs" (index 1) is always the current tab.
+const nav = isZh
+  ? [
+      { href: '/zh', label: '首页' },
+      { href: '/zh/docs', label: '文档' },
+      { href: '/zh/guides', label: '指南' },
+      { href: '/zh/compare', label: '对比' },
+      { href: '/zh/pricing', label: '定价' },
+    ]
+  : [
+      { href: '/', label: 'home' },
+      { href: '/docs', label: 'docs' },
+      { href: '/guides', label: 'guides' },
+      { href: '/compare', label: 'compare' },
+      { href: '/pricing', label: 'pricing' },
+    ];
+const currentIndex = 1;
+
+// Verified-equivalent link, not Starlight's <LanguageSelect /> — see header
+// comment. `pathname` is `/docs...` or `/zh/docs...` on every real docs page,
+// but this Header also renders on Starlight's own generated not-found route
+// (`starlightRoute.id === '404'`) — a single page at `/404` with no `/zh/404`
+// counterpart, since this project never added a docs/404 content entry per
+// locale. Astro.url.localizedUrl-style string rewriting would happily produce
+// that non-existent `/zh/404` (confirmed: Starlight's own stock
+// <LanguageSelect /> computes the identical dead link there via the same
+// pathname-rewrite algorithm — the plain <select> just hides it from a
+// build-time link check the way this <a href> doesn't), so this one route
+// always points at the locale root instead of a deep link.
+const { pathname } = Astro.url;
+const otherHref =
+  starlightRoute.id === '404'
+    ? '/zh'
+    : (() => {
+        const zhMatch = pathname.match(/^\/zh(\/.*)?$/);
+        return zhMatch ? zhMatch[1] || '/' : `/zh${pathname}`.replace(/\/$/, '') || '/zh';
+      })();
+
+// Verbatim copy of Marketing.astro's betaCopy() — see that file for the full
+// rationale (release.mjs's stage switch, the 'sale'-hides-the-chip default).
+function betaCopy(stage: string) {
+  if (stage === 'sale') return null;
+  if (stage === 'beta') {
+    return { full: isZh ? '外测开放中' : 'beta open', short: isZh ? '外测' : 'beta' };
+  }
+  return { full: isZh ? '外测审核中' : 'beta in review', short: isZh ? '外测' : 'beta' };
+}
+const beta = betaCopy(RELEASE.stage);
+---
+
+<div class="dtop">
+  <a class="dsess" href={siteTitleHref}><Logo />moshpit</a>
+  <div class="dwin">
+    {
+      nav.map((n, i) => (
+        <a href={n.href} aria-current={i === currentIndex ? 'page' : undefined}>
+          {n.label}
+        </a>
+      ))
+    }
+  </div>
+  <div class="dsearch print:hidden">
+    <Search />
+  </div>
+  <div class="dright">
+    {
+      beta && (
+        <span class="dbeta">
+          <span class="dot" aria-hidden="true"></span>
+          <span class="full">{beta.full}</span><span class="short">{beta.short}</span>
+        </span>
+      )
+    }
+    <a
+      class="dlang"
+      href={otherHref}
+      hreflang={isZh ? 'en' : 'zh-Hans'}
+      lang={isZh ? 'en' : 'zh-Hans'}
+    >
+      {isZh ? 'EN' : '中文'}
+    </a>
+  </div>
+</div>
+
+<style>
+  /* A from-scratch small status bar, not a restyle of stock Header.astro's
+     grid — that grid exists to align a centered search box with the content
+     column, which this design has no use for (search sits inline, right of
+     the nav tabs, like everything else in the bar). PageFrame.astro's outer
+     `.header` (fixed, bordered, background, reserved space for the mobile
+     menu button) is untouched; this only fills its content box.
+
+     max-width/margin-inline/padding-inline below reproduce moshpit.css's
+     own .wrap (max-width:1120px;margin:0 auto;padding:0 24px) on top of
+     Starlight's own header padding (--sl-nav-pad-x, left untouched — the
+     mobile menu button and search dialog both measure from it) rather than
+     instead of it — confirmed by measuring both headers' rendered nav-link
+     x-positions at 1440px: without this, .dtop had no centering of its own
+     and sat 160px further left than Marketing.astro's .wrap, so every nav
+     label visibly jumped left on navigating from a marketing page into
+     docs (and jumped back right on the way out). */
+  .dtop {
+    display: flex;
+    align-items: center;
+    gap: 32px;
+    height: 100%;
+    min-width: 0;
+    max-width: 1120px;
+    margin-inline: auto;
+    padding-inline: 24px;
+    font: 15px/1 var(--sans);
+    letter-spacing: -0.005em;
+  }
+
+  .dsess {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    flex: none;
+    font-weight: 700;
+    font-size: 17px;
+    letter-spacing: -0.02em;
+    color: var(--ink);
+    text-decoration: none;
+  }
+  .dsess:hover {
+    text-decoration: none;
+  }
+  .dsess :global(.mark) {
+    width: 26px;
+    height: 26px;
+    border-radius: 22%;
+    flex: none;
+  }
+
+  /* Same shrink-then-scroll fix moshpit.css's .win uses: every tab is
+     white-space:nowrap, so without min-width:0 this row would rather blow
+     out the header (real page overflow) than give up width to search/lang. */
+  .dwin {
+    position: relative;
+    display: flex;
+    gap: 22px;
+    min-width: 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .dwin::-webkit-scrollbar {
+    display: none;
+  }
+  /* Same edge hint moshpit.css's .win::after uses. */
+  .dwin::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    right: 0;
+    width: 28px;
+    background: linear-gradient(to right, transparent, rgba(244, 241, 232, 0.12));
+    pointer-events: none;
+  }
+  .dwin a {
+    flex: none;
+    color: var(--dim);
+    white-space: nowrap;
+    font-weight: 500;
+    text-decoration: none;
+    transition: color 0.15s;
+  }
+  .dwin a:hover {
+    color: var(--ink);
+  }
+  .dwin a[aria-current] {
+    color: var(--ink);
+    font-weight: 650;
+  }
+
+  .dsearch {
+    flex: none;
+  }
+  /* Starlight's own button, restyled to sit inline in the bar instead of
+     filling a grid column. Unlayered (plain component `<style>`, no
+     `@layer`), so it beats Search.astro's own `@layer starlight.core` rules
+     regardless of selector specificity — the same mechanism
+     starlight-bridge.css already relies on for the rest of the docs chrome. */
+  .dsearch :global(button[data-open-modal]) {
+    height: 34px;
+    padding-inline: 12px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.03);
+    color: var(--meta);
+    font: 14px/1 var(--sans);
+    width: auto;
+    max-width: none;
+  }
+  .dsearch :global(button[data-open-modal]:hover) {
+    border-color: var(--line-lit);
+    color: var(--ink);
+  }
+  .dsearch :global(button[data-open-modal] kbd) {
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--meta);
+  }
+
+  .dright {
+    margin-left: auto;
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    color: var(--meta);
+    white-space: nowrap;
+    font-size: 14px;
+  }
+  .dbeta {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    color: var(--dim);
+  }
+  .dbeta .dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--amber);
+    box-shadow: 0 0 8px rgba(255, 179, 92, 0.7);
+  }
+  .dbeta .full {
+    display: inline;
+  }
+  .dbeta .short {
+    display: none;
+  }
+  .dlang {
+    color: var(--dim);
+    text-decoration: none;
+  }
+  .dlang:hover {
+    color: var(--ink);
+    text-decoration: none;
+  }
+
+  @media (max-width: 56rem) {
+    .dbeta .full {
+      display: none;
+    }
+    .dbeta .short {
+      display: inline;
+    }
+  }
+  /* Below this, the nav tabs' own overflow-x:auto is doing the real work;
+     the beta chip is the least essential item in the bar so it goes first. */
+  @media (max-width: 30rem) {
+    .dbeta {
+      display: none;
+    }
+  }
+</style>

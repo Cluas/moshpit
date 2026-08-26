@@ -20,6 +20,8 @@ In order: a `worktree create` that makes the branch, the checkout and a herdr wo
 
 The checkout lands under `~/.herdr/worktrees/<repo>/<branch>`, not next to your repository — your working directory is not touched at all.
 
+![The Workspaces sheet: payments-api checked with 1 tabs on 1:claude — the workspace New Agent Task just created — with dashboard and infra listed below as detached](/04-workspaces-sheet.jpg)
+
 ## Cleaning up
 
 Long-press the workspace in the tree and choose **Remove Worktree**. It appears only on workspaces herdr created from a repository, because an ordinary workspace has no directory to delete.

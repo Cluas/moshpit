@@ -74,21 +74,6 @@ spec:
               service:
                 name: moshpit-site
                 port: { number: 80 }
-    # The pre-rebrand host, routed to the same pods so nginx.conf can 301 it
-    # per-path. It needs its own TLS entry because the redirect happens after
-    # the handshake — a certificate error is what a reader would see otherwise,
-    # and that is worse than the 404 this replaces.
-    - host: offhook.cluas.eu.org
-      http:
-        paths:
-          - path: /
-            pathType: Prefix
-            backend:
-              service:
-                name: moshpit-site
-                port: { number: 80 }
   tls:
     - hosts: [moshpit.cluas.eu.org]
       secretName: moshpit-site-tls
-    - hosts: [offhook.cluas.eu.org]
-      secretName: moshpit-site-offhook-tls

@@ -7,6 +7,8 @@ description: "从点 ＋ 到拿到一个能敲命令的 shell，中间发生的�
 
 「名称」「主机」「端口」「用户名」。只要「名称」和「主机」都有内容，「保存」 就能点了，其余都有能用的默认值。
 
+![Add Connection 表单：Name 填 review-demo，Host 填 demo.moshpit.cluas.eu.org，Port 填 2222，Username 填 review，Authentication 选中 Password 那个 tab](/34-add-connection.jpg)
+
 ## 选认证方式
 
 密码、在手机上生成的密钥，或者粘一段 PEM。密钥本身进 iOS Keychain， 连接记录里只留一个指向它的引用。
