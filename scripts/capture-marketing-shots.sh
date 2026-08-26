@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Your private key rides in argv and into the simulator keychain — see the
+# "WHERE YOUR PRIVATE KEY GOES" note in scripts/smoke-localhost.sh, and prefer
+# a throwaway key via MOSAIC_SSH_KEY.
 # Marketing + App Store screenshots, shot in a STAGED environment.
 #
 # Why this exists next to capture-flow-shots.sh: that script documents the app
@@ -24,7 +27,10 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 SIM_NAME="${MOSHPIT_SIM:-iPhone 17 Pro Max}"
 BUNDLE_ID="com.cluas.moshpit"
-KEY_PATH="${MOSHPIT_SSH_KEY:-$HOME/.ssh/id_ed25519}"
+# Accepts MOSAIC_SSH_KEY too: the other four harnesses use that name, and someone
+# who learned it there would otherwise fall back to their real key here without
+# noticing.
+KEY_PATH="${MOSHPIT_SSH_KEY:-${MOSAIC_SSH_KEY:-$HOME/.ssh/id_ed25519}}"
 OUT="${MOSHPIT_SHOT_DIR:-marketing/shots}"
 STAGE="$HOME/.moshpit-stage"
 HERDR_BIN="$(command -v herdr)"

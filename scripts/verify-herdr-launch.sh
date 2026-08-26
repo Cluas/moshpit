@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Your private key rides in argv and into the simulator keychain — see the
+# "WHERE YOUR PRIVATE KEY GOES" note in scripts/smoke-localhost.sh, and prefer
+# a throwaway key via MOSAIC_SSH_KEY.
 # Moshpit — end-to-end check that a herdr connection boots herdr's TUI.
 #
 # Phase 0 of docs/design/herdr-multiplexer.md: Moshpit probes for herdr,

@@ -15,6 +15,27 @@
 #   - Remote Login enabled (`sudo systemsetup -setremotelogin on`)
 #   - `~/.ssh/id_ed25519` exists with its public key in `~/.ssh/authorized_keys`
 #   - At least one iPhone simulator runtime installed (defaults to iPhone 17 Pro)
+#
+# WHERE YOUR PRIVATE KEY GOES. This hands the key to the app the only way the
+# DEBUG seed path accepts it: base64 on the `simctl launch` command line. So it
+# appears in the argv of both simctl and the app, and the app then stores it in
+# the simulator's keychain, where it stays until that app is uninstalled.
+#
+# On macOS another user cannot read your process arguments, and anyone who is
+# YOUR user can read ~/.ssh/id_ed25519 directly — so this crosses no boundary
+# that the key file does not already cross. It is still worth knowing: argv is
+# picked up by process accounting and endpoint tooling, it lands in shell history
+# if you paste the launch by hand, and a key with a wider blast radius than
+# "logs into this Mac" does not belong here.
+#
+# Prefer a throwaway key. `MOSAIC_SSH_KEY` already exists for exactly this:
+#
+#   ssh-keygen -t ed25519 -f ~/.ssh/moshpit-smoke -N ''
+#   cat ~/.ssh/moshpit-smoke.pub >> ~/.ssh/authorized_keys
+#   MOSAIC_SSH_KEY=~/.ssh/moshpit-smoke scripts/smoke-localhost.sh
+#
+# Having the script mint and revoke that key itself would be better still, but it
+# would edit your authorized_keys, which is not this script's call to make.
 
 set -euo pipefail
 
@@ -95,6 +116,7 @@ xcrun simctl terminate "$SIM_UDID" "$BUNDLE_ID" 2>/dev/null || true
 echo "▶ Launching with seed args: $(whoami)@$SSH_HOST:$SSH_PORT"
 KEY_B64="$(base64 -i "$KEY_PATH" | tr -d '\n')"
 xcrun simctl launch "$SIM_UDID" "$BUNDLE_ID" \
+  -MOSHPIT_AUTOCARE_OFF 1 \
   -MOSHPIT_SEED_USER "$(whoami)" \
   -MOSHPIT_SEED_KEY_B64 "$KEY_B64" \
   -MOSHPIT_SEED_HOST "$SSH_HOST" \

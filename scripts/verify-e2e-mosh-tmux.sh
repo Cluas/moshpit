@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Your private key rides in argv and into the simulator keychain — see the
+# "WHERE YOUR PRIVATE KEY GOES" note in scripts/smoke-localhost.sh, and prefer
+# a throwaway key via MOSAIC_SSH_KEY.
 # T4 — end-to-end self-verification of Moshpit over REAL mosh+tmux to localhost.
 #
 # What it proves, with screenshots I can inspect myself (no device, no sideload):
@@ -75,6 +78,7 @@ xcrun simctl install "$SIM_UDID" "$APP"
 xcrun simctl terminate "$SIM_UDID" "$BUNDLE_ID" 2>/dev/null || true
 KEY_B64="$(base64 -i "$KEY_PATH" | tr -d '\n')"
 xcrun simctl launch "$SIM_UDID" "$BUNDLE_ID" \
+  -MOSHPIT_AUTOCARE_OFF 1 \
   -MOSHPIT_SEED_USER "$(whoami)" \
   -MOSHPIT_SEED_KEY_B64 "$KEY_B64" \
   -MOSHPIT_SEED_HOST "$SSH_HOST" -MOSHPIT_SEED_PORT "$SSH_PORT" \

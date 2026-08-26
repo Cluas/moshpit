@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Your private key rides in argv and into the simulator keychain — see the
+# "WHERE YOUR PRIVATE KEY GOES" note in scripts/smoke-localhost.sh, and prefer
+# a throwaway key via MOSAIC_SSH_KEY.
 # Capture the real screens for the connection→usage flow prototype, on BOTH
 # multiplexers, so the prototype shows the shipped app rather than a drawing of
 # it. Anything not captured here has to be drawn — and labelled as drawn.
