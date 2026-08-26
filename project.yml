@@ -18,7 +18,7 @@ configFiles:
 settings:
   base:
     SWIFT_VERSION: "5.9"
-    MARKETING_VERSION: "1.0.0"
+    MARKETING_VERSION: "1.0.1"
     # Only the floor for local builds. A release overrides it from the command
     # line (scripts/release-archive.sh) — App Store Connect requires a build
     # number that is unique and monotonically increasing within a version, and
