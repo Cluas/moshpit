@@ -33,34 +33,32 @@ struct DiagnosticsLogView: View {
     private static let window: TimeInterval = 30 * 60
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
-                if isLoading {
+        // The message states live OUTSIDE the scroll view. Inside one they were
+        // sized to their text and pinned to the top-left corner — a lone
+        // "Reading…" floating in a dark screen read as a rendering bug, not as
+        // a state, for however long the log-archive walk took.
+        Group {
+            if isLoading {
+                VStack(spacing: 10) {
+                    ProgressView()
+                        .tint(Ink.meta)
                     Text("Reading…")
                         .font(Face.mono(12)).foregroundStyle(Ink.meta)
-                        .padding(16)
-                } else if let loadError {
-                    Text(loadError)
-                        .font(Face.mono(12)).foregroundStyle(Ink.warn)
-                        .padding(16)
-                } else if entries.isEmpty {
-                    Text("Nothing logged in the last 30 minutes.")
-                        .font(Face.mono(12)).foregroundStyle(Ink.meta)
-                        .padding(16)
-                } else {
-                    ForEach(entries) { entry in
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text("\(Self.clock.string(from: entry.date))  \(entry.category)")
-                                .font(Face.mono(9)).foregroundStyle(Ink.meta)
-                            Text(entry.message)
-                                .font(Face.mono(11)).foregroundStyle(Ink.primary)
-                                .textSelection(.enabled)
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, 14).padding(.vertical, 6)
-                        Divider().overlay(Ink.hairline)
-                    }
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if let loadError {
+                Text(loadError)
+                    .font(Face.mono(12)).foregroundStyle(Ink.warn)
+                    .multilineTextAlignment(.center)
+                    .padding(24)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if entries.isEmpty {
+                Text("Nothing logged in the last 30 minutes.")
+                    .font(Face.mono(12)).foregroundStyle(Ink.meta)
+                    .padding(24)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                logList
             }
         }
         .background(Ink.screenBG)
@@ -73,6 +71,25 @@ struct DiagnosticsLogView: View {
             }
         }
         .task { await load() }
+    }
+
+    private var logList: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(entries) { entry in
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("\(Self.clock.string(from: entry.date))  \(entry.category)")
+                            .font(Face.mono(9)).foregroundStyle(Ink.meta)
+                        Text(entry.message)
+                            .font(Face.mono(11)).foregroundStyle(Ink.primary)
+                            .textSelection(.enabled)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 14).padding(.vertical, 6)
+                    Divider().overlay(Ink.hairline)
+                }
+            }
+        }
     }
 
     private static let clock: DateFormatter = {
@@ -90,17 +107,40 @@ struct DiagnosticsLogView: View {
     /// take a beat on a device with a busy log.
     private func load() async {
         let found: Result<[Entry], Error> = await Task.detached(priority: .userInitiated) {
+            let cutoff = Date().addingTimeInterval(-Self.window)
+            // The notification service extension is a SEPARATE PROCESS, and
+            // `.currentProcessIdentifier` cannot see it — iOS gives an app no way
+            // to read another process's log. So the two lines that decide whether
+            // a push was decrypted, or fell back and why, would never appear on
+            // this screen no matter how long someone scrolled. The extension
+            // leaves them in the App Group instead; they get merged in here.
+            //
+            // This is the whole point of the screen: a reviewer went looking for
+            // exactly those lines here, found nothing, and reasoned from the
+            // absence. A diagnostic tool that is blind to the riskiest component
+            // misleads better than it helps.
+            let fromExtension = PushDiagnostics.recent(since: cutoff).map {
+                Entry(date: $0.at, category: PushDiagnostics.source, message: $0.text)
+            }
             do {
                 let store = try OSLogStore(scope: .currentProcessIdentifier)
-                let since = store.position(date: Date().addingTimeInterval(-Self.window))
+                let since = store.position(date: cutoff)
                 let matching = NSPredicate(format: "subsystem == %@", "com.cluas.moshpit")
                 let rows = try store.getEntries(at: since, matching: matching)
                     .compactMap { $0 as? OSLogEntryLog }
                     .map { Entry(date: $0.date, category: $0.category, message: $0.composedMessage) }
                 // Newest first: the thing that just happened is the thing
                 // being looked for.
-                return .success(Array(rows.suffix(400).reversed()))
+                let merged = (Array(rows.suffix(400)) + fromExtension)
+                    .sorted { $0.date > $1.date }
+                return .success(merged)
             } catch {
+                // Even when the system store is unavailable, the extension's own
+                // trail is still worth showing — it is the half this screen
+                // exists to surface.
+                if !fromExtension.isEmpty {
+                    return .success(fromExtension.sorted { $0.date > $1.date })
+                }
                 return .failure(error)
             }
         }.value

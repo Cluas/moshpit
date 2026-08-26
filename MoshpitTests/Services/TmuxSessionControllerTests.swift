@@ -141,8 +141,8 @@ struct TmuxSessionControllerTests {
         $0 @0 0 81x24,0,0,0 1 2 main
         %end 2 2 0
         %begin 3 3 0
-        %0 @0 0 80 24 1 bash
-        %1 @0 1 80 24 0 vim
+        %0 @0 0 80 24 1 0 0 bash
+        %1 @0 1 80 24 0 0 0 vim
         %end 3 3 0
 
         """)
@@ -173,7 +173,7 @@ struct TmuxSessionControllerTests {
         $0 @0 0 81x24,0,0,0 1 1 main
         %end 2 2 0
         %begin 3 3 0
-        %0 @0 0 80 24 1 bash
+        %0 @0 0 80 24 1 0 0 bash
         %end 3 3 0
 
         """)
@@ -277,7 +277,9 @@ struct TmuxSessionControllerTests {
     }
 
     /// Discovery replies that resolve one session/window/pane (@0/%0 active).
-    private func pushOneWindowDiscovery(_ transport: MockTmuxTransport) {
+    private func pushOneWindowDiscovery(_ transport: MockTmuxTransport,
+                                        alternate: Bool = false,
+                                        inCopyMode: Bool = false) {
         transport.pushText("""
         %begin 1 1 0
         $0 1 main
@@ -286,7 +288,7 @@ struct TmuxSessionControllerTests {
         $0 @0 0 81x24,0,0,0 1 1 main
         %end 2 2 0
         %begin 3 3 0
-        %0 @0 0 80 24 1 bash
+        %0 @0 0 80 24 1 \(alternate ? 1 : 0) \(inCopyMode ? 1 : 0) bash
         %end 3 3 0
 
         """)
@@ -378,6 +380,13 @@ struct TmuxSessionControllerTests {
         _ = await waitUntil {
             await transport.recordedCommands().contains { $0.hasPrefix("capture-pane -p -e -S") }
         }
+        // Let the attach's own resync finish first. Resyncs coalesce while one
+        // is in flight — a burst of them over a slow link would otherwise each
+        // buy a full-screen capture that the next one immediately supersedes —
+        // so a repin issued on top of an unanswered capture is folded into it
+        // rather than adding a second. That is the intended behaviour; here it
+        // would just hide the repin this test is about.
+        _ = await settleControlChatter(transport, answered: 3)
         let before = await transport.recordedCommands().count
 
         // `%output` kept flowing while backgrounded, laid out for whatever width
@@ -637,18 +646,20 @@ struct TmuxSessionControllerTests {
         $0 @1 1 81x24,0,0,1 0 1 work
         %end 2 2 0
         %begin 3 3 0
-        %0 @0 0 80 24 1 bash
-        %1 @1 0 80 24 1 vim
+        %0 @0 0 80 24 1 0 0 bash
+        %1 @1 0 80 24 1 0 0 vim
         %end 3 3 0
 
         """)
         #expect(await waitUntil { controller.snapshot.windows.count == 2 })
-        // Both panes get an attach-time backfill; settle them (and the fresh
-        // attach's own resync of %0) so %1's resync below isn't parked behind
-        // an unanswered dump.
-        await settleControlChatter(transport, answered: 3)
+        // Only the ON-SCREEN window is dumped on attach now, so %1 (in @1) has
+        // no backfill yet — it earns one when the switch below reaches it, and
+        // its resync is parked behind that dump exactly as the fresh-attach one
+        // is. Settle before AND after the switch so both dumps are answered.
+        let answered = await settleControlChatter(transport, answered: 3)
 
         controller.selectWindow("@1")
+        _ = await settleControlChatter(transport, answered: answered)
 
         #expect(await waitUntil {
             let cmds = await transport.recordedCommands()
@@ -685,7 +696,7 @@ struct TmuxSessionControllerTests {
         $0 @0 0 81x24,0,0,0 1 1 main
         %end 2 2 0
         %begin 3 3 0
-        %0 @0 0 80 24 1 bash
+        %0 @0 0 80 24 1 0 0 bash
         %end 3 3 0
 
         """)
@@ -1081,15 +1092,18 @@ struct TmuxSessionControllerTests {
         $0 @1 1 81x24,0,0,1 0 1 work
         %end 2 2 0
         %begin 3 3 0
-        %0 @0 0 80 24 1 bash
-        %1 @1 0 80 24 1 vim
+        %0 @0 0 80 24 1 0 0 bash
+        %1 @1 0 80 24 1 0 0 vim
         %end 3 3 0
 
         """)
         #expect(await waitUntil { controller.snapshot.windows.count == 2 })
-        await settleControlChatter(transport, answered: 3)
+        // %1 lives in the off-screen window, so its dump comes with the switch,
+        // not with the attach — settle after it too or the resync stays parked.
+        let answered = await settleControlChatter(transport, answered: 3)
 
         controller.selectWindow("@1")
+        _ = await settleControlChatter(transport, answered: answered)
 
         #expect(await waitUntil {
             await transport.recordedCommands()
@@ -1109,20 +1123,17 @@ struct TmuxSessionControllerTests {
     func backfillCancelsStaleCopyMode() async throws {
         let (controller, transport) = await makeAttachedController()
         _ = await waitUntil { await transport.recordedCommands().count >= 3 }
-        pushOneWindowDiscovery(transport)
+        pushOneWindowDiscovery(transport, inCopyMode: true)
         #expect(await waitUntil { controller.snapshot.activePaneId == "%0" })
 
-        // Minting %0 triggers backfill, whose first query now also carries
-        // #{pane_in_mode}. Answer "0 1" (primary screen, IN copy-mode — the
-        // stale leftover) on every pending FIFO slot; fire-and-forget slots
-        // ignore it, the backfill callback reads it.
+        // The screen state rides in on discovery now — the per-pane
+        // `display-message` probe it replaced cost a whole round-trip depth
+        // before any pane could be filled. What must NOT change is what the app
+        // does with a pane found sitting in copy-mode.
         #expect(await waitUntil {
-            await transport.recordedCommands().contains {
-                $0.hasPrefix("display-message -p -t %0 '#{alternate_on} #{pane_in_mode}'") }
-        }, "backfill must query alternate_on + pane_in_mode together")
-        for _ in 0..<8 {
-            transport.pushText("%begin 9 9 0\n0 1\n%end 9 9 0\n\n")
-        }
+            !(await transport.recordedCommands().contains {
+                $0.hasPrefix("display-message -p -t %0 '#{alternate_on}") })
+        }, "the per-pane alternate_on probe is redundant once list-panes carries it")
 
         #expect(await waitUntil {
             await transport.recordedCommands().contains { $0.hasPrefix("send-keys -t %0 -X cancel") }
@@ -1137,19 +1148,20 @@ struct TmuxSessionControllerTests {
         #expect(await waitUntil { controller.snapshot.activePaneId == "%0" })
 
         // The fresh attach asks for BOTH a backfill and a repaint of %0. The
-        // backfill's probe goes out at once; the repaint must not.
+        // dump goes out at once — since the screen state arrives with discovery
+        // there is nothing to probe for first — and the repaint must not.
         #expect(await waitUntil {
             await transport.recordedCommands().contains {
-                $0.hasPrefix("display-message -p -t %0 '#{alternate_on}")
+                $0.hasPrefix("capture-pane -p -e -S")
             }
-        })
+        }, "the dump is enqueued straight from discovery, with no probe ahead of it")
         let racedAhead = await transport.recordedCommands()
             .contains { $0.hasPrefix("capture-pane -p -e -t %0") }
         #expect(racedAhead == false, """
-                the resync must not go out while the backfill is still in flight: the dump's own \
-                capture is only enqueued from the probe's reply, so it would land LAST and scroll \
-                the authoritative frame away — leaving the pane showing the tail of history (the \
-                last thing typed before the drop) after every reconnect
+                the resync must not go out while the backfill is still in flight: its reply lands \
+                after the dump's, so the dump would scroll the authoritative frame away — leaving \
+                the pane showing the tail of history (the last thing typed before the drop) after \
+                every reconnect
                 """)
 
         await settleControlChatter(transport, answered: 3)
@@ -1160,6 +1172,90 @@ struct TmuxSessionControllerTests {
         let frame = try #require(cmds.firstIndex { $0.hasPrefix("capture-pane -p -e -t %0") },
                                  "the parked resync must have been released by the dump's reply")
         #expect(dump < frame, "the authoritative frame has to be fed last, on top of the history")
+    }
+
+    @Test("resyncs that pile up while one is in flight collapse into a single follow-up")
+    func resyncsCoalesceWhileInFlight() async throws {
+        // The case a localhost trace structurally cannot show. Here a resync
+        // completes in about a millisecond, so two never overlap; over a
+        // 500 ms link the pair of round trips takes a second, and everything
+        // that fires in that second — keyboard up, keyboard down, a rotation,
+        // a war repair — used to queue its own full-screen capture. Only the
+        // last frame to arrive survives on screen; the rest paid for a repaint
+        // nobody saw.
+        let (controller, transport) = await makeAttachedController()
+        _ = await waitUntil { await transport.recordedCommands().count >= 3 }
+        pushOneWindowDiscovery(transport)
+        #expect(await waitUntil { controller.snapshot.activePaneId == "%0" })
+        let settled = await settleControlChatter(transport, answered: 3)
+        let baseline = await transport.recordedCommands().count
+
+        // One resync, deliberately left unanswered — the "in flight" state.
+        controller.resyncActivePane()
+        #expect(await waitUntil {
+            await transport.recordedCommands().dropFirst(baseline)
+                .contains { $0.hasPrefix("capture-pane -p -e -t %0") }
+        }, "the first resync must go out immediately")
+
+        // Four more arrive while it is still on the wire.
+        for _ in 0..<4 { controller.resyncActivePane() }
+        try? await Task.sleep(for: .milliseconds(120))
+
+        let during = await transport.recordedCommands().dropFirst(baseline)
+            .filter { $0.hasPrefix("capture-pane -p -e -t %0") }.count
+        #expect(during == 1,
+                "four resyncs arriving during one in-flight capture produced \(during) captures")
+
+        // Answering it releases exactly ONE follow-up, however many piled up:
+        // the frame it captures is current as of now, which is what every one
+        // of them was asking for.
+        _ = await settleControlChatter(transport, answered: settled)
+        let after = await transport.recordedCommands().dropFirst(baseline)
+            .filter { $0.hasPrefix("capture-pane -p -e -t %0") }.count
+        #expect(after == 2, "expected the original plus one coalesced follow-up, got \(after)")
+    }
+
+    @Test("selecting a pane in another window fills that window's panes")
+    func selectPaneAcrossWindowsFills() async throws {
+        // Found on real hardware, not here — which is the point of adding it
+        // here. Only the on-screen window is dumped on attach; the rest are
+        // deferred until they come on screen. `selectWindow` got the hook that
+        // releases them, but `selectPane` handles a CROSS-WINDOW jump itself
+        // rather than calling `selectWindow`, and a deep link
+        // (`moshpit://connection/<id>?pane=%N`) lands there. The window
+        // switched, the pane resynced, and its scrollback never arrived:
+        // deferred had quietly become dropped.
+        let (controller, transport) = await makeAttachedController()
+        _ = await waitUntil { await transport.recordedCommands().count >= 3 }
+        transport.pushText("""
+        %begin 1 1 0
+        $0 1 main
+        %end 1 1 0
+        %begin 2 2 0
+        $0 @0 0 81x24,0,0,0 1 1 main
+        $0 @1 1 81x24,0,0,1 0 1 work
+        %end 2 2 0
+        %begin 3 3 0
+        %0 @0 0 80 24 1 0 0 bash
+        %9 @1 0 80 24 1 0 0 vim
+        %end 3 3 0
+
+        """)
+        #expect(await waitUntil { controller.snapshot.activePaneId == "%0" })
+        let answered = await settleControlChatter(transport, answered: 3)
+
+        // %9 lives off screen, so the attach must NOT have dumped it.
+        let beforeSwitch = await transport.recordedCommands()
+            .contains { $0.hasPrefix("capture-pane -p -e -S") && $0.contains("-t %9") }
+        #expect(beforeSwitch == false, "an off-screen pane was filled on attach")
+
+        controller.selectPane("%9")
+        _ = await settleControlChatter(transport, answered: answered)
+
+        #expect(await waitUntil {
+            await transport.recordedCommands()
+                .contains { $0.hasPrefix("capture-pane -p -e -S") && $0.contains("-t %9") }
+        }, "selecting a pane in another window must fill it — deferred, never dropped")
     }
 
     @Test("newWindow lands ON the window it just created")
@@ -1190,8 +1286,8 @@ struct TmuxSessionControllerTests {
         $0 @1 1 81x24,0,0,1 1 1 logs
         %end 21 21 0
         %begin 22 22 0
-        %0 @0 0 80 24 1 bash
-        %1 @1 0 80 24 1 bash
+        %0 @0 0 80 24 1 0 0 bash
+        %1 @1 0 80 24 1 0 0 bash
         %end 22 22 0
 
         """)
@@ -1224,8 +1320,8 @@ struct TmuxSessionControllerTests {
         $0 @0 0 81x24,0,0,0 1 2 main
         %end 2 2 0
         %begin 3 3 0
-        %0 @0 0 80 24 1 bash
-        %1 @0 1 80 24 0 vim
+        %0 @0 0 80 24 1 0 0 bash
+        %1 @0 1 80 24 0 0 0 vim
         %end 3 3 0
 
         """)
@@ -1379,8 +1475,8 @@ struct TmuxSessionControllerTests {
         $0 @1 1 81x24,0,0,1 0 1 work
         %end 2 2 0
         %begin 3 3 0
-        %0 @0 0 80 24 1 bash
-        %1 @1 0 80 24 1 vim
+        %0 @0 0 80 24 1 0 0 bash
+        %1 @1 0 80 24 1 0 0 vim
         %end 3 3 0
 
         """)
@@ -1495,8 +1591,8 @@ struct TmuxSessionControllerTests {
         $0 @1 1 81x24,0,0,1 0 1 logs
         %end 2 2 0
         %begin 3 3 0
-        %0 @0 0 80 24 1 bash
-        %1 @1 0 80 24 0 tail
+        %0 @0 0 80 24 1 0 0 bash
+        %1 @1 0 80 24 0 0 0 tail
         %end 3 3 0
 
         """)
@@ -1525,7 +1621,7 @@ struct TmuxSessionControllerTests {
         $0 @0 0 81x24,0,0,0 1 1 main
         %end 2 2 0
         %begin 3 3 0
-        %0 @0 0 80 24 1 bash
+        %0 @0 0 80 24 1 0 0 bash
         %end 3 3 0
 
         """)
@@ -1574,7 +1670,7 @@ struct TmuxSessionControllerTests {
         $0 @0 0 81x24,0,0,0 1 1 main
         %end 2 2 0
         %begin 3 3 0
-        %7 @0 0 80 24 1 zsh
+        %7 @0 0 80 24 1 0 0 zsh
         %end 3 3 0
 
         """)
@@ -1879,8 +1975,8 @@ struct TmuxSessionControllerTests {
         $0 @1 1 81x24,0,0,1 0 1 logs
         %end 2 2 0
         %begin 3 3 0
-        %0 @0 0 80 24 1 zsh
-        %1 @1 0 80 24 1 vim
+        %0 @0 0 80 24 1 0 0 zsh
+        %1 @1 0 80 24 1 0 0 vim
         %end 3 3 0
 
         """)
@@ -1956,8 +2052,8 @@ struct TmuxSessionControllerTests {
         $0 @1 1 81x24,0,0,1 1 1 logs
         %end 11 11 0
         %begin 12 12 0
-        %0 @0 0 80 24 1 zsh
-        %1 @1 0 80 24 1 vim
+        %0 @0 0 80 24 1 0 0 zsh
+        %1 @1 0 80 24 1 0 0 vim
         %end 12 12 0
 
         """)
@@ -2042,9 +2138,9 @@ struct TmuxSessionControllerTests {
         $0 @0 0 \(splitLayout) 1 3 main
         %end 2 2 0
         %begin 3 3 0
-        %0 @0 0 203 30 1 bash
-        %1 @0 1 101 29 0 bash
-        %2 @0 2 101 29 0 bash
+        %0 @0 0 203 30 1 0 0 bash
+        %1 @0 1 101 29 0 0 0 bash
+        %2 @0 2 101 29 0 0 0 bash
         %end 3 3 0
 
         """)

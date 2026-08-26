@@ -367,16 +367,42 @@ struct TransportPill: View {
     var connState: TransportConnState = .live
     @State private var pulsing = false
 
+    /// The state the LABEL shows — which deliberately lags the state the dot
+    /// shows. The dot recolors and pulses the instant anything changes (a
+    /// dropped session is never silent), but swapping the pill's TEXT is a
+    /// layout event: "tmux" → "reconnecting" more than doubles the pill and
+    /// shoves the whole header. Health flaps routinely bounce through
+    /// reconnecting and back within a second, and every bounce used to slam a
+    /// long word in and out of the layout. Now a transient state must STAND
+    /// for a beat before it earns words; recovery snaps back immediately.
+    @State private var labelState: TransportConnState = .live
+    @State private var labelDebounce: Task<Void, Never>?
+
     private var dotColor: Color {
         connState.transientTint ?? kind.dotColor
     }
 
     private var label: String {
-        switch connState {
+        switch labelState {
         case .live: return kind.label
         case .connecting: return kind.label
         case .reconnecting: return String(localized: "reconnecting")
         case .offline: return String(localized: "offline")
+        }
+    }
+
+    private func adoptLabelState(_ new: TransportConnState) {
+        labelDebounce?.cancel()
+        switch new {
+        case .live, .connecting:
+            // Good news and no-text states apply at once.
+            withAnimation(.snappy(duration: 0.25)) { labelState = new }
+        case .reconnecting, .offline:
+            labelDebounce = Task {
+                try? await Task.sleep(for: .milliseconds(800))
+                guard !Task.isCancelled else { return }
+                withAnimation(.snappy(duration: 0.25)) { labelState = new }
+            }
         }
     }
 
@@ -396,12 +422,20 @@ struct TransportPill: View {
                 .font(Face.mono(10, .bold))
                 .kerning(0.45)
                 .foregroundStyle(kind.fg)
+                .lineLimit(1)
+                .fixedSize()
         }
         .padding(EdgeInsets(top: 7, leading: 10, bottom: 7, trailing: 10))
         .background(kind.bg, in: Capsule(style: .continuous))
         .overlay {
             Capsule(style: .continuous)
                 .strokeBorder(kind.border ?? Color.white.opacity(0.09), lineWidth: 1)
+        }
+        // The width change itself animates, so when "reconnecting" does earn its
+        // place the pill grows instead of teleporting.
+        .animation(.snappy(duration: 0.25), value: label)
+        .onChange(of: connState, initial: true) { _, new in
+            adoptLabelState(new)
         }
         .onAppear {
             guard animates else { return }

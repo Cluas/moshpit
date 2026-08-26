@@ -42,7 +42,12 @@ Moshpit/
   Island/       Shared agent-status code (see §6) — compiled into BOTH the app
                 and the widget extension
 
+      Push/                     remote agent notifications (see §7.1, docs/PUSH.md)
+      Install/                  one install engine: hooks + pairing, over SSH exec
+
 MoshpitIsland/   Widget extension target: Live Activity + home/lock widgets
+MoshpitPush/     Notification service extension: opens sealed remote pushes
+push-relay/      Go APNs relay (the only server-side component; docs/PUSH.md)
 MoshpitTests/    unit tests    MoshpitUITests/   UI tests
 ```
 
@@ -334,6 +339,42 @@ In short: the Live Activity is **pushed live data**; the timeline widget is a
 **pulled JSON snapshot** through the App Group — same source, two delivery paths
 dictated by what each widget kind can actually see.
 
+### 7.1 When the app is not running: remote push
+
+Everything above needs Moshpit to be executing. iOS suspends it seconds after it
+leaves the screen and kills its sockets shortly after, so an agent that blocks on
+a permission prompt while your phone is in your pocket reaches nobody. That is
+not a bug in the monitor; it is the ceiling of a local-only design.
+
+`MoshpitPush/` is a notification service extension, and `push-relay/` is a small
+Go service, which together lift it: the agent hook on the dev host seals its
+status with a key only the phone has, a relay signs the push with the app's APNs
+key (which cannot be handed out to users' machines), and the extension opens the
+envelope and rewrites the notification before iOS shows it. A pushed
+notification carries the same category and the same two `userInfo` keys a local
+one does, so `AgentNotificationHandler` → `AgentControlBridge` → the live pane
+works unchanged — the lock-screen Allow / Deny / Reply surface has no
+push-specific branch at all.
+
+Shared across that boundary, in `Moshpit/Services/Push/`: `PushSealedBox` (the
+envelope), `PushPairing` + `PushPairingStore` (per-connection secrets, in the App
+Group container rather than the keychain because an extension on the lock screen
+cannot read `WhenUnlocked` items), and `PushRemoteNotification` (rendering).
+
+Getting any of it ONTO a host is `Moshpit/Services/Install/`, which is one engine
+for both the push pairing and the agent hooks: `HostChannel` (a single `run`
+primitive over the SSH exec channel image attachment uses), `HostCommands` (every
+remote command as a pinned pure function), `AgentHookConfig` (config merges done
+in Swift, so the host needs no jq and no python3), `InstallManifest` (what is
+installed, content-addressed so a stale copy is detectable), and `HostScripts`
+(the two shell programs, generated from `scripts/moshpit-{stamp,push}.sh`). The
+screen on top is `UI/Install/HostSetupView` + `ViewModels/HostSetupModel`.
+
+Read **docs/PUSH.md** before touching any of it: it holds the wire format, the
+exact privacy boundary, why APNs token authentication rather than certificates,
+and what is deliberately not built yet (Live Activity push, and a reverse
+control path that does not need the app to reconnect).
+
 ---
 
 ## 8. Where to start reading
@@ -347,3 +388,7 @@ dictated by what each widget kind can actually see.
 - **Widget bridge:** `AgentActivityMonitor.sync` / `writeWidgetSnapshot`, then
   `MoshpitIsland/MoshpitIslandWidget.swift` (Live Activity) and
   `MoshpitIsland/MoshpitStatusWidget.swift` (timeline).
+- **A remote notification, end to end:** `scripts/moshpit-push.sh` (seals on the
+  host) → `push-relay/main.go` `handleNotify` → `MoshpitPush/NotificationService`
+  → `AgentNotificationHandler`. Run `scripts/verify-push-e2e.sh` to watch the
+  whole chain work with no Apple credentials.

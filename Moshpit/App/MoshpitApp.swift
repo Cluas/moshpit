@@ -13,8 +13,12 @@ struct MoshpitApp: App {
     @State private var monitor: AgentActivityMonitor
     @State private var connectionHolder: ConnectionStoreHolder
     @State private var keychainHolder: KeychainServiceHolder
-    @State private var router = DeepLinkRouter()
-    @State private var notificationHandler = AgentNotificationHandler()
+    @State private var router: DeepLinkRouter
+    @State private var notificationHandler: AgentNotificationHandler
+    /// Remote-push tokens are delivered to a UIApplicationDelegate and nowhere
+    /// else — SwiftUI has no equivalent hook, so the app keeps a minimal one
+    /// whose only job is forwarding them to PushService.
+    @UIApplicationDelegateAdaptor(PushAppDelegate.self) private var pushDelegate
     @Environment(\.scenePhase) private var scenePhase
 
     private let keychain = KeychainService()
@@ -22,18 +26,127 @@ struct MoshpitApp: App {
     init() {
         let metrics = SessionMetricsRegistry()
         let settings = AppSettings.shared
+        #if DEBUG
+        // Screenshot runs must not inherit the relay address a previous scenario
+        // typed, or no shot stands on its own.
+        //
+        // It has to happen HERE. Two earlier attempts did nothing: -MOSHPIT_RESET
+        // is handled in RootView's task, which the demo branch never mounts; and
+        // a `.task` on the demo view races HostSetupView's own task, which reads
+        // the setting into its field. `init()` is the only point that is before
+        // every reader.
+        if HostSetupDemo.scenario(from: ProcessInfo.processInfo.arguments) != nil {
+            settings.pushRelayURL = ""
+        }
+        #endif
         let store = ConnectionStore()
+        let hub = SessionHub(metrics: metrics)
+        let monitor = AgentActivityMonitor(settings: settings)
+        let router = DeepLinkRouter()
+        let notificationHandler = AgentNotificationHandler()
         _metrics = State(initialValue: metrics)
         _settings = State(initialValue: settings)
         _store = State(initialValue: store)
-        _hub = State(initialValue: SessionHub(metrics: metrics))
-        _monitor = State(initialValue: AgentActivityMonitor(settings: settings))
+        _hub = State(initialValue: hub)
+        _monitor = State(initialValue: monitor)
+        _router = State(initialValue: router)
+        _notificationHandler = State(initialValue: notificationHandler)
         _connectionHolder = State(initialValue: ConnectionStoreHolder(store: store))
         _keychainHolder = State(initialValue: KeychainServiceHolder(service: KeychainService()))
+
+        // Everything iOS can call into before a view exists.
+        //
+        // All of this used to live in a `.task` on the root view, and every piece
+        // of it had the same defect: iOS launches this app to the BACKGROUND to
+        // run a notification action or a LiveActivityIntent, and a WindowGroup's
+        // content may never mount there — so the task never ran, the bridge
+        // handler stayed nil, and `await handler?(...)` did nothing at all. A
+        // lock-screen button produced no keystroke and no error. It looked dead
+        // because it was.
+        //
+        // The notification DELEGATE has it worse: set late, a cold launch from a
+        // tapped action can reach iOS's callback before there is anything to
+        // receive it.
+        //
+        // `init()` is the only point before every reader — the same conclusion
+        // -MOSHPIT_RESET above arrived at, for the same reason.
+        Self.wireSystemEntryPoints(hub: hub, monitor: monitor, router: router,
+                                   notificationHandler: notificationHandler)
+    }
+
+    /// Static so it cannot accidentally capture `self` — an `App` struct is a
+    /// value, and a closure that outlives init() holding a copy of it would be
+    /// wiring the system to a snapshot.
+    @MainActor
+    private static func wireSystemEntryPoints(
+        hub: SessionHub, monitor: AgentActivityMonitor, router: DeepLinkRouter,
+        notificationHandler: AgentNotificationHandler
+    ) {
+        // No control handler. The bridge's `handler` used to turn a lock-screen
+        // Allow/Deny into a keystroke — through a live session if one happened to
+        // be in memory, otherwise sealed to the relay for the host to press. Both
+        // halves are gone with the buttons that fed them.
+        //
+        // `opener` stays, and it is the whole interaction now: a tapped
+        // notification opens the pane that wants you.
+        AgentControlBridge.shared.opener = { connectionId, paneId in
+            router.request(connectionId: connectionId, paneId: paneId)
+        }
+        AgentControlBridge.shared.cycler = { [weak monitor] in
+            monitor?.cycleHeadline()
+        }
+        AgentControlBridge.shared.drainShareQueue = { [weak hub] in
+            guard let hub else { return }
+            await ShareQueueDrainer.drain(hub: hub)
+        }
+        // "Is this exact pane on screen?" — lets willPresent skip the
+        // banner + chime when the user is already looking at the prompt.
+        AgentControlBridge.shared.isPaneVisible = { connectionId, paneId in
+            guard let session = hub.visibleSession,
+                  session.connection.id == connectionId else { return false }
+            if let control = session.tmuxControl {
+                return control.snapshot.activePaneId == paneId
+            }
+            return true   // non-tmux: the session on screen IS the pane
+        }
+        // A pairing self-test push proves the whole chain works; the
+        // sheet that asked for it is waiting on this hop.
+        AgentControlBridge.shared.pushSelfTest = { nonce in
+            Log.push.info("self-test push arrived: \(nonce, privacy: .public)")
+            PushService.shared.noteSelfTestArrived(nonce: nonce)
+        }
+        AgentNotifications.configure(delegate: notificationHandler)
+        // Ask iOS for a device token when at least one host is paired.
+        // No-op otherwise: an unpaired install must not prompt, and has
+        // nothing to register.
+        PushService.shared.registerForRemoteNotifications()
+    
     }
 
     var body: some Scene {
         WindowGroup {
+            #if DEBUG
+            // Screenshot seam for the host-setup screen, which cannot otherwise
+            // be reached in a simulator: it requires a live SSH session, so
+            // Settings disables its row and the sheet renders nothing. Compiled
+            // out of Release entirely, like -MOSHPIT_RESET.
+            if let scenario = HostSetupDemo.scenario(from: ProcessInfo.processInfo.arguments) {
+                HostSetupDemo.view(scenario)
+                    .environment(settings)
+                    .tint(Ink.accent)
+
+            } else {
+                mainScene
+            }
+            #else
+            mainScene
+            #endif
+        }
+    }
+
+    @ViewBuilder
+    private var mainScene: some View {
+        Group {
             RootView(
                 store: store,
                 settings: settings,
@@ -68,54 +181,6 @@ struct MoshpitApp: App {
             .environment(connectionHolder)
             .environment(keychainHolder)
             .environment(router)
-            .task {
-                // Vibe Island control surface — route lock-screen Allow/Deny/
-                // Reply (notification actions + Live Activity buttons) and body
-                // taps to the live pane via the hub. Set early so a launch-from-
-                // action response (app was killed) still resolves once delivered.
-                AgentControlBridge.shared.handler = { action, connectionId, paneId, text in
-                    // Stale-prompt guard: Allow/Deny are blind keystrokes (Enter/
-                    // Esc). If we KNOW the pane has left attention, the prompt this
-                    // notification advertised is gone — tapping it could answer a
-                    // newer, different question. Only an explicit "no longer
-                    // attention" blocks; no record (app relaunched) passes through.
-                    if action == .allow || action == .deny,
-                       monitor.attentionState(connectionId: connectionId, paneId: paneId) == false {
-                        AgentNotifications.postPromptExpired()
-                        return
-                    }
-                    let delivered = await hub.deliverAgentInput(
-                        action.bytes(text: text),
-                        connectionId: connectionId, paneId: paneId)
-                    // A lock-screen Allow/Deny that silently fails is the worst
-                    // outcome — the user walks away believing they approved.
-                    // Say so, in the same channel they acted from.
-                    if !delivered {
-                        AgentNotifications.postDeliveryFailure()
-                    }
-                }
-                AgentControlBridge.shared.opener = { connectionId, paneId in
-                    router.request(connectionId: connectionId, paneId: paneId)
-                }
-                AgentControlBridge.shared.cycler = { [weak monitor] in
-                    monitor?.cycleHeadline()
-                }
-                AgentControlBridge.shared.drainShareQueue = { [weak hub] in
-                    guard let hub else { return }
-                    await ShareQueueDrainer.drain(hub: hub)
-                }
-                // "Is this exact pane on screen?" — lets willPresent skip the
-                // banner + chime when the user is already looking at the prompt.
-                AgentControlBridge.shared.isPaneVisible = { connectionId, paneId in
-                    guard let session = hub.visibleSession,
-                          session.connection.id == connectionId else { return false }
-                    if let control = session.tmuxControl {
-                        return control.snapshot.activePaneId == paneId
-                    }
-                    return true   // non-tmux: the session on screen IS the pane
-                }
-                AgentNotifications.configure(delegate: notificationHandler)
-            }
             .onOpenURL { url in
                 router.handle(url)
             }
@@ -130,6 +195,11 @@ struct MoshpitApp: App {
                 switch phase {
                 case .active:
                     hub.setForeground(true)
+                    // Re-announce this phone to its relays. Unconditional: a
+                    // relay that lost its registry would otherwise never hear
+                    // from us again, and every push it was asked to send would
+                    // 401 with nothing anywhere saying why.
+                    PushService.shared.refreshRegistration()
                     // Images queued from the share sheet while we were away:
                     // deliver the ones whose sessions are live, leave the
                     // rest for the next drain (session start re-drains too).
@@ -255,7 +325,12 @@ struct RootView: View {
         let host = launchArg("-MOSHPIT_SEED_HOST") ?? "127.0.0.1"
         let port = Int(launchArg("-MOSHPIT_SEED_PORT") ?? "22") ?? 22
 
-        let id = UUID()
+        // `-MOSHPIT_SEED_ID` fixes the connection's id so a harness can address
+        // it afterwards — `moshpit://connection/<id>?pane=%N` is the only way to
+        // drive a window switch on a real device, where XCUITest (the only thing
+        // that can tap) cannot be signed for the test runner's bundle id.
+        // Random when absent, as before.
+        let id = launchArg("-MOSHPIT_SEED_ID").flatMap(UUID.init(uuidString:)) ?? UUID()
         let ref = id.uuidString
         do {
             try await keychain.savePrivateKey(pem, forRef: ref, requireBiometry: false)

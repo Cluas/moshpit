@@ -144,6 +144,48 @@ targets:
       properties:
         com.apple.security.application-groups:
           - group.com.cluas.moshpit
+        # Remote push, for agent notifications that must arrive when the app is
+        # NOT running (docs/PUSH.md). Three things to know:
+        #
+        # 1. "development" is correct here even for App Store builds. aps-environment
+        #    is resolved from the PROVISIONING PROFILE at signing time, and this
+        #    repo's release flow archives development-signed then re-signs on export
+        #    (scripts/release-archive.sh), so the shipped binary gets "production".
+        #    Verify after an export, never assume:
+        #      codesign -d --entitlements - Moshpit.app | grep aps-environment
+        #
+        # 2. The Push Notifications capability is NOT available to a free Personal
+        #    Team. A device build under docs/install-free-account.md fails to sign
+        #    with this key present; comment out this one line and re-run
+        #    `xcodegen generate`. Simulator builds are unaffected (entitlements are
+        #    not checked there), which is why the automated tests do not notice.
+        #
+        # 3. Time Sensitive (below) has the same Personal Team problem, and the
+        #    same fix: comment out that one line for a free-account build. See
+        #    docs/install-free-account.md, which now covers both.
+        aps-environment: development
+        # Lets an approval prompt be ELIGIBLE to break through Focus and skip the
+        # Scheduled Summary. Not a nice-to-have here: an agent that stopped to ask
+        # permission is the case where a delayed notification is the same as no
+        # notification, and Focus is exactly what someone turns on to concentrate
+        # on the work the agent is doing for them.
+        #
+        # Eligible is the accurate word. Each Focus mode still decides, and one
+        # set to "allow only these apps" with an empty list suppresses a
+        # Time-Sensitive notification anyway. Verified on a real phone, 2026-08-25.
+        #
+        # This is the ENTITLEMENT only. Both senders already ask for the level and
+        # have from the start — AgentActivityMonitor sets
+        # `interruptionLevel = .timeSensitive` on local attention notifications,
+        # and the relay puts `"interruption-level":"time-sensitive"` in every
+        # payload. Without this key iOS downgrades both to `.active` silently,
+        # with no error anywhere, which is why it went unnoticed: nothing fails,
+        # the notification simply waits behind Focus.
+        #
+        # Unlike Critical Alerts, this needs no application to Apple — tick "Time
+        # Sensitive Notifications" on the App ID and regenerate the profile. It
+        # is not available to a free Personal Team; see note 2.
+        com.apple.developer.usernotifications.time-sensitive: true
     settings:
       base:
         INFOPLIST_FILE: Moshpit/App/Info.plist
@@ -189,6 +231,8 @@ targets:
       - target: MoshpitIsland
         embed: true
       - target: MoshpitShare
+        embed: true
+      - target: MoshpitPush
         embed: true
     info:
       path: Moshpit/App/Info.plist
@@ -430,6 +474,59 @@ targets:
             NSExtensionActivationRule:
               NSExtensionActivationSupportsImageWithMaxCount: 10
 
+  # Opens the sealed envelope in a remote agent notification and puts the real
+  # text on screen. iOS runs this for any push carrying mutable-content: 1 —
+  # including while the device is locked and the app is not running, which is the
+  # entire reason the push path exists.
+  MoshpitPush:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: MoshpitPush
+      # The envelope format, the pairing secrets, and the rendering — all shared
+      # with the app so there is exactly one implementation of each.
+      - path: Moshpit/Services/Push/PushSealedBox.swift
+      - path: Moshpit/Services/Push/PushPairing.swift
+      - path: Moshpit/Services/Push/PushRemoteNotification.swift
+      # The extension's own log is invisible to the in-app diagnostics screen
+      # (separate process, and iOS gives an app no way to read another's log), so
+      # it leaves a trail in the App Group instead.
+      - path: Moshpit/Services/Push/PushDiagnostics.swift
+      # The standing-attention set: how this extension and the app agree on the
+      # 0→1 edge that decides whether a push makes a sound.
+      - path: Moshpit/Services/Push/PushStanding.swift
+      # The extension needs the log facade too. It runs with no UI, no debugger
+      # attached, and often while the screen is locked; `log stream --predicate
+      # 'subsystem == "com.cluas.moshpit"'` is the only way to find out why a
+      # notification arrived showing the generic fallback.
+      - path: Moshpit/Services/Log.swift
+      # Linked for the two userInfo keys and the two category identifiers, so a
+      # pushed notification is byte-identical to a local one and the existing
+      # lock-screen Allow/Deny path needs no push-specific branch. AgentControl
+      # comes along because AgentNotifications references the bridge — the same
+      # arrangement MoshpitIsland already has, and for the same reason.
+      - path: Moshpit/Island/AgentNotifications.swift
+      - path: Moshpit/Island/AgentControl.swift
+    entitlements:
+      path: MoshpitPush/MoshpitPush.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.com.cluas.moshpit
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.cluas.moshpit.push
+    info:
+      path: MoshpitPush/Info.plist
+      properties:
+        CFBundleDisplayName: Moshpit Push
+        # Version lockstep with the app, same as the other two extensions — a
+        # mismatch is an App Store rejection.
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.usernotifications.service
+          NSExtensionPrincipalClass: "$(PRODUCT_MODULE_NAME).NotificationService"
+
   MoshpitUITests:
     type: bundle.ui-testing
     platform: iOS
@@ -448,10 +545,29 @@ targets:
     platform: iOS
     sources:
       - path: MoshpitTests
+      # The notification service extension's entry point, so a test can drive
+      # `didReceive` itself rather than only the rendering helper it calls. That
+      # method is the closest thing to a real push this repo can exercise without
+      # an APNs key and a physical phone.
+      - path: MoshpitPush/NotificationService.swift
+      # The Live Activity's lock-screen layout, so a test can MEASURE it. iOS
+      # clips this card at a fixed height and says nothing; the only signal is a
+      # screenshot from a real phone with the top and bottom sliced off, which
+      # is exactly how the overflow was found. Rendering it here turns that into
+      # a number.
+      - path: MoshpitIsland/MoshpitIslandWidget.swift
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.cluas.moshpit.tests
         GENERATE_INFOPLIST_FILE: YES
+      configs:
+        Debug:
+          # Lets a source file shared with an app EXTENSION know it is being
+          # compiled into the test bundle instead, and reach the app module for
+          # types that are its own module elsewhere — see
+          # MoshpitPush/NotificationService.swift. DEBUG is restated because a
+          # target-level value replaces the config default rather than adding to it.
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) DEBUG MOSHPIT_TESTS"
     dependencies:
       - target: Moshpit
 

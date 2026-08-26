@@ -112,6 +112,10 @@ struct AttachHomeView: View {
             // by a detached task after start() returns, so a one-shot read
             // here left the island blind on that transport.
             monitor.trackWhenReady(connection: connection, session: session)
+            // The buttons the Host Setup sheet used to require, run silently:
+            // refresh drifted scripts, mint/repair this device's pairing. Asks
+            // (once) before ever touching a host that has no hooks.
+            HostAutoCare.shared.tend(connection: connection, session: session)
             // Keep failed sessions queued so the error alert (which reads
             // erroredSession) has its message; its OK button dequeues them.
             if session.viewModel.errorMessage == nil {

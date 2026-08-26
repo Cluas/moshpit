@@ -33,5 +33,6 @@ gh repo edit Cluas/moshpit --homepage "https://moshpit.cluas.eu.org" \
 - ⚠️ 私有产品仓库根目录有 **MIT LICENSE**（开源时代遗留）。既然定了不开源：
   私有仓库**不要 public**；这个引流仓库不放 LICENSE（README 明说 not open source）。
   要不要把私有仓库的 LICENSE 换成 proprietary 声明，等用户拍板。
-- scripts/moshpit-notify.sh 是带占位 API 的遗留脚本（产品已决定不做远程推送），
-  **不要**放进公共仓库，免得误导。
+- scripts/moshpit-notify.sh 是带占位 API 的遗留脚本，**不要**放进公共仓库，免得误导。
+  （注：「不做远程推送」这个结论已在 2026-08-23 推翻 —— 真的推送链路见 `docs/PUSH.md`
+  和 `push-relay/`，那个占位脚本是被它取代、而不是仍然代表产品方向。）

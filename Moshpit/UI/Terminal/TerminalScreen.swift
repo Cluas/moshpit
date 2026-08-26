@@ -479,8 +479,33 @@ struct TerminalScreen: View {
         }
     }
 
+    @State private var autoCare = HostAutoCare.shared
+
     var body: some View {
         contentWithLifecycle
+        // The ONE question host automation is allowed to ask, once: everything
+        // else (pairing, script updates, registration) runs silently, but the
+        // first hook install edits the user's agent config and that write needs
+        // a yes. "Not Now" asks again next app run; "Don't Ask" never does —
+        // the Host Setup sheet stays available for a change of mind.
+        .alert(
+            String(localized: "Enable agent notifications on \(connection.displayName)?"),
+            isPresented: Binding(
+                get: { autoCare.needsConsent?.id == connection.id },
+                set: { if !$0 { autoCare.dismissConsent() } })
+        ) {
+            Button(String(localized: "Enable")) {
+                if let session = active {
+                    autoCare.grantConsent(connection: connection, session: session)
+                }
+            }
+            Button(String(localized: "Not Now"), role: .cancel) { autoCare.dismissConsent() }
+            Button(String(localized: "Don't Ask Again"), role: .destructive) {
+                autoCare.decline(connection: connection)
+            }
+        } message: {
+            Text(String(localized: "Moshpit installs its hook scripts in ~/.moshpit and registers them in Claude Code's settings, so agents can reach you when they need you. Everything can be removed from Host Setup."))
+        }
         .moshpitCard(isPresented: $showError) {
             MoshpitNoticeCard(
                 icon: "bolt.slash.fill",
@@ -590,6 +615,10 @@ struct TerminalScreen: View {
             // by a detached task after start() returns, so a one-shot read
             // here left the island blind on that transport.
             monitor.trackWhenReady(connection: connection, session: session)
+            // The buttons the Host Setup sheet used to require, run silently:
+            // refresh drifted scripts, mint/repair this device's pairing. Asks
+            // (once) before ever touching a host that has no hooks.
+            HostAutoCare.shared.tend(connection: connection, session: session)
             _ = active
         }
     }
@@ -1051,6 +1080,10 @@ struct TerminalScreen: View {
         session.tmuxController?.onFontSizeCommitted = { size in settings.fontSize = size }
         // When-ready, not right-now — see the connect-path call for why.
         monitor.trackWhenReady(connection: connection, session: session)
+            // The buttons the Host Setup sheet used to require, run silently:
+            // refresh drifted scripts, mint/repair this device's pairing. Asks
+            // (once) before ever touching a host that has no hooks.
+            HostAutoCare.shared.tend(connection: connection, session: session)
         // Deep-link path: if already attached with the pane present, land on
         // it now; otherwise the .onChange below retries as snapshots arrive.
         claimPendingPaneRequestIfNeeded()

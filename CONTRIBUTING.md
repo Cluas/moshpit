@@ -62,6 +62,35 @@ New behavior should come with tests. The hard system boundaries are already
 built for this (see below), so most logic can be exercised without a live
 server or a real keychain.
 
+#### A failure unrelated to your change: suspect the simulator first
+
+A simulator that has hosted a long session of test runs degrades, and it does not
+degrade by saying so. Observed on 2026-08-25, same commit and same command, one
+simulator red and a fresh one green — and the tired one failed three different
+ways in a row:
+
+1. named two specific unrelated tests as failing, both of them timing-sensitive
+   (`expiredKeystrokesDropOnFlush`, `keepAliveFunnelsThroughResume`), with
+   "Restarting after unexpected exit, crash, or test timeout" in the log
+2. `Mach error -308 - (ipc/mig) server died` when only those two suites were re-run
+3. "Early unexpected exit, operation never finished bootstrapping" — with no
+   crash report on either side
+
+The first presentation is the dangerous one: it looks exactly like a real
+regression, in named tests, and the names have enough time semantics to make a
+plausible story. Believing it costs an hour of reading transport timing code that
+was never touched.
+
+So: **if the failures have nothing to do with what you changed — especially
+anything about timing, keepalives or expiry — re-run on a simulator that has not
+been used today before you suspect the code.** One 60-second run to tell a real
+regression from a tired simulator.
+
+(The same shape bit us elsewhere the same day: a device file listing that said
+"could not be transferred" was read as "does not exist" until a deliberately
+invented filename showed what absence actually looks like. When one failure
+resembles another, the cheap move is a control, not a theory.)
+
 ## Documentation style: explain WHY, not WHAT
 
 This codebase's house style is that comments justify code that isn't

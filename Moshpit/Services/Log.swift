@@ -50,4 +50,29 @@ enum Log {
     /// Deliberately `info`, not `debug`: it has to survive in a Release
     /// TestFlight build, which is where these get reproduced.
     static let input = Logger(subsystem: subsystem, category: "input")
+
+    /// Remote push: device-token registration, relay sync, pairing decode.
+    ///
+    /// This whole path fails SILENTLY by nature — an unregistered device is not
+    /// an error anywhere, it is simply a phone that never buzzes — and every
+    /// step of it happens with no UI attached: at launch, in the background, or
+    /// inside an extension. The first attempt to bring it up on a simulator
+    /// produced exactly that: no prompt, no token, no registration, and nothing
+    /// anywhere saying which of the three guards had returned early. Hence
+    /// `info`, not `debug`, and hence logging the decisions rather than only the
+    /// failures.
+    ///
+    /// Never log a pairing secret or a whole send token. Device tokens are
+    /// logged as a short prefix — enough to correlate with the relay's own
+    /// fingerprints, not enough to be a credential.
+    static let push = Logger(subsystem: subsystem, category: "push")
+
+    /// Vibe Island: which agent states were seen, and what was announced.
+    ///
+    /// Added because a reconnect re-notifying was reported from a phone and
+    /// could not be observed anywhere — the decision left no trace, so the only
+    /// evidence was a person counting buzzes. `postAttention` now says who it is
+    /// announcing and for which episode, which is what makes the difference
+    /// between "it announced again" and "iOS re-delivered" visible at all.
+    static let island = Logger(subsystem: subsystem, category: "island")
 }

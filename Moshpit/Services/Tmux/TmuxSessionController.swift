@@ -21,6 +21,13 @@ struct AgentHook: Equatable, Sendable {
     var state: String?
     var agent: String?
     var since: Date?
+    /// What is actually RUNNING in the pane right now — polled fresh every
+    /// round, unlike the discovery snapshot's copy, which can be minutes stale.
+    /// The monitor uses it to spot stamps whose agent has since died: hooks
+    /// only ever write the options, and a killed agent fires no final hook, so
+    /// `attention` freezes at the moment of death unless something asks what
+    /// the pane is doing NOW.
+    var command: String?
     var title: String?
 }
 
@@ -401,6 +408,10 @@ final class TmuxSessionController: MultiplexerControlling {
         // full-screen pane.
         ensureImmersiveZoom()
         refreshActivePaneMouse()   // wheel-vs-copy-mode signal for the new pane
+        // Fill whatever this window's panes still need. On attach only the
+        // on-screen window is dumped, so arriving here is where the rest earn
+        // their `capture-pane` — deferred, never dropped.
+        ensureTerminalsForAllPanes()
         // The pane's local buffer may have drifted while hidden (%output only
         // carries new bytes; resizes reflow the local buffer independently of
         // tmux). Repaint it from tmux's model — FIFO ordering puts the capture
@@ -707,6 +718,13 @@ final class TmuxSessionController: MultiplexerControlling {
             // desktop-wide window's %output into our narrow pane (CJK `？` on switch).
             fitWindowToClient(newWindow)
             send(rawCommand: "select-window -t \(newWindow)")
+            // Fill the window we just brought on screen. `selectPane` handles a
+            // cross-window jump ITSELF rather than calling `selectWindow`, so
+            // the fill hook there does not cover this path — and a deep link
+            // (`moshpit://connection/<id>?pane=%N`) lands here, not there. A
+            // real-device run caught it: the window switched, the pane resynced,
+            // and its scrollback never arrived.
+            ensureTerminalsForAllPanes()
         }
         // Veil before the SwiftUI swap — see selectWindow.
         paneCoordinators[paneId]?.veilForSwitch()
@@ -1561,7 +1579,14 @@ final class TmuxSessionController: MultiplexerControlling {
         sendCommand("list-windows -a -F '#{session_id} #{window_id} #{window_index} #{window_layout} #{window_active} #{window_panes} #{window_name}'") { [weak self] response in
             self?.parseListWindows(response.lines)
         }
-        sendCommand("list-panes -a -F '#{pane_id} #{window_id} #{pane_index} #{pane_width} #{pane_height} #{pane_active} #{pane_current_command}'") { [weak self] response in
+        // `alternate_on` and `pane_in_mode` ride along here, ahead of the
+        // command (which is last because it can contain spaces). They used to be
+        // fetched per pane by `backfill`, with a `display-message` whose only
+        // purpose was to decide the capture range — a WHOLE extra round-trip
+        // depth before any pane could be filled, measured on a real attach with
+        // `-MOSHPIT_CC_TAP`. list-panes already runs and already round-trips;
+        // two more format fields on it cost nothing.
+        sendCommand("list-panes -a -F \(Self.paneDiscoveryFormat)") { [weak self] response in
             guard let self else { return }
             self.parseListPanes(response.lines)
             self.ensureTerminalsForAllPanes(isFreshAttach: isFreshAttach)
@@ -1794,21 +1819,32 @@ final class TmuxSessionController: MultiplexerControlling {
         clientSizeConfirmed = false   // this is a guess, not a view's report
     }
 
+    /// Whether a pane is on the alternate screen, and whether it is sitting in
+    /// copy-mode. Both are read from the discovery `list-panes`, which already
+    /// round-trips, rather than probed per pane — see ``sendInitialDiscovery``.
+    struct ScreenState { var isAlternate: Bool; var isInCopyMode: Bool }
+
+    @ObservationIgnored private var paneScreenState: [String: ScreenState] = [:]
+
     /// Panes whose pre-attach screen contents have been replayed into their
     /// terminal views via `capture-pane`.
-    @ObservationIgnored
-    private var backfilledPanes: Set<String> = []
+    @ObservationIgnored private var backfilledPanes: Set<String> = []
 
     /// How many lines of pre-attach scrollback to replay into a pane on first
-    /// sight. Kept deliberately small: every line is captured over the wire
-    /// and fed through SwiftTerm's parser on the main actor, so a 2 000-line
-    /// backfill stalled window switches into panes with deep history (e.g.
-    /// a 3 000-line node/Claude Code pane) — the gap a desktop tmux never
-    /// has. 400 fills several screens of scroll-up instantly; deeper history
-    /// is a future scroll-to-top on-demand fetch. tmux still keeps 50 000
-    /// lines server-side.
+    /// sight. Kept deliberately small: every line is captured over the wire and
+    /// fed through SwiftTerm's parser on the main actor, so a deep backfill
+    /// stalls window switches into panes with long history (a 3 000-line
+    /// node/Claude Code pane) — the gap a desktop tmux never has. 400 fills
+    /// several screens of scroll-up instantly; deeper history is a future
+    /// scroll-to-top on-demand fetch. tmux still keeps 50 000 lines server-side.
+    ///
+    /// The paragraph above was already here, arguing for 400, while the constant
+    /// said 2 000 — the reasoning had been written down and never applied.
+    /// Measured on a 4-pane session with 3 000 lines each: 2 000 costs ~20 KB
+    /// per pane on the wire and the same again through the parser, for
+    /// scrollback nobody has scrolled to yet.
     @ObservationIgnored
-    private let backfillHistoryLines = 2000
+    private let backfillHistoryLines = 400
 
     /// Replay a pane's existing scrollback (everything printed before we
     /// attached) into its terminal. `%output` only carries *new* bytes, so
@@ -1824,18 +1860,6 @@ final class TmuxSessionController: MultiplexerControlling {
         // stuck and mute every later resync for this pane.
         guard snapshot.isAttached else { return }
         backfilledPanes.insert(paneId)
-        backfillsInFlight.insert(paneId)
-        // Safety net for the hold below: if the dump's reply never lands (a
-        // desynced response FIFO, a connection dying mid-command), release it
-        // anyway. A resync fed slightly out of order costs one repaint; a hold
-        // that never lifts would mute this pane's repaints for the rest of the
-        // connection.
-        backfillTimeouts[paneId]?.cancel()
-        backfillTimeouts[paneId] = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(5))
-            guard !Task.isCancelled else { return }
-            self?.finishBackfill(paneId)
-        }
         // Full-screen TUIs on the alternate screen (vim, top, Claude Code)
         // are special: tmux does NOT re-emit an already-drawn TUI on attach,
         // so we must capture *something* or the pane is black — but replaying
@@ -1844,79 +1868,128 @@ final class TmuxSessionController: MultiplexerControlling {
         // resize). Compromise: alternate panes get only the current visible
         // screen (one frame, minimal pollution); primary-screen panes get the
         // full scrollback so scroll-up works.
-        sendCommand("display-message -p -t \(paneId) '#{alternate_on} #{pane_in_mode}'") { [weak self] resp in
-            guard let self else { return }
-            let fields = resp.lines.first?.split(separator: " ").map(String.init) ?? []
-            let isAlternate = fields.first == "1"
-            // A pane still in copy-mode on FIRST sight after attach is a stale
-            // leftover — our previous connection died mid-scroll and nobody sent
-            // the exit. The scroll POSITION survives server-side, so the user's
-            // first post-reconnect swipe would continue copy-mode from that old
-            // offset (way up in history — the "reconnect scrolls to the top"
-            // bug). Cancel it so the reconnect starts from a clean live view.
-            // (This runs once per pane per attach, so it can't kick another
-            // client's deliberate copy-mode reading beyond this one moment.)
-            if fields.count >= 2, fields[1] == "1" {
-                self.send(rawCommand: "send-keys -t \(paneId) -X cancel")
-            }
-            // Primary-screen panes stop at the scrollback ABOVE the visible
-            // screen (`-E -1`), because the visible screen itself arrives from
-            // the fresh-attach resync in ``ensureTerminalsForAllPanes`` —
-            // capturing it here too draws it twice, leaving a phantom extra
-            // prompt that looked like a stray Return.
-            //
-            // Do NOT reintroduce "tmux repaints the visible screen on attach"
-            // here. Measured against tmux 3.6a with a raw control client: a
-            // `-CC attach` emits no `%output` at all, and neither does a
-            // `refresh-client -C` that names the size the window already has.
-            // tmux only repaints when the size actually CHANGES — which is why
-            // the app's own resync is what paints a fresh attach, and why a
-            // paint fed before the terminal view was laid out went uncorrected
-            // (see `resizeClient`'s guard).
-            //
-            // Alternate-screen TUIs get their visible frame captured here as
-            // well: tmux does not re-emit an already-drawn TUI, and replaying
-            // scrollback into one corrupts it.
-            let range = isAlternate ? "" : "-S -\(self.backfillHistoryLines) -E -1"
-            self.sendCommand("capture-pane -p -e \(range) -t \(paneId)") { [weak self] response in
+        // NOTE: an attempt to hold this until `clientSizeConfirmed` (so the
+        // capture is laid out for the view's real grid instead of
+        // `setInitialClientSize`'s estimate) was measured and backed out. It is
+        // right in principle — a `-MOSHPIT_CC_TAP` trace shows the whole
+        // backfill captured at a guessed 80x53, then a `resize-window 76x68`
+        // right behind it — but it moves the dump from "just after discovery" to
+        // "just after the first size commit", which lands in the middle of every
+        // resize/cover test and re-orders a sequence six of them pin in detail.
+        // The measured payoff was smaller than the projection: the trace showed
+        // no `frameExceedsWidth` rejection, so nothing was actually re-fetched.
+        // Worth revisiting behind an explicit ordering test, not as a drive-by.
+        beginBackfillCapture(paneId)
+    }
+
+    private func beginBackfillCapture(_ paneId: String) {
+        backfillsInFlight.insert(paneId)
+        // Safety net for that hold: if the dump's reply never lands (a desynced
+        // response FIFO, a connection dying mid-command), release it anyway. A
+        // resync fed slightly out of order costs one repaint; a hold that never
+        // lifts would mute this pane's repaints for the rest of the connection.
+        backfillTimeouts[paneId]?.cancel()
+        backfillTimeouts[paneId] = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(5))
+            guard !Task.isCancelled else { return }
+            self?.finishBackfill(paneId)
+        }
+        // The screen state comes from the discovery `list-panes`, which has
+        // already round-tripped. Probing per pane cost a whole extra depth
+        // before anything could be filled — visible in a `-MOSHPIT_CC_TAP`
+        // trace as four `display-message` sends sitting between discovery and
+        // the first `capture-pane`.
+        //
+        // The probe survives as a fallback for a pane discovery has not
+        // described yet (one that appeared via `%window-add` between passes),
+        // because guessing "primary screen" for an alternate-screen TUI would
+        // replay scrollback into it and corrupt the frame.
+        if let state = paneScreenState[paneId] {
+            issueBackfillCapture(paneId: paneId, state: state)
+        } else {
+            sendCommand("display-message -p -t \(paneId) '#{alternate_on} #{pane_in_mode}'") { [weak self] resp in
                 guard let self else { return }
-                // Whatever this reply turns out to hold, the dump is over —
-                // release any resync that was waiting behind it.
-                defer { self.finishBackfill(paneId) }
-                var lines = response.lines
-                while let last = lines.last, last.trimmingCharacters(in: .whitespaces).isEmpty {
-                    lines.removeLast()
-                }
-                guard !lines.isEmpty else { return }
-                // A dump captured while the pane sits at ANOTHER client's
-                // width (真机取证 2026-08-19: 62-row desktop frames fed
-                // straight into background panes) is laid out for a grid
-                // this terminal doesn't have — feeding it wraps every line
-                // and seeds the local scrollback with permanent garble.
-                // Skip it and un-claim the pane so a later discovery pass
-                // retries once the sizes settle; the parked resync (which
-                // validates its own frame) still runs via the defer.
-                guard !Self.frameExceedsWidth(lines, cols: self.lastClientSize.cols) else {
-                    self.ccTapLine("BACKFILL-REJECT pane=\(paneId) lines=\(lines.count) "
-                        + "ours=\(self.lastClientSize.rows)x\(self.lastClientSize.cols)")
-                    self.backfilledPanes.remove(paneId)
-                    return
-                }
-                // History is followed by %output's visible repaint, which
-                // repositions the cursor — terminate with CRLF so the two
-                // don't run together, but add nothing after a bare frame.
-                let text = lines.joined(separator: "\r\n") + (isAlternate ? "" : "\r\n")
-                self.paneCoordinators[paneId]?.feed(data: Data(text.utf8))
+                let fields = resp.lines.first?.split(separator: " ").map(String.init) ?? []
+                let state = ScreenState(isAlternate: fields.first == "1",
+                                        isInCopyMode: fields.count >= 2 && fields[1] == "1")
+                self.paneScreenState[paneId] = state
+                self.issueBackfillCapture(paneId: paneId, state: state)
             }
+        }
+    }
+
+    /// Send the one `capture-pane` that fills a pane, with the range its screen
+    /// state calls for.
+    ///
+    /// Full-screen TUIs on the alternate screen (vim, top, Claude Code) are
+    /// special: tmux does NOT re-emit an already-drawn TUI on attach, so we must
+    /// capture *something* or the pane is black — but replaying SCROLLBACK
+    /// history into a TUI corrupts it (a capture-pane text dump has no cursor
+    /// positioning, and the stray lines bleed through on resize). Compromise:
+    /// alternate panes get only the current visible screen (one frame, minimal
+    /// pollution); primary-screen panes get the scrollback so scroll-up works.
+    private func issueBackfillCapture(paneId: String, state: ScreenState) {
+        // A pane still in copy-mode on FIRST sight after attach is a stale
+        // leftover — our previous connection died mid-scroll and nobody sent the
+        // exit. The scroll POSITION survives server-side, so the user's first
+        // post-reconnect swipe would continue copy-mode from that old offset
+        // (way up in history — the "reconnect scrolls to the top" bug). Cancel
+        // it so the reconnect starts from a clean live view. (Once per pane per
+        // attach, so it cannot kick another client's deliberate reading beyond
+        // this one moment.)
+        if state.isInCopyMode {
+            send(rawCommand: "send-keys -t \(paneId) -X cancel")
+        }
+        // Primary-screen panes stop at the scrollback ABOVE the visible screen
+        // (`-E -1`), because the visible screen itself arrives from the
+        // fresh-attach resync in ``ensureTerminalsForAllPanes`` — capturing it
+        // here too draws it twice, leaving a phantom extra prompt that looked
+        // like a stray Return.
+        //
+        // Do NOT reintroduce "tmux repaints the visible screen on attach" here.
+        // Measured against tmux 3.6a with a raw control client: a `-CC attach`
+        // emits no `%output` at all, and neither does a `refresh-client -C` that
+        // names the size the window already has. tmux only repaints when the
+        // size actually CHANGES — which is why the app's own resync is what
+        // paints a fresh attach.
+        let range = state.isAlternate ? "" : "-S -\(backfillHistoryLines) -E -1"
+        sendCommand("capture-pane -p -e \(range) -t \(paneId)") { [weak self] response in
+            guard let self else { return }
+            // Whatever this reply turns out to hold, the dump is over —
+            // release any resync that was waiting behind it.
+            defer { self.finishBackfill(paneId) }
+            var lines = response.lines
+            while let last = lines.last, last.trimmingCharacters(in: .whitespaces).isEmpty {
+                lines.removeLast()
+            }
+            guard !lines.isEmpty else { return }
+            // A dump captured while the pane sits at ANOTHER client's
+            // width (真机取证 2026-08-19: 62-row desktop frames fed
+            // straight into background panes) is laid out for a grid
+            // this terminal doesn't have — feeding it wraps every line
+            // and seeds the local scrollback with permanent garble.
+            // Skip it and un-claim the pane so a later discovery pass
+            // retries once the sizes settle; the parked resync (which
+            // validates its own frame) still runs via the defer.
+            guard !Self.frameExceedsWidth(lines, cols: self.lastClientSize.cols) else {
+                self.ccTapLine("BACKFILL-REJECT pane=\(paneId) lines=\(lines.count) "
+                    + "ours=\(self.lastClientSize.rows)x\(self.lastClientSize.cols)")
+                self.backfilledPanes.remove(paneId)
+                return
+            }
+            // History is followed by %output's visible repaint, which
+            // repositions the cursor — terminate with CRLF so the two
+            // don't run together, but add nothing after a bare frame.
+            let text = lines.joined(separator: "\r\n") + (state.isAlternate ? "" : "\r\n")
+            self.paneCoordinators[paneId]?.feed(data: Data(text.utf8))
         }
     }
 
     /// Panes whose ``backfill`` scrollback dump is still in flight, and the
     /// resyncs parked behind them (`paneId` → that resync's `reveal`).
     ///
-    /// ``backfill`` needs two round trips: the `alternate_on` probe, and then
-    /// the `capture-pane` it only enqueues from the probe's REPLY. Anything a
-    /// caller queues in between — `applyPendingRestoreIfReady()` →
+    /// ``backfill``'s dump lands a round trip after it is asked for, and
+    /// anything a caller queues in between — `applyPendingRestoreIfReady()` →
     /// `selectPane()` → `resyncPane()`, or the fresh-attach repaint — is
     /// therefore fed BEFORE the dump, and the dump's ~2 000 lines of history
     /// then scroll the authoritative frame straight off the screen. What's
@@ -1988,6 +2061,41 @@ final class TmuxSessionController: MultiplexerControlling {
             deferredResyncs[paneId] = reveal || (deferredResyncs[paneId] ?? false)
             return
         }
+        // One capture in flight per pane, and at most one queued behind it.
+        //
+        // Every disruption — a resize, a window switch, a war repair, the
+        // convergence arm — calls in here, and a burst of them used to mean a
+        // burst of `capture-pane` + cursor pairs: a `-MOSHPIT_CC_TAP` trace of a
+        // single attach showed the active pane captured TEN times, each a full
+        // round trip carrying a whole screen. They were redundant by
+        // construction: the last frame to arrive is the only one that survives
+        // on screen, so the ones before it paid for a repaint nobody saw.
+        //
+        // Coalescing rather than time-debouncing on purpose. A fixed timer has
+        // to be tuned for a link, and the links this app runs on differ by an
+        // order of magnitude; an in-flight gate adapts by itself — a fast link
+        // barely coalesces, a slow one collapses the whole burst into the one
+        // capture that was going to matter anyway.
+        //
+        // The two-pass settle (`resyncActivePaneSettling`) is unaffected: its
+        // second pass is scheduled well after the first has landed, which is the
+        // point of it — it exists to catch the app's own SIGWINCH redraw.
+        if resyncsInFlight.contains(paneId) {
+            queuedResyncs[paneId] = reveal || (queuedResyncs[paneId] ?? false)
+            return
+        }
+        resyncsInFlight.insert(paneId)
+        // Safety net, same shape as the backfill's: a connection that dies
+        // between the capture and its cursor reply would otherwise leave this
+        // pane permanently "in flight", and every later resync would coalesce
+        // into a follow-up that never runs — a pane that silently stops
+        // repainting for the rest of the session.
+        resyncTimeouts[paneId]?.cancel()
+        resyncTimeouts[paneId] = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(10))
+            guard !Task.isCancelled else { return }
+            self?.finishResync(paneId)
+        }
         // Frame FIRST, cursor SECOND, fed in two steps — the order matters.
         // The pipeline is stream-ordered, so any %output between the two
         // replies is (a) applied AFTER the frame feed, at its correct place on
@@ -2057,11 +2165,30 @@ final class TmuxSessionController: MultiplexerControlling {
         }
         sendCommand("display-message -p -t \(paneId) '#{cursor_x} #{cursor_y}'") { [weak self] resp in
             guard let self else { return }
+            // The cursor is the SECOND half of the pair, so this is where the
+            // resync is actually over.
+            defer { self.finishResync(paneId) }
             let parts = resp.lines.first?.split(separator: " ").compactMap { Int($0) } ?? []
             let (col, row) = parts.count == 2 ? (parts[0], parts[1]) : (0, 0)
             // CUP is 1-based; cursor_x/y are 0-based.
             self.paneCoordinators[paneId]?.feed(data: Data("\u{1b}[\(row + 1);\(col + 1)H".utf8))
         }
+    }
+
+    /// Panes with a `capture-pane`+cursor pair on the wire, and the one request
+    /// that arrived while it was there.
+    @ObservationIgnored private var resyncsInFlight: Set<String> = []
+    @ObservationIgnored private var queuedResyncs: [String: Bool] = [:]
+    @ObservationIgnored private var resyncTimeouts: [String: Task<Void, Never>] = [:]
+
+    private func finishResync(_ paneId: String) {
+        resyncTimeouts.removeValue(forKey: paneId)?.cancel()
+        guard resyncsInFlight.remove(paneId) != nil else { return }
+        guard let reveal = queuedResyncs.removeValue(forKey: paneId) else { return }
+        // Exactly one follow-up, however many arrived while we were waiting: the
+        // frame it captures is current as of now, which is what every one of
+        // them was asking for.
+        resyncPane(paneId, reveal: reveal)
     }
 
     // MARK: - Agent hook bridge (Phase B)
@@ -2070,10 +2197,11 @@ final class TmuxSessionController: MultiplexerControlling {
     /// control command. An UNSET user option expands to an EMPTY string (tmux
     /// substitutes "" rather than erroring), so a never-stamped pane yields
     /// `"%5||||"`. `|` delimits five fixed fields:
-    /// `pane_id | state | agent | since | title`. `@moshpit_title` may itself
-    /// contain `|`, so the parser keeps the last field intact (maxSplits: 4).
+    /// `pane_id | state | agent | since | command | title`. `@moshpit_title`
+    /// may itself contain `|`, so the parser keeps the last field intact
+    /// (maxSplits: 5).
     private static let agentHookFormat =
-        "'#{pane_id}|#{@moshpit_state}|#{@moshpit_agent}|#{@moshpit_since}|#{@moshpit_title}'"
+        "'#{pane_id}|#{@moshpit_state}|#{@moshpit_agent}|#{@moshpit_since}|#{pane_current_command}|#{@moshpit_title}'"
 
     /// Read every pane's hook stamp in a single cheap `list-panes -a` control
     /// command and rebuild ``agentHooks``. The monitor calls this on a timer.
@@ -2088,7 +2216,7 @@ final class TmuxSessionController: MultiplexerControlling {
         }
     }
 
-    /// Parse the `pane_id|state|agent|since|title` lines from
+    /// Parse the `pane_id|state|agent|since|command|title` lines from
     /// ``pollAgentHooks`` and replace ``agentHooks`` wholesale. Empty fields
     /// (unset user options) become `nil`. Panes with an empty/unrecognised
     /// `@moshpit_state` are recorded with `state == nil` (NOT dropped) so the
@@ -2099,9 +2227,9 @@ final class TmuxSessionController: MultiplexerControlling {
         for line in lines {
             // omittingEmptySubsequences:false keeps empty fields in position;
             // maxSplits:4 preserves any literal `|` inside a user-set title.
-            let parts = line.split(separator: "|", maxSplits: 4,
+            let parts = line.split(separator: "|", maxSplits: 5,
                                    omittingEmptySubsequences: false)
-            guard parts.count == 5, !parts[0].isEmpty else { continue }
+            guard parts.count == 6, !parts[0].isEmpty else { continue }
             let paneId = String(parts[0])
             let stateRaw = String(parts[1])
             // Only the three hook-emitted states are valid; anything else
@@ -2115,8 +2243,10 @@ final class TmuxSessionController: MultiplexerControlling {
             // since may be empty even with a state if a stamp partially failed;
             // garbage parses to nil too. Callers substitute Date() for nil.
             let since = TimeInterval(parts[3]).map { Date(timeIntervalSince1970: $0) }
-            let title = parts[4].isEmpty ? nil : String(parts[4])
-            parsed[paneId] = AgentHook(state: state, agent: agent, since: since, title: title)
+            let command = parts[4].isEmpty ? nil : String(parts[4])
+            let title = parts[5].isEmpty ? nil : String(parts[5])
+            parsed[paneId] = AgentHook(state: state, agent: agent, since: since,
+                                       command: command, title: title)
         }
         agentHooks = parsed
         onAgentHooksUpdated?()
@@ -2371,6 +2501,14 @@ final class TmuxSessionController: MultiplexerControlling {
 
     // MARK: - Initial discovery
 
+    /// The pane discovery format, in ONE place. It is parsed by field position
+    /// in `parseListPanes`, and a second call site that still spoke the older
+    /// seven-field version silently dropped every pane it described — the parse
+    /// requires all nine and a short line is skipped, not repaired.
+    static let paneDiscoveryFormat =
+        "'#{pane_id} #{window_id} #{pane_index} #{pane_width} #{pane_height} "
+        + "#{pane_active} #{alternate_on} #{pane_in_mode} #{pane_current_command}'"
+
     private func sendInitialDiscovery() async {
         // Mark attached first so the UI can show progress while list-* fly.
         snapshot.isAttached = true
@@ -2382,7 +2520,7 @@ final class TmuxSessionController: MultiplexerControlling {
         sendCommand("list-windows -a -F '#{session_id} #{window_id} #{window_index} #{window_layout} #{window_active} #{window_panes} #{window_name}'") { [weak self] response in
             self?.parseListWindows(response.lines)
         }
-        sendCommand("list-panes -a -F '#{pane_id} #{window_id} #{pane_index} #{pane_width} #{pane_height} #{pane_active} #{pane_current_command}'") { [weak self] response in
+        sendCommand("list-panes -a -F \(Self.paneDiscoveryFormat)") { [weak self] response in
             guard let self else { return }
             self.parseListPanes(response.lines)
             self.ensureTerminalsForAllPanes(isFreshAttach: true)
@@ -2469,10 +2607,11 @@ final class TmuxSessionController: MultiplexerControlling {
         var activePaneId: String? = snapshot.activePaneId
         for line in lines {
             // Format: "#{pane_id} #{window_id} #{pane_index} #{pane_width}
-            // #{pane_height} #{pane_active} #{pane_current_command}" —
-            // command LAST since it may contain spaces.
-            let parts = line.split(separator: " ", maxSplits: 6)
-            guard parts.count >= 7 else { continue }
+            // #{pane_height} #{pane_active} #{alternate_on} #{pane_in_mode}
+            // #{pane_current_command}" — command LAST since it may contain
+            // spaces.
+            let parts = line.split(separator: " ", maxSplits: 8)
+            guard parts.count >= 9 else { continue }
             let id = String(parts[0])
             let windowId = String(parts[1])
             // See parseListSessions — reject ids that don't match tmux's
@@ -2482,7 +2621,9 @@ final class TmuxSessionController: MultiplexerControlling {
             let width = Int(parts[3]) ?? 80
             let height = Int(parts[4]) ?? 24
             let isActive = parts[5] == "1"
-            let command = String(parts[6])
+            paneScreenState[id] = ScreenState(isAlternate: parts[6] == "1",
+                                              isInCopyMode: parts[7] == "1")
+            let command = String(parts[8])
             newPanes[id] = PaneInfo(
                 id: id,
                 windowId: windowId,
@@ -2516,10 +2657,24 @@ final class TmuxSessionController: MultiplexerControlling {
         let activePaneIds = snapshot.panes.values
             .filter { snapshot.windows[$0.windowId]?.sessionId == snapshot.activeSessionId }
             .map(\.id)
+        // Minting is local and cheap — every pane in the session gets a terminal
+        // so a switch has somewhere to paint immediately.
         for paneId in activePaneIds where paneTerminals[paneId] == nil {
             _ = mintTerminal(for: paneId)
         }
-        for paneId in activePaneIds {
+        // Filling is NOT cheap: one `capture-pane` per pane, each carrying that
+        // pane's scrollback. Only the panes actually on screen — the active
+        // window's — are worth that on attach. A session with four windows of
+        // three panes was paying twelve dumps to show three, and the other nine
+        // are for windows the user may never open.
+        //
+        // Deferred, not dropped: `selectWindow` calls back here, so a window
+        // fills the moment it is switched to. `backfilledPanes` makes the
+        // repeat a no-op for panes already done.
+        let onScreen = activePaneIds.filter {
+            snapshot.panes[$0]?.windowId == snapshot.activeWindowId
+        }
+        for paneId in (onScreen.isEmpty ? activePaneIds : onScreen) {
             backfill(paneId: paneId)
         }
         // backfill() deliberately skips the live screen for primary-screen
@@ -2906,7 +3061,7 @@ final class TmuxSessionController: MultiplexerControlling {
         sendCommand("list-windows -a -F '#{session_id} #{window_id} #{window_index} #{window_layout} #{window_active} #{window_panes} #{window_name}'") { [weak self] response in
             self?.parseListWindows(response.lines)
         }
-        sendCommand("list-panes -a -F '#{pane_id} #{window_id} #{pane_index} #{pane_width} #{pane_height} #{pane_active} #{pane_current_command}'") { [weak self] response in
+        sendCommand("list-panes -a -F \(Self.paneDiscoveryFormat)") { [weak self] response in
             guard let self else { return }
             self.parseListPanes(response.lines)
             self.ensureTerminalsForAllPanes()

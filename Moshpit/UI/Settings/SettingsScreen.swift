@@ -127,12 +127,24 @@ struct SettingsScreen: View {
                                 subtitle: "Display what the agent is running/asking — off keeps it private",
                                 isOn: $settings.lockScreenDetailEnabled)
                             ChevronRow(label: "How notifications work") { showNotifInfo = true }
-                            // Hidden on herdr: it reports agent status itself,
-                            // so there is nothing to install — offering the
-                            // installer would send the user to set up hooks
-                            // that would never be read.
-                            if hooksApplicable {
-                                ChevronRow(label: "Install agent hooks") { showHooksInstall = true }
+                            // Shown on herdr too, unlike the sheet this
+                            // replaced. That one only installed tmux hooks, so
+                            // hiding it on herdr was right — herdr reports agent
+                            // status itself. This screen also pairs the host for
+                            // pushes, which works on any multiplexer, and the
+                            // hook script is what FIRES a push even where its
+                            // tmux stamping is inert. The sheet says which half
+                            // applies.
+                            if liveSession != nil {
+                                ChevronRow(label: "Set up this host") { showHooksInstall = true }
+                            } else {
+                                // Present but inert, rather than hidden: a row
+                                // that vanishes when nothing is connected reads
+                                // as a missing feature.
+                                ChevronRow(label: "Set up this host",
+                                           subtitle: "Connect to a host first")
+                                    .disabled(true)
+                                    .opacity(0.45)
                             }
                         }
 
@@ -192,7 +204,11 @@ struct SettingsScreen: View {
             NotificationInfoView()
         }
         .sheet(isPresented: $showHooksInstall) {
-            IslandHooksInstallView(session: liveSession)
+            if let liveSession {
+                HostSetupView(
+                    model: HostSetupModel(session: liveSession),
+                    testPane: liveSession.tmuxControl?.snapshot.activePaneId)
+            }
         }
     }
 
@@ -493,8 +509,10 @@ struct SettingsScreen: View {
 
 // MARK: - Notification info
 
-/// Honest explainer for how Moshpit's notifications work — they are local and
-/// bell-driven, not a remote push service.
+/// Honest explainer for how Moshpit's notifications work. Kept honest twice:
+/// it originally said "local only, no cloud push server" because that was
+/// true; the push relay then shipped and the page kept saying it for a while,
+/// which is exactly the kind of drift an explainer exists to prevent.
 struct NotificationInfoView: View {
     @Environment(\.dismiss) private var dismiss
 
@@ -504,12 +522,14 @@ struct NotificationInfoView: View {
                 MoshpitBackground()
                 ScrollView {
                     VStack(alignment: .leading, spacing: 18) {
-                        row("bell.fill", Ink.warn, "Bell = attention",
-                            "When a tmux pane rings the terminal bell (BEL) — which Claude Code and most CLIs emit when they finish or need input — Moshpit posts a local notification and flips the Vibe Island to “needs attention.”")
+                        row("bell.fill", Ink.warn, "Agents stamp their state",
+                            "Coding agents (Claude Code, Codex, …) report working / needs-you / done through hooks Moshpit installs on your host — precise states, not guesses. The terminal bell still works as a fallback for everything else.")
                         row("bubbles.and.sparkles.fill", Ink.accent, "Live Activity",
                             "While a session is attached, the Dynamic Island shows whether the agent is working, idle, or waiting on you. Tapping it deep-links straight back to that pane.")
-                        row("bolt.horizontal.fill", Ink.mosh, "Local, not push",
-                            "Alerts are generated on-device from the live session — there’s no cloud push server. They fire while Moshpit is in the foreground or recently backgrounded; a fully suspended app won’t poll. iOS will ask for notification permission the first time you connect with Notifications on.")
+                        row("paperplane.fill", Ink.mosh, "Push, sealed end-to-end",
+                            "When the app isn’t running, your host sends the alert through Moshpit’s push relay. It is encrypted on your host with a key only this device holds — the relay and Apple carry ciphertext and can read none of it. Delivered even from a locked phone.")
+                        row("moon.zzz.fill", Ink.meta, "Quiet by design",
+                            "A question must stand for 30 seconds before any phone hears about it — answered at your desk means never announced. All waiting agents share one summary card; only the first rings. A finished turn only chimes if it ran three minutes or more. Parked agents stay silent.")
                     }
                     .padding(20)
                 }

@@ -1,104 +1,43 @@
 import Foundation
 import UserNotifications
 
-/// Vibe Island — T1 control surface, notification half.
+/// Vibe Island — the notification half.
 ///
-/// Defines the two interactive notification categories and the keys their
-/// `userInfo` carries. `AgentActivityMonitor` posts with these categories;
-/// `AgentNotificationHandler` consumes the action the user taps and routes it
-/// through `AgentControlBridge` to the live pane.
+/// Two `userInfo` keys and a delegate. That is deliberately all of it.
+///
+/// This file used to define interactive categories — Allow, Deny, Reply, Stop —
+/// and they are gone. Not because they were hard to deliver (they were, in three
+/// separate ways) but because the operation did not belong: each one sent a blind
+/// keystroke into a pane, so answering an agent's permission request meant
+/// approving something you had not read, from an app whose whole purpose is that
+/// you can read it. A notification's job here is to wake you, name the agent, say
+/// what it is asking, and take you to the pane. `AgentNotificationHandler` routes
+/// that tap on the keys below.
 enum AgentNotifications {
-    enum Category {
-        /// "agent needs you" — Allow · Deny · Reply.
-        static let attention = "moshpit.category.attention"
-        /// "agent finished" — Reply (send the next instruction).
-        static let done = "moshpit.category.done"
-    }
-
     /// `userInfo` keys identifying which pane a notification targets.
     static let connectionKey = "connectionId"
     static let paneKey = "paneId"
 
-    /// Register the interactive categories and install the action handler as the
-    /// notification-center delegate. Called once at launch — harmless for
-    /// non-Pro users (no prompt; authorization is requested separately, only
-    /// when a session is actually tracked).
+    /// Install the tap handler as the notification-center delegate. Called from
+    /// `MoshpitApp.init()` — harmless for non-Pro users (no prompt; authorization
+    /// is requested separately, only when a session is actually tracked).
     static func configure(delegate: UNUserNotificationCenterDelegate) {
-        let center = UNUserNotificationCenter.current()
-        center.delegate = delegate
-        center.setNotificationCategories([attentionCategory(), doneCategory()])
-    }
-
-    /// A lock-screen / island control action failed to reach the agent's pane
-    /// (transport dead and force-resume failed). Fired by the app-side handler
-    /// so the user is TOLD instead of walking away believing they approved.
-    static func postDeliveryFailure() {
-        let content = UNMutableNotificationContent()
-        content.title = String(localized: "Not delivered")
-        content.body = String(localized: "Your tap didn't reach the agent — open Moshpit and answer there.")
-        content.sound = .default
-        UNUserNotificationCenter.current().add(UNNotificationRequest(
-            identifier: "moshpit.delivery.failure",
-            content: content, trigger: nil))
-    }
-
-    /// The user tapped Allow/Deny on a notification whose prompt has already
-    /// been answered or superseded — the keystroke was NOT sent.
-    static func postPromptExpired() {
-        let content = UNMutableNotificationContent()
-        content.title = String(localized: "Prompt already gone")
-        content.body = String(localized: "That request was already answered or has changed — nothing was sent. Open Moshpit to see the current state.")
-        content.sound = nil
-        UNUserNotificationCenter.current().add(UNNotificationRequest(
-            identifier: "moshpit.delivery.expired",
-            content: content, trigger: nil))
-    }
-
-    private static func attentionCategory() -> UNNotificationCategory {
-        let allow = UNNotificationAction(
-            identifier: AgentAction.allow.rawValue,
-            title: String(localized: "Allow"),
-            options: [])
-        let deny = UNNotificationAction(
-            identifier: AgentAction.deny.rawValue,
-            title: String(localized: "Deny"),
-            options: [.destructive])
-        let reply = UNTextInputNotificationAction(
-            identifier: AgentAction.reply.rawValue,
-            title: String(localized: "Reply"),
-            options: [],
-            textInputButtonTitle: String(localized: "Send"),
-            textInputPlaceholder: String(localized: "Type a response…"))
-        let interrupt = UNNotificationAction(
-            identifier: AgentAction.interrupt.rawValue,
-            title: String(localized: "Stop"),
-            options: [.destructive])
-        return UNNotificationCategory(
-            identifier: Category.attention,
-            actions: [allow, deny, reply, interrupt],
-            intentIdentifiers: [],
-            options: [.customDismissAction])
-    }
-
-    private static func doneCategory() -> UNNotificationCategory {
-        let reply = UNTextInputNotificationAction(
-            identifier: AgentAction.reply.rawValue,
-            title: String(localized: "Reply"),
-            options: [],
-            textInputButtonTitle: String(localized: "Send"),
-            textInputPlaceholder: String(localized: "Next instruction…"))
-        return UNNotificationCategory(
-            identifier: Category.done,
-            actions: [reply],
-            intentIdentifiers: [],
-            options: [])
+        // Only the delegate. There are no categories any more: a category exists
+        // to carry ACTION BUTTONS, and Moshpit's notifications no longer have
+        // any. Allow/Deny sent a blind Enter or Esc into a pane — approving a
+        // coding agent's permission request from a lock screen without reading
+        // what it asked, in an app whose entire value is that you CAN read it.
+        // The honest notification wakes you, says which agent wants what, and
+        // opens the pane when tapped; that tap routes on `userInfo`, never on a
+        // category identifier.
+        UNUserNotificationCenter.current().delegate = delegate
     }
 }
 
-/// Notification-center delegate for the control surface. Each tapped action
-/// (Allow / Deny / Reply) or a body tap resolves the target pane from
-/// `userInfo` and hands off to `AgentControlBridge` (which lives in the app
-/// process and owns the live session).
+/// Notification-center delegate. A tapped notification resolves its target pane
+/// from `userInfo` and asks `AgentControlBridge` to open it. That is the only
+/// interaction — the tapped-ACTION branch that used to sit here, turning Allow /
+/// Deny / Reply into keystrokes, went with the buttons.
 ///
 /// Deliberately the completion-HANDLER delegate variants, not the async ones.
 /// The async variants read cleaner, but the ObjC bridge invokes their
@@ -120,10 +59,32 @@ final class AgentNotificationHandler: NSObject, UNUserNotificationCenterDelegate
         return (connectionId, paneId)
     }
 
+    /// A pairing self-test's nonce, when this notification is one — nil for
+    /// everything else. Pure and static so a test can pin it: this recognition
+    /// was DESTROYED once, silently, in an unrelated rewrite of the delegate,
+    /// and from that day every "send a test notification" timed out with "the
+    /// host sent one, but this screen never saw it arrive" — the push chain was
+    /// perfect and the last inch was gone. Nothing failed loudly, because the
+    /// closure it feeds is optional and nobody was left to call it.
+    static func selfTestNonce(in info: [AnyHashable: Any]) -> String? {
+        guard info[PushRemoteNotification.agentKey] as? String
+                == PushRemoteNotification.selfTestAgent else { return nil }
+        return info[PushRemoteNotification.detailKey] as? String ?? ""
+    }
+
     func userNotificationCenter(_ center: UNUserNotificationCenter,
                                 willPresent notification: UNNotification,
                                 withCompletionHandler completionHandler:
                                     @escaping (UNNotificationPresentationOptions) -> Void) {
+        // A pairing self-test is plumbing, not news: hand its nonce to the
+        // sheet that is waiting on it and show nothing.
+        if let nonce = Self.selfTestNonce(in: notification.request.content.userInfo) {
+            Task { @MainActor in
+                AgentControlBridge.shared.pushSelfTest?(nonce)
+                completionHandler([])
+            }
+            return
+        }
         // Surface attention even while Moshpit is foreground (the user may be on
         // a different screen than the agent's pane) — EXCEPT when the user is
         // looking at that exact pane: a banner + chime over the prompt you are
@@ -147,21 +108,14 @@ final class AgentNotificationHandler: NSObject, UNUserNotificationCenterDelegate
         // main-actor task.
         let target = target(of: response.notification.request.content.userInfo)
         let actionIdentifier = response.actionIdentifier
-        let text = (response as? UNTextInputNotificationResponse)?.userText
 
         Task { @MainActor in
             defer { completionHandler() }
             guard let (connectionId, paneId) = target else { return }
-
-            // Body tap (or "open") → jump to the pane, same as the island
-            // deep link.
-            if actionIdentifier == UNNotificationDefaultActionIdentifier {
-                AgentControlBridge.shared.open(connectionId: connectionId, paneId: paneId)
-                return
-            }
-            guard let action = AgentAction(rawValue: actionIdentifier) else { return }
-            await AgentControlBridge.shared.dispatch(action, connectionId: connectionId,
-                                                     paneId: paneId, text: text)
+            // A body tap, or the system's "open". Nothing else can arrive: with
+            // no categories registered there are no action identifiers to send.
+            guard actionIdentifier == UNNotificationDefaultActionIdentifier else { return }
+            AgentControlBridge.shared.open(connectionId: connectionId, paneId: paneId)
         }
     }
 }

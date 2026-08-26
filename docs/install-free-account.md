@@ -118,3 +118,20 @@ xcrun devicectl device install app --device <UDID> \
 - **装上后 7 天打不开** → 正常,重新 ⌘R 续签。
 - **想人不在家也能更新** → 免费账号做不到;升级 $99/年开发者账号后走 TestFlight(90 天)
   或直接上架。
+- **签名报 "Push Notifications capability is not available"** → 免费个人账号签不了
+  推送。把 `project.yml` 里 Moshpit target entitlements 下的 `aps-environment:
+  development` 那一行注释掉,`xcodegen generate` 后重试;同理可以照灵动岛扩展那条把
+  `MoshpitPush` 从 `dependencies` 里去掉。代价是**远程推送整个失效**——agent 在你没
+  开着 App 时叫不到你(`docs/PUSH.md` 讲的就是这条链路)。App 开着时的灵动岛、本地
+  通知、锁屏 Allow/Deny 都不受影响,因为那条路不经过 APNs。
+  注意 `project.yml` 是 Info.plist 和 entitlements 的**唯一源头**:直接改生成出来的
+  `Moshpit.entitlements` 会在下次 generate 时被覆盖回去。
+- **签名报 Time Sensitive Notifications 相关的 capability 错误** → 同一个原因,同一个
+  做法:把 `project.yml` 里 `com.apple.developer.usernotifications.time-sensitive`
+  那一行注释掉再 `xcodegen generate`。这条 entitlement 让"agent 在等你批准"的通知能
+  **穿透专注模式**、不被定时摘要攒起来;去掉之后 App 照常工作,通知也照常来,只是会
+  和普通通知一样排在专注模式后面。App 和 relay 两边的代码都仍然会**请求**这个级别,
+  iOS 在没有 entitlement 时静默降级,不报错也不打日志——所以不用改任何代码。
+
+  注意这跟 Critical Alerts 不是一回事:后者(能无视静音键)要向 Apple 单独申请审批,
+  Moshpit 没用、也不打算用。

@@ -61,3 +61,13 @@ xcuserdata/
 
 # tmux -CC lab runtime recordings (lab.py writes a dir per run)
 /scripts/tmux-cc-lab/runs/
+
+# APNs signing keys. One .p8 authorises pushes to EVERY device that ever paired
+# with this app, cannot be re-downloaded from Apple, and has no expiry to save
+# you — so it must never reach a commit, let alone a public mirror. Keep it in
+# a secret store and hand it to the relay through MOSHPIT_APNS_KEY_FILE
+# (docs/PUSH.md). Same for the certificate-era material, in case anyone reaches
+# for the old scheme.
+AuthKey_*.p8
+*.p8
+*.p12

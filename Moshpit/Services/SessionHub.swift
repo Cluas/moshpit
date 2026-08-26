@@ -144,6 +144,22 @@ final class SessionHub {
         /// The active tmux control surface, whichever transport is in use.
         var tmuxControl: TmuxSessionController? { tmuxController ?? moshControl }
 
+        /// Fired every time a multiplexer control plane is (re)wired — the
+        /// initial attach, mosh's late detached-task wiring, and the REBUILD a
+        /// mid-session reconnect performs.
+        ///
+        /// That last one is why this exists. `awaitMultiplexerControl` answers
+        /// once, and `AgentActivityMonitor` held the controller it got weakly;
+        /// a reconnect (`stop()` + `start()`) deallocates that instance and
+        /// builds a new one, so the monitor's ref went nil and hook polling
+        /// silently stopped — no new attention notifications after any
+        /// reconnect, for as long as the terminal screen stayed up. Found by
+        /// the real-device harness's positive control, not by any unit test:
+        /// the zero it produces is indistinguishable from the zero the
+        /// episode-suppression fix produces, until you ask a NEW question and
+        /// nothing rings.
+        var onMultiplexerControlChanged: ((any MultiplexerControlling) -> Void)?
+
         /// The multiplexer control plane, whenever it materializes — for
         /// callers that need "the control plane, once it exists" rather than
         /// "the control plane right now". Over SSH the controller is assigned
@@ -294,6 +310,7 @@ final class SessionHub {
             self.moshTransport = transport
             self.sidecarSSH = ssh
             self.herdrControl = control
+            if let control { onMultiplexerControlChanged?(control) }
             self.moshServerPid = pid
             self.moshHadFirstContact = hadContact
             if transport != nil { viewModel.markConnected() }
@@ -1210,6 +1227,7 @@ final class SessionHub {
                     try? await session.write(bytes)
                 }
                 tmuxController = controller
+                onMultiplexerControlChanged?(controller)
                 beginAttachTimeout(controller: controller)
             } else if multiplexer == .herdr {
                 // Native single-pane rendering: this PTY carries herdr's frame
@@ -1264,6 +1282,7 @@ final class SessionHub {
             }
             client.start()
             herdrControl = client
+            onMultiplexerControlChanged?(client)
         }
 
         /// Put the skew notice up with its remedy attached. Never runs the
@@ -2143,6 +2162,7 @@ final class SessionHub {
                     try? await session.write(bytes)
                 }
                 tmuxController = controller
+                onMultiplexerControlChanged?(controller)
                 beginAttachTimeout(controller: controller)
             } else {
                 let coordinator = self.coordinator
@@ -2369,6 +2389,7 @@ final class SessionHub {
             let boot = "\(tmux) set -g history-limit 50000 2>/dev/null; " + chain + "\r"
             try? await ssh.write(Data(boot.utf8))
             moshControl = controller
+            onMultiplexerControlChanged?(controller)
         }
 
         /// Bound the wait for `controller`'s tmux control-mode attach to

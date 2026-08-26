@@ -21,6 +21,13 @@ enum PredictMode: String, CaseIterable {
 final class AppSettings {
     @ObservationIgnored private let defaults: UserDefaults
 
+    /// The same store, for collaborators that persist their own bookkeeping
+    /// rather than a user-facing setting — `AgentActivityMonitor` keeps its
+    /// "already announced" record here so a relaunch does not re-notify for
+    /// prompts that are still standing. Exposed rather than duplicated so tests
+    /// that hand in a scratch suite keep isolating everything.
+    @ObservationIgnored var store: UserDefaults { defaults }
+
     /// App-wide instance so non-View code (design tokens, icon switching)
     /// can read the active settings without environment injection.
     static let shared = AppSettings()
@@ -150,6 +157,65 @@ final class AppSettings {
     var notificationsEnabled: Bool {
         get { access(keyPath: \.notificationsEnabled); return get("moshpit.settings.notifications", true) }
         set { withMutation(keyPath: \.notificationsEnabled) { defaults.set(newValue, forKey: "moshpit.settings.notifications") } }
+    }
+
+    /// Relay a paired host is pointed at.
+    ///
+    /// Empty until the user sets one: there is no default that could be right,
+    /// and guessing at a host would be worse than asking.
+    /// The push relay to pair against. Defaults to the hosted one, because for
+    /// an App Store install there is no other that can work: the relay's whole
+    /// power is the APNs `.p8` signing key for THIS bundle id, and only ours
+    /// holds it. The field stays editable for the two audiences it serves —
+    /// development (the simulator harness points it at 127.0.0.1) and people
+    /// who build the app from source under their own team, sign with their own
+    /// key, and run `push-relay/` themselves. Message content is sealed either
+    /// way; a relay, ours included, sees ciphertext and routing hashes.
+    /// Connections whose "enable agent notifications on this host?" question the
+    /// user answered NO to. Auto-care never asks those again; the Host Setup
+    /// sheet remains the door for changing their mind.
+    var hostSetupDeclined: Set<String> {
+        get {
+            access(keyPath: \.hostSetupDeclined)
+            return Set(defaults.stringArray(forKey: "moshpit.settings.hostSetupDeclined") ?? [])
+        }
+        set {
+            withMutation(keyPath: \.hostSetupDeclined) {
+                defaults.set(Array(newValue).sorted(), forKey: "moshpit.settings.hostSetupDeclined")
+            }
+        }
+    }
+
+    /// The one relay this build can use. HARDCODED, not defaulted: an earlier
+    /// version stored a user-editable value and fell back to the constant only
+    /// when nothing was stored — so the one time a stray edit dropped the
+    /// ".org" suffix, the typo was persisted, the fallback never fired again,
+    /// and (once the editing UI was removed) there was no way back at all. A
+    /// source builder running their own relay changes THIS line, together with
+    /// the signing key that makes their relay real.
+    nonisolated static let defaultPushRelay = "https://push.moshpit.cluas.eu.org"
+
+    /// What every pairing and registration uses. In Release this IS the
+    /// constant. In DEBUG a stored override is honored so a harness can point a
+    /// simulator at a local relay (`simctl spawn <sim> defaults write
+    /// com.cluas.moshpit moshpit.settings.pushRelay http://127.0.0.1:PORT`) —
+    /// and ONLY for loopback hosts. Not "any valid URL": the developer's own
+    /// devices run Debug builds permanently, and the typo that motivated all of
+    /// this ("…cluas.eu", org gone) parses as a perfectly valid URL. A harness
+    /// needs the loopback; nothing legitimate needs anything else.
+    var pushRelayURL: String {
+        get {
+            access(keyPath: \.pushRelayURL)
+            #if DEBUG
+            let stored = get("moshpit.settings.pushRelay", "")
+            if let url = URL(string: stored), let host = url.host,
+               ["127.0.0.1", "localhost", "::1"].contains(host) {
+                return stored
+            }
+            #endif
+            return Self.defaultPushRelay
+        }
+        set { withMutation(keyPath: \.pushRelayURL) { defaults.set(newValue, forKey: "moshpit.settings.pushRelay") } }
     }
 
     var liveActivityEnabled: Bool {

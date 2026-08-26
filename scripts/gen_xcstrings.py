@@ -281,17 +281,21 @@ add("Raise the keyboard as soon as a terminal opens, instead of after you tap it
     "打开终端就弹出键盘，而不是等你点一下之后",
     "タップを待たず、ターミナルを開いた時点でキーボードを表示します")
 # Notification info sheet
-add("Bell = attention", "响铃 = 需要关注", "ベル = 要注意")
-add("When a tmux pane rings the terminal bell (BEL) — which Claude Code and most CLIs emit when they finish or need input — Moshpit posts a local notification and flips the Vibe Island to “needs attention.”",
-    "当 tmux 窗格触发终端响铃（BEL）——Claude Code 和多数 CLI 在完成或需要输入时都会发出——Moshpit 会发送本地通知，并把 Vibe Island 切换为“需要关注”。",
-    "tmux ペインがターミナルベル（BEL）を鳴らすと——Claude Code やほとんどの CLI は完了時や入力待ちで発します——Moshpit はローカル通知を送り、Vibe Island を「要注意」に切り替えます。")
+add("Agents stamp their state", "智能体自报状态", "エージェントが状態を報告")
+add("Coding agents (Claude Code, Codex, …) report working / needs-you / done through hooks Moshpit installs on your host — precise states, not guesses. The terminal bell still works as a fallback for everything else.",
+    "编码智能体（Claude Code、Codex 等）通过 Moshpit 安装在主机上的钩子上报「工作中 / 等你 / 已完成」——精确状态，不靠猜。其余程序仍以终端响铃作为兜底。",
+    "コーディングエージェント（Claude Code、Codex など）は Moshpit がホストにインストールするフックで「作業中 / あなた待ち / 完了」を報告します——推測ではなく正確な状態です。それ以外はターミナルベルがフォールバックとして機能します。")
 add("While a session is attached, the Dynamic Island shows whether the agent is working, idle, or waiting on you. Tapping it deep-links straight back to that pane.",
     "会话附加期间，灵动岛会显示智能体正在工作、空闲，还是在等你。点按即可直接深链回到该窗格。",
     "セッションのアタッチ中、Dynamic Island はエージェントが作業中・アイドル・あなた待ちのいずれかを表示します。タップするとそのペインへ直接ジャンプします。")
-add("Local, not push", "本地通知，而非推送", "ローカル通知（プッシュではありません）")
-add("Alerts are generated on-device from the live session — there’s no cloud push server. They fire while Moshpit is in the foreground or recently backgrounded; a fully suspended app won’t poll. iOS will ask for notification permission the first time you connect with Notifications on.",
-    "提醒由设备端的实时会话生成——没有云端推送服务器。它们在 Moshpit 处于前台或刚进入后台时触发；完全挂起的应用不会轮询。首次在开启通知的情况下连接时，iOS 会请求通知权限。",
-    "通知はライブセッションからデバイス上で生成されます——クラウドのプッシュサーバーはありません。Moshpit がフォアグラウンドまたは直近バックグラウンドの間に発火し、完全にサスペンドされたアプリはポーリングしません。通知をオンにして初めて接続する際、iOS が通知の許可を求めます。")
+add("Push, sealed end-to-end", "推送，端到端加密", "プッシュ、エンドツーエンド暗号化")
+add("When the app isn’t running, your host sends the alert through Moshpit’s push relay. It is encrypted on your host with a key only this device holds — the relay and Apple carry ciphertext and can read none of it. Delivered even from a locked phone.",
+    "应用未运行时，提醒由你的主机经 Moshpit 推送中继送达。内容在你的主机上用只有这台设备持有的密钥加密——中继和 Apple 只经手密文，谁也读不了。手机锁屏也能送达。",
+    "アプリが起動していないとき、通知はホストから Moshpit のプッシュリレー経由で届きます。内容はこのデバイスだけが持つ鍵でホスト上で暗号化され、リレーも Apple も暗号文を運ぶだけで読めません。ロック中の iPhone にも届きます。")
+add("Quiet by design", "为安静而设计", "静けさを前提に")
+add("A question must stand for 30 seconds before any phone hears about it — answered at your desk means never announced. All waiting agents share one summary card; only the first rings. A finished turn only chimes if it ran three minutes or more. Parked agents stay silent.",
+    "一个提问要站立满 30 秒手机才会知道——在桌面上顺手答掉就永远不响。所有等待中的智能体共用一张摘要卡，只有第一个会响铃。任务完成只有跑满三分钟才会提示音。待机的智能体保持静默。",
+    "問いかけは 30 秒間続いて初めて通知されます——デスクですぐ答えれば鳴りません。待機中のエージェントは 1 枚のサマリーカードを共有し、鳴るのは最初の 1 回だけ。完了音は 3 分以上かかったターンのみ。放置中のエージェントは静かなままです。")
 # Server binary editor
 add("MOSH SERVER PATH", "MOSH SERVER 路径", "MOSH SERVER パス")
 add("The mosh-server executable on the remote host. Override if it isn't on PATH (e.g. /opt/homebrew/bin/mosh-server).",
@@ -691,6 +695,22 @@ add("Not delivered", "未送达", "送信されませんでした")
 add("Your tap didn't reach the agent — open Moshpit and answer there.",
     "你的点按没有送达智能体——请打开 Moshpit 在里面回应。",
     "タップがエージェントに届きませんでした——Moshpit を開いて操作してください。")
+add("Sent to your Mac", "已发给你的 Mac", "Mac に送信しました")
+add("Your answer was passed to the host. It takes effect if the agent is still waiting on that question.",
+    "你的回答已交给主机。若智能体仍停在那个提问上，回答就会生效。",
+    "回答をホストに渡しました。エージェントがまだその問いで待っていれば反映されます。")
+add("Stop was passed to the host. It takes effect if the agent is still running.",
+    "停止指令已交给主机。若智能体仍在运行，指令就会生效。",
+    "停止をホストに渡しました。エージェントがまだ実行中であれば反映されます。")
+add("Enable agent notifications on %@?",
+    "在 %@ 上启用智能体通知？",
+    "%@ でエージェント通知を有効にしますか？")
+add("Enable", "启用", "有効にする")
+add("Not Now", "以后再说", "今はしない")
+add("Don't Ask Again", "不再询问", "今後確認しない")
+add("Moshpit installs its hook scripts in ~/.moshpit and registers them in Claude Code's settings, so agents can reach you when they need you. Everything can be removed from Host Setup.",
+    "Moshpit 会把钩子脚本安装到 ~/.moshpit 并注册进 Claude Code 的设置，这样智能体需要你时能找到你。所有内容都可以在主机设置里移除。",
+    "Moshpit は ~/.moshpit にフックスクリプトをインストールし、Claude Code の設定に登録します。エージェントがあなたを必要とするとき届くようにするためです。すべてホスト設定から削除できます。")
 add("Prompt already gone", "该提问已不存在", "問いかけは既にありません")
 add("That request was already answered or has changed — nothing was sent. Open Moshpit to see the current state.",
     "那个请求已经被回应过、或者状态变了——什么都没发出去。打开 Moshpit 看当前状态。",
@@ -777,6 +797,18 @@ add("Pane", "窗格", "ペイン")
 add("Respond to agent", "回应智能体", "エージェントに応答")
 add("Switch agent", "切换智能体", "エージェントを切り替え")
 add("✓ %@ finished", "✓ %@ 已完成", "✓ %@ が完了しました")
+
+# APNs fallback text. These are not shown by any Swift code: the push relay puts
+# them in the payload as `title-loc-key` / `loc-key`, and iOS resolves them
+# against this catalog. They surface only when the notification service
+# extension fails to decrypt in time — see docs/PUSH.md. The keys ARE the
+# English, so a missed lookup still reads as a sentence.
+add("An agent needs you", "有 agent 在等你", "エージェントが待っています")
+add("Open Moshpit to see what it is asking.",
+    "打开 Moshpit 看它在问什么。", "Moshpit を開いて内容を確認してください。")
+add("An agent finished", "有 agent 已完成", "エージェントが完了しました")
+add("Open Moshpit to send the next instruction.",
+    "打开 Moshpit 发下一条指令。", "Moshpit を開いて次の指示を送ってください。")
 add("pane %lld", "窗格 %lld", "ペイン %lld")
 
 # Multiplexer choice (Add Connection)
