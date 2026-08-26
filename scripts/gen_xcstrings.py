@@ -280,6 +280,13 @@ add("Keyboard on Open", "打开时弹出键盘", "開いたらキーボードを
 add("Raise the keyboard as soon as a terminal opens, instead of after you tap it",
     "打开终端就弹出键盘，而不是等你点一下之后",
     "タップを待たず、ターミナルを開いた時点でキーボードを表示します")
+# Offline host-setup sheet
+add("Automatic — connect to inspect", "自动完成——连接后可查看", "自動——接続すると確認できます")
+add("Host setup is automatic. Connecting to a host installs and repairs everything it needs — scripts, hooks registration, push pairing — and asks before its first install. Connect to a host to inspect or remove its setup here.",
+    "主机设置是自动的。连接主机时会自动安装并修复所需的一切——脚本、钩子注册、推送配对——首次安装前会先询问你。连接主机后可在此查看或移除其设置。",
+    "ホスト設定は自動です。ホストに接続すると必要なもの——スクリプト、フック登録、プッシュペアリング——を自動でインストール・修復し、初回インストール前には確認します。接続するとここで確認・削除できます。")
+add("PAIRED HOSTS", "已配对主机", "ペアリング済みホスト")
+add("paired %@", "配对于 %@", "%@ にペアリング")
 # Notification info sheet
 add("Agents stamp their state", "智能体自报状态", "エージェントが状態を報告")
 add("Coding agents (Claude Code, Codex, …) report working / needs-you / done through hooks Moshpit installs on your host — precise states, not guesses. The terminal bell still works as a fallback for everything else.",

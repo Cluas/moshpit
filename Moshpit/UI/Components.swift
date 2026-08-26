@@ -384,9 +384,13 @@ struct TransportPill: View {
 
     private var label: String {
         switch labelState {
-        case .live: return kind.label
-        case .connecting: return kind.label
-        case .reconnecting: return String(localized: "reconnecting")
+        // Reconnecting deliberately keeps the transport word. The word
+        // "reconnecting" more than doubled the pill and shoved the whole
+        // header, for a state that routinely lasts under a second — the story
+        // is told by MOTION instead: the dot pulses in transport blue and the
+        // capsule's border breathes the same colour. Only `offline`, the state
+        // where nothing is being attempted, still earns a word.
+        case .live, .connecting, .reconnecting: return kind.label
         case .offline: return String(localized: "offline")
         }
     }
@@ -429,9 +433,12 @@ struct TransportPill: View {
         .background(kind.bg, in: Capsule(style: .continuous))
         .overlay {
             Capsule(style: .continuous)
-                .strokeBorder(kind.border ?? Color.white.opacity(0.09), lineWidth: 1)
+                .strokeBorder(
+                    connState.transientTint.map { $0.opacity(pulsing ? 0.7 : 0.25) }
+                        ?? kind.border ?? Color.white.opacity(0.09),
+                    lineWidth: 1)
         }
-        // The width change itself animates, so when "reconnecting" does earn its
+        // The width change itself animates, so when "offline" does earn its
         // place the pill grows instead of teleporting.
         .animation(.snappy(duration: 0.25), value: label)
         .onChange(of: connState, initial: true) { _, new in

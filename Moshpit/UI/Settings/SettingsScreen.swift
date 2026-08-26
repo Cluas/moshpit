@@ -32,6 +32,7 @@ struct SettingsScreen: View {
     @State private var showUDPEditor = false
     @State private var showNotifInfo = false
     @State private var showHooksInstall = false
+    @State private var showOfflineHostInfo = false
 
     /// True when the session this sheet would act on runs herdr, whose agent
     /// status needs no host-side hooks at all.
@@ -138,13 +139,17 @@ struct SettingsScreen: View {
                             if liveSession != nil {
                                 ChevronRow(label: "Set up this host") { showHooksInstall = true }
                             } else {
-                                // Present but inert, rather than hidden: a row
-                                // that vanishes when nothing is connected reads
-                                // as a missing feature.
+                                // Not a dead grey row. Host setup happens ON the
+                                // host — the phone only holds its half of each
+                                // pairing — so with nothing connected there is
+                                // nothing to act on. But since auto-care made
+                                // setup automatic, this row's job offline is to
+                                // SAY that, and to show the half the phone does
+                                // have: which hosts are paired.
                                 ChevronRow(label: "Set up this host",
-                                           subtitle: "Connect to a host first")
-                                    .disabled(true)
-                                    .opacity(0.45)
+                                           subtitle: "Automatic — connect to inspect") {
+                                    showOfflineHostInfo = true
+                                }
                             }
                         }
 
@@ -209,6 +214,9 @@ struct SettingsScreen: View {
                     model: HostSetupModel(session: liveSession),
                     testPane: liveSession.tmuxControl?.snapshot.activePaneId)
             }
+        }
+        .sheet(isPresented: $showOfflineHostInfo) {
+            OfflineHostInfoView()
         }
     }
 
@@ -504,6 +512,65 @@ struct SettingsScreen: View {
                 value: "\(settings.wrappedValue.udpRangeStart) – \(settings.wrappedValue.udpRangeEnd)"
             ) { showUDPEditor = true }
         }
+    }
+}
+
+// MARK: - Host setup, seen from offline
+
+/// What "Set up this host" can honestly show with nothing connected: the half
+/// of each pairing the PHONE holds, and the fact that the other half lives on
+/// hosts this screen cannot reach right now.
+///
+/// This view exists because the row used to be a dead grey "connect to a host
+/// first" — a settings entry that looked like an unmet obligation. Since host
+/// care became automatic (install, pairing, repair all run on connect; the
+/// only question left is asked there, once), the row's offline job is to say
+/// so, and to list what is already paired.
+struct OfflineHostInfoView: View {
+    @Environment(\.dismiss) private var dismiss
+    private let pairings = PushPairingStore.read()
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                MoshpitBackground()
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 18) {
+                        Text("Host setup is automatic. Connecting to a host installs and repairs everything it needs — scripts, hooks registration, push pairing — and asks before its first install. Connect to a host to inspect or remove its setup here.")
+                            .font(Face.mono(12))
+                            .foregroundStyle(Ink.meta)
+
+                        if !pairings.isEmpty {
+                            Text("PAIRED HOSTS")
+                                .font(Face.mono(10, .bold)).kerning(0.6)
+                                .foregroundStyle(Ink.meta)
+                            ForEach(pairings) { pairing in
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(pairing.hostLabel)
+                                        .font(Face.mono(13, .bold))
+                                        .foregroundStyle(Ink.primary)
+                                    Text("paired \(pairing.createdAt.formatted(date: .abbreviated, time: .shortened))")
+                                        .font(Face.mono(10))
+                                        .foregroundStyle(Ink.meta)
+                                }
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(12)
+                                .background(Ink.terminalBG, in: RoundedRectangle(cornerRadius: 10))
+                            }
+                        }
+                    }
+                    .padding(20)
+                }
+            }
+            .navigationTitle("Set up this host")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }.foregroundStyle(Ink.accent)
+                }
+            }
+        }
+        .preferredColorScheme(.dark)
     }
 }
 

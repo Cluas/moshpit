@@ -1671,6 +1671,22 @@
         }
       }
     },
+    "Automatic — connect to inspect": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自動——接続すると確認できます"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自动完成——连接后可查看"
+          }
+        }
+      }
+    },
     "Automatically appends ⏎ to submit": {
       "localizations": {
         "ja": {
@@ -4055,6 +4071,22 @@
         }
       }
     },
+    "Host setup is automatic. Connecting to a host installs and repairs everything it needs — scripts, hooks registration, push pairing — and asks before its first install. Connect to a host to inspect or remove its setup here.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ホスト設定は自動です。ホストに接続すると必要なもの——スクリプト、フック登録、プッシュペアリング——を自動でインストール・修復し、初回インストール前には確認します。接続するとここで確認・削除できます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "主机设置是自动的。连接主机时会自动安装并修复所需的一切——脚本、钩子注册、推送配对——首次安装前会先询问你。连接主机后可在此查看或移除其设置。"
+          }
+        }
+      }
+    },
     "How notifications work": {
       "localizations": {
         "ja": {
@@ -6435,6 +6467,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "自定义高亮颜色"
+          }
+        }
+      }
+    },
+    "PAIRED HOSTS": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ペアリング済みホスト"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已配对主机"
           }
         }
       }
@@ -10435,6 +10483,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "ok"
+          }
+        }
+      }
+    },
+    "paired %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ にペアリング"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "配对于 %@"
           }
         }
       }
