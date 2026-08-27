@@ -110,11 +110,15 @@ packages:
     # iOS 16+ (UIMenuController silently refuses to show without first
     # responder, which (15) made the terminal's normal state), plus a public
     # closeSelection() so the host's own tap can dismiss a selection while
-    # unfocused — the built-in clear lived only in singleTap's focused branch.
+    # unfocused — the built-in clear lived only in singleTap's focused branch —
+    # and (17) long-press selects the word under the finger (slide extends,
+    # menu on release) instead of grabbing first responder for a bare paste
+    # menu: a long press taken while reading summoned the keyboard and
+    # selected nothing.
     # Revert to the upstream URL if/when these land there and a
     # release picks them up.
     url: https://github.com/Cluas/SwiftTerm.git
-    revision: fa25f83bb102557b5e3430b7be35074e5b81ba9b
+    revision: cebf9df7917f86e6c71267e1443ce74928b2747e
   Citadel:
     url: https://github.com/orlandos-nl/Citadel.git
     from: "0.7.0"

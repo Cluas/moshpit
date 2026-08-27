@@ -329,6 +329,20 @@ same `canPerformAction` source of truth); pre-16 keeps the old path.
 
 **Upstream candidate:** yes, both halves.
 
+## 17. Long-press selects, instead of summoning the keyboard
+
+**Touches:** `Sources/SwiftTerm/iOS/iOSTerminalView.swift` (`longPress`).
+
+**Why:** The old handler called `becomeFirstResponder()` (on iOS, the
+software keyboard) and showed a bare paste menu with no selection — the
+opposite of what a long press means everywhere else text appears on the
+platform. It now selects the word/expression under the finger, extends if
+the finger slides before lifting, and shows the edit menu on release, where
+paste still lives. No first responder involved — the fourth member of the
+"assumed focus" family (menu, handles, deselection came first).
+
+**Upstream candidate:** yes.
+
 ## Fork maintenance
 
 - **Where the fork lives:** [github.com/Cluas/SwiftTerm](https://github.com/Cluas/SwiftTerm),

@@ -42,7 +42,7 @@
 | 单击 | F | **清除选择**（app `handleTap` → fork `closeSelection()`，聚焦与否都成立；不发 click、不弹键盘） | U ✅ |
 | 双击 | 任意 | 选中词/表达式 + 出现手柄 + **Copy 菜单（无需聚焦，UIEditMenuInteraction）** | M（菜单出现 S 待补） |
 | 三击 | 任意 | 选整行 + 菜单 | M |
-| 长按 | 任意 | 光标词选择/菜单（fork 行为） | M |
+| 长按 | 任意 | **选中指下的词** + 手柄；按住滑动=扩选；松手出菜单（含 Paste）。不弹键盘（fork patch 17） | S ✅ |
 | 手柄拖动 | F | 抓取窗口 = **手指尺寸**（22pt 折算格子，`selectionHandleTolerance`）；抓中端点 → 拖动该端点；抓空 → 从 pivot 扩展 | U ✅ + M |
 | 单指纵向拖 | B/C（primary） | 滚动本地 scrollback；到底自动释放 hold | S(待补)/M |
 | 单指纵向拖 | E | wheel 事件转发给远端应用（tmux 由 `#{mouse_any_flag}` 决定 wheel vs copy-mode，见 scroll 架构 memory） | M |
@@ -73,4 +73,5 @@
 
 - 2026-08-27 初版。当日修复：focusOnTap（fork 15）、按落点分键盘
   （`tapWantsKeyboard`，commit 3c931cb）、手柄手指化 + UIEditMenuInteraction
-  （fork 16）、未聚焦态点击取消选中（fork `closeSelection` + app handleTap）。
+  （fork 16）、未聚焦态点击取消选中（fork `closeSelection` + app handleTap）、
+  长按=选词而非弹键盘（fork 17）。
