@@ -1,4 +1,3 @@
-import CryptoKit
 import Foundation
 import Testing
 @testable import Moshpit
@@ -10,7 +9,7 @@ struct PushPairingTests {
 
     // MARK: - Material
 
-    @Test("minted material is two independent 32-byte secrets")
+    @Test("make mints the secret locally and leaves the credential to the relay")
     func material() {
         let a = PushPairing.make(connectionId: UUID(), hostLabel: "m1-pro",
                                  relayURL: "https://push.example.org")
@@ -18,26 +17,41 @@ struct PushPairingTests {
                                  relayURL: "https://push.example.org")
         for pairing in [a, b] {
             #expect(pairing.secretHex.count == 64)
-            #expect(pairing.sendToken.count == 64)
             #expect(Data(moshpitHex: pairing.secretHex) != nil)
-            #expect(Data(moshpitHex: pairing.sendToken) != nil)
-            // The E2E key and the routing credential must not be the same value:
-            // the relay is given a hash of the second and must never be able to
-            // derive the first.
-            #expect(pairing.secretHex != pairing.sendToken)
+            // The send token is the RELAY's to mint — an HMAC over the routing
+            // facts, which do not exist until a device token does. A fresh
+            // pairing must therefore be visibly not-ready, never installable.
+            #expect(pairing.sendToken.isEmpty)
+            #expect(!pairing.isReadyToInstall)
+            #expect(pairing.needsMint(currentToken: nil))
         }
         #expect(a.secretHex != b.secretHex)
-        #expect(a.sendToken != b.sendToken)
     }
 
-    @Test("the relay is given a hash it cannot send with")
-    func sendTokenHash() {
-        let pairing = PushPairing.make(connectionId: UUID(), hostLabel: "h",
+    @Test("a credential re-mints when the device token rotates or age nears the relay TTL")
+    func mintLifecycle() {
+        var pairing = PushPairing.make(connectionId: UUID(), hostLabel: "h",
                                        relayURL: "https://r")
-        let expected = Data(SHA256.hash(data: Data(pairing.sendToken.utf8))).moshpitHexString
-        #expect(pairing.sendTokenHash == expected)
-        #expect(pairing.sendTokenHash != pairing.sendToken)
-        #expect(pairing.sendTokenHash.count == 64)
+        let now = Date()
+        pairing.sendToken = String(repeating: "ab", count: 32)
+        pairing.apnsToken = String(repeating: "CD", count: 32)
+        pairing.apnsEnv = "production"
+        pairing.sendTokenIssuedAt = now
+
+        #expect(pairing.isReadyToInstall)
+        // Same token, fresh mint: nothing to do. Hex casing must not split it.
+        #expect(!pairing.needsMint(currentToken: String(repeating: "cd", count: 32), now: now))
+        // The phone's token rotated (reinstall, restore): the HMAC no longer
+        // matches what the conf will claim, so it must re-mint.
+        #expect(pairing.needsMint(currentToken: String(repeating: "ee", count: 32), now: now))
+        // Ageing towards the relay-side TTL re-mints long before expiry.
+        #expect(pairing.needsMint(currentToken: String(repeating: "cd", count: 32),
+                                  now: now.addingTimeInterval(PushPairing.refreshAfter + 1)))
+        // A pairing stored by an older build (no routing fields) must read as
+        // needing a mint, not as ready.
+        pairing.apnsToken = nil
+        #expect(pairing.needsMint(currentToken: String(repeating: "cd", count: 32), now: now))
+        #expect(!pairing.isReadyToInstall)
     }
 
     @Test("a trailing slash on the relay URL does not become a double slash")

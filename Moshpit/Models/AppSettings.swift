@@ -34,6 +34,19 @@ final class AppSettings {
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
+        // Seed the App Group mirror the notification service extension reads
+        // (see PushPrefs). At launch rather than lazily: a pushed notification
+        // can land before the user ever opens Settings, and it must see the
+        // values the switches already hold.
+        mirrorPushPrefs()
+    }
+
+    /// Push the two extension-visible switches into the App Group. Called from
+    /// init and from the two setters those switches own.
+    private func mirrorPushPrefs() {
+        PushPrefs.write(
+            showDetail: defaults.object(forKey: "moshpit.settings.lockScreenDetail") as? Bool ?? true,
+            sound: defaults.object(forKey: "moshpit.settings.attentionSound") as? Bool ?? true)
     }
 
     // MARK: Generic accessors
@@ -227,7 +240,10 @@ final class AppSettings {
     /// notifications are silent.
     var attentionSoundEnabled: Bool {
         get { access(keyPath: \.attentionSoundEnabled); return get("moshpit.settings.attentionSound", true) }
-        set { withMutation(keyPath: \.attentionSoundEnabled) { defaults.set(newValue, forKey: "moshpit.settings.attentionSound") } }
+        set {
+            withMutation(keyPath: \.attentionSoundEnabled) { defaults.set(newValue, forKey: "moshpit.settings.attentionSound") }
+            mirrorPushPrefs()
+        }
     }
 
     /// Show what the agent is doing/asking (the hook `@moshpit_title`, e.g.
@@ -236,7 +252,10 @@ final class AppSettings {
     /// keep command/prompt text private (state working/needs-you/done still shows).
     var lockScreenDetailEnabled: Bool {
         get { access(keyPath: \.lockScreenDetailEnabled); return get("moshpit.settings.lockScreenDetail", true) }
-        set { withMutation(keyPath: \.lockScreenDetailEnabled) { defaults.set(newValue, forKey: "moshpit.settings.lockScreenDetail") } }
+        set {
+            withMutation(keyPath: \.lockScreenDetailEnabled) { defaults.set(newValue, forKey: "moshpit.settings.lockScreenDetail") }
+            mirrorPushPrefs()
+        }
     }
 
     /// Raise the software keyboard the moment a terminal opens.

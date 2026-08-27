@@ -31,8 +31,9 @@ struct PushRemoteNotificationTests {
                        title: String? = "Bash: rm -rf build",
                        agent: String? = "claude",
                        sess: String? = "work",
-                       ts: Int? = nil) -> PushSealedBox.Status {
-        PushSealedBox.Status(conn: "3F2504E0-4F89-11D3-9A0C-0305E82C3301",
+                       ts: Int? = nil,
+                       dur: Int? = nil) -> PushSealedBox.Status {
+        var status = PushSealedBox.Status(conn: "3F2504E0-4F89-11D3-9A0C-0305E82C3301",
                              host: "m1-pro", sess: sess, pane: "%3", agent: agent,
                              state: state, title: title,
                              // NOW by default. Age no longer changes what is
@@ -41,6 +42,8 @@ struct PushRemoteNotificationTests {
                              // asserting yesterday. The frozen vector lives in
                              // PushSealedBoxTests, which never renders.
                              ts: ts ?? Int(Date().timeIntervalSince1970))
+        status.dur = dur
+        return status
     }
 
     // MARK: - Extracting the envelope
@@ -114,6 +117,41 @@ struct PushRemoteNotificationTests {
         #expect(content.title == "✓ claude")
         #expect(content.body == "m1-pro · work")
         #expect(content.categoryIdentifier.isEmpty)
+    }
+
+    @Test("Show detail off keeps the question out of a pushed body too")
+    func detailOffHidesTheQuestion() throws {
+        let content = UNMutableNotificationContent()
+        PushRemoteNotification.apply(Self.status(), to: content,
+                                     prefs: .init(showDetail: false, sound: true))
+        // The setting's own subtitle is "off keeps it private" — for months the
+        // local surfaces obeyed and a pushed notification printed the command
+        // anyway. Who and where survive; what does not.
+        #expect(content.title == "claude")
+        #expect(content.body == "m1-pro · work")
+        // The unrendered copy in userInfo stays: the app acknowledges prompts
+        // and matches self-test nonces through it, and it is never shown.
+        #expect(content.userInfo[PushRemoteNotification.detailKey] as? String
+                == "Bash: rm -rf build")
+    }
+
+    @Test("Alert sound off silences even the edge that earned a sound")
+    func soundOffSilences() throws {
+        let attention = UNMutableNotificationContent()
+        PushRemoteNotification.apply(Self.status(), to: attention,
+                                     attentionEdge: true,
+                                     prefs: .init(showDetail: true, sound: false))
+        #expect(attention.sound == nil)
+        // The interruption level is unchanged — the switch says "no sound",
+        // not "no notification".
+        #expect(attention.interruptionLevel == .timeSensitive)
+
+        let done = UNMutableNotificationContent()
+        PushRemoteNotification.apply(Self.status(state: "done", title: nil, ts: nil,
+                                                 dur: 600),
+                                     to: done,
+                                     prefs: .init(showDetail: true, sound: false))
+        #expect(done.sound == nil)
     }
 
     @Test("no notification carries an action, whatever its state or age")

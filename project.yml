@@ -488,6 +488,10 @@ targets:
       - path: Moshpit/Services/Push/PushSealedBox.swift
       - path: Moshpit/Services/Push/PushPairing.swift
       - path: Moshpit/Services/Push/PushRemoteNotification.swift
+      # The user's "Show detail on lock screen" / "Alert sound" switches,
+      # mirrored through the App Group — the extension is the reader that made
+      # the mirror necessary.
+      - path: Moshpit/Services/Push/PushPrefs.swift
       # The extension's own log is invisible to the in-app diagnostics screen
       # (separate process, and iOS gives an app no way to read another's log), so
       # it leaves a trail in the App Group instead.

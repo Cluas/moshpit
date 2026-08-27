@@ -32,10 +32,8 @@ say() { printf "\n== %s\n" "$1"; }
 fail() { printf "FAIL: %s\n" "$1" >&2; exit 1; }
 
 SECRET=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
-SEND_TOKEN=aaaabbbbccccddddeeeeffff00001111aaaabbbbccccddddeeeeffff00001111
 CONN=3F2504E0-4F89-11D3-9A0C-0305E82C3301
-# sha256 of SEND_TOKEN, the only form the relay ever holds.
-HASH=$(printf "%s" "$SEND_TOKEN" | openssl dgst -sha256 | awk '{print $NF}')
+APNS_TOKEN=$(printf 'ab%.0s' $(seq 1 32))
 
 say "go vet + go test"
 (cd "$ROOT/push-relay" && go vet ./... && go test ./...) || fail "relay tests"
@@ -44,7 +42,6 @@ say "build + start the relay in dry-run mode"
 (cd "$ROOT/push-relay" && go build -o "$TMP/relay" .) || fail "build"
 MOSHPIT_RELAY_DRY_RUN=1 \
 MOSHPIT_RELAY_ADDR=":$PORT" \
-MOSHPIT_RELAY_STATE="$TMP/devices.json" \
   "$TMP/relay" > "$TMP/relay.log" 2>&1 &
 RELAY_PID=$!
 
@@ -57,11 +54,13 @@ while [ $i -lt 50 ]; do
 done
 curl -fsS "http://127.0.0.1:$PORT/healthz" > /dev/null 2>&1 || fail "relay never came up: $(cat "$TMP/relay.log")"
 
-say "register a device"
-curl -fsS -X POST "http://127.0.0.1:$PORT/v1/register" \
+say "mint a send token — the relay keeps nothing"
+MINTED=$(curl -fsS -X POST "http://127.0.0.1:$PORT/v1/mint" \
   -H "content-type: application/json" \
-  -d "{\"apnsToken\":\"$(printf 'ab%.0s' $(seq 1 32))\",\"sendTokenHash\":\"$HASH\",\"env\":\"sandbox\"}" \
-  > /dev/null || fail "register rejected"
+  -d "{\"apnsToken\":\"$APNS_TOKEN\",\"conn\":\"$CONN\"}") || fail "mint rejected"
+SEND_TOKEN=$(printf "%s" "$MINTED" | sed -e 's/.*"sendToken":"//' -e 's/".*//')
+SEND_IAT=$(printf "%s" "$MINTED" | sed -e 's/.*"iat"://' -e 's/[,}].*//')
+[ ${#SEND_TOKEN} -eq 64 ] || fail "minted token malformed: $MINTED"
 
 say "send one attention through the real sender script"
 cat > "$TMP/push.conf" <<CONF
@@ -69,6 +68,9 @@ RELAY_URL=http://127.0.0.1:$PORT
 SEND_TOKEN=$SEND_TOKEN
 SECRET=$SECRET
 CONN=$CONN
+APNS_TOKEN=$APNS_TOKEN
+APNS_ENV=sandbox
+SEND_IAT=$SEND_IAT
 CONF
 TITLE='Bash: rm -rf "build" \ 构建'
 MOSHPIT_PUSH_CONF="$TMP/push.conf" MOSHPIT_PUSH_HOST=m1-pro TMUX_PANE=%3 TMUX= \
@@ -93,7 +95,9 @@ echo "$PAYLOAD" | grep -q 'An agent needs you' \
 # The relay must not have leaked any plaintext into the visible alert.
 echo "$PAYLOAD" | grep -q 'rm -rf' \
   && fail "the relay payload contains plaintext from the agent"
-grep "DRY RUN push" "$TMP/relay.log" | tail -1 | grep -q "collapse=moshpit.attention.$CONN.%3" \
+# Per CONNECTION, not per pane: every waiting prompt on a host collapses into
+# one summary card, matching the app's local identifier.
+grep "DRY RUN push" "$TMP/relay.log" | tail -1 | grep -q "collapse=moshpit.attention.$CONN payload=" \
   || fail "collapse id is not the app's local notification identifier"
 
 say "open the envelope that came out the other side"

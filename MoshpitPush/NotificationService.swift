@@ -43,6 +43,12 @@ final class NotificationService: UNNotificationServiceExtension {
         // invisible to the diagnostics screen (see PushDiagnostics).
         PushDiagnostics.record("woke for a push")
 
+        // The user's two extension-visible switches, mirrored into the App
+        // Group by AppSettings. Read once per push; every path below —
+        // decrypted or fallback — must honor them.
+        let prefs = PushPrefs.read()
+        if !prefs.sound { content.sound = nil }
+
         guard let envelope = PushRemoteNotification.envelope(in: request.content.userInfo) else {
             Log.push.info("push carries no sealed envelope — delivering as received")
             PushDiagnostics.record("no sealed envelope — delivered as received")
@@ -87,11 +93,12 @@ final class NotificationService: UNNotificationServiceExtension {
                              recordedAt: Date()))
             let count = PushStanding.standing(conn: status.conn).count
             PushRemoteNotification.apply(status, to: content,
-                                         attentionEdge: edge, standingCount: count)
+                                         attentionEdge: edge, standingCount: count,
+                                         prefs: prefs)
         } else {
             // A `done` closes its pane's turn — that pane is no longer waiting.
             PushStanding.clear(conn: status.conn, pane: status.pane)
-            PushRemoteNotification.apply(status, to: content)
+            PushRemoteNotification.apply(status, to: content, prefs: prefs)
         }
         contentHandler(content)
     }

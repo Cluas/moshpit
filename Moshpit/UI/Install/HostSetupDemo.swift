@@ -138,6 +138,7 @@ enum HostSetupDemo {
         func pair(connectionId: UUID, hostLabel: String, relayURL: String) async throws -> PushPairing {
             PushPairing.make(connectionId: connectionId, hostLabel: hostLabel, relayURL: relayURL)
         }
+        func ensureReady(connectionId: UUID) async -> PushPairing? { nil }
         func unpair(connectionId: UUID) {}
         func awaitSelfTest(nonce: String, timeout: Duration) async -> Bool { false }
         func forgetSelfTest(nonce: String) {}

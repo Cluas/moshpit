@@ -14,10 +14,14 @@ import UserNotifications
 /// key — which is why a relay exists at all.
 ///
 /// This service owns the phone's side of that arrangement:
-///   * ask iOS for a device token, and keep the relay's copy of it current
-///   * mint per-connection pairing material and hand it to the host as a
-///     one-liner
-///   * forget a host cleanly when the user unpairs
+///   * ask iOS for a device token
+///   * mint per-connection pairing material: the end-to-end secret locally,
+///     the send token at the relay (an HMAC over the routing facts; the relay
+///     keeps nothing — see push-relay/token.go)
+///   * keep those credentials fresh: a rotated device token or an ageing mint
+///     re-mints, and the installer rewrites the host's conf on its next pass
+///   * forget a host when the user unpairs — locally, by deleting the secret,
+///     which is the only revocation a stateless relay needs the phone for
 ///
 /// It deliberately does NOT handle the incoming notification: a pushed
 /// notification carries the same category and `userInfo` a local one does, so
@@ -30,10 +34,16 @@ import UserNotifications
 /// stays silent, and they cannot be exercised against real APNs in a unit test.
 @MainActor
 protocol PushCoordinating: AnyObject {
-    /// Why this phone is not registered with its relay, if it is not. nil when
-    /// the last attempt succeeded.
+    /// Why this phone has no usable relay credential, if it has none. nil when
+    /// the last mint succeeded.
     var lastRelayError: String? { get }
     func pair(connectionId: UUID, hostLabel: String, relayURL: String) async throws -> PushPairing
+    /// The stored pairing for a connection, re-minted if its credential is
+    /// missing, stale, or was issued for a device token this phone no longer
+    /// has. nil when nothing is paired OR the credential cannot be minted right
+    /// now (no device token yet) — a pairing that is not ready must never be
+    /// written to a host.
+    func ensureReady(connectionId: UUID) async -> PushPairing?
     func unpair(connectionId: UUID)
     func awaitSelfTest(nonce: String, timeout: Duration) async -> Bool
     func forgetSelfTest(nonce: String)
@@ -143,10 +153,38 @@ final class PushService: PushCoordinating {
         deviceToken = hex
         UserDefaults.standard.set(hex, forKey: tokenKey)
         lastError = nil
+        // Wake anything parked on the token — a first pair blocks here between
+        // the permission prompt and its mint.
+        for waiter in tokenWaiters.values { waiter.resume() }
+        tokenWaiters.removeAll()
         if changed || syncPending {
-            Task { await syncAllPairings() }
+            Task { await mintNeededPairings() }
         }
     }
+
+    /// Wait briefly for iOS to hand over a device token, or give up.
+    ///
+    /// The first pair on a fresh install lands here: authorization was granted
+    /// a breath ago, `registerForRemoteNotifications()` has been called, and
+    /// the token arrives through the app delegate within a second or two. The
+    /// same discipline as `awaitSelfTest`: removal from the dictionary is the
+    /// single wake-up gate, so the continuation resumes exactly once.
+    private func awaitDeviceToken(timeout: Duration = .seconds(10)) async -> String? {
+        if let deviceToken { return deviceToken }
+        let id = UUID()
+        let timeoutTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: timeout)
+            guard let self, !Task.isCancelled else { return }
+            self.tokenWaiters.removeValue(forKey: id)?.resume()
+        }
+        await withCheckedContinuation { continuation in
+            tokenWaiters[id] = continuation
+        }
+        timeoutTask.cancel()
+        return deviceToken
+    }
+
+    @ObservationIgnored private var tokenWaiters: [UUID: CheckedContinuation<Void, Never>] = [:]
 
     func handleRegistrationFailure(_ error: Error) {
         Log.push.error("iOS refused to issue a device token: \(error.localizedDescription, privacy: .public)")
@@ -157,11 +195,17 @@ final class PushService: PushCoordinating {
         syncPending = true
     }
 
-    /// Re-announce every pairing to its relay. Called on token change, after
-    /// pairing, and on return to foreground when an earlier attempt failed.
-    func syncAllPairings() async {
+    /// Re-mint every pairing whose credential is missing, stale, or was issued
+    /// for a device token this phone no longer has. Called on token change,
+    /// after pairing, and on return to foreground.
+    ///
+    /// There is nothing to "announce" any more — the relay keeps no registry —
+    /// so a healthy pairing costs zero requests here. The installer notices an
+    /// updated credential by conf digest and rewrites the host's file on its
+    /// next pass.
+    func mintNeededPairings() async {
         guard let token = deviceToken else {
-            Log.push.info("relay sync deferred — no device token yet")
+            Log.push.info("mint deferred — no device token yet")
             syncPending = true
             return
         }
@@ -172,14 +216,13 @@ final class PushService: PushCoordinating {
         syncInFlight = true
         defer { syncInFlight = false }
         var failed = false
-        for pairing in pairings {
+        for pairing in pairings where pairing.needsMint(currentToken: token) {
             do {
-                try await PushRelayClient.register(apnsToken: token, pairing: pairing)
-                Log.push.info("registered with relay \(pairing.relayURL, privacy: .public)")
+                _ = try await mintAndStore(pairing, token: token)
             } catch {
                 failed = true
                 lastError = error.localizedDescription
-                Log.push.error("relay \(pairing.relayURL, privacy: .public) rejected registration: \(error.localizedDescription, privacy: .public)")
+                Log.push.error("relay \(pairing.relayURL, privacy: .public) refused to mint: \(error.localizedDescription, privacy: .public)")
             }
         }
         syncPending = failed
@@ -189,15 +232,42 @@ final class PushService: PushCoordinating {
         }
     }
 
-    /// Called when the app returns to the foreground.
-    ///
-    /// Re-announces unconditionally, not just when a previous attempt failed. A
-    /// relay that lost its registry — restored from an older volume, redeployed
-    /// without one — otherwise never hears from this phone again: the token has
-    /// not changed, so nothing is pending, and every push it is asked to send
-    /// 401s forever with no way for the user to find out. Observed exactly that
-    /// while testing against a freshly started relay. One small POST per
-    /// foreground buys a system that heals itself.
+    /// Ask the relay for a send token over the CURRENT device token and store
+    /// the updated pairing. The relay keeps nothing; what it returns is an HMAC
+    /// it can recompute from the routing facts every push carries.
+    private func mintAndStore(_ pairing: PushPairing, token: String) async throws -> PushPairing {
+        var updated = pairing
+        let minted = try await PushRelayClient.mint(apnsToken: token,
+                                                    connectionId: pairing.connectionId,
+                                                    relayURL: pairing.relayURL)
+        updated.sendToken = minted.sendToken
+        updated.sendTokenIssuedAt = minted.iat
+        updated.apnsToken = token
+        updated.apnsEnv = Self.apnsEnvironment
+        guard PushPairingStore.upsert(updated) else { throw PushRelayClient.Failure.couldNotSave }
+        Log.push.info("minted a send token for \(pairing.hostLabel, privacy: .public) at \(pairing.relayURL, privacy: .public)")
+        return updated
+    }
+
+    func ensureReady(connectionId: UUID) async -> PushPairing? {
+        guard let pairing = PushPairingStore.pairing(for: connectionId) else { return nil }
+        guard pairing.needsMint(currentToken: deviceToken) else { return pairing }
+        registerForRemoteNotifications()
+        guard let token = await awaitDeviceToken() else {
+            Log.push.info("credential for \(pairing.hostLabel, privacy: .public) not ready — no device token")
+            return nil
+        }
+        do {
+            return try await mintAndStore(pairing, token: token)
+        } catch {
+            lastError = error.localizedDescription
+            Log.push.error("mint for \(pairing.hostLabel, privacy: .public) failed: \(error.localizedDescription, privacy: .public)")
+            return nil
+        }
+    }
+
+    /// Called when the app returns to the foreground: a cheap local check that
+    /// re-mints only what needs it (rotated device token, ageing credential).
     func refreshRegistration() {
         guard !pairings.isEmpty, deviceToken != nil else {
             if syncPending { registerForRemoteNotifications() }
@@ -206,7 +276,7 @@ final class PushService: PushCoordinating {
         guard !Self.shouldSkipRefresh(syncPending: syncPending,
                                       lastSuccess: lastSyncSucceededAt,
                                       now: Date()) else { return }
-        Task { await syncAllPairings() }
+        Task { await mintNeededPairings() }
     }
 
     /// The floor on foreground re-announcement, as a pure decision so it is
@@ -293,85 +363,61 @@ final class PushService: PushCoordinating {
 
     // MARK: - Pairing
 
-    /// Mint material for a connection, tell the relay, and return the pairing so
-    /// the caller can show its one-liner.
+    /// Mint material for a connection and return a READY pairing — end-to-end
+    /// secret from this phone's CSPRNG, send token from the relay.
     ///
-    /// The relay is told BEFORE the user runs the one-liner on purpose: if
-    /// registration fails there is nothing to undo on the host, and the user
-    /// sees the error instead of pasting a command that could never have worked.
+    /// The relay is asked BEFORE the host is touched, for the same reason
+    /// registration used to be: if the mint fails there is nothing to undo on
+    /// the host, and the user sees the real error instead of a host configured
+    /// with a credential that could never have worked.
+    ///
+    /// A first-ever pair usually lands here seconds after notification
+    /// permission was granted, before iOS has handed over a device token — so
+    /// this waits briefly for one rather than failing the commonest path.
     func pair(connectionId: UUID, hostLabel: String, relayURL: String) async throws -> PushPairing {
+        // A re-pair mints a fresh SECRET on purpose: the previous conf on that
+        // host stops decrypting, which is the whole point of re-pairing after a
+        // machine changes hands. (Its send token dies of relay-side TTL — a
+        // stateless relay has no row to delete — but a token without the secret
+        // can only ever produce the generic fallback line.)
         let pairing = PushPairing.make(connectionId: connectionId,
                                        hostLabel: hostLabel,
                                        relayURL: relayURL)
-        // Retire the previous registration FIRST, while its send token still
-        // exists. A re-pair replaces the local pairing and overwrites the host's
-        // push.conf, so a moment from now that token has no copy anywhere — and
-        // the relay's row for it can never be authenticated away again. It would
-        // sit there holding this phone's device token forever: harmless to use,
-        // but counted against MOSHPIT_RELAY_MAX_DEVICES, and unreclaimable
-        // because a row is only dropped when APNs calls the token Gone, which a
-        // live token never is. One zombie per re-pair adds up fast on anyone
-        // debugging a pairing.
-        if let previous = PushPairingStore.pairing(for: connectionId) {
-            await forgetAtRelay(previous)
-        }
         // Abort before the host is touched. A pairing the phone failed to save,
         // installed on a host anyway, is the worst arrangement available: the
         // host holds secrets, every push it sends is undecryptable, and there is
         // no local record left to unpair with.
         guard PushPairingStore.upsert(pairing) else { throw PushRelayClient.Failure.couldNotSave }
         registerForRemoteNotifications()
-        if let token = deviceToken {
-            try await PushRelayClient.register(apnsToken: token, pairing: pairing)
-        } else {
-            // No token yet (authorization just granted, or offline). The pairing
-            // is stored and will be announced by handle(deviceToken:).
+        guard let token = await awaitDeviceToken() else {
+            // Stored but credential-less: `ensureReady`/`mintNeededPairings`
+            // completes it the moment a token exists. Failing loudly here beats
+            // silently installing a conf the sender would skip.
             syncPending = true
+            throw PushRelayClient.Failure.noDeviceToken
         }
-        return pairing
+        return try await mintAndStore(pairing, token: token)
     }
 
-    /// Forget a host, and tell the relay to forget it too.
-    ///
-    /// The delete IS authenticated — this phone holds the send token, which is
-    /// the credential /v1/notify checks — so an earlier note claiming otherwise
-    /// was wrong. It matters when the host is unreachable at unpair time and its
-    /// `push.conf` survives: without this, that registration keeps delivering
-    /// notifications the app can no longer open.
-    ///
-    /// Best effort, and deliberately not blocking: the local copy of the secret
-    /// goes regardless, because that is the part that stops this device reading
-    /// anything. A relay that was down keeps a row until the next attempt.
+    /// Forget a host. Local-only, and that is now the whole story: deleting the
+    /// pairing SECRET is what stops this device reading anything, and the relay
+    /// has no registration to forget. A conf left on an unreachable host keeps
+    /// a valid send token until its TTL runs out — such a host can ring the
+    /// generic fallback line, never content — and the unpair flow's host-side
+    /// file removal handles the reachable case.
     func unpair(connectionId: UUID) {
-        let pairing = PushPairingStore.pairing(for: connectionId)
         PushPairingStore.remove(connectionId: connectionId)
-        guard let pairing else { return }
-        Task { await forgetAtRelay(pairing) }
-    }
-
-    /// Ask the relay to drop one registration. Shared by unpair and re-pair,
-    /// because a re-pair IS an unpair followed by a pair — it just never had the
-    /// first half.
-    ///
-    /// Best effort on purpose: a relay that is down must not block pairing. The
-    /// cost of a miss is one stale row, which is exactly what this exists to
-    /// avoid, so it is worth a log line either way.
-    private func forgetAtRelay(_ pairing: PushPairing) async {
-        do {
-            try await PushRelayClient.unregister(pairing: pairing)
-            Log.push.info("relay dropped the registration for \(pairing.hostLabel, privacy: .public)")
-        } catch {
-            Log.push.error("relay still holds a registration for \(pairing.hostLabel, privacy: .public): \(error.localizedDescription, privacy: .public)")
-        }
     }
 }
 
-/// The relay's HTTP surface, as seen from the phone. Exactly one call: "this is
-/// my device token, file it under this send-token hash".
+/// The relay's HTTP surface, as seen from the phone. Exactly one call: "here is
+/// my device token and a connection id — mint me a send token". The relay
+/// answers with an HMAC and remembers nothing.
 enum PushRelayClient {
     enum Failure: LocalizedError {
         case badURL
         case couldNotSave
+        case noDeviceToken
         case status(Int, String)
 
         var errorDescription: String? {
@@ -380,31 +426,18 @@ enum PushRelayClient {
                 return String(localized: "That relay address isn't a valid URL.")
             case .couldNotSave:
                 return String(localized: "Couldn't save the pairing on this phone, so nothing was installed on the host. The diagnostics log has the reason.")
+            case .noDeviceToken:
+                return String(localized: "iOS hasn't issued a push token to this phone yet — check that notifications are allowed, then try again.")
             case let .status(code, body):
-                return String(localized: "Relay rejected the registration (\(code)): \(body)")
+                return String(localized: "Relay refused to mint a send token (\(code)): \(body)")
             }
         }
     }
 
-    /// Ask the relay to forget this device. Authenticated with the send token,
-    /// the same credential a push carries.
-    static func unregister(pairing: PushPairing) async throws {
-        guard let url = URL(string: pairing.relayURL + "/v1/register") else {
-            throw Failure.badURL
-        }
-        var request = URLRequest(url: url)
-        request.httpMethod = "DELETE"
-        request.setValue("Bearer \(pairing.sendToken)", forHTTPHeaderField: "authorization")
-        request.timeoutInterval = 10
-        let (data, response) = try await URLSession.shared.data(for: request)
-        let code = (response as? HTTPURLResponse)?.statusCode ?? 0
-        guard code == 200 else {
-            throw Failure.status(code, String(data: data.prefix(200), encoding: .utf8) ?? "")
-        }
-    }
-
-    static func register(apnsToken: String, pairing: PushPairing) async throws {
-        guard let url = URL(string: pairing.relayURL + "/v1/register"),
+    /// Ask the relay for a send token over this device token and connection.
+    static func mint(apnsToken: String, connectionId: UUID,
+                     relayURL: String) async throws -> (sendToken: String, iat: Date) {
+        guard let url = URL(string: relayURL + "/v1/mint"),
               url.scheme == "https" || url.host == "localhost" || url.host == "127.0.0.1"
         else { throw Failure.badURL }
 
@@ -414,17 +447,14 @@ enum PushRelayClient {
         request.timeoutInterval = 15
         let payload = [
             "apnsToken": apnsToken,
-            "sendTokenHash": pairing.sendTokenHash,
-            "env": PushService.apnsEnvironment,
+            "conn": connectionId.uuidString,
         ]
         request.httpBody = try JSONEncoder().encode(payload)
 
         // One retry, on NETWORK failure only. A live re-pair was watched dying
-        // at exactly this step: the old registration had just been retired
-        // (forget-first — see pair()), the new register hit a transient error,
-        // and the device was left registered NOWHERE until auto-care's next
-        // pass — sixteen minutes of silence that one retry would have covered.
-        // An HTTP status is the relay's ANSWER; asking again would not change it.
+        // at exactly this step on the old register flow — a transient error
+        // that one retry would have covered. An HTTP status is the relay's
+        // ANSWER; asking again would not change it.
         let (data, response): (Data, URLResponse)
         do {
             (data, response) = try await URLSession.shared.data(for: request)
@@ -436,6 +466,12 @@ enum PushRelayClient {
         guard code == 200 else {
             throw Failure.status(code, String(data: data.prefix(200), encoding: .utf8) ?? "")
         }
+        struct Minted: Decodable {
+            let sendToken: String
+            let iat: Int64
+        }
+        let minted = try JSONDecoder().decode(Minted.self, from: data)
+        return (minted.sendToken, Date(timeIntervalSince1970: TimeInterval(minted.iat)))
     }
 }
 

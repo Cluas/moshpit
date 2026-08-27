@@ -9,16 +9,25 @@
 //	dev host                        relay                      Apple
 //	  agent hook                      |                          |
 //	  seal(status) ── POST /v1/notify ─┤                          |
-//	                 Bearer sendToken │ sha256 → device token     |
-//	                                  ├── POST /3/device/… ──────►│ ──► phone
+//	     + device token, in the body  │ verify HMAC, forward      |
+//	                 Bearer sendToken ├── POST /3/device/… ──────►│ ──► phone
+//
+// The relay is STATELESS. It holds no registry, no database, no file of paired
+// devices — the routing facts (the APNs device token, an env hint) ride inside
+// each request, and the bearer credential is an HMAC the relay itself minted
+// over those facts (see token.go). Restarting the relay loses nothing because
+// there is nothing to lose.
 //
 // What the relay can see: that some device got a push, roughly when, whether it
 // was an "attention" or a "done", and an opaque per-pane thread id. What it
 // cannot see: the host, the session, the pane, the agent, or one character of
 // what the agent asked — those live inside a sealbox envelope whose key exists
-// only on the phone and on the user's own server. That boundary is the product
-// promise; docs/PUSH.md states it in full and this file must not quietly widen
-// it.
+// only on the phone and on the user's own server. What it KEEPS: nothing —
+// every request is served and forgotten, which is what lets the app's privacy
+// label say "Data Not Collected" and mean it by Apple's definition (data is
+// "collected" when it remains accessible longer than servicing the request
+// takes). That boundary is the product promise; docs/PUSH.md states it in full
+// and this file must not quietly widen it.
 package main
 
 import (
@@ -77,7 +86,10 @@ var expiries = map[string]time.Duration{
 }
 
 type relay struct {
-	reg      *Registry
+	// master signs and verifies send tokens (token.go). The one secret the
+	// relay holds — and it is the RELAY's secret, not any user's data.
+	master   []byte
+	tokenTTL time.Duration
 	prod     Sender
 	sandbox  Sender
 	throttle *throttle
@@ -102,16 +114,19 @@ func main() {
 	log.SetFlags(log.LstdFlags | log.LUTC)
 
 	addr := env("MOSHPIT_RELAY_ADDR", ":8080")
-	statePath := env("MOSHPIT_RELAY_STATE", "/var/lib/moshpit-relay/devices.json")
-	maxDevices := envInt("MOSHPIT_RELAY_MAX_DEVICES", 10000)
 
-	reg, err := NewRegistry(statePath, maxDevices)
-	if err != nil {
-		log.Fatalf("registry: %v", err)
+	master := []byte(os.Getenv("MOSHPIT_RELAY_HMAC_SECRET"))
+	if path := os.Getenv("MOSHPIT_RELAY_HMAC_SECRET_FILE"); path != "" {
+		b, err := os.ReadFile(path)
+		if err != nil {
+			log.Fatalf("hmac secret: %v", err)
+		}
+		master = []byte(strings.TrimSpace(string(b)))
 	}
 
 	r := &relay{
-		reg:               reg,
+		master:            master,
+		tokenTTL:          time.Duration(envInt("MOSHPIT_RELAY_TOKEN_TTL_DAYS", 45)) * 24 * time.Hour,
 		throttle:          newThrottle(),
 		interruptionLevel: env("MOSHPIT_RELAY_INTERRUPTION_LEVEL", "time-sensitive"),
 		now:               time.Now,
@@ -122,6 +137,12 @@ func main() {
 		// can be exercised end to end on a laptop with no Apple credentials at
 		// all. It is the only mode the automated e2e test uses.
 		log.Printf("DRY RUN: pushes are logged, not sent")
+		if len(r.master) == 0 {
+			// A harness should not need to invent a secret to test plumbing,
+			// but production must never fall back to a known value.
+			r.master = []byte("moshpit-dry-run-master-not-for-production")
+			log.Printf("DRY RUN: using the built-in HMAC master")
+		}
 		s := &dryRunSender{}
 		r.prod, r.sandbox = s, s
 	} else {
@@ -143,6 +164,9 @@ func main() {
 		log.Printf("APNs token auth ready: team=%s key=%s topic=%s",
 			cfg.TeamID, cfg.KeyID, cfg.Topic)
 	}
+	if len(r.master) < 32 {
+		log.Fatalf("set MOSHPIT_RELAY_HMAC_SECRET (or _FILE) to at least 32 bytes — send tokens are HMACs of it")
+	}
 
 	srv := &http.Server{
 		Addr:              addr,
@@ -151,7 +175,7 @@ func main() {
 		ReadTimeout:       20 * time.Second,
 		WriteTimeout:      20 * time.Second,
 	}
-	log.Printf("listening on %s (devices: %d)", addr, reg.Len())
+	log.Printf("listening on %s (stateless; token ttl %s)", addr, r.tokenTTL)
 	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		log.Fatal(err)
 	}
@@ -159,39 +183,45 @@ func main() {
 
 func (r *relay) routes() http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("POST /v1/register", r.handleRegister)
+	mux.HandleFunc("POST /v1/mint", r.handleMint)
 	mux.HandleFunc("POST /v1/notify", r.handleNotify)
-	mux.HandleFunc("DELETE /v1/register", r.handleUnregister)
+	// The v1 registry endpoints. 410, not 404: an old build's registration
+	// attempt should read as "this flow is gone, update the app", not as a
+	// relay that lost its routes.
+	gone := func(w http.ResponseWriter, _ *http.Request) {
+		httpError(w, http.StatusGone, "this relay is stateless — update Moshpit and re-pair")
+	}
+	mux.HandleFunc("POST /v1/register", gone)
+	mux.HandleFunc("DELETE /v1/register", gone)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("content-type", "application/json")
-		fmt.Fprintf(w, `{"ok":true,"devices":%d}`, r.reg.Len())
+		fmt.Fprint(w, `{"ok":true,"stateless":true}`)
 	})
 	return mux
 }
 
-// MARK: - register
+// MARK: - mint
 
-type registerRequest struct {
+type mintRequest struct {
 	// APNsToken is the hex device token from
 	// application(_:didRegisterForRemoteNotificationsWithDeviceToken:).
 	APNsToken string `json:"apnsToken"`
-	// SendTokenHash is sha256(sendToken), hex. The phone computes it and keeps
-	// the send token itself, which it prints into the host's pairing one-liner.
-	// The relay is never told the credential it will later authenticate.
-	SendTokenHash string `json:"sendTokenHash"`
-	// Env is the phone's own belief about which APNs host its token lives on:
-	// "sandbox" for anything Xcode signed, "production" for App Store and
-	// TestFlight. Wrong guesses self-correct — see handleNotify.
-	Env string `json:"env"`
+	// Conn is the phone's own random id for the connection this token will be
+	// handed to — an opaque string to the relay, bound into the HMAC so each
+	// host carries its own credential.
+	Conn string `json:"conn"`
 }
 
-// handleRegister is deliberately unauthenticated: both values in it are minted
-// by the phone, so there is no prior secret to authenticate WITH, and a caller
-// who invents a pair can only ever push to a device they already control.
-// What it must resist is being used as free storage — hence the size cap in the
-// registry and the strict shape checks here.
-func (r *relay) handleRegister(w http.ResponseWriter, req *http.Request) {
-	var body registerRequest
+// handleMint issues a send token and stores nothing.
+//
+// Deliberately unauthenticated, exactly as /v1/register was: every input is
+// minted by the phone, so there is no prior secret to authenticate WITH, and a
+// caller who invents inputs gains only the ability to push (rate-limited,
+// undecryptable) to a device whose token they already hold — a power that
+// possession of a device token always implied. Unlike register, there is
+// nothing here to fill up: no storage exists.
+func (r *relay) handleMint(w http.ResponseWriter, req *http.Request) {
+	var body mintRequest
 	if !readJSON(w, req, &body) {
 		return
 	}
@@ -199,48 +229,17 @@ func (r *relay) handleRegister(w http.ResponseWriter, req *http.Request) {
 		httpError(w, http.StatusBadRequest, "apnsToken must be 64-200 hex chars")
 		return
 	}
-	if !isHex(body.SendTokenHash, 64, 64) {
-		httpError(w, http.StatusBadRequest, "sendTokenHash must be 64 hex chars")
+	if !isCollapseID(body.Conn) || body.Conn == "" {
+		httpError(w, http.StatusBadRequest,
+			"conn must be 1-64 printable ASCII bytes with no whitespace")
 		return
 	}
-	env := "production"
-	if body.Env == "sandbox" {
-		env = "sandbox"
-	}
-	d := Device{APNsToken: strings.ToLower(body.APNsToken), Env: env, UpdatedAt: r.now()}
-	if err := r.reg.Put(strings.ToLower(body.SendTokenHash), d); err != nil {
-		httpError(w, http.StatusInsufficientStorage, err.Error())
-		return
-	}
-	log.Printf("register device=%s env=%s", Fingerprint(body.SendTokenHash), env)
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
-}
-
-// handleUnregister drops a device at the phone's request.
-//
-// Authenticated by the same bearer token /v1/notify uses, which the phone holds:
-// an earlier note here claimed there was no authenticated way for a phone to
-// delete its own registration, and that was simply wrong. Without this, an
-// unpaired host that is unreachable at the time (so its push.conf survives)
-// leaves a registration that keeps delivering fallback notifications the app can
-// no longer open.
-func (r *relay) handleUnregister(w http.ResponseWriter, req *http.Request) {
-	sendToken, ok := bearer(req)
-	if !ok {
-		httpError(w, http.StatusUnauthorized, "missing bearer token")
-		return
-	}
-	hash := SendTokenHash(sendToken)
-	if _, found := r.reg.Get(hash); !found {
-		// Already gone is the desired end state, so say so rather than 404 —
-		// the phone's retry of a delete that succeeded must not look like a
-		// failure.
-		writeJSON(w, http.StatusOK, map[string]any{"ok": true})
-		return
-	}
-	r.reg.Delete(hash)
-	log.Printf("unregister device=%s", Fingerprint(hash))
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+	iat := r.now().Unix()
+	token := mintSendToken(r.master, body.APNsToken, body.Conn, iat)
+	// The fingerprint of the HASH, matching what /v1/notify logs for the same
+	// credential, so a mint and its later pushes correlate in the journal.
+	log.Printf("mint device=%s ttl=%s", Fingerprint(SendTokenHash(token)), r.tokenTTL)
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "sendToken": token, "iat": iat})
 }
 
 // MARK: - decisions travelling back
@@ -264,6 +263,23 @@ type notifyRequest struct {
 	// REPLACES its predecessor instead of stacking a second card for one
 	// question.
 	Thread string `json:"thread"`
+	// Tok is the APNs device token to deliver to. In v1 the relay looked this
+	// up in its registry; now the host's conf carries it and every request
+	// brings its own routing. The bearer token is an HMAC over it, so a host
+	// cannot point its credential at a different phone.
+	Tok string `json:"tok"`
+	// TokEnv is a HINT — "production" or "sandbox" — for which APNs host the
+	// token lives on. A wrong hint costs one extra APNs round trip (see send),
+	// never a lost push.
+	TokEnv string `json:"tokEnv"`
+	// Conn is the phone's opaque per-connection id, echoed from the conf. Bound
+	// into the bearer HMAC; also visible in Thread, so it tells the relay
+	// nothing Thread did not.
+	Conn string `json:"conn"`
+	// IAT is the mint time of the bearer token, seconds. Carried because the
+	// relay stores nothing: verification recomputes the HMAC over exactly what
+	// was minted, and expiry is judged against this value.
+	IAT int64 `json:"iat"`
 }
 
 func (r *relay) handleNotify(w http.ResponseWriter, req *http.Request) {
@@ -272,18 +288,25 @@ func (r *relay) handleNotify(w http.ResponseWriter, req *http.Request) {
 		httpError(w, http.StatusUnauthorized, "missing bearer token")
 		return
 	}
-	hash := SendTokenHash(sendToken)
-	device, found := r.reg.Get(hash)
-	if !found {
-		// Same status and wording as a malformed credential: a prober must not
-		// learn whether a given send token is registered.
-		httpError(w, http.StatusUnauthorized, "unknown or expired send token")
-		return
-	}
 
 	var body notifyRequest
 	if !readJSON(w, req, &body) {
 		return
+	}
+	// One status and one wording for every credential failure — forged,
+	// expired, retargeted, or a body missing its routing facts entirely — so a
+	// prober learns nothing about which part failed. No separate shape check
+	// on `tok`: a value the mint endpoint would have refused can never have a
+	// matching HMAC, so verification already rejects it.
+	if !verifySendToken(r.master, sendToken, body.Tok, body.Conn,
+		body.IAT, r.now(), r.tokenTTL) {
+		httpError(w, http.StatusUnauthorized, "unknown or expired send token")
+		return
+	}
+	hash := SendTokenHash(sendToken)
+	device := Device{APNsToken: lowerHex(body.Tok), Env: "production"}
+	if body.TokEnv == "sandbox" {
+		device.Env = "sandbox"
 	}
 	category, ok := categories[body.Category]
 	if !ok {
@@ -342,7 +365,8 @@ func (r *relay) handleNotify(w http.ResponseWriter, req *http.Request) {
 		Fingerprint(hash), body.Category, resp.StatusCode, resp.Reason, resp.UniqueID)
 
 	if resp.Gone() {
-		r.reg.Delete(hash)
+		// Nothing to delete any more — the token expired with the device. 410
+		// still travels back so a --test run prints "pair again from the app".
 		httpError(w, http.StatusGone, "device unregistered — pair again")
 		return
 	}
@@ -353,14 +377,24 @@ func (r *relay) handleNotify(w http.ResponseWriter, req *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "id": resp.UniqueID})
 }
 
-// send picks the APNs host the device is filed under, and — on BadDeviceToken —
+// Device is the routing half of one push: where to deliver and on which APNs
+// host. It exists per REQUEST — nothing retains one.
+type Device struct {
+	APNsToken string
+	Env       string
+}
+
+// send picks the APNs host the request hints at, and — on BadDeviceToken —
 // retries the other one once.
 //
 // That retry is not paranoia: a token minted by an Xcode build is only valid on
 // sandbox, an App Store build's only on production, and the phone's own guess
 // (#if DEBUG) is wrong for exactly one common case — a TestFlight build
-// installed over a development one. Self-correcting here is cheaper than a
-// support thread that ends in "reinstall the app".
+// installed over a development one. v1 remembered the corrected answer in its
+// registry; a stateless relay cannot, so a device with a wrong hint pays one
+// extra APNs round trip per push until the app rewrites the host's conf. Logged
+// each time, because a journal full of "answered on <other env>" is how an
+// operator notices the hint is systematically wrong.
 func (r *relay) send(ctx context.Context, hash string, d Device, n apns.Notification) (apns.Response, error) {
 	first, second, otherEnv := r.prod, r.sandbox, "sandbox"
 	if d.Env == "sandbox" {
@@ -373,8 +407,7 @@ func (r *relay) send(ctx context.Context, hash string, d Device, n apns.Notifica
 	if resp.Reason == "BadDeviceToken" {
 		resp2, err2 := second.Send(ctx, n)
 		if err2 == nil && resp2.OK() {
-			r.reg.SetEnv(hash, otherEnv)
-			log.Printf("device=%s moved to %s", Fingerprint(hash), otherEnv)
+			log.Printf("device=%s answered on %s — the conf's tokEnv hint is wrong", Fingerprint(hash), otherEnv)
 			return resp2, nil
 		}
 	}

@@ -20,10 +20,12 @@ import (
 )
 
 const (
-	testSecret    = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-	testSendToken = "aaaabbbbccccddddeeeeffff00001111aaaabbbbccccddddeeeeffff00001111"
-	testConn      = "3F2504E0-4F89-11D3-9A0C-0305E82C3301"
+	testSecret = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	testConn   = "3F2504E0-4F89-11D3-9A0C-0305E82C3301"
+	testMaster = "test-master-secret-longer-than-32-bytes!"
 )
+
+var testAPNsToken = strings.Repeat("ab", 32)
 
 type fakeSender struct {
 	mu    sync.Mutex
@@ -67,13 +69,10 @@ func (f *fakeSender) count() int {
 
 func newTestRelay(t *testing.T) (*relay, *fakeSender, *httptest.Server) {
 	t.Helper()
-	reg, err := NewRegistry(filepath.Join(t.TempDir(), "devices.json"), 10)
-	if err != nil {
-		t.Fatal(err)
-	}
 	prod := &fakeSender{}
 	r := &relay{
-		reg:               reg,
+		master:            []byte(testMaster),
+		tokenTTL:          45 * 24 * time.Hour,
 		prod:              prod,
 		sandbox:           prod,
 		throttle:          newThrottle(),
@@ -85,22 +84,40 @@ func newTestRelay(t *testing.T) (*relay, *fakeSender, *httptest.Server) {
 	return r, prod, srv
 }
 
-func register(t *testing.T, srv *httptest.Server, env string) {
+// cred is one minted send token plus the facts it was minted over — everything
+// a host's conf holds that the relay verifies against.
+type cred struct {
+	token  string
+	iat    int64
+	tok    string
+	tokEnv string
+	conn   string
+}
+
+// mint asks the relay for a send token the way the phone does.
+func mint(t *testing.T, srv *httptest.Server, apnsToken, conn, env string) cred {
 	t.Helper()
-	body := map[string]string{
-		"apnsToken":     strings.Repeat("ab", 32),
-		"sendTokenHash": SendTokenHash(testSendToken),
-		"env":           env,
-	}
-	b, _ := json.Marshal(body)
-	resp, err := srv.Client().Post(srv.URL+"/v1/register", "application/json", strings.NewReader(string(b)))
+	b, _ := json.Marshal(map[string]string{"apnsToken": apnsToken, "conn": conn})
+	resp, err := srv.Client().Post(srv.URL+"/v1/mint", "application/json", strings.NewReader(string(b)))
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != 200 {
-		t.Fatalf("register: status %d", resp.StatusCode)
+		t.Fatalf("mint: status %d", resp.StatusCode)
 	}
+	var out struct {
+		SendToken string `json:"sendToken"`
+		IAT       int64  `json:"iat"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		t.Fatal(err)
+	}
+	return cred{token: out.SendToken, iat: out.IAT, tok: apnsToken, tokEnv: env, conn: conn}
+}
+
+func testCred(t *testing.T, srv *httptest.Server, env string) cred {
+	return mint(t, srv, testAPNsToken, testConn, env)
 }
 
 func notify(t *testing.T, srv *httptest.Server, token string, body any) *http.Response {
@@ -116,14 +133,17 @@ func notify(t *testing.T, srv *httptest.Server, token string, body any) *http.Re
 	return resp
 }
 
-func sealedBody(t *testing.T, cat, thread string, status sealbox.Status) map[string]any {
+// sealedBody builds the notify request the shell sender would: the envelope,
+// the clear routing facts, and the credential's own mint facts.
+func sealedBody(t *testing.T, c cred, cat, thread string, status sealbox.Status) map[string]any {
 	t.Helper()
 	pt, _ := json.Marshal(status)
 	e, err := sealbox.Seal(testSecret, pt)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return map[string]any{"env": e, "cat": cat, "thread": thread}
+	return map[string]any{"env": e, "cat": cat, "thread": thread,
+		"tok": c.tok, "tokEnv": c.tokEnv, "conn": c.conn, "iat": c.iat}
 }
 
 // TestNotifyBuildsExpectedPush is the contract with the phone: category,
@@ -131,14 +151,14 @@ func sealedBody(t *testing.T, cat, thread string, status sealbox.Status) map[str
 // untouched.
 func TestNotifyBuildsExpectedPush(t *testing.T) {
 	_, sender, srv := newTestRelay(t)
-	register(t, srv, "sandbox")
+	c := testCred(t, srv, "sandbox")
 
 	thread := "moshpit.attention." + testConn + ".%3"
 	want := sealbox.Status{
 		Conn: testConn, Host: "m1-pro", Pane: "%3", Agent: "claude",
 		State: "attention", Title: "Bash: rm -rf build", TS: 1755900000,
 	}
-	resp := notify(t, srv, testSendToken, sealedBody(t, "attention", thread, want))
+	resp := notify(t, srv, c.token, sealedBody(t, c, "attention", thread, want))
 	defer resp.Body.Close()
 	if resp.StatusCode != 200 {
 		t.Fatalf("status %d", resp.StatusCode)
@@ -225,13 +245,13 @@ func TestOnlyAQuestionBreaksThroughFocus(t *testing.T) {
 	} {
 		t.Run(tc.cat, func(t *testing.T) {
 			_, sender, srv := newTestRelay(t)
-			register(t, srv, "sandbox")
+			c := testCred(t, srv, "sandbox")
 			status := sealbox.Status{
 				Conn: testConn, Host: "m1-pro", Pane: "%3", Agent: "claude",
 				State: tc.cat, TS: 1755900000,
 			}
-			resp := notify(t, srv, testSendToken,
-				sealedBody(t, tc.cat, "moshpit."+tc.cat+"."+testConn+".%3", status))
+			resp := notify(t, srv, c.token,
+				sealedBody(t, c, tc.cat, "moshpit."+tc.cat+"."+testConn+".%3", status))
 			defer resp.Body.Close()
 			if resp.StatusCode != 200 {
 				t.Fatalf("status %d", resp.StatusCode)
@@ -256,12 +276,12 @@ func TestOnlyAQuestionBreaksThroughFocus(t *testing.T) {
 // the done path silently promoted back up by the step-down logic.
 func TestSteppingDownDoneNeverStepsItUp(t *testing.T) {
 	r, sender, srv := newTestRelay(t)
-	register(t, srv, "sandbox")
+	c := testCred(t, srv, "sandbox")
 	// Same shape as MOSHPIT_RELAY_INTERRUPTION_LEVEL=passive.
 	r.interruptionLevel = "passive"
 	status := sealbox.Status{Conn: testConn, Host: "m1-pro", Pane: "%3",
 		State: "done", TS: 1755900000}
-	resp := notify(t, srv, testSendToken, sealedBody(t, "done", "t", status))
+	resp := notify(t, srv, c.token, sealedBody(t, c, "done", "t", status))
 	defer resp.Body.Close()
 	var payload struct {
 		APS struct {
@@ -277,17 +297,41 @@ func TestSteppingDownDoneNeverStepsItUp(t *testing.T) {
 	}
 }
 
-func TestNotifyRejectsUnknownOrMissingToken(t *testing.T) {
-	_, _, srv := newTestRelay(t)
-	register(t, srv, "production")
-	body := sealedBody(t, "done", "moshpit.done.x.%1", sealbox.Status{State: "done"})
+// TestNotifyRejectsForgedOrRetargetedTokens is the auth contract of a stateless
+// relay: the bearer must be the HMAC over EXACTLY the routing facts in the
+// body, so a credential cannot be forged, aged past its TTL, or pointed at a
+// different phone than it was minted for.
+func TestNotifyRejectsForgedOrRetargetedTokens(t *testing.T) {
+	_, sender, srv := newTestRelay(t)
+	c := testCred(t, srv, "production")
+	status := sealbox.Status{State: "done"}
 
-	resp := notify(t, srv, "not-the-token", body)
+	// A made-up bearer.
+	resp := notify(t, srv, "not-the-token", sealedBody(t, c, "done", "moshpit.done.x.%1", status))
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusUnauthorized {
-		t.Errorf("unknown token: status %d, want 401", resp.StatusCode)
+		t.Errorf("forged token: status %d, want 401", resp.StatusCode)
 	}
 
+	// A real bearer aimed at a DIFFERENT device than it was minted for.
+	retargeted := c
+	retargeted.tok = strings.Repeat("cd", 32)
+	resp = notify(t, srv, c.token, sealedBody(t, retargeted, "done", "moshpit.done.x.%2", status))
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Errorf("retargeted token: status %d, want 401", resp.StatusCode)
+	}
+
+	// A real bearer whose claimed mint time was altered.
+	aged := c
+	aged.iat = c.iat - 60
+	resp = notify(t, srv, c.token, sealedBody(t, aged, "done", "moshpit.done.x.%3", status))
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Errorf("altered iat: status %d, want 401", resp.StatusCode)
+	}
+
+	// No auth header at all.
 	req, _ := http.NewRequest("POST", srv.URL+"/v1/notify", strings.NewReader("{}"))
 	bare, err := srv.Client().Do(req)
 	if err != nil {
@@ -297,6 +341,45 @@ func TestNotifyRejectsUnknownOrMissingToken(t *testing.T) {
 	if bare.StatusCode != http.StatusUnauthorized {
 		t.Errorf("no auth header: status %d, want 401", bare.StatusCode)
 	}
+
+	if sender.count() != 0 {
+		t.Error("a rejected credential still reached APNs")
+	}
+}
+
+// TestSendTokenExpiry pins the revocation story a stateless relay has: a token
+// past its TTL stops working, and one claiming to be from the future (beyond
+// clock skew) never starts.
+func TestSendTokenExpiry(t *testing.T) {
+	r, _, srv := newTestRelay(t)
+	c := testCred(t, srv, "production")
+	status := sealbox.Status{State: "done"}
+
+	// Age the relay's clock past the TTL: yesterday's mint must still work,
+	// but one minted TTL+ ago must not.
+	r.now = func() time.Time { return time.Unix(c.iat, 0).Add(r.tokenTTL + time.Minute) }
+	resp := notify(t, srv, c.token, sealedBody(t, c, "done", "moshpit.done.x.%1", status))
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Errorf("expired token: status %d, want 401", resp.StatusCode)
+	}
+
+	// A token from the future: the relay's clock is BEHIND the claimed iat by
+	// more than the skew allowance.
+	r.now = func() time.Time { return time.Unix(c.iat, 0).Add(-10 * time.Minute) }
+	resp = notify(t, srv, c.token, sealedBody(t, c, "done", "moshpit.done.x.%2", status))
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Errorf("future token: status %d, want 401", resp.StatusCode)
+	}
+
+	// And within its window it works — same credential, same body shape.
+	r.now = func() time.Time { return time.Unix(c.iat, 0).Add(24 * time.Hour) }
+	resp = notify(t, srv, c.token, sealedBody(t, c, "done", "moshpit.done.x.%3", status))
+	resp.Body.Close()
+	if resp.StatusCode != 200 {
+		t.Errorf("token inside its window: status %d, want 200", resp.StatusCode)
+	}
 }
 
 // TestCategoryIsAnAllowlist matters because the category decides which BUTTONS
@@ -304,10 +387,10 @@ func TestNotifyRejectsUnknownOrMissingToken(t *testing.T) {
 // finished agent up as an approval prompt.
 func TestCategoryIsAnAllowlist(t *testing.T) {
 	_, sender, srv := newTestRelay(t)
-	register(t, srv, "production")
+	c := testCred(t, srv, "production")
 	for _, cat := range []string{"working", "", "moshpit.category.attention", "../attention"} {
-		resp := notify(t, srv, testSendToken,
-			sealedBody(t, cat, "moshpit.done.x.%1", sealbox.Status{State: "x"}))
+		resp := notify(t, srv, c.token,
+			sealedBody(t, c, cat, "moshpit.done.x.%1", sealbox.Status{State: "x"}))
 		resp.Body.Close()
 		if resp.StatusCode != http.StatusBadRequest {
 			t.Errorf("cat %q: status %d, want 400", cat, resp.StatusCode)
@@ -320,14 +403,14 @@ func TestCategoryIsAnAllowlist(t *testing.T) {
 
 func TestCollapseIDIsBounded(t *testing.T) {
 	_, _, srv := newTestRelay(t)
-	register(t, srv, "production")
+	c := testCred(t, srv, "production")
 	for _, thread := range []string{
 		strings.Repeat("x", 65), // APNs answers >64 bytes with BadCollapseId
 		"has space",             // not header-safe
 		"line\r\nbreak",         // header injection
 	} {
-		resp := notify(t, srv, testSendToken,
-			sealedBody(t, "done", thread, sealbox.Status{State: "done"}))
+		resp := notify(t, srv, c.token,
+			sealedBody(t, c, "done", thread, sealbox.Status{State: "done"}))
 		resp.Body.Close()
 		if resp.StatusCode != http.StatusBadRequest {
 			t.Errorf("thread %q: status %d, want 400", thread, resp.StatusCode)
@@ -376,57 +459,56 @@ func TestThrottleHourlyCapIsPerDevice(t *testing.T) {
 	}
 }
 
-func TestGoneDropsDevice(t *testing.T) {
-	r, sender, srv := newTestRelay(t)
-	register(t, srv, "production")
+// TestGoneTravelsBack: APNs saying the device is gone must surface as a 410 so
+// a --test run prints "pair again from the app". There is no registry row to
+// drop any more — the token dies of its TTL instead.
+func TestGoneTravelsBack(t *testing.T) {
+	_, sender, srv := newTestRelay(t)
+	c := testCred(t, srv, "production")
 	sender.resp = apns.Response{StatusCode: 410, Reason: "Unregistered"}
 
-	resp := notify(t, srv, testSendToken,
-		sealedBody(t, "done", "moshpit.done.x.%1", sealbox.Status{State: "done"}))
+	resp := notify(t, srv, c.token,
+		sealedBody(t, c, "done", "moshpit.done.x.%1", sealbox.Status{State: "done"}))
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusGone {
 		t.Errorf("status %d, want 410", resp.StatusCode)
 	}
-	if r.reg.Len() != 0 {
-		t.Error("a device APNs called Unregistered stayed in the registry")
-	}
 }
 
 // TestBadDeviceTokenFallsBackToOtherEnvironment covers the one case the phone's
-// own #if DEBUG guess gets wrong: a TestFlight build installed over an Xcode one.
+// own #if DEBUG guess gets wrong: a TestFlight build installed over an Xcode
+// one. The hint rides in each request now, so there is nothing to remember —
+// only the retry itself matters.
 func TestBadDeviceTokenFallsBackToOtherEnvironment(t *testing.T) {
-	reg, _ := NewRegistry("", 10)
 	prod := &fakeSender{resp: apns.Response{StatusCode: 400, Reason: "BadDeviceToken"}}
 	sand := &fakeSender{}
-	r := &relay{reg: reg, prod: prod, sandbox: sand, throttle: newThrottle(),
+	r := &relay{master: []byte(testMaster), tokenTTL: 45 * 24 * time.Hour,
+		prod: prod, sandbox: sand, throttle: newThrottle(),
 		interruptionLevel: "active", now: time.Now}
 	srv := httptest.NewServer(r.routes())
 	defer srv.Close()
-	register(t, srv, "production")
+	c := testCred(t, srv, "production")
 
-	resp := notify(t, srv, testSendToken,
-		sealedBody(t, "done", "moshpit.done.x.%1", sealbox.Status{State: "done"}))
+	resp := notify(t, srv, c.token,
+		sealedBody(t, c, "done", "moshpit.done.x.%1", sealbox.Status{State: "done"}))
 	resp.Body.Close()
 	if resp.StatusCode != 200 {
 		t.Fatalf("status %d, want the sandbox retry to succeed", resp.StatusCode)
 	}
-	if sand.count() != 1 {
-		t.Error("sandbox was never tried")
-	}
-	if d, ok := r.reg.Get(SendTokenHash(testSendToken)); !ok || d.Env != "sandbox" {
-		t.Errorf("device env = %+v; the correction was not remembered", d)
+	if prod.count() != 1 || sand.count() != 1 {
+		t.Errorf("prod tried %d times, sandbox %d — want one attempt each",
+			prod.count(), sand.count())
 	}
 }
 
-func TestRegistryRejectsGarbageAndCapsSize(t *testing.T) {
-	reg, _ := NewRegistry("", 1)
-	r := &relay{reg: reg, prod: &fakeSender{}, sandbox: &fakeSender{},
-		throttle: newThrottle(), now: time.Now}
-	srv := httptest.NewServer(r.routes())
-	defer srv.Close()
+// TestMintValidatesShape: the mint endpoint stores nothing, so shape checks are
+// all the resistance it needs — plus proof that what it returns actually
+// authenticates a push.
+func TestMintValidatesShape(t *testing.T) {
+	_, sender, srv := newTestRelay(t)
 
 	post := func(body string) int {
-		resp, err := srv.Client().Post(srv.URL+"/v1/register", "application/json",
+		resp, err := srv.Client().Post(srv.URL+"/v1/mint", "application/json",
 			strings.NewReader(body))
 		if err != nil {
 			t.Fatal(err)
@@ -434,37 +516,45 @@ func TestRegistryRejectsGarbageAndCapsSize(t *testing.T) {
 		defer resp.Body.Close()
 		return resp.StatusCode
 	}
-	if got := post(`{"apnsToken":"zz","sendTokenHash":"` + strings.Repeat("a", 64) + `"}`); got != 400 {
+	if got := post(`{"apnsToken":"zz","conn":"c1"}`); got != 400 {
 		t.Errorf("non-hex token: status %d, want 400", got)
 	}
-	if got := post(`{"apnsToken":"` + strings.Repeat("a", 64) + `","sendTokenHash":"short"}`); got != 400 {
-		t.Errorf("short hash: status %d, want 400", got)
+	if got := post(`{"apnsToken":"` + testAPNsToken + `","conn":""}`); got != 400 {
+		t.Errorf("empty conn: status %d, want 400", got)
 	}
-	if got := post(`{"apnsToken":"` + strings.Repeat("a", 64) + `","sendTokenHash":"` +
-		strings.Repeat("b", 64) + `"}`); got != 200 {
-		t.Errorf("valid registration: status %d", got)
+	if got := post(`{"apnsToken":"` + testAPNsToken + `","conn":"has space"}`); got != 400 {
+		t.Errorf("conn with whitespace: status %d, want 400", got)
 	}
-	if got := post(`{"apnsToken":"` + strings.Repeat("a", 64) + `","sendTokenHash":"` +
-		strings.Repeat("c", 64) + `"}`); got != http.StatusInsufficientStorage {
-		t.Errorf("over the cap: status %d, want 507", got)
+
+	c := testCred(t, srv, "production")
+	if len(c.token) != 64 {
+		t.Errorf("minted token is %d chars, want 64 hex", len(c.token))
+	}
+	resp := notify(t, srv, c.token,
+		sealedBody(t, c, "done", "moshpit.done.x.%1", sealbox.Status{State: "done"}))
+	resp.Body.Close()
+	if resp.StatusCode != 200 {
+		t.Errorf("a freshly minted token failed to authenticate: %d", resp.StatusCode)
+	}
+	if sender.count() != 1 {
+		t.Errorf("pushes sent = %d, want 1", sender.count())
 	}
 }
 
-func TestRegistrySurvivesRestart(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "nested", "devices.json")
-	reg, err := NewRegistry(path, 10)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := reg.Put("hash", Device{APNsToken: "ff", Env: "sandbox", UpdatedAt: time.Now()}); err != nil {
-		t.Fatal(err)
-	}
-	again, err := NewRegistry(path, 10)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if d, ok := again.Get("hash"); !ok || d.APNsToken != "ff" {
-		t.Errorf("device did not survive a restart: %+v", d)
+// TestTokenCasingCannotSplitACredential: the phone sends the device token in
+// whatever hex casing iOS handed it; the conf and the mint must agree even if
+// one side lowercases.
+func TestTokenCasingCannotSplitACredential(t *testing.T) {
+	_, _, srv := newTestRelay(t)
+	c := mint(t, srv, strings.ToUpper(testAPNsToken), testConn, "production")
+	// The conf carries the same token lowercased.
+	lowered := c
+	lowered.tok = strings.ToLower(c.tok)
+	resp := notify(t, srv, c.token,
+		sealedBody(t, lowered, "done", "moshpit.done.x.%1", sealbox.Status{State: "done"}))
+	resp.Body.Close()
+	if resp.StatusCode != 200 {
+		t.Errorf("hex casing split the credential: status %d", resp.StatusCode)
 	}
 }
 
@@ -497,30 +587,25 @@ func TestShellSenderFansOutToEveryDevice(t *testing.T) {
 
 	_, sender, srv := newTestRelay(t)
 
-	type device struct{ conn, secret, token string }
-	devices := []device{
-		{"AAAAAAAA-0000-0000-0000-000000000001", strings.Repeat("11", 32), strings.Repeat("a1", 32)},
-		{"BBBBBBBB-0000-0000-0000-000000000002", strings.Repeat("22", 32), strings.Repeat("b2", 32)},
-		{"CCCCCCCC-0000-0000-0000-000000000003", strings.Repeat("33", 32), strings.Repeat("c3", 32)},
+	type device struct {
+		conn, secret, apns string
+		c                  cred
 	}
-	for _, d := range devices {
-		body, _ := json.Marshal(map[string]string{
-			"apnsToken":     strings.Repeat("ab", 32),
-			"sendTokenHash": SendTokenHash(d.token),
-			"env":           "sandbox",
-		})
-		resp, err := srv.Client().Post(srv.URL+"/v1/register", "application/json",
-			strings.NewReader(string(body)))
-		if err != nil {
-			t.Fatal(err)
-		}
-		resp.Body.Close()
+	devices := []device{
+		{conn: "AAAAAAAA-0000-0000-0000-000000000001", secret: strings.Repeat("11", 32), apns: strings.Repeat("a1", 32)},
+		{conn: "BBBBBBBB-0000-0000-0000-000000000002", secret: strings.Repeat("22", 32), apns: strings.Repeat("b2", 32)},
+		{conn: "CCCCCCCC-0000-0000-0000-000000000003", secret: strings.Repeat("33", 32), apns: strings.Repeat("c3", 32)},
+	}
+	for i := range devices {
+		devices[i].c = mint(t, srv, devices[i].apns, devices[i].conn, "sandbox")
 	}
 
 	home := t.TempDir()
 	confFor := func(d device) string {
-		return "RELAY_URL=" + srv.URL + "\nSEND_TOKEN=" + d.token +
-			"\nSECRET=" + d.secret + "\nCONN=" + d.conn + "\n"
+		return "RELAY_URL=" + srv.URL + "\nSEND_TOKEN=" + d.c.token +
+			"\nSECRET=" + d.secret + "\nCONN=" + d.conn +
+			"\nAPNS_TOKEN=" + d.apns + "\nAPNS_ENV=sandbox" +
+			"\nSEND_IAT=" + strconv.FormatInt(d.c.iat, 10) + "\n"
 	}
 	// Two modern per-device files, one legacy single file — all three must fly.
 	if err := os.MkdirAll(filepath.Join(home, ".moshpit", "push.d"), 0o700); err != nil {
@@ -536,12 +621,22 @@ func TestShellSenderFansOutToEveryDevice(t *testing.T) {
 		[]byte(confFor(devices[2])), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	// And one conf from the registry era — no APNS_TOKEN, no SEND_IAT. The
+	// sender must skip it in silence rather than earn a 401: the app rewrites
+	// these on its next connect.
+	if err := os.WriteFile(filepath.Join(home, ".moshpit", "push.d", "DDDDDDDD-legacy.conf"),
+		[]byte("RELAY_URL="+srv.URL+"\nSEND_TOKEN="+strings.Repeat("d4", 32)+
+			"\nSECRET="+strings.Repeat("44", 32)+"\nCONN=DDDDDDDD-0000-0000-0000-000000000004\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 
 	cmd := exec.Command("sh", script, "attention", "claude", "may I?")
 	cmd.Env = append(os.Environ(), "HOME="+home, "MOSHPIT_PUSH_HOST=m1-pro",
 		"TMUX_PANE=%3", "TMUX=")
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("sender failed: %v\n%s", err, out)
+	} else if len(out) > 0 {
+		t.Fatalf("sender wrote output in hook mode: %q", out)
 	}
 
 	pushes := sender.all()
@@ -594,16 +689,19 @@ func TestShellSenderInterop(t *testing.T) {
 	}
 
 	_, sender, srv := newTestRelay(t)
-	register(t, srv, "sandbox")
+	c := testCred(t, srv, "sandbox")
 
 	conf := filepath.Join(t.TempDir(), "push.conf")
 	err = os.WriteFile(conf, []byte(
 		"RELAY_URL="+srv.URL+"\n"+
-			"SEND_TOKEN="+testSendToken+"\n"+
+			"SEND_TOKEN="+c.token+"\n"+
 			// Deliberately UPPERCASE: the shell must lowercase the secret before
 			// deriving, or the phone rejects its own messages with a MAC error.
 			"SECRET="+strings.ToUpper(testSecret)+"\n"+
-			"CONN="+testConn+"\n"), 0o600)
+			"CONN="+testConn+"\n"+
+			"APNS_TOKEN="+testAPNsToken+"\n"+
+			"APNS_ENV=sandbox\n"+
+			"SEND_IAT="+strconv.FormatInt(c.iat, 10)+"\n"), 0o600)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -699,99 +797,29 @@ func TestPayloadStaysUnderAPNsLimit(t *testing.T) {
 	t.Logf("worst-case payload: %s bytes", strconv.Itoa(len(b)))
 }
 
-func TestUnregisterIsAuthenticatedAndIdempotent(t *testing.T) {
-	r, _, srv := newTestRelay(t)
-	register(t, srv, "sandbox")
+// TestLegacyRegisterEndpointsAreGone: an old build must read "update the app",
+// never "route not found".
+func TestLegacyRegisterEndpointsAreGone(t *testing.T) {
+	_, _, srv := newTestRelay(t)
 
-	del := func(token string) int {
-		req, _ := http.NewRequest("DELETE", srv.URL+"/v1/register", nil)
-		if token != "" {
-			req.Header.Set("authorization", "Bearer "+token)
-		}
-		resp, err := srv.Client().Do(req)
-		if err != nil {
-			t.Fatal(err)
-		}
-		resp.Body.Close()
-		return resp.StatusCode
-	}
-
-	if got := del(""); got != http.StatusUnauthorized {
-		t.Errorf("no token: %d, want 401", got)
-	}
-	if got := del("not-the-token"); got != http.StatusOK {
-		// An unknown token deletes nothing; answering OK keeps the endpoint from
-		// telling a prober which tokens exist.
-		t.Errorf("unknown token: %d, want 200", got)
-	}
-	if r.reg.Len() != 1 {
-		t.Error("an unknown token deleted a real registration")
-	}
-	if got := del(testSendToken); got != http.StatusOK {
-		t.Errorf("delete: %d", got)
-	}
-	if r.reg.Len() != 0 {
-		t.Error("the device was not removed")
-	}
-	// Idempotent: the phone retrying a delete that worked must not see an error.
-	if got := del(testSendToken); got != http.StatusOK {
-		t.Errorf("repeat delete: %d, want 200", got)
-	}
-}
-
-// The reply path: phone files a decision, host collects it. The relay routes and
-// never opens — a compromised one can hand the host any bytes and the waiter
-// drops them on the MAC, which is the whole safety of this direction.
-func registerWithRespond(t *testing.T, srv *httptest.Server) string {
-	t.Helper()
-	respondToken := strings.Repeat("9e", 32)
-	body := map[string]string{
-		"apnsToken":        strings.Repeat("ab", 32),
-		"sendTokenHash":    SendTokenHash(testSendToken),
-		"respondTokenHash": SendTokenHash(respondToken),
-		"env":              "sandbox",
-	}
-	b, _ := json.Marshal(body)
-	resp, err := srv.Client().Post(srv.URL+"/v1/register", "application/json", strings.NewReader(string(b)))
+	resp, err := srv.Client().Post(srv.URL+"/v1/register", "application/json",
+		strings.NewReader(`{"apnsToken":"`+testAPNsToken+`","sendTokenHash":"`+strings.Repeat("a", 64)+`"}`))
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode != 200 {
-		t.Fatalf("register: %d", resp.StatusCode)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusGone {
+		t.Errorf("POST /v1/register: %d, want 410", resp.StatusCode)
 	}
-	return respondToken
-}
 
-func postRespond(t *testing.T, srv *httptest.Server, token, pane string) *http.Response {
-	t.Helper()
-	e, err := sealbox.Seal(testSecret, []byte(`{"decision":"allow"}`))
+	req, _ := http.NewRequest("DELETE", srv.URL+"/v1/register", nil)
+	req.Header.Set("authorization", "Bearer x")
+	del, err := srv.Client().Do(req)
 	if err != nil {
 		t.Fatal(err)
 	}
-	b, _ := json.Marshal(map[string]any{"env": e, "pane": pane})
-	req, _ := http.NewRequest("POST", srv.URL+"/v1/respond", strings.NewReader(string(b)))
-	req.Header.Set("authorization", "Bearer "+token)
-	req.Header.Set("content-type", "application/json")
-	resp, err := srv.Client().Do(req)
-	if err != nil {
-		t.Fatal(err)
+	del.Body.Close()
+	if del.StatusCode != http.StatusGone {
+		t.Errorf("DELETE /v1/register: %d, want 410", del.StatusCode)
 	}
-	return resp
-}
-
-func awaitOnce(t *testing.T, srv *httptest.Server, token string) (int, []map[string]any) {
-	t.Helper()
-	req, _ := http.NewRequest("GET", srv.URL+"/v1/await", nil)
-	req.Header.Set("authorization", "Bearer "+token)
-	resp, err := srv.Client().Do(req)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer resp.Body.Close()
-	var out struct {
-		Decisions []map[string]any `json:"decisions"`
-	}
-	_ = json.NewDecoder(resp.Body).Decode(&out)
-	return resp.StatusCode, out.Decisions
 }

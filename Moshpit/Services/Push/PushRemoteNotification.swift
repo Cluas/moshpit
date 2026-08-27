@@ -142,10 +142,18 @@ enum PushRemoteNotification {
                       to content: UNMutableNotificationContent,
                       attentionEdge: Bool = true,
                       standingCount: Int = 1,
+                      prefs: PushPrefs.Values = .default,
                       now: Date = Date()) {
         let who = status.agent?.isEmpty == false ? status.agent! : status.host
         let place = location(status)
-        let detail = status.title?.trimmingCharacters(in: .whitespacesAndNewlines)
+        // "Show detail on lock screen" is a promise this renderer has to keep
+        // for PUSHED notifications too: with it off, the body names where —
+        // never what the agent is running or asking. The title (agent name) and
+        // the userInfo copy of the detail stay: the name is the card's job, and
+        // userInfo is never rendered — the app reads it to acknowledge prompts
+        // and match self-tests, so it carries the REAL detail either way.
+        let rawDetail = status.title?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let detail = prefs.showDetail ? rawDetail : nil
 
         if status.state == "done" {
             content.title = "✓ \(who)"
@@ -153,11 +161,11 @@ enum PushRemoteNotification {
             // A finished SHORT turn is information, not an interruption: no
             // sound, `.passive` (the list, but no lit screen, no Focus breach).
             // A long turn — the user walked away from a build — earns `.active`
-            // and the chime. `dur` is absent from older senders; absent reads
-            // as short, because "quieter than intended" is the recoverable
-            // direction.
+            // and the chime, unless the Alert sound switch is off. `dur` is
+            // absent from older senders; absent reads as short, because
+            // "quieter than intended" is the recoverable direction.
             let isLong = (status.dur ?? 0) >= Self.doneSoundThreshold
-            content.sound = isLong ? .default : nil
+            content.sound = (isLong && prefs.sound) ? .default : nil
             content.interruptionLevel = isLong ? .active : .passive
         } else {
             // The newest question leads; further standing prompts are a count.
@@ -165,12 +173,13 @@ enum PushRemoteNotification {
             if let detail, !detail.isEmpty {
                 content.body = "\(detail) — \(place)"
             } else {
-                // No hook title — no jq on the host, or a bell-only signal. The
-                // agent name and the location are still more use than the
-                // relay's generic fallback line, so both slots take data.
+                // No hook title — no jq on the host, a bell-only signal, or
+                // detail hidden by the switch. The agent name and the location
+                // are still more use than the relay's generic fallback line, so
+                // both slots take data.
                 content.body = place
             }
-            content.sound = attentionEdge ? .default : nil
+            content.sound = (attentionEdge && prefs.sound) ? .default : nil
             content.interruptionLevel = attentionEdge ? .timeSensitive : .passive
         }
 
@@ -184,7 +193,7 @@ enum PushRemoteNotification {
         // nonce in exactly this field, and matching it is the only way the phone
         // can prove that THIS push — not a stale one from an earlier attempt —
         // arrived.
-        info[detailKey] = detail ?? ""
+        info[detailKey] = rawDetail ?? ""
         content.userInfo = info
 
 

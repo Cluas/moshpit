@@ -25,27 +25,44 @@ does not hold your SSH credentials, and never sees your session.
 ## Shape
 
 ```
-dev host                          relay (ours)                 Apple        phone
+dev host                          relay (ours, STATELESS)      Apple        phone
 --------                          ------------                 -----        -----
 agent hook fires
   moshpit-stamp.sh
     |- tmux set @moshpit_state ...  (the existing local path, unchanged)
     `- moshpit-push.sh  -- POST /v1/notify --+
          seal(status, SECRET)                |  Bearer SEND_TOKEN
-                                             |- sha256 -> device token
+         + APNS_TOKEN, APNS_ENV,             |- verify HMAC(master, tok|conn|iat)
+           CONN, SEND_IAT from the conf      |     == bearer   (no lookup, no db)
                                              |- sign JWT (ES256, .p8)
                                              `-- POST /3/device/... -> APNs -> push
                                                                                |
                                              MoshpitPush (NSE) <----------------'
                                                open(envelope, SECRET)
+                                               honor PushPrefs (detail, sound)
                                                rewrite title + body
                                                inject connectionId + paneId
                                                       |
-                                             lock screen: Allow / Deny / Reply
+                                             lock screen: the question, no buttons
                                                       |
-                                             AgentNotificationHandler
-                                               -> AgentControlBridge -> live pane
+                                             a tap -> AgentNotificationHandler
+                                               -> AgentControlBridge -> the pane
 ```
+
+The relay keeps NOTHING. v1 held a registry — sha256(send token) → device
+token, persisted to disk — which was small and honest and still a server-side
+record of every paired phone, i.e. "collection" by the App Store privacy
+definition. v2 (2026-08-27) deletes it: the routing facts ride inside each
+push request, and the bearer credential is an HMAC the relay itself minted
+over exactly those facts (`push-relay/token.go`). Verification is
+recomputation. A restarted relay loses nothing because there is nothing to
+lose; "Data Not Collected" is literally true of it. What replaces revocation:
+send tokens carry their mint time and EXPIRE (default 45 days,
+`MOSHPIT_RELAY_TOKEN_TTL_DAYS`); the app re-mints after 14 days
+(`PushPairing.refreshAfter`) and the installer rewrites the host's conf on the
+next connect. Deleting the pairing secret on the phone remains the instant
+revocation that actually matters — without it a push renders only the generic
+fallback line.
 
 The last two steps are existing code, and the sentence that used to be here —
 that a pushed notification is equivalent to a local one, "which is why this
@@ -372,16 +389,19 @@ two fewer endpoints to be wrong about.
 
 ## Pairing is machinery, not a ceremony
 
-Pairing mints a per-device secret (the end-to-end encryption) and a send token
-(who may make this phone buzz). Neither can be hardcoded — a shared secret would
-be everyone's secret — but nothing in the exchange ever needed a human's
-judgment, and the Pair / Re-pair / Update buttons existed only because the
-machinery had no other trigger. Now it has one: `HostAutoCare` runs once per
-connection per app run, whenever a session's control plane comes up, and
-silently puts right whatever drifted — stale scripts reinstalled (the sender is
-checked EXPLICITLY; `hooksStatus` folds in the stamp but not the sender, and a
-stale sender under a fresh pairing fails silently), a missing or stale pairing
-written, a never-paired device minted and registered.
+Pairing mints a per-device secret (the end-to-end encryption, from the phone's
+CSPRNG) and asks the relay to mint a send token (who may make this phone buzz —
+an HMAC over the device token, the connection id and the mint time, which the
+relay can verify later by recomputing it; POST `/v1/mint`, and the relay stores
+nothing). Neither can be hardcoded — a shared secret would be everyone's secret
+— but nothing in the exchange ever needed a human's judgment, and the Pair /
+Re-pair / Update buttons existed only because the machinery had no other
+trigger. Now it has one: `HostAutoCare` runs once per connection per app run,
+whenever a session's control plane comes up, and silently puts right whatever
+drifted — stale scripts reinstalled (the sender is checked EXPLICITLY;
+`hooksStatus` folds in the stamp but not the sender, and a stale sender under a
+fresh pairing fails silently), a missing, stale or expiring credential
+re-minted and its conf rewritten, a never-paired device paired outright.
 
 The one thing it never does silently is the FIRST hook install: that edits the
 user's agent config, and it is the single genuine consent moment the feature
@@ -492,20 +512,24 @@ MOSHPIT_APNS_KEY_ID         10-char Key ID
 MOSHPIT_APNS_TEAM_ID        10-char Team ID
 MOSHPIT_APNS_TOPIC          com.cluas.moshpit          (default)
 MOSHPIT_APNS_SUBJECT        only for topic-restricted keys
-MOSHPIT_RELAY_ADDR          :8080                      (default)
-MOSHPIT_RELAY_STATE         /var/lib/moshpit-relay/devices.json
-MOSHPIT_RELAY_MAX_DEVICES   10000    (caps an unauthenticated /v1/register)
-MOSHPIT_RELAY_DRY_RUN       any value: log pushes instead of sending
+MOSHPIT_RELAY_ADDR             :8080                   (default)
+MOSHPIT_RELAY_HMAC_SECRET      >=32 bytes; signs and verifies send tokens
+MOSHPIT_RELAY_HMAC_SECRET_FILE alternative to the above, as a mounted file
+MOSHPIT_RELAY_TOKEN_TTL_DAYS   45                      (default)
+MOSHPIT_RELAY_DRY_RUN          any value: log pushes instead of sending
 ```
 
 `MOSHPIT_RELAY_DRY_RUN=1` needs no Apple credentials at all and is what the
-automated end-to-end test uses.
+automated end-to-end test uses (it also defaults the HMAC master so a harness
+needs no secret; production without one refuses to start).
 
-`/v1/register` is unauthenticated on purpose: both values in it are minted by
-the phone, so there is no prior secret to authenticate *with*, and a caller who
-invents a pair can only push to a device they already control. What it has to
-resist is being used as free storage, hence the strict shape checks and the
-device cap.
+`/v1/mint` is unauthenticated on purpose, exactly as `/v1/register` was: every
+input is minted by the phone, so there is no prior secret to authenticate
+*with*, and a caller who invents inputs gains only the ability to push
+(rate-limited, undecryptable) to a device whose token they already hold. Unlike
+register there is nothing to fill up — no storage exists. The old
+`/v1/register` endpoints answer 410 so an outdated build reads "update the
+app", not "the relay is broken".
 
 ## What has to be done by hand at developer.apple.com
 

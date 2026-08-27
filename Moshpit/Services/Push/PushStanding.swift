@@ -72,7 +72,18 @@ enum PushStanding {
 
     private static func write(_ value: [String: [Entry]]) {
         guard let url, let data = try? JSONEncoder().encode(value) else { return }
-        try? data.write(to: url, options: .atomic)
+        // The container directory is normally created by containerURL(...) —
+        // but not on every path (an unsigned simulator test host reaches here
+        // with no directory at all), and an atomic write into a missing
+        // directory fails without a word. A store whose whole job is agreeing
+        // on the 0→1 edge must not "write and hope".
+        try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(),
+                                                 withIntermediateDirectories: true)
+        do {
+            try data.write(to: url, options: .atomic)
+        } catch {
+            Log.push.error("standing store write failed: \(error.localizedDescription, privacy: .public)")
+        }
     }
 
     /// Record a prompt as standing. Returns whether this was the 0→1 edge for

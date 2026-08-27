@@ -1,8 +1,9 @@
 # Moshpit push relay on k3s.
 #
-# The relay holds the APNs signing key and nothing else of value: no message
-# content, no host names, no send credentials (only their SHA-256). See
-# docs/PUSH.md for what that boundary is and why.
+# The relay holds the APNs signing key and its own HMAC master, and nothing
+# else: no message content, no host names, no device registry — it is
+# STATELESS, verifying each push's bearer token by recomputing the HMAC over
+# the routing facts the request carries. See docs/PUSH.md.
 #
 # Build and push the image. This cluster already delivers custom code through
 # GHCR (moshpit-site runs `ghcr.io/cluas/moshpit-site:…` with an existing
@@ -29,26 +30,20 @@
 #     --from-literal=keyId=XXXXXXXXXX \
 #     --from-literal=teamId=YYYYYYYYYY
 #
+# And the HMAC master that signs send tokens (rotating it invalidates every
+# minted token; paired phones re-mint on their next app run, hosts get their
+# conf rewritten on the next connect — so rotation is a soft outage, not a
+# re-pair ceremony):
+#
+#   kubectl -n moshpit create secret generic moshpit-relay-hmac \
+#     --from-literal=secret="$(openssl rand -hex 32)"
+#
 #   kubectl apply -f deploy/push-relay/relay.yaml
 ---
 apiVersion: v1
 kind: Namespace
 metadata:
   name: moshpit
----
-# Device tokens survive a restart here. Losing the file is not fatal — every
-# phone re-registers on launch — but until each one does, its pushes go nowhere,
-# so it is worth a volume rather than an emptyDir.
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: moshpit-relay-state
-  namespace: moshpit
-spec:
-  accessModes: [ReadWriteOnce]
-  resources:
-    requests:
-      storage: 128Mi
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -57,11 +52,10 @@ metadata:
   namespace: moshpit
 spec:
   replicas: 1
-  # ReadWriteOnce + a single JSON file means exactly one writer. Recreate rather
-  # than RollingUpdate, or the new pod cannot mount the volume the old one still
-  # holds and the rollout wedges.
+  # Nothing to hand over between pods any more — the registry is gone — so a
+  # rollout can overlap the old and new pod instead of going dark between them.
   strategy:
-    type: Recreate
+    type: RollingUpdate
   selector:
     matchLabels:
       app: moshpit-push-relay
@@ -87,8 +81,9 @@ spec:
           env:
             - name: MOSHPIT_RELAY_ADDR
               value: ":8080"
-            - name: MOSHPIT_RELAY_STATE
-              value: /var/lib/moshpit-relay/devices.json
+            - name: MOSHPIT_RELAY_HMAC_SECRET
+              valueFrom:
+                secretKeyRef: { name: moshpit-relay-hmac, key: secret }
             - name: MOSHPIT_APNS_TOPIC
               value: com.cluas.moshpit
             - name: MOSHPIT_APNS_KEY_FILE
@@ -103,8 +98,6 @@ spec:
             - name: apns
               mountPath: /etc/apns
               readOnly: true
-            - name: state
-              mountPath: /var/lib/moshpit-relay
           resources:
             requests: { cpu: 10m, memory: 32Mi }
             limits: { cpu: 500m, memory: 128Mi }
@@ -124,9 +117,6 @@ spec:
           secret:
             secretName: moshpit-apns
             defaultMode: 0400
-        - name: state
-          persistentVolumeClaim:
-            claimName: moshpit-relay-state
 ---
 apiVersion: v1
 kind: Service
@@ -142,7 +132,7 @@ spec:
       name: http
 ---
 # HTTPS is not optional: the send token is a bearer credential, and the phone
-# refuses any relay URL that is not https (PushRelayClient.register), localhost
+# refuses any relay URL that is not https (PushRelayClient.mint), localhost
 # aside.
 apiVersion: networking.k8s.io/v1
 kind: Ingress
@@ -162,8 +152,8 @@ metadata:
     # handlers cap bodies at 8 KB themselves. Say so here too, so a flood cannot
     # be made of large bodies.
     nginx.ingress.kubernetes.io/proxy-body-size: 16k
-    # /v1/register is unauthenticated by design (both values in it are minted by
-    # the phone, so there is no prior secret to authenticate with). What it must
+    # /v1/mint is unauthenticated by design (every input is minted by the
+    # phone, so there is no prior secret to authenticate with). What it must
     # not be is an amplifier: bound it at the edge rather than trusting every
     # caller to be a phone at launch.
     nginx.ingress.kubernetes.io/limit-rps: "5"

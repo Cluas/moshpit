@@ -20,11 +20,26 @@ struct HostSetupModelTests {
         var selfTestArrives = true
         var awaited: [String] = []
 
+        /// A pairing the way the real service returns one: credential minted,
+        /// routing facts filled — ready to install.
+        static func ready(connectionId: UUID, hostLabel: String, relayURL: String) -> PushPairing {
+            var pairing = PushPairing.make(connectionId: connectionId, hostLabel: hostLabel,
+                                           relayURL: relayURL)
+            pairing.sendToken = String(repeating: "cd", count: 32)
+            pairing.apnsToken = String(repeating: "ab", count: 32)
+            pairing.apnsEnv = "production"
+            pairing.sendTokenIssuedAt = Date()
+            return pairing
+        }
+
         func pair(connectionId: UUID, hostLabel: String, relayURL: String) async throws -> PushPairing {
             if let pairError { throw pairError }
             paired.append(connectionId)
-            return PushPairing.make(connectionId: connectionId, hostLabel: hostLabel,
-                                    relayURL: relayURL)
+            return Self.ready(connectionId: connectionId, hostLabel: hostLabel,
+                              relayURL: relayURL)
+        }
+        func ensureReady(connectionId: UUID) async -> PushPairing? {
+            Self.ready(connectionId: connectionId, hostLabel: "fake", relayURL: "https://r")
         }
         func unpair(connectionId: UUID) { unpaired.append(connectionId) }
         func awaitSelfTest(nonce: String, timeout: Duration) async -> Bool {

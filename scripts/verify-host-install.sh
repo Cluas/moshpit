@@ -79,15 +79,15 @@ ok "digest agrees — and this file contains single quotes, which is what the ba
 
 say "push.conf: is umask 077 really giving us 0600 on arrival?"
 CONF="$SCRATCH/pushconf.tmp"
-printf 'RELAY_URL=https://push.example.org\nSEND_TOKEN=%s\nSECRET=%s\nCONN=3F2504E0-4F89-11D3-9A0C-0305E82C3301\n' \
-  "$(printf 'a%.0s' $(seq 1 64))" "$(printf 'b%.0s' $(seq 1 64))" > "$CONF"
+printf 'RELAY_URL=https://push.example.org\nSEND_TOKEN=%s\nSECRET=%s\nCONN=3F2504E0-4F89-11D3-9A0C-0305E82C3301\nAPNS_TOKEN=%s\nAPNS_ENV=production\nSEND_IAT=1756000000\n' \
+  "$(printf 'a%.0s' $(seq 1 64))" "$(printf 'b%.0s' $(seq 1 64))" "$(printf 'c%.0s' $(seq 1 64))" > "$CONF"
 write_file '$HOME/.moshpit/push.conf' 600 "$CONF"
 MODE=$(chan 'ls -l "$HOME/.moshpit/push.conf" | cut -c1-10')
 [ "$MODE" = "-rw-------" ] || fail "push.conf landed as $MODE, expected -rw-------"
 ok "mode $MODE — secrets are not world-readable for even one instant"
 LINES=$(chan 'wc -l < "$HOME/.moshpit/push.conf"' | tr -d ' ')
-[ "$LINES" = "4" ] || fail "push.conf has $LINES lines, expected 4"
-ok "4 lines, exactly as the sender parses"
+[ "$LINES" = "7" ] || fail "push.conf has $LINES lines, expected 7"
+ok "7 lines, exactly as the sender parses"
 
 say "a config the merge produces: quotes, slashes, UTF-8, no trailing newline problems"
 # The shape AgentHookConfig.mergedJSON emits (sortedKeys, withoutEscapingSlashes,

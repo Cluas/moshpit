@@ -151,11 +151,19 @@ struct HostInstaller {
     /// a missing newline here is a pairing that fails with a MAC error nobody
     /// can read.
     nonisolated static func pushConf(_ pairing: PushPairing) -> String {
+        // APNS_TOKEN / APNS_ENV / SEND_IAT are the routing facts a stateless
+        // relay verifies the send token against — the sender puts them in every
+        // request, and the relay recomputes the HMAC instead of looking anything
+        // up. A pairing missing them (isReadyToInstall == false) must never get
+        // here; the empty fields it would produce make the sender skip the conf.
         """
         RELAY_URL=\(pairing.relayURL)
         SEND_TOKEN=\(pairing.sendToken)
         SECRET=\(pairing.secretHex)
         CONN=\(pairing.connectionId.uuidString)
+        APNS_TOKEN=\(pairing.apnsToken ?? "")
+        APNS_ENV=\(pairing.apnsEnv ?? "production")
+        SEND_IAT=\(Int((pairing.sendTokenIssuedAt ?? Date(timeIntervalSince1970: 0)).timeIntervalSince1970))
 
         """
     }

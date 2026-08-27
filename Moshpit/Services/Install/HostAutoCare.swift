@@ -115,22 +115,33 @@ final class HostAutoCare {
 
         if var local = PushPairingStore.pairing(for: connection.id) {
             // Heal a pairing minted while the relay setting was broken (the
-            // ".org"-less typo era): the secrets and tokens are fine — they are
-            // random, not derived from the address — so only the address needs
-            // correcting, locally and (via the digest mismatch below) on the
-            // host. Re-minting would orphan the relay registration instead.
+            // ".org"-less typo era): the secret is fine — it is random, not
+            // derived from the address — so only the address needs correcting,
+            // locally and (via the digest mismatch below) on the host. The
+            // send token is re-minted by `ensureReady` right after, because it
+            // belongs to the relay that issued it.
             if local.relayURL != settings.pushRelayURL {
                 Log.island.info("autocare: correcting relay address on \(connection.displayName, privacy: .public)")
                 local.relayURL = settings.pushRelayURL
+                local.sendToken = ""
                 _ = PushPairingStore.upsert(local)
+            }
+            // Re-mint if the credential is missing, ageing toward its relay-side
+            // TTL, or was issued for a device token this phone no longer has. A
+            // pairing that cannot be made ready (no device token yet) must not
+            // be written: the conf would carry empty routing fields the sender
+            // skips — the next pass completes it instead.
+            guard let ready = await push.ensureReady(connectionId: connection.id) else {
+                Log.island.info("autocare: pairing for \(connection.displayName, privacy: .public) not ready — will retry next pass")
+                return
             }
             // The host's copy must match ours byte for byte; `pairingEntry`
             // also finds a pre-multi-device install, whose digest matches when
             // the content does — reinstalling then migrates it to push.d.
-            let expected = ContentDigest.of(HostInstaller.pushConf(local))
+            let expected = ContentDigest.of(HostInstaller.pushConf(ready))
             if state.manifest.pairingEntry(conn: conn)?.digest != expected {
                 Log.island.info("autocare: rewriting pairing on \(connection.displayName, privacy: .public)")
-                _ = try await installer.installPairing(local, state: state)
+                _ = try await installer.installPairing(ready, state: state)
             }
             return
         }

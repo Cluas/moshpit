@@ -82,7 +82,7 @@ final class HostSetupModel {
         phase = .idle
     }
 
-    /// Why this PHONE is not registered with the relay, if it is not.
+    /// Why this PHONE has no usable relay credential, if it has none.
     ///
     /// Distinct from everything else on this screen, which reports the state of
     /// the HOST: the pairing row reads the host's manifest, so a phone whose
@@ -146,7 +146,7 @@ final class HostSetupModel {
             error = String(localized: "Enter the address of your push relay first.")
             return
         }
-        phase = .working(String(localized: "Registering this phone with the relay…"))
+        phase = .working(String(localized: "Minting a send token at the relay…"))
         error = nil
         pushProof = .untested
         do {

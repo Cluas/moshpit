@@ -233,7 +233,7 @@ struct HostSetupView: View {
                     // below reads the host's manifest and cannot see it.
                     Label {
                         VStack(alignment: .leading, spacing: 4) {
-                            Text("This phone isn't registered with the relay")
+                            Text("This phone has no relay credential yet")
                                 .font(Face.text(13, .semibold)).foregroundStyle(Ink.primary)
                             Text(relayError)
                                 .font(Face.text(12)).foregroundStyle(Ink.secondary)

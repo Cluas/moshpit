@@ -185,12 +185,18 @@ exit 0
 # script seals the status with a key the relay does not have, and the relay does
 # the one thing it is for: sign, and forward.
 #
-# Config — written by the app's pairing one-liner into ~/.moshpit/push.conf:
+# Config — written by the app into ~/.moshpit/push.d/<conn>.conf:
 #
 #     RELAY_URL=https://push.example.org
-#     SEND_TOKEN=<64 hex>   bearer credential; proves "may push to that phone"
+#     SEND_TOKEN=<64 hex>   bearer credential the relay minted; proves "may
+#                           push to that phone" without the relay keeping a
+#                           registry — it is an HMAC over the three fields below
 #     SECRET=<64 hex>       E2E key; the relay never has it
 #     CONN=<uuid>           the phone's own id for this connection
+#     APNS_TOKEN=<hex>      where Apple should deliver; rides in each request
+#     APNS_ENV=production|sandbox   which APNs host, a hint only
+#     SEND_IAT=<unix>       when SEND_TOKEN was minted; tokens expire and the
+#                           app rewrites this file well before they do
 #
 # Usage:
 #     moshpit-push.sh <state> <agent> [title]
@@ -316,11 +322,18 @@ trap 'rm -f "$AUTHFILE"' EXIT INT TERM
 # script in hook mode.
 send_one() {
   # shellcheck disable=SC1090
-  RELAY_URL=""; SEND_TOKEN=""; SECRET=""; CONN=""
+  RELAY_URL=""; SEND_TOKEN=""; SECRET=""; CONN=""; APNS_TOKEN=""; APNS_ENV=""; SEND_IAT=""
   . "$1" 2>/dev/null || return 0
   [ -n "${RELAY_URL:-}" ] || return 0
   [ -n "${SEND_TOKEN:-}" ] || return 0
   [ -n "${SECRET:-}" ] || return 0
+  # The stateless relay routes by what THIS request carries: the phone's APNs
+  # token and the token's mint time ride in the conf. A conf without them is
+  # from before the relay stopped keeping a registry — sending would only earn
+  # a 401, so skip quietly and let the app rewrite the file on its next
+  # connect (it re-checks every conf against its own copy byte for byte).
+  [ -n "${APNS_TOKEN:-}" ] || return 0
+  case "$SEND_IAT" in *[!0-9]*|"") return 0 ;; esac
   if [ -n "$TESTCONN" ] && [ "$CONN" != "$TESTCONN" ]; then return 0; fi
 
   PLAIN=$(printf '{"conn":"%s","host":"%s","sess":"%s","pane":"%s","agent":"%s","state":"%s","title":"%s","ts":%s%s}' \
@@ -361,8 +374,13 @@ send_one() {
   else
     THREAD="moshpit.$STATE.${CONN:-none}.$PANE"
   fi
-  BODY=$(printf '{"env":{"v":1,"iv":"%s","ct":"%s","mac":"%s"},"cat":"%s","thread":"%s"}' \
-    "$IV" "$CT" "$MAC" "$STATE" "$(esc "$THREAD")")
+  # `tok`/`tokEnv`/`conn`/`iat` are the routing facts the relay verifies the
+  # bearer token against — it keeps no registry to look them up in. All four
+  # were written into this conf by the app, next to the token they were minted
+  # with; none of them is content (the conn already rides in `thread`).
+  BODY=$(printf '{"env":{"v":1,"iv":"%s","ct":"%s","mac":"%s"},"cat":"%s","thread":"%s","tok":"%s","tokEnv":"%s","conn":"%s","iat":%s}' \
+    "$IV" "$CT" "$MAC" "$STATE" "$(esc "$THREAD")" \
+    "$(esc "$APNS_TOKEN")" "$(esc "${APNS_ENV:-production}")" "$(esc "${CONN:-}")" "$SEND_IAT")
 
   printf 'header = "authorization: Bearer %s"\n' "$SEND_TOKEN" > "$AUTHFILE"
 
