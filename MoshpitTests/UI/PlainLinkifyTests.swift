@@ -43,6 +43,34 @@ struct PlainLinkifyTests {
                 "the prose after the tail must not be part of the link")
     }
 
+    @Test("a CJK-prefixed hard-wrapped URL tags the correct columns")
+    func cjkPrefixHardWrap() {
+        let t = makeTerminal()
+        // The report's exact shape: Claude Code's transcript line, wide
+        // characters before the link. Measure the prefix in COLUMNS with the
+        // emulator itself — guessing east-asian widths in the test would
+        // re-introduce the very drift this pins against.
+        let prefix = "⏺ 产品文档已发布：⧉ "
+        let probe = makeTerminal()
+        probe.feed(text: prefix)
+        let prefixCols = probe.buffer.x
+        let full = "https://claude.ai/code/artifact/40373e79-4780-408d-8ebc-b183e6c374e6"
+        let headLen = t.cols - prefixCols
+        let head = String(full.prefix(headLen))
+        let tail = String(full.dropFirst(headLen))
+        t.feed(text: prefix + head + "\r\n" + tail + "\r\n")
+        PlainLinkDetector.linkify(terminal: t)
+
+        #expect(link(t, row: 0, col: prefixCols) == full,
+                "the url's first column must be tagged despite wide chars before it")
+        #expect(link(t, row: 0, col: t.cols - 1) == full,
+                "the url's last column on the first row must be tagged")
+        #expect(link(t, row: 0, col: prefixCols - 2) == nil,
+                "the CJK prefix itself must not be part of the link")
+        #expect(link(t, row: 1, col: 0) == full,
+                "the continuation row must carry the joined url")
+    }
+
     @Test("a complete URL ending at the right edge is not extended into prose")
     func edgeURLBeforeProseUntouched() {
         let t = makeTerminal()

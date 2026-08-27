@@ -1188,6 +1188,10 @@ struct SwiftTerminalView: UIViewRepresentable {
             guard let url = URL(string: trimmed),
                   let scheme = url.scheme?.lowercased(),
                   ["http", "https", "mailto", "ftp", "ftps"].contains(scheme) else { return }
+            // The observability seam the touch-matrix S-layer asserts on: the
+            // EXACT address handed to the system, so a harness can prove a
+            // wrapped link opened whole without scraping Safari.
+            Log.input.info("link open \(url.absoluteString, privacy: .public)")
             Task { @MainActor in
                 UIApplication.shared.open(url)
             }
