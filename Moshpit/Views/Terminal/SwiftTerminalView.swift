@@ -12,9 +12,10 @@ import SwiftTerm
 enum TerminalFocusPolicy {
     /// Take first responder now, and take it back if something steals it.
     case take
-    /// Neither take nor surrender. A tap on the terminal focuses it, and
-    /// nothing drags it back down — this is what "the keyboard hasn't been
-    /// asked for yet" has to mean.
+    /// Neither take nor surrender: the keyboard stays wherever the user left
+    /// it. (A tap no longer focuses the terminal — `focusOnTap` is off — so
+    /// "allow" is about not resigning focus the toggle granted, not about
+    /// granting any.)
     case allow
     /// Give it up: a sheet is covering the screen, or the user put the
     /// keyboard away on purpose.
@@ -274,6 +275,12 @@ struct SwiftTerminalView: UIViewRepresentable {
         // assistant bar; this is a no-op there.
         terminalView.inputAssistantItem.leadingBarButtonGroups = []
         terminalView.inputAssistantItem.trailingBarButtonGroups = []
+        // A tap is a tap, never a keyboard. Reading history, tapping a link,
+        // selecting output — none of those mean "I want to type", and on iOS
+        // focus IS the keyboard. It comes up through the shortcut bar's own
+        // toggle (and Settings' raise-on-open), which stay programmatic
+        // becomeFirstResponder() calls this flag does not gate. (fork patch 15)
+        terminalView.focusOnTap = false
         TerminalKeyboard.enableComposingInput(on: terminalView)
         TerminalScrollback.enlarge(terminalView)
         // Only underline/open REAL hyperlinks the program declared via OSC-8.

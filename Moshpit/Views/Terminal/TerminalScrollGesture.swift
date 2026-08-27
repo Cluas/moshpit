@@ -67,19 +67,6 @@ final class TerminalScrollGesture: NSObject, UIGestureRecognizerDelegate {
         pinch.delegate = handler
         terminal.addGestureRecognizer(pinch)
 
-        // See `handleReadingTap`. Installed BEFORE the require(toFail:) sweep
-        // below so SwiftTerm's own single tap defers to it.
-        let readingTap = UITapGestureRecognizer(target: handler,
-                                                action: #selector(handleReadingTap(_:)))
-        readingTap.delegate = handler
-        terminal.addGestureRecognizer(readingTap)
-        handler.readingTap = readingTap
-        for existing in terminal.gestureRecognizers ?? [] {
-            guard let tap = existing as? UITapGestureRecognizer, tap !== readingTap,
-                  tap.numberOfTapsRequired == 1 else { continue }
-            tap.require(toFail: readingTap)
-        }
-
         // Tap-to-position. A mouse-aware program (Claude Code's prompt, vim,
         // less) reads a click as "put the cursor here" — the only way to reach a
         // character in the middle of a long line without walking the arrow keys
@@ -132,7 +119,6 @@ final class TerminalScrollGesture: NSObject, UIGestureRecognizerDelegate {
             let lines = Int(t.y / cellHeight)
             guard lines != 0 else { return }
             coordinator?.scroll(lines: lines)
-            lastScrollAt = Date()
             gesture.setTranslation(.zero, in: terminal)
         case .ended:
             if axisLock == .horizontal, abs(gesture.translation(in: terminal).x) >= 40,
@@ -194,41 +180,16 @@ final class TerminalScrollGesture: NSObject, UIGestureRecognizerDelegate {
 
     // MARK: - UIGestureRecognizerDelegate
 
+    // The "reading window" tap-swallower that used to live here — a
+    // recognizer that ate taps for two seconds after a scroll so SwiftTerm's
+    // tap couldn't summon the keyboard over history being read — is gone,
+    // superseded by `focusOnTap = false` (fork patch 15): a tap now NEVER
+    // grabs focus, scrolled recently or not, so there is nothing to swallow
+    // and links stay tappable even inside what used to be the window.
+
     /// Gate the one-finger scroll so it never steals taps, long-press selection,
     /// or full-screen-app drags.
-    /// When the user last dragged the view to look at history.
-    private var lastScrollAt = Date.distantPast
-
-    /// How long after a scroll a tap is read as "still reading", not "I want
-    /// to type".
-    private static let readingWindow: TimeInterval = 2.0
-
-    /// Swallows a tap that lands while the user is reading back.
-    ///
-    /// SwiftTerm focuses the view on any tap that arrives when it is not
-    /// first responder, and on iOS focus IS the keyboard — so scrolling up to
-    /// read and then tapping anything threw the keyboard over the very output
-    /// being read ("我点击历史记录 它把输入框给我打开了"). This recognizer only
-    /// begins inside the reading window, and SwiftTerm's own tap is made to
-    /// wait for it to fail, so every other tap behaves exactly as before.
-    ///
-    /// It deliberately does not scroll to the bottom or do anything else: the
-    /// user tapped while reading, and the least surprising response to that
-    /// is nothing at all. The keyboard is still one tap away on the shortcut
-    /// bar's own toggle.
-    @objc fileprivate func handleReadingTap(_ gesture: UITapGestureRecognizer) {
-        // One tap says "I'm reading". A second one, right after, says "no, I
-        // really do want to type" — so close the window rather than swallowing
-        // taps until it expires, which would just feel broken.
-        lastScrollAt = .distantPast
-    }
-
-    fileprivate weak var readingTap: UITapGestureRecognizer?
-
     func gestureRecognizerShouldBegin(_ gesture: UIGestureRecognizer) -> Bool {
-        if gesture === readingTap {
-            return Date().timeIntervalSince(lastScrollAt) < Self.readingWindow
-        }
         guard let pan = gesture as? UIPanGestureRecognizer,
               pan.maximumNumberOfTouches == 1,
               let terminal = pan.view as? TerminalView else { return true }

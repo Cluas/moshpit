@@ -269,6 +269,47 @@ halves of one fix, and 10 alone gives a misleading impression of being complete.
 
 ---
 
+## 13. A tap on a link opens it without grabbing focus
+
+**Touches:** `Sources/SwiftTerm/iOS/iOSTerminalView.swift` (`singleTap`).
+
+**Why:** Patch 4 made an unfocused tap check for a link before treating the
+tap as "focus me" — but it still focused afterwards, so tapping a link with
+the keyboard dismissed popped the keyboard over the output being read and
+left it up on return from the browser. The unfocused link-tap now opens the
+link and deliberately does NOT become first responder.
+
+**Upstream candidate:** yes, same UX argument as patch 4.
+
+## 14. OSC 52 read queries reach the host
+
+**Touches:** `Sources/SwiftTerm/Terminal.swift`, delegate surface.
+
+**Why:** `ESC ] 52 ; c ; ?` (clipboard read) was mis-parsed as base64 content
+and dropped. It now surfaces through a `clipboardRequest` delegate hook and
+is answered via `Terminal.sendClipboardResponse` — whether the remote gets
+the clipboard is the host's call. Groundwork for clipboard-image paste over
+SSH.
+
+**Upstream candidate:** yes.
+
+## 15. `focusOnTap` — the host decides whether a tap summons the keyboard
+
+**Touches:** `Sources/SwiftTerm/iOS/iOSTerminalView.swift` (new public
+`focusOnTap`, checked in `singleTap`'s unfocused branch).
+
+**Why:** On iOS first responder IS the software keyboard, and the unfocused
+branch of `singleTap` unconditionally grabbed it — so in an app whose
+terminal is read as much as it is typed at, every tap taken while reading
+history summoned a keyboard over the output ("没点输入框也弹键盘"). With
+`focusOnTap = false` a tap is only ever a tap: links open (patch 13),
+double-tap selection and mouse reporting are untouched, and focus moves only
+when the host calls `becomeFirstResponder()` itself — Moshpit's shortcut-bar
+keyboard toggle and its raise-keyboard-on-open setting. Default stays `true`
+so the fork changes nothing for other consumers.
+
+**Upstream candidate:** yes — as an opt-in flag it costs upstream nothing.
+
 ## Fork maintenance
 
 - **Where the fork lives:** [github.com/Cluas/SwiftTerm](https://github.com/Cluas/SwiftTerm),

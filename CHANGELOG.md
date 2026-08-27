@@ -32,8 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reads as "the cursor goes here", so reaching a character in the middle of a
   long prompt is one tap instead of walking the arrow keys one cell at a time.
   Only programs that asked for the mouse get it: a plain shell would print the
-  report into its command line, so it sends nothing there. The first tap on an
-  unfocused terminal still just brings up the keyboard, as before.
+  report into its command line, so it sends nothing there.
 
 ### Fixed
 
@@ -99,6 +98,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **A tap on the terminal no longer summons the keyboard.** Opening a session
+  is usually to read it — history, a link, output to select and copy — and on
+  iOS focusing the terminal *is* the keyboard, so every tap taken while
+  reading threw one over the very thing being read. Now a tap is only ever a
+  tap: links open, double-tap still selects, tap-to-position still clicks for
+  mouse-aware programs. The keyboard comes up through the shortcut bar's own
+  toggle, or on open via Settings → Raise keyboard on open. (This replaces
+  the earlier half-measure that only swallowed taps within two seconds of a
+  scroll.)
 - **The mic is a normal shortcut chip.** It used to be pinned beside the
   keyboard toggle, outside the scrolling row — permanently costing bar width
   and the only shortcut nobody could reorder or hide. It is now an ordinary

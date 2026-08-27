@@ -99,11 +99,15 @@ packages:
     # the host through a clipboardRequest delegate hook and are answered via
     # Terminal.sendClipboardResponse, instead of being mis-parsed as base64
     # and dropped; whether the remote gets the clipboard is the host's call
-    # (groundwork for clipboard-image paste over SSH, Claude Code #42712).
+    # (groundwork for clipboard-image paste over SSH, Claude Code #42712) —
+    # and (15) `focusOnTap`: a host flag (default true) that stops a tap on
+    # an unfocused terminal from grabbing first responder at all. Moshpit
+    # sets it false: on iOS focus is the keyboard, reading is a first-class
+    # activity, and the keyboard has its own toggle on the shortcut bar.
     # Revert to the upstream URL if/when these land there and a
     # release picks them up.
     url: https://github.com/Cluas/SwiftTerm.git
-    revision: 29949bcd146f190c3f7f54599587e90fa8665289
+    revision: 0a10d487f3e03a25dc5857d0df92dfbde2f9c0aa
   Citadel:
     url: https://github.com/orlandos-nl/Citadel.git
     from: "0.7.0"

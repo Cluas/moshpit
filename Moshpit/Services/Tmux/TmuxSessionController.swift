@@ -3254,6 +3254,13 @@ final class TmuxSessionController: MultiplexerControlling {
                                 height: cell.height * CGFloat(max(1, lastClientSize.rows)))
         let terminal = TerminalView(frame: birthFrame, font: font)
         terminal.inputAccessoryView = nil   // we render our own shortcut bar
+        // Match SwiftTerminalView.makeUIView: a tap never summons the
+        // keyboard — the shortcut bar's toggle owns that. (fork patch 15)
+        terminal.focusOnTap = false
+        // No system assistant bar either (iPad: 45–55pt over the keyboard) —
+        // see the twin note in SwiftTerminalView.makeUIView.
+        terminal.inputAssistantItem.leadingBarButtonGroups = []
+        terminal.inputAssistantItem.trailingBarButtonGroups = []
         TerminalKeyboard.enableComposingInput(on: terminal)
         TerminalScrollback.enlarge(terminal)
         // OSC-8 only — SwiftTerm's default `.implicit` mis-underlines file/
