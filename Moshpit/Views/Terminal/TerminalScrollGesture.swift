@@ -172,9 +172,15 @@ final class TerminalScrollGesture: NSObject, UIGestureRecognizerDelegate {
     @objc private func handleTap(_ gesture: UITapGestureRecognizer) {
         guard gesture.state == .ended,
               let terminal = gesture.view as? TerminalView else { return }
-        // A live selection: the tap clears it (SwiftTerm's job), not a click.
+        // A live selection: this tap means "dismiss it" — nothing else. The
+        // fork's own tap-clears-selection lives in its FOCUSED branch, so with
+        // the keyboard down a selection could otherwise never be dismissed at
+        // all ("如何取消选中呢，现在也没有方式"). Clearing here rather than in
+        // the fork's unfocused branch keeps one owner for the unfocused tap
+        // and dodges the undefined action order between the two recognizers.
         // `copy:` is permitted exactly when a selection is active.
         if terminal.canPerformAction(#selector(UIResponder.copy(_:)), withSender: nil) {
+            terminal.closeSelection()
             return
         }
         let cell = TerminalCellGeometry.cell(at: gesture.location(in: terminal), in: terminal)

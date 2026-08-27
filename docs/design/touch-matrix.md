@@ -39,7 +39,7 @@
 | 单击 | C | 键盘保持；click 定位；近光标 4 列×2 行且无鼠标模式 → 粘贴菜单 | U ✅（菜单 M） |
 | 单击 | D | 永不弹键盘（光标在屏外）；click 照发 | U ✅ |
 | 单击链接 | A/B/C/D | 打开链接，**不**弹键盘、不聚焦（fork patch 4+13+15） | S(链接层待补) / M ✅ |
-| 单击 | F | 清除选择（fork singleTap 聚焦分支）；app 的 click 被 `canPerformAction(copy:)` 门挡住不发 | T ✅ |
+| 单击 | F | **清除选择**（app `handleTap` → fork `closeSelection()`，聚焦与否都成立；不发 click、不弹键盘） | U ✅ |
 | 双击 | 任意 | 选中词/表达式 + 出现手柄 + **Copy 菜单（无需聚焦，UIEditMenuInteraction）** | M（菜单出现 S 待补） |
 | 三击 | 任意 | 选整行 + 菜单 | M |
 | 长按 | 任意 | 光标词选择/菜单（fork 行为） | M |
@@ -73,4 +73,4 @@
 
 - 2026-08-27 初版。当日修复：focusOnTap（fork 15）、按落点分键盘
   （`tapWantsKeyboard`，commit 3c931cb）、手柄手指化 + UIEditMenuInteraction
-  （fork 16）。
+  （fork 16）、未聚焦态点击取消选中（fork `closeSelection` + app handleTap）。

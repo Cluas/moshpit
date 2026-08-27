@@ -52,6 +52,21 @@ struct GestureTopologyTests {
                 "implicit link regex mis-underlines bare file paths")
     }
 
+    @Test("a selection can be dismissed without first responder")
+    func closeSelectionWorksUnfocused() {
+        // The user's report verbatim: "如何取消选中呢，现在也没有方式" — the
+        // fork's own tap-clears-selection lives in its focused branch, so with
+        // focusOnTap off, handleTap's closeSelection() is the only exit.
+        let (terminal, _) = makeWired()
+        terminal.feed(text: "some words to select\r\n")
+        terminal.selectAll(nil)
+        #expect(terminal.canPerformAction(#selector(UIResponder.copy(_:)), withSender: nil),
+                "selectAll should have armed the selection")
+        terminal.closeSelection()
+        #expect(!terminal.canPerformAction(#selector(UIResponder.copy(_:)), withSender: nil),
+                "closeSelection must disarm the selection — and with it the app pan's yield")
+    }
+
     @Test("selection handles are finger-sized at every font size")
     func handleToleranceIsFingerSized() {
         // 9pt terminal font ≈ 5.3×10.7pt cells — the old fixed 3×2-cell window

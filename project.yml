@@ -108,11 +108,13 @@ packages:
     # finger-sized (22pt derived from the cell size, was 3×2 cells ≈ 16pt at
     # small fonts), and the copy/paste menu is UIEditMenuInteraction on
     # iOS 16+ (UIMenuController silently refuses to show without first
-    # responder, which (15) made the terminal's normal state).
+    # responder, which (15) made the terminal's normal state), plus a public
+    # closeSelection() so the host's own tap can dismiss a selection while
+    # unfocused — the built-in clear lived only in singleTap's focused branch.
     # Revert to the upstream URL if/when these land there and a
     # release picks them up.
     url: https://github.com/Cluas/SwiftTerm.git
-    revision: 5be43e4dfdf932bcb06bf26d59aeee36eae31062
+    revision: fa25f83bb102557b5e3430b7be35074e5b81ba9b
   Citadel:
     url: https://github.com/orlandos-nl/Citadel.git
     from: "0.7.0"
