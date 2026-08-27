@@ -310,6 +310,25 @@ so the fork changes nothing for other consumers.
 
 **Upstream candidate:** yes — as an opt-in flag it costs upstream nothing.
 
+## 16. Selection that works without first responder
+
+**Touches:** `Sources/SwiftTerm/iOS/iOSTerminalView.swift`
+(`panSelectionHandler`, `showContextMenu`/`hideContextMenu`, a
+`UIEditMenuInteractionDelegate` extension).
+
+**Why:** Two assumptions in the selection flow broke once patch 15 made
+"unfocused" the terminal's normal state. The handle-grab window was 3×2
+cells — ~16pt under a 9pt font, a third of the 44pt HIG minimum — so
+dragging a handle usually missed and re-anchored the selection from the old
+pivot. It is now derived from the cell size to stay finger-sized (22pt),
+exposed as `selectionHandleTolerance(cellWidth:cellHeight:)` for host tests.
+And the copy menu was `UIMenuController`, which refuses to show unless the
+view is first responder — double-tap selected a word, then no menu ever
+appeared. iOS 16+ uses `UIEditMenuInteraction` (no responder requirement,
+same `canPerformAction` source of truth); pre-16 keeps the old path.
+
+**Upstream candidate:** yes, both halves.
+
 ## Fork maintenance
 
 - **Where the fork lives:** [github.com/Cluas/SwiftTerm](https://github.com/Cluas/SwiftTerm),

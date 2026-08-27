@@ -3253,25 +3253,7 @@ final class TmuxSessionController: MultiplexerControlling {
                                 width: cell.width * CGFloat(max(1, lastClientSize.cols)),
                                 height: cell.height * CGFloat(max(1, lastClientSize.rows)))
         let terminal = TerminalView(frame: birthFrame, font: font)
-        terminal.inputAccessoryView = nil   // we render our own shortcut bar
-        // Match SwiftTerminalView.makeUIView: a tap never summons the
-        // keyboard — the shortcut bar's toggle owns that. (fork patch 15)
-        terminal.focusOnTap = false
-        // No system assistant bar either (iPad: 45–55pt over the keyboard) —
-        // see the twin note in SwiftTerminalView.makeUIView.
-        terminal.inputAssistantItem.leadingBarButtonGroups = []
-        terminal.inputAssistantItem.trailingBarButtonGroups = []
-        TerminalKeyboard.enableComposingInput(on: terminal)
-        TerminalScrollback.enlarge(terminal)
-        // OSC-8 only — SwiftTerm's default `.implicit` mis-underlines file/
-        // relative paths and truncates URLs (see SwiftTerminalView.makeUIView).
-        terminal.linkReporting = .explicit
-        terminal.linkHighlightMode = .always   // OSC-8 hyperlinks open on a plain tap
-        // We own scrolling via gestures + the scroll thumb, so SwiftTerm must
-        // NOT also report touches as mouse drags — those flow through onInput,
-        // spam the remote during a scroll, and (over mosh) toggle copy-mode out
-        // from under us, so keystrokes never leave copy-mode.
-        terminal.allowMouseReporting = false
+        TerminalMint.configureInput(terminal)
         currentTheme.apply(to: terminal)
         let desiredCursor = TerminalCursor.apply(
             shape: cursorShape, colorId: cursorColorId, blink: cursorBlink, to: terminal)

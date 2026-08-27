@@ -103,11 +103,16 @@ packages:
     # and (15) `focusOnTap`: a host flag (default true) that stops a tap on
     # an unfocused terminal from grabbing first responder at all. Moshpit
     # sets it false: on iOS focus is the keyboard, reading is a first-class
-    # activity, and the keyboard has its own toggle on the shortcut bar.
+    # activity, and the keyboard has its own toggle on the shortcut bar —
+    # and (16) selection you can use unfocused: the handle-grab window is
+    # finger-sized (22pt derived from the cell size, was 3×2 cells ≈ 16pt at
+    # small fonts), and the copy/paste menu is UIEditMenuInteraction on
+    # iOS 16+ (UIMenuController silently refuses to show without first
+    # responder, which (15) made the terminal's normal state).
     # Revert to the upstream URL if/when these land there and a
     # release picks them up.
     url: https://github.com/Cluas/SwiftTerm.git
-    revision: 0a10d487f3e03a25dc5857d0df92dfbde2f9c0aa
+    revision: 5be43e4dfdf932bcb06bf26d59aeee36eae31062
   Citadel:
     url: https://github.com/orlandos-nl/Citadel.git
     from: "0.7.0"
