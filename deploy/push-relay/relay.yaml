@@ -73,7 +73,7 @@ spec:
         fsGroup: 10001
       containers:
         - name: relay
-          image: ghcr.io/cluas/moshpit-push-relay:dev-20260825-2
+          image: ghcr.io/cluas/moshpit-push-relay:v2-b864117
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8080
