@@ -265,6 +265,15 @@ struct SwiftTerminalView: UIViewRepresentable {
         let terminalView = TerminalView(frame: birthFrame, font: font)
         coordinator.ownedTerminal = terminalView
         terminalView.inputAccessoryView = nil   // the app renders its own shortcut bar
+        // …and no system assistant bar either. On iPad the shortcuts/assistant
+        // strip (undo · paste · autofill, 45–55pt) rides above the software
+        // keyboard and, with a hardware keyboard, floats at the bottom right on
+        // top of the app's own bar. SwiftTerm clears these in its
+        // setupAccessoryView() path — which the line above opts out of, so the
+        // clearing came along with the accessory we didn't want. iPhone has no
+        // assistant bar; this is a no-op there.
+        terminalView.inputAssistantItem.leadingBarButtonGroups = []
+        terminalView.inputAssistantItem.trailingBarButtonGroups = []
         TerminalKeyboard.enableComposingInput(on: terminalView)
         TerminalScrollback.enlarge(terminalView)
         // Only underline/open REAL hyperlinks the program declared via OSC-8.
@@ -408,9 +417,38 @@ struct SwiftTerminalView: UIViewRepresentable {
         /// make tappable (``PlainLinkDetector``) — the remote often only
         /// wraps a URL in a real OSC-8 hyperlink when it's alone on its own
         /// line, not one mentioned inline or inside a summary box.
+        ///
+        /// The link scan is DEBOUNCED, not run per feed. It walks every
+        /// visible cell (`viewportLineText` per row — a fresh String each),
+        /// which was written off as "cheap to call after every feed" on a
+        /// phone grid of ~2k cells. An iPad grid is ~9k cells, and a pane
+        /// switch arrives as hundreds of separate `%output` events — paying
+        /// O(rows×cols) on each was a visible slice of the "repaints line by
+        /// line" stall. A link is tappable ~0.15s after output goes quiet,
+        /// which no finger beats; the cursor fix stays immediate because it
+        /// is O(1).
         private func postFeedFixups(on terminalView: TerminalView) {
             enforceCursor(on: terminalView)
-            PlainLinkDetector.linkify(terminalView)
+            scheduleLinkify(on: terminalView)
+        }
+
+        /// Touched only on the main queue — `feed` is documented safe from any
+        /// thread, so the hop below is what keeps this pointer un-raced.
+        private var linkifyWork: DispatchWorkItem?
+
+        private func scheduleLinkify(on terminalView: TerminalView,
+                                     after delay: TimeInterval = 0.15) {
+            let schedule = { [weak self, weak terminalView] in
+                guard let self else { return }
+                self.linkifyWork?.cancel()
+                let work = DispatchWorkItem { [weak terminalView] in
+                    guard let terminalView else { return }
+                    PlainLinkDetector.linkify(terminalView)
+                }
+                self.linkifyWork = work
+                DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
+            }
+            if Thread.isMainThread { schedule() } else { DispatchQueue.main.async(execute: schedule) }
         }
 
         /// Called when the terminal wants to send bytes upstream (typed

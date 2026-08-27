@@ -109,6 +109,16 @@ struct TerminalScreen: View {
     /// there is no camera, e.g. the simulator).
     @State private var showCamera = false
 
+    /// iPad landscape trims the app's own chrome (top bar 54→42, shortcut bar
+    /// 50→38, pane inset 4→2). With the software keyboard up, an iPad mini has
+    /// ~744pt of height and the keyboard takes ~400 of it — the ~24pt clawed
+    /// back here is two more terminal rows. Size classes can't express this
+    /// (an iPad is regular×regular in both orientations), so it's geometry:
+    /// pad + wider-than-tall. Deliberately NOT keyed on the keyboard — a bar
+    /// that changes height mid keyboard transition would fight the frame-hold
+    /// machinery in TerminalHostContainer.
+    @State private var compactChrome = false
+
     private var theme: TerminalTheme {
         themes.theme(id: settings.themeId)
     }
@@ -435,6 +445,10 @@ struct TerminalScreen: View {
         }
         .navigationBarHidden(true)
         .preferredColorScheme(.dark)
+        .onGeometryChange(for: Bool.self) { proxy in
+            UIDevice.current.userInterfaceIdiom == .pad
+                && proxy.size.width > proxy.size.height
+        } action: { compactChrome = $0 }
         .safeAreaInset(edge: .bottom, spacing: 0) { bottomAccessory }
         .task {
             if settings.raiseKeyboardOnOpen { keyboardIntent = .up }
@@ -699,7 +713,7 @@ struct TerminalScreen: View {
             // gone — the rightmost icon the breadcrumb wrapping issue referenced.
         }
         .padding(.horizontal, 14)
-        .frame(height: 54)
+        .frame(height: compactChrome ? 42 : 54)
         .background(Ink.navGlass)
         .background(.ultraThinMaterial)
         .overlay(alignment: .bottom) {
@@ -926,7 +940,8 @@ struct TerminalScreen: View {
                 if controller.snapshot.isAttached {
                     TmuxPaneSplitView(controller: controller,
                                       focusPolicy: focusPolicy,
-                                      geometryHeld: geometryHold)
+                                      geometryHeld: geometryHold,
+                                      compactChrome: compactChrome)
                 } else {
                     // Unattached. Distinguish the two reasons (the design's
                     // "fix the mis-diagnosis"): tmux genuinely absent → offer
@@ -1231,6 +1246,7 @@ struct TerminalScreen: View {
                     forHost: connection.displayName,
                     inMultiplexer: active?.tmuxControl != nil || active?.herdrControl != nil),
                 onTap: send(shortcut:),
+                compact: compactChrome,
                 ctrlArmed: ctrlArmed,
                 onArrow: sendArrow,
                 onScroll: scrollHistory,
@@ -1422,6 +1438,8 @@ struct TmuxPaneSplitView: View {
     /// Hold the shown pane at its current size across a modal — see
     /// ``TerminalHostContainer/geometryHeld``.
     var geometryHeld: Bool = false
+    /// iPad-landscape chrome trim — see `TerminalScreen.compactChrome`.
+    var compactChrome: Bool = false
 
     var body: some View {
         let snapshot = controller.snapshot
@@ -1459,7 +1477,7 @@ struct TmuxPaneSplitView: View {
                 Color.clear
             }
         }
-        .padding(4)
+        .padding(compactChrome ? 2 : 4)
         .background(Ink.terminalBG)
         .clipped()
         // NOT `.animation(_:value:)` here — the mutation that flips
@@ -1565,6 +1583,10 @@ private struct ChipRowContentWidthKey: PreferenceKey {
 struct ShortcutBarView: View {
     let shortcuts: [TerminalShortcut]
     let onTap: (TerminalShortcut) -> Void
+    /// iPad-landscape chrome trim: the chips are 30pt tall either way, this
+    /// only sheds the bar's spare vertical padding. See
+    /// `TerminalScreen.compactChrome`.
+    var compact: Bool = false
     /// Sticky-Ctrl chip: highlighted while armed. The `.ctrl` shortcut (a
     /// normal, reorderable/removable builtin) drives its own arm/disarm
     /// through `onTap` like any other chip — this only controls the highlight.
@@ -1631,7 +1653,7 @@ struct ShortcutBarView: View {
                 keyboardToggle(onToggleKeyboard)
             }
         }
-        .frame(height: 50)
+        .frame(height: compact ? 38 : 50)
         .background(Ink.shortcutBarBG)
         .overlay(alignment: .top) {
             Rectangle().fill(Ink.hairline).frame(height: 1)
