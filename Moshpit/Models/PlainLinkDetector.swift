@@ -40,8 +40,11 @@ enum PlainLinkDetector {
     /// column count comparison, without affecting the rendering itself,
     /// which is correctly column-based.)
     static func linkify(_ terminalView: TerminalView) {
+        linkify(terminal: terminalView.getTerminal())
+    }
+
+    static func linkify(terminal: Terminal) {
         guard let detector else { return }
-        let terminal = terminalView.getTerminal()
         var row = 0
         while row < terminal.rows {
             var spans: [(row: Int, length: Int)] = []
@@ -77,10 +80,80 @@ enum PlainLinkDetector {
                 let start = text.distance(from: text.startIndex, to: swiftRange.lowerBound)
                 let length = text.distance(from: swiftRange.lowerBound, to: swiftRange.upperBound)
                 guard length > 0 else { return }
+                // A URL that runs into the right edge of a full-width final
+                // row may continue on the next PHYSICAL line even though the
+                // emulator saw a hard newline: programs that do their own
+                // layout (Claude Code's transcript is the constant case)
+                // word-wrap by printing each visual line separately, often
+                // indenting the continuation — no isRowWrapped bit is ever
+                // set, so the logical-line join above can't see it.
+                var taggedURL = url.absoluteString
+                var tails: [(row: Int, startCol: Int, length: Int)] = []
+                if swiftRange.upperBound == text.endIndex,
+                   let lastSpan = spans.last, lastSpan.length == terminal.cols {
+                    tails = hardWrapContinuation(after: lastSpan.row, terminal: terminal)
+                    if !tails.isEmpty {
+                        var joined = String(matchedText)
+                        for tail in tails {
+                            let rowText = terminal.viewportLineText(row: tail.row)
+                            let from = rowText.index(rowText.startIndex, offsetBy: tail.startCol)
+                            let to = rowText.index(from, offsetBy: tail.length)
+                            joined += rowText[from..<to]
+                        }
+                        taggedURL = joined
+                    }
+                }
                 tagAcrossRows(startOffset: start, length: length, spans: spans,
-                              terminal: terminal, url: url.absoluteString)
+                              terminal: terminal, url: taggedURL)
+                for tail in tails {
+                    terminal.tagPlainTextLink(row: tail.row, startCol: tail.startCol,
+                                              endCol: tail.startCol + tail.length - 1,
+                                              url: taggedURL)
+                }
             }
         }
+    }
+
+    /// Characters a hard-wrapped URL tail may consist of. Deliberately
+    /// narrower than RFC 3986: prose-punctuation members of the reserved set
+    /// (parens, quotes, commas, semicolons, bangs) are left out so a
+    /// continuation run stops where a sentence plausibly starts.
+    private static func isURLTailChar(_ c: Character) -> Bool {
+        if c.isASCII && (c.isLetter || c.isNumber) { return true }
+        return "-._~/%?#=&:@+".contains(c)
+    }
+
+    /// Walks the physical rows after a URL that ended flush against the right
+    /// edge, collecting indented URL-charset runs that look like the rest of
+    /// it. Heuristic by nature — the emulator genuinely saw separate lines —
+    /// so each run must be at least two characters and contain something
+    /// other than a letter (a digit, slash, dash…): a real tail almost always
+    /// does, while the word a new prose sentence starts with almost never
+    /// does. That guard is what keeps a COMPLETE url that happens to end at
+    /// the last column, followed by ordinary text, from being extended into a
+    /// broken one — that case renders and taps correctly today and must stay
+    /// working.
+    private static func hardWrapContinuation(after row: Int, terminal: Terminal)
+        -> [(row: Int, startCol: Int, length: Int)] {
+        var tails: [(row: Int, startCol: Int, length: Int)] = []
+        var current = row + 1
+        // Enough for a ~5×-terminal-width URL; also the runaway stop.
+        let maxTailRows = 4
+        while current < terminal.rows, tails.count < maxTailRows {
+            // A continuation the emulator itself knows about belongs to the
+            // logical-line join in linkify, not to this heuristic.
+            let rowText = terminal.viewportLineText(row: current)
+            let indent = rowText.prefix(while: { $0 == " " }).count
+            let afterIndent = rowText.dropFirst(indent)
+            let run = afterIndent.prefix(while: isURLTailChar)
+            guard run.count >= 2, run.contains(where: { !$0.isLetter }) else { break }
+            tails.append((current, indent, run.count))
+            // Keep walking only while the run itself hits the right edge —
+            // a tail that stops mid-row is the URL's end.
+            guard indent + run.count == terminal.cols else { break }
+            current += 1
+        }
+        return tails
     }
 
     /// Splits a logical-line match back into per-physical-row column ranges

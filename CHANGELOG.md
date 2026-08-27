@@ -36,6 +36,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A URL wrapped across two lines opens as the whole address, not the first
+  line's half.** Programs that lay out their own transcript — Claude Code is
+  the constant case — print a long URL as two physical lines with a hard
+  newline and often an indented continuation, so the terminal's own
+  soft-wrap bookkeeping never links them. The plain-link detector now
+  continues a URL that runs flush into the right edge onto the next row's
+  URL-shaped run, and tags every row with the joined address; a complete URL
+  that merely happens to end at the last column is left alone, so tapping it
+  keeps working as before.
 - **Returning from the background no longer flashes a mis-wrapped frame.**
   Moshpit hands the tmux window back while it is away, so a desktop client
   attaching meanwhile isn't stranded at phone width — but output kept arriving

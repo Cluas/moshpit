@@ -38,7 +38,7 @@
 | 单击 | B | 不弹键盘；仅 click（E 内生效，如 jump-to-bottom；纯 shell 无鼠标模式则无副作用） | U+S ✅ |
 | 单击 | C | 键盘保持；click 定位；近光标 4 列×2 行且无鼠标模式 → 粘贴菜单 | U ✅（菜单 M） |
 | 单击 | D | 永不弹键盘（光标在屏外）；click 照发 | U ✅ |
-| 单击链接 | A/B/C/D | 打开链接，**不**弹键盘、不聚焦（fork patch 4+13+15） | S(链接层待补) / M ✅ |
+| 单击链接 | A/B/C/D | 打开链接，**不**弹键盘、不聚焦（fork patch 4+13+15）。跨行 URL 点任一行都是完整地址：软换行由 `isRowWrapped` 拼接；**硬换行**（Claude Code 自排版，贴右边缘断行+缩进续行）由 PlainLinkDetector 的续接启发式拼接，防误伤门槛=续行段 ≥2 字符且含非字母 | U ✅ / M ✅ |
 | 单击 | F | **清除选择**（app `handleTap` → fork `closeSelection()`，聚焦与否都成立；不发 click、不弹键盘） | U ✅ |
 | 双击 | 任意 | 选中词/表达式 + 出现手柄 + **Copy 菜单（无需聚焦，UIEditMenuInteraction）** | M（菜单出现 S 待补） |
 | 三击 | 任意 | 选整行 + 菜单 | M |
