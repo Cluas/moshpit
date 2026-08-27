@@ -134,22 +134,58 @@ final class TerminalScrollGesture: NSObject, UIGestureRecognizerDelegate {
         }
     }
 
-    /// Forward a tap as a click at the tapped cell, so a mouse-aware program
-    /// moves its cursor there.
+    /// How far (in rows) from the cursor a tap still reads as "I want to type
+    /// here". Claude Code's input box is a bordered region a couple of rows
+    /// tall with the cursor inside; a shell prompt is one row. Columns are
+    /// deliberately ignored — the input box spans the full width, and tapping
+    /// its right half is not a different intention than tapping its left.
+    static let typingRows = 2
+
+    /// The tap-splitting decision, pure so a test can pin it: raise the
+    /// keyboard only for a tap on the input area (the cursor's own rows),
+    /// never while reading local scrollback (the cursor is off-screen below;
+    /// whatever sits under its viewport row up there is history).
+    static func tapWantsKeyboard(tapRow: Int, cursorRow: Int,
+                                 readingScrollback: Bool) -> Bool {
+        !readingScrollback && abs(tapRow - cursorRow) <= typingRows
+    }
+
+    /// One tap, two meanings, split by WHERE it lands rather than by focus:
+    ///
+    ///  * near the cursor's row — "I want to type here": raise the keyboard
+    ///    (the one gesture-driven focus grab left now that `focusOnTap` is
+    ///    off) AND forward the click, so a tap into the middle of a long
+    ///    prompt both summons the keyboard and puts the cursor there;
+    ///  * anywhere else — just a click. A mouse-aware program gives taps
+    ///    meaning far from any prompt (Claude Code's "jump to bottom
+    ///    (click)" chip while scrolled), and those must work with the
+    ///    keyboard down. The old `isFirstResponder` guard here made them
+    ///    cost a keyboard first — one tap to summon it, a second to click —
+    ///    and once `focusOnTap` went off, that first tap stopped granting
+    ///    focus at all and clicks went completely dead.
+    ///
+    /// Reading local scrollback is exempt from the typing heuristic: while
+    /// scrolled up, the cursor is off-screen below and whatever sits under
+    /// its viewport row is history, not a prompt. (`canScroll` first —
+    /// `scrollPosition` is 0 both at the very top AND when there is nothing
+    /// to scroll, so alone it would read an empty shell as "scrolled up".)
     @objc private func handleTap(_ gesture: UITapGestureRecognizer) {
         guard gesture.state == .ended,
               let terminal = gesture.view as? TerminalView else { return }
-        // A tap on an unfocused terminal means "give me the keyboard" — that's
-        // all SwiftTerm does with it, and positioning shouldn't ride along on
-        // it: tapping to start typing would otherwise also move the cursor
-        // wherever the thumb happened to land. Once focused, taps position.
-        guard terminal.isFirstResponder else { return }
         // A live selection: the tap clears it (SwiftTerm's job), not a click.
         // `copy:` is permitted exactly when a selection is active.
         if terminal.canPerformAction(#selector(UIResponder.copy(_:)), withSender: nil) {
             return
         }
         let cell = TerminalCellGeometry.cell(at: gesture.location(in: terminal), in: terminal)
+        let readingScrollback = terminal.canScroll && terminal.scrollPosition < 0.999
+        let cursorRow = terminal.getTerminal().getCursorLocation().y
+        let wantsKeyboard = Self.tapWantsKeyboard(tapRow: cell.row, cursorRow: cursorRow,
+                                                  readingScrollback: readingScrollback)
+        Log.input.debug("tap row=\(cell.row) cursor=\(cursorRow) scrolled=\(readingScrollback) keyboard=\(wantsKeyboard) focused=\(terminal.isFirstResponder)")
+        if wantsKeyboard, !terminal.isFirstResponder {
+            _ = terminal.becomeFirstResponder()
+        }
         coordinator?.click(col: cell.col, row: cell.row)
     }
 

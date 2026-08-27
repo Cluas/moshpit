@@ -98,15 +98,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **A tap on the terminal no longer summons the keyboard.** Opening a session
-  is usually to read it — history, a link, output to select and copy — and on
-  iOS focusing the terminal *is* the keyboard, so every tap taken while
-  reading threw one over the very thing being read. Now a tap is only ever a
-  tap: links open, double-tap still selects, tap-to-position still clicks for
-  mouse-aware programs. The keyboard comes up through the shortcut bar's own
-  toggle, or on open via Settings → Raise keyboard on open. (This replaces
-  the earlier half-measure that only swallowed taps within two seconds of a
-  scroll.)
+- **The keyboard follows where you tap, not whether you tap.** Opening a
+  session is usually to read it — history, a link, output to select and copy —
+  and on iOS focusing the terminal *is* the keyboard, so every tap taken
+  while reading threw one over the very thing being read. Now a tap on the
+  input area — the cursor's own rows: Claude Code's prompt box, a shell
+  prompt — raises the keyboard and positions the cursor; a tap anywhere else
+  is just a tap: links open, double-tap still selects, and clicks reach
+  mouse-aware programs with the keyboard down (Claude Code's "jump to bottom
+  (click)" now works without summoning a keyboard first). The shortcut bar's
+  toggle and Settings → Raise keyboard on open still work as before. (This
+  replaces the earlier half-measure that only swallowed taps within two
+  seconds of a scroll.)
 - **The mic is a normal shortcut chip.** It used to be pinned beside the
   keyboard toggle, outside the scrolling row — permanently costing bar width
   and the only shortcut nobody could reorder or hide. It is now an ordinary

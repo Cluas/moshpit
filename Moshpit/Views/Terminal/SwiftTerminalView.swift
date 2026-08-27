@@ -275,11 +275,13 @@ struct SwiftTerminalView: UIViewRepresentable {
         // assistant bar; this is a no-op there.
         terminalView.inputAssistantItem.leadingBarButtonGroups = []
         terminalView.inputAssistantItem.trailingBarButtonGroups = []
-        // A tap is a tap, never a keyboard. Reading history, tapping a link,
-        // selecting output — none of those mean "I want to type", and on iOS
-        // focus IS the keyboard. It comes up through the shortcut bar's own
-        // toggle (and Settings' raise-on-open), which stay programmatic
-        // becomeFirstResponder() calls this flag does not gate. (fork patch 15)
+        // A tap is a tap, not a keyboard grab. Reading history, tapping a
+        // link, selecting output — none of those mean "I want to type", and on
+        // iOS focus IS the keyboard. What still raises it: the shortcut bar's
+        // toggle, Settings' raise-on-open, and a tap landing on the cursor's
+        // own rows — the input box — which TerminalScrollGesture.handleTap
+        // detects and answers with a programmatic becomeFirstResponder() this
+        // flag does not gate. (fork patch 15)
         terminalView.focusOnTap = false
         TerminalKeyboard.enableComposingInput(on: terminalView)
         TerminalScrollback.enlarge(terminalView)
