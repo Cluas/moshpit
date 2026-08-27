@@ -223,9 +223,14 @@ struct TerminalScreen: View {
         return active?.herdrControl?.agentHooks ?? [:]
     }
 
-    /// True while any tmux navigation sheet is up.
+    /// True while any full-cover modal is up — the tmux navigation sheets and
+    /// the camera. Everything here goes through `presentSheet` on the way in,
+    /// so the keyboard collapses for the modal and comes back afterwards if it
+    /// was up before: the modal borrows the screen, it doesn't get to change
+    /// the keyboard's expand/collapse state ("图片插入的时候要保留键盘展开收起
+    /// 状态").
     private var anySheetOpen: Bool {
-        showWindowsSheet || showSessionsSheet || showPaneSheet
+        showWindowsSheet || showSessionsSheet || showPaneSheet || showCamera
     }
 
     /// Whether the pane behind a modal is pinned to the size it already has.
@@ -1257,7 +1262,7 @@ struct TerminalScreen: View {
                 imageHistory: active?.imageUploads.entries ?? [],
                 clipboardHasImage: clipboardHasImage,
                 onImagePasteboard: { beginClipboardImageAttachment() },
-                onImageCamera: CameraCaptureView.isAvailable ? { showCamera = true } : nil,
+                onImageCamera: CameraCaptureView.isAvailable ? { presentSheet { showCamera = true } } : nil,
                 onImageHistory: { insertUploadedImage($0) })
         }
         .animation(.easeOut(duration: 0.2), value: dictation == nil)
