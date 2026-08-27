@@ -5,14 +5,15 @@ import Marketing from '@layouts/Marketing.astro';
 const body = `<div class="wrap">
   <section class="band doc" style="border-top:none">
 <h2>Privacy Policy</h2>
-<p class="meta">Effective: 2026-08-07 · Contact: see <a href="/support">Support</a></p>
+<p class="meta">Effective: 2026-08-27 · Contact: see <a href="/support">Support</a></p>
 <p class="txt">Moshpit is a terminal. Your data is none of our business, and the app is
 built so it never becomes our business.</p>
 
 <h3>What we collect</h3>
 <p class="txt"><strong>Nothing.</strong> Moshpit has no analytics, no crash-reporting
-service, no advertising SDKs, no tracking, and no accounts. We run no servers
-that your data could be sent to.</p>
+service, no advertising SDKs, no tracking, and no accounts. The one server we
+operate is a push relay for agent notifications, and it is built so it cannot
+read what it carries — see <em>Notifications</em> below.</p>
 
 <h3>Where your data lives</h3>
 <ul>
@@ -26,16 +27,26 @@ and your servers, encrypted by SSH or Mosh (AES-128-OCB3), and on your screen.</
 </ul>
 
 <h3>Network connections</h3>
-<p class="txt">Moshpit connects exclusively to servers you add. There are no first-party or
-third-party endpoints: no telemetry, no update pings, no font or CDN fetches.
-The Local Network permission is requested only so SSH/Mosh can reach hosts on
-your own LAN (e.g. 192.168.x.x); iOS would otherwise silently drop that traffic.</p>
+<p class="txt">Terminal traffic goes exclusively to servers you add. Beyond that, the app
+talks to exactly one endpoint of ours — the push relay, and only to register or
+renew notification pairings: no telemetry, no update pings, no font or CDN
+fetches. The Local Network permission is requested only so SSH/Mosh can reach
+hosts on your own LAN (e.g. 192.168.x.x); iOS would otherwise silently drop
+that traffic.</p>
 
 <h3>Notifications &amp; Live Activities</h3>
-<p class="txt">Agent-status notifications and the Dynamic Island Live Activity are generated
-<em>on your device</em> from your own session data. They use no push servers; we
-could not see them if we wanted to. The lock-screen preview of what an agent is
-asking can be turned off in Settings.</p>
+<p class="txt">The Dynamic Island Live Activity and in-app alerts are generated
+<em>on your device</em> from your own session data.</p>
+<p class="txt">Remote notifications — the alerts that reach you when the app is closed —
+are sealed <em>on your own host</em> with a per-host key that only your device
+holds. They travel through Moshpit's push relay and Apple's push service as
+ciphertext: neither can read the agent's name, the command, or anything else
+inside; the text is decrypted by a notification extension on your device. To
+deliver at all, the relay necessarily handles your device's Apple push token
+and sees when a paired host sends; it stores no message content. What the Live
+Activity shows on the lock screen can be limited with <em>Show detail on lock
+screen</em> in Settings, and pushed notifications additionally respect iOS's
+own <em>Show Previews</em> setting.</p>
 
 <h3>Purchases</h3>
 <p class="txt">Moshpit is a one-time purchase handled entirely by Apple's App Store. We
@@ -50,13 +61,16 @@ wording, not substance.</p>
 
 <h3>隐私政策</h3>
 <p class="txt">Moshpit 是一个终端。<strong>我们不收集任何数据</strong>：无分析、无崩溃上报服务、
-无广告 SDK、无跟踪、无账号，也没有任何我们自己的服务器。</p>
+无广告 SDK、无跟踪、无账号。我们运营的唯一服务是一个通知推送中转，它读不了自己承载的内容（见下）。</p>
 <ul>
 <li>连接信息存于你的设备；密码与私钥存于 iOS 钥匙串（有 Secure Enclave 则由其保护），
 除与你自己配置的服务器做 SSH/Mosh 握手外绝不离开设备。</li>
 <li>终端内容只在你的设备与你的服务器之间加密传输（SSH / Mosh AES-128-OCB3）。</li>
-<li>App 只连接你添加的服务器；本地网络权限仅用于访问局域网主机。</li>
-<li>通知与灵动岛均在设备本地生成，不经任何推送服务器。</li>
+<li>终端流量只去你添加的服务器；本地网络权限仅用于访问局域网主机。</li>
+<li>灵动岛与 App 内提醒在设备本地生成。App 关闭时的远程通知，在你自己的主机上、
+用只有你设备持有的密钥密封，经 Moshpit 推送中转与 Apple 以密文送达——两者都读不到内容，
+解密发生在你设备上的通知扩展里。为完成投递，中转需要处理你设备的 Apple 推送令牌、
+能看到配对主机何时发送；它不存储任何消息内容。</li>
 <li>购买由 Apple App Store 处理，我们接触不到任何支付信息。</li>
 </ul>
   </section>
@@ -65,7 +79,7 @@ wording, not substance.</p>
 
 <Marketing
   title="Privacy Policy — Moshpit"
-  description="Moshpit collects nothing. No analytics, no crash reporting, no accounts, and no servers of ours."
+  description="Moshpit collects nothing. No analytics, no crash reporting, no accounts — and a push relay that cannot read what it carries."
   path="privacy"
   lang="en"
   translated={false}

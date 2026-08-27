@@ -26,7 +26,8 @@ const body = `<header class="pagehead">
     </article>
     <article class="pane">
       <div class="title" id="s3"><b>3</b> 把手机放下</div>
-      <div class="body">Claude Code 要人点头的时候，锁屏会告诉你，并且直接给你回它的按钮。</div>
+      <div class="body">Claude Code 要人点头的时候，锁屏会告诉你——点一下，
+      就落在提问的那个 pane 里。</div>
     </article>
   </div>
 
@@ -263,73 +264,66 @@ curl -fsSL https://herdr.dev/install.sh | sh</pre>
   <!-- ══ 第四步 ══ -->
   <section class="band doc">
     <p class="kicker">第四步</p>
-    <h2 id="s-step4">在锁屏上回它的权限询问</h2>
+    <h2 id="s-step4">人在哪，都能回它的权限询问</h2>
     <p class="sub">Claude Code 停下来问你能不能跑某条命令。琥珀色在这个站上只有一个意思——
-    「有 agent 在等人」——它出现的地方就是这里。</p>
+    「有 agent 在等人」——它出现的地方就是这里：一条能落到锁屏上的通知。</p>
 
     <div class="lockrow">
       <img class="phone lift lockshot" src="/20-lockscreen.jpg" width="440" height="956"
-           alt="iPhone 锁屏上的 Moshpit Live Activity：Claude Code 带着 Allow 和 Deny 按钮，下面是工作中的 codex">
+           alt="iPhone 锁屏：一条 time-sensitive 的 Moshpit 通知——claude 在 m1-pro 上请求运行 Bash">
       <div class="notes">
-        <p><b class="amber">正卡着的那一条</b>
-        状态点、等宽字体的命令名、位置写成 <em>主机 · workspace · tab</em>，右边一个在走的计时器。
-        最紧急的那个排最前，也只有它带按钮。</p>
-        <p><b class="teal">其余的</b>
-        headline 以下全部收成一行状态。这是故意的：iOS 会把过高的 Live Activity 裁掉，
-        而当初掉出屏幕的，正好就是第二个 agent 的 Allow 和 Deny。</p>
-        <p><b class="dimb">按钮跑在哪</b>
-        跑在 Moshpit 自己的进程里，不在 widget 里。你点一下，iOS 会把 App 拉到后台执行。
-        屏幕不用解锁。</p>
+        <p><b class="amber">锁屏上的那个问题</b>
+        标题是 agent，正文是它在问什么、在哪儿问——
+        <em>Claude needs your permission to use Bash — m1-pro · pit</em>。
+        同一台主机上几个 agent 一起等的时候，只有一张卡：<em>claude +2</em>。</p>
+        <p><b class="teal">点一下</b>
+        直接落在提问的那个 pane 里。你在一个真实的终端里读完提示，
+        用你在工位上会敲的那几个键回答它。</p>
+        <p><b class="dimb">锁屏上刻意没有 Allow 按钮</b>
+        这个 App 曾经有过的那排按钮，发的是盲打的按键。批准一个你没读过的请求，
+        恰恰违背了「你随时能读到它」这个 App 的全部价值——所以它们被拿掉了。</p>
       </div>
     </div>
 
-    <h3 id="s14">每个按钮到底敲进去什么</h3>
-    <p class="txt">就是往 Claude Code 那个 pane 里发原始按键。没有别的，也没有什么聪明操作。</p>
+    <h3 id="s14">App 没在跑，它是怎么到你手机上的</h3>
+    <p class="txt">被挂起的 iPhone 做不到的那部分，你的主机来做。给 pane 盖状态戳的那套 hook，
+    会把 <code>attention</code> 和 <code>done</code>——从来不含 <code>working</code>——
+    交给一个小小的发送器 <code>~/.moshpit/moshpit-push.sh</code>：它用一把<b>只存在于你手机上</b>
+    的钥匙把提醒封好，把密文交给 Moshpit 的推送中转，再由 Apple 送达。两边都读不到一个字：
+    agent 名字、命令、问题本身，都是在你手机上的通知扩展里、在锁屏上才解开的。
+    第一次给主机打开通知时自动完成配对；唯一留下的一次确认，是首次安装 hook 那一下。</p>
+    <div class="wire">
+      <p><b>适用范围，说在明处。</b>发送器搭在 agent hook 上，而 hook 盖章的对象是
+      <b>tmux</b> 的 pane——所以「App 关着也能收到推送」这条路，需要你的 agent 跑在装了
+      hook 的 tmux 里。纯 herdr 的 pane 上，herdr 自带的 <code>agent_status</code>
+      会在 <em>Moshpit 活着的时候</em>驱动灵动岛和通知；App 一关，推送也就停了。
+      如果「关着 App 也被叫醒」正是你要的，现阶段请把 Claude Code 跑在 tmux 的 pane 里。</p>
+    </div>
 
+    <h3 id="s15">让它保持安静的四条规则</h3>
+    <p class="txt">什么都通知，等于什么都没通知——所以每一次打扰都得挣来：</p>
     <div class="tbl-wrap">
       <table class="ledger">
         <thead>
-          <tr><th>按钮</th><th class="us">发进 pane 的字节</th><th>什么状态下出现</th></tr>
+          <tr><th>规则</th><th class="us">意味着什么</th></tr>
         </thead>
         <tbody>
-          <tr><td class="cap-col"><b>Allow</b></td>
-              <td class="us"><code>0x0d</code>——一个回车，选中当前高亮的那一项</td>
-              <td class="no">需要你</td></tr>
-          <tr><td class="cap-col"><b>Deny</b></td>
-              <td class="us"><code>0x1b</code>——Esc，取消</td>
-              <td class="no">需要你</td></tr>
-          <tr><td class="cap-col"><b>yes</b> / <b>continue</b></td>
-              <td class="us">这段文字，然后回车</td>
-              <td class="no">需要你</td></tr>
-          <tr><td class="cap-col"><b>Stop</b></td>
-              <td class="us"><code>0x03</code>——Ctrl-C</td>
-              <td class="no">工作中</td></tr>
-          <tr><td class="cap-col"><b>Reply</b></td>
-              <td class="us">你输入的文字，然后回车</td>
-              <td class="no">通知上的操作</td></tr>
+          <tr><td class="cap-col"><b>先站住 30 秒</b></td>
+              <td class="us">在宽限窗口内、你在工位上顺手答掉的问题，永远不会惊动任何手机。</td></tr>
+          <tr><td class="cap-col"><b>每台主机一张卡</b></td>
+              <td class="us">所有在等的 agent 共用一张汇总卡——“claude +2”。只有
+              <i>没人在等 → 有人在等</i>的那个瞬间会响、可以穿透专注模式；之后都只是安静地更新。</td></tr>
+          <tr><td class="cap-col"><b>跑满 3 分钟的完成才响</b></td>
+              <td class="us">一个跑了三分钟以上的回合结束时值得一声提示音；二十秒的回答只进列表，
+              不点亮屏幕。</td></tr>
+          <tr><td class="cap-col"><b>停着的 agent 保持沉默</b></td>
+              <td class="us">你自己留在提示符上的 agent 发来的「空闲提醒」不会点亮任何东西——
+              放了一天的陈旧「需要你」也会自愈成已完成。</td></tr>
         </tbody>
       </table>
     </div>
-
-    <p class="txt">这套映射是对着 Claude Code 的权限提示调的——肯定项默认高亮、Esc 取消，
-    这个形状也吻合绝大多数 TUI 的 yes/no 菜单。<b>但它们是盲发的按键：Moshpit 不解析提示内容</b>，
-    不会去确认此刻高亮的到底是哪一项。<code>yes</code> 和 <code>continue</code> 是快捷回复，
-    它们是往 pane 里打字，不是往什么聊天框里发消息。</p>
-
-    <h3 id="s15">点了却送不到的时候</h3>
-    <ul class="list">
-      <li>在 herdr 上，帧通道是打进「它当前 attach 的那个 pane」的，所以一次点击会先给目标 pane
-      发 <code>agent focus</code>，等切换真的完成了再写入。这条是被一个真 bug 逼出来的：
-      两个 agent 并发时，锁屏上的 <b>Allow</b> 可能变成别人的回车。</li>
-      <li>如果焦点拿不到，投递会返回失败，并且<b>明确告诉你</b>——通知标题 <b>“Not delivered”</b>，
-      正文 <i>“Your tap didn't reach the agent — open Moshpit and answer there.”</i>
-      锁屏上点了 Allow 却悄无声息地失败，是最坏的结果，所以它宁可吵你一下。</li>
-      <li>如果 Moshpit 已经知道那个 pane 早就不在「需要你」状态了，Allow / Deny 干脆不发：
-      <b>“Prompt already gone”</b>，<i>“That request was already answered or has changed —
-      nothing was sent.”</i> 状态一变，之前那条「需要你」的通知也会被从锁屏上撤掉——
-      免得你回的是一个已经被换成更危险的新提示。</li>
-      <li>已经彻底断开的会话，没法从后台的一次点击里救回来。打开 App 在里面回。</li>
-    </ul>
+    <p class="txt">细节处也诚实：在 App 里看过那个提示就算已读；重连或重启不会为一个
+    已经告诉过你的问题再响一次。</p>
 
     <h3 id="s16">控制它的四个开关</h3>
     <p class="txt"><b>Settings → NOTIFICATIONS</b>，四个默认都是开的。</p>
@@ -342,12 +336,13 @@ curl -fsSL https://herdr.dev/install.sh | sh</pre>
       <code>Bash: npm install</code> 那一行。</li>
     </ul>
     <p class="txt"><b>Notifications</b> 和 <b>Live Activity</b> 两个都关掉，就什么都不看了。
-    herdr 连接下，<b>Install agent hooks</b> 那一行是隐藏的——没东西要装。</p>
+    开关下面的 <b>Set up this host</b> 一行，列出当前连接的主机上都有什么：哪些 agent 装了
+    hook、推送发送器在不在、这台手机握着哪些配对——安装本身在连接时自动完成。</p>
 
     <div class="wire">
-      <p><b>一处得说在前面的现状：</b>Live Activity 上的按钮和通知里的操作名，目前<b>只有英文</b>
-      ——<i>Allow</i>、<i>Deny</i>、<i>Reply</i>、<i>Stop</i>，以及 “Not delivered”、
-      “Prompt already gone” 这两条提示都还没有中文。App 内的界面是中文的，锁屏这一层还不是。</p>
+      <p><b>一处得说在前面的现状：</b>锁屏通知的正文是 hook 从 agent 那里原样抓来的
+      ——<i>Claude needs your permission to use Bash</i> 这类句子通常是英文；
+      “claude +2” 这种计数则与语言无关。App 内的界面是中文的，锁屏这一层跟着 agent 走。</p>
     </div>
 
     <div class="moment" style="margin-top:2.4rem">
@@ -372,24 +367,22 @@ curl -fsSL https://herdr.dev/install.sh | sh</pre>
   <section class="band doc" id="background">
     <p class="kicker">诚实的那一段</p>
     <h2>你把 App 切到后台之后会怎样</h2>
-    <p class="sub">在你打算依赖上面那一切之前，这一段才是该读的。它是「中间不放服务器」这个决定的
-    必然代价，也不是任何一个设置能关掉的。</p>
+    <p class="sub">在你打算依赖上面那一切之前，这一段才是该读的。现在补上这个缺口的是
+    密封推送——它补不上的部分，也一并写在这里。</p>
 
-    <h3 id="s17">iOS 会挂起连接，状态就停在那了</h3>
-    <p class="txt">Moshpit 里<b>没有任何推送服务器</b>。你手机上的每一条提醒，都是正在跑的 App
-    从活着的那条会话里就地生成的本地通知。iOS 一挂起 App，那个 2 秒的轮询和 SSH 的拉取
-    也跟着停了。</p>
-    <p class="txt">真机实测：App 切到后台之后，把一个 pane 从 blocked 翻到 working，灵动岛
-    纹丝不动；只有回到前台、再过一个轮询周期，它才翻过来。tmux 那条路同理——
-    这是「不做远程推送」这个产品决定的结果，不是 herdr 的问题。</p>
+    <h3 id="s17">iOS 会挂起连接，实时的那几层就停了</h3>
+    <p class="txt">iOS 一挂起 App，那个 2 秒的轮询和 SSH 的拉取也跟着停了。能跨过这个缺口的，
+    是第四步讲的推送：主机上的 hook 自己注意到 <code>attention</code> 和 <code>done</code>，
+    自己把密封的提醒发出来——不需要活着的会话，手机锁着、App 关着都行。</p>
+    <p class="txt">跨<b>不</b>过去的是 Live Activity。它渲染的是 App 最后看到的状态，App 被挂起后
+    就没有东西再喂它了。真机实测：App 切到后台之后，把一个 pane 从 blocked 翻到 working，
+    灵动岛纹丝不动；只有回到前台、再过一个轮询周期，它才翻过来。</p>
 
-    <h3 id="s18">所以它选择说「暂停了」，而不是骗你</h3>
+    <h3 id="s18">所以灵动岛选择说「暂停了」，而不是骗你</h3>
 <pre>Moshpit                      <i>2 working · 1 needs you</i>
-<u>●  claude       needs you</u>   <i>2m</i>
+<u>●  claude</u>                   <i>NEEDS YOU · 2m</i>
    mac-studio · ~ · Tab 1
    <i>Bash: npm install</i>
-
-        [ Deny ]  [ <b>Allow</b> ]
 
 <i>…… App 被挂起两分钟 ……</i>
 
@@ -397,7 +390,7 @@ Moshpit            <i>paused — open Moshpit to refresh</i></pre>
 
     <p class="txt">Live Activity 带着一个 120 秒的过期线——两个轮询周期没跟上——
     到点就渲染成诚实的「暂停」，而不是一个冻住的「working」。桌面小组件用的是 180 秒，
-    过期后把所有状态点都压成灰的。</p>
+    过期后把所有状态点都压成灰的。只要第四步的发送器在位，推送通知不受这些影响，照样送达。</p>
 
     <h3 id="s19">就算在前台，外面的改动也会滞后</h3>
     <ul class="list">
@@ -441,8 +434,12 @@ Moshpit            <i>paused — open Moshpit to refresh</i></pre>
       </details>
       <details>
         <summary>Moshpit 关掉之后还能叫醒我吗？</summary>
-        <p>不能。没有推送服务器，所以提醒只在会话还活在你设备上的时候存在。iOS 会挂起连接，
-        状态会停更，直到你回来。见<a href="#background" style="color:var(--teal)">上面那一段</a>。</p>
+        <p>能——推送这条路就是为这个存在的。主机上的 hook 用一把只有你手机持有的钥匙把提醒封好，
+        经 Moshpit 的中转发出；手机上的通知扩展在锁屏上解开它——App 关着、手机锁着都行。
+        第四步的适用范围同样成立：发送器搭在 agent hook 上、hook 盖章的是 tmux 的 pane，
+        在乎这条路就把 agent 跑在 tmux 里。四条安静规则——30 秒宽限、每台主机一张卡、
+        3 分钟以上的完成才响、停着的 agent 沉默——见
+        <a href="/zh/docs/agents" style="color:var(--teal)">在锁屏上回应 agent</a>。</p>
       </details>
       <details>
         <summary>那 Mosh 呢？</summary>
@@ -460,9 +457,10 @@ Moshpit            <i>paused — open Moshpit to refresh</i></pre>
       </details>
       <details>
         <summary>Moshpit 会读我的代码、我的 prompt，或者别的什么吗？</summary>
-        <p>没有 Moshpit 账号、没有中转、也根本没有 Moshpit 的服务器。App 只连你自己添加的机器。
-        唯一会离开 pane 的，是 hook 抓到的那一行短标题——agent 正在跑什么或问什么，截到 80 个字符
-        ——它渲染在你自己的锁屏上，并且可以用 <b>Show detail on lock screen</b> 关掉。</p>
+        <p>没有 Moshpit 账号、没有埋点，终端流量只去你自己添加的机器。Moshpit 运营的只有
+        推送中转这一件东西，而它承载的是自己解不开的密文——提醒在你的主机上、
+        用只有你手机持有的钥匙封好。唯一会离开 pane 的，是 hook 抓到的那一行短标题
+        ——agent 正在跑什么或问什么，截到 80 个字符——它全程密封，最终渲染在你自己的锁屏上。</p>
       </details>
       <details>
         <summary>接下来看哪？</summary>

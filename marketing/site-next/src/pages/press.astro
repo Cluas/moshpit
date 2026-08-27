@@ -21,9 +21,11 @@ const body = `<header class="pagehead">
     <h3 id="s-boilerplate" style="margin-top:0">Boilerplate</h3>
     <p>Moshpit is an SSH / Mosh / tmux terminal for iPhone and iPad, built for developers
     who run AI coding agents — Claude Code, Codex, or anything else that lives in a shell —
-    on a remote machine. Its headline feature is Vibe Island: a Live Activity that puts a
-    remote agent's status on the Lock Screen and in the Dynamic Island, so a permission
-    prompt can be answered — Allow, Deny, or a quick reply — without unlocking the phone.
+    on a remote machine. Its headline features are Vibe Island — a Live Activity that puts
+    every remote agent's status in the Dynamic Island and on the Lock Screen — and
+    end-to-end encrypted push: the dev host seals each alert with a key only that phone
+    holds, so "claude needs your permission" reaches a locked phone even with the app
+    closed, and a tap lands in the exact pane that asked.
     It's a one-time purchase: no subscription, no account, no telemetry.</p>
 
     <h3 id="s-facts">Fact sheet</h3>
@@ -32,11 +34,12 @@ const body = `<header class="pagehead">
   <div class="tbl-wrap">
     <table>
       <tbody>
+        <tr><td class="cap-col"><b>App Store</b></td><td><a href="https://apps.apple.com/app/id6799896801">Moshpit: Terminal for Agents</a></td></tr>
         <tr><td class="cap-col"><b>Price</b></td><td>$6.99, one-time — rises to $9.99 once the first wave of buyers is in; nobody who already bought pays again</td></tr>
         <tr><td class="cap-col"><b>Platforms</b></td><td>iPhone and iPad, iOS 18 or later</td></tr>
         <tr><td class="cap-col"><b>Regions</b></td><td>Most App Store regions at launch — mainland China and France are excluded in this release (see <a href="/pricing#s-faq">pricing FAQ</a>)</td></tr>
         <tr><td class="cap-col"><b>Category</b></td><td>Developer Tools</td></tr>
-        <tr><td class="cap-col"><b>Data collected</b></td><td>None — no accounts, no analytics, no crash reporting, no servers of ours (App Store privacy label: <em>Data Not Collected</em>)</td></tr>
+        <tr><td class="cap-col"><b>Data collected</b></td><td>None — no accounts, no analytics, no crash reporting (App Store privacy label: <em>Data Not Collected</em>). Agent alerts travel as end-to-end ciphertext through a push relay that cannot read them</td></tr>
         <tr><td class="cap-col"><b>License</b></td><td>Proprietary — Moshpit is not open source</td></tr>
         <tr><td class="cap-col"><b>Contact</b></td><td><a href="https://github.com/Cluas/moshpit/issues">github.com/Cluas/moshpit/issues</a></td></tr>
       </tbody>
@@ -50,9 +53,9 @@ const body = `<header class="pagehead">
 
   <div class="cellgrid">
     <div class="cell" style="text-align:center">
-      <a href="/20-lockscreen.jpg" download><img class="phone" src="/20-lockscreen.jpg" width="180" style="width:180px;height:auto" alt="iPhone lock screen: Claude Code needs you, Allow and Deny buttons"></a>
+      <a href="/20-lockscreen.jpg" download><img class="phone" src="/20-lockscreen.jpg" width="180" style="width:180px;height:auto" alt="iPhone lock screen: a time-sensitive Moshpit notification — claude needs permission to use Bash"></a>
       <h4>Lock screen</h4>
-      <p>Answering an agent's permission prompt without unlocking the phone.</p>
+      <p>A sealed push, decrypted on the lock screen: claude needs you — with the app closed.</p>
     </div>
     <div class="cell" style="text-align:center">
       <a href="/07-tmux-terminal.jpg" download><img class="phone" src="/07-tmux-terminal.jpg" width="180" style="width:180px;height:auto" alt="tmux session rendered natively in the Moshpit terminal"></a>

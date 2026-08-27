@@ -27,9 +27,9 @@ const body = `<!-- ══ HERO ══ -->
     <div>
       <div class="kicker">在锁屏上回 agent</div>
       <h1>让你的 agent<br><span class="reach">找得到你</span></h1>
-      <p class="lede">Claude Code 在你的服务器上卡在一个权限询问。你的手机亮了。
-      你在锁屏上点一下 <b>Allow</b>，它就继续跑下去——不用解锁、不用 SSH、
-      不用走回工位。</p>
+      <p class="lede">Claude Code 在你的服务器上卡在一个权限询问。你锁着的手机会告诉你
+      ——<b>App 没开着也一样</b>。提醒是密封送来的，只有你的手机解得开。
+      点一下，直接落在提问的那个窗格里。不用走回工位。</p>
       <div class="cta-row">
         ${ctaPrimary('zh')}
         <a class="cta ${hasPrimaryCta ? 'ghost' : ''}" href="/zh/guide/claude-code">完整跑一遍</a>
@@ -39,7 +39,7 @@ const body = `<!-- ══ HERO ══ -->
     </div>
 
     <img class="phone lift herolock" src="/20-lockscreen.jpg" width="440" height="956" loading="eager"
-         alt="iPhone 锁屏：一个 agent 在等你，不用解锁就能点 Allow 或 Deny">
+         alt="iPhone 锁屏：一条 time-sensitive 的 Moshpit 通知——claude 在 m1-pro 上请求运行 Bash">
   </div>
 </header>
 
@@ -77,9 +77,36 @@ const body = `<!-- ══ HERO ══ -->
       </article>
       <article class="pane">
         <div class="title"><b>3</b> 放下手机</div>
-        <div class="body">当 agent 需要人的时候，你的锁屏会告诉你——连回答用的按钮
-        一起给你。</div>
+        <div class="body">当 agent 需要人的时候，你的锁屏会告诉你是谁、想干什么
+        ——App 没开着也一样。点一下通知，就落在提问的那个窗格里。</div>
       </article>
+    </div>
+  </div>
+</section>
+
+<!-- ══ PUSH ══ -->
+<section class="push" id="s-push">
+  <div class="wrap">
+    <div>
+      <div class="k">推送 · 在你的主机上密封</div>
+      <h2>App 可以是关着的，手机照样知道。</h2>
+      <p>被挂起的 iPhone 做不到的那部分，交给你的开发机来做：它用一把
+      <b>只存在于你手机上</b>的钥匙把提醒封好，把密文交给 Moshpit 的推送中转。
+      中转和 Apple 都读不到一个字——agent 名字、命令、问题本身，都是到了你的手机上、
+      在锁屏上才解开。第一次给主机打开通知时自动完成配对，没有任何要配置的。</p>
+      <p>锁屏上刻意<b>没有</b>盲按的 Allow 按钮：批准一个你没读过的请求，
+      恰恰违背了随身带一个真终端的意义。点通知落进窗格——先读，再回答。</p>
+    </div>
+    <div class="quiet" role="list" aria-label="让通知保持安静的四条规则">
+      <div class="qhead">安静是设计出来的</div>
+      <div class="qrule" role="listitem"><b>先站住 30 秒</b>
+        <span>一个问题要持续 30 秒，手机才会听说它。在工位上顺手答掉的，永远不会响。</span></div>
+      <div class="qrule" role="listitem"><b>每台主机只有一张卡</b>
+        <span>“claude +2”。只有<i>没人在等 → 有人在等</i>的那一下会响、可以穿透专注模式；之后都只是安静地更新。</span></div>
+      <div class="qrule" role="listitem"><b>跑满 3 分钟的完成才有提示音</b>
+        <span>长活儿跑完值得响一声；二十秒的回答只进列表，不点亮屏幕。</span></div>
+      <div class="qrule" role="listitem"><b>停着的 agent 保持沉默</b>
+        <span>你自己留在提示符上的 agent，不算在问你问题。</span></div>
     </div>
   </div>
 </section>
@@ -94,7 +121,7 @@ const body = `<!-- ══ HERO ══ -->
         <img class="on" src="/02-agent-terminal.jpg" width="1320" height="2763" loading="lazy" alt="终端会话，带 agent 状态面包屑">
         <img src="/07-tmux-terminal.jpg" width="1320" height="2815" loading="lazy" alt="原生渲染的 tmux 会话，支持窗口和面板切换">
         <img src="/06-new-task.jpg" width="1320" height="1466" loading="lazy" alt="New Agent Task 表单：仓库、分支、agent 与首条消息">
-        <img src="/20-lockscreen.jpg" width="440" height="956" loading="lazy" alt="iPhone 锁屏：agent 在等你，不解锁就能 Allow 或 Deny">
+        <img src="/20-lockscreen.jpg" width="440" height="956" loading="lazy" alt="iPhone 锁屏：一条密封推送通知——claude 在等你授权，点一下落进窗格">
         <img src="/10-themes.jpg" width="1320" height="2868" loading="lazy" alt="主题选择器：四套 App 主题和多个内置终端配色">
       </div>
       <div class="galtabs" role="tablist">
@@ -141,8 +168,10 @@ const body = `<!-- ══ HERO ══ -->
               <td>没有账号可注册，也就没有账号能泄露。</td></tr>
           <tr><td class="cap-col">埋点与统计</td><td class="us yes">零</td>
               <td>隐私标签上写着 "Data Not Collected"，因为确实什么都没收集。</td></tr>
-          <tr><td class="cap-col">你的流量</td><td class="us yes">只到你自己的服务器</td>
-              <td>没有中转、没有云端——我们根本不运营服务器。</td></tr>
+          <tr><td class="cap-col">终端流量</td><td class="us yes">只到你自己的服务器</td>
+              <td>SSH 和 Mosh 直连你添加的机器，中间没有任何东西。</td></tr>
+          <tr><td class="cap-col">agent 提醒</td><td class="us yes">端到端密封</td>
+              <td>推送走的是只有你手机能解开的密文——中转和 Apple 什么都读不到。</td></tr>
           <tr><td class="cap-col">语音数据</td><td class="us yes">不出这台手机</td>
               <td>由 Apple 的语音模型或本地 Whisper 在本机转写，没有一条通向服务器的路。</td></tr>
           <tr><td class="cap-col">SSH 密钥</td><td class="us yes">留在 Secure Enclave</td>
@@ -169,13 +198,14 @@ const body = `<!-- ══ HERO ══ -->
 
 <Marketing
   title="Moshpit — 让你的 agent 找得到你"
-  description="为 AI coding agent 打造的 iOS 终端。锁屏上批准 Claude Code、一眼看清每个 agent 在等谁、手机上直接开隔离任务。SSH · Mosh · tmux · herdr。一次性买断，零数据收集。"
+  description="为 AI coding agent 打造的 iOS 终端。一条密封推送告诉你哪个 agent 在等你——App 没开着也能到；点一下落在提问的窗格里。SSH · Mosh · tmux · herdr。一次性买断，零数据收集。"
   path=""
   lang="zh"
   scrollspy={[
     { id: 's-home', label: '首页' },
     { id: 's-agents', label: '支持' },
     { id: 's-flow', label: '流程' },
+    { id: 's-push', label: '推送' },
     { id: 's-shots', label: '截图' },
     { id: 's-voice', label: '语音' },
     { id: 's-honest', label: '诚实' },

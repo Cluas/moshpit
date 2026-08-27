@@ -21,6 +21,8 @@ The part a suspended iPhone can't do for itself, your dev host does: it seals th
 
 The notification's job is to get you to the pane: tap it and you land in the exact pane that asked. Reading the question before answering it is the point of a terminal in your pocket — there are no blind Allow/Deny buttons to press from the lock screen, on purpose.
 
+![A locked iPhone showing one time-sensitive Moshpit notification: claude +2 — Edit src/retry.ts? — m1-pro · pit](/22-push-summary.jpg)
+
 ## Quiet by design
 
 Notifying on everything is the same as notifying on nothing, so four rules stand between an agent and your attention:

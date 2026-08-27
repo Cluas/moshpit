@@ -29,7 +29,7 @@ A machine you can already SSH into. Everything else is optional: `mosh` buys roa
 
 ## The limit worth knowing on day one
 
-There is no push server, so agent state only updates while Moshpit is running in the foreground or briefly in the background. Once iOS suspends the connection, the lock screen keeps showing the last thing it saw until you come back. That is the price of nothing-in-the-middle, and it applies to every transport.
+Live agent state only updates while Moshpit is running in the foreground or briefly in the background — once iOS suspends the connection, the Live Activity keeps showing the last thing it saw (and says "paused") until you come back. What crosses that gap is the push path: your own host seals an alert only your phone can decrypt and sends it through Moshpit's relay, so "an agent needs you" still reaches a locked phone with the app closed. [Agent notifications, end to end](/docs/agents) has the whole story.
 
 ## Where to go next
 

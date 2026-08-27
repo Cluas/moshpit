@@ -30,7 +30,8 @@ const body = `<header class="pagehead">
   <div class="prose" style="max-width:none">
     <h3 id="s-short" style="margin-top:0">The short version</h3>
     <p>Moshpit is built for one job: <b>your coding agents can reach you</b>. An agent
-    blocks on a permission prompt, your lock screen says so, and you answer it there.
+    blocks on a permission prompt, your lock screen says so — even with the app closed —
+    and one tap puts you in the pane that asked.
     Everything else — SSH, Mosh, tmux, herdr — exists so that job works on a real
     terminal instead of a toy one. If that is not your job, a different app is probably
     a better buy, and the last section says which.</p>
@@ -51,9 +52,9 @@ const body = `<header class="pagehead">
       </thead>
       <tbody>
         <tr>
-          <td class="cap-col"><b>Answer an agent from the lock screen</b><br>Approve, deny or reply without unlocking into the app</td>
-          <td class="us yes">Allow · Deny · Reply</td><td class="no">—</td>
-          <td class="no">Connection alerts only</td><td class="no">Varies — several do this well</td>
+          <td class="cap-col"><b>Know an agent needs you — app closed</b><br>End-to-end sealed push from your own host; the tap lands in the pane that asked</td>
+          <td class="us yes">Sealed push + quiet rules</td><td class="no">—</td>
+          <td class="no">Connection alerts only</td><td class="no">Varies — typically through their own cloud relay</td>
         </tr>
         <tr>
           <td class="cap-col"><b>Agent status with no host-side setup</b></td>

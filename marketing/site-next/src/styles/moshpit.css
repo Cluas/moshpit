@@ -444,7 +444,9 @@ details code{font:14px var(--mono);background:var(--raise);border-radius:5px;pad
    hand-drawn approximation in the hero read as a wireframe next to every
    other section's real content. .phone/.phone.lift already give it a device
    frame and shadow; this just caps the width to the hero's 400px column. */
-.herolock{max-width:400px;margin:0 auto}
+/* min(400px,100%): 400px is wider than a real phone's ~342px content column,
+   and a fixed cap was the whole page's only horizontal overflow at 390px. */
+.herolock{max-width:min(400px,100%);height:auto;margin:0 auto}
 
 .works{padding:64px 0 8px;text-align:center}
 .chips{display:flex;flex-wrap:wrap;gap:10px;justify-content:center;margin-bottom:14px}
@@ -490,6 +492,25 @@ details code{font:14px var(--mono);background:var(--raise);border-radius:5px;pad
 .overlay .cancel{font:600 12px var(--mono);color:var(--dim);padding:8px 14px;border:1px solid var(--line);border-radius:999px}
 .overlay .insert{font:700 12px var(--mono);color:var(--panel);background:var(--citron);padding:8px 16px;border-radius:999px}
 
+/* ── push section (home) ─────────────────────────────────────────
+   The sealed-push story. Amber is the "needs you" colour everywhere
+   else on the site, so the one section about being interrupted keeps
+   it. The .quiet card sets the four interruption rules in the same
+   panel voice sets its dictation overlay in. */
+.push{padding:40px 0 72px}
+.push .wrap{display:grid;grid-template-columns:minmax(0,1fr) 430px;gap:64px;align-items:center}
+.push .k{color:var(--amber)}
+.push h2{margin-bottom:16px}
+.push p{color:var(--dim);max-width:var(--meas)}
+.push p+p{margin-top:12px}
+.push p b{color:var(--ink)}
+.quiet{border:1px solid var(--line);border-radius:14px;background:var(--raise);padding:6px 0 8px;font-family:var(--mono);box-shadow:0 20px 60px rgba(0,0,0,.4)}
+.qhead{font:700 11px/1 var(--mono);letter-spacing:.18em;color:var(--amber);padding:14px 18px 10px}
+.qrule{padding:11px 18px;border-top:1px solid var(--line)}
+.qrule b{display:block;font-size:13px;color:var(--ink);margin-bottom:3px}
+.qrule span{font-size:12.5px;line-height:1.65;color:var(--dim)}
+.qrule i{color:var(--ink);font-style:normal}
+
 .ledger{padding:0 0 80px}
 .price{padding:0 0 96px;text-align:center}
 
@@ -533,7 +554,7 @@ body.has-scrollspy{padding-bottom:34px}
   .status .beta .full{display:none}
   .status .beta .short{display:inline}
   .cellgrid{grid-template-columns:1fr 1fr}
-  .hero .wrap,.voice .wrap{grid-template-columns:minmax(0,1fr);gap:44px}
+  .hero .wrap,.voice .wrap,.push .wrap{grid-template-columns:minmax(0,1fr);gap:44px}
   .lockmock{margin:0 auto}
   .panes{grid-template-columns:1fr}
   .locktime{margin-bottom:64px}

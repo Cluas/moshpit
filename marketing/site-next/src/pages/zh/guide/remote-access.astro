@@ -318,9 +318,10 @@ sudo ufw allow in on tailscale0 to any port 60000:61000 proto udp</pre>
     <div class="doc">
       <div class="notes">
         <p><b class="amber">App 切到后台就被挂起</b>
-        iOS 会挂起 Moshpit、它 12 秒一次的 keepalive、以及所有轮询。agent 状态会停在那里不再更新，
-        等你切回 App 才补上。没有推送服务器——这是「中间什么都没有」的代价。后台超过 20 秒，
-        Moshpit 回来时会直接重连，而不去信任那个可能对半开 socket 误判为「活着」的探活。</p>
+        iOS 会挂起 Moshpit、它 12 秒一次的 keepalive、以及所有轮询。实时的 agent 状态会停在那里，
+        等你切回 App 才补上——但 agent 的提醒照样送达，因为那是主机自己端到端密封推送出来的。
+        后台超过 20 秒，Moshpit 回来时会直接重连，而不去信任那个可能对半开 socket
+        误判为「活着」的探活。</p>
         <p><b class="teal">走 mosh 时，tmux 和 herdr 跑的是自己的 TUI</b>
         mosh 传的是渲染完的屏幕差分，不是原始的按行分帧字节流，所以 <code>tmux -CC</code> 和 herdr
         的 frame 协议都承载不了，两者都退回到 mosh shell 里的全屏界面。原生 sheet 是由旁边另一条
@@ -370,8 +371,10 @@ sudo ufw allow in on tailscale0 to any port 60000:61000 proto udp</pre>
       </details>
       <details>
         <summary>Moshpit 会看到我的 mesh 或者别的机器吗？</summary>
-        <p>不会。它没有网络发现、没有账号、没有中继，也没有自己的服务器。它只知道你手动填进去的那几条连接，
-        也只会跟它们通信。本地网络权限存在的唯一目的是别让 iOS 把发往局域网的 UDP 丢掉，不是用来扫描什么的。</p>
+        <p>不会。它没有网络发现、没有账号。它只知道你手动填进去的那几条连接，终端流量也只去它们。
+        Moshpit 运营的只有通知推送中转这一件东西，承载的是它自己解不开的密封提醒——
+        永远碰不到你的 mesh 和你的会话。本地网络权限存在的唯一目的是别让 iOS
+        把发往局域网的 UDP 丢掉，不是用来扫描什么的。</p>
       </details>
       <details>
         <summary>回到家之后 mosh 会话就断了，为什么？</summary>

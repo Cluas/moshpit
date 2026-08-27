@@ -237,7 +237,7 @@ That overlay exists because the failure needs real packet loss, real reordering,
 :::note
 Moshpit's keepalive runs on a 12-second timer and **only in the foreground** — iOS suspends timers in the background. Away for more than 20 seconds, Moshpit forces a fresh reconnect on return rather than trusting a liveness probe that can false-positive on a half-open channel. Mosh is the exception on that return leg and takes its own UDP resume path, but the tmux or herdr control plane rides SSH, so it gets rebuilt.
 
-There is no push server — that is the trade for having nothing in the middle. Notifications are generated on-device from the live session. They fire while Moshpit is in the foreground or recently backgrounded; **a fully suspended app won't poll**, so agent state stops updating until you come back, and catches up then.
+Live agent state pauses with the app: **a fully suspended app won't poll**, so the island stops updating until you come back, and catches up then. Agent alerts still arrive while suspended — the host pushes those itself, sealed end to end ([details](/docs/agents)).
 
 Backgrounding also drops every cached decrypted secret, so the next resume goes through a fresh Face ID-gated keychain read, and hands every pinned tmux window back to the server.
 :::

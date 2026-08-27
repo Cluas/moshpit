@@ -21,6 +21,8 @@ Moshpit 运行时每 `2s` 轮询一次所有被跟踪的会话。herdr 上控制
 
 通知的职责是把你带到那个窗格：点一下，直达提问的窗格。先读清问题再回答，正是口袋里装一个终端的意义——锁屏上刻意不提供盲按的 Allow/Deny 按钮。
 
+![锁定的 iPhone 上显示一条 time-sensitive 的 Moshpit 通知：claude +2 —— Edit src/retry.ts? —— m1-pro · pit](/22-push-summary.jpg)
+
 ## 为安静而设计
 
 事事通知等于没有通知，所以智能体和你的注意力之间隔着四条规则：

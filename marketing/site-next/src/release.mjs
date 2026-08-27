@@ -10,7 +10,7 @@
  */
 export const RELEASE = {
   /** 'review' → beta submitted, no link yet · 'beta' → link live · 'sale' → on the App Store */
-  stage: 'review',
+  stage: 'sale',
 
   /**
    * The public TestFlight invite. Stays null until Beta App Review passes

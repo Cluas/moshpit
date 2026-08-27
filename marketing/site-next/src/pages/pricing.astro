@@ -1,5 +1,6 @@
 ---
 import Marketing from '@layouts/Marketing.astro';
+import { RELEASE } from '../release.mjs';
 
 // Raw markup, lifted verbatim from the page this replaces.
 const body = `<header class="pagehead">
@@ -12,7 +13,7 @@ const body = `<header class="pagehead">
     <div class="pricecard">
       <div><span class="amount">$6.99</span><span class="once">once</span></div>
       <p class="pricenote">Launch price · iPhone and iPad · priced in USD, converted automatically for your region</p>
-      <span class="pricecta">Coming to the App Store</span>
+      <a class="pricecta" href="https://apps.apple.com/app/id${RELEASE.appStoreId}">Download on the App Store</a>
       <p class="pricefine">This is the launch price, and it goes up as the app matures —
       never down. Buying early is the discount; there will not be a sale later.</p>
     </div>
@@ -27,10 +28,10 @@ const body = `<header class="pagehead">
     <ul>
       <li><b>SSH and Mosh</b> — Mosh sessions survive Wi-Fi/5G handoffs and heavy packet loss.</li>
       <li><b>Native tmux and herdr</b> — real sessions, windows and panes, not a TUI in a box.</li>
-      <li><b>Agent status on the lock screen</b> — Allow, Deny and quick replies without unlocking.</li>
+      <li><b>Agent alerts that find you</b> — end-to-end sealed push, even with the app closed; the tap lands in the pane that asked.</li>
       <li><b>Isolated tasks on a git worktree</b> — start one from the phone, in one sheet.</li>
       <li><b>Keyboard, themes, icon and accent</b> — a shortcut bar you build from a key library.</li>
-      <li><b>No account and no servers of ours</b> — nothing to sign up for, nothing collected.</li>
+      <li><b>No account, nothing collected</b> — terminal traffic goes only to your own servers; the push relay carries only ciphertext it cannot read.</li>
     </ul>
 
     <h3 id="s-cost">What it costs against a subscription</h3>

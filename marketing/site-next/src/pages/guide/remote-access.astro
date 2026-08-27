@@ -366,11 +366,11 @@ sudo ufw allow in on tailscale0 to any port 60000:61000 proto udp</pre>
     <div class="doc">
       <div class="notes">
         <p><b class="amber">The app suspends in the background</b>
-        iOS suspends Moshpit, its 12-second keepalive timer, and its polling. Agent state
-        stops updating until you come back to the app, and catches up then. There is no push
-        server — that is the trade for having nothing in the middle. Away for more than 20
-        seconds, Moshpit forces a fresh reconnect on return rather than trusting a liveness
-        probe that can false-positive on a half-open socket.</p>
+        iOS suspends Moshpit, its 12-second keepalive timer, and its polling. Live agent
+        state stops updating until you come back to the app, and catches up then — agent
+        alerts still arrive, because the host pushes those itself, sealed end to end.
+        Away for more than 20 seconds, Moshpit forces a fresh reconnect on return rather
+        than trusting a liveness probe that can false-positive on a half-open socket.</p>
         <p><b class="teal">Over mosh, tmux and herdr run their own TUI</b>
         Mosh transmits rendered screen diffs, not a raw line-framed byte pipe, so
         <code>tmux -CC</code> and herdr's frame protocol cannot ride it. Both fall back to
@@ -432,10 +432,11 @@ sudo ufw allow in on tailscale0 to any port 60000:61000 proto udp</pre>
       </details>
       <details>
         <summary>Does Moshpit see my mesh, or my other machines?</summary>
-        <p>No. It has no network discovery, no account, no relay and no server of its own. It
-        knows the connections you typed in, and it only ever talks to those. The Local Network
-        permission exists solely so iOS does not drop UDP to LAN addresses — not to scan
-        anything.</p>
+        <p>No. It has no network discovery and no account. It knows the connections you typed
+        in, and terminal traffic only ever goes to those. The one Moshpit-operated piece is
+        the notification push relay, which carries sealed agent alerts it cannot read — it
+        never touches your mesh or your sessions. The Local Network permission exists solely
+        so iOS does not drop UDP to LAN addresses — not to scan anything.</p>
       </details>
       <details>
         <summary>My mosh session died when I got home. Why?</summary>

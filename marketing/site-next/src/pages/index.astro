@@ -17,9 +17,10 @@ const body = `<!-- ══ HERO ══ -->
     <div>
       <div class="kicker">ANSWER AGENTS FROM LOCK SCREEN</div>
       <h1>Your agents<br>can <span class="reach">reach you</span></h1>
-      <p class="lede">Claude Code hits a permission prompt on your server. Your phone
-      lights up. You tap <b>Allow</b> from the lock screen — and it keeps going.
-      No unlocking, no SSH, no walking back to your desk.</p>
+      <p class="lede">Claude Code hits a permission prompt on your server. Your locked
+      phone says so — <b>even with Moshpit closed</b>. The alert travels sealed; only
+      your device can read it. One tap lands in the exact pane that asked.
+      No walking back to your desk.</p>
       <div class="cta-row">
         ${ctaPrimary('en')}
         <a class="cta ${hasPrimaryCta ? 'ghost' : ''}" href="/guide/claude-code">See it end to end</a>
@@ -29,7 +30,7 @@ const body = `<!-- ══ HERO ══ -->
     </div>
 
     <img class="phone lift herolock" src="/20-lockscreen.jpg" width="440" height="956" loading="eager"
-         alt="iPhone lock screen: one agent needs you; Allow and Deny buttons available without unlocking">
+         alt="iPhone lock screen: a time-sensitive Moshpit notification — claude needs your permission to use Bash on m1-pro">
   </div>
 </header>
 
@@ -69,9 +70,40 @@ const body = `<!-- ══ HERO ══ -->
       </article>
       <article class="pane">
         <div class="title"><b>3</b> put-the-phone-down</div>
-        <div class="body">When an agent needs a human, your lock screen says so —
-        with the buttons to answer right there.</div>
+        <div class="body">When an agent needs a human, your lock screen says which
+        one wants what — even with the app closed. The tap drops you in the pane
+        that asked.</div>
       </article>
+    </div>
+  </div>
+</section>
+
+<!-- ══ PUSH ══ -->
+<section class="push" id="s-push">
+  <div class="wrap">
+    <div>
+      <div class="k">PUSH · SEALED ON YOUR HOST</div>
+      <h2>The app can be closed. Your phone still knows.</h2>
+      <p>The part a suspended iPhone can't do for itself, your dev host does: it
+      seals the alert with a key <b>only your device holds</b> and hands the
+      ciphertext to Moshpit's push relay. Neither the relay nor Apple can read a
+      byte — agent names, commands, the question itself decrypt on your phone,
+      on the lock screen. Pairing happens by itself the first time you enable
+      notifications on a host. Nothing to configure.</p>
+      <p>And no Allow button to press blind, <b>on purpose</b>: approving a
+      prompt you haven't read defeats the point of carrying a real terminal.
+      The tap lands you in the pane — you read, then you answer.</p>
+    </div>
+    <div class="quiet" role="list" aria-label="The four rules that keep notifications quiet">
+      <div class="qhead">QUIET BY DESIGN</div>
+      <div class="qrule" role="listitem"><b>Stands 30 seconds first</b>
+        <span>before any phone hears about a question. Answered at your desk means never announced.</span></div>
+      <div class="qrule" role="listitem"><b>One card per host</b>
+        <span>“claude +2”. Only the moment <i>nobody was waiting → someone is</i> rings; the rest updates silently.</span></div>
+      <div class="qrule" role="listitem"><b>Done chimes at 3 min +</b>
+        <span>a finished long run earns a sound; a twenty-second answer files into the list without lighting the screen.</span></div>
+      <div class="qrule" role="listitem"><b>Parked agents stay silent</b>
+        <span>an agent idling at its prompt because you left it there is not asking you anything.</span></div>
     </div>
   </div>
 </section>
@@ -86,7 +118,7 @@ const body = `<!-- ══ HERO ══ -->
         <img class="on" src="/02-agent-terminal.jpg" width="1320" height="2763" loading="lazy" alt="Terminal session with an agent status breadcrumb">
         <img src="/07-tmux-terminal.jpg" width="1320" height="2815" loading="lazy" alt="tmux session rendered natively, with window and pane switching">
         <img src="/06-new-task.jpg" width="1320" height="1466" loading="lazy" alt="New Agent Task sheet: repo, branch, agent and a first message">
-        <img src="/20-lockscreen.jpg" width="440" height="956" loading="lazy" alt="iPhone lock screen: an agent needs you, Allow and Deny without unlocking">
+        <img src="/20-lockscreen.jpg" width="440" height="956" loading="lazy" alt="iPhone lock screen: a sealed push notification — claude needs your permission, tap to land in the pane">
         <img src="/10-themes.jpg" width="1320" height="2868" loading="lazy" alt="Theme picker: four app themes and several built-in terminal color schemes">
       </div>
       <div class="galtabs" role="tablist">
@@ -135,8 +167,10 @@ const body = `<!-- ══ HERO ══ -->
               <td>There is nothing to sign up for, so there is nothing to leak.</td></tr>
           <tr><td class="cap-col">Analytics &amp; tracking</td><td class="us yes">zero</td>
               <td>The privacy label reads “Data Not Collected” because none is.</td></tr>
-          <tr><td class="cap-col">Your traffic</td><td class="us yes">your servers only</td>
-              <td>No relay, no cloud middleman — we don't operate servers at all.</td></tr>
+          <tr><td class="cap-col">Terminal traffic</td><td class="us yes">your servers only</td>
+              <td>SSH and Mosh connect straight to machines you added. No middlebox.</td></tr>
+          <tr><td class="cap-col">Agent alerts</td><td class="us yes">sealed end-to-end</td>
+              <td>Pushed as ciphertext only your phone can open — the relay and Apple read none of it.</td></tr>
           <tr><td class="cap-col">Dictation audio</td><td class="us yes">never leaves the phone</td>
               <td>Apple's on-device models or a local Whisper one; server recognition is not in the app.</td></tr>
           <tr><td class="cap-col">SSH keys</td><td class="us yes">Secure Enclave</td>
@@ -164,13 +198,14 @@ const body = `<!-- ══ HERO ══ -->
 
 <Marketing
   title="Moshpit — your agents can reach you"
-  description="The iOS terminal for AI coding agents. Approve Claude Code from the lock screen, watch every agent's line status, start isolated tasks from your phone. SSH · Mosh · tmux · herdr. One-time purchase, nothing collected."
+  description="The iOS terminal for AI coding agents. A sealed push says which agent needs you — even with the app closed — and the tap lands in the pane that asked. SSH · Mosh · tmux · herdr. One-time purchase, nothing collected."
   path=""
   lang="en"
   scrollspy={[
     { id: 's-home', label: 'home' },
     { id: 's-agents', label: 'agents' },
     { id: 's-flow', label: 'flow' },
+    { id: 's-push', label: 'push' },
     { id: 's-shots', label: 'shots' },
     { id: 's-voice', label: 'voice' },
     { id: 's-honest', label: 'honest' },

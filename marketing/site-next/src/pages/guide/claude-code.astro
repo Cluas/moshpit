@@ -27,8 +27,8 @@ const body = `<header class="pagehead">
     </article>
     <article class="pane">
       <div class="title" id="s3"><b>3</b> Put the phone down</div>
-      <div class="body">When Claude Code asks permission, the lock screen says so and carries the
-      buttons that answer it.</div>
+      <div class="body">When Claude Code asks permission, the lock screen says so —
+      and the tap lands you in the pane that asked.</div>
     </article>
   </div>
 
@@ -291,83 +291,76 @@ curl -fsSL https://herdr.dev/install.sh | sh</pre>
   <!-- ══ STEP 4 ══ -->
   <section class="band doc">
     <p class="kicker">Step 4</p>
-    <h2 id="s-step4">Answer the permission prompt from the lock screen</h2>
+    <h2 id="s-step4">Answer the permission prompt from wherever you are</h2>
     <p class="sub">Claude Code stops and asks whether it may run a command. Amber is the
     only colour on this site that means "an agent needs a human", and this is where it
-    shows up.</p>
+    shows up — as a notification that reaches a locked phone.</p>
 
     <div class="lockrow">
       <img class="phone lift lockshot" src="/20-lockscreen.jpg" width="440" height="956"
-           alt="iPhone lock screen with an Moshpit Live Activity: Claude Code with Allow and Deny buttons, and codex working below it">
+           alt="iPhone lock screen: a time-sensitive Moshpit notification — claude needs permission to use Bash on m1-pro">
       <div class="notes">
-        <p><b class="amber">The row that is blocking</b>
-        State dot, the command in mono, the location as <em>host · workspace · tab</em>, and
-        a live counting-up timer. The most-urgent agent sorts to the top and is the one that
-        gets buttons.</p>
-        <p><b class="teal">The ones that are not</b>
-        Everything below the headline collapses to a status line. That is deliberate: iOS
-        clips a tall Live Activity, and what fell off the bottom was exactly the second
-        agent's Allow and Deny.</p>
-        <p><b class="dimb">Where the buttons run</b>
-        In Moshpit's own process, not in the widget. iOS launches the app into the
-        background to handle the tap. The screen stays locked.</p>
+        <p><b class="amber">The question, on a locked phone</b>
+        Title is the agent; the body is what it is asking and where —
+        <em>Claude needs your permission to use Bash — m1-pro · pit</em>. When several
+        agents wait on one host, they share a single card: <em>claude +2</em>.</p>
+        <p><b class="teal">The tap</b>
+        Lands in the exact pane that asked. You read the prompt in a real terminal, then
+        answer it with the same keys you would press at your desk.</p>
+        <p><b class="dimb">No Allow button, on purpose</b>
+        The lock-screen buttons this app used to have sent a blind keystroke into the
+        pane. Approving something you have not read, in an app whose whole value is that
+        you can read it, was the wrong trade — so they are gone.</p>
       </div>
     </div>
 
-    <h3 id="s14">What each button types</h3>
-    <p class="txt">They are raw keystrokes into Claude Code's pane. Nothing else, and
-    nothing clever.</p>
+    <h3 id="s14">How it reaches a phone the app is not running on</h3>
+    <p class="txt">Your host does the part a suspended iPhone cannot. The same hooks that
+    stamp the pane hand <code>attention</code> and <code>done</code> — never
+    <code>working</code> — to a small sender, <code>~/.moshpit/moshpit-push.sh</code>,
+    which seals the alert with a key <b>only your phone holds</b> and passes the
+    ciphertext to Moshpit's push relay, then Apple. Neither can read a byte of it: agent
+    name, command, the question itself decrypt inside a notification extension on your
+    phone, lock screen included. Pairing happens by itself the first time you enable
+    notifications on a host; the one consent that remains is the first hook install.</p>
+    <div class="wire">
+      <p><b>Scope, stated plainly.</b> The sender rides the agent hooks, and the hooks
+      stamp <b>tmux</b> panes — so the app-closed push path needs your agent running
+      under tmux with the hooks installed. On a pure herdr pane, herdr's own
+      <code>agent_status</code> drives the island and notifications <em>while Moshpit is
+      alive</em>, and pushes stop when the app does. If being woken with the app closed
+      is the point, run Claude Code in a tmux pane for now.</p>
+    </div>
 
+    <h3 id="s15">The four rules that keep it quiet</h3>
+    <p class="txt">Notifying on everything is the same as notifying on nothing, so an
+    alert has to earn the interruption:</p>
     <div class="tbl-wrap">
       <table class="ledger">
         <thead>
-          <tr><th>Button</th><th class="us">Bytes into the pane</th><th>Shown when</th></tr>
+          <tr><th>Rule</th><th class="us">What it means</th></tr>
         </thead>
         <tbody>
-          <tr><td class="cap-col"><b>Allow</b></td>
-              <td class="us"><code>0x0d</code> — a bare Enter, accepting the highlighted
-              option</td><td class="no">needs you</td></tr>
-          <tr><td class="cap-col"><b>Deny</b></td>
-              <td class="us"><code>0x1b</code> — Esc, cancel</td>
-              <td class="no">needs you</td></tr>
-          <tr><td class="cap-col"><b>yes</b> / <b>continue</b></td>
-              <td class="us">that text, then Enter</td>
-              <td class="no">needs you</td></tr>
-          <tr><td class="cap-col"><b>Stop</b></td>
-              <td class="us"><code>0x03</code> — Ctrl-C</td>
-              <td class="no">working</td></tr>
-          <tr><td class="cap-col"><b>Reply</b></td>
-              <td class="us">your typed text, then Enter</td>
-              <td class="no">notification action</td></tr>
+          <tr><td class="cap-col"><b>30 seconds standing</b></td>
+              <td class="us">A question answered at your desk inside the grace window is
+              never announced to any phone.</td></tr>
+          <tr><td class="cap-col"><b>One card per host</b></td>
+              <td class="us">All waiting agents share one summary — "claude +2". Only the
+              <i>nobody was waiting → someone is</i> edge rings and may pierce Focus;
+              everything after updates the card silently.</td></tr>
+          <tr><td class="cap-col"><b>Done chimes at 3 minutes</b></td>
+              <td class="us">A finished turn makes a sound only if it ran three minutes or
+              more. Short turns file into the list without lighting the screen.</td></tr>
+          <tr><td class="cap-col"><b>Parked agents stay silent</b></td>
+              <td class="us">An idle reminder on an agent you deliberately left at its
+              prompt lights nothing up — and a day-old stale "needs you" heals itself
+              to done.</td></tr>
         </tbody>
       </table>
     </div>
-
-    <p class="txt">The mapping is tuned for Claude Code's permission prompt, where the
-    affirmative option is default-highlighted and Esc cancels — which also fits most TUI
-    yes/no menus. <b>They are blind keystrokes: Moshpit does not read the prompt</b> to
-    confirm which option is highlighted. <code>yes</code> and <code>continue</code> are
-    quick replies that type into the pane, not into a chat.</p>
-
-    <h3 id="s15">When the tap cannot land</h3>
-    <ul class="list">
-      <li>On herdr, the frame channel types into whichever pane it is attached to, so a tap
-      first sends <code>agent focus</code> to the target pane and waits for the retarget to
-      finish before writing. This exists because of a real bug: with two agents running,
-      a lock-screen <b>Allow</b> could send someone else's Enter.</li>
-      <li>If focus cannot be obtained, delivery returns false and you get a notification —
-      <b>"Not delivered"</b>, <i>"Your tap didn't reach the agent — open Moshpit and answer
-      there."</i> A lock-screen Allow that silently fails is the worst outcome, so it is
-      announced rather than swallowed.</li>
-      <li>If Moshpit knows the pane already left the "needs you" state, Allow and Deny are
-      not sent at all: <b>"Prompt already gone"</b>,
-      <i>"That request was already answered or has changed — nothing was sent."</i> Stale
-      "needs you" notifications are also pulled off the lock screen when the state changes,
-      so you cannot answer a prompt that has been replaced by a newer, more dangerous
-      one.</li>
-      <li>A session that was fully disconnected cannot be revived from a background tap.
-      Open the app and answer there.</li>
-    </ul>
+    <p class="txt">Honesty in the small print too: viewing a prompt in the app
+    acknowledges it, and a reconnect or relaunch never re-rings a question you have
+    already been told about.</p>
 
     <h3 id="s16">The four switches that control it</h3>
     <p class="txt"><b>Settings → NOTIFICATIONS.</b> All four default to on.</p>
@@ -380,8 +373,9 @@ curl -fsSL https://herdr.dev/install.sh | sh</pre>
       the <code>Bash: npm install</code> line.</li>
     </ul>
     <p class="txt">Turn both <b>Notifications</b> and <b>Live Activity</b> off and nothing is
-    watched at all. On a herdr connection the <b>Install agent hooks</b> row is hidden, since
-    there is nothing to install.</p>
+    watched at all. The <b>Set up this host</b> row below the switches shows what the
+    connected host has: which agents have hooks, whether the push sender is installed,
+    and the pairing this phone holds — setup itself is automatic on connect.</p>
 
     <div class="moment" style="margin-top:2.4rem">
       <div class="strip a">
@@ -406,26 +400,25 @@ curl -fsSL https://herdr.dev/install.sh | sh</pre>
   <section class="band doc" id="background">
     <p class="kicker">The honest part</p>
     <h2>What happens when you background the app</h2>
-    <p class="sub">This is the section to read before you rely on any of the above. It is
-    the trade for having no server in the middle, and it is not something a setting can
-    turn off.</p>
+    <p class="sub">This is the section to read before you rely on any of the above. The
+    sealed push is what covers the gap now — and what it does not cover is written here
+    too.</p>
 
-    <h3 id="s17">iOS suspends the connection, and state stops updating</h3>
-    <p class="txt">There is <b>no push server</b> anywhere in Moshpit. Every alert on your
-    phone is a local notification the running app generated from the live session. When iOS
-    suspends the app, the 2-second sweep and the SSH polls stop with it.</p>
-    <p class="txt">Measured on device: with Moshpit backgrounded, flipping a pane from
-    blocked to working left the Dynamic Island unchanged. It only flipped one poll after
-    returning to the foreground. The same is true on the tmux path — this is a product
-    decision about not running a relay, not a herdr problem.</p>
+    <h3 id="s17">iOS suspends the connection, and the live surfaces pause</h3>
+    <p class="txt">When iOS suspends the app, the 2-second sweep and the SSH polls stop
+    with it. What crosses the gap is the push path from step 4: the hooks on your host
+    notice <code>attention</code> and <code>done</code> and send the sealed alert
+    themselves — no live session required, phone locked, app closed.</p>
+    <p class="txt">What does <b>not</b> cross the gap: the Live Activity. It renders the
+    last state the app saw, and with the app suspended nothing feeds it. Measured on
+    device: with Moshpit backgrounded, flipping a pane from blocked to working left the
+    Dynamic Island unchanged until one poll after returning to the foreground.</p>
 
-    <h3 id="s18">So the app says "paused" instead of lying</h3>
+    <h3 id="s18">So the island says "paused" instead of lying</h3>
 <pre>Moshpit                      <i>2 working · 1 needs you</i>
-<u>●  claude       needs you</u>   <i>2m</i>
+<u>●  claude</u>                   <i>NEEDS YOU · 2m</i>
    mac-studio · ~ · Tab 1
    <i>Bash: npm install</i>
-
-        [ Deny ]  [ <b>Allow</b> ]
 
 <i>… app suspended for two minutes …</i>
 
@@ -433,7 +426,9 @@ Moshpit            <i>paused — open Moshpit to refresh</i></pre>
 
     <p class="txt">The Live Activity carries a 120-second staleness horizon — two missed
     sweeps — and renders an honest "paused" hint rather than a frozen "working". The Home
-    Screen widget uses 180 seconds and dims every state dot to grey when it goes stale.</p>
+    Screen widget uses 180 seconds and dims every state dot to grey when it goes stale.
+    Where the step-4 sender is in place, the pushed notifications keep arriving
+    regardless.</p>
 
     <h3 id="s19">Even in the foreground, out-of-band changes lag</h3>
     <ul class="list">
@@ -484,9 +479,14 @@ Moshpit            <i>paused — open Moshpit to refresh</i></pre>
       </details>
       <details>
         <summary>Can it wake me when Moshpit is closed?</summary>
-        <p>No. There is no push server, so alerts only exist while the session is alive on
-        your device. iOS suspends the connection and state stops updating until you return.
-        See <a href="#background" style="color:var(--teal)">the section above</a>.</p>
+        <p>Yes — that is what the push path is for. The hooks on your host seal the alert
+        with a key only your phone holds and send it through Moshpit's relay; a
+        notification extension decrypts it on the lock screen, app closed, phone locked.
+        The scope note in step 4 applies: the sender rides the agent hooks, which stamp
+        tmux panes, so run the agent under tmux if this is the part you care about. The
+        quiet rules — 30-second grace, one card per host, done only chimes past three
+        minutes, parked agents silent — are described in
+        <a href="/docs/agents" style="color:var(--teal)">Answering agents</a>.</p>
       </details>
       <details>
         <summary>What about Mosh?</summary>
@@ -507,11 +507,12 @@ Moshpit            <i>paused — open Moshpit to refresh</i></pre>
       </details>
       <details>
         <summary>Does Moshpit read my code, my prompts, or anything else?</summary>
-        <p>There is no Moshpit account, no relay and no Moshpit server. The app connects
-        only to servers you add. The one thing that leaves the pane is the hook's short
-        title — what the agent is running or asking, capped at 80 characters — which is
-        rendered on your own lock screen and can be turned off with <b>Show detail on lock
-        screen</b>.</p>
+        <p>There is no Moshpit account and no analytics, and terminal traffic goes only to
+        servers you add. The one Moshpit-operated piece is the push relay, and it carries
+        ciphertext it cannot open — the alert is sealed on your host with a key only your
+        phone holds. The one thing that leaves the pane is the hook's short title — what
+        the agent is running or asking, capped at 80 characters — which travels sealed and
+        is rendered on your own lock screen.</p>
       </details>
       <details>
         <summary>Where do I go next?</summary>
