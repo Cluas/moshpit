@@ -1,0 +1,56 @@
+{
+  "fill-specializations": [
+    {
+      "value": {
+        "linear-gradient": [
+          "extended-srgb:0.22745,0.73333,0.65882,1.00000",
+          "extended-srgb:0.09804,0.53725,0.48235,1.00000"
+        ]
+      }
+    },
+    {
+      "appearance": "dark",
+      "value": {
+        "linear-gradient": [
+          "extended-srgb:0.13725,0.54902,0.49020,1.00000",
+          "extended-srgb:0.04706,0.30980,0.27843,1.00000"
+        ]
+      }
+    }
+  ],
+  "groups": [
+    {
+      "layers": [
+        {
+          "glass": true,
+          "image-name": "chevron.png",
+          "name": "chevron"
+        },
+        {
+          "glass": true,
+          "image-name": "arcs.png",
+          "name": "arcs"
+        },
+        {
+          "glass": true,
+          "image-name": "arc-far.png",
+          "name": "arc-far",
+          "opacity": 0.55
+        }
+      ],
+      "lighting": "individual",
+      "shadow": {
+        "kind": "neutral",
+        "opacity": 0.5
+      },
+      "specular": true,
+      "translucency": {
+        "enabled": true,
+        "value": 0.5
+      }
+    }
+  ],
+  "supported-platforms": {
+    "squares": "shared"
+  }
+}

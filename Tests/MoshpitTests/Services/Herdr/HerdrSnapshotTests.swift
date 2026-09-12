@@ -1,0 +1,219 @@
+import Foundation
+import Testing
+@testable import Moshpit
+
+/// Decoding `herdr api snapshot`. The fixture is a REAL capture from herdr
+/// 0.7.3 (protocol 16) driven by Moshpit itself: two workspaces, the first
+/// with two tabs, the first tab split into two panes.
+@Suite("herdr snapshot decoding")
+struct HerdrSnapshotTests {
+
+    /// Read the capture from the source tree rather than the test bundle:
+    /// whether a `.json` gets copied as a bundle resource depends on how the
+    /// target was generated, and this file is checked in next to the tests.
+    private func fixture() throws -> String {
+        let path = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()   // …/MoshpitTests/Services/Herdr
+            .deletingLastPathComponent()   // …/MoshpitTests/Services
+            .deletingLastPathComponent()   // …/MoshpitTests
+            .appendingPathComponent("Fixtures/herdr-snapshot.json")
+        return try String(contentsOf: path, encoding: .utf8)
+    }
+
+    // MARK: - The real payload
+
+    @Test("Real 0.7.3 capture decodes into the app's three levels")
+    func decodesRealSnapshot() throws {
+        let decoded = try #require(HerdrSnapshot.decode(fixture()))
+        let snap = decoded.snapshot
+
+        // workspace → session
+        #expect(snap.sessions.count == 2)
+        #expect(snap.sessions["w1"]?.name == "~")
+        #expect(snap.sessions["w2"]?.name == "api")
+        #expect(snap.sessions["w1"]?.isAttached == true)
+        #expect(snap.sessions["w2"]?.isAttached == false)
+
+        // tab → window, grouped under its workspace
+        #expect(snap.windows.count == 3)
+        #expect(snap.windows(inSession: "w1").map(\.id) == ["w1:t1", "w1:t2"])
+        #expect(snap.windows["w1:t2"]?.name == "logs")
+        #expect(snap.windows["w1:t2"]?.index == 2)
+        #expect(snap.windows["w1:t1"]?.paneCount == 2)
+
+        // pane
+        #expect(snap.panes.count == 4)
+        #expect(snap.panes(inWindow: "w1:t1").map(\.id) == ["w1:p1", "w1:p3"])
+        #expect(snap.activePaneId == "w1:p3")
+        #expect(snap.activeWindowId == "w1:t1")
+        #expect(snap.activeSessionId == "w1")
+        #expect(snap.panes["w1:p3"]?.isActive == true)
+    }
+
+    @Test("Pane geometry comes from the layouts array, not the pane objects")
+    func geometryFromLayouts() throws {
+        let decoded = try #require(HerdrSnapshot.decode(fixture()))
+        // The split tab: two panes side by side, each half of the 44-col area.
+        #expect(decoded.snapshot.panes["w1:p1"]?.width == 22)
+        #expect(decoded.snapshot.panes["w1:p3"]?.width == 22)
+        #expect(decoded.snapshot.panes["w1:p1"]?.height == 32)
+    }
+
+    @Test("A snapshot naming a workspace counts as attached")
+    func attachedWhenPopulated() throws {
+        let decoded = try #require(HerdrSnapshot.decode(fixture()))
+        #expect(decoded.snapshot.isAttached)
+        #expect(decoded.snapshot.everAttached)
+    }
+
+    // MARK: - Index derivation
+
+    @Test("Pane index comes from the id, so poll order can't reshuffle panes",
+          arguments: [("w1:p1", 1), ("w1:p3", 3), ("w12:p47", 47), ("nonsense", 0)])
+    func paneIndexFromId(id: String, expected: Int) {
+        #expect(HerdrSnapshot.paneIndex(id) == expected)
+    }
+
+    // MARK: - Version tolerance
+
+    @Test("0.8.0-style panes carry agent + title through; 0.7.3-style don't break")
+    func newerFieldsDecode() throws {
+        // 0.7.3 omits every one of these keys. This is the same payload with
+        // the 0.8.0 additions present.
+        let raw = """
+        {"id":"x","result":{"snapshot":{
+          "workspaces":[{"workspace_id":"w1","label":"~","focused":true}],
+          "tabs":[{"tab_id":"w1:t1","workspace_id":"w1","label":"1","number":1,"focused":true,"pane_count":1}],
+          "panes":[{"pane_id":"w1:p1","tab_id":"w1:t1","workspace_id":"w1","focused":true,
+                    "agent_status":"working","agent":"claude","display_agent":"Claude Code",
+                    "terminal_title_stripped":"claude — moshpit"}],
+          "layouts":[],
+          "focused_workspace_id":"w1","focused_tab_id":"w1:t1","focused_pane_id":"w1:p1"}}}
+        """
+        let decoded = try #require(HerdrSnapshot.decode(raw))
+        #expect(decoded.snapshot.panes["w1:p1"]?.command == "Claude Code")
+        #expect(decoded.agentHooks["w1:p1"]?.state == "working")
+        #expect(decoded.agentHooks["w1:p1"]?.agent == "Claude Code")
+        #expect(decoded.agentHooks["w1:p1"]?.title == "claude — moshpit")
+        // No geometry reported → the model's own defaults, not a crash.
+        #expect(decoded.snapshot.panes["w1:p1"]?.width == 80)
+    }
+
+    @Test("A bare snapshot (no response envelope) still decodes")
+    func bareSnapshotDecodes() throws {
+        let raw = """
+        {"workspaces":[{"workspace_id":"w1","label":"solo","focused":true}],
+         "tabs":[],"panes":[],"layouts":[]}
+        """
+        let decoded = try #require(HerdrSnapshot.decode(raw))
+        #expect(decoded.snapshot.sessions["w1"]?.name == "solo")
+    }
+
+    // MARK: - Agent status → the app's stamp vocabulary
+
+    @Test("agent_status maps onto the stamps the Island and sheets already speak",
+          arguments: [("working", "working"), ("blocked", "attention"), ("done", "done")])
+    func agentStatusMapping(status: String, stamp: String) throws {
+        let decoded = try #require(HerdrSnapshot.decode(paneWith(status: status)))
+        #expect(decoded.agentHooks["w1:p1"]?.state == stamp)
+    }
+
+    @Test("unknown produces no stamp — nothing lights up without cause")
+    func unknownStatusIsQuiet() throws {
+        let decoded = try #require(HerdrSnapshot.decode(paneWith(status: "unknown")))
+        #expect(decoded.agentHooks["w1:p1"]?.state == nil)
+    }
+
+    /// `idle` passes through by its own name so the Agents section can show a
+    /// NAMED idle agent as a quiet row — but it must never light anything:
+    /// `AgentSignal` and the island's `hookState` both map it to nothing.
+    @Test("idle passes through by name, and by name only")
+    func idleStatusIsCarriedButUnlit() throws {
+        let decoded = try #require(HerdrSnapshot.decode(paneWith(status: "idle")))
+        #expect(decoded.agentHooks["w1:p1"]?.state == "idle")
+        #expect(AgentSignal("idle") == nil)
+    }
+
+    private func paneWith(status: String) -> String {
+        """
+        {"result":{"snapshot":{
+          "workspaces":[{"workspace_id":"w1","label":"~","focused":true}],
+          "tabs":[{"tab_id":"w1:t1","workspace_id":"w1","label":"1","number":1,"focused":true,"pane_count":1}],
+          "panes":[{"pane_id":"w1:p1","tab_id":"w1:t1","workspace_id":"w1","agent_status":"\(status)"}],
+          "layouts":[]}}}
+        """
+    }
+
+    // MARK: - Junk in, no crash out
+
+    @Test("Shell noise before the JSON is skipped, not fatal")
+    func leadingNoise() throws {
+        let raw = "Welcome to Ubuntu 24.04\n" + """
+        {"result":{"snapshot":{"workspaces":[{"workspace_id":"w1","label":"~"}],"tabs":[],"panes":[],"layouts":[]}}}
+        """
+        #expect(HerdrSnapshot.decode(raw) != nil)
+    }
+
+    @Test("A brace inside a label can't confuse the object scanner")
+    func braceInsideString() throws {
+        let raw = """
+        {"result":{"snapshot":{"workspaces":[{"workspace_id":"w1","label":"weird{name}"}],
+         "tabs":[],"panes":[],"layouts":[]}}}
+        """
+        let decoded = try #require(HerdrSnapshot.decode(raw))
+        #expect(decoded.snapshot.sessions["w1"]?.name == "weird{name}")
+    }
+
+    @Test("Payloads that aren't snapshots decode to nil rather than an empty tree",
+          arguments: ["", "not json at all", "{}", "{\"result\":{}}"])
+    func nonSnapshots(raw: String) {
+        #expect(HerdrSnapshot.decode(raw) == nil)
+    }
+
+    @Test("0.8's agents array supplies the identity the pane no longer carries")
+    func agentsArrayOverlay() throws {
+        // Shape verbatim from `herdr api snapshot` against a real 0.8.0
+        // server: the pane has agent_status but NO agent/display_agent —
+        // identity moved to the top-level agents array, keyed by pane_id.
+        // Decoding the panes alone produced hooks with a state and no name,
+        // and the Home agents tree rendered nothing.
+        let raw = """
+        {"result":{"snapshot":{
+         "workspaces":[{"workspace_id":"wP","label":"sample-app","focused":true}],
+         "tabs":[{"tab_id":"wP:t1","workspace_id":"wP","label":"claude","number":1,"focused":true}],
+         "panes":[{"pane_id":"wP:p1","tab_id":"wP:t1","workspace_id":"wP","focused":true,
+                   "agent_status":"idle","cwd":"/Users/u/code/sample-app",
+                   "terminal_title_stripped":"claude --resume 7d04"}],
+         "layouts":[],
+         "agents":[{"agent":"claude","agent_status":"idle","pane_id":"wP:p1",
+                    "workspace_id":"wP","tab_id":"wP:t1","focused":true}],
+         "focused_workspace_id":"wP","focused_tab_id":"wP:t1","focused_pane_id":"wP:p1"}}}
+        """
+        let decoded = try #require(HerdrSnapshot.decode(raw))
+        let hook = try #require(decoded.agentHooks["wP:p1"])
+        #expect(hook.agent == "claude")
+        #expect(hook.state == "idle")
+        // And a 0.7-style pane that carries its own agent field keeps working
+        // without any agents array at all.
+        let old = """
+        {"result":{"snapshot":{
+         "workspaces":[{"workspace_id":"w1","label":"x"}],
+         "tabs":[],"layouts":[],
+         "panes":[{"pane_id":"w1:p1","tab_id":"w1:t1","agent":"codex","agent_status":"working"}]}}}
+        """
+        let legacy = try #require(HerdrSnapshot.decode(old))
+        #expect(legacy.agentHooks["w1:p1"]?.agent == "codex")
+        #expect(legacy.agentHooks["w1:p1"]?.state == "working")
+    }
+
+    @Test("server_not_running is recognized as its own state")
+    func serverNotRunning() {
+        let raw = """
+        {"error":{"code":"server_not_running","message":"no herdr server is running at /x/herdr.sock"},"id":"cli:api:snapshot"}
+        """
+        #expect(HerdrSnapshot.decode(raw) == nil)
+        #expect(HerdrSnapshot.isServerNotRunning(raw))
+        // A different error must NOT read as "no server".
+        #expect(!HerdrSnapshot.isServerNotRunning("{\"error\":{\"code\":\"not_found\"}}"))
+    }
+}

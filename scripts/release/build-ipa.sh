@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+# Build an UNSIGNED .ipa for AltStore / SideStore to re-sign with your
+# free Apple ID. No Team ID needed here — the sideloader handles signing
+# and (with AltServer running) auto-refreshes before the 7-day expiry.
+#
+# Output: build/Moshpit.ipa  → drag into AltStore, or `altserver` install.
+set -euo pipefail
+cd "$(dirname "${BASH_SOURCE[0]}")/../.."
+
+CONFIG="${1:-Debug}"
+DERIVED="build/ipa"
+APP="$DERIVED/Build/Products/$CONFIG-iphoneos/Moshpit.app"
+
+echo "▶ Building $CONFIG (device, unsigned)…"
+xcodebuild -project Moshpit.xcodeproj -scheme Moshpit -configuration "$CONFIG" \
+  -sdk iphoneos -derivedDataPath "$DERIVED" \
+  CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build >/dev/null
+
+[ -d "$APP" ] || { echo "✘ build produced no app at $APP" >&2; exit 1; }
+
+# Stamp the build so Settings can show which build is running (git SHA + time;
+# "+" = uncommitted changes). Also set CFBundleVersion to the commit count — a
+# monotonically increasing build number that's easy to compare between installs.
+# Only the PRODUCT's Info.plist is touched (unsigned; AltStore re-signs anyway).
+SHA="$(git rev-parse --short HEAD 2>/dev/null || echo unknown)"
+git diff --quiet HEAD 2>/dev/null || SHA="${SHA}+"
+STAMP="$SHA · $(date '+%m-%d %H:%M')"
+# Same source as release-archive.sh: the hand-bumped BUILD_NUMBER file, so a
+# sideloaded build and an App Store build cut from the same commit carry the
+# same number. Falls back to 1 outside a checkout (e.g. a source tarball).
+BUILDNUM="$(tr -cd '0-9' < "$(dirname "${BASH_SOURCE[0]}")/../../BUILD_NUMBER" 2>/dev/null || echo 1)"
+[ -n "$BUILDNUM" ] || BUILDNUM=1
+/usr/libexec/PlistBuddy -c "Add :MoshpitBuildStamp string $STAMP" "$APP/Info.plist" 2>/dev/null \
+  || /usr/libexec/PlistBuddy -c "Set :MoshpitBuildStamp $STAMP" "$APP/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILDNUM" "$APP/Info.plist" 2>/dev/null || true
+# App extensions MUST carry the same CFBundleVersion as the containing app —
+# a mismatch can get the appex rejected at install/validation, which silently
+# kills the Dynamic Island (Activity.request fails, swallowed by try?).
+for appex in "$APP"/PlugIns/*.appex; do
+  [ -d "$appex" ] || continue
+  /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILDNUM" "$appex/Info.plist" 2>/dev/null || true
+done
+echo "▶ Stamped build $BUILDNUM ($STAMP)"
+
+echo "▶ Packaging .ipa…"
+rm -rf build/Payload build/Moshpit.ipa
+mkdir -p build/Payload
+cp -R "$APP" build/Payload/
+( cd build && zip -qry Moshpit.ipa Payload )
+rm -rf build/Payload
+
+echo "✓ build/Moshpit.ipa  ($(du -h build/Moshpit.ipa | cut -f1))"
+echo "  Install via AltStore (drag in) or: altserver -u <UDID> build/Moshpit.ipa"

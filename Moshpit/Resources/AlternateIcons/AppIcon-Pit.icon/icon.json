@@ -1,0 +1,51 @@
+{
+  "fill-specializations": [
+    {
+      "value": {
+        "linear-gradient": [
+          "extended-srgb:0.22745,0.22745,0.47059,1.00000",
+          "extended-srgb:0.10980,0.10980,0.26667,1.00000"
+        ]
+      }
+    },
+    {
+      "appearance": "dark",
+      "value": {
+        "linear-gradient": [
+          "extended-srgb:0.14902,0.14902,0.32941,1.00000",
+          "extended-srgb:0.05490,0.05490,0.15686,1.00000"
+        ]
+      }
+    }
+  ],
+  "groups": [
+    {
+      "layers": [
+        {
+          "glass": true,
+          "image-name": "surfer.png",
+          "name": "surfer"
+        },
+        {
+          "glass": true,
+          "image-name": "crowd.png",
+          "name": "crowd",
+          "opacity": 0.7
+        }
+      ],
+      "lighting": "individual",
+      "shadow": {
+        "kind": "neutral",
+        "opacity": 0.5
+      },
+      "specular": true,
+      "translucency": {
+        "enabled": true,
+        "value": 0.5
+      }
+    }
+  ],
+  "supported-platforms": {
+    "squares": "shared"
+  }
+}

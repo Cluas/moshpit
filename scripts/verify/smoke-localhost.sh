@@ -1,0 +1,135 @@
+#!/usr/bin/env bash
+# Moshpit — end-to-end localhost SSH smoke test.
+#
+# Builds Moshpit, installs onto an iPhone simulator, launches with seed
+# args that:
+#   1. Write `~/.ssh/id_ed25519` into the app's keychain
+#   2. Register a `127.0.0.1:22` connection
+#   3. Auto-navigate straight to TerminalContainerView
+#
+# Sleeps a few seconds to let the SSH session open, then screenshots the
+# terminal so a reviewer can confirm the shell prompt rendered. Exits 0
+# on success.
+#
+# Prerequisites on the Mac:
+#   - Remote Login enabled (`sudo systemsetup -setremotelogin on`)
+#   - `~/.ssh/id_ed25519` exists with its public key in `~/.ssh/authorized_keys`
+#   - At least one iPhone simulator runtime installed (defaults to iPhone 17 Pro)
+#
+# WHERE YOUR PRIVATE KEY GOES. This hands the key to the app the only way the
+# DEBUG seed path accepts it: base64 on the `simctl launch` command line. So it
+# appears in the argv of both simctl and the app, and the app then stores it in
+# the simulator's keychain, where it stays until that app is uninstalled.
+#
+# On macOS another user cannot read your process arguments, and anyone who is
+# YOUR user can read ~/.ssh/id_ed25519 directly — so this crosses no boundary
+# that the key file does not already cross. It is still worth knowing: argv is
+# picked up by process accounting and endpoint tooling, it lands in shell history
+# if you paste the launch by hand, and a key with a wider blast radius than
+# "logs into this Mac" does not belong here.
+#
+# Prefer a throwaway key. `MOSHPIT_SSH_KEY` already exists for exactly this:
+#
+#   ssh-keygen -t ed25519 -f ~/.ssh/moshpit-smoke -N ''
+#   cat ~/.ssh/moshpit-smoke.pub >> ~/.ssh/authorized_keys
+#   MOSHPIT_SSH_KEY=~/.ssh/moshpit-smoke scripts/verify/smoke-localhost.sh
+#
+# Having the script mint and revoke that key itself would be better still, but it
+# would edit your authorized_keys, which is not this script's call to make.
+
+set -euo pipefail
+
+SIM_NAME="${MOSHPIT_SIM:-iPhone 17 Pro}"
+BUNDLE_ID="com.cluas.moshpit"
+KEY_PATH="${MOSHPIT_SSH_KEY:-$HOME/.ssh/id_ed25519}"
+SSH_HOST="${MOSHPIT_SSH_HOST:-127.0.0.1}"
+SSH_PORT="${MOSHPIT_SSH_PORT:-22}"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+OUT_DIR="$REPO_ROOT/design-audit/smoke"
+mkdir -p "$OUT_DIR"
+
+if [ ! -f "$KEY_PATH" ]; then
+  echo "✘ SSH key not found at $KEY_PATH" >&2
+  echo "  generate one with: ssh-keygen -t ed25519 -f $KEY_PATH -N ''" >&2
+  exit 1
+fi
+
+if ! ssh -i "$KEY_PATH" -o StrictHostKeyChecking=no -o ConnectTimeout=3 \
+         -o BatchMode=yes "$(whoami)@$SSH_HOST" echo ok >/dev/null 2>&1; then
+  echo "✘ Can't SSH into $SSH_HOST as $(whoami) with $KEY_PATH" >&2
+  echo "  - Enable Remote Login: sudo systemsetup -setremotelogin on" >&2
+  echo "  - Add public key:      cat ${KEY_PATH}.pub >> ~/.ssh/authorized_keys" >&2
+  exit 1
+fi
+
+echo "▶ Resolving simulator: $SIM_NAME"
+resolve_udid() {
+  xcrun simctl list devices --json | python3 -c "
+import json, sys
+data = json.load(sys.stdin)
+target = sys.argv[1]
+booted, available = None, None
+for _runtime, devices in data['devices'].items():
+    for d in devices:
+        if d.get('name') == target and d.get('isAvailable', False):
+            if d.get('state') == 'Booted' and booted is None: booted = d['udid']
+            elif available is None: available = d['udid']
+print(booted or available or '')
+" "$1"
+}
+SIM_UDID="$(resolve_udid "$SIM_NAME")"
+[ -n "$SIM_UDID" ] || { echo "✘ no simulator named '$SIM_NAME'"; exit 1; }
+
+STATE="$(xcrun simctl list devices --json | python3 -c "
+import json, sys
+data = json.load(sys.stdin)
+for _r, ds in data['devices'].items():
+    for d in ds:
+        if d.get('udid') == sys.argv[1]:
+            print(d.get('state', 'Unknown')); sys.exit(0)
+" "$SIM_UDID")"
+if [ "$STATE" != "Booted" ]; then
+  echo "▶ Booting $SIM_UDID"
+  xcrun simctl boot "$SIM_UDID"
+  open -a Simulator
+  sleep 10
+fi
+
+echo "▶ Building Moshpit"
+DERIVED="$(mktemp -d)"
+xcodebuild \
+  -project "$REPO_ROOT/Moshpit.xcodeproj" -scheme Moshpit \
+  -configuration Debug -sdk iphonesimulator \
+  -destination "platform=iOS Simulator,name=$SIM_NAME" \
+  -derivedDataPath "$DERIVED" \
+  CODE_SIGNING_ALLOWED=NO build > "$DERIVED/build.log" 2>&1 \
+  || { echo "✘ build failed"; tail -30 "$DERIVED/build.log"; exit 1; }
+APP="$(find "$DERIVED/Build/Products" -name 'Moshpit.app' -type d | head -1)"
+
+echo "▶ Installing app on $SIM_UDID"
+xcrun simctl install "$SIM_UDID" "$APP"
+xcrun simctl status_bar "$SIM_UDID" override \
+  --time "9:41" --batteryState charged --batteryLevel 100 \
+  --wifiBars 3 --cellularBars 4 --dataNetwork wifi 2>/dev/null || true
+xcrun simctl terminate "$SIM_UDID" "$BUNDLE_ID" 2>/dev/null || true
+
+echo "▶ Launching with seed args: $(whoami)@$SSH_HOST:$SSH_PORT"
+KEY_B64="$(base64 -i "$KEY_PATH" | tr -d '\n')"
+xcrun simctl launch "$SIM_UDID" "$BUNDLE_ID" \
+  -MOSHPIT_AUTOCARE_OFF 1 \
+  -MOSHPIT_SEED_USER "$(whoami)" \
+  -MOSHPIT_SEED_KEY_B64 "$KEY_B64" \
+  -MOSHPIT_SEED_HOST "$SSH_HOST" \
+  -MOSHPIT_SEED_PORT "$SSH_PORT" >/dev/null
+
+echo "▶ Waiting 6s for SSH handshake + first PTY output…"
+sleep 6
+
+OUT="$OUT_DIR/$(date +%H%M%S)-localhost.png"
+xcrun simctl io "$SIM_UDID" screenshot --type=png "$OUT" >/dev/null 2>&1
+echo
+echo "✓ Done."
+echo "  Screenshot: $OUT"
+echo
+echo "  Open with: open $OUT"
+echo "  Expect the terminal viewport to show a shell login banner + prompt."

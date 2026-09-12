@@ -1,0 +1,549 @@
+name: Moshpit
+options:
+  bundleIdPrefix: com.cluas
+  developmentLanguage: en
+  deploymentTarget:
+    iOS: "18.0"
+  xcodeVersion: "26.0"
+  generateEmptyDirectories: true
+
+# DEVELOPMENT_TEAM is supplied by Signing.xcconfig (kept out of git, see
+# that file) so on-device signing survives `xcodegen generate`. It is NOT
+# set in `settings` here, because project build settings would override the
+# xcconfig value.
+configFiles:
+  Debug: Signing.xcconfig
+  Release: Signing.xcconfig
+
+settings:
+  base:
+    SWIFT_VERSION: "5.9"
+    MARKETING_VERSION: "1.0.3"
+    # Only the floor for local builds. A release overrides it from the command
+    # line (scripts/release/release-archive.sh) — App Store Connect requires a build
+    # number that is unique and monotonically increasing within a version, and
+    # bumping it here by hand is exactly the step that gets forgotten.
+    CURRENT_PROJECT_VERSION: 1
+    CODE_SIGN_STYLE: Automatic
+  configs:
+    Debug:
+      # Pinned for Debug only — it MUST NOT sit in `base`. An App Store archive
+      # has to be signed "Apple Distribution", and an explicit identity in base
+      # beats automatic signing's own per-action choice: the archive would then
+      # be built with a development certificate, which App Store Connect
+      # rejects on upload. Release deliberately sets nothing, so automatic
+      # signing keeps picking Development for a plain `build` (including the
+      # free-Personal-Team path in docs/install-free-account.md, which builds
+      # Debug anyway) and Distribution when archiving.
+      CODE_SIGN_IDENTITY: "Apple Development"
+
+packages:
+  # The code every process shares (Log, the Live Activity payload and widget
+  # snapshot, the share queue, the sealed-push envelope and pairing store).
+  # A local package rather than files listed into four targets by path, so
+  # the app/extension boundary is a module boundary the compiler checks.
+  MoshpitKit:
+    path: Packages/MoshpitKit
+  SwiftTerm:
+    # Forked from migueldeicaza/SwiftTerm at v1.13.0 (see the fork's commit
+    # messages): (1)+(2) two OSC-8 hyperlink underline-overshoot fixes in
+    # oscHyperlink's close handler, (3) a new public API (viewportLineText /
+    # tagPlainTextLink) letting Moshpit linkify plain http(s) URLs it detects
+    # itself, reusing the same cell.hasPayload path a real OSC-8 hyperlink
+    # uses — SwiftTerm's own built-in implicit-link regex is too permissive
+    # (matches bare file paths) to turn on globally, (4) singleTap checks for
+    # a link hit BEFORE treating a not-yet-focused tap as "just focus me" —
+    # otherwise tapping a link while the keyboard was dismissed silently ate
+    # the first tap and needed a second one, (5) setMarkedText/unmarkText now
+    # paint an underlined overlay at the cursor for IME composition (Pinyin
+    # etc.) — previously tracked internally but never rendered anywhere,
+    # (6) that overlay moves the terminal's own real cursor (caretView) to
+    # the end of the composing text as it grows, rather than drawing a
+    # second separate caret or tracking a mid-composition insertion offset
+    # (which jittered back to the front — phonetic IMEs replace the whole
+    # marked string per keystroke and candidate paging can report a stale
+    # selectedRange), (8) wide-char hygiene on the WRITE side — overwriting
+    # half a CJK char clears the other half (Buffer.insertCharacter +
+    # insertAsciiRun), plus a renderer belt treating a visited width-0 cell
+    # as the default blank it is: kills the permanent white blocks over mosh
+    # (an orphaned continuation stub renders inverted-default, and mosh never
+    # repaints a cell its model says is already blank), (7) deleteBackward() during active composition
+    # removes one character from the end of the marked text and sends
+    # nothing to the terminal, instead of nuking the whole composition in
+    # one shot with real (wrong) backspace keypresses — fixes hold-to-repeat
+    # delete under the Pinyin keyboard, (8) a new public `isRowWrapped(_:)`
+    # on Terminal exposing the emulator's own soft-wrap bit, so Moshpit can
+    # join a URL that wrapped across rows exactly instead of guessing from
+    # row text width (which broke, silently truncating the opened link,
+    # whenever a CJK/emoji character earlier on the row threw off a
+    # character-count-vs-column-count comparison), and (9) composition-end
+    # no longer snaps the caret to updateCursorPosition() — the terminal
+    # buffer's cursor hasn't moved yet at that instant (the committed text
+    # is only just sent, not yet echoed back), so snapping to it yanked the
+    # caret backwards to the pre-composition position right as you finished
+    # typing a word, (10) UIKeyInput.hasText now always reports true — UIKit
+    # gates the delete key's hold-to-repeat on it, and answering from
+    # SwiftTerm's shadow input buffer (emptied on every Return, and empty for
+    # anything the REMOTE put on screen) killed hold-to-delete for exactly
+    # the text you most want to clear: a reattached session's half-written
+    # prompt — and (11) updateCursorPosition() defers to the composition
+    # overlay while an IME composition is on screen, so a pane that keeps
+    # repainting (agent status line, resync, reflow) stops yanking the caret
+    # from the end of the Pinyin back to its front mid-word — (9) fixed that
+    # coming from the IME, this fixes it coming from output — and (12) one
+    # phantom newline is parked in front of the caret so the delete key's
+    # hold-to-repeat keeps going: UIKit does not re-read hasText per repeat
+    # tick, it measures the document one character back from the caret and
+    # quits the moment that comes back empty, which (10) alone did not change.
+    # Holding delete over 20 pasted characters used to send ONE backspace;
+    # it now sends one per tick for as long as the key is down — and (13)
+    # a not-yet-focused tap that lands on a link now opens it WITHOUT
+    # becoming first responder: on iOS focus is the keyboard, and (4)'s
+    # focus-grab meant tapping a link with the keyboard dismissed popped it
+    # over the very output being read (and left it up on return from the
+    # browser) — and (14) OSC 52 read queries (`ESC ] 52 ; c ; ?`) now reach
+    # the host through a clipboardRequest delegate hook and are answered via
+    # Terminal.sendClipboardResponse, instead of being mis-parsed as base64
+    # and dropped; whether the remote gets the clipboard is the host's call
+    # (groundwork for clipboard-image paste over SSH, Claude Code #42712) —
+    # and (15) `focusOnTap`: a host flag (default true) that stops a tap on
+    # an unfocused terminal from grabbing first responder at all. Moshpit
+    # sets it false: on iOS focus is the keyboard, reading is a first-class
+    # activity, and the keyboard has its own toggle on the shortcut bar —
+    # and (16) selection you can use unfocused: the handle-grab window is
+    # finger-sized (22pt derived from the cell size, was 3×2 cells ≈ 16pt at
+    # small fonts), and the copy/paste menu is UIEditMenuInteraction on
+    # iOS 16+ (UIMenuController silently refuses to show without first
+    # responder, which (15) made the terminal's normal state), plus a public
+    # closeSelection() so the host's own tap can dismiss a selection while
+    # unfocused — the built-in clear lived only in singleTap's focused branch —
+    # and (17) long-press selects the word under the finger (slide extends,
+    # menu on release) instead of grabbing first responder for a bare paste
+    # menu: a long press taken while reading summoned the keyboard and
+    # selected nothing.
+    # Revert to the upstream URL if/when these land there and a
+    # release picks them up.
+    url: https://github.com/Cluas/SwiftTerm.git
+    revision: cebf9df7917f86e6c71267e1443ce74928b2747e
+  Citadel:
+    url: https://github.com/orlandos-nl/Citadel.git
+    from: "0.7.0"
+  # Local Whisper for dictation (Settings → VOICE INPUT → Recognition).
+  # Apple's own transcribers take exactly ONE locale and have no
+  # code-switching mode, so a sentence carrying English command names inside
+  # another language — the normal way this app's users talk to a terminal —
+  # comes out mangled whichever locale you pick. Whisper covers ~100
+  # languages in a single model and handles that mixing natively, so it ships
+  # as an alternative engine rather than a replacement.
+  #
+  # The library target pulls in NOTHING but its own ArgmaxCore (the
+  # swift-argument-parser dependency in its manifest belongs to the CLI
+  # executable target, which we don't build). Keep `product:` explicit —
+  # the package is named `argmax-oss-swift`, not `WhisperKit`, and XcodeGen
+  # would otherwise look for a product matching the key.
+  WhisperKit:
+    url: https://github.com/argmaxinc/WhisperKit.git
+    from: "1.1.0"
+  # SOCKS5 client handshake for the optional per-connection proxy (Add
+  # Connection → Proxy). `swift-nio-extras` ships several library products;
+  # naming the package key `NIOSOCKS` (matching the one product we want)
+  # keeps the default package→product resolution working with no explicit
+  # `product:` override — see the WhisperKit note above for what happens
+  # when the two names diverge.
+  NIOSOCKS:
+    url: https://github.com/apple/swift-nio-extras.git
+    from: "1.34.0"
+
+targets:
+  Moshpit:
+    type: application
+    platform: iOS
+    sources:
+      - path: Moshpit
+    entitlements:
+      path: Moshpit/App/Moshpit.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.com.cluas.moshpit
+        # Remote push, for agent notifications that must arrive when the app is
+        # NOT running (docs/PUSH.md). Three things to know:
+        #
+        # 1. "development" is correct here even for App Store builds. aps-environment
+        #    is resolved from the PROVISIONING PROFILE at signing time, and this
+        #    repo's release flow archives development-signed then re-signs on export
+        #    (scripts/release/release-archive.sh), so the shipped binary gets "production".
+        #    Verify after an export, never assume:
+        #      codesign -d --entitlements - Moshpit.app | grep aps-environment
+        #
+        # 2. The Push Notifications capability is NOT available to a free Personal
+        #    Team. A device build under docs/install-free-account.md fails to sign
+        #    with this key present; comment out this one line and re-run
+        #    `xcodegen generate`. Simulator builds are unaffected (entitlements are
+        #    not checked there), which is why the automated tests do not notice.
+        #
+        # 3. Time Sensitive (below) has the same Personal Team problem, and the
+        #    same fix: comment out that one line for a free-account build. See
+        #    docs/install-free-account.md, which now covers both.
+        aps-environment: development
+        # Lets an approval prompt be ELIGIBLE to break through Focus and skip the
+        # Scheduled Summary. Not a nice-to-have here: an agent that stopped to ask
+        # permission is the case where a delayed notification is the same as no
+        # notification, and Focus is exactly what someone turns on to concentrate
+        # on the work the agent is doing for them.
+        #
+        # Eligible is the accurate word. Each Focus mode still decides, and one
+        # set to "allow only these apps" with an empty list suppresses a
+        # Time-Sensitive notification anyway. Verified on a real phone, 2026-08-25.
+        #
+        # This is the ENTITLEMENT only. Both senders already ask for the level and
+        # have from the start — AgentActivityMonitor sets
+        # `interruptionLevel = .timeSensitive` on local attention notifications,
+        # and the relay puts `"interruption-level":"time-sensitive"` in every
+        # payload. Without this key iOS downgrades both to `.active` silently,
+        # with no error anywhere, which is why it went unnoticed: nothing fails,
+        # the notification simply waits behind Focus.
+        #
+        # Unlike Critical Alerts, this needs no application to Apple — tick "Time
+        # Sensitive Notifications" on the App ID and regenerate the profile. It
+        # is not available to a free Personal Team; see note 2.
+        com.apple.developer.usernotifications.time-sensitive: true
+    settings:
+      base:
+        INFOPLIST_FILE: Moshpit/App/Info.plist
+        PRODUCT_BUNDLE_IDENTIFIER: com.cluas.moshpit
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        # Alternate icons are Icon Composer documents too
+        # (Moshpit/Resources/AlternateIcons, built by scripts/gen/generate-alternate-icons.mjs).
+        # Listing them here makes actool compile each as a Liquid Glass stack,
+        # flatten its iOS 18/19 fallbacks, and write the CFBundleAlternateIcons
+        # entries into Info.plist itself — the iPad sizes included, which the
+        # hand-written plist block and loose PNGs used to get wrong (ITMS-90892).
+        ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES: AppIcon-Pit AppIcon-Island AppIcon-Wq AppIcon-Prefix AppIcon-Localhost AppIcon-Prompt AppIcon-Cursor AppIcon-Hail
+        ENABLE_PREVIEWS: YES
+        SWIFT_EMIT_LOC_STRINGS: YES
+        # iPhone + iPad, CONFIRMED as a shipping decision (2026-08-08), not
+        # inherited from XcodeGen's "1,2" preset. Two obligations follow and
+        # neither is optional: App Store Connect demands 13" iPad screenshots
+        # for every release, and reviewers will open the app on a display the
+        # layout has to actually work on. It is also one-way — an app that
+        # shipped with iPad support cannot drop it later without abandoning
+        # the customers who bought it on one.
+        TARGETED_DEVICE_FAMILY: "1,2"
+      configs:
+        # Both of these exist to beat XcodeGen's own setting preset for iOS
+        # application targets, which injects a legacy
+        # `CODE_SIGN_IDENTITY = "iPhone Developer"` into EVERY config of this
+        # target. Target settings win over the project-level ones above, so
+        # fixing this at the project level alone silently achieves nothing.
+        # Verify after `xcodegen generate` with:
+        #   grep -c 'iPhone Developer' Moshpit.xcodeproj/project.pbxproj   # 0
+        #
+        # Release is "Apple Development" ON PURPOSE, not a typo: with
+        # automatic signing the ARCHIVE is development-signed and the
+        # app-store-connect EXPORT re-signs it "Apple Distribution"
+        # (scripts/release/release-archive.sh's -exportOptionsPlist step). Forcing
+        # Distribution here instead makes xcodebuild refuse to archive at all
+        # ("conflicting provisioning settings" — automatic signing archives
+        # development-style by design).
+        Debug:
+          CODE_SIGN_IDENTITY: "Apple Development"
+        Release:
+          CODE_SIGN_IDENTITY: "Apple Development"
+    dependencies:
+      - package: MoshpitKit
+      - package: SwiftTerm
+      - package: Citadel
+      - package: WhisperKit
+        product: WhisperKit
+      - package: NIOSOCKS
+        product: NIOSOCKS
+      - target: MoshpitIsland
+        embed: true
+      - target: MoshpitShare
+        embed: true
+      - target: MoshpitPush
+        embed: true
+    info:
+      path: Moshpit/App/Info.plist
+      properties:
+        CFBundleName: Moshpit
+        CFBundleDisplayName: Moshpit
+        UIAppFonts:
+          - JetBrainsMono-Regular.ttf
+          - MapleMono-Regular.ttf
+          - FiraCode-Regular.ttf
+          - SourceCodePro-Regular.ttf
+          - IBMPlexMono-Regular.ttf
+          - Hack-Regular.ttf
+          - AnonymousPro-Regular.ttf
+        # The primary icon is Moshpit/Resources/AppIcon.icon (Icon Composer, Liquid
+        # Glass); actool writes CFBundleIcons / CFBundleIcons~ipad for it and
+        # for every alternate named in ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES.
+        CFBundleIconName: AppIcon
+        NSSupportsLiveActivities: true
+        # Export compliance is DELIBERATELY absent from the binary. It lives as
+        # an app-level encryption declaration in App Store Connect instead
+        # (App Information → App Encryption Documentation, filed 2026-08-10:
+        # uses encryption / standard algorithms only — AES-GCM + ECDH/Curve25519
+        # + Ed25519/ECDSA/RSA for SSH, AES-128-OCB3 per RFC 7253 for Mosh — not
+        # distributed in France, no documentation required).
+        #
+        # Do NOT re-add ITSAppUsesNonExemptEncryption here. Since the 2026 ASC
+        # flow, `true` without an ITSEncryptionExportComplianceCode makes BOTH
+        # Organizer Validate and Upload hard-fail with error 90592 ("Invalid
+        # Export Compliance Code") — verified on build 282, 2026-08-10, even
+        # after the app-level declaration was on file — and the no-France/
+        # standard-algorithms path issues no code that could ever satisfy the
+        # check.
+        # If distribution ever expands to France: redo the ASC questionnaire
+        # (answer France = yes), file the ANSSI declaration, and only then
+        # consider carrying the resulting code in the plist.
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        UILaunchScreen:
+          UIColorName: ""
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        NSFaceIDUsageDescription: "Use Face ID to unlock SSH keys"
+        # Voice input (Settings → VOICE INPUT, mic key on the terminal bar).
+        # BOTH keys are required or App Review rejects the binary: the mic key
+        # for the recording session, the speech key because the iOS 18–25 path
+        # goes through SFSpeechRecognizer (which gates on that permission).
+        #
+        # The "on-device / never uploaded" wording is a real, load-bearing
+        # promise about AUDIO, and it holds for both engines: Apple's path
+        # refuses server recognition outright (DictationEngineFactory, all OS
+        # versions), and the Whisper path runs a CoreML model locally. What
+        # does touch the network is the one-time Whisper MODEL download from
+        # Hugging Face — weights in, nothing out — which is why the strings
+        # below say "audio" rather than a blanket "nothing leaves the device".
+        # Keep code and copy in lockstep if either ever changes.
+        NSMicrophoneUsageDescription: "Voice input uses the microphone so you can dictate commands and prompts into your terminal. Your audio is transcribed on this device — by Apple's speech models or by a Whisper model you download — and is never uploaded anywhere."
+        NSSpeechRecognitionUsageDescription: "Dictation runs on-device speech recognition. Your voice and transcripts never leave this device — Moshpit does not use server-based recognition."
+        # MUST live here, not just in Info.plist: XcodeGen regenerates that file
+        # from this block, so a key added to the plist by hand silently vanishes
+        # at the next `xcodegen generate`. Without this key iOS drops UDP to LAN
+        # addresses on the floor, which presents as "SSH connects but mosh
+        # black-screens" against a 192.168.x.x host.
+        NSLocalNetworkUsageDescription: "Moshpit connects to servers on your local network over SSH and mosh (UDP). Without this permission, connections to LAN hosts (e.g. 192.168.x.x) will fail."
+        # Camera is an attach-image SOURCE (photograph a whiteboard, hand it
+        # to the agent) — the shot is processed like any picked image: scaled,
+        # EXIF/GPS-stripped on device, uploaded only to YOUR server. Say so.
+        NSCameraUsageDescription: "The camera lets you photograph something — a whiteboard, a sketch, a screen — and attach it to your terminal session. Photos are stripped of location data on this device and uploaded only to your own server."
+        CFBundleURLTypes:
+          - CFBundleURLSchemes:
+              - moshpit
+            CFBundleURLName: com.cluas.moshpit
+
+  MoshpitIsland:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: Extensions/MoshpitIsland
+      # The one file shared by path: an App Intent belongs to the bundle that
+      # declares it, and the widget's Button needs the type while the app runs
+      # its perform() — see the comment in the file.
+      - path: Moshpit/App/AgentCycleIntent.swift
+    dependencies:
+      - package: MoshpitKit
+    entitlements:
+      path: Extensions/MoshpitIsland/MoshpitIsland.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.com.cluas.moshpit
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.cluas.moshpit.island
+    info:
+      path: Extensions/MoshpitIsland/Info.plist
+      properties:
+        CFBundleDisplayName: Moshpit Island
+        # Keep the extension's version in lockstep with the app — a mismatch is
+        # an App Store rejection. Driven by the shared MARKETING_VERSION /
+        # CURRENT_PROJECT_VERSION in settings.base, same as the app target.
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+
+  MoshpitShare:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: Extensions/MoshpitShare
+    dependencies:
+      # The App Group snapshot the target list reads and the queue the app drains.
+      - package: MoshpitKit
+    entitlements:
+      path: Extensions/MoshpitShare/MoshpitShare.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.com.cluas.moshpit
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.cluas.moshpit.share
+        # Manual signing, unlike every other target: with no Apple ID signed
+        # into Xcode, archive-time automatic signing cannot mint the managed
+        # dev profile for a new bundle id (developerservices2 rejects ASC API
+        # keys — see scripts/release/release-archive.sh). This profile was created via
+        # the ASC API after the App Group association was made once by hand at
+        # developer.apple.com; recreate with a new one if it expires or a new
+        # device/cert is added. Simulator builds ignore it; export re-signs
+        # with a cloud-minted App Store profile as usual.
+        CODE_SIGN_STYLE: Manual
+        PROVISIONING_PROFILE_SPECIFIER: Moshpit Share Dev
+        CODE_SIGN_IDENTITY: Apple Development
+    info:
+      path: Extensions/MoshpitShare/Info.plist
+      properties:
+        CFBundleDisplayName: Moshpit
+        # Version lockstep with the app, same as MoshpitIsland — a mismatch
+        # is an App Store rejection.
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.share-services
+          NSExtensionPrincipalClass: "$(PRODUCT_MODULE_NAME).ShareViewController"
+          NSExtensionAttributes:
+            NSExtensionActivationRule:
+              NSExtensionActivationSupportsImageWithMaxCount: 10
+
+  # Opens the sealed envelope in a remote agent notification and puts the real
+  # text on screen. iOS runs this for any push carrying mutable-content: 1 —
+  # including while the device is locked and the app is not running, which is the
+  # entire reason the push path exists.
+  MoshpitPush:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: Extensions/MoshpitPush
+    dependencies:
+      # The envelope format, the pairing secrets, the rendering, the prefs mirror,
+      # the diagnostics ring, the standing-attention set and the log facade: all
+      # shared with the app so there is exactly one implementation of each.
+      - package: MoshpitKit
+    entitlements:
+      path: Extensions/MoshpitPush/MoshpitPush.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.com.cluas.moshpit
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.cluas.moshpit.push
+    info:
+      path: Extensions/MoshpitPush/Info.plist
+      properties:
+        CFBundleDisplayName: Moshpit Push
+        # Version lockstep with the app, same as the other two extensions — a
+        # mismatch is an App Store rejection.
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.usernotifications.service
+          NSExtensionPrincipalClass: "$(PRODUCT_MODULE_NAME).NotificationService"
+
+  MoshpitUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: Tests/MoshpitUITests
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.cluas.moshpit.uitests
+        TEST_TARGET_NAME: Moshpit
+        GENERATE_INFOPLIST_FILE: YES
+    dependencies:
+      - target: Moshpit
+
+  MoshpitTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: Tests/MoshpitTests
+      # The notification service extension's entry point, so a test can drive
+      # `didReceive` itself rather than only the rendering helper it calls. That
+      # method is the closest thing to a real push this repo can exercise without
+      # an APNs key and a physical phone.
+      - path: Extensions/MoshpitPush/NotificationService.swift
+      # The Live Activity's lock-screen layout, so a test can MEASURE it. iOS
+      # clips this card at a fixed height and says nothing; the only signal is a
+      # screenshot from a real phone with the top and bottom sliced off, which
+      # is exactly how the overflow was found. Rendering it here turns that into
+      # a number.
+      - path: Extensions/MoshpitIsland/MoshpitIslandWidget.swift
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.cluas.moshpit.tests
+        GENERATE_INFOPLIST_FILE: YES
+      configs:
+        Debug:
+          # Lets a source file shared with an app EXTENSION know it is being
+          # compiled into the test bundle instead, and reach the app module for
+          # types that are its own module elsewhere — see
+          # Extensions/MoshpitPush/NotificationService.swift. DEBUG is restated because a
+          # target-level value replaces the config default rather than adding to it.
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) DEBUG MOSHPIT_TESTS"
+    dependencies:
+      - target: Moshpit
+
+schemes:
+  # Unit tests only, and the point is what it leaves OUT.
+  #
+  # `-only-testing:MoshpitTests` filters what RUNS, not what gets built and
+  # installed: the Moshpit scheme lists MoshpitUITests as testable, so every
+  # unit-test run also compiled the UI test target and pushed its 18 MB runner
+  # app onto the simulator alongside the 80 MB debug app, then waited through a
+  # second launch handshake.
+  #
+  # Measured on the Moshpit scheme: 172 s wall, of which the tests themselves
+  # were 13.5 s (~8%). xcodebuild's own accounting put 135 s in the "Testing"
+  # phase — install, launch, handshake, teardown — so the wait had almost
+  # nothing to do with how many tests exist. This scheme attacks that instead.
+  #
+  #   xcodebuild -scheme MoshpitUnitTests -destination '…' test
+  #
+  # Iterating on test code only? Build once with `build-for-testing`, then
+  # `test-without-building` — that saves a further ~60 s per cycle. And do NOT
+  # run `xcodegen generate` unless project.yml changed: rewriting the pbxproj
+  # invalidates DerivedData and forces a full rebuild of WhisperKit, SwiftTerm,
+  # Citadel and swift-nio.
+  MoshpitUnitTests:
+    build:
+      targets:
+        Moshpit: all
+        MoshpitTests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - MoshpitTests
+    analyze:
+      config: Debug
+
+  Moshpit:
+    build:
+      targets:
+        Moshpit: all
+        MoshpitTests: [test]
+        MoshpitUITests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - MoshpitTests
+        - MoshpitUITests
+    profile:
+      config: Release
+    analyze:
+      config: Debug
+    archive:
+      config: Release

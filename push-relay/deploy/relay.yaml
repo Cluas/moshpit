@@ -1,0 +1,177 @@
+# Moshpit push relay on k3s.
+#
+# The relay holds the APNs signing key and its own HMAC master, and nothing
+# else: no message content, no host names, no device registry — it is
+# STATELESS, verifying each push's bearer token by recomputing the HMAC over
+# the routing facts the request carries. See docs/PUSH.md.
+#
+# Build and push the image. This cluster already delivers custom code through
+# GHCR (moshpit-site runs `ghcr.io/cluas/moshpit-site:…` with an existing
+# `ghcr-secret`), so the relay follows the same path rather than importing into
+# each node's containerd — the nodes are mixed amd64/arm64, which makes a
+# per-node `ctr images import` five imports and two architectures:
+#
+#   cd push-relay
+#   docker buildx build --platform linux/amd64,linux/arm64 \
+#     -t ghcr.io/cluas/moshpit-push-relay:<tag> --push .
+#
+# The image holds no secret — the .p8 arrives at runtime from the Secret below —
+# but the package is private, so the pull secret has to exist in THIS namespace
+# (secrets are namespaced; copy it from `default`):
+#
+#   kubectl -n default get secret ghcr-secret -o yaml \
+#     | sed 's/namespace: default/namespace: moshpit/' | kubectl apply -f -
+#
+# Then create the secret from the .p8 Apple issued once (see docs/PUSH.md, "The
+# one manual step") — never commit it:
+#
+#   kubectl -n moshpit create secret generic moshpit-apns \
+#     --from-file=AuthKey.p8=./AuthKey_XXXXXXXXXX.p8 \
+#     --from-literal=keyId=XXXXXXXXXX \
+#     --from-literal=teamId=YYYYYYYYYY
+#
+# And the HMAC master that signs send tokens (rotating it invalidates every
+# minted token; paired phones re-mint on their next app run, hosts get their
+# conf rewritten on the next connect — so rotation is a soft outage, not a
+# re-pair ceremony):
+#
+#   kubectl -n moshpit create secret generic moshpit-relay-hmac \
+#     --from-literal=secret="$(openssl rand -hex 32)"
+#
+#   kubectl apply -f push-relay/deploy/relay.yaml
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: moshpit
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: moshpit-push-relay
+  namespace: moshpit
+spec:
+  replicas: 1
+  # Nothing to hand over between pods any more — the registry is gone — so a
+  # rollout can overlap the old and new pod instead of going dark between them.
+  strategy:
+    type: RollingUpdate
+  selector:
+    matchLabels:
+      app: moshpit-push-relay
+  template:
+    metadata:
+      labels:
+        app: moshpit-push-relay
+    spec:
+      # The GHCR package is private, same as moshpit-site's.
+      imagePullSecrets:
+        - name: ghcr-secret
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        fsGroup: 10001
+      containers:
+        - name: relay
+          image: ghcr.io/cluas/moshpit-push-relay:v2-b864117
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+              name: http
+          env:
+            - name: MOSHPIT_RELAY_ADDR
+              value: ":8080"
+            - name: MOSHPIT_RELAY_HMAC_SECRET
+              valueFrom:
+                secretKeyRef: { name: moshpit-relay-hmac, key: secret }
+            - name: MOSHPIT_APNS_TOPIC
+              value: com.cluas.moshpit
+            - name: MOSHPIT_APNS_KEY_FILE
+              value: /etc/apns/AuthKey.p8
+            - name: MOSHPIT_APNS_KEY_ID
+              valueFrom:
+                secretKeyRef: { name: moshpit-apns, key: keyId }
+            - name: MOSHPIT_APNS_TEAM_ID
+              valueFrom:
+                secretKeyRef: { name: moshpit-apns, key: teamId }
+          volumeMounts:
+            - name: apns
+              mountPath: /etc/apns
+              readOnly: true
+          resources:
+            requests: { cpu: 10m, memory: 32Mi }
+            limits: { cpu: 500m, memory: 128Mi }
+          readinessProbe:
+            httpGet: { path: /healthz, port: http }
+            initialDelaySeconds: 2
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 30
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+      volumes:
+        - name: apns
+          secret:
+            secretName: moshpit-apns
+            defaultMode: 0400
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: moshpit-push-relay
+  namespace: moshpit
+spec:
+  selector:
+    app: moshpit-push-relay
+  ports:
+    - port: 80
+      targetPort: http
+      name: http
+---
+# HTTPS is not optional: the send token is a bearer credential, and the phone
+# refuses any relay URL that is not https (PushRelayClient.mint), localhost
+# aside.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: moshpit-push-relay
+  namespace: moshpit
+  annotations:
+    # DNS-01 rather than HTTP-01, and not for lack of public reachability: the
+    # cluster serves moshpit.cluas.eu.org over HTTP-01 fine. It is that a FRESH
+    # hostname's HTTP-01 self check has to resolve the A record it just created,
+    # and the upstream resolvers still hold the authoritative NXDOMAIN from
+    # before it existed (Cloudflare's SOA minimum, ~30 min). DNS-01 validates a
+    # TXT record instead, so it does not wait on that at all — and it keeps
+    # working if this host is ever moved somewhere port 80 is not open.
+    cert-manager.io/cluster-issuer: letsencrypt-dns01
+    # The largest thing this endpoint ever accepts is a 4 KB APNs payload; the
+    # handlers cap bodies at 8 KB themselves. Say so here too, so a flood cannot
+    # be made of large bodies.
+    nginx.ingress.kubernetes.io/proxy-body-size: 16k
+    # /v1/mint is unauthenticated by design (every input is minted by the
+    # phone, so there is no prior secret to authenticate with). What it must
+    # not be is an amplifier: bound it at the edge rather than trusting every
+    # caller to be a phone at launch.
+    nginx.ingress.kubernetes.io/limit-rps: "5"
+    nginx.ingress.kubernetes.io/limit-burst-multiplier: "3"
+    nginx.ingress.kubernetes.io/limit-connections: "20"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts: [push.moshpit.cluas.eu.org]
+      secretName: moshpit-push-relay-tls
+  rules:
+    - host: push.moshpit.cluas.eu.org
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: moshpit-push-relay
+                port:
+                  name: http

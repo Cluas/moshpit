@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Privacy manifest for the MoshpitIsland widget extension, which ships as its
+  own bundle inside the app and therefore carries its own declaration.
+
+  The extension reaches one required-reason API: UserDefaults, and only through
+  the App Group suite it shares with the app (Island/AgentWidgetState.swift is
+  compiled into both targets) — hence 1C8F.1 alone, without the app-only
+  CA92.1 that the containing app also needs.
+
+  Like the app: collects nothing, tracks nothing. The Live Activity is driven
+  entirely from state the app writes into the shared App Group container.
+-->
+<plist version="1.0">
+<dict>
+	<key>NSPrivacyTracking</key>
+	<false/>
+	<key>NSPrivacyTrackingDomains</key>
+	<array/>
+	<key>NSPrivacyCollectedDataTypes</key>
+	<array/>
+	<key>NSPrivacyAccessedAPITypes</key>
+	<array>
+		<dict>
+			<key>NSPrivacyAccessedAPIType</key>
+			<string>NSPrivacyAccessedAPICategoryUserDefaults</string>
+			<key>NSPrivacyAccessedAPITypeReasons</key>
+			<array>
+				<string>1C8F.1</string>
+			</array>
+		</dict>
+	</array>
+</dict>
+</plist>

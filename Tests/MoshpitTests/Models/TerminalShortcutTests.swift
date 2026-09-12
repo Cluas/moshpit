@@ -1,0 +1,528 @@
+import Foundation
+import Testing
+@testable import Moshpit
+
+@Suite("TerminalShortcut encoding")
+struct TerminalShortcutEncodingTests {
+
+    private func combo(_ mods: Set<ShortcutModifier>, _ key: String) -> TerminalShortcut {
+        var sc = TerminalShortcut()
+        sc.kind = .keyCombo
+        sc.modifiers = mods
+        sc.key = key
+        return sc
+    }
+
+    @Test("named keys encode to their control bytes")
+    func namedKeys() throws {
+        #expect(combo([], "esc").encodedBytes() == Data([0x1B]))
+        #expect(combo([], "tab").encodedBytes() == Data([0x09]))
+        #expect(combo([], "return").encodedBytes() == Data([0x0D]))
+        #expect(combo([], "space").encodedBytes() == Data([0x20]))
+    }
+
+    @Test("arrow keys encode to CSI sequences")
+    func arrows() throws {
+        #expect(combo([], "up").encodedBytes() == Data([0x1B, 0x5B, 0x41]))
+        #expect(combo([], "down").encodedBytes() == Data([0x1B, 0x5B, 0x42]))
+        #expect(combo([], "right").encodedBytes() == Data([0x1B, 0x5B, 0x43]))
+        #expect(combo([], "left").encodedBytes() == Data([0x1B, 0x5B, 0x44]))
+    }
+
+    @Test("ctrl+letter maps to the C0 control byte")
+    func ctrlLetters() throws {
+        #expect(combo([.ctrl], "c").encodedBytes() == Data([0x03]))  // ^C SIGINT
+        #expect(combo([.ctrl], "d").encodedBytes() == Data([0x04]))  // ^D EOF
+        #expect(combo([.ctrl], "r").encodedBytes() == Data([0x12]))  // ^R rev-search
+        #expect(combo([.ctrl], "l").encodedBytes() == Data([0x0C]))  // ^L clear
+        #expect(combo([.ctrl], "a").encodedBytes() == Data([0x01]))
+    }
+
+    @Test("alt prefixes the byte with ESC (meta)")
+    func altMeta() throws {
+        #expect(combo([.alt], "b").encodedBytes() == Data([0x1B, 0x62]))
+    }
+
+    @Test("text shortcut sends literal bytes; appendReturn adds CR")
+    func textKind() throws {
+        var sc = TerminalShortcut()
+        sc.kind = .text
+        sc.payload = "git status"
+        #expect(sc.encodedBytes() == Data("git status".utf8))
+        sc.appendReturn = true
+        #expect(sc.encodedBytes() == Data("git status\r".utf8))
+    }
+
+    @Test("command shortcut always terminates with CR")
+    func commandKind() throws {
+        var sc = TerminalShortcut()
+        sc.kind = .command
+        sc.payload = "claude --resume"
+        #expect(sc.encodedBytes() == Data("claude --resume\r".utf8))
+    }
+
+    @Test("escape sequences in payloads are unescaped")
+    func escapes() throws {
+        var sc = TerminalShortcut()
+        sc.kind = .text
+        sc.payload = #"a\tb\r\e"#
+        #expect(sc.encodedBytes() == Data([0x61, 0x09, 0x62, 0x0D, 0x1B]))
+    }
+
+    @Test("the bulk-clear keys encode to their readline control bytes")
+    func killLineKeys() throws {
+        // ^U kills to line start, ^K to line end — one keystroke each, versus
+        // holding backspace for one tmux round trip PER character.
+        #expect(combo([.ctrl], "u").encodedBytes() == Data([0x15]))
+        #expect(combo([.ctrl], "k").encodedBytes() == Data([0x0B]))
+        let builtins = ShortcutStore.builtins
+        #expect(builtins.contains { $0.chipLabel == "^U" })
+        #expect(builtins.contains { $0.chipLabel == "^K" })
+    }
+
+    @Test("Return encodes to CR")
+    func returnKey() throws {
+        #expect(combo([], "return").encodedBytes() == Data([0x0D]))
+        #expect(combo([], "enter").encodedBytes() == Data([0x0D]))
+    }
+
+    @Test("The Claude Code two-step sends Tab then Return, in that order")
+    func tabThenEnter() throws {
+        // Accepting a suggested prompt is Tab followed by Return, and the
+        // order is the whole point — so one chip can do both.
+        let sc = try #require(ShortcutStore.builtins.first { $0.chipLabel == "⇥⏎" })
+        #expect(sc.kind == .text)
+        #expect(sc.encodedBytes() == Data([0x09, 0x0D]))
+        // Must NOT append its own CR on top — that would submit twice.
+        #expect(sc.appendReturn == false)
+        #expect(sc.isBuiltin)
+        // …and as TWO writes. Reported as "tab + enter only did the tab":
+        // arriving in one read, the Return reads as pasted text and lands as a
+        // newline in the input box instead of submitting.
+        #expect(sc.encodedStages() == [Data([0x09]), Data([0x0D])])
+    }
+
+    @Test("only control-byte payloads split; text stays one write")
+    func onlyKeySequencesSplit() {
+        func text(_ payload: String) -> TerminalShortcut {
+            var sc = TerminalShortcut()
+            sc.kind = .text
+            sc.payload = payload
+            return sc
+        }
+        // Typing a command IS one string to the shell — splitting it would put
+        // 120ms between every character.
+        #expect(text("git status").encodedStages() == [Data("git status".utf8)])
+        #expect(text("git status").sendsDiscreteKeys == false)
+        // A lone key has nothing to pace against.
+        #expect(text(#"\r"#).encodedStages() == [Data([0x0D])])
+        // Mixed content is text with a submit on the end, not a key run.
+        #expect(text(#"deploy\r"#).sendsDiscreteKeys == false)
+        // Escape-then-key runs split like ⇥⏎ does.
+        #expect(text(#"\e\r"#).encodedStages() == [Data([0x1B]), Data([0x0D])])
+    }
+
+    @Test("ctrl (like dpad/scroll) has no bytes of its own — resolved by the caller")
+    func ctrlKindEncodesNothing() throws {
+        var sc = TerminalShortcut()
+        sc.kind = .ctrl
+        #expect(sc.encodedBytes() == nil)
+    }
+
+    @Test("modifiers sort ⌃⌥⇧⌘, the order macOS writes them")
+    func modifierOrder() {
+        // Pins the order now that `<` reads it off an exhaustive switch instead
+        // of searching a lookup table with a force-unwrapped firstIndex.
+        let scrambled: [ShortcutModifier] = [.cmd, .shift, .alt, .ctrl]
+        let expected: [ShortcutModifier] = [.ctrl, .alt, .shift, .cmd]
+        #expect(scrambled.sorted() == expected)
+        #expect(ShortcutModifier.allCases.sorted() == expected)
+    }
+
+    @Test("the arrow cluster has no bytes of its own — its zones route through onArrow")
+    func arrowsKindEncodesNothing() throws {
+        var sc = TerminalShortcut()
+        sc.kind = .arrows
+        // Deliberately nil rather than a CSI: the bar's `onArrow` encodes for
+        // the remote's *current* cursor-key mode, and a fixed sequence here
+        // would break history search in application-cursor-mode shells.
+        #expect(sc.encodedBytes() == nil)
+    }
+}
+
+@Suite("ShortcutStore")
+struct ShortcutStoreTests {
+
+    /// A persisted set as it looked before the mic became a chip: today's
+    /// builtins minus the mic, with ^L put back in the bar where it was.
+    ///
+    /// Reconstructed rather than taken from `builtins` as-is — ^L now ships
+    /// out of the bar, so a plain filter would seed a toolbar that already
+    /// lacks it and every assertion about the migration would pass without
+    /// the migration doing anything.
+    ///
+    /// Note the `.arrows` filter: the cluster postdates this era entirely. It
+    /// ships out of the bar, so leaving it in wouldn't disturb the toolbar
+    /// order — but the `staleDefault` check this fixture exists to trip compares
+    /// toolbar summaries **in order**, and seeding a set with an entry that era
+    /// never had is how a fixture stops describing the thing it's named after.
+    private static func preMicDefaults() -> [TerminalShortcut] {
+        // A persisted set from BEFORE the mic joined the bar. Built by
+        // filtering today's builtins, which means every builtin added since
+        // must be filtered out here too — when the image chip joined the
+        // defaults it silently appeared in this "old" fixture, the toolbar
+        // stopped matching the migration's stale-default guard, and both
+        // migration tests failed against migration code that was fine.
+        ShortcutStore.builtins
+            .filter { $0.kind != .mic && $0.kind != .arrows && $0.kind != .image }
+            .map { shortcut in
+                var restored = shortcut
+                if restored.summary == "Clear screen" { restored.inToolbar = true }
+                return restored
+            }
+    }
+
+    private func freshStore() -> ShortcutStore {
+        let suite = "test.shortcuts.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+        return ShortcutStore(defaults: defaults)
+    }
+
+    @Test("seeds a lean default toolbar: esc, tab, interrupt, paste, arrows, mic, img")
+    func defaultToolbar() throws {
+        let store = freshStore()
+        let labels = store.toolbar.map(\.chipLabel)
+        let allBuiltin = store.available.allSatisfy(\.isBuiltin)
+        // The handful of keys actually reached for constantly. Ctrl and the
+        // scroll thumb start outside the bar (available to add back), along
+        // with everything else that used to be a default (^D, ^R, ⌃End, ⇧Tab).
+        // The mic trails the row: it used to be pinned outside the scroll at
+        // the trailing edge, so this is where it already appeared. The image
+        // chip trails even that — same "attach something" family as the mic,
+        // added to the defaults with the M1 image-attach feature.
+        #expect(store.toolbarCount == 7)
+        #expect(labels == ["esc", "tab", "^C", "paste", "✛", "mic", "img"])
+        #expect(store.toolbar.last?.kind == .image)
+        #expect(store.available.contains { $0.kind == .ctrl })
+        #expect(store.available.contains { $0.kind == .scroll })
+        #expect(allBuiltin)
+    }
+
+    @Test("the core editing keys always fit a phone-width row")
+    func defaultToolbarCoreKeysFitOnScreen() throws {
+        // The contract CHANGED when the image chip joined the defaults: the
+        // full default row now deliberately exceeds a 402pt phone, because
+        // every honest alternative was worse — no default chip is evictable
+        // the way ^L was (each is a feature's only always-visible door), and
+        // shaving chip metrics couldn't recover the 52pt a chip costs. What
+        // made the overflow acceptable is the bar's edge behaviour: a crisply
+        // hard-clipped chip that pans into reach (the old edge FADE sat mid-
+        // glyph at rest and read as a rendering bug — user report, 2026-08-16).
+        //
+        // The invariant that remains load-bearing: the CORE editing keys —
+        // everything up to and including the D-pad — must sit fully inside
+        // the row at rest, so nothing you type/steer with ever needs a
+        // scroll. Trailing feature chips (mic, img) are allowed past the
+        // edge. Widths mirror the layout: chips 46pt (D-pad 42), 6pt gaps,
+        // 8pt leading inset; the pinned keyboard toggle occupies 54pt
+        // (4 + 42 + 8) of a 402pt screen.
+        let store = freshStore()
+        let dpad = try #require(store.toolbar.firstIndex { $0.kind == .dpad })
+        let core = store.toolbar[...dpad]
+        let width = core.reduce(CGFloat(8)) { total, shortcut in
+            total + (shortcut.kind == .dpad ? 42 : 46) + 6
+        }
+        #expect(width <= 402 - 54, "core keys overflow: \(width)pt")
+        // And the feature chips are where the contract expects them — at the
+        // trailing edge, where clipping only ever hides a re-openable door.
+        #expect(store.toolbar.last?.kind == .image)
+    }
+
+    @Test("the tap-first cluster ships available but out of the bar")
+    func tapArrowsAvailableNotDefault() throws {
+        let store = freshStore()
+        // The joystick keeps the default slot: one chip for four directions,
+        // where the cluster's four zones cost ~2.5 and overflow a phone row.
+        // The cluster is the answer to "a tap can't carry a direction", so it
+        // has to be reachable — just not at the cost of the default layout.
+        let cluster = try #require(store.shortcuts.first { $0.kind == .arrows })
+        #expect(!cluster.inToolbar)
+        #expect(store.available.contains { $0.kind == .arrows })
+        #expect(store.toolbar.contains { $0.kind == .dpad })
+        // Distinct summaries, because summary is the identity the builtin
+        // catch-all migration keys on — two "Arrow keys" would make it inject
+        // duplicates for anyone upgrading.
+        #expect(cluster.summary != store.toolbar.first { $0.kind == .dpad }?.summary)
+    }
+
+    @Test("all four arrows exist as individual chips, outside the bar")
+    func individualArrowBuiltinsExist() throws {
+        let store = freshStore()
+        // ← and → had no chip at all before the cluster landed — the joystick
+        // was the only way to move a cursor sideways, which is the press-and-
+        // hold complaint in its purest form.
+        for key in ["up", "down", "left", "right"] {
+            let sc = try #require(store.shortcuts.first { $0.kind == .keyCombo && $0.key == key },
+                                  "no builtin chip for \(key)")
+            #expect(sc.repeatOnHold, "\(key) should hold-to-repeat like a hardware key")
+            #expect(!sc.inToolbar, "the cluster covers all four; single chips stay available")
+        }
+    }
+
+    @Test("migration injects ctrl + the D-pad for a persisted set that predates them")
+    func migratesDpad() throws {
+        let suite = "test.shortcuts.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+        // Seed an old persisted set with one builtin and NO D-pad/ctrl.
+        var esc = TerminalShortcut()
+        esc.kind = .keyCombo; esc.key = "esc"; esc.chipLabel = "esc"
+        esc.isBuiltin = true; esc.inToolbar = true
+        let data = try JSONEncoder().encode([esc])
+        defaults.set(data, forKey: "moshpit.shortcuts.v1")
+
+        let store = ShortcutStore(defaults: defaults)
+        // dpad joins the toolbar (its own current default); ctrl is injected
+        // too but — like its own current default — starts outside the bar.
+        #expect(store.toolbar.first?.kind == .dpad)
+        #expect(store.shortcuts.contains { $0.kind == .ctrl })
+        #expect(store.available.contains { $0.kind == .ctrl })
+        #expect(store.toolbar.contains { $0.chipLabel == "esc" })
+        // And the tap-first cluster arrives as an available alternative, without
+        // touching the bar — no migration step of its own, just the catch-all.
+        #expect(store.available.contains { $0.kind == .arrows })
+    }
+
+    @Test("migration moves the mic into the bar for a set that predates the chip")
+    func migratesMic() throws {
+        let suite = "test.shortcuts.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+        defaults.set(try JSONEncoder().encode(Self.preMicDefaults()),
+                     forKey: "moshpit.shortcuts.v1")
+
+        let store = ShortcutStore(defaults: defaults)
+        // It has to arrive IN the bar: the key was always visible before, and
+        // an upgrade that quietly hides it reads as the feature being removed.
+        #expect(store.toolbar.contains { $0.kind == .mic })
+        // At the trailing edge, which is where the pinned key already sat — so
+        // no existing chip shifts under the user's thumb. The image chip (a
+        // later builtin, injected by the summary-keyed catch-all AFTER this
+        // migration) lands behind it, so the tail reads [mic, img].
+        #expect(store.toolbar.suffix(2).map(\.kind) == [.mic, .image])
+        // And it makes room for itself rather than overflowing the row.
+        #expect(!store.toolbar.contains { $0.chipLabel == "^L" })
+        #expect(store.available.contains { $0.chipLabel == "^L" })
+    }
+
+    @Test("a bar that already grew a mic still gets its slot freed")
+    func clearScreenLeavesEvenWhenMicAlreadyPresent() throws {
+        let suite = "test.shortcuts.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+        // The intermediate state: mic already injected, ^L still in the bar,
+        // seven chips wide. Reachable by anyone who ran a build between the
+        // two changes, and the reason the ^L step can't hang off the mic
+        // injection — that branch never runs again once a mic exists.
+        var previous = Self.preMicDefaults()
+        var mic = try #require(ShortcutStore.builtins.first { $0.kind == .mic })
+        mic.inToolbar = true
+        previous.append(mic)
+        defaults.set(try JSONEncoder().encode(previous), forKey: "moshpit.shortcuts.v1")
+
+        let store = ShortcutStore(defaults: defaults)
+        // Six after ^L leaves, plus the image chip the catch-all injects
+        // behind the mic (it postdates this whole migration era).
+        #expect(store.toolbarCount == 7)
+        #expect(!store.toolbar.contains { $0.chipLabel == "^L" })
+        #expect(store.toolbar.suffix(2).map(\.kind) == [.mic, .image])
+    }
+
+    @Test("a customized toolbar keeps every key the user put in it")
+    func micMigrationSparesCustomizedBars() throws {
+        let suite = "test.shortcuts.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+        // Same era as the migration above, but the user rearranged it: ^L
+        // moved to the front and a custom chip added. Freeing a slot by
+        // deleting a shortcut someone deliberately placed is worse than a row
+        // they have to drag, so the ^L removal must not fire here.
+        var previous = Self.preMicDefaults()
+        if let clear = previous.firstIndex(where: { $0.summary == "Clear screen" }) {
+            previous.insert(previous.remove(at: clear), at: 0)
+        }
+        var custom = TerminalShortcut()
+        custom.kind = .command; custom.payload = "claude"; custom.chipLabel = "clm"
+        custom.isBuiltin = false; custom.inToolbar = true
+        previous.append(custom)
+        defaults.set(try JSONEncoder().encode(previous), forKey: "moshpit.shortcuts.v1")
+
+        let store = ShortcutStore(defaults: defaults)
+        #expect(store.toolbar.contains { $0.chipLabel == "^L" })
+        #expect(store.toolbar.contains { $0.chipLabel == "clm" })
+        #expect(store.toolbar.contains { $0.kind == .mic })
+    }
+
+    @Test("a full toolbar keeps the mic out of the bar rather than over-filling it")
+    func micRespectsToolbarCap() throws {
+        let suite = "test.shortcuts.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+        // 12 chips already in the bar — the cap — and no mic.
+        let full = (0 ..< ShortcutStore.toolbarLimit).map { i -> TerminalShortcut in
+            var sc = TerminalShortcut()
+            sc.kind = .keyCombo; sc.key = "\(i)"; sc.chipLabel = "k\(i)"
+            sc.isBuiltin = false; sc.inToolbar = true
+            return sc
+        }
+        defaults.set(try JSONEncoder().encode(full), forKey: "moshpit.shortcuts.v1")
+
+        let store = ShortcutStore(defaults: defaults)
+        #expect(store.toolbarCount == ShortcutStore.toolbarLimit)
+        #expect(!store.toolbar.contains { $0.kind == .mic })
+        // Present but parked, so the editor can offer it rather than it
+        // vanishing without trace.
+        #expect(store.shortcuts.contains { $0.kind == .mic })
+    }
+
+    @Test("toolbar is capped at 12 slots")
+    func toolbarCap() throws {
+        let store = freshStore()
+        // Add customs until full; the 13th should not enter the toolbar.
+        for i in 0..<10 {
+            var sc = TerminalShortcut()
+            sc.chipLabel = "c\(i)"
+            sc.kind = .text
+            sc.payload = "x"
+            store.add(sc)
+        }
+        let overflow = store.custom.filter { !$0.inToolbar }
+        #expect(store.toolbarCount == ShortcutStore.toolbarLimit)
+        #expect(overflow.isEmpty == false, "shortcuts beyond 12 stay out of the toolbar")
+    }
+
+    @Test("remove takes a builtin out of the toolbar but keeps it available")
+    func removeBuiltin() throws {
+        let store = freshStore()
+        let esc = store.toolbar.first { $0.chipLabel == "esc" }!
+        store.removeFromToolbar(id: esc.id)
+        let inToolbar = store.toolbar.contains { $0.chipLabel == "esc" }
+        let inAvailable = store.available.contains { $0.chipLabel == "esc" }
+        #expect(!inToolbar)
+        #expect(inAvailable)
+    }
+
+    @Test("scope filter hides host-scoped shortcuts on other hosts")
+    func scopeFilter() throws {
+        let store = freshStore()
+        var scoped = TerminalShortcut()
+        scoped.chipLabel = "⌘B"
+        scoped.kind = .command
+        scoped.payload = "tmux"
+        scoped.scopeHosts = ["work"]
+        store.add(scoped)
+
+        let onWork = store.toolbar(forHost: "work", inMultiplexer: false).contains { $0.chipLabel == "⌘B" }
+        let onOther = store.toolbar(forHost: "rednote", inMultiplexer: false).contains { $0.chipLabel == "⌘B" }
+        #expect(onWork == true)
+        #expect(onOther == false)
+    }
+
+    @Test("only-in-tmux shortcuts are hidden outside tmux")
+    func tmuxOnlyFilter() throws {
+        let store = freshStore()
+        var sc = TerminalShortcut()
+        sc.chipLabel = "clm"
+        sc.kind = .command
+        sc.payload = "claude"
+        sc.onlyInTmux = true
+        store.add(sc)
+        let inMultiplexer = store.toolbar(forHost: nil, inMultiplexer: true).contains { $0.chipLabel == "clm" }
+        let outsideMultiplexer = store.toolbar(forHost: nil, inMultiplexer: false).contains { $0.chipLabel == "clm" }
+        #expect(inMultiplexer == true)
+        #expect(outsideMultiplexer == false)
+    }
+
+    @Test("named CSI keys encode with xterm modifiers (⌃End jumps Claude Code to the live end)")
+    func namedKeyEncoding() {
+        func bytes(mods: Set<ShortcutModifier> = [], key: String) -> [UInt8] {
+            var sc = TerminalShortcut()
+            sc.kind = .keyCombo
+            sc.modifiers = mods
+            sc.key = key
+            return sc.encodedBytes().map(Array.init) ?? []
+        }
+        #expect(bytes(mods: [.ctrl], key: "end") == Array("\u{1B}[1;5F".utf8))
+        #expect(bytes(key: "end") == Array("\u{1B}[F".utf8))
+        #expect(bytes(key: "home") == Array("\u{1B}[H".utf8))
+        #expect(bytes(mods: [.shift], key: "tab") == Array("\u{1B}[Z".utf8))
+        #expect(bytes(key: "pgup") == Array("\u{1B}[5~".utf8))
+        #expect(bytes(mods: [.ctrl], key: "pgdn") == Array("\u{1B}[6;5~".utf8))
+        // Plain arrows keep their historic encoding; ctrl adds word-jump.
+        #expect(bytes(key: "up") == Array("\u{1B}[A".utf8))
+        #expect(bytes(mods: [.ctrl], key: "left") == Array("\u{1B}[1;5D".utf8))
+    }
+
+    @Test("new builtins are injected into a persisted pre-existing set")
+    func builtinInjection() {
+        let suite = "test.shortcuts.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+
+        // Persist an OLD set that predates ⌃End/⇧Tab (drop them + the
+        // available-list named keys), bypassing the store so no migration
+        // runs yet. Key mirrors ShortcutStore.storageKey.
+        let pruned = ShortcutStore.builtins.filter {
+            !["Jump to end", "Back-tab / toggle mode", "End", "Home",
+              "Page up", "Page down"].contains($0.summary)
+        }
+        defaults.set(try! JSONEncoder().encode(pruned), forKey: "moshpit.shortcuts.v1")
+
+        // A fresh store over the same defaults must inject the new builtins.
+        // "Jump to end" isn't one of the current 6 default-bar items, so the
+        // injected copy starts outside the toolbar, like its own current default.
+        let migrated = ShortcutStore(defaults: defaults)
+        #expect(migrated.shortcuts.contains { $0.summary == "Jump to end" && !$0.inToolbar })
+        #expect(migrated.shortcuts.contains { $0.summary == "Back-tab / toggle mode" })
+        #expect(migrated.shortcuts.contains { $0.summary == "Page down" })
+    }
+
+    @Test("migration injects ctrl for a set that already has everything else, outside the toolbar")
+    func migratesCtrlAheadOfExistingSet() throws {
+        let suite = "test.shortcuts.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+
+        // A realistic pre-existing set: every current builtin except ctrl
+        // (ctrl postdates it), bypassing the store so no migration runs yet.
+        let pruned = ShortcutStore.builtins.filter { $0.kind != .ctrl }
+        defaults.set(try! JSONEncoder().encode(pruned), forKey: "moshpit.shortcuts.v1")
+
+        // ctrl is a builtin now, like any other — it's added for a set that
+        // predates it, but (like its own current default) starts outside the
+        // toolbar rather than force-inserted ahead of everything else.
+        let migrated = ShortcutStore(defaults: defaults)
+        #expect(migrated.shortcuts.contains { $0.kind == .ctrl })
+        #expect(migrated.available.contains { $0.kind == .ctrl })
+        #expect(!migrated.toolbar.contains { $0.kind == .ctrl })
+    }
+
+    @Test("custom shortcuts persist across store instances")
+    func persistence() throws {
+        let suite = "test.shortcuts.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+
+        let writer = ShortcutStore(defaults: defaults)
+        var sc = TerminalShortcut()
+        sc.chipLabel = "GP"
+        sc.kind = .command
+        sc.payload = "git push"
+        writer.add(sc)
+
+        let reader = ShortcutStore(defaults: defaults)
+        let persisted = reader.custom.contains { $0.chipLabel == "GP" }
+        #expect(persisted)
+    }
+}

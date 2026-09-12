@@ -1,0 +1,91 @@
+[r[0m[H[2J[?25l[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K[1;1H[?25h[0m[?2004l[?1003l[?1002l[?1001l[?1000l[?1004l[?1015l[?1006l[?1005l01 ascii  the quick brown fox jumps over the lazy dog        [?25l
+02 cjk-fit 你好世界你好世界你好世界你好世界你好世界你好世界你好世界你好世界你好世界
+03 cjk-odd 汉字宽度汉字宽度汉字宽度汉字宽度汉字宽度汉字宽度汉字宽度汉字宽度汉字宽度汉字宽
+度汉字宽度
+04 inv-mid abc[0;7m [0mdef
+05 inv-cjk 你好[0;7m [0m世界
+06 inv-eol                                                                               [0;7m 
+[0m07 inv-wide [0;7m汉字[0m tail
+08 bce [0;41mred[K
+[0m09 box ╭────────────╮
+10 box │ 你好, world │
+11 box ╰────────────╯
+12 glyph ⏺ ✻ ✽ ⎿ → … ✓ ✗ ● ○ ▪ ⧉ │
+13 emoji 🎉 🚀 ✅ 🔥 ⚠️ end
+14 para 我需要你帮我在这个 Swift 项目里定位一个渲染 bug，终端里会出现光标大小的白块 white[15;90H blocks，只在切换 tmux pane 之后才出现，initial paint is clean。
+15 tail 结尾空格          [24;1H20 half1 前缀你好世界结尾 ABC
+21 half2 前缀你好世界结尾 ABC
+22 widen 前缀ab好世界结尾 ABC
+23 shrink [0;7m                              [0m|end
+24 grow   [0;7m          [0m                    |end
+25 invtail  [0;7m                                                                              
+[0m26 bgtail   [0;44m                                                                              
+[0m27 parity 宽字宽字宽字宽字宽字宽字宽字宽字宽字宽字宽字宽字宽字宽字宽字宽字宽字宽字宽字宽
+28 caret 命令行[0;7m [0m提示符
+29 lastch 内容内容内容内容内容内容内容内容内容内容内容内容内容内容内容内容内容内容内容甲
+S01 orphan                                                                             [0;7m汉
+[0mS02 orphan                                                                            [0;7m汉
+[0mS03 orphan                                                                           [0;7m汉
+[0mS04 orphan                                                                          [0;7m汉
+[0mS05 orphan                                                                         [0;7m汉
+[0mS06 orphan                                                                        [0;7m汉
+[0mS07 orphan                                                                       [0;7m汉
+[0mS08 orphan                                                                      [0;7m汉
+[0mT01 narrow                                                                             [0;7m汉
+[0mT02 narrow                                                                            [0;7m汉
+[0mT03 narrow                                                                           [0;7m汉
+[0mT04 narrow                                                                          [0;7m汉
+[0mT05 narrow                                                                         [0;7m汉
+[0mT06 narrow                                                                        [0;7m汉
+[0mT07 narrow                                                                       [0;7m汉
+[0mT08 narrow                                                                      [0;7m汉
+[?25h[0m[?2004h

@@ -1,0 +1,50 @@
+P2-01 第二个窗格 測試測試測試測試測試
+P2-02 第二个窗格 測試測試測試測試測試
+P2-03 第二个窗格 測試測試測試測試測試
+P2-04 第二个窗格 測試測試測試測試測試
+P2-05 第二个窗格 測試測試測試測試測試
+P2-06 第二个窗格 測試測試測試測試測試
+P2-07 第二个窗格 測試測試測試測試測試
+P2-08 第二个窗格 測試測試測試測試測試
+P2-09 第二个窗格 測試測試測試測試測試
+P2-10 第二个窗格 測試測試測試測試測試
+P2-11 第二个窗格 測試測試測試測試測試
+P2-12 第二个窗格 測試測試測試測試測試
+P2-13 第二个窗格 測試測試測試測試測試
+P2-14 第二个窗格 測試測試測試測試測試
+P2-15 第二个窗格 測試測試測試測試測試
+
+
+
+
+
+
+
+
+20 half1 前缀X好世界结尾 ABC
+21 half2 前缀你X世界结尾 ABC
+22 widen 前缀你好世界结尾 ABC
+23 shrink [7m          [0m                    |end
+24 grow   [7m                              [0m|end
+25 invtail  plain tail, nothing set
+26 bgtail   plain tail, nothing set
+27 parity x宽字宽字宽字宽字宽字宽字宽字宽字宽字宽字宽字宽字宽字宽字宽字宽字宽字宽字宽字
+28 caret 命令行 [7m提[0m示符
+29 lastch 内容内容内容内容内容内容内容内容内容内容内容内容内容内容内容内容内容内容内容乙
+S01 orphan                                                                             a
+S02 orphan                                                                            a
+S03 orphan                                                                           a
+S04 orphan                                                                          a
+S05 orphan                                                                         a
+S06 orphan                                                                        a
+S07 orphan                                                                       a
+S08 orphan                                                                      a
+T01 narrow                                                                             ab
+T02 narrow                                                                            ab
+T03 narrow                                                                           ab
+T04 narrow                                                                          ab
+T05 narrow                                                                         ab
+T06 narrow                                                                        ab
+T07 narrow                                                                       ab
+T08 narrow                                                                      ab
+

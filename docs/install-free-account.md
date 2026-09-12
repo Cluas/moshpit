@@ -1,0 +1,137 @@
+# 本地安装 Moshpit 到 iPhone(免费 Apple 开发者账号)
+
+免费 Apple ID 足以把 Moshpit 装到你自己的 iPhone——没有推送、没有后台模式,Live Activity
+只是个 Info.plist 开关。唯一的 entitlement 是一个 App Group(`group.com.cluas.moshpit`,
+主 App 与灵动岛扩展靠它共享 Agent 状态);免费账号签它偶尔会失败,遇到就看下面「常见问题」
+里剥掉扩展只验主 App 的做法。
+
+## 免费账号能做 / 不能做
+
+| ✅ 可以 | ❌ 不行 |
+|---|---|
+| 装到自己配对过的 iPhone | TestFlight / 对外分发 |
+| mosh + SSH + tmux 全功能 | 后台远程推送(我们不用) |
+| 本地通知 + 灵动岛 Live Activity | App 不在同一网络时远程安装 |
+
+**硬限制(记住)**:① App **7 天过期**,过期后图标在但打不开,重新 ⌘R 一次即可续(数据保留)。② 同时最多 **3 个**自签 App。③ 每 7 天最多 10 个 App ID(Moshpit 占 2 个:主 App + 灵动岛扩展)。
+
+---
+
+## A. 一次性准备(在 Mac 上,手机可不在场)
+
+1. **加 Apple ID**:Xcode ▸ Settings ▸ Accounts ▸ 左下 `+` ▸ Apple ID ▸ 登录。
+   登录后会自动出现一个 **"(Personal Team)"**。
+
+2. **拿到 Team ID**(10 位):
+   ```bash
+   ./scripts/release/team-id.sh
+   ```
+   若提示还没有 team:先在 Xcode 里打开 `Moshpit.xcodeproj`,选 **Moshpit** target ▸
+   Signing & Capabilities ▸ Team 下拉选你的 Personal Team(这一步会触发 Xcode
+   创建证书),再跑一次脚本。
+
+3. **填进签名配置**(让重新生成工程也不丢):
+   编辑根目录 `Signing.xcconfig`,把 Team ID 填到 `DEVELOPMENT_TEAM =` 后面。
+   然后:
+   ```bash
+   xcodegen generate
+   git update-index --skip-worktree Signing.xcconfig   # 防止 Team ID 误入 git
+   ```
+
+> 为什么走 xcconfig:本项目用 xcodegen 生成 `.xcodeproj`,每次 `xcodegen generate`
+> 都会重置工程——若只在 Xcode GUI 里选 Team,下次生成就丢了。写进 `Signing.xcconfig`
+> 才持久。
+
+---
+
+## B. 装到手机(手机需在场:USB 线,或与 Mac 同一 Wi-Fi)
+
+4. **手机开开发者模式**:设置 ▸ 隐私与安全性 ▸ 开发者模式 ▸ 打开 ▸ 重启。
+   (iOS 16+ 首次部署时 Xcode 也会提示你开。)
+
+5. **连接**:USB 接上,手机弹窗点"信任此电脑"。或同 Wi-Fi 下 Xcode ▸ Window ▸
+   Devices and Simulators 里勾 "Connect via network"。
+
+6. **运行**:Xcode 顶部设备选择器选你的 iPhone ▸ 按 **⌘R**。
+   首次会自动注册设备、生成 Personal Team 的 provisioning profile。
+
+7. **信任证书**:首次启动会被拦截 → 手机 ▸ 设置 ▸ 通用 ▸ VPN 与设备管理 ▸
+   点你的开发者 App ▸ 信任 ▸ 回到 App 再启动即可。
+
+---
+
+## C. 命令行安装(可选,完成 B 的首次 GUI 运行之后)
+
+首次务必用 Xcode GUI ⌘R(它负责注册设备 + 建 profile)。之后可纯命令行:
+
+```bash
+# 设备 UDID:xcrun devicectl list devices
+xcodebuild -project Moshpit.xcodeproj -scheme Moshpit -configuration Debug \
+  -destination 'generic/platform=iOS' \
+  -derivedDataPath build/Device -allowProvisioningUpdates build
+
+xcrun devicectl device install app --device <UDID> \
+  build/Device/Build/Products/Debug-iphoneos/Moshpit.app
+```
+
+---
+
+## D. 用 AltStore 自动续签(免去每周手动 ⌘R)
+
+7 天过期是免费账号最烦的点。**AltStore 正是为此而生**:它用你的免费 Apple ID
+侧载,并由常驻电脑的 **AltServer** 在后台、过期前自动重新签名,你无需每周手动重装。
+好处:**这条路连 `Signing.xcconfig` 的 Team ID 都不用填**——签名由 AltStore 用它自己
+登录的 Apple ID 完成。
+
+1. **出包**(未签名 .ipa,含灵动岛扩展):
+   ```bash
+   ./scripts/release/build-ipa.sh        # → build/Moshpit.ipa(约 9 MB)
+   ```
+2. **装 AltStore**:Mac/PC 装 [AltServer](https://altstore.io),手机装 AltStore,
+   在 AltStore 里用你的 Apple ID 登录。
+3. **侧载**:把 `build/Moshpit.ipa` 拖进 AltStore(或 `altserver -u <UDID> build/Moshpit.ipa`)。
+   AltStore 用你的 Apple ID 重签后安装。
+4. **开自动续签**:AltStore ▸ Settings ▸ 打开 Background Refresh。让 AltServer 在
+   电脑常驻,手机与电脑同一 Wi-Fi(并开启设备的 Wi-Fi 同步)即可后台续签。
+
+**前提与现实**:
+- AltServer 需要在一台电脑上常驻、且手机定期能与它同网可达——后台刷新才会发生;
+  完全离线太久仍会过期(打开 App 触发一次前台刷新即可补上)。
+- AltStore 本身占用免费账号 3 个 App 名额里的 1 个(剩 2 个;Moshpit 是其中之一)。
+- 后台刷新不是 100% 可靠(iOS 后台调度 + 设备可达性所限),但比每周手动强得多。
+- **想完全摆脱"电脑常驻"**:用 [SideStore](https://sidestore.io)(AltStore 分支,
+  靠设备本地 WireGuard 回环续签,无需电脑在同一网络)。流程同上,出包脚本通用。
+- **Tailscale 内网能替代"同一 Wi-Fi"吗?基本不能**。经典 AltServer 靠局域网
+  Bonjour/mDNS(链路本地组播)发现设备,**组播不跨 Tailscale 的 L3 overlay**,所以
+  AltServer 隔着 Tailscale 通常发现不了手机;即便手动指定 IP,iOS 的 lockdownd 也未必
+  在 Tailscale 接口上可达。别指望它做后台续签。**续签请用 SideStore(设备本地,
+  与网络无关)**。Tailscale 真正的用武之地是下一条——连你的服务器。
+
+## 常见问题
+
+- **"Failed to register bundle identifier"** → `com.cluas.moshpit` 全球唯一被占用了。
+  改 `project.yml` 里 `com.cluas.moshpit` → 更独特的(如 `com.<你的标识>.moshpit`),
+  连带把 `.island` 后缀的扩展 id 一起改,`xcodegen generate` 后重试。
+- **灵动岛扩展签名报错** → 免费账号偶发。临时验证主 App:在 `project.yml` 的 Moshpit
+  target `dependencies` 里去掉 `MoshpitIsland` 那两行,generate 后只装主 App(会暂时
+  失去 Live Activity);确认主 App 能装后再加回来排查。
+- **装上后 7 天打不开** → 正常,重新 ⌘R 续签。
+- **想人不在家也能更新** → 免费账号做不到;升级 $99/年开发者账号后走 TestFlight(90 天)
+  或直接上架。
+- **签名报 "Push Notifications capability is not available"** → 免费个人账号签不了
+  推送。把 `project.yml` 里 Moshpit target entitlements 下的 `aps-environment:
+  development` 那一行注释掉,`xcodegen generate` 后重试;同理可以照灵动岛扩展那条把
+  `MoshpitPush` 从 `dependencies` 里去掉。代价是**远程推送整个失效**——agent 在你没
+  开着 App 时叫不到你(`docs/PUSH.md` 讲的就是这条链路)。App 开着时的灵动岛、本地
+  通知、锁屏 Allow/Deny 都不受影响,因为那条路不经过 APNs。
+  注意 `project.yml` 是 Info.plist 和 entitlements 的**唯一源头**:直接改生成出来的
+  `Moshpit.entitlements` 会在下次 generate 时被覆盖回去。
+- **签名报 Time Sensitive Notifications 相关的 capability 错误** → 同一个原因,同一个
+  做法:把 `project.yml` 里 `com.apple.developer.usernotifications.time-sensitive`
+  那一行注释掉再 `xcodegen generate`。这条 entitlement 让"agent 在等你批准"的通知能
+  **穿透专注模式**、不被定时摘要攒起来;去掉之后 App 照常工作,通知也照常来,只是会
+  和普通通知一样排在专注模式后面。App 和 relay 两边的代码都仍然会**请求**这个级别,
+  iOS 在没有 entitlement 时静默降级,不报错也不打日志——所以不用改任何代码。
+
+  注意这跟 Critical Alerts 不是一回事:后者(能无视静音键)要向 Apple 单独申请审批,
+  Moshpit 没用、也不打算用。

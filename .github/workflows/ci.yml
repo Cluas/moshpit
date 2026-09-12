@@ -1,0 +1,100 @@
+name: CI
+
+# Moshpit is an iOS 18 app whose Xcode project is generated from project.yml
+# by xcodegen (project.yml is the source of truth; Moshpit.xcodeproj is a
+# generated artifact), so CI regenerates it from scratch rather than trusting
+# the checked-in copy. Runs on every push to main and on pull requests; the
+# manual trigger stays for re-running a flaky simulator boot.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# Cancel superseded runs on the same ref so a fast-follow push doesn't pay for
+# a stale build.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-test:
+    name: Build & Test (iOS Simulator)
+    runs-on: macos-26
+
+    env:
+      # Local SPM checkout dir so downloaded packages can be cached across runs
+      # independently of DerivedData (which we intentionally do not cache).
+      SPM_CACHE_DIR: ${{ github.workspace }}/.spm-cache
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # The app DEPLOYS to iOS 18 but must COMPILE against the iOS 26 SDK:
+      # voice input references the SpeechAnalyzer/SpeechTranscriber family
+      # (DictationEngines.swift), which older SDKs simply don't declare —
+      # `@available(iOS 26)` guards the runtime, not the compile. Xcode 16.x
+      # therefore fails with "cannot find type 'SpeechTranscriber'", which is
+      # what broke every run while this job still pinned Xcode 16.4 on
+      # macos-15. Pick the newest 26.x on the image, falling back to the
+      # image's default Xcode.app (also 26.x on macos-26) if GitHub rotates
+      # the versioned paths.
+      - name: Select Xcode
+        run: |
+          XCODE=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1)
+          sudo xcode-select -s "${XCODE:-/Applications/Xcode.app}/Contents/Developer"
+          xcodebuild -version
+          echo "Available iOS simulators:"
+          xcrun simctl list devicetypes | grep -i iphone || true
+
+      - name: Install xcodegen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      # Cache the resolved SwiftPM checkouts keyed on Package.resolved. On a hit
+      # the resolve step below is essentially a no-op; on a miss it repopulates
+      # the cache. The key uses the committed Package.resolved (SwiftTerm is a
+      # pinned fork by revision, Citadel by version) so it only busts when a
+      # dependency actually changes.
+      - name: Cache SwiftPM packages
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.SPM_CACHE_DIR }}
+          key: spm-${{ runner.os }}-${{ hashFiles('Moshpit.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
+          restore-keys: |
+            spm-${{ runner.os }}-
+
+      - name: Resolve SwiftPM dependencies
+        run: |
+          xcodebuild -resolvePackageDependencies \
+            -project Moshpit.xcodeproj \
+            -scheme Moshpit \
+            -clonedSourcePackagesDirPath "$SPM_CACHE_DIR"
+
+      # Run the unit + UI test targets (MoshpitTests + MoshpitUITests, both wired
+      # into the shared "Moshpit" scheme's test action in project.yml).
+      #
+      # CODE_SIGNING_ALLOWED=NO: project.yml sets CODE_SIGN_IDENTITY
+      # "Apple Development" / CODE_SIGN_STYLE Automatic and expects a
+      # DEVELOPMENT_TEAM from Signing.xcconfig. Signing.xcconfig IS committed to
+      # this repo (with an empty DEVELOPMENT_TEAM), so `xcodegen generate` never
+      # fails for lack of it — but a simulator Debug build needs no signing at
+      # all, so we disable it here. If project.yml ever forced signing in a way
+      # that broke the *simulator* destination, that would be fixed in
+      # project.yml (out of scope for this workflow); as configured today the
+      # simulator build+test works with no Signing.xcconfig secret present.
+      - name: Build & test
+        env:
+          # Reaches the test process as MOSHPIT_CI; FeedCostTests widens its
+          # wall-clock budget for the shared two-core runner.
+          TEST_RUNNER_MOSHPIT_CI: "1"
+        run: |
+          xcodebuild test \
+            -project Moshpit.xcodeproj \
+            -scheme Moshpit \
+            -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \
+            -clonedSourcePackagesDirPath "$SPM_CACHE_DIR" \
+            CODE_SIGNING_ALLOWED=NO
