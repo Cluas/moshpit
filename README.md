@@ -103,6 +103,11 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md) for the xcodegen-first workflow and the
 house style, and [SECURITY.md](SECURITY.md) before reporting anything sensitive.
 Everyone here follows the [Code of Conduct](CODE_OF_CONDUCT.md).
 
+## Community
+
+Moshpit is shared on [LINUX DO](https://linux.do), a developer community in Chinese.
+Questions and ideas are as welcome there as in the issue tracker.
+
 ## License
 
 Moshpit is free software, released under the [GNU General Public License v3.0](LICENSE)

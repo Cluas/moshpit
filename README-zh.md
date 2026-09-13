@@ -89,6 +89,10 @@ App 默认连维护者的中转服务器；[docs/PUSH.md](docs/PUSH.md) 写明�
 先读 [CONTRIBUTING.md](CONTRIBUTING.md)（xcodegen 优先的工作流和代码风格），涉及安全问题请先看
 [SECURITY.md](SECURITY.md)。所有人都遵守[行为准则](CODE_OF_CONDUCT.md)。
 
+## 社区
+
+Moshpit 在 [LINUX DO](https://linux.do) 社区有帖子。有问题或想法，去那里聊和开 issue 一样欢迎。
+
 ## 许可证
 
 Moshpit 是自由软件，以 [GNU 通用公共许可证第 3 版](LICENSE)（GPL-3.0-only）发布。你可以在该许可证的
