@@ -24,6 +24,10 @@ import MoshpitKit
 ///    vertical. A motionless press never moves, so tap + long-press still fire.
 ///  - `cancelsTouchesInView = false` — the recognizer never swallows the
 ///    touches the terminal needs.
+///  - The position tap is the one recognizer NOT allowed to run simultaneously
+///    with the long press: a held-then-lifted finger is also a tap to UIKit,
+///    and that tap used to dismiss the selection the press had just made (see
+///    `gestureRecognizer(_:shouldRecognizeSimultaneouslyWith:)`).
 ///
 /// ### Reading while output streams
 ///
@@ -329,8 +333,24 @@ final class TerminalScrollGesture: NSObject, UIGestureRecognizerDelegate {
         return canScroll || canSwitch
     }
 
+    /// Everything here may run alongside SwiftTerm's own recognizers — with
+    /// one exception. The position tap must NOT recognize on a touch the
+    /// fork's long press has already claimed: `UITapGestureRecognizer` has no
+    /// maximum press duration, so a finger that holds 0.7s to select a word
+    /// and then lifts is, to the tap, a perfectly good tap — and ``handleTap``
+    /// reads a live selection as "dismiss it". Allowed to run simultaneously,
+    /// the tap fired on the lift and closed the selection the long press had
+    /// just made ("长按一个文本想选中，她会选中后自动取消掉" — the device log
+    /// shows `closeSelection()` under `handleTap`, once per attempt). Made
+    /// exclusive, UIKit fails the tap the moment the long press begins; a
+    /// quick tap, released before the press matures, still recognizes at once
+    /// and the long press fails instead. The simulator never showed this: a
+    /// synthetic held touch does not register as a tap there, a real one does.
     func gestureRecognizer(_ gesture: UIGestureRecognizer,
                            shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool {
-        true
+        if gesture is UITapGestureRecognizer, other is UILongPressGestureRecognizer {
+            return false
+        }
+        return true
     }
 }

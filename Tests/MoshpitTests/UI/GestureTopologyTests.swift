@@ -34,6 +34,35 @@ struct GestureTopologyTests {
         // and the S-layer harness.)
     }
 
+    @Test("the position tap yields to the long press — lifting after a word selection is not a tap")
+    func positionTapIsExclusiveWithLongPress() throws {
+        // Device log, three long presses in a row: closeSelection() under
+        // handleTap every time. UITapGestureRecognizer has no maximum press
+        // duration, so with simultaneous recognition the lift that ends a
+        // 0.7s word selection was also a tap — and a tap over a live selection
+        // dismisses it. Exclusive with the long press, UIKit fails the tap as
+        // soon as the press begins.
+        let (terminal, _) = makeWired()
+        let recognizers = terminal.gestureRecognizers ?? []
+        let tap = try #require(recognizers.first {
+            ($0 as? UITapGestureRecognizer)?.numberOfTapsRequired == 1 && $0.delegate is TerminalScrollGesture
+        }, "the app's position tap is missing")
+        let longPress = try #require(recognizers.first { $0 is UILongPressGestureRecognizer },
+                                     "SwiftTerm's long press is missing")
+        let pan = try #require(recognizers.first {
+            $0 is UIPanGestureRecognizer && $0.delegate is TerminalScrollGesture
+        }, "the app's scroll pan is missing")
+        let delegate = try #require(tap.delegate)
+        #expect(delegate.gestureRecognizer?(tap, shouldRecognizeSimultaneouslyWith: longPress) == false,
+                "a tap must not also recognize on the touch a long press claimed")
+        // The rest of the topology is unchanged: the pan still coexists with
+        // the long press (its own shouldBegin yields to a live selection), and
+        // the tap with everything else.
+        #expect(delegate.gestureRecognizer?(pan, shouldRecognizeSimultaneouslyWith: longPress) == true)
+        let pinch = try #require(recognizers.first { $0 is UIPinchGestureRecognizer })
+        #expect(delegate.gestureRecognizer?(tap, shouldRecognizeSimultaneouslyWith: pinch) == true)
+    }
+
     @Test("a minted terminal has tap-focus off, no assistant bar, no mouse-drag reporting")
     func mintConfiguration() {
         // TerminalMint.configureInput is what BOTH real mint sites (SSH
