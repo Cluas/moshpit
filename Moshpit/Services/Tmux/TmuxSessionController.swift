@@ -1074,7 +1074,7 @@ final class TmuxSessionController: MultiplexerControlling {
     /// (positive = older). Same routing; the local scrollback moves by the
     /// exact distance so the content follows the finger, the wheel gets whole
     /// rows with the remainder carried. Returns the distance consumed — 0 for
-    /// a dropped tick or an exhausted buffer, which stops a fling.
+    /// a dropped tick or an exhausted buffer.
     @discardableResult
     func scroll(pixels dy: CGFloat) -> CGFloat {
         guard dy != 0, let routed = scrollRoute() else { return 0 }
@@ -1091,7 +1091,7 @@ final class TmuxSessionController: MultiplexerControlling {
         }
     }
 
-    /// The drag — and any coast after it — came to rest: let a locally
+    /// The drag came to rest: let a locally
     /// scrolled pane dock onto the bottom if it stopped within half a row.
     func scrollDidEnd() {
         guard let routed = scrollRoute(), routed.route == .local else { return }

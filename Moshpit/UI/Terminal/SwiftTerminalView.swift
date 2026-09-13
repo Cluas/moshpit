@@ -476,14 +476,13 @@ struct SwiftTerminalView: UIViewRepresentable {
 
         /// Set for tmux panes alongside ``onScroll``: pixel-precise scroll
         /// requests from the pan gesture (positive = older). Returns the
-        /// distance consumed — 0 when the route drops the tick — so a fling can
-        /// stop at an edge. When nil, ``scroll(pixels:)`` folds the pixels into
+        /// distance consumed — 0 when the route drops the tick or the buffer
+        /// is at its edge. When nil, ``scroll(pixels:)`` folds the pixels into
         /// whole rows for ``onScroll`` (mosh / herdr: server-side rows are all
         /// there is).
         var onScrollPixels: ((CGFloat) -> CGFloat)?
 
-        /// Set alongside ``onScrollPixels``: the drag, and any coast after it,
-        /// came to rest.
+        /// Set alongside ``onScrollPixels``: the drag came to rest.
         var onScrollEnd: (() -> Void)?
 
         /// Fired when a scroll gesture/drag BEGINS (before the first
@@ -619,7 +618,7 @@ struct SwiftTerminalView: UIViewRepresentable {
             return scrollLocal(pixels: dy)
         }
 
-        /// The drag — and any coast after it — came to rest.
+        /// The drag came to rest.
         func scrollDidEnd() {
             if let onScrollEnd {
                 onScrollEnd()
@@ -708,7 +707,7 @@ struct SwiftTerminalView: UIViewRepresentable {
             return moved
         }
 
-        /// A local drag/fling came to rest. A viewport parked within half a
+        /// A local drag came to rest. A viewport parked within half a
         /// row of the live bottom docks onto it: the reader is done, and a
         /// half-row of history left on screen would keep output held and make
         /// taps read as "scrolled up".
