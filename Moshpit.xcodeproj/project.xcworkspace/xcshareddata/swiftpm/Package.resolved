@@ -195,7 +195,7 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/Cluas/SwiftTerm.git",
       "state" : {
-        "revision" : "fc38113b789af7bcc98f0c0c781eeeb14994d187"
+        "revision" : "68da3aac8139fef5b50ff8177747b7c180926cf2"
       }
     },
     {

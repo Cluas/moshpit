@@ -1502,13 +1502,21 @@ struct TmuxSessionControllerTests {
         #expect(abs(bottomOffset - CGFloat(bottomRow) * cellHeight) < 0.5,
                 "at rest the offset sits on the viewport row")
 
-        // Three and a half rows of finger travel toward older output.
-        let moved = controller.scroll(pixels: 3.5 * cellHeight)
-        #expect(abs(moved - 3.5 * cellHeight) < 0.5, "the whole travel is consumed")
-        #expect(abs(view.contentOffset.y - (bottomOffset - 3.5 * cellHeight)) < 0.5,
+        // Three and a half rows of finger travel toward older output, plus a
+        // sliver no pixel grid divides — a real finger's deltas are like that.
+        let travel = 3.5 * cellHeight + 0.1234
+        let moved = controller.scroll(pixels: travel)
+        #expect(abs(moved - travel) < 0.5, "the whole travel is consumed")
+        #expect(abs(view.contentOffset.y - (bottomOffset - travel)) < 0.5,
                 "the pixels move by exactly the finger travel")
         #expect(terminal.getTopVisibleRow() == bottomRow - 4,
                 "yDisp follows the offset's row (floor)")
+        // A fractional-pixel offset would rasterise every glyph differently
+        // per frame (text shimmering under a real finger): the offset lands on
+        // the device pixel grid, off the edges.
+        let devicePixels = view.contentOffset.y * view.contentScaleFactor
+        #expect(abs(devicePixels - devicePixels.rounded()) < 0.001,
+                "the offset sits on the device pixel grid")
 
         // Output while reading is held, not painted.
         let xBefore = terminal.getCursorLocation().x
