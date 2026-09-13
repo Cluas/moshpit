@@ -241,14 +241,16 @@ struct TmuxSessionControllerTests {
     /// the return value lets a later call resume from there.
     @discardableResult
     private func settleControlChatter(_ transport: MockTmuxTransport,
-                                      answered alreadyAnswered: Int) async -> Int {
+                                      answered alreadyAnswered: Int,
+                                      reply: ((String, Int) -> String)? = nil) async -> Int {
         var answered = alreadyAnswered
         for _ in 0..<20 {
             // Only ever answer commands that have actually been written —
             // a reply with no slot waiting for it desyncs the FIFO.
-            let sent = await transport.recordedCommands().count
-            while answered < sent {
-                transport.pushText("%begin 900 900 0\n0 0\n%end 900 900 0\n\n")
+            let cmds = await transport.recordedCommands()
+            while answered < cmds.count {
+                transport.pushText(reply?(cmds[answered], answered)
+                                   ?? "%begin 900 900 0\n0 0\n%end 900 900 0\n\n")
                 answered += 1
             }
             try? await Task.sleep(for: .milliseconds(20))
@@ -322,13 +324,22 @@ struct TmuxSessionControllerTests {
         _ = await waitUntil { await transport.recordedCommands().count >= 3 }
         pushOneWindowDiscovery(transport)
         #expect(await waitUntil { controller.snapshot.activePaneId == "%0" })
-        await settleControlChatter(transport, answered: 3)
-
         let terminal = controller.terminalView(for: "%0").getTerminal()
+        // The pane's first resync — a capture-pane + cursor-query pair — is on
+        // the wire. Answer the cursor query with a column nothing else in this
+        // test produces, and wait for its CUP to actually LAND before probing:
+        // the reply's bytes reach the grid on a later main-actor turn, and on
+        // a loaded full-suite run that turn came AFTER the probe below, moving
+        // the cursor from under the assertions (x → 0 — the flake this test
+        // carried for weeks; isolated it always passed).
+        _ = await settleControlChatter(transport, answered: 3) { cmd, i in
+            block(900 + i, cmd.hasPrefix("display-message") ? "9 0" : "0 0")
+        }
+        #expect(await waitUntil(timeout: 5.0) { terminal.getCursorLocation().x == 9 },
+                "the resync pair must have landed before the probe")
+
         transport.pushText("%output %0 abc\n")
-        // Generous: a loaded 68-suite run delays main-actor processing well
-        // past the default 1s (recurring full-suite flake, isolated-pass).
-        #expect(await waitUntil(timeout: 5.0) { terminal.getCursorLocation().x == 3 },
+        #expect(await waitUntil(timeout: 5.0) { terminal.getCursorLocation().x == 12 },
                 "output must paint while the pin is ours")
 
         // Off screen / backgrounded: tmux has handed the window to whatever else
@@ -341,14 +352,14 @@ struct TmuxSessionControllerTests {
 
         transport.pushText("%output %0 defghij\n")
         try? await Task.sleep(for: .milliseconds(150))
-        #expect(terminal.getCursorLocation().x == 3,
+        #expect(terminal.getCursorLocation().x == 12,
                 "a released pin means these bytes must not reach the grid")
 
         // The bell has to survive: it's the agent-needs-you signal, and the
         // parser that normally raises it is exactly what's being skipped.
         transport.pushText("%output %0 \\007\n")   // tmux escapes BEL octally
         #expect(await waitUntil { bells.count == 1 }, "a bell must still get through")
-        #expect(terminal.getCursorLocation().x == 3)
+        #expect(terminal.getCursorLocation().x == 12)
     }
 
     @Test("coming back to the foreground re-pins AND repaints, not just re-pins")
