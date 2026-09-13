@@ -44,6 +44,7 @@ struct SettingsScreen: View {
     @State private var showNotifInfo = false
     @State private var showHooksInstall = false
     @State private var showOfflineHostInfo = false
+    @State private var showFeedback = false
     /// Whether the MIIT filing line is shown; resolved once per appearance from
     /// the App Store storefront (see MainlandStorefront).
     @State private var showsFilingNumber = false
@@ -177,6 +178,17 @@ struct SettingsScreen: View {
                     }
                 }
 
+                FormGroup(
+                    title: "FEEDBACK",
+                    footer: "Goes to support@cluas.eu.org through your own Mail app. Nothing is sent until you tap Send there."
+                ) {
+                    ChevronRow(label: "Send Feedback",
+                               subtitle: "A bug, an idea, a screen that reads wrong") {
+                        showFeedback = true
+                    }
+                    .accessibilityIdentifier("settings-feedback")
+                }
+
                 // Build identity — long-press to copy (for bug reports) — and,
                 // on mainland-store copies, the MIIT APP filing. China's
                 // regulator requires the number shown inside the app, not only
@@ -246,6 +258,7 @@ struct SettingsScreen: View {
         .appSheet(isPresented: $showOfflineHostInfo) {
             OfflineHostInfoView()
         }
+        .appSheet(isPresented: $showFeedback) { FeedbackView() }
     }
 
     /// Build identity for the footer: marketing version + build number from the

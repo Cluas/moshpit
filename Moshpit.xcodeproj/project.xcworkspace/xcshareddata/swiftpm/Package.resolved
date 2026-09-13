@@ -1,5 +1,5 @@
 {
-  "originHash" : "555abd301b7d6fc0b5da7e7b95d0f2630f5d050bf4a551b0b323af8610c27347",
+  "originHash" : "35b9be50a307081338c4a1a51e8fe49a697d7d5bd77dfaad68860f6c4ef7f53f",
   "pins" : [
     {
       "identity" : "bigint",
@@ -195,7 +195,7 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/Cluas/SwiftTerm.git",
       "state" : {
-        "revision" : "cebf9df7917f86e6c71267e1443ce74928b2747e"
+        "revision" : "fc38113b789af7bcc98f0c0c781eeeb14994d187"
       }
     },
     {

@@ -807,6 +807,22 @@
         }
       }
     },
+    "A bug, an idea, a screen that reads wrong": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "バグ、アイデア、読みにくい画面"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "一个 bug、一个想法，或者哪个界面看着不对"
+          }
+        }
+      }
+    },
     "A custom accent tints controls, highlights and the faint background wash. Status colors (warning, success, error) stay fixed so they never get mistaken for the accent.": {
       "localizations": {
         "ja": {
@@ -2551,6 +2567,22 @@
         }
       }
     },
+    "Copy Address": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アドレスをコピー"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "复制地址"
+          }
+        }
+      }
+    },
     "Copy Fingerprint": {
       "localizations": {
         "ja": {
@@ -2951,6 +2983,22 @@
         }
       }
     },
+    "DIAGNOSTICS": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "診断"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "诊断"
+          }
+        }
+      }
+    },
     "DICTATION LANGUAGE": {
       "localizations": {
         "ja": {
@@ -3123,6 +3171,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "描述"
+          }
+        }
+      }
+    },
+    "Device and app info": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "端末とアプリの情報"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "设备和 App 信息"
           }
         }
       }
@@ -3719,6 +3783,22 @@
         }
       }
     },
+    "FEEDBACK": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "フィードバック"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "反馈"
+          }
+        }
+      }
+    },
     "FINISHING…": {
       "localizations": {
         "ja": {
@@ -3795,6 +3875,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "最快，准确度最低。适合较旧的设备。"
+          }
+        }
+      }
+    },
+    "Feedback": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "フィードバック"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "反馈"
           }
         }
       }
@@ -3939,6 +4035,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "本地生成密钥对。私钥可选 Secure Enclave 托管，仅签名时调用，不出芯片。"
+          }
+        }
+      }
+    },
+    "Goes to support@cluas.eu.org through your own Mail app. Nothing is sent until you tap Send there.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "お使いのメールアプリから support@cluas.eu.org に送ります。メールで送信するまで、何も送られません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "通过你自己的邮件 app 发到 support@cluas.eu.org。在邮件里点发送之前，什么都不会发出。"
           }
         }
       }
@@ -4147,6 +4259,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "工具条内 · %lld/%lld"
+          }
+        }
+      }
+    },
+    "INCLUDE": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "含める"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "附带"
           }
         }
       }
@@ -4999,6 +5127,22 @@
         }
       }
     },
+    "MESSAGE": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "メッセージ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "内容"
+          }
+        }
+      }
+    },
     "METHOD": {
       "localizations": {
         "ja": {
@@ -5107,6 +5251,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "我的主题"
+          }
+        }
+      }
+    },
+    "Mail isn’t set up on this device. Copy the address and write from anywhere.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この端末ではメールが設定されていません。アドレスをコピーして、お好きな方法で送ってください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这台设备没有配置邮件。复制地址，用任何方式写给我们。"
           }
         }
       }
@@ -6167,6 +6327,22 @@
         }
       }
     },
+    "Nothing logged in the last 30 minutes.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "直近 30 分のログはありません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最近 30 分钟没有日志。"
+          }
+        }
+      }
+    },
     "Nothing running — start a task to isolate one": {
       "localizations": {
         "ja": {
@@ -7207,6 +7383,54 @@
         }
       }
     },
+    "Reading…": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "読み込み中…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "读取中…"
+          }
+        }
+      }
+    },
+    "Recent Log": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最近のログ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最近日志"
+          }
+        }
+      }
+    },
+    "Recent log": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最近のログ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最近日志"
+          }
+        }
+      }
+    },
     "Recognition": {
       "localizations": {
         "ja": {
@@ -8099,6 +8323,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "发送"
+          }
+        }
+      }
+    },
+    "Send Feedback": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "フィードバックを送る"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "发送反馈"
           }
         }
       }
@@ -9127,6 +9367,22 @@
         }
       }
     },
+    "The log is the app’s own from the last 30 minutes — the same lines as Recent Log. Read it there first if anything in it should stay private.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ログはアプリ自身の直近 30 分の記録で、「最近のログ」と同じ内容です。送りたくない内容がないか、先にそちらで確認してください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "日志是 App 自己最近 30 分钟记下的，和「最近日志」里看到的一样。有不想发出去的内容，先去那里看一眼。"
+          }
+        }
+      }
+    },
     "The mosh-server executable on the remote host. Override if it isn't on PATH (e.g. /opt/homebrew/bin/mosh-server).": {
       "localizations": {
         "ja": {
@@ -9655,6 +9911,22 @@
         }
       }
     },
+    "Version, system, device model, language": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "バージョン、システム、機種、言語"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "版本、系统、机型、语言"
+          }
+        }
+      }
+    },
     "Vibe Island": {
       "localizations": {
         "ja": {
@@ -9747,6 +10019,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "Whisper 模型"
+          }
+        }
+      }
+    },
+    "What happened, or what would help?": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "何が起きたか、あるいは何があると助かるか"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "遇到了什么问题，或者希望加点什么？"
+          }
+        }
+      }
+    },
+    "What the app logged about this session: every terminal resize with its before-and-after size, and the cause of every reconnect. Screenshot it — or copy it — when something looks wrong.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このセッションでアプリが記録した内容：ターミナルのサイズ変更（変更前後のサイズ）と、再接続の原因。何かおかしいときは、スクリーンショットを撮るかコピーしてください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这次会话里 App 记下的东西：每次终端改尺寸的前后大小，以及每次重连的原因。哪里不对劲时，截个图或复制下来。"
           }
         }
       }
