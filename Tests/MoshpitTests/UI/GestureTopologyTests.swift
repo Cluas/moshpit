@@ -34,6 +34,18 @@ struct GestureTopologyTests {
         // and the S-layer harness.)
     }
 
+    @Test("the scroll view's own scrolling is off — one pan owns vertical travel")
+    func nativeScrollingIsOff() {
+        // A device trace of one drag: UIKit wrote contentOffset by the finger's
+        // delta before every tick of the app's pan (content at twice the
+        // finger) and kept decelerating after the lift against the fork's row
+        // realign — the jitter. Disabling only panGestureRecognizer had not
+        // held; isScrollEnabled is the switch that does.
+        let (terminal, _) = makeWired()
+        #expect(terminal.isScrollEnabled == false)
+        #expect(terminal.panGestureRecognizer.isEnabled == false)
+    }
+
     @Test("the position tap yields to the long press — lifting after a word selection is not a tap")
     func positionTapIsExclusiveWithLongPress() throws {
         // Device log, three long presses in a row: closeSelection() under

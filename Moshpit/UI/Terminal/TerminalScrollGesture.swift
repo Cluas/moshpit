@@ -107,11 +107,19 @@ final class TerminalScrollGesture: NSObject, UIGestureRecognizerDelegate {
         }
         terminal.addGestureRecognizer(tap)
 
-        // The built-in scroll-view pan stays off: the ONE pan above must own
+        // The scroll view's own scrolling is OFF: the ONE pan above must own
         // vertical travel so the wheel-vs-local routing decision is made in a
         // single place (a native pan would page the local buffer under a
-        // mouse app that should have received the wheel). Its deceleration
-        // goes with it: a lift stops the content where it is (see Motion above).
+        // mouse app that should have received the wheel), and a lift stops the
+        // content where it is (see Motion above). Disabling only the native
+        // pan recognizer was not enough on a device: a trace of one drag
+        // showed UIKit writing contentOffset by the finger's own delta right
+        // before every tick of our pan (the content ran at twice the finger)
+        // and then decelerating after the lift, each step snapped back by the
+        // fork's row realign in layoutSubviews — the "抖动". isScrollEnabled
+        // turns the scroll view's touch handling off for good; programmatic
+        // offsets (scrollViewport(by:)) are unaffected.
+        terminal.isScrollEnabled = false
         terminal.panGestureRecognizer.isEnabled = false
         objc_setAssociatedObject(terminal, &key, handler, .OBJC_ASSOCIATION_RETAIN)
     }
