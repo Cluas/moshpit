@@ -13,9 +13,13 @@ EXPORT_DIR="build/AppStore"
 OPTS="build/ExportOptions.plist"
 
 # The build number lives in BUILD_NUMBER at the repo root, holding the number
-# the NEXT archive will carry. Bump it by hand (+1) as part of preparing a
-# release and commit it with the changes it ships — the number and the source
-# it names then live in the same commit.
+# the NEXT archive will carry WITHIN the current MARKETING_VERSION. Bump it by
+# hand (+1) as part of preparing a build and commit it with the changes it
+# ships — the number and the source it names then live in the same commit.
+# When MARKETING_VERSION moves, reset it to 1: App Store Connect scopes iOS
+# build numbers to the version (train), so 1.0.5 starts over at (1). Builds up
+# to 1.0.4 (399) used one counter across all versions; 1.0.4 (1) onwards
+# restart per version (the user asked for "1.0.4 build 1").
 #
 # It used to be the commit count. That is monotonic on one branch and nowhere
 # else: a build cut from main after working on v2 counts LOWER and App Store
@@ -36,6 +40,16 @@ BUILD="${MOSHPIT_BUILD:-$(tr -cd '0-9' < BUILD_NUMBER 2>/dev/null || true)}"
 if ! [[ "$BUILD" =~ ^[1-9][0-9]*$ ]]; then
   echo "✘ BUILD_NUMBER must hold a positive integer (got '${BUILD:-nothing}')." >&2
   echo "  It names the build the next archive will be — bump it by hand, +1 per release." >&2
+  exit 1
+fi
+
+# The train the build belongs to. project.yml is the only source of the
+# marketing version (it feeds every target's CFBundleShortVersionString), and
+# the tester notes below are named after both numbers, because "(1)" alone
+# stops being unique once each version restarts its count.
+TRAIN="$(sed -n 's/^[[:space:]]*MARKETING_VERSION:[[:space:]]*"\([^"]*\)".*/\1/p' project.yml | head -1)"
+if ! [[ "$TRAIN" =~ ^[0-9]+(\.[0-9]+)+$ ]]; then
+  echo "✘ could not read MARKETING_VERSION from project.yml (got '${TRAIN:-nothing}')." >&2
   exit 1
 fi
 
@@ -60,10 +74,10 @@ git diff --quiet HEAD 2>/dev/null || \
 # asks for "What to Test" per build, and a build uploaded without them wastes
 # testers on things we already know are broken. Warned rather than enforced —
 # a local archive you never upload doesn't need them.
-NOTES="docs/testflight/build-$BUILD.md"
+NOTES="docs/testflight/build-$TRAIN-$BUILD.md"
 if [ ! -f "$NOTES" ]; then
   echo "⚠ no tester notes at $NOTES — write them before uploading to TestFlight"
-  echo "  (start from the previous build's: $(ls -1 docs/testflight/build-*.md 2>/dev/null | tail -1 || echo 'none yet'))"
+  echo "  (start from the previous build's: $(ls -1t docs/testflight/build-*.md 2>/dev/null | head -1 || echo 'none yet'))"
 fi
 
 # Export authenticates with the App Store Connect API key (below); the ARCHIVE
@@ -83,7 +97,7 @@ fi
 # a specific group (no endpoint; capability settings reject it), and a profile
 # minted before the association carries an empty application-groups array that
 # codesign then refuses.
-echo "▶ Archiving Release (build $BUILD, team $TEAM)…"
+echo "▶ Archiving Release ($TRAIN build $BUILD, team $TEAM)…"
 rm -rf "$ARCHIVE" "$EXPORT_DIR"
 mkdir -p build
 xcodebuild -project Moshpit.xcodeproj -scheme Moshpit \
