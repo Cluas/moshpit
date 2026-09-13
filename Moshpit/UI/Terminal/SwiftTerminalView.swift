@@ -474,11 +474,33 @@ struct SwiftTerminalView: UIViewRepresentable {
         /// = newer.
         var onScroll: ((Int) -> Void)?
 
+        /// Set for tmux panes alongside ``onScroll``: pixel-precise scroll
+        /// requests from the pan gesture (positive = older). Returns the
+        /// distance consumed — 0 when the route drops the tick — so a fling can
+        /// stop at an edge. When nil, ``scroll(pixels:)`` folds the pixels into
+        /// whole rows for ``onScroll`` (mosh / herdr: server-side rows are all
+        /// there is).
+        var onScrollPixels: ((CGFloat) -> CGFloat)?
+
+        /// Set alongside ``onScrollPixels``: the drag, and any coast after it,
+        /// came to rest.
+        var onScrollEnd: (() -> Void)?
+
         /// Fired when a scroll gesture/drag BEGINS (before the first
         /// ``scroll(lines:)``). tmux panes use it to refresh whether the active
         /// pane's app wants the mouse (`#{mouse_any_flag}`) — the signal that
         /// decides wheel-vs-copy-mode — so the decision is fresh for this burst.
         var onScrollBegin: (() -> Void)?
+
+        /// Sub-row finger travel not yet turned into a wheel tick / server-side
+        /// row. Reset when a drag starts.
+        private var rowCarry = ScrollRowCarry()
+
+        /// One text row in points — the unit that turns finger travel into rows.
+        var cellHeight: CGFloat {
+            let height = terminalView?.cellHeight ?? 0
+            return height > 0 ? height : 16
+        }
 
         /// A horizontal swipe asked to switch pane/window. `forward == true` =
         /// next (swipe left), false = previous (swipe right). Set for tmux panes;
@@ -544,6 +566,7 @@ struct SwiftTerminalView: UIViewRepresentable {
         /// Notify the scroll owner that a gesture/drag is starting. Lets tmux
         /// panes refresh the active pane's mouse flag before the first tick.
         func scrollWillBegin() {
+            rowCarry.reset()
             onScrollBegin?()
         }
 
@@ -568,6 +591,42 @@ struct SwiftTerminalView: UIViewRepresentable {
                 sendWheel(lines: lines)
             } else {
                 scrollLocal(lines: lines)
+            }
+        }
+
+        /// Pixel-precise sibling of ``scroll(lines:)`` for the pan gesture:
+        /// finger travel in points, positive = toward older output. Routes the
+        /// same way. Local scrollback moves by the exact distance (sub-row
+        /// offsets included, so the content tracks the finger); wheel and
+        /// server-side routes get whole rows with the remainder carried to the
+        /// next tick. Returns the distance consumed (0 = nothing moved).
+        @discardableResult
+        func scroll(pixels dy: CGFloat) -> CGFloat {
+            guard dy != 0, dy.isFinite else { return 0 }
+            if let onScrollPixels {
+                return onScrollPixels(dy)
+            }
+            if let onScroll {
+                let rows = rowCarry.take(pixels: dy, cellHeight: cellHeight)
+                if rows != 0 { onScroll(rows) }
+                return dy
+            }
+            if localAppWantsMouse {
+                let rows = rowCarry.take(pixels: dy, cellHeight: cellHeight)
+                if rows != 0 { sendWheel(lines: rows) }
+                return dy
+            }
+            return scrollLocal(pixels: dy)
+        }
+
+        /// The drag — and any coast after it — came to rest.
+        func scrollDidEnd() {
+            if let onScrollEnd {
+                onScrollEnd()
+                return
+            }
+            if onScroll == nil, !localAppWantsMouse {
+                settleLocalScroll()
             }
         }
 
@@ -634,10 +693,43 @@ struct SwiftTerminalView: UIViewRepresentable {
             } else {
                 terminalView.scrollDown(lines: -lines)
             }
-            if terminalView.scrollPosition >= 0.999 {
-                releaseScrollHold()
-            } else {
+            updateScrollHold(terminalView)
+        }
+
+        /// Pixel-precise ``scrollLocal(lines:)``: move the viewport `dy` points
+        /// (positive = older), keeping sub-row offsets so the content follows
+        /// the finger instead of lurching a row at a time. Returns the
+        /// distance actually travelled (0 at an edge).
+        @discardableResult
+        func scrollLocal(pixels dy: CGFloat) -> CGFloat {
+            guard let terminalView, dy != 0 else { return 0 }
+            let moved = terminalView.scrollViewport(by: dy)
+            updateScrollHold(terminalView)
+            return moved
+        }
+
+        /// A local drag/fling came to rest. A viewport parked within half a
+        /// row of the live bottom docks onto it: the reader is done, and a
+        /// half-row of history left on screen would keep output held and make
+        /// taps read as "scrolled up".
+        func settleLocalScroll() {
+            guard let terminalView else { return }
+            let gap = terminalView.distanceToBottom
+            if gap > 0, gap < terminalView.cellHeight / 2 {
+                terminalView.scrollViewport(by: -gap)
+            }
+            updateScrollHold(terminalView)
+        }
+
+        /// Hold live output exactly while history is on screen. `canScroll`
+        /// first: `scrollPosition` is 0 both at the very top AND when there is
+        /// nothing to scroll, so on its own a swipe over an empty pane would
+        /// freeze its output until the next keystroke.
+        private func updateScrollHold(_ terminalView: TerminalView) {
+            if terminalView.canScroll, terminalView.scrollPosition < 0.999 {
                 engageScrollHold()
+            } else {
+                releaseScrollHold()
             }
         }
 

@@ -1079,6 +1079,61 @@ struct TmuxSessionControllerTests {
                 """)
     }
 
+    @Test("a backfill dump laid out for another width is recaptured once the sizes settle, and the live frame is repainted on top")
+    func foreignWidthBackfillIsRecaptured() async throws {
+        // The -CC trace behind this: a fresh attach's dump captured 353 history
+        // lines while tmux still had the window at the 80-column guess, our
+        // `resize-window` to 76 right behind it. The dump was (rightly)
+        // rejected — and then nothing ever asked for it again, so the pane had
+        // no local history and a swipe over pre-attach output moved nothing.
+        let transport = MockTmuxTransport()
+        let controller = TmuxSessionController(sshSession: transport)
+        controller.setInitialClientSize(cols: 69, rows: 60)
+        await controller.attach()
+        transport.pushText("%begin 100 0 0\n%end 100 0 0\n\n")
+        _ = await waitUntil { await transport.recordedCommands().count >= 3 }
+        pushOneWindowDiscovery(transport)
+        #expect(await waitUntil { controller.snapshot.activePaneId == "%0" })
+        let terminalView = controller.terminalView(for: "%0")
+        let rows = terminalView.getTerminal().rows
+
+        let isDump: (String) -> Bool = { $0.hasPrefix("capture-pane -p -e -S") }
+        #expect(await waitUntil { await transport.recordedCommands().contains(where: isDump) })
+
+        // Answer in FIFO order; the dump gets 120 lines wrapped at 80 columns.
+        let wide = String(repeating: "W", count: 80)
+        var answered = await answerPending(transport, answered: 3) { cmd, i in
+            isDump(cmd)
+                ? block(300 + i, Array(repeating: wide, count: 120).joined(separator: "\n"))
+                : block(300 + i, "0 0")
+        }
+        // The pane holds no history yet — the wide dump must not have been fed.
+        #expect(!terminalView.canScroll, "a foreign-width dump must be dropped, not fed")
+
+        // …and a second dump goes out on its own once the sizes have settled.
+        #expect(await waitUntil(timeout: 2.0) {
+            await transport.recordedCommands().filter(isDump).count >= 2
+        }, "the rejected backfill must be recaptured without another discovery pass")
+        let cmds = await transport.recordedCommands()
+        let retry = try #require(cmds.lastIndex(where: isDump))
+
+        // This one is laid out for our grid: 120 lines of history land as
+        // local scrollback, then the parked repaint runs frame-on-top.
+        answered = await answerPending(transport, answered: answered) { cmd, i in
+            isDump(cmd)
+                ? block(400 + i, (1...120).map { "history \($0)" }.joined(separator: "\n"))
+                : block(400 + i, "0 0")
+        }
+        #expect(await waitUntil { terminalView.canScroll },
+                "the recaptured dump must seed the local scrollback")
+        #expect(await waitUntil {
+            await transport.recordedCommands().dropFirst(retry + 1)
+                .contains { $0.hasPrefix("capture-pane -p -e -t %0") }
+        }, "a dump that lands after the live screen was painted must be followed by a repaint on top")
+        _ = await settleControlChatter(transport, answered: answered)
+        #expect(terminalView.getTerminal().rows == rows)
+    }
+
     @Test("selectWindow runs a two-pass resync: an immediate silent capture plus a settled one")
     func selectWindowRunsSettlingResync() async throws {
         let (controller, transport) = await makeAttachedController()
@@ -1419,6 +1474,74 @@ struct TmuxSessionControllerTests {
             await transport.recordedCommands().dropFirst(before)
                 .contains { $0.contains("send-keys -t %0 -H") }
         }, "an idle mouse app keeps scrolling itself — copy-mode would break its own paging")
+    }
+
+    @Test("a drag over a plain shell pane moves the pixels, holds output, and docks back onto the bottom")
+    func dragMovesLocalScrollbackByPixels() async throws {
+        let (controller, transport) = await makeAttachedController()
+        _ = await waitUntil { await transport.recordedCommands().count >= 3 }
+        pushOneWindowDiscovery(transport)
+        #expect(await waitUntil { controller.snapshot.activePaneId == "%0" })
+        _ = await settleControlChatter(transport, answered: 3)
+        #expect(!controller.activePaneWantsMouse, "a plain shell: the local scrollback is the route")
+
+        // Enough history for the viewport to have somewhere to go.
+        let view = controller.terminalView(for: "%0")
+        let terminal = view.getTerminal()
+        let lines = terminal.rows + 40
+        var blob = ""
+        for i in 0..<lines { blob += "%output %0 history-\(i)\\015\\012\n" }
+        transport.pushText(blob)
+        #expect(await waitUntil(timeout: 4) { terminal.getTopVisibleRow() >= 40 },
+                "the output must scroll the buffer before the drag")
+
+        let cellHeight = view.cellHeight
+        #expect(cellHeight > 0)
+        let bottomOffset = view.contentOffset.y
+        let bottomRow = terminal.getTopVisibleRow()
+        #expect(abs(bottomOffset - CGFloat(bottomRow) * cellHeight) < 0.5,
+                "at rest the offset sits on the viewport row")
+
+        // Three and a half rows of finger travel toward older output.
+        let moved = controller.scroll(pixels: 3.5 * cellHeight)
+        #expect(abs(moved - 3.5 * cellHeight) < 0.5, "the whole travel is consumed")
+        #expect(abs(view.contentOffset.y - (bottomOffset - 3.5 * cellHeight)) < 0.5,
+                "the pixels move by exactly the finger travel")
+        #expect(terminal.getTopVisibleRow() == bottomRow - 4,
+                "yDisp follows the offset's row (floor)")
+
+        // Output while reading is held, not painted.
+        let xBefore = terminal.getCursorLocation().x
+        transport.pushText("%output %0 while-reading\n")
+        try? await Task.sleep(for: .milliseconds(150))
+        #expect(terminal.getCursorLocation().x == xBefore,
+                "output while scrolled up must be held")
+
+        // Back to within half a row of the bottom, then the drag ends: dock.
+        controller.scroll(pixels: -3.2 * cellHeight)
+        #expect(view.contentOffset.y < bottomOffset, "still a fraction of a row up")
+        controller.scrollDidEnd()
+        #expect(abs(view.contentOffset.y - bottomOffset) < 0.5, "docked onto the bottom")
+        #expect(terminal.getTopVisibleRow() == bottomRow)
+        #expect(await waitUntil { terminal.getCursorLocation().x == xBefore + 13 },
+                "docking releases the hold and the held output replays")
+    }
+
+    @Test("a swipe over an empty pane never freezes its output")
+    func swipeOverEmptyPaneHoldsNothing() async throws {
+        let (controller, transport) = await makeAttachedController()
+        _ = await waitUntil { await transport.recordedCommands().count >= 3 }
+        pushOneWindowDiscovery(transport)
+        #expect(await waitUntil { controller.snapshot.activePaneId == "%0" })
+        _ = await settleControlChatter(transport, answered: 3)
+
+        let terminal = controller.terminalView(for: "%0").getTerminal()
+        // Nothing to scroll: the tick must consume nothing and hold nothing.
+        #expect(controller.scroll(pixels: 200) == 0)
+        controller.scroll(lines: 3)
+        transport.pushText("%output %0 still-live\n")
+        #expect(await waitUntil { terminal.getCursorLocation().x == 10 },
+                "output after a swipe over an empty pane must paint immediately")
     }
 
     /// Interleaved %output and command replies must be handled in byte-stream

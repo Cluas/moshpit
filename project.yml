@@ -121,10 +121,16 @@ packages:
     # menu on release) instead of grabbing first responder for a bare paste
     # menu: a long press taken while reading summoned the keyboard and
     # selected nothing.
+    # (18) on iOS the scroll offset follows yDisp instead of being pinned to
+    # the last screen on every scrollTo — upstream draws its rows from
+    # contentOffset (9ad1b19) so programmatic scrollUp/scrollDown moved yDisp
+    # while not a pixel changed — plus a host-facing pixel API (cellHeight,
+    # distanceToBottom, scrollViewport(by:)) that keeps sub-row offsets so a
+    # finger drag over the scrollback is smooth.
     # Revert to the upstream URL if/when these land there and a
     # release picks them up.
     url: https://github.com/Cluas/SwiftTerm.git
-    revision: cebf9df7917f86e6c71267e1443ce74928b2747e
+    revision: fc38113b789af7bcc98f0c0c781eeeb14994d187
   Citadel:
     url: https://github.com/orlandos-nl/Citadel.git
     from: "0.7.0"

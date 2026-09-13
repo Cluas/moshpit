@@ -312,6 +312,9 @@ final class TmuxSessionController: MultiplexerControlling {
         paneResizeAwaitingCapture.removeAll()
         for task in backfillTimeouts.values { task.cancel() }
         backfillTimeouts.removeAll()
+        for task in backfillRetryTasks.values { task.cancel() }
+        backfillRetryTasks.removeAll()
+        backfillRejectStreak.removeAll()
         // Same reasoning for the foreign-width gate: a repair frame that will
         // never arrive must not keep the next connection's output gated.
         activeWindowAtForeignWidth = false
@@ -1010,17 +1013,19 @@ final class TmuxSessionController: MultiplexerControlling {
     /// phone can never see — and hijacked any desktop client sharing the
     /// window into copy-mode. (The mosh+tmux path is different: its renderer
     /// IS a regular client, so SessionHub's copy-mode driver stays correct.)
-    func scroll(lines: Int) {
-        guard lines != 0,
-              let paneId = snapshot.activePaneId ?? snapshot.activePanes.first?.id else { return }
+    /// Where a scroll tick over the active pane goes. One decision shared by
+    /// the row and pixel entry points so they can never disagree.
+    private enum ScrollRoute { case wheel, drop, local }
+
+    private func scrollRoute() -> (paneId: String, route: ScrollRoute)? {
+        guard let paneId = snapshot.activePaneId ?? snapshot.activePanes.first?.id else { return nil }
         // An ALT-SCREEN mouse app (Claude Code) gets the wheel unconditionally:
         // its own repaint after a wheel updated `lastPaneOutputAt`, which
         // read as "streaming" and flipped the NEXT tick into the parked path,
         // where the sticky latch kept every later swipe. First swipe scrolled,
         // the rest were dead (the 347 report).
         if activePaneWantsMouse && activePaneOnAltScreen {
-            sendWheel(lines: lines, paneId: paneId)
-            return
+            return (paneId, .wheel)
         }
         // NON-alt panes: forwarding the wheel to an app that is CURRENTLY
         // repainting makes the two fight over the same viewport: the app
@@ -1029,10 +1034,10 @@ final class TmuxSessionController: MultiplexerControlling {
         // while output streams. Park the viewport in the LOCAL scrollback
         // instead: the coordinator's scroll-hold buffers live output while
         // the user reads, exactly like the plain-SSH path.
-        let appDrivesItsOwnScroll = activePaneWantsMouse && !isStreaming(paneId)
-        if appDrivesItsOwnScroll {
-            sendWheel(lines: lines, paneId: paneId)
-        } else if activePaneOnAltScreen {
+        if activePaneWantsMouse && !isStreaming(paneId) {
+            return (paneId, .wheel)
+        }
+        if activePaneOnAltScreen {
             // Alt-screen pane whose wheel we can't forward (no mouse, or the
             // flags haven't settled): the LOCAL buffer holds no real history
             // for it — tmux never replays an already-drawn TUI on attach, so
@@ -1044,10 +1049,53 @@ final class TmuxSessionController: MultiplexerControlling {
             // output until the next keystroke. Drop the ticks instead: for a
             // mouse app the next tick forwards the wheel once the flags
             // settle.
-            return
-        } else {
-            paneCoordinators[paneId]?.scrollLocal(lines: lines)
+            return (paneId, .drop)
         }
+        return (paneId, .local)
+    }
+
+    func scroll(lines: Int) {
+        guard lines != 0, let routed = scrollRoute() else { return }
+        switch routed.route {
+        case .wheel:
+            sendWheel(lines: lines, paneId: routed.paneId)
+        case .drop:
+            return
+        case .local:
+            paneCoordinators[routed.paneId]?.scrollLocal(lines: lines)
+        }
+    }
+
+    /// Sub-row finger travel not yet turned into a wheel tick; reset when a
+    /// drag starts (``refreshActivePaneMouse`` is that moment).
+    @ObservationIgnored private var wheelCarry = ScrollRowCarry()
+
+    /// Pixel-precise sibling of ``scroll(lines:)`` for the pan gesture
+    /// (positive = older). Same routing; the local scrollback moves by the
+    /// exact distance so the content follows the finger, the wheel gets whole
+    /// rows with the remainder carried. Returns the distance consumed — 0 for
+    /// a dropped tick or an exhausted buffer, which stops a fling.
+    @discardableResult
+    func scroll(pixels dy: CGFloat) -> CGFloat {
+        guard dy != 0, let routed = scrollRoute() else { return 0 }
+        switch routed.route {
+        case .wheel:
+            let cellHeight = paneCoordinators[routed.paneId]?.cellHeight ?? 16
+            let rows = wheelCarry.take(pixels: dy, cellHeight: cellHeight)
+            if rows != 0 { sendWheel(lines: rows, paneId: routed.paneId) }
+            return dy
+        case .drop:
+            return 0
+        case .local:
+            return paneCoordinators[routed.paneId]?.scrollLocal(pixels: dy) ?? 0
+        }
+    }
+
+    /// The drag — and any coast after it — came to rest: let a locally
+    /// scrolled pane dock onto the bottom if it stopped within half a row.
+    func scrollDidEnd() {
+        guard let routed = scrollRoute(), routed.route == .local else { return }
+        paneCoordinators[routed.paneId]?.settleLocalScroll()
     }
 
     /// Synthesize SGR wheel bytes into the pane's program.
@@ -1974,7 +2022,17 @@ final class TmuxSessionController: MultiplexerControlling {
                 self.ccTapLine("BACKFILL-REJECT pane=\(paneId) lines=\(lines.count) "
                     + "ours=\(self.lastClientSize.rows)x\(self.lastClientSize.cols)")
                 self.backfilledPanes.remove(paneId)
+                self.scheduleBackfillRetry(paneId)
                 return
+            }
+            // A retried dump lands AFTER the live screen was painted by the
+            // attach's own resync, so its history scrolls that screen away.
+            // Ask for the repaint the first dump's ordering got for free:
+            // `finishBackfill` (the defer above) runs whatever is parked here
+            // once the dump has been fed, frame on top of history.
+            if (self.backfillRejectStreak[paneId] ?? 0) > 0 {
+                self.backfillRejectStreak[paneId] = 0
+                self.deferredResyncs[paneId] = true
             }
             // History is followed by %output's visible repaint, which
             // repositions the cursor — terminate with CRLF so the two
@@ -2001,6 +2059,35 @@ final class TmuxSessionController: MultiplexerControlling {
     @ObservationIgnored private var backfillsInFlight: Set<String> = []
     @ObservationIgnored private var deferredResyncs: [String: Bool] = [:]
     @ObservationIgnored private var backfillTimeouts: [String: Task<Void, Never>] = [:]
+
+    /// Dumps rejected for another client's width, per pane, and the retries
+    /// waiting on them — see ``scheduleBackfillRetry``.
+    @ObservationIgnored private var backfillRejectStreak: [String: Int] = [:]
+    @ObservationIgnored private var backfillRetryTasks: [String: Task<Void, Never>] = [:]
+
+    /// A backfill dump came back laid out for a width this grid doesn't have:
+    /// the capture ran while tmux still held the window at
+    /// `setInitialClientSize`'s guess (or a desktop client's size), with our
+    /// `resize-window` landing right behind it — a `-MOSHPIT_CC_TAP` trace of a
+    /// fresh attach shows 353 history lines wrapped at 80 columns arriving for
+    /// a 76-column view. Un-claiming the pane on its own promised a retry
+    /// "once a later discovery pass runs", but discovery never runs again on
+    /// its own after attach, so the pane simply had no local history: the
+    /// first swipe over anything printed before the attach moved nothing.
+    /// Recapture after the sizes have had a settle's worth of time, bounded
+    /// the same way as `scheduleResyncRetry` so a size war can't loop it.
+    private func scheduleBackfillRetry(_ paneId: String) {
+        let streak = (backfillRejectStreak[paneId] ?? 0) + 1
+        backfillRejectStreak[paneId] = streak
+        guard streak <= 4 else { return }
+        backfillRetryTasks[paneId]?.cancel()
+        backfillRetryTasks[paneId] = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(700))
+            guard !Task.isCancelled, let self else { return }
+            self.backfillRetryTasks.removeValue(forKey: paneId)
+            self.backfill(paneId: paneId)
+        }
+    }
 
     /// A backfill's dump has landed (or its safety timeout fired): drop the
     /// hold and run whatever resync was parked behind it.
@@ -3328,7 +3415,14 @@ final class TmuxSessionController: MultiplexerControlling {
         coordinator.onScroll = { [weak self] lines in
             self?.scroll(lines: lines)
         }
+        coordinator.onScrollPixels = { [weak self] dy in
+            self?.scroll(pixels: dy) ?? 0
+        }
+        coordinator.onScrollEnd = { [weak self] in
+            self?.scrollDidEnd()
+        }
         coordinator.onScrollBegin = { [weak self] in
+            self?.wheelCarry.reset()
             self?.refreshActivePaneMouse()
         }
         // Tap-to-position: forwarded as a click when the pane's program wants

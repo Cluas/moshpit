@@ -33,6 +33,16 @@ import MoshpitKit
 /// incoming output while the user is scrolled up (see `engageScrollHold`) and
 /// flushes it the instant they return to the bottom or type. This gesture is
 /// what tells the coordinator which side of that line the viewport is on.
+///
+/// ### Motion
+///
+/// A vertical drag hands every point of travel to ``Coordinator/scroll(pixels:)``
+/// — local scrollback moves by the exact distance (sub-row offsets included),
+/// row-only routes fold it into rows with the remainder carried. Lifting with
+/// speed starts a ``ScrollFling`` coast on a display link, stopped by the
+/// edge of the buffer, a new touch, or coming to rest. The old version
+/// quantised to whole rows per event and threw the remainder away, then did
+/// nothing on lift, so the content lurched and stopped dead under the finger.
 final class TerminalScrollGesture: NSObject, UIGestureRecognizerDelegate {
     private static var key: UInt8 = 0
     private weak var coordinator: SwiftTerminalView.Coordinator?
@@ -41,6 +51,11 @@ final class TerminalScrollGesture: NSObject, UIGestureRecognizerDelegate {
     /// Axis a one-finger pan committed to, decided once it has moved enough.
     private enum Axis { case vertical, horizontal }
     private var axisLock: Axis?
+
+    /// The coast after a vertical drag lifts, ticked by the display link.
+    private var fling: ScrollFling?
+    private var flingLink: CADisplayLink?
+    private var flingLastTimestamp: CFTimeInterval = 0
 
     /// Attach once per terminal; idempotent. Retained via an associated object
     /// so its lifetime matches the terminal (gesture targets are held weakly).
@@ -91,8 +106,11 @@ final class TerminalScrollGesture: NSObject, UIGestureRecognizerDelegate {
         }
         terminal.addGestureRecognizer(tap)
 
-        // The built-in scroll-view pan reveals blank space (SwiftTerm draws the
-        // current buffer view, not the scrolled content), so leave it off.
+        // The built-in scroll-view pan stays off: the ONE pan above must own
+        // vertical travel so the wheel-vs-local routing decision is made in a
+        // single place (a native pan would page the local buffer under a
+        // mouse app that should have received the wheel). Inertia comes from
+        // ``ScrollFling`` instead.
         terminal.panGestureRecognizer.isEnabled = false
         objc_setAssociatedObject(terminal, &key, handler, .OBJC_ASSOCIATION_RETAIN)
     }
@@ -102,6 +120,8 @@ final class TerminalScrollGesture: NSObject, UIGestureRecognizerDelegate {
         switch gesture.state {
         case .began:
             axisLock = nil
+            // A finger down catches a coasting scroll, like any list.
+            stopFling(settle: false)
             // Burst start: let tmux refresh whether the active pane's app wants
             // the mouse, so the wheel-vs-copy-mode decision is fresh for a scroll.
             coordinator?.scrollWillBegin()
@@ -114,25 +134,75 @@ final class TerminalScrollGesture: NSObject, UIGestureRecognizerDelegate {
             }
             guard axisLock == .vertical else { return }   // horizontal commits on .ended
             // Dragging down (positive y) pulls older content into view → the
-            // coordinator routes to tmux copy-mode / wheel / local scrollback.
-            let rows = max(terminal.getTerminal().rows, 1)
-            let cellHeight = max(8, terminal.bounds.height / CGFloat(rows))
-            let lines = Int(t.y / cellHeight)
-            guard lines != 0 else { return }
-            coordinator?.scroll(lines: lines)
+            // coordinator routes to wheel / local scrollback / server rows.
+            // Every point goes through; the routes that can only move by rows
+            // carry the remainder themselves.
+            coordinator?.scroll(pixels: t.y)
             gesture.setTranslation(.zero, in: terminal)
         case .ended:
-            if axisLock == .horizontal, abs(gesture.translation(in: terminal).x) >= 40,
-               let onSwitch = coordinator?.onSwitch {
-                // A deliberate horizontal travel commits a pane/window switch:
-                // drag left (negative dx) = next, drag right = previous.
-                Haptics.select()
-                onSwitch(gesture.translation(in: terminal).x < 0)
+            switch axisLock {
+            case .horizontal:
+                if abs(gesture.translation(in: terminal).x) >= 40,
+                   let onSwitch = coordinator?.onSwitch {
+                    // A deliberate horizontal travel commits a pane/window switch:
+                    // drag left (negative dx) = next, drag right = previous.
+                    Haptics.select()
+                    onSwitch(gesture.translation(in: terminal).x < 0)
+                }
+            case .vertical:
+                startFling(velocity: gesture.velocity(in: terminal).y)
+            case nil:
+                break
             }
             axisLock = nil
         default:
+            if axisLock == .vertical { coordinator?.scrollDidEnd() }
             axisLock = nil
         }
+    }
+
+    // MARK: - Fling
+
+    /// Coast from the lift velocity (points/s, positive = older). A lift too
+    /// slow to count as a flick settles the scroll right away.
+    private func startFling(velocity: CGFloat) {
+        guard let fling = ScrollFling(velocity: velocity) else {
+            coordinator?.scrollDidEnd()
+            return
+        }
+        self.fling = fling
+        flingLastTimestamp = 0
+        let link = CADisplayLink(target: self, selector: #selector(flingTick(_:)))
+        link.add(to: .main, forMode: .common)
+        flingLink = link
+    }
+
+    @objc private func flingTick(_ link: CADisplayLink) {
+        guard var fling else {
+            stopFling(settle: true)
+            return
+        }
+        let dt = flingLastTimestamp == 0 ? link.duration : link.targetTimestamp - flingLastTimestamp
+        flingLastTimestamp = link.targetTimestamp
+        let distance = fling.step(dt: dt)
+        self.fling = fling
+        // 0 back means the route dropped the tick or the buffer ran out: stop
+        // instead of pushing against the edge for another second.
+        let moved = coordinator?.scroll(pixels: distance) ?? 0
+        if fling.isAtRest || moved == 0 {
+            stopFling(settle: true)
+        }
+    }
+
+    /// Stop coasting. `settle` tells the coordinator the motion is over (dock
+    /// near the bottom, hold or release output); a new touch skips it — the
+    /// drag that interrupted the coast settles in its own time.
+    private func stopFling(settle: Bool) {
+        let wasCoasting = flingLink != nil
+        flingLink?.invalidate()
+        flingLink = nil
+        fling = nil
+        if settle, wasCoasting { coordinator?.scrollDidEnd() }
     }
 
     /// How far (in rows) from the cursor a tap still reads as "I want to type
@@ -173,6 +243,8 @@ final class TerminalScrollGesture: NSObject, UIGestureRecognizerDelegate {
     @objc private func handleTap(_ gesture: UITapGestureRecognizer) {
         guard gesture.state == .ended,
               let terminal = gesture.view as? TerminalView else { return }
+        // A tap on coasting content stops it where it is, like any list.
+        stopFling(settle: true)
         // A live selection: this tap means "dismiss it" — nothing else. The
         // fork's own tap-clears-selection lives in its FOCUSED branch, so with
         // the keyboard down a selection could otherwise never be dismissed at
@@ -200,6 +272,7 @@ final class TerminalScrollGesture: NSObject, UIGestureRecognizerDelegate {
         guard let terminal = gesture.view as? TerminalView else { return }
         switch gesture.state {
         case .began:
+            stopFling(settle: true)
             pinchBaseSize = terminal.font.pointSize
         case .changed:
             let target = min(max(pinchBaseSize * gesture.scale, 8), 32)
