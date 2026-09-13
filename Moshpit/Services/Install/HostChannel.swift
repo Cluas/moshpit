@@ -170,6 +170,7 @@ enum HostCommands {
     static func clearStamp(pane: String, tmuxSocket: String) -> String {
         "TMUX=\(quote(tmuxValue(socket: tmuxSocket))) sh -c 'tmux set -pu -t \(quote(pane)) @moshpit_state; " +
         "tmux set -pu -t \(quote(pane)) @moshpit_agent; " +
+        "tmux set -pu -t \(quote(pane)) @moshpit_prompt; " +
         "tmux set -pu -t \(quote(pane)) @moshpit_title' 2>/dev/null || true"
     }
 

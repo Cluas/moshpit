@@ -83,6 +83,13 @@ final class NotificationService: UNNotificationServiceExtension {
         PushDiagnostics.record("opened a \(status.state) push from \(status.host)"
                               + (status.agent == PushRemoteNotification.selfTestAgent
                                  ? " (self-test \(status.title ?? "?"))" : ""))
+        // The card names the connection the way the phone does — the label the
+        // user typed when saving it — not by whatever `hostname` returns on the
+        // host. The envelope's `conn` points at the pairing, and the pairing
+        // remembers the label the app gave it. A local card uses the same name,
+        // so the two copies of one event finally read alike.
+        let label = UUID(uuidString: status.conn)
+            .flatMap { PushPairingStore.pairing(for: $0)?.hostLabel }
         // The standing store is what lets this process and the app agree on the
         // 0→1 edge — whichever of the push and the local announcement lands
         // first rings; the other sees "already standing" and stays silent.
@@ -95,11 +102,11 @@ final class NotificationService: UNNotificationServiceExtension {
             let count = PushStanding.standing(conn: status.conn).count
             PushRemoteNotification.apply(status, to: content,
                                          attentionEdge: edge, standingCount: count,
-                                         prefs: prefs)
+                                         prefs: prefs, label: label)
         } else {
             // A `done` closes its pane's turn — that pane is no longer waiting.
             PushStanding.clear(conn: status.conn, pane: status.pane)
-            PushRemoteNotification.apply(status, to: content, prefs: prefs)
+            PushRemoteNotification.apply(status, to: content, prefs: prefs, label: label)
         }
         contentHandler(content)
     }

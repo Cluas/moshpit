@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
-"""Generate Moshpit/Resources/Localizable.xcstrings and Extensions/MoshpitIsland/Localizable.xcstrings.
+"""Generate the three strings catalogs: Moshpit/Resources/Localizable.xcstrings (the app),
+Extensions/MoshpitIsland/Localizable.xcstrings (the widget) and
+Extensions/MoshpitPush/Localizable.xcstrings (the notification service extension).
 
 Source language: en (the key IS the English value).
 Each entry carries complete zh-Hans + ja translations.
@@ -300,9 +302,9 @@ add("When the app isn’t running, your host sends the alert through Moshpit’s
     "应用未运行时，提醒由你的主机经 Moshpit 推送中继送达。内容在你的主机上用只有这台设备持有的密钥加密——中继和 Apple 只经手密文，谁也读不了。手机锁屏也能送达。",
     "アプリが起動していないとき、通知はホストから Moshpit のプッシュリレー経由で届きます。内容はこのデバイスだけが持つ鍵でホスト上で暗号化され、リレーも Apple も暗号文を運ぶだけで読めません。ロック中の iPhone にも届きます。")
 add("Quiet by design", "为安静而设计", "静けさを前提に")
-add("A question must stand for 30 seconds before any phone hears about it — answered at your desk means never announced. All waiting agents share one summary card; only the first rings. A finished turn only chimes if it ran three minutes or more. Parked agents stay silent.",
-    "一个提问要站立满 30 秒手机才会知道——在桌面上顺手答掉就永远不响。所有等待中的智能体共用一张摘要卡，只有第一个会响铃。任务完成只有跑满三分钟才会提示音。待机的智能体保持静默。",
-    "問いかけは 30 秒間続いて初めて通知されます——デスクですぐ答えれば鳴りません。待機中のエージェントは 1 枚のサマリーカードを共有し、鳴るのは最初の 1 回だけ。完了音は 3 分以上かかったターンのみ。放置中のエージェントは静かなままです。")
+add("A question must stand for 30 seconds before any phone hears about it — answered at your desk means never announced. All waiting agents share one summary card; only the first rings. A finished turn shows the prompt it answered and only chimes if it ran three minutes or more. Parked agents stay silent.",
+    "一个提问要站立满 30 秒手机才会知道——在桌面上顺手答掉就永远不响。所有等待中的智能体共用一张摘要卡，只有第一个会响铃。任务完成会带上它答的那条提示词，只有跑满三分钟才会提示音。待机的智能体保持静默。",
+    "問いかけは 30 秒間続いて初めて通知されます——デスクですぐ答えれば鳴りません。待機中のエージェントは 1 枚のサマリーカードを共有し、鳴るのは最初の 1 回だけ。完了通知には答えたプロンプトが載り、完了音は 3 分以上かかったターンのみ。放置中のエージェントは静かなままです。")
 # Server binary editor
 add("MOSH SERVER PATH", "MOSH SERVER 路径", "MOSH SERVER パス")
 add("The mosh-server executable on the remote host. Override if it isn't on PATH (e.g. /opt/homebrew/bin/mosh-server).",
@@ -666,9 +668,9 @@ add("Alert when an agent needs you", "智能体需要你时提醒", "エージ�
 add("Alert sound", "提示音", "通知音")
 add("Play a sound when the agent needs you", "智能体需要你时播放提示音", "エージェントがあなたを必要とするとき音を鳴らします")
 add("Show detail on lock screen", "在锁屏上显示详情", "ロック画面に詳細を表示")
-add("Display what the agent is running/asking — off keeps it private",
-    "显示智能体正在跑什么、在问什么——关掉则保持私密",
-    "エージェントが実行中の内容や問いかけを表示します——オフにすると非表示のままです")
+add("Display what the agent is running, asking, or was asked — off keeps it private",
+    "显示 agent 正在跑什么、在问什么、做完的是哪条提示词——关掉则保持私密",
+    "エージェントが実行中の内容、問いかけ、完了したプロンプトを表示します——オフにすると非表示のままです")
 add("Moshpit watches the active session for agent activity and posts a local alert when your agent needs attention — natively on herdr, via the bell and hooks on tmux.",
     "Moshpit 会盯着当前会话里的智能体活动，需要你处理时发本地通知——herdr 上是原生支持，tmux 上靠响铃和 hook。",
     "Moshpit はアクティブなセッションのエージェントの動きを監視し、対応が必要になるとローカル通知を送ります——herdr ではネイティブに、tmux ではベルとフックを介して行います。")
@@ -806,7 +808,8 @@ add("Connection", "连接", "接続")
 add("Pane", "窗格", "ペイン")
 add("Respond to agent", "回应智能体", "エージェントに応答")
 add("Switch agent", "切换智能体", "エージェントを切り替え")
-add("✓ %@ finished", "✓ %@ 已完成", "✓ %@ が完了しました")
+# "✓ %@ finished" lives in the PUSH table below: the notification service
+# extension renders the same card and needs the key in its own catalog.
 
 # APNs fallback text. These are not shown by any Swift code: the push relay puts
 # them in the payload as `title-loc-key` / `loc-key`, and iOS resolves them
@@ -905,6 +908,18 @@ island("working", "工作中", "作業中")
 island("needs attention", "需要关注", "要注意")
 island("idle", "空闲", "アイドル")
 ISLAND["%lldms"] = SAME  # latency unit chip in the Island UI
+
+# ---------- Agent notifications (shared with the push extension) ----------
+# AgentNotificationCopy (MoshpitKit) composes every agent card — the local one
+# the app posts and the pushed one the notification service extension writes.
+# String(localized:) resolves against Bundle.main, which inside the extension is
+# the EXTENSION, so it carries these keys in a catalog of its own.
+PUSH = {}
+def push(key, zh, ja):
+    PUSH[key] = (zh, ja)
+    S[key] = (zh, ja)
+push("✓ %@ finished", "✓ %@ 已完成", "✓ %@ が完了しました")
+push("%@ needs you", "%@ 在等你", "%@ が待っています")
 
 
 def unit(value):
@@ -1044,10 +1059,12 @@ def check(paths):
 
 root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 CATALOGS = [os.path.join(root, "Moshpit/Resources/Localizable.xcstrings"),
-            os.path.join(root, "Extensions/MoshpitIsland/Localizable.xcstrings")]
+            os.path.join(root, "Extensions/MoshpitIsland/Localizable.xcstrings"),
+            os.path.join(root, "Extensions/MoshpitPush/Localizable.xcstrings")]
 
 if "--check" in sys.argv:
     raise SystemExit(check(CATALOGS))
 
 write_catalog(CATALOGS[0], S)
 write_catalog(CATALOGS[1], ISLAND)
+write_catalog(CATALOGS[2], PUSH)

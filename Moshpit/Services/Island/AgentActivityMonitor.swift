@@ -409,9 +409,13 @@ final class AgentActivityMonitor {
         Log.island.info("announcing attention: pane \(paneId, privacy: .public) on \(location, privacy: .public)")
         guard settings.notificationsEnabled else { return }
         let conn = connectionId.uuidString
+        // The entry carries the card's WHERE in card form (`place`, not the
+        // island's `location`): the digest below is drawn from the standing
+        // set alone, newest first, so what it can say is what was stored.
         let edge = PushStanding.noteStanding(conn: conn, entry: .init(
             pane: paneId, agent: displayCommand(command), title: detail,
-            location: location, since: Int(episode.timeIntervalSince1970),
+            location: place(connectionId: connectionId, paneId: paneId),
+            since: Int(episode.timeIntervalSince1970),
             recordedAt: Date()))
         postedAttention.insert(PaneKey(conn: connectionId, pane: paneId))
         renderAttentionDigest(connectionId: connectionId, edge: edge)
@@ -432,20 +436,15 @@ final class AgentActivityMonitor {
         }
         let content = UNMutableNotificationContent()
         let who = newest.agent?.isEmpty == false ? newest.agent! : "agent"
-        // "+N" rather than a sentence, for parity with the notification service
-        // extension, which renders the pushed copy of this same card and has no
-        // localization catalog of its own.
-        content.title = standing.count > 1 ? "\(who) +\(standing.count - 1)" : who
-        if let title = newest.title, !title.isEmpty {
-            content.body = "\(title) — \(newest.location ?? "")"
-        } else {
-            content.body = newest.location ?? ""
-        }
-        content.sound = (edge && settings.attentionSoundEnabled) ? .default : nil
-        // The edge is ELIGIBLE to break through Focus (see the entitlement notes
-        // in docs/PUSH.md — each Focus still decides for itself). Updates are
+        // The same words the notification service extension puts on the pushed
+        // copy of this card — one renderer, so the two never drift again. The
+        // edge is ELIGIBLE to break through Focus (see the entitlement notes in
+        // docs/PUSH.md — each Focus still decides for itself); updates are
         // `.passive`: they change a count on a card, they wake no one.
-        content.interruptionLevel = edge ? .timeSensitive : .passive
+        AgentNotificationCopy.attention(agent: who, standingCount: standing.count,
+                                        detail: newest.title, place: newest.location ?? "",
+                                        edge: edge, sound: settings.attentionSoundEnabled,
+                                        into: content)
         content.userInfo = [
             AgentNotifications.connectionKey: conn,
             AgentNotifications.paneKey: newest.pane
@@ -456,23 +455,23 @@ final class AgentActivityMonitor {
     /// Post the "agent finished" notification. Hook-driven only — a precise
     /// `Stop` stamp flipping a pane to `.done` is a real end-of-turn signal,
     /// whereas the output heuristic's `.done` (4s of quiet) is too fuzzy to ping
-    /// on. Carries the Reply action so the user can fire the next instruction
-    /// from the lock screen.
+    /// on. `detail` is the prompt the turn answered (the hook's title on a
+    /// `done`), already gated by the Show detail switch by the caller; `duration`
+    /// is how long the closing episode ran — the card shows it, and at the
+    /// shared threshold (PushRemoteNotification.doneSoundThreshold) it decides
+    /// whether this finish is worth a sound: the user walked away from a build,
+    /// tell them it is over; a twenty-second answer is information, not an
+    /// interruption. A tap opens the pane.
     private func postDone(connectionId: UUID, paneId: String,
-                          location: String, command: String,
+                          command: String, detail: String?,
                           duration: TimeInterval = 0) {
         guard settings.notificationsEnabled else { return }
         let content = UNMutableNotificationContent()
-        content.title = String(localized: "✓ \(displayCommand(command)) finished")
-        content.body = location
-        // Only a LONG turn's finish makes a sound — the user walked away from a
-        // build; tell them it is over. A twenty-second answer finishing is
-        // information, not an interruption: silent, `.passive`, in the list for
-        // whenever they next look. Same threshold as the pushed copy
-        // (PushRemoteNotification.doneSoundThreshold).
-        let isLong = Int(duration) >= PushRemoteNotification.doneSoundThreshold
-        content.interruptionLevel = isLong ? .active : .passive
-        content.sound = (isLong && settings.attentionSoundEnabled) ? .default : nil
+        AgentNotificationCopy.done(agent: displayCommand(command), detail: detail,
+                                   place: place(connectionId: connectionId, paneId: paneId),
+                                   duration: Int(duration), sound: settings.attentionSoundEnabled,
+                                   threshold: PushRemoteNotification.doneSoundThreshold,
+                                   into: content)
         content.userInfo = [
             AgentNotifications.connectionKey: connectionId.uuidString,
             AgentNotifications.paneKey: paneId
@@ -727,8 +726,14 @@ final class AgentActivityMonitor {
                 // on same-state stamps, that is "time since the last human
                 // interaction", which is exactly the walked-away measure.
                 let duration = prevSince.map { since.timeIntervalSince($0) } ?? 0
+                // On a `done` the hook's title is the prompt the turn answered
+                // (`@moshpit_prompt`, carried over by the stamp script), so the
+                // card can say WHAT finished — behind the same switch as every
+                // other lock-screen detail.
                 postDone(connectionId: connectionId, paneId: paneId,
-                         location: loc, command: cmd, duration: duration)
+                         command: cmd,
+                         detail: settings.lockScreenDetailEnabled ? hook.title : nil,
+                         duration: duration)
             }
         }
 
@@ -762,6 +767,25 @@ final class AgentActivityMonitor {
         let place = [session, window.displayTitle(vocab)]
             .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
         return place.isEmpty ? host : "\(host) · \(place)"
+    }
+
+    /// Where an agent is, as a notification names it: the connection's own
+    /// name and the session — the two words that tell workspaces apart. Not
+    /// ``location(connectionId:paneId:)``, which the island and the Agents list
+    /// use and which adds the window: on a lock screen that read as
+    /// "work · 0 · 14: bl", and the card's body now says WHAT instead of
+    /// narrowing down WHERE. Same rule as the pushed copy
+    /// (``AgentNotificationCopy/place(label:session:)``), so a card reads the
+    /// same however it reached the phone.
+    private func place(connectionId: UUID, paneId: String) -> String {
+        let label = conns[connectionId]?.connection.displayName ?? ""
+        guard let snapshot = conns[connectionId]?.controller?.snapshot,
+              let pane = snapshot.panes[paneId],
+              let window = snapshot.windows[pane.windowId],
+              let session = snapshot.sessions[window.sessionId]
+        else { return label }
+        return AgentNotificationCopy.place(label: label,
+                                           session: snapshot.sessionDisplayName(session))
     }
 
     /// Clean a foreground command for display (drop a leading login "-").

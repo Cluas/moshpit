@@ -104,8 +104,8 @@ struct QuietRenderingTests {
                                      attentionEdge: false, standingCount: 3)
         #expect(update.sound == nil, "a count changing is not worth a sound")
         #expect(update.interruptionLevel == .passive)
-        #expect(update.title == "claude +2",
-                "the summary is language-free (+N) because the extension has no catalog")
+        #expect(update.title == "claude +2 needs you",
+                "further prompts ride on the name as +N — one card for the whole wait")
     }
 
     @Test("a finished short turn is information, not an interruption")

@@ -135,7 +135,7 @@ struct SettingsScreen: View {
                         isOn: $settings.attentionSoundEnabled)
                     ToggleRow(
                         label: "Show detail on lock screen",
-                        subtitle: "Display what the agent is running/asking — off keeps it private",
+                        subtitle: "Display what the agent is running, asking, or was asked — off keeps it private",
                         isOn: $settings.lockScreenDetailEnabled)
                     ChevronRow(label: "How notifications work") { showNotifInfo = true }
                     // Shown on herdr too, unlike the sheet this
@@ -628,7 +628,7 @@ struct NotificationInfoView: View {
                 row("paperplane.fill", Ink.mosh, "Push, sealed end-to-end",
                     "When the app isn’t running, your host sends the alert through Moshpit’s push relay. It is encrypted on your host with a key only this device holds — the relay and Apple carry ciphertext and can read none of it. Delivered even from a locked phone.")
                 row("moon.zzz.fill", Ink.meta, "Quiet by design",
-                    "A question must stand for 30 seconds before any phone hears about it — answered at your desk means never announced. All waiting agents share one summary card; only the first rings. A finished turn only chimes if it ran three minutes or more. Parked agents stay silent.")
+                    "A question must stand for 30 seconds before any phone hears about it — answered at your desk means never announced. All waiting agents share one summary card; only the first rings. A finished turn shows the prompt it answered and only chimes if it ran three minutes or more. Parked agents stay silent.")
             }
             .listStyle(.insetGrouped)
             .moshpitForm()

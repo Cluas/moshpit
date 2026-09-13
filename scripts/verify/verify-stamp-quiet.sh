@@ -4,7 +4,7 @@
 #   1. an idle reminder on a parked (done) pane stamps nothing and pushes nothing
 #   2. an attention answered within the grace window never reaches the sender
 #   3. one that stands the window out reaches it exactly once
-#   4. a done carries how long the closing episode ran
+#   4. a done carries how long the closing episode ran, and the prompt it answered
 set -eu
 T=$(command -v tmux); S=stampquiet
 SCRATCH=$(mktemp -d)
@@ -77,10 +77,15 @@ echo "== 4: done carries the closing episode's length =="
 sleep 2
 stamp done ""
 sleep 1
-grep -Eq '^PUSH done claude  ?[0-9]+$' "$SCRATCH/push.log" || fail "done push missing duration: $(tail -1 "$SCRATCH/push.log")"
+# The title slot carries the LAST PROMPT ("yes", claim 2's answer at the desk)
+# — a finish card says what finished — then the duration.
+grep -Eq '^PUSH done claude yes [0-9]+$' "$SCRATCH/push.log" || fail "done push should carry the prompt and the duration: $(tail -1 "$SCRATCH/push.log")"
 DUR=$(tail -1 "$SCRATCH/push.log" | awk '{print $NF}')
 [ "$DUR" -ge 5 ] && [ "$DUR" -le 20 ] || fail "duration $DUR implausible for a ~7s episode"
-echo "   ok  dur=$DUR s"
+# And the pane's own title now reads the same, for the app's local card.
+TITLE_DONE=$("$T" -L $S display-message -p -t "$PANE" '#{@moshpit_title}')
+[ "$TITLE_DONE" = "yes" ] || fail "a done's title should be the prompt it answered, got: $TITLE_DONE"
+echo "   ok  prompt=yes dur=$DUR s"
 
 echo "== 5: an idle nag HEALS a fossil attention =="
 # The frozen-for-a-day case: a pane stuck in attention (old stamp script, or a

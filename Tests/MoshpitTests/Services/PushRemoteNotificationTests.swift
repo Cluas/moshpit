@@ -97,7 +97,7 @@ struct PushRemoteNotificationTests {
 
         PushRemoteNotification.apply(Self.status(), to: content)
 
-        #expect(content.title == "claude")
+        #expect(content.title == "claude needs you")
         #expect(content.body == "Bash: rm -rf build — m1-pro · work")
         // The two keys that make the existing Allow/Deny path work.
         #expect(content.userInfo[AgentNotifications.connectionKey] as? String
@@ -108,16 +108,54 @@ struct PushRemoteNotificationTests {
         #expect(content.categoryIdentifier.isEmpty)
     }
 
-    @Test("a done push is marked with the glyph, not a translated sentence")
+    @Test("a done push reads as finished, the same words as the local card")
     func doneRendering() throws {
         let content = UNMutableNotificationContent()
         PushRemoteNotification.apply(Self.status(state: "done", title: nil), to: content)
-        // No English is composed here on purpose: String(localized:) in an
-        // extension resolves against the EXTENSION's bundle, so a sentence built
-        // here would ship untranslated.
-        #expect(content.title == "✓ claude")
+        // The sentence IS composed here now — the extension carries its own
+        // strings catalog (gen_xcstrings.py writes it from the app's table), so
+        // String(localized:) resolves in both processes. A short turn with no
+        // prompt on record: no duration, no detail, just where.
+        #expect(content.title == "✓ claude finished")
         #expect(content.body == "m1-pro · work")
         #expect(content.categoryIdentifier.isEmpty)
+    }
+
+    @Test("a done push says what finished and how long it ran")
+    func doneWithPromptAndDuration() throws {
+        let content = UNMutableNotificationContent()
+        PushRemoteNotification.apply(
+            Self.status(state: "done", title: "Upload the build with the new Xcode", dur: 12 * 60),
+            to: content)
+        // The hook's title on a `done` is the prompt the turn answered
+        // (@moshpit_prompt on the host). The duration rides on the title; its
+        // exact spelling is Foundation's and follows the device language, so
+        // only the shape is pinned here (the formatter itself is pinned in
+        // AgentNotificationCopyTests with an explicit locale).
+        #expect(content.title.hasPrefix("✓ claude finished · "))
+        #expect(content.title.contains("12"))
+        #expect(content.body == "Upload the build with the new Xcode — m1-pro · work")
+    }
+
+    @Test("Show detail off keeps the prompt out of a finished card too")
+    func detailOffHidesThePrompt() throws {
+        let content = UNMutableNotificationContent()
+        PushRemoteNotification.apply(
+            Self.status(state: "done", title: "Upload the build with the new Xcode"),
+            to: content, prefs: .init(showDetail: false, sound: true))
+        #expect(content.title == "✓ claude finished")
+        #expect(content.body == "m1-pro · work")
+    }
+
+    @Test("the card names the connection the way the phone does, when it knows")
+    func labelOverridesHostName() throws {
+        let content = UNMutableNotificationContent()
+        // The host only knows its own `hostname`; the phone knows what the user
+        // called the connection. The extension reads that off the pairing and
+        // hands it in; a blank label falls back to the host.
+        PushRemoteNotification.apply(Self.status(), to: content, label: "mac-mini")
+        #expect(content.body == "Bash: rm -rf build — mac-mini · work")
+        #expect(PushRemoteNotification.location(Self.status(), label: "  ") == "m1-pro · work")
     }
 
     @Test("Show detail off keeps the question out of a pushed body too")
@@ -128,7 +166,7 @@ struct PushRemoteNotificationTests {
         // The setting's own subtitle is "off keeps it private" — for months the
         // local surfaces obeyed and a pushed notification printed the command
         // anyway. Who and where survive; what does not.
-        #expect(content.title == "claude")
+        #expect(content.title == "claude needs you")
         #expect(content.body == "m1-pro · work")
         // The unrendered copy in userInfo stays: the app acknowledges prompts
         // and matches self-test nonces through it, and it is never shown.
@@ -189,7 +227,7 @@ struct PushRemoteNotificationTests {
         let content = UNMutableNotificationContent()
         content.title = "An agent needs you"
         PushRemoteNotification.apply(Self.status(title: "   "), to: content)
-        #expect(content.title == "claude")
+        #expect(content.title == "claude needs you")
         #expect(content.body == "m1-pro · work")
     }
 
@@ -217,7 +255,7 @@ struct PushRemoteNotificationTests {
     func noAgent() throws {
         let content = UNMutableNotificationContent()
         PushRemoteNotification.apply(Self.status(agent: nil, sess: nil), to: content)
-        #expect(content.title == "m1-pro")
+        #expect(content.title == "m1-pro needs you")
     }
 
     @Test("existing userInfo is preserved, not replaced")

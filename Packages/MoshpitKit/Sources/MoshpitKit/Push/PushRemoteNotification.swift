@@ -4,13 +4,15 @@ import UserNotifications
 /// Turning a sealed push into the notification the user sees.
 ///
 /// Shared by the app and the notification service extension, which is the only
-/// process awake when a push lands. Kept free of any English sentence on
-/// purpose: `String(localized:)` resolves against `Bundle.main`, which inside an
-/// extension is the EXTENSION's bundle — so a sentence composed here would
-/// silently ship untranslated. Everything shown is either data the agent sent or
-/// a glyph, and the two generic lines that need real prose stay where they can be
-/// translated: the relay's `title-loc-key`/`loc-key` fallback, resolved by iOS
-/// against the app's own catalog.
+/// process awake when a push lands. The words themselves come from
+/// ``AgentNotificationCopy`` — the same renderer the app uses for its local
+/// cards, so a pushed finish and a local one read identically. Its sentences
+/// are translated in BOTH processes because the extension ships a catalog of
+/// its own (`Extensions/MoshpitPush/Localizable.xcstrings`, written by
+/// `scripts/gen/gen_xcstrings.py` from the app's table); `String(localized:)`
+/// resolves against `Bundle.main`, which inside an extension is the extension.
+/// The relay's `title-loc-key`/`loc-key` fallback — what shows when no key
+/// opens the envelope — is resolved by iOS against the app's catalog instead.
 public enum PushRemoteNotification {
     /// Payload key holding the sealed envelope. Matches the relay's `mp`.
     public static let envelopeKey = "mp"
@@ -65,21 +67,16 @@ public enum PushRemoteNotification {
         return nil
     }
 
-    /// Where this agent is, in the form the local notifications already use.
-    ///
-    /// A session name that is only digits is treated as no name. tmux calls its
-    /// first session `0`, so the honest-looking `host · session` rendering came
-    /// out as "mac-mini.lan · 0" on a real lock screen — which reads as a broken
-    /// counter, not a location. Technically correct, which is why no test caught
-    /// it and why it took looking at a real notification to see.
-    ///
-    /// The trade: someone who deliberately names a session `7` loses that from
-    /// the notification. A bare number carries no information about where you
-    /// are either way, so this is the better of the two.
-    public static func location(_ status: PushSealedBox.Status) -> String {
-        let session = status.sess?.trimmingCharacters(in: .whitespaces) ?? ""
-        guard !session.isEmpty, !session.allSatisfy(\.isNumber) else { return status.host }
-        return "\(status.host) · \(session)"
+    /// Where this agent is, in the form the local notifications use
+    /// (``AgentNotificationCopy/place(label:session:)``). `label` is the name
+    /// the user gave this connection on the phone, when the caller knows it —
+    /// the extension reads it off the pairing the envelope's `conn` points at;
+    /// the host's own name is the fallback. The envelope cannot carry the label:
+    /// the host never learns what the phone calls it.
+    public static func location(_ status: PushSealedBox.Status, label: String? = nil) -> String {
+        let label = label?.trimmingCharacters(in: .whitespaces) ?? ""
+        return AgentNotificationCopy.place(label: label.isEmpty ? status.host : label,
+                                           session: status.sess)
     }
 
     /// Rewrite a notification with the decrypted content.
@@ -134,53 +131,45 @@ public enum PushRemoteNotification {
     /// ``PushStanding``, which both the app and the extension share precisely
     /// so the two paths cannot both claim it for the same prompt.
     ///
-    /// `standingCount` is how many prompts are waiting AFTER this one; a count
-    /// above one renders as a language-free "+N" suffix, because this function
-    /// also runs in the notification service extension, whose bundle has no
-    /// localization catalog — a sentence composed there ships untranslated.
+    /// `standingCount` is how many prompts are waiting INCLUDING this one; a
+    /// count above one renders as "+N" on the agent's name, one card for the
+    /// whole wait. `label` is what the phone calls this connection (see
+    /// ``location(_:label:)``).
     public static func apply(_ status: PushSealedBox.Status,
                              to content: UNMutableNotificationContent,
                              attentionEdge: Bool = true,
                              standingCount: Int = 1,
                              prefs: PushPrefs.Values = .default,
+                             label: String? = nil,
                              now: Date = Date()) {
         let who = status.agent?.isEmpty == false ? status.agent! : status.host
-        let place = location(status)
+        let place = location(status, label: label)
         // "Show detail on lock screen" is a promise this renderer has to keep
         // for PUSHED notifications too: with it off, the body names where —
-        // never what the agent is running or asking. The title (agent name) and
-        // the userInfo copy of the detail stay: the name is the card's job, and
-        // userInfo is never rendered — the app reads it to acknowledge prompts
-        // and match self-tests, so it carries the REAL detail either way.
+        // never what the agent is running, asking, or was asked to do. The
+        // title (agent name) and the userInfo copy of the detail stay: the name
+        // is the card's job, and userInfo is never rendered — the app reads it
+        // to acknowledge prompts and match self-tests, so it carries the REAL
+        // detail either way.
         let rawDetail = status.title?.trimmingCharacters(in: .whitespacesAndNewlines)
         let detail = prefs.showDetail ? rawDetail : nil
 
         if status.state == "done" {
-            content.title = "✓ \(who)"
-            content.body = place
-            // A finished SHORT turn is information, not an interruption: no
-            // sound, `.passive` (the list, but no lit screen, no Focus breach).
-            // A long turn — the user walked away from a build — earns `.active`
-            // and the chime, unless the Alert sound switch is off. `dur` is
-            // absent from older senders; absent reads as short, because
+            // On a `done` the hook's title is the prompt the turn answered
+            // (`@moshpit_prompt` on the host), so the card says what finished.
+            // `dur` is absent from older senders; absent reads as short, because
             // "quieter than intended" is the recoverable direction.
-            let isLong = (status.dur ?? 0) >= Self.doneSoundThreshold
-            content.sound = (isLong && prefs.sound) ? .default : nil
-            content.interruptionLevel = isLong ? .active : .passive
+            AgentNotificationCopy.done(agent: who, detail: detail, place: place,
+                                       duration: status.dur ?? 0, sound: prefs.sound,
+                                       threshold: Self.doneSoundThreshold, into: content)
         } else {
-            // The newest question leads; further standing prompts are a count.
-            content.title = standingCount > 1 ? "\(who) +\(standingCount - 1)" : who
-            if let detail, !detail.isEmpty {
-                content.body = "\(detail) — \(place)"
-            } else {
-                // No hook title — no jq on the host, a bell-only signal, or
-                // detail hidden by the switch. The agent name and the location
-                // are still more use than the relay's generic fallback line, so
-                // both slots take data.
-                content.body = place
-            }
-            content.sound = (attentionEdge && prefs.sound) ? .default : nil
-            content.interruptionLevel = attentionEdge ? .timeSensitive : .passive
+            // No hook title — no jq on the host, a bell-only signal, or detail
+            // hidden by the switch — leaves the body to the location alone,
+            // which is still more use than the relay's generic fallback line.
+            AgentNotificationCopy.attention(agent: who, standingCount: standingCount,
+                                            detail: detail, place: place,
+                                            edge: attentionEdge, sound: prefs.sound,
+                                            into: content)
         }
 
         var info = content.userInfo
@@ -189,10 +178,9 @@ public enum PushRemoteNotification {
         info[agentKey] = status.agent ?? ""
         info[stateKey] = status.state
         // The hook's title survives here even when the rendered body drops it
-        // (a `done` shows the location instead). A pairing self-test carries its
-        // nonce in exactly this field, and matching it is the only way the phone
-        // can prove that THIS push — not a stale one from an earlier attempt —
-        // arrived.
+        // (Show detail off). A pairing self-test carries its nonce in exactly
+        // this field, and matching it is the only way the phone can prove that
+        // THIS push — not a stale one from an earlier attempt — arrived.
         info[detailKey] = rawDetail ?? ""
         content.userInfo = info
 

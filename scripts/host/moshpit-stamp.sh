@@ -17,8 +17,11 @@
 #     nothing.
 #
 # The title is best-effort: with jq it is derived from the hook's stdin JSON,
-# without jq it is skipped and only the state is stamped. It is cleared on `done`
-# and whenever no fresh title is derivable, so a stale one never lingers.
+# without jq it is skipped and only the state is stamped. While a turn runs it
+# is what the agent is doing or asking; on `done` it becomes the PROMPT the turn
+# answered (remembered in @moshpit_prompt from UserPromptSubmit), so the finish
+# card can say what finished. Whenever no title is derivable it is cleared, so a
+# stale one never lingers.
 #
 # Canonical copy. Moshpit/Services/Install/HostScripts.swift carries a
 # byte-identical literal (the app cannot read a repo file on a phone);
@@ -40,6 +43,14 @@ if command -v jq >/dev/null 2>&1 && [ ! -t 0 ]; then
   esac
   TITLE=$(printf "%s" "$TITLE" | tr "\n" " " | cut -c1-80)
   command -v iconv >/dev/null 2>&1 && TITLE=$(printf "%s" "$TITLE" | iconv -f UTF-8 -t UTF-8 -c 2>/dev/null)
+  # Remember the prompt for this turn's `done`. Only the prompt: a tool line
+  # would overwrite it on the very next PreToolUse, and a Stop hook brings no
+  # text of its own. Already cut to 80 bytes above — a prompt can be a
+  # paragraph, and a lock screen shows two lines (the phone cuts again, by
+  # character, before showing it).
+  if [ "$EV" = "UserPromptSubmit" ] && [ -n "$TITLE" ]; then
+    tmux set -p -t "$TMUX_PANE" @moshpit_prompt "$TITLE" 2>/dev/null
+  fi
 fi
 # What the pane was doing BEFORE this stamp, read in one round trip. Two things
 # hang off it below: telling a real question apart from an idle nag, and
@@ -98,7 +109,12 @@ EPISODE=$NOW
 if [ "$PREV_ST" = "$ST" ]; then
   case "$PREV_SINCE" in *[!0-9]*|"") ;; *) EPISODE=$PREV_SINCE ;; esac
 fi
-if [ -n "$TITLE" ] && [ "$ST" != "done" ]; then
+# A `done` carries the prompt this turn answered: "what finished" is the one
+# thing a finish card is for, and the Stop event itself says nothing.
+if [ "$ST" = "done" ]; then
+  TITLE=$(tmux display-message -p -t "$TMUX_PANE" "#{@moshpit_prompt}" 2>/dev/null)
+fi
+if [ -n "$TITLE" ]; then
   tmux set -p -t "$TMUX_PANE" @moshpit_title "$TITLE" 2>/dev/null
 else
   tmux set -pu -t "$TMUX_PANE" @moshpit_title 2>/dev/null

@@ -238,7 +238,19 @@ The plaintext is one JSON object:
 
 `conn` is why no host-name-to-connection lookup exists anywhere: the phone told
 the host its own id at pairing, so a notification arrives already knowing which
-saved connection it belongs to.
+saved connection it belongs to. It is also how the card gets its name: the
+extension reads the pairing `conn` points at and shows the label the user gave
+the connection on the phone, not whatever `hostname` says on the host.
+
+`title` is what the hook knew. On an `attention` it is the tool line or the
+question; on a `done` it is the PROMPT the turn answered — the stamp script
+remembers every `UserPromptSubmit` in `@moshpit_prompt` and hands it to the
+`Stop`, because the Stop event itself carries no text and "what finished" is the
+one thing a finish card is for. A prompt can be a paragraph and a lock screen
+shows two lines, so it is cut twice: to 80 bytes on the host (UTF-8 repaired
+by `iconv -c`), then to 72 characters, whitespace collapsed, on the phone
+(`AgentNotificationCopy.detailLimit`). `dur` is how long the closing turn ran,
+in seconds.
 
 ## Pairing, and everything else installed on a host
 
@@ -471,10 +483,35 @@ the host since the last human interaction — the walked-away case). Older
 senders send no duration; absent reads as short, because quieter is the
 recoverable direction.
 
+**One renderer, two deliveries.** Every card — pushed or local — is composed by
+`AgentNotificationCopy` in MoshpitKit, so the same event reads the same however
+it reached the phone. Before, a pushed finish was "✓ claude / mac-mini.lan" and
+its local twin "✓ claude finished / work · 0 · 14: bl", and neither said what
+had finished. Now both read
+
+```
+✓ claude finished · 12 min
+Upload the build with the new Xcode — mac-mini · work
+
+claude needs you            (claude +2 needs you when more are waiting)
+Bash: rm -rf build — mac-mini · work
+```
+
+The place is the connection's name and the session (a digits-only session name
+is dropped — tmux's default `0` read as a broken counter); the window is gone,
+because the body now says WHAT. The extension carries its own strings catalog
+(`Extensions/MoshpitPush/Localizable.xcstrings`, written by
+`scripts/gen/gen_xcstrings.py` from the same table as the app's), which is what
+lets the sentence be translated in a process whose `Bundle.main` is not the app.
+Durations are Foundation's own unit formatting and need no catalog. Show detail
+off keeps the prompt out of a finished card exactly as it keeps the question
+out of a needs-you card.
+
 Verified host-side against a real tmux pane by `scripts/verify/verify-stamp-quiet.sh`:
 a parked pane's idle nag stays `done` and pushes nothing; a question answered
 inside the window never reaches the sender; one that stands the window out
-pushes exactly once, with the question; a `done` carries its duration.
+pushes exactly once, with the question; a `done` carries its duration and the
+prompt it answered.
 
 ## Throttling and coalescing
 

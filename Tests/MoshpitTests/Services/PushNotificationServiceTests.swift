@@ -25,12 +25,13 @@ struct PushNotificationServiceTests {
     /// Install one pairing for the duration of a test, restoring whatever the
     /// container held. The store is real shared state — the extension has no
     /// injection seam, because on device it has no one to inject it.
-    private func withPairing<T>(secretHex: String = secret, _ body: () throws -> T) throws -> T {
+    private func withPairing<T>(secretHex: String = secret, label: String = "m1-pro",
+                                _ body: () throws -> T) throws -> T {
         let saved = PushPairingStore.read()
         defer { PushPairingStore.write(saved) }
         PushPairingStore.write([
             PushPairing(connectionId: UUID(uuidString: Self.conn)!,
-                        hostLabel: "m1-pro", secretHex: secretHex,
+                        hostLabel: label, secretHex: secretHex,
                         sendToken: String(repeating: "0", count: 64),
                         relayURL: "https://push.example.org", createdAt: Date()),
         ])
@@ -77,7 +78,7 @@ struct PushNotificationServiceTests {
     func opensAndRewrites() throws {
         let delivered = try withPairing { deliver(try request()) }
         let content = try #require(delivered)
-        #expect(content.title == "claude")
+        #expect(content.title == "claude needs you")
         #expect(content.body == "Bash: rm -rf build — m1-pro · work")
         // The two keys the lock-screen Allow/Deny path reads. Without them a
         // pushed notification would look right and do nothing.
@@ -91,8 +92,18 @@ struct PushNotificationServiceTests {
     func donePush() throws {
         let delivered = try withPairing { deliver(try request(state: "done", title: nil)) }
         let content = try #require(delivered)
-        #expect(content.title == "✓ claude")
+        #expect(content.title == "✓ claude finished")
         #expect(content.categoryIdentifier.isEmpty)
+    }
+
+    @Test("the extension names the connection what the phone calls it")
+    func pairingLabelNamesThePlace() throws {
+        // The envelope carries the host's `hostname`; the pairing it points at
+        // carries the label the user typed when saving the connection. The
+        // card uses the latter, like the local card does.
+        let delivered = try withPairing(label: "mac-mini") { deliver(try request()) }
+        let content = try #require(delivered)
+        #expect(content.body == "Bash: rm -rf build — mac-mini · work")
     }
 
     @Test("a push this device has no key for keeps the translated fallback")
@@ -136,7 +147,7 @@ struct PushNotificationServiceTests {
             ts: Int(Date().timeIntervalSince1970) - 86_400)
         PushRemoteNotification.apply(old, to: content)
 
-        #expect(content.title == "claude")
+        #expect(content.title == "claude needs you")
         #expect(content.body.contains("rm -rf build"), "the user should still learn it was asked")
         #expect(content.categoryIdentifier.isEmpty)
     }
@@ -154,7 +165,7 @@ struct PushNotificationServiceTests {
             state: "done", title: nil,
             ts: Int(Date().timeIntervalSince1970) - 3 * 60 * 60)
         PushRemoteNotification.apply(old, to: content)
-        #expect(content.title == "✓ claude")
+        #expect(content.title == "✓ claude finished")
         #expect(content.categoryIdentifier.isEmpty)
     }
 
