@@ -1072,11 +1072,18 @@ struct SwiftTerminalView: UIViewRepresentable {
         func reveal() {
             coverTimeout?.cancel()
             coverTimeout = nil
+            // Told whether or not a cover was up: a reveal means "the frame
+            // on this pane is the one to look at", and the tmux controller
+            // reports the first of those per attach to the hub.
+            defer { onReveal?() }
             guard let cover = transitionCover else { return }
             transitionCover = nil
             UIView.animate(withDuration: 0.12, animations: { cover.alpha = 0 },
                            completion: { _ in cover.removeFromSuperview() })
         }
+
+        /// Called on every ``reveal()`` — see there.
+        var onReveal: (() -> Void)?
 
         /// Attach the coordinator to a live ``TerminalView``. Normally called
         /// automatically by ``SwiftTerminalView/makeUIView(context:)``; the

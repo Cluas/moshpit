@@ -27,6 +27,12 @@ struct TmuxSnapshot: Equatable {
     /// gesture" flag through every selection call site for.
     var lastSwitchForward: Bool = true
 
+    /// Whether a swipe has switched panes on this control plane yet. Until one
+    /// has, a pane appearing in the host is not the result of a gesture — it
+    /// is the attach, or a reconnect's replacement taking over from the frozen
+    /// frame — and has no edge to slide in from; it fades instead.
+    var hasSwipedSinceAttach = false
+
     /// Panes in the currently active window, sorted by pane id.
     var activePanes: [PaneInfo] {
         guard let windowId = activeWindowId else { return [] }

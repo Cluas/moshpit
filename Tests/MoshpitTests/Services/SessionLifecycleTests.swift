@@ -89,7 +89,8 @@ struct SessionLifecycleTests {
 
     // MARK: - Fixtures
 
-    private func makeSession(_ transport: ScriptedTransport) -> SessionHub.ActiveSession {
+    private func makeSession(_ transport: ScriptedTransport,
+                             moshControl: TmuxSessionController? = nil) -> SessionHub.ActiveSession {
         var connection = ServerConnection(
             name: "lifecycle",
             host: "192.0.2.1",   // RFC5737 TEST-NET-1 — guaranteed non-routable
@@ -106,7 +107,7 @@ struct SessionLifecycleTests {
             credentials: MoshCredentials(host: "192.0.2.1", udpPort: 60001, key: key),
             channel: IdleDatagramChannel())
         let sidecar = SSHSession(connection: connection, transport: transport)
-        session.installForTesting(moshTransport: mosh, sidecarSSH: sidecar)
+        session.installForTesting(moshTransport: mosh, sidecarSSH: sidecar, moshControl: moshControl)
         return session
     }
 
@@ -268,5 +269,104 @@ struct SessionLifecycleTests {
         // swiftlint:disable:next empty_count - `Counter.count` is a tally, not a collection
         #expect(connects.count == 0,
                 "first contact must latch stop() off the reap path entirely — no sidecar should even be dialed")
+    }
+
+    // MARK: - Reconnect teardown
+
+    /// The measured cause of "reconnect is slow": a half-open socket held the
+    /// courtesy unpin exec for Citadel's full 15s channel-open timeout. The
+    /// reconnect teardown must not spend a single round trip on the transport
+    /// it is replacing — and the pins it owed must travel to the replacement.
+    @Test("stop(forReconnect:) issues no exec on the dying transport and carries the pin ledger")
+    func reconnectTeardownSkipsCourtesyExecs() async {
+        let transport = ScriptedTransport(.hangIgnoringCancellation)
+        let control = TmuxSessionController(sshSession: MockTmuxTransport(), rendersOutput: false)
+        control.inheritPinLedger(TmuxSessionController.PinLedger(resizedWindows: ["@3"]))
+        let session = makeSession(transport, moshControl: control)
+
+        #expect(await bounded(1) { await session.stop(forReconnect: true) },
+                "a reconnect teardown must return at once — the old transport is already judged dead")
+        #expect(transport.commands.isEmpty,
+                "no unpin / layout / status exec may be spent on the transport being replaced")
+        #expect(session.inheritedPinLedger?.pinnedWindows == ["@3"],
+                "the retired controller's pins travel to the replacement instead of being paid now")
+        #expect(control.resizedWindows.isEmpty)
+    }
+
+    /// The full teardown still pays the debt — but bounded, so a socket that
+    /// died between the decision to disconnect and this line cannot hold the
+    /// teardown for a channel timeout per command.
+    @Test("stop() pays the pin debt over the sidecar, bounded as a whole")
+    func fullTeardownCourtesyIsBounded() async {
+        let transport = ScriptedTransport(.hangIgnoringCancellation)
+        let control = TmuxSessionController(sshSession: MockTmuxTransport(), rendersOutput: false)
+        control.inheritPinLedger(TmuxSessionController.PinLedger(resizedWindows: ["@3", "@5"]))
+        let session = makeSession(transport, moshControl: control)
+
+        let began = Date()
+        #expect(await bounded(6) { await session.stop() })
+        let took = Date().timeIntervalSince(began)
+        #expect(took < 5, "two hung execs must cost one bound (3s), not one channel timeout each — took \(took)s")
+        #expect(transport.commands.contains { $0.contains("set-option -u -w -t @3 window-size") },
+                "the unpin is still attempted on a real disconnect")
+        #expect(session.inheritedPinLedger == nil)
+    }
+
+    /// The foreground-return check waits less for silence than the periodic
+    /// tick: the person is watching, and a socket iOS held through a
+    /// suspension is dead far more often than not.
+    @Test("resumeIfNeeded honours a shorter probe deadline for the foreground return")
+    func foregroundProbeDeadlineIsHonoured() async {
+        let session = makeSession(ScriptedTransport(.hangIgnoringCancellation))
+        session.probeTimeout = 5   // the periodic deadline — must NOT be what applies here
+        let connects = wireConnector(session, replacement: .reply(""))
+
+        // The rebuild dials the connector the moment the probe gives up, so
+        // "when was the sidecar re-dialed" is the probe deadline made visible.
+        let began = Date()
+        let resume = Task { await session.resumeIfNeeded(probeTimeout: 0.2) }
+        let deadline = Date().addingTimeInterval(2)
+        // swiftlint:disable:next empty_count - `Counter.count` is a tally, not a collection
+        while connects.count == 0, Date() < deadline {
+            try? await Task.sleep(for: .milliseconds(20))
+        }
+        #expect(connects.count >= 1, "a probe that timed out at the deadline still rebuilds the sidecar")
+        #expect(Date().timeIntervalSince(began) < 2,
+                "a hung sidecar must be given up on at the foreground deadline, not the periodic one")
+        _ = await bounded(10) { await resume.value }
+    }
+
+    /// While the replacement dials and attaches, the screen keeps showing the
+    /// dropped connection's last frame — but only a frame with content on it,
+    /// and never past a real disconnect.
+    @Test("A reconnect retires a painted tmux controller as the ghost; a full stop drops it")
+    func reconnectRetiresPaintedController() async {
+        let session = makeSession(ScriptedTransport(.reply("")))
+        let unpainted = TmuxSessionController(sshSession: MockTmuxTransport())
+        session.installForTesting(moshTransport: nil, tmuxController: unpainted)
+        #expect(await bounded(1) { await session.stop(forReconnect: true) })
+        #expect(session.retiredTmuxController == nil,
+                "a controller that never revealed a frame has nothing worth keeping on screen")
+        #expect(session.tmuxController == nil)
+
+        let painted = TmuxSessionController(sshSession: MockTmuxTransport())
+        _ = painted.terminalView(for: "%0")
+        painted.coordinator(for: "%0")?.reveal()
+        #expect(painted.hasPaintedSinceAttach)
+        session.installForTesting(moshTransport: nil, tmuxController: painted)
+        #expect(await bounded(1) { await session.stop(forReconnect: true) })
+        #expect(session.retiredTmuxController === painted)
+        #expect(session.awaitingFirstFrame == false)
+
+        // A second drop before the replacement painted keeps the OLDER ghost.
+        let replacement = TmuxSessionController(sshSession: MockTmuxTransport())
+        _ = replacement.terminalView(for: "%0")
+        replacement.coordinator(for: "%0")?.reveal()
+        session.installForTesting(moshTransport: nil, tmuxController: replacement)
+        #expect(await bounded(1) { await session.stop(forReconnect: true) })
+        #expect(session.retiredTmuxController === painted)
+
+        #expect(await bounded(1) { await session.stop() })
+        #expect(session.retiredTmuxController == nil, "a real disconnect has nothing to stand in for")
     }
 }

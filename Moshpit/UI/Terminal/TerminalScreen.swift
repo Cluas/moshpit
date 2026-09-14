@@ -116,6 +116,15 @@ struct TerminalScreen: View {
     /// `.live`, so it fades out over a painted terminal instead of over the
     /// black not-yet-attached pane. See the `.onChange(of: connState)`.
     @State private var settleGrace = false
+    /// Whether this screen's session has ever been `.live` — the difference
+    /// between a first connect (nothing behind the cover but the void, so the
+    /// poster is the honest picture) and a reconnect (a frame worth keeping
+    /// on screen is right there). Reset when the session object changes.
+    @State private var wasEverLive = false
+    /// The last state the poster announced before the transport came back:
+    /// the label it keeps while the cover waits for the first frame, so a
+    /// reconnect does not read "Opening the pit" for its last few hundred ms.
+    @State private var lastCoverState: TransportConnState = .connecting
     /// Camera capture sheet (an attach-image source; menu entry hidden where
     /// there is no camera, e.g. the simulator).
     @State private var showCamera = false
@@ -498,22 +507,24 @@ struct TerminalScreen: View {
             }
         }
         .onChange(of: connState) { _, state in
-            // A reconnect replaces the hosted terminal (tmux mints a fresh
-            // controller per reconnect — see TmuxPaneSplitView's `.id`), so
-            // first responder dies with the old view: the keyboard slides
-            // away uninvited mid-cycle, then pops back the moment the new
-            // pane takes focus. Two keyboard animations sandwiching one
-            // connecting animation. Collapse deliberately at cycle start
-            // instead — the connecting screen plays out in the keyboard-down
-            // layout and stays there; tapping the terminal raises it again.
-            if state == .reconnecting { keyboardIntent = .down }
+            // A reconnect used to collapse the keyboard at cycle start: tmux
+            // mints a fresh controller per reconnect (see TmuxPaneSplitView's
+            // `.id`), so first responder died with the old pane view and the
+            // keyboard slid away mid-cycle, then popped back when the new
+            // pane took focus. The retired controller now stays hosted until
+            // the replacement has painted, so first responder has somewhere
+            // to go and the keyboard never moves.
+            if state != .live { lastCoverState = state }
             // `.live` means the TRANSPORT is up, not that anything has
             // painted: on tmux the -CC re-attach and first backfill land a
             // few hundred ms later, and dropping the cover at transport-up
             // revealed a black pane for exactly that window (measured
-            // frame-by-frame on the rig). Hold the cover briefly past
-            // `.live`, then fade it out over content instead of over void.
+            // frame-by-frame on the rig). tmux now reports its first painted
+            // frame (`ActiveSession.awaitingFirstFrame`); for everything
+            // else, hold the cover briefly past `.live`, then fade it out
+            // over content instead of over void.
             if state == .live {
+                wasEverLive = true
                 settleGrace = true
                 Task {
                     try? await Task.sleep(for: .milliseconds(500))
@@ -524,6 +535,12 @@ struct TerminalScreen: View {
     }
 
     @State private var autoCare = HostAutoCare.shared
+
+    /// Identity of the session this screen is showing — a new object (protocol
+    /// switch, Install Assist's fresh session) starts from "never live" again.
+    private var activeIdentity: ObjectIdentifier? {
+        active.map { ObjectIdentifier($0) }
+    }
     @State private var hardwareKeyOwner = UUID()
 
     var body: some View {
@@ -879,7 +896,12 @@ struct TerminalScreen: View {
     private var retainedPlan: BreadcrumbPlan? {
         switch connState {
         case .connecting, .reconnecting: return lastBreadcrumb
-        case .live, .offline: return nil
+        // Transport back, tree not yet attached and painted: still the same
+        // in-between, and the bar flipping to the host name for those few
+        // hundred ms was the one piece of chrome that moved during a
+        // frozen-frame reconnect.
+        case .live: return settling ? lastBreadcrumb : nil
+        case .offline: return nil
         }
     }
 
@@ -971,47 +993,138 @@ struct TerminalScreen: View {
     /// happens underneath it, invisibly.
     ///
     /// Kept as an OVERLAY, not a replacement, so SwiftTerm stays attached and
-    /// never misses buffered output. An automatic reconnect keeps it up for
-    /// the WHOLE cycle, including waits between failed attempts. Mosh roaming
-    /// is naturally excluded — a roam never sets `.connecting`/`.reconnecting`
-    /// (SSP heals itself), so mosh keeps its useful last frame + predictive
-    /// echo. `.offline` also shows no cover: nothing is being attempted, and
-    /// the dead terminal with the red pill is the honest picture.
+    /// never misses buffered output. A first connect gets the poster — there
+    /// is nothing behind it but the void. A reconnect keeps the last frame
+    /// (the retired tmux controller, or the persistent single-pane terminal)
+    /// under ``ReconnectVeil`` for the WHOLE cycle, including waits between
+    /// failed attempts; both hold until the replacement has painted, not
+    /// until the transport says so. Mosh roaming is naturally excluded — a
+    /// roam never sets `.connecting`/`.reconnecting` (SSP heals itself), so
+    /// mosh keeps its useful last frame + predictive echo. `.offline` shows
+    /// no poster (nothing is being attempted), only the veil over the dead
+    /// frame the person was reading.
     private var terminalBody: some View {
         ZStack {
             terminalContent
-            if active == nil || settleGrace
-                || connState == .connecting || connState == .reconnecting {
-                TerminalConnectingView(connection: connection, state: connState)
-                    // Asymmetric on purpose, measured frame-by-frame: a fade-IN
-                    // still flashed black, because the pane below is torn down
-                    // within milliseconds of the cover starting its fade — for
-                    // the first ~200ms the screen was a few-percent-opaque
-                    // cover over an already-black hole. Insertion is therefore
-                    // a hard cut to the fully-opaque cover (one frame pane,
-                    // next frame cover); only the removal fades, revealing the
-                    // fresh session underneath.
-                    .transition(.asymmetric(insertion: .identity, removal: .opacity))
-                    // During the settle grace the session is LIVE and the
-                    // cover is only waiting for paint — a swipe in that
-                    // window belongs to the terminal, not to a poster.
-                    // While genuinely connecting, the cover keeps its
-                    // touches (there is nothing usable beneath).
+            if posterVisible {
+                TerminalConnectingView(connection: connection, state: posterState)
+                    // Fades both ways now that there is always something
+                    // beneath: the ghost, the persistent pane, or (first
+                    // connect) the terminal background it shares a colour with.
+                    .transition(.opacity)
+                    // While the cover only waits for paint the session is LIVE
+                    // — a swipe in that window belongs to the terminal, not
+                    // to a poster. While genuinely connecting, the cover keeps
+                    // its touches (there is nothing usable beneath).
                     .allowsHitTesting(connState != .live)
             }
+            if veilVisible {
+                ReconnectVeil(state: posterState,
+                              isMosh: connection.connectionProtocol == .mosh)
+                    .allowsHitTesting(false)
+                    .transition(.opacity)
+            }
         }
-        .animation(.easeOut(duration: 0.28), value: connState)
+        .animation(.easeInOut(duration: 0.3), value: transitionKey)
+        .onChange(of: activeIdentity) { _, _ in wasEverLive = false }
+    }
+
+    /// What the cover says. Once the transport is back the state reads
+    /// `.live`, but the cover is still up for the first frame — it keeps
+    /// announcing the phase it was covering, not "Opening the pit".
+    private var posterState: TransportConnState {
+        connState == .live ? lastCoverState : connState
+    }
+
+    /// The transport is up but there is nothing to uncover yet: tmux until
+    /// its controller reveals a frame, everything else for the beat
+    /// `settleGrace` holds. Never both — on a fast attach the first frame
+    /// lands inside the grace period, and letting the grace outlive the
+    /// signal put the poster up for the leftover ~170ms right as the frozen
+    /// frame gave way to the new one (a poster flash in the crossfade,
+    /// measured on the rig's short-suspension run).
+    private var settling: Bool {
+        guard let active, connState == .live else { return false }
+        return expectsTmuxPanes(active) ? active.awaitingFirstFrame : settleGrace
+    }
+
+    /// Whether this session paints through tmux pane hosts (which report
+    /// their first frame) rather than the persistent single-pane terminal
+    /// (plain SSH, mosh, a tmux connect degraded to a plain shell).
+    private func expectsTmuxPanes(_ active: SessionHub.ActiveSession) -> Bool {
+        active.connection.connectionProtocol == .ssh
+            && active.connection.multiplexer == .tmux && active.degrade == nil
+    }
+
+    /// Something a person could be looking at is on the pane: the frozen frame
+    /// of the dropped connection, or the persistent single-pane terminal
+    /// (plain SSH, mosh, degraded tmux) that keeps its buffer across
+    /// reconnects. A tmux session whose ghost is gone — never painted, or the
+    /// fallback dropped it — has only the void behind, like a first connect.
+    private var hasContentBehind: Bool {
+        guard let active else { return false }
+        if active.retiredTmuxController != nil { return true }
+        return wasEverLive && !expectsTmuxPanes(active)
+    }
+
+    /// Only a connect with nothing behind it gets the poster — a reconnect
+    /// keeps the last frame and takes the veil instead. It holds until the
+    /// replacement has painted, not until the transport says so. `.offline`
+    /// shows no poster: nothing is being attempted.
+    private var posterVisible: Bool {
+        guard active != nil else { return true }
+        if hasContentBehind { return false }
+        return connState == .connecting || connState == .reconnecting || settling
+    }
+
+    /// The reconnect dim and status capsule — over content only, and also
+    /// over a dropped line that is no longer being redialled (the frame is
+    /// still what the person was reading).
+    private var veilVisible: Bool {
+        guard hasContentBehind else { return false }
+        switch connState {
+        case .connecting, .reconnecting, .offline: return true
+        case .live: return settling
+        }
+    }
+
+    /// Everything the cover stack animates on, in one value.
+    private struct TransitionKey: Equatable {
+        var ghost: Bool
+        var poster: Bool
+        var veil: Bool
+        var state: TransportConnState
+    }
+
+    private var transitionKey: TransitionKey {
+        TransitionKey(ghost: active?.retiredTmuxController != nil,
+                      poster: posterVisible, veil: veilVisible, state: connState)
     }
 
     @ViewBuilder
     private var terminalContent: some View {
         if let active {
-            if let controller = active.tmuxController {
-                if controller.snapshot.isAttached {
+            // The controller whose panes are on screen: after a drop, the
+            // retired one until the replacement has painted (the hub clears
+            // it on that signal), otherwise the live one. ONE branch for
+            // both on purpose — the retired controller and its pane id are
+            // what the hosted view was keyed on before the drop, so with the
+            // branch unchanged it is the very same view: nothing is
+            // re-parented or re-laid out, the frame stays where it was.
+            // (A separate ghost layer moved the TerminalView between two
+            // hosts, and it visibly slid into place — measured.) The swap to
+            // the new controller is then a keyed identity change inside
+            // TmuxPaneSplitView, crossfaded by the animation on the ZStack.
+            let ghost = active.retiredTmuxController
+            if let controller = ghost ?? active.tmuxController {
+                if ghost != nil || controller.snapshot.isAttached {
                     TmuxPaneSplitView(controller: controller,
                                       focusPolicy: focusPolicy,
                                       geometryHeld: geometryHold,
-                                      compactChrome: compactChrome)
+                                      compactChrome: compactChrome,
+                                      frozen: ghost != nil)
+                        // A frozen frame has nobody to send touches to.
+                        .allowsHitTesting(ghost == nil)
                 } else {
                     // Unattached. Distinguish the two reasons (the design's
                     // "fix the mis-diagnosis"): tmux genuinely absent → offer
@@ -1510,6 +1623,10 @@ struct TmuxPaneSplitView: View {
     var geometryHeld: Bool = false
     /// iPad-landscape chrome trim — see `TerminalScreen.compactChrome`.
     var compactChrome: Bool = false
+    /// The controller is a reconnect's retired one, shown for its last frame
+    /// only — see `TerminalScreen.terminalContent`. Its pane leaves by fading,
+    /// never by sliding: the replacement is not "the next pane over".
+    var frozen: Bool = false
 
     var body: some View {
         let snapshot = controller.snapshot
@@ -1539,10 +1656,18 @@ struct TmuxPaneSplitView: View {
                     // tree, Windows/Sessions/Pane sheets) reuse whatever
                     // direction the last actual swipe was — see
                     // `lastSwitchForward`'s doc comment.
-                    .transition(.asymmetric(
-                        insertion: .move(edge: snapshot.lastSwitchForward ? .trailing : .leading),
-                        removal: .move(edge: snapshot.lastSwitchForward ? .leading : .trailing)
-                    ).combined(with: .opacity))
+                    //
+                    // Only once a swipe has happened on this controller, and
+                    // never for a frozen frame: the pane a reconnect's
+                    // replacement puts up is the SAME pane on a new
+                    // connection, and sliding it in from an edge read as the
+                    // whole screen lurching sideways mid-crossfade (measured).
+                    .transition(snapshot.hasSwipedSinceAttach && !frozen
+                        ? .asymmetric(
+                            insertion: .move(edge: snapshot.lastSwitchForward ? .trailing : .leading),
+                            removal: .move(edge: snapshot.lastSwitchForward ? .leading : .trailing)
+                        ).combined(with: .opacity)
+                        : .opacity)
             } else {
                 Color.clear
             }
@@ -2885,6 +3010,55 @@ private struct PulseDots: View {
             }
         }
         .onAppear { on = true }
+    }
+}
+
+// MARK: - Reconnect over the frozen frame
+
+/// The reconnect overlay: a dim over the pane that is no longer live and one
+/// status capsule at the top, in the transport pill's colour family. Nothing
+/// else moves — the frame the person was reading stays put and comes back
+/// into focus when the replacement crossfades in over it.
+private struct ReconnectVeil: View {
+    let state: TransportConnState
+    let isMosh: Bool
+
+    private var accent: SwiftUI.Color { state.transientTint ?? Ink.accent }
+
+    private var label: String {
+        switch state {
+        case .offline: return String(localized: "Line dropped")
+        case .connecting: return String(localized: "Opening the pit")
+        default:
+            return isMosh
+                ? String(localized: "Riding the handoff")
+                : String(localized: "Reconnecting")
+        }
+    }
+
+    var body: some View {
+        ZStack(alignment: .top) {
+            Color.black.opacity(0.45)
+            HStack(spacing: 10) {
+                if state == .offline {
+                    Circle()
+                        .fill(accent)
+                        .frame(width: 8, height: 8)
+                        .shadow(color: accent.opacity(0.8), radius: 4)
+                } else {
+                    PulseDots(color: accent)
+                }
+                Text(label.uppercased())
+                    .font(Face.mono(11, .semibold))
+                    .kerning(1.8)
+                    .foregroundStyle(Ink.primary)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 9)
+            .background(.ultraThinMaterial, in: Capsule())
+            .overlay(Capsule().strokeBorder(accent.opacity(0.35), lineWidth: 1))
+            .padding(.top, 14)
+        }
     }
 }
 

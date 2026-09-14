@@ -1,4 +1,5 @@
 import Foundation
+import MoshpitKit
 import Observation
 import SwiftTerm
 import SwiftUI
@@ -436,10 +437,79 @@ final class TmuxSessionController: MultiplexerControlling {
     /// A window's pane layout as it was BEFORE we touched it: the raw
     /// `#{window_layout}` string, the pane the USER had zoomed (nil when the
     /// window wasn't zoomed) and the pane count that string describes.
-    private struct PristineLayout {
+    fileprivate struct PristineLayout {
         let layout: String
         let zoomedPane: String?
         let paneCount: Int
+    }
+
+    /// What a controller still owes the server for the windows it shaped:
+    /// the phone-grid pins (``resizedWindows``) and the layouts recorded
+    /// beneath them (``pristineLayouts``). A reconnect hands this from the
+    /// controller it retires to the replacement — the old transport is dead,
+    /// so paying the debt there would only wait out a channel timeout; the
+    /// replacement re-pins the same window on attach and the hub settles
+    /// whatever is left on the real disconnect. See
+    /// `SessionHub.ActiveSession.stop(forReconnect:)`.
+    struct PinLedger {
+        fileprivate var resizedWindows: Set<String>
+        fileprivate var pristineLayouts: [String: PristineLayout]
+
+        fileprivate init(resizedWindows: Set<String>, pristineLayouts: [String: PristineLayout]) {
+            self.resizedWindows = resizedWindows
+            self.pristineLayouts = pristineLayouts
+        }
+
+        /// Bare pins with nothing recorded beneath them — what a test hands
+        /// a controller to stand in for a retired one.
+        init(resizedWindows: Set<String>) {
+            self.init(resizedWindows: resizedWindows, pristineLayouts: [:])
+        }
+
+        var isEmpty: Bool { resizedWindows.isEmpty && pristineLayouts.isEmpty }
+        /// The windows still pinned to a phone grid — what the tests check
+        /// made it across a handoff.
+        var pinnedWindows: Set<String> { resizedWindows }
+    }
+
+    /// Hand over everything this controller still owes the server and forget
+    /// it — the caller is retiring this controller without a teardown round
+    /// trip and will give the ledger to the replacement.
+    func takePinLedger() -> PinLedger {
+        defer {
+            resizedWindows.removeAll()
+            pristineLayouts.removeAll()
+        }
+        return PinLedger(resizedWindows: resizedWindows, pristineLayouts: pristineLayouts)
+    }
+
+    /// Take on a retired controller's debt. Pins merge; a layout this
+    /// controller has already recorded for a window wins over the inherited
+    /// one (it is newer — the pristine record must predate the FIRST pin, and
+    /// the inherited record is exactly that).
+    func inheritPinLedger(_ ledger: PinLedger) {
+        resizedWindows.formUnion(ledger.resizedWindows)
+        for (windowId, layout) in ledger.pristineLayouts where pristineLayouts[windowId] == nil {
+            pristineLayouts[windowId] = layout
+        }
+    }
+
+    /// Whether a pane of THIS connection has been revealed on screen — a frame
+    /// from this attach is what the person is looking at. The hub keeps the
+    /// retired connection's last frame up until this flips, and drops the
+    /// cover the moment it does; nothing else in the reconnect is measured on
+    /// paint rather than on a guessed grace period.
+    @ObservationIgnored
+    private(set) var hasPaintedSinceAttach = false
+
+    /// Fires once, on the first revealed pane after attach.
+    @ObservationIgnored
+    var onFirstFramePainted: (() -> Void)?
+
+    private func notePaneRevealed() {
+        guard !hasPaintedSinceAttach else { return }
+        hasPaintedSinceAttach = true
+        onFirstFramePainted?()
     }
 
     /// Pre-Moshpit layouts for the windows we pinned or zoomed, put back
@@ -764,6 +834,7 @@ final class TmuxSessionController: MultiplexerControlling {
     func switchPaneOrWindow(forward: Bool) {
         guard snapshot.isAttached, let windowId = snapshot.activeWindowId else { return }
         snapshot.lastSwitchForward = forward
+        snapshot.hasSwipedSinceAttach = true
         let panes = snapshot.panes(inWindow: windowId)
         if panes.count > 1 {
             if let next = Self.cycled(panes.map(\.id),
@@ -2002,6 +2073,7 @@ final class TmuxSessionController: MultiplexerControlling {
         let range = state.isAlternate ? "" : "-S -\(backfillHistoryLines) -E -1"
         sendCommand("capture-pane -p -e \(range) -t \(paneId)") { [weak self] response in
             guard let self else { return }
+            Log.ssh.debug("resume: backfill reply for \(paneId, privacy: .public) (\(response.lines.count, privacy: .public) lines)")
             // Whatever this reply turns out to hold, the dump is over —
             // release any resync that was waiting behind it.
             defer { self.finishBackfill(paneId) }
@@ -3203,6 +3275,7 @@ final class TmuxSessionController: MultiplexerControlling {
         // longer matched tmux's. Later %session-changed events are session
         // switches on a live connection and must NOT re-veil.
         let isFreshAttach = !snapshot.isAttached
+        if isFreshAttach { Log.ssh.debug("resume: tmux %session-changed (attach)") }
         snapshot.activeSessionId = sessionId
         if var session = snapshot.sessions[sessionId] {
             session.name = name
@@ -3348,6 +3421,7 @@ final class TmuxSessionController: MultiplexerControlling {
         // agents) carries DECSCUSR/OSC-12 that would otherwise override the
         // user's Settings choice.
         coordinator.enforcedCursor = desiredCursor
+        coordinator.onReveal = { [weak self] in self?.notePaneRevealed() }
         coordinator.onInput = { [weak self, paneId] data in
             Task { @MainActor [weak self] in
                 guard let self else { return }

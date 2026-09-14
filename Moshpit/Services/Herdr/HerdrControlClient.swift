@@ -276,6 +276,7 @@ final class HerdrControlClient: MultiplexerControlling {
     private func apply(_ decoded: HerdrSnapshot.Decoded) {
         var next = decoded.snapshot
         next.lastSwitchForward = snapshot.lastSwitchForward
+        next.hasSwipedSinceAttach = snapshot.hasSwipedSinceAttach
         next.everAttached = snapshot.everAttached || next.isAttached
         snapshot = next
         agentHooks = decoded.agentHooks

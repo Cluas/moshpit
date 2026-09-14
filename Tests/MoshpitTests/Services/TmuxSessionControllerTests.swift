@@ -2621,3 +2621,88 @@ struct TmuxSelectionStoreTests {
         #expect(TmuxSelectionStore.load(id, defaults: d) == nil)
     }
 }
+
+// MARK: - Reconnect handoff (pin ledger + first-frame signal)
+
+/// What a reconnect moves from the controller it retires to its replacement,
+/// and how the replacement announces that it has something on screen — see
+/// `SessionHub.ActiveSession.stop(forReconnect:)`.
+@Suite("tmux reconnect handoff", .serialized)
+@MainActor
+struct TmuxReconnectHandoffTests {
+
+    // ─────────────────────────────────────────────────────────────
+    // Reconnect handoff: pin ledger + first-frame signal
+    // ─────────────────────────────────────────────────────────────
+
+    @Test("takePinLedger hands the pinned windows over and forgets them; inheritPinLedger takes them on")
+    func pinLedgerHandoff() async throws {
+        let (controller, transport) = await makeAttachedController()
+        _ = await waitUntil { await transport.recordedCommands().count >= 3 }
+        transport.pushText("""
+        %begin 1 1 0
+        $0 1 main
+        %end 1 1 0
+        %begin 2 2 0
+        $0 @0 0 81x24,0,0,0 1 1 main
+        %end 2 2 0
+        %begin 3 3 0
+        %0 @0 0 80 24 1 0 0 bash
+        %end 3 3 0
+
+        """)
+        #expect(await waitUntil { controller.snapshot.activeWindowId == "@0" })
+        _ = controller.resizeClient(rows: 35, cols: 70)
+        #expect(await waitUntil { controller.resizedWindows.contains("@0") },
+                "a client resize pins the active window")
+
+        let ledger = controller.takePinLedger()
+        #expect(ledger.pinnedWindows == ["@0"])
+        #expect(controller.resizedWindows.isEmpty,
+                "the retiring controller must not still believe it owns the pin — nothing should try to unpin over its dead transport")
+
+        // The replacement takes the debt on, alongside anything it pins itself.
+        let replacement = TmuxSessionController(sshSession: MockTmuxTransport())
+        replacement.inheritPinLedger(ledger)
+        replacement.inheritPinLedger(TmuxSessionController.PinLedger(resizedWindows: ["@4"]))
+        #expect(replacement.resizedWindows == ["@0", "@4"])
+        #expect(TmuxSessionController.PinLedger(resizedWindows: []).isEmpty)
+    }
+
+    @Test("The first revealed pane after attach fires onFirstFramePainted exactly once")
+    func firstFrameSignalFiresOnce() async throws {
+        let (controller, transport) = await makeAttachedController()
+        _ = await waitUntil { await transport.recordedCommands().count >= 3 }
+        transport.pushText("""
+        %begin 1 1 0
+        $0 1 main
+        %end 1 1 0
+        %begin 2 2 0
+        $0 @0 0 81x24,0,0,0 1 1 main
+        %end 2 2 0
+        %begin 3 3 0
+        %0 @0 0 80 24 1 0 0 bash
+        %1 @0 1 80 24 0 0 0 vim
+        %end 3 3 0
+
+        """)
+        #expect(await waitUntil { controller.snapshot.panes.count == 2 })
+
+        var fired = 0
+        controller.onFirstFramePainted = { fired += 1 }
+        #expect(controller.hasPaintedSinceAttach == false)
+
+        // Minting the pane terminals wires each coordinator's reveal back to
+        // the controller; a reveal with no cover up still counts — it means
+        // "the frame on this pane is the one to look at".
+        _ = controller.terminalView(for: "%0")
+        _ = controller.terminalView(for: "%1")
+        controller.coordinator(for: "%0")?.reveal()
+        #expect(controller.hasPaintedSinceAttach)
+        #expect(fired == 1)
+
+        controller.coordinator(for: "%0")?.reveal()
+        controller.coordinator(for: "%1")?.reveal()
+        #expect(fired == 1, "later reveals (pane switches, repaints) are not first frames")
+    }
+}

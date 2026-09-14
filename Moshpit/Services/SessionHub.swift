@@ -120,6 +120,34 @@ final class SessionHub {
         let viewModel: TerminalViewModel
         /// Set when the connection runs in tmux control mode.
         private(set) var tmuxController: TmuxSessionController?
+
+        /// The tmux controller a reconnect just retired, kept alive so the
+        /// screen can keep showing its last frame while the replacement dials,
+        /// attaches and paints — the frozen frame IS the reconnect's cover.
+        /// Nil once the replacement reveals its first frame (or the fallback
+        /// in `armFirstFrameWait` gives up) and on a full teardown. Only ever
+        /// the oldest frame with content on it: a second drop before the
+        /// first replacement painted keeps the ghost people were reading, not
+        /// the veiled one that never showed anything.
+        private(set) var retiredTmuxController: TmuxSessionController?
+
+        /// True from the start of a tmux attempt until the new controller
+        /// reveals its first frame: the window in which the transport may
+        /// already say `.live` while the pane has nothing worth uncovering.
+        /// The screen keeps its cover (ghost or poster) up for exactly this
+        /// long — measured on paint, not on a guessed grace period.
+        private(set) var awaitingFirstFrame = false
+        @ObservationIgnored private var firstFrameFallback: Task<Void, Never>?
+        /// How long after the controller is installed the cover may wait for a
+        /// revealed frame before giving up (a server with no sessions never
+        /// paints; the empty-state card behind the cover settles at 4s).
+        private static let firstFrameFallbackSeconds: Double = 6
+
+        /// Window pins and pristine layouts a retired controller still owed
+        /// the server, carried to its replacement so the debt is settled on
+        /// the eventual real disconnect instead of being paid — over a socket
+        /// already judged dead — right now.
+        @ObservationIgnored private(set) var inheritedPinLedger: TmuxSessionController.PinLedger?
         /// Single-pane data path (non-tmux).
         @ObservationIgnored let coordinator = SwiftTerminalView.Coordinator()
         /// Set when the connection runs over the real mosh UDP transport.
@@ -305,11 +333,15 @@ final class SessionHub {
         func installForTesting(moshTransport transport: MoshTransport?,
                                sidecarSSH ssh: SSHSession? = nil,
                                herdrControl control: HerdrControlClient? = nil,
+                               moshControl: TmuxSessionController? = nil,
+                               tmuxController: TmuxSessionController? = nil,
                                moshServerPid pid: Int? = nil,
                                moshHadFirstContact hadContact: Bool = false) {
             self.moshTransport = transport
             self.sidecarSSH = ssh
             self.herdrControl = control
+            if let moshControl { self.moshControl = moshControl }
+            if let tmuxController { self.tmuxController = tmuxController }
             if let control { onMultiplexerControlChanged?(control) }
             self.moshServerPid = pid
             self.moshHadFirstContact = hadContact
@@ -1120,6 +1152,12 @@ final class SessionHub {
                 break
             }
             viewModel.beginAttempt(automatic: automatic)
+            // A tmux attempt has nothing to show until its controller reveals a
+            // frame; declare that up front so the cover doesn't drop in the gap
+            // between the transport coming up and the controller existing.
+            if connection.connectionProtocol == .ssh, connection.multiplexer == .tmux {
+                awaitingFirstFrame = true
+            }
             // Fresh attempt — clear any stale degrade/stall notices so a retry
             // (or a reused-but-reset session) doesn't inherit the last run's
             // banner before it has re-earned it.
@@ -1157,8 +1195,11 @@ final class SessionHub {
             // very visible over high-RTT links (wide text, wrong wrapping).
             // The exact size still follows from the view's layout.
             let grid = coordinator.lastReportedSize ?? Self.estimateGrid(fontSize: fontSize)
+            let startBegan = Date()
+            Log.ssh.debug("resume: start() ssh connect begin")
             await viewModel.start(rows: grid.rows, cols: grid.cols)
             guard let session = viewModel.session else { return }
+            Log.ssh.debug("resume: ssh+pty up after \(Int(Date().timeIntervalSince(startBegan) * 1000), privacy: .public)ms")
             // Auto-reconnect the moment the transport drops on its own (server
             // reboot, network change, NIO seeing the socket die on resume).
             await session.setOnUnexpectedClose { [weak self] in
@@ -1175,7 +1216,25 @@ final class SessionHub {
             // and skip the degrade check (the probe walks PATH, not custom
             // locations). Otherwise a missing multiplexer degrades to a plain
             // pane with a banner instead of stalling on a failing attach.
-            let caps = await probeCapabilities(over: session)
+            // Known host: decide on what we know and refresh behind the boot
+            // line. Waiting for the probe cost a full round trip on every
+            // reconnect for an answer that changes about once per host
+            // lifetime; a stale "has tmux" still fails safe (the attach
+            // doesn't confirm and the empty state offers Install/Create).
+            let caps: HostCapabilities
+            if let known = HostCapabilityCache.shared.capabilities(for: connection.id) {
+                capabilities = known
+                caps = known
+                let id = connection.id
+                Task { @MainActor [weak self] in
+                    if let fresh = await HostCapabilityCache.shared.probe(over: session, for: id) {
+                        self?.capabilities = fresh
+                    }
+                }
+            } else {
+                caps = await probeCapabilities(over: session)
+            }
+            Log.ssh.debug("resume: capabilities ready after \(Int(Date().timeIntervalSince(startBegan) * 1000), privacy: .public)ms")
             // Retention sweep for uploaded images, on the channel that's
             // already warm. Fire-and-forget and silent on failure — a host
             // without the folder, or without `find`, owes nobody an error.
@@ -1190,9 +1249,15 @@ final class SessionHub {
             if muxDegraded { degrade = DegradeNotice.forMissing(chosen) }
             // Degraded → a plain shell, never the OTHER multiplexer.
             let multiplexer: Multiplexer = muxDegraded ? .none : chosen
+            // No controller is coming: the plain pane paints on its own.
+            if multiplexer != .tmux { awaitingFirstFrame = false }
 
             if multiplexer == .tmux {
                 let controller = TmuxSessionController(sshSession: session)
+                if let ledger = inheritedPinLedger {
+                    controller.inheritPinLedger(ledger)
+                    inheritedPinLedger = nil
+                }
                 controller.transportIsLive = { [weak viewModel] in
                     viewModel?.connState == .live
                 }
@@ -1226,7 +1291,9 @@ final class SessionHub {
                 if let bytes = boot.data(using: .utf8) {
                     try? await session.write(bytes)
                 }
+                Log.ssh.debug("resume: tmux boot written after \(Int(Date().timeIntervalSince(startBegan) * 1000), privacy: .public)ms")
                 tmuxController = controller
+                armFirstFrameWait(for: controller)
                 onMultiplexerControlChanged?(controller)
                 beginAttachTimeout(controller: controller)
             } else if multiplexer == .herdr {
@@ -2376,6 +2443,10 @@ final class SessionHub {
             sidecarSSH = ssh
 
             let controller = TmuxSessionController(sshSession: ssh, rendersOutput: false)
+            if let ledger = inheritedPinLedger {
+                controller.inheritPinLedger(ledger)
+                inheritedPinLedger = nil
+            }
             controller.pendingRestore = lastSelection   // restore window/pane too
             await controller.beginControlMode()
             let tmux = connection.tmuxPath ?? "tmux"
@@ -2420,7 +2491,36 @@ final class SessionHub {
             }
         }
 
-        func stop() async {
+        /// Tear the transport down.
+        ///
+        /// `forReconnect` says the caller is about to `start()` again on a
+        /// transport it has already judged dead (or is replacing anyway). Two
+        /// things change: no courtesy round trip is spent on the old
+        /// connection — measured on the rig, a half-open socket held the
+        /// tmux unpin exec for Citadel's full 15s channel-open timeout, which
+        /// was the whole of "reconnect is slow" — and the tmux controller is
+        /// kept as ``retiredTmuxController`` so its last frame stays on screen
+        /// until the replacement paints. The pins it owed the server travel
+        /// with it (``inheritedPinLedger``); the replacement re-pins the same
+        /// window on attach and settles the rest on the real disconnect.
+        func stop(forReconnect: Bool = false) async {
+            let stopBegan = Date()
+            defer { Log.ssh.debug("resume: stop(forReconnect: \(forReconnect, privacy: .public)) took \(Int(Date().timeIntervalSince(stopBegan) * 1000), privacy: .public)ms") }
+            if forReconnect {
+                cancelFirstFrameWait()
+                // Retire the ghost BEFORE the first suspension point: the
+                // screen already reads `.reconnecting`, and with no ghost in
+                // place it reaches for the poster for as long as the teardown
+                // takes — seen on the rig as a faint poster flashing through
+                // the frozen frame. Only a frame with content on it qualifies,
+                // and never over an older ghost (see the property).
+                if let controller = tmuxController, controller.hasPaintedSinceAttach,
+                   retiredTmuxController == nil {
+                    retiredTmuxController = controller
+                }
+            } else {
+                endFirstFrameWait()
+            }
             captureSelection()   // remember where we were, for the next attach
             pumpTask?.cancel()
             pumpTask = nil
@@ -2475,55 +2575,56 @@ final class SessionHub {
             herdrControl?.stop()
             herdrControl = nil
             if let controller = tmuxController {
-                // Hand back the pinned window sizes so other clients get their
-                // full width back. Do it over a one-shot EXEC channel
-                // (executeCommand awaits server completion) rather than the
-                // in-band -CC write, which raced the teardown and left windows
-                // stuck at the phone size (`resize-window -A` clears the manual
-                // size override; tmux then re-sizes to the desktop client).
-                // The split layout our pin squashed (and the zoom that hid
-                // it) go back over the same channel, AFTER the unpin — see
-                // TmuxSessionController.pristineLayouts.
-                if let ssh = viewModel.session {
+                if forReconnect {
+                    // Not one byte more on this transport — see the doc
+                    // comment. The debt moves to the replacement.
+                    inheritedPinLedger = controller.takePinLedger()
+                } else if let ssh = viewModel.session {
+                    // Hand back the pinned window sizes so other clients get
+                    // their full width back. Over a one-shot EXEC channel
+                    // (executeCommand awaits server completion) rather than the
+                    // in-band -CC write, which raced the teardown and left
+                    // windows stuck at the phone size (`resize-window -A`
+                    // clears the manual size override; tmux then re-sizes to
+                    // the desktop client). The split layout our pin squashed
+                    // (and the zoom that hid it) go back over the same channel,
+                    // strictly AFTER the unpin: replayed while the window is
+                    // still pinned, the layout is just refitted to the phone
+                    // grid and the restore is lost. See
+                    // TmuxSessionController.pristineLayouts.
                     let tmux = connection.tmuxPath ?? "tmux"
-                    for win in controller.resizedWindows {
+                    var commands = controller.resizedWindows.sorted().map {
                         // Unset the per-window override — the real "back to
                         // automatic" (`resize-window -A` re-pins, still manual).
-                        _ = try? await ssh.executeCommand("\(tmux) set-option -u -w -t \(win) window-size")
+                        "\(tmux) set-option -u -w -t \($0) window-size"
                     }
-                    // Strictly after the loop above: replayed while the window
-                    // is still pinned, the layout is just refitted to the phone
-                    // grid and the restore is lost.
-                    for command in controller.pristineLayoutRestoreCommands() {
-                        _ = try? await ssh.executeCommand("\(tmux) \(command)")
-                    }
+                    commands += controller.pristineLayoutRestoreCommands().map { "\(tmux) \($0)" }
+                    await Self.runCourtesy(commands, over: ssh)
                 }
                 await controller.detach()
             }
             tmuxController = nil
             if let control = moshControl {
-                // Restore the status bar over the LIVE control channel (a
-                // round-trip blocks until tmux applies it). The exec channel
-                // mangled the `$id` session target through the login shell, so
-                // status never came back; the control channel speaks straight
-                // to tmux like the suppression did.
-                await control.restoreSuppressedStatusAndFlush()
-                // Restore window sizes over a ONE-SHOT exec channel on the
-                // sidecar SSH connection (these target windows by `@id`, which
-                // survives the shell), then the layout/zoom — see the SSH path.
-                if let ssh = sidecarSSH {
-                    let tmux = connection.tmuxPath ?? "tmux"
-                    // Un-pin the windows we resized to the phone grid so other
-                    // clients (and the next desktop attach) get automatic sizing
-                    // back — unset the per-window override (`resize-window -A`
-                    // re-pins, still manual). Over the one-shot exec channel so
-                    // it can't race teardown (same as the SSH path above).
-                    for win in control.resizedWindows {
-                        _ = try? await ssh.executeCommand("\(tmux) set-option -u -w -t \(win) window-size")
-                    }
-                    // After the unpin, never before: see the SSH path.
-                    for command in control.pristineLayoutRestoreCommands() {
-                        _ = try? await ssh.executeCommand("\(tmux) \(command)")
+                if forReconnect {
+                    inheritedPinLedger = control.takePinLedger()
+                } else {
+                    // Restore the status bar over the LIVE control channel (a
+                    // round-trip blocks until tmux applies it). The exec channel
+                    // mangled the `$id` session target through the login shell,
+                    // so status never came back; the control channel speaks
+                    // straight to tmux like the suppression did.
+                    await control.restoreSuppressedStatusAndFlush()
+                    // Restore window sizes over a ONE-SHOT exec channel on the
+                    // sidecar SSH connection (these target windows by `@id`,
+                    // which survives the shell), then the layout/zoom — same
+                    // order and same reasons as the SSH path above.
+                    if let ssh = sidecarSSH {
+                        let tmux = connection.tmuxPath ?? "tmux"
+                        var commands = control.resizedWindows.sorted().map {
+                            "\(tmux) set-option -u -w -t \($0) window-size"
+                        }
+                        commands += control.pristineLayoutRestoreCommands().map { "\(tmux) \($0)" }
+                        await Self.runCourtesy(commands, over: ssh)
                     }
                 }
                 await control.detach()
@@ -2565,6 +2666,50 @@ final class SessionHub {
                 }
             }
             await viewModel.disconnect()
+        }
+
+        /// Teardown round trips the server is owed but nobody is waiting on
+        /// — bounded as a whole, so a socket that died between the decision
+        /// to disconnect and this line can't hold the teardown hostage (each
+        /// exec on a half-open socket otherwise waits out Citadel's 15s).
+        private static func runCourtesy(_ commands: [String], over ssh: SSHSession) async {
+            guard !commands.isEmpty else { return }
+            _ = await withTimeoutValue(3) {
+                for command in commands { _ = try? await ssh.executeCommand(command) }
+            }
+        }
+
+        /// Start the first-frame wait for a freshly installed controller —
+        /// see ``awaitingFirstFrame``. Ends on the controller's first revealed
+        /// frame, or on the fallback deadline for a server that never paints.
+        private func armFirstFrameWait(for controller: TmuxSessionController) {
+            awaitingFirstFrame = true
+            controller.onFirstFramePainted = { [weak self] in
+                Log.ssh.debug("resume: first frame revealed")
+                self?.endFirstFrameWait()
+            }
+            firstFrameFallback?.cancel()
+            firstFrameFallback = Task { [weak self] in
+                try? await Task.sleep(for: .seconds(Self.firstFrameFallbackSeconds))
+                guard !Task.isCancelled else { return }
+                Log.ssh.debug("resume: no frame revealed in time — dropping the cover")
+                self?.endFirstFrameWait()
+            }
+        }
+
+        /// Stop waiting AND drop the ghost: the replacement has painted (or
+        /// never will), so the frozen frame has nothing left to stand in for.
+        private func endFirstFrameWait() {
+            cancelFirstFrameWait()
+            retiredTmuxController = nil
+        }
+
+        /// Stop waiting but keep the ghost: the attempt being torn down is
+        /// about to be replaced by another, which re-arms the wait itself.
+        private func cancelFirstFrameWait() {
+            firstFrameFallback?.cancel()
+            firstFrameFallback = nil
+            awaitingFirstFrame = false
         }
 
         /// The transport died on its own — flag the UI and reconnect.
@@ -2631,7 +2776,7 @@ final class SessionHub {
             guard !isStopping, !isReconnecting, !isResuming else { return }
             isReconnecting = true
             defer { isReconnecting = false }
-            await stop()
+            await stop(forReconnect: true)
             viewModel.resetForReconnect()
             await start(theme: lastTheme, fontSize: lastFontSize, fontName: lastFontName,
                         cursorShape: lastCursorShape, cursorColorId: lastCursorColorId,
@@ -2643,6 +2788,7 @@ final class SessionHub {
         /// UDP resume path.
         func forceResume() async {
             guard !isStopping else { return }
+            Log.ssh.debug("resume: forceResume begin")
             if let transport = moshTransport {
                 // A REAL suspension (>20s background). The UDP flow may be a
                 // zombie — .ready in name, blackhole in practice — so replace
@@ -2667,7 +2813,7 @@ final class SessionHub {
         /// several `await` points, and `setForeground(true)`'s `resumeAll`
         /// plus the periodic keepalive tick can both call this for the same
         /// session.
-        func resumeIfNeeded() async {
+        func resumeIfNeeded(probeTimeout: Double? = nil) async {
             guard !isStopping, !isReconnecting, !isResuming else { return }
             isResuming = true
             defer { isResuming = false }
@@ -2680,7 +2826,7 @@ final class SessionHub {
                     // (herdr's focus lives on the server) and no window to
                     // re-pin, so just replace the dead connection under the
                     // poller. Retried every keepalive tick while it's down.
-                    let alive = await isSidecarAlive()
+                    let alive = await isSidecarAlive(timeout: probeTimeout)
                     if !alive || herdrControl == nil {
                         herdrControl?.stop()
                         herdrControl = nil
@@ -2696,13 +2842,17 @@ final class SessionHub {
                     // snapshot, so a failed re-establish would otherwise leave it
                     // blank until the app restarts. Since keepalive funnels
                     // through here, a nil controller is retried every cycle.
-                    let alive = await isSidecarAlive()
+                    let alive = await isSidecarAlive(timeout: probeTimeout)
                     if !alive || moshControl == nil {
                         captureSelection()   // remember window/pane before rebuild
                         let preferred = moshControl.flatMap { c in
                             c.snapshot.activeSessionId.flatMap { c.snapshot.sessions[$0]?.name }
                         }
-                        if let control = moshControl { await control.detach() }
+                        if let control = moshControl {
+                            // Its pins travel to the rebuilt sidecar — see stop().
+                            inheritedPinLedger = control.takePinLedger()
+                            await control.detach()
+                        }
                         moshControl = nil
                         if let ssh = sidecarSSH { await ssh.close() }
                         sidecarSSH = nil
@@ -2723,11 +2873,11 @@ final class SessionHub {
             // the TCP socket during suspension without NIO seeing a close, so it
             // lies (home shows "connected" but -CC can't attach). Actively
             // round-trip a trivial command with a short timeout instead.
-            if await isTransportAlive() { return }
+            if await isTransportAlive(timeout: probeTimeout) { return }
 
             // Dead transport: tear down without touching the UI layer, then
             // run the exact same start flow (tmux `new -A` reuses the session).
-            await stop()
+            await stop(forReconnect: true)
             viewModel.resetForReconnect()
             await start(theme: lastTheme, fontSize: lastFontSize, fontName: lastFontName,
                         cursorShape: lastCursorShape, cursorColorId: lastCursorColorId,
@@ -2788,6 +2938,14 @@ final class SessionHub {
         /// lifecycle tests shrink it so a scripted hang resolves in
         /// milliseconds instead of a wall-clock wait.
         @ObservationIgnored var probeTimeout: Double = 8
+
+        /// Probe deadline for the foreground-return check specifically. A
+        /// socket iOS held through a suspension is dead far more often than
+        /// one the periodic tick is asking about, and the person is watching
+        /// the screen — so the wait for silence is shorter here. Still wide
+        /// enough for a 500–700ms RTT path's three round trips plus one
+        /// retransmit (see `isTransportAlive`'s arithmetic).
+        @ObservationIgnored var foregroundProbeTimeout: Double = 4
 
         func isTransportAlive(timeout: Double? = nil) async -> Bool {
             await probeTransport(timeout: timeout) == .alive
@@ -2867,9 +3025,13 @@ final class SessionHub {
             let away = lastBackgroundedAt.map { Date().timeIntervalSince($0) } ?? 0
             lastBackgroundedAt = nil
             let force = away > forceReconnectAfter
+            Log.ssh.debug("resume: foreground after \(Int(away), privacy: .public)s force=\(force, privacy: .public)")
             // Take back the phone-grid pin for the terminal on screen (released
-            // on backgrounding below).
-            visibleSession?.repinForeground()
+            // on backgrounding below) — unless that terminal is about to be
+            // torn down and rebuilt anyway: the replacement pins on attach,
+            // and queueing commands on a channel we are about to declare dead
+            // only re-lists the window as a pin the teardown must then undo.
+            if !force { visibleSession?.repinForeground() }
             Task { await resumeAll(force: force) }
             guard keepAliveTimer == nil else { return }
             keepAliveTimer = Timer.scheduledTimer(withTimeInterval: keepAliveInterval, repeats: true) { [weak self] _ in
@@ -3040,7 +3202,7 @@ final class SessionHub {
                     if force {
                         await session.forceResume()
                     } else {
-                        await session.resumeIfNeeded()
+                        await session.resumeIfNeeded(probeTimeout: session.foregroundProbeTimeout)
                     }
                 }
             }
