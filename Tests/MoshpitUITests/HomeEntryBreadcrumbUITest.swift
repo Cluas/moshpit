@@ -30,7 +30,10 @@ final class HomeEntryBreadcrumbUITest: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments += [
             "-MOSHPIT_RESET", "-MOSHPIT_SEED_HOME", "1",
-            "-MOSHPIT_SEED_USER", NSUserName(),
+            // The rig names the account the key belongs to; `NSUserName()`
+            // inside the simulator runner is not reliably the host account.
+            "-MOSHPIT_SEED_USER", (try? String(contentsOfFile: "/tmp/rc/seeduser", encoding: .utf8))?
+                .trimmingCharacters(in: .whitespacesAndNewlines) ?? NSUserName(),
             "-MOSHPIT_SEED_KEY_B64", key.trimmingCharacters(in: .whitespacesAndNewlines),
             "-MOSHPIT_SEED_HOST", "127.0.0.1", "-MOSHPIT_SEED_PORT", "2222",
             "-MOSHPIT_SEED_NAME", "rc-lab", "-MOSHPIT_SEED_MUX", "tmux",
