@@ -160,6 +160,25 @@ minimal surface is a feature, not a limitation.
 - Fill out the PR template. Describe what changed and, in the spirit above, why.
 - Include a simulator screenshot or short clip for any user-facing UI change.
 
+## Commit messages
+
+Commits follow [Conventional Commits](https://www.conventionalcommits.org/):
+a type, an optional scope, and a short imperative summary, then a body that
+says why.
+
+```
+feat(terminal): keep a long-press selection when the finger lifts
+fix(tmux): stop the scroll view scrolling underneath our own pan
+docs: describe how the public history is produced
+```
+
+Types in use: `feat`, `fix`, `perf`, `refactor`, `test`, `docs`, `build`,
+`ci`, `chore`. Scope is the area touched (`terminal`, `tmux`, `herdr`, `push`,
+`island`, `settings`, `i18n`, `release`) and is left out when the change is
+repository-wide. The summary stays under about 70 characters; the body
+explains the reasoning, the trade-off or the bug's mechanism — the diff
+already shows what changed.
+
 ## Reporting bugs and requesting features
 
 Use the issue templates under `.github/ISSUE_TEMPLATE/`. A clear repro (host
@@ -174,6 +193,6 @@ pull request you agree that your contribution is licensed under the same terms.
 This public repository is published from the maintainer's development tree. The
 App Store release pipeline, the marketing site and the store metadata live in a
 private repository, and `scripts/export-oss.sh` there produces exactly the
-files you see here. Pull requests are merged back into that tree and land in
-the next export, so history on this side is a sequence of release snapshots
-rather than every working commit.
+files you see here — one commit per development commit, with the original
+author, date and message and a `Source-Commit` trailer naming its origin.
+Pull requests are merged into that tree and appear here on the next export.
