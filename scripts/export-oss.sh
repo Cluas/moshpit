@@ -17,19 +17,22 @@
 #                         k3s cluster and mainland mirror host
 #
 # Usage:
-#   scripts/export-oss.sh [DEST]                    copy the public tree into DEST
-#   scripts/export-oss.sh [DEST] --commit           ...and commit it there
-#   scripts/export-oss.sh [DEST] --commit -m "..."  ...under the given subject line
+#   scripts/export-oss.sh [DEST]                 copy the public tree into DEST
+#   scripts/export-oss.sh [DEST] --commit        replay the development commits
+#                                                since the last export as commits
+#   scripts/export-oss.sh [DEST] --commit --since <sha>
+#                                                ...starting after <sha> when DEST's
+#                                                last commit carries no source mark
 #
 # DEST defaults to ../moshpit-oss next to this checkout. The first run creates
-# a fresh repository (single root commit); later runs replace the tree and, with
-# --commit, record one snapshot commit — the public history is a sequence of
-# release snapshots, not every working commit. The snapshot's message reads
-# like any other commit: the subject is the one given with -m, or else the
-# subject of the development tree's HEAD; the body lists the development
-# commits the snapshot carries since the previous one; a Source-Commit trailer
-# names the exact tree it was cut from, which is also how the next run finds
-# where the previous snapshot left off.
+# a fresh repository (single root commit). Later runs with --commit walk the
+# development history since the previous export, first-parent, and re-create
+# each commit that touches a public path: the same author, date and message,
+# plus a Source-Commit trailer naming the development commit it came from. The
+# public log therefore reads like an ordinary history — one commit per change,
+# in the author's words — with the private-only paths simply absent. The
+# trailer is also how the next run finds where the previous export stopped
+# (the older "Sync from private <sha>" subjects are recognised too).
 #
 # Signing.xcconfig is exported with DEVELOPMENT_TEAM blanked (contributors fill
 # in their own), and the result is scanned for anything that must not leave:
@@ -40,11 +43,11 @@ set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 DEST="$ROOT/../moshpit-oss"
 COMMIT=0
-SUBJECT=""
+SINCE_ARG=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --commit) COMMIT=1 ;;
-    -m|--message) shift; SUBJECT=${1:-}; [ -n "$SUBJECT" ] || { echo "export-oss: -m needs a subject" >&2; exit 64; } ;;
+    --since) shift; SINCE_ARG=${1:-}; [ -n "$SINCE_ARG" ] || { echo "export-oss: --since needs a commit" >&2; exit 64; } ;;
     -*) echo "export-oss: unknown option $1" >&2; exit 64 ;;
     *) DEST=$1 ;;
   esac
@@ -67,101 +70,138 @@ PUBLIC=(
   scripts/capture/capture_mosh_switch_bytes.swift scripts/capture/stage
 )
 
-LIST=$(mktemp)
-trap 'rm -f "$LIST" "$LIST.dest"' EXIT
-git -C "$ROOT" ls-files -z -- "${PUBLIC[@]}" | tr '\0' '\n' | LC_ALL=C sort -u > "$LIST"
-[ -s "$LIST" ] || { echo "export-oss: nothing matched" >&2; exit 1; }
-
-# DEST is a working checkout too (people run xcodegen and build there), so
-# "stale" means files git would track that are no longer listed — never the
-# generated Moshpit.xcodeproj or build/, which the exported .gitignore covers.
-[ -d "$DEST/.git" ] || git -C "$DEST" init -q -b main
-rsync -a --files-from="$LIST" "$ROOT/" "$DEST/"
-git -C "$DEST" ls-files -z --cached --others --exclude-standard | tr '\0' '\n' | LC_ALL=C sort -u > "$LIST.dest"
-LC_ALL=C comm -13 "$LIST" "$LIST.dest" | while IFS= read -r stale; do rm -f "$DEST/$stale"; done
-find "$DEST" -type d -empty -not -path "$DEST/.git*" -delete
-
-# Contributors sign with their own Team; the maintainer's stays here.
-sed -i '' -E 's/^DEVELOPMENT_TEAM = .*/DEVELOPMENT_TEAM =/' "$DEST/Signing.xcconfig"
-
-# --- leak scan -------------------------------------------------------------
-fail=0
-TEAM=$(sed -nE 's/^DEVELOPMENT_TEAM = *([A-Z0-9]{10}).*/\1/p' "$ROOT/Signing.xcconfig" | head -1)
-# Scan what git would publish (tracked + untracked-but-not-ignored), never the
-# generated project or build/, which carry the signing Team of whoever built.
-SCOPE=$(mktemp); trap 'rm -f "$LIST" "$LIST.dest" "$SCOPE"' EXIT
-git -C "$DEST" ls-files -z --cached --others --exclude-standard | tr '\0' '\n' | grep -v '^scripts/export-oss.sh$' > "$SCOPE" || true
-scan() { # label, grep flags, pattern
-  local hits
-  hits=$(cd "$DEST" && tr '\n' '\0' < "$SCOPE" | xargs -0 grep -In $2 -- "$3" 2>/dev/null | head -5 || true)
-  if [ -n "$hits" ]; then echo "LEAK ($1):"; echo "$hits" | cut -c1-160; fail=1; fi
+LIST=$(mktemp); SCOPE=$(mktemp)
+WT=""
+cleanup() {
+  rm -f "$LIST" "$LIST.dest" "$SCOPE"
+  [ -n "$WT" ] && git -C "$ROOT" worktree remove --force "$WT" 2>/dev/null
+  true
 }
-[ -n "$TEAM" ] && scan "team id" -F "$TEAM"
-scan "asc identifiers" -E 'ASC_(KEY|ISSUER)_ID=[A-Za-z0-9]|AuthKey_[A-Z0-9]*[A-WYZ0-9][A-Z0-9]*\.p8'
-scan "tokens" -E 'ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|AKID[A-Za-z0-9]{20,}|tskey-[a-z]+-[A-Za-z0-9]{10,}|xox[bap]-[A-Za-z0-9-]{10,}'
-scan "key material" -E '^[A-Za-z0-9+/]{64}$'
-# Literal strings that must never appear (old credentials, personal mailboxes).
-# The list itself is private: it is not in PUBLIC above.
-if [ -f "$ROOT/scripts/oss-denylist.txt" ]; then
-  while IFS= read -r word; do
-    [ -n "$word" ] && [ "${word#\#}" = "$word" ] && scan "denylist" -F "$word"
-  done < "$ROOT/scripts/oss-denylist.txt"
-fi
-if [ "$fail" -ne 0 ]; then echo "export-oss: refusing to continue" >&2; exit 2; fi
+trap cleanup EXIT
 
-# --- dangling references (warnings only) ----------------------------------
-refs=$(cd "$DEST" && tr '\n' '\0' < "$SCOPE" | xargs -0 grep -IEn -- 'marketing/|docs/appstore|docs/testflight|deploy/review-demo|app-review\.md|OSS_READINESS|release-(upload|promote|listing|screenshots)|deploy-site|shot-upload|capture-marketing-shots' 2>/dev/null || true)
-if [ -n "$refs" ]; then
-  echo "note: $(echo "$refs" | wc -l | tr -d ' ') reference(s) to private-only paths (comments/docs, harmless):"
-  echo "$refs" | cut -d: -f1 | sort | uniq -c | sort -rn | head -8
-fi
+# Copy the public tree of SRC (a checkout of this repository — the working
+# tree, or a detached worktree at some commit) into DEST and scan it. The
+# scan's Team ID and denylist always come from the current tree, so an old
+# commit is judged by today's rules.
+export_tree() {
+  local SRC=$1
+  git -C "$SRC" ls-files -z -- "${PUBLIC[@]}" 2>/dev/null | tr '\0' '\n' | LC_ALL=C sort -u > "$LIST"
+  [ -s "$LIST" ] || { echo "export-oss: nothing matched in $SRC" >&2; exit 1; }
 
-echo "exported $(wc -l < "$LIST" | tr -d ' ') files to $DEST"
+  # DEST is a working checkout too (people run xcodegen and build there), so
+  # "stale" means files git would track that are no longer listed — never the
+  # generated Moshpit.xcodeproj or build/, which the exported .gitignore covers.
+  [ -d "$DEST/.git" ] || git -C "$DEST" init -q -b main
+  rsync -a --files-from="$LIST" "$SRC/" "$DEST/"
+  git -C "$DEST" ls-files -z --cached --others --exclude-standard | tr '\0' '\n' | LC_ALL=C sort -u > "$LIST.dest"
+  LC_ALL=C comm -13 "$LIST" "$LIST.dest" | while IFS= read -r stale; do rm -f "$DEST/$stale"; done
+  find "$DEST" -type d -empty -not -path "$DEST/.git*" -delete
 
-# --- commit ----------------------------------------------------------------
-# The development commit the previous snapshot was cut from: the Source-Commit
-# trailer on the last public commit, or the sha in the older "Sync from
-# private <sha>" subjects. Empty when there is no previous snapshot to speak of.
+  # Contributors sign with their own Team; the maintainer's stays here.
+  [ -f "$DEST/Signing.xcconfig" ] && sed -i '' -E 's/^DEVELOPMENT_TEAM = .*/DEVELOPMENT_TEAM =/' "$DEST/Signing.xcconfig"
+
+  # --- leak scan -----------------------------------------------------------
+  local fail=0 TEAM
+  TEAM=$(sed -nE 's/^DEVELOPMENT_TEAM = *([A-Z0-9]{10}).*/\1/p' "$ROOT/Signing.xcconfig" | head -1)
+  # Scan what git would publish (tracked + untracked-but-not-ignored), never the
+  # generated project or build/, which carry the signing Team of whoever built.
+  git -C "$DEST" ls-files -z --cached --others --exclude-standard | tr '\0' '\n' | grep -v '^scripts/export-oss.sh$' > "$SCOPE" || true
+  scan() { # label, grep flags, pattern
+    local hits
+    hits=$(cd "$DEST" && tr '\n' '\0' < "$SCOPE" | xargs -0 grep -In $2 -- "$3" 2>/dev/null | head -5 || true)
+    if [ -n "$hits" ]; then echo "LEAK ($1):"; echo "$hits" | cut -c1-160; fail=1; fi
+  }
+  [ -n "$TEAM" ] && scan "team id" -F "$TEAM"
+  scan "asc identifiers" -E 'ASC_(KEY|ISSUER)_ID=[A-Za-z0-9]|AuthKey_[A-Z0-9]*[A-WYZ0-9][A-Z0-9]*\.p8'
+  scan "tokens" -E 'ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|AKID[A-Za-z0-9]{20,}|tskey-[a-z]+-[A-Za-z0-9]{10,}|xox[bap]-[A-Za-z0-9-]{10,}'
+  scan "key material" -E '^[A-Za-z0-9+/]{64}$'
+  # Literal strings that must never appear (old credentials, personal mailboxes).
+  # The list itself is private: it is not in PUBLIC above.
+  if [ -f "$ROOT/scripts/oss-denylist.txt" ]; then
+    while IFS= read -r word; do
+      [ -n "$word" ] && [ "${word#\#}" = "$word" ] && scan "denylist" -F "$word"
+    done < "$ROOT/scripts/oss-denylist.txt"
+  fi
+  if [ "$fail" -ne 0 ]; then echo "export-oss: refusing to continue" >&2; exit 2; fi
+}
+
+# Comments and docs may still name private-only paths; say so, once, for the
+# tree that ends up published.
+dangling_refs() {
+  local refs
+  refs=$(cd "$DEST" && tr '\n' '\0' < "$SCOPE" | xargs -0 grep -IEn -- 'marketing/|docs/appstore|docs/testflight|deploy/review-demo|app-review\.md|OSS_READINESS|release-(upload|promote|listing|screenshots)|deploy-site|shot-upload|capture-marketing-shots' 2>/dev/null || true)
+  if [ -n "$refs" ]; then
+    echo "note: $(echo "$refs" | wc -l | tr -d ' ') reference(s) to private-only paths (comments/docs, harmless):"
+    echo "$refs" | cut -d: -f1 | sort | uniq -c | sort -rn | head -8
+  fi
+}
+
+# The development commit the previous export stopped at: the Source-Commit
+# trailer on DEST's last commit, or the sha in the older "Sync from private
+# <sha>" / root-commit wording. Prints nothing when there is no mark.
 previous_source() {
   local msg
   msg=$(git -C "$DEST" log -1 --format=%B 2>/dev/null) || return 0
-  sed -n 's/^Source-Commit: \([0-9a-f]*\).*/\1/p' <<<"$msg" | head -1 | grep . && return 0
-  sed -n 's/^Sync from private \([0-9a-f]*\).*/\1/p' <<<"$msg" | head -1 | grep . && return 0
-  sed -n 's/^Exported from the development tree at \([0-9a-f]*\).*/\1/p' <<<"$msg" | head -1 | grep . && return 0
-  return 0
+  { sed -n 's/^Source-Commit: \([0-9a-f]*\).*/\1/p' <<<"$msg"
+    sed -n 's/^Sync from private \([0-9a-f]*\).*/\1/p' <<<"$msg"
+    sed -n 's/^Exported from the development tree at \([0-9a-f]*\).*/\1/p' <<<"$msg"
+  } | grep . | head -1 || true
 }
 
-# Subject + body for a snapshot commit. The body names every development
-# commit since the previous snapshot so the public log says what changed,
-# not just that something did.
-snapshot_message() {
-  local subject=$1 since=$2 head=$3 range
-  printf '%s\n\n' "$subject"
-  if [ -n "$since" ] && git -C "$ROOT" rev-parse -q --verify "$since^{commit}" >/dev/null 2>&1; then
-    range="$since..$head"
-    printf 'Snapshot of the development tree. Development commits since the previous one:\n\n'
-    git -C "$ROOT" log --reverse --format='• %s' "$range"
-    printf '\n'
-  else
-    printf 'Snapshot of the development tree.\n\n'
-  fi
-  printf 'Source-Commit: %s\n' "$(git -C "$ROOT" rev-parse "$head")"
-}
-
-if [ "$COMMIT" -eq 1 ]; then
-  SHA=$(git -C "$ROOT" rev-parse --short HEAD)
-  if ! git -C "$DEST" rev-parse -q --verify HEAD >/dev/null 2>&1; then
-    git -C "$DEST" add -A
-    git -C "$DEST" commit -q -m "${SUBJECT:-Moshpit goes open source: the app, its extensions and the push relay}" \
-      -m "Exported from the development tree at $SHA by scripts/export-oss.sh." \
-      -m "Source-Commit: $(git -C "$ROOT" rev-parse HEAD)"
-  else
-    git -C "$DEST" add -A
-    if git -C "$DEST" diff --cached --quiet; then echo "nothing to commit"; else
-      SINCE=$(previous_source)
-      snapshot_message "${SUBJECT:-$(git -C "$ROOT" log -1 --format=%s HEAD)}" "$SINCE" HEAD \
-        | git -C "$DEST" commit -q -F -
-    fi
-  fi
-  git -C "$DEST" log --oneline -1
+if [ "$COMMIT" -eq 0 ]; then
+  export_tree "$ROOT"
+  dangling_refs
+  echo "exported $(wc -l < "$LIST" | tr -d ' ') files to $DEST"
+  exit 0
 fi
+
+# --- first export: one root commit ---------------------------------------
+if ! git -C "$DEST" rev-parse -q --verify HEAD >/dev/null 2>&1; then
+  export_tree "$ROOT"
+  dangling_refs
+  HEAD_SHA=$(git -C "$ROOT" rev-parse HEAD)
+  git -C "$DEST" add -A
+  git -C "$DEST" commit -q -m "Moshpit goes open source: the app, its extensions and the push relay" \
+    -m "Exported from the development tree at ${HEAD_SHA:0:7} by scripts/export-oss.sh." \
+    -m "Source-Commit: $HEAD_SHA"
+  git -C "$DEST" log --oneline -1
+  exit 0
+fi
+
+# --- later exports: replay the development commits -------------------------
+SINCE=${SINCE_ARG:-$(previous_source)}
+if [ -z "$SINCE" ]; then
+  echo "export-oss: $DEST's last commit carries no Source-Commit mark; pass --since <development sha>" >&2
+  exit 65
+fi
+if ! git -C "$ROOT" merge-base --is-ancestor "$SINCE" HEAD 2>/dev/null; then
+  echo "export-oss: $SINCE is not an ancestor of HEAD in $ROOT" >&2
+  exit 65
+fi
+if ! git -C "$ROOT" diff --quiet HEAD -- "${PUBLIC[@]}" 2>/dev/null; then
+  echo "note: uncommitted changes to public paths in $ROOT are not exported — commit them first"
+fi
+
+made=0
+for sha in $(git -C "$ROOT" rev-list --reverse --first-parent "$SINCE..HEAD"); do
+  # Commits that touch no public path leave nothing to publish.
+  if git -C "$ROOT" diff --quiet "$sha^" "$sha" -- "${PUBLIC[@]}" 2>/dev/null; then continue; fi
+  WT=$(mktemp -d "${TMPDIR:-/tmp}/export-oss.XXXXXX")
+  git -C "$ROOT" worktree add --detach -q "$WT" "$sha"
+  export_tree "$WT"
+  git -C "$DEST" add -A
+  if git -C "$DEST" diff --cached --quiet; then
+    git -C "$ROOT" worktree remove --force "$WT"; WT=""
+    continue
+  fi
+  git -C "$ROOT" log -1 --format=%B "$sha" \
+    | git interpret-trailers --trailer "Source-Commit: $sha" \
+    | git -C "$DEST" commit -q -F - \
+        --author="$(git -C "$ROOT" log -1 --format='%an <%ae>' "$sha")" \
+        --date="$(git -C "$ROOT" log -1 --format=%aD "$sha")"
+  git -C "$DEST" log --oneline -1
+  made=$((made + 1))
+  git -C "$ROOT" worktree remove --force "$WT"; WT=""
+done
+dangling_refs
+if [ "$made" -eq 0 ]; then echo "nothing to commit: $DEST is already at $(git -C "$ROOT" rev-parse --short HEAD)"; fi
