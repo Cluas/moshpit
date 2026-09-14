@@ -43,6 +43,20 @@ if command -v jq >/dev/null 2>&1 && [ ! -t 0 ]; then
   esac
   TITLE=$(printf "%s" "$TITLE" | tr "\n" " " | cut -c1-80)
   command -v iconv >/dev/null 2>&1 && TITLE=$(printf "%s" "$TITLE" | iconv -f UTF-8 -t UTF-8 -c 2>/dev/null)
+  # Claude Code routes its own injected turns through UserPromptSubmit too:
+  # a background task finishing (<task-notification>), a teammate or another
+  # session writing in, a slash command's local output, an interrupt marker.
+  # Nobody typed those, and a finish card that quoted one read
+  # "<task-notification> <task-id>…" on a real lock screen. Drop the text and
+  # keep the prompt the person actually gave — that is still what this work is.
+  if [ "$EV" = "UserPromptSubmit" ]; then
+    LEAD=${TITLE#"${TITLE%%[! ]*}"}
+    case "$LEAD" in
+      "<task-notification>"*|"<teammate-message"*|"<cross-session-message"*|\
+      "<system-reminder>"*|"<local-command-"*|"<command-name>"*|\
+      "[SYSTEM NOTIFICATION"*|"[Request interrupted"*) TITLE="" ;;
+    esac
+  fi
   # Remember the prompt for this turn's `done`. Only the prompt: a tool line
   # would overwrite it on the very next PreToolUse, and a Stop hook brings no
   # text of its own. Already cut to 80 bytes above — a prompt can be a

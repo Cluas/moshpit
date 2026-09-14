@@ -246,7 +246,11 @@ the connection on the phone, not whatever `hostname` says on the host.
 question; on a `done` it is the PROMPT the turn answered — the stamp script
 remembers every `UserPromptSubmit` in `@moshpit_prompt` and hands it to the
 `Stop`, because the Stop event itself carries no text and "what finished" is the
-one thing a finish card is for. A prompt can be a paragraph and a lock screen
+one thing a finish card is for. Turns Claude Code injects itself — a background
+task completing (`<task-notification>`), a teammate or another session writing
+in, a slash command's local output — also arrive as `UserPromptSubmit`; the
+script ignores those, so the remembered prompt stays the one the person typed.
+A prompt can be a paragraph and a lock screen
 shows two lines, so it is cut twice: to 80 bytes on the host (UTF-8 repaired
 by `iconv -c`), then to 72 characters, whitespace collapsed, on the phone
 (`AgentNotificationCopy.detailLimit`). `dur` is how long the closing turn ran,

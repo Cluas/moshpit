@@ -1,10 +1,12 @@
 #!/bin/sh
 # The stamp script's quiet-notification behavior, against a real tmux pane and a
-# FAKE sender that just logs its argv. Four claims:
+# FAKE sender that just logs its argv. Six claims:
 #   1. an idle reminder on a parked (done) pane stamps nothing and pushes nothing
 #   2. an attention answered within the grace window never reaches the sender
 #   3. one that stands the window out reaches it exactly once
 #   4. a done carries how long the closing episode ran, and the prompt it answered
+#   5. an idle reminder heals a pane left stuck in attention
+#   6. a turn Claude Code injected itself never becomes the finish card's prompt
 set -eu
 T=$(command -v tmux); S=stampquiet
 SCRATCH=$(mktemp -d)
@@ -101,6 +103,22 @@ sleep 3
 TITLE_NOW=$("$T" -L $S display-message -p -t "$PANE" '#{@moshpit_title}')
 [ -z "$TITLE_NOW" ] || fail "the fossil's title survived the heal: $TITLE_NOW"
 echo "   ok  healed to done, silently, title cleared"
+
+echo "== 6: an injected turn never becomes the finish card's prompt =="
+# Claude Code fires UserPromptSubmit for its own synthetic turns too — a
+# background task completing arrives as "<task-notification>…". The remembered
+# prompt must stay the one the person typed, and the done must carry that.
+stamp working '{"hook_event_name":"UserPromptSubmit","prompt":"ship it"}'
+stamp working '{"hook_event_name":"UserPromptSubmit","prompt":"<task-notification>\n<task-id>bgh3exmc1</task-id>\n<tool-use-id>toolu_01X</tool-use-id>\n<status>completed</status>\n</task-notification>"}'
+PROMPT_NOW=$("$T" -L $S display-message -p -t "$PANE" '#{@moshpit_prompt}')
+[ "$PROMPT_NOW" = "ship it" ] || fail "an injected turn overwrote the remembered prompt: $PROMPT_NOW"
+TITLE_NOW=$("$T" -L $S display-message -p -t "$PANE" '#{@moshpit_title}')
+case "$TITLE_NOW" in *task-notification*) fail "an injected turn became the pane title: $TITLE_NOW" ;; esac
+: > "$SCRATCH/push.log"
+stamp done ""
+sleep 1
+grep -Eq '^PUSH done claude ship it [0-9]+$' "$SCRATCH/push.log" || fail "done should carry the typed prompt: $(tail -1 "$SCRATCH/push.log")"
+echo "   ok  prompt stayed 'ship it', done carried it"
 
 echo
 echo "PASS — parked panes stay quiet, answered questions never ring, real ones ring once."
