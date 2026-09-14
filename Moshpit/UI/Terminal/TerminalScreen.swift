@@ -121,6 +121,23 @@ struct TerminalScreen: View {
     /// poster is the honest picture) and a reconnect (a frame worth keeping
     /// on screen is right there). Reset when the session object changes.
     @State private var wasEverLive = false
+
+    /// Whether this screen has put the cover up for a phase that was not
+    /// `.live` — the only licence for a cover to still be up once the
+    /// transport reads `.live` (waiting for the first frame, see `settling`).
+    ///
+    /// A screen that appears onto a session that is ALREADY live (entered
+    /// from the home card or the session tree after connecting there) never
+    /// shows a cover: the poster would be up for the one frame before the
+    /// pane paints and come straight back down in the very update that
+    /// resolves `active` and hosts the pane. On iOS 27 that exact sequence
+    /// left every SwiftUI control in the top bar deaf to taps for the life
+    /// of the screen — breadcrumb, transport pill, back — while the UIKit
+    /// terminal beneath kept working (rig, iPhone 17 Pro iOS 27.0
+    /// simulator, 2026-09-14; iOS 26.2 was unaffected). Holding the poster a
+    /// beat longer avoided it; not putting it up at all is the honest
+    /// version, since there is nothing to cover.
+    @State private var coverArmed = false
     /// The last state the poster announced before the transport came back:
     /// the label it keeps while the cover waits for the first frame, so a
     /// reconnect does not read "Opening the pit" for its last few hundred ms.
@@ -514,7 +531,10 @@ struct TerminalScreen: View {
             // pane took focus. The retired controller now stays hosted until
             // the replacement has painted, so first responder has somewhere
             // to go and the keyboard never moves.
-            if state != .live { lastCoverState = state }
+            if state != .live {
+                lastCoverState = state
+                coverArmed = true
+            }
             // `.live` means the TRANSPORT is up, not that anything has
             // painted: on tmux the -CC re-attach and first backfill land a
             // few hundred ms later, and dropping the cover at transport-up
@@ -1026,7 +1046,13 @@ struct TerminalScreen: View {
             }
         }
         .animation(.easeInOut(duration: 0.3), value: transitionKey)
-        .onChange(of: activeIdentity) { _, _ in wasEverLive = false }
+        .onChange(of: activeIdentity) { _, _ in
+            wasEverLive = false
+            // The session resolving while still connecting is the first
+            // connect's normal path (`connState` reads `.connecting` both
+            // before and after, so the state change above never fires).
+            coverArmed = (active?.viewModel.connState ?? .live) != .live
+        }
     }
 
     /// What the cover says. Once the transport is back the state reads
@@ -1044,7 +1070,7 @@ struct TerminalScreen: View {
     /// frame gave way to the new one (a poster flash in the crossfade,
     /// measured on the rig's short-suspension run).
     private var settling: Bool {
-        guard let active, connState == .live else { return false }
+        guard let active, connState == .live, coverArmed else { return false }
         return expectsTmuxPanes(active) ? active.awaitingFirstFrame : settleGrace
     }
 
@@ -1072,7 +1098,12 @@ struct TerminalScreen: View {
     /// replacement has painted, not until the transport says so. `.offline`
     /// shows no poster: nothing is being attempted.
     private var posterVisible: Bool {
-        guard active != nil else { return true }
+        // No session resolved yet: NOT a poster. `active` is a `@State` set
+        // on appear, so every screen renders one frame without it — for a
+        // first connect the poster follows a frame later over the same
+        // colour; for a screen entering a live session it must never come
+        // (see `coverArmed`).
+        guard active != nil else { return false }
         if hasContentBehind { return false }
         return connState == .connecting || connState == .reconnecting || settling
     }
