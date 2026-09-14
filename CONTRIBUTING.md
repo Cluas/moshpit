@@ -190,9 +190,9 @@ fix much faster.
 Moshpit is licensed under GPL-3.0-only (see [LICENSE](LICENSE)). By submitting a
 pull request you agree that your contribution is licensed under the same terms.
 
-This public repository is published from the maintainer's development tree. The
-App Store release pipeline, the marketing site and the store metadata live in a
-private repository, and `scripts/export-oss.sh` there produces exactly the
-files you see here — one commit per development commit, with the original
-author, date and message and a `Source-Commit` trailer naming its origin.
+This public repository is published from the maintainer's development tree:
+`scripts/export-oss.sh` there produces exactly the files you see here — one
+commit per development commit, with the original author, date and message and
+a `Source-Commit` trailer naming its origin. The App Store release pipeline
+and store metadata, and the marketing site, are separate private repositories.
 Pull requests are merged into that tree and appear here on the next export.

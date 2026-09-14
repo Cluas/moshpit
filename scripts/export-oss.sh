@@ -6,15 +6,15 @@
 # developer tooling, and nothing else. What stays here, and why:
 #
 #   marketing/            app icon drafts (the website itself is its own repo, moshpit-site)
-#   docs/appstore/        store listing, pricing strategy, release runbook
-#   docs/testflight*      per-build tester notes and the machine-state guide
-#   docs/app-review.md    the App Review demo host and how to rotate it
-#   deploy/review-demo/   that demo host's manifests
-#   docs/OSS_READINESS_AUDIT.md   an internal self-audit
-#   scripts/release-{upload,promote,listing,screenshots}.*, shot-upload.py,
-#   publish-design-docs.sh, capture-marketing-shots.sh
-#                         bound to the maintainer's App Store Connect account,
-#                         k3s cluster and mainland mirror host
+#   scripts/oss-denylist.txt      the literal strings the leak scan below refuses
+#   scripts/publish-design-docs.sh, scripts/capture/capture-marketing-shots.sh
+#                         bound to the maintainer's local servers and site checkout
+#
+# The App Store pipeline (release-upload/promote/listing/screenshots), the store
+# listing and runbook, the TestFlight notes, the App Review demo host and the
+# OSS readiness audit moved to their own private repository, moshpit-ops, on
+# 2026-09-14. They were never exported from here either; release-archive.sh
+# (public) only looks for the tester notes in that checkout when it is present.
 #
 # Usage:
 #   scripts/export-oss.sh [DEST]                 copy the public tree into DEST

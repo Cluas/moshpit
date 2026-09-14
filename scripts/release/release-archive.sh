@@ -73,11 +73,14 @@ git diff --quiet HEAD 2>/dev/null || \
 # Tester notes are part of shipping a build, not an afterthought: TestFlight
 # asks for "What to Test" per build, and a build uploaded without them wastes
 # testers on things we already know are broken. Warned rather than enforced —
-# a local archive you never upload doesn't need them.
-NOTES="docs/testflight/build-$TRAIN-$BUILD.md"
-if [ ! -f "$NOTES" ]; then
+# a local archive you never upload doesn't need them. The notes live in the
+# maintainer's release repository (moshpit-ops, next to this checkout or at
+# $MOSHPIT_OPS); without that checkout there is nothing to look for.
+OPS="${MOSHPIT_OPS:-$PWD/../moshpit-ops}"
+NOTES="$OPS/testflight/build-$TRAIN-$BUILD.md"
+if [ -d "$OPS/testflight" ] && [ ! -f "$NOTES" ]; then
   echo "⚠ no tester notes at $NOTES — write them before uploading to TestFlight"
-  echo "  (start from the previous build's: $(ls -1t docs/testflight/build-*.md 2>/dev/null | head -1 || echo 'none yet'))"
+  echo "  (start from the previous build's: $(ls -1t "$OPS"/testflight/build-*.md 2>/dev/null | head -1 || echo 'none yet'))"
 fi
 
 # Export authenticates with the App Store Connect API key (below); the ARCHIVE
