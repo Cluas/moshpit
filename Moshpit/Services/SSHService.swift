@@ -1030,6 +1030,17 @@ private final class SecureEnclaveP256AuthDelegate: NIOSSHClientUserAuthenticatio
     }
 }
 
+#if DEBUG
+extension SSHService {
+    /// Harness-only: commit a TOFU decision up front so a scripted run
+    /// (simulator without a tap tool) reaches the terminal without the
+    /// New Host card. Same store the card's Trust button writes.
+    func preTrustHostKey(host: String, port: Int, fingerprint: String) async {
+        await validator.trust(host: host, port: port, fingerprint: fingerprint)
+    }
+}
+#endif
+
 // MARK: - Shared instance
 
 extension SSHService {

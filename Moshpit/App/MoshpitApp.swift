@@ -326,6 +326,12 @@ struct RootView: View {
 
         let host = launchArg("-MOSHPIT_SEED_HOST") ?? "127.0.0.1"
         let port = Int(launchArg("-MOSHPIT_SEED_PORT") ?? "22") ?? 22
+        // `-MOSHPIT_SEED_TRUST_FP SHA256:…` pre-answers the New Host card, for
+        // rigs with no way to tap it (Xcode 27 ships no Simulator.app, so
+        // idb's HID path is gone).
+        if let fingerprint = launchArg("-MOSHPIT_SEED_TRUST_FP") {
+            await SSHService.shared.preTrustHostKey(host: host, port: port, fingerprint: fingerprint)
+        }
 
         // `-MOSHPIT_SEED_ID` fixes the connection's id so a harness can address
         // it afterwards — `moshpit://connection/<id>?pane=%N` is the only way to
