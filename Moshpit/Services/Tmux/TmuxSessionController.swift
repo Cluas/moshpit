@@ -321,6 +321,14 @@ final class TmuxSessionController: MultiplexerControlling {
         activeWindowAtForeignWidth = false
         foreignQuietRepinTask?.cancel()
         foreignQuietRepinTask = nil
+        // The lease cache names a client that is about to stop existing.
+        sizeLeases.removeAll()
+        pendingAttachLease = nil
+        sizeLeaseProbesInFlight.removeAll()
+        ourClientName = nil
+        sizeFollow = nil
+        foregroundProbeFallback?.cancel()
+        foregroundProbeFallback = nil
         resyncRetryTask?.cancel()
         resyncRetryTask = nil
         resyncRejectStreak.removeAll()
@@ -406,7 +414,8 @@ final class TmuxSessionController: MultiplexerControlling {
         // 70-col pane with CJK in the wrong cells → `？`/tofu on switch. tmux runs
         // the two in send order, so resizing first means the post-select stream
         // already arrives at our width. (A no-op width change is harmless.)
-        fitWindowToClient(windowId)
+        // A switch is the person's doing: the target window becomes ours.
+        requestPin(windowId, reason: .user)
         send(rawCommand: "select-window -t \(windowId)")
         // Landing on a split window: zoom its active pane so we show a single
         // full-screen pane.
@@ -433,6 +442,317 @@ final class TmuxSessionController: MultiplexerControlling {
     /// phone-sized for desktop clients). Exposed read-only for that path.
     @ObservationIgnored
     private(set) var resizedWindows: Set<String> = []
+
+    // MARK: - Window size ownership (two Moshpit devices on one window)
+
+    /// Who a window's size belongs to, as recorded in the tmux window option
+    /// `@moshpit_size_owner` (`<client_name>|<label>|<stamp>`).
+    ///
+    /// tmux's own `window-size latest` cannot arbitrate between two `-CC`
+    /// clients — control traffic never counts as activity — and without an
+    /// arbiter two Moshpit devices on one window each re-pinned it to their
+    /// own grid on every drift, forever: the 2s quiet re-pin on each side kept
+    /// the other side's fight alive (iPad and iPhone open together, 2026-09-14).
+    /// The lease names the device the window belongs to; the other device
+    /// FOLLOWS — keeps its last frame under a veil — instead of reclaiming,
+    /// until the person touches it. The stamp is the holder's last
+    /// interaction (0 for a passive claim), so a device coming to the front
+    /// can take an idle window but never one someone is typing into.
+    struct SizeLease: Equatable {
+        /// tmux `#{client_name}` of the holder — its liveness check: a lease
+        /// left behind by a client that is no longer attached (a crash, a
+        /// reconnect) is nobody's.
+        var clientName: String
+        /// What the holder calls itself on the follower's veil ("iPad").
+        var label: String
+        /// Unix time of the holder's last interaction; 0 for a passive claim.
+        var stamp: TimeInterval
+        /// Whether `clientName` was attached when last probed.
+        var live: Bool
+
+        init(clientName: String, label: String, stamp: TimeInterval, live: Bool) {
+            self.clientName = clientName
+            self.label = label
+            self.stamp = stamp
+            self.live = live
+        }
+
+        /// `nil` for anything that is not a lease (unset expands to "", and a
+        /// test harness's generic reply is a bare `0 0`).
+        init?(parsing raw: String, clients: Set<String>) {
+            let parts = raw.split(separator: "|", maxSplits: 2, omittingEmptySubsequences: false)
+            guard parts.count == 3, !parts[0].isEmpty, !parts[1].isEmpty,
+                  let stamp = TimeInterval(parts[2]) else { return nil }
+            self.clientName = String(parts[0])
+            self.label = String(parts[1])
+            self.stamp = stamp
+            // A reply with no clients at all is a failed listing, not an
+            // empty server — we are a client ourselves. Err toward "live":
+            // following a ghost costs one tap, stealing a window costs a fight.
+            self.live = clients.isEmpty || clients.contains(clientName)
+        }
+
+        var encoded: String { "\(clientName)|\(label)|\(Int(stamp))" }
+    }
+
+    /// What we last learned about a window's lease. No entry: never probed.
+    enum SizeLeaseState: Equatable {
+        case unset
+        case held(SizeLease)
+    }
+
+    @ObservationIgnored private var sizeLeases: [String: SizeLeaseState] = [:]
+    /// The lease of the session's current window, read at attach before the
+    /// window list lands, adopted by the first pin.
+    @ObservationIgnored private var pendingAttachLease: SizeLeaseState?
+    @ObservationIgnored private var sizeLeaseProbesInFlight: Set<String> = []
+    /// Our own tmux `#{client_name}`, read once per attach; leases we write
+    /// carry it. Nil until the reply lands (a claim before that is skipped —
+    /// the next interaction writes it). Settable for tests, whose attach path
+    /// skips the `%session-changed` that reads it.
+    @ObservationIgnored var ourClientName: String?
+    /// The device name written into our leases and shown on the other
+    /// device's veil. Injectable for tests.
+    @ObservationIgnored var sizeOwnerLabel: String = UIDevice.current.userInterfaceIdiom == .pad ? "iPad" : "iPhone"
+    /// Seconds a holder may sit idle before a device attaching or coming to
+    /// the front may take its window. A drift or a re-check never steals,
+    /// however long the holder idles.
+    @ObservationIgnored var foregroundStealAfter: TimeInterval = 10
+    /// A stamp refresh per keystroke would be a control command per
+    /// keystroke; once in this many seconds says "in use" just as well.
+    @ObservationIgnored var leaseStampRefreshInterval: TimeInterval = 5
+    @ObservationIgnored private var lastLeaseStampWrite: Date = .distantPast
+    /// Bounds the foreground probe: if tmux never answers, pin anyway.
+    @ObservationIgnored var foregroundProbeTimeout: TimeInterval = 1.5
+    @ObservationIgnored private var foregroundProbeFallback: Task<Void, Never>?
+
+    /// Non-nil while the active window is sized for another live device: the
+    /// view dims, freezes on its last frame and offers a tap to take over.
+    private(set) var sizeFollow: SizeFollow?
+    struct SizeFollow: Equatable {
+        var windowId: String
+        var ownerLabel: String
+    }
+
+    /// Why a pin is wanted — decides how much the lease may be overridden.
+    enum PinReason {
+        /// First pin after discovery.
+        case attach
+        /// Return from the background.
+        case foreground
+        /// A layout-change at a width other than ours (backoff applies).
+        case drift
+        /// The quiet-spell timer, or the follow-up to a probe.
+        case recheck
+        /// Our own grid changed, or a capture came back oversized.
+        case resize
+        /// The person did something to this window: always ours.
+        case user
+    }
+
+    /// The one gate every pin goes through.
+    ///
+    /// `user` claims and pins. `attach`/`foreground` take the window unless
+    /// another live device interacted within `foregroundStealAfter`; they
+    /// probe first when the lease is unknown. `drift`/`resize`/`recheck` take
+    /// it only when it is unowned, ours, or its holder is gone — a live
+    /// holder keeps it however long it idles. An unprobed window pins right
+    /// away on drift (today's behaviour, and what a desktop-terminal war
+    /// needs) and learns afterwards; a re-check always probes, which is what
+    /// notices a holder releasing or vanishing while we follow.
+    private func requestPin(_ windowId: String, reason: PinReason) {
+        guard rendersOutput else { return }
+        if reason == .user {
+            claimSizeOwnership(windowId, stamp: Date().timeIntervalSince1970)
+            pinNow(windowId, reason: reason)
+            return
+        }
+        if reason == .attach, let pending = pendingAttachLease {
+            pendingAttachLease = nil
+            if sizeLeases[windowId] == nil { sizeLeases[windowId] = pending }
+        }
+        let known = sizeLeases[windowId]
+        switch reason {
+        case .recheck:
+            probeSizeLease(windowId) { [weak self] in self?.decidePin(windowId, reason: reason) }
+        case .attach, .foreground:
+            if known == nil {
+                probeSizeLease(windowId) { [weak self] in self?.decidePin(windowId, reason: reason) }
+            } else {
+                decidePin(windowId, reason: reason)
+            }
+        case .drift, .resize:
+            decidePin(windowId, reason: reason)
+            // Verify what we just assumed; a wrong assumption costs one flap,
+            // and the follow-up turns it into following. The follow-up never
+            // pins on its own: the drift already did (or its backoff declined
+            // to, which a probe reply must not bypass — that backoff is what
+            // keeps a desktop tug-of-war from flashing). An unowned window we
+            // are using gets our passive claim, so a device arriving later
+            // knows to defer.
+            if !isHeldByAnotherLiveDevice(known) {
+                probeSizeLease(windowId) { [weak self] in
+                    guard let self else { return }
+                    let learned = self.sizeLeases[windowId]
+                    if self.isHeldByAnotherLiveDevice(learned) {
+                        self.decidePin(windowId, reason: reason)
+                    } else if learned == .unset, self.snapshot.activeWindowId == windowId {
+                        self.claimSizeOwnership(windowId, stamp: 0)
+                    }
+                }
+            }
+        case .user:
+            break
+        }
+    }
+
+    private func isHeldByAnotherLiveDevice(_ state: SizeLeaseState?) -> Bool {
+        guard case .held(let lease)? = state else { return false }
+        return lease.live && lease.clientName != ourClientName
+    }
+
+    private func decidePin(_ windowId: String, reason: PinReason) {
+        guard rendersOutput, snapshot.isAttached else { return }
+        let known = sizeLeases[windowId]
+        if reason == .foreground { endForegroundProbe() }
+        if case .held(let lease)? = known, lease.live, lease.clientName != ourClientName {
+            let idle = Date().timeIntervalSince1970 - lease.stamp
+            let mayTake = (reason == .attach || reason == .foreground) && idle > foregroundStealAfter
+            if !mayTake {
+                follow(windowId, lease)
+                return
+            }
+            claimSizeOwnership(windowId, stamp: 0)
+        } else if case .held(let lease)? = known, lease.clientName == ourClientName {
+            // Ours already; nothing to write.
+        } else if reason != .drift || known != nil {
+            // Unset, or a holder that is no longer attached. A drift on a
+            // never-probed window pins without writing — we do not know yet
+            // whether anyone holds it (the probe that follows may say so).
+            claimSizeOwnership(windowId, stamp: 0)
+        }
+        if reason == .recheck, !activeWindowAtForeignWidth, sizeFollow == nil {
+            // Nothing to fix: the window is already at our width and we were
+            // not following. (A re-check exists to end a follow or a war.)
+            return
+        }
+        pinNow(windowId, reason: reason)
+    }
+
+    private func pinNow(_ windowId: String, reason: PinReason) {
+        if sizeFollow?.windowId == windowId { sizeFollow = nil }
+        switch reason {
+        case .drift:
+            reclaimWindowOnDrift(windowId)
+        case .foreground:
+            fitWindowToClient(windowId)
+            // `releaseWindowPins` handed the split layout back (which
+            // unzooms), so the single-pane presentation has to be
+            // re-established — it is no longer left standing while we're away.
+            ensureImmersiveZoom()
+        case .attach, .recheck, .resize, .user:
+            fitWindowToClient(windowId)
+        }
+    }
+
+    /// The window belongs to `lease`'s device: leave its size alone. The veil
+    /// (and the output gate behind it) only make sense while the window is
+    /// actually at the other size; at ours there is nothing to hide — the
+    /// lease alone keeps us from reclaiming when it drifts.
+    private func follow(_ windowId: String, _ lease: SizeLease) {
+        guard windowId == snapshot.activeWindowId, activeWindowAtForeignWidth else { return }
+        let next = SizeFollow(windowId: windowId, ownerLabel: lease.label)
+        if sizeFollow != next {
+            Log.ssh.debug("size: following \(lease.label, privacy: .public) on \(windowId, privacy: .public)")
+            sizeFollow = next
+        }
+    }
+
+    /// Read a window's lease and who is attached, in one FIFO pair. The
+    /// clients reply lands first (send order), so the option callback can
+    /// judge liveness. One probe per window at a time.
+    private func probeSizeLease(_ windowId: String, then completion: @escaping () -> Void) {
+        guard snapshot.isAttached, !sizeLeaseProbesInFlight.contains(windowId) else { return }
+        sizeLeaseProbesInFlight.insert(windowId)
+        final class Box { var clients: Set<String> = [] }
+        let box = Box()
+        sendCommand("list-clients -F '#{client_name}'") { response in
+            box.clients = Set(response.lines.map { $0.trimmingCharacters(in: .whitespaces) }
+                .filter { !$0.isEmpty })
+        }
+        sendCommand("show-options -wqv -t \(windowId) @moshpit_size_owner") { [weak self] response in
+            guard let self else { return }
+            self.sizeLeaseProbesInFlight.remove(windowId)
+            let raw = response.lines.first?.trimmingCharacters(in: .whitespaces) ?? ""
+            if let lease = SizeLease(parsing: raw, clients: box.clients) {
+                self.sizeLeases[windowId] = .held(lease)
+            } else {
+                self.sizeLeases[windowId] = .unset
+            }
+            completion()
+        }
+    }
+
+    /// Write our lease on `windowId`. `stamp` 0 is a passive claim (attach,
+    /// foreground, a dead holder's window); a real interaction stamps now.
+    private func claimSizeOwnership(_ windowId: String, stamp: TimeInterval) {
+        guard rendersOutput, let name = ourClientName else { return }
+        let lease = SizeLease(clientName: name, label: sizeOwnerLabel, stamp: stamp, live: true)
+        sizeLeases[windowId] = .held(lease)
+        send(rawCommand: "set-option -w -t \(windowId) @moshpit_size_owner \"\(lease.encoded)\"")
+        lastLeaseStampWrite = stamp == 0 ? .distantPast : Date()
+        if sizeFollow?.windowId == windowId { sizeFollow = nil }
+    }
+
+    /// Unset our lease on `windowId` if it is ours. Called wherever the pin is
+    /// handed back (window switch, background); a full disconnect does it
+    /// over the courtesy channel via ``sizeLeaseReleaseCommands``.
+    private func releaseSizeOwnership(_ windowId: String) {
+        if case .held(let lease)? = sizeLeases[windowId], lease.clientName == ourClientName {
+            send(rawCommand: "set-option -wu -t \(windowId) @moshpit_size_owner")
+            sizeLeases[windowId] = .unset
+        }
+        if sizeFollow?.windowId == windowId { sizeFollow = nil }
+    }
+
+    /// The lease unsets a full teardown owes, for the hub's one-shot courtesy
+    /// channel (an in-band write races the detach). Consumes the records.
+    func sizeLeaseReleaseCommands() -> [String] {
+        var commands: [String] = []
+        for windowId in sizeLeases.keys.sorted() {
+            if case .held(let lease)? = sizeLeases[windowId], lease.clientName == ourClientName {
+                commands.append("set-option -wu -t \(windowId) @moshpit_size_owner")
+            }
+        }
+        sizeLeases.removeAll()
+        return commands
+    }
+
+    /// The person did something to the active window — a keystroke, a paste,
+    /// a wheel tick. Following ends here: the window comes back to our grid.
+    /// Otherwise the stamp says "in use" so another device coming to the
+    /// front leaves this window alone (throttled).
+    private func noteUserInteraction() {
+        guard rendersOutput, snapshot.isAttached, let win = snapshot.activeWindowId else { return }
+        if sizeFollow?.windowId == win || isHeldByAnotherLiveDevice(sizeLeases[win]) {
+            requestPin(win, reason: .user)
+            return
+        }
+        guard Date().timeIntervalSince(lastLeaseStampWrite) > leaseStampRefreshInterval else { return }
+        claimSizeOwnership(win, stamp: Date().timeIntervalSince1970)
+    }
+
+    /// The follower's tap: take the active window back.
+    func takeSizeOwnership() {
+        guard let win = snapshot.activeWindowId else { return }
+        requestPin(win, reason: .user)
+    }
+
+    private func endForegroundProbe() {
+        foregroundProbeFallback?.cancel()
+        foregroundProbeFallback = nil
+        pinsReleased = false
+    }
 
     /// A window's pane layout as it was BEFORE we touched it: the raw
     /// `#{window_layout}` string, the pane the USER had zoomed (nil when the
@@ -788,7 +1108,7 @@ final class TmuxSessionController: MultiplexerControlling {
             snapshot.activeWindowId = newWindow
             // Pre-size before activating — see selectWindow: avoids streaming a
             // desktop-wide window's %output into our narrow pane (CJK `？` on switch).
-            fitWindowToClient(newWindow)
+            requestPin(newWindow, reason: .user)
             send(rawCommand: "select-window -t \(newWindow)")
             // Fill the window we just brought on screen. `selectPane` handles a
             // cross-window jump ITSELF rather than calling `selectWindow`, so
@@ -1295,6 +1615,7 @@ final class TmuxSessionController: MultiplexerControlling {
             // manual, which kept stranding desktop clients.)
             send(rawCommand: "set-option -u -w -t \(windowId) window-size")
         }
+        releaseSizeOwnership(windowId)
         restorePristineLayout(windowId)
     }
 
@@ -1348,6 +1669,17 @@ final class TmuxSessionController: MultiplexerControlling {
             send(rawCommand: "set-option -u -w -t \(win) window-size")
         }
         resizedWindows.removeAll()
+        //  2b. Our size lease goes with the pin: a device we were keeping
+        //     out of this window may have it now. Following ends too — the
+        //     veil belongs to a visible terminal.
+        for win in sizeLeases.keys.sorted() { releaseSizeOwnership(win) }
+        // And forget what we knew: by the time we come back the other device
+        // may hold any of these, so the foreground pin has to ask afresh (a
+        // cached `.unset` would let it pin without probing).
+        sizeLeases.removeAll()
+        sizeFollow = nil
+        foregroundProbeFallback?.cancel()
+        foregroundProbeFallback = nil
         //  3. Our phone-sized pin also squashed any split layout it covered,
         //     and our immersive zoom hid it. Both go back now — AFTER the
         //     unpin above, or the replayed layout is just refitted to the
@@ -1367,17 +1699,37 @@ final class TmuxSessionController: MultiplexerControlling {
     /// the sidecar. Snapping the width back immediately avoids a transient
     /// desktop-wide frame (and its CJK reflow garble) before rendering.
     func repinActiveWindow() {
-        pinsReleased = false
-        guard snapshot.isAttached, let win = snapshot.activeWindowId else { return }
+        guard snapshot.isAttached, let win = snapshot.activeWindowId else {
+            pinsReleased = false
+            return
+        }
         send(rawCommand: "refresh-client -f !ignore-size")
         send(rawCommand: "refresh-client -C \(lastClientSize.cols)x\(lastClientSize.rows)")
-        capturePristineLayout(win)
-        send(rawCommand: "resize-window -t \(win) -x \(lastClientSize.cols) -y \(lastClientSize.rows)")
-        resizedWindows.insert(win)
-        // `releaseWindowPins` handed the split layout back (which unzooms), so
-        // the single-pane presentation has to be re-established here — it is no
-        // longer left standing while we're away.
-        ensureImmersiveZoom()
+        if rendersOutput {
+            // Another device may have taken the window while we were away
+            // (we released our lease on leaving). Ask before pinning — the
+            // gate stays closed for that one round trip, so nothing sized for
+            // the other device paints here meanwhile; if tmux never answers,
+            // pin anyway rather than sit frozen.
+            foregroundProbeFallback?.cancel()
+            foregroundProbeFallback = Task { [weak self] in
+                try? await Task.sleep(for: .seconds(self?.foregroundProbeTimeout ?? 1.5))
+                guard !Task.isCancelled, let self, self.pinsReleased else { return }
+                Log.ssh.debug("size: foreground probe timed out — pinning")
+                self.endForegroundProbe()
+                self.pinNow(win, reason: .foreground)
+            }
+            requestPin(win, reason: .foreground)
+        } else {
+            pinsReleased = false
+            capturePristineLayout(win)
+            send(rawCommand: "resize-window -t \(win) -x \(lastClientSize.cols) -y \(lastClientSize.rows)")
+            resizedWindows.insert(win)
+            // `releaseWindowPins` handed the split layout back (which unzooms), so
+            // the single-pane presentation has to be re-established here — it is no
+            // longer left standing while we're away.
+            ensureImmersiveZoom()
+        }
         // Catch the screen up to everything that happened while we were away.
         //
         // `handlePaneOutput` drops `%output` for as long as the pin is handed
@@ -1751,6 +2103,7 @@ final class TmuxSessionController: MultiplexerControlling {
         // first (releasing the local scroll-hold replays everything buffered),
         // so the echo of what they type is actually visible.
         paneCoordinators[paneId]?.releaseScrollHold()
+        if snapshot.panes[paneId]?.windowId == snapshot.activeWindowId { noteUserInteraction() }
         let hex = data.map { String(format: "%02x", $0) }.joined(separator: " ")
         send(rawCommand: "send-keys -t \(paneId) -H \(hex)")
     }
@@ -1788,6 +2141,7 @@ final class TmuxSessionController: MultiplexerControlling {
         let literal = Self.tmuxCommandStringLiteral(text)
         send(rawCommand: "set-buffer -b moshpit-paste -- \(literal)")
         send(rawCommand: "paste-buffer -p -b moshpit-paste -d -t \(paneId)")
+        if snapshot.panes[paneId]?.windowId == snapshot.activeWindowId { noteUserInteraction() }
     }
 
     /// Tell tmux the client viewport changed size. Driven by the container
@@ -1852,7 +2206,7 @@ final class TmuxSessionController: MultiplexerControlling {
     private func commitClientSize() {
         send(rawCommand: "refresh-client -C \(lastClientSize.cols)x\(lastClientSize.rows)")
         if !pinsReleased, let win = snapshot.activeWindowId {
-            fitWindowToClient(win)
+            requestPin(win, reason: .resize)
         }
         // 334-model: our own resize's in-flight bytes paint at the previous
         // grid's layout (briefly mis-wrapped) and the settling double-pass +
@@ -2294,7 +2648,7 @@ final class TmuxSessionController: MultiplexerControlling {
                   !Self.frameExceedsWidth(lines, cols: self.lastClientSize.cols) else {
                 self.ccTapLine("FRAME-REJECT pane=\(paneId) rows=\(lines.count) "
                     + "ours=\(self.lastClientSize.rows)x\(self.lastClientSize.cols)")
-                if let win = self.snapshot.activeWindowId { self.fitWindowToClient(win) }
+                if let win = self.snapshot.activeWindowId { self.requestPin(win, reason: .resize) }
                 self.scheduleResyncRetry(paneId, reveal: reveal)
                 return
             }
@@ -2877,7 +3231,7 @@ final class TmuxSessionController: MultiplexerControlling {
             // "the first connect wraps everything wrong until I tap the
             // terminal", where the tap resized the grid and finally pinned it.
             if !pinsReleased, let win = snapshot.activeWindowId {
-                fitWindowToClient(win)
+                requestPin(win, reason: .attach)
             }
             resyncPane(activePaneId)
             // The pin makes the pane's program repaint, and a capture taken now
@@ -2921,7 +3275,16 @@ final class TmuxSessionController: MultiplexerControlling {
         // The bell is the exception that has to get through — it's the
         // agent-needs-you signal, and it normally reaches us through SwiftTerm's
         // parser, which this path skips.
-        if pinsReleased {
+        // Following another device's size is the same picture: the window is
+        // laid out for a grid that is not ours, and painting that here is the
+        // shredded-fragments garble. The frame the person last saw stays
+        // under the veil until they take the window back (the takeover's
+        // resync repaints it whole).
+        // (Compared through the follow, not optional-to-optional: with no
+        // follow, `nil == nil` for a pane discovery has not named yet would
+        // gate the very output that mints its view.)
+        let followingThisWindow = sizeFollow.map { $0.windowId == snapshot.panes[paneId]?.windowId } ?? false
+        if pinsReleased || followingThisWindow {
             var detector = bellDetectors[paneId] ?? BellDetector()
             let rang = detector.containsBell(data)
             bellDetectors[paneId] = detector
@@ -3000,11 +3363,14 @@ final class TmuxSessionController: MultiplexerControlling {
                 // hands the pin back and forth against a desktop client on
                 // the same session).
                 activeWindowAtForeignWidth = true
-                reclaimWindowOnDrift(windowId)
+                requestPin(windowId, reason: .drift)
                 armForeignQuietRepin(windowId)
             } else if activeWindowAtForeignWidth {
                 foreignQuietRepinTask?.cancel()
                 foreignQuietRepinTask = nil
+                // At our width there is nothing to follow; the lease record
+                // stays, so a later drift still defers to a live holder.
+                if sizeFollow?.windowId == windowId { sizeFollow = nil }
                 // Back at our width: repaint the gap the gate dropped, with
                 // the settling double-pass — this transition usually follows
                 // our own fitWindowToClient, so the immediate capture races
@@ -3044,7 +3410,12 @@ final class TmuxSessionController: MultiplexerControlling {
             guard !Task.isCancelled, let self, self.activeWindowAtForeignWidth,
                   self.rendersOutput, !self.pinsReleased, self.snapshot.isAttached,
                   self.snapshot.activeWindowId == windowId else { return }
-            self.fitWindowToClient(windowId)
+            // Through the lease gate: against a desktop terminal this is the
+            // forced re-pin it always was; while we FOLLOW another Moshpit
+            // device it is the periodic re-check that notices the holder
+            // releasing (background), vanishing (crash, reconnect) or the
+            // window otherwise coming free — and then takes it.
+            self.requestPin(windowId, reason: .recheck)
             // The resize's own layout-change (at our width) is what clears
             // the state and repairs the screen; if that notification is lost
             // on a weak link, keep trying at the same quiet cadence.
@@ -3298,6 +3669,28 @@ final class TmuxSessionController: MultiplexerControlling {
         // screen) and keeps this client out of tmux's window-size math.
         if rendersOutput {
             send(rawCommand: "refresh-client -C \(lastClientSize.cols)x\(lastClientSize.rows)")
+            // Who we are to tmux, and whose the current window already is —
+            // both ahead of discovery, so the first pin (in the list-panes
+            // callback, FIFO behind these) can defer to a device that is
+            // using it instead of yanking it to our grid.
+            sendCommand("display-message -p '#{client_name}'") { [weak self] response in
+                let name = response.lines.first?.trimmingCharacters(in: .whitespaces) ?? ""
+                if !name.isEmpty { self?.ourClientName = name }
+            }
+            final class Box { var clients: Set<String> = [] }
+            let box = Box()
+            sendCommand("list-clients -F '#{client_name}'") { response in
+                box.clients = Set(response.lines.map { $0.trimmingCharacters(in: .whitespaces) }
+                    .filter { !$0.isEmpty })
+            }
+            sendCommand("show-options -wqv @moshpit_size_owner") { [weak self] response in
+                let raw = response.lines.first?.trimmingCharacters(in: .whitespaces) ?? ""
+                if let lease = SizeLease(parsing: raw, clients: box.clients) {
+                    self?.pendingAttachLease = .held(lease)
+                } else {
+                    self?.pendingAttachLease = .unset
+                }
+            }
         } else {
             // mosh renders tmux's full TUI, so hide the redundant status bar
             // for the whole connection (restored on session switch/disconnect).

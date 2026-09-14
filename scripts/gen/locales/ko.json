@@ -339,6 +339,8 @@
   "%@ pane %lld?": "패널 %2$lld %1$@?",
   "Opening the pit": "열고 있습니다",
   "Riding the handoff": "네트워크 전환 중",
+  "Following %@": "%@ 크기를 따라가는 중",
+  "Tap to take over": "탭하여 넘겨받기",
   "mosh keeps the line up · sessions survive the handoff": "mosh가 회선을 붙잡습니다 · 세션은 전환을 견딥니다",
   "%@@%@:%lld": "%@@%@:%lld",
   "%llu": "%llu",

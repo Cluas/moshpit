@@ -198,7 +198,10 @@ struct TmuxSessionControllerTests {
                 "release must not use resize-window -A (it re-pins, still manual)")
 
         // Foregrounding: rejoin sizing, re-assert our size, re-pin the grid.
+        // The pin waits for the size-lease probe (another device may have
+        // taken the window while we were away); answer it like tmux would.
         controller.repinActiveWindow()
+        _ = await settleControlChatter(transport, answered: 3)
         #expect(await waitUntil {
             let cmds = await transport.recordedCommands()
             return cmds.contains { $0.hasPrefix("refresh-client -f !ignore-size") }
@@ -397,13 +400,15 @@ struct TmuxSessionControllerTests {
         // so a repin issued on top of an unanswered capture is folded into it
         // rather than adding a second. That is the intended behaviour; here it
         // would just hide the repin this test is about.
-        _ = await settleControlChatter(transport, answered: 3)
+        let answered = await settleControlChatter(transport, answered: 3)
         let before = await transport.recordedCommands().count
 
         // `%output` kept flowing while backgrounded, laid out for whatever width
         // the window took once we handed it back — so returning has to repaint,
         // not just re-pin, or the stale mis-wrapped frame is what's on screen.
+        // (The pin itself waits for the size-lease probe's reply.)
         controller.repinActiveWindow()
+        _ = await settleControlChatter(transport, answered: answered)
 
         #expect(await waitUntil(timeout: 2.0) {
             let cmds = await transport.recordedCommands()
@@ -425,6 +430,10 @@ struct TmuxSessionControllerTests {
         transport.pushText("%begin 100 0 0\n%end 100 0 0\n\n")
         _ = await waitUntil { await transport.recordedCommands().count >= 3 }
         pushOneWindowDiscovery(transport)
+        // The pin goes through the size-lease gate: with no %session-changed
+        // pre-read (this harness skips that event) it probes first. Answer
+        // like an unowned window would.
+        _ = await settleControlChatter(transport, answered: 3)
 
         // No resizeClient() here on purpose: `window-size latest` leaves the
         // window at whatever an already-attached desktop client made it, and
@@ -846,10 +855,13 @@ struct TmuxSessionControllerTests {
         }
 
         // The quiet-spell deadline must force one more resize-window even
-        // though the reclaim backoff swallowed the last drift's reclaim.
+        // though the reclaim backoff swallowed the last drift's reclaim. The
+        // re-pin goes through the size-lease gate — it asks who holds the
+        // window first — so keep answering like an unowned window would.
         let beforeQuiet = answered
         #expect(await waitUntil(timeout: 2.0) {
-            await transport.recordedCommands().dropFirst(beforeQuiet)
+            answered = await answerPending(transport, answered: answered) { _, n in block(500 + n, "") }
+            return await transport.recordedCommands().dropFirst(beforeQuiet)
                 .contains { $0.hasPrefix("resize-window") }
         }, "a war ending at the desktop's width must trigger a quiet-spell re-pin")
 
@@ -872,6 +884,17 @@ struct TmuxSessionControllerTests {
                 return block(600 + i, "")
             }
             try? await Task.sleep(for: .milliseconds(40))
+        }
+        // Real tmux answers every command: drain what the settled pass sent
+        // after its capture was answered (its cursor query, and a convergence
+        // pass), or the cursor never lands at 0,0 for the live probe below.
+        for _ in 0..<5 {
+            try? await Task.sleep(for: .milliseconds(40))
+            answered = await answerPending(transport, answered: answered) { cmd, i in
+                if cmd.hasPrefix("capture-pane") { return block(600 + i, "QUIET-REPAIRED") }
+                if cmd.hasPrefix("display-message") { return block(600 + i, "0 0") }
+                return block(600 + i, "")
+            }
         }
         #expect(await waitUntil {
             terminal.getText(start: Position(col: 0, row: 0),
@@ -2438,17 +2461,19 @@ struct TmuxSessionControllerTests {
             await transport.recordedCommands().contains { $0.hasPrefix("select-layout -t '@0'") }
         }
         let baseline = await transport.recordedCommands().count
-        _ = answered
 
+        // The pin waits for the size-lease probe; answer it (unowned window).
         controller.repinActiveWindow()
+        _ = await settleControlChatter(transport, answered: answered)
         #expect(await waitUntil {
             let fresh = await transport.recordedCommands().dropFirst(baseline)
             return fresh.contains { $0.contains("#{window_layout}") && $0.contains("@0") }
+                && fresh.contains { $0.hasPrefix("resize-window -t @0") }
         }, "the re-pin must ask again — the desktop may have rearranged the window")
 
         let fresh = Array(await transport.recordedCommands().dropFirst(baseline))
-        let probe = fresh.firstIndex { $0.contains("#{window_layout}") }!
-        let pin = fresh.firstIndex { $0.hasPrefix("resize-window -t @0") }!
+        let probe = try #require(fresh.firstIndex { $0.contains("#{window_layout}") })
+        let pin = try #require(fresh.firstIndex { $0.hasPrefix("resize-window -t @0") })
         #expect(probe < pin)
         // Release unzooms, so coming back has to re-establish the one-pane view.
         #expect(fresh.contains { $0.contains("#{window_zoomed_flag}") },

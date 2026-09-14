@@ -528,6 +528,8 @@ add("%@ pane %lld?", "%@ 窗格 %lld？", "%@ ペイン %lld？")
 # Terminal
 add("Opening the pit", "正在打开", "接続中")
 add("Riding the handoff", "正在跨网切换", "ハンドオフ中")
+add("Following %@", "正在跟随 %@ 的尺寸", "%@ のサイズに合わせています")
+add("Tap to take over", "点一下接管", "タップして引き継ぐ")
 add("mosh keeps the line up · sessions survive the handoff",
     "mosh 保持链路 · 会话扛得住网络切换", "mosh が接続を維持 · セッションはハンドオフを乗り切ります")
 add("%@@%@:%lld", SAME)

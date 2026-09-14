@@ -339,6 +339,8 @@
   "%@ pane %lld?": "%1$@ o painel %2$lld?",
   "Opening the pit": "Abrindo o pit",
   "Riding the handoff": "Trocando de rede",
+  "Following %@": "Seguindo o %@",
+  "Tap to take over": "Toque para assumir",
   "mosh keeps the line up · sessions survive the handoff": "o mosh segura a linha · as sessões sobrevivem à troca",
   "%@@%@:%lld": "%@@%@:%lld",
   "%llu": "%llu",

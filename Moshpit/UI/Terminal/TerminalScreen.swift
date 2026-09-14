@@ -1044,6 +1044,12 @@ struct TerminalScreen: View {
                     .allowsHitTesting(false)
                     .transition(.opacity)
             }
+            if let follow = sizeFollow {
+                SizeFollowVeil(ownerLabel: follow.ownerLabel) {
+                    active?.tmuxController?.takeSizeOwnership()
+                }
+                .transition(.opacity)
+            }
         }
         .animation(.easeInOut(duration: 0.3), value: transitionKey)
         .onChange(of: activeIdentity) { _, _ in
@@ -1119,17 +1125,30 @@ struct TerminalScreen: View {
         }
     }
 
+    /// Another Moshpit device holds the live window's size: the pane is
+    /// frozen on its last frame under a veil that names the holder and
+    /// offers a tap to take over. Only while nothing else covers the pane —
+    /// a reconnect's own veil says what matters then.
+    private var sizeFollow: TmuxSessionController.SizeFollow? {
+        guard connState == .live, !posterVisible, !veilVisible,
+              let controller = active?.tmuxController, active?.retiredTmuxController == nil
+        else { return nil }
+        return controller.sizeFollow
+    }
+
     /// Everything the cover stack animates on, in one value.
     private struct TransitionKey: Equatable {
         var ghost: Bool
         var poster: Bool
         var veil: Bool
+        var follow: Bool
         var state: TransportConnState
     }
 
     private var transitionKey: TransitionKey {
         TransitionKey(ghost: active?.retiredTmuxController != nil,
-                      poster: posterVisible, veil: veilVisible, state: connState)
+                      poster: posterVisible, veil: veilVisible,
+                      follow: sizeFollow != nil, state: connState)
     }
 
     @ViewBuilder
@@ -3090,6 +3109,45 @@ private struct ReconnectVeil: View {
             .overlay(Capsule().strokeBorder(accent.opacity(0.35), lineWidth: 1))
             .padding(.top, 14)
         }
+    }
+}
+
+/// The follower's veil: the window on screen is sized for another Moshpit
+/// device (the lease in `@moshpit_size_owner`), so the pane keeps the frame
+/// the person last saw, dimmed, and one capsule names the holder. A tap
+/// anywhere takes the window back — the one thing that ends following.
+private struct SizeFollowVeil: View {
+    let ownerLabel: String
+    let takeOver: () -> Void
+
+    var body: some View {
+        ZStack(alignment: .top) {
+            Color.black.opacity(0.45)
+            VStack(spacing: 6) {
+                HStack(spacing: 10) {
+                    Image(systemName: ownerLabel == "iPad" ? "ipad" : "iphone")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Ink.accent)
+                    Text(String(localized: "Following \(ownerLabel)").uppercased())
+                        .font(Face.mono(11, .semibold))
+                        .kerning(1.8)
+                        .foregroundStyle(Ink.primary)
+                }
+                Text(String(localized: "Tap to take over"))
+                    .font(Face.mono(10, .medium))
+                    .foregroundStyle(Ink.secondary)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 9)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .strokeBorder(Ink.accent.opacity(0.35), lineWidth: 1))
+            .padding(.top, 14)
+        }
+        .contentShape(Rectangle())
+        .onTapGesture(perform: takeOver)
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isButton)
     }
 }
 

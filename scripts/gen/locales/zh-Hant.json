@@ -339,6 +339,8 @@
   "%@ pane %lld?": "%@ 窗格 %lld？",
   "Opening the pit": "正在打開",
   "Riding the handoff": "正在跨網路切換",
+  "Following %@": "正在跟隨 %@ 的尺寸",
+  "Tap to take over": "點一下接手",
   "mosh keeps the line up · sessions survive the handoff": "mosh 撐住線路 · 工作階段扛得住網路切換",
   "%@@%@:%lld": "%@@%@:%lld",
   "%llu": "%llu",

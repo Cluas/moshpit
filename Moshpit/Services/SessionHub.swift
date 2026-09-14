@@ -2599,6 +2599,10 @@ final class SessionHub {
                         "\(tmux) set-option -u -w -t \($0) window-size"
                     }
                     commands += controller.pristineLayoutRestoreCommands().map { "\(tmux) \($0)" }
+                    // And the size lease: another device following this
+                    // window must learn it is free without waiting for our
+                    // client to be noticed missing.
+                    commands += controller.sizeLeaseReleaseCommands().map { "\(tmux) \($0)" }
                     await Self.runCourtesy(commands, over: ssh)
                 }
                 await controller.detach()
