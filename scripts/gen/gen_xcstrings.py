@@ -50,7 +50,7 @@ add("No connections yet", "还没有连接", "接続はまだありません")
 add("Tap ＋ to add your first server. Moshpit keeps your sessions alive across Wi-Fi / 5G handoff.",
     "点按 ＋ 添加第一台服务器。Moshpit 会在 Wi-Fi / 5G 切换时保持会话不断线。",
     "＋をタップして最初のサーバーを追加。Moshpit は Wi-Fi / 5G の切り替えをまたいでセッションを維持します。")
-add("SIGNAL FOR YOUR AGENTS", "智能体信号站", "エージェントのシグナル")
+add("SIGNAL FOR YOUR AGENTS", "AGENT 信号站", "エージェントのシグナル")
 add("Delete %@?", "删除 %@？", "%@を削除しますか？")
 add("connection", "连接", "接続")
 add("Removes the saved server and its stored credentials from this device.",
@@ -136,12 +136,12 @@ add("Shortcuts", "快捷键", "ショートカット")
 add("SSH Keys", "SSH 密钥", "SSH キー")
 add("NOTIFICATIONS", "通知", "通知")
 add("Moshpit watches the active tmux session for the terminal bell and posts a local alert when your agent needs attention.",
-    "Moshpit 会监听活动 tmux 会话的终端响铃，并在你的智能体需要关注时发出本地提醒。",
+    "Moshpit 会监听活动 tmux 会话的终端响铃，并在你的 agent 需要关注时发出本地提醒。",
     "Moshpit はアクティブな tmux セッションのターミナルベルを監視し、エージェントが注意を必要とするとローカル通知を出します。")
 add("Notifications", "通知", "通知")
-add("Alert when the agent rings the bell", "智能体响铃时提醒", "エージェントがベルを鳴らしたら通知")
+add("Alert when the agent rings the bell", "agent 响铃时提醒", "エージェントがベルを鳴らしたら通知")
 add("Live Activity", "实时活动", "ライブアクティビティ")
-add("Show agent session status in the Dynamic Island", "在灵动岛显示智能体会话状态", "Dynamic Island にエージェントの状態を表示")
+add("Show agent session status in the Dynamic Island", "在灵动岛显示 agent 会话状态", "Dynamic Island にエージェントの状態を表示")
 add("How notifications work", "通知的工作原理", "通知のしくみ")
 add("VOICE INPUT", "语音输入", "音声入力")
 add("Dictate commands instead of typing. Planned for a future update.",
@@ -285,25 +285,25 @@ add("Raise the keyboard as soon as a terminal opens, instead of after you tap it
 # Offline host-setup sheet
 add("Automatic — connect to inspect", "自动完成——连接后可查看", "自動——接続すると確認できます")
 add("Host setup is automatic. Connecting to a host installs and repairs everything it needs — scripts, hooks registration, push pairing — and asks before its first install. Connect to a host to inspect or remove its setup here.",
-    "主机设置是自动的。连接主机时会自动安装并修复所需的一切——脚本、钩子注册、推送配对——首次安装前会先询问你。连接主机后可在此查看或移除其设置。",
+    "主机设置是自动的。连接主机时会自动安装并修复所需的一切——脚本、hooks 注册、推送配对——首次安装前会先询问你。连接主机后可在此查看或移除其设置。",
     "ホスト設定は自動です。ホストに接続すると必要なもの——スクリプト、フック登録、プッシュペアリング——を自動でインストール・修復し、初回インストール前には確認します。接続するとここで確認・削除できます。")
 add("PAIRED HOSTS", "已配对主机", "ペアリング済みホスト")
 add("paired %@", "配对于 %@", "%@ にペアリング")
 # Notification info sheet
-add("Agents stamp their state", "智能体自报状态", "エージェントが状態を報告")
+add("Agents stamp their state", "agent 自报状态", "エージェントが状態を報告")
 add("Coding agents (Claude Code, Codex, …) report working / needs-you / done through hooks Moshpit installs on your host — precise states, not guesses. The terminal bell still works as a fallback for everything else.",
-    "编码智能体（Claude Code、Codex 等）通过 Moshpit 安装在主机上的钩子上报「工作中 / 等你 / 已完成」——精确状态，不靠猜。其余程序仍以终端响铃作为兜底。",
+    "编码 agent（Claude Code、Codex 等）通过 Moshpit 安装在主机上的 hooks 上报「工作中 / 等你 / 已完成」——精确状态，不靠猜。其余程序仍以终端响铃作为兜底。",
     "コーディングエージェント（Claude Code、Codex など）は Moshpit がホストにインストールするフックで「作業中 / あなた待ち / 完了」を報告します——推測ではなく正確な状態です。それ以外はターミナルベルがフォールバックとして機能します。")
 add("While a session is attached, the Dynamic Island shows whether the agent is working, idle, or waiting on you. Tapping it deep-links straight back to that pane.",
-    "会话附加期间，灵动岛会显示智能体正在工作、空闲，还是在等你。点按即可直接深链回到该窗格。",
+    "会话附加期间，灵动岛会显示 agent 正在工作、空闲，还是在等你。点按即可直接深链回到该窗格。",
     "セッションのアタッチ中、Dynamic Island はエージェントが作業中・アイドル・あなた待ちのいずれかを表示します。タップするとそのペインへ直接ジャンプします。")
 add("Push, sealed end-to-end", "推送，端到端加密", "プッシュ、エンドツーエンド暗号化")
 add("When the app isn’t running, your host sends the alert through Moshpit’s push relay. It is encrypted on your host with a key only this device holds — the relay and Apple carry ciphertext and can read none of it. Delivered even from a locked phone.",
-    "应用未运行时，提醒由你的主机经 Moshpit 推送中继送达。内容在你的主机上用只有这台设备持有的密钥加密——中继和 Apple 只经手密文，谁也读不了。手机锁屏也能送达。",
+    "应用未运行时，提醒由你的主机经 Moshpit 的中转服务器送达。内容在你的主机上用只有这台设备持有的密钥加密——中转服务器和 Apple 只经手密文，谁也读不了。手机锁屏也能送达。",
     "アプリが起動していないとき、通知はホストから Moshpit のプッシュリレー経由で届きます。内容はこのデバイスだけが持つ鍵でホスト上で暗号化され、リレーも Apple も暗号文を運ぶだけで読めません。ロック中の iPhone にも届きます。")
 add("Quiet by design", "为安静而设计", "静けさを前提に")
 add("A question must stand for 30 seconds before any phone hears about it — answered at your desk means never announced. All waiting agents share one summary card; only the first rings. A finished turn shows the prompt it answered and only chimes if it ran three minutes or more. Parked agents stay silent.",
-    "一个提问要站立满 30 秒手机才会知道——在桌面上顺手答掉就永远不响。所有等待中的智能体共用一张摘要卡，只有第一个会响铃。任务完成会带上它答的那条提示词，只有跑满三分钟才会提示音。待机的智能体保持静默。",
+    "一个提问要站立满 30 秒手机才会知道——在桌面上顺手答掉就永远不响。所有等待中的 agent 共用一张摘要卡，只有第一个会响铃。任务完成会带上它答的那条提示词，只有跑满三分钟才会提示音。待机的 agent 保持静默。",
     "問いかけは 30 秒間続いて初めて通知されます——デスクですぐ答えれば鳴りません。待機中のエージェントは 1 枚のサマリーカードを共有し、鳴るのは最初の 1 回だけ。完了通知には答えたプロンプトが載り、完了音は 3 分以上かかったターンのみ。放置中のエージェントは静かなままです。")
 # Server binary editor
 add("MOSH SERVER PATH", "MOSH SERVER 路径", "MOSH SERVER パス")
@@ -480,7 +480,7 @@ add("THE PIT NEVER CLOSES", "机器不眠", "ピットは閉じない")
 add("the pit never closes · your sessions wait for you",
     "机器不眠 · 会话一直等着你", "ピットは閉じない · セッションはあなたを待っています")
 add("SSH", SAME)
-add("AGENTS", "智能体", "エージェント")
+add("AGENTS", "AGENTS", "エージェント")
 add("OPEN", "打开", "開く")
 add("RETRY", "重试", "再試行")
 add("WAIT", "等待", "待機")
@@ -492,14 +492,14 @@ add("live", "在线", "接続中")
 add("linking", "连接中", "接続処理中")
 add("stalled", "已停滞", "停滞")
 add("now", "刚刚", "たった今")
-add("agent", "智能体", "エージェント")
+add("agent", "agent", "エージェント")
 add("1 host saved · all quiet", "已保存 1 台主机 · 一切安静", "ホスト 1 台を保存 · 静かです")
 add("%lld hosts saved · all quiet", "已保存 %lld 台主机 · 一切安静", "ホスト %lld 台を保存 · 静かです")
-add("1 live connection · agents quiet", "1 个在线连接 · 智能体安静", "接続 1 件 · エージェントは静かです")
+add("1 live connection · agents quiet", "1 个在线连接 · agent 都安静", "接続 1 件 · エージェントは静かです")
 add("%lld live connections · agents quiet",
-    "%lld 个在线连接 · 智能体安静", "接続 %lld 件 · エージェントは静かです")
-add("1 agent needs you", "1 个智能体需要你", "エージェント 1 体があなたを待っています")
-add("%lld agents need you", "%lld 个智能体需要你", "エージェント %lld 体があなたを待っています")
+    "%lld 个在线连接 · agent 都安静", "接続 %lld 件 · エージェントは静かです")
+add("1 agent needs you", "1 个 agent 需要你", "エージェント 1 体があなたを待っています")
+add("%lld agents need you", "%lld 个 agent 需要你", "エージェント %lld 体があなたを待っています")
 add("%lld NEED YOU", "%lld 个待处理", "%lld 件が要対応")
 add("Connection lost — tap to reconnect", "连接已断开——点按重连", "接続が切れました——タップで再接続")
 add("Disconnecting…", "正在断开…", "切断中…")
@@ -626,12 +626,12 @@ add("warn", "警告", "警告")
 add("err", "错误", "エラー")
 
 # New agent task (herdr)
-add("New Agent Task", "新建智能体任务", "新規エージェントタスク")
+add("New Agent Task", "新建 agent 任务", "新規エージェントタスク")
 add("TASK", "任务", "タスク")
 add("Repo", "仓库", "リポジトリ")
 add("Repository path", "仓库路径", "リポジトリのパス")
 add("Branch", "分支", "ブランチ")
-add("Agent", "智能体", "エージェント")
+add("Agent", "Agent", "エージェント")
 add("Prompt", "提示词", "プロンプト")
 add("FIRST MESSAGE", "首条消息", "最初のメッセージ")
 add("Choose", "选择", "選択")
@@ -643,10 +643,10 @@ add("Looking for repositories…", "正在查找仓库…", "リポジトリを�
 add("None found — no panes in repos, and nothing under ~",
     "没找到——窗格都不在仓库里，主目录下也没有", "見つかりません——リポジトリ内のペインがなく、ホーム直下にもありません")
 add("Creates a git worktree on the host, then starts the agent inside it. Your working tree is untouched.",
-    "在主机上创建一个 git worktree，然后在里面启动智能体。你的工作树不受影响。",
+    "在主机上创建一个 git worktree，然后在里面启动 agent。你的工作树不受影响。",
     "ホスト上に git ワークツリーを作成し、その中でエージェントを起動します。あなたの作業ツリーはそのままです。")
 add("Optional. Sent to the agent once it's running — leave blank to type it yourself.",
-    "可选。智能体启动后会发给它——留空则你自己手输。",
+    "可选。agent 启动后会发给它——留空则你自己手输。",
     "任意。エージェントの起動後に送信されます——空欄にすると自分で入力できます。")
 
 # Settings
@@ -664,15 +664,15 @@ add("The accent color tints the app's controls and highlights. The home-screen i
 add("Leaves a signal trail behind the cursor while mosh predicts ahead of the server",
     "mosh 抢先于服务器预测时，在光标后留下一道轨迹",
     "mosh がサーバーより先に予測している間、カーソルの後ろに軌跡を残します")
-add("Alert when an agent needs you", "智能体需要你时提醒", "エージェントがあなたを必要とするとき通知")
+add("Alert when an agent needs you", "agent 需要你时提醒", "エージェントがあなたを必要とするとき通知")
 add("Alert sound", "提示音", "通知音")
-add("Play a sound when the agent needs you", "智能体需要你时播放提示音", "エージェントがあなたを必要とするとき音を鳴らします")
+add("Play a sound when the agent needs you", "agent 需要你时播放提示音", "エージェントがあなたを必要とするとき音を鳴らします")
 add("Show detail on lock screen", "在锁屏上显示详情", "ロック画面に詳細を表示")
 add("Display what the agent is running, asking, or was asked — off keeps it private",
     "显示 agent 正在跑什么、在问什么、做完的是哪条提示词——关掉则保持私密",
     "エージェントが実行中の内容、問いかけ、完了したプロンプトを表示します——オフにすると非表示のままです")
 add("Moshpit watches the active session for agent activity and posts a local alert when your agent needs attention — natively on herdr, via the bell and hooks on tmux.",
-    "Moshpit 会盯着当前会话里的智能体活动，需要你处理时发本地通知——herdr 上是原生支持，tmux 上靠响铃和 hook。",
+    "Moshpit 会盯着当前会话里的 agent 活动，需要你处理时发本地通知——herdr 上是原生支持，tmux 上靠响铃和 hook。",
     "Moshpit はアクティブなセッションのエージェントの動きを監視し、対応が必要になるとローカル通知を送ります——herdr ではネイティブに、tmux ではベルとフックを介して行います。")
 
 # Add Connection
@@ -705,23 +705,23 @@ add("Type a response…", "输入回复…", "返信を入力…")
 add("Next instruction…", "下一条指令…", "次の指示…")
 add("Not delivered", "未送达", "送信されませんでした")
 add("Your tap didn't reach the agent — open Moshpit and answer there.",
-    "你的点按没有送达智能体——请打开 Moshpit 在里面回应。",
+    "你的点按没有送达 agent——请打开 Moshpit 在里面回应。",
     "タップがエージェントに届きませんでした——Moshpit を開いて操作してください。")
 add("Sent to your Mac", "已发给你的 Mac", "Mac に送信しました")
 add("Your answer was passed to the host. It takes effect if the agent is still waiting on that question.",
-    "你的回答已交给主机。若智能体仍停在那个提问上，回答就会生效。",
+    "你的回答已交给主机。若 agent 仍停在那个提问上，回答就会生效。",
     "回答をホストに渡しました。エージェントがまだその問いで待っていれば反映されます。")
 add("Stop was passed to the host. It takes effect if the agent is still running.",
-    "停止指令已交给主机。若智能体仍在运行，指令就会生效。",
+    "停止指令已交给主机。若 agent 仍在运行，指令就会生效。",
     "停止をホストに渡しました。エージェントがまだ実行中であれば反映されます。")
 add("Enable agent notifications on %@?",
-    "在 %@ 上启用智能体通知？",
+    "在 %@ 上启用 agent 通知？",
     "%@ でエージェント通知を有効にしますか？")
 add("Enable", "启用", "有効にする")
 add("Not Now", "以后再说", "今はしない")
 add("Don't Ask Again", "不再询问", "今後確認しない")
 add("Moshpit installs its hook scripts in ~/.moshpit and registers them in Claude Code's settings, so agents can reach you when they need you. Everything can be removed from Host Setup.",
-    "Moshpit 会把钩子脚本安装到 ~/.moshpit 并注册进 Claude Code 的设置，这样智能体需要你时能找到你。所有内容都可以在主机设置里移除。",
+    "Moshpit 会把 hook 脚本安装到 ~/.moshpit 并注册进 Claude Code 的设置，这样 agent 需要你时能找到你。所有内容都可以在主机设置里移除。",
     "Moshpit は ~/.moshpit にフックスクリプトをインストールし、Claude Code の設定に登録します。エージェントがあなたを必要とするとき届くようにするためです。すべてホスト設定から削除できます。")
 add("Prompt already gone", "该提问已不存在", "問いかけは既にありません")
 add("That request was already answered or has changed — nothing was sent. Open Moshpit to see the current state.",
@@ -729,17 +729,17 @@ add("That request was already answered or has changed — nothing was sent. Open
     "そのリクエストは既に回答済みか変化しています——何も送信されていません。Moshpit を開いて現在の状態を確認してください。")
 
 # Island hooks installer
-add("AGENT", "智能体", "エージェント")
+add("AGENT", "AGENT", "エージェント")
 add("Not run", "未运行", "未実行")
 add("Run an agent turn in any pane, then re-check.",
-    "在任意窗格里跑一轮智能体，然后重新检查。", "任意のペインでエージェントを 1 ターン実行し、再確認してください。")
+    "在任意窗格里跑一轮 agent，然后重新检查。", "任意のペインでエージェントを 1 ターン実行し、再確認してください。")
 add("Backs up your config", "会备份你的配置", "設定をバックアップします")
 add("Copies the agent's config to a timestamped backup before merging Moshpit's hook groups.",
-    "在合入 Moshpit 的 hook 组之前，先把智能体配置复制成带时间戳的备份。",
+    "在合入 Moshpit 的 hook 组之前，先把 agent 配置复制成带时间戳的备份。",
     "Moshpit のフックを統合する前に、エージェントの設定をタイムスタンプ付きでバックアップします。")
-add("Never blocks the agent", "绝不阻塞智能体", "エージェントを妨げません")
+add("Never blocks the agent", "绝不阻塞 agent", "エージェントを妨げません")
 add("The hooks only stamp the tmux pane and exit 0 — the agent is never slowed, prompted, or interrupted.",
-    "这些 hook 只在 tmux 窗格上打个标记然后 exit 0——不会让智能体变慢、不会弹提示、也不会打断它。",
+    "这些 hook 只在 tmux 窗格上打个标记然后 exit 0——不会让 agent 变慢、不会弹提示、也不会打断它。",
     "フックは tmux ペインに印を付けて exit 0 するだけです——エージェントが遅くなったり、確認を求められたり、中断されることはありません。")
 add("Idempotent: re-running de-dupes Moshpit's hooks instead of stacking them.",
     "幂等：重复运行会去重 Moshpit 的 hook，而不是层层堆叠。",
@@ -747,7 +747,7 @@ add("Idempotent: re-running de-dupes Moshpit's hooks instead of stacking them.",
 add("Edits %@ (a timestamped backup is written first).",
     "会修改 %@（先写一份带时间戳的备份）。", "%@ を編集します（先にタイムスタンプ付きのバックアップを書き出します）。")
 add("Install Moshpit's hooks so the Vibe Island shows exactly when your agent is working, what it's running, when it needs you, and when it's done — instead of guessing from output. Moshpit backs up your config first and never blocks the agent.",
-    "安装 Moshpit 的 hook，让 Vibe Island 准确显示智能体何时在工作、在跑什么、何时需要你、何时完成——而不是靠输出去猜。Moshpit 会先备份你的配置，且绝不阻塞智能体。",
+    "安装 Moshpit 的 hook，让 Vibe Island 准确显示 agent 何时在工作、在跑什么、何时需要你、何时完成——而不是靠输出去猜。Moshpit 会先备份你的配置，且绝不阻塞 agent。",
     "Moshpit のフックをインストールすると、Vibe Island はエージェントがいつ作業中か、何を実行しているか、いつあなたを必要としているか、いつ完了したかを正確に表示します——出力から推測する必要はありません。Moshpit は先に設定をバックアップし、エージェントを妨げることはありません。")
 
 # Host key verification (Components)
@@ -778,7 +778,7 @@ add("＋ splits a new pane", "＋ 新建一个窗格", "＋ で新しいペイ�
 
 # Branch-name validation (new agent task)
 add("Pick a repository", "选一个仓库", "リポジトリを選択してください")
-add("Pick an agent", "选一个智能体", "エージェントを選択してください")
+add("Pick an agent", "选一个 agent", "エージェントを選択してください")
 add("Name the branch", "给分支起个名字", "ブランチ名を入力してください")
 add("No spaces in a branch name", "分支名不能有空格", "ブランチ名に空白は使えません")
 add("No control characters in a branch name", "分支名不能有控制字符", "ブランチ名に制御文字は使えません")
@@ -806,8 +806,8 @@ add("%@ %@ %@? Everything in it dies.", "%1$@ %2$@ %3$@？其中的一切都会�
 add("Action", "操作", "操作")
 add("Connection", "连接", "接続")
 add("Pane", "窗格", "ペイン")
-add("Respond to agent", "回应智能体", "エージェントに応答")
-add("Switch agent", "切换智能体", "エージェントを切り替え")
+add("Respond to agent", "回应 agent", "エージェントに応答")
+add("Switch agent", "切换 agent", "エージェントを切り替え")
 # "✓ %@ finished" lives in the PUSH table below: the notification service
 # extension renders the same card and needs the key in its own catalog.
 
@@ -829,7 +829,7 @@ add("None", "不使用", "使用しない")
 add("Single shell, no session persistence", "单个 shell，会话不持久", "シェル 1 つのみ、セッションは保持されません")
 add("Mature, already on nearly every host", "成熟，几乎每台主机上都有", "成熟しており、ほぼすべてのホストに導入済み")
 add("Built for coding agents — agent status needs no hooks",
-    "为编码智能体而生——智能体状态无需 hook", "コーディングエージェント向け——エージェントの状態にフックは不要")
+    "为编码 agent 而生——agent 状态无需 hook", "コーディングエージェント向け——エージェントの状態にフックは不要")
 
 # Host / install banners
 add("Install herdr", "安装 herdr", "herdr をインストール")
