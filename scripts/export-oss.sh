@@ -17,13 +17,19 @@
 #                         k3s cluster and mainland mirror host
 #
 # Usage:
-#   scripts/export-oss.sh [DEST]            copy the public tree into DEST
-#   scripts/export-oss.sh [DEST] --commit   ...and commit it there
+#   scripts/export-oss.sh [DEST]                    copy the public tree into DEST
+#   scripts/export-oss.sh [DEST] --commit           ...and commit it there
+#   scripts/export-oss.sh [DEST] --commit -m "..."  ...under the given subject line
 #
 # DEST defaults to ../moshpit-oss next to this checkout. The first run creates
 # a fresh repository (single root commit); later runs replace the tree and, with
-# --commit, record one "Sync from private <sha>" commit — the public history is
-# a sequence of release snapshots, not every working commit.
+# --commit, record one snapshot commit — the public history is a sequence of
+# release snapshots, not every working commit. The snapshot's message reads
+# like any other commit: the subject is the one given with -m, or else the
+# subject of the development tree's HEAD; the body lists the development
+# commits the snapshot carries since the previous one; a Source-Commit trailer
+# names the exact tree it was cut from, which is also how the next run finds
+# where the previous snapshot left off.
 #
 # Signing.xcconfig is exported with DEVELOPMENT_TEAM blanked (contributors fill
 # in their own), and the result is scanned for anything that must not leave:
@@ -34,12 +40,15 @@ set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 DEST="$ROOT/../moshpit-oss"
 COMMIT=0
-for arg in "$@"; do
-  case "$arg" in
+SUBJECT=""
+while [ $# -gt 0 ]; do
+  case "$1" in
     --commit) COMMIT=1 ;;
-    -*) echo "export-oss: unknown option $arg" >&2; exit 64 ;;
-    *) DEST=$arg ;;
+    -m|--message) shift; SUBJECT=${1:-}; [ -n "$SUBJECT" ] || { echo "export-oss: -m needs a subject" >&2; exit 64; } ;;
+    -*) echo "export-oss: unknown option $1" >&2; exit 64 ;;
+    *) DEST=$1 ;;
   esac
+  shift
 done
 DEST=$(mkdir -p "$DEST" && cd "$DEST" && pwd)
 
@@ -110,16 +119,48 @@ fi
 echo "exported $(wc -l < "$LIST" | tr -d ' ') files to $DEST"
 
 # --- commit ----------------------------------------------------------------
+# The development commit the previous snapshot was cut from: the Source-Commit
+# trailer on the last public commit, or the sha in the older "Sync from
+# private <sha>" subjects. Empty when there is no previous snapshot to speak of.
+previous_source() {
+  local msg
+  msg=$(git -C "$DEST" log -1 --format=%B 2>/dev/null) || return 0
+  sed -n 's/^Source-Commit: \([0-9a-f]*\).*/\1/p' <<<"$msg" | head -1 | grep . && return 0
+  sed -n 's/^Sync from private \([0-9a-f]*\).*/\1/p' <<<"$msg" | head -1 | grep . && return 0
+  sed -n 's/^Exported from the development tree at \([0-9a-f]*\).*/\1/p' <<<"$msg" | head -1 | grep . && return 0
+  return 0
+}
+
+# Subject + body for a snapshot commit. The body names every development
+# commit since the previous snapshot so the public log says what changed,
+# not just that something did.
+snapshot_message() {
+  local subject=$1 since=$2 head=$3 range
+  printf '%s\n\n' "$subject"
+  if [ -n "$since" ] && git -C "$ROOT" rev-parse -q --verify "$since^{commit}" >/dev/null 2>&1; then
+    range="$since..$head"
+    printf 'Snapshot of the development tree. Development commits since the previous one:\n\n'
+    git -C "$ROOT" log --reverse --format='• %s' "$range"
+    printf '\n'
+  else
+    printf 'Snapshot of the development tree.\n\n'
+  fi
+  printf 'Source-Commit: %s\n' "$(git -C "$ROOT" rev-parse "$head")"
+}
+
 if [ "$COMMIT" -eq 1 ]; then
   SHA=$(git -C "$ROOT" rev-parse --short HEAD)
   if ! git -C "$DEST" rev-parse -q --verify HEAD >/dev/null 2>&1; then
     git -C "$DEST" add -A
-    git -C "$DEST" commit -q -m "Moshpit goes open source: the app, its extensions and the push relay" \
-      -m "Exported from the development tree at $SHA by scripts/export-oss.sh."
+    git -C "$DEST" commit -q -m "${SUBJECT:-Moshpit goes open source: the app, its extensions and the push relay}" \
+      -m "Exported from the development tree at $SHA by scripts/export-oss.sh." \
+      -m "Source-Commit: $(git -C "$ROOT" rev-parse HEAD)"
   else
     git -C "$DEST" add -A
     if git -C "$DEST" diff --cached --quiet; then echo "nothing to commit"; else
-      git -C "$DEST" commit -q -m "Sync from private $SHA"
+      SINCE=$(previous_source)
+      snapshot_message "${SUBJECT:-$(git -C "$ROOT" log -1 --format=%s HEAD)}" "$SINCE" HEAD \
+        | git -C "$DEST" commit -q -F -
     fi
   fi
   git -C "$DEST" log --oneline -1
