@@ -21,6 +21,13 @@ struct MultiplexerVocabulary: Equatable {
     /// Middle level — tmux window, herdr tab.
     let window: String
     let windowPlural: String
+    /// The same nouns as they sit mid-sentence ("Kill session “x”?", "No
+    /// sessions yet"). Separate catalog keys rather than `.lowercased()` in
+    /// code: German keeps its nouns capitalised, and CJK has no case at all.
+    let sessionLower: String
+    let sessionPluralLower: String
+    let windowLower: String
+    let windowPluralLower: String
 
     /// Keys the sheet footers print, as `["⌃", "b s"]` style pairs.
     let sessionKeys: [String]
@@ -44,6 +51,10 @@ struct MultiplexerVocabulary: Equatable {
         sessionPlural: String(localized: "Sessions"),
         window: String(localized: "Window"),
         windowPlural: String(localized: "Windows"),
+        sessionLower: String(localized: "session"),
+        sessionPluralLower: String(localized: "sessions"),
+        windowLower: String(localized: "window"),
+        windowPluralLower: String(localized: "windows"),
         sessionKeys: ["⌃", "b s"],
         windowKeys: ["⌃", "1-9"],
         // tmux: display-panes.
@@ -58,6 +69,10 @@ struct MultiplexerVocabulary: Equatable {
         sessionPlural: String(localized: "Workspaces"),
         window: String(localized: "Tab"),
         windowPlural: String(localized: "Tabs"),
+        sessionLower: String(localized: "workspace"),
+        sessionPluralLower: String(localized: "workspaces"),
+        windowLower: String(localized: "tab"),
+        windowPluralLower: String(localized: "tabs"),
         // herdr: workspace navigation.
         sessionKeys: ["⌃", "b w"],
         // herdr steps through tabs rather than jumping by number.

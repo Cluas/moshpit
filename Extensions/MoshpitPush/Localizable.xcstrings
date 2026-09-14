@@ -3,13 +3,49 @@
   "strings": {
     "%@ needs you": {
       "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ braucht dich"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ te necesita"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ vous attend"
+          }
+        },
         "ja": {
           "stringUnit": {
             "state": "translated",
             "value": "%@ が待っています"
           }
         },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 대기 중"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ precisa de você"
+          }
+        },
         "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 在等你"
+          }
+        },
+        "zh-Hant": {
           "stringUnit": {
             "state": "translated",
             "value": "%@ 在等你"
@@ -19,13 +55,49 @@
     },
     "✓ %@ finished": {
       "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "✓ %@ fertig"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "✓ %@ terminó"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "✓ %@ a terminé"
+          }
+        },
         "ja": {
           "stringUnit": {
             "state": "translated",
             "value": "✓ %@ が完了しました"
           }
         },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "✓ %@ 완료"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "✓ %@ terminou"
+          }
+        },
         "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "✓ %@ 已完成"
+          }
+        },
+        "zh-Hant": {
           "stringUnit": {
             "state": "translated",
             "value": "✓ %@ 已完成"

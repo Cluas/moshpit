@@ -1,0 +1,296 @@
+{
+  "sourceLanguage": "en",
+  "strings": {
+    "NSCameraUsageDescription": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mit der Kamera fotografierst du etwa Whiteboards, Skizzen oder Bildschirme und hängst sie an eine Terminalsitzung an. Fotos werden auf diesem Gerät von Ortsdaten befreit und nur auf deinen eigenen Server geladen."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The camera lets you photograph something — a whiteboard, a sketch, a screen — and attach it to your terminal session. Photos are stripped of location data on this device and uploaded only to your own server."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La cámara sirve para fotografiar pizarras, bocetos o pantallas y adjuntarlos a una sesión de terminal. Las fotos pierden los datos de ubicación en este dispositivo y solo se suben a tu propio servidor."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "L’appareil photo sert à photographier un tableau blanc, un croquis ou un écran pour le joindre à une session de terminal. Les photos sont débarrassées de leurs données de localisation sur cet appareil et ne sont envoyées qu’à votre propre serveur."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "カメラでホワイトボードやスケッチ、画面などを撮影し、ターミナルセッションに添付できます。写真はこの端末上で位置情報を取り除き、あなた自身のサーバーにのみアップロードされます。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "카메라로 화이트보드, 스케치, 화면 등을 찍어 터미널 세션에 첨부합니다. 사진은 이 기기에서 위치 정보를 제거한 뒤 사용자의 서버에만 업로드됩니다."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A câmera serve para fotografar quadros brancos, rascunhos ou telas e anexar a uma sessão de terminal. As fotos perdem os dados de localização neste aparelho e só são enviadas ao seu próprio servidor."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "相机用来拍点东西，比如白板、草图、屏幕，然后附到终端会话里。照片会在这台设备上去掉位置信息，只上传到你自己的服务器。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "相機用來拍點東西，比如白板、草圖、螢幕，然後附加到終端機工作階段。照片會在這部裝置上移除位置資訊，只上傳到你自己的伺服器。"
+          }
+        }
+      }
+    },
+    "NSFaceIDUsageDescription": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Entsperrt SSH-Schlüssel mit Face ID"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Use Face ID to unlock SSH keys"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Desbloquea las claves SSH con Face ID"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Déverrouille les clés SSH avec Face ID"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Face ID で SSH キーをロック解除します"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Face ID로 SSH 키를 잠금 해제합니다"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Desbloqueia as chaves SSH com Face ID"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "用 Face ID 解锁 SSH 密钥"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "用 Face ID 解鎖 SSH 金鑰"
+          }
+        }
+      }
+    },
+    "NSLocalNetworkUsageDescription": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Moshpit verbindet sich per SSH und mosh (UDP) mit Servern in deinem lokalen Netzwerk. Ohne diese Berechtigung schlagen Verbindungen zu Hosts wie 192.168.x.x fehl."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Moshpit connects to servers on your local network over SSH and mosh (UDP). Without this permission, connections to LAN hosts (e.g. 192.168.x.x) will fail."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Moshpit se conecta por SSH y mosh (UDP) a los servidores de tu red local. Sin este permiso, las conexiones a hosts como 192.168.x.x fallan."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Moshpit se connecte en SSH et mosh (UDP) aux serveurs de votre réseau local. Sans cette autorisation, les connexions à des hôtes comme 192.168.x.x échouent."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Moshpit は SSH と mosh（UDP）でローカルネットワーク上のサーバーに接続します。この許可がないと、192.168.x.x のような LAN 上のホストへの接続は失敗します。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Moshpit은 SSH와 mosh(UDP)로 로컬 네트워크의 서버에 연결합니다. 이 권한이 없으면 192.168.x.x 같은 내부 호스트에 연결할 수 없습니다."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O Moshpit conecta por SSH e mosh (UDP) aos servidores da sua rede local. Sem esta permissão, conexões a hosts como 192.168.x.x falham."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Moshpit 通过 SSH 和 mosh（UDP）连接你局域网里的服务器。没有这个权限，连 192.168.x.x 这类内网主机会失败。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Moshpit 透過 SSH 和 mosh（UDP）連線到你區域網路裡的伺服器。沒有這個權限，連 192.168.x.x 這類內網主機會失敗。"
+          }
+        }
+      }
+    },
+    "NSMicrophoneUsageDescription": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Die Spracheingabe nutzt das Mikrofon, damit du Befehle und Prompts direkt ins Terminal sprechen kannst. Audio wird auf diesem Gerät in Text umgewandelt, mit Apples Sprachmodell oder einem geladenen Whisper-Modell, und nirgendwohin hochgeladen."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Voice input uses the microphone so you can dictate commands and prompts into your terminal. Your audio is transcribed on this device — by Apple's speech models or by a Whisper model you download — and is never uploaded anywhere."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La entrada de voz usa el micrófono para que puedas dictar comandos y prompts directamente al terminal. El audio se transcribe en este dispositivo, con el modelo de voz de Apple o con un modelo Whisper que hayas descargado, y no se sube a ningún sitio."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La saisie vocale utilise le micro pour que vous puissiez dicter commandes et prompts directement dans le terminal. L’audio est transcrit sur cet appareil, avec le modèle vocal d’Apple ou un modèle Whisper que vous avez téléchargé, et n’est envoyé nulle part."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "音声入力はマイクを使い、コマンドやプロンプトをターミナルに向けて話せるようにします。音声はこの端末上で、Apple の音声モデルまたはダウンロードした Whisper モデルによって書き起こされ、どこにもアップロードされません。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "음성 입력에 마이크를 사용해 명령과 프롬프트를 터미널에 말로 입력할 수 있습니다. 오디오는 Apple 음성 모델이나 다운로드한 Whisper 모델로 이 기기에서 텍스트로 바뀌며, 어디에도 업로드되지 않습니다."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A entrada de voz usa o microfone para você ditar comandos e prompts direto no terminal. O áudio é transcrito neste aparelho, com o modelo de voz da Apple ou com um modelo Whisper que você baixou, e não é enviado para lugar nenhum."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "语音输入要用麦克风，这样你可以把命令和提示词直接说进终端。音频在这台设备上转写，用 Apple 的语音模型或你下载的 Whisper 模型，不会上传到任何地方。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "語音輸入需要使用麥克風，這樣你可以把指令和提示詞直接說進終端機。音訊會在這部裝置上轉寫，用 Apple 的語音模型或你下載的 Whisper 模型，不會上傳到任何地方。"
+          }
+        }
+      }
+    },
+    "NSSpeechRecognitionUsageDescription": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Das Diktat erkennt Sprache auf dem Gerät. Weder deine Stimme noch der erkannte Text verlassen dieses Gerät; Moshpit nutzt keine serverseitige Erkennung."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dictation runs on-device speech recognition. Your voice and transcripts never leave this device — Moshpit does not use server-based recognition."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El dictado reconoce la voz en el propio dispositivo. Ni tu voz ni la transcripción salen de él; Moshpit no usa reconocimiento en servidores."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La dictée reconnaît la parole sur l’appareil. Ni votre voix ni la transcription ne quittent cet appareil ; Moshpit n’utilise aucune reconnaissance côté serveur."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "音声入力は端末内で音声認識を行います。音声も書き起こしもこの端末を離れず、Moshpit はサーバー側の認識を使いません。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "받아쓰기는 기기 안에서 음성을 인식합니다. 음성과 변환된 텍스트는 이 기기를 벗어나지 않으며, Moshpit은 서버 측 인식을 사용하지 않습니다."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O ditado reconhece a fala no próprio aparelho. Nem sua voz nem a transcrição saem dele; o Moshpit não usa reconhecimento em servidor."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "听写在本机做语音识别。你的语音和转写文字都不会离开这台设备，Moshpit 不使用服务器端识别。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "聽寫在裝置上進行語音辨識。你的語音和轉寫文字都不會離開這部裝置，Moshpit 不使用伺服器端辨識。"
+          }
+        }
+      }
+    }
+  },
+  "version": "1.0"
+}

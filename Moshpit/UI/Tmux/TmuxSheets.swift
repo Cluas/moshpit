@@ -65,7 +65,7 @@ struct WindowsSheet<C: MultiplexerControlling>: View {
             Button("Cancel", role: .cancel) { renaming = nil }
         }
         .confirmationDialog(
-            "\(controller.multiplexer.vocabulary.killVerb) \(controller.multiplexer.vocabulary.window.lowercased()) \(killing.map { $0.displayTitle(controller.multiplexer.vocabulary) } ?? "")? Every pane in it dies.",
+            "\(controller.multiplexer.vocabulary.killVerb) \(controller.multiplexer.vocabulary.windowLower) \(killing.map { $0.displayTitle(controller.multiplexer.vocabulary) } ?? "")? Every pane in it dies.",
             isPresented: Binding(get: { killing != nil }, set: { if !$0 { killing = nil } }),
             titleVisibility: .visible
         ) {
@@ -178,7 +178,7 @@ struct SessionsSheet<C: MultiplexerControlling>: View {
             Button("Cancel", role: .cancel) { renaming = nil }
         }
         .confirmationDialog(
-            "\(controller.multiplexer.vocabulary.killVerb) \(controller.multiplexer.vocabulary.session.lowercased()) \(killing.map { controller.snapshot.sessionDisplayName($0) } ?? "")? Everything in it dies.",
+            "\(controller.multiplexer.vocabulary.killVerb) \(controller.multiplexer.vocabulary.sessionLower) \(killing.map { controller.snapshot.sessionDisplayName($0) } ?? "")? Everything in it dies.",
             isPresented: Binding(get: { killing != nil }, set: { if !$0 { killing = nil } }),
             titleVisibility: .visible
         ) {
@@ -208,7 +208,7 @@ struct SessionsSheet<C: MultiplexerControlling>: View {
         if session.id == snapshot.activeSessionId {
             let count = snapshot.sortedWindows.count
             let activeWindow = snapshot.activeWindowId.flatMap { snapshot.windows[$0] }
-            let head = "\(count) \(controller.multiplexer.vocabulary.windowPlural.lowercased())"
+            let head = "\(count) \(controller.multiplexer.vocabulary.windowPluralLower)"
             if let activeWindow {
                 return "\(head) · \(activeWindow.index):\(activeWindow.name)"
             }

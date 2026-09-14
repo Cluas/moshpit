@@ -4,10 +4,12 @@ Extensions/MoshpitIsland/Localizable.xcstrings (the widget) and
 Extensions/MoshpitPush/Localizable.xcstrings (the notification service extension).
 
 Source language: en (the key IS the English value).
-Each entry carries complete zh-Hans + ja translations.
+Each entry carries complete zh-Hans + ja translations inline; zh-Hant, ko, de, es,
+fr and pt-BR live in scripts/gen/locales/<locale>.json (see STYLE.md there).
+Moshpit/Resources/InfoPlist.xcstrings (permission texts) is written too.
 SAME = identical value in every language (brand names, protocol words, glyphs).
 """
-import json, os, sys
+import json, os, re, sys
 
 SAME = object()
 
@@ -772,6 +774,17 @@ add("Workspace", "工作区", "ワークスペース")
 add("Workspaces", "工作区", "ワークスペース")
 add("Tab", "标签页", "タブ")
 add("Tabs", "标签页", "タブ")
+# Mid-sentence forms of the multiplexer nouns ("Kill session “x”?", "No
+# sessions yet"). Separate keys rather than `.lowercased()` in code: German
+# capitalises nouns, CJK has no case.
+add("session", "会话", "セッション")
+add("sessions", "会话", "セッション")
+add("window", "窗口", "ウィンドウ")
+add("windows", "窗口", "ウィンドウ")
+add("workspace", "工作区", "ワークスペース")
+add("workspaces", "工作区", "ワークスペース")
+add("tab", "标签页", "タブ")
+add("tabs", "标签页", "タブ")
 add("Kill", "终止", "強制終了")
 add("Close", "关闭", "閉じる")
 add("＋ splits a new pane", "＋ 新建一个窗格", "＋ で新しいペインを分割")
@@ -1173,30 +1186,141 @@ push("✓ %@ finished", "✓ %@ 已完成", "✓ %@ が完了しました")
 push("%@ needs you", "%@ 在等你", "%@ が待っています")
 
 
+# ---------- Info.plist permission texts ----------
+# The English lives in project.yml (XcodeGen regenerates Info.plist from it);
+# it is read from there so the two can never drift. zh-Hans / ja sit here like
+# every other string; the other locales come from scripts/gen/locales/*.json
+# under the plist key name.
+INFOPLIST_ZH_JA = {
+    "NSFaceIDUsageDescription": (
+        "用 Face ID 解锁 SSH 密钥",
+        "Face ID で SSH キーをロック解除します"),
+    "NSMicrophoneUsageDescription": (
+        "语音输入要用麦克风，这样你可以把命令和提示词直接说进终端。音频在这台设备上转写，用 Apple 的语音模型或你下载的 Whisper 模型，不会上传到任何地方。",
+        "音声入力はマイクを使い、コマンドやプロンプトをターミナルに向けて話せるようにします。音声はこの端末上で、Apple の音声モデルまたはダウンロードした Whisper モデルによって書き起こされ、どこにもアップロードされません。"),
+    "NSSpeechRecognitionUsageDescription": (
+        "听写在本机做语音识别。你的语音和转写文字都不会离开这台设备，Moshpit 不使用服务器端识别。",
+        "音声入力は端末内で音声認識を行います。音声も書き起こしもこの端末を離れず、Moshpit はサーバー側の認識を使いません。"),
+    "NSLocalNetworkUsageDescription": (
+        "Moshpit 通过 SSH 和 mosh（UDP）连接你局域网里的服务器。没有这个权限，连 192.168.x.x 这类内网主机会失败。",
+        "Moshpit は SSH と mosh（UDP）でローカルネットワーク上のサーバーに接続します。この許可がないと、192.168.x.x のような LAN 上のホストへの接続は失敗します。"),
+    "NSCameraUsageDescription": (
+        "相机用来拍点东西，比如白板、草图、屏幕，然后附到终端会话里。照片会在这台设备上去掉位置信息，只上传到你自己的服务器。",
+        "カメラでホワイトボードやスケッチ、画面などを撮影し、ターミナルセッションに添付できます。写真はこの端末上で位置情報を取り除き、あなた自身のサーバーにのみアップロードされます。"),
+}
+
+
+def infoplist_english():
+    """Pull the permission texts out of project.yml, keyed by plist key."""
+    text = open(os.path.join(root, "project.yml"), encoding="utf-8").read()
+    found = {}
+    for key, value in re.findall(r'^\s+(NS\w+UsageDescription): "(.*)"\s*$', text, re.M):
+        found.setdefault(key, value)
+    missing = set(INFOPLIST_ZH_JA) - set(found)
+    if missing:
+        raise SystemExit(f"project.yml lacks {sorted(missing)}; keep INFOPLIST_ZH_JA in step with it")
+    return found
+
+
+# ---------- Additional locales ----------
+# One JSON file per locale in scripts/gen/locales/, mapping the English key to
+# its translation. Plural keys (see plural() above) take {"one": …, "other": …}
+# in languages that inflect, or a single string where they do not. SAME keys
+# are filled in automatically and must not appear in the files. Style notes and
+# the per-language glossary: scripts/gen/locales/STYLE.md.
+LOCALES = ["zh-Hant", "ko", "de", "es", "fr", "pt-BR"]
+PLURAL_LOCALES = {"de", "es", "fr", "pt-BR"}
+LOCALE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "locales")
+
+SPEC = re.compile(r"%(?:\d+\$)?(?:lld|llu|ld|lu|d|u|f|@|%)")
+
+
+def specifiers(text):
+    """Multiset of format specifier types, positions stripped — '%2$@' == '%@'."""
+    return sorted(re.sub(r"\d+\$", "", m) for m in SPEC.findall(text))
+
+
+def load_locales():
+    tables = {}
+    for loc in LOCALES:
+        path = os.path.join(LOCALE_DIR, loc + ".json")
+        if not os.path.exists(path):
+            tables[loc] = {}
+            continue
+        with open(path, encoding="utf-8") as f:
+            try:
+                tables[loc] = json.load(f)
+            except json.JSONDecodeError as exc:
+                raise SystemExit(f"{path}: {exc}")
+    return tables
+
+
+LOCALE_TABLES = load_locales()
+PROBLEMS = []   # (locale, key, what)
+MISSING = {loc: [] for loc in LOCALES}
+
+
+def locale_value(loc, key, spec):
+    """Translation for one key in one extra locale, or None when the file lacks it."""
+    # SAME keys (brand names, glyphs, bare format strings) fall back to the
+    # key itself, but a locale file may still override one — "%@ %@" is
+    # killVerb + noun, and German or Korean want the noun first.
+    if spec is SAME and key not in LOCALE_TABLES[loc]:
+        return key
+    value = LOCALE_TABLES[loc].get(key)
+    if value is None:
+        MISSING[loc].append(key)
+        return None
+    plural_spec = isinstance(spec, dict) and spec.get("plural")
+    if plural_spec and loc in PLURAL_LOCALES:
+        if not (isinstance(value, dict) and {"one", "other"} <= set(value)):
+            PROBLEMS.append((loc, key, "plural key needs {\"one\": …, \"other\": …}"))
+            return None
+        for form in ("one", "other"):
+            if specifiers(value[form]) != specifiers(key):
+                PROBLEMS.append((loc, key, f"format specifiers differ in plural '{form}'"))
+        return value
+    if isinstance(value, dict):
+        PROBLEMS.append((loc, key, "expected a plain string"))
+        return None
+    if specifiers(value) != specifiers(key):
+        PROBLEMS.append((loc, key, f"format specifiers {specifiers(key)} vs {specifiers(value)}"))
+    return value
+
+
 def unit(value):
     return {"stringUnit": {"state": "translated", "value": value}}
 
 
-def entry(key, spec):
+def plural_unit(forms):
+    return {"variations": {"plural": {
+        form: {"stringUnit": {"state": "translated", "value": text}} for form, text in forms.items()}}}
+
+
+def entry(key, spec, english=None):
     locs = {}
+    if english is not None:
+        locs["en"] = unit(english)
     if spec is SAME:
         locs["zh-Hans"] = unit(key)
         locs["ja"] = unit(key)
     elif isinstance(spec, dict) and spec.get("plural"):
-        locs["en"] = {"variations": {"plural": {
-            "one": {"stringUnit": {"state": "translated", "value": spec["en_one"]}},
-            "other": {"stringUnit": {"state": "translated", "value": key}},
-        }}}
+        locs["en"] = plural_unit({"one": spec["en_one"], "other": key})
         locs["zh-Hans"] = unit(spec["zh"])
         locs["ja"] = unit(spec["ja"])
     else:
         zh, ja = spec
         locs["zh-Hans"] = unit(zh)
         locs["ja"] = unit(ja)
+    for loc in LOCALES:
+        value = locale_value(loc, key, spec)
+        if value is None:
+            continue
+        locs[loc] = plural_unit(value) if isinstance(value, dict) else unit(value)
     return {"localizations": locs}
 
 
-def write_catalog(path, table):
+def write_catalog(path, table, english=None):
     """Merge the curated table INTO the existing catalog.
 
     Merge, not overwrite. Two things write this file: this script (the curated
@@ -1217,7 +1341,7 @@ def write_catalog(path, table):
 
     merged = dict(existing)
     for key, spec in table.items():
-        merged[key] = entry(key, spec)
+        merged[key] = entry(key, spec, (english or {}).get(key))
 
     catalog = {"sourceLanguage": "en", "strings": merged, "version": "1.0"}
     os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -1226,6 +1350,30 @@ def write_catalog(path, table):
         f.write("\n")
     kept = len(merged) - len(table)
     print(f"{path}: {len(table)} curated + {kept} kept = {len(merged)} keys")
+
+
+def report_locales(all_keys):
+    """Coverage per extra locale, unknown keys in the files, specifier problems."""
+    ok = True
+    translatable = [k for k, spec in all_keys.items() if spec is not SAME]
+    for loc in LOCALES:
+        unknown = sorted(set(LOCALE_TABLES[loc]) - set(all_keys))
+        missing = sorted(set(MISSING[loc]))
+        done = len(translatable) - len(missing)
+        line = f"  {loc:8} {done}/{len(translatable)}"
+        if missing:
+            line += f"  missing {len(missing)}"
+        if unknown:
+            line += f"  UNKNOWN KEYS {len(unknown)}: " + "; ".join(repr(u[:50]) for u in unknown[:5])
+            ok = False
+        print(line)
+        if "--missing" in sys.argv:
+            for k in missing:
+                print(f"      - {k!r}")
+    for loc, key, what in PROBLEMS:
+        print(f"  {loc}: {what}: {key!r}")
+        ok = False
+    return ok
 
 
 def translated(loc):
@@ -1238,12 +1386,13 @@ def translated(loc):
 
 
 def check(paths):
-    """Report every string the app needs that has no zh-Hans / ja translation.
+    """Report every string the app needs that has no translation in some language.
 
     Reads the keys the compiler actually extracted (`.stringsdata` emitted by
     SWIFT_EMIT_LOC_STRINGS) rather than grepping the source, so interpolation
     is already normalized to %@ / %lld and nothing is missed by a regex that
-    didn't anticipate a call shape.
+    didn't anticipate a call shape. Pass --derived-data <dir> when the build
+    did not go to the default DerivedData location.
     """
     import glob
     import plistlib
@@ -1261,10 +1410,11 @@ def check(paths):
         except Exception:
             return None
 
+    derived = os.path.expanduser("~/Library/Developer/Xcode/DerivedData/Moshpit-*")
+    if "--derived-data" in sys.argv:
+        derived = sys.argv[sys.argv.index("--derived-data") + 1]
     needed = {}
-    pattern = os.path.expanduser(
-        "~/Library/Developer/Xcode/DerivedData/Moshpit-*/Build/Intermediates.noindex"
-        "/*/Debug-*/*/Objects-normal/*/*.stringsdata")
+    pattern = os.path.join(derived, "Build/Intermediates.noindex/*/Debug-*/*/Objects-normal/*/*.stringsdata")
     for found in glob.glob(pattern):
         if "AppShortcuts" in found:
             continue
@@ -1294,11 +1444,11 @@ def check(paths):
         with open(path, encoding="utf-8") as f:
             have.update(json.load(f).get("strings") or {})
 
+    languages = ["zh-Hans", "ja"] + LOCALES
     gaps = []
     for key, source in sorted(needed.items()):
         locs = (have.get(key) or {}).get("localizations") or {}
-        missing = [lang for lang in ("zh-Hans", "ja")
-                   if not translated(locs.get(lang) or {})]
+        missing = [lang for lang in languages if not translated(locs.get(lang) or {})]
         if missing:
             gaps.append((key, source, missing))
 
@@ -1312,10 +1462,18 @@ root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 CATALOGS = [os.path.join(root, "Moshpit/Resources/Localizable.xcstrings"),
             os.path.join(root, "Extensions/MoshpitIsland/Localizable.xcstrings"),
             os.path.join(root, "Extensions/MoshpitPush/Localizable.xcstrings")]
+INFOPLIST_CATALOG = os.path.join(root, "Moshpit/Resources/InfoPlist.xcstrings")
 
 if "--check" in sys.argv:
-    raise SystemExit(check(CATALOGS))
+    raise SystemExit(check(CATALOGS + [INFOPLIST_CATALOG]))
 
 write_catalog(CATALOGS[0], S)
 write_catalog(CATALOGS[1], ISLAND)
 write_catalog(CATALOGS[2], PUSH)
+INFOPLIST_EN = infoplist_english()
+write_catalog(INFOPLIST_CATALOG, {k: INFOPLIST_ZH_JA[k] for k in INFOPLIST_ZH_JA}, english=INFOPLIST_EN)
+
+ALL = dict(S); ALL.update(ISLAND); ALL.update(PUSH); ALL.update({k: INFOPLIST_ZH_JA[k] for k in INFOPLIST_ZH_JA})
+print("extra locales (scripts/gen/locales/*.json):")
+if not report_locales(ALL):
+    raise SystemExit("locale files have problems; see above")

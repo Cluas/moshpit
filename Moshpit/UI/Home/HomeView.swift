@@ -1583,7 +1583,7 @@ struct ConnectionCard: View {
             Image(systemName: "square.stack.3d.up.slash")
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(Ink.meta)
-            Text(verbatim: String(localized: "No \(vocab.sessionPlural.lowercased()) yet"))
+            Text(verbatim: String(localized: "No \(vocab.sessionPluralLower) yet"))
                 .font(Face.mono(11, .semibold))
                 .foregroundStyle(Ink.meta)
             Spacer()
@@ -1722,7 +1722,7 @@ struct ConnectionCard: View {
                 let vocab = control.multiplexer.vocabulary
                 killTarget = KillTarget(
                     label: "\(vocab.killVerb) \(vocab.session)",
-                    confirmTitle: String(localized: "\(vocab.killVerb) \(vocab.session.lowercased()) \"\(snapshot.sessionDisplayName(session))\"?")
+                    confirmTitle: String(localized: "\(vocab.killVerb) \(vocab.sessionLower) \"\(snapshot.sessionDisplayName(session))\"?")
                 ) { control.killSession(session.id) }
             } label: {
                 Label("\(control.multiplexer.vocabulary.killVerb) \(control.multiplexer.vocabulary.session)",
@@ -1805,7 +1805,7 @@ struct ConnectionCard: View {
                 let vocab = control.multiplexer.vocabulary
                 killTarget = KillTarget(
                     label: "\(vocab.killVerb) \(vocab.window)",
-                    confirmTitle: String(localized: "\(vocab.killVerb) \(vocab.window.lowercased()) \"\(window.displayTitle(vocab))\"?")
+                    confirmTitle: String(localized: "\(vocab.killVerb) \(vocab.windowLower) \"\(window.displayTitle(vocab))\"?")
                 ) { control.killWindow(window.id) }
             } label: {
                 Label("\(control.multiplexer.vocabulary.killVerb) \(control.multiplexer.vocabulary.window)",

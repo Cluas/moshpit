@@ -2946,7 +2946,7 @@ private struct MultiplexerEmptyStateView: View {
         Text("\(multiplexer.label) not installed on this host")
             .font(Face.display(16, .semibold)).foregroundStyle(Ink.primary)
             .multilineTextAlignment(.center)
-        Text("Moshpit needs \(multiplexer.label) for \(multiplexer.vocabulary.session.lowercased()) navigation.\nInstall it, then reconnect.")
+        Text("Moshpit needs \(multiplexer.label) for \(multiplexer.vocabulary.sessionLower) navigation.\nInstall it, then reconnect.")
             .font(Face.text(12)).foregroundStyle(Ink.meta)
             .multilineTextAlignment(.center)
         Button(action: onInstall) {
@@ -2965,9 +2965,9 @@ private struct MultiplexerEmptyStateView: View {
         Image(systemName: "square.stack.3d.up.slash")
             .font(.system(size: 28, weight: .light))
             .foregroundStyle(Ink.meta)
-        Text("No \(multiplexer.label) \(multiplexer.vocabulary.sessionPlural.lowercased())")
+        Text("No \(multiplexer.label) \(multiplexer.vocabulary.sessionPluralLower)")
             .font(Face.display(16, .semibold)).foregroundStyle(Ink.primary)
-        Text("This server has no running \(multiplexer.vocabulary.sessionPlural.lowercased()).\nMoshpit only attaches — create the first one to start.")
+        Text("This server has no running \(multiplexer.vocabulary.sessionPluralLower).\nMoshpit only attaches — create the first one to start.")
             .font(Face.text(12)).foregroundStyle(Ink.meta)
             .multilineTextAlignment(.center)
         Button {
