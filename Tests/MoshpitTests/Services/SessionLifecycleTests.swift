@@ -369,4 +369,127 @@ struct SessionLifecycleTests {
         #expect(await bounded(1) { await session.stop() })
         #expect(session.retiredTmuxController == nil, "a real disconnect has nothing to stand in for")
     }
+
+    // MARK: - The first-frame fallback vs a slow link
+
+    /// A session mid-reconnect: the dropped connection's painted controller
+    /// is the ghost, the replacement is installed with the first-frame wait
+    /// armed and its pump running on `transport`, and the fallback deadline
+    /// is short so the tests can watch it fire (or hold).
+    private struct GhostedRig {
+        let session: SessionHub.ActiveSession
+        let painted: TmuxSessionController
+        let replacement: TmuxSessionController
+        let transport: MockTmuxTransport
+    }
+
+    private func ghostedSession(fallback: Double, attachBound: Double) -> GhostedRig {
+        let session = makeSession(ScriptedTransport(.reply("")))
+        let painted = TmuxSessionController(sshSession: MockTmuxTransport())
+        _ = painted.terminalView(for: "%0")
+        painted.coordinator(for: "%0")?.reveal()
+        session.installForTesting(moshTransport: nil, tmuxController: painted)
+        let transport = MockTmuxTransport()
+        let replacement = TmuxSessionController(sshSession: transport)
+        session.firstFrameFallbackSeconds = fallback
+        session.firstFrameAttachBoundSeconds = attachBound
+        return GhostedRig(session: session, painted: painted, replacement: replacement, transport: transport)
+    }
+
+    private func eventually(_ timeout: Double, _ predicate: @MainActor () -> Bool) async -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if predicate() { return true }
+            try? await Task.sleep(for: .milliseconds(20))
+        }
+        return predicate()
+    }
+
+    /// The regression behind "the poster is back" (phone over 5G, 2026-09-15):
+    /// the fallback used to run from the boot line, so a slow SSH/attach ate
+    /// the budget, the ghost was dropped over a blank pane, and the next drop
+    /// had nothing to keep. Silence from the server is the LINK's problem —
+    /// the ghost stands until a frame paints.
+    @Test("The first-frame fallback holds the ghost while the server has not answered the boot line")
+    func fallbackHoldsGhostOnSilentLink() async {
+        let rig = ghostedSession(fallback: 0.2, attachBound: 5)
+        let (session, painted, replacement, transport) = (rig.session, rig.painted, rig.replacement, rig.transport)
+        #expect(await bounded(1) { await session.stop(forReconnect: true) })
+        #expect(session.retiredTmuxController === painted)
+        await replacement.beginControlMode()
+        session.installForTesting(moshTransport: nil, tmuxController: replacement, armFirstFrame: true)
+        #expect(session.awaitingFirstFrame)
+
+        try? await Task.sleep(for: .milliseconds(700))
+        #expect(session.retiredTmuxController === painted, "a silent link is not a server that never paints")
+        #expect(session.awaitingFirstFrame)
+
+        // tmux answers late and attaches — still nothing painted, ghost stays…
+        transport.pushText("%begin 100 0 0\n%end 100 0 0\n\n%session-changed $0 main\n")
+        #expect(await eventually(1) { replacement.snapshot.isAttached })
+        #expect(replacement.attachedAt != nil)
+        #expect(session.retiredTmuxController === painted)
+
+        // …and goes the moment the replacement reveals a frame.
+        _ = replacement.terminalView(for: "%1")
+        replacement.coordinator(for: "%1")?.reveal()
+        #expect(session.retiredTmuxController == nil)
+        #expect(session.awaitingFirstFrame == false)
+        await replacement.detach()
+    }
+
+    /// A blank pane is still a pane: once attached, the fallback gives the
+    /// first capture its grace measured from the attach, then drops the
+    /// cover so a genuinely empty pane is not veiled forever.
+    @Test("Once attached, the fallback grace runs from the attach, not from the boot line")
+    func fallbackGraceRunsFromAttach() async {
+        let rig = ghostedSession(fallback: 0.4, attachBound: 5)
+        let (session, painted, replacement, transport) = (rig.session, rig.painted, rig.replacement, rig.transport)
+        #expect(await bounded(1) { await session.stop(forReconnect: true) })
+        await replacement.beginControlMode()
+        session.installForTesting(moshTransport: nil, tmuxController: replacement, armFirstFrame: true)
+
+        try? await Task.sleep(for: .milliseconds(600))   // deadline passed, link silent: held
+        #expect(session.retiredTmuxController === painted)
+        transport.pushText("%begin 100 0 0\n%end 100 0 0\n\n%session-changed $0 main\n")
+        #expect(await eventually(1) { replacement.snapshot.isAttached })
+        try? await Task.sleep(for: .milliseconds(150))
+        #expect(session.retiredTmuxController === painted, "the attach grace has not run yet")
+        #expect(await eventually(1.5) { session.retiredTmuxController == nil },
+                "a pane that attached but never painted gets the cover dropped after the grace")
+        #expect(session.awaitingFirstFrame == false)
+        await replacement.detach()
+    }
+
+    /// tmux answered without attaching (no sessions, no server): the
+    /// empty-state card behind the cover is what to show — no holding.
+    @Test("A server that answers but refuses the attach gets the cover dropped at the deadline")
+    func fallbackDropsWhenServerRefuses() async {
+        let rig = ghostedSession(fallback: 0.2, attachBound: 5)
+        let (session, painted, replacement, transport) = (rig.session, rig.painted, rig.replacement, rig.transport)
+        #expect(await bounded(1) { await session.stop(forReconnect: true) })
+        #expect(session.retiredTmuxController === painted)
+        await replacement.beginControlMode()
+        session.installForTesting(moshTransport: nil, tmuxController: replacement, armFirstFrame: true)
+        transport.pushText("no sessions\n")
+        #expect(await eventually(1.5) { session.retiredTmuxController == nil },
+                "an answered boot line with no attach is the server's silence, not the link's")
+        #expect(session.awaitingFirstFrame == false)
+        await replacement.detach()
+    }
+
+    /// A link that never answers cannot hold a frozen frame forever: at the
+    /// attach bound (where `attachStalled` latches) the cover goes too.
+    @Test("A link that stays silent gives the ghost up at the attach bound")
+    func fallbackGivesUpAtAttachBound() async {
+        let rig = ghostedSession(fallback: 0.2, attachBound: 0.9)
+        let (session, painted, replacement) = (rig.session, rig.painted, rig.replacement)
+        #expect(await bounded(1) { await session.stop(forReconnect: true) })
+        await replacement.beginControlMode()
+        session.installForTesting(moshTransport: nil, tmuxController: replacement, armFirstFrame: true)
+        try? await Task.sleep(for: .milliseconds(500))
+        #expect(session.retiredTmuxController === painted, "still inside the bound")
+        #expect(await eventually(1.5) { session.retiredTmuxController == nil })
+        await replacement.detach()
+    }
 }

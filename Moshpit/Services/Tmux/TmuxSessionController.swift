@@ -822,6 +822,14 @@ final class TmuxSessionController: MultiplexerControlling {
     @ObservationIgnored
     private(set) var hasPaintedSinceAttach = false
 
+    /// When this connection's tmux attach landed (`%session-changed` or the
+    /// discovery that follows it); nil until then. The hub's first-frame
+    /// fallback measures its grace from HERE, not from the boot line: over a
+    /// slow link the attach alone can outlast a deadline that was meant for
+    /// "attached, but nothing to paint".
+    @ObservationIgnored
+    private(set) var attachedAt: Date?
+
     /// Fires once, on the first revealed pane after attach.
     @ObservationIgnored
     var onFirstFramePainted: (() -> Void)?
@@ -3025,6 +3033,7 @@ final class TmuxSessionController: MultiplexerControlling {
         // Mark attached first so the UI can show progress while list-* fly.
         snapshot.isAttached = true
         snapshot.everAttached = true
+        if attachedAt == nil { attachedAt = Date() }
 
         sendCommand("list-sessions -F '#{session_id} #{session_attached} #{session_name}'") { [weak self] response in
             self?.parseListSessions(response.lines)
@@ -3661,6 +3670,7 @@ final class TmuxSessionController: MultiplexerControlling {
         // `tmux -CC new` line has actually started tmux.
         snapshot.isAttached = true
         snapshot.everAttached = true
+        if attachedAt == nil { attachedAt = Date() }
         // Control clients have no size until they report one; without it
         // tmux suppresses %output entirely. Report a sane default before
         // discovery — the real size follows from the terminal view layout.

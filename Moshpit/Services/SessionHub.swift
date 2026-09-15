@@ -138,10 +138,16 @@ final class SessionHub {
         /// long — measured on paint, not on a guessed grace period.
         private(set) var awaitingFirstFrame = false
         @ObservationIgnored private var firstFrameFallback: Task<Void, Never>?
-        /// How long after the controller is installed the cover may wait for a
-        /// revealed frame before giving up (a server with no sessions never
-        /// paints; the empty-state card behind the cover settles at 4s).
-        private static let firstFrameFallbackSeconds: Double = 6
+        /// How long the cover may wait for a revealed frame before giving up
+        /// once tmux has ANSWERED — attached (a pane with nothing on it), or
+        /// refused (a server with no sessions never paints; the empty-state
+        /// card behind the cover settles at 4s). Measured from the attach when
+        /// there is one, not from the boot line — see ``firstFrameWaitHolds``.
+        @ObservationIgnored var firstFrameFallbackSeconds: Double = 6
+        /// How long a link that has not answered the boot line at all may hold
+        /// the cover before it is dropped anyway; aligned with the attach
+        /// timeout that latches `attachStalled`, so both give up together.
+        @ObservationIgnored var firstFrameAttachBoundSeconds: Double = tmuxAttachTimeoutSeconds
 
         /// Window pins and pristine layouts a retired controller still owed
         /// the server, carried to its replacement so the debt is settled on
@@ -336,12 +342,16 @@ final class SessionHub {
                                moshControl: TmuxSessionController? = nil,
                                tmuxController: TmuxSessionController? = nil,
                                moshServerPid pid: Int? = nil,
-                               moshHadFirstContact hadContact: Bool = false) {
+                               moshHadFirstContact hadContact: Bool = false,
+                               armFirstFrame: Bool = false) {
             self.moshTransport = transport
             self.sidecarSSH = ssh
             self.herdrControl = control
             if let moshControl { self.moshControl = moshControl }
-            if let tmuxController { self.tmuxController = tmuxController }
+            if let tmuxController {
+                self.tmuxController = tmuxController
+                if armFirstFrame { armFirstFrameWait(for: tmuxController) }
+            }
             if let control { onMultiplexerControlChanged?(control) }
             self.moshServerPid = pid
             self.moshHadFirstContact = hadContact
@@ -2686,6 +2696,14 @@ final class SessionHub {
         /// Start the first-frame wait for a freshly installed controller —
         /// see ``awaitingFirstFrame``. Ends on the controller's first revealed
         /// frame, or on the fallback deadline for a server that never paints.
+        ///
+        /// The deadline is not a plain timer. It first waits the fallback,
+        /// then keeps waiting for as long as ``firstFrameWaitHolds`` says the
+        /// silence is the LINK's and not the server's: on a slow cellular path
+        /// the SSH connect alone can eat the budget, and a deadline that then
+        /// dropped the ghost over a still-blank pane left the next drop with
+        /// no frame to keep — the poster came back on every second reconnect
+        /// (phone over 5G, 2026-09-15).
         private func armFirstFrameWait(for controller: TmuxSessionController) {
             awaitingFirstFrame = true
             controller.onFirstFramePainted = { [weak self] in
@@ -2693,12 +2711,37 @@ final class SessionHub {
                 self?.endFirstFrameWait()
             }
             firstFrameFallback?.cancel()
-            firstFrameFallback = Task { [weak self] in
-                try? await Task.sleep(for: .seconds(Self.firstFrameFallbackSeconds))
+            let armedAt = Date()
+            firstFrameFallback = Task { [weak self, weak controller] in
+                try? await Task.sleep(for: .seconds(self?.firstFrameFallbackSeconds ?? 0))
+                while !Task.isCancelled, let self, let controller,
+                      self.firstFrameWaitHolds(controller, armedAt: armedAt) {
+                    try? await Task.sleep(for: .milliseconds(250))
+                }
                 guard !Task.isCancelled else { return }
                 Log.ssh.debug("resume: no frame revealed in time — dropping the cover")
                 self?.endFirstFrameWait()
             }
+        }
+
+        /// Whether the first-frame fallback, past its deadline, should keep
+        /// waiting rather than drop the cover:
+        /// - attached: the pane is hosted and its first capture is in flight,
+        ///   so give it the fallback measured from the ATTACH;
+        /// - not attached, but the server has answered the boot line: the
+        ///   attach was refused (no sessions / no server) — the empty-state
+        ///   card behind the cover is the thing to show, drop now;
+        /// - not attached and not a byte back since the boot line: the link
+        ///   is slow or dead, hold — up to the attach bound, past which the
+        ///   attach timeout has latched `attachStalled` and holding a frozen
+        ///   frame stops being honest.
+        func firstFrameWaitHolds(_ controller: TmuxSessionController, armedAt: Date,
+                                 now: Date = Date()) -> Bool {
+            if let attachedAt = controller.attachedAt {
+                return now.timeIntervalSince(attachedAt) < firstFrameFallbackSeconds
+            }
+            if controller.lastInboundAt > armedAt { return false }
+            return now.timeIntervalSince(armedAt) < firstFrameAttachBoundSeconds
         }
 
         /// Stop waiting AND drop the ghost: the replacement has painted (or
