@@ -31,14 +31,32 @@ final class AppSettings {
 
     /// App-wide instance so non-View code (design tokens, icon switching)
     /// can read the active settings without environment injection.
-    static let shared = AppSettings()
+    static let shared = AppSettings(readiness: .system)
 
-    init(defaults: UserDefaults = .standard) {
+    @ObservationIgnored private let readiness: DefaultsReadiness
+    /// Settings read the defaults live, so a sealed launch heals itself the
+    /// moment the file is readable — except for the one thing `init` WRITES,
+    /// the App Group mirror. That waits for a read it can trust
+    /// (``DefaultsReadiness``): mirroring the switches' fallbacks would tell
+    /// the extension "detail on, sound on" for a user who turned both off.
+    @ObservationIgnored private var isAuthoritative = false
+
+    init(defaults: UserDefaults = .standard, readiness: DefaultsReadiness = .always) {
         self.defaults = defaults
+        self.readiness = readiness
         // Seed the App Group mirror the notification service extension reads
         // (see PushPrefs). At launch rather than lazily: a pushed notification
         // can land before the user ever opens Settings, and it must see the
         // values the switches already hold.
+        reloadIfNeeded()
+    }
+
+    /// Mirror the extension-visible switches once the defaults can be
+    /// trusted; a no-op once that has happened.
+    func reloadIfNeeded() {
+        guard !isAuthoritative, readiness.isReadable(defaults) else { return }
+        isAuthoritative = true
+        readiness.markReadable(defaults)
         mirrorPushPrefs()
     }
 

@@ -526,3 +526,49 @@ struct ShortcutStoreTests {
         #expect(persisted)
     }
 }
+
+/// The sealed launch (see ConnectionStoreTests), for the one store that used
+/// to WRITE when it found nothing: it seeded the built-ins and persisted them,
+/// and over a file that was merely still encrypted that erased every custom
+/// chip for good.
+@Suite("ShortcutStore on a sealed launch")
+struct ShortcutStoreSealedLaunchTests {
+    /// The store's key, duplicated so the test can look at the disk directly.
+    private static let storageKey = "moshpit.shortcuts.v1"
+
+    private final class Phone { var unlocked = false }
+
+    @Test("built-ins are shown, not written, over a file that could not be read")
+    func sealedLaunchDoesNotSeedOverCustomChips() throws {
+        let suite = "test.shortcuts.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        // What a previous, trusted run left on disk: one custom chip.
+        let scratchName = "test.shortcuts.\(UUID().uuidString)"
+        let scratch = UserDefaults(suiteName: scratchName)!
+        defer { scratch.removePersistentDomain(forName: scratchName) }
+        var deploy = TerminalShortcut()
+        deploy.kind = .text
+        deploy.payload = "make deploy"
+        deploy.chipLabel = "deploy"
+        deploy.summary = "Deploy"
+        ShortcutStore(defaults: scratch).add(deploy)
+        let payload = try #require(scratch.data(forKey: Self.storageKey))
+
+        let phone = Phone()
+        let store = ShortcutStore(defaults: defaults, readiness: DefaultsReadiness { phone.unlocked })
+        // Usable — the bar has its shipped chips — but nothing reached the disk.
+        #expect(!store.toolbar.isEmpty)
+        #expect(!store.isAuthoritative)
+        #expect(defaults.data(forKey: Self.storageKey) == nil,
+                "seeding the built-ins over a sealed file is how custom chips were lost")
+
+        // The file becomes readable; the app comes forward.
+        defaults.set(payload, forKey: Self.storageKey)
+        phone.unlocked = true
+        store.reloadIfNeeded()
+        #expect(store.custom.map(\.summary) == ["Deploy"])
+        #expect(store.isAuthoritative)
+    }
+}

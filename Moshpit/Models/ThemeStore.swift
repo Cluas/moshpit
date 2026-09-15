@@ -15,10 +15,26 @@ final class ThemeStore {
 
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private let storageKey = "moshpit.settings.customThemes"
+    @ObservationIgnored private let readiness: DefaultsReadiness
+    /// True once `customThemes` came from defaults known to be readable
+    /// (``DefaultsReadiness``); until then nothing here is written back.
+    @ObservationIgnored private(set) var isAuthoritative = false
 
-    init(defaults: UserDefaults = .standard) {
+    init(defaults: UserDefaults = .standard, readiness: DefaultsReadiness = .always) {
         self.defaults = defaults
-        self.customThemes = Self.load(from: defaults, key: storageKey)
+        self.readiness = readiness
+        load()
+    }
+
+    /// Read again if the last read could not be trusted; a no-op otherwise.
+    func reloadIfNeeded() {
+        if !isAuthoritative { load() }
+    }
+
+    private func load() {
+        customThemes = Self.load(from: defaults, key: storageKey)
+        isAuthoritative = readiness.isReadable(defaults)
+        if isAuthoritative { readiness.markReadable(defaults) }
     }
 
     // MARK: - Lookup
@@ -45,6 +61,7 @@ final class ThemeStore {
     /// routes "edit a built-in" through ``duplicate(_:)`` instead.
     func save(_ theme: TerminalTheme) {
         guard !theme.isBuiltIn else { return }
+        reloadIfNeeded()
         var updated = theme
         updated.name = uniqueName(updated.name, excluding: updated.id)
         if let index = customThemes.firstIndex(where: { $0.id == updated.id }) {
@@ -56,6 +73,7 @@ final class ThemeStore {
     }
 
     func delete(id: String) {
+        reloadIfNeeded()
         customThemes.removeAll { $0.id == id }
         persist()
     }
@@ -65,6 +83,7 @@ final class ThemeStore {
     /// reinstall in the simulator, so without this a UI test's "fresh install"
     /// still sees themes left behind by the previous run.
     func removeAllCustom() {
+        reloadIfNeeded()
         guard !customThemes.isEmpty else { return }
         customThemes.removeAll()
         persist()
@@ -169,6 +188,7 @@ final class ThemeStore {
     }
 
     private func persist() {
+        guard isAuthoritative else { return }
         let encoder = JSONEncoder()
         guard let data = try? encoder.encode(customThemes) else { return }
         defaults.set(data, forKey: storageKey)

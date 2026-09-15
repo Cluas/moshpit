@@ -275,10 +275,23 @@ final class ShortcutStore {
     private(set) var shortcuts: [TerminalShortcut] = []
 
     @ObservationIgnored private let defaults: UserDefaults
+    @ObservationIgnored private let readiness: DefaultsReadiness
+    /// True once `shortcuts` came from defaults known to be readable
+    /// (``DefaultsReadiness``). Until then the set is a guess — and this store
+    /// in particular must not act on it: finding nothing, it seeds the
+    /// built-ins and WRITES them, which over a sealed file erased the user's
+    /// custom chips.
+    @ObservationIgnored private(set) var isAuthoritative = false
 
-    init(defaults: UserDefaults = .standard) {
+    init(defaults: UserDefaults = .standard, readiness: DefaultsReadiness = .always) {
         self.defaults = defaults
+        self.readiness = readiness
         load()
+    }
+
+    /// Read again if the last read could not be trusted; a no-op otherwise.
+    func reloadIfNeeded() {
+        if !isAuthoritative { load() }
     }
 
     /// Ordered toolbar entries (≤ 12).
@@ -309,6 +322,7 @@ final class ShortcutStore {
     }
 
     func add(_ shortcut: TerminalShortcut) {
+        reloadIfNeeded()
         var sc = shortcut
         sc.inToolbar = toolbarCount < Self.toolbarLimit
         shortcuts.append(sc)
@@ -316,12 +330,14 @@ final class ShortcutStore {
     }
 
     func update(_ shortcut: TerminalShortcut) {
+        reloadIfNeeded()
         guard let i = shortcuts.firstIndex(where: { $0.id == shortcut.id }) else { return }
         shortcuts[i] = shortcut
         persist()
     }
 
     func remove(id: UUID) {
+        reloadIfNeeded()
         guard let i = shortcuts.firstIndex(where: { $0.id == id }) else { return }
         if shortcuts[i].isBuiltin {
             shortcuts[i].inToolbar = false
@@ -332,6 +348,7 @@ final class ShortcutStore {
     }
 
     func addToToolbar(id: UUID) {
+        reloadIfNeeded()
         guard toolbarCount < Self.toolbarLimit,
               let i = shortcuts.firstIndex(where: { $0.id == id }) else { return }
         shortcuts[i].inToolbar = true
@@ -339,6 +356,7 @@ final class ShortcutStore {
     }
 
     func removeFromToolbar(id: UUID) {
+        reloadIfNeeded()
         guard let i = shortcuts.firstIndex(where: { $0.id == id }) else { return }
         shortcuts[i].inToolbar = false
         persist()
@@ -349,11 +367,13 @@ final class ShortcutStore {
     /// it — the store lives in UserDefaults and outlives a reinstall, so a UI
     /// test would otherwise inherit the previous run's custom shortcuts.
     func restoreDefaults() {
+        reloadIfNeeded()
         shortcuts = Self.builtins
         persist()
     }
 
     func moveInToolbar(fromOffsets: IndexSet, toOffset: Int) {
+        reloadIfNeeded()
         // Map toolbar indices back into the master array by reordering the
         // toolbar slice and rebuilding.
         var bar = toolbar
@@ -367,6 +387,7 @@ final class ShortcutStore {
     /// directly (toolbar order == filtered order), which is far more reliable
     /// for drag-and-drop than IndexSet math.
     func moveInToolbar(_ movingId: UUID, before targetId: UUID) {
+        reloadIfNeeded()
         guard movingId != targetId,
               let from = shortcuts.firstIndex(where: { $0.id == movingId }) else { return }
         let item = shortcuts.remove(at: from)
@@ -381,6 +402,10 @@ final class ShortcutStore {
     // MARK: Persistence
 
     private func load() {
+        // Trust is decided first: `persist()` — below, and inside
+        // `reconcileBuiltins()` — refuses to write over a read it cannot trust.
+        isAuthoritative = readiness.isReadable(defaults)
+        if isAuthoritative { readiness.markReadable(defaults) }
         if let data = defaults.data(forKey: Self.storageKey),
            let decoded = try? JSONDecoder().decode([TerminalShortcut].self, from: data),
            !decoded.isEmpty {
@@ -388,6 +413,9 @@ final class ShortcutStore {
             reconcileBuiltins()
             return
         }
+        // Nothing usable on disk: seed the shipped set. The write only happens
+        // when the read could be trusted — a sealed file is not an empty one,
+        // and this write is exactly how a locked launch erased custom chips.
         shortcuts = Self.builtins
         persist()
     }
@@ -494,6 +522,7 @@ final class ShortcutStore {
     }
 
     private func persist() {
+        guard isAuthoritative else { return }
         if let data = try? JSONEncoder().encode(shortcuts) {
             defaults.set(data, forKey: Self.storageKey)
         }

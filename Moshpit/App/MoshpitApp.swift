@@ -6,9 +6,9 @@ struct MoshpitApp: App {
     @State private var store: ConnectionStore
     @State private var settings: AppSettings
     @State private var metrics: SessionMetricsRegistry
-    @State private var shortcuts = ShortcutStore()
-    @State private var sshKeys = SSHKeyStore()
-    @State private var themes = ThemeStore()
+    @State private var shortcuts = ShortcutStore(readiness: .system)
+    @State private var sshKeys = SSHKeyStore(readiness: .system)
+    @State private var themes = ThemeStore(readiness: .system)
     @State private var appThemes = AppThemeStore.shared
     @State private var hub: SessionHub
     @State private var monitor: AgentActivityMonitor
@@ -40,7 +40,7 @@ struct MoshpitApp: App {
             settings.pushRelayURL = ""
         }
         #endif
-        let store = ConnectionStore()
+        let store = ConnectionStore(readiness: .system)
         let hub = SessionHub(metrics: metrics)
         let monitor = AgentActivityMonitor(settings: settings)
         let router = DeepLinkRouter()
@@ -124,6 +124,19 @@ struct MoshpitApp: App {
         PushService.shared.registerForRemoteNotifications()
     }
 
+    /// Every UserDefaults-backed store re-reads if what it loaded could not be
+    /// trusted (a no-op for the ordinary launch). Cheap, so it runs on every
+    /// return to the foreground rather than trying to predict the one that
+    /// follows an unattended launch.
+    private func reloadStoresIfNeeded() {
+        store.reloadIfNeeded()
+        shortcuts.reloadIfNeeded()
+        sshKeys.reloadIfNeeded()
+        themes.reloadIfNeeded()
+        appThemes.reloadIfNeeded()
+        settings.reloadIfNeeded()
+    }
+
     var body: some Scene {
         WindowGroup {
             #if DEBUG
@@ -184,6 +197,14 @@ struct MoshpitApp: App {
             .onOpenURL { url in
                 router.handle(url)
             }
+            // The stores loaded in init(), which may have run before the first
+            // unlock after a reboot (prewarming, a push, a Live Activity intent
+            // — see DefaultsReadiness). Read again the moment the file can be
+            // trusted, and again whenever the app comes forward.
+            .onReceive(NotificationCenter.default.publisher(
+                for: UIApplication.protectedDataDidBecomeAvailableNotification)) { _ in
+                reloadStoresIfNeeded()
+            }
             .onChange(of: scenePhase) { _, phase in
                 // iOS kills TCP during suspension; run a foreground keepalive
                 // while active, and on return force a reconnect if we were away
@@ -194,6 +215,7 @@ struct MoshpitApp: App {
                 // notification shade) is transient — ignore it.
                 switch phase {
                 case .active:
+                    reloadStoresIfNeeded()
                     hub.setForeground(true)
                     // Re-announce this phone to its relays. Unconditional: a
                     // relay that lost its registry would otherwise never hear

@@ -10,7 +10,7 @@ import Observation
 /// Views still read the same instance via `@Environment` so mutations publish.
 @Observable
 final class AppThemeStore {
-    static let shared = AppThemeStore()
+    static let shared = AppThemeStore(readiness: .system)
 
     /// User-created themes, newest last.
     private(set) var customThemes: [AppTheme] = []
@@ -28,15 +28,33 @@ final class AppThemeStore {
         var accent: String
     }
 
-    init(defaults: UserDefaults = .standard) {
+    @ObservationIgnored private let readiness: DefaultsReadiness
+    /// True once `customThemes` came from defaults known to be readable
+    /// (``DefaultsReadiness``); until then nothing here is written back.
+    @ObservationIgnored private(set) var isAuthoritative = false
+
+    init(defaults: UserDefaults = .standard, readiness: DefaultsReadiness = .always) {
         self.defaults = defaults
-        self.customThemes = Self.load(from: defaults, key: storageKey)
+        self.readiness = readiness
+        load()
+    }
+
+    /// Read again if the last read could not be trusted; a no-op otherwise.
+    func reloadIfNeeded() {
+        if !isAuthoritative { load() }
+    }
+
+    private func load() {
+        customThemes = Self.load(from: defaults, key: storageKey)
+        isAuthoritative = readiness.isReadable(defaults)
+        if isAuthoritative { readiness.markReadable(defaults) }
     }
 
     // MARK: - Mutation
 
     func save(_ theme: AppTheme) {
         guard !theme.isBuiltIn else { return }
+        reloadIfNeeded()
         let rebuilt = AppTheme.custom(id: theme.id,
                                       name: uniqueName(theme.name, excluding: theme.id),
                                       accentHex: theme.accentHex)
@@ -49,6 +67,7 @@ final class AppThemeStore {
     }
 
     func delete(id: String) {
+        reloadIfNeeded()
         customThemes.removeAll { $0.id == id }
         persist()
     }
@@ -56,6 +75,7 @@ final class AppThemeStore {
     /// Only used by the DEBUG `-MOSHPIT_RESET` launch seam — these live in
     /// UserDefaults and would otherwise survive a simulator reinstall.
     func removeAllCustom() {
+        reloadIfNeeded()
         guard !customThemes.isEmpty else { return }
         customThemes.removeAll()
         persist()
@@ -85,6 +105,7 @@ final class AppThemeStore {
     }
 
     private func persist() {
+        guard isAuthoritative else { return }
         let stored = customThemes.map { Stored(id: $0.id, name: $0.name, accent: $0.accentHex) }
         guard let data = try? JSONEncoder().encode(stored) else { return }
         defaults.set(data, forKey: storageKey)

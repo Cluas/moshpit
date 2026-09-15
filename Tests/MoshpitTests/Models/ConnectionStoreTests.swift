@@ -138,4 +138,96 @@ struct ConnectionStoreTests {
         let store = ConnectionStore(defaults: defaults)
         #expect(store.connections.isEmpty)
     }
+
+    // MARK: - A launch before the first unlock
+
+    // The report: "opening the app, sometimes every connection is gone" — the
+    // first-run card over a phone full of hosts. iOS had launched the app
+    // unattended before the first unlock after a reboot (prewarming, a push,
+    // a Live Activity intent); the preferences file was still sealed and read
+    // as nothing; the store believed it. And the first "+" from that card
+    // would have written the empty list over everything.
+
+    /// A phone that starts locked (before first unlock) and can be unlocked
+    /// mid-test. What its sealed file reads as is simply an empty suite.
+    private final class Phone { var unlocked = false }
+
+    private static func readiness(_ phone: Phone) -> DefaultsReadiness {
+        DefaultsReadiness { phone.unlocked }
+    }
+
+    /// Put `connections` on disk the way a previous, trusted run would have —
+    /// without the sentinel, so the suite still looks like a file that was
+    /// sealed at launch and became readable later.
+    private static func writePayload(_ connections: [ServerConnection], into defaults: UserDefaults) {
+        let (scratch, scratchName) = makeDefaults()
+        defer { scratch.removePersistentDomain(forName: scratchName) }
+        let writer = ConnectionStore(defaults: scratch)
+        connections.forEach { writer.add($0) }
+        defaults.set(scratch.data(forKey: storageKey), forKey: storageKey)
+    }
+
+    @Test("a launch before first unlock shows nothing and trusts nothing")
+    func sealedLaunchTrustsNothing() {
+        let (defaults, name) = Self.makeDefaults()
+        defer { defaults.removePersistentDomain(forName: name) }
+        let phone = Phone()
+
+        let store = ConnectionStore(defaults: defaults, readiness: Self.readiness(phone))
+        #expect(store.connections.isEmpty)
+        #expect(!store.isAuthoritative)
+        #expect(defaults.object(forKey: DefaultsReadiness.sentinelKey) == nil,
+                "an untrusted read must not claim the file was there")
+
+        // The user unlocks; the file is readable; the app comes forward.
+        Self.writePayload([Self.sample(name: "alpha"), Self.sample(name: "bravo")], into: defaults)
+        phone.unlocked = true
+        store.reloadIfNeeded()
+        #expect(store.connections.map(\.name) == ["alpha", "bravo"])
+        #expect(store.isAuthoritative)
+        #expect(defaults.bool(forKey: DefaultsReadiness.sentinelKey))
+    }
+
+    @Test("adding from a first-run card that should not be there keeps what was on disk")
+    func addOnUntrustedReadDoesNotClobber() {
+        let (defaults, name) = Self.makeDefaults()
+        defer { defaults.removePersistentDomain(forName: name) }
+        let phone = Phone()
+        let store = ConnectionStore(defaults: defaults, readiness: Self.readiness(phone))
+
+        // Unlocked, but no foreground hop has reloaded the store yet: the tap
+        // on "+" is the first thing that happens.
+        Self.writePayload([Self.sample(name: "alpha"), Self.sample(name: "bravo")], into: defaults)
+        phone.unlocked = true
+        store.add(Self.sample(name: "charlie"))
+
+        #expect(store.connections.map(\.name) == ["alpha", "bravo", "charlie"])
+        #expect(ConnectionStore(defaults: defaults).connections.count == 3,
+                "the old bug wrote [charlie] over alpha and bravo")
+    }
+
+    @Test("nothing is written while the file is still sealed")
+    func noWriteWhileSealed() {
+        let (defaults, name) = Self.makeDefaults()
+        defer { defaults.removePersistentDomain(forName: name) }
+        let store = ConnectionStore(defaults: defaults, readiness: Self.readiness(Phone()))
+
+        store.add(Self.sample(name: "charlie"))
+        #expect(store.connections.count == 1)
+        #expect(defaults.data(forKey: Self.storageKey) == nil,
+                "a sealed file is not an empty list to overwrite")
+    }
+
+    @Test("the sentinel makes a locked read trusted: the file was there")
+    func sentinelTrustsALockedRead() {
+        let (defaults, name) = Self.makeDefaults()
+        defer { defaults.removePersistentDomain(forName: name) }
+        Self.writePayload([Self.sample(name: "alpha")], into: defaults)
+        defaults.set(true, forKey: DefaultsReadiness.sentinelKey)
+
+        // Locked (after first unlock, say — a push arrived): the file reads.
+        let store = ConnectionStore(defaults: defaults, readiness: Self.readiness(Phone()))
+        #expect(store.connections.map(\.name) == ["alpha"])
+        #expect(store.isAuthoritative)
+    }
 }
