@@ -198,4 +198,74 @@ struct AgentActivityMonitorTests {
         monitor.cycleHeadline()
         #expect(monitor.attentionState(connectionId: UUID(), paneId: "%0") == nil)
     }
+
+    // MARK: - A turn ending
+
+    // The reported bug: four "✓ claude finished" cards for prompts answered
+    // hours earlier, on one lock screen, within a minute of the phone attaching.
+    // The relay had sent nothing that night — the cards were local. On attach
+    // every pane redraws; the output heuristic flipped each stale done pane to
+    // `working`; the next poll read the host's standing `done` plus the prompt
+    // still stored on the pane; and `prevState == .working` waved it through.
+    // The rule now asks what the HOST said last, and how long ago.
+
+    private var grace: TimeInterval { 5 }
+    private var t0: Date { Date(timeIntervalSince1970: 1_789_400_000) }
+
+    @Test("a live working→done poll is a turn ending")
+    func liveStopIsATurnEnding() {
+        #expect(AgentActivityMonitor.isTurnEnding(
+            hook: .done, shown: .done, previousHook: .working,
+            previousHookSeen: t0.addingTimeInterval(-2), now: t0, grace: grace))
+        // A question answered and then finished rings too.
+        #expect(AgentActivityMonitor.isTurnEnding(
+            hook: .done, shown: .done, previousHook: .attention,
+            previousHookSeen: t0.addingTimeInterval(-2), now: t0, grace: grace))
+    }
+
+    @Test("the attach redraw: heuristic working over a host that said done is no turn")
+    func heuristicWorkingIsNotATurn() {
+        // The host's last word was `done`, hours ago. Only this record said
+        // working, and only because a redraw produced output.
+        #expect(!AgentActivityMonitor.isTurnEnding(
+            hook: .done, shown: .done, previousHook: .done,
+            previousHookSeen: t0.addingTimeInterval(-9 * 3600), now: t0, grace: grace))
+        // Even when the polls themselves never paused.
+        #expect(!AgentActivityMonitor.isTurnEnding(
+            hook: .done, shown: .done, previousHook: .done,
+            previousHookSeen: t0.addingTimeInterval(-2), now: t0, grace: grace))
+    }
+
+    @Test("the first poll after a launch or reconnect never rings")
+    func firstPollIsSilent() {
+        #expect(!AgentActivityMonitor.isTurnEnding(
+            hook: .done, shown: .done, previousHook: nil,
+            previousHookSeen: nil, now: t0, grace: grace))
+    }
+
+    @Test("a finish that happened while not polling was the push's to deliver")
+    func staleWorkingIsNotATurn() {
+        // Seen working, then an hour in the background. The host finished in
+        // the gap and pushed; the first foreground poll must not repeat it.
+        #expect(!AgentActivityMonitor.isTurnEnding(
+            hook: .done, shown: .done, previousHook: .working,
+            previousHookSeen: t0.addingTimeInterval(-3600), now: t0, grace: grace))
+        // Just past the grace is a gap too — the same window that hands the
+        // pane back to the heuristic.
+        #expect(!AgentActivityMonitor.isTurnEnding(
+            hook: .done, shown: .done, previousHook: .working,
+            previousHookSeen: t0.addingTimeInterval(-(grace + 0.5)), now: t0, grace: grace))
+    }
+
+    @Test("a healed fossil is bookkeeping, not a finish")
+    func reclassifiedFossilIsSilent() {
+        // The host still says attention; reclassify shows it as done.
+        #expect(!AgentActivityMonitor.isTurnEnding(
+            hook: .attention, shown: .done, previousHook: .working,
+            previousHookSeen: t0.addingTimeInterval(-2), now: t0, grace: grace))
+        // And a host `done` shown as anything else is not a finish either.
+        #expect(!AgentActivityMonitor.isTurnEnding(
+            hook: .done, shown: .working, previousHook: .working,
+            previousHookSeen: t0.addingTimeInterval(-2), now: t0, grace: grace))
+    }
 }

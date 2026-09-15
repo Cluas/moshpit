@@ -95,6 +95,11 @@ final class AgentActivityMonitor {
         // unset (the pane drops out of the poll for ~2 intervals).
         var hookOwned: Bool = false
         var lastHookSeen: Date = .distantPast
+        /// What the host's stamp said on the last poll that carried one —
+        /// before ``reclassify`` and never written by the output heuristic —
+        /// so a `done` is judged against what the HOST last said, not against
+        /// what this record last showed.
+        var lastHookState: AgentActivityAttributes.AgentState?
     }
 
     private var conns: [UUID: ConnRef] = [:]
@@ -503,6 +508,38 @@ final class AgentActivityMonitor {
         return lastAnnounced != episode
     }
 
+    /// Whether a poll reading `hook` from the host (shown as `shown` after
+    /// ``reclassify``) is a turn ENDING — the one moment a finish card is for.
+    ///
+    /// Three things must hold, and each is a phantom this rule has met:
+    ///
+    /// * The host says `done` now and it is shown as done. A reclassified
+    ///   fossil (a day-old idle-nag `attention` healed to done, a killed
+    ///   agent's frozen stamp) is bookkeeping, not a finish — healing two of
+    ///   them must not chime twice.
+    /// * The host said `working` or `attention` LAST poll. The record's own
+    ///   state is not evidence: the output heuristic writes it too, and on an
+    ///   attach every pane redraws. A done Claude pane whose stamp had gone
+    ///   stale was flipped to heuristic `working` by that redraw; the next poll
+    ///   read the host's standing `done` plus the prompt still stored on the
+    ///   pane, and a lock screen showed "✓ claude finished" for a turn that had
+    ///   ended nine hours earlier. Four of them, in one minute.
+    /// * That last word was RECENT — within `grace`, the same window that
+    ///   decides whether a hook governs a pane at all. A finish that happened
+    ///   while this device was not polling (background, disconnected) was the
+    ///   remote push's to deliver, and it did; repeating it on the next
+    ///   foreground, hours later, is the same phantom on a longer fuse.
+    static func isTurnEnding(hook: AgentActivityAttributes.AgentState,
+                             shown: AgentActivityAttributes.AgentState,
+                             previousHook: AgentActivityAttributes.AgentState?,
+                             previousHookSeen: Date?,
+                             now: Date, grace: TimeInterval) -> Bool {
+        guard hook == .done, shown == .done else { return false }
+        guard previousHook == .working || previousHook == .attention else { return false }
+        guard let previousHookSeen else { return false }
+        return now.timeIntervalSince(previousHookSeen) <= grace
+    }
+
     private func hookGoverns(_ p: PaneActivity, now: Date) -> Bool {
         p.hookOwned && now.timeIntervalSince(p.lastHookSeen) <= hookGrace
     }
@@ -660,8 +697,9 @@ final class AgentActivityMonitor {
             let loc = location(connectionId: connectionId, paneId: paneId)
             let since = hook.since ?? now
 
-            let prevState = panes[key]?.state
             let prevSince = panes[key]?.stateSince
+            let prevHook = panes[key]?.lastHookState
+            let prevHookSeen = panes[key]?.lastHookSeen
 
             if var p = panes[key] {
                 // A state flip (or first stamp) resets the timer to the stamp's
@@ -677,6 +715,7 @@ final class AgentActivityMonitor {
                 p.visible = true
                 p.hookOwned = true
                 p.lastHookSeen = now
+                p.lastHookState = mapped
                 p.lastOutput = now
                 panes[key] = p
             } else {
@@ -686,7 +725,7 @@ final class AgentActivityMonitor {
                     detail: hook.title,
                     state: newState, stateSince: since,
                     lastOutput: now, firstActive: now, visible: true,
-                    hookOwned: true, lastHookSeen: now)
+                    hookOwned: true, lastHookSeen: now, lastHookState: mapped)
             }
             changed = true
 
@@ -710,16 +749,14 @@ final class AgentActivityMonitor {
             }
 
             // A hook flipping a pane INTO done (from a live working/attention
-            // turn) is a real `Stop` — ping once. Skip a first-poll `.done` and
-            // repeated done polls (no prior state, or already done).
-            // `mapped == .done` and not merely `newState == .done`: a
-            // reclassified fossil (a day-old idle-nag `attention` healed to
-            // done, or a killed agent's frozen stamp) is bookkeeping, not a
-            // finish — healing two of them must not chime twice, and their
-            // "durations" are how long the fossil stood, not how long anything
-            // ran. Only the host explicitly saying `done` is a turn ending.
-            if newState == .done, mapped == .done,
-               prevState == .working || prevState == .attention {
+            // turn) is a real `Stop` — ping once. The rule is ``isTurnEnding``
+            // and it is judged against what the HOST said on the previous
+            // poll, not against this record's state: the output heuristic
+            // writes that state too, and that is how four "finished" cards for
+            // day-old prompts landed on one lock screen in a single minute.
+            if Self.isTurnEnding(hook: mapped, shown: newState,
+                                 previousHook: prevHook, previousHookSeen: prevHookSeen,
+                                 now: now, grace: hookGrace) {
                 // How long the closing episode ran decides whether this finish
                 // is worth a sound. `prevSince` is the episode the pane is
                 // leaving — since the host stopped rewriting `@moshpit_since`
