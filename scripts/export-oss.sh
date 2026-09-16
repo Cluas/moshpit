@@ -34,6 +34,13 @@
 # trailer is also how the next run finds where the previous export stopped
 # (the older "Sync from private <sha>" subjects are recognised too).
 #
+# A development commit whose tree fails the leak scan is not published on its
+# own: its changes ride along in the next commit whose tree passes, which says
+# so in its body and names it in Folds-Source-Commit trailers. Every tree is
+# judged by today's rules, so this is what happens when a word joins the
+# denylist after the commit that first wrote it. If HEAD's own tree fails,
+# nothing is published and the run stops — fix the tree first.
+#
 # Signing.xcconfig is exported with DEVELOPMENT_TEAM blanked (contributors fill
 # in their own), and the result is scanned for anything that must not leave:
 # the maintainer's Team ID, App Store Connect identifiers, tokens, private-key
@@ -122,7 +129,7 @@ export_tree() {
       [ -n "$word" ] && [ "${word#\#}" = "$word" ] && scan "denylist" -F "$word"
     done < "$ROOT/scripts/oss-denylist.txt"
   fi
-  if [ "$fail" -ne 0 ]; then echo "export-oss: refusing to continue" >&2; exit 2; fi
+  if [ "$fail" -ne 0 ]; then return 2; fi
 }
 
 # Comments and docs may still name private-only paths; say so, once, for the
@@ -149,7 +156,7 @@ previous_source() {
 }
 
 if [ "$COMMIT" -eq 0 ]; then
-  export_tree "$ROOT"
+  export_tree "$ROOT" || { echo "export-oss: refusing to continue" >&2; exit 2; }
   dangling_refs
   echo "exported $(wc -l < "$LIST" | tr -d ' ') files to $DEST"
   exit 0
@@ -157,7 +164,7 @@ fi
 
 # --- first export: one root commit ---------------------------------------
 if ! git -C "$DEST" rev-parse -q --verify HEAD >/dev/null 2>&1; then
-  export_tree "$ROOT"
+  export_tree "$ROOT" || { echo "export-oss: refusing to continue" >&2; exit 2; }
   dangling_refs
   HEAD_SHA=$(git -C "$ROOT" rev-parse HEAD)
   git -C "$DEST" add -A
@@ -182,26 +189,66 @@ if ! git -C "$ROOT" diff --quiet HEAD -- "${PUBLIC[@]}" 2>/dev/null; then
   echo "note: uncommitted changes to public paths in $ROOT are not exported — commit them first"
 fi
 
+# The development commit's message, with a paragraph naming the commits folded
+# into this one (before the trailer block, so the original trailers stay
+# trailers) and the source trailers appended.
+compose_message() { # sha folded...
+  local sha=$1 msg note="" f
+  local -a folds=()
+  shift
+  msg=$(git -C "$ROOT" log -1 --format=%B "$sha")
+  for f in "$@"; do folds+=(--trailer "Folds-Source-Commit: $f"); done
+  if [ $# -gt 0 ]; then
+    note="Carries the changes of $# earlier development commit(s) whose trees the"
+    note+=$'\n'"export's leak scan would not publish on their own:"
+    for f in "$@"; do note+=$'\n'"  ${f:0:7} $(git -C "$ROOT" log -1 --format=%s "$f")"; done
+  fi
+  # (the note goes in through the environment: macOS awk rejects a -v value
+  # with newlines in it)
+  printf '%s\n' "$msg" \
+    | NOTE="$note" awk -v has="$(printf '%s\n' "$msg" | git interpret-trailers --parse | grep -c . || true)" \
+        'BEGIN { RS = ""; ORS = ""; note = ENVIRON["NOTE"] }
+         { p[NR] = $0 }
+         END { for (i = 1; i <= NR; i++) { if (note != "" && i == NR && has > 0) print note "\n\n"; print p[i] "\n\n" }
+               if (note != "" && has == 0) print note "\n" }' \
+    | git interpret-trailers ${folds[@]+"${folds[@]}"} --trailer "Source-Commit: $sha"
+}
+
 made=0
+folded=()
 for sha in $(git -C "$ROOT" rev-list --reverse --first-parent "$SINCE..HEAD"); do
   # Commits that touch no public path leave nothing to publish.
   if git -C "$ROOT" diff --quiet "$sha^" "$sha" -- "${PUBLIC[@]}" 2>/dev/null; then continue; fi
   WT=$(mktemp -d "${TMPDIR:-/tmp}/export-oss.XXXXXX")
   git -C "$ROOT" worktree add --detach -q "$WT" "$sha"
-  export_tree "$WT"
-  git -C "$DEST" add -A
-  if git -C "$DEST" diff --cached --quiet; then
+  if ! export_tree "$WT"; then
+    # This tree must not be published as it stands. Put DEST back and carry
+    # the commit into the next one whose tree passes (its changes are in
+    # that tree anyway).
+    echo "  folding ${sha:0:7} into the next clean commit: $(git -C "$ROOT" log -1 --format=%s "$sha")"
+    git -C "$DEST" checkout -q -- . && git -C "$DEST" clean -qfd
+    folded+=("$sha")
     git -C "$ROOT" worktree remove --force "$WT"; WT=""
     continue
   fi
-  git -C "$ROOT" log -1 --format=%B "$sha" \
-    | git interpret-trailers --trailer "Source-Commit: $sha" \
+  git -C "$DEST" add -A
+  if git -C "$DEST" diff --cached --quiet; then
+    folded=()
+    git -C "$ROOT" worktree remove --force "$WT"; WT=""
+    continue
+  fi
+  compose_message "$sha" ${folded[@]+"${folded[@]}"} \
     | git -C "$DEST" commit -q -F - \
         --author="$(git -C "$ROOT" log -1 --format='%an <%ae>' "$sha")" \
         --date="$(git -C "$ROOT" log -1 --format=%aD "$sha")"
+  folded=()
   git -C "$DEST" log --oneline -1
   made=$((made + 1))
   git -C "$ROOT" worktree remove --force "$WT"; WT=""
 done
+if [ "${#folded[@]}" -gt 0 ]; then
+  echo "export-oss: the tree at HEAD fails the leak scan; ${#folded[@]} commit(s) since the last export stay unpublished" >&2
+  exit 2
+fi
 dangling_refs
 if [ "$made" -eq 0 ]; then echo "nothing to commit: $DEST is already at $(git -C "$ROOT" rev-parse --short HEAD)"; fi
