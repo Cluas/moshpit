@@ -690,6 +690,69 @@ struct TmuxSessionControllerTests {
         }, "the switched-to pane must be repainted from tmux's model after activation")
     }
 
+    /// Two sessions, one window each, so a Home-tree action aimed at the
+    /// session we are NOT attached to has somewhere to land.
+    private func twoSessionTree() -> String {
+        """
+        %begin 1 1 0
+        $0 1 main
+        $1 0 dev
+        %end 1 1 0
+        %begin 2 2 0
+        $0 @0 0 81x24,0,0,0 1 1 main
+        $1 @1 0 81x24,0,0,1 1 1 work
+        %end 2 2 0
+        %begin 3 3 0
+        %0 @0 0 80 24 1 0 0 bash
+        %1 @1 0 80 24 1 0 0 vim
+        %end 3 3 0
+
+        """
+    }
+
+    @Test("newWindow(inSession:) names another session explicitly; the attached one gets a bare new-window")
+    func newWindowInSessionTargetsIt() async throws {
+        let (controller, transport) = await makeAttachedController()
+        _ = await waitUntil { await transport.recordedCommands().count >= 3 }
+        transport.pushText(twoSessionTree())
+        #expect(await waitUntil { controller.snapshot.sessions.count == 2 })
+        #expect(controller.snapshot.activeSessionId == "$0")
+
+        controller.newWindow(inSession: "$1", named: "api")
+        #expect(await waitUntil {
+            await transport.recordedCommands().contains {
+                $0.hasPrefix("new-window -t $1: -P -F '#{window_id}' -n")
+            }
+        }, "a window for the other session is created THERE, not in the client's current session")
+
+        let before = await transport.recordedCommands().count
+        controller.newWindow(inSession: "$0", named: nil)
+        #expect(await waitUntil {
+            await transport.recordedCommands().dropFirst(before).contains {
+                $0.hasPrefix("new-window -P -F '#{window_id}'")
+            }
+        }, "the attached session keeps the plain create (same command the Windows sheet sends)")
+    }
+
+    @Test("newPane(inWindow:) switches to an off-screen window (session hop included) before splitting its pane")
+    func newPaneInWindowSwitchesFirst() async throws {
+        let (controller, transport) = await makeAttachedController()
+        _ = await waitUntil { await transport.recordedCommands().count >= 3 }
+        transport.pushText(twoSessionTree())
+        #expect(await waitUntil { controller.snapshot.windows.count == 2 })
+
+        controller.newPane(inWindow: "@1")
+        #expect(await waitUntil {
+            let cmds = await transport.recordedCommands()
+            guard let hop = cmds.firstIndex(where: { $0.hasPrefix("switch-client -t $1") }),
+                  let select = cmds.firstIndex(where: { $0.hasPrefix("select-window -t @1") }),
+                  let split = cmds.firstIndex(where: { $0.hasPrefix("split-window -t %1") }),
+                  let zoom = cmds.firstIndex(where: { $0.hasPrefix("resize-pane -Z -t @1") })
+            else { return false }
+            return hop < select && select < split && split < zoom
+        }, "tmux runs the channel in order: land on the window, split ITS pane, zoom the result")
+    }
+
     // ─────────────────────────────────────────────────────────────
     // Weak-network protocol hardening (2026-08-19 garble evidence)
     // ─────────────────────────────────────────────────────────────
@@ -1880,6 +1943,54 @@ struct TmuxSessionControllerTests {
     }
 
     // ─────────────────────────────────────────────────────────────
+    // list-sessions vs OUR session
+    // ─────────────────────────────────────────────────────────────
+
+    /// The report (2026-09-15): desktop tmux on "dev", the phone switched back
+    /// to "0" and could not stay there. `session_attached` counts EVERY
+    /// client, so the re-list that follows every %session-changed named the
+    /// desktop's session and dragged the active one back over. With the
+    /// desktop on "0" the last attached session happened to be ours, which is
+    /// why it only broke one way round.
+    @Test("a re-list never moves our session onto one another client is attached to")
+    func listSessionsKeepsOurSession() async throws {
+        let (controller, transport) = await makeAttachedController()
+        transport.pushText("%session-changed $0 0\n")
+        _ = await waitUntil { controller.snapshot.activeSessionId == "$0" }
+
+        controller.parseListSessions(["$0 1 0", "$1 1 dev"])
+        #expect(controller.snapshot.activeSessionId == "$0")
+        #expect(controller.snapshot.sessions["$1"]?.isAttached == true,
+                "the desktop's session is still listed as attached — just not as OURS")
+    }
+
+    @Test("a re-list only guesses the session when ours is gone or unknown")
+    func listSessionsGuessesOnlyWithoutOurs() async throws {
+        let (controller, transport) = await makeAttachedController()
+        transport.pushText("%session-changed $0 0\n")
+        _ = await waitUntil { controller.snapshot.activeSessionId == "$0" }
+
+        controller.parseListSessions(["$1 1 dev", "$2 0 scratch"])
+        #expect(controller.snapshot.activeSessionId == "$1", "ours was killed: the attached one is the best guess")
+
+        let fresh = TmuxSessionController(sshSession: MockTmuxTransport())
+        fresh.parseListSessions(["$3 0 a", "$4 1 b"])
+        #expect(fresh.snapshot.activeSessionId == "$4")
+        let nothingAttached = TmuxSessionController(sshSession: MockTmuxTransport())
+        nothingAttached.parseListSessions(["$7 0 a", "$5 0 b"])
+        #expect(nothingAttached.snapshot.activeSessionId == "$5", "no client anywhere: the first by id")
+    }
+
+    @Test("the mosh control-plane sidecar still follows the attached (visible) client's session")
+    func sidecarFollowsAttachedSession() async throws {
+        let sidecar = TmuxSessionController(sshSession: MockTmuxTransport(), rendersOutput: false)
+        sidecar.parseListSessions(["$0 1 0"])
+        #expect(sidecar.snapshot.activeSessionId == "$0")
+        sidecar.parseListSessions(["$0 0 0", "$1 1 dev"])
+        #expect(sidecar.snapshot.activeSessionId == "$1")
+    }
+
+    // ─────────────────────────────────────────────────────────────
     // %pause auto-resume
     // ─────────────────────────────────────────────────────────────
 
@@ -2692,6 +2803,53 @@ struct TmuxReconnectHandoffTests {
         replacement.inheritPinLedger(TmuxSessionController.PinLedger(resizedWindows: ["@4"]))
         #expect(replacement.resizedWindows == ["@0", "@4"])
         #expect(TmuxSessionController.PinLedger(resizedWindows: []).isEmpty)
+    }
+
+    @Test("takeAgentHooks/inheritAgentHooks carry the agent stamps across a rebuild — and only once read")
+    func agentHooksHandoff() async throws {
+        let never = TmuxSessionController(sshSession: MockTmuxTransport())
+        #expect(never.agentHooksLoaded == false)
+        #expect(never.takeAgentHooks() == nil,
+                "a controller that never read the stamps has nothing to hand over — an empty inheritance would read as 'no agents'")
+
+        let (controller, transport) = await makeAttachedController()
+        _ = await waitUntil { await transport.recordedCommands().count >= 3 }
+        // Answer the three discovery commands with nothing (no panes, so no
+        // repaint chain follows) — the FIFO is then empty for the poll.
+        for n in 1...3 { transport.pushText("%begin \(n) \(n) 0\n%end \(n) \(n) 0\n") }
+        controller.pollAgentHooks()
+        _ = await waitUntil { await transport.recordedCommands().count >= 4 }
+        transport.pushText("%begin 9 9 0\n%5|working|claude|1758000000|2.1.269|\n%end 9 9 0\n")
+        #expect(await waitUntil { controller.agentHooksLoaded })
+        #expect(controller.agentHooks["%5"]?.agent == "claude")
+
+        let handed = try #require(controller.takeAgentHooks())
+        let replacement = TmuxSessionController(sshSession: MockTmuxTransport())
+        replacement.inheritAgentHooks(handed)
+        #expect(replacement.agentHooksLoaded == true)
+        #expect(replacement.agentHooks["%5"]?.state == "working")
+        // Its own reading wins over a late inheritance.
+        replacement.inheritAgentHooks([:])
+        #expect(replacement.agentHooks["%5"] != nil)
+    }
+
+    /// The monitor polls the stamps every 2s — and not at all with the island
+    /// and notifications off. The breadcrumb now waits for them, so the
+    /// attach itself must ask, right behind the tree.
+    @Test("A fresh attach polls the agent stamps FIFO behind the pane discovery")
+    func freshAttachPollsAgentHooks() async throws {
+        let transport = MockTmuxTransport()
+        let controller = TmuxSessionController(sshSession: transport)
+        await controller.beginControlMode()
+        transport.pushText("%begin 100 0 0\n%end 100 0 0\n\n%session-changed $0 main\n")
+        let ordered = await waitUntil(timeout: 2.0) {
+            let commands = await transport.recordedCommands()
+            guard let tree = commands.firstIndex(where: { $0.hasPrefix("list-panes -a -F '#{pane_id} ") }),
+                  let stamps = commands.firstIndex(where: { $0.hasPrefix("list-panes -a -F '#{pane_id}|") })
+            else { return false }
+            return stamps > tree
+        }
+        #expect(ordered, "the hook poll is queued once the tree discovery is, so its reply lands right after the panes")
     }
 
     @Test("The first revealed pane after attach fires onFirstFramePainted exactly once")

@@ -151,7 +151,13 @@ struct CitadelSSHClientProvider: SSHClientProvider {
             port: port,
             authenticationMethod: authenticationMethod,
             hostKeyValidator: hostKeyValidator,
-            reconnect: .never
+            reconnect: .never,
+            // The TCP connect only; the handshake has its own clock. Citadel's
+            // default is 30s. A SYN that gets no answer in 15s is a black hole
+            // — most often a VPN address with the tunnel down — and the sooner
+            // it fails, the sooner the retry lands on the path the user has
+            // meanwhile fixed. Real paths connect in one round trip.
+            connectTimeout: .seconds(15)
         )
     }
 

@@ -821,6 +821,8 @@ add("%@ %@ %@? Everything in it dies.", "%1$@ %2$@ %3$@？其中的一切都会�
 add("Action", "操作", "操作")
 add("Connection", "连接", "接続")
 add("Pane", "窗格", "ペイン")
+# Home tree, window-row long-press: split a new pane off the window.
+add("New Pane", "新建窗格", "新しいペイン")
 add("Respond to agent", "回应智能体", "エージェントに応答")
 add("Switch agent", "切换智能体", "エージェントを切り替え")
 # "✓ %@ finished" lives in the PUSH table below: the notification service

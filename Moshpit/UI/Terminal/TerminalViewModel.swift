@@ -88,6 +88,23 @@ final class TerminalViewModel {
     var hostKeyPrompt: HostKeyPrompt?
 
     @ObservationIgnored private let sshService: SSHService
+    /// How the primary transport is dialed. Production goes through
+    /// `sshService.connect`; tests inject a dialer that hands back a session
+    /// over a scripted transport — or hangs, which is what a SYN into a
+    /// black hole looks like from here.
+    typealias Dialer = @Sendable (ServerConnection,
+                                  @escaping SSHService.TrustNewHostHandler,
+                                  @escaping SSHService.AcceptChangedHostHandler) async throws -> SSHSession
+    @ObservationIgnored private let dial: Dialer
+    /// Which dial the in-flight `start()` / `connectForExec()` belongs to.
+    /// `disconnect()` while a dial is still out bumps this, and that dial's
+    /// eventual verdict — success or failure — is then nobody's business:
+    /// the session it returns is closed, the error it throws is dropped.
+    /// Without it a dial parked on a SYN nobody answers (a VPN address with
+    /// the tunnel down: 30s to the connect timeout) landed on top of the
+    /// redial that had replaced it — as a stale `.failed`, or as a second
+    /// session adopted over the live one.
+    @ObservationIgnored private var dialGeneration = 0
     /// Chains outgoing writes so rapid-fire input (type a word, then
     /// immediately tap an arrow key) can't reorder at the transport —
     /// independently-spawned `Task`s have no FIFO guarantee relative to each
@@ -95,9 +112,16 @@ final class TerminalViewModel {
     /// bug, already fixed on the -CC control path).
     @ObservationIgnored private var writeChain: Task<Void, Never>?
 
-    init(connection: ServerConnection, sshService: SSHService = .shared) {
+    init(connection: ServerConnection, sshService: SSHService = .shared, dial: Dialer? = nil) {
         self.connection = connection
         self.sshService = sshService
+        if let dial {
+            self.dial = dial
+        } else {
+            self.dial = { connection, onUnknown, onChanged in
+                try await sshService.connect(connection, onUnknownHost: onUnknown, onChangedHost: onChanged)
+            }
+        }
     }
 
     /// Suspend the SSH handshake until the user answers the host-key prompt.
@@ -179,15 +203,20 @@ final class TerminalViewModel {
     func start(rows: Int = 24, cols: Int = 80) async {
         guard case .idle = status else { return }
         status = .connecting
+        dialGeneration += 1
+        let generation = dialGeneration
         do {
             let handlers = hostKeyHandlers()
-            let newSession = try await sshService.connect(
-                connection, onUnknownHost: handlers.onUnknown, onChangedHost: handlers.onChanged)
+            let newSession = try await dial(connection, handlers.onUnknown, handlers.onChanged)
+            guard generation == dialGeneration else { await newSession.close(); return }
             try await newSession.requestPTY(rows: rows, cols: cols)
+            guard generation == dialGeneration else { await newSession.close(); return }
             self.session = newSession
             self.status = .connected
             self.isAutoReconnectInFlight = false
         } catch {
+            // A superseded dial's failure is not this attempt's failure.
+            guard generation == dialGeneration else { return }
             let message: String
             if let sshError = error as? SSHError {
                 message = sshError.description
@@ -207,13 +236,16 @@ final class TerminalViewModel {
     func connectForExec() async -> SSHSession? {
         guard case .idle = status else { return session }
         status = .connecting
+        dialGeneration += 1
+        let generation = dialGeneration
         do {
             let handlers = hostKeyHandlers()
-            let newSession = try await sshService.connect(
-                connection, onUnknownHost: handlers.onUnknown, onChangedHost: handlers.onChanged)
+            let newSession = try await dial(connection, handlers.onUnknown, handlers.onChanged)
+            guard generation == dialGeneration else { await newSession.close(); return nil }
             self.session = newSession
             return newSession
         } catch {
+            guard generation == dialGeneration else { return nil }
             let message = (error as? SSHError)?.description ?? error.localizedDescription
             self.status = .failed(message)
             if !isAutoReconnectInFlight { self.errorMessage = message }
@@ -262,6 +294,8 @@ final class TerminalViewModel {
     /// the SSH session, not the byte-pump that feeds the terminal, and
     /// `ActiveSession.stop()` cancels its own pump task before calling this.
     func disconnect() async {
+        // Disown a dial still in flight — see `dialGeneration`.
+        dialGeneration += 1
         if let session {
             await session.close()
         }

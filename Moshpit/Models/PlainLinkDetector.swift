@@ -80,6 +80,19 @@ enum PlainLinkDetector {
                 let start = text.distance(from: text.startIndex, to: swiftRange.lowerBound)
                 let length = text.distance(from: swiftRange.lowerBound, to: swiftRange.upperBound)
                 guard length > 0 else { return }
+                // A link the program declared itself (OSC-8) is authoritative
+                // and may say more than the text shows: Claude Code prints a
+                // long URL as two hard-wrapped rows, each carrying the FULL
+                // address as its payload. Re-tagging the first row from its
+                // visible text would overwrite that with the row's fragment —
+                // the tap then opened a truncated address while the second
+                // row still opened the whole one. Our own earlier tags land
+                // here too, which keeps the pass idempotent.
+                if let first = cell(atOffset: start, spans: spans),
+                   terminal.link(at: .screen(Position(col: first.col, row: first.row)),
+                                 mode: .explicitOnly) != nil {
+                    return
+                }
                 // A URL that runs into the right edge of a full-width final
                 // row may continue on the next PHYSICAL line even though the
                 // emulator saw a hard newline: programs that do their own
@@ -123,16 +136,41 @@ enum PlainLinkDetector {
         return "-._~/%?#=&:@+".contains(c)
     }
 
+    /// The logical-line offset of a match mapped back to the physical cell it
+    /// starts on.
+    private static func cell(atOffset offset: Int, spans: [(row: Int, length: Int)]) -> (row: Int, col: Int)? {
+        var remaining = offset
+        for span in spans {
+            if remaining < span.length { return (span.row, remaining) }
+            remaining -= span.length
+        }
+        return nil
+    }
+
+    /// Whether a URL-charset run on the row after a flush-right URL reads as
+    /// the rest of that address rather than as the word a new sentence
+    /// starts with. Anything other than letters — a digit, slash, dash — is
+    /// one tell: a real tail almost always has one, prose almost never does.
+    /// The other is the case pattern of an opaque token: capitals INSIDE the
+    /// run next to lowercase (`OFywpjh`, a Lark document id's tail) is what
+    /// random ids look like and what no English word or acronym does. A
+    /// lowercase word or a Capitalized one stays prose, which keeps a
+    /// COMPLETE url that happens to end at the last column, followed by
+    /// ordinary text, from being extended into a broken one — that case
+    /// renders and taps correctly today and must stay working.
+    static func looksLikeAddressTail(_ run: Substring) -> Bool {
+        guard run.count >= 2 else { return false }
+        if run.contains(where: { !$0.isLetter }) { return true }
+        let innerCapital = run.dropFirst().contains(where: { $0.isUppercase })
+        let anyLowercase = run.contains(where: { $0.isLowercase })
+        return innerCapital && anyLowercase
+    }
+
     /// Walks the physical rows after a URL that ended flush against the right
     /// edge, collecting indented URL-charset runs that look like the rest of
-    /// it. Heuristic by nature — the emulator genuinely saw separate lines —
-    /// so each run must be at least two characters and contain something
-    /// other than a letter (a digit, slash, dash…): a real tail almost always
-    /// does, while the word a new prose sentence starts with almost never
-    /// does. That guard is what keeps a COMPLETE url that happens to end at
-    /// the last column, followed by ordinary text, from being extended into a
-    /// broken one — that case renders and taps correctly today and must stay
-    /// working.
+    /// it (``looksLikeAddressTail``). Heuristic by nature — the emulator
+    /// genuinely saw separate lines. Sentence punctuation right after a tail
+    /// belongs to the prose around the link, not to the address.
     private static func hardWrapContinuation(after row: Int, terminal: Terminal)
         -> [(row: Int, startCol: Int, length: Int)] {
         var tails: [(row: Int, startCol: Int, length: Int)] = []
@@ -145,8 +183,9 @@ enum PlainLinkDetector {
             let rowText = terminal.viewportLineText(row: current)
             let indent = rowText.prefix(while: { $0 == " " }).count
             let afterIndent = rowText.dropFirst(indent)
-            let run = afterIndent.prefix(while: isURLTailChar)
-            guard run.count >= 2, run.contains(where: { !$0.isLetter }) else { break }
+            var run = afterIndent.prefix(while: isURLTailChar)
+            while let last = run.last, ".,:;!?".contains(last) { run = run.dropLast() }
+            guard looksLikeAddressTail(run) else { break }
             tails.append((current, indent, run.count))
             // Keep walking only while the run itself hits the right edge —
             // a tail that stops mid-row is the URL's end.

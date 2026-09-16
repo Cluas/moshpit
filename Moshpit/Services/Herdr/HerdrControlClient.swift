@@ -89,6 +89,7 @@ final class HerdrControlClient: MultiplexerControlling {
 
     private(set) var snapshot = TmuxSnapshot()
     private(set) var agentHooks: [String: AgentHook] = [:]
+    private(set) var agentHooksLoaded = false
     private(set) var isRefreshing = false
 
     /// True once a poll came back with `server_not_running` — the host has
@@ -264,6 +265,7 @@ final class HerdrControlClient: MultiplexerControlling {
             empty.everAttached = snapshot.everAttached
             snapshot = empty
             agentHooks = [:]
+            agentHooksLoaded = true
         }
         // Anything else (shell noise, a truncated read) is "no new
         // information" — keep the last good tree rather than blanking it.
@@ -280,6 +282,7 @@ final class HerdrControlClient: MultiplexerControlling {
         next.everAttached = snapshot.everAttached || next.isAttached
         snapshot = next
         agentHooks = decoded.agentHooks
+        agentHooksLoaded = true
         paneCwds = decoded.paneCwds
         terminalIds = decoded.terminalIds
         worktreeRepos = decoded.worktreeRepos
@@ -768,6 +771,60 @@ final class HerdrControlClient: MultiplexerControlling {
     func newPane() {
         guard let target = snapshot.activePaneId ?? snapshot.activePanes.first?.id else { return }
         send("pane split \(HerdrLaunch.quote(target)) --direction right --focus")
+    }
+
+    /// Session-row "New tab" on Home: focus `sessionId`'s workspace, then
+    /// create — one Task, in order, because `send` is fire-and-forget and two
+    /// of them may run out of order.
+    func newWindow(inSession sessionId: String, named name: String?) {
+        var create = "tab create --focus"
+        if let name, !name.isEmpty { create += " --label \(HerdrLaunch.quote(name))" }
+        var steps: [String] = []
+        if sessionId != snapshot.activeSessionId {
+            steps.append("workspace focus \(HerdrLaunch.quote(sessionId))")
+        }
+        steps.append(create)
+        sendSequence(steps)
+    }
+
+    /// Window-row "New pane" on Home: `pane split` takes a pane id, so the
+    /// target tab's own active pane is split whether or not it is on screen;
+    /// focusing its workspace and tab first is what lands the user there
+    /// (the frame channel follows focus).
+    func newPane(inWindow windowId: String) {
+        let panes = snapshot.panes(inWindow: windowId)
+        guard let window = snapshot.windows[windowId],
+              let target = panes.first(where: \.isActive) ?? panes.first else { return }
+        var steps: [String] = []
+        if window.sessionId != snapshot.activeSessionId {
+            steps.append("workspace focus \(HerdrLaunch.quote(window.sessionId))")
+        }
+        if windowId != snapshot.activeWindowId {
+            steps.append("tab focus \(HerdrLaunch.quote(windowId))")
+        }
+        steps.append("pane split \(HerdrLaunch.quote(target.id)) --direction right --focus")
+        sendSequence(steps)
+    }
+
+    /// `send` for several commands that must run in this order: one Task,
+    /// stopping at the first failure, one trailing poll.
+    private func sendSequence(_ subcommands: [String]) {
+        Task { [weak self] in
+            guard let self else { return }
+            for subcommand in subcommands {
+                do {
+                    let result = try await run(subcommand)
+                    if result.failed {
+                        Log.ssh.error("herdr command failed: \(subcommand, privacy: .public)")
+                        break
+                    }
+                } catch {
+                    Log.ssh.error("herdr command could not run: \(subcommand, privacy: .public)")
+                    break
+                }
+            }
+            await self.poll()
+        }
     }
 
     func renameSession(_ sessionId: String, to name: String) {

@@ -164,6 +164,12 @@ final class TmuxSessionController: MultiplexerControlling {
     @ObservationIgnored
     private(set) var agentHooks: [String: AgentHook] = [:]
 
+    /// True once ``agentHooks`` has been rebuilt from a poll reply or taken
+    /// over from a retired controller (``inheritAgentHooks``). Until then the
+    /// empty dictionary is "not read yet", which the breadcrumb treats as
+    /// incomplete rather than as "no agent here".
+    private(set) var agentHooksLoaded = false
+
     /// Invoked on the main actor at the end of each ``pollAgentHooks()`` after
     /// ``agentHooks`` has been rebuilt, so the monitor can re-sync the Vibe
     /// Island immediately instead of waiting for its next sweep.
@@ -812,6 +818,23 @@ final class TmuxSessionController: MultiplexerControlling {
         for (windowId, layout) in ledger.pristineLayouts where pristineLayouts[windowId] == nil {
             pristineLayouts[windowId] = layout
         }
+    }
+
+    /// The agent stamps as last read, for the replacement controller — nil
+    /// if this one never got to read them. The server's `@moshpit_*` options
+    /// did not change because our client dropped, so the replacement can
+    /// show them from its first frame instead of a bare command for the
+    /// second or two until its own poll answers.
+    func takeAgentHooks() -> [String: AgentHook]? {
+        agentHooksLoaded ? agentHooks : nil
+    }
+
+    /// Start from a retired controller's stamps; the first poll of this
+    /// attach replaces them wholesale.
+    func inheritAgentHooks(_ hooks: [String: AgentHook]) {
+        guard !agentHooksLoaded else { return }
+        agentHooks = hooks
+        agentHooksLoaded = true
     }
 
     /// Whether a pane of THIS connection has been revealed on screen — a frame
@@ -1580,10 +1603,40 @@ final class TmuxSessionController: MultiplexerControlling {
     /// back as part of the switch, and doing it here would strand a desktop
     /// client at the phone width on the path where `new-window` fails.
     func newWindow(named name: String? = nil) {
+        createWindow(inSession: nil, named: name)
+    }
+
+    /// The Home tree's session-row "New window": the target need not be the
+    /// session we're attached to. `new-window -t <session>:` creates at that
+    /// session's next free index and makes it current there; the create+jump
+    /// below then switches us over (`selectWindow` handles the cross-session
+    /// hop). Explicit `-t` rather than switching first: in control-plane mode
+    /// `selectSession` moves the visible client from a `list-clients`
+    /// completion — AFTER a bare `new-window` would already have run in the
+    /// old session.
+    func newWindow(inSession sessionId: String, named name: String?) {
+        let elsewhere = Self.isValidTmuxId(sessionId) && sessionId != snapshot.activeSessionId
+        createWindow(inSession: elsewhere ? sessionId : nil, named: name)
+    }
+
+    /// The Home tree's window-row "New pane": split `windowId` even when it is
+    /// not on screen. Switching to it first (cross-session included) points
+    /// `activePaneId` at its pane synchronously, so the plain split — which
+    /// targets that pane and zooms that window — lands in the right place;
+    /// the control channel is FIFO, so tmux sees the switch before the split.
+    func newPane(inWindow windowId: String) {
+        if snapshot.windows[windowId] != nil, windowId != snapshot.activeWindowId {
+            selectWindow(windowId)
+        }
+        newPane()
+    }
+
+    private func createWindow(inSession sessionId: String?, named name: String?) {
         let trimmed = name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let namePart = trimmed.isEmpty ? "" : " -n \(tmuxQuote(trimmed))"
+        let targetPart = sessionId.map { " -t \($0):" } ?? ""
         pendingWindowFocus = nil
-        sendCommand("new-window -P -F '#{window_id}'\(namePart)") { [weak self] response in
+        sendCommand("new-window\(targetPart) -P -F '#{window_id}'\(namePart)") { [weak self] response in
             guard let self else { return }
             if response.isError {
                 self.flashNotice(response.lines.first ?? "new-window failed")
@@ -2769,6 +2822,7 @@ final class TmuxSessionController: MultiplexerControlling {
                                        command: command, title: title)
         }
         agentHooks = parsed
+        agentHooksLoaded = true
         onAgentHooksUpdated?()
     }
 
@@ -3049,9 +3103,9 @@ final class TmuxSessionController: MultiplexerControlling {
         }
     }
 
-    private func parseListSessions(_ lines: [String]) {
+    func parseListSessions(_ lines: [String]) {
         var newSessions: [String: SessionInfo] = [:]
-        var activeId: String? = snapshot.activeSessionId
+        var lastAttached: String?
         for line in lines {
             // Format: "#{session_id} #{session_attached} #{session_name}" —
             // the name comes LAST because it may contain spaces.
@@ -3065,10 +3119,28 @@ final class TmuxSessionController: MultiplexerControlling {
             let isAttached = parts[1] != "0"
             let name = String(parts[2])
             newSessions[id] = SessionInfo(id: id, name: name, isAttached: isAttached)
-            if isAttached { activeId = id }
+            if isAttached { lastAttached = id }
         }
         snapshot.sessions = newSessions
-        if let activeId { snapshot.activeSessionId = activeId }
+        if rendersOutput {
+            // Our client's session is what tmux told US — %session-changed,
+            // or the switch we just issued. `session_attached` counts EVERY
+            // client, so with the desktop sitting on another session it names
+            // that one, and following it here dragged the active session back
+            // over after every re-list (each %session-changed triggers one):
+            // the phone could not switch back to a session the desktop had
+            // left, while with the desktop on the same session the last
+            // attached happened to be ours and everything seemed fine. Only a
+            // session we no longer have — killed, or none known yet — falls
+            // back to a guess.
+            if let current = snapshot.activeSessionId, newSessions[current] != nil { return }
+            snapshot.activeSessionId = lastAttached ?? newSessions.keys.sorted().first
+        } else if let lastAttached {
+            // Control-plane sidecar: the session the person sees is the one
+            // the mosh-rendered client sits on, and this invisible client
+            // learns of its switches only through the attached flag.
+            snapshot.activeSessionId = lastAttached
+        }
     }
 
     private func parseListWindows(_ lines: [String]) {
@@ -3713,6 +3785,12 @@ final class TmuxSessionController: MultiplexerControlling {
             self?.parseListSessions(response.lines)
         }
         refreshWindowsAndPanes(isFreshAttach: isFreshAttach)
+        // The agent stamps ride FIFO right behind the tree, so the first
+        // breadcrumb of this attach already has its agent. Left to the
+        // monitor's 2s sweep they arrived a beat after the tree — the bar
+        // showed the bare command, then grew the agent — and with the island
+        // and notifications both off they never arrived at all.
+        if isFreshAttach { pollAgentHooks() }
     }
 
     private func handleCommandResponse(_ response: TmuxCommandResponse) {

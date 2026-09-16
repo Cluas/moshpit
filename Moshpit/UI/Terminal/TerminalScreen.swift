@@ -260,6 +260,14 @@ struct TerminalScreen: View {
         return active?.herdrControl?.agentHooks ?? [:]
     }
 
+    /// Whether those hooks have been read once for the current controller —
+    /// the breadcrumb holds the previous plan until they have.
+    private var multiplexerAgentHooksLoaded: Bool {
+        if let controller = active?.tmuxController { return controller.agentHooksLoaded }
+        if let control = active?.moshControl { return control.agentHooksLoaded }
+        return active?.herdrControl?.agentHooksLoaded ?? false
+    }
+
     /// True while any full-cover modal is up — the tmux navigation sheets and
     /// the camera. Everything here goes through `presentSheet` on the way in,
     /// so the keyboard collapses for the modal and comes back afterwards if it
@@ -904,10 +912,18 @@ struct TerminalScreen: View {
     /// might be.
     @State private var lastBreadcrumb: BreadcrumbPlan?
 
-    /// The plan for the live tree, if there is one.
+    /// The plan for the live tree, once it is whole. An attach marks the
+    /// tree live before `list-windows` / `list-panes` and the hook poll have
+    /// answered; a plan built from that half-filled tree ("0 › —", then the
+    /// command without its agent) is what jumped in the bar on every
+    /// reconnect (真机 2026-09-16). Until it is complete, `retainedPlan`
+    /// keeps the remembered one up.
     private var livePlan: BreadcrumbPlan? {
-        guard let snapshot = tmuxSnapshot else { return nil }
-        return BreadcrumbPlan.make(snapshot: snapshot, hooks: multiplexerAgentHooks)
+        guard let snapshot = tmuxSnapshot,
+              let plan = BreadcrumbPlan.make(snapshot: snapshot, hooks: multiplexerAgentHooks,
+                                             hooksLoaded: multiplexerAgentHooksLoaded),
+              plan.isComplete else { return nil }
+        return plan
     }
 
     /// What to draw while the tree is gone: the last one we had, but only
@@ -916,11 +932,11 @@ struct TerminalScreen: View {
     private var retainedPlan: BreadcrumbPlan? {
         switch connState {
         case .connecting, .reconnecting: return lastBreadcrumb
-        // Transport back, tree not yet attached and painted: still the same
-        // in-between, and the bar flipping to the host name for those few
-        // hundred ms was the one piece of chrome that moved during a
-        // frozen-frame reconnect.
-        case .live: return settling ? lastBreadcrumb : nil
+        // Transport back, tree not yet attached and painted — or attached and
+        // still filling in: still the same in-between, and the bar flipping
+        // to the host name for those few hundred ms was the one piece of
+        // chrome that moved during a frozen-frame reconnect.
+        case .live: return (settling || tmuxSnapshot?.isAttached == true) ? lastBreadcrumb : nil
         case .offline: return nil
         }
     }

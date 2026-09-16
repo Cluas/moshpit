@@ -412,7 +412,10 @@ struct SessionLifecycleTests {
     /// the ghost stands until a frame paints.
     @Test("The first-frame fallback holds the ghost while the server has not answered the boot line")
     func fallbackHoldsGhostOnSilentLink() async {
-        let rig = ghostedSession(fallback: 0.2, attachBound: 5)
+        // 0.45s: well under the 700ms of silence below, and wide enough that
+        // the post-attach check lands inside the grace even when the full
+        // suite is hogging the main actor (a 0.2s grace flaked there).
+        let rig = ghostedSession(fallback: 0.45, attachBound: 5)
         let (session, painted, replacement, transport) = (rig.session, rig.painted, rig.replacement, rig.transport)
         #expect(await bounded(1) { await session.stop(forReconnect: true) })
         #expect(session.retiredTmuxController === painted)

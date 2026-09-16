@@ -154,6 +154,11 @@ final class SessionHub {
         /// the eventual real disconnect instead of being paid — over a socket
         /// already judged dead — right now.
         @ObservationIgnored private(set) var inheritedPinLedger: TmuxSessionController.PinLedger?
+        /// The retired controller's agent stamps, handed to the replacement
+        /// the same way (see ``TmuxSessionController/takeAgentHooks()``), so
+        /// the breadcrumb and the Home tree keep their agents across the
+        /// rebuild instead of losing and regaining them.
+        @ObservationIgnored private(set) var inheritedAgentHooks: [String: AgentHook]?
         /// Single-pane data path (non-tmux).
         @ObservationIgnored let coordinator = SwiftTerminalView.Coordinator()
         /// Set when the connection runs over the real mosh UDP transport.
@@ -552,9 +557,9 @@ final class SessionHub {
         /// (see its doc comment).
         @ObservationIgnored private var attachTimeoutTask: Task<Void, Never>?
 
-        init(connection: ServerConnection) {
+        init(connection: ServerConnection, dial: TerminalViewModel.Dialer? = nil) {
             self.connection = connection
-            self.viewModel = TerminalViewModel(connection: connection)
+            self.viewModel = TerminalViewModel(connection: connection, dial: dial)
         }
 
         /// Rough on-screen grid for a font size, used to seed the terminal
@@ -1162,6 +1167,9 @@ final class SessionHub {
                 break
             }
             viewModel.beginAttempt(automatic: automatic)
+            dialBegan = Date()
+            startGeneration += 1
+            let attempt = startGeneration
             // A tmux attempt has nothing to show until its controller reveals a
             // frame; declare that up front so the cover doesn't drop in the gap
             // between the transport coming up and the controller existing.
@@ -1208,7 +1216,10 @@ final class SessionHub {
             let startBegan = Date()
             Log.ssh.debug("resume: start() ssh connect begin")
             await viewModel.start(rows: grid.rows, cols: grid.cols)
-            guard let session = viewModel.session else { return }
+            // A redial replaced this attempt while its dial was out: the
+            // session now on the view model is the replacement's, and the
+            // replacement's own `start()` is wiring it up. Not twice.
+            guard attempt == startGeneration, let session = viewModel.session else { return }
             Log.ssh.debug("resume: ssh+pty up after \(Int(Date().timeIntervalSince(startBegan) * 1000), privacy: .public)ms")
             // Auto-reconnect the moment the transport drops on its own (server
             // reboot, network change, NIO seeing the socket die on resume).
@@ -1267,6 +1278,10 @@ final class SessionHub {
                 if let ledger = inheritedPinLedger {
                     controller.inheritPinLedger(ledger)
                     inheritedPinLedger = nil
+                }
+                if let hooks = inheritedAgentHooks {
+                    controller.inheritAgentHooks(hooks)
+                    inheritedAgentHooks = nil
                 }
                 controller.transportIsLive = { [weak viewModel] in
                     viewModel?.connState == .live
@@ -2214,6 +2229,10 @@ final class SessionHub {
             let multiplexer: Multiplexer = available ? chosen : .none
             if multiplexer == .tmux {
                 let controller = TmuxSessionController(sshSession: session)
+                if let hooks = inheritedAgentHooks {
+                    controller.inheritAgentHooks(hooks)
+                    inheritedAgentHooks = nil
+                }
                 controller.transportIsLive = { [weak viewModel] in
                     viewModel?.connState == .live
                 }
@@ -2457,6 +2476,10 @@ final class SessionHub {
                 controller.inheritPinLedger(ledger)
                 inheritedPinLedger = nil
             }
+            if let hooks = inheritedAgentHooks {
+                controller.inheritAgentHooks(hooks)
+                inheritedAgentHooks = nil
+            }
             controller.pendingRestore = lastSelection   // restore window/pane too
             await controller.beginControlMode()
             let tmux = connection.tmuxPath ?? "tmux"
@@ -2589,6 +2612,7 @@ final class SessionHub {
                     // Not one byte more on this transport — see the doc
                     // comment. The debt moves to the replacement.
                     inheritedPinLedger = controller.takePinLedger()
+                    inheritedAgentHooks = controller.takeAgentHooks() ?? inheritedAgentHooks
                 } else if let ssh = viewModel.session {
                     // Hand back the pinned window sizes so other clients get
                     // their full width back. Over a one-shot EXEC channel
@@ -2621,6 +2645,7 @@ final class SessionHub {
             if let control = moshControl {
                 if forReconnect {
                     inheritedPinLedger = control.takePinLedger()
+                    inheritedAgentHooks = control.takeAgentHooks() ?? inheritedAgentHooks
                 } else {
                     // Restore the status bar over the LIVE control channel (a
                     // round-trip blocks until tmux applies it). The exec channel
@@ -2819,7 +2844,12 @@ final class SessionHub {
         /// Tear down the dead transport and run the start flow again. tmux
         /// `attach` reattaches to the same server-side session, so panes + their
         /// scrollback come right back.
-        func reconnect() async {
+        ///
+        /// `automatic` is the attempt's provenance for the error surface (see
+        /// `TerminalViewModel.beginAttempt`): a transport that dropped on its
+        /// own is redialed as automatic, while a redial of a connect the user
+        /// asked for keeps its right to a modal if it fails too.
+        func reconnect(automatic: Bool = true) async {
             guard !isStopping, !isReconnecting, !isResuming else { return }
             isReconnecting = true
             defer { isReconnecting = false }
@@ -2827,7 +2857,7 @@ final class SessionHub {
             viewModel.resetForReconnect()
             await start(theme: lastTheme, fontSize: lastFontSize, fontName: lastFontName,
                         cursorShape: lastCursorShape, cursorColorId: lastCursorColorId,
-                        cursorBlink: lastCursorBlink, automatic: true)
+                        cursorBlink: lastCursorBlink, automatic: automatic)
         }
 
         /// Unconditional resume after a long suspension — skip the (unreliable
@@ -2845,8 +2875,11 @@ final class SessionHub {
                 await resumeIfNeeded()
                 return
             }
+            // A dial that never landed is the same attempt continued (see
+            // retryIfDown); a transport that dropped is redialed as automatic.
+            let automatic = isDialing ? viewModel.isAutoReconnectInFlight : true
             viewModel.markReconnecting()
-            await reconnect()
+            await reconnect(automatic: automatic)
         }
 
         /// Foreground-resume. iOS kills TCP while the app is suspended, so an
@@ -2862,6 +2895,9 @@ final class SessionHub {
         /// session.
         func resumeIfNeeded(probeTimeout: Double? = nil) async {
             guard !isStopping, !isReconnecting, !isResuming else { return }
+            // Nothing up yet, or nothing up any more: there is no transport
+            // to probe, so redial / reconnect now instead of returning.
+            if await retryIfDown(stalledDialAfter: stalledDialGrace, reason: "foreground") { return }
             isResuming = true
             defer { isResuming = false }
             if let transport = moshTransport {
@@ -2898,6 +2934,7 @@ final class SessionHub {
                         if let control = moshControl {
                             // Its pins travel to the rebuilt sidecar — see stop().
                             inheritedPinLedger = control.takePinLedger()
+                            inheritedAgentHooks = control.takeAgentHooks() ?? inheritedAgentHooks
                             await control.detach()
                         }
                         moshControl = nil
@@ -2986,6 +3023,63 @@ final class SessionHub {
         /// milliseconds instead of a wall-clock wait.
         @ObservationIgnored var probeTimeout: Double = 8
 
+        /// When the current attempt began dialing — see `isDialing`.
+        @ObservationIgnored private(set) var dialBegan: Date?
+
+        /// Numbers `start()` attempts, so an attempt whose dial was superseded
+        /// by a redial (see `TerminalViewModel.dialGeneration`) stops at the
+        /// first check instead of wiring up the replacement's session again.
+        @ObservationIgnored private var startGeneration = 0
+
+        /// The attempt is still waiting on its TCP/SSH dial: no transport of
+        /// any kind has come up. This is the state a SYN into a black hole
+        /// leaves us in — a Tailscale address with the tunnel down, a host
+        /// behind a Wi-Fi that just went away — and it lasts the whole
+        /// connect timeout, because nothing on the wire ever says no.
+        var isDialing: Bool {
+            guard case .connecting = viewModel.status else { return false }
+            return viewModel.session == nil && moshTransport == nil
+        }
+
+        /// How long a dial must have been out before a foreground return
+        /// restarts it. Bouncing to another app for a second mid-handshake on
+        /// a slow link should not cost the handshake; tests shrink it.
+        @ObservationIgnored var stalledDialGrace: TimeInterval = 2
+
+        /// The "nothing is up" half of coming back. A dial that has been out
+        /// for `stalledDialAfter` is redialed on the spot; a session whose
+        /// transport died is reconnected now rather than on the next keepalive
+        /// tick. Both are what the user expects after fixing the network — the
+        /// tunnel is up, the Wi-Fi is back — and neither used to happen: the
+        /// resume path only knew how to probe a transport it already had, and
+        /// the tick left a dial alone for as long as it took (30s into a black
+        /// hole, then 12s to the tick). Returns true when it acted, so the
+        /// caller skips its probe.
+        @discardableResult
+        func retryIfDown(stalledDialAfter: TimeInterval, reason: String) async -> Bool {
+            guard !isStopping, !isReconnecting, !isResuming else { return false }
+            if isDialing {
+                let age = dialBegan.map { Date().timeIntervalSince($0) } ?? .infinity
+                guard age >= stalledDialAfter else { return false }
+                Log.ssh.notice("resume: redial (\(reason, privacy: .public)) after \(Int(age), privacy: .public)s dialing")
+                // The same attempt on a fresh socket — see `reconnect(automatic:)`.
+                await reconnect(automatic: viewModel.isAutoReconnectInFlight)
+                return true
+            }
+            // mosh keeps its own UDP resume path; its sidecar rebuild lives in
+            // resumeIfNeeded's transport branch and must not be preempted.
+            guard moshTransport == nil else { return false }
+            switch viewModel.status {
+            case .failed, .disconnected:
+                Log.ssh.notice("resume: retry (\(reason, privacy: .public)) of a down session")
+                viewModel.markReconnecting()
+                await reconnect()
+                return true
+            default:
+                return false
+            }
+        }
+
         /// Probe deadline for the foreground-return check specifically. A
         /// socket iOS held through a suspension is dead far more often than
         /// one the periodic tick is asking about, and the person is watching
@@ -3044,6 +3138,24 @@ final class SessionHub {
     @ObservationIgnored private let metrics: SessionMetricsRegistry
     @ObservationIgnored private var keepAliveTimer: Timer?
     @ObservationIgnored private var lastBackgroundedAt: Date?
+    /// Foreground per `setForeground` — the path watch only acts while true.
+    @ObservationIgnored private var isForeground = false
+    /// Started on the first foreground and never stopped: iOS suspends us in
+    /// the background anyway, and whatever changed while we were away is
+    /// delivered as one update on resume — which is exactly the case this
+    /// exists for (the user left to turn Tailscale on and came back).
+    @ObservationIgnored private var pathWatch: NetworkPathWatch?
+    /// Coalesces the burst a tunnel coming up produces into one kick.
+    @ObservationIgnored private var pathKick: Task<Void, Never>?
+    /// A dial has to be at least this old for a path change to restart it. The
+    /// watch reports a change a beat after it happened, so a younger dial most
+    /// likely began after the change and is already on the new path.
+    @ObservationIgnored var pathRedialAfter: TimeInterval = 1
+    /// How `prepare` builds a session. Tests swap in sessions with a scripted
+    /// dialer so hub-level recovery runs without a network.
+    @ObservationIgnored var makeSession: @MainActor (ServerConnection) -> ActiveSession = {
+        ActiveSession(connection: $0)
+    }
     /// How often to probe live sessions while foreground (NAT-warmth + death
     /// detection + reconnect retry). iOS suspends timers in the background.
     private let keepAliveInterval: TimeInterval = 12
@@ -3064,7 +3176,9 @@ final class SessionHub {
     weak var visibleSession: ActiveSession?
 
     func setForeground(_ active: Bool) {
+        isForeground = active
         if active {
+            startPathWatchIfNeeded()
             // A long suspension almost certainly means iOS killed the socket,
             // and the liveness probe can false-positive on a half-open channel
             // (green pill, frozen -CC pane). Past the threshold, force a fresh
@@ -3127,6 +3241,44 @@ final class SessionHub {
         }
     }
 
+    private func startPathWatchIfNeeded() {
+        guard pathWatch == nil else { return }
+        let watch = NetworkPathWatch { [weak self] in
+            Task { @MainActor [weak self] in self?.networkPathChanged() }
+        }
+        watch.start()
+        pathWatch = watch
+    }
+
+    /// The device's network path changed — an interface came or went, a VPN
+    /// tunnel opened or closed. Sessions with nothing up get their dial or
+    /// reconnect now; live ones take a keepalive tick early, which probes
+    /// only if bytes haven't flowed lately. Background changes wait: the app
+    /// can't hold a socket there, and the foreground return resumes anyway.
+    func networkPathChanged() {
+        guard isForeground else { return }
+        pathKick?.cancel()
+        pathKick = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(400))
+            guard !Task.isCancelled, let self else { return }
+            await self.kickSessionsAfterPathChange()
+        }
+    }
+
+    /// The kick itself, reachable synchronously for tests.
+    func kickSessionsAfterPathChange() async {
+        Log.ssh.debug("resume: network path changed")
+        let redialAfter = pathRedialAfter
+        await withTaskGroup(of: Void.self) { group in
+            for session in sessions.values {
+                group.addTask { @MainActor in
+                    if await session.retryIfDown(stalledDialAfter: redialAfter, reason: "path") { return }
+                    await session.keepAlive()
+                }
+            }
+        }
+    }
+
     /// Concurrent for the same reason as ``resumeAll(force:)`` — and it bites
     /// harder here: `keepAlive`'s liveness probe is a timeout race, so one
     /// half-open socket serially burning its timeout used to delay every
@@ -3166,7 +3318,7 @@ final class SessionHub {
                 return existing
             }
         }
-        let active = ActiveSession(connection: connection)
+        let active = makeSession(connection)
         sessions[connection.id] = active
 
         // Live SRTT + roaming from the mosh transport → SessionMetrics, so the

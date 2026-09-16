@@ -35,6 +35,23 @@ struct PaneInfo: Codable, Sendable, Equatable, Identifiable, Hashable {
     /// Whether this pane is the active pane within its window.
     var isActive: Bool
 
+    /// What to call the foreground process. tmux reports the comm name, and
+    /// Claude Code's native install runs a binary named after its version
+    /// (`~/.local/share/claude/versions/2.1.269`), so the comm arrives as
+    /// "2.1.269" — which no icon map and no human recognizes. Anything
+    /// containing "claude" is claude, and a bare semver comm is claude too
+    /// (nothing else in a terminal names its process a version string). The
+    /// Home tree and the terminal breadcrumb both read this, so a pane is
+    /// called the same thing wherever it appears.
+    var displayCommand: String {
+        let lowered = command.lowercased()
+        if lowered.contains("claude") { return "claude" }
+        if lowered.range(of: #"^\d+\.\d+\.\d+$"#, options: .regularExpression) != nil {
+            return "claude"
+        }
+        return command
+    }
+
     init(
         id: String,
         windowId: String,

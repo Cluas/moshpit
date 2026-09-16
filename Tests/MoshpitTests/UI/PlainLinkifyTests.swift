@@ -85,6 +85,77 @@ struct PlainLinkifyTests {
                 "prose must never be pulled into a link")
     }
 
+    /// The bytes tmux captured from the report's pane: Claude Code printed
+    /// a long document URL as two rows, each re-opening an OSC 8 link whose
+    /// target is the FULL address. The detector must leave that alone — it
+    /// used to re-tag the first row from its visible text, so a tap there
+    /// opened the truncated half while the second row opened the whole.
+    @Test("a program's own OSC 8 link is never overwritten by the text detector")
+    func programLinkIsAuthoritative() {
+        let t = makeTerminal()
+        let indent = "  "
+        let tail = "OFywpjh"
+        let prefix = "https://wiki.example.com/docx/"
+        let full = prefix + String(repeating: "M", count: t.cols - indent.count - prefix.count) + tail
+        let head = String(full.dropLast(tail.count))
+        #expect((indent + head).count == t.cols, "the first row must end flush at the right edge")
+        let open = "\u{1b}]8;id=128g0ok;\(full)\u{1b}\\"
+        let close = "\u{1b}]8;;\u{1b}\\"
+        t.feed(text: indent + open + head + close + "\r\n" + indent + open + tail + close + "\r\n")
+        PlainLinkDetector.linkify(terminal: t)
+
+        #expect(link(t, row: 0, col: indent.count) == full,
+                "the first row keeps the program's full address")
+        #expect(link(t, row: 0, col: t.cols - 1) == full)
+        #expect(link(t, row: 1, col: indent.count) == full)
+    }
+
+    /// The same URL without the program's help (an inline mention, which
+    /// Claude Code does not hyperlink): the tail is letters only, but its
+    /// inner capitals read as an opaque id, not as a word.
+    @Test("a token-like letters-only tail joins a hard-wrapped URL")
+    func tokenTailJoins() {
+        let t = makeTerminal()
+        let indent = "  "
+        let tail = "OFywpjh"
+        let prefix = "https://wiki.example.com/docx/"
+        let full = prefix + String(repeating: "M", count: t.cols - indent.count - prefix.count) + tail
+        let head = String(full.dropLast(tail.count))
+        t.feed(text: indent + head + "\r\n" + indent + tail + "\r\n")
+        PlainLinkDetector.linkify(terminal: t)
+
+        #expect(link(t, row: 0, col: indent.count) == full)
+        #expect(link(t, row: 1, col: indent.count) == full)
+        #expect(link(t, row: 1, col: indent.count + tail.count) == nil)
+    }
+
+    @Test("sentence punctuation after a wrapped tail is not part of the address")
+    func tailPunctuationIsProse() {
+        let t = makeTerminal()
+        let prefix = "See "
+        let head = "https://claude.ai/code/artifact/" +
+            String(repeating: "a", count: t.cols - prefix.count - 32)
+        let tail = "4780-408d"
+        t.feed(text: prefix + head + "\r\n" + tail + ". Then more\r\n")
+        PlainLinkDetector.linkify(terminal: t)
+
+        #expect(link(t, row: 0, col: prefix.count) == head + tail)
+        #expect(link(t, row: 1, col: tail.count - 1) == head + tail)
+        #expect(link(t, row: 1, col: tail.count) == nil, "the period belongs to the sentence")
+    }
+
+    @Test("a lowercase or Capitalized word after an edge URL stays prose")
+    func plainWordsStayProse() {
+        for word in ["the rest is prose", "Then it goes on"] {
+            let t = makeTerminal()
+            let url = "https://e.example/p/" + String(repeating: "b", count: t.cols - 20)
+            t.feed(text: url + "\r\n" + word + "\r\n")
+            PlainLinkDetector.linkify(terminal: t)
+            #expect(link(t, row: 0, col: 0) == url, "\(word)")
+            #expect(link(t, row: 1, col: 0) == nil, "\(word)")
+        }
+    }
+
     @Test("an emulator-soft-wrapped URL still joins (the existing path)")
     func softWrapStillJoins() {
         let t = makeTerminal()

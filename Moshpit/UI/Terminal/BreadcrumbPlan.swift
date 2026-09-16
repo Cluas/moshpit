@@ -16,6 +16,13 @@ import Foundation
 ///
 /// Pure — the snapshot and hooks go in, the strings come out — so the
 /// squeeze rule and the fallback chain are testable without a connection.
+///
+/// `isComplete` is the bar's gate. An attach marks the tree live BEFORE
+/// `list-windows` / `list-panes` and the hook poll have answered, so a plan
+/// built at that instant says "0 › —", then the pane's command without its
+/// agent, then — one more reply later — the agent with the session squeezed
+/// to its icon. Three different bars in under a second, on every reconnect
+/// (真机 2026-09-16). The view keeps the previous plan until this one is whole.
 struct BreadcrumbPlan: Equatable {
     var sessionTitle: String
     /// True when the pane segment carries an agent and needs the room: the
@@ -27,9 +34,13 @@ struct BreadcrumbPlan: Equatable {
     /// The dot inside the pane crumb — the same signal the Agents section and
     /// the island show, in the same colours. nil = plain pane, no dot.
     var paneSignal: AgentSignal?
+    /// False while the tree is still filling in after an attach (no active
+    /// window or pane yet) or the agent stamps have not been read once.
+    var isComplete = true
 
     static func make(snapshot: TmuxSnapshot,
-                     hooks: [String: AgentHook]) -> BreadcrumbPlan? {
+                     hooks: [String: AgentHook],
+                     hooksLoaded: Bool = true) -> BreadcrumbPlan? {
         guard snapshot.isAttached else { return nil }
 
         let sessionTitle = snapshot.activeSessionId
@@ -51,9 +62,11 @@ struct BreadcrumbPlan: Equatable {
         // pane either way, but the hook's spelling is the authoritative one),
         // which beats the pane number — the herdr-0.7.3 floor, kept because a
         // vanished crumb takes the Select Pane sheet's only entry with it.
+        // The command is the pane's display name, not the raw comm: Claude
+        // Code's binary is named after its version (see `displayCommand`).
         let paneTitle: String? = pane.map { pane in
             agentName
-                ?? (pane.command.isEmpty ? String(localized: "pane \(pane.index)") : pane.command)
+                ?? (pane.command.isEmpty ? String(localized: "pane \(pane.index)") : pane.displayCommand)
         }
 
         return BreadcrumbPlan(
@@ -61,6 +74,7 @@ struct BreadcrumbPlan: Equatable {
             sessionIconOnly: agentName != nil || signal != nil,
             windowTitle: windowTitle,
             paneTitle: paneTitle,
-            paneSignal: signal)
+            paneSignal: signal,
+            isComplete: window != nil && pane != nil && hooksLoaded)
     }
 }

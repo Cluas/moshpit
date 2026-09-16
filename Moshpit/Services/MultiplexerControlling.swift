@@ -124,6 +124,12 @@ protocol MultiplexerControlling: AnyObject, Observable {
     /// needs nothing installed at all.
     var agentHooks: [String: AgentHook] { get }
 
+    /// Whether ``agentHooks`` has been read at least once for this
+    /// controller. Before that an empty dictionary means "not asked yet",
+    /// not "no agents" — the breadcrumb waits for it so a pane never shows
+    /// up bare and grows its agent a reply later.
+    var agentHooksLoaded: Bool { get }
+
     /// Invoked on the main actor once ``agentHooks`` has been rebuilt, so the
     /// Vibe Island can re-sync immediately instead of waiting for its next
     /// sweep.
@@ -141,6 +147,12 @@ protocol MultiplexerControlling: AnyObject, Observable {
     func newWindow(named name: String?)
     func newPane()
     func newSession(named name: String?)
+    /// Create a window in `sessionId` and land on it. The Home tree's
+    /// session-row action: the target need not be the attached session.
+    func newWindow(inSession sessionId: String, named name: String?)
+    /// Split a new pane off `windowId`'s active pane and land on it. The Home
+    /// tree's window-row action: the target need not be the active window.
+    func newPane(inWindow windowId: String)
     /// Rename a session (`rename-session`) then refresh discovery.
     func renameSession(_ sessionId: String, to name: String)
     /// Kill a session (`kill-session`) then refresh discovery.

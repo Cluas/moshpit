@@ -93,4 +93,42 @@ struct BreadcrumbPlanTests {
         #expect(plan?.paneTitle == "zsh")
         #expect(plan?.paneSignal == .working)
     }
+
+    /// Claude Code's native binary is named after its version, so tmux
+    /// reports the comm as "2.1.269" — the Home tree already read that as
+    /// claude; the bar said the number (真机 2026-09-16).
+    @Test("A versioned comm is claude in the bar, as in the Home tree")
+    func versionedCommandIsClaude() {
+        var snap = snapshot()
+        snap.panes["w1:p1"]?.command = "2.1.269"
+        let plan = BreadcrumbPlan.make(snapshot: snap, hooks: [:])
+        #expect(plan?.paneTitle == "claude")
+        #expect(plan?.sessionIconOnly == false, "no hook, no dot, no squeeze — just the right word")
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // Completeness: what the bar waits for after an attach
+    // ─────────────────────────────────────────────────────────────
+
+    @Test("Attached but the tree is still filling in: not complete")
+    func incompleteWhileTreeFillsIn() {
+        var snap = snapshot()
+        snap.windows = [:]
+        snap.panes = [:]
+        let plan = BreadcrumbPlan.make(snapshot: snap, hooks: [:])
+        #expect(plan?.isComplete == false)
+        #expect(plan?.windowTitle == "—", "the placeholder the bar must never show")
+
+        var noPane = snapshot()
+        noPane.activePaneId = nil
+        #expect(BreadcrumbPlan.make(snapshot: noPane, hooks: [:])?.isComplete == false)
+    }
+
+    @Test("Agent stamps not read yet: not complete, so a pane never appears bare and then grows its agent")
+    func incompleteBeforeHooksAreRead() {
+        #expect(BreadcrumbPlan.make(snapshot: snapshot(), hooks: [:], hooksLoaded: false)?.isComplete == false)
+        #expect(BreadcrumbPlan.make(snapshot: snapshot(), hooks: [:], hooksLoaded: true)?.isComplete == true)
+        #expect(BreadcrumbPlan.make(snapshot: snapshot(), hooks: [:])?.isComplete == true,
+                "callers without a controller to ask default to complete")
+    }
 }

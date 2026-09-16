@@ -38,6 +38,12 @@ struct HomeView: View {
     /// Prompts and errors surface one at a time, oldest first.
     @State private var connecting: [SessionHub.ActiveSession] = []
     @State private var showConnectError = false
+    /// The modal card a connection card asked Home to draw — a rename, a
+    /// name for something about to be created, a notice. The card presenter
+    /// is an overlay sized to the view it hangs off, so it has to hang off
+    /// the whole screen: a List row would clip it to the row.
+    @State private var cardModal: ConnectionCard.Modal?
+    @State private var cardModalText = ""
 
     private var theme: TerminalTheme {
         themes.theme(id: settings.themeId)
@@ -164,6 +170,9 @@ struct HomeView: View {
         .onChange(of: erroredSession?.viewModel.errorMessage) { _, message in
             showConnectError = message?.isEmpty == false
         }
+        .moshpitCard(item: $cardModal) { modal in
+            cardModalView(modal)
+        }
         .moshpitCard(
             item: Binding(
                 get: { promptingSession?.viewModel.hostKeyPrompt },
@@ -210,6 +219,31 @@ struct HomeView: View {
             }
             store.delete(id: connection.id)
             deletingConnection = nil
+        }
+    }
+
+    /// The input card (rename / name-before-create) or the notice a
+    /// connection card requested, drawn over the whole screen.
+    @ViewBuilder
+    private func cardModalView(_ modal: ConnectionCard.Modal) -> some View {
+        switch modal.kind {
+        case .input(let input):
+            MoshpitInputCard(
+                icon: input.icon,
+                title: input.title,
+                message: input.message,
+                placeholder: input.placeholder,
+                text: $cardModalText,
+                confirmLabel: input.confirmLabel,
+                onCancel: { cardModal = nil },
+                onConfirm: {
+                    input.apply(cardModalText)
+                    cardModal = nil
+                })
+        case .notice(let notice):
+            MoshpitNoticeCard(icon: notice.icon, title: notice.title, message: notice.message) {
+                cardModal = nil
+            }
         }
     }
 
@@ -307,21 +341,21 @@ struct HomeView: View {
                     SectionKicker(title: "The pit never closes")
                 }
 
-                Section {
-                    ForEach(store.connections) { connection in
-                        connectionRow(connection)
-                    }
-                } header: {
-                    SectionKicker(title: "Connections", count: store.connections.count)
-                } footer: {
-                    // A quiet floor for the page. Doubles as the "which
-                    // build am I running" answer for sideload feedback.
-                    HomeFooter()
+                // One SECTION per host, not one row: the system draws the
+                // section as the card, and every row inside it — host head,
+                // session, window, pane — gets its own swipe actions and
+                // long-press menu. As a single row the whole card swiped and
+                // pressed as the connection, whichever tree row the finger
+                // was on.
+                ForEach(store.connections) { connection in
+                    connectionCard(connection)
                 }
             }
         }
         .listStyle(.insetGrouped)
-        .listRowSpacing(10)
+        .listSectionSpacing(10)
+        // The tree's rows are 34pt; the system's 44pt floor would pad them out.
+        .environment(\.defaultMinListRowHeight, ConnectionCard.treeRowMinHeight)
         .scrollContentBackground(.hidden)
         // Two frames rather than one: the first caps the column, the
         // second hands it the screen's full width to be centred within.
@@ -462,50 +496,28 @@ struct HomeView: View {
             : String(localized: "\(saved) hosts saved · all quiet")
     }
 
-    /// One saved host as a list row: the card draws its own surface, the row
-    /// lends it the system's swipe actions so Edit/Disconnect/Delete are
-    /// reachable the way they are in every other list on the phone.
-    private func connectionRow(_ connection: ServerConnection) -> some View {
-        let live = hub.session(for: connection) != nil
-        return ConnectionCard(
+    /// One saved host as a list SECTION. The CONNECTIONS kicker rides on the
+    /// first host, the page footer on the last — a section has no way to
+    /// say "the group of us" itself.
+    private func connectionCard(_ connection: ServerConnection) -> some View {
+        ConnectionCard(
             connection: connection,
             active: hub.session(for: connection),
             metrics: metrics.metrics[connection.id],
+            kickerCount: store.connections.first?.id == connection.id ? store.connections.count : nil,
+            showsFooter: store.connections.last?.id == connection.id,
             onConnect: { connect(connection) },
             onEnter: { open(connection.id) },
             onEdit: { editingConnection = connection },
             isDisconnecting: disconnectingIds.contains(connection.id),
             onDisconnect: { disconnect(connection) },
             onDelete: { deletingConnection = connection },
-            onRetryAttach: { retryAttach(connection) }
+            onRetryAttach: { retryAttach(connection) },
+            present: { modal in
+                cardModalText = modal.initialText
+                cardModal = modal
+            }
         )
-        .listRowInsets(EdgeInsets())
-        .listRowBackground(Color.clear)
-        .listRowSeparator(.hidden)
-        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-            Button(role: .destructive) {
-                deletingConnection = connection
-            } label: {
-                Label("Delete", systemImage: "trash")
-            }
-            // The app-wide accent tint would otherwise win over the
-            // destructive role and paint the pill violet.
-            .tint(.red)
-            if live {
-                Button {
-                    disconnect(connection)
-                } label: {
-                    Label("Disconnect", systemImage: "bolt.slash")
-                }
-                .tint(Ink.warn)
-            }
-            Button {
-                editingConnection = connection
-            } label: {
-                Label("Edit", systemImage: "pencil")
-            }
-            .tint(Ink.accent)
-        }
     }
 
     /// Teardown flushes the control channel for up to ~2s — without feedback
@@ -607,6 +619,10 @@ struct ConnectionCard: View {
     let connection: ServerConnection
     let active: SessionHub.ActiveSession?
     let metrics: SessionMetrics?
+    /// Non-nil on the first card only: the CONNECTIONS kicker, with the count.
+    var kickerCount: Int?
+    /// The last card carries the page footer.
+    var showsFooter = false
     /// Begin connecting in-place (Home runs prepare+start). Called when the
     /// host head of an offline card is tapped.
     let onConnect: () -> Void
@@ -622,6 +638,10 @@ struct ConnectionCard: View {
     /// `.connected` (only the tmux handshake stalled), and `start()` only
     /// re-runs from `.idle`, so recovering needs a real disconnect first.
     let onRetryAttach: () -> Void
+    /// Ask Home to draw a modal card (rename, a name before creating, a
+    /// notice) over the whole screen — see `HomeView.cardModal` for why a
+    /// row can't host one itself.
+    let present: (Modal) -> Void
 
     /// The island's per-pane clock — the Agents section shows the same
     /// "in this state since" the lock-screen timer runs on, rather than
@@ -633,20 +653,15 @@ struct ConnectionCard: View {
     /// windows can show their panes at once.
     @State private var expandedWindows: Set<String> = []
 
-    /// Dense but touchable SESSIONS tree rows.
-    private static let treeRowMinHeight: CGFloat = 34
+    /// Dense but touchable SESSIONS tree rows. Also the List's row floor —
+    /// the system's 44pt would pad every tree row out.
+    static let treeRowMinHeight: CGFloat = 34
 
-    /// In-flight rename: the title to show, the current name pre-filled into the
-    /// text field, and the closure that applies the new name through the
-    /// (generic) controller. Captured here so the alert lives outside the
-    /// generic `sessionsSection` helper.
-    @State private var renameTarget: RenameTarget?
-    @State private var renameText: String = ""
     /// In-flight kill confirmation: a label for the dialog plus the closure
     /// that performs the kill through the controller.
     @State private var killTarget: KillTarget?
-    /// In-flight "new session" naming prompt.
-    @State private var newSessionTarget: NewSessionTarget?
+    /// The one row of this card whose swipe tray is open — see SwipeTrayRow.
+    @State private var openSwipeRow: String?
     /// Pending New agent task sheet. Boxed like `NewSessionTarget` so the
     /// non-generic sheet can call back into the concrete controller.
     @State private var agentTaskTarget: AgentTaskTarget?
@@ -654,17 +669,40 @@ struct ConnectionCard: View {
     /// the checkout turns out to be dirty — a second one that says so.
     @State private var worktreeTarget: WorktreeTarget?
     @State private var worktreeForceTarget: WorktreeTarget?
-    /// Why a removal didn't happen — herdr's own words, not ours.
-    @State private var worktreeError: String?
-    @State private var newSessionName: String = ""
 
-    /// Captures a pending rename action from a session/window row. `apply`
-    /// closes over the concrete controller so the non-generic alert can run it.
-    private struct RenameTarget: Identifiable {
+    /// A modal card for Home to present on this card's behalf.
+    struct Modal: Identifiable {
+        enum Kind {
+            case input(InputRequest)
+            case notice(NoticeRequest)
+        }
         let id = UUID()
-        let title: String
-        let currentName: String
+        let kind: Kind
+        /// What the input card's field starts with — the current name for a
+        /// rename, nothing for a name-before-create or a notice.
+        var initialText: String {
+            if case .input(let input) = kind { return input.initialText }
+            return ""
+        }
+    }
+
+    /// A one-field prompt: rename, or name the thing about to be created.
+    /// `apply` closes over the concrete controller so the non-generic card
+    /// can run it.
+    struct InputRequest {
+        var icon: String
+        var title: LocalizedStringKey
+        var message: Text?
+        var placeholder: LocalizedStringKey
+        var initialText = ""
+        var confirmLabel: LocalizedStringKey
         let apply: (String) -> Void
+    }
+
+    struct NoticeRequest {
+        var icon: String
+        var title: LocalizedStringKey
+        var message: String
     }
 
     /// Captures a pending kill action from a session/window/pane row.
@@ -673,17 +711,6 @@ struct ConnectionCard: View {
         let label: String
         let confirmTitle: String
         let perform: () -> Void
-    }
-
-    /// Captures a pending "new session", applying the typed name on confirm
-    /// (nil = let tmux auto-name).
-    private struct NewSessionTarget: Identifiable {
-        let id = UUID()
-        /// What this multiplexer calls the thing being created — the alert
-        /// lives outside the generic tree helper, so the word has to travel
-        /// with the target rather than be read off a controller.
-        let noun: String
-        let apply: (String?) -> Void
     }
 
     struct WorktreeTarget: Identifiable {
@@ -768,108 +795,127 @@ struct ConnectionCard: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            hostHead
-            if isConnecting {
-                connectingRow
-            } else if isDead {
-                deadRow
-            } else if isAttachStalled {
-                attachStalledRow
-            } else if let c = active?.tmuxControl {
-                // tmux mode: always the sessions section. When attached it shows
-                // the tree; after the last session was killed it shows an empty
-                // SESSIONS list with "+" to create a fresh one (the SSH shell is
-                // still alive), rather than a stuck "Attaching…" spinner.
-                sessionsSection(control: c)
-            } else if let h = active?.herdrControl {
-                // Same section, herdr's tree behind it. Branching here rather
-                // than passing an existential keeps `sessionsSection` generic
-                // over the concrete controller, which is what preserves
-                // Observation tracking on `snapshot`.
-                agentsSection(control: h)
-                sessionsSection(control: h)
-            } else if isLiveWithoutTree {
-                openTerminalRow
+        Section {
+            Group {
+                headRow
+                if isConnecting {
+                    connectingRow
+                } else if isDead {
+                    deadRow
+                } else if isAttachStalled {
+                    attachStalledRow
+                } else if let c = active?.tmuxControl {
+                    // tmux mode: always the sessions section. When attached it shows
+                    // the tree; after the last session was killed it shows an empty
+                    // SESSIONS list with "+" to create a fresh one (the SSH shell is
+                    // still alive), rather than a stuck "Attaching…" spinner.
+                    sessionsSection(control: c)
+                } else if let h = active?.herdrControl {
+                    // Same section, herdr's tree behind it. Branching here rather
+                    // than passing an existential keeps `sessionsSection` generic
+                    // over the concrete controller, which is what preserves
+                    // Observation tracking on `snapshot`.
+                    agentsSection(control: h)
+                    sessionsSection(control: h)
+                } else if isLiveWithoutTree {
+                    openTerminalRow
+                }
             }
-        }
-        .background(Self.surface)
-        .clipShape(RoundedRectangle(cornerRadius: Metrics.cardRadius, style: .continuous))
-        // Status edge-light: an INSET capsule, not a full-height square-ended
-        // bar — the old rail ran past the card's 20pt corners and read as a
-        // stray line floating outside it. Only drawn when there IS a status;
-        // a saved card carries no light, so live ones stand out more.
-        .overlay(alignment: .leading) {
-            if isLive || isConnecting || isDead || isAttachStalled {
-                Capsule()
-                    .fill(statusTint)
-                    .frame(width: 3)
-                    .padding(.vertical, 16)
-                    .padding(.leading, 7)
-                    .shadow(color: statusTint.opacity(isLive ? 0.55 : 0.3), radius: 4)
+            // The card's surface: the system's grouped-row colour, so a card
+            // sits on the home list the way a row sits in Settings. The
+            // section's rounded shape is the system's too — one rule, no
+            // clipShape of our own.
+            .listRowBackground(Self.surface)
+            .listRowSeparator(.hidden)
+        } header: {
+            if let kickerCount {
+                SectionKicker(title: "Connections", count: kickerCount)
             }
-        }
-        // The same actions three ways — the ⋯ button in the head (visible),
-        // the row's swipe (habitual), and long-press (discoverable by touch).
-        .contextMenu { cardActions }
-        // Rename a session / window from its row long-press.
-        .moshpitCard(item: $renameTarget) { target in
-            MoshpitInputCard(
-                icon: "pencil",
-                title: "\(target.title)",
-                message: nil,
-                placeholder: "Name",
-                text: $renameText,
-                confirmLabel: "Rename",
-                onCancel: { renameTarget = nil },
-                onConfirm: {
-                    target.apply(renameText)
-                    renameTarget = nil
-                })
-        }
-        // Confirm killing a session / window / pane from its row long-press.
-        .confirmationDialog(
-            killTarget?.confirmTitle ?? "",
-            isPresented: Binding(get: { killTarget != nil },
-                                 set: { if !$0 { killTarget = nil } }),
-            titleVisibility: .visible,
-            presenting: killTarget
-        ) { target in
-            Button(target.label, role: .destructive) {
-                target.perform()
-                killTarget = nil
+        } footer: {
+            if showsFooter {
+                // A quiet floor for the page. Doubles as the "which build am
+                // I running" answer for sideload feedback.
+                HomeFooter()
             }
-            Button("Cancel", role: .cancel) { killTarget = nil }
-        }
-        // Name a new session before creating it (blank = tmux auto-name).
-        .appSheet(item: $agentTaskTarget) { target in
-            NewAgentTaskSheet(initialRepos: target.initialRepos,
-                              load: target.load, start: target.start)
-        }
-        .modifier(WorktreeRemovalDialogs(
-            target: $worktreeTarget, forceTarget: $worktreeForceTarget, error: $worktreeError))
-        .moshpitCard(item: $newSessionTarget) { target in
-            MoshpitInputCard(
-                icon: "plus",
-                title: "New \(target.noun)",
-                message: Text("Leave blank for an automatic name."),
-                placeholder: "Name (optional)",
-                text: $newSessionName,
-                confirmLabel: "Create",
-                onCancel: { newSessionTarget = nil },
-                onConfirm: {
-                    let trimmed = newSessionName.trimmingCharacters(in: .whitespacesAndNewlines)
-                    target.apply(trimmed.isEmpty ? nil : trimmed)
-                    newSessionTarget = nil
-                })
         }
     }
 
-    /// Open the rename alert pre-filled with `currentName`, applying through
-    /// `apply` on confirm.
+    /// The host head as the card's first row. The CONNECTION's actions live
+    /// here and only here — the ⋯ menu (visible), the swipe (habitual) and
+    /// the long-press (discoverable by touch) — so a finger on a tree row
+    /// below gets that row's, not these. The card's dialogs hang off this
+    /// row as well: one row per host, so each presents once.
+    private var headRow: some View {
+        // The swipe is the card's own (SwipeTrayRow), not the list's: the
+        // list's would slide this one row — background and all — away from
+        // the tree beneath it, tearing the card in two.
+        SwipeTrayRow(id: "head", openRow: $openSwipeRow, actions: headTrayActions, style: .head) {
+            hostHead
+                // Status edge-light: an INSET capsule, not a full-height square-ended
+                // bar — the old rail ran past the card's corners and read as a
+                // stray line floating outside it. Only drawn when there IS a status;
+                // a saved card carries no light, so live ones stand out more.
+                .overlay(alignment: .leading) {
+                    if isLive || isConnecting || isDead || isAttachStalled {
+                        Capsule()
+                            .fill(statusTint)
+                            .frame(width: 3)
+                            .padding(.vertical, 14)
+                            .padding(.leading, 7)
+                            .shadow(color: statusTint.opacity(isLive ? 0.55 : 0.3), radius: 4)
+                    }
+                }
+        }
+            .listRowInsets(EdgeInsets())
+            .contextMenu { cardActions }
+            // Confirm killing a session / window / pane from a row's swipe or
+            // long-press.
+            .confirmationDialog(
+                killTarget?.confirmTitle ?? "",
+                isPresented: Binding(get: { killTarget != nil },
+                                     set: { if !$0 { killTarget = nil } }),
+                titleVisibility: .visible,
+                presenting: killTarget
+            ) { target in
+                Button(target.label, role: .destructive) {
+                    target.perform()
+                    killTarget = nil
+                }
+                Button("Cancel", role: .cancel) { killTarget = nil }
+            }
+            .appSheet(item: $agentTaskTarget) { target in
+                NewAgentTaskSheet(initialRepos: target.initialRepos,
+                                  load: target.load, start: target.start)
+            }
+            .modifier(WorktreeRemovalDialogs(
+                target: $worktreeTarget, forceTarget: $worktreeForceTarget,
+                onError: { message in
+                    present(Modal(kind: .notice(NoticeRequest(
+                        icon: "trash.slash.fill",
+                        title: "Couldn't remove the worktree",
+                        message: message))))
+                }))
+    }
+
+    /// Ask Home for the rename card, pre-filled with `currentName`, applying
+    /// through `apply` on confirm.
     private func beginRename(title: String, currentName: String, apply: @escaping (String) -> Void) {
-        renameText = currentName
-        renameTarget = RenameTarget(title: title, currentName: currentName, apply: apply)
+        present(Modal(kind: .input(InputRequest(
+            icon: "pencil", title: "\(title)", placeholder: "Name",
+            initialText: currentName, confirmLabel: "Rename", apply: apply))))
+    }
+
+    /// Ask Home for the name-before-create card: a session, or a window in
+    /// one. Blank means "let the program name it" — `apply` gets nil.
+    private func beginCreate(noun: String, apply: @escaping (String?) -> Void) {
+        present(Modal(kind: .input(InputRequest(
+            icon: "plus", title: "New \(noun)",
+            message: Text("Leave blank for an automatic name."),
+            placeholder: "Name (optional)", confirmLabel: "Create",
+            apply: { typed in
+                let trimmed = typed.trimmingCharacters(in: .whitespacesAndNewlines)
+                apply(trimmed.isEmpty ? nil : trimmed)
+            }))))
     }
 
     // MARK: Host head
@@ -893,6 +939,22 @@ struct ConnectionCard: View {
     /// The card's surface: the system's grouped-row colour, so a card sits on
     /// the home list the way a row sits in Settings.
     static let surface = Color(.secondarySystemGroupedBackground)
+
+    /// The head's swipe: the same three as the menu, Delete at the edge the
+    /// way the system puts its destructive action.
+    private var headTrayActions: [SwipeTrayAction] {
+        var actions = [
+            SwipeTrayAction(id: "edit", title: String(localized: "Edit"),
+                            systemImage: "pencil", tint: Ink.accent, action: onEdit),
+        ]
+        if isLive {
+            actions.append(SwipeTrayAction(id: "disconnect", title: String(localized: "Disconnect"),
+                                           systemImage: "bolt.slash", tint: Ink.warn, action: onDisconnect))
+        }
+        actions.append(SwipeTrayAction(id: "delete", title: String(localized: "Delete"),
+                                       systemImage: "trash", tint: Ink.danger, action: onDelete))
+        return actions
+    }
 
     /// Open/Connect, Edit, Disconnect, Delete — shared by the head's ⋯ menu and
     /// the long-press context menu so the two can never disagree.
@@ -1100,63 +1162,68 @@ struct ConnectionCard: View {
         // `+` — hiding the section outright made the app's most valuable
         // action impossible to reach until an agent already existed.
         if control.snapshot.isAttached {
-            VStack(alignment: .leading, spacing: 0) {
-                Rectangle().fill(Ink.cardDivider).frame(height: 1)
-                    .padding(.bottom, 10)
+            agentsHeaderRow(control: control, entries: entries)
+            ForEach(entries) { entry in
+                agentRow(entry, isActive: entry.paneId == control.snapshot.activePaneId) {
+                    // Exactly what a tree pane row does — same selection
+                    // call, same destination. One way in.
+                    Haptics.select()
+                    control.selectPane(entry.paneId)
+                    onEnter()
+                }
+                .listRowInsets(EdgeInsets(top: 0, leading: 14, bottom: 0, trailing: 14))
+            }
+        }
+    }
 
-                HStack {
-                    HStack(spacing: 7) {
-                        Text("AGENTS")
+    /// The AGENTS header as a row: divider, title + count, NEEDS YOU, `+`.
+    private func agentsHeaderRow<C: MultiplexerControlling>(control: C, entries: [AgentEntry]) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Rectangle().fill(Ink.cardDivider).frame(height: 1)
+                .padding(.bottom, 10)
+
+            HStack {
+                HStack(spacing: 7) {
+                    Text("AGENTS")
+                        .font(Face.mono(10, .bold))
+                        .kerning(1.7)
+                        .foregroundStyle(Ink.sectionTitle)
+                    CountBadge(count: entries.count)
+                }
+                Spacer()
+                HStack(spacing: 8) {
+                    // "NEEDS YOU" — with the count once there's more than
+                    // one, because "2 NEED YOU" and "one of several needs
+                    // you" are different amounts of trouble.
+                    let waiting = entries.filter { $0.signal == .attention }.count
+                    // A tinted capsule, not bare text — this is the single
+                    // most important signal on the screen and it was
+                    // dressing like a section label.
+                    if waiting >= 1 {
+                        Text(verbatim: waiting == 1
+                            ? AgentSignal.attention.label.uppercased()
+                            : String(localized: "\(waiting) NEED YOU"))
                             .font(Face.mono(10, .bold))
-                            .kerning(1.7)
-                            .foregroundStyle(Ink.sectionTitle)
-                        CountBadge(count: entries.count)
+                            .kerning(1.2)
+                            .foregroundStyle(Ink.warn)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(Ink.warn.opacity(0.12), in: Capsule())
+                            .overlay(Capsule().strokeBorder(Ink.warn.opacity(0.28), lineWidth: 1))
                     }
-                    Spacer()
-                    HStack(spacing: 8) {
-                        // "NEEDS YOU" — with the count once there's more than
-                        // one, because "2 NEED YOU" and "one of several needs
-                        // you" are different amounts of trouble.
-                        let waiting = entries.filter { $0.signal == .attention }.count
-                        // A tinted capsule, not bare text — this is the single
-                        // most important signal on the screen and it was
-                        // dressing like a section label.
-                        if waiting >= 1 {
-                            Text(verbatim: waiting == 1
-                                ? AgentSignal.attention.label.uppercased()
-                                : String(localized: "\(waiting) NEED YOU"))
-                                .font(Face.mono(10, .bold))
-                                .kerning(1.2)
-                                .foregroundStyle(Ink.warn)
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 4)
-                                .background(Ink.warn.opacity(0.12), in: Capsule())
-                                .overlay(Capsule().strokeBorder(Ink.warn.opacity(0.28), lineWidth: 1))
-                        }
-                        newAgentTaskButton(control: control)
-                    }
-                }
-                .padding(.bottom, 6)
-
-                if entries.isEmpty {
-                    Text("Nothing running — start a task to isolate one")
-                        .font(Face.mono(11))
-                        .foregroundStyle(Ink.meta)
-                        .padding(.vertical, 6)
-                }
-
-                ForEach(entries) { entry in
-                    agentRow(entry, isActive: entry.paneId == control.snapshot.activePaneId) {
-                        // Exactly what a tree pane row does — same selection
-                        // call, same destination. One way in.
-                        Haptics.select()
-                        control.selectPane(entry.paneId)
-                        onEnter()
-                    }
+                    newAgentTaskButton(control: control)
                 }
             }
-            .padding(EdgeInsets(top: 10, leading: 14, bottom: 0, trailing: 14))
+            .padding(.bottom, 6)
+
+            if entries.isEmpty {
+                Text("Nothing running — start a task to isolate one")
+                    .font(Face.mono(11))
+                    .foregroundStyle(Ink.meta)
+                    .padding(.vertical, 6)
+            }
         }
+        .listRowInsets(EdgeInsets(top: 10, leading: 14, bottom: 0, trailing: 14))
     }
 
     /// One agent, in the same row grammar as the tree below: identity +
@@ -1307,7 +1374,7 @@ struct ConnectionCard: View {
             let name = namedAgent
                 ?? (pane.command.isEmpty
                     ? String(localized: "agent")
-                    : normalizedCommand(pane.command))
+                    : pane.displayCommand)
             let location = [session?.name, window?.name]
                 .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
             return AgentEntry(paneId: paneId, name: name, location: location,
@@ -1395,21 +1462,6 @@ struct ConnectionCard: View {
         return (id, label)
     }
 
-    /// tmux reports the foreground process's comm name, and Claude Code sets
-    /// a process title that STARTS WITH ITS VERSION — the comm arrives as
-    /// "2.1.222", which no icon map and no human recognizes. Normalize before
-    /// icon lookup and display: anything containing "claude" is claude, and a
-    /// bare semver comm is claude too (nothing else in a terminal names its
-    /// process a version string).
-    private static func normalizedCommand(_ command: String) -> String {
-        let lowered = command.lowercased()
-        if lowered.contains("claude") { return "claude" }
-        if lowered.range(of: #"^\d+\.\d+\.\d+$"#, options: .regularExpression) != nil {
-            return "claude"
-        }
-        return command
-    }
-
     /// A pane's leading icon — what's RUNNING, at a glance. Three shells and
     /// a vim all read as bare words without this; the tile also gives every
     /// pane row the same front anchor the agent rows have.
@@ -1456,11 +1508,36 @@ struct ConnectionCard: View {
 
     // MARK: Sessions tree
 
+    @ViewBuilder
     private func sessionsSection<C: MultiplexerControlling>(control: C) -> some View {
         let snapshot = control.snapshot
         let sessions = snapshot.sessions.values.sorted { $0.id < $1.id }
 
-        return VStack(alignment: .leading, spacing: 0) {
+        sessionsHeaderRow(control: control, count: sessions.count)
+        if let herdr = control as? HerdrControlClient,
+           let mismatch = herdr.protocolMismatch {
+            // Version skew: every command is being refused, so "No
+            // workspaces yet" would be a lie and the + button a trap
+            // (its create fails silently). Name the problem and offer
+            // the one remedy, same as the terminal banner.
+            herdrMismatchRow(mismatch, client: herdr)
+                .listRowInsets(Self.treeInsets(last: true))
+        } else if sessions.isEmpty {
+            sessionsEmptyRow(control.multiplexer.vocabulary)
+                .listRowInsets(Self.treeInsets(last: true))
+        } else {
+            let rows = Self.treeRows(sessions: sessions, snapshot: snapshot,
+                                     collapsed: collapsedSessions, expanded: expandedWindows)
+            ForEach(rows) { row in
+                treeRow(row, snapshot: snapshot, control: control)
+                    .listRowInsets(Self.treeInsets(last: row.id == rows.last?.id))
+            }
+        }
+    }
+
+    /// The SESSIONS header as a row: divider, title + count, `+`, refresh.
+    private func sessionsHeaderRow<C: MultiplexerControlling>(control: C, count: Int) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
             Rectangle().fill(Ink.cardDivider).frame(height: 1)
                 .padding(.bottom, 10)
 
@@ -1470,14 +1547,13 @@ struct ConnectionCard: View {
                         .font(Face.mono(10, .bold))
                         .kerning(1.7)
                         .foregroundStyle(Ink.sectionTitle)
-                    CountBadge(count: sessions.count)
+                    CountBadge(count: count)
                 }
                 Spacer()
                 HStack(spacing: 8) {
                     Button {
                         Haptics.tap()
-                        newSessionName = ""
-                        newSessionTarget = NewSessionTarget(noun: control.multiplexer.vocabulary.session) { control.newSession(named: $0) }
+                        beginCreate(noun: control.multiplexer.vocabulary.session) { control.newSession(named: $0) }
                     } label: {
                         Image(systemName: "plus")
                             .font(.system(size: 12, weight: .bold))
@@ -1507,36 +1583,143 @@ struct ConnectionCard: View {
                 }
                 .buttonStyle(.plain)
             }
-            .padding(.bottom, 8)
+            .padding(.bottom, 6)
+        }
+        .listRowInsets(EdgeInsets(top: 0, leading: 14, bottom: 0, trailing: 14))
+    }
 
-            VStack(alignment: .leading, spacing: 4) {
-                if let herdr = control as? HerdrControlClient,
-                   let mismatch = herdr.protocolMismatch {
-                    // Version skew: every command is being refused, so "No
-                    // workspaces yet" would be a lie and the + button a trap
-                    // (its create fails silently). Name the problem and offer
-                    // the one remedy, same as the terminal banner.
-                    herdrMismatchRow(mismatch, client: herdr)
-                } else if sessions.isEmpty {
-                    sessionsEmptyRow(control.multiplexer.vocabulary)
-                } else {
-                    ForEach(sessions) { session in
-                        sessionRow(session, snapshot: snapshot, control: control)
-                        if !collapsedSessions.contains(session.id) {
-                            ForEach(windows(in: session, snapshot: snapshot)) { window in
-                                windowRow(window, snapshot: snapshot, control: control)
-                                if expandedWindows.contains(window.id) {
-                                    ForEach(snapshot.panes(inWindow: window.id)) { pane in
-                                        paneRow(pane, snapshot: snapshot, control: control)
-                                    }
-                                }
-                            }
-                        }
-                    }
+    /// Tree rows sit 4pt apart inside the card's 14pt side margins; the last
+    /// one carries the card's bottom padding.
+    private static func treeInsets(last: Bool) -> EdgeInsets {
+        EdgeInsets(top: 2, leading: 14, bottom: last ? 12 : 2, trailing: 14)
+    }
+
+    /// One tree row of any level. A List row each — that is what gives every
+    /// level its own swipe actions and long-press menu.
+    @ViewBuilder
+    private func treeRow<C: MultiplexerControlling>(_ row: TreeRow,
+                                                    snapshot: TmuxSnapshot,
+                                                    control: C) -> some View {
+        switch row {
+        case .session(let session): sessionRow(session, snapshot: snapshot, control: control)
+        case .window(let window): windowRow(window, snapshot: snapshot, control: control)
+        case .pane(let pane): paneRow(pane, snapshot: snapshot, control: control)
+        }
+    }
+
+    /// The tree as List rows in display order — what each session's and
+    /// window's disclosure state exposes. Flat, so the List gets one ForEach
+    /// of stable ids (row-level swipe, insert/remove animation) and the last
+    /// row knows it is last.
+    enum TreeRow: Identifiable, Equatable {
+        case session(SessionInfo)
+        case window(WindowInfo)
+        case pane(PaneInfo)
+
+        var id: String {
+            switch self {
+            case .session(let session): return "s" + session.id
+            case .window(let window): return "w" + window.id
+            case .pane(let pane): return "p" + pane.id
+            }
+        }
+    }
+
+    /// Pure, so the flattening — which rows a collapsed session or an
+    /// unexpanded window hides — is testable without a view.
+    static func treeRows(sessions: [SessionInfo], snapshot: TmuxSnapshot,
+                         collapsed: Set<String>, expanded: Set<String>) -> [TreeRow] {
+        var rows: [TreeRow] = []
+        for session in sessions {
+            rows.append(.session(session))
+            guard !collapsed.contains(session.id) else { continue }
+            for window in snapshot.windows(inSession: session.id) {
+                rows.append(.window(window))
+                guard expanded.contains(window.id) else { continue }
+                for pane in snapshot.panes(inWindow: window.id) {
+                    rows.append(.pane(pane))
                 }
             }
         }
-        .padding(EdgeInsets(top: 0, leading: 14, bottom: 12, trailing: 14))
+        return rows
+    }
+
+    // MARK: Row actions — the swipe and the long-press share these
+
+    private func renameSession<C: MultiplexerControlling>(_ session: SessionInfo, control: C) {
+        beginRename(title: String(localized: "Rename \(control.multiplexer.vocabulary.session)"),
+                    currentName: session.name) { control.renameSession(session.id, to: $0) }
+    }
+
+    private func renameWindow<C: MultiplexerControlling>(_ window: WindowInfo, control: C) {
+        beginRename(title: String(localized: "Rename \(control.multiplexer.vocabulary.window)"),
+                    currentName: window.name) { control.renameWindow(window.id, to: $0) }
+    }
+
+    // Kill at each tree level asks first (`killTarget` → the head row's
+    // confirmation dialog). The menu button and the swipe tray share one
+    // target builder so the two never disagree on wording.
+
+    private func killSessionTarget<C: MultiplexerControlling>(_ session: SessionInfo,
+                                                              snapshot: TmuxSnapshot,
+                                                              control: C) -> KillTarget {
+        let vocab = control.multiplexer.vocabulary
+        return KillTarget(
+            label: "\(vocab.killVerb) \(vocab.session)",
+            confirmTitle: String(localized: "\(vocab.killVerb) \(vocab.sessionLower) \"\(snapshot.sessionDisplayName(session))\"?")
+        ) { control.killSession(session.id) }
+    }
+
+    private func killWindowTarget<C: MultiplexerControlling>(_ window: WindowInfo, control: C) -> KillTarget {
+        let vocab = control.multiplexer.vocabulary
+        return KillTarget(
+            label: "\(vocab.killVerb) \(vocab.window)",
+            confirmTitle: String(localized: "\(vocab.killVerb) \(vocab.windowLower) \"\(window.displayTitle(vocab))\"?")
+        ) { control.killWindow(window.id) }
+    }
+
+    /// tmux panes have no name, so Kill is the pane level's one action.
+    private func killPaneTarget<C: MultiplexerControlling>(_ pane: PaneInfo, control: C) -> KillTarget {
+        let vocab = control.multiplexer.vocabulary
+        return KillTarget(
+            label: "\(vocab.killVerb) \(String(localized: "Pane"))",
+            confirmTitle: String(localized: "\(vocab.killVerb) pane \(pane.index)?")
+        ) { control.killPane(pane.id) }
+    }
+
+    private func killSessionButton<C: MultiplexerControlling>(_ session: SessionInfo,
+                                                              snapshot: TmuxSnapshot,
+                                                              control: C) -> some View {
+        let target = killSessionTarget(session, snapshot: snapshot, control: control)
+        return Button(role: .destructive) { killTarget = target } label: {
+            Label(target.label, systemImage: "xmark.circle")
+        }
+    }
+
+    private func killWindowButton<C: MultiplexerControlling>(_ window: WindowInfo, control: C) -> some View {
+        let target = killWindowTarget(window, control: control)
+        return Button(role: .destructive) { killTarget = target } label: {
+            Label(target.label, systemImage: "xmark.circle")
+        }
+    }
+
+    private func killPaneButton<C: MultiplexerControlling>(_ pane: PaneInfo, control: C) -> some View {
+        let target = killPaneTarget(pane, control: control)
+        return Button(role: .destructive) { killTarget = target } label: {
+            Label(target.label, systemImage: "rectangle.split.2x1")
+        }
+    }
+
+    /// The swipe tray's Kill: the same target as the menu button.
+    private func killAction(_ target: KillTarget, systemImage: String = "xmark.circle") -> SwipeTrayAction {
+        SwipeTrayAction(id: "kill", title: target.label, systemImage: systemImage, tint: Ink.danger) {
+            killTarget = target
+        }
+    }
+
+    private func renameAction(_ rename: @escaping () -> Void) -> SwipeTrayAction {
+        SwipeTrayAction(id: "rename", title: String(localized: "Rename"),
+                        systemImage: "pencil", tint: Ink.accent, action: rename)
     }
 
     /// The last tmux-only string on this screen: a herdr connection with an
@@ -1606,11 +1789,13 @@ struct ConnectionCard: View {
         let expanded = !collapsedSessions.contains(session.id)
         let windowCount = snapshot.windows(inSession: session.id).count
 
-        return Button {
+        let row = Button {
             // Tapping any session expands/collapses its windows; several can be
             // open at once. Switching the attached session happens when you
             // enter one of its windows/panes.
-            if expanded { collapsedSessions.insert(session.id) } else { collapsedSessions.remove(session.id) }
+            withAnimation(.snappy) {
+                if expanded { collapsedSessions.insert(session.id) } else { collapsedSessions.remove(session.id) }
+            }
         } label: {
             VStack(alignment: .leading, spacing: 0) {
                 HStack(spacing: 8) {
@@ -1701,11 +1886,20 @@ struct ConnectionCard: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+
+        return SwipeTrayRow(id: "s:\(session.id)", openRow: $openSwipeRow, actions: [
+            renameAction { renameSession(session, control: control) },
+            killAction(killSessionTarget(session, snapshot: snapshot, control: control)),
+        ]) { row }
         .contextMenu {
             Button {
-                beginRename(title: String(localized: "Rename \(control.multiplexer.vocabulary.session)"),
-                            currentName: session.name) { control.renameSession(session.id, to: $0) }
+                renameSession(session, control: control)
             } label: { Label("Rename", systemImage: "pencil") }
+            Button {
+                beginCreate(noun: control.multiplexer.vocabulary.window) {
+                    control.newWindow(inSession: session.id, named: $0)
+                }
+            } label: { Label("New \(control.multiplexer.vocabulary.window)", systemImage: "plus.rectangle") }
             if let repo = control.worktreeRepo(for: session.id),
                let herdr = control as? HerdrControlClient {
                 // Only a session that IS a checkout can be removed as a task;
@@ -1718,16 +1912,7 @@ struct ConnectionCard: View {
                         })
                 } label: { Label("Remove Worktree", systemImage: "trash.slash") }
             }
-            Button(role: .destructive) {
-                let vocab = control.multiplexer.vocabulary
-                killTarget = KillTarget(
-                    label: "\(vocab.killVerb) \(vocab.session)",
-                    confirmTitle: String(localized: "\(vocab.killVerb) \(vocab.sessionLower) \"\(snapshot.sessionDisplayName(session))\"?")
-                ) { control.killSession(session.id) }
-            } label: {
-                Label("\(control.multiplexer.vocabulary.killVerb) \(control.multiplexer.vocabulary.session)",
-                      systemImage: "xmark.circle")
-            }
+            killSessionButton(session, snapshot: snapshot, control: control)
         }
     }
 
@@ -1738,7 +1923,7 @@ struct ConnectionCard: View {
         let panes = window.paneCount
         let expanded = expandedWindows.contains(window.id)
 
-        return HStack(spacing: 4) {
+        let row = HStack(spacing: 4) {
             // Hierarchy is pure indentation — the old rail-and-tick glyphs
             // read as ASCII art (├—) no matter how thinly they were drawn.
             Color.clear.frame(width: 26)
@@ -1746,7 +1931,9 @@ struct ConnectionCard: View {
             // Disclosure for the pane level — only multi-pane windows expand.
             if panes > 1 {
                 Button {
-                    if expanded { expandedWindows.remove(window.id) } else { expandedWindows.insert(window.id) }
+                    withAnimation(.snappy) {
+                        if expanded { expandedWindows.remove(window.id) } else { expandedWindows.insert(window.id) }
+                    }
                 } label: {
                     Image(systemName: expanded ? "chevron.down" : "chevron.right")
                         .font(.system(size: 8, weight: .bold))
@@ -1796,31 +1983,29 @@ struct ConnectionCard: View {
             }
             .buttonStyle(.plain)
         }
+
+        return SwipeTrayRow(id: "w:\(window.id)", openRow: $openSwipeRow, actions: [
+            renameAction { renameWindow(window, control: control) },
+            killAction(killWindowTarget(window, control: control)),
+        ]) { row }
         .contextMenu {
             Button {
-                beginRename(title: String(localized: "Rename \(control.multiplexer.vocabulary.window)"),
-                            currentName: window.name) { control.renameWindow(window.id, to: $0) }
+                renameWindow(window, control: control)
             } label: { Label("Rename", systemImage: "pencil") }
-            Button(role: .destructive) {
-                let vocab = control.multiplexer.vocabulary
-                killTarget = KillTarget(
-                    label: "\(vocab.killVerb) \(vocab.window)",
-                    confirmTitle: String(localized: "\(vocab.killVerb) \(vocab.windowLower) \"\(window.displayTitle(vocab))\"?")
-                ) { control.killWindow(window.id) }
-            } label: {
-                Label("\(control.multiplexer.vocabulary.killVerb) \(control.multiplexer.vocabulary.window)",
-                      systemImage: "xmark.circle")
-            }
-            // Pane level: tmux panes have no name, so only Kill is offered.
-            // The active pane of this window is the one Moshpit shows full-screen.
+            Button {
+                // Splits this window whether or not it is on screen, and
+                // moves the attached client onto it — the row's violet
+                // follows, the way `+` on the SESSIONS header does.
+                Haptics.tap()
+                control.newPane(inWindow: window.id)
+            } label: { Label("New Pane", systemImage: "rectangle.split.2x1") }
+            killWindowButton(window, control: control)
+            // Pane level: the active pane of this window is the one Moshpit
+            // shows full-screen; its Kill rides here so a single-pane window
+            // needn't be expanded to reach it.
             if let pane = activePane(of: window, snapshot: snapshot) {
                 Divider()
-                Button(role: .destructive) {
-                    killTarget = KillTarget(
-                        label: "\(control.multiplexer.vocabulary.killVerb) \(String(localized: "Pane"))",
-                        confirmTitle: String(localized: "\(control.multiplexer.vocabulary.killVerb) pane \(pane.index)?")
-                    ) { control.killPane(pane.id) }
-                } label: { Label("\(control.multiplexer.vocabulary.killVerb) \(String(localized: "Pane"))", systemImage: "rectangle.split.2x1") }
+                killPaneButton(pane, control: control)
             }
         }
     }
@@ -1831,9 +2016,9 @@ struct ConnectionCard: View {
                          snapshot: TmuxSnapshot,
                          control: C) -> some View {
         let isActive = pane.id == snapshot.activePaneId
-        let label = pane.command.isEmpty ? "shell" : Self.normalizedCommand(pane.command)
+        let label = pane.command.isEmpty ? "shell" : pane.displayCommand
 
-        return Button {
+        let row = Button {
             Haptics.select()
             control.selectPane(pane.id)
             onEnter()
@@ -1866,13 +2051,12 @@ struct ConnectionCard: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+
+        return SwipeTrayRow(id: "p:\(pane.id)", openRow: $openSwipeRow, actions: [
+            killAction(killPaneTarget(pane, control: control), systemImage: "rectangle.split.2x1"),
+        ]) { row }
         .contextMenu {
-            Button(role: .destructive) {
-                killTarget = KillTarget(
-                    label: "\(control.multiplexer.vocabulary.killVerb) \(String(localized: "Pane"))",
-                    confirmTitle: String(localized: "Kill pane \(pane.index)?")
-                ) { control.killPane(pane.id) }
-            } label: { Label("\(control.multiplexer.vocabulary.killVerb) \(String(localized: "Pane"))", systemImage: "rectangle.split.2x1") }
+            killPaneButton(pane, control: control)
         }
     }
 
@@ -1935,6 +2119,7 @@ struct ConnectionCard: View {
             .background(connectingTint.opacity(0.07), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
         }
         .padding(EdgeInsets(top: 0, leading: 14, bottom: 12, trailing: 14))
+        .listRowInsets(EdgeInsets())
         .accessibilityIdentifier("card-connecting-\(connection.displayName)")
     }
 
@@ -1985,6 +2170,7 @@ struct ConnectionCard: View {
             .background(Ink.warn.opacity(0.07), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
         }
         .padding(EdgeInsets(top: 0, leading: 14, bottom: 12, trailing: 14))
+        .listRowInsets(EdgeInsets())
         .accessibilityIdentifier("card-attach-stalled-\(connection.displayName)")
     }
 
@@ -2017,6 +2203,7 @@ struct ConnectionCard: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .listRowInsets(EdgeInsets())
         .accessibilityIdentifier("card-open-terminal-\(connection.displayName)")
     }
 
@@ -2041,6 +2228,7 @@ struct ConnectionCard: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .listRowInsets(EdgeInsets())
     }
 }
 
@@ -2056,7 +2244,10 @@ struct ConnectionCard: View {
 private struct WorktreeRemovalDialogs: ViewModifier {
     @Binding var target: ConnectionCard.WorktreeTarget?
     @Binding var forceTarget: ConnectionCard.WorktreeTarget?
-    @Binding var error: String?
+    /// Why a removal didn't happen — herdr's own words, not ours — for the
+    /// card to have Home show (a notice is a screen-sized overlay, see
+    /// `HomeView.cardModal`).
+    let onError: (String) -> Void
 
     func body(content: Content) -> some View {
         content
@@ -2082,15 +2273,6 @@ private struct WorktreeRemovalDialogs: ViewModifier {
             } message: { _ in
                 Text("Those changes exist nowhere else. Removing the worktree throws them away.")
             }
-            .moshpitCard(isPresented: Binding(
-                get: { error != nil }, set: { if !$0 { error = nil } }
-            )) {
-                MoshpitNoticeCard(
-                    icon: "trash.slash.fill",
-                    title: "Couldn't remove the worktree",
-                    message: error ?? ""
-                ) { error = nil }
-            }
     }
 
     private func remove(_ item: ConnectionCard.WorktreeTarget, force: Bool) {
@@ -2103,7 +2285,7 @@ private struct WorktreeRemovalDialogs: ViewModifier {
             case .needsForce:
                 forceTarget = item
             case .failed(let message):
-                error = message
+                onError(message)
             }
         }
     }
