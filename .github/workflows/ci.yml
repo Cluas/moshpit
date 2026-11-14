@@ -128,9 +128,13 @@ jobs:
             android/app/build/outputs/bundle/release/*.aab
             android/app/build/rust/release/symbols
 
+  # GitHub's Xcode 27 image (macOS 27, arm64): the app ships built with
+  # Xcode 27, and macos-26 carries Xcode 26.0 to 26.6 only, whose Swift 6.2
+  # refuses code Xcode 27 builds.
   build-test:
     name: Build & Test (iOS Simulator)
-    runs-on: macos-26
+    runs-on: xcode-27
+    timeout-minutes: 90
 
     env:
       # Local SPM checkout dir so downloaded packages can be cached across runs
@@ -148,9 +152,9 @@ jobs:
       # therefore fails with "cannot find type 'SpeechTranscriber'", which is
       # what broke every run while this job still pinned Xcode 16.4 on
       # macos-15. The app ships built with Xcode 27, so the newest 27.x on the
-      # image is picked, else the newest 26.x (the code compiles under both),
-      # else the image's default Xcode.app if GitHub rotates the versioned
-      # paths.
+      # image is picked, else the newest 26.x (a fallback the code should
+      # still compile under), else the image's default Xcode.app if GitHub
+      # rotates the versioned paths.
       #
       # The simulator is the iPhone 17 Pro when the chosen Xcode has one, else
       # its last iPhone: a newer Xcode's runtimes may not carry that name.
@@ -185,9 +189,16 @@ jobs:
       # keeps nothing in ~/.cargo/bin; the step's PATH reaches the phase
       # through xcodebuild). Install
       # the pinned toolchain and the simulator's Rust target up front, so
-      # the Xcode build log is not where a download shows up.
+      # the Xcode build log is not where a download shows up. An image
+      # without rustup gets it from rustup.rs first.
       - name: Install the Rust toolchain
         run: |
+          if ! command -v rustup >/dev/null; then
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs |
+              sh -s -- -y --profile minimal --default-toolchain none
+            echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+            export PATH="$HOME/.cargo/bin:$PATH"
+          fi
           rustup toolchain install
           rustup target add aarch64-apple-ios-sim
           rustc --version

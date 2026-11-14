@@ -162,7 +162,9 @@ final class TerminalNSHStage {
         activeObserver = NotificationCenter.default.addObserver(
             forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main
         ) { [weak self] _ in
-            MainActor.assumeIsolated { self?.reassert() }
+            // What it found is for tests. The observer's closure returns
+            // nothing, and Xcode 26 won't let the result through it.
+            MainActor.assumeIsolated { _ = self?.reassert() }
         }
         // A terminal was minted (B445): it may be the one the target names
         // now (a pane's terminal made again under the same controller), and

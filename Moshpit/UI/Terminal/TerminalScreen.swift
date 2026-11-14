@@ -513,10 +513,7 @@ struct TerminalScreen: View {
         .animation(.easeOut(duration: 0.2), value: copiedURL)
         .animation(.easeOut(duration: 0.2), value: active?.tmuxControl?.notice)
         .onReceive(NotificationCenter.default.publisher(
-            for: UIPasteboard.changedNotification)) { _ in
-            clipboardHasImage = UIPasteboard.general.hasImages
-            Task { await detectCopiedURL() }
-        }
+            for: UIPasteboard.changedNotification)) { _ in pasteboardChanged() }
         .onAppear {
             clipboardHasImage = UIPasteboard.general.hasImages
             HardwareKeys.shared.install(owner: hardwareKeyOwner, hardwareKeyCommands)
@@ -1684,6 +1681,15 @@ struct TerminalScreen: View {
     private func disarmStickyCtrlIfNeeded() {
         guard ctrlArmed else { return }
         stickyCtrl.disarm()
+    }
+
+    /// The pasteboard changed: whether it holds an image, and a link in it
+    /// to offer. A method of its own: inline in `body`'s modifier chain,
+    /// Xcode 26's type checker gave up on it ("unable to type-check this
+    /// expression in reasonable time").
+    private func pasteboardChanged() {
+        clipboardHasImage = UIPasteboard.general.hasImages
+        Task { () async -> Void in await detectCopiedURL() }
     }
 
     /// Copying inside the terminal is how users grab dev-server/OAuth links
