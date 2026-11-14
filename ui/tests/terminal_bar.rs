@@ -294,3 +294,39 @@ fn the_terminal_pages_ground_is_its_terminal_themes_background() {
             .color("terminal-bg")
     );
 }
+
+/// B496: on herdr the grid shows herdr's own ground (its grey), not the
+/// terminal theme's; B495 matched the terminal's margins to it, and the
+/// page's ground (bar strip, panels) follows the host's `ground` now, as
+/// tokens swapped in place.
+#[test]
+fn the_terminal_pages_ground_follows_the_grids() {
+    use moshpit_ui::screen::Params;
+    use moshpit_ui::terminal::ground_tokens;
+    use nsh_core::{color::rgb, element::AdaptiveColor};
+    let params = Params {
+        terminal: Some("#000000".to_owned()),
+        ..Params::default()
+    };
+    let grey = AdaptiveColor::new(rgb(0x3A3A3A), rgb(0x3A3A3A));
+    assert_eq!(
+        ground_tokens(&params, Some("#3A3A3A")).color("terminal-bg"),
+        Some(grey),
+        "the grid's ground"
+    );
+    assert_eq!(
+        ground_tokens(&params, None).color("terminal-bg"),
+        Some(AdaptiveColor::new(rgb(0x000000), rgb(0x000000))),
+        "none said: the terminal theme's (B488)"
+    );
+    // The chrome message carries it.
+    let message = serde_json::json!({
+        "op": "chrome", "name": "studio", "user": "cluas", "host": "studio.local", "port": 22,
+        "mosh": false, "mux": "herdr", "pill": "ssh", "state": "live",
+        "cover": {"kind": "none", "state": "live"}, "content": "terminal", "ground": "#3A3A3A"
+    });
+    assert!(
+        moshpit_ui::terminal::Message::parse(&message.to_string()).is_ok(),
+        "the page takes a chrome with its ground"
+    );
+}

@@ -11,7 +11,9 @@
 #                         bound to the maintainer's local servers and site checkout
 #   docs/nsh/PROGRESS.md  the working ledger: field logs, devices, test machines
 #   spike/                experiments run on the maintainer's devices (their
-#                         scripts name them)
+#                         scripts name them); only tmux-bench's project and
+#                         sources go out, which scripts/rust/test-build-ios.sh
+#                         (run by CI) reads
 #
 # The App Store pipeline (release-upload/promote/listing/screenshots), the store
 # listing and runbook, the TestFlight notes, the App Review demo host and the
@@ -76,6 +78,7 @@ PUBLIC=(
   docs/ARCHITECTURE.md docs/PATCHES.md docs/PUSH.md docs/WEZTERM-PATCHES.md docs/install-free-account.md
   docs/design docs/assets
   docs/nsh/DESIGN.md docs/nsh/NSH-GAPS.md docs/nsh/TERMINAL-CORE.md docs/nsh/TERMINAL-VIEW.md
+  spike/tmux-bench/project.yml spike/tmux-bench/Bench spike/tmux-bench/.gitignore
   push-relay
   scripts/export-oss.sh scripts/host scripts/gen scripts/verify scripts/spikes scripts/rust scripts/wezterm
   scripts/release/build-ipa.sh scripts/release/release-archive.sh scripts/release/team-id.sh

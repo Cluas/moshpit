@@ -189,4 +189,31 @@ struct SwitchStillTests {
         #expect(stage.still != nil, "the switch keeps a picture on SwiftTerm's path too")
         stage.releaseStill()
     }
+
+    @Test("B496: the chrome carries the grid's ground, and the page takes it")
+    func theChromeCarriesTheGround() {
+        var chrome = TerminalNSHChrome()
+        #expect(chrome.message["ground"] == nil, "none: the theme's")
+        chrome.ground = "#3A3A3A"
+        let message = chrome.message
+        #expect(message["ground"] as? String == "#3A3A3A")
+        #expect(NSHSurface.check(screen: NSHScreen.terminal.name, message: message), "the screen takes it")
+    }
+
+    @Test("B496: the stage says the shown terminal's ground, and says it again only when it changes")
+    func theStageSaysTheGround() throws {
+        let controller = CoreController(sshSession: MockTmuxTransport())
+        let stage = TerminalNSHStage()
+        var said: [UInt32?] = []
+        stage.onGround = { said.append($0) }
+        let (_, window) = TerminalNSHTests.slot(for: stage)
+        defer { window.isHidden = true }
+        stage.show(.init(source: .pane(controller, "%1"), inset: 0))
+        #expect(said == [nil], "the theme's, nothing painted")
+        let terminal = try #require(controller.surface(for: "%1") as? CoreTerminalView)
+        terminal.feed(Data("\u{1b}[48;2;58;58;58m\u{1b}[2J".utf8))
+        #expect(terminal.settle { _ in said.last == .some(0x3A3A3A) }, "said: \(said)")
+        stage.show(.init(source: .pane(controller, "%2"), inset: 0))
+        #expect(said.last == .some(nil), "the next pane's own")
+    }
 }

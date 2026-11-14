@@ -12,9 +12,14 @@ import UIKit
 @MainActor
 struct FeedbackWhisperNSHTests {
 
-    @Test("each page runs the Rust screen of its name")
-    func names() {
+    @Test("each page has its own switch, off unless set")
+    func switches() {
+        #expect(NSHScreen.feedback.switchKey == "MOSHPIT_NSH_FEEDBACK")
+        #expect(NSHScreen.whisperModel.switchKey == "MOSHPIT_NSH_WHISPER_MODEL")
         #expect([NSHScreen.feedback, .whisperModel].map(\.name) == ["feedback", "whisper-model"])
+        let registered = UserDefaults.standard.volatileDomain(forName: UserDefaults.registrationDomain)
+        #expect(registered[NSHScreen.feedback.switchKey] == nil)
+        #expect(registered[NSHScreen.whisperModel.switchKey] == nil)
     }
 
     // MARK: Feedback

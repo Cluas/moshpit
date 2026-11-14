@@ -41,7 +41,7 @@ private func makeAttachedController() async -> (TmuxSessionController, MockTmuxT
 
 // MARK: - Suite
 
-@Suite("TmuxSessionController state machine", .serialized)
+@Suite("TmuxSessionController state machine", .serialized, .tmuxParserUnderTest)
 @MainActor
 struct TmuxSessionControllerTests {
 
@@ -3101,7 +3101,7 @@ struct TmuxSessionControllerTests {
 }
 
 /// The gate that keeps a surprise control reply out of `select-layout`.
-@Suite("tmux layout string sanity")
+@Suite("tmux layout string sanity", .tmuxParserUnderTest)
 struct TmuxPlausibleLayoutTests {
     @Test("accepts a real tmux layout string")
     func acceptsRealLayouts() {
@@ -3124,7 +3124,7 @@ struct TmuxPlausibleLayoutTests {
 /// The window-width parser behind the multi-client re-pin: when a layout-change
 /// shows the active window was sized by another (wide desktop) client,
 /// TmuxSessionController reclaims it to the phone width.
-@Suite("tmux layout width")
+@Suite("tmux layout width", .tmuxParserUnderTest)
 struct TmuxLayoutWidthTests {
     typealias C = TmuxSessionController
 
@@ -3164,7 +3164,7 @@ struct TmuxLayoutWidthTests {
 /// NOT the CLI-with-pre-split-argv path, which bypasses tmux's own
 /// command-string parser and would make an escaper look correct here while
 /// doing nothing on the wire).
-@Suite("tmux paste escaping")
+@Suite("tmux paste escaping", .tmuxParserUnderTest)
 struct TmuxPasteEscapingTests {
     typealias C = TmuxSessionController
 
@@ -3247,7 +3247,7 @@ struct TmuxPasteEscapingTests {
 /// ActiveSession's death (protocol switch, app relaunch), which is exactly
 /// when it's needed: the mosh renderer attaches the REMEMBERED session by
 /// name instead of tmux's "most recent".
-@Suite("tmux selection store")
+@Suite("tmux selection store", .tmuxParserUnderTest)
 struct TmuxSelectionStoreTests {
     private func isolatedDefaults() -> UserDefaults {
         let name = "moshpit-tests-\(UUID().uuidString)"
@@ -3282,7 +3282,7 @@ struct TmuxSelectionStoreTests {
 /// What a reconnect moves from the controller it retires to its replacement,
 /// and how the replacement announces that it has something on screen — see
 /// `SessionHub.ActiveSession.stop(forReconnect:)`.
-@Suite("tmux reconnect handoff", .serialized)
+@Suite("tmux reconnect handoff", .serialized, .tmuxParserUnderTest)
 @MainActor
 struct TmuxReconnectHandoffTests {
 
@@ -3414,7 +3414,7 @@ struct TmuxReconnectHandoffTests {
 /// Nothing still queued when the control channel closes is ever answered.
 /// Whoever waits on a reply must hear that, and the queue must not outlive
 /// the control session it belonged to.
-@Suite("tmux control channel closing", .serialized)
+@Suite("tmux control channel closing", .serialized, .tmuxParserUnderTest)
 @MainActor
 struct TmuxChannelCloseTests {
 
@@ -3512,6 +3512,23 @@ struct TmuxChannelCloseTests {
                 "a slot left over from the ended session shifted every reply by one")
         #expect(controller.snapshot.sessions["$0"] == nil, "the listing replaced the old session's")
     }
+
+    @Test("a failed parser starts the control session over: the queue is answered, the hub told")
+    func parserFailureStartsOver() async throws {
+        let (controller, transport) = await attachedAndDiscovered()
+        let pasted = await pasteQueued(controller, transport)
+        var silent = 0
+        controller.onChannelSilent = { silent += 1 }
+        // What TmuxRustParser.swift does when the Rust parser panics, with a
+        // latch of the test's own: the process keeps its parser choice.
+        await controller.client.rustParserFailed(reason: "injected", latch: TmuxParserBackend.Latch())
+        #expect(await waitUntil(timeout: Self.loadedDeviceTimeout) { silent == 1 },
+                "the hub reconnects on onChannelSilent; the new client gets the Swift parser")
+        #expect(await waitUntil(timeout: Self.loadedDeviceTimeout) { pasted.value != nil },
+                "a reply the failed parser dropped would have paired with the next command")
+        #expect(pasted.value == false)
+        #expect(await controller.client.backend == .swift)
+    }
 }
 
 // MARK: - Windows closed by another client
@@ -3521,7 +3538,7 @@ struct TmuxChannelCloseTests {
 /// is already unlinked when the notification goes out) — and never with the
 /// `%window-close` this controller listened for, so a window killed from the
 /// desktop stayed in the tree, and on screen, until something re-listed.
-@Suite("tmux windows closed elsewhere", .serialized)
+@Suite("tmux windows closed elsewhere", .serialized, .tmuxParserUnderTest)
 @MainActor
 struct TmuxUnlinkedWindowCloseTests {
 
@@ -3609,7 +3626,7 @@ struct TmuxUnlinkedWindowCloseTests {
 /// Every listing used to parse that reply as an answer — no rows — and so
 /// emptied what it was asked for: the sessions, the windows, the panes and
 /// their terminals, the agent stamps, until the next listing came back whole.
-@Suite("tmux listings answered with %error", .serialized)
+@Suite("tmux listings answered with %error", .serialized, .tmuxParserUnderTest)
 @MainActor
 struct TmuxRefusedListingTests {
 
@@ -3725,7 +3742,7 @@ struct TmuxRefusedListingTests {
 /// `$10` ahead of `$2`: with ten sessions, the session to fall back to — a
 /// fresh listing with none attached, the one on screen killed — was the
 /// tenth, not the first.
-@Suite("tmux ids in number order", .serialized)
+@Suite("tmux ids in number order", .serialized, .tmuxParserUnderTest)
 @MainActor
 struct TmuxIdOrderTests {
 
@@ -3778,7 +3795,7 @@ struct TmuxIdOrderTests {
 /// new-pane button with two blocks), the late half of an `if-shell -b`.
 /// Taken for replies, they put every later reply one command off — the
 /// crates/tmux rule (B273), missing from the app's controller (B275).
-@Suite("tmux replies flagged 0 answer nothing of ours", .serialized)
+@Suite("tmux replies flagged 0 answer nothing of ours", .serialized, .tmuxParserUnderTest)
 @MainActor
 struct TmuxReplyFlagsTests {
 

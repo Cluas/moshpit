@@ -101,6 +101,9 @@ extension CoreTerminalView: TerminalSurface {
 
     // `redrawAll()` and `framesSinceCanvas`: CoreTerminalView.
 
+    /// What lies outside the grid when it isn't the theme's (B495).
+    var groundColor: UInt32? { style.ground }
+
     // MARK: mosh's predictive echo (crates/term/src/predict.rs)
 
     func attachPrediction(_ engine: MoshPrediction?) {

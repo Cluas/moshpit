@@ -172,6 +172,31 @@ struct RustSessionTests {
         #expect(LaunchTrust.fingerprint(host: "rig.test", port: 2299) == nil, "the trust leaked to the process")
     }
 
+    // MARK: The switch
+
+    @Test("nothing stays on the Swift path with the switch on")
+    func swiftPathReasons() {
+        var connection = ServerConnection(host: "h", username: "u")
+        #expect(RustSessionSwitch.swiftPathReason(for: connection, predictSetting: .adaptive) == nil)
+        connection.multiplexer = .tmux
+        #expect(RustSessionSwitch.swiftPathReason(for: connection, predictSetting: .adaptive) == nil)
+        // herdr over SSH runs on the core (W10b).
+        connection.multiplexer = .herdr
+        #expect(RustSessionSwitch.swiftPathReason(for: connection, predictSetting: .never) == nil)
+        // herdr over mosh too (W10c): the raw-attach loop on mosh, the
+        // control client beside it.
+        connection.connectionProtocol = .mosh
+        #expect(RustSessionSwitch.swiftPathReason(for: connection, predictSetting: .never) == nil)
+        #expect(RustSessionSwitch.swiftPathReason(for: connection, predictSetting: .always) == nil)
+        // mosh runs on the core whatever predictive echo says (the core
+        // carries its echo acks now).
+        connection.multiplexer = .none
+        #expect(RustSessionSwitch.swiftPathReason(for: connection, predictSetting: .adaptive) == nil)
+        #expect(RustSessionSwitch.swiftPathReason(for: connection, predictSetting: .always) == nil)
+        connection.multiplexer = .tmux
+        #expect(RustSessionSwitch.swiftPathReason(for: connection, predictSetting: .always) == nil)
+    }
+
     @Test("a connection becomes the core's spec")
     func spec() {
         var connection = ServerConnection(host: "box.local", port: 2222, username: "me",
@@ -594,11 +619,11 @@ struct RustSessionTests {
             .newSession(name: nil),
         ])
         #expect(fake.intents.allSatisfy { $0.0 == 7 })
-        // The terminal for the pane on screen is minted on demand, once, on
-        // the core.
+        // The terminal for the pane on screen is minted on demand, once, as
+        // the view the switch names (T3: the core's when it is on).
         let view = tmux.surface(for: "%1")
         #expect(view === tmux.surface(for: "%1"))
-        #expect(view is CoreTerminalView)
+        #expect((view is CoreTerminalView) == CoreTermSwitch.isOn)
         #expect(tmux.activeCoordinator === tmux.coordinator(for: "%1"))
         // A disconnect asks the core to close the session.
         let stopping = Task { await session.stop() }
@@ -707,7 +732,7 @@ struct RustSessionTests {
         #expect(unset == "build default")
         defaults.set(false, forKey: ResumeInPlaceSwitch.switchKey)
         let stored = ResumeInPlaceSwitch.words(.preferences, defaults: defaults, bundle: suite)
-        #expect(stored.hasPrefix("stored"))
+        #expect(stored == "Core Switches")
         let sealed = ResumeInPlaceSwitch.words(.unreadable, defaults: defaults, bundle: suite)
         #expect(sealed.contains("unlock"))
     }

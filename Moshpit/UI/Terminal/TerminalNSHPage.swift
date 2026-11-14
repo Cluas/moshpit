@@ -110,6 +110,13 @@ struct TerminalNSHPage<Anchors: View>: View {
 @MainActor @Observable
 final class TerminalNSHModel {
     let stage = TerminalNSHStage()
+    /// The shown terminal's ground, when it isn't the theme's background
+    /// (B496): the chrome sends it to the page.
+    private(set) var ground: UInt32?
+
+    init() {
+        stage.onGround = { [weak self] ground in self?.ground = ground }
+    }
     @ObservationIgnored private weak var surface: NSHSurface?
     @ObservationIgnored private(set) var chrome: TerminalNSHChrome?
     @ObservationIgnored private(set) var bar: TerminalNSHBar?
@@ -464,6 +471,10 @@ struct TerminalNSHChrome: Equatable {
     /// A protocol switch is under way: nothing on the page moves
     /// (`ui/src/terminal/model.rs`'s `Chrome.still`).
     var still = false
+    /// What lies outside the shown terminal's grid when it isn't the
+    /// theme's background, `#RRGGBB` (B496): the page's ground and bar
+    /// strip take it, as the margins do (B495).
+    var ground: String?
 
     struct Crumbs: Equatable {
         var plan: BreadcrumbPlan
@@ -524,6 +535,7 @@ struct TerminalNSHChrome: Equatable {
             "compact": compact,
             "still": still,
         ]
+        if let ground { message["ground"] = ground }
         if let crumbs { message["crumbs"] = Self.json(crumbs) }
         if let empty {
             let vocabulary = empty.mux.vocabulary

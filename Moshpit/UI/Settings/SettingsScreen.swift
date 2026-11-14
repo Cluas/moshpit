@@ -51,6 +51,7 @@ struct SettingsScreen: View {
     @State private var asking: SettingsHost?
     @State private var showFeedback = false
     /// The hidden Core Switches page (seven taps on the version line).
+    @State private var showCoreSwitches = false
     /// The NSH page could not run here: the SwiftUI one shows instead.
     @State private var nshFailed = false
     /// A page the NSH page's rows asked for, pushed on Settings' stack.
@@ -144,6 +145,7 @@ struct SettingsScreen: View {
             Text("Setup runs on the host over a live session. Connect first, then set it up here.")
         }
         .appSheet(isPresented: $showFeedback) { FeedbackPage() }
+        .appSheet(isPresented: $showCoreSwitches) { CoreSwitchesView() }
     }
 
     /// The page at the root of Settings' stack: the SwiftUI form, or the NSH
@@ -318,6 +320,9 @@ struct SettingsScreen: View {
                                 .contextMenu {
                                     Button("Copy") { UIPasteboard.general.string = Self.versionLine }
                                 }
+                                // The Rust core's runtime switches, for the
+                                // developer and the Canary group: hidden.
+                                .onTapGesture(count: 7) { showCoreSwitches = true }
                                 .accessibilityIdentifier("settings-version")
                             if showsFilingNumber {
                                 Link(destination: Self.icpFilingURL) {
@@ -395,6 +400,7 @@ struct SettingsScreen: View {
         case "feedback": showFeedback = true
         case "github-issue": openURL(FeedbackChannels.newIssueURL)
         case "filing": openURL(Self.icpFilingURL)
+        case "core-switches": showCoreSwitches = true
         default: Log.ui.error("settings: no page \(page, privacy: .public)")
         }
     }

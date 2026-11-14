@@ -396,6 +396,9 @@ final class SwiftTermSurface: NSObject, TerminalSurface {
     /// SwiftTerm's drawing isn't counted.
     var framesSinceCanvas: Int? { nil }
 
+    /// SwiftTerm's margins are the theme's.
+    var groundColor: UInt32? { nil }
+
     /// The app gives SwiftTerm's view no find bar.
     var isFinding: Bool { false }
 

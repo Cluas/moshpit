@@ -425,10 +425,26 @@ pub(crate) fn symbol(name: &str, points: f32, weight: &'static str, color: Rgba)
         .prop("color", json!(theme::hex_string(color)))
 }
 
+/// The terminal page's tokens (B496): its ground (`terminal-bg`) the
+/// grid's `ground` when the host says one, else the terminal theme's
+/// background (B488), else the app theme's.
+pub fn ground_tokens(
+    params: &crate::screen::Params,
+    ground: Option<&str>,
+) -> nsh_core::element::Tokens {
+    let colour = ground
+        .or(params.terminal.as_deref())
+        .and_then(crate::theme::parse_hex);
+    crate::theme::tokens_on(&params.theme, colour)
+}
+
 /// The terminal screen.
 #[component]
 pub fn TerminalScreen(props: ScreenProps) -> impl IntoElement {
     let channel = Channel::find(props.surface.get_untracked());
+    // What the page ran with: the app theme and the terminal theme's
+    // background, for the ground's tokens (B496).
+    let params = channel.as_ref().map(|c| c.params()).unwrap_or_default();
     let keys = shortcuts::Shortcuts::default();
     let ctx = Ctx {
         tell: tell_host(channel.clone()),
@@ -452,6 +468,11 @@ pub fn TerminalScreen(props: ScreenProps) -> impl IntoElement {
             Message::parse,
             move |message| match message {
                 Message::Chrome(next) => {
+                    // The grid's ground changed (herdr painting its own):
+                    // the page's tokens follow, no re-run (B496).
+                    if ctx.chrome.with_untracked(|c| c.ground != next.ground) {
+                        set_tokens(ground_tokens(&params, next.ground.as_deref()));
+                    }
                     if ctx.chrome.with_untracked(|c| *c != *next) {
                         ctx.chrome.set(*next);
                     }

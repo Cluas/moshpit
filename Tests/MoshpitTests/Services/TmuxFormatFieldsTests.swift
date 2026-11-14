@@ -67,7 +67,7 @@ private let loadedDeviceTimeout: TimeInterval = 15
 
 // MARK: - The cut itself
 
-@Suite("tmux format fields are cut on bytes")
+@Suite("tmux format fields are cut on bytes", .tmuxParserUnderTest)
 struct TmuxFormatFieldsTests {
 
     @Test("a field that starts with a joining mark keeps the separator in front of it",
@@ -122,7 +122,7 @@ struct TmuxFormatFieldsTests {
 
 // MARK: - The controller's replies
 
-@Suite("tmux replies keep rows whose names start with a joining mark", .serialized)
+@Suite("tmux replies keep rows whose names start with a joining mark", .serialized, .tmuxParserUnderTest)
 @MainActor
 struct TmuxJoiningMarkRowsTests {
 
@@ -302,7 +302,7 @@ struct TmuxJoiningMarkRowsTests {
 /// can be empty, and tmux then ends the row on its separator. Rows captured
 /// from tmux 3.6a on a private socket: `rename-window ''`, and a pane running
 /// a binary named `--` (tmux reads its command as "").
-@Suite("tmux replies keep rows whose last field is empty", .serialized)
+@Suite("tmux replies keep rows whose last field is empty", .serialized, .tmuxParserUnderTest)
 @MainActor
 struct TmuxEmptyLastFieldTests {
 

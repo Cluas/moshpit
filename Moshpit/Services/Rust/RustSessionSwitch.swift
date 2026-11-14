@@ -1,23 +1,60 @@
 import Foundation
 import MoshpitFFI
 
-/// A connection's terminal runs on the Rust core's session layer
-/// (crates/session through crates/ffi, docs/nsh/DESIGN.md §3.6), not
+/// Whether a connection's terminal runs on the Rust core's session layer
+/// (crates/session through crates/ffi, docs/nsh/DESIGN.md §3.6) instead of
 /// ``SessionHub``'s Swift transports.
 ///
-/// No switch any more (F0): every build runs every connection on the core
-/// whenever its library is the one the app was compiled against, as Canary
-/// builds did. The Swift transports go with batches E1–E4.
+/// The switch is a Bool in `UserDefaults.standard`, set on the hidden Core
+/// Switches page, or for one launch with the launch argument
+/// `-MOSHPIT_RUST_SESSION 1` (the argument domain beats the stored value).
+/// Off by default: switch off is exactly the app without it. It is read
+/// once per connection, when the connection starts; a running session keeps
+/// the path it started on.
+///
+/// Even with the switch on, some connections stay on the Swift path —
+/// ``swiftPathReason(for:predictSetting:)`` says which and why — because
+/// the Rust side of what they need isn't wired yet.
 enum RustSessionSwitch {
+    static let switchKey = "MOSHPIT_RUST_SESSION"
+
     /// Whether this build can run sessions on the Rust core: the library is
-    /// linked and is the one the app was compiled against.
+    /// linked and is the one the app was compiled against (the check the
+    /// tmux parser's switch makes too).
     static let available = mp_ffi_abi_version() == UInt32(MP_FFI_ABI_VERSION)
 
-    /// Whether `connection` runs on the core: every one, in a build that can.
+    static var isOn: Bool {
+        UserDefaults.standard.bool(forKey: switchKey)
+    }
+
+    /// Why `connection` stays on the Swift path with the switch on; nil when
+    /// it runs on the Rust core. Every kind of connection runs on the core
+    /// now (herdr over mosh since W10c: mosh-server runs the raw-attach loop,
+    /// the control client steers it from beside mosh); this stays the one
+    /// place a future exception would go.
+    static func swiftPathReason(for connection: ServerConnection,
+                                predictSetting: PredictMode) -> String? {
+        nil
+    }
+
+    /// The switch's verdict for one connection, at connect time.
     @MainActor
     static func runsOnRust(_ connection: ServerConnection) -> Bool {
-        available
+        guard available, isOn else { return false }
+        return swiftPathReason(for: connection, predictSetting: AppSettings.shared.predictMode) == nil
     }
+
+    /// What stays on the Swift path with the switch on, for the debug page.
+    static let swiftPathNote = """
+        On: plain SSH, SSH + tmux, SSH + herdr, mosh (predictive echo included), \
+        mosh + tmux (tmux's own client on screen, the -CC sidecar for the tree) and \
+        mosh + herdr (the raw-attach loop on screen, the control client beside it) connect \
+        through the Rust core. Remote previews, \
+        file transfers, image uploads, the path probe and host maintenance borrow the Rust \
+        session's own connection (no second sign-in; a reconnect under way is waited for, a \
+        session that isn't connected is said so); notification replies and shares go \
+        through the core, which waits out a reconnect for them.
+        """
 }
 
 /// Whether a session on the Rust core resumes in place on the way back from
@@ -33,17 +70,11 @@ enum RustSessionSwitch {
 /// first unlock, when the preferences answer with the registered default
 /// alone, the core takes it as off until they can be read.
 ///
-/// On in every build, as Canary builds ran it: registered as the key's
-/// default at launch (``registerDefault()``) until the core decides it
-/// without the app's preferences (F0b). The Core Switches page that could
-/// turn it off is gone.
+/// On by default in a Canary build (``CanaryDefaults``), off otherwise; set
+/// on the hidden Core Switches page, or for one launch with the launch
+/// argument `-MOSHPIT_RESUME_IN_PLACE 1`.
 enum ResumeInPlaceSwitch {
     static let switchKey = "MOSHPIT_RESUME_IN_PLACE"
-
-    /// The key's default, on: before anything makes the core's registry.
-    static func registerDefault() {
-        UserDefaults.standard.register(defaults: [switchKey: true])
-    }
 
     /// What decided the core's resume in place, for the log: the
     /// preferences told apart into the person's switch, a launch argument
@@ -58,7 +89,7 @@ enum ResumeInPlaceSwitch {
                 return "launch argument"
             }
             if defaults.persistentDomain(forName: bundle)?[switchKey] != nil {
-                return "stored (an earlier build's Core Switches)"
+                return "Core Switches"
             }
             return "build default"
         case .unreadable:

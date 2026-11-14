@@ -128,7 +128,7 @@ private func screenText(_ terminal: Terminal) -> String {
 
 // MARK: - Suite
 
-@Suite("tmux window size lease", .serialized)
+@Suite("tmux window size lease", .serialized, .tmuxParserUnderTest)
 @MainActor
 struct TmuxSizeLeaseTests {
 
@@ -513,7 +513,7 @@ struct TmuxSizeLeaseTests {
 
 // MARK: - Lease line parsing
 
-@Suite("tmux size lease line")
+@Suite("tmux size lease line", .tmuxParserUnderTest)
 struct TmuxSizeLeaseParsingTests {
     typealias Lease = TmuxSessionController.SizeLease
 

@@ -11,11 +11,15 @@ import UIKit
 @MainActor
 @Suite("Terminal in NSH")
 struct TerminalNSHTests {
-    // MARK: The screen
+    // MARK: The switch
 
-    @Test("the terminal runs the Rust screen of its name")
-    func name() {
+    @Test("the terminal has its own switch, off unless set")
+    func switchIsOff() {
+        #expect(NSHScreen.terminal.switchKey == "MOSHPIT_NSH_TERMINAL")
         #expect(NSHScreen.terminal.name == "terminal")
+        let registered = UserDefaults.standard.volatileDomain(forName: UserDefaults.registrationDomain)
+        #expect(registered[NSHScreen.terminal.switchKey] == nil)
+        #expect(Set(NSHScreen.allCases.map(\.switchKey)).count == NSHScreen.allCases.count)
     }
 
     // MARK: What the host posts

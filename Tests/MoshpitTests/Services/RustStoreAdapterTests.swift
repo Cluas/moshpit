@@ -526,11 +526,15 @@ struct RustStoreAdapterTests {
         #endif
     }
 
-    // MARK: - The Rust store, always
+    // MARK: - The switch
 
-    @Test("every build runs its stores on the Rust core: no switch (F0)")
-    func alwaysRust() {
+    /// The app's own preferences are only read here: the test host is the
+    /// app, and what it keeps is left alone.
+    @Test("the switch: its key, off unless set")
+    func theSwitch() {
+        #expect(RustStoreSwitch.switchKey == "MOSHPIT_RUST_STORE")
+        let registered = UserDefaults.standard.volatileDomain(forName: UserDefaults.registrationDomain)
+        #expect(registered[RustStoreSwitch.switchKey] == nil, "off unless set")
         #expect(RustStoreSwitch.available, "this build links the Rust core")
-        #expect(RustStoreSwitch.isOn)
     }
 }

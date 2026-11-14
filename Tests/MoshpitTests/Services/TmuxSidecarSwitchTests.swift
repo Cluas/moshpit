@@ -286,7 +286,7 @@ private let desktop = FakeClient(control: false, pid: 41001, sessionId: "$0", se
 
 // MARK: - Session ids, not names
 
-@Suite("the mosh sidecar's session switch matches sessions by id", .serialized)
+@Suite("the mosh sidecar's session switch matches sessions by id", .serialized, .tmuxParserUnderTest)
 @MainActor
 struct TmuxSidecarSessionIdTests {
 
@@ -367,7 +367,7 @@ private let workDesktop = FakeClient(control: false, pid: 41001, sessionId: "$1"
 private let alphaDesktop = FakeClient(control: false, pid: 41002, sessionId: "$0", sessionName: "alpha",
                                       name: "/dev/ttys010")
 
-@Suite("the mosh sidecar's session switch moves the phone's own renderer and nothing else", .serialized)
+@Suite("the mosh sidecar's session switch moves the phone's own renderer and nothing else", .serialized, .tmuxParserUnderTest)
 @MainActor
 struct TmuxSidecarRendererTests {
 
@@ -493,7 +493,7 @@ private let zzzDesktop = FakeClient(control: false, pid: 41001, sessionId: "$1",
                                     name: "/dev/ttys009")
 private let aaaZzzWindows = ["$0 @0 0 b25d,80x24,0,0,0 1 1 zsh", "$1 @1 0 b25e,200x50,0,0,1 1 1 vim"]
 
-@Suite("the mosh sidecar follows the phone's renderer, and nobody else", .serialized)
+@Suite("the mosh sidecar follows the phone's renderer, and nobody else", .serialized, .tmuxParserUnderTest)
 @MainActor
 struct TmuxSidecarRendererFollowTests {
 
@@ -667,7 +667,7 @@ struct TmuxSidecarRendererFollowTests {
 // another client attaching or switching `%client-session-changed
 // /dev/ttys024 $1 other`. All of it used to be dropped as unknown.
 
-@Suite("the mosh sidecar hears about sessions, windows and clients that change elsewhere", .serialized)
+@Suite("the mosh sidecar hears about sessions, windows and clients that change elsewhere", .serialized, .tmuxParserUnderTest)
 @MainActor
 struct TmuxSidecarServerNotificationTests {
 
@@ -820,7 +820,7 @@ struct TmuxSidecarServerNotificationTests {
 // every `%session-changed` — whatever session it landed on, the user's own
 // included — and only a clean disconnect set it back.
 
-@Suite("over mosh the status line goes only on a session Moshpit created", .serialized)
+@Suite("over mosh the status line goes only on a session Moshpit created", .serialized, .tmuxParserUnderTest)
 @MainActor
 struct TmuxSidecarStatusLineTests {
 
@@ -911,7 +911,7 @@ struct TmuxSidecarStatusLineTests {
 /// sidecar never knew the session for Moshpit's: off for good, the desktop's
 /// status bar with it. Now the session carries `@moshpit_owned`, and the
 /// hidden status line a stamp naming the client that hid it.
-@Suite("sessions Moshpit made are known from the server (B86)", .serialized)
+@Suite("sessions Moshpit made are known from the server (B86)", .serialized, .tmuxParserUnderTest)
 @MainActor
 struct TmuxSidecarOwnedSessionTests {
 
@@ -978,7 +978,7 @@ struct TmuxSidecarOwnedSessionTests {
 
 // MARK: - The rows
 
-@Suite("the sidecar's list-clients rows")
+@Suite("the sidecar's list-clients rows", .tmuxParserUnderTest)
 struct TmuxClientRowTests {
 
     @Test("tmux 3.6a's rows: a terminal and a -CC client")
@@ -1014,7 +1014,7 @@ struct TmuxClientRowTests {
 
 // MARK: - The control client
 
-@Suite("tmux control client: %session-renamed")
+@Suite("tmux control client: %session-renamed", .tmuxParserUnderTest)
 struct TmuxSessionRenamedParserTests {
 
     @Test("%session-renamed hands over the id and the whole new name", arguments: [
@@ -1046,7 +1046,7 @@ struct TmuxSessionRenamedParserTests {
 /// layouts already squashed; and on the disconnect the windows went back to
 /// automatic sizing with the renderer still attached (and the sidecar itself
 /// a sizing client): straight back to the phone's grid.
-@Suite("the mosh sidecar hands the windows back as they were (B270)", .serialized)
+@Suite("the mosh sidecar hands the windows back as they were (B270)", .serialized, .tmuxParserUnderTest)
 @MainActor
 struct TmuxSidecarHandBackTests {
     private static let split = "bf8c,200x60,0,0[200x30,0,0,0,200x29,0,31{100x29,0,31,1,99x29,101,31,2}]"
@@ -1166,7 +1166,7 @@ struct TmuxSidecarHandBackTests {
 
 // MARK: - The window over mosh is tmux's current window (B80)
 
-@Suite("over mosh the sidecar's window is tmux's current window", .serialized)
+@Suite("over mosh the sidecar's window is tmux's current window", .serialized, .tmuxParserUnderTest)
 @MainActor
 struct TmuxSidecarCurrentWindowTests {
 

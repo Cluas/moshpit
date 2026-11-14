@@ -2,9 +2,10 @@ import MoshpitKit
 import SwiftUI
 import UIKit
 
-/// The screens moved from SwiftUI to NSH (`ui/` in the Rust workspace). Each
-/// shows whenever the build can host NSH (``isOn``); the switch each had
-/// went with F0.
+/// The screens moved from SwiftUI to NSH (`ui/` in the Rust workspace), each
+/// behind a runtime switch of its own (docs/nsh/DESIGN.md §3.6): the SwiftUI
+/// page stays the default until the NSH one has shipped, and turning the
+/// switch off brings the SwiftUI page back.
 enum NSHScreen: String, CaseIterable, Sendable {
     /// Settings › Recent Log (`RecentLogNSHPage`).
     case recentLog = "recent-log"
@@ -64,13 +65,119 @@ enum NSHScreen: String, CaseIterable, Sendable {
     /// Home, which has no SwiftUI page of its own to fall back to.
     case sessions
 
+    /// The switch: a Bool in `UserDefaults.standard`, off by default, set on
+    /// the hidden Core Switches page (Settings: tap the version line seven
+    /// times), or for one launch with the launch argument
+    /// `-MOSHPIT_NSH_RECENT_LOG 1` — launch arguments land in the argument
+    /// domain, which beats the stored value. Read each time the page opens.
+    var switchKey: String {
+        switch self {
+        case .recentLog: "MOSHPIT_NSH_RECENT_LOG"
+        case .appIcon: "MOSHPIT_NSH_APP_ICON"
+        case .accent: "MOSHPIT_NSH_ACCENT"
+        case .voiceEngine: "MOSHPIT_NSH_VOICE_ENGINE"
+        case .voiceLanguage: "MOSHPIT_NSH_VOICE_LANGUAGE"
+        case .settings: "MOSHPIT_NSH_SETTINGS"
+        case .feedback: "MOSHPIT_NSH_FEEDBACK"
+        case .whisperModel: "MOSHPIT_NSH_WHISPER_MODEL"
+        case .theme: "MOSHPIT_NSH_THEME"
+        case .themeEditor: "MOSHPIT_NSH_THEME_EDITOR"
+        case .accentEditor: "MOSHPIT_NSH_ACCENT_EDITOR"
+        case .home: "MOSHPIT_NSH_HOME"
+        case .connectionForm: "MOSHPIT_NSH_CONNECTION_FORM"
+        case .sshKeys: "MOSHPIT_NSH_SSH_KEYS"
+        case .addKey: "MOSHPIT_NSH_ADD_KEY"
+        case .keyPicker: "MOSHPIT_NSH_KEY_PICKER"
+        case .shortcuts: "MOSHPIT_NSH_SHORTCUTS"
+        case .addShortcut: "MOSHPIT_NSH_ADD_SHORTCUT"
+        case .hostSetup: "MOSHPIT_NSH_HOST_SETUP"
+        case .terminal: "MOSHPIT_NSH_TERMINAL"
+        case .muxPicker: "MOSHPIT_NSH_MUX_PICKER"
+        case .installAssist: "MOSHPIT_NSH_INSTALL_ASSIST"
+        case .remoteFolder: "MOSHPIT_NSH_REMOTE_FOLDER"
+        case .sessions: "MOSHPIT_NSH_SESSIONS"
+        }
+    }
+
+    /// What the Core Switches page calls its switch.
+    var switchTitle: String {
+        switch self {
+        case .recentLog: "Recent Log in NSH"
+        case .appIcon: "App Icon in NSH"
+        case .accent: "Accent in NSH"
+        case .voiceEngine: "Voice Recognition in NSH"
+        case .voiceLanguage: "Voice Language in NSH"
+        case .settings: "Settings in NSH"
+        case .feedback: "Feedback in NSH"
+        case .whisperModel: "Whisper Models in NSH"
+        case .theme: "Theme in NSH"
+        case .themeEditor: "Theme Editor in NSH"
+        case .accentEditor: "Accent Editor in NSH"
+        case .home: "Home in NSH (with Rust sessions)"
+        case .connectionForm: "Connection Form in NSH"
+        case .sshKeys: "SSH Keys in NSH"
+        case .addKey: "Add Key in NSH"
+        case .keyPicker: "Key Picker in NSH"
+        case .shortcuts: "Shortcuts in NSH"
+        case .addShortcut: "Shortcut Editor in NSH"
+        case .hostSetup: "Host Setup in NSH"
+        case .terminal: "Terminal in NSH"
+        case .muxPicker: "Window Pickers in NSH"
+        case .installAssist: "Install Assist in NSH"
+        case .remoteFolder: "Host Folders in NSH"
+        case .sessions: "Sessions in NSH"
+        }
+    }
+
+    /// The page the switch moves, as the Core Switches page says it.
+    var page: String {
+        switch self {
+        case .recentLog: "Settings › Recent Log"
+        case .appIcon: "Settings › App Icon"
+        case .accent: "Settings › Accent"
+        case .voiceEngine: "Settings › Voice Input › Recognition"
+        case .voiceLanguage: "Settings › Voice Input › Language"
+        case .settings: "Settings"
+        case .feedback: "Settings › Send Feedback"
+        case .whisperModel: "Settings › Voice Input › Model"
+        case .theme: "Settings › Theme"
+        case .themeEditor: "Settings › Theme › a theme's editor"
+        case .accentEditor: "Settings › Accent › an accent's editor"
+        case .home: "Home"
+        case .connectionForm: "Home › Add Connection / Edit Connection"
+        case .sshKeys: "Settings › SSH Keys"
+        case .addKey: "SSH Keys › Add Key"
+        case .keyPicker: "Add Connection › Select Key"
+        case .shortcuts: "Settings › Shortcuts"
+        case .addShortcut: "Shortcuts › Add or Edit Shortcut"
+        case .hostSetup: "Settings › Set up this host"
+        case .terminal: "A connection's terminal (read when it opens)"
+        case .muxPicker: "Terminal › Windows / Sessions / Select Pane (always with the NSH terminal)"
+        case .installAssist: "Terminal › Install Assist (always with the NSH terminal)"
+        case .remoteFolder: "Terminal › a host folder (always with the NSH terminal)"
+        case .sessions: "Home › a host's sessions (always with the NSH Home)"
+        }
+    }
+
     /// The name the Rust side runs it by (`Screen::named`).
     var name: String { rawValue }
 
-    /// Whether the NSH page shows: whenever this build can host NSH screens.
-    /// No switch any more (F0); the SwiftUI page it replaced still stands
-    /// in when the screen fails to run, until batches D1–D8.
-    var isOn: Bool { NSHSurface.available }
+    /// Whether the NSH page shows: the switch is on and this build can host
+    /// NSH screens. With the switch off nothing of NSH runs.
+    var isOn: Bool {
+        Self.chosen(switchOn: UserDefaults.standard.bool(forKey: switchKey),
+                    available: { NSHSurface.available })
+    }
+
+    /// The switch's choice: `available` is only asked when the switch is on.
+    static func chosen(switchOn: Bool, available: () -> Bool) -> Bool {
+        switchOn && available()
+    }
+
+    /// The switch is set for this launch by its launch argument.
+    var setByLaunchArgument: Bool {
+        UserDefaults.standard.volatileDomain(forName: UserDefaults.argumentDomain)[switchKey] != nil
+    }
 }
 
 /// What every screen is told before it runs: the language the app shows and

@@ -323,6 +323,10 @@ class TmuxSessionController: MultiplexerControlling {
     /// `tmux -CC new` line is written to the shell *after* this returns) —
     /// discovery fires automatically once `%session-changed` arrives.
     func beginControlMode() async {
+        // Which parser this connection runs: the Rust switch's effect shows
+        // in Settings' Recent Log.
+        let parser = await client.backend
+        Log.ssh.info("tmux: \(parser.rawValue, privacy: .public) control-mode parser")
         await installCallbacks()
         startPumping()
     }
@@ -3853,6 +3857,7 @@ class TmuxSessionController: MultiplexerControlling {
         case clientDetached(String)
         case exit
         case commandResponse(TmuxCommandResponse)
+        case parserFailed(String)
     }
 
     /// Single consumer of ``ControlEvent``s; cancelled on detach/re-attach.
@@ -3891,7 +3896,8 @@ class TmuxSessionController: MultiplexerControlling {
             onClientDetached: { emit.yield(.clientDetached($0)) },
             onExit: { _ in emit.yield(.exit) },
             onCommandResponse: { emit.yield(.commandResponse($0)) },
-            onProtocolError: nil
+            onProtocolError: nil,
+            onParserFailure: { emit.yield(.parserFailed($0)) }
         )
         eventPump = Task { @MainActor [weak self] in
             for await event in events {
@@ -4045,6 +4051,16 @@ class TmuxSessionController: MultiplexerControlling {
             closePendingCommands(reason: "exit")
         case .commandResponse(let response):
             handleCommandResponse(response)
+        case .parserFailed(let reason):
+            // The Rust parser failed (TmuxRustParser.swift) and the client
+            // went on with the Swift one, but what the Rust parser dropped
+            // may include the end of a reply a queued command waits for: no
+            // later reply could be paired right. Start over, as for a dead
+            // channel; the new client gets the Swift parser.
+            Log.ssh.error("tmux: \(reason, privacy: .public)")
+            ccTapLine("PARSER-FAILED \(reason)")
+            closePendingCommands(reason: "parser-failed")
+            reportChannelDead(reason: "parser-failed")
         }
     }
 

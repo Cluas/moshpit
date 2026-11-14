@@ -81,35 +81,27 @@ enum HomeSeed {
     }
 
     /// The store Home shows in place of the saved one: the seeded
-    /// connections, for this launch only (``launchOnlyStore(_:suite:)``).
+    /// connections, in a suite of its own that is never written (its
+    /// registration domain holds them, and the store never trusts its read,
+    /// so it never saves).
     static let store: ConnectionStore? = {
         guard fixture != nil else { return nil }
         return launchOnlyStore(connections, suite: "moshpit.home-seed")
     }()
 
-    /// A store holding `connections` for this launch only: the Rust store
-    /// over preferences kept in memory (``LaunchOnlyPreferences``), whose
-    /// read is never trusted, so it never writes, not even there. What a
-    /// DEBUG seed shows in place of the saved connections, leaving those
-    /// alone. `suite` (with the process id) scopes the session-memory sweep
-    /// to a domain of its own.
-    ///
-    /// It used to register the connections in a suite of its own, but a
-    /// suite's `register(defaults:)` lands in the process's registration
-    /// domain, which every `UserDefaults` reads, `.standard` too: on a
-    /// phone with no connections saved, the app's own store read the
-    /// seed's back as saved (B200, caught by the first cloud run of the
-    /// app's tests on a fresh simulator).
+    /// A store holding `connections` for this launch only: a suite of its
+    /// own (named `suite` and the process id) whose registration domain holds
+    /// them, never written — the store never trusts its read, so it never
+    /// saves. What a DEBUG seed shows in place of the saved connections,
+    /// leaving those alone.
     static func launchOnlyStore(_ connections: [ServerConnection], suite name: String) -> ConnectionStore {
-        let preferences = LaunchOnlyPreferences()
+        let suite = UserDefaults(suiteName: "\(name).\(ProcessInfo.processInfo.processIdentifier)")!
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
-        if let data = try? encoder.encode(connections), let value = PlistNodes.value(data) {
-            preferences.set(key: "moshpit.connections", value: value)
+        if let data = try? encoder.encode(connections) {
+            suite.register(defaults: ["moshpit.connections": data])
         }
-        let suite = UserDefaults(suiteName: "\(name).\(ProcessInfo.processInfo.processIdentifier)")!
-        return ConnectionStore(backing: RustConnectionStore(preferences: preferences, mode: .system),
-                               defaults: suite)
+        return ConnectionStore(defaults: suite, readiness: DefaultsReadiness { false })
     }
 
     /// What connecting the seeded connections needs, for this launch only:
@@ -136,27 +128,5 @@ enum HomeSeed {
         let ids = Set((fixture?.connections ?? []).filter { $0.connect == true }.map(\.id))
         return connections.filter { ids.contains($0.id) }
     }
-}
-/// Preferences in memory, for a DEBUG seed's launch-only store: nothing
-/// in them reaches the app's preferences, and protected data reads as
-/// unavailable, so a store over them shows what they hold and never
-/// writes.
-final class LaunchOnlyPreferences: PreferencesHost, @unchecked Sendable {
-    private let lock = NSLock()
-    private var values: [String: PlistValue] = [:]
-
-    func get(key: String) -> PlistValue? {
-        lock.lock()
-        defer { lock.unlock() }
-        return values[key]
-    }
-
-    func set(key: String, value: PlistValue?) {
-        lock.lock()
-        defer { lock.unlock() }
-        values[key] = value
-    }
-
-    func protectedDataAvailable() -> Bool { false }
 }
 #endif

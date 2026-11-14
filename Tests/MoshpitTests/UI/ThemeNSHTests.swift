@@ -49,12 +49,20 @@ struct ThemeNSHTests {
         return Color.hexString(r: Double(red), g: Double(green), b: Double(blue))
     }
 
-    // MARK: Screens
+    // MARK: Switches
 
-    @Test("each page runs the Rust screen of its name")
-    func names() {
+    @Test("each page has its own switch, off unless set")
+    func switches() {
+        let registered = UserDefaults.standard.volatileDomain(forName: UserDefaults.registrationDomain)
         let screens: [NSHScreen] = [.theme, .themeEditor, .accentEditor]
+        #expect(screens.map(\.switchKey) == [
+            "MOSHPIT_NSH_THEME", "MOSHPIT_NSH_THEME_EDITOR", "MOSHPIT_NSH_ACCENT_EDITOR",
+        ])
         #expect(screens.map(\.name) == ["theme", "theme-editor", "accent-editor"])
+        #expect(Set(NSHScreen.allCases.map(\.switchKey)).count == NSHScreen.allCases.count)
+        for screen in screens {
+            #expect(registered[screen.switchKey] == nil)
+        }
         #expect(SettingsPage(rawValue: "theme") == .theme, "the NSH Settings root's Theme row")
     }
 

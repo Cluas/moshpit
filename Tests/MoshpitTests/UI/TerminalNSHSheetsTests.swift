@@ -15,9 +15,11 @@ struct TerminalNSHSheetsTests {
         .init(id: "@2", index: 2, name: "logs", panes: 1, command: "tail"),
     ]
 
-    @Test("the pickers run the Rust screen of their name")
-    func pickerName() {
+    @Test("the pickers have their own switch, off unless set")
+    func pickerSwitch() {
+        #expect(NSHScreen.muxPicker.switchKey == "MOSHPIT_NSH_MUX_PICKER")
         #expect(NSHScreen.muxPicker.name == "mux-picker")
+        #expect(Set(NSHScreen.allCases.map(\.switchKey)).count == NSHScreen.allCases.count)
     }
 
     @Test("every list the host posts is a message the picker takes, in both multiplexers' words")
@@ -141,6 +143,7 @@ struct TerminalNSHSheetsTests {
     @Test("Install Assist's message, the core's, is the screen's whatever the re-check found")
     func installCrossesTheBoundary() {
         let screen = NSHScreen.installAssist.name
+        #expect(NSHScreen.installAssist.switchKey == "MOSHPIT_NSH_INSTALL_ASSIST")
         let brew = Self.install(manager: "brew")
         #expect(NSHSurface.check(screen: screen, message: brew))
         #expect(brew["command"] as? String == "brew install mosh")
@@ -172,6 +175,7 @@ struct TerminalNSHSheetsTests {
     @Test("a host folder's facts, its menu's picks and the prompt's answers are the screen's messages")
     func folderCrossesTheBoundary() {
         let screen = NSHScreen.remoteFolder.name
+        #expect(NSHScreen.remoteFolder.switchKey == "MOSHPIT_NSH_REMOTE_FOLDER")
         var facts = Self.folder()
         #expect(NSHSurface.check(screen: screen, message: facts.message))
         facts.uploading = 0.5

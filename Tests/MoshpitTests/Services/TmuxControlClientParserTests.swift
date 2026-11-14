@@ -90,8 +90,16 @@ private func bytes(_ string: String) -> Data {
 
 // MARK: - TmuxControlClientParserTests
 
-@Suite("TmuxControlClient parser")
+@Suite("TmuxControlClient parser", .tmuxParserUnderTest)
 struct TmuxControlClientParserTests {
+
+    @Test("every client in this suite runs the parser under test")
+    func runsTheParserUnderTest() async {
+        // Without it the Rust run of these suites (MoshpitTmuxRustTests)
+        // could pass on the Swift parser: a client asked for Rust falls back
+        // to Swift when the library is missing.
+        #expect(await TmuxControlClient().backend == TmuxParserUnderTest.backend)
+    }
 
     // MARK: - Output
 

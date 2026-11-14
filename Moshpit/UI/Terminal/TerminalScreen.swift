@@ -4054,6 +4054,8 @@ extension TerminalScreen {
         }
         chrome.link = copiedURL.map { $0.host() ?? $0.absoluteString }
         chrome.compact = compactChrome
+        // The page's ground follows the grid's (B496).
+        chrome.ground = nshModel.ground.map { String(format: "#%06X", $0) }
         return chrome
     }
 

@@ -324,6 +324,11 @@ pub struct Chrome {
     /// owner: 「mosh 切换 ssh 有个动画 我们直接去掉」). Ordinary drops and
     /// resumes keep their motion.
     pub still: bool,
+    /// What lies outside the shown terminal's grid when it isn't the
+    /// terminal theme's background, `#RRGGBB` (B496): the colour the grid
+    /// shows at its edges (herdr paints its own). The page's ground, the
+    /// bar's strip and the panels take it, as the terminal's margins do.
+    pub ground: Option<String>,
 }
 
 /// A chip of the shortcut bar, from the shortcut store.

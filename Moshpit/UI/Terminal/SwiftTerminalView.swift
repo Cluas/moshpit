@@ -403,6 +403,9 @@ struct SwiftTerminalView: UIViewRepresentable {
         /// Called when the remote rings the terminal bell (BEL). The Vibe
         /// Island agent monitor uses this as a "needs attention" signal.
         var onBell: (() -> Void)?
+        /// What lies outside the terminal's grid changed (B496): the NSH
+        /// stage passes it to the page's chrome.
+        var onGround: (() -> Void)?
 
         /// A mark fed with ``feed(mark:)`` is due: every byte fed before it
         /// is on screen, none after it is (``TerminalSurface``).
@@ -1424,6 +1427,10 @@ extension SwiftTerminalView.Coordinator: TerminalSurfaceDelegate {
 
     func surfaceBell(_ surface: TerminalSurface) {
         onBell?()
+    }
+
+    func surfaceGroundChanged(_ surface: TerminalSurface) {
+        onGround?()
     }
 
     func surface(_ surface: TerminalSurface, openLink link: String) {

@@ -404,6 +404,8 @@ final class CoreTerminalView: UIView {
         s.ground = next == s.background ? nil : next
         style = s
         backgroundColor = UIColor(cgColor: coreCGColor(next))
+        // The page's chrome takes it too (B496).
+        surfaceDelegate?.surfaceGroundChanged(self)
     }
 
     /// The colour most of `edges` have, if more than half do; else

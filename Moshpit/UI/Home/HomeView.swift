@@ -516,7 +516,8 @@ struct HomeView: View {
     private static var seededConnected = false
     #endif
 
-    /// Whether the NSH list shows: this build can host NSH, it ran, and
+    /// Whether the NSH list shows: its switch is on (a capture run's
+    /// `home-nsh` turns it on), this build can host NSH, it ran, and
     /// sessions run on the core, where its record is read
     /// (``HomeNSHPage/shows(nsh:rustSessions:)``).
     private var usesNSHList: Bool {
@@ -525,7 +526,8 @@ struct HomeView: View {
         #if DEBUG
         if CaptureScreen.requested == .homeNSH { nsh = NSHSurface.available }
         #endif
-        return HomeNSHPage.shows(nsh: nsh, rustSessions: RustSessionSwitch.available)
+        return HomeNSHPage.shows(nsh: nsh,
+                                 rustSessions: RustSessionSwitch.available && RustSessionSwitch.isOn)
     }
 
     /// What the NSH list's connection-level asks do: what the SwiftUI card's

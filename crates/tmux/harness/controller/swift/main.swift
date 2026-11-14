@@ -104,7 +104,7 @@ final class Runner {
     var out = ""
     var controller: TmuxSessionController?
     let transport = HarnessTransport()
-    let shadow = TmuxControlClient()
+    let shadow = TmuxControlClient(backend: .swift)
     let counter = EventCounter()
     var renders = true
     var settings: [String: String] = [:]

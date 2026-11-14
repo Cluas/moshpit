@@ -14,7 +14,8 @@
 #   - An Xcode build whose project predates the setting is refused before
 #     cargo runs, and so is a profile that isn't one of the two.
 #   - project.yml: each configuration names a profile Cargo.toml defines,
-#     and the app links from that profile's directory. The sideload IPA (scripts/release/build-ipa.sh) builds
+#     and the app links from that profile's directory (and tmux-bench from
+#     `app` always). The sideload IPA (scripts/release/build-ipa.sh) builds
 #     `app` whatever its configuration.
 #   - Cargo.toml: `app-test` is what the test builds need (release
 #     semantics, opt-level 2, no whole-graph LTO, 16 codegen units, line
@@ -149,13 +150,16 @@ fi
 
 # The manifests the script and the link rely on.
 spec="$work/spec.json"
+bench="$work/bench.json"
 (cd "$root" && xcodegen dump --type json --spec project.yml > "$spec")
-python3 -I - "$root/Cargo.toml" "$spec" "$root/scripts/release/build-ipa.sh" <<'EOF' || failures=$((failures + 1))
+(cd "$root/spike/tmux-bench" && xcodegen dump --type json --spec project.yml > "$bench")
+python3 -I - "$root/Cargo.toml" "$spec" "$bench" "$root/scripts/release/build-ipa.sh" <<'EOF' || failures=$((failures + 1))
 import json, re, sys, tomllib
 
 cargo = tomllib.load(open(sys.argv[1], "rb"))
 spec = json.load(open(sys.argv[2]))
-ipa = open(sys.argv[3]).read()
+bench = json.load(open(sys.argv[3]))
+ipa = open(sys.argv[4]).read()
 profiles = cargo["profile"]
 problems = []
 
@@ -187,6 +191,11 @@ for config, profile in want.items():
 check("the app links from its profile's directory",
       app["base"]["LIBRARY_SEARCH_PATHS"].endswith("/$(MOSHPIT_RUST_TARGET)/$(MOSHPIT_RUST_PROFILE)"))
 check("no base setting overrides the configurations'", "MOSHPIT_RUST_PROFILE" not in app["base"])
+
+bench_settings = bench["targets"]["MoshpitTmuxBench"]["settings"]["base"]
+check("tmux-bench benches the shipping profile", bench_settings.get("MOSHPIT_RUST_PROFILE") == "app")
+check("tmux-bench links from its profile's directory",
+      bench_settings["LIBRARY_SEARCH_PATHS"].endswith("/$(MOSHPIT_RUST_TARGET)/$(MOSHPIT_RUST_PROFILE)"))
 
 # Its xcodebuild command, continuation lines joined.
 command = re.search(r"^xcodebuild (?:.*\\\n)*.*$", ipa, re.M)

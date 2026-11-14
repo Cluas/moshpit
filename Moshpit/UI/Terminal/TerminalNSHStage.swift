@@ -133,6 +133,19 @@ final class TerminalNSHStage {
     var onPaste: ((String) -> Void)?
     /// Every swap, for the debug director: the key shown and when.
     var onShow: ((String?) -> Void)?
+    /// What lies outside the shown terminal's grid, when it isn't the
+    /// theme's background (B496): the page's chrome takes it.
+    var onGround: ((UInt32?) -> Void)?
+    /// The last colour said through ``onGround``.
+    private var saidGround: UInt32??
+
+    /// Says the shown terminal's ground if it changed (B496).
+    private func sayGround() {
+        let ground = hosted.flatMap { $0.owns ? $0.surface.groundColor : nil }
+        guard saidGround != .some(ground) else { return }
+        saidGround = .some(ground)
+        onGround?(ground)
+    }
 
     /// How long transitions run: a pane switch (the controller's
     /// `withAnimation(.easeInOut(duration: 0.22))`), a reconnect's
@@ -538,6 +551,7 @@ final class TerminalNSHStage {
             }
             hosted = nil
             onShow?(nil)
+            sayGround()
             return
         }
         if let hosted, hosted.key == target.key, hosted.owns, current(target) === hosted.terminal {
@@ -555,6 +569,7 @@ final class TerminalNSHStage {
         let old = hosted
         hosted = next
         onShow?(target.key)
+        sayGround()
         guard let old else {
             applyFocus()
             return
@@ -614,6 +629,11 @@ final class TerminalNSHStage {
             coordinator?.onPaste = onPaste
         }
         let hosted = Hosted(key: target.key, surface: surface, coordinator: coordinator, inset: target.inset)
+        // Its ground, to the page's chrome while it shows (B496).
+        coordinator?.onGround = { [weak self, weak hosted] in
+            guard let self, let hosted, self.hosted === hosted else { return }
+            self.sayGround()
+        }
         hosted.container.host(surface)
         coordinator?.hostContainer = hosted.container
         hosted.container.geometryHeld = geometryHeld

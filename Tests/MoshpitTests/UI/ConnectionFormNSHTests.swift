@@ -41,9 +41,13 @@ struct ConnectionFormNSHTests {
         connectionDraftNew(moshByDefault: false)
     }
 
-    @Test("the form runs the Rust screen of its name")
-    func name() {
+    @Test("the form has its own switch, off unless set")
+    func switches() {
+        #expect(NSHScreen.connectionForm.switchKey == "MOSHPIT_NSH_CONNECTION_FORM")
         #expect(NSHScreen.connectionForm.name == "connection-form")
+        let registered = UserDefaults.standard.volatileDomain(forName: UserDefaults.registrationDomain)
+        #expect(registered[NSHScreen.connectionForm.switchKey] == nil)
+        #expect(Set(NSHScreen.allCases.map(\.switchKey)).count == NSHScreen.allCases.count)
     }
 
     @Test("every draft is a message the Rust screen takes; bad ones are refused")

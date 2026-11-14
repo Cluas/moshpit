@@ -194,6 +194,10 @@ protocol TerminalSurface: AnyObject {
     /// check (a terminal on screen with text on it and nothing drawn); nil
     /// when the surface doesn't count them.
     var framesSinceCanvas: Int? { get }
+    /// What lies outside the grid when it isn't the theme's background: the
+    /// colour the grid shows at its edges (B495), which the page's chrome
+    /// takes too (B496). nil: the theme's.
+    var groundColor: UInt32? { get }
 
     // MARK: Find
 
@@ -259,11 +263,15 @@ protocol TerminalSurfaceDelegate: AnyObject {
     func surface(_ surface: TerminalSurface, switchForward forward: Bool)
     /// A pinch ended at this font size.
     func surface(_ surface: TerminalSurface, fontSizeCommitted size: Double)
+    /// What lies outside the grid changed (``TerminalSurface/groundColor``,
+    /// B496).
+    func surfaceGroundChanged(_ surface: TerminalSurface)
 }
 
 /// The quiet defaults: a test's sink (or any owner) implements what it
 /// cares about.
 extension TerminalSurfaceDelegate {
+    func surfaceGroundChanged(_ surface: TerminalSurface) {}
     func surface(_ surface: TerminalSurface, sizeChanged cols: Int, rows: Int) {}
     func surface(_ surface: TerminalSurface, titleChanged title: String) {}
     func surface(_ surface: TerminalSurface, directoryChanged directory: String?) {}
