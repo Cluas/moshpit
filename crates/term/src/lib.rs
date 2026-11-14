@@ -451,6 +451,19 @@ pub enum Tap {
 /// How far, in rows, a tap from the cursor still means "I want to type".
 pub const TYPING_ROWS: i64 = 2;
 
+/// The quiet after a VoiceOver announcement (V33): an agent streaming
+/// output would otherwise talk over everything.
+pub const ANNOUNCE_EVERY_MS: u64 = 1_000;
+
+/// What VoiceOver hears now ([`Terminal::announce_at`]).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Announcement {
+    pub text: Option<String>,
+    /// Ask again in this many milliseconds: what appeared in the quiet is
+    /// said then.
+    pub again_in_ms: Option<u64>,
+}
+
 /// A search match in viewport coordinates (after the view scrolled to it).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Match {
@@ -570,6 +583,11 @@ pub struct Terminal {
     scroll_top: Option<StableRowIndex>,
     /// The rows VoiceOver was told of last.
     a11y_last: Vec<String>,
+    /// The cursor's row VoiceOver's last look saw.
+    a11y_last_cursor: usize,
+    /// Until when (the terminal's clock, ms) VoiceOver hears nothing new:
+    /// the quiet after an announcement ([`Terminal::announce_at`]).
+    a11y_quiet_until: Option<u64>,
     /// mosh's predictive echo, laid over the frames (never into the grid).
     prediction: Option<predict::Prediction>,
     /// Screen rows the last frame's predictions covered (the next frame
@@ -659,6 +677,8 @@ impl Terminal {
             scroll: scroll::Scroll::default(),
             scroll_top: None,
             a11y_last: Vec::new(),
+            a11y_last_cursor: 0,
+            a11y_quiet_until: None,
             prediction: None,
             predicted_rows: Vec::new(),
             marks: Vec::new(),
@@ -881,10 +901,90 @@ impl Terminal {
         (s.physical_cols as u16, s.physical_rows as u16)
     }
 
-    /// The grid follows the view (text reflows).
+    /// The grid follows the view (text reflows). A view reading history
+    /// stays on the line it was reading (B425): the reflow gives row
+    /// numbers to other text, so the view's row number alone threw it far
+    /// back (narrower) or onto the live screen (wider).
     pub fn resize(&mut self, cols: u16, rows: u16) {
+        let reading = self.reading_place();
         self.term.resize(term_size(cols, rows, &self.options));
+        if let Some(place) = reading {
+            self.go_to_reading_place(place);
+        }
         self.full_damage = true;
+    }
+
+    /// The first row of the logical line holding stable row `row`.
+    fn line_start(&self, row: StableRowIndex) -> StableRowIndex {
+        let mut first = row;
+        while first > self.first_row() && self.wraps(first - 1) {
+            first -= 1;
+        }
+        first
+    }
+
+    /// The first row of the last logical line with text: what a reflow
+    /// keeps under the history (the cursor is no mark: the reflow may put
+    /// it on another line, and the blank rows under the text come and go).
+    fn last_text_line(&self) -> StableRowIndex {
+        let mut row = self.screen_top() + self.size().1 as StableRowIndex - 1;
+        while row > self.first_row()
+            && !self.wraps(row - 1)
+            && self
+                .with_line(row, |l| Self::line_text(l).0.is_empty())
+                .unwrap_or(true)
+        {
+            row -= 1;
+        }
+        self.line_start(row)
+    }
+
+    /// Where a view reading the main screen's history stands, in what a
+    /// reflow keeps: logical lines from its line to the last one with text,
+    /// and cells into its line.
+    fn reading_place(&self) -> Option<(usize, usize)> {
+        if self.view_top.is_none() || self.term.is_alt_screen_active() {
+            return None;
+        }
+        let top = self.view_top();
+        if top >= self.screen_top() {
+            return None;
+        }
+        let first = self.line_start(top);
+        let cells_in = (top - first) as usize * self.size().0 as usize;
+        let mut lines = 0;
+        let mut row = self.last_text_line();
+        while row > first {
+            row = self.line_start(row - 1);
+            lines += 1;
+        }
+        Some((lines, cells_in))
+    }
+
+    /// Puts the view back on the line [`Terminal::reading_place`] read, on
+    /// whole rows; the live screen if that line is on it now.
+    fn go_to_reading_place(&mut self, (lines, cells_in): (usize, usize)) {
+        let mut first = self.last_text_line();
+        for _ in 0..lines {
+            if first <= self.first_row() {
+                break;
+            }
+            first = self.line_start(first - 1);
+        }
+        let mut last = first;
+        while last < self.screen_top() && self.wraps(last) {
+            last += 1;
+        }
+        let cols = self.size().0.max(1) as usize;
+        let top = (first + (cells_in / cols) as StableRowIndex).min(last);
+        if top >= self.screen_top() {
+            self.scroll_to_bottom();
+            return;
+        }
+        self.view_top = Some(top);
+        self.scroll_top = self.view_top;
+        self.scroll.offset_px = self.display_offset() as i64 * self.cell_px();
+        self.scroll.momentum = None;
     }
 
     fn reconfigure(&mut self) {
@@ -2638,37 +2738,76 @@ impl Terminal {
     }
 
     /// What appeared since the last call, for a screen reader to announce:
-    /// lines the screen scrolled in, else rows that changed, never the
-    /// cursor's row (what is being typed is the keyboard's to speak).
+    /// the rows from where the cursor was then on (output, the line it
+    /// echoed), never the cursor's row now (what is being typed is the
+    /// keyboard's to speak). The rows above the cursor's then are settled;
+    /// finding them again, moved up, tells how far the screen scrolled, so
+    /// a prompt row typed into while the screen scrolled is not taken for
+    /// new text. Without them in view, the rows that changed.
     pub fn take_announcement(&mut self) -> Option<String> {
         let now = self.a11y_lines();
         let cursor =
             (self.term.cursor_pos().y + (self.screen_top() - self.view_top()) as i64) as usize;
         let last = std::mem::replace(&mut self.a11y_last, now.clone());
+        let last_cursor = std::mem::replace(&mut self.a11y_last_cursor, cursor);
         if last.is_empty() {
             return None;
         }
         let n = now.len().min(last.len());
-        // How far the screen scrolled: the largest shift that lines the old
-        // rows up with the new.
-        let shift = (1..n)
-            .find(|&k| now[..n - k] == last[k..n] && now[..n - k].iter().any(|l| !l.is_empty()))
-            .unwrap_or(0);
+        let settled = last_cursor.min(n);
+        let shift = (0..settled).find(|&k| {
+            let kept = &now[..settled - k];
+            kept == &last[k..settled] && kept.iter().any(|l| !l.is_empty())
+        });
         let fresh: Vec<&str> = now
             .iter()
             .enumerate()
             .filter(|(i, l)| {
                 *i != cursor
                     && !l.is_empty()
-                    && if shift > 0 {
-                        *i >= n - shift
-                    } else {
-                        last.get(*i) != Some(*l)
+                    && match shift {
+                        Some(k) => *i >= settled - k,
+                        None => last.get(*i) != Some(*l),
                     }
             })
             .map(|(_, l)| l.as_str())
             .collect();
         (!fresh.is_empty()).then(|| fresh.join("\n"))
+    }
+
+    /// What VoiceOver hears now (V33), paced: after an announcement a
+    /// second of quiet, and what appears in it is said at its end, in one
+    /// (`again_in_ms`: ask then, frame or no frame). Only what is said
+    /// starts a quiet: a change with nothing to say (the cursor's row)
+    /// leaves the next one free (B427). The view's own one-second gate let
+    /// output that ended within a second of the last announcement go
+    /// unsaid until the next, unrelated change, and armed itself on frames
+    /// with nothing to say. `now_ms` on the terminal's clock
+    /// ([`Terminal::announce`] reads it).
+    pub fn announce_at(&mut self, now_ms: u64) -> Announcement {
+        if let Some(until) = self.a11y_quiet_until
+            && now_ms < until
+        {
+            return Announcement {
+                text: None,
+                again_in_ms: Some(until - now_ms),
+            };
+        }
+        self.a11y_quiet_until = None;
+        let text = self.take_announcement();
+        if text.is_some() {
+            self.a11y_quiet_until = Some(now_ms + ANNOUNCE_EVERY_MS);
+        }
+        Announcement {
+            text,
+            again_in_ms: None,
+        }
+    }
+
+    /// [`Terminal::announce_at`] now.
+    pub fn announce(&mut self) -> Announcement {
+        let now = self.now_ms();
+        self.announce_at(now)
     }
 
     // --- Modes -------------------------------------------------------------

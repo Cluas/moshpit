@@ -86,6 +86,9 @@ pub(super) struct Attach {
     /// The pane another device has — it took ours over, or held the one
     /// the focus went to — until the person's word or its closing.
     pub held_elsewhere: Option<String>,
+    /// The held pane's terminal when the hold began (B467): a new one is a
+    /// server restarted since, which ended every attach.
+    pub held_terminal: Option<String>,
     /// The pane whose veil lifts on its first full frame.
     pub awaiting_full: Option<String>,
     /// The last switch's cost, ask to full frame (`herdrLastSwitch`).
@@ -261,7 +264,7 @@ impl Client {
             // moves on while the notice says so — the person settles it (a
             // pick, "Open here"). Unless its pane is gone: then the focused
             // one, by itself.
-            if !user && !self.pane_gone(&held) {
+            if !user && !self.pane_gone(&held) && !self.hold_outlived(&held) {
                 return;
             }
             self.attach.held_elsewhere = None;
@@ -708,8 +711,7 @@ impl Client {
             log::warn!(
                 "herdr: {pane} is held by another device; not taken back without the person"
             );
-            self.attach.held_elsewhere = Some(pane);
-            self.set_notice(Notice::OnAnotherDevice, Some(super::NoticeAction::OpenHere));
+            self.hold(pane);
             return;
         }
         // A pane that doesn't exist (closed, or a stale focus), or anything
@@ -751,6 +753,19 @@ impl Client {
             self.event(Event::InputIgnored(message));
             return;
         }
+        // B466: the attach's CLI says its last words on the channel when the
+        // attach ends on the host's side (`herdr: server shut down: …`). The
+        // server stopping or restarting and the pane closing are no refusal,
+        // nor is another device taking the pane: each was said as one and
+        // backed off from for 30 s, the stale frame on screen.
+        if message.contains("shutting down")
+            || (message.contains("terminal attach") && message.contains("not found"))
+        {
+            return self.attach_gone(&message);
+        }
+        if message.contains("taken over") || crate::launch::held_elsewhere(&message) {
+            return self.attach_taken(&message);
+        }
         let refused = message.clone();
         if snapshot::looks_like_version_skew(&message) {
             self.offer_restart(message);
@@ -787,6 +802,84 @@ impl Client {
         );
         if let Some(awaiting) = awaiting {
             self.view(&awaiting, ViewAction::Reveal);
+        }
+    }
+
+    /// The attach let go of the channel on the host's side: nothing of ours
+    /// reads it, and nothing typed for it goes anywhere now.
+    fn attach_ended(&mut self) {
+        self.attach.attached = None;
+        self.attach.target = None;
+        self.attach.input_open = false;
+        self.attach.switch = None;
+        self.timers.cancel(&Slot::Settle);
+        self.timers.cancel(&Slot::ReleaseAck);
+        self.drop_all_held(true);
+        self.dirty = true;
+        if let Some(awaiting) = self.attach.awaiting_full.take() {
+            self.view(&awaiting, ViewAction::Reveal);
+        }
+    }
+
+    /// The attach ended because its pane closed or the server stopped or
+    /// restarted (B466): the next read names the pane to follow, or says
+    /// there is no server; asked for now.
+    fn attach_gone(&mut self, said: &str) {
+        log::warn!(
+            "herdr: the attach to {} ended ({said}): following the focus",
+            self.attach.attached.as_deref().unwrap_or("-")
+        );
+        self.attach_ended();
+        self.quicken();
+    }
+
+    /// Another device took the pane, said by the CLI (B466): the pane is
+    /// theirs until the person's word, as when the close says so.
+    fn attach_taken(&mut self, said: &str) {
+        let Some(pane) = self
+            .attach
+            .attached
+            .clone()
+            .or_else(|| self.attach.target.clone())
+        else {
+            return self.attach_gone(said);
+        };
+        log::warn!(
+            "herdr: {pane} was taken by another device ({said}); not taken back without the person"
+        );
+        self.attach_ended();
+        self.hold(pane);
+    }
+
+    /// Another device has `pane`: said with its take-back, and its terminal
+    /// noted (B467).
+    fn hold(&mut self, pane: String) {
+        self.attach.held_terminal = self.poll.terminal_ids.get(&pane).cloned();
+        self.attach.held_elsewhere = Some(pane);
+        self.set_notice(Notice::OnAnotherDevice, Some(super::NoticeAction::OpenHere));
+    }
+
+    /// Whether the server restarted since the hold on `pane` began: its
+    /// terminal is a new one (B467). The other device's attach ended with
+    /// the old server.
+    fn hold_outlived(&self, pane: &str) -> bool {
+        matches!(
+            (self.attach.held_terminal.as_deref(), self.poll.terminal_ids.get(pane)),
+            (Some(then), Some(now)) if then != now
+        )
+    }
+
+    /// No server: whatever another device held, it holds no more (B467).
+    pub(super) fn server_gone_ends_hold(&mut self) {
+        if self.attach.held_elsewhere.take().is_some() {
+            log::warn!("herdr: the server went away: the pane another device held is free");
+            if self
+                .notice
+                .as_ref()
+                .is_some_and(|(notice, _)| *notice == Notice::OnAnotherDevice)
+            {
+                self.clear_notice();
+            }
         }
     }
 

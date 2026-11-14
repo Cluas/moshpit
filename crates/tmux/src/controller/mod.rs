@@ -390,6 +390,8 @@ enum Reply {
     ClientName,
     /// The current window's lease at attach.
     AttachLeaseOwner,
+    /// Every window's lease, for the dead-pin sweep (B456).
+    SweepWindows,
     ClientCount {
         request: u64,
         switches: u64,
@@ -1262,6 +1264,7 @@ impl Controller {
             }
             Reply::ClientName => self.client_name_answered(response),
             Reply::AttachLeaseOwner => self.attach_lease_answered(response),
+            Reply::SweepWindows => self.sweep_windows_answered(response),
             Reply::PristineProbe { window } => self.pristine_probe_answered(&window, response),
             Reply::SizeProbe { before, .. } => self.size_probe_answered(before, response),
             Reply::SwitchProbe { session, earlier } => {
@@ -1369,6 +1372,10 @@ impl Controller {
             self.send(format!("refresh-client -C {cols}x{rows}"));
             self.probe_layouts_after_sizing();
             self.read_attach_lease();
+            if fresh_attach {
+                // B456: what a dead phone left pinned, handed back.
+                self.sweep_dead_pins();
+            }
         } else {
             // B270: what the renderer's attach squashed, read again now.
             self.probe_layouts_after_renderer();

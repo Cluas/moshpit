@@ -314,10 +314,15 @@ pub fn body(detail_text: Option<&str>, place: &str) -> String {
     }
 }
 
-/// Whether a finish of a turn that ran `duration_seconds` would make a sound
-/// at all — the only finishes the finishes record has to share.
-pub fn done_rings(duration_seconds: i64, sound: bool, threshold: i64) -> bool {
-    sound && duration_seconds >= threshold
+/// Whether a finish of a turn that ran `duration_seconds` would wake the
+/// screen — `Active`, with the sound if the user allows one: the finishes
+/// the finishes record shares between the pushed copy and the local one.
+///
+/// It used to ask the sound switch too (B442): with the sound off the
+/// record was never consulted, both copies of a long finish were `Active`,
+/// and one turn woke the screen twice.
+pub fn done_wakes(duration_seconds: i64, threshold: i64) -> bool {
+    duration_seconds >= threshold
 }
 
 /// The finished card. A turn of `threshold` seconds or more is worth a sound

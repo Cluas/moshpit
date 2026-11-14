@@ -1197,3 +1197,71 @@ fn a_refused_save_says_the_hosts_reason_and_offers_no_retry() {
     assert!(!app.screen().shows("Try again"));
     channel.close();
 }
+
+/// §4.13: what a host's emoji field takes. One emoji (a ZWJ sequence, a
+/// skin tone, a flag, a keycap, a character asked to show as an emoji),
+/// the spaces round it dropped; empty: none, the key's face. Not words,
+/// not spaces alone, not two emoji.
+#[test]
+fn a_hosts_emoji_is_one_emoji_or_none() {
+    use moshpit_ui::connection_form::emoji;
+    for (typed, saved) in [
+        ("🍓", "🍓"),
+        ("🐳", "🐳"),
+        ("👩\u{200D}💻", "👩\u{200D}💻"),
+        (" 🐳 ", "🐳"),
+        ("👍🏽", "👍🏽"),
+        ("🇯🇵", "🇯🇵"),
+        ("❤\u{FE0F}", "❤\u{FE0F}"),
+        ("1\u{FE0F}\u{20E3}", "1\u{FE0F}\u{20E3}"),
+    ] {
+        assert_eq!(emoji(typed), Ok(Some(saved.to_owned())), "{typed:?}");
+    }
+    assert_eq!(emoji(""), Ok(None), "empty: the key's face");
+    for wrong in ["ab", " ", "a", "1", "🍓🐳", "🍓 🐳", "❤", "#", "→"] {
+        assert!(emoji(wrong).is_err(), "{wrong:?} taken");
+    }
+}
+
+/// The emoji field: under the name, what it is for under it; text that
+/// isn't one emoji says so once the field is left, and Save waits; one
+/// emoji, or clearing it, saves.
+#[test]
+fn an_emoji_that_isnt_one_says_so_and_save_waits() {
+    let (mut app, channel, _) = start_tall(Params::default());
+    let heard = hear(&channel);
+    show(&mut app, &channel, savable());
+    find(&mut app, "id:connection-form-emoji");
+    assert!(app.screen().shows("Emoji"));
+    assert!(
+        app.screen()
+            .shows("Shows on the host's mark in place of its key's pattern.")
+    );
+    assert!(saves(&mut app, &heard), "an empty emoji saves");
+    for bad in ["ab", " ", "🍓🐳"] {
+        retype(&mut app, "connection-form-emoji", bad);
+        find(&mut app, "id:connection-form-emoji-error");
+        assert!(
+            app.screen().shows("One emoji, or leave it empty."),
+            "{bad:?}: {:?}",
+            app.screen().texts()
+        );
+        assert!(!saves(&mut app, &heard), "{bad:?} saved");
+    }
+    retype(&mut app, "connection-form-emoji", "🐳");
+    assert!(!says_wrong(&app, "connection-form-emoji"));
+    drain(&heard);
+    app.clear(&input("connection-form-emoji")).unwrap();
+    app.type_text(&input("connection-form-emoji"), "🐳")
+        .unwrap();
+    assert!(
+        drain(&heard)
+            .iter()
+            .any(|m| m == &json!({"ev": "set", "key": "emoji", "value": "🐳"})),
+        "the host hears the emoji"
+    );
+    assert!(saves(&mut app, &heard), "one emoji saves");
+    retype(&mut app, "connection-form-emoji", "");
+    assert!(saves(&mut app, &heard), "cleared, back to the key's face");
+    channel.close();
+}

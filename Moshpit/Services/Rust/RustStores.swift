@@ -82,7 +82,8 @@ extension ConnectionRecord {
             predictModeRaw: c.predictModeRaw, roamOnCellular: c.roamOnCellular, tmuxPath: c.tmuxPath,
             herdrPath: c.herdrPath, multiplexerRaw: c.multiplexerRaw, sshKeyId: c.sshKeyId?.uuidString,
             sshKeyAlgorithmRaw: c.sshKeyAlgorithmRaw, useSocksProxy: c.useSOCKSProxy,
-            socksProxyHost: c.socksProxyHost, socksProxyPort: c.socksProxyPort.map(Int64.init))
+            socksProxyHost: c.socksProxyHost, socksProxyPort: c.socksProxyPort.map(Int64.init),
+            emoji: c.emoji)
     }
 }
 
@@ -106,6 +107,7 @@ extension ServerConnection {
         useSOCKSProxy = r.useSocksProxy
         socksProxyHost = r.socksProxyHost
         socksProxyPort = r.socksProxyPort.map { Int($0) }
+        emoji = r.emoji
     }
 }
 

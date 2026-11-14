@@ -176,6 +176,36 @@ fn care_tends_a_connection_once_a_run_and_afresh_after_a_delete_is_called_off() 
     );
 }
 
+/// B440: a pairing kept the name the connection was paired under, and a
+/// pushed card names its place by it — after a rename the pushed copy of
+/// an event and the local one read differently. The next care pass gives
+/// the pairing the connection's name; the label never leaves the phone, so
+/// the host's conf stays as it is and nothing is minted again. A blank
+/// name leaves the label.
+#[test]
+fn a_renamed_connections_pairing_takes_its_new_name() {
+    let mut rig = Rig::new().with_token();
+    let c = hooked(&mut rig, "old name");
+    rig.tend(&c);
+    let before = rig.pairing(c.id).unwrap();
+    assert_eq!(before.host_label, "old name");
+    let conf = rig.host(c.id).pairing_conf(c.id).cloned();
+    let renamed = moshpit_hostcare::Conn { id: c.id, label: "studio".into() };
+    rig.act(|m, k| m.forget(c.id, k));
+    rig.tend(&renamed);
+    let after = rig.pairing(c.id).unwrap();
+    assert_eq!(after.host_label, "studio");
+    assert_eq!(after.secret_hex, before.secret_hex);
+    assert_eq!(after.send_token, before.send_token);
+    assert_eq!(rig.host(c.id).pairing_conf(c.id).cloned(), conf, "the host was touched");
+    assert_eq!(rig.mints, [c.id.to_string()], "minted again");
+
+    let blank = moshpit_hostcare::Conn { id: c.id, label: "  ".into() };
+    rig.act(|m, k| m.forget(c.id, k));
+    rig.tend(&blank);
+    assert_eq!(rig.pairing(c.id).unwrap().host_label, "studio");
+}
+
 // MARK: - Unpairing from Host Setup
 
 /// Host Setup's Unpair, tapped while the care pass that started with the

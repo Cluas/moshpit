@@ -159,6 +159,10 @@ pub struct FormState {
     pub mux: Mux,
     pub tmux_path: String,
     pub herdr_path: String,
+    /// The emoji the host's mark shows in place of its key's face (§4.13),
+    /// as typed; empty: the face. Saved only when it is one ([`emoji`]).
+    #[serde(default)]
+    pub emoji: String,
 }
 
 /// The password and the private key, as far as the page may know: whether
@@ -340,6 +344,7 @@ pub enum Field {
     Mux(Mux),
     TmuxPath(String),
     HerdrPath(String),
+    Emoji(String),
 }
 
 impl Field {
@@ -361,6 +366,7 @@ impl Field {
             Field::Mux(v) => ("mux", json!(v.id())),
             Field::TmuxPath(v) => ("tmuxPath", json!(v)),
             Field::HerdrPath(v) => ("herdrPath", json!(v)),
+            Field::Emoji(v) => ("emoji", json!(v)),
         };
         json!({"ev": "set", "key": key, "value": value})
     }
@@ -383,6 +389,7 @@ impl Field {
             Field::Mux(v) => s.mux = v,
             Field::TmuxPath(v) => s.tmux_path = v,
             Field::HerdrPath(v) => s.herdr_path = v,
+            Field::Emoji(v) => s.emoji = v,
         }
     }
 }
@@ -395,7 +402,52 @@ pub fn can_save(state: &FormState) -> bool {
         && !state.host.trim().is_empty()
         && !port_is_wrong(state)
         && !proxy_port_is_wrong(state)
+        && !emoji_is_wrong(state)
         && has_credential(state)
+}
+
+/// The emoji field holds something that isn't one emoji ([`emoji`]).
+pub fn emoji_is_wrong(state: &FormState) -> bool {
+    emoji(&state.emoji).is_err()
+}
+
+/// The emoji field's text isn't one emoji.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NotOneEmoji;
+
+/// What a host's emoji field saves: none for an empty field (the mark
+/// shows the key's face); else `text` without the spaces round it, which
+/// must be exactly one grapheme cluster and an emoji (spaces alone are not). An emoji is
+/// one shown as one by default (`Emoji_Presentation`: 🍓, 🐳, 👩‍💻, a flag),
+/// or a character asked to show as one (followed by U+FE0F, ❤️) or a
+/// keycap (1️⃣). Letters, digits and text symbols alone are not.
+pub fn emoji(text: &str) -> Result<Option<String>, NotOneEmoji> {
+    use unicode_properties::{EmojiStatus, UnicodeEmoji};
+    use unicode_segmentation::UnicodeSegmentation;
+    if text.is_empty() {
+        return Ok(None);
+    }
+    let text = text.trim();
+    let mut clusters = text.graphemes(true);
+    let (Some(one), None) = (clusters.next(), clusters.next()) else {
+        return Err(NotOneEmoji);
+    };
+    let shown_as_emoji = one.chars().any(|c| {
+        matches!(
+            c.emoji_status(),
+            EmojiStatus::EmojiPresentation
+                | EmojiStatus::EmojiPresentationAndModifierBase
+                | EmojiStatus::EmojiPresentationAndEmojiComponent
+                | EmojiStatus::EmojiPresentationAndModifierAndEmojiComponent
+        )
+    });
+    let asked = one.chars().any(|c| c == '\u{FE0F}' || c == '\u{20E3}')
+        && one.chars().next().is_some_and(|c| c.is_emoji_char());
+    if shown_as_emoji || asked {
+        Ok(Some(one.to_owned()))
+    } else {
+        Err(NotOneEmoji)
+    }
 }
 
 /// Saving leaves the connection something to sign in with. A key: one
@@ -480,6 +532,7 @@ struct Checked {
     host: bool,
     port: bool,
     proxy_port: bool,
+    emoji: bool,
 }
 
 /// The error under a field: `wrong` once the field has been left.
@@ -503,6 +556,11 @@ fn port_words() -> String {
 
 fn required_words() -> String {
     t!("Required")
+}
+
+/// What the emoji field must hold.
+fn emoji_words() -> String {
+    t!("One emoji, or leave it empty.")
 }
 
 /// Add connection / Edit connection.
@@ -727,6 +785,29 @@ fn connection(draft: &Draft) -> AnyElement {
                 required_words,
             ))
             .test_id("connection-form-name"),
+            Inset::Content,
+        )
+        .item(
+            field(
+                t!("Emoji"),
+                text_input()
+                    .default_value(start(draft, |s| s.emoji.clone()))
+                    .placeholder("🐳")
+                    .max_length(32)
+                    .on_change(draft.setter(Field::Emoji))
+                    .on_blur(leave(draft, |c| c.emoji = true)),
+            )
+            .description(t!(
+                "Shows on the host's mark in place of its key's pattern."
+            ))
+            .error(error_once(
+                state,
+                checked,
+                |c| c.emoji,
+                emoji_is_wrong,
+                emoji_words,
+            ))
+            .test_id("connection-form-emoji"),
             Inset::Content,
         )
         .item(

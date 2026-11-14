@@ -177,9 +177,12 @@ final class RustCore {
 
     /// Both monitors the Swift hub watches — the default path and `.other`
     /// (a split-tunnel VPN such as Tailscale comes up without moving the
-    /// default path). Only acted on in the foreground: the app can't hold a
-    /// socket in the background, and the foreground return resumes anyway.
-    /// A burst (a tunnel coming up) is told once; the core settles it again.
+    /// default path). Every change is told, foreground or not (B447): the
+    /// core acts on one heard in the background at the return. Dropped here,
+    /// it was gone for good — the watch had recorded the new path — and the
+    /// update iOS delivers as the process thaws can arrive before the
+    /// foreground does. A burst (a tunnel coming up) is told once; the core
+    /// settles it again.
     private func startPathWatch() {
         let watch = NetworkPathWatch { [weak self] in
             DispatchQueue.main.async {
@@ -191,7 +194,6 @@ final class RustCore {
     }
 
     private func networkPathChanged() {
-        guard isForeground else { return }
         pathKick?.cancel()
         pathKick = Task { @MainActor [weak self] in
             try? await Task.sleep(for: .milliseconds(150))

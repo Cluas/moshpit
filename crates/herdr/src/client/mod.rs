@@ -699,6 +699,9 @@ pub struct Client {
     owned: BTreeMap<u64, OwnedWait>,
     pane_switch_generation: u64,
     pane_switch_in_flight: bool,
+    /// The newest pick's focus was asked for again after it couldn't run
+    /// (B470): once a pick.
+    pick_asked_again: bool,
 
     // What the person asked for and waits on.
     tasks: BTreeMap<u64, task::AgentTask>,
@@ -751,6 +754,7 @@ impl Client {
             owned: BTreeMap::new(),
             pane_switch_generation: 0,
             pane_switch_in_flight: false,
+            pick_asked_again: false,
             tasks: BTreeMap::new(),
             removals: BTreeSet::new(),
             discoveries: BTreeMap::new(),
@@ -1219,6 +1223,9 @@ impl Client {
             let answer = read_result(text.as_bytes());
             let reading = control::read_poll(&answer);
             let tree = matches!(reading, PollReading::Tree(_));
+            if matches!(reading, PollReading::NoServer) {
+                self.server_gone_ends_hold();
+            }
             let server_was_down = self.poll.server_not_running;
             if tree {
                 // What the latest tree says, or unknown: a server that
@@ -1400,6 +1407,22 @@ impl Client {
         id
     }
 
+    /// A mutation at the head of the queue: it runs next, ahead of what
+    /// waits (B470's focus asked again, in its failed step's place).
+    fn enqueue_front(&mut self, body: Body, landed: Option<Landed>) {
+        self.lane.next_id += 1;
+        let id = self.lane.next_id;
+        self.lane.epoch += 1;
+        self.lane.queued += 1;
+        self.lane.steps.push_front(Step {
+            id,
+            mutation: true,
+            body,
+            landed,
+        });
+        self.lane_advance();
+    }
+
     /// Queue a command whose answer `owner` waits for, at most `patience`
     /// from now (the queue wait included, as `WriteLane.wait` counted it).
     fn enqueue_owned(
@@ -1491,8 +1514,27 @@ impl Client {
         };
         match follow {
             Err((command, reason)) => {
+                let again = self.pick_to_ask_again(&reason);
                 self.event(Event::CommandFailed { command, reason });
+                let again = again.map(|(subcommands, landed)| {
+                    // In the failed step's place, ahead of what was queued
+                    // behind it (a reply's focus check), and queued before
+                    // the step lets go, so the lane's re-read doesn't run
+                    // between the two and report the focus where the person
+                    // left it (B470).
+                    self.enqueue_front(
+                        Body::Commands {
+                            subcommands,
+                            next: 0,
+                        },
+                        Some(landed),
+                    );
+                });
                 self.lane_release();
+                if again.is_some() {
+                    // Still on its way: the step let go lowered it.
+                    self.pane_switch_in_flight = true;
+                }
             }
             Ok(Some(subcommand)) => {
                 let command = self.herdr(&subcommand);
@@ -1521,6 +1563,29 @@ impl Client {
             self.abandon(exec);
         }
         self.lane_release();
+    }
+
+    /// The running step moved herdr's focus for the newest pick and couldn't
+    /// run (the control connection dropped under it): what to send once more
+    /// (B470). Left alone, the next read reported the focus where it was
+    /// and pulled the screen back, silently. Over mosh the command waits for
+    /// the next connection. Once a pick.
+    fn pick_to_ask_again(&mut self, reason: &control::Refusal) -> Option<(Vec<String>, Landed)> {
+        if !matches!(reason, control::Refusal::Unreachable) || self.pick_asked_again {
+            return None;
+        }
+        let running = self.lane.running.as_ref()?;
+        let landed = running.step.landed?;
+        let Landed::PaneSwitch(generation) = landed;
+        if generation != self.pane_switch_generation {
+            return None;
+        }
+        let Body::Commands { subcommands, .. } = &running.step.body else {
+            return None;
+        };
+        self.pick_asked_again = true;
+        log::warn!("herdr: a pane switch's focus couldn't run: asked once more");
+        Some((subcommands.clone(), landed))
     }
 
     /// The lane is done with its running step.
@@ -1719,6 +1784,7 @@ impl Client {
     fn select_pane(&mut self, pane: &str) {
         self.pane_switch_generation += 1;
         self.pane_switch_in_flight = true;
+        self.pick_asked_again = false;
         let landed = Some(Landed::PaneSwitch(self.pane_switch_generation));
         if self.poll.snapshot.active_pane_id.as_deref() != Some(pane) {
             self.poll.snapshot.active_pane_id = Some(pane.to_owned());

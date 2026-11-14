@@ -952,6 +952,10 @@ add("1080", SAME)
 add("Must be a whole number from 1 to 65535", "要填 1 到 65535 之间的整数", "1〜65535 の整数を入力してください")
 # A labelled field Save needs filled, in its empty state (B319).
 add("Required", "必填", "必須")
+# A host's emoji (the connection form, §4.13).
+add("Emoji", "表情", "絵文字")
+add("Shows on the host's mark in place of its key's pattern.", "主机头像上显示这个表情，不再用主机密钥生成的图案。", "ホストのアイコンに、ホスト鍵から作った模様の代わりに表示します。")
+add("One emoji, or leave it empty.", "只能填一个表情，也可以留空。", "絵文字を 1 つ入力するか、空のままにしてください。")
 add("Only unauthenticated SOCKS5 proxies are supported. This proxies the SSH connection only — if Mosh is also enabled above, its UDP session connects directly once bootstrapped and is not proxied.",
     "仅支持免认证的 SOCKS5 代理。它只代理 SSH 连接——如果上面同时开了 Mosh，其 UDP 会话在建立后直连，不走代理。",
     "認証なしの SOCKS5 プロキシのみ対応しています。プロキシ経由になるのは SSH 接続のみです——上で Mosh も有効な場合、その UDP セッションは確立後は直接接続され、プロキシを経由しません。")

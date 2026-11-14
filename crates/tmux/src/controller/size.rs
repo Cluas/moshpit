@@ -27,6 +27,11 @@
 //! - The war guard: a desktop client and `window-size latest` resizing the
 //!   window back and forth; three reclaims within 5 s back off for 5 s, and a
 //!   war that ends at the other width is re-pinned after a quiet spell.
+//! - A dead phone's pins (B456): a phone that died with a window pinned —
+//!   the app killed, the network gone, no teardown to hand it back — left
+//!   it at the phone's grid (`window-size manual`) for good, the desktop's
+//!   with it. Each attach hands back the windows whose lease names a client
+//!   no longer attached ([`Controller::sweep_dead_pins`]).
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -149,6 +154,11 @@ pub(super) struct SizeState {
     pub listed_clients: Option<BTreeSet<String>>,
     /// Our `#{client_name}`.
     pub our_client_name: Option<String>,
+    /// The dead-pin sweep's window listing is on its way (B456).
+    pub sweep_pending: bool,
+    /// The clients the attach's lease read listed, kept for that sweep;
+    /// `None` until listed.
+    pub sweep_clients: Option<BTreeSet<String>>,
     pub follow: Option<SizeFollow>,
     /// When we last wrote a stamped claim; `None` = never (distant past).
     pub last_stamp_write: Option<super::Wall>,
@@ -364,6 +374,10 @@ impl Controller {
                 .map(str::to_owned)
                 .collect()
         };
+        if self.size.sweep_pending && self.size.sweep_clients.is_none() {
+            // A refused listing reads as no clients: the sweep judges none.
+            self.size.sweep_clients = Some(clients.clone());
+        }
         self.size.listed_clients = Some(clients);
     }
 
@@ -406,6 +420,63 @@ impl Controller {
             "show-options -wqv @moshpit_size_owner".to_owned(),
             Reply::AttachLeaseOwner,
         );
+    }
+
+    /// Hand back what a dead phone left pinned (B456): every window's lease,
+    /// read after the attach's lease read listed who is attached
+    /// ([`Self::read_attach_lease`], whose listing it keeps). A window whose
+    /// lease names a client no longer attached is unpinned and its lease
+    /// unset; one a live device holds, one nobody leased (a pin can't be
+    /// told from the user's own `window-size` without a lease) and the
+    /// windows a retired controller handed over are left alone.
+    ///
+    /// The reply comes before discovery has named the active window, and
+    /// before this client has written a lease of its own: a dead lease on
+    /// the window this attach is about to pin is handed back like any other,
+    /// and the attach's pin then claims and pins it again (both in tmux's
+    /// order, the hand-back first).
+    pub(super) fn sweep_dead_pins(&mut self) {
+        self.size.sweep_pending = true;
+        self.size.sweep_clients = None;
+        self.send_command(
+            "list-windows -a -F '#{window_id} #{@moshpit_size_owner}'".to_owned(),
+            Reply::SweepWindows,
+        );
+    }
+
+    pub(super) fn sweep_windows_answered(&mut self, response: &CommandResponse) {
+        self.size.sweep_pending = false;
+        // Without a listing of the clients (or with an empty one: we are a
+        // client ourselves) nothing can be judged dead.
+        let Some(clients) = self.size.sweep_clients.take().filter(|c| !c.is_empty()) else {
+            return;
+        };
+        if response.is_error {
+            return;
+        }
+        let ours = self.size.our_client_name.clone();
+        let active = self.snapshot.active_window_id.clone();
+        for line in &response.lines {
+            let Some((window, raw)) = line.split_once(' ') else {
+                continue;
+            };
+            if !is_valid_id(window)
+                || active.as_deref() == Some(window)
+                || self.size.resized_windows.contains(window)
+                || self.size.pristine_layouts.contains_key(window)
+            {
+                continue;
+            }
+            let Some(lease) = SizeLease::parse(trim_whitespaces(raw), &clients) else {
+                continue;
+            };
+            if lease.live || Some(lease.client_name.as_str()) == ours.as_deref() {
+                continue;
+            }
+            self.send(format!("set-option -u -w -t {window} window-size"));
+            self.send(format!("set-option -wu -t {window} @moshpit_size_owner"));
+            self.size.leases.remove(window);
+        }
     }
 
     pub(super) fn client_name_answered(&mut self, response: &CommandResponse) {

@@ -64,6 +64,8 @@ struct AgentStandingTests {
         }
         func update(_ state: AgentActivityAttributes.ContentState) { updates.append(state) }
         func endAll() { up = false }
+        var leftoversEnded = 0
+        func endLeftovers() { leftoversEnded += 1 }
     }
 
     /// The cards the monitor posted and withdrew.
@@ -153,6 +155,16 @@ struct AgentStandingTests {
     /// never announced it itself); the agent carries on and asks again a few
     /// minutes later. That second question used to arrive silent: the first
     /// one's entry still stood, so it was no edge.
+    /// B441: a killed process leaves its island up, and nothing ended it
+    /// until this process had something to show. The monitor ends what an
+    /// earlier process left the moment it is made, before it tracks anything.
+    @Test("a launch ends the islands an earlier process left up")
+    func aLaunchEndsLeftoverIslands() throws {
+        let bench = try bench()
+        defer { bench.finish() }
+        #expect(bench.island.leftoversEnded == 1)
+    }
+
     @Test("a pushed prompt answered while the app polls leaves the set: the next question rings")
     func answeredPushedPromptLeaves() throws {
         let bench = try bench()

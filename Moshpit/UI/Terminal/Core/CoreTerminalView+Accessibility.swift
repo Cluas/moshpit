@@ -6,9 +6,10 @@ import UIKit
 // passed over); the cursor's row says it holds the cursor. The view also
 // answers UIAccessibilityReadingContent, so "read all" and line-by-line
 // navigation walk the screen. What appeared is the core's to say (V33:
-// lines a scroll brought, rows that changed, never the cursor's row); the
-// view announces it at most once a second (an agent streaming output would
-// otherwise talk over everything).
+// the rows from where the cursor was, never the cursor's row), and when: a
+// second of quiet after each announcement, what appears in it said at its
+// end (B427: an agent streaming output would otherwise talk over
+// everything, and the last of it must not go unsaid).
 
 /// One row of the screen, for VoiceOver.
 final class CoreTermRowElement: UIAccessibilityElement {
@@ -61,18 +62,31 @@ extension CoreTerminalView: UIAccessibilityReadingContent {
         accessibilityRows = elements
     }
 
-    /// The screen changed: VoiceOver hears what appeared, at most once a
-    /// second.
+    /// The screen changed: VoiceOver hears what appeared when the core says
+    /// (B427), and is asked again when the core wants (frame or no frame).
+    /// The rows' elements are refreshed at most once a second.
     func announceChanges() {
         guard UIAccessibility.isVoiceOverRunning, let term else { return }
         let now = CACurrentMediaTime()
-        guard now - lastAccessibilityPost > 1 else { return }
-        lastAccessibilityPost = now
-        UIAccessibility.post(notification: .layoutChanged, argument: nil)
-        guard let p = mp_term_a11y_take_announcement(term) else { return }
-        let text = String(cString: p)
-        mp_string_free(p)
-        UIAccessibility.post(notification: .announcement, argument: text)
+        if now - lastAccessibilityPost > 1 {
+            lastAccessibilityPost = now
+            UIAccessibility.post(notification: .layoutChanged, argument: nil)
+        }
+        var again: UInt32 = 0
+        if let p = mp_term_a11y_announce(term, &again) {
+            let text = String(cString: p)
+            mp_string_free(p)
+            UIAccessibility.post(notification: .announcement, argument: text)
+        }
+        guard again > 0, announceAgain == nil else { return }
+        let work = DispatchWorkItem { [weak self] in
+            MainActor.assumeIsolated {
+                self?.announceAgain = nil
+                self?.announceChanges()
+            }
+        }
+        announceAgain = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + Double(again) / 1000, execute: work)
     }
 
     // MARK: UIAccessibilityReadingContent

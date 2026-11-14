@@ -13,7 +13,7 @@ extern "C" {
 
 /// Bumped whenever anything below changes shape: a view checks
 /// `mp_term_abi_version() == MP_TERM_ABI_VERSION` before it uses the core.
-#define MP_TERM_ABI_VERSION 12
+#define MP_TERM_ABI_VERSION 13
 uint32_t mp_term_abi_version(void);
 
 typedef struct MpTerm MpTerm;
@@ -405,8 +405,11 @@ void mp_term_set_coast(const MpTerm *_Nonnull t, bool on);
 
 // MARK: Accessibility (V33)
 
-/// What appeared since the last call, for a screen reader; NULL: nothing.
-char *_Nullable mp_term_a11y_take_announcement(const MpTerm *_Nonnull t);
+/// What a screen reader hears now (free with mp_string_free; NULL:
+/// nothing), paced: a second of quiet after each announcement, what appears
+/// in it said at its end. `again_ms` (may be NULL) gets when to ask again,
+/// 0 for no need (B427).
+char *_Nullable mp_term_a11y_announce(const MpTerm *_Nonnull t, uint32_t *_Nullable again_ms);
 
 // MARK: mosh's predictive echo, laid over the frames (never into the grid)
 

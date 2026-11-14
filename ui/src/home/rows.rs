@@ -243,7 +243,12 @@ pub(crate) fn saved_card(hosts: Vec<Connection>, ctx: &Ctx) -> AnyElement {
     for host in hosts {
         let id = host.id.clone();
         let saved = row(host.name.clone())
-            .leading(host_mark(host.initial.clone()).size(MarkSize::Sm))
+            .leading(
+                host_mark(host.initial.clone())
+                    .face(host.face.clone())
+                    .emoji(host.emoji.clone())
+                    .size(MarkSize::Sm),
+            )
             .subtitle(format!("{}@{}", host.user, host.host))
             .mono_subtitle()
             .chevron()

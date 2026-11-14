@@ -24,6 +24,11 @@
       "replace": "\\1'",
       "kind": "on-purpose",
       "why": "B363: the Rust repaint's cursor query also reads the pane program's flags (#{mouse_any_flag} #{alternate_on}), so they are known from the attach's own repaint on, per pane, with no round trip of their own; the Swift controller asks only for the cursor. Written back to the Swift query before comparing (replies with only the cursor parse as before)."
+    },
+    {
+      "pattern": "^> list-windows -a -F '#\\{window_id\\} #\\{@moshpit_size_owner\\}'$",
+      "kind": "on-purpose",
+      "why": "B456: at every fresh -CC attach the Rust controller reads every window's size lease and hands back (window-size unset, lease unset) the windows whose lease names a client no longer attached — a phone that died with a window pinned left it at the phone's grid for good. The Swift controller has no such sweep. The listing is taken out of the Rust log; the scripts' replies name no such window, so nothing else changes."
     }
   ],
   "divergences": [

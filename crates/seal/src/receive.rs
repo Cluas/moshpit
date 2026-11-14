@@ -152,11 +152,7 @@ pub fn receive(
         // A long turn's finish rings once between this card and the app's
         // local copy of it: whichever lands first.
         let done_rings = status.state != "done"
-            || !copy::done_rings(
-                status.dur.unwrap_or(0),
-                prefs.sound,
-                notification::DONE_SOUND_THRESHOLD,
-            )
+            || !copy::done_wakes(status.dur.unwrap_or(0), notification::DONE_SOUND_THRESHOLD)
             || finishes.note_ring(&status.conn, &status.pane, status.ts, now);
         notification::render(&status, Render { done_rings, ..how })
     };
@@ -430,6 +426,17 @@ mod tests {
                                   Prefs::default(), Language::En, now));
         assert!(!second.sound, "one turn's finish rang twice");
         assert_eq!(second.level, crate::copy::InterruptionLevel::Passive);
+
+        // B442: with the sound off the record wasn't consulted, and both
+        // copies of a long finish woke the screen. One wakes it.
+        let quiet = Prefs { sound: false, ..Prefs::default() };
+        let first = card(receive(&long(1_790_003_000), &pairings, &standing, &finishes,
+                                 quiet, Language::En, now));
+        assert_eq!((first.sound, first.level), (false, crate::copy::InterruptionLevel::Active));
+        assert!(finishes.note_ring(CONN, "%3", 1_790_004_000, now));
+        let second = card(receive(&long(1_790_004_001), &pairings, &standing, &finishes,
+                                  quiet, Language::En, now));
+        assert_eq!(second.level, crate::copy::InterruptionLevel::Passive, "one turn woke the screen twice");
     }
 
     #[test]

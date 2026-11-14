@@ -44,6 +44,8 @@ use moshpit_ui::home::model::{
     PaneInfo, SessionInfo, Transport, WindowInfo, Worktree,
 };
 use moshpit_ui::home::{Message, words};
+use moshpit_ui::ui::{mark::Face, tokens::FACES};
+use sha2::{Digest, Sha256};
 use unicode_segmentation::UnicodeSegmentation;
 
 /// One saved connection, as the host's store has it, and its session.
@@ -54,6 +56,11 @@ pub struct SavedConnection {
     pub id: String,
     /// The name the store displays it by (its name, else its host).
     pub name: String,
+    /// The fingerprint of its host key as trusted (`SHA256:…`, the known
+    /// hosts' entry for its SSH port); none before a key is trusted.
+    pub fingerprint: Option<String>,
+    /// The emoji picked for it, which its mark shows in place of its face.
+    pub emoji: Option<String>,
     pub user: String,
     pub host: String,
     pub mosh: bool,
@@ -108,6 +115,8 @@ fn connection(saved: &SavedConnection, input: &HomeInput) -> Connection {
         id: saved.id.clone(),
         name: saved.name.clone(),
         initial: initial(&saved.name),
+        face: saved.fingerprint.as_deref().map(face),
+        emoji: saved.emoji.clone(),
         user: saved.user.clone(),
         host: saved.host.clone(),
         mosh: saved.mosh,
@@ -143,6 +152,38 @@ pub fn initial(name: &str) -> String {
         .next()
         .map(str::to_uppercase)
         .unwrap_or_default()
+}
+
+/// A trusted host key's face (§4.13): the one seam from a fingerprint, as
+/// the known hosts keep it, to the [`Face`] a mark draws. Whatever makes
+/// faces lives behind it (another generator, a pixel creature, can take its
+/// place); the store, the emoji over it, the mark's sizes and "no key, the
+/// initial" don't change with it.
+///
+/// Today's: from the SHA-256 of the fingerprint, a 5 × 5 grid mirrored left
+/// to right, the digest's first fifteen bits its left three columns (bit
+/// `row * 3 + column`), its last byte the hue. A key with no cell set (one
+/// in 32768) has them all. The same key, the same face; another key,
+/// another face.
+pub fn face(fingerprint: &str) -> Face {
+    const SIDE: usize = 5;
+    let digest = Sha256::digest(fingerprint.as_bytes());
+    let bits = match u16::from_le_bytes([digest[0], digest[1]]) & 0x7FFF {
+        0 => 0x7FFF,
+        bits => bits,
+    };
+    let cells = (0..SIDE * SIDE)
+        .map(|at| {
+            let (row, column) = (at / SIDE, at % SIDE);
+            let column = column.min(SIDE - 1 - column);
+            (bits >> (row * 3 + column)) & 1 == 1
+        })
+        .collect();
+    Face {
+        side: SIDE as u8,
+        cells,
+        hue: digest[31] % FACES.len() as u8,
+    }
 }
 
 /// Where a session is (`HomeSnapshot.link`): dead, then connecting, then

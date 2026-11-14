@@ -25,6 +25,13 @@ protocol AgentIsland: AnyObject {
     func update(_ state: AgentActivityAttributes.ContentState)
     /// No agents are listed: end every island this app has up.
     func endAll()
+    /// The app launched: end every island an earlier process left up
+    /// (B441). None of its agents is one this process knows of yet.
+    func endLeftovers()
+}
+
+extension AgentIsland {
+    func endLeftovers() {}
 }
 
 /// The island as ActivityKit shows it.
@@ -49,6 +56,11 @@ final class ActivityKitIsland: AgentIsland {
     private var dismissed = false
     /// The update on its way, which the next one waits for.
     private var pending: Task<Void, Never>?
+    /// Islands this process asked to end. Ending is asynchronous: until it
+    /// lands one still reads as active, and adopting it sent the next
+    /// updates to an island about to go — and the state, unchanged, wasn't
+    /// sent again for a minute.
+    private var ending: Set<String> = []
 
     /// Whether an island in `state` still shows what it is sent. An ended
     /// one can linger on the lock screen for hours, frozen; a dismissed one
@@ -104,11 +116,30 @@ final class ActivityKitIsland: AgentIsland {
         if !live.isEmpty {
             Log.island.info("island: no agents, ending \(live.count) activity(ies)")
         }
-        for a in live {
-            Task { await a.end(nil, dismissalPolicy: .immediate) }
-        }
+        end(live)
         activity = nil
         dismissed = false
+    }
+
+    /// Every island an earlier process left up, ended at launch (B441). A
+    /// process killed while agents were listed (jetsam, a crash, a swipe)
+    /// leaves its island up, and nothing ended it until this process first
+    /// had something to show: one that connected to no host with an agent
+    /// on it left "paused" agents on the lock screen for up to eight hours.
+    /// The first agent this process lists asks for a new island.
+    func endLeftovers() {
+        let live = Activity<AgentActivityAttributes>.activities
+        guard !live.isEmpty else { return }
+        Log.island.info("island: launch, ending \(live.count) left by an earlier process")
+        end(live)
+        activity = nil
+    }
+
+    private func end(_ islands: [Activity<AgentActivityAttributes>]) {
+        for island in islands {
+            ending.insert(island.id)
+            Task { await island.end(nil, dismissalPolicy: .immediate) }
+        }
     }
 
     private func content(_ state: AgentActivityAttributes.ContentState)
@@ -131,9 +162,9 @@ final class ActivityKitIsland: AgentIsland {
         // all adopted an ended one, and every update after went nowhere.
         // The ended ones are ended for good, off the lock screen too, where
         // they'd otherwise sit showing hours-old agents.
-        let keep = live.first { Self.takesUpdates($0.activityState) }
+        let keep = live.first { Self.takesUpdates($0.activityState) && !ending.contains($0.id) }
         activity = keep
-        let orphans = live.filter { $0.id != keep?.id }
+        let orphans = live.filter { $0.id != keep?.id && !ending.contains($0.id) }
         Log.island.info("island: adopted \(keep?.id ?? "none", privacy: .public), ending \(orphans.count) orphan(s)")
         for orphan in orphans {
             Task { await orphan.end(nil, dismissalPolicy: .immediate) }
@@ -144,5 +175,6 @@ final class ActivityKitIsland: AgentIsland {
     func request(_ state: AgentActivityAttributes.ContentState) -> String? { nil }
     func update(_ state: AgentActivityAttributes.ContentState) {}
     func endAll() {}
+    func endLeftovers() {}
     #endif
 }

@@ -82,6 +82,8 @@ pub struct ConnectionDraft {
     pub use_socks_proxy: bool,
     pub socks_proxy_host: String,
     pub socks_proxy_port: String,
+    /// The emoji field as typed; empty: the host key's face.
+    pub emoji: String,
     pub stored: StoredCredential,
 }
 
@@ -199,6 +201,7 @@ impl From<&Draft> for ConnectionDraft {
             use_socks_proxy: f.socks,
             socks_proxy_host: f.socks_host.clone(),
             socks_proxy_port: f.socks_port.clone(),
+            emoji: f.emoji.clone(),
             stored: match d.stored {
                 Stored::None => StoredCredential::None,
                 Stored::Password => StoredCredential::Password,
@@ -238,6 +241,7 @@ fn draft(d: &ConnectionDraft, given: SecretsGiven) -> Draft {
     f.socks = d.use_socks_proxy;
     f.socks_host = d.socks_proxy_host.clone();
     f.socks_port = d.socks_proxy_port.clone();
+    f.emoji = d.emoji.clone();
     draft.key = d.selected_key.as_deref().and_then(Uuid::parse);
     draft.stored = match &d.stored {
         StoredCredential::None => Stored::None,

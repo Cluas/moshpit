@@ -105,10 +105,13 @@ public enum AgentNotificationCopy {
         content.interruptionLevel = isLong ? .active : .passive
     }
 
-    /// Whether a finish of a turn that ran `duration` seconds would make a
-    /// sound at all — the only finishes ``PushFinishes`` has to share.
-    public static func doneRings(duration: Int, sound: Bool, threshold: Int) -> Bool {
-        sound && duration >= threshold
+    /// Whether a finish of a turn that ran `duration` seconds would wake the
+    /// screen — `.active`, with the sound if the user allows one: the
+    /// finishes ``PushFinishes`` shares between the pushed copy and the
+    /// local one. It used to ask the sound switch too (B442): with the sound
+    /// off the record was never consulted, and one turn woke the screen twice.
+    public static func doneWakes(duration: Int, threshold: Int) -> Bool {
+        duration >= threshold
     }
 
     /// The needs-you card. `standingCount` is how many prompts are waiting

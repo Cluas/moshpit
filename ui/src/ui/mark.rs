@@ -1,6 +1,11 @@
-//! Who a row is about (`docs/nsh/UI-DESIGN.md` §4.13): a host's mark (its
-//! initial on a disc, a status dot on its corner) and an agent's (a glyph,
-//! no tile).
+//! Who a row is about (`docs/nsh/UI-DESIGN.md` §4.13): a host's mark and
+//! an agent's (a glyph, no tile).
+//!
+//! A host's mark is a disc with a status dot on its corner. On the disc, by
+//! what the host has: the emoji the person picked for it; else its trusted
+//! host key's face ([`Face`]: a pattern made from the key's fingerprint, in
+//! one of eight hues, that changes when the key does); else, before any key
+//! is trusted, its name's initial.
 //!
 //! A host mark is decoration beside the host's name: screen readers hear
 //! the name and its state from the row or head it sits in, not from the
@@ -8,13 +13,47 @@
 //! a state (§3.6: the waiting hand is solid amber), muted otherwise.
 
 use nsh_core::prelude::*;
+use serde::{Deserialize, Serialize};
 
 use crate::ui::{
     icon::{IconSize, Tone, icon},
     status::{DotSize, Status, status_dot},
-    tokens::token,
+    tokens::{FACES, token},
     typography::TextToken,
 };
+
+/// A trusted host key's face: a square grid of cells, some filled, in one
+/// of the hues of [`FACES`]. What fills the grid, and how big it is, is the
+/// generator's (the host's model makes a face from the key's fingerprint:
+/// the same key, the same face); the mark draws any grid in the same space,
+/// whatever its side.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct Face {
+    /// The grid's side, in cells.
+    pub side: u8,
+    /// Its cells, row by row, `side * side` of them: filled or not.
+    pub cells: Vec<bool>,
+    /// Its hue: an index into [`FACES`].
+    pub hue: u8,
+}
+
+impl Face {
+    /// Whether the cell at `row`, `column` is filled (none past the grid).
+    pub fn filled(&self, row: usize, column: usize) -> bool {
+        let side = usize::from(self.side);
+        column < side
+            && self
+                .cells
+                .get(row * side + column)
+                .copied()
+                .unwrap_or(false)
+    }
+
+    /// Its pattern's colour token and its disc's.
+    pub fn tokens(&self) -> (&'static str, &'static str) {
+        FACES[usize::from(self.hue) % FACES.len()]
+    }
+}
 
 /// A host mark's size.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -41,7 +80,29 @@ impl MarkSize {
             MarkSize::Sm => TextToken::MonoFootnote,
         }
     }
+
+    /// The space a face's grid takes: 25 pt on the head's mark, 20 pt in a
+    /// row's lane, its corners within the circle. A 5-cell grid's cells are
+    /// 5 and 4 pt, whole pixels at 3x.
+    pub fn pattern(self) -> f32 {
+        match self {
+            MarkSize::Md => 25.0,
+            MarkSize::Sm => 20.0,
+        }
+    }
+
+    /// An emoji's size: most of the disc, fixed (it is a picture, not
+    /// words: it doesn't grow with the text size past the disc).
+    fn emoji(self) -> f32 {
+        match self {
+            MarkSize::Md => 22.0,
+            MarkSize::Sm => 16.0,
+        }
+    }
 }
+
+/// How dim an emoji goes on the mark of a host offline or failed.
+const EMOJI_DOWN: f32 = 0.45;
 
 /// The ring around a mark's status dot, in the card's color, so the dot
 /// reads apart from the disc under it.
@@ -50,6 +111,8 @@ const RING: f32 = 2.0;
 /// A host's mark ([`host_mark`]).
 pub struct HostMark {
     initial: SharedString,
+    face: Option<Face>,
+    emoji: Option<SharedString>,
     size: MarkSize,
     status: Option<Status>,
     test_id: Option<SharedString>,
@@ -59,6 +122,8 @@ pub struct HostMark {
 pub fn host_mark(initial: impl Into<SharedString>) -> HostMark {
     HostMark {
         initial: initial.into(),
+        face: None,
+        emoji: None,
         size: MarkSize::Md,
         status: None,
         test_id: None,
@@ -71,9 +136,22 @@ impl HostMark {
         self
     }
 
+    /// Its trusted host key's face, which shows in place of the initial.
+    pub fn face(mut self, face: Option<Face>) -> Self {
+        self.face = face;
+        self
+    }
+
+    /// The emoji picked for it, which shows in place of the face.
+    pub fn emoji(mut self, emoji: Option<impl Into<SharedString>>) -> Self {
+        self.emoji = emoji.map(Into::into);
+        self
+    }
+
     /// The connection's state, as a dot on the mark's corner: live, a
     /// spinner while it connects, a hollow ring offline, red when it
-    /// failed. Offline or failed, the disc goes grey too.
+    /// failed. Offline or failed, the disc goes grey too: the initial and
+    /// the face's pattern grey, an emoji dimmed.
     pub fn status(mut self, status: Status) -> Self {
         self.status = Some(status);
         self
@@ -89,16 +167,41 @@ impl IntoElement for HostMark {
     fn into_element(self) -> AnyElement {
         let HostMark {
             initial,
+            face,
+            emoji,
             size,
             status,
             test_id,
         } = self;
         let side = size.points();
         let down = matches!(status, Some(Status::Offline | Status::Error));
-        let (fill, ink) = if down {
-            ("muted", "muted-foreground")
-        } else {
-            ("primary-soft", "primary-text")
+        let (fill, ink) = match (down, &face, &emoji) {
+            (true, _, _) => ("muted", "muted-foreground"),
+            (false, _, Some(_)) => ("secondary", "foreground"),
+            (false, Some(face), None) => {
+                let (pattern, wash) = face.tokens();
+                (wash, pattern)
+            }
+            (false, None, None) => ("primary-soft", "primary-text"),
+        };
+        let glyph = match (emoji, face) {
+            (Some(emoji), _) => view()
+                .opacity(if down { EMOJI_DOWN } else { 1.0 })
+                .child(
+                    text(emoji)
+                        .text_size(px(size.emoji()))
+                        .allow_font_scaling(false)
+                        .number_of_lines(1u32),
+                )
+                .into_element(),
+            (None, Some(face)) => pattern(&face, size.pattern(), ink),
+            (None, None) => size
+                .text()
+                .apply(text(initial))
+                .font_weight(FontWeight::SEMIBOLD)
+                .number_of_lines(1u32)
+                .text_color(move || token(ink))
+                .into_element(),
         };
         let mut mark = view()
             .relative()
@@ -110,13 +213,7 @@ impl IntoElement for HostMark {
             .items_center()
             .justify_center()
             .accessibility_elements_hidden(true)
-            .child(
-                size.text()
-                    .apply(text(initial))
-                    .font_weight(FontWeight::SEMIBOLD)
-                    .number_of_lines(1u32)
-                    .text_color(move || token(ink)),
-            );
+            .child(glyph);
         if let Some(status) = status {
             let dot = match size {
                 MarkSize::Md => DotSize::Md,
@@ -149,6 +246,28 @@ impl IntoElement for HostMark {
         }
         mark.into_element()
     }
+}
+
+/// `face`'s grid in a square `space` points wide, its filled cells in
+/// `ink`.
+fn pattern(face: &Face, space: f32, ink: &'static str) -> AnyElement {
+    let side = usize::from(face.side.max(1));
+    let cell = space / side as f32;
+    view()
+        .flex_col()
+        .children((0..side).map(|row| {
+            view()
+                .flex_row()
+                .children((0..side).map(|column| {
+                    let mut cell_view = view().w(px(cell)).h(px(cell));
+                    if face.filled(row, column) {
+                        cell_view = cell_view.bg(move || token(ink));
+                    }
+                    cell_view.into_element()
+                }))
+                .into_element()
+        }))
+        .into_element()
 }
 
 /// An agent's mark for `status` (an agent's: attention, working, done,

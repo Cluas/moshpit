@@ -19,7 +19,7 @@ use crate::ui::{
     },
     icon::{IconSize, Tone, icon},
     key::{ChipVariant, KeyVariant, chip, content_key, key, symbol_key},
-    mark::{MarkSize, agent_mark, host_mark},
+    mark::{Face, MarkSize, agent_mark, host_mark},
     notice::{BannerTone, banner, toasts},
     row::{RowTone, row as list_row},
     section::{Inset, SectionVariant, section as group},
@@ -490,6 +490,35 @@ pub fn GalleryScreen(props: ScreenProps) -> impl IntoElement {
                 .child(host_mark("E").status(Status::Offline))
                 .child(host_mark("G").status(Status::Error))
                 .child(host_mark("L")),
+        )
+        // A host key's face in each hue, a grid of another side, an emoji,
+        // and both muted offline.
+        .child(row().children((0..8u8).map(|hue| {
+            host_mark("F")
+                .face(Some(demo_face(
+                    5,
+                    0x5A5Au32.rotate_left(u32::from(hue) * 3),
+                    hue,
+                )))
+                .size(MarkSize::Sm)
+                .into_element()
+        })))
+        .child(
+            row()
+                .child(
+                    host_mark("W")
+                        .face(Some(demo_face(5, 0x2B5D, 5)))
+                        .status(Status::Live),
+                )
+                .child(
+                    host_mark("W")
+                        .face(Some(demo_face(5, 0x2B5D, 5)))
+                        .status(Status::Offline),
+                )
+                .child(host_mark("S").face(Some(demo_face(7, 0x0F3C_A5E1, 2))))
+                .child(host_mark("E").emoji(Some("🐳")).status(Status::Live))
+                .child(host_mark("E").emoji(Some("🐳")).status(Status::Offline))
+                .child(host_mark("E").emoji(Some("🍓")).size(MarkSize::Sm)),
         )
         .child(
             row()
@@ -964,4 +993,22 @@ pub fn GalleryScreen(props: ScreenProps) -> impl IntoElement {
         .flex_1()
         .child(page)
         .child(toasts.host().test_id("ui-gallery-toast"))
+}
+
+/// A `side`-cell face for the gallery, mirrored left to right, its left
+/// half and middle from `bits`.
+fn demo_face(side: usize, bits: u32, hue: u8) -> Face {
+    let half = side.div_ceil(2);
+    let cells = (0..side * side)
+        .map(|at| {
+            let (row, column) = (at / side, at % side);
+            let column = column.min(side - 1 - column);
+            (bits >> ((row * half + column) % 32)) & 1 == 1
+        })
+        .collect();
+    Face {
+        side: side as u8,
+        cells,
+        hue,
+    }
 }

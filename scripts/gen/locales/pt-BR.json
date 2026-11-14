@@ -1153,5 +1153,8 @@
   "Connected": "Conectado",
   "Not connected": "Não conectado",
   "%@ isn't connected": "%@ não está conectado",
-  "Setup runs on the host over a live session. Connect first, then set it up here.": "A configuração é feita no host por uma sessão ativa. Conecte-se primeiro e depois configure-o aqui."
+  "Setup runs on the host over a live session. Connect first, then set it up here.": "A configuração é feita no host por uma sessão ativa. Conecte-se primeiro e depois configure-o aqui.",
+  "Emoji": "Emoji",
+  "Shows on the host's mark in place of its key's pattern.": "Aparece no ícone do host no lugar do padrão da chave dele.",
+  "One emoji, or leave it empty.": "Um emoji, ou deixe em branco."
 }

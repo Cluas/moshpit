@@ -227,6 +227,7 @@ impl Draft {
                 },
                 tmux_path: c.tmux_path.clone().unwrap_or_default(),
                 herdr_path: c.herdr_path.clone().unwrap_or_default(),
+                emoji: c.emoji.clone().unwrap_or_default(),
             },
             key: c.ssh_key_id,
             stored: Stored::of(c),
@@ -273,6 +274,7 @@ impl Draft {
             ("socksPort", Some(t), _) => s.socks_port = t,
             ("tmuxPath", Some(t), _) => s.tmux_path = t,
             ("herdrPath", Some(t), _) => s.herdr_path = t,
+            ("emoji", Some(t), _) => s.emoji = t,
             ("mosh", _, Some(f)) => s.mosh = f,
             ("roamOnCellular", _, Some(f)) => s.roam_on_cellular = f,
             ("socks", _, Some(f)) => s.socks = f,
@@ -448,6 +450,8 @@ impl Draft {
         c.roam_on_cellular = Some(s.roam_on_cellular);
         c.tmux_path = non_empty(&s.tmux_path);
         c.herdr_path = non_empty(&s.herdr_path);
+        // One emoji, trimmed; anything else (Save refuses it) none.
+        c.emoji = screen::emoji(&s.emoji).ok().flatten();
         // Keeps the legacy `useTmux` flag in step too.
         c.set_multiplexer(match s.mux {
             Mux::None => Multiplexer::None,

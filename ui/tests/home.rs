@@ -28,6 +28,7 @@ use moshpit_ui::{
         },
     },
     screen::{Params, Screen},
+    ui::mark::Face,
 };
 use nsh_core::{Edges, Points, Size, geometry::px, platform::Idiom};
 use nsh_testing::{Headless, LayoutNode};
@@ -777,4 +778,57 @@ fn the_bar_has_the_oses_look_once_the_large_title_has_gone() {
         assert_eq!(hidden(&app, never), None, "{version:?}: {never}");
         channel.close();
     }
+}
+
+/// §4.13: a host's mark is the emoji picked for it, else its trusted key's
+/// face, else (no key trusted yet) its initial: on a card's head and in
+/// SAVED's rows alike.
+#[test]
+fn a_hosts_mark_is_its_emoji_its_keys_face_or_its_initial() {
+    let (mut app, channel, _) = phone(Params::default());
+    let host = |id: &str, name: &str, initial: &str, link: Link| Connection {
+        id: id.into(),
+        name: name.into(),
+        initial: initial.into(),
+        user: "me".into(),
+        host: format!("{name}.example.com"),
+        link,
+        ..Connection::default()
+    };
+    let face = Some(Face {
+        side: 3,
+        cells: vec![true, false, true, false, true, false, true, false, true],
+        hue: 5,
+    });
+    let mut whale = host("c-whale", "whale", "W", Link::Live);
+    whale.face = face.clone();
+    whale.emoji = Some("🐳".into());
+    let mut keyed = host("c-keyed", "keyed", "K", Link::Live);
+    keyed.face = face.clone();
+    let fresh = host("c-fresh", "fresh", "F", Link::Live);
+    let mut berry = host("c-berry", "berry", "B", Link::Saved);
+    berry.emoji = Some("🍓".into());
+    let mut kept = host("c-kept", "kept", "Q", Link::Saved);
+    kept.face = face;
+    let never = host("c-never", "never", "N", Link::Saved);
+    show(
+        &mut app,
+        &channel,
+        vec![whale, keyed, fresh, berry, kept, never],
+    );
+    find(&mut app, "id:connection-card-never");
+    for shown in ["🐳", "🍓", "F", "N"] {
+        assert!(
+            app.screen().shows(shown),
+            "{shown}: {:?}",
+            app.screen().texts()
+        );
+    }
+    for hidden in ["W", "K", "B", "Q"] {
+        assert!(
+            !app.screen().shows(hidden),
+            "{hidden} shown under a face or an emoji"
+        );
+    }
+    channel.close();
 }

@@ -109,6 +109,9 @@ final class AgentActivityMonitor {
                                announced: record,
                                announceGrace: Self.announceGrace,
                                now: (clock?() ?? Date()).timeIntervalSince1970)
+        // What a killed process left up: none of its agents is known here
+        // yet (B441).
+        self.island.endLeftovers()
     }
 
     private var now: Double { (clock?() ?? Date()).timeIntervalSince1970 }

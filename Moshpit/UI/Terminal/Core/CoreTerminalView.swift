@@ -146,6 +146,8 @@ final class CoreTerminalView: UIView {
     var accessibilityRows: [CoreTermRowElement] = []
     var accessibilityStale = true
     var lastAccessibilityPost: CFTimeInterval = 0
+    /// The core asked to be asked again (what appeared in its quiet).
+    var announceAgain: DispatchWorkItem?
 
     // Measurements: the debug probes read these.
     private(set) var framesTaken = 0
@@ -234,10 +236,21 @@ final class CoreTerminalView: UIView {
             pacer = nil
         } else {
             restartBlink()
-            // Drawables the size of the view again, if they were let go.
-            (canvas as? CoreTermMetalCanvas)?.fitDrawables()
-            // Every row, whatever was drawn before it left (B445).
-            redrawAll()
+            if let why = layerSuspect, canvas is CoreTermMetalCanvas,
+               !CoreTermMemory.inBackground, UIApplication.shared.applicationState == .active {
+                // B469: a layer with a reason not to show what it is given
+                // (its drawables let go in the background) coming on screen
+                // after the app is already active: the return's new canvas
+                // (``cameToForeground()``) passed it by, off screen then.
+                // Refitted, it dropped every frame until eight in a row made
+                // a new canvas (Canary 124, 145 ms); a new one now.
+                remakeCanvas(why: "into a window; \(why); \(drawableSummary)")
+            } else {
+                // Drawables the size of the view again, if they were let go.
+                (canvas as? CoreTermMetalCanvas)?.fitDrawables()
+                // Every row, whatever was drawn before it left (B445).
+                redrawAll()
+            }
             // Back on screen: its path links were held back while it was not.
             schedulePathPass()
         }

@@ -547,8 +547,10 @@ fn a_herdr_line_during_a_release_whose_close_never_comes_leaves_the_channel_free
     rig.act(Action::SelectPane("w1:p2".to_owned()));
     rig.run(100);
     let now = rig.now;
+    // A refusal (B466: a server shutting down is no longer one; its line
+    // follows the focus at once, see below).
     rig.client
-        .frame_bytes(b"herdr: server shut down: server is shutting down\r\n", now);
+        .frame_bytes(b"herdr: terminal session control failed: busy\r\n", now);
     rig.pump();
     assert!(matches!(rig.client.notice(), Some((Notice::Refused(_), _))));
     rig.run(70_000);
@@ -2100,5 +2102,187 @@ fn attaches_that_never_paint_are_said_and_nothing_is_typed_into_a_shell() {
             .all(|line| !line.contains("terminal session control") && !line.contains("stty")),
         "{:?}",
         rig.frame_writes()
+    );
+}
+
+// MARK: - B466: an attach's last words are not all refusals
+
+/// The server stopped or restarted (an upgrade on the desktop): the
+/// attach's CLI says `herdr: server shut down: server is shutting down`.
+/// It was said as a refusal and backed off from for 30 s, the dead
+/// server's last frame on screen; now the next read decides: no server
+/// (the empty state), or the focused pane, attached at once.
+#[test]
+fn a_server_restart_reattaches_at_once_and_is_no_refusal() {
+    let mut rig = attached();
+    rig.host_attach_ends("herdr: server shut down: server is shutting down");
+    rig.run(3_000);
+    assert!(
+        !matches!(rig.client.notice(), Some((Notice::Refused(_), _))),
+        "{:?}",
+        rig.client.notice()
+    );
+    assert_eq!(
+        rig.attach_lines()
+            .iter()
+            .filter(|line| *line == "w1:p1")
+            .count(),
+        2,
+        "attached again: {:?}",
+        rig.attach_lines()
+    );
+    assert_eq!(rig.client.attached_pane(), Some("w1:p1"));
+}
+
+/// The pane on screen was closed on the desktop, and the attach's CLI
+/// said so (`terminal attach ended: terminal … not found`). Backed off
+/// from as a refusal, the closed pane stayed on screen for 30 s; now the
+/// terminal follows the focus to the pane herdr moved to.
+#[test]
+fn the_pane_on_screen_closed_on_the_desktop_follows_the_focus() {
+    let mut rig = attached();
+    rig.host.panes.retain(|pane| pane.id != "w1:p1");
+    rig.host.focused = Some("w1:p2".to_owned());
+    rig.host_attach_ends(
+        "herdr: server shut down: terminal attach ended: terminal term_1 not found",
+    );
+    rig.run(3_000);
+    assert!(!matches!(
+        rig.client.notice(),
+        Some((Notice::Refused(_), _))
+    ));
+    assert_eq!(rig.client.attached_pane(), Some("w1:p2"));
+    assert!(rig.screen("w1:p2").contains("[w1:p2 #"));
+}
+
+/// Another device took the pane, said as the CLI's last words: the pane
+/// is theirs, said with its take-back, not a refusal backed off from.
+#[test]
+fn a_takeover_said_by_the_cli_is_another_device_not_a_refusal() {
+    let mut rig = attached();
+    rig.host.held_elsewhere.push("w1:p1".to_owned());
+    rig.host_attach_ends("herdr: server shut down: terminal attach taken over");
+    rig.run(3_000);
+    assert_eq!(
+        rig.client
+            .notice()
+            .map(|(notice, action)| (notice.clone(), action)),
+        Some((Notice::OnAnotherDevice, Some(NoticeAction::OpenHere)))
+    );
+    assert_eq!(
+        rig.client.attached_pane(),
+        None,
+        "never taken back without the person"
+    );
+}
+
+// MARK: - B467: a hold another device had ends with the server
+
+/// Another device held the pane, and the desktop restarted herdr between
+/// two reads: every attach ended with the server, theirs too, and every
+/// terminal is new. The phone kept saying the pane was on another device
+/// and never followed the focus again until the person tapped "Open here".
+#[test]
+fn a_server_restarted_elsewhere_ends_the_hold_another_device_had() {
+    let mut rig = attached();
+    rig.host_take_over();
+    rig.run(100);
+    assert_eq!(
+        rig.client.notice().map(|(notice, _)| notice.clone()),
+        Some(Notice::OnAnotherDevice)
+    );
+    rig.host_restarted_elsewhere();
+    rig.act(Action::Refresh);
+    rig.run(3_000);
+    assert_eq!(rig.client.notice(), None, "the hold ended with the server");
+    assert_eq!(rig.client.attached_pane(), Some("w1:p1"));
+}
+
+/// The same, with the server seen down between the reads (stopped on the
+/// desktop, started again later).
+#[test]
+fn a_server_seen_down_ends_the_hold_another_device_had() {
+    let mut rig = attached();
+    rig.host_take_over();
+    rig.run(100);
+    rig.host.running = false;
+    rig.host.held_elsewhere.clear();
+    rig.act(Action::Refresh);
+    rig.run(500);
+    assert!(rig.client.server_not_running());
+    rig.host.running = true;
+    rig.act(Action::Refresh);
+    rig.run(3_000);
+    assert_ne!(
+        rig.client.notice().map(|(notice, _)| notice.clone()),
+        Some(Notice::OnAnotherDevice)
+    );
+    assert_eq!(rig.client.attached_pane(), Some("w1:p1"));
+}
+
+// MARK: - B470: a pick whose focus couldn't run
+
+/// The person picked a pane, and the command moving herdr's focus there
+/// couldn't run (the control connection dropped under it: over mosh the
+/// next connection takes what comes after). The next read reported the
+/// focus where it was and pulled the screen back, silently; the pick was
+/// lost. Now the focus is asked once more, and the pick holds.
+#[test]
+fn a_pick_whose_focus_could_not_run_is_asked_again_and_holds() {
+    let mut rig = attached();
+    rig.host
+        .rules
+        .push(rule("agent focus 'w1:p2'", None, Fate::UnreachableOnce));
+    rig.act(Action::SelectPane("w1:p2".to_owned()));
+    rig.run(1);
+    assert!(
+        rig.client.pane_switch_in_flight(),
+        "still switching while it is asked again"
+    );
+    rig.run(5_000);
+    assert_eq!(rig.host.focused.as_deref(), Some("w1:p2"), "asked again");
+    assert_eq!(rig.client.attached_pane(), Some("w1:p2"), "not pulled back");
+    assert!(!rig.client.pane_switch_in_flight());
+}
+
+/// One more time only: a focus that never runs is given up on, not asked
+/// for forever.
+#[test]
+fn a_pick_whose_focus_never_runs_is_asked_once_more_then_given_up() {
+    let mut rig = attached();
+    rig.host
+        .rules
+        .push(rule("agent focus 'w1:p2'", None, Fate::Unreachable));
+    rig.act(Action::SelectPane("w1:p2".to_owned()));
+    rig.run(10_000);
+    assert_eq!(rig.commands("agent focus 'w1:p2'").len(), 2);
+    assert!(!rig.client.pane_switch_in_flight());
+}
+
+/// What was queued behind the pick (a reply's focus check) sees the focus
+/// asked again: the retry takes the failed step's place in line, not the
+/// end of it, where the check read the old focus first and the reply was
+/// refused as never focused.
+#[test]
+fn a_check_queued_behind_the_pick_sees_the_focus_asked_again() {
+    let mut rig = attached();
+    rig.host
+        .rules
+        .push(rule("agent focus 'w1:p2'", None, Fate::UnreachableOnce));
+    rig.act(Action::SelectPane("w1:p2".to_owned()));
+    let request = rig
+        .act(Action::ConfirmFocus { budget_ms: 5_000 })
+        .expect("a request");
+    rig.run(5_000);
+    assert!(
+        rig.events().iter().any(|event| matches!(
+            event,
+            Event::FocusConfirmed { request: r, pane } if *r == request && pane.as_deref() == Some("w1:p2")
+        )),
+        "{:?}",
+        rig.events()
+            .iter()
+            .filter(|e| matches!(e, Event::FocusConfirmed { .. }))
+            .collect::<Vec<_>>()
     );
 }

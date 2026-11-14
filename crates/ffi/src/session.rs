@@ -730,6 +730,9 @@ pub struct CoreSessions {
     defaults: HostDefaults,
     /// What resume in place was last decided, and from what.
     resume: Mutex<ResumeInPlaceDecision>,
+    /// The trusted host keys the sessions decide by: Home's marks are made
+    /// from them (a host's key's face).
+    known_hosts: Arc<KnownHosts>,
 }
 
 impl CoreSessions {
@@ -737,6 +740,11 @@ impl CoreSessions {
     /// (Home's record, `home`).
     pub(crate) fn registry(&self) -> &Sessions {
         &self.sessions
+    }
+
+    /// The fingerprint trusted for `host` on `port`, if any.
+    pub(crate) fn trusted(&self, host: &str, port: u16) -> Option<String> {
+        self.known_hosts.trusted(host, port)
     }
 }
 
@@ -761,7 +769,8 @@ impl CoreSessions {
             KeychainKnownHosts::new(Arc::new(HostKeychain(keychain)))
                 .with_unlock_probe(Arc::new(move || unlocked.protected_data_available())),
         )));
-        let mut services = core::Services::new(Arc::new(HostCredentials(credentials)), known_hosts);
+        let mut services =
+            core::Services::new(Arc::new(HostCredentials(credentials)), known_hosts.clone());
         let defaults = HostDefaults(preferences.clone());
         let resume = resume_in_place(|name| std::env::var(name).ok(), &defaults);
         let timing = Timing {
@@ -809,6 +818,7 @@ impl CoreSessions {
             blackhole,
             defaults,
             resume: Mutex::new(resume),
+            known_hosts,
         })
     }
 

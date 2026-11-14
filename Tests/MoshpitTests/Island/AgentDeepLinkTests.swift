@@ -75,3 +75,33 @@ struct AgentDeepLinkTests {
         #expect(router.paneRequest?.paneId == "%12")
     }
 }
+
+/// B468: a notification for a pane that was closed since (or a stale id)
+/// left its landing waiting for the screen's whole life, and the first pane
+/// to take that id later (herdr numbers panes anew after a restart) pulled
+/// the screen there out of nowhere. A pane missing from an attached
+/// snapshot for `landingPatience` is dropped.
+@Suite("landing on a pane (B468)")
+struct LandingStepTests {
+    @Test("Not attached yet: wait, however long it has been")
+    func waitsForTheAttach() {
+        #expect(TerminalScreen.landingStep(present: false, attached: false, attachedFor: nil) == .wait)
+        #expect(TerminalScreen.landingStep(present: true, attached: false, attachedFor: nil) == .wait)
+    }
+
+    @Test("The pane is there: go")
+    func selectsAPaneThatIsThere() {
+        #expect(TerminalScreen.landingStep(present: true, attached: true, attachedFor: 0) == .select)
+        #expect(TerminalScreen.landingStep(present: true, attached: true, attachedFor: 60) == .select)
+    }
+
+    @Test("Missing: wait while the pane list may still fill, then drop it")
+    func dropsAPaneThatNeverComes() {
+        let patience = TerminalScreen.landingPatience
+        #expect(TerminalScreen.landingStep(present: false, attached: true, attachedFor: 0) == .wait)
+        #expect(TerminalScreen.landingStep(present: false, attached: true, attachedFor: patience - 1) == .wait)
+        #expect(TerminalScreen.landingStep(present: false, attached: true, attachedFor: patience) == .drop)
+        #expect(TerminalScreen.landingStep(present: false, attached: true, attachedFor: nil) == .wait,
+                "attached just now: its patience starts")
+    }
+}

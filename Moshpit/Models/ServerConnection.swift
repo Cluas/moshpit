@@ -153,6 +153,10 @@ struct ServerConnection: Identifiable, Codable, Equatable {
     var socksProxyHost: String?
     /// `nil` ⇒ 1080, the conventional SOCKS5 default.
     var socksProxyPort: Int?
+    /// The emoji its mark shows in place of its host key's face (one
+    /// emoji, checked by the Rust form model). Optional: connections saved
+    /// before it existed decode as `nil`, the face.
+    var emoji: String?
 
     /// Whether a connect to this goes to another box than one to `before`:
     /// another host (case aside, as DNS compares names), port or SSH port

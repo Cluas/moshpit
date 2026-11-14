@@ -91,6 +91,9 @@ struct TerminalScreen: View {
     /// while a claimed-but-not-yet-actionable request can't be replayed by a
     /// later, unrelated manual navigation to this same connection.
     @State private var pendingPaneSelection: String?
+    /// When the multiplexer was first seen attached while a claimed pane
+    /// waited: its patience counts from there (B468).
+    @State private var pendingPaneAttachedAt: Date?
     /// Sticky-Ctrl armed: the next typed key goes out as its control code.
     @State private var ctrlArmed = false
     /// The coordinator it is armed on: one at a time, let go when typing
@@ -219,6 +222,7 @@ struct TerminalScreen: View {
         guard let request = router.paneRequest, request.connectionId == connection.id else { return }
         router.clear(token: request.token)
         pendingPaneSelection = request.paneId
+        pendingPaneAttachedAt = nil
         Log.island.info("land: claimed #\(request.token, privacy: .public) pane=\(request.paneId ?? "-", privacy: .public)")
     }
 
@@ -236,12 +240,40 @@ struct TerminalScreen: View {
     /// here unacted on. Same order as ``tmuxSnapshot``.
     private func selectPendingPaneIfReady() {
         guard let paneId = pendingPaneSelection else { return }
-        guard let snapshot = tmuxSnapshot, snapshot.isAttached,
-              snapshot.panes[paneId] != nil else {
-            Log.island.info("land: waiting pane=\(paneId, privacy: .public) attached=\(tmuxSnapshot?.isAttached ?? false, privacy: .public) panes=\(tmuxSnapshot?.panes.count ?? -1, privacy: .public)")
-            return
+        let attached = tmuxSnapshot?.isAttached == true
+        // A drop (a reconnect) starts the patience over at the next attach.
+        if !attached { pendingPaneAttachedAt = nil }
+        if attached, pendingPaneAttachedAt == nil {
+            // Its patience starts now; looked at again once it has run out,
+            // whether or not the snapshot changes by then (B468).
+            pendingPaneAttachedAt = Date()
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(Self.landingPatience + 0.5))
+                selectPendingPaneIfReady()
+            }
         }
+        let step = Self.landingStep(
+            present: tmuxSnapshot?.panes[paneId] != nil, attached: attached,
+            attachedFor: pendingPaneAttachedAt.map { Date().timeIntervalSince($0) })
+        switch step {
+        case .wait:
+            Log.island.info("land: waiting pane=\(paneId, privacy: .public) attached=\(attached, privacy: .public) panes=\(tmuxSnapshot?.panes.count ?? -1, privacy: .public)")
+            return
+        case .drop:
+            // A pane the server doesn't have (closed since the notification,
+            // a stale id): dropped, as this always meant to. Left waiting,
+            // the first pane to take its id later (herdr numbers panes anew
+            // after a restart) pulled the screen there out of nowhere.
+            pendingPaneSelection = nil
+            pendingPaneAttachedAt = nil
+            Log.island.notice("land: pane \(paneId, privacy: .public) is not on the server \(Int(Self.landingPatience), privacy: .public) s after attach; dropped")
+            return
+        case .select:
+            break
+        }
+        guard let snapshot = tmuxSnapshot else { return }
         pendingPaneSelection = nil
+        pendingPaneAttachedAt = nil
         Log.island.info("land: selecting pane=\(paneId, privacy: .public) from=\(snapshot.activePaneId ?? "-", privacy: .public) phase=\(String(describing: scenePhase), privacy: .public)")
         if let controller = active?.tmuxController {
             controller.selectPane(paneId)
@@ -250,6 +282,32 @@ struct TerminalScreen: View {
         } else {
             active?.herdrControl?.selectPane(paneId)
         }
+    }
+
+    /// How long a claimed pane may be missing from an attached snapshot
+    /// before it is dropped (B468): tmux's pane list fills a few round trips
+    /// after attach; herdr's tree comes whole.
+    nonisolated static let landingPatience: TimeInterval = 8
+
+    /// What a claimed landing does now (B468).
+    enum LandingStep: Equatable {
+        /// Not attached yet, or the pane may still come.
+        case wait
+        /// The pane is there: go.
+        case select
+        /// Attached past ``landingPatience`` without the pane: drop it.
+        case drop
+    }
+
+    /// The landing's step for a pane `present` in the snapshot or not, the
+    /// multiplexer `attached` for `attachedFor` seconds (nil: not seen
+    /// attached yet).
+    nonisolated static func landingStep(present: Bool, attached: Bool,
+                                        attachedFor: TimeInterval?) -> LandingStep {
+        guard attached else { return .wait }
+        if present { return .select }
+        guard let attachedFor, attachedFor >= landingPatience else { return .wait }
+        return .drop
     }
 
     /// Effective cursor colour: amber while roaming (prototype "漫游态自动切换为

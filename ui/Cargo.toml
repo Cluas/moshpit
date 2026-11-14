@@ -26,6 +26,9 @@ log = "0.4"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["sync"] }
+# A host's emoji (the connection form): one grapheme cluster, and an emoji.
+unicode-segmentation = "1.13"
+unicode-properties = { version = "0.1", default-features = false, features = ["emoji"] }
 
 # UIKit exists on iOS, the simulator and Mac Catalyst (all `target_os =
 # "ios"`): the embedding layer. Elsewhere the crate is the screens alone,

@@ -255,6 +255,17 @@ async fn ensure_pairing_now(
         )
     });
     if let Some(mut local) = local {
+        // The name the phone gives the connection now (B440): the pairing
+        // kept the one it was paired under, and a pushed card names its
+        // place by the pairing's label — after a rename the pushed copy of
+        // an event and the local one read differently. The label never
+        // leaves the phone (the conf doesn't carry it), so the host is not
+        // touched; a mint in flight keeps it (it stores over what's stored).
+        if !conn.label.trim().is_empty() && local.host_label != conn.label {
+            log::info!(target: "moshpit::care", "autocare: the pairing for {} takes the connection's new name", conn.label);
+            local.host_label = conn.label.clone();
+            ctx.with(|s| s.store.upsert(&local));
+        }
         // Heal a pairing minted while the relay setting was wrong: the
         // secret is random, only the address (and the token the old relay
         // issued) need replacing.

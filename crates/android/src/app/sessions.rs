@@ -79,6 +79,9 @@ pub struct Conn {
 #[derive(Default)]
 pub struct Live {
     sessions: Option<Sessions>,
+    /// The trusted host keys the sessions decide by: what Home's marks are
+    /// made from (a host's key's face).
+    known_hosts: Option<Arc<KnownHosts>>,
     pub(crate) by_connection: HashMap<Uuid, Conn>,
     /// Every mosh datagram dropped, both ways, while set (a debug build's
     /// fault injection: the UDP silence test).
@@ -105,6 +108,7 @@ impl Live {
             defaults: defaults.clone(),
             keychain: keychain.clone(),
         });
+        self.known_hosts = Some(known_hosts.clone());
         let mut services = Services::new(credentials, known_hosts);
         services.memory = Arc::new(StoreMemory {
             defaults: defaults.clone(),
@@ -125,6 +129,13 @@ impl Live {
 
     pub fn conn(&self, connection: Uuid) -> Option<&Conn> {
         self.by_connection.get(&connection)
+    }
+
+    /// The fingerprint trusted for `host` on `port`; none before the
+    /// registry starts, or for a host never trusted.
+    pub fn trusted(&self, host: &str, port: i64) -> Option<String> {
+        let port = u16::try_from(port).ok()?;
+        self.known_hosts.as_ref()?.trusted(host, port)
     }
 
     fn connection_of(&self, session: SessionId) -> Option<Uuid> {

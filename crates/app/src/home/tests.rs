@@ -14,6 +14,7 @@ use moshpit_ui::home::Message;
 use moshpit_ui::home::model::{FailureReason, Link, Mux, Transport};
 
 use super::*;
+use moshpit_ui::ui::mark::Face;
 
 const STUDIO: &str = "C0FFEE00-0000-4000-8000-000000000001";
 
@@ -21,6 +22,8 @@ fn saved(id: &str, name: &str) -> SavedConnection {
     SavedConnection {
         id: id.into(),
         name: name.into(),
+        fingerprint: None,
+        emoji: None,
         user: "cluas".into(),
         host: "studio.local".into(),
         mosh: false,
@@ -607,4 +610,108 @@ fn the_card_flags_come_from_the_view_and_the_host() {
     );
     assert_eq!(card.transport, Transport::Live);
     assert!(!card.degraded && card.connected_at.is_none());
+}
+
+// MARK: - A host's face (§4.13)
+
+/// A trusted key's fingerprint as the known hosts keep it.
+const KEY: &str = "SHA256:nThbg6kXUpJWGl7E1IGOCspRomTxdCARLviKw6E5SY8";
+
+/// `face`'s rows, `#` filled and `.` not.
+fn drawn(face: &Face) -> Vec<String> {
+    let side = usize::from(face.side);
+    (0..side)
+        .map(|row| {
+            (0..side)
+                .map(|column| if face.filled(row, column) { '#' } else { '.' })
+                .collect()
+        })
+        .collect()
+}
+
+/// The same fingerprint, the same face: pinned, so a change to how a face
+/// is made shows here (every host's face would change with it).
+#[test]
+fn a_fingerprint_makes_a_pinned_face() {
+    let made = face(KEY);
+    assert_eq!(made, face(KEY), "the same key, the same face");
+    assert_eq!(made.side, 5);
+    assert_eq!(made.cells.len(), 25);
+    assert_eq!(
+        drawn(&made),
+        [".#.#.", "..#..", "#...#", "..#..", "#...#"],
+        "{made:?}"
+    );
+    assert_eq!(made.hue, 5, "blue");
+}
+
+/// Today's faces are mirrored left to right, every one; none is empty.
+#[test]
+fn a_face_is_mirror_symmetric() {
+    for n in 0..64 {
+        let face = face(&format!("SHA256:key-{n}"));
+        let side = usize::from(face.side);
+        assert_eq!(face.cells.len(), side * side);
+        for row in 0..side {
+            for column in 0..side {
+                assert_eq!(
+                    face.filled(row, column),
+                    face.filled(row, side - 1 - column),
+                    "key {n}: row {row}, column {column}"
+                );
+            }
+        }
+        assert!(face.cells.iter().any(|c| *c), "key {n}: an empty face");
+        assert!(usize::from(face.hue) < moshpit_ui::ui::tokens::FACES.len());
+    }
+}
+
+/// Different keys look different: across a sample of a thousand keys, the
+/// faces are all but all distinct, and every hue is used.
+#[test]
+fn different_keys_make_different_faces() {
+    let faces: Vec<_> = (0..1000)
+        .map(|n| face(&format!("SHA256:host-{n}")))
+        .collect();
+    let distinct: std::collections::BTreeSet<_> =
+        faces.iter().map(|f| (f.cells.clone(), f.hue)).collect();
+    assert!(distinct.len() >= 990, "{} distinct of 1000", distinct.len());
+    let hues: std::collections::BTreeSet<_> = faces.iter().map(|f| f.hue).collect();
+    assert_eq!(hues.len(), moshpit_ui::ui::tokens::FACES.len());
+    assert_ne!(face("SHA256:a"), face("SHA256:b"));
+}
+
+/// A card's mark: the emoji picked, else the trusted key's face, else (no
+/// key trusted yet, a host never connected) only the initial.
+#[test]
+fn a_card_has_its_keys_face_its_emoji_or_neither() {
+    let mut keyed = saved(STUDIO, "studio");
+    keyed.fingerprint = Some(KEY.into());
+    let mut whale = saved("C0FFEE00-0000-4000-8000-000000000002", "whale");
+    whale.fingerprint = Some(KEY.into());
+    whale.emoji = Some("🐳".into());
+    let fresh = saved("C0FFEE00-0000-4000-8000-000000000003", "fresh");
+    let home = build(&[keyed, whale, fresh], &|_| BTreeMap::new());
+    let [keyed, whale, fresh] = &home.connections[..] else {
+        panic!("three cards");
+    };
+    assert_eq!(keyed.face.as_ref(), Some(&face(KEY)));
+    assert_eq!(keyed.emoji, None);
+    assert_eq!(whale.emoji.as_deref(), Some("🐳"));
+    assert_eq!(
+        whale.face.as_ref(),
+        Some(&face(KEY)),
+        "the face is kept under the emoji"
+    );
+    assert_eq!(fresh.face, None, "no key trusted: no face");
+    assert_eq!(fresh.initial, "F");
+    // The screen takes them.
+    let json = message(&HomeInput {
+        connections: &[saved(STUDIO, "studio")],
+        since: &|_| BTreeMap::new(),
+        version: "v1.0.9 (1)",
+        sidebar: false,
+        locale: "en",
+    });
+    assert!(Message::parse(&json).is_ok());
 }

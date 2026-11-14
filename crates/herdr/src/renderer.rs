@@ -295,6 +295,10 @@ pub struct Renderer {
     /// The person chose `target` (a pick, a reply, the take back): its
     /// attach takes the pane from whoever holds it. A follow's doesn't.
     take_over: bool,
+    /// The terminal the person picked whose retarget couldn't run (B471):
+    /// the next report of it is still their pick, `--takeover`, not a
+    /// follow.
+    lost_pick: Option<String>,
     /// The terminal the last retarget pointed the loop at, by the host's
     /// word that the loop came round to it: what is on screen, as far as
     /// anything here knows. None before the first, and after one failed,
@@ -350,6 +354,7 @@ impl Renderer {
             budgets,
             target: None,
             take_over: false,
+            lost_pick: None,
             applied: None,
             down: None,
             epoch: 0,
@@ -448,6 +453,14 @@ impl Renderer {
             Some(Down::Gone(closed)) if closed == terminal => return,
             _ => {}
         }
+        if let Some(picked) = self.lost_pick.take()
+            && picked == terminal
+        {
+            // The person's pick whose retarget never ran, reported again:
+            // still theirs (B471).
+            self.steer(terminal, true, now);
+            return;
+        }
         // Following the focus never takes a pane from another device.
         self.steer(terminal, false, now);
     }
@@ -457,6 +470,7 @@ impl Renderer {
     /// (`--takeover`) — on the very pane another device has, that is the
     /// person taking it back.
     pub fn pick(&mut self, terminal: &str, now: u64) {
+        self.lost_pick = None;
         match &self.down {
             Some(Down::TakenOver(stopped) | Down::Refused(stopped)) if stopped == terminal => {
                 // The same pane, wanted again: not "already showing it".
@@ -663,6 +677,12 @@ impl Renderer {
                     // but the person.
                     self.stopped(stop, now);
                 } else {
+                    if output.is_none() && self.take_over && self.target.as_ref() == Some(&terminal)
+                    {
+                        // It never ran (the control connection dropped
+                        // under it): the person's pick stands (B471).
+                        self.lost_pick = Some(terminal.clone());
+                    }
                     self.retarget_failed(&terminal);
                     if output.and_then(launch::renderer_stop) == Some(RendererStop::LoopGone) {
                         self.stopped(RendererStop::LoopGone, now);

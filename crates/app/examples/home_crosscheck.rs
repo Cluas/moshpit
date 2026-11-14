@@ -337,6 +337,8 @@ fn main() {
             .map(|c| SavedConnection {
                 id: c.id.clone(),
                 name: c.name.clone(),
+                fingerprint: None,
+                emoji: None,
                 user: c.user.clone().unwrap_or_else(|| "cluas".into()),
                 host: c.host.clone().unwrap_or_else(|| "studio.local".into()),
                 mosh: c.mosh,

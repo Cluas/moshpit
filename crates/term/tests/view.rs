@@ -5,7 +5,9 @@
 
 mod common;
 use common::*;
-use moshpit_term::{Ime, ScrollAction, SelectKind, Tap, Typed, cell_flags as F, ime::Outcome};
+use moshpit_term::{
+    Announcement, Ime, ScrollAction, SelectKind, Tap, Typed, cell_flags as F, ime::Outcome,
+};
 
 fn typed(o: &Outcome) -> String {
     o.typed
@@ -518,6 +520,63 @@ fn v21_a_view_whose_history_is_cleared_goes_live() {
     assert_eq!(t.history_len(), history);
 }
 
+/// B425: the width changes while reading history (the phone turns, a
+/// pinch sets another font size, an iPad window is resized): the text
+/// reflows, and the view stays on the line it was reading. It kept a row
+/// number the reflow gave to other text: narrower threw the reader far
+/// back, mid-line; wider dropped it on the live screen.
+#[test]
+fn v21_a_resize_while_reading_keeps_the_line_read() {
+    let feed = |t: &mut moshpit_term::Terminal| {
+        for i in 0..200 {
+            t.feed(format!("L{i:03} {}\r\n", "x".repeat(30)).as_bytes());
+        }
+    };
+    let top = |t: &moshpit_term::Terminal| t.view_row_text(0).0.chars().take(4).collect::<String>();
+    let mut t = term(40, 10, 1000);
+    t.set_cell_pixels(10, 16);
+    feed(&mut t);
+    t.scroll(50);
+    assert_eq!(top(&t), "L141");
+    t.resize(20, 10);
+    assert_eq!(top(&t), "L141", "narrower: the same line, from its start");
+    t.resize(40, 10);
+    assert_eq!(top(&t), "L141", "wider again");
+    t.resize(40, 6);
+    assert_eq!(top(&t), "L141", "the keyboard (rows only)");
+    assert!(t.display_offset() > 0, "still reading");
+    t.feed(b"more\r\n");
+    assert_eq!(
+        top(&t),
+        "L141",
+        "output after it leaves the view where it is"
+    );
+
+    // From the second row of a line: wider, that line's start.
+    let mut t = term(20, 10, 1000);
+    t.set_cell_pixels(10, 16);
+    feed(&mut t);
+    t.scroll(60);
+    if t.view_row_text(0).0.starts_with('L') {
+        t.scroll(1);
+    }
+    let off = t.display_offset() as i32;
+    let (above, _) = t.row_text(-off - 1);
+    assert!(
+        !t.view_row_text(0).0.starts_with('L'),
+        "a line's second row"
+    );
+    t.resize(40, 10);
+    assert_eq!(top(&t), above[..4], "wider: the line it was in");
+    assert!(t.display_offset() > 0, "not the live screen");
+
+    // A live view stays live.
+    let mut t = term(40, 10, 1000);
+    feed(&mut t);
+    t.resize(20, 10);
+    assert_eq!(t.display_offset(), 0);
+}
+
 #[test]
 fn v22_no_coast_unless_the_host_asks() {
     let mut t = tall(500);
@@ -584,6 +643,47 @@ fn v33_what_appears_is_announced_once() {
     // Output that scrolls the screen: only the new lines.
     t.feed(b"\r\none\r\ntwo\r\nthree\r\n$ ");
     assert_eq!(t.take_announcement().as_deref(), Some("one\ntwo\nthree"));
+}
+
+/// B427: VoiceOver hears what appears at most once a second, and what
+/// appears in that second is said at its end, in one; only what was said
+/// starts the quiet. The view's own gate dropped output that ended within
+/// a second of the last announcement until the next, unrelated change,
+/// and armed itself on frames with nothing to say.
+#[test]
+fn v33_announcements_are_paced_and_the_last_is_said() {
+    let mut t = term(20, 6, 100);
+    t.feed(b"first\r\n$ ");
+    assert_eq!(t.announce_at(0), Announcement::default(), "the baseline");
+    t.feed(b"ls\r\nfile.txt\r\n$ ");
+    assert_eq!(t.announce_at(100).text.as_deref(), Some("$ ls\nfile.txt"));
+    // The command's last lines, within the second: held, and when to ask.
+    t.feed(b"cat x\r\nlast line\r\n$ ");
+    let held = t.announce_at(300);
+    assert_eq!(
+        held,
+        Announcement {
+            text: None,
+            again_in_ms: Some(800)
+        }
+    );
+    t.feed(b"more\r\n$ ");
+    assert_eq!(t.announce_at(600).again_in_ms, Some(500));
+    // The second is over: everything since, at once.
+    assert_eq!(
+        t.announce_at(1_100).text.as_deref(),
+        Some("$ cat x\nlast line\n$ more"),
+        "the last output was never said"
+    );
+    // Nothing to say starts no quiet: the next output is said at once.
+    t.feed(b"c");
+    assert_eq!(t.announce_at(2_200), Announcement::default());
+    t.feed(b"\r\nnew\r\n$ ");
+    assert_eq!(
+        t.announce_at(2_300).text.as_deref(),
+        Some("$ c\nnew"),
+        "the line typed, as echoed, and its output"
+    );
 }
 
 // --- Links -----------------------------------------------------------------

@@ -39,6 +39,12 @@ pub fn state(app: &App) -> HomeState {
                     .next()
                     .map(|c| c.to_uppercase().to_string())
                     .unwrap_or_default(),
+                face: app
+                    .sessions
+                    .trusted(&saved.host, saved.port)
+                    .as_deref()
+                    .map(moshpit_app::home::face),
+                emoji: saved.emoji.clone(),
                 name,
                 user: saved.username.clone(),
                 host: saved.host.clone(),

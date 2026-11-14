@@ -1319,3 +1319,48 @@ fn a_loop_that_came_up_with_its_first_line_costs_one_check() {
         "asked again once booted"
     );
 }
+
+// MARK: - B471: a pick whose retarget couldn't run
+
+/// The person picked a pane another device holds, and the retarget couldn't
+/// run (the control connection dropped under it, mosh carrying on). The
+/// next report of the focus — the pick's own, asked again on the new
+/// connection (B470) — came as a follow: a plain attach, refused, "on
+/// another device". The person's tap took nothing. Now it is still theirs.
+#[test]
+fn a_pick_whose_retarget_couldnt_run_still_takes_the_pane_on_the_next_report() {
+    let mut rig = on_first_pane();
+    rig.host.held = vec!["t-2".to_owned()];
+    rig.host.failing.insert("t-2".to_owned(), 1);
+    rig.pick("t-2");
+    rig.run_for(100);
+    assert_ne!(rig.renderer.on_screen(), Some("t-2"), "it couldn't run");
+    rig.show("t-2");
+    rig.run_for(400);
+    assert_eq!(
+        rig.host.taken_from_others,
+        ["t-2"],
+        "the person's pick, with --takeover"
+    );
+    assert_eq!(rig.renderer.on_screen(), Some("t-2"));
+    assert_eq!(rig.renderer.down(), None);
+}
+
+/// A report of another pane in between ends it: the focus moved on, and
+/// the old pick is no one's to take.
+#[test]
+fn a_lost_pick_is_forgotten_once_the_focus_moves_elsewhere() {
+    let mut rig = on_first_pane();
+    rig.host.held = vec!["t-2".to_owned()];
+    rig.host.failing.insert("t-2".to_owned(), 1);
+    rig.pick("t-2");
+    rig.run_for(100);
+    rig.show("t-3");
+    rig.run_for(400);
+    rig.show("t-2");
+    rig.run_for(400);
+    assert!(
+        rig.host.taken_from_others.is_empty(),
+        "a follow takes nothing"
+    );
+}

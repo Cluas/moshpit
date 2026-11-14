@@ -172,6 +172,9 @@ enum Phase {
 enum ProbePurpose {
     Keepalive,
     Resume,
+    /// The network changed under it (B446): any doubt reconnects, as on a
+    /// return, but input doesn't wait for the answer.
+    Path,
 }
 
 /// See the module documentation.
@@ -194,6 +197,9 @@ pub struct Lifecycle {
     left_live: bool,
     keepalive_at: Option<u64>,
     path_kick_at: Option<u64>,
+    /// The network changed while the app was away (B447): the return acts
+    /// on it.
+    path_changed_away: bool,
     /// The dial waits on the person: its credential read (Face ID, the
     /// passphrase card) or a host-key question (B395).
     on_person: bool,
@@ -224,6 +230,7 @@ impl Lifecycle {
             left_live: false,
             keepalive_at,
             path_kick_at: None,
+            path_changed_away: false,
             on_person: false,
             probe: None,
             probes: 0,
@@ -454,8 +461,9 @@ impl Lifecycle {
                 self.probe_timeouts = 0;
                 self.last_inbound = Some(now);
             }
-            // Coming back, with the person watching: any doubt reconnects.
-            (ProbePurpose::Resume, _) => self.reconnect(now),
+            // Coming back, with the person watching, or onto another path:
+            // any doubt reconnects.
+            (ProbePurpose::Resume | ProbePurpose::Path, _) => self.reconnect(now),
             (ProbePurpose::Keepalive, Probe::Failed) => {
                 self.probe_timeouts = 0;
                 self.reconnect(now);
@@ -482,6 +490,7 @@ impl Lifecycle {
         self.foreground = true;
         self.away = away;
         let left_live = std::mem::take(&mut self.left_live);
+        let path_changed = std::mem::take(&mut self.path_changed_away);
         if self.keepalive_at.is_none() {
             self.keepalive_at = Some(now + ms(self.timing.keepalive_interval));
         }
@@ -514,7 +523,18 @@ impl Lifecycle {
                     generation: self.generation,
                 });
             }
-            self.resume_if_needed(now);
+            if path_changed && self.live() == Some(Transport::Mosh) {
+                // The network changed while the app was away (B447): the
+                // flow's socket is bound to the path it left on, and a nudge
+                // would send from an address that may be gone. Roam it.
+                // (SSH: the return asks the transport anyway, deadline and
+                // all; a dial or a down session is retried as on any return.)
+                self.push(Action::RoamMosh {
+                    generation: self.generation,
+                });
+            } else {
+                self.resume_if_needed(now);
+            }
         }
     }
 
@@ -526,7 +546,8 @@ impl Lifecycle {
         self.foreground = false;
         self.backgrounded_at = Some(now);
         self.keepalive_at = None;
-        self.path_kick_at = None;
+        // A change still settling is acted on at the return (B447).
+        self.path_changed_away |= self.path_kick_at.take().is_some();
         self.left_live = self.timing.resume_in_place
             && matches!(
                 self.phase,
@@ -552,10 +573,18 @@ impl Lifecycle {
         }
     }
 
-    /// The device's network path changed. Acted on once a burst settles, and
-    /// only in the foreground (the return resumes anyway).
+    /// The device's network path changed. Acted on once a burst settles in
+    /// the foreground; heard in the background, at the return (B447). It
+    /// used to be dropped there, as the return "resumes anyway" — but a
+    /// short return only nudges a mosh flow, whose socket is bound to the
+    /// path it left on: after locking on Wi-Fi and unlocking on cellular, it
+    /// sent from an address that was gone.
     pub fn network_changed(&mut self, now: u64) {
-        if !self.foreground || self.is_ended() {
+        if self.is_ended() {
+            return;
+        }
+        if !self.foreground {
+            self.path_changed_away = true;
             return;
         }
         self.path_kick_at = Some(now + ms(self.timing.path_settle));
@@ -715,9 +744,22 @@ impl Lifecycle {
             } => self.push(Action::RoamMosh {
                 generation: self.generation,
             }),
+            // Asked whatever arrived lately (B446): bytes from before the
+            // change came over the path it left, and said nothing of this
+            // one. A recent agent's output skipped the check, and a silence
+            // counted one of two: a frozen terminal under a green pill for
+            // two keepalive ticks, about 40 s. Asked as the return asks.
             Phase::Live {
                 transport: Transport::Ssh,
-            } => self.keepalive_check(now),
+            } => {
+                // A keepalive's question is replaced (its answer would count
+                // one of two); a return's, which reconnects on any doubt and
+                // holds input meanwhile, stands.
+                if matches!(self.probe, Some((ProbePurpose::Keepalive, _))) {
+                    self.probe = None;
+                }
+                self.start_probe(ProbePurpose::Path, self.timing.foreground_probe_timeout);
+            }
             _ => {}
         }
     }
@@ -1679,18 +1721,17 @@ mod tests {
         life.network_changed(T0 + 2 * S);
         assert_eq!(dials(&run_to(&mut life, T0 + 3 * S)), vec![(2, true)]);
 
-        // A live SSH transport quiet for 11 s is probed; a fresh one not.
+        // A live SSH transport is asked, however fresh its last bytes, with
+        // the return's deadline (B446).
         let mut life = ssh_life();
         let generation = live(&mut life, Transport::Ssh, T0);
         life.network_changed(T0 + 2 * S);
-        assert!(run_to(&mut life, T0 + 3 * S).is_empty());
-        life.network_changed(T0 + 11 * S + 600);
         assert_eq!(
-            run_to(&mut life, T0 + 12 * S),
+            run_to(&mut life, T0 + 3 * S),
             vec![Action::Probe {
                 generation,
                 probe: 1,
-                timeout: Duration::from_secs(8)
+                timeout: Duration::from_secs(4)
             }]
         );
 
@@ -1702,6 +1743,94 @@ mod tests {
             run_to(&mut life, T0 + 2 * S),
             vec![Action::RoamMosh { generation }]
         );
+    }
+
+    /// B446: bytes that arrived just before a network change came over the
+    /// path it left. The check skipped the probe on them, and a silence
+    /// counted one of two: a frozen terminal under a green pill for two
+    /// keepalive ticks. The change asks at once, and a silence reconnects.
+    #[test]
+    fn a_network_change_asks_a_live_ssh_transport_whatever_arrived_before_it() {
+        let mut life = ssh_life();
+        let generation = live(&mut life, Transport::Ssh, T0);
+        life.inbound(T0 + 5 * S);
+        life.network_changed(T0 + 6 * S);
+        let asked = run_to(&mut life, T0 + 7 * S);
+        assert_eq!(
+            asked,
+            vec![Action::Probe {
+                generation,
+                probe: 1,
+                timeout: Duration::from_secs(4)
+            }],
+            "bytes from before the change skipped the check"
+        );
+        answer(&mut life, generation, Probe::TimedOut, T0 + 10 * S + 500);
+        let after = drain(&mut life);
+        assert!(
+            after.contains(&Action::Teardown { generation, why: Teardown::Reconnect }),
+            "one silence after a change held the session: {after:?}"
+        );
+        assert_eq!(dials(&after), vec![(generation + 1, true)]);
+
+        // An answer keeps it.
+        let mut life = ssh_life();
+        let generation = live(&mut life, Transport::Ssh, T0);
+        life.network_changed(T0 + S);
+        run_to(&mut life, T0 + 2 * S);
+        answer(&mut life, generation, Probe::Alive, T0 + 2 * S);
+        assert!(drain(&mut life).is_empty());
+
+        // A keepalive's question out at the change is replaced.
+        let mut life = ssh_life();
+        let generation = live(&mut life, Transport::Ssh, T0);
+        run_to(&mut life, T0 + 12 * S);
+        assert!(matches!(life.probe, Some((ProbePurpose::Keepalive, 1))));
+        life.network_changed(T0 + 13 * S);
+        let asked = run_to(&mut life, T0 + 14 * S);
+        assert_eq!(
+            asked,
+            vec![Action::Probe { generation, probe: 2, timeout: Duration::from_secs(4) }]
+        );
+    }
+
+    /// B447: a network change heard while the app was away was dropped (the
+    /// return "resumes anyway"), and a short return only nudges a mosh flow,
+    /// whose socket is bound to the path it left on. The return roams it.
+    #[test]
+    fn a_network_change_while_away_roams_mosh_at_a_short_return() {
+        let mut life = Lifecycle::new(Timing::default(), Protocol::Mosh, true, T0);
+        let generation = live(&mut life, Transport::Mosh, T0);
+        life.background(T0 + S);
+        drain(&mut life);
+        life.network_changed(T0 + 3 * S);
+        assert!(drain(&mut life).is_empty(), "acted on in the background");
+        life.foreground(T0 + 6 * S);
+        let back = drain(&mut life);
+        assert!(back.contains(&Action::RoamMosh { generation }), "{back:?}");
+
+        // Without a change, a short return only nudges.
+        life.background(T0 + 10 * S);
+        drain(&mut life);
+        life.foreground(T0 + 15 * S);
+        let back = drain(&mut life);
+        assert!(!back.contains(&Action::RoamMosh { generation }), "{back:?}");
+        assert!(back.contains(&Action::ResumeMosh { generation, force: false }), "{back:?}");
+
+        // A change still settling when the app left counts too.
+        life.network_changed(T0 + 20 * S);
+        life.background(T0 + 20 * S + 100);
+        drain(&mut life);
+        life.foreground(T0 + 25 * S);
+        assert!(drain(&mut life).contains(&Action::RoamMosh { generation }));
+
+        // SSH: the return asks the transport, as it always does.
+        let mut life = ssh_life();
+        let generation = live(&mut life, Transport::Ssh, T0);
+        life.background(T0 + S);
+        life.network_changed(T0 + 2 * S);
+        life.foreground(T0 + 5 * S);
+        assert!(drain(&mut life).iter().any(|a| matches!(a, Action::Probe { generation: g, .. } if *g == generation)));
     }
 
     #[test]

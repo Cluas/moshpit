@@ -123,8 +123,15 @@ fn transport(connection: &Connection) -> &'static str {
 /// the swipe tray (Edit, Disconnect, Delete), and the identifier the
 /// host's long press finds (`home-head-<connection>`).
 fn head(connection: ReadSignal<Connection>, ctx: Ctx) -> AnyElement {
-    let (id, name, initial) =
-        connection.with_untracked(|c| (c.id.clone(), c.name.clone(), c.initial.clone()));
+    let (id, name, initial, face, emoji) = connection.with_untracked(|c| {
+        (
+            c.id.clone(),
+            c.name.clone(),
+            c.initial.clone(),
+            c.face.clone(),
+            c.emoji.clone(),
+        )
+    });
     let now = ctx.now;
     let link = computed(move || connection.with(|c| c.link));
     let waiting = computed(move || connection.with(Connection::waiting));
@@ -140,9 +147,9 @@ fn head(connection: ReadSignal<Connection>, ctx: Ctx) -> AnyElement {
     });
     let mark = dynamic(move || {
         let status = status.get();
-        let initial = initial.clone();
+        let (initial, face, emoji) = (initial.clone(), face.clone(), emoji.clone());
         untracked(move || {
-            let mark = host_mark(initial);
+            let mark = host_mark(initial).face(face).emoji(emoji);
             match status {
                 Some(status) => mark.status(status),
                 None => mark,

@@ -22,6 +22,8 @@ struct Tmux {
     clients: Vec<String>,
     lease: Option<String>,
     capture: String,
+    /// `list-windows -a`: `<window_id> <@moshpit_size_owner>` per window.
+    windows: Vec<String>,
 }
 
 impl Default for Tmux {
@@ -30,6 +32,7 @@ impl Default for Tmux {
             clients: vec!["moshpit-a".into()],
             lease: None,
             capture: "READY".into(),
+            windows: Vec::new(),
         }
     }
 }
@@ -44,6 +47,9 @@ fn responder(tmux: Shared) -> moshpit_tmux::rig::Responder {
         }
         if command.starts_with("show-options -wqv") {
             return ok(tmux.lease.clone());
+        }
+        if command.starts_with("list-windows -a") && command.contains("@moshpit_size_owner") {
+            return ok(tmux.windows.clone());
         }
         if command.starts_with("capture-pane") {
             return ok([tmux.capture.clone()]);
@@ -142,6 +148,80 @@ fn a_lease_of_a_client_no_longer_attached_is_nobodys() {
     });
     assert!(rig.has(&format!("{CLAIM} \"moshpit-a|iPhone|0\"")));
     assert!(rig.has(PIN));
+}
+
+/// A controller attached as the app attaches one: control mode begun
+/// (`begin_control_mode`, as the tmux leg does), tmux's `%session-changed`
+/// first, everything else answered by the responder.
+fn attached(setup: impl FnOnce(&Rig) -> Tmux) -> Rig {
+    let mut rig = Rig::new(Config {
+        size_owner_label: "iPhone".into(),
+        ..Config::default()
+    });
+    rig.with(|c, _| {
+        c.set_initial_client_size(70, 35);
+        c.set_our_client_name(Some("moshpit-a".into()));
+    });
+    let tmux = Rc::new(RefCell::new(setup(&rig)));
+    rig.respond(responder(tmux));
+    rig.with(|c, now| c.begin_control_mode(now));
+    rig.boot();
+    rig.push("%session-changed $0 main\n");
+    rig.settle();
+    rig
+}
+
+/// B456: a phone that died while a window was pinned to it — the app
+/// killed, the network gone, no teardown to hand anything back — left the
+/// window at the phone's grid (`resize-window` sets `window-size manual`)
+/// with its lease naming a client that no longer exists: the desktop's
+/// window stayed phone-sized for good. The next attach hands back every
+/// such window — only those: a live device's and an unleased one are left
+/// alone.
+#[test]
+fn an_attach_hands_back_the_windows_a_dead_phone_left_pinned() {
+    let rig = attached(|rig| Tmux {
+        clients: vec![
+            "moshpit-a".into(),
+            "moshpit-b".into(),
+            "/dev/ttys004".into(),
+        ],
+        windows: vec![
+            format!("@1 {}", lease(rig, "moshpit-gone", 600)),
+            format!("@2 {}", lease(rig, "moshpit-b", 600)),
+            "@3 ".into(),
+            "@4 moshpit-gone|Cluas's iPhone|0".into(),
+        ],
+        ..Tmux::default()
+    });
+    assert!(
+        rig.has("list-windows -a -F '#{window_id} #{@moshpit_size_owner}'"),
+        "the attach reads every window's lease"
+    );
+    for window in ["@1", "@4"] {
+        assert!(
+            rig.has(&format!("set-option -u -w -t {window} window-size")),
+            "{window} handed back"
+        );
+        assert!(rig.has(&format!("set-option -wu -t {window} @moshpit_size_owner")));
+    }
+    for window in ["@2", "@3"] {
+        assert!(!rig.has(&format!("set-option -u -w -t {window} window-size")));
+        assert!(!rig.has(&format!("set-option -wu -t {window} @moshpit_size_owner")));
+    }
+}
+
+/// Without a listing of the clients nothing can be judged dead: nothing is
+/// handed back.
+#[test]
+fn no_clients_listed_hands_nothing_back() {
+    let rig = attached(|rig| Tmux {
+        clients: Vec::new(),
+        windows: vec![format!("@1 {}", lease(rig, "moshpit-gone", 600))],
+        ..Tmux::default()
+    });
+    assert!(rig.has("list-windows -a -F '#{window_id} #{@moshpit_size_owner}'"));
+    assert!(!rig.has("set-option -u -w -t @1 window-size"));
 }
 
 // MARK: - Following
@@ -1234,8 +1314,7 @@ fn only_the_sidecar_takes_the_layouts_before_the_renderer() {
 // MARK: - Only over a layout of ours (round thirty-four)
 
 /// The squashed SPLIT after the keyboard came up: 70×20.
-const SQUASHED_SHORTER: &str =
-    "a1b2,70x20,0,0[70x10,0,0,0,70x9,0,11{35x9,0,11,1,34x9,36,11,2}]";
+const SQUASHED_SHORTER: &str = "a1b2,70x20,0,0[70x10,0,0,0,70x9,0,11{35x9,0,11,1,34x9,36,11,2}]";
 /// The desktop's own arrangement at the phone's size: stacked.
 const REARRANGED: &str = "c3d4,70x35,0,0[70x11,0,0,0,70x11,0,12,1,70x11,0,24,2]";
 

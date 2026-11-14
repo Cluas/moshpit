@@ -200,6 +200,21 @@ impl KnownHosts {
         self.save(&mut state);
     }
 
+    /// The fingerprint trusted for `host` on `port`: the one waiting to be
+    /// written, else the map's, read now if no read has succeeded yet. None
+    /// for a host never trusted, or while the map can't be read.
+    pub fn trusted(&self, host: &str, port: u16) -> Option<String> {
+        let key = known_hosts_entry(host, port);
+        let mut state = lock(&self.state);
+        if let Some(pending) = state.unsaved.get(&key) {
+            return Some(pending.clone());
+        }
+        match self.load(&mut state) {
+            TableRead::Read(table) => table.get(&key).cloned(),
+            TableRead::Locked | TableRead::Broken => None,
+        }
+    }
+
     /// Everything trusted, as this process knows it.
     pub fn snapshot(&self) -> BTreeMap<String, String> {
         let state = lock(&self.state);
@@ -438,6 +453,23 @@ mod tests {
             *self.entries.lock().unwrap() = entries.clone();
             Ok(())
         }
+    }
+
+    #[test]
+    fn a_hosts_trusted_fingerprint_is_read_from_the_map_or_the_trust_waiting() {
+        let known = KnownHosts::in_memory(BTreeMap::from([(
+            "box:22".to_owned(),
+            "SHA256:a".to_owned(),
+        )]));
+        assert_eq!(known.trusted("box", 22).as_deref(), Some("SHA256:a"));
+        assert_eq!(
+            known.trusted("box", 2222),
+            None,
+            "another port, another entry"
+        );
+        assert_eq!(known.trusted("other", 22), None);
+        known.trust("other", 22, "SHA256:b");
+        assert_eq!(known.trusted("other", 22).as_deref(), Some("SHA256:b"));
     }
 
     #[test]

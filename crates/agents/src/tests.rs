@@ -338,6 +338,28 @@ fn a_long_finish_the_push_already_rang_is_a_silent_card_here() {
     assert_eq!(done.text.title, "✓ claude finished · 10 min");
 }
 
+/// B442: with the sound off the record wasn't consulted, so a long finish
+/// the push had already put on screen came here `Active` again — one turn,
+/// the screen woken twice. The record decides whatever the sound switch.
+#[test]
+fn a_long_finish_the_push_already_showed_wakes_nothing_here_with_the_sound_off() {
+    let mut bench = Bench::new(Settings { sound: false, ..Settings::default() }, &[]);
+    let ended = T0 + 600.0;
+    assert!(bench.finishes.note_ring(CONN, "%1", ended as i64 + 1, Date::from_unix(ended)));
+    bench.poll("%1", "working", T0, ended - 1.0);
+    let effects = bench.poll("%1", "done", ended, ended + 1.0);
+    let done = posts(&effects).into_iter().find(|c| c.id.starts_with("moshpit.done.")).unwrap();
+    assert!(!done.text.sound);
+    assert_eq!(done.text.level, InterruptionLevel::Passive, "one turn woke the screen twice");
+
+    let mut first = Bench::new(Settings { sound: false, ..Settings::default() }, &[]);
+    first.poll("%1", "working", T0, ended - 1.0);
+    let effects = first.poll("%1", "done", ended, ended + 1.0);
+    let done = posts(&effects).into_iter().find(|c| c.id.starts_with("moshpit.done.")).unwrap();
+    assert_eq!((done.text.sound, done.text.level), (false, InterruptionLevel::Active));
+    assert!(!first.finishes.note_ring(CONN, "%1", ended as i64, Date::from_unix(ended + 2.0)), "not recorded");
+}
+
 #[test]
 fn a_long_finish_nobody_rang_rings_here_and_the_push_after_it_doesnt() {
     let mut bench = Bench::new(Settings::default(), &[]);

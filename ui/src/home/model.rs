@@ -14,6 +14,8 @@ use std::{cmp::Ordering, collections::HashMap};
 
 use serde::{Deserialize, Serialize};
 
+use crate::ui::mark::Face;
+
 /// Everything Home shows (`{"op": "home", …}`).
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
@@ -103,8 +105,17 @@ pub struct Connection {
     pub id: String,
     /// What it is called (`displayName`).
     pub name: String,
-    /// The avatar's letter: the name's first character, upper case.
+    /// The avatar's letter: the name's first character, upper case. What
+    /// the mark shows before any host key is trusted.
     pub initial: String,
+    /// Its trusted host key's face (§4.13), which the mark shows in place
+    /// of the initial; none before a key is trusted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub face: Option<Face>,
+    /// The emoji picked for it in its form, which the mark shows in place
+    /// of the face.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub emoji: Option<String>,
     pub user: String,
     pub host: String,
     /// It runs over mosh (else SSH).

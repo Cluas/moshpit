@@ -23,7 +23,7 @@ pub type MpTermWaker = unsafe extern "C" fn(ctx: *mut c_void);
 
 /// `MP_TERM_ABI_VERSION` (moshpit_term.h): bumped whenever the C ABI
 /// changes shape, so a view refuses a stale library instead of misreading it.
-pub const ABI_VERSION: u32 = 12;
+pub const ABI_VERSION: u32 = 13;
 
 /// The `MP_TERM_ABI_VERSION` this library was built with.
 #[unsafe(no_mangle)]
@@ -1551,17 +1551,28 @@ pub unsafe extern "C" fn mp_term_set_coast(t: *const MpTerm, on: bool) {
 
 // --- Accessibility -----------------------------------------------------------
 
-/// What appeared on screen since the last call, for a screen reader (free
-/// with mp_string_free); NULL: nothing.
+/// What a screen reader hears now (free with mp_string_free; NULL:
+/// nothing), paced: `again_ms` (may be NULL) gets when to ask again, 0 for
+/// no need (B427).
 ///
 /// # Safety
-/// `t` live.
+/// `t` live; `again_ms` NULL or writable.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn mp_term_a11y_take_announcement(t: *const MpTerm) -> *mut c_char {
+pub unsafe extern "C" fn mp_term_a11y_announce(
+    t: *const MpTerm,
+    again_ms: *mut u32,
+) -> *mut c_char {
     let t = term!(t, std::ptr::null_mut());
     guard(std::ptr::null_mut(), || {
-        t.with(|term| term.take_announcement())
-            .map_or(std::ptr::null_mut(), into_c)
+        let said = t.with(|term| term.announce());
+        if !again_ms.is_null() {
+            let again = said
+                .again_in_ms
+                .map_or(0, |ms| ms.clamp(1, u32::MAX as u64) as u32);
+            // SAFETY: the contract above.
+            unsafe { *again_ms = again };
+        }
+        said.text.map_or(std::ptr::null_mut(), into_c)
     })
 }
 

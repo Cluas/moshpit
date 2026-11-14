@@ -1046,7 +1046,7 @@ impl Monitor {
         }
         let threshold = self.tunables.done_threshold;
         let duration = duration as i64;
-        let rings = !copy::done_rings(duration, self.settings.sound, threshold)
+        let rings = !copy::done_wakes(duration, threshold)
             || self.finishes.as_ref().is_none_or(|finishes| {
                 finishes.note_ring(&key.0, &key.1, ended_at as i64, Date::from_unix(now))
             });

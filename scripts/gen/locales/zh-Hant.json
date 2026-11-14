@@ -1153,5 +1153,8 @@
   "Connected": "已連線",
   "Not connected": "未連線",
   "%@ isn't connected": "%@ 還沒連上",
-  "Setup runs on the host over a live session. Connect first, then set it up here.": "設定要透過連線中的工作階段在主機上進行。先連上，再回來設定。"
+  "Setup runs on the host over a live session. Connect first, then set it up here.": "設定要透過連線中的工作階段在主機上進行。先連上，再回來設定。",
+  "Emoji": "表情符號",
+  "Shows on the host's mark in place of its key's pattern.": "主機頭像上顯示這個表情符號，不再用主機金鑰產生的圖案。",
+  "One emoji, or leave it empty.": "只能填一個表情符號，也可以留空。"
 }

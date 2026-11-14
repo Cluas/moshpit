@@ -25,6 +25,10 @@ pub struct HomeConnection {
     pub name: String,
     pub user: String,
     pub host: String,
+    /// Its SSH port: with the host, where its trusted host key is found.
+    pub port: u16,
+    /// The emoji picked for it, which its mark shows in place of its face.
+    pub emoji: Option<String>,
     pub mosh: bool,
     /// The first port of its mosh UDP range.
     pub udp_port: u32,
@@ -55,6 +59,8 @@ impl CoreSessions {
             .into_iter()
             .map(|c| SavedConnection {
                 session: c.session.and_then(|id| self.registry().view(id)),
+                fingerprint: self.trusted(&c.host, c.port),
+                emoji: c.emoji,
                 id: c.id,
                 name: c.name,
                 user: c.user,
@@ -157,6 +163,8 @@ mod tests {
             name: "studio".into(),
             user: "cluas".into(),
             host: "127.0.0.1".into(),
+            port: 22,
+            emoji: None,
             mosh: false,
             udp_port: 60001,
             tmux: true,

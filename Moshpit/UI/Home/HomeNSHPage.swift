@@ -376,7 +376,8 @@ struct HomeRecord: Equatable {
         let connections = connections.map { connection in
             HomeConnection(
                 id: connection.id.uuidString, name: connection.displayName, user: connection.username,
-                host: connection.host, mosh: connection.connectionProtocol == .mosh,
+                host: connection.host, port: UInt16(clamping: connection.port), emoji: connection.emoji,
+                mosh: connection.connectionProtocol == .mosh,
                 udpPort: UInt32(clamping: udpPort),
                 tmux: connection.multiplexer == .tmux,
                 disconnecting: disconnecting.contains(connection.id),

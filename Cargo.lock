@@ -2336,6 +2336,7 @@ dependencies = [
  "nsh-core",
  "serde",
  "serde_json",
+ "sha2 0.10.9",
  "unicode-normalization",
  "unicode-segmentation",
 ]
@@ -2582,6 +2583,8 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+ "unicode-properties",
+ "unicode-segmentation",
 ]
 
 [[package]]

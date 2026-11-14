@@ -128,6 +128,58 @@ fn fixed() -> Vec<(&'static str, Rgba, Rgba)> {
         ("key-foreground", rgb(INK), rgb(0xECE8DF)),
         ("key-pressed", rgb(0xE4E3DE), rgb(0x353A45)),
         ("grid-line", alpha(INK, 0.06), alpha(0x26303C, 0.24)),
+        // A host key's face (the host mark, §4.13): eight hues, each a
+        // colour for its pattern and a wash for its disc, the pattern
+        // reading on the wash and on the card at 3:1 and better in both
+        // appearances ([`FACES`]).
+        ("face-red", rgb(0xC2362F), rgb(0xF27A72)),
+        (
+            "face-red-soft",
+            alpha(0xC2362F, 0.14),
+            alpha(0xF27A72, 0.18),
+        ),
+        ("face-orange", rgb(0xC2570C), rgb(0xF79A55)),
+        (
+            "face-orange-soft",
+            alpha(0xC2570C, 0.14),
+            alpha(0xF79A55, 0.18),
+        ),
+        ("face-amber", rgb(0x9A6A00), rgb(0xE8B53C)),
+        (
+            "face-amber-soft",
+            alpha(0x9A6A00, 0.14),
+            alpha(0xE8B53C, 0.18),
+        ),
+        ("face-green", rgb(0x1E8A47), rgb(0x5CC98A)),
+        (
+            "face-green-soft",
+            alpha(0x1E8A47, 0.14),
+            alpha(0x5CC98A, 0.18),
+        ),
+        ("face-teal", rgb(0x0B7F84), rgb(0x4CC9C9)),
+        (
+            "face-teal-soft",
+            alpha(0x0B7F84, 0.14),
+            alpha(0x4CC9C9, 0.18),
+        ),
+        ("face-blue", rgb(0x2E62D9), rgb(0x7AA7FF)),
+        (
+            "face-blue-soft",
+            alpha(0x2E62D9, 0.14),
+            alpha(0x7AA7FF, 0.18),
+        ),
+        ("face-violet", rgb(0x7046D6), rgb(0xB49AFB)),
+        (
+            "face-violet-soft",
+            alpha(0x7046D6, 0.14),
+            alpha(0xB49AFB, 0.18),
+        ),
+        ("face-pink", rgb(0xBE2F78), rgb(0xF283B8)),
+        (
+            "face-pink-soft",
+            alpha(0xBE2F78, 0.14),
+            alpha(0xF283B8, 0.18),
+        ),
         // Shadows (their geometry: [`SHADOW_LG`], [`SHADOW_SM`]).
         ("shadow-lg", alpha(BLACK, 0.12), alpha(BLACK, 0.50)),
         ("shadow-sm", alpha(BLACK, 0.16), alpha(BLACK, 0.35)),
@@ -271,6 +323,19 @@ pub fn on_accent(accent: Rgba) -> Rgba {
         rgb(INK)
     }
 }
+
+/// A host key's face's hues (§4.13), in the order a face's `hue` picks
+/// them: the pattern's colour token and its disc's wash.
+pub const FACES: [(&str, &str); 8] = [
+    ("face-red", "face-red-soft"),
+    ("face-orange", "face-orange-soft"),
+    ("face-amber", "face-amber-soft"),
+    ("face-green", "face-green-soft"),
+    ("face-teal", "face-teal-soft"),
+    ("face-blue", "face-blue-soft"),
+    ("face-violet", "face-violet-soft"),
+    ("face-pink", "face-pink-soft"),
+];
 
 /// The light and the dark value of every color token for `app`.
 pub fn colors(app: &AppTheme) -> Vec<(&'static str, Rgba, Rgba)> {
@@ -586,6 +651,8 @@ mod tests {
             "shadow-lg",
             "shadow-sm",
         ];
+        // A host key's face's hues (§4.13), each a pattern and a wash.
+        expected.extend(FACES.iter().flat_map(|(strong, soft)| [*strong, *soft]));
         expected.sort_unstable();
         assert_eq!(names, expected);
         // The light appearance is designed, not a copy of the dark: every
@@ -633,6 +700,38 @@ mod tests {
             assert!(close(l, hex(light)), "{name} light: {}", hex_string(l));
             assert!(close(d, hex(dark)), "{name} dark: {}", hex_string(d));
         }
+    }
+
+    /// A host key's face reads in both appearances under every theme: its
+    /// pattern on its disc's wash and on the card (3:1, WCAG's for a
+    /// graphic), and the eight hues are eight colours.
+    #[test]
+    fn a_host_faces_pattern_reads_on_its_disc_and_the_card() {
+        for (theme_name, theme) in themes() {
+            let colors = colors(&theme);
+            let card = token(&colors, "card");
+            for (strong, soft) in FACES {
+                let (pattern, wash) = (token(&colors, strong), token(&colors, soft));
+                for (dark, p, w, c) in [
+                    (false, pattern.0, wash.0, card.0),
+                    (true, pattern.1, wash.1, card.1),
+                ] {
+                    let disc = over(w, c);
+                    let look = if dark { "dark" } else { "light" };
+                    assert!(
+                        contrast(p, c) >= 3.0,
+                        "{theme_name}: {strong} on the card in {look}"
+                    );
+                    assert!(
+                        contrast(p, disc) >= 3.0,
+                        "{theme_name}: {strong} on its disc in {look}"
+                    );
+                }
+            }
+        }
+        let names: std::collections::BTreeSet<_> =
+            FACES.iter().map(|(strong, _)| *strong).collect();
+        assert_eq!(names.len(), FACES.len());
     }
 
     #[test]

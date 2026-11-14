@@ -389,6 +389,8 @@ pub struct ConnectionRecord {
     pub use_socks_proxy: Option<bool>,
     pub socks_proxy_host: Option<String>,
     pub socks_proxy_port: Option<i64>,
+    /// The emoji its mark shows in place of its host key's face.
+    pub emoji: Option<String>,
 }
 
 impl From<&ServerConnection> for ConnectionRecord {
@@ -425,6 +427,7 @@ impl From<&ServerConnection> for ConnectionRecord {
             use_socks_proxy: c.use_socks_proxy,
             socks_proxy_host: c.socks_proxy_host.clone(),
             socks_proxy_port: c.socks_proxy_port,
+            emoji: c.emoji.clone(),
         }
     }
 }
@@ -463,6 +466,7 @@ impl TryFrom<ConnectionRecord> for ServerConnection {
         connection.use_socks_proxy = c.use_socks_proxy;
         connection.socks_proxy_host = c.socks_proxy_host;
         connection.socks_proxy_port = c.socks_proxy_port;
+        connection.emoji = c.emoji;
         Ok(connection)
     }
 }

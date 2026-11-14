@@ -131,7 +131,7 @@ final class NotificationService: UNNotificationServiceExtension {
             // app's local copy of it: whichever lands first.
             var rings = true
             if status.state == "done",
-               AgentNotificationCopy.doneRings(duration: status.dur ?? 0, sound: prefs.sound,
+               AgentNotificationCopy.doneWakes(duration: status.dur ?? 0,
                                                threshold: PushRemoteNotification.doneSoundThreshold) {
                 rings = PushFinishes.noteRing(conn: status.conn, pane: status.pane, endedAt: status.ts)
             }

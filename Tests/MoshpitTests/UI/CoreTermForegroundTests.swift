@@ -109,6 +109,42 @@ struct CoreTermForegroundTests {
         #expect(view.subviews.filter { $0 is CoreTermMetalCanvas }.count == 1)
     }
 
+    @Test("B469: let go in the background off screen, on screen after the return: a new canvas at once")
+    func intoAWindowAfterTheReturnSwapsASuspectLayer() throws {
+        let view = makeView()
+        guard view.canvasKind == "metal" else { return }
+        let window = inWindow(view)
+        defer { window.isHidden = true }
+        let host = try #require(view.superview)
+        let canvases = view.canvasesMade
+        // Off screen as the app goes away, and still off screen when it is
+        // active again (the screen re-ran after the return): the return's
+        // new canvas passes it by.
+        view.removeFromSuperview()
+        CoreTermMemory.background()
+        #expect(view.layerSuspect != nil, "let go in the background")
+        CoreTermMemory.foreground()
+        #expect(view.canvasesMade == canvases, "off screen: nothing then")
+        host.addSubview(view)
+        #expect(view.canvasesMade == canvases + 1, "a new layer as it comes on screen, not eight dropped frames later")
+        #expect(view.layerSuspect == nil)
+        #expect(view.drawablesFit)
+    }
+
+    @Test("B469: a layer with nothing against it comes on screen on its own canvas")
+    func intoAWindowKeepsAHealthyLayer() throws {
+        let view = makeView()
+        guard view.canvasKind == "metal" else { return }
+        let window = inWindow(view)
+        defer { window.isHidden = true }
+        let host = try #require(view.superview)
+        let canvases = view.canvasesMade
+        view.removeFromSuperview()
+        host.addSubview(view)
+        #expect(view.layerSuspect == nil)
+        #expect(view.canvasesMade == canvases)
+    }
+
     @Test("The app active again: a layer that could not present gets a new canvas")
     func foregroundSwapsALayerThatCannotPresent() throws {
         let view = makeView(width: 0, height: 0)

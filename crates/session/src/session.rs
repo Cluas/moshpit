@@ -875,7 +875,10 @@ impl Actor {
                 self.life.network_changed(now);
                 // At once, not after the path settles: a command given
                 // meanwhile would go to a connection that may be gone (B401).
-                self.revive_control(true);
+                // Heard in the background (B447), the return revives it.
+                if self.life.is_foreground() {
+                    self.revive_control(true);
+                }
             }
             Msg::Unlocked => self.life.unlocked(now),
             Msg::MoshPrefix(key) => self.mosh_prefix = prefix_bytes(&key),

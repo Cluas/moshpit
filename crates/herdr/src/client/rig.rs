@@ -43,6 +43,9 @@ pub enum Fate {
     Hang,
     /// Can't run.
     Unreachable,
+    /// Can't run the first time (the connection dropped under it); runs
+    /// normally after.
+    UnreachableOnce,
     /// Runs, but the answer stops before the exit-status trailer.
     CutTrailer,
     /// Runs, and prints exactly this.
@@ -98,6 +101,9 @@ pub struct FakeHerdr {
     pub held_elsewhere: Vec<String>,
     /// Panes our `--takeover` took from that client, in order.
     pub taken_from_others: Vec<String>,
+    /// Restarts of the server the client didn't make: each numbers every
+    /// pane's terminal anew.
+    pub terminal_epoch: u32,
 }
 
 impl Default for FakeHerdr {
@@ -142,6 +148,7 @@ impl Default for FakeHerdr {
             snapshot_names_version: true,
             held_elsewhere: Vec::new(),
             taken_from_others: Vec::new(),
+            terminal_epoch: 0,
         }
     }
 }
@@ -199,12 +206,25 @@ impl FakeHerdr {
                 fate: Fate::Hang, ..
             }) => Plan::Never,
             Some(Rule {
-                fate: Fate::Unreachable,
+                fate: Fate::Unreachable | Fate::UnreachableOnce,
                 ..
             }) => Plan::Fail,
             Some(rule) => Plan::After(rule.delay.unwrap_or(self.default_delay)),
             None => Plan::After(self.default_delay),
         }
+    }
+
+    /// [`Self::plan`], spending a rule that fails once.
+    pub fn plan_once(&mut self, command: &str) -> Plan {
+        let plan = self.plan(command);
+        if let Some(rule) = self
+            .rules
+            .iter_mut()
+            .find(|rule| command.contains(&rule.pattern) && rule.fate == Fate::UnreachableOnce)
+        {
+            rule.fate = Fate::Normal;
+        }
+        plan
     }
 
     fn pane(&self, id: &str) -> Option<&FakePane> {
@@ -285,7 +305,11 @@ impl FakeHerdr {
                     json::encode_string(&pane.tab),
                     json::encode_string(&pane.workspace),
                     json::encode_string(&pane.cwd),
-                    pane.id.replace(':', "_")
+                    if self.terminal_epoch == 0 {
+                        pane.id.replace(':', "_")
+                    } else {
+                        format!("{}_r{}", pane.id.replace(':', "_"), self.terminal_epoch)
+                    }
                 )
             })
             .collect();
@@ -846,6 +870,20 @@ impl FakeFrames {
         }
     }
 
+    /// The attach reading the channel ended on the host's side and its CLI
+    /// said its last words on the channel (`herdr: server shut down: …`):
+    /// the server stopped, the pane closed, another client took it.
+    pub fn attach_ends(&mut self, now: u64, said: &str) {
+        if let Reader::Attach(..) = self.reader {
+            self.reader = if self.loop_works {
+                Reader::Loop
+            } else {
+                Reader::Shell
+            };
+            self.say(now, format!("{said}\r\n").into_bytes());
+        }
+    }
+
     /// One line reaching the host at `at`.
     fn line(&mut self, at: u64, line: &str, herdr: &mut FakeHerdr) {
         match self.reader.clone() {
@@ -989,7 +1027,7 @@ impl Rig {
     pub fn pump(&mut self) {
         while let Some(output) = self.client.poll_output() {
             match &output {
-                Output::Exec { id, command } => match self.host.plan(command) {
+                Output::Exec { id, command } => match self.host.plan_once(command) {
                     Plan::After(delay) => {
                         self.seq += 1;
                         self.in_flight.push(InFlight {
@@ -1211,6 +1249,21 @@ impl Rig {
             self.host.held_elsewhere.push(pane);
         }
         self.frames.take_over(now);
+    }
+
+    /// The server restarted on the host, not by the client (the desktop
+    /// upgraded herdr) and between two reads: every client's attach ended
+    /// with it, another device's hold too, and every terminal is new.
+    pub fn host_restarted_elsewhere(&mut self) {
+        self.host.terminal_epoch += 1;
+        self.host.held_elsewhere.clear();
+        self.host_attach_ends("herdr: server shut down: server is shutting down");
+    }
+
+    /// The attach reading the channel ends with herdr's last words.
+    pub fn host_attach_ends(&mut self, said: &str) {
+        let now = self.now;
+        self.frames.attach_ends(now, said);
     }
 
     /// Panes that received a release, an input, … in order.

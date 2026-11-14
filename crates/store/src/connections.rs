@@ -165,6 +165,10 @@ pub struct ServerConnection {
     /// `None` is 1080.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub socks_proxy_port: Option<i64>,
+    /// The emoji its mark shows in place of its host key's face (one
+    /// grapheme cluster, checked by the form); none: the face.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub emoji: Option<String>,
 }
 
 impl ServerConnection {
@@ -197,6 +201,7 @@ impl ServerConnection {
             use_socks_proxy: None,
             socks_proxy_host: None,
             socks_proxy_port: None,
+            emoji: None,
         }
     }
 
@@ -885,6 +890,47 @@ mod tests {
         tmux_auto_attach: bool,
         tmux_create_new: bool,
         use_tmux: bool,
+    }
+
+    /// A connection's emoji is saved and read back; one saved before it
+    /// existed reads as none, and one without it writes no key.
+    #[test]
+    fn a_connections_emoji_is_saved_and_an_older_one_has_none() {
+        let defaults = defaults();
+        let mut store = ConnectionStore::new(defaults.clone(), Readiness::Always);
+        let mut whale = sample("whale");
+        whale.emoji = Some("🐳".into());
+        store.add(whale.clone());
+        store.add(sample("plain"));
+        let again = ConnectionStore::new(defaults.clone(), Readiness::Always);
+        assert_eq!(again.connections()[0].id, whale.id);
+        assert_eq!(again.connections()[0].emoji.as_deref(), Some("🐳"));
+        assert_eq!(again.connections()[1].emoji, None);
+        let entries = stored_entries(&defaults);
+        assert_eq!(
+            entries[0]
+                .as_object()
+                .unwrap()
+                .get("emoji")
+                .and_then(Value::as_str),
+            Some("🐳")
+        );
+        assert!(!entries[1].as_object().unwrap().contains_key("emoji"));
+        let older = r#"[{
+          "id": "5D1A7E0C-3F42-4B8E-9C61-0A2B3C4D5E6F", "name": "studio",
+          "host": "studio.example.com", "port": 22, "username": "dev",
+          "authMethod": "password", "connectionProtocol": "ssh", "sshPort": 22,
+          "moshPortRangeStart": 60001, "moshPortRangeEnd": 60999,
+          "createdAt": "2026-08-27T09:00:00Z", "useTmux": false
+        }]"#;
+        let defaults = self::defaults();
+        defaults.set(
+            ConnectionStore::STORAGE_KEY,
+            Some(Plist::Data(older.as_bytes().to_vec())),
+        );
+        let store = ConnectionStore::new(defaults, Readiness::Always);
+        assert_eq!(store.connections()[0].name, "studio");
+        assert_eq!(store.connections()[0].emoji, None);
     }
 
     #[test]

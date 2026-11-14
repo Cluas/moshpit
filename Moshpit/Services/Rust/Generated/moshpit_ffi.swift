@@ -8937,6 +8937,10 @@ public struct ConnectionDraft: Equatable, Hashable {
     public var useSocksProxy: Bool
     public var socksProxyHost: String
     public var socksProxyPort: String
+    /**
+     * The emoji field as typed; empty: the host key's face.
+     */
+    public var emoji: String
     public var stored: StoredCredential
 
     // Default memberwise initializers are never public by default, so we
@@ -8950,7 +8954,10 @@ public struct ConnectionDraft: Equatable, Hashable {
          */selectedKey: String?, useMosh: Bool, predictModeRaw: String, roamOnCellular: Bool, multiplexerRaw: String, tmuxPath: String, herdrPath: String, 
         /**
          * Empty: `mosh-server` on PATH.
-         */moshServerPath: String, useSocksProxy: Bool, socksProxyHost: String, socksProxyPort: String, stored: StoredCredential) {
+         */moshServerPath: String, useSocksProxy: Bool, socksProxyHost: String, socksProxyPort: String, 
+        /**
+         * The emoji field as typed; empty: the host key's face.
+         */emoji: String, stored: StoredCredential) {
         self.editing = editing
         self.name = name
         self.host = host
@@ -8968,6 +8975,7 @@ public struct ConnectionDraft: Equatable, Hashable {
         self.useSocksProxy = useSocksProxy
         self.socksProxyHost = socksProxyHost
         self.socksProxyPort = socksProxyPort
+        self.emoji = emoji
         self.stored = stored
     }
 
@@ -9004,6 +9012,7 @@ public struct FfiConverterTypeConnectionDraft: FfiConverterRustBuffer {
                 useSocksProxy: FfiConverterBool.read(from: &buf), 
                 socksProxyHost: FfiConverterString.read(from: &buf), 
                 socksProxyPort: FfiConverterString.read(from: &buf), 
+                emoji: FfiConverterString.read(from: &buf), 
                 stored: FfiConverterTypeStoredCredential.read(from: &buf)
         )
     }
@@ -9026,6 +9035,7 @@ public struct FfiConverterTypeConnectionDraft: FfiConverterRustBuffer {
         FfiConverterBool.write(value.useSocksProxy, into: &buf)
         FfiConverterString.write(value.socksProxyHost, into: &buf)
         FfiConverterString.write(value.socksProxyPort, into: &buf)
+        FfiConverterString.write(value.emoji, into: &buf)
         FfiConverterTypeStoredCredential.write(value.stored, into: &buf)
     }
 }
@@ -9199,13 +9209,20 @@ public struct ConnectionRecord: Equatable, Hashable {
     public var useSocksProxy: Bool?
     public var socksProxyHost: String?
     public var socksProxyPort: Int64?
+    /**
+     * The emoji its mark shows in place of its host key's face.
+     */
+    public var emoji: String?
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
     public init(id: String, name: String, host: String, port: Int64, username: String, authMethod: StoreAuthMethod, connectionProtocol: StoreConnectionProtocol, sshPort: Int64, moshPortRangeStart: Int64, moshPortRangeEnd: Int64, moshServerPath: String?, 
         /**
          * The keychain account of the password or key.
-         */keychainRef: String?, createdAt: Double, lastConnectedAt: Double?, useTmux: Bool, predictModeRaw: String?, roamOnCellular: Bool?, tmuxPath: String?, herdrPath: String?, multiplexerRaw: String?, sshKeyId: String?, sshKeyAlgorithmRaw: String?, useSocksProxy: Bool?, socksProxyHost: String?, socksProxyPort: Int64?) {
+         */keychainRef: String?, createdAt: Double, lastConnectedAt: Double?, useTmux: Bool, predictModeRaw: String?, roamOnCellular: Bool?, tmuxPath: String?, herdrPath: String?, multiplexerRaw: String?, sshKeyId: String?, sshKeyAlgorithmRaw: String?, useSocksProxy: Bool?, socksProxyHost: String?, socksProxyPort: Int64?, 
+        /**
+         * The emoji its mark shows in place of its host key's face.
+         */emoji: String?) {
         self.id = id
         self.name = name
         self.host = host
@@ -9231,6 +9248,7 @@ public struct ConnectionRecord: Equatable, Hashable {
         self.useSocksProxy = useSocksProxy
         self.socksProxyHost = socksProxyHost
         self.socksProxyPort = socksProxyPort
+        self.emoji = emoji
     }
 
     
@@ -9273,7 +9291,8 @@ public struct FfiConverterTypeConnectionRecord: FfiConverterRustBuffer {
                 sshKeyAlgorithmRaw: FfiConverterOptionString.read(from: &buf), 
                 useSocksProxy: FfiConverterOptionBool.read(from: &buf), 
                 socksProxyHost: FfiConverterOptionString.read(from: &buf), 
-                socksProxyPort: FfiConverterOptionInt64.read(from: &buf)
+                socksProxyPort: FfiConverterOptionInt64.read(from: &buf), 
+                emoji: FfiConverterOptionString.read(from: &buf)
         )
     }
 
@@ -9303,6 +9322,7 @@ public struct FfiConverterTypeConnectionRecord: FfiConverterRustBuffer {
         FfiConverterOptionBool.write(value.useSocksProxy, into: &buf)
         FfiConverterOptionString.write(value.socksProxyHost, into: &buf)
         FfiConverterOptionInt64.write(value.socksProxyPort, into: &buf)
+        FfiConverterOptionString.write(value.emoji, into: &buf)
     }
 }
 
@@ -10009,6 +10029,14 @@ public struct HomeConnection: Equatable, Hashable {
     public var name: String
     public var user: String
     public var host: String
+    /**
+     * Its SSH port: with the host, where its trusted host key is found.
+     */
+    public var port: UInt16
+    /**
+     * The emoji picked for it, which its mark shows in place of its face.
+     */
+    public var emoji: String?
     public var mosh: Bool
     /**
      * The first port of its mosh UDP range.
@@ -10035,7 +10063,13 @@ public struct HomeConnection: Equatable, Hashable {
          */id: String, 
         /**
          * The name the store displays it by.
-         */name: String, user: String, host: String, mosh: Bool, 
+         */name: String, user: String, host: String, 
+        /**
+         * Its SSH port: with the host, where its trusted host key is found.
+         */port: UInt16, 
+        /**
+         * The emoji picked for it, which its mark shows in place of its face.
+         */emoji: String?, mosh: Bool, 
         /**
          * The first port of its mosh UDP range.
          */udpPort: UInt32, 
@@ -10052,6 +10086,8 @@ public struct HomeConnection: Equatable, Hashable {
         self.name = name
         self.user = user
         self.host = host
+        self.port = port
+        self.emoji = emoji
         self.mosh = mosh
         self.udpPort = udpPort
         self.tmux = tmux
@@ -10079,6 +10115,8 @@ public struct FfiConverterTypeHomeConnection: FfiConverterRustBuffer {
                 name: FfiConverterString.read(from: &buf), 
                 user: FfiConverterString.read(from: &buf), 
                 host: FfiConverterString.read(from: &buf), 
+                port: FfiConverterUInt16.read(from: &buf), 
+                emoji: FfiConverterOptionString.read(from: &buf), 
                 mosh: FfiConverterBool.read(from: &buf), 
                 udpPort: FfiConverterUInt32.read(from: &buf), 
                 tmux: FfiConverterBool.read(from: &buf), 
@@ -10092,6 +10130,8 @@ public struct FfiConverterTypeHomeConnection: FfiConverterRustBuffer {
         FfiConverterString.write(value.name, into: &buf)
         FfiConverterString.write(value.user, into: &buf)
         FfiConverterString.write(value.host, into: &buf)
+        FfiConverterUInt16.write(value.port, into: &buf)
+        FfiConverterOptionString.write(value.emoji, into: &buf)
         FfiConverterBool.write(value.mosh, into: &buf)
         FfiConverterUInt32.write(value.udpPort, into: &buf)
         FfiConverterBool.write(value.tmux, into: &buf)
