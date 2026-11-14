@@ -11,7 +11,8 @@ import Testing
 /// images already gone. Two processes on this Mac, 40 shares during a drain
 /// of 40: the old index kept 4–6 of the 40 and left 33–35 images no entry
 /// named; one file per entry keeps all 40 and none.
-@Suite("share queue: two writers at once (B269)", .serialized)
+@Suite("share queue: two writers at once (B269)", .serialized,
+       .enabled(if: AppGroupContainer.isAvailable, AppGroupContainer.skipReason))
 struct ShareQueueRaceTests {
 
     private func scratch() throws -> URL {

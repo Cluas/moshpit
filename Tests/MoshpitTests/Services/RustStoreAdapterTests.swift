@@ -518,8 +518,12 @@ struct RustStoreAdapterTests {
         #expect(PushPairingFile(url: ours).read().map(\.connectionId) == [Self.ids[0]])
         let excluded = try ours.resourceValues(forKeys: [.isExcludedFromBackupKey]).isExcludedFromBackup
         #expect(excluded == true, "out of backups, as the Swift file's")
+        #if !targetEnvironment(simulator)
+        // The simulator keeps no data protection class on a file: nil there
+        // whatever was asked.
         let protection = try FileManager.default.attributesOfItem(atPath: ours.path)[.protectionKey] as? FileProtectionType
         #expect(protection == .completeUntilFirstUserAuthentication)
+        #endif
     }
 
     // MARK: - The switch

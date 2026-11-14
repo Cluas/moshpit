@@ -20,9 +20,19 @@ struct SmokeSeedTests {
          "-MOSHPIT_SEED_ID", id.uuidString, "-MOSHPIT_SEED_TMUX", "1"] + extra
     }
 
+    /// Whether the app's saved connections name the seed's. Read as text,
+    /// not compared with what was there before: suites running alongside
+    /// this one save connections of their own under that key (a fresh
+    /// simulator starts with none), so its bytes are no measure, and the
+    /// seed's id in them is.
+    static func savedNameTheSeed() -> Bool {
+        guard let data = UserDefaults.standard.data(forKey: "moshpit.connections") else { return false }
+        return String(decoding: data, as: UTF8.self).contains(id.uuidString)
+    }
+
     @Test("the seeded connection is this launch's alone: the saved ones and the keychain are left as they are")
     func seedWritesNothing() async throws {
-        let saved = UserDefaults.standard.data(forKey: "moshpit.connections")
+        #expect(!Self.savedNameTheSeed(), "a seed from an earlier run was saved")
         let seed = try #require(await SmokeSeed.prepare(arguments: Self.arguments()))
 
         #expect(seed.connection.id == Self.id)
@@ -30,8 +40,7 @@ struct SmokeSeedTests {
         #expect(seed.connection.username == "rig" && seed.connection.useTmux)
         #expect(seed.store.connections.map(\.id) == [Self.id], "Home shows the seeded connection alone")
         #expect(seed.opensTerminal)
-        #expect(UserDefaults.standard.data(forKey: "moshpit.connections") == saved,
-                "the saved connections were rewritten")
+        #expect(!Self.savedNameTheSeed(), "the seed went into the saved connections")
         let ref = try #require(seed.connection.keychainRef)
         #expect(ref == "smoke.seed.\(Self.id.uuidString)")
         #expect(!SystemKeychainBackend().exists(account: ref), "the seed's key went into the keychain")
@@ -41,7 +50,7 @@ struct SmokeSeedTests {
         var renamed = seed.connection
         renamed.name = "renamed"
         seed.store.update(renamed)
-        #expect(UserDefaults.standard.data(forKey: "moshpit.connections") == saved)
+        #expect(!Self.savedNameTheSeed(), "the launch's store wrote to the saved connections")
     }
 
     @Test("-MOSHPIT_SEED_HOME 1 stays on Home; no key, no seed")

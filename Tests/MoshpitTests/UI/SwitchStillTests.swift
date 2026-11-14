@@ -87,9 +87,24 @@ struct SwitchStillTests {
         #expect(container.superview === slot)
     }
 
+    /// Panes on the core's terminal whatever this host's switch says: the
+    /// picture is drawn from the terminal's own rows (the phone's path).
+    /// SwiftTerm's comes from a snapshot of the screen, which a view never
+    /// drawn yet (a test's) doesn't give.
+    final class CoreController: TmuxSessionController {
+        private var made: [String: TerminalSurface] = [:]
+        override func surface(for paneId: String) -> TerminalSurface {
+            if let surface = made[paneId] { return surface }
+            let surface = TerminalSurfaces.make(.core, font: UIFont.monospacedSystemFont(ofSize: 12, weight: .regular),
+                                                grid: TerminalGrid(cols: 80, rows: 24))
+            made[paneId] = surface
+            return surface
+        }
+    }
+
     @Test("A switch keeps the pane's picture on top of the slot until it is released")
     func theStageHoldsThePicture() throws {
-        let controller = TmuxSessionController(sshSession: MockTmuxTransport())
+        let controller = CoreController(sshSession: MockTmuxTransport())
         let stage = TerminalNSHStage()
         let (slot, window) = TerminalNSHTests.slot(for: stage)
         defer { window.isHidden = true }

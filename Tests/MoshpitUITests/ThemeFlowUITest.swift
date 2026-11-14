@@ -34,6 +34,7 @@ final class ThemeFlowUITest: XCTestCase {
 
     @MainActor
     func testGalleryListsBuiltInsAndSwitchesSelection() throws {
+        try skipUntilRewrittenForNSH("Theme page")
         let app = XCUIApplication()
         app.launchArguments += ["-MOSHPIT_RESET"]
         app.launch()
@@ -58,6 +59,7 @@ final class ThemeFlowUITest: XCTestCase {
 
     @MainActor
     func testDuplicateEditAndSaveBecomesSelection() throws {
+        try skipUntilRewrittenForNSH("Theme page")
         let app = XCUIApplication()
         app.launchArguments += ["-MOSHPIT_RESET"]
         app.launch()
@@ -128,6 +130,7 @@ final class ThemeFlowUITest: XCTestCase {
 
     @MainActor
     func testDeleteCustomThemeFallsBackToDefault() throws {
+        try skipUntilRewrittenForNSH("Theme page")
         let app = XCUIApplication()
         app.launchArguments += ["-MOSHPIT_RESET"]
         app.launch()

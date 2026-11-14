@@ -121,7 +121,7 @@ struct HomeNSHTests {
         fake.home = Self.json(Self.message())
         let record = HomeRecord.now(core: core, connections: Self.store(),
                                     session: { $0.id == Self.studio ? 7 : nil }, agents: nil,
-                                    disconnecting: [Self.edge], sidebar: true)
+                                    disconnecting: [Self.edge], sidebar: true, udpPort: 60200)
         #expect(record.message == fake.home, "as the core wrote it")
         let asked = try #require(fake.homeAsked.last)
         #expect(asked.connections.map(\.id) == [Self.studio.uuidString, Self.edge.uuidString])
@@ -129,7 +129,9 @@ struct HomeNSHTests {
         #expect(asked.connections.map(\.name) == ["studio", "edge"])
         #expect(asked.connections.map(\.tmux) == [true, false])
         #expect(asked.connections.map(\.mosh) == [false, true])
-        #expect(asked.connections.map(\.udpPort) == [60001, 60100])
+        // Settings' first port on every card, the one a connect asks for,
+        // not the 60100 the edge saved (B430).
+        #expect(asked.connections.map(\.udpPort) == [60200, 60200])
         #expect(asked.connections.map(\.disconnecting) == [false, true])
         #expect(asked.sidebar == true)
         #expect(asked.version == HomeFooter.line)

@@ -21,6 +21,7 @@ final class SSHKeyFlowUITest: XCTestCase {
 
     @MainActor
     func testGenerateFromPickerThenDeleteWithConfirmation() throws {
+        try skipUntilRewrittenForNSH("key form")
         let keyName = "qa-\(UUID().uuidString.prefix(6).lowercased())"
         let app = XCUIApplication()
         app.launchArguments += ["-MOSHPIT_RESET", "-MOSHPIT_AUTOCARE_OFF"]

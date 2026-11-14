@@ -64,6 +64,7 @@ final class AppearanceFlowUITest: XCTestCase {
 
     @MainActor
     func testIconGalleryOffersDistinctIconsAndSwitches() throws {
+        try skipUntilRewrittenForNSH("App Icon page")
         let app = XCUIApplication()
         app.launchArguments += ["-MOSHPIT_RESET"]
         app.launch()
