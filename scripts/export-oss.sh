@@ -77,7 +77,7 @@ PUBLIC=(
   docs/design docs/assets
   docs/nsh/DESIGN.md docs/nsh/NSH-GAPS.md docs/nsh/TERMINAL-CORE.md docs/nsh/TERMINAL-VIEW.md
   push-relay
-  scripts/export-oss.sh scripts/host scripts/gen scripts/verify scripts/spikes scripts/rust scripts/wezterm
+  scripts/export-oss.sh scripts/host scripts/gen scripts/verify scripts/spikes scripts/rust scripts/wezterm scripts/shots
   scripts/release/build-ipa.sh scripts/release/release-archive.sh scripts/release/team-id.sh
   scripts/capture/capture-flow-shots.sh scripts/capture/capture-mosh-switch-bytes.sh
   scripts/capture/capture_mosh_switch_bytes.swift scripts/capture/stage

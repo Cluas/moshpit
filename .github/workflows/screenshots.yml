@@ -1,0 +1,126 @@
+name: Screenshots
+
+# The App Store and README screenshots, by hand only: a Debug simulator build
+# of the app, a host staged on the runner itself (sshd on loopback, tmux on
+# a private socket, a throwaway key), the app seeded to each screen on the
+# iPhone 6.9" and iPad 13" simulators, and the PNGs kept as the run's
+# artifact. scripts/shots/ci-capture.sh does the staging and the shots.
+# Normal CI never runs it.
+on:
+  workflow_dispatch:
+    inputs:
+      devices:
+        description: Which simulators
+        type: choice
+        options: [both, iphone, ipad]
+        default: both
+      locales:
+        description: Locales, space-separated (en-US zh-Hans zh-Hant ja)
+        type: string
+        default: en-US
+
+permissions:
+  contents: read
+
+jobs:
+  shots:
+    name: Screenshots (${{ inputs.devices }}, ${{ inputs.locales }})
+    runs-on: xcode-27
+    timeout-minutes: 120
+
+    env:
+      SPM_CACHE_DIR: ${{ github.workspace }}/.spm-cache
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # The same pick as CI's: the newest Xcode 27, a simulator to build for.
+      - name: Select Xcode
+        run: |
+          XCODE=$(ls -d /Applications/Xcode_27*.app 2>/dev/null | sort -V | tail -1)
+          sudo xcode-select -s "${XCODE:-/Applications/Xcode.app}/Contents/Developer"
+          xcodebuild -version
+          xcrun simctl list devices available | grep -E 'iPhone|iPad' || true
+          iphones=$(xcrun simctl list devices available |
+            sed -nE 's/^ +(iPhone.*[^ ]) \([0-9A-F-]{36}\).*/\1/p')
+          SIMULATOR="iPhone 18 Pro"
+          grep -qxF "$SIMULATOR" <<< "$iphones" || SIMULATOR=$(tail -1 <<< "$iphones")
+          echo "SIMULATOR=$SIMULATOR" >> "$GITHUB_ENV"
+
+      - name: Install xcodegen and tmux
+        run: brew install xcodegen tmux
+
+      - name: Install the Rust toolchain
+        run: |
+          if ! command -v rustup >/dev/null; then
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs |
+              sh -s -- -y --profile minimal --default-toolchain none
+            echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+            export PATH="$HOME/.cargo/bin:$PATH"
+          fi
+          rustup toolchain install
+          rustup target add aarch64-apple-ios-sim
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            target
+          key: cargo-ios-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}
+          restore-keys: |
+            cargo-ios-${{ runner.os }}-
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Cache SwiftPM packages
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.SPM_CACHE_DIR }}
+          key: spm-${{ runner.os }}-${{ hashFiles('Moshpit.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
+          restore-keys: |
+            spm-${{ runner.os }}-
+
+      # Debug: the DEBUG seeds the shots are made with. One build for both
+      # simulators (the app is universal); arm64 only.
+      - name: Build the app
+        run: |
+          xcodebuild build \
+            -project Moshpit.xcodeproj \
+            -scheme Moshpit \
+            -configuration Debug \
+            -destination "platform=iOS Simulator,name=$SIMULATOR" \
+            -derivedDataPath build/dd \
+            -clonedSourcePackagesDirPath "$SPM_CACHE_DIR" \
+            CODE_SIGNING_ALLOWED=NO
+          ls -d build/dd/Build/Products/Debug-iphonesimulator/Moshpit.app
+
+      - name: iPhone 6.9"
+        if: inputs.devices != 'ipad'
+        env:
+          LOCALES: ${{ inputs.locales }}
+        run: |
+          # shellcheck disable=SC2086 # one locale per word
+          scripts/shots/ci-capture.sh build/dd/Build/Products/Debug-iphonesimulator/Moshpit.app \
+            shots/iphone-6.9 iphone $LOCALES
+
+      - name: iPad 13"
+        if: inputs.devices != 'iphone'
+        env:
+          LOCALES: ${{ inputs.locales }}
+        run: |
+          # shellcheck disable=SC2086 # one locale per word
+          scripts/shots/ci-capture.sh build/dd/Build/Products/Debug-iphonesimulator/Moshpit.app \
+            shots/ipad-13 ipad $LOCALES
+
+      - name: Keep the shots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: shots-${{ github.run_number }}
+          path: shots
+          if-no-files-found: warn
