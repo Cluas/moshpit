@@ -10,6 +10,13 @@ public struct PixelSprite: Equatable, Sendable {
     public struct Ink: Equatable, Sendable {
         public let light: UInt32
         public let dark: UInt32
+
+        /// An ink's two colours, `0xRRGGBB` (the tests compare decoded
+        /// inks against these; a struct's own initializer isn't public).
+        public init(light: UInt32, dark: UInt32) {
+            self.light = light
+            self.dark = dark
+        }
     }
 
     public let side: Int
