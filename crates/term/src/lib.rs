@@ -236,6 +236,17 @@ impl Shared {
     }
 }
 
+impl Inbox {
+    /// An event for the host, the oldest let go past [`EVENTS_MAX`] (a host
+    /// that takes none: the app in the background).
+    fn push(&mut self, event: Event) {
+        if self.events.len() >= EVENTS_MAX {
+            self.events.remove(0);
+        }
+        self.events.push(event);
+    }
+}
+
 impl std::io::Write for Shared {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         self.lock().replies.extend_from_slice(buf);
@@ -261,17 +272,15 @@ impl AlertHandler for Shared {
             }
             _ => return,
         };
-        if inbox.events.len() >= EVENTS_MAX {
-            inbox.events.remove(0);
-        }
-        inbox.events.push(event);
+        inbox.push(event);
     }
 }
 
 impl Clipboard for Shared {
     fn set_contents(&self, _: ClipboardSelection, data: Option<String>) -> anyhow::Result<()> {
+        // Bounded as the others are (B481): each holds its whole text.
         if let Some(text) = data {
-            self.lock().events.push(Event::ClipboardStore(text));
+            self.lock().push(Event::ClipboardStore(text));
         }
         Ok(())
     }
@@ -756,7 +765,7 @@ impl Terminal {
                     let earlier = std::mem::take(batch);
                     self.perform(earlier);
                     self.clipboard_query = Some(sel);
-                    self.shared.lock().events.push(Event::ClipboardLoad);
+                    self.shared.lock().push(Event::ClipboardLoad);
                     return;
                 }
             }
@@ -1558,6 +1567,14 @@ impl Terminal {
         self.options.cell_height_px = height;
         let (cols, rows) = self.size();
         self.term.resize(term_size(cols, rows, &self.options));
+        // A reader stays on its rows, drawn on whole rows of the new size
+        // (B479): the old size's pixel offset shifted them by part of a row.
+        if self.view_top.is_some() {
+            self.scroll_top = self.view_top;
+            self.scroll.offset_px = self.display_offset() as i64 * self.cell_px();
+            self.scroll.momentum = None;
+            self.full_damage = true;
+        }
     }
 
     /// What a clear of the main screen keeps (a tmux pane's: what tmux
@@ -1670,23 +1687,73 @@ impl Terminal {
     /// The selection's cells, if it still stands on its text: it goes when
     /// its rows leave the history or anything under it changes (an erase, a
     /// reset, new text), as the fork's fixes made it (B79, B100, B180,
-    /// B181, B216).
+    /// B181, B216). A row written again with the same text (tmux's repair
+    /// frame at the keyboard going up or down, the return, a switch) still
+    /// reads as it did: the selection stands (B480).
     fn selection_range(&mut self) -> Option<select::Range> {
         let sel = self.selection.as_ref()?;
         let range = sel.range(|row| self.row_cells(row));
+        let mut rewritten = false;
         let stands = range.as_ref().is_some_and(|r| {
             r.start.0 >= self.first_row()
                 && (r.start.0..=r.end.0).all(|row| {
-                    self.with_line(row, |l| !l.changed_since(sel.seqno))
-                        .unwrap_or(false)
+                    match self.with_line(row, |l| {
+                        (
+                            l.changed_since(sel.seqno),
+                            l.changed_since(sel.seqno).then(|| Self::line_text(l)),
+                        )
+                    }) {
+                        None => false,
+                        Some((false, _)) => true,
+                        Some((true, text)) => {
+                            let same = text.as_ref() == sel.read(row);
+                            rewritten |= same;
+                            same
+                        }
+                    }
                 })
         });
         if stands {
+            if rewritten {
+                self.stamp_selection();
+            }
             range
         } else {
             self.selection = None;
             self.full_damage = true;
             None
+        }
+    }
+
+    /// Whether the rows `sel` noted are still kept and read as they did.
+    fn reads_as_before(&self, sel: &select::Selection) -> bool {
+        sel.rows.iter().all(|(row, text)| {
+            *row >= self.first_row()
+                && self
+                    .with_line(*row, |l| {
+                        !l.changed_since(sel.seqno) || Self::line_text(l) == *text
+                    })
+                    .unwrap_or(false)
+        })
+    }
+
+    /// Notes the selection's rows as they read now, and when.
+    fn stamp_selection(&mut self) {
+        let Some(sel) = self.selection.as_ref() else {
+            return;
+        };
+        let rows = sel
+            .range(|row| self.row_cells(row))
+            .map(|r| {
+                (r.start.0..=r.end.0)
+                    .filter_map(|row| self.with_line(row, Self::line_text).map(|t| (row, t)))
+                    .collect()
+            })
+            .unwrap_or_default();
+        let seqno = self.term.current_seqno();
+        if let Some(sel) = self.selection.as_mut() {
+            sel.rows = rows;
+            sel.seqno = seqno;
         }
     }
 
@@ -1708,7 +1775,9 @@ impl Terminal {
                     seqno,
                 );
                 sel.extend((top + last.0 as StableRowIndex, last.2 as usize), true);
+                sel.keep_whole();
                 self.selection = Some(sel);
+                self.stamp_selection();
                 self.full_damage = true;
                 return;
             }
@@ -1721,16 +1790,50 @@ impl Terminal {
             right_half,
             self.term.current_seqno(),
         ));
+        self.stamp_selection();
         self.full_damage = true;
     }
 
     /// Moves the selection's moving end to a viewport cell.
     pub fn select_extend(&mut self, row: u16, col: u16, right_half: bool) {
         let p = self.point(row, col);
+        // What it stood on so far must still read the same before it moves.
+        if self
+            .selection
+            .as_ref()
+            .is_some_and(|s| !self.reads_as_before(s))
+        {
+            self.selection = None;
+            self.full_damage = true;
+            return;
+        }
         if let Some(s) = self.selection.as_mut() {
             s.extend(p, right_half);
+            self.stamp_selection();
             self.full_damage = true;
         }
+    }
+
+    /// A handle's drag starts: the selection keeps its other end where it
+    /// is, on screen or not (`end`: keeps the end, the start handle moves;
+    /// else keeps the start), cell by cell from here on, and
+    /// [`Terminal::select_extend`] moves the dragged one (B477). False when
+    /// there is no selection.
+    pub fn select_keep_end(&mut self, end: bool) -> bool {
+        let Some(r) = self.selection_range() else {
+            return false;
+        };
+        let kept = if end { (r.end, true) } else { (r.start, false) };
+        let seqno = self.term.current_seqno();
+        self.selection = Some(select::Selection::new(
+            SelectKind::Cells,
+            kept.0,
+            kept.1,
+            seqno,
+        ));
+        self.stamp_selection();
+        self.full_damage = true;
+        true
     }
 
     pub fn select_clear(&mut self) {

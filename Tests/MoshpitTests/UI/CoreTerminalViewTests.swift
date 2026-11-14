@@ -329,6 +329,23 @@ struct CoreTerminalViewTests {
         #expect(view.settle { $0.rowText(4) == "more" })
     }
 
+    /// B479: a pinch to another font size while reading history leaves the
+    /// reader in the history, on the same line. It went to the bottom at
+    /// every step of the pinch.
+    @Test func aNewFontSizeLeavesAHistoryReaderReading() {
+        let (view, _) = makeView(cols: 20, rows: 5)
+        var text = ""
+        for i in 0..<50 { text += "\(i)\r\n" }
+        feed(view, text + "$", until: { $0.rowText(4) == "$" })
+        view.scrollLines(10)
+        let top = view.rowText(0)
+        view.apply(font: Self.font.withSize(14))
+        let reading = view.isReadingScrollback
+        #expect(reading, "the new size sent the reader to the bottom")
+        let still = view.rowText(0)
+        #expect(still == top)
+    }
+
     /// B426: the terminal's answer to a program's question goes out on the
     /// session's input path, which releases the scroll hold for what it
     /// sends; a history reader stays where it is all the same. A key still
@@ -528,5 +545,168 @@ struct CoreTerminalViewTests {
 
     private func host(_ view: CoreTerminalView, in window: UIWindow) {
         window.rootViewController?.view.addSubview(view)
+    }
+}
+
+/// B472: a glyph wider than its cells was narrowed on x alone, so a colour
+/// emoji in one cell (Claude Code's "⏺" bullets, drawn from Apple Color
+/// Emoji) kept its full height and came out a tall thin pill. Now it is
+/// scaled uniformly to fit, its shape kept, centred, inside the line; box
+/// drawing still fills the cell's height; a glyph whose ink fits is only
+/// moved into its cells.
+@Suite("glyphs wider than their cells keep their shape (B472)")
+struct GlyphFitTests {
+    private static let metrics = CoreTermMetrics(
+        font: UIFont.monospacedSystemFont(ofSize: 12, weight: .regular), scale: 3)
+
+    /// The ink's width over its height, drawn at its own size.
+    private static func naturalAspect(_ text: String) -> CGFloat? {
+        let m = metrics
+        let line = CTLineCreateWithAttributedString(NSAttributedString(string: text, attributes: [
+            .font: m.font, .foregroundColor: UIColor.white,
+        ]))
+        let w = 400, h = 200
+        var data = [UInt8](repeating: 0, count: w * h * 4)
+        var minX = w, minY = h, maxX = -1, maxY = -1
+        data.withUnsafeMutableBytes { raw in
+            guard let ctx = CGContext(data: raw.baseAddress, width: w, height: h, bitsPerComponent: 8,
+                                      bytesPerRow: w * 4, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue
+                                          | CGBitmapInfo.byteOrder32Little.rawValue) else { return }
+            ctx.translateBy(x: 40, y: 60)
+            ctx.scaleBy(x: m.scale, y: m.scale)
+            ctx.textPosition = .zero
+            CTLineDraw(line, ctx)
+        }
+        for y in 0..<h {
+            for x in 0..<w where data[(y * w + x) * 4 + 3] != 0 {
+                minX = min(minX, x); maxX = max(maxX, x); minY = min(minY, y); maxY = max(maxY, y)
+            }
+        }
+        guard maxX >= 0 else { return nil }
+        return CGFloat(maxX - minX + 1) / CGFloat(maxY - minY + 1)
+    }
+
+    @Test("Emoji keep their shape in one cell and in two", arguments: ["⏺", "🍓"], [1, 2])
+    func emojiKeepTheirShape(text: String, cells: Int) throws {
+        let m = Self.metrics
+        let natural = try #require(Self.naturalAspect(text))
+        let ink = try #require(CoreTermAtlas.ink(text, style: cells == 2 ? 4 : 0, metrics: m))
+        let aspect = CGFloat(ink.w) / CGFloat(ink.h)
+        #expect(abs(aspect - natural) / natural <= 0.10,
+                "\(text) in \(cells) cell(s): \(ink.w)×\(ink.h) px, aspect \(aspect) against \(natural)")
+        // Inside its cells across.
+        let span = cells * m.widthPx
+        #expect(ink.dx >= -1 && ink.dx + ink.w <= span + 1, "\(ink.dx)+\(ink.w) in \(span)")
+    }
+
+    @Test("Wider than its cells: scaled uniformly, centred across and between baseline and ascent")
+    func aWideInkIsScaledUniformly() throws {
+        let fit = try #require(CoreTermGlyphFit.fit(
+            advance: 16, ink: CGRect(x: 0, y: -2, width: 15, height: 15), span: 7.5,
+            ascent: 9, descent: 3, scalar: 0x1F353))
+        #expect(fit.scaleX == fit.scaleY, "its shape kept")
+        #expect(abs(fit.scaleX - 0.5) < 0.0001)
+        // Across: the 7.5 pt ink fills the 7.5 pt span from 0.
+        #expect(abs(fit.dx - 0) < 0.0001)
+        // Up: its middle at half the ascent.
+        let middle = fit.dy + (-2 + 15.0 / 2) * fit.scaleY
+        #expect(abs(middle - 4.5) < 0.0001)
+    }
+
+    @Test("Never taller than the line: kept between descent and ascent")
+    func aTallInkStaysInsideTheLine() throws {
+        let fit = try #require(CoreTermGlyphFit.fit(
+            advance: 16, ink: CGRect(x: 0, y: -4, width: 15, height: 15), span: 15,
+            ascent: 9, descent: 3, scalar: 0x1F353))
+        #expect(fit.scaleY <= 12.0 / 15 + 0.0001, "the line is 12 pt")
+        let top = fit.dy + 11 * fit.scaleY, bottom = fit.dy - 4 * fit.scaleY
+        #expect(top <= 9.0001 && bottom >= -3.0001, "\(bottom)…\(top)")
+    }
+
+    @Test("A wide advance whose ink fits is moved into its cells, not shrunk")
+    func anInkThatFitsIsOnlyMoved() throws {
+        // "⎿" from a CJK fallback: 12 pt of advance, 6.2 pt of ink.
+        let fit = try #require(CoreTermGlyphFit.fit(
+            advance: 12, ink: CGRect(x: 4, y: -1.4, width: 6.2, height: 12), span: 7.2,
+            ascent: 9, descent: 3, scalar: 0x23BF))
+        #expect(fit.scaleX == 1 && fit.scaleY == 1)
+        #expect(fit.dy == 0, "where its font put it")
+        #expect(abs((fit.dx + 4) - 0.5) < 0.0001, "centred across")
+    }
+
+    @Test("Box drawing and blocks still fill the cell's height: narrowed on x")
+    func boxDrawingKeepsTheCellsHeight() throws {
+        for scalar: UInt32 in [0x2502, 0x2588, 0xE0B0] {
+            let fit = try #require(CoreTermGlyphFit.fit(
+                advance: 12, ink: CGRect(x: 0, y: -3, width: 12, height: 15), span: 7.2,
+                ascent: 9, descent: 3, scalar: scalar))
+            #expect(fit.scaleY == 1 && abs(fit.scaleX - 0.6) < 0.0001 && fit.dy == 0)
+        }
+    }
+
+    @Test("A glyph that fits its cells is left alone")
+    func aGlyphThatFitsIsLeftAlone() {
+        #expect(CoreTermGlyphFit.fit(advance: 7.2, ink: CGRect(x: 0, y: 0, width: 7, height: 7), span: 7.2,
+                                     ascent: 9, descent: 3, scalar: 0x2713) == nil)
+    }
+}
+
+/// B473: the grid's leftover width all went to the right (columns are the
+/// width's floor), so the content looked shoved left beside a strip; with
+/// the page's near-black ground around a tmux pane's inset, the strip read
+/// as black. The grid is centred now, the same origin for drawing and for
+/// every tap.
+@Suite("the grid sits centred across the terminal (B473)")
+struct GridCentreTests {
+    @Test("A width that isn't a whole number of cells leaves equal margins, to a pixel")
+    func marginsAreEqual() {
+        for (width, cell, scale) in [(402.0, 5.6, 3.0), (394.0, 7.2246, 3.0), (744.0, 8.4, 2.0), (320.0, 7.0, 2.0)] {
+            let cols = Int(width / cell)
+            let left = CoreTerminalView.gridOrigin(width: width, cols: cols, cellWidth: cell, scale: scale)
+            let right = width - left - CGFloat(cols) * cell
+            #expect(abs(left - right) <= 1 / scale + 0.0001, "\(width) / \(cell): \(left) against \(right)")
+            #expect(left >= 0 && right >= -0.0001)
+        }
+    }
+
+    @Test("A whole number of cells leaves no margin")
+    func noMarginWhenItFits() {
+        #expect(CoreTerminalView.gridOrigin(width: 560, cols: 100, cellWidth: 5.6, scale: 3) == 0)
+    }
+
+    @Test("A tap maps to the cell drawn under it: the first cell's centre is column 0")
+    func tapsMapThroughTheSameOrigin() {
+        let width: CGFloat = 402, cell: CGFloat = 5.6, scale: CGFloat = 3
+        let cols = Int(width / cell)
+        let origin = CoreTerminalView.gridOrigin(width: width, cols: cols, cellWidth: cell, scale: scale)
+        #expect(origin > 0)
+        #expect(CoreTerminalView.column(atX: origin + cell / 2, originX: origin, cellWidth: cell, cols: cols) == 0)
+        #expect(CoreTerminalView.column(atX: origin + cell * 1.5, originX: origin, cellWidth: cell, cols: cols) == 1)
+        let last = origin + CGFloat(cols - 1) * cell + cell / 2
+        #expect(CoreTerminalView.column(atX: last, originX: origin, cellWidth: cell, cols: cols) == cols - 1)
+        // The margins belong to the edge columns.
+        #expect(CoreTerminalView.column(atX: 0.5, originX: origin, cellWidth: cell, cols: cols) == 0)
+        #expect(CoreTerminalView.column(atX: width - 0.5, originX: origin, cellWidth: cell, cols: cols) == cols - 1)
+        // Without the origin, the first cell's centre sat a margin to the
+        // right of where it was drawn.
+        #expect(CoreTerminalView.column(atX: cell / 2, originX: origin, cellWidth: cell, cols: cols) == 0)
+    }
+
+    @Test("A view's grid is centred, and its taps land on the cells drawn there")
+    @MainActor
+    func aViewCentresItsGrid() throws {
+        let font = UIFont.monospacedSystemFont(ofSize: 12, weight: .regular)
+        let view = CoreTerminalView(frame: CGRect(x: 0, y: 0, width: 402, height: 600), font: font)
+        view.layoutIfNeeded()
+        let cell = view.cellSize
+        let cols = view.grid.cols
+        let left = view.gridOriginX
+        let right = view.bounds.width - view.x(ofColumn: cols)
+        #expect(abs(left - right) <= 1 / view.metrics.scale + 0.0001, "\(left) against \(right)")
+        let first = view.cell(at: CGPoint(x: view.x(ofColumn: 0) + cell.width / 2, y: cell.height / 2))
+        #expect(first.col == 0 && first.row == 0)
+        let next = view.cell(at: CGPoint(x: view.x(ofColumn: 1) + cell.width / 2, y: cell.height / 2))
+        #expect(next.col == 1)
     }
 }

@@ -348,6 +348,104 @@ fn v15_a_long_press_selects_the_link_or_the_word() {
     assert_eq!(t.selection_text().as_deref(), Some("ok"));
 }
 
+/// B478: a long-pressed link stays whole while the finger rests on it (a
+/// resting finger reports small moves: each one extended the selection to
+/// the cell under it, so the link shrank to "https:"); sliding past either
+/// end grows the selection from the link, keeping all of it.
+#[test]
+fn v15_a_long_pressed_link_stays_whole_under_the_finger() {
+    let mut t = term(40, 4, 10);
+    t.feed(b"see https://example.com/abc/def ok then");
+    t.select_start(SelectKind::Semantic, 0, 10, false);
+    let link = Some("https://example.com/abc/def".to_string());
+    assert_eq!(t.selection_text(), link);
+    for col in [10, 11, 4, 29] {
+        t.select_extend(0, col, false);
+        assert_eq!(t.selection_text(), link, "the finger at column {col}");
+    }
+    t.select_extend(0, 34, false);
+    assert_eq!(
+        t.selection_text().as_deref(),
+        Some("https://example.com/abc/def ok"),
+        "past its end: from the link's start"
+    );
+    t.select_extend(0, 0, false);
+    assert_eq!(
+        t.selection_text().as_deref(),
+        Some("see https://example.com/abc/def"),
+        "before its start: to the link's end"
+    );
+}
+
+/// B480: a repaint that writes the same text (tmux's repair frame: each
+/// row erased and written again, at the keyboard going up or down, the
+/// return, a switch) leaves a selection standing; text that changes under
+/// it still ends it (B79, B100).
+#[test]
+fn v15_a_selection_stands_through_a_repaint_of_the_same_text() {
+    let mut t = term(20, 4, 100);
+    t.feed(b"alpha beta\r\ngamma\r\n$ ");
+    t.select_start(SelectKind::Word, 0, 7, false);
+    assert_eq!(t.selection_text().as_deref(), Some("beta"));
+    let repaint =
+        b"\x1b[H\x1b[0malpha beta\x1b[0m\x1b[K\r\ngamma\x1b[0m\x1b[K\r\n$ \x1b[0m\x1b[K\x1b[J";
+    t.feed(repaint);
+    let _ = t.frame();
+    assert_eq!(t.selection_text().as_deref(), Some("beta"), "the same text");
+    t.feed(repaint);
+    t.select_extend(1, 4, true);
+    assert_eq!(t.selection_text().as_deref(), Some("beta\ngamma"));
+    t.feed(repaint);
+    assert_eq!(
+        t.selection_text().as_deref(),
+        Some("beta\ngamma"),
+        "extended, then repainted"
+    );
+    t.feed(b"\x1b[H\x1b[0malpha bets\x1b[0m\x1b[K");
+    assert_eq!(t.selection_text(), None, "changed text ends it");
+}
+
+/// B477: a handle drags with the selection's other end off the screen
+/// (output scrolled the selected rows up, a long-pressed link starts above
+/// the view): the selection keeps that end where it is, wherever it is,
+/// and the dragged end follows the finger. The view re-anchored on the
+/// other end through the viewport, and refused one outside it: the handle
+/// didn't move.
+#[test]
+fn v16_a_handle_drags_with_the_other_end_off_screen() {
+    let mut t = term(20, 4, 100);
+    t.feed(b"first line\r\nsecond\r\n");
+    t.select_start(SelectKind::Word, 0, 1, false);
+    assert_eq!(t.selection_text().as_deref(), Some("first"));
+    // Output scrolls it up, out of the view (which follows the output).
+    t.feed(b"a\r\nb\r\nc\r\nd\r\n$ ");
+    let ((start_row, _), _) = t.selection_bounds().unwrap();
+    assert!(start_row < 0, "the selection's start is above the view");
+    // The end handle: the start stays, the end follows the finger.
+    assert!(t.select_keep_end(false));
+    t.select_extend(0, 0, true);
+    assert_eq!(
+        t.selection_text().as_deref(),
+        Some("first line\nsecond\na\nb"),
+        "from the start off screen to the finger"
+    );
+    // The start handle of a selection whose end is below the view.
+    t.scroll(4);
+    assert!(t.select_keep_end(true));
+    t.select_extend(0, 6, false);
+    assert!(
+        t.selection_text().unwrap().ends_with("\nb"),
+        "the end below the view stays"
+    );
+    assert!(
+        !{
+            t.select_clear();
+            t.select_keep_end(true)
+        },
+        "nothing to keep"
+    );
+}
+
 #[test]
 fn v17_a_drag_to_the_edge_after_the_last_column_takes_it() {
     let mut t = term(10, 2, 10);
@@ -575,6 +673,27 @@ fn v21_a_resize_while_reading_keeps_the_line_read() {
     feed(&mut t);
     t.resize(20, 10);
     assert_eq!(t.display_offset(), 0);
+}
+
+/// B479: a new font size while reading history (a pinch): the cells take
+/// new pixels, and the reader stays on its rows, drawn on whole rows of the
+/// new size. The pixel offset stayed the old size's: the frames drew the
+/// rows shifted by a part of a row.
+#[test]
+fn v21_new_cell_pixels_while_reading_keep_whole_rows() {
+    let mut t = tall(50);
+    t.scroll_drag(45.0, false);
+    let f = t.frame();
+    assert!(
+        f.display_offset > 0 && f.pixel_shift > 0,
+        "a row and a half up"
+    );
+    let top = t.view_row_text(0);
+    t.set_cell_pixels(12, 40);
+    let f = t.frame();
+    assert_eq!(t.view_row_text(0), top, "the same rows");
+    assert_eq!(f.pixel_shift, 0, "on whole rows of the new size");
+    assert!(f.display_offset > 0, "still reading");
 }
 
 #[test]

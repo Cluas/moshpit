@@ -348,6 +348,10 @@ pub(crate) struct TmuxStart {
     pub config: Config,
     pub grid: (u16, u16),
     pub restore: Option<Selection>,
+    /// `restore` is the person's own pick (B405): it moves a desktop on that
+    /// session as a tap would. Otherwise it is where the app last was, and
+    /// leaves a desktop where it is (B457).
+    pub restore_chosen: bool,
     pub inherited: Handoff,
     pub attach_stall: Duration,
     pub inbound: Arc<AtomicU64>,
@@ -463,6 +467,7 @@ async fn run(
         mut config,
         grid,
         restore,
+        restore_chosen,
         inherited,
         attach_stall,
         inbound,
@@ -500,6 +505,7 @@ async fn run(
     task.controller
         .set_initial_client_size(i64::from(grid.0), i64::from(grid.1));
     task.controller.set_pending_restore(restore);
+    task.controller.set_restore_chosen(restore_chosen);
     if let Some(ledger) = inherited.ledger {
         task.controller.inherit_pin_ledger(ledger);
     }

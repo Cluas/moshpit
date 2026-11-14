@@ -1884,13 +1884,13 @@ struct TerminalScreen: View {
         // dropped every shortcut).
         let stages = shortcut.encodedStages()
         guard let first = stages.first else { return }
-        active?.sendInput(first)
+        active?.sendShortcutInput(first)
         guard stages.count > 1 else { return }
         let rest = stages.dropFirst()
         Task {
             for stage in rest {
                 try? await Task.sleep(for: Self.keySequenceGap)
-                active?.sendInput(stage)
+                active?.sendShortcutInput(stage)
             }
         }
     }
@@ -1925,7 +1925,7 @@ struct TerminalScreen: View {
         case "left":  csi = appMode ? [0x1B, 0x4F, 0x44] : [0x1B, 0x5B, 0x44]
         default: return
         }
-        active?.sendInput(Data(csi))
+        active?.sendShortcutInput(Data(csi))
     }
 
     /// Scroll the visible pane's scrollback from the scroll thumb. Drives the

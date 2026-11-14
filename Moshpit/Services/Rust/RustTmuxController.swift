@@ -212,6 +212,13 @@ final class RustTmuxController: TmuxSessionController {
         _ = write(data, toPane: paneId)
     }
 
+    /// The shortcut bar's keys for the pane on screen (B476: never kept for
+    /// a reconnect to deliver later).
+    func sendBarToActivePane(_ data: Data) {
+        guard let paneId = inputPaneId, let feeder = panes[paneId]?.feeder else { return }
+        feeder.writeBar(data)
+    }
+
     /// Bytes into `paneId`'s channel; false when it has none.
     @discardableResult
     func write(_ data: Data, toPane paneId: String) -> Bool {

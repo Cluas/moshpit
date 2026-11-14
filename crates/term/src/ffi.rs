@@ -23,7 +23,7 @@ pub type MpTermWaker = unsafe extern "C" fn(ctx: *mut c_void);
 
 /// `MP_TERM_ABI_VERSION` (moshpit_term.h): bumped whenever the C ABI
 /// changes shape, so a view refuses a stale library instead of misreading it.
-pub const ABI_VERSION: u32 = 13;
+pub const ABI_VERSION: u32 = 14;
 
 /// The `MP_TERM_ABI_VERSION` this library was built with.
 #[unsafe(no_mangle)]
@@ -1047,6 +1047,18 @@ pub unsafe extern "C" fn mp_term_select_extend(
     guard((), || {
         t.with(|term| term.select_extend(row, col, right_half))
     });
+}
+
+/// A handle's drag starts: the selection keeps its other end, on screen or
+/// not (`end`: keeps the end), and mp_term_select_extend moves the dragged
+/// one (B477). False: no selection.
+///
+/// # Safety
+/// `t` live.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn mp_term_select_keep_end(t: *const MpTerm, end: bool) -> bool {
+    let t = term!(t, false);
+    guard(false, || t.with(|term| term.select_keep_end(end)))
 }
 
 /// # Safety

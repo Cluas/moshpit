@@ -1786,6 +1786,8 @@ impl Actor {
                         tmux: self.spec.tmux_command().to_owned(),
                         config: self.tmux_config(),
                         grid: self.grid,
+                        // The person's pick, made while redialling (B405).
+                        restore_chosen: self.tmux_pick.is_some(),
                         restore: self.next_tmux_restore(),
                         inherited: std::mem::take(&mut self.handoff),
                         attach_stall: self.timing.attach_stall,
@@ -2231,6 +2233,8 @@ impl Actor {
                 config,
                 grid: control.grid,
                 restore,
+                // Where the app last was, never a pick: the sidecar's.
+                restore_chosen: false,
                 inherited: std::mem::take(&mut control.handoff),
                 attach_stall,
                 // The sidecar's chatter is no proof that mosh is alive.
@@ -3079,12 +3083,13 @@ impl Actor {
     // MARK: Input
 
     fn input(&mut self, stream: StreamId, event: InputEvent) {
+        let bar = matches!(event, InputEvent::Bar(_));
         let typed = match event {
             InputEvent::Resize { cols, rows } => {
                 self.resize(stream, cols, rows);
                 return;
             }
-            InputEvent::Bytes(bytes) => {
+            InputEvent::Bytes(bytes) | InputEvent::Bar(bytes) => {
                 if bytes.is_empty() {
                     return;
                 }
@@ -3102,11 +3107,18 @@ impl Actor {
             InputEvent::Paste(text) => Typed::Paste(text),
         };
         if !self.life.state().is_live() {
-            self.emit(EventKind::InputDiscarded {
-                stream,
-                bytes: typed.len(),
-                why: Discarded::NotLive,
-            });
+            if bar {
+                // A tap on the shortcut bar under the veil is not the
+                // person's typing to deliver later: a stray one must not
+                // land in an agent's prompt after the reconnect (B476).
+                self.emit(EventKind::InputDiscarded {
+                    stream,
+                    bytes: typed.len(),
+                    why: Discarded::NotLive,
+                });
+            } else {
+                self.not_live(stream, typed);
+            }
             return;
         }
         // Back from the background, the transport not yet heard from: wait
@@ -3118,6 +3130,30 @@ impl Actor {
             return;
         }
         self.route(stream, typed);
+    }
+
+    /// Typed while the session isn't live. Under a reconnect's veil it
+    /// follows B396's rule (B476, the rest of B322): a multiplexer pane's
+    /// keys and pastes wait for the pane, which comes back with the redial;
+    /// a plain shell's are not sent, the redial being a new shell, and that
+    /// is said. Before the first connect, or once the session failed or
+    /// ended, nothing is sent.
+    fn not_live(&mut self, stream: StreamId, typed: Typed) {
+        let reconnecting = self.life.state() == SessionState::Reconnecting;
+        match self.panes.get(&stream).map(|channel| channel.pane.clone()) {
+            Some(pane) if reconnecting => {
+                self.pending.entry(pane).or_default().push((stream, typed))
+            }
+            _ => self.emit(EventKind::InputDiscarded {
+                stream,
+                bytes: typed.len(),
+                why: if reconnecting {
+                    Discarded::Reconnected
+                } else {
+                    Discarded::NotLive
+                },
+            }),
+        }
     }
 
     fn route(&mut self, stream: StreamId, typed: Typed) {
@@ -4530,8 +4566,8 @@ mod tests {
     }
 
     /// Live, keys then a paste in one turn reach the pane in that order (the
-    /// pump's hop no longer lets a paste overtake them); a paste while not
-    /// live is dropped and said, as typing is.
+    /// pump's hop no longer lets a paste overtake them); a paste under the
+    /// reconnect's veil waits for its pane, as typing does (B322).
     #[tokio::test]
     async fn keys_then_a_paste_go_to_the_pane_in_the_order_made() {
         let (mut actor, mut events) = live_actor(false);
@@ -4551,16 +4587,127 @@ mod tests {
         while events.try_recv().is_ok() {}
         assert!(moshpit_stream::view::paste(id, "late"));
         take_input(&mut actor, 1).await;
-        assert!(actor.pending.is_empty());
-        let discarded: Vec<EventKind> = std::iter::from_fn(|| events.try_recv().ok())
+        assert_eq!(
+            actor.pending.remove("%2"),
+            Some(vec![(id, paste("late"))]),
+            "it waits for the pane"
+        );
+        let discarded = std::iter::from_fn(|| events.try_recv().ok())
+            .filter(|event| matches!(event.kind, EventKind::InputDiscarded { .. }))
+            .count();
+        assert_eq!(discarded, 0);
+    }
+
+    /// A plain shell with its stream, on `actor`.
+    fn plain_shell(actor: &mut Actor) -> StreamId {
+        let (stream, input) = moshpit_stream::open();
+        let id = stream.id();
+        actor.shell = Some(ShellChannel {
+            stream: Arc::new(stream),
+            pump: pump(id, input, actor.me.clone()),
+            used: false,
+            written: 0,
+        });
+        id
+    }
+
+    fn discarded(events: &mut mpsc::UnboundedReceiver<Event>) -> Vec<EventKind> {
+        std::iter::from_fn(|| events.try_recv().ok())
             .map(|event| event.kind)
             .filter(|kind| matches!(kind, EventKind::InputDiscarded { .. }))
-            .collect();
+            .collect()
+    }
+
+    /// B322: keys typed under the reconnect's veil follow B396's rule. A
+    /// multiplexer pane's wait for the pane, which comes back with the
+    /// redial; a plain shell's are not sent (the redial is a new shell) and
+    /// that is said, so the app tells the person once it is back. They were
+    /// dropped before the core, unsaid.
+    #[tokio::test]
+    async fn keys_typed_under_the_reconnect_veil_wait_for_their_pane_or_are_said_dropped() {
+        let (mut actor, mut events) = live_actor(false);
+        let pane = tmux_pane(&mut actor, "%3");
+        let shell = plain_shell(&mut actor);
+        let generation = actor.life.generation();
+        let now = actor.now();
+        actor.life.lost(generation, now);
+        while actor.life.poll_action().is_some() {}
+        assert_eq!(actor.life.state(), SessionState::Reconnecting);
+        while events.try_recv().is_ok() {}
+        assert!(moshpit_stream::view::write(pane, b"git st"));
+        assert!(moshpit_stream::view::write(shell, b"rm x\r"));
+        take_input(&mut actor, 2).await;
         assert_eq!(
-            discarded,
+            actor.pending.remove("%3"),
+            Some(vec![(pane, keys(b"git st"))]),
+            "the pane's keys wait for it"
+        );
+        assert_eq!(
+            discarded(&mut events),
             [EventKind::InputDiscarded {
-                stream: id,
-                bytes: 4,
+                stream: shell,
+                bytes: 5,
+                why: Discarded::Reconnected,
+            }],
+            "the shell's are said dropped"
+        );
+    }
+
+    /// B476: the shortcut bar's keys under the reconnect's veil are not the
+    /// person's typing to deliver later (a stray tap must not land in an
+    /// agent's prompt after the reconnect): not sent, and not kept, while
+    /// the keyboard's keys around them wait for the pane in order.
+    #[tokio::test]
+    async fn the_bars_keys_under_the_reconnect_veil_are_not_kept() {
+        let (mut actor, mut events) = live_actor(false);
+        let pane = tmux_pane(&mut actor, "%4");
+        let generation = actor.life.generation();
+        let now = actor.now();
+        actor.life.lost(generation, now);
+        while actor.life.poll_action().is_some() {}
+        while events.try_recv().is_ok() {}
+        assert!(moshpit_stream::view::write(pane, b"ls"));
+        assert!(moshpit_stream::view::bar(pane, b"\x03"));
+        assert!(moshpit_stream::view::write(pane, b" -l"));
+        take_input(&mut actor, 3).await;
+        assert_eq!(
+            actor.pending.remove("%4"),
+            Some(vec![(pane, keys(b"ls")), (pane, keys(b" -l"))]),
+            "the keyboard's keys wait for the pane, the bar's are not among them"
+        );
+        assert_eq!(
+            discarded(&mut events),
+            [EventKind::InputDiscarded {
+                stream: pane,
+                bytes: 1,
+                why: Discarded::NotLive,
+            }]
+        );
+        // Live, the bar's keys are keystrokes like any.
+        let mut actor = live_actor(false).0;
+        let pane = tmux_pane(&mut actor, "%5");
+        assert!(moshpit_stream::view::bar(pane, b"\x1b[A"));
+        take_input(&mut actor, 1).await;
+        assert_eq!(
+            actor.pending.remove("%5"),
+            Some(vec![(pane, keys(b"\x1b[A"))])
+        );
+    }
+
+    /// Before the first connect (nothing to come back to), typing is not
+    /// sent, as before.
+    #[tokio::test]
+    async fn keys_typed_before_the_first_connect_are_not_sent() {
+        let (mut actor, mut events) = dialing_actor(false);
+        assert_eq!(actor.life.state(), SessionState::Connecting);
+        let shell = plain_shell(&mut actor);
+        assert!(moshpit_stream::view::write(shell, b"ls"));
+        take_input(&mut actor, 1).await;
+        assert_eq!(
+            discarded(&mut events),
+            [EventKind::InputDiscarded {
+                stream: shell,
+                bytes: 2,
                 why: Discarded::NotLive,
             }]
         );

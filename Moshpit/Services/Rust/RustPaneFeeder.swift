@@ -148,6 +148,20 @@ final class RustPaneFeeder {
         }
     }
 
+    /// The shortcut bar's keys, after the bytes written so far: keystrokes
+    /// while the session is live, never kept for a reconnect to deliver
+    /// later (B476). Stream bytes all the same: `written` counts them, as
+    /// the core does. False once the core's end is gone.
+    @discardableResult
+    func writeBar(_ data: Data) -> Bool {
+        let stream = self.stream
+        let taken = data.withUnsafeBytes { raw in
+            mp_stream_bar(stream, raw.baseAddress?.assumingMemoryBound(to: UInt8.self), raw.count)
+        }
+        if taken { written += UInt64(data.count) }
+        return taken
+    }
+
     /// The view's grid, after the bytes written so far.
     @discardableResult
     func resize(cols: Int, rows: Int) -> Bool {

@@ -187,6 +187,25 @@ pub unsafe extern "C" fn mp_stream_paste(id: StreamId, ptr: *const u8, len: usiz
     view::paste(id, &String::from_utf8_lossy(bytes))
 }
 
+/// Queues the shortcut bar's `len` bytes after everything written before
+/// and ahead of anything written after: keystrokes while the session is
+/// live, never kept for later (B476). Returns `false` if the stream is gone
+/// or its core's end closed.
+///
+/// # Safety
+///
+/// `ptr` must be valid for `len` bytes of reads (or `len` 0).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn mp_stream_bar(id: StreamId, ptr: *const u8, len: usize) -> bool {
+    let bytes = if ptr.is_null() || len == 0 {
+        &[][..]
+    } else {
+        // SAFETY: guaranteed by the caller.
+        unsafe { std::slice::from_raw_parts(ptr, len) }
+    };
+    view::bar(id, bytes)
+}
+
 /// Tells the core the view's size in cells. Returns `false` if the stream
 /// is gone or its core's end closed.
 #[unsafe(no_mangle)]

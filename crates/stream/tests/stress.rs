@@ -240,6 +240,7 @@ fn concurrent_writers_one_core_task_no_loss_no_reordering() {
                     last_size = cols;
                 }
                 InputEvent::Paste(text) => panic!("nothing was pasted: {text:?}"),
+                InputEvent::Bar(bytes) => panic!("no bar keys were sent: {bytes:?}"),
             }
         }
         records

@@ -42,6 +42,7 @@
 > display-message -p -t '@0' '#{window_panes} #{window_zoomed_flag} #{pane_id} #{window_layout}'
 @15 settle
 > resize-pane -Z -t @0
+> set-option -w -t @0 @moshpit_zoomed "moshpit-a %1"
 @16 recv %layout-change @0 1c2d,47x40,0,0{45x40,0,0[45x20,0,0,0,45x19,0,21,3],1x40,46,0[1x20,46,0,1,1x19,46,21,2]} 1c2d,47x40,0,0,1 *Z\n
 @17 settle
 @18 recv %layout-change @0 1c2d,47x40,0,0{45x40,0,0[45x20,0,0,0,45x19,0,21,3],1x40,46,0[1x20,46,0,1,1x19,46,21,2]} 1c2d,47x40,0,0{45x40,0,0[45x20,0,0,0,45x19,0,21,3],1x40,46,0[1x20,46,0,1,1x19,46,21,2]}\n

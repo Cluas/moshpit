@@ -58,7 +58,7 @@ pub fn record(id: StreamId, event: &InputEvent) {
         }
         InputEvent::Resize { cols, rows } => entry.resizes.push((*cols, *rows, now_nanos())),
         // The spike's views never paste through the stream.
-        InputEvent::Paste(_) => {}
+        InputEvent::Paste(_) | InputEvent::Bar(_) => {}
     }
 }
 

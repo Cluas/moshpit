@@ -13,7 +13,7 @@ extern "C" {
 
 /// Bumped whenever anything below changes shape: a view checks
 /// `mp_term_abi_version() == MP_TERM_ABI_VERSION` before it uses the core.
-#define MP_TERM_ABI_VERSION 13
+#define MP_TERM_ABI_VERSION 14
 uint32_t mp_term_abi_version(void);
 
 typedef struct MpTerm MpTerm;
@@ -315,6 +315,10 @@ void mp_term_scroll_state(const MpTerm *_Nonnull t, uint32_t *_Nullable offset, 
 /// point, wrapped rows included, else its word).
 void mp_term_select_start(const MpTerm *_Nonnull t, uint8_t kind, uint16_t row, uint16_t col, bool right_half);
 void mp_term_select_extend(const MpTerm *_Nonnull t, uint16_t row, uint16_t col, bool right_half);
+/// A handle's drag starts: the selection keeps its other end, on screen or
+/// not (`end`: keeps the end); mp_term_select_extend moves the dragged one
+/// (B477). False: no selection.
+bool mp_term_select_keep_end(const MpTerm *_Nonnull t, bool end);
 void mp_term_select_clear(const MpTerm *_Nonnull t);
 char *_Nullable mp_term_selection_text(const MpTerm *_Nonnull t);
 typedef struct {

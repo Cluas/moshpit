@@ -772,6 +772,93 @@ fn new_pane_in_an_off_screen_window_switches_first() {
     assert!(hop < select && select < split && split < zoom);
 }
 
+/// A session of two windows, `@1` current with `%1`, `@2` with `%2`, that
+/// tmux counts `attached` clients on; this control client `/dev/ttys003`,
+/// plus `clients` (`control|pid|session|name` rows); a reconnect replaying
+/// `@2`/`%2`, the person's pick or not.
+fn restoring(attached: u32, clients: &'static [&'static str], chosen: bool) -> Rig {
+    let mut rig = Rig::new(Config::default());
+    rig.with(|c, _| {
+        c.set_pending_restore(Some(Selection {
+            session: "$0".into(),
+            window: Some("@2".into()),
+            pane: Some("%2".into()),
+        }));
+        c.set_restore_chosen(chosen);
+    });
+    rig.respond(Box::new(move |command, _| {
+        if command.starts_with("list-sessions") {
+            return ok([format!("$0 {attached} main")]);
+        }
+        if command.starts_with("list-windows -a -F '#{session_id}") {
+            return ok([
+                "$0 @1 0 b25d,80x24,0,0,1 1 1 main",
+                "$0 @2 1 b25e,80x24,0,0,2 0 1 logs",
+            ]);
+        }
+        if command.starts_with("list-panes -a -F '#{pane_id} ") {
+            return ok(["%1 @1 0 80 24 1 0 0 bash", "%2 @2 0 80 24 1 0 0 bash"]);
+        }
+        if command.starts_with("display-message -p '#{client_name}'") {
+            return ok(["/dev/ttys003"]);
+        }
+        if command.starts_with("list-clients -F '#{client_control_mode}") {
+            let mut rows = vec!["1|111|$0|/dev/ttys003"];
+            rows.extend_from_slice(clients);
+            return ok(rows);
+        }
+        None
+    }));
+    rig.with(|c, now| c.begin_control_mode(now));
+    rig.push("%begin 100 0 0\n%end 100 0 0\n\n%session-changed $0 main\n");
+    rig.settle();
+    rig
+}
+
+/// B457: a session's current window and a window's active pane belong to
+/// the session, and every client on it shows them. A reconnect replayed
+/// where the app last was with `select-window`/`select-pane`: a desktop on
+/// that session jumped to the phone's old window mid-typing, its keys going
+/// to another pane. With another client on the session the replay keeps
+/// the session's own window.
+#[test]
+fn a_reconnects_restore_leaves_a_desktop_on_the_session_where_it_is() {
+    let rig = restoring(2, &["0|222|$0|/dev/ttys004"], false);
+    assert!(
+        rig.has("list-clients -F '#{client_control_mode}"),
+        "the restore asks who is on the session"
+    );
+    assert!(!rig.has("select-window -t @2"));
+    assert!(!rig.has("select-pane -Z -t %2"));
+    assert_eq!(rig.controller.pending_restore(), None, "settled");
+}
+
+/// Nobody else there (a client on another session doesn't count): the
+/// replay lands where the app was, as before.
+#[test]
+fn a_restore_with_nobody_else_on_the_session_selects_as_before() {
+    let rig = restoring(2, &["0|222|$5|/dev/ttys004"], false);
+    assert!(rig.has("select-window -t @2") || rig.has("select-pane -Z -t %2"));
+}
+
+/// Alone on its session by tmux's own count, the usual reconnect: no
+/// listing, no round trip, the replay as before.
+#[test]
+fn a_restore_alone_on_its_session_asks_nobody() {
+    let rig = restoring(1, &[], false);
+    assert!(!rig.has("list-clients -F '#{client_control_mode}"));
+    assert!(rig.has("select-window -t @2") || rig.has("select-pane -Z -t %2"));
+}
+
+/// The person's own pick (a notification tapped while redialling, B405)
+/// moves what it names, as a tap does, desktop or not.
+#[test]
+fn a_persons_pick_selects_even_with_a_desktop_there() {
+    let rig = restoring(2, &["0|222|$0|/dev/ttys004"], true);
+    assert!(!rig.has("list-clients -F '#{client_control_mode}"));
+    assert!(rig.has("select-window -t @2") || rig.has("select-pane -Z -t %2"));
+}
+
 #[test]
 fn a_restore_into_a_split_window_stays_zoomed() {
     // tmux runs commands in order: the zoom probes and the toggles are

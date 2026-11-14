@@ -32,6 +32,11 @@
 //!   it at the phone's grid (`window-size manual`) for good, the desktop's
 //!   with it. Each attach hands back the windows whose lease names a client
 //!   no longer attached ([`Controller::sweep_dead_pins`]).
+//! - A dead phone's zoom (B458): the immersive zoom stays when the phone
+//!   dies too, so the phone marks the zoom it makes (`@moshpit_zoomed` =
+//!   `<client> <pane>`), and the same sweep unzooms a window still zoomed on
+//!   that pane once its client is gone. A zoom with no mark is somebody
+//!   else's — a desktop's own — and never touched.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -156,6 +161,8 @@ pub(super) struct SizeState {
     pub our_client_name: Option<String>,
     /// The dead-pin sweep's window listing is on its way (B456).
     pub sweep_pending: bool,
+    /// Windows whose immersive zoom this controller made and marked (B458).
+    pub zoom_marks: BTreeSet<String>,
     /// The clients the attach's lease read listed, kept for that sweep;
     /// `None` until listed.
     pub sweep_clients: Option<BTreeSet<String>>,
@@ -438,10 +445,7 @@ impl Controller {
     pub(super) fn sweep_dead_pins(&mut self) {
         self.size.sweep_pending = true;
         self.size.sweep_clients = None;
-        self.send_command(
-            "list-windows -a -F '#{window_id} #{@moshpit_size_owner}'".to_owned(),
-            Reply::SweepWindows,
-        );
+        self.send_command(format!("list-windows -a -F '{SWEEP_FORMAT}'"), Reply::SweepWindows);
     }
 
     pub(super) fn sweep_windows_answered(&mut self, response: &CommandResponse) {
@@ -456,18 +460,35 @@ impl Controller {
         }
         let ours = self.size.our_client_name.clone();
         let active = self.snapshot.active_window_id.clone();
+        let gone = |name: &str| !clients.contains(name) && Some(name) != ours.as_deref();
         for line in &response.lines {
-            let Some((window, raw)) = line.split_once(' ') else {
+            let Some(row) = SweepRow::parse(line) else {
                 continue;
             };
-            if !is_valid_id(window)
-                || active.as_deref() == Some(window)
+            let window = row.window.as_str();
+            // B458: a zoom the phone made, its client gone. Unzoomed only
+            // while the window is still zoomed on the pane the phone zoomed:
+            // a desktop that zoomed another pane since keeps its zoom. One
+            // that zoomed that same pane again after the phone died loses it
+            // (rare, and one keystroke to redo).
+            if let Some((owner, pane)) = &row.zoom
+                && gone(owner)
+                && !self.size.zoom_marks.contains(window)
+            {
+                if row.zoomed && row.active_pane == *pane {
+                    self.send(zoom_command(window));
+                    self.bump_zoom_epoch();
+                }
+                self.send(format!("set-option -wu -t {window} {ZOOM_MARK_OPTION}"));
+            }
+            // B456: a pin the phone left, its client gone.
+            if active.as_deref() == Some(window)
                 || self.size.resized_windows.contains(window)
                 || self.size.pristine_layouts.contains_key(window)
             {
                 continue;
             }
-            let Some(lease) = SizeLease::parse(trim_whitespaces(raw), &clients) else {
+            let Some(lease) = SizeLease::parse(&row.lease, &clients) else {
                 continue;
             };
             if lease.live || Some(lease.client_name.as_str()) == ours.as_deref() {
@@ -942,6 +963,10 @@ impl Controller {
             self.send(format!("set-option -u -w -t {window} window-size"));
         }
         self.release_size_ownership(window);
+        // The replay below puts the user's layout back, our zoom with it.
+        if self.size.pristine_layouts.contains_key(window) && self.size.zoom_marks.remove(window) {
+            self.send(format!("set-option -wu -t {window} {ZOOM_MARK_OPTION}"));
+        }
         self.check_replay(window, !self.config.renders_output);
     }
 
@@ -1206,6 +1231,20 @@ impl Controller {
             if epoch == self.size.zoom_epoch {
                 self.send(zoom_command(window));
                 self.bump_zoom_epoch();
+                // The zoom is ours: marked, so a sweep after our death can
+                // tell it from a desktop's own (B458). The probe's pane is
+                // the active one, the pane the toggle zooms.
+                if let (true, Some(name), Some(pane)) = (
+                    self.config.renders_output,
+                    self.size.our_client_name.clone(),
+                    fields.get(2).filter(|pane| is_valid_id(pane)),
+                ) {
+                    self.send(format!(
+                        "set-option -w -t {window} {ZOOM_MARK_OPTION} {}",
+                        crate::format::command_string_literal(&format!("{name} {pane}"))
+                    ));
+                    self.size.zoom_marks.insert(window.to_owned());
+                }
             } else {
                 self.ensure_immersive_zoom();
             }
@@ -1654,6 +1693,48 @@ pub const PRISTINE_PROBE_FORMAT: &str =
 /// Zoom a window's active pane: a toggle, sent only on a probe that saw it
 /// unzoomed and is newer than every zoom change we sent
 /// ([`Controller::zoom_probe_answered`]).
+/// The window option that marks a zoom this phone made: `<client> <pane>`
+/// (B458).
+pub const ZOOM_MARK_OPTION: &str = "@moshpit_zoomed";
+
+/// The dead-pin sweep's window listing (B456, B458): the window, whether it
+/// is zoomed, its active pane, the phone's zoom mark and the size lease.
+pub const SWEEP_FORMAT: &str = "#{window_id} #{window_zoomed_flag} #{pane_id} zoom=#{@moshpit_zoomed} lease=#{@moshpit_size_owner}";
+
+/// One row of [`SWEEP_FORMAT`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SweepRow {
+    window: String,
+    zoomed: bool,
+    active_pane: String,
+    /// The zoom mark's client and pane, when it has both.
+    zoom: Option<(String, String)>,
+    /// The lease as stored ("" when none).
+    lease: String,
+}
+
+impl SweepRow {
+    fn parse(line: &str) -> Option<Self> {
+        let mut words = line.splitn(4, ' ');
+        let window = words.next().filter(|id| is_valid_id(id))?;
+        let zoomed = words.next()? == "1";
+        let active_pane = words.next()?.to_owned();
+        let rest = words.next()?.strip_prefix("zoom=")?;
+        let (zoom, lease) = rest.split_once(" lease=")?;
+        let zoom = zoom
+            .split_once(' ')
+            .filter(|(client, pane)| !client.is_empty() && is_valid_id(pane))
+            .map(|(client, pane)| (client.to_owned(), pane.to_owned()));
+        Some(Self {
+            window: window.to_owned(),
+            zoomed,
+            active_pane,
+            zoom,
+            lease: trim_whitespaces(lease).to_owned(),
+        })
+    }
+}
+
 pub fn zoom_command(window: &str) -> String {
     format!("resize-pane -Z -t {window}")
 }

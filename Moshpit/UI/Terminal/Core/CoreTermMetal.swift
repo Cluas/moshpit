@@ -518,8 +518,13 @@ final class CoreTermAtlas {
             ctx.scaleBy(x: m.scale, y: m.scale)
             let width = CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil))
             let spanPt = CGFloat(span) / m.scale
-            if width > spanPt * 1.05, width > 0 { ctx.scaleBy(x: spanPt / width, y: 1) }
             ctx.textPosition = .zero
+            // Wider than its cells: fitted to them, its shape kept (B472).
+            if let fit = CoreTermGlyphFit.fit(advance: width, ink: CoreTermGlyphFit.ink(of: line, in: ctx), span: spanPt,
+                                              ascent: m.ascent, descent: m.descent,
+                                              scalar: text.unicodeScalars.first?.value ?? 0) {
+                fit.apply(to: ctx)
+            }
             CTLineDraw(line, ctx)
             let alpha = isColor ? 3 : 0
             for y in 0..<h {

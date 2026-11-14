@@ -767,16 +767,19 @@ final class RustSessionDriver: RustSessionListener {
     // MARK: Input
 
     /// The shortcut bar, the keyboard, a paste's bytes: into the pane on
-    /// screen, only while live (the Swift path's gate; the core drops input
-    /// typed while not live too). Over mosh, typing is guessed first
-    /// (predictive echo), and the guess is told where in the channel its
-    /// bytes end — what the core's echo acknowledgement counts in.
+    /// screen. While the session isn't live they go to the core all the
+    /// same, which under a reconnect's veil follows B396's rule (B322): a
+    /// pane's keys wait for the pane, a plain shell's are not sent and that
+    /// is said. They used to stop here, unsaid. Over mosh, typing is
+    /// guessed first while live (predictive echo), and the guess is told
+    /// where in the channel its bytes end — what the core's echo
+    /// acknowledgement counts in.
     func sendInput(_ data: Data) {
-        guard viewModel.connState == .live else { return }
+        let live = viewModel.connState == .live
         if let tmux, !tmux.sidecar {
             tmux.sendToActivePane(data)
         } else if isMosh, let shell {
-            let batch = session.coordinator.predict(data)
+            let batch = live ? session.coordinator.predict(data) : nil
             shell.write(data)
             if let batch {
                 session.coordinator.predictionSent(batch: batch, userState: shell.written)
@@ -786,12 +789,30 @@ final class RustSessionDriver: RustSessionListener {
         }
     }
 
+    /// The shortcut bar's keys: as typing while the session is live; under
+    /// a reconnect's veil the core drops them rather than keep them for the
+    /// pane (B476: a stray tap must not land in an agent's prompt later).
+    func sendShortcut(_ data: Data) {
+        let live = viewModel.connState == .live
+        if let tmux, !tmux.sidecar {
+            tmux.sendBarToActivePane(data)
+        } else if isMosh, let shell {
+            let batch = live ? session.coordinator.predict(data) : nil
+            shell.writeBar(data)
+            if let batch {
+                session.coordinator.predictionSent(batch: batch, userState: shell.written)
+            }
+        } else {
+            shell?.writeBar(data)
+        }
+    }
+
     /// A paste rides the pane's channel, as typing does, so it keeps its
     /// place among the keys typed before it and waits with them while a
-    /// return from the background waits for its answer (B361); a pane with
-    /// no channel yet gets it as an intent, as before.
+    /// return from the background waits for its answer (B361), or a
+    /// reconnect brings the pane back (B322); a pane with no channel yet
+    /// gets it as an intent, as before.
     func sendPaste(_ text: String) {
-        guard viewModel.connState == .live else { return }
         if let tmux, !tmux.sidecar, let pane = tmux.inputPaneId {
             tmux.paste(text, toPane: pane)
         } else if expectsHerdr, let id, let pane = herdrSurface?.snapshot.activePaneId {

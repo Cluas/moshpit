@@ -276,8 +276,29 @@ impl Shared {
         true
     }
 
-    /// The next input event: every byte written up to the next resize or
-    /// paste, as one chunk, or that resize or paste. `None` once the core's
+    /// Queues the shortcut bar's keys after the bytes written so far, never
+    /// merged with anything; `false` once the core's end is gone.
+    pub(crate) fn bar(&self, bytes: Vec<u8>) -> bool {
+        let waker = {
+            let mut input = lock(&self.input);
+            if input.closed {
+                return false;
+            }
+            if bytes.is_empty() {
+                return true;
+            }
+            let at = input.written;
+            input.events.push_back((at, InputEvent::Bar(bytes)));
+            input.waker.take()
+        };
+        if let Some(waker) = waker {
+            waker.wake();
+        }
+        true
+    }
+
+    /// The next input event: every byte written up to the next resize,
+    /// paste or bar keys, as one chunk, or that event. `None` once the core's
     /// end is gone and everything was taken.
     pub(crate) fn poll_input(&self, cx: &mut Context<'_>) -> Poll<Option<InputEvent>> {
         let mut input = lock(&self.input);

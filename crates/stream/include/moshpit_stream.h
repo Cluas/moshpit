@@ -67,6 +67,12 @@ bool mp_stream_write(uint64_t id, const uint8_t *_Nullable ptr, size_t len);
 /// replaced. False if the stream is gone or its core's end closed.
 bool mp_stream_paste(uint64_t id, const uint8_t *_Nullable ptr, size_t len);
 
+/// Queues the shortcut bar's `len` bytes, synchronously, after everything
+/// written before: keystrokes while the session is live, never kept for a
+/// reconnect to deliver later (B476). False if the stream is gone or its
+/// core's end closed.
+bool mp_stream_bar(uint64_t id, const uint8_t *_Nullable ptr, size_t len);
+
 /// Tells the core the view's size in cells, after the bytes written so far.
 bool mp_stream_resize(uint64_t id, uint16_t cols, uint16_t rows);
 

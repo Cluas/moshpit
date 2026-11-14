@@ -913,6 +913,8 @@ final class SessionHub {
         /// Label for the notice's one-tap remedy, when the notice has one
         /// (herdr version skew → restart the server). nil = plain notice.
         private(set) var herdrNoticeAction: String?
+        /// The input-lost notice waits for the session (``rustNoteInputLost()``).
+        @ObservationIgnored private var inputLostWaiting = false
         /// When attaching may be tried again after herdr refused an attach
         /// and said why (version skew, a refused handshake): a refusal
         /// doesn't heal by asking again on every poll.
@@ -1144,6 +1146,15 @@ final class SessionHub {
         /// Routes to the correct transport so callers don't have to know
         /// whether this session is tmux / mosh / plain SSH.
         func sendInput(_ data: Data) {
+            routeInput(data)
+        }
+
+        /// The shortcut bar's keys: typing, except under a reconnect's veil,
+        /// where the Rust core doesn't keep them for later as it does the
+        /// keyboard's (B476).
+        func sendShortcutInput(_ data: Data) {
+            guard !data.isEmpty else { return }
+            if let rust { rust.sendShortcut(data); return }
             routeInput(data)
         }
 
@@ -5887,23 +5898,30 @@ extension SessionHub.ActiveSession {
         if herdrNoticeAction != action { herdrNoticeAction = action }
     }
 
-    /// How long the input-lost notice waits for the session to be live again,
-    /// and how long it then shows (``rustNoteInputLost()``).
-    static var inputLostWait: Duration = .seconds(30)
+    /// How long the input-lost notice waits for the session to be live again
+    /// (a reconnect can take minutes), and how long it then shows
+    /// (``rustNoteInputLost()``).
+    static var inputLostWait: Duration = .seconds(600)
     static var inputLostShown: Duration = .seconds(4)
 
     /// What was typed on a plain shell while the way back asked a connection
-    /// that turned out dead wasn't sent: the redial is a new shell (B396).
-    /// Said once the session is live again, for a few seconds, in the
+    /// that turned out dead (B396), or under a reconnect's veil (B322),
+    /// wasn't sent: the redial is a new shell. Said once the session is live
+    /// again, once however many keys it was, for a few seconds, in the
     /// banner's slot — never over a notice of herdr's that is showing (that
     /// one stays, and the log line says this) — then cleared, unless
-    /// something else has taken the slot meanwhile.
+    /// something else has taken the slot meanwhile. Not when the session
+    /// gave up instead.
     func rustNoteInputLost() {
+        guard !inputLostWaiting else { return }
+        inputLostWaiting = true
         let notice = String(localized: "What you just typed wasn't sent: the connection dropped, and it's back now")
         let deadline = ContinuousClock.now + Self.inputLostWait
         Task { @MainActor [weak self] in
+            defer { self?.inputLostWaiting = false }
             while self?.viewModel.connState != .live {
-                guard self != nil, ContinuousClock.now < deadline else { return }
+                guard let state = self?.viewModel.connState, state != .offline,
+                      ContinuousClock.now < deadline else { return }
                 try? await Task.sleep(for: .milliseconds(100))
             }
             guard let self, self.herdrNotice == nil else { return }

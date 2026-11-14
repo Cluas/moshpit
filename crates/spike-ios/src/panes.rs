@@ -157,8 +157,9 @@ pub async fn shell(stream: Arc<Stream>, mut input: Input, lines: usize) {
                 out.extend_from_slice(line.as_bytes());
                 stream.push(&out);
             }
-            // The spike's views never paste through the stream.
-            InputEvent::Paste(_) => {}
+            // The spike's views never paste, nor send bar keys, through the
+            // stream.
+            InputEvent::Paste(_) | InputEvent::Bar(_) => {}
         }
     }
 }
@@ -263,8 +264,9 @@ pub async fn tui(stream: Arc<Stream>, mut input: Input) {
                 size = Some((cols, rows));
                 pending = true;
             }
-            // The spike's views never paste through the stream.
-            InputEvent::Paste(_) => {}
+            // The spike's views never paste, nor send bar keys, through the
+            // stream.
+            InputEvent::Paste(_) | InputEvent::Bar(_) => {}
             InputEvent::Bytes(bytes) => {
                 let text = String::from_utf8_lossy(&bytes).into_owned();
                 let mut submitted = false;

@@ -26,9 +26,14 @@
       "why": "B363: the Rust repaint's cursor query also reads the pane program's flags (#{mouse_any_flag} #{alternate_on}), so they are known from the attach's own repaint on, per pane, with no round trip of their own; the Swift controller asks only for the cursor. Written back to the Swift query before comparing (replies with only the cursor parse as before)."
     },
     {
-      "pattern": "^> list-windows -a -F '#\\{window_id\\} #\\{@moshpit_size_owner\\}'$",
+      "pattern": "^> list-windows -a -F '\\#\\{window_id\\}\\ \\#\\{window_zoomed_flag\\}\\ \\#\\{pane_id\\}\\ zoom=\\#\\{@moshpit_zoomed\\}\\ lease=\\#\\{@moshpit_size_owner\\}'$",
       "kind": "on-purpose",
-      "why": "B456: at every fresh -CC attach the Rust controller reads every window's size lease and hands back (window-size unset, lease unset) the windows whose lease names a client no longer attached — a phone that died with a window pinned left it at the phone's grid for good. The Swift controller has no such sweep. The listing is taken out of the Rust log; the scripts' replies name no such window, so nothing else changes."
+      "why": "B456: at every fresh -CC attach the Rust controller reads every window's size lease and hands back (window-size unset, lease unset) the windows whose lease names a client no longer attached — a phone that died with a window pinned left it at the phone's grid for good. The Swift controller has no such sweep. B458 reads each window's zoom, active pane and the phone's zoom mark in the same listing. The listing is taken out of the Rust log; the scripts' replies name no such window, so nothing else changes."
+    },
+    {
+      "pattern": "@moshpit_zoomed",
+      "kind": "on-purpose",
+      "why": "B458: the Rust controller marks the immersive zoom it makes (set-option -w @moshpit_zoomed '<client> <pane>') and unsets the mark when its layout replay undoes the zoom, so an attach after the phone died can unzoom a window still zoomed on that pane, and never a zoom nobody marked. The Swift controller marks nothing. Those lines are taken out of the Rust log."
     }
   ],
   "divergences": [

@@ -56,7 +56,8 @@ pub use input::{InputFlags, PixelScroll, ScrollRoute, click_bytes, wheel_bytes};
 pub use sidecar::{OWNED_OPTION, STATUS_HIDDEN_OPTION};
 use size::LeaseThen;
 pub use size::{
-    PRISTINE_PROBE_FORMAT, PinLedger, PinReason, PristineLayout, SIZE_PROBE_FORMAT, zoom_command,
+    PRISTINE_PROBE_FORMAT, PinLedger, PinReason, PristineLayout, SIZE_PROBE_FORMAT, SWEEP_FORMAT,
+    ZOOM_MARK_OPTION, zoom_command,
 };
 use timers::{Action, Slot, Timers};
 
@@ -390,6 +391,12 @@ enum Reply {
     ClientName,
     /// The current window's lease at attach.
     AttachLeaseOwner,
+    /// Our `#{client_name}`, ahead of a restore's client listing (B457).
+    RestoreSelf,
+    /// Who is on the session a restore would move (B457).
+    RestoreClients {
+        session: String,
+    },
     /// Every window's lease, for the dead-pin sweep (B456).
     SweepWindows,
     ClientCount {
@@ -479,6 +486,19 @@ pub struct Controller {
     transport_live: bool,
 
     pending_restore: Option<Selection>,
+    /// The restore is the person's own pick (a notification tapped while
+    /// redialling, B405): it moves what it names, as a tap does. Otherwise
+    /// it is where the app last was, and moves nothing a desktop is on
+    /// (B457).
+    restore_chosen: bool,
+    /// Whether the restore was checked for other clients on its session.
+    restore_checked: bool,
+    restore_check_in_flight: bool,
+    /// Our `#{client_name}`, read for that check.
+    restore_self: Option<String>,
+    /// How many clients each session had at the last session listing
+    /// (`#{session_attached}`).
+    session_clients: BTreeMap<String, i64>,
     pending_immersive_zoom: bool,
     pane_screen_state: BTreeMap<String, ScreenState>,
     pending_window_focus: Option<String>,
@@ -562,6 +582,11 @@ impl Controller {
             client_size_confirmed: false,
             transport_live: true,
             pending_restore: None,
+            restore_chosen: false,
+            restore_checked: false,
+            restore_check_in_flight: false,
+            restore_self: None,
+            session_clients: BTreeMap::new(),
             pending_immersive_zoom: false,
             pane_screen_state: BTreeMap::new(),
             pending_window_focus: None,
@@ -842,6 +867,13 @@ impl Controller {
     /// the ids again (`pendingRestore`).
     pub fn set_pending_restore(&mut self, selection: Option<Selection>) {
         self.pending_restore = selection;
+        self.restore_checked = false;
+    }
+
+    /// The restore is the person's own pick (B405), not where the app last
+    /// was: it selects what it names even with a desktop on that session.
+    pub fn set_restore_chosen(&mut self, chosen: bool) {
+        self.restore_chosen = chosen;
     }
 
     pub fn pending_restore(&self) -> Option<&Selection> {
@@ -1264,6 +1296,8 @@ impl Controller {
             }
             Reply::ClientName => self.client_name_answered(response),
             Reply::AttachLeaseOwner => self.attach_lease_answered(response),
+            Reply::RestoreSelf => self.restore_self_answered(response),
+            Reply::RestoreClients { session } => self.restore_clients_answered(&session, response),
             Reply::SweepWindows => self.sweep_windows_answered(response),
             Reply::PristineProbe { window } => self.pristine_probe_answered(&window, response),
             Reply::SizeProbe { before, .. } => self.size_probe_answered(before, response),
@@ -1473,10 +1507,14 @@ impl Controller {
     fn parse_list_sessions_with(&mut self, lines: &[String], locating_renderer: bool) {
         let mut sessions = BTreeMap::new();
         let mut last_attached: Option<String> = None;
+        self.session_clients.clear();
         for line in lines {
             let parts = fields(line, b' ', 2, true);
             if parts.len() < 3 || !is_valid_id(parts[0]) {
                 continue;
+            }
+            if let Some(count) = swift_int(parts[1]) {
+                self.session_clients.insert(parts[0].to_owned(), count);
             }
             let is_attached = parts[1] != "0";
             sessions.insert(
@@ -1698,6 +1736,32 @@ impl Controller {
         if !self.snapshot.is_attached || self.snapshot.sessions.is_empty() {
             return;
         }
+        // B457: a session's current window and its windows' active panes are
+        // the session's, not this client's — every client on it shows them.
+        // Where the app last was, replayed at every reconnect, moved a
+        // desktop on that session to it, mid-typing. Asked first: who else
+        // is on the session the restore would move.
+        if !self.restore_chosen
+            && !self.restore_checked
+            && let Some(session) = self.session_a_restore_moves(&restore)
+            && self.session_may_have_others(&session)
+        {
+            if !self.restore_check_in_flight {
+                self.restore_check_in_flight = true;
+                // The -CC attach read our name already; the sidecar's didn't.
+                if self.size.our_client_name.is_none() {
+                    self.send_command(
+                        "display-message -p '#{client_name}'".to_owned(),
+                        Reply::RestoreSelf,
+                    );
+                }
+                self.send_command(
+                    format!("list-clients -F '{}'", crate::clients::CLIENT_ROW_FORMAT),
+                    Reply::RestoreClients { session },
+                );
+            }
+            return;
+        }
         if let Some(pane) = restore
             .pane
             .as_ref()
@@ -1718,6 +1782,79 @@ impl Controller {
         } else if !self.snapshot.panes.is_empty() {
             self.pending_restore = None;
         }
+    }
+
+    /// The session whose current window or a window's active pane the
+    /// restore would change; `None` when it changes neither (or names no
+    /// window or pane discovery knows).
+    fn session_a_restore_moves(&self, restore: &Selection) -> Option<String> {
+        let pane = restore
+            .pane
+            .as_ref()
+            .and_then(|pane| self.snapshot.panes.get(pane.as_str()));
+        let window_id = pane.map(|pane| pane.window_id.clone()).or_else(|| {
+            restore
+                .window
+                .clone()
+                .filter(|window| self.snapshot.windows.contains_key(window.as_str()))
+        })?;
+        let window = self.snapshot.windows.get(&window_id)?;
+        let moves = !window.is_active || pane.is_some_and(|pane| !pane.is_active);
+        (moves && !window.session_id.is_empty()).then(|| window.session_id.clone())
+    }
+
+    /// Whether `session` may have a client that isn't ours: the session
+    /// listing counted more clients there than this one and the phone's mosh
+    /// renderer. Not known: maybe. Only then is the listing asked for (one
+    /// round trip the usual reconnect, alone on its session, never waits).
+    fn session_may_have_others(&self, session: &str) -> bool {
+        let Some(&count) = self.session_clients.get(session) else {
+            return true;
+        };
+        let mut ours = i64::from(self.snapshot.active_session_id.as_deref() == Some(session));
+        if !self.config.renders_output
+            && self.sidecar.renderer_session_id.as_deref() == Some(session)
+        {
+            ours += 1;
+        }
+        count > ours
+    }
+
+    fn restore_self_answered(&mut self, response: &CommandResponse) {
+        self.restore_self = response
+            .lines
+            .first()
+            .map(|line| moshpit_herdr::text::trim_whitespaces(line).to_owned())
+            .filter(|name| !name.is_empty() && !response.is_error);
+    }
+
+    /// Who else is on the session the restore would move (B457): a client
+    /// that is neither this one nor the phone's own mosh renderer keeps its
+    /// view — the restore lands on the session's current window instead.
+    /// A refused listing reads as nobody else.
+    fn restore_clients_answered(&mut self, session: &str, response: &CommandResponse) {
+        self.restore_check_in_flight = false;
+        self.restore_checked = true;
+        let me = self.restore_self.take().or_else(|| self.size.our_client_name.clone());
+        let renderer_pid = self.sidecar.renderer_pid;
+        let renderer_name = self.sidecar.renderer_client.as_ref().map(|r| r.name.clone());
+        let others = !response.is_error
+            && response
+                .lines
+                .iter()
+                .filter_map(|line| crate::clients::ClientRow::parse(line))
+                .any(|row| {
+                    row.session_id == session
+                        && Some(&row.name) != me.as_ref()
+                        && Some(&row.name) != renderer_name.as_ref()
+                        && (row.pid.is_none() || row.pid != renderer_pid)
+                });
+        if others && let Some(restore) = self.pending_restore.as_mut() {
+            restore.session = session.to_owned();
+            restore.window = None;
+            restore.pane = None;
+        }
+        self.apply_pending_restore_if_ready();
     }
 
     // MARK: - Notifications

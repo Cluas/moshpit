@@ -30,8 +30,8 @@ final class CoreTermGestureState {
     weak var longPress: UILongPressGestureRecognizer?
     /// A selection is showing (the core has one).
     var selecting = false
-    /// The anchor of a handle drag: the other end's edge.
-    var handleAnchor: (row: Int, col: Int, after: Bool)?
+    /// A handle is being dragged (the selection keeps its other end).
+    var draggingHandle = false
 }
 
 /// A selection handle: a bar the height of a row and a knob, in a
@@ -320,9 +320,9 @@ extension CoreTerminalView: UIGestureRecognizerDelegate, UIEditMenuInteractionDe
             handles = (start, end)
         }
         let endCol = min(Int(b.end_col), max(0, rows.cols - 1))
-        handles?.start.place(x: CGFloat(b.start_col) * metrics.width, y: y(ofRow: Int(b.start_row)),
+        handles?.start.place(x: x(ofColumn: Int(b.start_col)), y: y(ofRow: Int(b.start_row)),
                              height: metrics.height)
-        handles?.end.place(x: CGFloat(endCol + 1) * metrics.width, y: y(ofRow: Int(b.end_row)),
+        handles?.end.place(x: x(ofColumn: Int(endCol) + 1), y: y(ofRow: Int(b.end_row)),
                            height: metrics.height)
         #endif
     }
@@ -331,19 +331,15 @@ extension CoreTerminalView: UIGestureRecognizerDelegate, UIEditMenuInteractionDe
         guard let term, let handle = g.view as? CoreTermHandle else { return }
         switch g.state {
         case .began:
-            var b = MpSelectionBounds()
-            guard mp_term_selection_bounds(term, &b) else { return }
+            // The other end stays where it is, on screen or not (B477: it
+            // was re-anchored through the viewport, and the drag refused
+            // when it lay outside it), cell by cell from here.
+            guard mp_term_select_keep_end(term, handle.isStart) else { return }
             editMenu.dismissMenu()
-            // Re-anchor at the other end's edge, cell by cell from here.
-            let anchor: (row: Int, col: Int, after: Bool) = handle.isStart
-                ? (Int(b.end_row), min(Int(b.end_col), rows.cols - 1), true)
-                : (Int(b.start_row), Int(b.start_col), false)
-            guard anchor.row >= 0, anchor.row < rows.gridRows else { return }
-            gestures.handleAnchor = anchor
-            mp_term_select_start(term, 0, UInt16(anchor.row), UInt16(anchor.col), anchor.after)
+            gestures.draggingHandle = true
             fallthrough
         case .changed:
-            guard gestures.handleAnchor != nil else { return }
+            guard gestures.draggingHandle else { return }
             // The handle's edge, a row's height above the finger for the
             // start handle (the finger hides the text under it).
             var point = g.location(in: self)
@@ -353,7 +349,7 @@ extension CoreTerminalView: UIGestureRecognizerDelegate, UIEditMenuInteractionDe
             takeFrame()
             positionHandles()
         case .ended, .cancelled:
-            gestures.handleAnchor = nil
+            gestures.draggingHandle = false
             showMenu()
         default:
             break

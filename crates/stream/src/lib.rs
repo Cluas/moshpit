@@ -66,6 +66,10 @@ pub enum InputEvent {
     /// A paste, in its place among the keystrokes: text for the core to
     /// send as one paste, bracketed by the pane's real mode (B361).
     Paste(String),
+    /// Keys the app sent for the person (its shortcut bar), in their place
+    /// among the keystrokes: sent as keystrokes while the session is live,
+    /// never kept for a reconnect to deliver later (B476).
+    Bar(Vec<u8>),
 }
 
 /// Something the view does at a point in the output: a code the core and

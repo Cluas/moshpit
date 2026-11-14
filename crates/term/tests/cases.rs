@@ -353,6 +353,21 @@ fn osc52_store_and_load() {
     assert_eq!(t.take_replies(), b"\x1b]52;c;aGk=\x07");
 }
 
+/// B481: clipboard writes a host doesn't take (the app in the background
+/// takes no frames) are kept within the same bound as bells and titles,
+/// the newest kept: each holds its whole text, and they grew without end.
+#[test]
+fn osc52_stores_nobody_takes_are_bounded() {
+    let mut t = term(20, 4, 100);
+    for _ in 0..1_000 {
+        t.feed(b"\x1b]52;c;aGVsbG8=\x07");
+    }
+    t.feed(b"\x1b]52;c;bGFzdA==\x07");
+    let events = t.take_events();
+    assert_eq!(events.len(), 256);
+    assert_eq!(events.last(), Some(&Event::ClipboardStore("last".into())));
+}
+
 #[test]
 fn synchronized_output_is_held_until_its_end_or_deadline() {
     let mut t = term(20, 4, 100);

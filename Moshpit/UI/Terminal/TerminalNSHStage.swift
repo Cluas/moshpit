@@ -394,6 +394,19 @@ final class TerminalNSHStage {
         slots.removeAll { $0.slot == nil }
         slots.append(Weak(slot: slot))
         slot.stage = self
+        paint(slot)
+    }
+
+    /// The terminal theme's background behind what the slot hosts (B473).
+    /// The page under the slot is the app theme's terminal ground (near
+    /// black), which showed around a tmux pane's inset as a black strip
+    /// beside the terminal's own grey.
+    private func paint(_ slot: TerminalNSHSlotView) {
+        guard let hex = appearance?.theme.backgroundHex,
+              let rgb = UInt32(hex.trimmingCharacters(in: CharacterSet(charactersIn: "# ")), radix: 16)
+        else { return }
+        slot.backgroundColor = UIColor(red: CGFloat((rgb >> 16) & 0xFF) / 255, green: CGFloat((rgb >> 8) & 0xFF) / 255,
+                                       blue: CGFloat(rgb & 0xFF) / 255, alpha: 1)
     }
 
     /// A slot came into (or left) a window: the newest one in a window
@@ -701,6 +714,7 @@ final class TerminalNSHStage {
     func apply(appearance: Appearance) {
         guard appearance != self.appearance else { return }
         self.appearance = appearance
+        for slot in slots.compactMap(\.slot) { paint(slot) }
         guard let hosted, hosted.owns, case .plain? = target?.source, hosted.coordinator != nil
         else { return }
         hosted.surface.apply(font: TerminalFont.font(id: appearance.fontName, size: CGFloat(appearance.fontSize)))

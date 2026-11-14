@@ -179,6 +179,9 @@ fn a_paste_keeps_its_place_among_the_bytes_and_resizes() {
     assert!(view::paste(id, "")); // empty pastes are accepted and vanish
     assert!(view::paste(id, "p1"));
     assert!(view::paste(id, "p2"));
+    assert!(view::write(id, b"k"));
+    assert!(view::bar(id, b"\x1b[A")); // the bar's keys, in their place (B476)
+    assert!(view::write(id, b"l"));
     runtime.block_on(async {
         let expected = [
             InputEvent::Bytes(b"ab".to_vec()),
@@ -192,6 +195,9 @@ fn a_paste_keeps_its_place_among_the_bytes_and_resizes() {
             },
             InputEvent::Paste("p1".into()),
             InputEvent::Paste("p2".into()),
+            InputEvent::Bytes(b"k".to_vec()),
+            InputEvent::Bar(b"\x1b[A".to_vec()),
+            InputEvent::Bytes(b"l".to_vec()),
         ];
         for event in expected {
             assert_eq!(input.next().await, Some(event));

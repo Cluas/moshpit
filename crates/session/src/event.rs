@@ -448,9 +448,10 @@ pub const SHELL_PANE: &str = "shell";
 /// Why input was not sent.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Discarded {
-    /// Typed while the session wasn't live: nothing on screen could be
-    /// trusted to be where it lands (a stray tap on the shortcut bar during
-    /// a reconnect must not replay into the agent's prompt afterwards).
+    /// Typed while the session wasn't live and wasn't coming back on its
+    /// own: before the first connect, or after it failed or ended. (Under a
+    /// reconnect's veil a pane's keys wait for it, a shell's are
+    /// `Reconnected`: B322.)
     NotLive,
     /// Typed into a pane that no longer exists once the session attached.
     PaneGone,
@@ -461,9 +462,10 @@ pub enum Discarded {
     /// so it is dropped here, and the pane's notice says so.
     NotAttached,
     /// Typed at a plain shell while the way back from the background asked
-    /// its connection, which turned out dead (B396): the redial is a new
-    /// shell, and what was typed for the old one could run out of context
-    /// there. A multiplexer pane's keys wait for the pane instead.
+    /// its connection, which turned out dead (B396), or under a reconnect's
+    /// veil (B322): the redial is a new shell, and what was typed for the
+    /// old one could run out of context there. A multiplexer pane's keys
+    /// wait for the pane instead.
     Reconnected,
 }
 

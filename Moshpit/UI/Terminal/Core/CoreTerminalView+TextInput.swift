@@ -326,7 +326,7 @@ extension CoreTerminalView: UITextInput {
     /// The cursor's cell in this view.
     func cursorCellRect() -> CGRect {
         let c = rows.info.cursor
-        return CGRect(x: CGFloat(c.col) * metrics.width, y: y(ofRow: Int(c.row)),
+        return CGRect(x: x(ofColumn: Int(c.col)), y: y(ofRow: Int(c.row)),
                       width: metrics.width, height: metrics.height)
     }
 
@@ -374,7 +374,7 @@ extension CoreTerminalView: UITextInput {
     func positionMarkedText() {
         guard let label = markedLabel else { return }
         let anchor = markedAnchor ?? (Int(rows.info.cursor.col), Int(rows.info.cursor.row))
-        label.frame.origin = CGPoint(x: CGFloat(anchor.col) * metrics.width, y: y(ofRow: anchor.row))
+        label.frame.origin = CGPoint(x: x(ofColumn: Int(anchor.col)), y: y(ofRow: anchor.row))
         let caret = compositionCaret
         caret.backgroundColor = UIColor(cgColor: coreCGColor(style.cursorColor))
         caret.frame = CGRect(x: label.frame.maxX, y: label.frame.minY, width: max(2, metrics.width / 4),

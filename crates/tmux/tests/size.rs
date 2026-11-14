@@ -7,7 +7,7 @@ use std::cell::RefCell;
 use std::collections::BTreeSet;
 use std::rc::Rc;
 
-use moshpit_tmux::controller::{Config, PinLedger, SIZE_PROBE_FORMAT};
+use moshpit_tmux::controller::{Config, PinLedger, SIZE_PROBE_FORMAT, SWEEP_FORMAT};
 use moshpit_tmux::lease::SizeFollow;
 use moshpit_tmux::rig::{Rig, START_UNIX_MS, ok};
 
@@ -22,7 +22,7 @@ struct Tmux {
     clients: Vec<String>,
     lease: Option<String>,
     capture: String,
-    /// `list-windows -a`: `<window_id> <@moshpit_size_owner>` per window.
+    /// `list-windows -a`, the sweep's rows ([`row`]).
     windows: Vec<String>,
 }
 
@@ -48,7 +48,7 @@ fn responder(tmux: Shared) -> moshpit_tmux::rig::Responder {
         if command.starts_with("show-options -wqv") {
             return ok(tmux.lease.clone());
         }
-        if command.starts_with("list-windows -a") && command.contains("@moshpit_size_owner") {
+        if command.starts_with("list-windows -a") && command.contains("zoom=") {
             return ok(tmux.windows.clone());
         }
         if command.starts_with("capture-pane") {
@@ -150,6 +150,15 @@ fn a_lease_of_a_client_no_longer_attached_is_nobodys() {
     assert!(rig.has(PIN));
 }
 
+/// A row of the dead-pin sweep's window listing (`SWEEP_FORMAT`): the
+/// window, zoomed or not, its active pane, the zoom mark, the lease.
+fn row(window: &str, zoomed: bool, pane: &str, zoom: &str, lease: &str) -> String {
+    format!(
+        "{window} {} {pane} zoom={zoom} lease={lease}",
+        if zoomed { 1 } else { 0 }
+    )
+}
+
 /// A controller attached as the app attaches one: control mode begun
 /// (`begin_control_mode`, as the tmux leg does), tmux's `%session-changed`
 /// first, everything else answered by the responder.
@@ -187,15 +196,15 @@ fn an_attach_hands_back_the_windows_a_dead_phone_left_pinned() {
             "/dev/ttys004".into(),
         ],
         windows: vec![
-            format!("@1 {}", lease(rig, "moshpit-gone", 600)),
-            format!("@2 {}", lease(rig, "moshpit-b", 600)),
-            "@3 ".into(),
-            "@4 moshpit-gone|Cluas's iPhone|0".into(),
+            row("@1", false, "%1", "", &lease(rig, "moshpit-gone", 600)),
+            row("@2", false, "%2", "", &lease(rig, "moshpit-b", 600)),
+            row("@3", false, "%3", "", ""),
+            row("@4", false, "%4", "", "moshpit-gone|Cluas's iPhone|0"),
         ],
         ..Tmux::default()
     });
     assert!(
-        rig.has("list-windows -a -F '#{window_id} #{@moshpit_size_owner}'"),
+        rig.has(&format!("list-windows -a -F '{SWEEP_FORMAT}'")),
         "the attach reads every window's lease"
     );
     for window in ["@1", "@4"] {
@@ -211,16 +220,106 @@ fn an_attach_hands_back_the_windows_a_dead_phone_left_pinned() {
     }
 }
 
+/// B458: the phone zooms a split window's active pane to show it alone,
+/// and a phone that died left the zoom too: the desktop's split window
+/// stayed one zoomed pane. The phone marks the zoom it makes with its client
+/// and the pane; the next attach unzooms a window still zoomed on that pane
+/// once the client is gone, and only that: a desktop that zoomed another
+/// pane since, a live iPad's zoom, a zoom nobody marked (a desktop's own)
+/// and an unzoomed window are left as they are.
+#[test]
+fn an_attach_unzooms_only_the_zoom_a_dead_phone_made() {
+    let rig = attached(|_| Tmux {
+        clients: vec![
+            "moshpit-a".into(),
+            "moshpit-b".into(),
+            "/dev/ttys004".into(),
+        ],
+        windows: vec![
+            row("@1", true, "%5", "moshpit-gone %5", ""),
+            row("@2", true, "%7", "moshpit-gone %6", ""),
+            row("@3", true, "%8", "moshpit-b %8", ""),
+            row("@4", true, "%9", "", ""),
+            row("@5", false, "%10", "moshpit-gone %10", ""),
+        ],
+        ..Tmux::default()
+    });
+    assert!(rig.has("resize-pane -Z -t @1"), "the dead phone's zoom");
+    for window in ["@2", "@3", "@4", "@5"] {
+        assert!(!rig.has(&format!("resize-pane -Z -t {window}")), "{window}");
+    }
+    // A gone client's mark goes, zoom or not; a live one's and none stay.
+    for window in ["@1", "@2", "@5"] {
+        assert!(rig.has(&format!("set-option -wu -t {window} @moshpit_zoomed")));
+    }
+    for window in ["@3", "@4"] {
+        assert!(!rig.has(&format!("set-option -wu -t {window} @moshpit_zoomed")));
+    }
+}
+
+/// The zoom the phone makes is marked with its client and the pane it zooms.
+#[test]
+fn the_phones_own_zoom_is_marked() {
+    let mut rig = Rig::new(Config::default());
+    rig.with(|c, _| {
+        c.set_initial_client_size(47, 40);
+        c.set_our_client_name(Some("moshpit-a".into()));
+    });
+    let three = "3992,47x40,0,0{45x40,0,0,0,1x40,46,0[1x20,46,0,1,1x19,46,21,2]}";
+    let window = format!("$0 @0 0 {three} 1 3 claude");
+    let probe = format!("3 0 %1 {three}");
+    rig.respond(Box::new(move |command, _| {
+        if command.starts_with("list-sessions") {
+            return ok(["$0 1 main"]);
+        }
+        if command.starts_with("list-windows -a -F '#{session_id}") {
+            return ok([window.clone()]);
+        }
+        if command.starts_with("list-panes -a -F '#{pane_id} ") {
+            return ok([
+                "%0 @0 0 45 40 0 0 0 claude",
+                "%1 @0 1 1 20 1 0 0 claude",
+                "%2 @0 2 1 19 0 0 0 claude",
+            ]);
+        }
+        if command.starts_with("display-message -p -t '@0'") {
+            return ok([probe.clone()]);
+        }
+        if command.starts_with("display-message -p '#{client_name}'")
+            || command.starts_with("list-clients -F '#{client_name}'")
+        {
+            return ok(["moshpit-a"]);
+        }
+        None
+    }));
+    rig.with(|c, now| c.begin_control_mode(now));
+    rig.boot();
+    rig.push("%session-changed $0 main\n");
+    rig.settle();
+    let zoom = rig.index_of("resize-pane -Z -t @0").expect("zoomed");
+    let mark = rig
+        .index_of("set-option -w -t @0 @moshpit_zoomed \"moshpit-a %1\"")
+        .expect("marked");
+    assert!(zoom < mark);
+}
+
 /// Without a listing of the clients nothing can be judged dead: nothing is
 /// handed back.
 #[test]
 fn no_clients_listed_hands_nothing_back() {
     let rig = attached(|rig| Tmux {
         clients: Vec::new(),
-        windows: vec![format!("@1 {}", lease(rig, "moshpit-gone", 600))],
+        windows: vec![row(
+            "@1",
+            true,
+            "%1",
+            "moshpit-gone %1",
+            &lease(rig, "moshpit-gone", 600),
+        )],
         ..Tmux::default()
     });
-    assert!(rig.has("list-windows -a -F '#{window_id} #{@moshpit_size_owner}'"));
+    assert!(rig.has(&format!("list-windows -a -F '{SWEEP_FORMAT}'")));
+    assert!(!rig.has("resize-pane -Z -t @1"));
     assert!(!rig.has("set-option -u -w -t @1 window-size"));
 }
 

@@ -64,6 +64,13 @@ pub fn paste(id: StreamId, text: &str) -> bool {
     find(id).is_some_and(|shared| shared.paste(text.to_owned()))
 }
 
+/// Queues the shortcut bar's keys after the bytes written so far, in their
+/// place among them: keystrokes while the session is live, never kept for
+/// later (B476). `false` if the stream is gone or its core's end closed.
+pub fn bar(id: StreamId, bytes: &[u8]) -> bool {
+    find(id).is_some_and(|shared| shared.bar(bytes.to_vec()))
+}
+
 /// The output's counters, if the stream is live.
 pub fn stats(id: StreamId) -> Option<Stats> {
     find(id).map(|shared| shared.stats())

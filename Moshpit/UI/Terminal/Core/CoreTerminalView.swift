@@ -184,11 +184,13 @@ final class CoreTerminalView: UIView {
         super.init(frame: frame)
         wake.view = self
         isOpaque = true
-        backgroundColor = .black
+        // The terminal's own ground from birth, never black (B473): what
+        // shows beside the grid before a theme is applied.
+        backgroundColor = UIColor(cgColor: coreCGColor(style.background))
         clipsToBounds = true
         isMultipleTouchEnabled = true
         let canvasView = canvas.view
-        canvasView.frame = bounds
+        canvasView.frame = canvasFrame
         addSubview(canvasView)
         rows.reset(cols: cols, rows: gridRows, background: style.background)
         term = mp_term_open_local(UInt16(clamping: cols), UInt16(clamping: gridRows), UInt32(clamping: scrollback),
@@ -620,7 +622,7 @@ final class CoreTerminalView: UIView {
     private func remakeCanvas(why: String) {
         guard canvas is CoreTermMetalCanvas, let fresh = CoreTermMetalCanvas(metrics: metrics, style: style) else { return }
         let old = canvas.view
-        fresh.frame = bounds
+        fresh.frame = canvasFrame
         insertSubview(fresh, belowSubview: old)
         canvas = fresh
         canvasesMade += 1
@@ -778,14 +780,55 @@ final class CoreTerminalView: UIView {
         gridRows = r
         if let term { mp_term_resize(term, UInt16(clamping: c), UInt16(clamping: r)) }
         applyCellPixels()
+        canvas.view.frame = canvasFrame
         surfaceDelegate?.surface(self, sizeChanged: c, rows: r)
+    }
+
+    // MARK: Where the grid sits across the view (B473)
+
+    /// Where the grid starts across the view: the width its columns leave
+    /// over, split evenly on both sides (to a pixel), so the grid
+    /// isn't shoved left with the whole leftover on the right. Every cell
+    /// to point mapping goes through it (``cell(at:)``, ``edge(at:)``,
+    /// ``x(ofColumn:)``, the canvas, the snapshot).
+    var gridOriginX: CGFloat {
+        Self.gridOrigin(width: bounds.width, cols: cols, cellWidth: metrics.width, scale: metrics.scale)
+    }
+
+    /// The grid's left edge in a view `width` wide holding `cols` columns
+    /// of `cellWidth`: half what they leave over, to the nearest pixel at
+    /// `scale` (the two sides differ by a pixel at most).
+    nonisolated static func gridOrigin(width: CGFloat, cols: Int, cellWidth: CGFloat, scale: CGFloat) -> CGFloat {
+        let spare = width - CGFloat(cols) * cellWidth
+        guard spare > 0, scale > 0 else { return 0 }
+        return min(spare, ((spare / 2) * scale).rounded() / scale)
+    }
+
+    /// The column under `x` (the view's coordinates) for a grid starting at
+    /// `originX`, clamped to the grid.
+    nonisolated static func column(atX x: CGFloat, originX: CGFloat, cellWidth: CGFloat, cols: Int) -> Int {
+        guard cellWidth > 0 else { return 0 }
+        return min(max(0, Int(((x - originX) / cellWidth).rounded(.down))), max(0, cols - 1))
+    }
+
+    /// Where column `col` starts, in the view.
+    func x(ofColumn col: Int) -> CGFloat { gridOriginX + CGFloat(col) * metrics.width }
+
+    /// The canvas: from the grid's left edge to the view's right one (the
+    /// gutter left of it is the view's own ground, the theme's background).
+    var canvasFrame: CGRect {
+        let origin = gridOriginX
+        return CGRect(x: origin, y: 0, width: max(0, bounds.width - origin), height: bounds.height)
     }
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        canvas.view.frame = bounds
-        guard bounds.width > 0, bounds.height > 0 else { return }
+        guard bounds.width > 0, bounds.height > 0 else {
+            canvas.view.frame = bounds
+            return
+        }
         syncGrid()
+        canvas.view.frame = canvasFrame
         if markedLabel != nil { positionMarkedText() }
         if handles != nil { positionHandles() }
         accessibilityStale = true
@@ -816,8 +859,12 @@ final class CoreTerminalView: UIView {
         let scale = window?.screen.scale ?? UITraitCollection.current.displayScale
         metrics = CoreTermMetrics(font: font, scale: scale)
         canvas.setMetrics(metrics)
+        // The core's cells take the new pixels even when the grid keeps its
+        // columns and rows; a history reader stays on its line (B479: the
+        // view went to the bottom at every step of a pinch).
+        applyCellPixels()
         canvas.update(rows, changed: [], all: true)
-        scrollToBottom()
+        takeFrame()
         setNeedsLayout()
         layoutIfNeeded()
         requestRender()
@@ -828,7 +875,7 @@ final class CoreTerminalView: UIView {
     /// The viewport cell under `point` (this view's coordinates), clamped.
     func cell(at point: CGPoint) -> (col: Int, row: Int) {
         let y = point.y + renderShift
-        let col = min(max(0, Int(point.x / metrics.width)), max(0, rows.cols - 1))
+        let col = Self.column(atX: point.x, originX: gridOriginX, cellWidth: metrics.width, cols: rows.cols)
         let row = min(max(0, Int(y / metrics.height)), max(0, rows.gridRows - 1))
         return (col, row)
     }
@@ -838,7 +885,7 @@ final class CoreTerminalView: UIView {
     func edge(at point: CGPoint) -> (col: Int, row: Int, after: Bool) {
         let y = point.y + renderShift
         let row = min(max(0, Int(y / metrics.height)), max(0, rows.gridRows - 1))
-        let e = min(max(0, Int((point.x / metrics.width).rounded())), rows.cols)
+        let e = min(max(0, Int(((point.x - gridOriginX) / metrics.width).rounded())), rows.cols)
         return e >= rows.cols ? (rows.cols - 1, row, true) : (e, row, false)
     }
 
@@ -946,7 +993,8 @@ final class CoreTerminalView: UIView {
     /// A still picture of the terminal as it shows (the keyboard cover).
     func snapshot() -> UIView {
         let renderer = CoreTermCGRenderer(metrics: metrics, style: style)
-        let image = renderer.image(of: rows, size: bounds.size, yOffset: renderShift, cursorShown: cursorOn)
+        let image = renderer.image(of: rows, size: bounds.size, xOffset: gridOriginX, yOffset: renderShift,
+                                   cursorShown: cursorOn)
         let view = UIImageView(image: image)
         view.frame = frame
         return view

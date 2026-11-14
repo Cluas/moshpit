@@ -136,8 +136,9 @@ async fn echo_loop(
                     s.rows = rows;
                 });
             }
-            // The spike's view never pastes through the stream.
-            InputEvent::Paste(_) => {}
+            // The spike's view never pastes, nor sends bar keys, through the
+            // stream.
+            InputEvent::Paste(_) | InputEvent::Bar(_) => {}
         }
     }
     alog::info("pane: input ended");

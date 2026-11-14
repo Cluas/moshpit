@@ -18,9 +18,15 @@ pub(crate) struct Selection {
     pub kind: SelectKind,
     anchor: (Point, bool),
     head: (Point, bool),
-    /// The emulator's sequence number when the selection was made: a row
-    /// under it that changed since means its text is gone.
+    /// What a long press selected (a link): kept whole however the finger
+    /// moves, the selection growing from it (B478).
+    span: Option<((Point, bool), (Point, bool))>,
+    /// The emulator's sequence number when the selection was made or
+    /// moved: a row under it that changed since means its text is gone,
+    /// unless it still reads as it did then (`rows`, B480).
     pub seqno: usize,
+    /// Its rows' text and wrap marks when it was made or moved.
+    pub rows: Vec<(StableRowIndex, (String, bool))>,
 }
 
 /// The selected cells: from `start` to `end`, inclusive; a block takes the
@@ -66,17 +72,47 @@ impl Selection {
             kind,
             anchor: (at, right_half),
             head: (at, right_half),
+            span: None,
             seqno,
+            rows: Vec::new(),
         }
+    }
+
+    /// Row `row`'s text and wrap mark as the selection last saw them.
+    pub fn read(&self, row: StableRowIndex) -> Option<&(String, bool)> {
+        self.rows.iter().find(|(r, _)| *r == row).map(|(_, t)| t)
     }
 
     pub fn extend(&mut self, to: Point, right_half: bool) {
         self.head = (to, right_half);
     }
 
+    /// Keeps what is selected now whole from here on: a finger resting on
+    /// it (a long press reports its small moves) leaves it as it is, and one
+    /// that slides past either end grows the selection from the far end.
+    pub fn keep_whole(&mut self) {
+        let (a, b) = if self.head.0 < self.anchor.0 {
+            (self.head, self.anchor)
+        } else {
+            (self.anchor, self.head)
+        };
+        self.span = Some((a, b));
+    }
+
     /// The cells selected now. `cells(row)` reads a row (`None`: not kept).
     pub fn range(&self, cells: impl Fn(StableRowIndex) -> Option<RowCells>) -> Option<Range> {
-        let (mut a, mut b) = (self.anchor, self.head);
+        let (mut a, mut b) = match self.span {
+            // The span, and the finger past either end of it.
+            Some((start, end)) => (
+                if self.head.0 < start.0 {
+                    self.head
+                } else {
+                    start
+                },
+                if self.head.0 > end.0 { self.head } else { end },
+            ),
+            None => (self.anchor, self.head),
+        };
         if b.0 < a.0 {
             std::mem::swap(&mut a, &mut b);
         }

@@ -257,8 +257,12 @@ struct CoreTermCGRenderer {
         ctx.textPosition = CGPoint(x: 0, y: 0)
         ctx.translateBy(x: x, y: baseline)
         // A glyph wider than its cells (a fallback font's emoji or symbol)
-        // is narrowed to them, as the Metal atlas does.
-        if width > span * 1.05, span > 0 { ctx.scaleBy(x: span / width, y: 1) }
+        // is fitted to them, its shape kept, as the Metal atlas does (B472).
+        if let fit = CoreTermGlyphFit.fit(advance: width, ink: CoreTermGlyphFit.ink(of: line, in: ctx), span: span,
+                                          ascent: metrics.ascent, descent: metrics.descent,
+                                          scalar: string.unicodeScalars.first?.value ?? 0) {
+            fit.apply(to: ctx, flipped: true)
+        }
         CTLineDraw(line, ctx)
         ctx.restoreGState()
     }
@@ -394,7 +398,8 @@ struct CoreTermCGRenderer {
     }
 
     /// The whole grid as a picture (the keyboard cover).
-    func image(of rows: CoreTermRows, size: CGSize, yOffset: CGFloat, cursorShown: Bool) -> UIImage {
+    func image(of rows: CoreTermRows, size: CGSize, xOffset: CGFloat = 0, yOffset: CGFloat,
+               cursorShown: Bool) -> UIImage {
         let format = UIGraphicsImageRendererFormat()
         format.scale = metrics.scale
         format.opaque = true
@@ -403,6 +408,8 @@ struct CoreTermCGRenderer {
             let ctx = context.cgContext
             ctx.setFillColor(coreCGColor(style.background))
             ctx.fill(CGRect(origin: .zero, size: size))
+            // Where the view's grid starts across it (B473).
+            ctx.translateBy(x: xOffset, y: 0)
             for r in 0..<rows.rows.count {
                 draw(row: r, of: rows, y: CGFloat(r) * metrics.height - yOffset, cursorShown: cursorShown,
                      in: ctx, cache: &cache)
