@@ -15,9 +15,9 @@ on:
         options: [both, iphone, ipad]
         default: both
       locales:
-        description: Locales, space-separated (en-US zh-Hans zh-Hant ja)
+        description: Locales, space-separated, or "all" (every locale the app ships, LOCALES below)
         type: string
-        default: en-US
+        default: all
 
 permissions:
   contents: read
@@ -30,6 +30,8 @@ jobs:
 
     env:
       SPM_CACHE_DIR: ${{ github.workspace }}/.spm-cache
+      # Every locale the app ships, shot for every simulator shot. Trim here.
+      LOCALES_ALL: en-US zh-Hans zh-Hant ja de-DE es-ES fr-FR ko pt-BR
 
     steps:
       - name: Checkout
@@ -104,6 +106,7 @@ jobs:
         env:
           LOCALES: ${{ inputs.locales }}
         run: |
+          [ "$LOCALES" = all ] && LOCALES="$LOCALES_ALL"
           # shellcheck disable=SC2086 # one locale per word
           scripts/shots/ci-capture.sh build/dd/Build/Products/Debug-iphonesimulator/Moshpit.app \
             shots/iphone-6.9 iphone $LOCALES
@@ -113,6 +116,7 @@ jobs:
         env:
           LOCALES: ${{ inputs.locales }}
         run: |
+          [ "$LOCALES" = all ] && LOCALES="$LOCALES_ALL"
           # shellcheck disable=SC2086 # one locale per word
           scripts/shots/ci-capture.sh build/dd/Build/Products/Debug-iphonesimulator/Moshpit.app \
             shots/ipad-13 ipad $LOCALES

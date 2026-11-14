@@ -9,11 +9,13 @@
 #   <app>     the Debug simulator build of Moshpit.app (DEBUG seeds in it)
 #   <out>     where the PNGs go, one folder per locale
 #   <device>  iphone | ipad
-#   locale    en-US (default) zh-Hans zh-Hant ja …
+#   locale    en-US (default) zh-Hans zh-Hant ja de-DE es-ES fr-FR ko pt-BR
 #
 # Everything the app shows outside the panes is live: it connects over SSH
-# to the runner (127.0.0.1:2222), to a tmux on a private socket. Only the
-# panes' contents are staged (scripts/shots/stage/), and they say so.
+# to the runner, as devbox.example.com (an /etc/hosts line for 127.0.0.1),
+# port 2222, to a tmux on a private socket. Only the panes' contents are
+# staged (scripts/shots/stage/), and they say so. Every name a shot shows
+# is example.com's or a made-up repo's: nothing of a person's.
 #
 # Nothing here is the person's: the key is made for the run and thrown
 # away, sshd runs from a config of its own on loopback, tmux on its own
@@ -26,6 +28,7 @@ root="$(cd "$(dirname "$0")/../.." && pwd)"
 bundle=com.cluas.moshpit
 work="$(mktemp -d)"
 port=2222
+host=devbox.example.com
 user="$(id -un)"
 mkdir -p "$out"
 
@@ -54,13 +57,14 @@ AllowUsers $user
 EOF
 sudo /usr/sbin/sshd -f "$work/sshd_config" -E "$work/sshd.log"
 trap 'sudo kill "$(cat "$work/sshd.pid" 2>/dev/null)" 2>/dev/null || true; rm -rf "$work"' EXIT
+grep -q " $host\$" /etc/hosts || echo "127.0.0.1 $host" | sudo tee -a /etc/hosts >/dev/null
 for _ in $(seq 1 20); do
     ssh -i "$work/id" -p "$port" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
-        -o BatchMode=yes "$user@127.0.0.1" true 2>/dev/null && break
+        -o BatchMode=yes "$user@$host" true 2>/dev/null && break
     sleep 0.5
 done
 ssh -i "$work/id" -p "$port" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
-    -o BatchMode=yes "$user@127.0.0.1" true || { cat "$work/sshd.log" >&2; fail "sshd never answered"; }
+    -o BatchMode=yes "$user@$host" true || { cat "$work/sshd.log" >&2; fail "sshd never answered as $host"; }
 fingerprint="$(ssh-keygen -l -E sha256 -f "$work/host_ed25519.pub" | awk '{print $2}')"
 key_b64="$(base64 < "$work/id" | tr -d '\n')"
 log "host key $fingerprint"
@@ -129,21 +133,21 @@ xcrun simctl install "$udid" "$app"
 
 # The seeded session: the runner as a host, tmux on the staged socket.
 session=(-MOSHPIT_SEED_USER "$user" -MOSHPIT_SEED_KEY_B64 "$key_b64"
-    -MOSHPIT_SEED_HOST 127.0.0.1 -MOSHPIT_SEED_PORT "$port"
+    -MOSHPIT_SEED_HOST "$host" -MOSHPIT_SEED_PORT "$port"
     -MOSHPIT_SEED_TRUST_FP "$fingerprint" -MOSHPIT_SEED_NAME devbox
     -MOSHPIT_SEED_MUX tmux -MOSHPIT_SEED_TMUX_BIN "$work/stage-tmux")
 quiet=(-MOSHPIT_SEED_QUIET 1 -MOSHPIT_AUTOCARE_OFF
     -moshpit.settings.notifications '<false/>' -moshpit.settings.liveActivity '<false/>')
 
 # Home: the runner, connected, beside two hosts that aren't.
-home_fixture="$(python3 -I - "$key_b64" "$fingerprint" "$port" "$user" "$work/stage-tmux" <<'EOF'
+home_fixture="$(python3 -I - "$key_b64" "$fingerprint" "$port" "$user" "$work/stage-tmux" "$host" <<'EOF'
 import base64, json, sys
-key, fingerprint, port, user, tmux = sys.argv[1:6]
+key, fingerprint, port, user, tmux, host = sys.argv[1:7]
 fixture = {
     "key": key,
-    "trust": [{"host": "127.0.0.1", "port": int(port), "fingerprint": fingerprint}],
+    "trust": [{"host": host, "port": int(port), "fingerprint": fingerprint}],
     "connections": [
-        {"id": "5EED0000-0000-4000-8000-000000000001", "name": "devbox", "host": "127.0.0.1",
+        {"id": "5EED0000-0000-4000-8000-000000000001", "name": "devbox", "host": host,
          "port": int(port), "user": user, "mux": "tmux", "tmuxPath": tmux, "connect": True},
         {"id": "5EED0000-0000-4000-8000-000000000002", "name": "gpu-01", "host": "gpu-01.example.com",
          "user": "dev", "mosh": True, "mux": "tmux"},
@@ -155,12 +159,26 @@ print(base64.b64encode(json.dumps(fixture).encode()).decode())
 EOF
 )"
 
+# A store locale's app language (Localizable.xcstrings') and its region.
+language() {
+    case "$1" in
+        zh-Hans|zh-Hant|pt-BR) echo "$1" ;;
+        *) echo "${1%%-*}" ;;
+    esac
+}
+region() {
+    case "$1" in
+        zh-Hans) echo zh_CN ;; zh-Hant) echo zh_TW ;; ja) echo ja_JP ;; ko) echo ko_KR ;;
+        *) echo "${1/-/_}" ;;
+    esac
+}
+
 shoot() {  # <locale> <name> <seconds> <launch args…>
     local locale="$1" name="$2" wait="$3"; shift 3
-    local lang="${locale%%-*}"; [ "$locale" = zh-Hans ] || [ "$locale" = zh-Hant ] && lang="$locale"
     mkdir -p "$out/$locale"
     xcrun simctl terminate "$udid" "$bundle" 2>/dev/null || true
-    xcrun simctl launch "$udid" "$bundle" -AppleLanguages "($lang)" -AppleLocale "${locale/-/_}" "$@" >/dev/null
+    xcrun simctl launch "$udid" "$bundle" -AppleLanguages "($(language "$locale"))" \
+        -AppleLocale "$(region "$locale")" "$@" >/dev/null
     sleep "$wait"
     xcrun simctl io "$udid" screenshot --type=png "$out/$locale/$name.png" >/dev/null
     local size
