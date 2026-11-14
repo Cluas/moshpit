@@ -44,6 +44,11 @@ pub fn state(app: &App) -> HomeState {
                     .trusted(&saved.host, saved.port)
                     .as_deref()
                     .map(moshpit_app::home::face),
+                creature: app
+                    .sessions
+                    .trusted(&saved.host, saved.port)
+                    .as_deref()
+                    .map(moshpit_app::home::creature),
                 emoji: saved.emoji.clone(),
                 name,
                 user: saved.username.clone(),

@@ -175,10 +175,10 @@ impl PetMachine {
                 stored::write(&self.defaults, &Readiness::System, record);
                 s.stored = Stored::Pet(record.clone());
             }
-            if r.write_cloud {
-                if let Some(cloud) = &cloud {
-                    cloud.put(record.to_json());
-                }
+            if r.write_cloud
+                && let Some(cloud) = &cloud
+            {
+                cloud.put(record.to_json());
             }
         }
         drop(s);

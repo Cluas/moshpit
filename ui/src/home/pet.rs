@@ -314,11 +314,12 @@ fn play(pet: &PetCtx, figure: Figure) {
     };
     pet.showing.set(Some(figure));
     let showing = pet.showing;
-    let _ = set_timeout(length, move || {
+    // Dropping the handle leaves the timer running (it ends with the owner).
+    drop(set_timeout(length, move || {
         if showing.get_untracked() == Some(figure) {
             showing.set(None);
         }
-    });
+    }));
 }
 
 /// What a screen reader hears: its name, and what it is.

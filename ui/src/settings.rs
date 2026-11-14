@@ -1024,6 +1024,7 @@ fn about(state: State, tell: &Tell) -> AnyElement {
 
 /// A page the hub opens: the bar (back to the hub, the page's title) over
 /// its groups.
+#[allow(clippy::too_many_arguments)]
 fn subpage(
     root: View,
     part: Part,
