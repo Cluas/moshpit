@@ -523,13 +523,19 @@ impl Client {
         if self.retry_stuck_channel() {
             return None;
         }
-        match self.notice.as_ref().and_then(|(_, action)| *action) {
-            Some(NoticeAction::RestartServer | NoticeAction::Retry) => self.restart_server(),
-            Some(NoticeAction::OpenHere) => {
+        match self.notice.clone() {
+            Some((_, Some(NoticeAction::RestartServer)))
+            | Some((Notice::RestartFailed, Some(NoticeAction::Retry))) => self.restart_server(),
+            // A refusal's Retry asks again now: never a restart (B490).
+            Some((_, Some(NoticeAction::Retry))) => {
+                self.retry_now();
+                None
+            }
+            Some((_, Some(NoticeAction::OpenHere))) => {
                 self.open_here();
                 None
             }
-            None => None,
+            _ => None,
         }
     }
 

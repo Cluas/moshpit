@@ -91,6 +91,12 @@ struct TerminalScreen: View {
     /// while a claimed-but-not-yet-actionable request can't be replayed by a
     /// later, unrelated manual navigation to this same connection.
     @State private var pendingPaneSelection: String?
+    /// A one-off said for a moment (B492): the notice the multiplexer
+    /// puts up wins over it.
+    @State private var flashNotice: String?
+    /// Moves once a second while a herdr refusal's backoff counts down
+    /// (B490): the banner's "N s" reads it.
+    @State private var retryTick = Date()
     /// When the multiplexer was first seen attached while a claimed pane
     /// waited: its patience counts from there (B468).
     @State private var pendingPaneAttachedAt: Date?
@@ -267,6 +273,10 @@ struct TerminalScreen: View {
             pendingPaneSelection = nil
             pendingPaneAttachedAt = nil
             Log.island.notice("land: pane \(paneId, privacy: .public) is not on the server \(Int(Self.landingPatience), privacy: .public) s after attach; dropped")
+            // Said, for a moment (B492): landing on another pane without a
+            // word read as the notification having taken the person
+            // somewhere wrong.
+            flash(String(localized: "That pane is closed"))
             return
         case .select:
             break
@@ -282,6 +292,41 @@ struct TerminalScreen: View {
         } else {
             active?.herdrControl?.selectPane(paneId)
         }
+    }
+
+    /// `text` said for a moment (B492): three seconds, unless another
+    /// one-off replaces it.
+    private func flash(_ text: String) {
+        flashNotice = text
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(Self.flashSeconds))
+            if flashNotice == text { flashNotice = nil }
+        }
+    }
+
+    nonisolated static let flashSeconds: Double = 3
+
+    /// The notice the screen shows: the multiplexer's, else a one-off.
+    nonisolated static func shownNotice(multiplexer: String?, flashed: String?) -> String? {
+        multiplexer ?? flashed
+    }
+
+    /// A herdr notice's text, with the seconds left before what it refused
+    /// is asked again, while a backoff runs (B490).
+    private func herdrNoticeText(_ text: String) -> String {
+        guard active?.tmuxControl?.notice == nil,
+              let left = Self.retrySecondsLeft(until: active?.herdrControl?.retryDeadline, now: retryTick)
+        else { return text }
+        return text + " · " + String(localized: "Retrying in \(left) s")
+    }
+
+    /// Whole seconds until `deadline` from `now`, rounded up; nil once it
+    /// has passed (or there is none).
+    nonisolated static func retrySecondsLeft(until deadline: Date?, now: Date) -> Int? {
+        guard let deadline else { return nil }
+        let left = deadline.timeIntervalSince(now)
+        guard left > 0 else { return nil }
+        return Int(left.rounded(.up))
     }
 
     /// How long a claimed pane may be missing from an attached snapshot
@@ -514,9 +559,10 @@ struct TerminalScreen: View {
 
             // Transient tmux command failures (create/rename/kill) — these were
             // silently dropped before; a quiet capsule beats a modal alert.
-            if let notice = active?.tmuxControl?.notice ?? active?.herdrNotice {
+            if let notice = Self.shownNotice(multiplexer: active?.tmuxControl?.notice ?? active?.herdrNotice,
+                                             flashed: flashNotice) {
                 VStack(spacing: 6) {
-                    Text(notice)
+                    Text(herdrNoticeText(notice))
                         .font(Face.mono(11))
                         .foregroundStyle(.white)
                         .padding(.horizontal, 12).padding(.vertical, 6)
@@ -656,6 +702,15 @@ struct TerminalScreen: View {
         }
         // A protocol switch is over once the new session's frame is
         // uncovered: its picture goes, motion comes back.
+        .task(id: active?.herdrControl?.retryDeadline) {
+            // The banner's countdown (B490): a tick a second until it ends.
+            while let deadline = active?.herdrControl?.retryDeadline, deadline > Date() {
+                retryTick = Date()
+                try? await Task.sleep(for: .seconds(1))
+                if Task.isCancelled { return }
+            }
+            retryTick = Date()
+        }
         .onChange(of: paneCover) { old, cover in
             // What covers the pane, said (B445): a page left in the
             // terminal's colour under its bar reads as a blank terminal.
@@ -3993,7 +4048,9 @@ extension TerminalScreen {
             chrome.banner = .degrade(notice.missing)
         }
         if let text = active?.tmuxControl?.notice ?? active?.herdrNotice {
-            chrome.notice = .init(text: text, action: active?.herdrNoticeAction)
+            chrome.notice = .init(text: herdrNoticeText(text), action: active?.herdrNoticeAction)
+        } else if let flashed = flashNotice {
+            chrome.notice = .init(text: flashed, action: nil)
         }
         chrome.link = copiedURL.map { $0.host() ?? $0.absoluteString }
         chrome.compact = compactChrome

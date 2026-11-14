@@ -1474,6 +1474,11 @@ class HerdrControlClient: MultiplexerControlling {
     /// herdr's state as the Rust core read it (``RustHerdrController``,
     /// which runs no poll of its own), where the chrome reads it. Only what
     /// changed is written: every write is an Observation change.
+    /// When what herdr refused is asked again by itself, while a backoff
+    /// runs (B490): the banner counts down to it. Set by the Rust core's
+    /// mirror only.
+    var retryDeadline: Date?
+
     func mirrorRust(snapshot new: TmuxSnapshot, agentHooks: [String: AgentHook],
                     agentHooksLoaded: Bool, isRefreshing: Bool, serverNotRunning: Bool,
                     protocolMismatch: String?, versionSkew: HerdrVersionReport?,

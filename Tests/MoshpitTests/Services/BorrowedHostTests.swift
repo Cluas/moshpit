@@ -105,6 +105,51 @@ struct BorrowedHostTests {
         #expect(ssh.ran.isEmpty)
     }
 
+    /// B461: every fetch of a file shared one `.partial`. A tap on a folder
+    /// tile whose thumbnail was still loading started a second download
+    /// into it, which cut the first's bytes off; the last to finish deleted
+    /// the copy the other had handed out and failed its own move.
+    @Test("two fetches of one file at once both end with the whole copy, and nothing else is left")
+    func overlappingFetches() async throws {
+        let ssh = FakeLentSSH()
+        let chart = Data((0..<300_000).map { UInt8($0 % 251) })
+        ssh.file("/work/out/chart.png", chart)
+        // The thumbnail's download is still landing when the tap's starts
+        // and finishes.
+        ssh.holdDownloads(.milliseconds(400))
+        let host = BorrowedHost(ssh)
+        let entry = try await host.remoteStat("/work/out/chart.png")
+        let files = RemoteFileAccess(scope: "b461-\(UUID().uuidString)", channel: { host })
+        let thumbnail = Task { try await RemotePreviewCache.fetch(entry, files: files, progress: { _ in }) }
+        try await Task.sleep(for: .milliseconds(100))
+        let tapped = try await RemotePreviewCache.fetch(entry, files: files, progress: { _ in })
+        let first = try await thumbnail.value
+        #expect(first == tapped)
+        #expect(try Data(contentsOf: tapped) == chart)
+        let folder = tapped.deletingLastPathComponent()
+        #expect(try FileManager.default.contentsOfDirectory(atPath: folder.path) == ["chart.png"])
+        try? FileManager.default.removeItem(at: folder)
+    }
+
+    @Test("a fetch given up leaves nothing behind in the cache (B461)")
+    func abandonedFetch() async throws {
+        let ssh = FakeLentSSH()
+        ssh.file("/work/out/clip.mov", Data(count: 300_000))
+        ssh.holdDownloads(.milliseconds(400))
+        let host = BorrowedHost(ssh)
+        let entry = try await host.remoteStat("/work/out/clip.mov")
+        let files = RemoteFileAccess(scope: "b461-\(UUID().uuidString)", channel: { host })
+        let fetch = Task { try await RemotePreviewCache.fetch(entry, files: files, progress: { _ in }) }
+        try await Task.sleep(for: .milliseconds(100))
+        fetch.cancel()
+        await #expect(throws: CancellationError.self) { try await fetch.value }
+        // The core gives up at its next report, after the hold.
+        try await Task.sleep(for: .milliseconds(600))
+        let folder = RemotePreviewCache.localURL(for: entry, scope: files.scope).deletingLastPathComponent()
+        #expect(try FileManager.default.contentsOfDirectory(atPath: folder.path).isEmpty)
+        try? FileManager.default.removeItem(at: folder)
+    }
+
     @Test("a host with SFTP turned off: the Swift path's exec forms, through the one quoter")
     func noSFTP() async throws {
         let ssh = FakeLentSSH()

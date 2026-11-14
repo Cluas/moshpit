@@ -1086,8 +1086,17 @@ impl Client {
     /// Back in the foreground: read now at the fast cadence.
     pub fn foreground(&mut self, now: u64) {
         self.begin(now);
+        // What was backed off from is asked again, not after the rest of
+        // the wait (B490).
+        self.retry_now();
         self.quicken();
         self.end();
+    }
+
+    /// How long the backoff after a refusal is, while one runs: the
+    /// banner counts it down (B490).
+    pub fn retry_wait(&self) -> Option<u64> {
+        self.attach.retry_after.and(self.attach.retry_wait)
     }
 
     /// Read the tree now, at the fast cadence, without the refresh
@@ -1230,7 +1239,16 @@ impl Client {
             if tree {
                 // What the latest tree says, or unknown: a server that
                 // stopped naming its version was replaced.
-                self.server_version = snapshot_version(&answer.output);
+                let version = snapshot_version(&answer.output);
+                if self.server_version.is_some()
+                    && version.is_some()
+                    && version != self.server_version
+                {
+                    // Another server answers (upgraded on the host): what
+                    // the old one refused is asked of this one now (B490).
+                    self.retry_now();
+                }
+                self.server_version = version;
             }
             let effects = self.poll.apply(reading);
             self.dirty = true;

@@ -41,6 +41,7 @@ enum RemotePreviewCache {
     /// A copy whose length isn't the host file's is not a match either: a
     /// download that stopped short must never be served as the picture.
     static func cached(_ entry: RemoteFileEntry, scope: String) -> URL? {
+        _ = swept
         guard entry.modified != nil else { return nil }
         let url = localURL(for: entry, scope: scope)
         guard let length = (try? FileManager.default.attributesOfItem(atPath: url.path))?[.size] as? UInt64
@@ -49,29 +50,46 @@ enum RemotePreviewCache {
         return url
     }
 
-    /// Fetch `entry` (or reuse a matching copy). Written beside the final
-    /// name first, so a cancelled download never passes for a cached one.
+    /// Fetch `entry` (or reuse a matching copy). Written under a name of
+    /// its own beside the final one, then renamed into place: a cancelled
+    /// download never passes for a cached one, and leaves nothing behind.
+    ///
+    /// Fix (B461): every fetch of a file shared one `.partial` and moved it
+    /// over the final name. A second fetch of the same file while the first
+    /// was still landing — the tap on a folder tile whose thumbnail is
+    /// loading — cut the first's bytes off (the core creates its destination
+    /// afresh), and whichever finished last deleted the copy the other had
+    /// just handed out, then failed its own move: the tap said the host
+    /// couldn't be reached, and the tile opened to nothing after that. Each
+    /// fetch now downloads under its own name, and `rename(2)` puts it over
+    /// the final one in one step, so that name never points at nothing or
+    /// at half a file.
     static func fetch(_ entry: RemoteFileEntry, files: RemoteFileAccess,
                       progress: @escaping @Sendable (Double) -> Void) async throws -> URL {
         if let hit = cached(entry, scope: files.scope) { return hit }
-        sweepOnce()
         let final = localURL(for: entry, scope: files.scope)
         let fm = FileManager.default
-        try fm.createDirectory(at: final.deletingLastPathComponent(), withIntermediateDirectories: true)
-        let partial = final.deletingLastPathComponent().appendingPathComponent(".partial")
-        try await files.channel().downloadRemoteFile(entry.path, to: partial, progress: progress)
-        try? fm.removeItem(at: final)
-        try fm.moveItem(at: partial, to: final)
+        let folder = final.deletingLastPathComponent()
+        try fm.createDirectory(at: folder, withIntermediateDirectories: true)
+        let partial = folder.appendingPathComponent(".partial-\(UUID().uuidString)")
+        do {
+            try await files.channel().downloadRemoteFile(entry.path, to: partial, progress: progress)
+            guard Darwin.rename(partial.path, final.path) == 0 else {
+                throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+            }
+        } catch {
+            try? fm.removeItem(at: partial)
+            throw error
+        }
         return final
     }
 
-    private static var swept = false
-
     /// Drop copies older than a day, once per run — the temp directory is
     /// reclaimed eventually, but a day of agent charts is plenty to keep.
-    private static func sweepOnce() {
-        guard !swept else { return }
-        swept = true
+    /// Done before the first copy is handed out (`cached`), never after: a
+    /// copy served earlier in the run — on screen, in the share sheet — is
+    /// never deleted under it (B461).
+    private static let swept: Void = {
         let fm = FileManager.default
         let cutoff = Date().addingTimeInterval(-24 * 3600)
         let folders = (try? fm.contentsOfDirectory(at: root, includingPropertiesForKeys: [.contentModificationDateKey])) ?? []
@@ -79,7 +97,7 @@ enum RemotePreviewCache {
             let modified = (try? folder.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
             if let modified, modified < cutoff { try? fm.removeItem(at: folder) }
         }
-    }
+    }()
 
     /// A small thumbnail straight from the file, without decoding it whole.
     static func thumbnail(at url: URL, maxPixels: Int = 320) -> UIImage? {

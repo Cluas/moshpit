@@ -138,6 +138,9 @@ pub struct Bench {
     /// The sign-in methods the server advertises.
     pub methods: Vec<MethodKind>,
     pub sftp: bool,
+    /// What the account's shell prints before the SFTP server starts (an
+    /// rc file's `echo`, which sshd's `$SHELL -c sftp-server` runs first).
+    pub sftp_noise: Vec<u8>,
     /// Unknown commands run in `sh -c` with `$HOME` the scratch home.
     pub shell_commands: bool,
     /// The server's host-key preference (it presents the first that the
@@ -162,6 +165,7 @@ impl Default for Bench {
             password: Some(PASSWORD.to_owned()),
             methods: vec![MethodKind::PublicKey, MethodKind::Password],
             sftp: true,
+            sftp_noise: Vec::new(),
             shell_commands: false,
             preferred_keys: None,
             rsa_signatures: None,
@@ -177,6 +181,7 @@ struct Shared {
     password: Option<String>,
     methods: Vec<MethodKind>,
     sftp: bool,
+    sftp_noise: Vec<u8>,
     shell_commands: bool,
     home: PathBuf,
     seen: Arc<Mutex<Seen>>,
@@ -221,6 +226,7 @@ impl Host {
                 password: bench.password.clone(),
                 methods: bench.methods.clone(),
                 sftp: bench.sftp,
+                sftp_noise: bench.sftp_noise.clone(),
                 shell_commands: bench.shell_commands,
                 home: home.path().to_owned(),
                 seen: seen.clone(),
@@ -698,7 +704,12 @@ impl server::Handler for Connection {
         };
         session.channel_success(channel)?;
         let files = Files::new(self.shared.home.clone(), self.shared.seen.clone());
-        russh_sftp::server::run(stream.into_stream(), files).await;
+        let mut stream = stream.into_stream();
+        if !self.shared.sftp_noise.is_empty() {
+            use tokio::io::AsyncWriteExt;
+            let _ = stream.write_all(&self.shared.sftp_noise).await;
+        }
+        russh_sftp::server::run(stream, files).await;
         Ok(())
     }
 }

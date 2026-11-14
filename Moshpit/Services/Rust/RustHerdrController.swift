@@ -23,7 +23,15 @@ final class RustHerdrController: HerdrControlClient {
 
     // MARK: Mirroring the core
 
+    /// The backoff's length last mirrored: a new one starts its countdown
+    /// now (B490).
+    private var mirroredRetryWait: UInt64?
+
     func mirror(_ model: HerdrReadModel) {
+        if model.retryWaitMs != mirroredRetryWait {
+            mirroredRetryWait = model.retryWaitMs
+            retryDeadline = model.retryWaitMs.map { Date().addingTimeInterval(Double($0) / 1000) }
+        }
         var snapshot = TmuxSnapshot()
         for session in model.sessions {
             snapshot.sessions[session.id] = SessionInfo(

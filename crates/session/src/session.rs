@@ -4435,6 +4435,7 @@ mod tests {
             open_repo_guesses: Vec::new(),
             frame_target: None,
             attached_pane: None,
+            retry_wait_ms: None,
         };
         let repicks = |actor: &mut Actor| match actor.herdr_repick() {
             Some(HerdrCommand::Action {

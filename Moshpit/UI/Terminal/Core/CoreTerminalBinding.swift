@@ -24,7 +24,7 @@ extension CoreTerminalView {
                 mp_term_set_palette(term, $0.baseAddress!, foreground, background, hex(theme.cursorHex))
             }
             appliedPalette = (ansi, background, foreground)
-            backgroundColor = UIColor(cgColor: coreCGColor(background))
+            backgroundColor = UIColor(cgColor: coreCGColor(style.ground ?? background))
         }
         var s = style
         s.background = background

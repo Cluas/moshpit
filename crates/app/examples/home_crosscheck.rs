@@ -306,6 +306,7 @@ fn herdr_view(t: &Tree) -> HerdrView {
         open_repo_guesses: Vec::new(),
         frame_target: None,
         attached_pane: None,
+        retry_wait_ms: None,
     }
 }
 

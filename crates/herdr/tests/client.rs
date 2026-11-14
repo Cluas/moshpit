@@ -2365,3 +2365,68 @@ fn a_pane_still_held_is_asked_for_plainly_at_most_every_ten_seconds() {
     );
     assert_eq!(rig.client.attached_pane(), None);
 }
+
+// MARK: - B490: a refusal's backoff, said and cut short
+
+fn refused(rig: &mut Rig) {
+    rig.host_attach_ends("herdr: terminal session control failed: busy");
+    rig.run(100);
+    assert!(matches!(rig.client.notice(), Some((Notice::Refused(_), _))));
+}
+
+fn p1_attaches(rig: &Rig) -> usize {
+    rig.attach_lines()
+        .iter()
+        .filter(|line| *line == "w1:p1")
+        .count()
+}
+
+/// A refusal was said with no button and backed off from for 30 s. Now it
+/// says how long ("Retry" too), and the button asks again at once —
+/// never a restart of the server.
+#[test]
+fn a_refusal_says_its_wait_and_retry_asks_again_at_once() {
+    let mut rig = attached();
+    refused(&mut rig);
+    assert_eq!(
+        rig.client.notice().map(|(_, action)| action),
+        Some(Some(NoticeAction::Retry))
+    );
+    assert_eq!(rig.client.retry_wait(), Some(30_000));
+    rig.act(Action::NoticeAction);
+    rig.run(1_000);
+    assert_eq!(p1_attaches(&rig), 2, "asked again at once");
+    assert_eq!(rig.client.attached_pane(), Some("w1:p1"));
+    assert_eq!(rig.client.notice(), None);
+    assert_eq!(rig.client.retry_wait(), None);
+    assert!(
+        rig.commands("server stop").is_empty(),
+        "a retry is no restart"
+    );
+}
+
+/// Back from the background: whatever was backed off from is asked again.
+#[test]
+fn the_return_asks_again_at_once() {
+    let mut rig = attached();
+    refused(&mut rig);
+    let now = rig.now + 100;
+    rig.client.foreground(now);
+    rig.pump();
+    rig.run(1_000);
+    assert_eq!(p1_attaches(&rig), 2);
+    assert_eq!(rig.client.attached_pane(), Some("w1:p1"));
+}
+
+/// A server of another version answering (upgraded on the host): asked
+/// again at once, not after the rest of the wait.
+#[test]
+fn a_new_server_version_asks_again_at_once() {
+    let mut rig = attached();
+    refused(&mut rig);
+    rig.host.version = "0.9.6".to_owned();
+    rig.act(Action::Refresh);
+    rig.run(1_000);
+    assert_eq!(p1_attaches(&rig), 2);
+    assert_eq!(rig.client.attached_pane(), Some("w1:p1"));
+}

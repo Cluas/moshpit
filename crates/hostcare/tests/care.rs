@@ -1440,3 +1440,25 @@ fn an_earlier_install_on_this_phone_leaves_its_conf_to_this_one() {
     assert!(host.file(&install_conf_path(c.id, Some(THEIRS))).is_some(), "another phone's conf went");
     assert!(host.file(&install_conf_path(c.id, Some(MINE))).is_some());
 }
+
+/// B443: a legacy conf of this phone's that the move over didn't take —
+/// minted again since, so its digest is an older conf — still pushes to
+/// this phone's APNs token, which only this phone has (a restored phone is
+/// handed a new one): it goes once the install has its own. Another
+/// phone's legacy conf pushes to another token and stays.
+#[test]
+fn this_phones_older_legacy_conf_goes_by_its_token() {
+    let mut rig = Rig::new().with_token();
+    let c = hooked(&mut rig, "m1-pro");
+    let mine = ready_pairing(c.id);
+    rig.store.0.lock().unwrap().pairings.push(mine.clone());
+    let mut older = mine.clone();
+    older.send_token = "99".repeat(32);
+    conf_on_host_as(&mut rig, c.id, &older, None);
+    rig.act(|m, k| m.install_id(MINE.into(), k));
+    rig.tend(&c);
+    let host = rig.host(c.id);
+    assert_eq!(host.file(&install_conf_path(c.id, Some(MINE))), Some(&moshpit_install::push_conf(&mine)));
+    assert!(host.file(&install_conf_path(c.id, None)).is_none(), "this phone's older legacy conf stayed");
+    assert!(host.manifest().pairing_entry(&c.id.to_string()).is_none());
+}

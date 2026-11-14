@@ -105,3 +105,17 @@ struct LandingStepTests {
                 "attached just now: its patience starts")
     }
 }
+
+/// B492: a landing whose pane is gone was dropped without a word: the
+/// person landed on another pane and took the notification for wrong.
+/// Now it says so for a moment; the multiplexer's own notice wins.
+@Suite("a gone pane's landing is said (B492)")
+struct LandingSaidTests {
+    @Test("A one-off shows when nothing else is said, and gives way to the multiplexer's notice")
+    func aOneOffGivesWay() {
+        #expect(TerminalScreen.shownNotice(multiplexer: nil, flashed: "That pane is closed") == "That pane is closed")
+        #expect(TerminalScreen.shownNotice(multiplexer: "Refused", flashed: "That pane is closed") == "Refused")
+        #expect(TerminalScreen.shownNotice(multiplexer: nil, flashed: nil) == nil)
+        #expect(TerminalScreen.flashSeconds > 0 && TerminalScreen.flashSeconds <= 5, "a moment")
+    }
+}

@@ -119,10 +119,33 @@ pub fn scan(cells: &[&str], rules: &Rules) -> Vec<Candidate> {
     found
 }
 
-/// One ASCII character a path is made of.
+/// One character a path is made of: ASCII's, or a letter of a script that
+/// puts spaces between its words (Latin with its accents, Greek, Cyrillic),
+/// which runs on inside a name like any ASCII letter. A cell is a grapheme,
+/// so a letter carries its combining marks.
+///
+/// Fix (B462): only ASCII was; any other letter ended the run, and only a
+/// CJK name's head or tail carried a path past it. "café/menu.png" was cut
+/// at the accent and offered as "é/menu.png" and "/menu.png". Scripts
+/// written without spaces (CJK, Thai) still end the run: there prose runs
+/// straight into a path, and the heads and tails sort that out.
 fn is_path(cell: &str) -> bool {
     let b = cell.as_bytes();
-    b.len() == 1 && (b[0].is_ascii_alphanumeric() || b"._@+-/~".contains(&b[0]))
+    if b.len() == 1 {
+        return b[0].is_ascii_alphanumeric() || b"._@+-/~".contains(&b[0]);
+    }
+    cell.chars()
+        .next()
+        .is_some_and(|c| c.is_ascii_alphanumeric() || is_spaced_letter(c))
+}
+
+/// A letter of Latin (beyond ASCII), Greek or Cyrillic.
+fn is_spaced_letter(c: char) -> bool {
+    matches!(
+        c,
+        '\u{C0}'..='\u{24F}' | '\u{1E00}'..='\u{1EFF}' | '\u{370}'..='\u{3FF}'
+            | '\u{1F00}'..='\u{1FFF}' | '\u{400}'..='\u{52F}'
+    ) && c.is_alphabetic()
 }
 
 /// A wide (CJK) letter or digit: part of a name.
@@ -393,10 +416,37 @@ mod tests {
         assert!(!pngs.previewable("x."));
     }
 
+    /// B462: any letter outside ASCII ended the run, and only a CJK name's
+    /// head or tail could carry a path past it. A name that starts in ASCII
+    /// and has an accent further on ("café/", "Präsentation/") was cut at
+    /// the accent, and what was offered was the rest ("é/menu.png",
+    /// "/menu.png"), which no host has.
+    #[test]
+    fn a_name_in_a_spaced_script_is_one_path() {
+        assert_eq!(tokens("saved to café/menu.png"), ["café/menu.png"]);
+        assert_eq!(
+            tokens("Gespeichert: Präsentation/übersicht.png."),
+            ["Präsentation/übersicht.png"]
+        );
+        assert_eq!(tokens("voir résumé.pdf"), ["résumé.pdf"]);
+        assert_eq!(tokens("готово: отчёт/график.png"), ["отчёт/график.png"]);
+        let found = scan_line("à Ελλάδα/χάρτης.png");
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].token, "Ελλάδα/χάρτης.png");
+        assert_eq!(found[0].cells, 2..19);
+        // e + combining acute is one cell at the front of a name too.
+        let cells = ["c", "a", "f", "e\u{301}", "/", "a", ".", "p", "n", "g"];
+        let found = scan(&cells, &rules());
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].token, "cafe\u{301}/a.png");
+        // Scripts written without spaces still end the run.
+        assert_eq!(tokens("保存到out/a.png了"), ["out/a.png"]);
+    }
+
     #[test]
     fn a_grapheme_cell_is_one_character() {
         // "é" as e + combining acute is one cell, as the app's Character is:
-        // not ASCII (it ends the ASCII run), a letter (a name's).
+        // a letter, part of the name.
         let cells = ["o", "u", "t", "/", "e\u{301}", ".", "p", "n", "g"];
         let found = scan(&cells, &rules());
         assert_eq!(found[0].token, "out/e\u{301}.png");

@@ -1326,6 +1326,7 @@ add("The icon is separate from the accent color, because iOS only allows switchi
 # Connection / session failures
 add("Not attached to the pane yet — input wasn't sent",
     "还没连上这个窗格，刚才的输入没发出去", "まだペインに接続していません。入力は送信されませんでした")
+add("That pane is closed", "那个窗格已经关了", "そのペインはもう閉じています")
 add("Couldn't switch to that pane — nothing was sent",
     "没能切到那个窗格，什么都没发出去", "そのペインに切り替えられませんでした。何も送信していません")
 # A plain shell's keys typed while the way back found the connection dead (B396)
@@ -1428,6 +1429,7 @@ add("Restart didn't take — on the host, run: herdr server stop && herdr", "重
 add("Restart herdr server", "重启 herdr 服务", "herdr サーバーを再起動")
 add("Restarting herdr server…", "正在重启 herdr 服务…", "herdr サーバーを再起動中…")
 add("Retry", "重试", "再試行")
+add("Retrying in %lld s", "%lld 秒后重试", "%lld 秒後に再試行")
 add("Restart server", "重启服务", "サーバーを再起動")
 add("herdr on the host's PATH is %@, its server %@ — update that copy", "主机 PATH 里的 herdr 是 %1$@，服务是 %2$@，升级 PATH 里那份就好", "ホストの PATH 上の herdr は %1$@、サーバーは %2$@ です。PATH 上の herdr を更新してください")
 add("The host's herdr server is %@, older than its herdr %@", "主机上运行的 herdr 服务是 %1$@，比 herdr 本身（%2$@）旧", "ホストの herdr サーバーは %1$@ で、herdr 本体（%2$@）より古いです")

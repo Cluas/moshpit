@@ -136,6 +136,9 @@ pub struct HerdrView {
     /// The pane the frame channel is pointed at, and the one taking input.
     pub frame_target: Option<String>,
     pub attached_pane: Option<String>,
+    /// How long the backoff after a refusal is, while one runs: the
+    /// banner counts it down (B490).
+    pub retry_wait_ms: Option<u64>,
 }
 
 impl HerdrView {
@@ -179,6 +182,7 @@ impl HerdrView {
             open_repo_guesses: client.open_repo_guesses(),
             frame_target: client.frame_target().map(str::to_owned),
             attached_pane: client.attached_pane().map(str::to_owned),
+            retry_wait_ms: client.retry_wait(),
             snapshot,
         }
     }

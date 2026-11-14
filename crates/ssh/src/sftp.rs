@@ -38,15 +38,17 @@ const WRITE_CHUNK: usize = 128 * 1024;
 /// A request unanswered this long fails rather than hangs (B89's lesson).
 const REQUEST_TIMEOUT_SECS: u64 = 60;
 
-/// `S_IFMT` and `S_IFDIR`.
+/// `S_IFMT`, `S_IFDIR` and `S_IFLNK`.
 const FILE_TYPE_MASK: u32 = 0o170000;
 const DIRECTORY: u32 = 0o040000;
+const SYMLINK: u32 = 0o120000;
 
 /// One file or folder on the host (`RemoteFileEntry`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RemoteEntry {
     pub path: String,
-    /// A symlink reads as what the listing reported for the link itself.
+    /// A symlink reads as what it points at (B460); one pointing nowhere as
+    /// the link itself.
     pub is_directory: bool,
     pub size: Option<u64>,
     /// Seconds since 1970.
@@ -267,6 +269,13 @@ impl Sftp {
 
     /// The entries of the folder at `path`, without `.` and `..`, unsorted;
     /// each path is `path` joined with the name.
+    ///
+    /// Fix (B460): readdir reports a symlink as the link itself (OpenSSH's
+    /// sftp-server lstats each entry), and a link to a folder read as a file
+    /// with no extension — which the folder sheet, showing folders and
+    /// previewable files, dropped. Each link is stat'ed (pipelined) and read
+    /// as what it points at, as the exec listing reads it (B333); a link
+    /// pointing nowhere stays as listed.
     pub async fn list(&self, path: &str) -> Result<Vec<RemoteEntry>, SftpError> {
         let (raw, at) = (self.raw.clone(), path.to_owned());
         let handle = self
@@ -287,7 +296,7 @@ impl Sftp {
                     name.files
                         .into_iter()
                         .filter(|f| f.filename != "." && f.filename != "..")
-                        .map(|f| RemoteEntry::new(format!("{base}/{}", f.filename), &f.attrs)),
+                        .map(|f| (format!("{base}/{}", f.filename), f.attrs)),
                 ),
                 Ok(Err(RawError::Status(status))) if status.status_code == StatusCode::Eof => {
                     break Ok(entries);
@@ -297,7 +306,29 @@ impl Sftp {
             }
         };
         self.let_go(handle).await;
-        result
+        let mut listed = result?;
+        let mut follows = JoinSet::new();
+        for (index, (at, attrs)) in listed.iter().enumerate() {
+            if attrs
+                .permissions
+                .is_some_and(|mode| mode & FILE_TYPE_MASK == SYMLINK)
+            {
+                let (raw, at) = (self.raw.clone(), at.clone());
+                follows.spawn(async move { (index, raw.stat(at).await) });
+            }
+        }
+        while let Some(done) = self
+            .unless_cancelled(async { Ok(follows.join_next().await) })
+            .await?
+        {
+            if let Ok((index, Ok(target))) = done {
+                listed[index].1 = target.attrs;
+            }
+        }
+        Ok(listed
+            .into_iter()
+            .map(|(at, attrs)| RemoteEntry::new(at, &attrs))
+            .collect())
     }
 
     /// Opens `path` for reads at any offset — what streaming playback pulls
@@ -735,7 +766,7 @@ impl Raw {
             ..Default::default()
         };
         let stream = Watched {
-            inner: stream,
+            inner: PastNoise::new(stream),
             ended: ended.clone(),
         };
         Raw {
@@ -872,6 +903,131 @@ impl<S: AsyncRead + Unpin> AsyncRead for Watched<S> {
 }
 
 impl<S: AsyncWrite + Unpin> AsyncWrite for Watched<S> {
+    fn poll_write(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<std::io::Result<usize>> {
+        Pin::new(&mut self.inner).poll_write(cx, buf)
+    }
+
+    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+        Pin::new(&mut self.inner).poll_flush(cx)
+    }
+
+    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+        Pin::new(&mut self.inner).poll_shutdown(cx)
+    }
+}
+
+/// How much an rc file may print before the SFTP greeting is given up on
+/// and the stream handed over as it came.
+const NOISE_LIMIT: usize = 64 * 1024;
+
+/// The subsystem channel's stream, past whatever the account's shell
+/// printed before the SFTP server started.
+///
+/// Fix (B463): sshd runs the server as `$SHELL -c sftp-server`, so an rc
+/// file that prints for every shell — bash reads `~/.bashrc` for sshd's
+/// `-c` — puts its text in front of the greeting. The client read that text
+/// as a packet length far past the limit and SFTP failed; every preview and
+/// listing then fell back to exec, whose output carries the same text, and
+/// came back garbled. Until the greeting (`SSH_FXP_VERSION`: a short
+/// length, type 2, version 1–6) has come, what comes first is set aside and
+/// dropped up to it. Text never holds the zero bytes a length starts with,
+/// so a clean stream's greeting is found at once, at its start. One that
+/// never comes within [`NOISE_LIMIT`] is handed over as it came.
+struct PastNoise<S> {
+    inner: S,
+    /// What has come while looking for the greeting; `None` once found.
+    seeking: Option<Vec<u8>>,
+    /// The greeting and what followed it, still to hand over.
+    ready: Vec<u8>,
+    handed: usize,
+}
+
+impl<S> PastNoise<S> {
+    fn new(inner: S) -> Self {
+        Self {
+            inner,
+            seeking: Some(Vec::new()),
+            ready: Vec::new(),
+            handed: 0,
+        }
+    }
+
+    /// Done looking: `bytes` from `from` on are the stream.
+    fn found(&mut self, bytes: Vec<u8>, from: usize) {
+        self.seeking = None;
+        self.ready = bytes;
+        self.handed = from;
+    }
+}
+
+/// Where an SFTP version packet starts in `bytes`.
+fn greeting_at(bytes: &[u8]) -> Option<usize> {
+    bytes.windows(9).position(|w| {
+        let length = u32::from_be_bytes([w[0], w[1], w[2], w[3]]);
+        let version = u32::from_be_bytes([w[5], w[6], w[7], w[8]]);
+        (5..=64 * 1024).contains(&length) && w[4] == 2 && (1..=6).contains(&version)
+    })
+}
+
+impl<S: AsyncRead + Unpin> AsyncRead for PastNoise<S> {
+    fn poll_read(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut ReadBuf<'_>,
+    ) -> Poll<std::io::Result<()>> {
+        let this = self.get_mut();
+        loop {
+            if this.handed < this.ready.len() {
+                let n = buf.remaining().min(this.ready.len() - this.handed);
+                buf.put_slice(&this.ready[this.handed..this.handed + n]);
+                this.handed += n;
+                if this.handed == this.ready.len() {
+                    this.ready = Vec::new();
+                    this.handed = 0;
+                }
+                return Poll::Ready(Ok(()));
+            }
+            let Some(seen) = this.seeking.as_mut() else {
+                return Pin::new(&mut this.inner).poll_read(cx, buf);
+            };
+            let mut chunk = [0u8; 4096];
+            let mut read = ReadBuf::new(&mut chunk);
+            match Pin::new(&mut this.inner).poll_read(cx, &mut read) {
+                Poll::Pending => return Poll::Pending,
+                Poll::Ready(Err(e)) => return Poll::Ready(Err(e)),
+                Poll::Ready(Ok(())) if read.filled().is_empty() => {
+                    // The end, no greeting: what came, then the end.
+                    let seen = std::mem::take(seen);
+                    this.found(seen, 0);
+                    if this.ready.is_empty() {
+                        return Poll::Ready(Ok(()));
+                    }
+                }
+                Poll::Ready(Ok(())) => {
+                    seen.extend_from_slice(read.filled());
+                    if let Some(at) = greeting_at(seen) {
+                        if at > 0 {
+                            log::warn!(
+                                "sftp: dropped {at} bytes the account's shell printed before the server's greeting"
+                            );
+                        }
+                        let seen = std::mem::take(seen);
+                        this.found(seen, at);
+                    } else if seen.len() > NOISE_LIMIT {
+                        let seen = std::mem::take(seen);
+                        this.found(seen, 0);
+                    }
+                }
+            }
+        }
+    }
+}
+
+impl<S: AsyncWrite + Unpin> AsyncWrite for PastNoise<S> {
     fn poll_write(
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
@@ -1068,6 +1224,52 @@ mod tests {
         let held = tokio::time::timeout(std::time::Duration::from_secs(5), held).await;
         assert!(matches!(held, Ok(Ok(Err(_)))), "the held write: {held:?}");
         drop(host);
+    }
+
+    /// What a [`PastNoise`] over `parts` (written one at a time, the host
+    /// side then closed) hands over.
+    async fn past_noise(parts: Vec<Vec<u8>>) -> Vec<u8> {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let (client, mut host) = tokio::io::duplex(1024);
+        let writer = tokio::spawn(async move {
+            for part in parts {
+                host.write_all(&part).await.unwrap();
+                host.flush().await.unwrap();
+                tokio::task::yield_now().await;
+            }
+            host.shutdown().await.unwrap();
+        });
+        let mut out = Vec::new();
+        PastNoise::new(client).read_to_end(&mut out).await.unwrap();
+        writer.await.unwrap();
+        out
+    }
+
+    /// OpenSSH's greeting: length 5, `SSH_FXP_VERSION`, version 3.
+    const GREETING: [u8; 9] = [0, 0, 0, 5, 2, 0, 0, 0, 3];
+
+    /// B463: the greeting found past text that spans many reads, and split
+    /// across two itself; what follows it is handed over untouched. A
+    /// clean stream comes through as it is, and so does one with no
+    /// greeting at all.
+    #[tokio::test]
+    async fn the_greeting_is_found_past_what_the_shell_printed() {
+        let after: Vec<u8> = (0..20_000u32).map(|i| (i % 251) as u8).collect();
+        let text = "motd: welcome\n".repeat(700).into_bytes();
+        let got = past_noise(vec![
+            text.clone(),
+            GREETING[..4].to_vec(),
+            GREETING[4..].to_vec(),
+            after.clone(),
+        ])
+        .await;
+        assert_eq!(got, [&GREETING[..], &after].concat());
+
+        let clean = [&GREETING[..], &after].concat();
+        assert_eq!(past_noise(vec![clean.clone()]).await, clean);
+
+        assert_eq!(past_noise(vec![text.clone()]).await, text);
+        assert!(past_noise(Vec::new()).await.is_empty());
     }
 
     /// Runs a window against a file of `actual` bytes whose server answers

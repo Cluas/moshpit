@@ -377,8 +377,45 @@ final class CoreTerminalView: UIView {
         }
         let took = (end - start) * 1000
         if took > longestFrameMs { longestFrameMs = took }
+        if changedAny { updateGround() }
         requestRender()
         onFrame?()
+    }
+
+    // MARK: What lies outside the grid (B495)
+
+    /// The margins the grid leaves (its columns centred, B473; its rows
+    /// from the top) take what the grid shows at its edges: the colour most
+    /// of its first and last column's cells have, else the core's live
+    /// default background. They were the theme's background, while the
+    /// grid's own could differ (a remote's OSC 11, a program painting every
+    /// cell): dark strips either side of the grid.
+    private func updateGround() {
+        var edges: [UInt32] = []
+        edges.reserveCapacity(rows.gridRows * 2)
+        for row in rows.rows.prefix(rows.gridRows) where !row.cells.isEmpty {
+            edges.append(row.cells[0].bg)
+            edges.append(row.cells[row.cells.count - 1].bg)
+        }
+        let fallback = framesTaken > 0 ? rows.info.background : style.background
+        let next = Self.ground(edges: edges, fallback: fallback)
+        guard next != style.outside else { return }
+        var s = style
+        s.ground = next == s.background ? nil : next
+        style = s
+        backgroundColor = UIColor(cgColor: coreCGColor(next))
+    }
+
+    /// The colour most of `edges` have, if more than half do; else
+    /// `fallback`.
+    nonisolated static func ground(edges: [UInt32], fallback: UInt32) -> UInt32 {
+        guard !edges.isEmpty else { return fallback }
+        var counts: [UInt32: Int] = [:]
+        for colour in edges { counts[colour, default: 0] += 1 }
+        guard let (top, count) = counts.max(by: { $0.value < $1.value }), count * 2 > edges.count else {
+            return fallback
+        }
+        return top
     }
 
     /// One frame into the rows and the canvas, then the marks its bytes
@@ -1141,7 +1178,7 @@ final class CoreTermCGCanvas: UIView, CoreTermCanvas {
         let h = renderer.metrics.height
         let toDraw: [Int] = all ? Array(rows.rows.indices) : dirty.sorted()
         if all {
-            ctx.setFillColor(coreCGColor(renderer.style.background))
+            ctx.setFillColor(coreCGColor(renderer.style.outside))
             ctx.fill(bounds)
         }
         for r in toDraw where r < rows.rows.count {

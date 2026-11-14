@@ -32,6 +32,7 @@ final class FakeLentSSH: BorrowedSsh, @unchecked Sendable {
         var progressAnswers: [Bool] = []
         var opened: [FakeLentFile] = []
         var cancels: [BorrowCancel] = []
+        var downloadHolds: [Duration] = []
     }
 
     init() {
@@ -84,6 +85,9 @@ final class FakeLentSSH: BorrowedSsh, @unchecked Sendable {
     func deny(_ path: String) { with { _ = $0.denied.insert(path) } }
     /// Calls on `path` (or the command `path`) never answer.
     func hang(_ what: String) { with { _ = $0.hang.insert(what) } }
+    /// Extra time the next downloads take once their destination is
+    /// created, one per download in the order they're asked for.
+    func holdDownloads(_ holds: Duration...) { with { $0.downloadHolds += holds } }
 
     // MARK: What happened
 
@@ -186,14 +190,22 @@ final class FakeLentSSH: BorrowedSsh, @unchecked Sendable {
         }
     }
 
+    /// As the core does it: the destination is created (or cut to nothing)
+    /// once the file is open, and the bytes land in it as the reads answer.
     override func sftpDownload(path: String, destination: String, progress: TransferProgress?) async throws -> UInt64 {
+        let hold = with { $0.downloadHolds.isEmpty ? Duration.zero : $0.downloadHolds.removeFirst() }
         let data = try await answer(path, sftp: true) { () -> Data in
             try checked(path)
             guard let data = with({ $0.files[path] }) else { throw notFound(path) }
             return data
         }
+        let descriptor = Darwin.open(destination, O_WRONLY | O_CREAT | O_TRUNC, 0o644)
+        guard descriptor >= 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+        let out = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
+        try await Task.sleep(for: hold)
         try await report(progress, chunks: 8)
-        try data.write(to: URL(fileURLWithPath: destination))
+        try out.write(contentsOf: data)
+        try out.close()
         return UInt64(data.count)
     }
 

@@ -149,4 +149,15 @@ struct SwitchStillTests {
         let container = try #require(stage.container)
         #expect(container.frame == slot.bounds)
     }
+
+    @Test("B490: a herdr refusal's banner counts down whole seconds to its retry, then stops")
+    func theRetryCountdown() {
+        let now = Date(timeIntervalSince1970: 1_000)
+        #expect(TerminalScreen.retrySecondsLeft(until: nil, now: now) == nil)
+        #expect(TerminalScreen.retrySecondsLeft(until: now.addingTimeInterval(30), now: now) == 30)
+        #expect(TerminalScreen.retrySecondsLeft(until: now.addingTimeInterval(29.2), now: now) == 30, "rounded up")
+        #expect(TerminalScreen.retrySecondsLeft(until: now.addingTimeInterval(0.4), now: now) == 1)
+        #expect(TerminalScreen.retrySecondsLeft(until: now, now: now) == nil, "over")
+        #expect(TerminalScreen.retrySecondsLeft(until: now.addingTimeInterval(-3), now: now) == nil)
+    }
 }

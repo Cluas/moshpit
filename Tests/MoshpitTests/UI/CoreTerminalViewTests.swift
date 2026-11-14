@@ -710,3 +710,54 @@ struct GridCentreTests {
         #expect(next.col == 1)
     }
 }
+
+/// B495: the margins the grid leaves (B473 centred them) were the theme's
+/// background, the grid's own background could be another (a remote's
+/// OSC 11, a program painting every cell): dark strips either side. They
+/// take what the grid shows at its edges now; and the core's default
+/// background is the theme's for every theme, so with nothing painted the
+/// two are one colour.
+@Suite("what lies outside the grid matches its edges (B495)")
+struct GridGroundTests {
+    @Test("The colour most edge cells have, if more than half do; else the fallback")
+    func theMajorityOfTheEdges() {
+        let grey: UInt32 = 0x282A36, black: UInt32 = 0x000000, blue: UInt32 = 0x0000AA
+        #expect(CoreTerminalView.ground(edges: Array(repeating: grey, count: 40), fallback: black) == grey)
+        #expect(CoreTerminalView.ground(edges: Array(repeating: grey, count: 38) + [blue, blue], fallback: black) == grey,
+                "a status row of its own doesn't count")
+        #expect(CoreTerminalView.ground(edges: [grey, blue, grey, blue], fallback: black) == black, "no majority")
+        #expect(CoreTerminalView.ground(edges: [], fallback: black) == black)
+    }
+
+    private static let font = UIFont.monospacedSystemFont(ofSize: 12, weight: .regular)
+
+    private static func look(_ theme: TerminalTheme) -> TerminalLook {
+        TerminalLook(theme: theme, cursorShape: .block, cursorColorId: "teal", cursorBlink: false)
+    }
+
+    @Test("Every built-in theme: the core's default background is the one the view keeps")
+    @MainActor
+    func theCoreAndTheViewAgreeOnEveryTheme() {
+        let view = CoreTerminalView(frame: CGRect(x: 0, y: 0, width: 360, height: 480), font: Self.font)
+        for theme in TerminalTheme.builtIns {
+            view.apply(look: Self.look(theme))
+            #expect(view.settle { $0.rows.info.background == $0.style.background },
+                    "\(theme.name): core \(String(view.rows.info.background, radix: 16)) against \(String(view.style.background, radix: 16))")
+            #expect(view.style.outside == view.style.background, "\(theme.name): nothing painted, nothing else outside")
+        }
+    }
+
+    @Test("A grid painted grey on a black theme leaves grey margins, not black ones")
+    @MainActor
+    func marginsFollowAPaintedGrid() {
+        let view = CoreTerminalView(frame: CGRect(x: 0, y: 0, width: 362, height: 480), font: Self.font)
+        let black = TerminalTheme.builtIns.first { $0.backgroundHex.lowercased().hasSuffix("000000") } ?? TerminalTheme.fallback
+        view.apply(look: Self.look(black))
+        // Erase in a set background: every cell takes it (background colour erase).
+        view.feed(Data("\u{1b}[48;2;40;42;54m\u{1b}[2J".utf8))
+        #expect(view.settle { $0.style.outside == 0x282A36 }, "outside \(String(view.style.outside, radix: 16))")
+        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        view.backgroundColor?.getRed(&r, green: &g, blue: &b, alpha: &a)
+        #expect(abs(r * 255 - 40) < 1 && abs(g * 255 - 42) < 1 && abs(b * 255 - 54) < 1, "the gutter is the grid's grey")
+    }
+}

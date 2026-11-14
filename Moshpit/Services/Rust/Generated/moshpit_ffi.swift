@@ -9891,6 +9891,11 @@ public struct HerdrReadModel: Equatable, Hashable {
      */
     public var frameTarget: String?
     public var attachedPane: String?
+    /**
+     * How long the backoff after a refusal is, while one runs: the
+     * banner counts it down from when it first sees it (B490).
+     */
+    public var retryWaitMs: UInt64?
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
@@ -9915,7 +9920,11 @@ public struct HerdrReadModel: Equatable, Hashable {
          */worktreeRepos: [String: String], openRepoGuesses: [String], 
         /**
          * The pane the frame channel is pointed at, and the one taking input.
-         */frameTarget: String?, attachedPane: String?) {
+         */frameTarget: String?, attachedPane: String?, 
+        /**
+         * How long the backoff after a refusal is, while one runs: the
+         * banner counts it down from when it first sees it (B490).
+         */retryWaitMs: UInt64?) {
         self.sessions = sessions
         self.windows = windows
         self.panes = panes
@@ -9942,6 +9951,7 @@ public struct HerdrReadModel: Equatable, Hashable {
         self.openRepoGuesses = openRepoGuesses
         self.frameTarget = frameTarget
         self.attachedPane = attachedPane
+        self.retryWaitMs = retryWaitMs
     }
 
     
@@ -9985,7 +9995,8 @@ public struct FfiConverterTypeHerdrReadModel: FfiConverterRustBuffer {
                 worktreeRepos: FfiConverterDictionaryStringString.read(from: &buf), 
                 openRepoGuesses: FfiConverterSequenceString.read(from: &buf), 
                 frameTarget: FfiConverterOptionString.read(from: &buf), 
-                attachedPane: FfiConverterOptionString.read(from: &buf)
+                attachedPane: FfiConverterOptionString.read(from: &buf), 
+                retryWaitMs: FfiConverterOptionUInt64.read(from: &buf)
         )
     }
 
@@ -10016,6 +10027,7 @@ public struct FfiConverterTypeHerdrReadModel: FfiConverterRustBuffer {
         FfiConverterSequenceString.write(value.openRepoGuesses, into: &buf)
         FfiConverterOptionString.write(value.frameTarget, into: &buf)
         FfiConverterOptionString.write(value.attachedPane, into: &buf)
+        FfiConverterOptionUInt64.write(value.retryWaitMs, into: &buf)
     }
 }
 

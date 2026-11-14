@@ -552,6 +552,9 @@ pub struct HerdrReadModel {
     /// The pane the frame channel is pointed at, and the one taking input.
     pub frame_target: Option<String>,
     pub attached_pane: Option<String>,
+    /// How long the backoff after a refusal is, while one runs: the
+    /// banner counts it down from when it first sees it (B490).
+    pub retry_wait_ms: Option<u64>,
 }
 
 pub(crate) fn read_model(view: &HerdrView) -> HerdrReadModel {
@@ -663,6 +666,7 @@ pub(crate) fn read_model(view: &HerdrView) -> HerdrReadModel {
         open_repo_guesses: view.open_repo_guesses.clone(),
         frame_target: view.frame_target.clone(),
         attached_pane: view.attached_pane.clone(),
+        retry_wait_ms: view.retry_wait_ms,
     }
 }
 

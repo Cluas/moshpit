@@ -362,9 +362,17 @@ async fn forget_left_behind(
                 let let_go = !paired.contains(&id) && !saved.contains(&id) && !s.saved.listed.contains(&id);
                 // Another install's conf pushing to this phone's token is an
                 // earlier install of the app on this very phone: its secret is
-                // gone with it (B443). A legacy one is left to the move over.
+                // gone with it (B443).
                 let earlier_install = matches!((install.as_deref(), mine), (Some(theirs), Some(mine)) if theirs != mine);
-                let_go || earlier_install
+                // So is a legacy conf pushing to this phone's token once this
+                // install has its own: an APNs token is the device's and the
+                // app install's, and a phone restored from another's backup is
+                // handed a new one — a conf that pushes to this token can only
+                // be this phone's. One the move over didn't take (its digest
+                // is an older conf of this phone's, minted again since) went on
+                // costing a refused push each time it sorted first.
+                let own_legacy = install.is_none() && mine.is_some();
+                let_go || earlier_install || own_legacy
             })
             .collect()
     });

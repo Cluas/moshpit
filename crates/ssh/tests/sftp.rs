@@ -104,6 +104,48 @@ async fn a_listing_drops_dot_entries_and_joins_paths() {
     ));
 }
 
+/// B460: SFTP's readdir reports a symlink as the link itself (OpenSSH's
+/// sftp-server lstats each entry), and the listing took that as the entry:
+/// a link to a folder (`~/code -> /data/code`) read as a file with no
+/// extension, and the folder sheet, which shows folders and previewable
+/// files, dropped it — on every host with SFTP. The exec listing follows
+/// links (B333). A link is now read as what it points at; one pointing
+/// nowhere stays as the listing said.
+#[tokio::test]
+async fn a_listing_reads_a_link_as_what_it_points_at() {
+    let host = Host::start(Bench::default()).await;
+    let dir = host.home.join("project");
+    std::fs::create_dir_all(dir.join("real")).unwrap();
+    std::fs::write(dir.join("real/a.png"), b"png").unwrap();
+    std::os::unix::fs::symlink(dir.join("real"), dir.join("linked")).unwrap();
+    std::os::unix::fs::symlink(dir.join("real/a.png"), dir.join("pic.png")).unwrap();
+    std::os::unix::fs::symlink(dir.join("missing"), dir.join("dangling")).unwrap();
+    let sftp = connect(&host).await.sftp().await.unwrap();
+    let base = dir.to_string_lossy().into_owned();
+
+    let entries = sftp.list(&base).await.unwrap();
+    let entry = |name: &str| {
+        entries
+            .iter()
+            .find(|e| e.path == format!("{base}/{name}"))
+            .unwrap_or_else(|| panic!("no {name} in {entries:?}"))
+            .clone()
+    };
+    assert!(entry("real").is_directory);
+    assert!(
+        entry("linked").is_directory,
+        "a link to a folder is a folder"
+    );
+    assert!(!entry("pic.png").is_directory);
+    assert_eq!(
+        entry("pic.png").size,
+        Some(3),
+        "a link to a file has its size"
+    );
+    assert!(!entry("dangling").is_directory);
+    assert_eq!(host.seen().open_handles, 0);
+}
+
 /// Listing again and again on one session doesn't run the host out of
 /// handles: each directory handle is closed.
 #[tokio::test]
@@ -204,6 +246,37 @@ async fn a_download_arrives_whole_with_progress() {
     assert!(fractions.windows(2).all(|w| w[0] <= w[1]));
     assert_eq!(fractions.last(), Some(&1.0));
     assert_eq!(host.seen().open_handles, 0);
+}
+
+/// B463: sshd starts the SFTP server through the account's shell, and an
+/// rc file that prints for every shell (bash reads `~/.bashrc` for sshd's
+/// `-c`) puts its text in front of the server's greeting. That text read as
+/// a packet length far past the limit, SFTP failed, and every preview fell
+/// back to exec, whose output carries the same text.
+#[tokio::test]
+async fn a_shell_that_prints_before_sftp_starts_doesnt_break_it() {
+    let host = Host::start(Bench {
+        sftp_noise: b"Welcome to the build box!\r\nLast deploy: today\n".to_vec(),
+        ..Bench::default()
+    })
+    .await;
+    let bytes = noise(300_000, 7);
+    std::fs::create_dir(host.home.join("out")).unwrap();
+    std::fs::write(host.home.join("out/a.png"), &bytes).unwrap();
+    let sftp = connect(&host)
+        .await
+        .sftp()
+        .await
+        .expect("SFTP past the noise");
+    assert!(sftp.stat("out").await.unwrap().is_directory);
+    let local = Scratch::new("noisy-download");
+    let destination = local.join("a.png");
+    let copied = sftp
+        .download("out/a.png", &destination, &mut |_| true)
+        .await
+        .unwrap();
+    assert_eq!(copied, bytes.len() as u64);
+    assert!(std::fs::read(&destination).unwrap() == bytes);
 }
 
 #[tokio::test]

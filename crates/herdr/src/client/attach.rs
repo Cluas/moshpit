@@ -82,6 +82,8 @@ pub(super) struct Attach {
     pub release_sent_at: Option<u64>,
     /// Backing off after herdr refused an attach.
     pub retry_after: Option<u64>,
+    /// How long that backoff is, for the banner's countdown (B490).
+    pub retry_wait: Option<u64>,
     /// The person chose `target` (a pick, a reply, "Open here"): its attach
     /// line asks for `--takeover`. A follow's doesn't.
     pub take_over: bool,
@@ -265,6 +267,7 @@ impl Client {
                 return;
             }
             self.attach.retry_after = None;
+            self.attach.retry_wait = None;
         }
         if !self.attach.open {
             return;
@@ -810,7 +813,12 @@ impl Client {
         if snapshot::looks_like_version_skew(&message) {
             self.offer_restart(message);
         } else {
-            self.set_notice(Notice::Refused(message.clone()), None);
+            // Said with how long until it is asked again, and a button
+            // that asks now (B490).
+            self.set_notice(
+                Notice::Refused(message.clone()),
+                Some(super::NoticeAction::Retry),
+            );
             if frame::is_handshake_drop(&message) {
                 // A hang-up mid-handshake names no versions: ask.
                 let command = self.herdr(control::STATUS);
@@ -831,6 +839,7 @@ impl Client {
         self.timers.cancel(&Slot::ReleaseAck);
         self.drop_all_held(true);
         self.attach.retry_after = Some(self.now + self.config.budgets.refusal_backoff);
+        self.attach.retry_wait = Some(self.config.budgets.refusal_backoff);
         self.dirty = true;
         let awaiting = self.attach.awaiting_full.take();
         log::warn!(
@@ -909,6 +918,25 @@ impl Client {
             (self.attach.held_terminal.as_deref(), self.poll.terminal_ids.get(pane)),
             (Some(then), Some(now)) if then != now
         )
+    }
+
+    /// What was backed off from is asked for now (B490): the banner's
+    /// Retry, the app's return, a server of another version. A refusal's
+    /// banner goes with it; a skew's stays until the server answers.
+    pub(super) fn retry_now(&mut self) {
+        if self.attach.retry_after.take().is_none() {
+            return;
+        }
+        self.attach.retry_wait = None;
+        if self
+            .notice
+            .as_ref()
+            .is_some_and(|(notice, _)| matches!(notice, Notice::Refused(_)))
+        {
+            self.clear_notice();
+        }
+        self.dirty = true;
+        self.quicken();
     }
 
     /// No server: whatever another device held, it holds no more (B467).

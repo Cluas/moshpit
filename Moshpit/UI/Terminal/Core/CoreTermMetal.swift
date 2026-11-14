@@ -999,7 +999,8 @@ final class CoreTermMetalCanvas: UIView {
         pass.colorAttachments[0].texture = texture
         pass.colorAttachments[0].loadAction = .clear
         pass.colorAttachments[0].storeAction = .store
-        let bg = style.background
+        // What lies outside the grid (B495).
+        let bg = style.outside
         pass.colorAttachments[0].clearColor = MTLClearColor(red: Double((bg >> 16) & 0xFF) / 255,
                                                             green: Double((bg >> 8) & 0xFF) / 255,
                                                             blue: Double(bg & 0xFF) / 255, alpha: 1)

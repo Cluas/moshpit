@@ -106,6 +106,13 @@ struct CoreTermStyle: Equatable {
     var cursorBlink = true
     var selection: UInt32 = 0x264F78
     var match: UInt32 = 0x7A5F00
+    /// What lies outside the grid (the margins its columns and rows leave),
+    /// when it isn't ``background`` (B495): the colour the grid shows at
+    /// its edges, which a remote can make other than the theme's.
+    var ground: UInt32?
+
+    /// The colour outside the grid.
+    var outside: UInt32 { ground ?? background }
 
     /// A cell's background as drawn: the selection and a search match tint it.
     @inline(__always) func background(of cell: MpDrawCell) -> UInt32 {
@@ -406,7 +413,7 @@ struct CoreTermCGRenderer {
         var cache: [UInt64: CGImage] = [:]
         return UIGraphicsImageRenderer(size: size, format: format).image { context in
             let ctx = context.cgContext
-            ctx.setFillColor(coreCGColor(style.background))
+            ctx.setFillColor(coreCGColor(style.outside))
             ctx.fill(CGRect(origin: .zero, size: size))
             // Where the view's grid starts across it (B473).
             ctx.translateBy(x: xOffset, y: 0)

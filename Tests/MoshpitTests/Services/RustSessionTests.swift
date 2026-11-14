@@ -885,7 +885,7 @@ struct RustSessionTests {
             restarting: false, serverNotRunning: false, protocolMismatch: nil, skewClient: nil,
             skewServer: nil, serverVersion: "0.9.5", pushActive: true, paneSwitchInFlight: false,
             paneCwds: ["w1:p1": "/r"], worktreeRepos: [:], openRepoGuesses: ["/r"],
-            frameTarget: "w1:p1", attachedPane: "w1:p1")
+            frameTarget: "w1:p1", attachedPane: "w1:p1", retryWaitMs: nil)
     }
 
     static func model(active: String) -> TmuxReadModel {
