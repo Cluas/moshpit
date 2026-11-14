@@ -607,6 +607,7 @@
   "The icon is separate from the accent color, because iOS only allows switching between icons bundled with the app — a custom accent can't have matching artwork generated for it.": "O ícone é separado da cor de destaque porque o iOS só permite alternar entre os ícones incluídos no app: não dá para gerar um ícone combinando com uma cor personalizada.",
   "Not attached to the pane yet — input wasn't sent": "Ainda sem conexão com o painel. A entrada não foi enviada",
   "That pane is closed": "Esse painel foi fechado",
+  "Couldn't switch to that pane": "Não foi possível mudar para esse painel",
   "Couldn't switch to that pane — nothing was sent": "Não foi possível mudar para esse painel. Nada foi enviado",
   "What you just typed wasn't sent: the connection dropped, and it's back now": "O que você acabou de digitar não foi enviado. A conexão caiu e já voltou",
   "This pane is open on another device": "Este painel está aberto em outro dispositivo",

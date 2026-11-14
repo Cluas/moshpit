@@ -1083,6 +1083,11 @@ void uniffi_moshpit_ffi_fn_method_hostcarecore_install_id(uint64_t ptr, RustBuff
 int8_t uniffi_moshpit_ffi_fn_method_hostcarecore_is_tending(uint64_t ptr, RustBuffer connection, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_HOSTCARECORE_NAME_CONNECTION
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_HOSTCARECORE_NAME_CONNECTION
+void uniffi_moshpit_ffi_fn_method_hostcarecore_name_connection(uint64_t ptr, RustBuffer connection, RustBuffer label, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_HOSTCARECORE_OPEN_SETUP
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_HOSTCARECORE_OPEN_SETUP
 uint64_t uniffi_moshpit_ffi_fn_method_hostcarecore_open_setup(uint64_t ptr, RustBuffer connection, RustBuffer test_pane, RustCallStatus *_Nonnull out_status
@@ -3690,6 +3695,12 @@ uint16_t uniffi_moshpit_ffi_checksum_method_hostcarecore_install_id(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_HOSTCARECORE_IS_TENDING
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_HOSTCARECORE_IS_TENDING
 uint16_t uniffi_moshpit_ffi_checksum_method_hostcarecore_is_tending(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_HOSTCARECORE_NAME_CONNECTION
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_HOSTCARECORE_NAME_CONNECTION
+uint16_t uniffi_moshpit_ffi_checksum_method_hostcarecore_name_connection(void
     
 );
 #endif

@@ -306,6 +306,8 @@ pub struct Monitor {
     unjudged: BTreeSet<String>,
     headline_offset: usize,
     widget_sent: Option<(IslandState, f64)>,
+    /// The pane on screen at the last sweep (B449).
+    on_screen: Option<Visible>,
     island_sent: Option<(IslandState, f64)>,
     island_ended: bool,
     effects: Vec<Effect>,
@@ -347,6 +349,7 @@ impl Monitor {
             unjudged: BTreeSet::new(),
             headline_offset: 0,
             widget_sent: None,
+            on_screen: None,
             island_sent: None,
             island_ended: false,
             effects: Vec::new(),
@@ -868,6 +871,7 @@ impl Monitor {
     /// grace ran out, a card for the pane on screen acknowledged, and the
     /// heuristic's ageing.
     pub fn sweep(&mut self, visible: Option<&Visible>, now: f64) {
+        self.on_screen = visible.cloned();
         self.fire_due_announcements(now);
         if let Some(visible) = visible {
             let seen: Vec<Key> = self
@@ -1042,6 +1046,21 @@ impl Monitor {
     /// pushed copy the host sent when the turn stopped.
     fn post_done(&mut self, key: &Key, command: &str, detail: Option<String>, duration: f64, ended_at: f64, now: f64) {
         if !self.settings.notifications {
+            return;
+        }
+        // A turn that finished on screen needs no card (B449): the person
+        // watched it end. It used to post one all the same, a banner over
+        // the very pane, then sit in the list as news. Its finish counts as
+        // rung, so the pushed copy, if the host's arrives, is quiet too.
+        if self
+            .on_screen
+            .as_ref()
+            .is_some_and(|v| v.conn == key.0 && v.pane.as_deref().is_none_or(|pane| pane == key.1))
+        {
+            self.effects.push(Effect::Note(format!("finish on screen: pane {} — no card", key.1)));
+            if let Some(finishes) = &self.finishes {
+                finishes.note_ring(&key.0, &key.1, ended_at as i64, Date::from_unix(now));
+            }
             return;
         }
         let threshold = self.tunables.done_threshold;

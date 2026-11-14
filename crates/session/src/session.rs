@@ -449,6 +449,31 @@ const CONTROL_CHECK: Duration = Duration::from_millis(1_500);
 /// How long the person's tmux commands wait for a control plane in doubt.
 const CONTROL_HOLD: Duration = Duration::from_secs(5);
 
+/// How long typing waits behind a paste to the same place (B485). A
+/// program taking a paste in may drop a key that comes with it: Claude
+/// Code, making an image's path an attachment, drops a Return that reaches
+/// it with the paste, so the image panel's Send (the path, then Return)
+/// only pasted. Measured there: lost back to back, kept 5 ms behind; this
+/// leaves room for a slower host.
+const PASTE_SETTLE: Duration = Duration::from_millis(150);
+
+/// Where typing goes: the session's shell (plain SSH, mosh) or a
+/// multiplexer's pane.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+enum Dest {
+    Shell,
+    Pane(String),
+}
+
+/// Typing held behind the paste just sent to a place (B485).
+struct Settling {
+    /// When the paste has had its time (the session clock's ms).
+    until: u64,
+    /// What came after it, in order, with where each ends in the shell's
+    /// channel (mosh's echo acknowledgement counts in it).
+    queued: Vec<(StreamId, Typed, u64)>,
+}
+
 /// herdr's control plane beside the mosh leg of `generation`: the plane
 /// (W2b's client and the raw-attach renderer) on a connection of its own —
 /// first the bootstrap's, kept; redialled when it drops, while mosh carries
@@ -609,6 +634,9 @@ pub(crate) struct Actor {
     /// Commands held past their bound were dropped: said once an attach
     /// carries commands again.
     tmux_dropped: bool,
+    /// Typing behind a paste, per place, until the paste has had its time
+    /// (B485).
+    settling: BTreeMap<Dest, Settling>,
     /// The in-place return's question, until it is settled.
     resume_question: Option<ResumeQuestion>,
     deliveries: Vec<Delivery>,
@@ -689,6 +717,7 @@ impl Actor {
             tmux_held: Vec::new(),
             tmux_hold: 0,
             tmux_dropped: false,
+            settling: BTreeMap::new(),
             resume_question: None,
             deliveries: Vec::new(),
             grids: BTreeMap::new(),
@@ -745,6 +774,7 @@ impl Actor {
             let next = [
                 self.life.next_deadline(),
                 self.deliveries.iter().map(|d| d.deadline).min(),
+                self.settling.values().map(|s| s.until).min(),
             ]
             .into_iter()
             .flatten()
@@ -769,6 +799,7 @@ impl Actor {
                     let now = self.now();
                     self.life.tick(now);
                     self.expire_deliveries(now);
+                    self.release_settled(now);
                 }
             }
         }
@@ -3082,7 +3113,7 @@ impl Actor {
             };
             if panes.iter().any(|info| info.pane == pane) {
                 for (stream, typed) in queued {
-                    self.send_to_pane(&pane, stream, typed);
+                    self.send_or_wait(Dest::Pane(pane.clone()), stream, typed, 0);
                 }
             } else {
                 for (stream, typed) in queued {
@@ -3263,35 +3294,7 @@ impl Actor {
     fn route(&mut self, stream: StreamId, typed: Typed) {
         if let Some(shell) = self.shell.as_ref().filter(|s| s.stream.id() == stream) {
             let end = shell.written;
-            match &self.leg {
-                Some(Leg::Shell { shell, .. }) => {
-                    let _ = shell.commands.send(ShellCommand::Input(typed.into_bytes()));
-                }
-                Some(Leg::Mosh { mosh, .. }) => match (&self.herdr_mosh, typed) {
-                    // herdr's renderer decides where typing and pastes may go.
-                    (Some(plane), Typed::Bytes(bytes)) => {
-                        let _ = plane
-                            .leg
-                            .commands
-                            .send(HerdrMoshCommand::Typed { bytes, end });
-                    }
-                    (Some(plane), Typed::Paste(text)) => {
-                        let _ = plane
-                            .leg
-                            .commands
-                            .send(HerdrMoshCommand::Paste { text, end });
-                    }
-                    (None, typed) => {
-                        let bytes = typed.into_bytes();
-                        let _ = mosh.commands.send(MoshCommand::Keys { bytes, end });
-                    }
-                },
-                _ => self.emit(EventKind::InputDiscarded {
-                    stream,
-                    bytes: typed.len(),
-                    why: Discarded::PaneGone,
-                }),
-            }
+            self.send_or_wait(Dest::Shell, stream, typed, end);
             return;
         }
         let Some(pane) = self.panes.get(&stream).map(|channel| channel.pane.clone()) else {
@@ -3299,13 +3302,101 @@ impl Actor {
         };
         let attached = self.current.iter().any(|info| info.pane == pane);
         match &self.leg {
-            Some(Leg::Herdr { herdr, .. }) => {
-                // herdr's client holds a pane's input until its attach paints,
-                // and only for the pane the person picked (B185).
-                let _ = herdr.commands.send(typed.for_herdr(pane, stream));
+            // herdr's client holds a pane's input until its attach paints,
+            // and only for the pane the person picked (B185).
+            Some(Leg::Herdr { .. }) => self.send_or_wait(Dest::Pane(pane), stream, typed, 0),
+            Some(Leg::Tmux { .. }) if attached => {
+                self.send_or_wait(Dest::Pane(pane), stream, typed, 0)
             }
-            Some(Leg::Tmux { .. }) if attached => self.send_to_pane(&pane, stream, typed),
             _ => self.pending.entry(pane).or_default().push((stream, typed)),
+        }
+    }
+
+    /// Typing for a place: behind a paste sent there a moment ago, it
+    /// waits for the paste to have had its time, in order (B485).
+    fn send_or_wait(&mut self, dest: Dest, stream: StreamId, typed: Typed, end: u64) {
+        if let Some(settling) = self.settling.get_mut(&dest) {
+            settling.queued.push((stream, typed, end));
+            return;
+        }
+        self.send_now(&dest, stream, typed, end);
+    }
+
+    /// Sends to a place now; what comes after a paste waits behind it.
+    fn send_now(&mut self, dest: &Dest, stream: StreamId, typed: Typed, end: u64) {
+        let paste = matches!(typed, Typed::Paste(_));
+        match dest {
+            Dest::Shell => self.send_to_shell(stream, typed, end),
+            Dest::Pane(pane) => self.send_to_pane(pane, stream, typed),
+        }
+        if paste {
+            let until = self.now() + crate::spec::ms(PASTE_SETTLE);
+            self.settling.insert(
+                dest.clone(),
+                Settling {
+                    until,
+                    queued: Vec::new(),
+                },
+            );
+        }
+    }
+
+    /// The pastes whose time is up: what waited behind each goes out, in
+    /// order, up to the next paste, which it then waits behind.
+    fn release_settled(&mut self, now: u64) {
+        let due: Vec<Dest> = self
+            .settling
+            .iter()
+            .filter(|(_, s)| s.until <= now)
+            .map(|(dest, _)| dest.clone())
+            .collect();
+        for dest in due {
+            let Some(settling) = self.settling.remove(&dest) else {
+                continue;
+            };
+            let mut queued = settling.queued.into_iter();
+            while let Some((stream, typed, end)) = queued.next() {
+                let paste = matches!(typed, Typed::Paste(_));
+                self.send_now(&dest, stream, typed, end);
+                if paste {
+                    if let Some(next) = self.settling.get_mut(&dest) {
+                        next.queued.extend(queued);
+                    }
+                    break;
+                }
+            }
+        }
+    }
+
+    fn send_to_shell(&mut self, stream: StreamId, typed: Typed, end: u64) {
+        match &self.leg {
+            Some(Leg::Shell { shell, .. }) => {
+                let _ = shell.commands.send(ShellCommand::Input(typed.into_bytes()));
+            }
+            Some(Leg::Mosh { mosh, .. }) => match (&self.herdr_mosh, typed) {
+                // herdr's renderer decides where typing and pastes may go.
+                (Some(plane), Typed::Bytes(bytes)) => {
+                    let _ = plane
+                        .leg
+                        .commands
+                        .send(HerdrMoshCommand::Typed { bytes, end });
+                }
+                (Some(plane), Typed::Paste(text)) => {
+                    let _ = plane
+                        .leg
+                        .commands
+                        .send(HerdrMoshCommand::Paste { text, end });
+                }
+                (None, typed) => {
+                    let bytes = typed.into_bytes();
+                    let _ = mosh.commands.send(MoshCommand::Keys { bytes, end });
+                }
+            },
+            _ => self.emit(EventKind::InputDiscarded {
+                stream,
+                bytes: typed.len(),
+                why: Discarded::PaneGone,
+            }),
         }
     }
 
@@ -4544,6 +4635,58 @@ mod tests {
         );
     }
 
+    /// B485: typing behind a paste to the same place waits for the paste to
+    /// have had its time, in order, then goes; a paste among it starts the
+    /// wait again; another place doesn't wait.
+    #[tokio::test]
+    async fn typing_behind_a_paste_waits_for_it_in_order() {
+        let (mut actor, _events) = dialing_actor(false);
+        let pane = |p: &str| Dest::Pane(p.to_owned());
+        let sent = |actor: &Actor, p: &str| -> Vec<Typed> {
+            actor
+                .pending
+                .get(p)
+                .map(|q| q.iter().map(|(_, t)| t.clone()).collect())
+                .unwrap_or_default()
+        };
+        let start = actor.now();
+        actor.send_or_wait(pane("%1"), 1, Typed::Paste(" /tmp/a.jpg ".into()), 0);
+        actor.send_or_wait(pane("%1"), 1, Typed::Bytes(b"\r".to_vec()), 0);
+        actor.send_or_wait(pane("%1"), 1, Typed::Paste("b".into()), 0);
+        actor.send_or_wait(pane("%1"), 1, Typed::Bytes(b"c".to_vec()), 0);
+        actor.send_or_wait(pane("%2"), 2, Typed::Bytes(b"d".to_vec()), 0);
+        assert_eq!(
+            sent(&actor, "%1"),
+            vec![Typed::Paste(" /tmp/a.jpg ".into())],
+            "the Return waits"
+        );
+        assert_eq!(sent(&actor, "%2"), vec![Typed::Bytes(b"d".to_vec())]);
+        let until = actor.settling[&pane("%1")].until;
+        assert!(until >= start + 150, "{until} {start}");
+        actor.release_settled(until - 1);
+        assert_eq!(sent(&actor, "%1").len(), 1, "not before its time");
+        actor.release_settled(until);
+        assert_eq!(
+            sent(&actor, "%1"),
+            vec![
+                Typed::Paste(" /tmp/a.jpg ".into()),
+                Typed::Bytes(b"\r".to_vec()),
+                Typed::Paste("b".into()),
+            ],
+            "up to the next paste, which waits in turn"
+        );
+        let next = actor.settling[&pane("%1")].until;
+        actor.release_settled(next);
+        assert_eq!(
+            sent(&actor, "%1").last(),
+            Some(&Typed::Bytes(b"c".to_vec()))
+        );
+        assert!(
+            !actor.settling.contains_key(&pane("%1")),
+            "nothing left waiting"
+        );
+    }
+
     /// B483: with no leg, a tmux command (a new window, a close) waits for
     /// the next attach instead of going nowhere, in order; a pick still goes
     /// where that attach lands (B405), and what only matters now, or a
@@ -4937,6 +5080,10 @@ mod tests {
         assert!(moshpit_stream::view::paste(id, "p\x1b[201~q"));
         assert!(moshpit_stream::view::write(id, b"c"));
         take_input(&mut actor, 3).await;
+        // The key after the paste waits behind it (B485), ending where it
+        // did when typed.
+        let until = actor.settling[&Dest::Shell].until;
+        actor.release_settled(until);
         let went: Vec<(Vec<u8>, u64)> = std::iter::from_fn(|| sent.try_recv().ok())
             .filter_map(|command| match command {
                 MoshCommand::Keys { bytes, end } => Some((bytes, end)),

@@ -1,5 +1,5 @@
 //! The mosh path, and a tmux session's redial, against real programs
-//! (rc1's hunts, B400–B402, B483): a private sshd, mosh-server started
+//! (rc1's hunts, B400–B402, B483, B485): a private sshd, mosh-server started
 //! through it, a private tmux server (`tmux -L`). What the person sees when
 //! the server dies, the return path heals, the control plane goes quiet or
 //! the connection is dialled again.
@@ -456,6 +456,197 @@ async fn a_tmux_command_given_while_mosh_is_redialled_lands_on_the_new_plane() {
     settle(&mut bench, 1000).await;
     assert_eq!(windows(&tmux, "mosh"), before + 1, "once");
     assert_eq!(dropped_notices(&bench, id), 0);
+    let _ = bench.sessions.disconnect(id).await;
+}
+
+/// A program that asks for bracketed paste and logs each read it gets,
+/// with when (seconds, monotonic), until ^D.
+const READ_LOGGER: &str = r#"
+import os, sys, time, tty, termios
+fd = sys.stdin.fileno()
+old = termios.tcgetattr(fd)
+tty.setraw(fd)
+sys.stdout.write("\x1b[?2004h")
+sys.stdout.flush()
+log = open(sys.argv[1], "a", buffering=1)
+log.write("ready\n")
+try:
+    while True:
+        b = os.read(fd, 4096)
+        if not b or b == b"\x04":
+            break
+        log.write("%.6f %r\n" % (time.monotonic(), b))
+finally:
+    termios.tcsetattr(fd, termios.TCSADRAIN, old)
+"#;
+
+/// The reads [`READ_LOGGER`] wrote to `log`: when, and what (as Python
+/// printed it).
+fn reads(log: &std::path::Path) -> Vec<(f64, String)> {
+    std::fs::read_to_string(log)
+        .unwrap_or_default()
+        .lines()
+        .filter_map(|line| {
+            let (at, what) = line.split_once(' ')?;
+            Some((at.parse().ok()?, what.to_owned()))
+        })
+        .collect()
+}
+
+/// Gives the pane on `term` a paste and a Return at once, as the image
+/// panel's Send does, and reads back how they reached the program: the
+/// time from the read that ended the paste to the one with the Return.
+async fn paste_then_return(term: &Term, log: &std::path::Path) -> f64 {
+    // The pane takes typing now: a key goes through and is read first
+    // (an attach still settling holds typing and lets it go at once).
+    assert!(term.write(b"."));
+    let mut through = false;
+    for _ in 0..100 {
+        if reads(log).iter().any(|(_, b)| b == "b'.'") {
+            through = true;
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    assert!(through, "a key never reached the pane: {:?}", reads(log));
+    assert!(moshpit_stream::view::paste(
+        term.stream,
+        " /tmp/IMG-20261114-120000-a3f2.jpg "
+    ));
+    assert!(term.write(b"\r"));
+    for _ in 0..40 {
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        let got = reads(log);
+        let pasted = got.iter().position(|(_, b)| b.contains(r"\x1b[201~"));
+        let entered = got.iter().rposition(|(_, b)| b.contains(r"\r"));
+        if let (Some(p), Some(e)) = (pasted, entered) {
+            eprintln!("reads: {got:?}");
+            // One read with both: no time apart at all.
+            return if e == p { 0.0 } else { got[e].0 - got[p].0 };
+        }
+    }
+    panic!("the paste and the Return never came: {:?}", reads(log));
+}
+
+/// Waits for [`READ_LOGGER`] to say it runs.
+async fn logger_ready(log: &std::path::Path) {
+    for _ in 0..100 {
+        if std::fs::read_to_string(log).is_ok_and(|s| s.starts_with("ready")) {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    panic!("the read logger never started");
+}
+
+/// B485: the image panel's Send is a paste and a Return given at once; the
+/// Return reaches the program apart from the paste, 150 ms behind it.
+/// Claude Code drops a Return that comes with the paste of an image's path
+/// (it is still taking the paste in): it went out right behind the paste,
+/// both reached the host together, and Send only pasted, as Insert does.
+/// SSH + tmux, and a plain SSH shell.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[ignore = "needs sshd, tmux and python3"]
+async fn a_return_given_with_a_paste_reaches_the_program_apart() {
+    let sshd = Sshd::start().await;
+    let scratch = Scratch::new("rc1-paste");
+    let script = scratch.join("reads.py");
+    std::fs::write(&script, READ_LOGGER).unwrap();
+
+    // SSH + tmux: the pane runs the logger.
+    let log = scratch.join("tmux.log");
+    let tmux = Tmux::named("rc1-paste");
+    tmux.new_session("paste");
+    let program = format!("python3 -I {} {}", script.display(), log.display());
+    tmux.run(&["respawn-pane", "-k", "-t", "paste", &program]);
+    logger_ready(&log).await;
+    let mut bench = direct(&sshd);
+    let mut wanted = spec(sshd.port);
+    wanted.multiplexer = Multiplexer::Tmux;
+    wanted.tmux_path = Some(tmux.prefix());
+    let id = bench.sessions.connect(wanted);
+    bench.sessions.set_visible(Some(id));
+    bench.connected(id).await;
+    let (_, panes) = bench.panes(id, 20).await;
+    let term = Term::attach(panes[0].stream);
+    settle(&mut bench, 1500).await;
+    let apart = paste_then_return(&term, &log).await;
+    eprintln!("tmux: the Return came {apart:.3} s after the paste");
+    assert!(apart >= 0.1, "tmux: {apart:.3} s");
+    drop(term);
+    let _ = bench.sessions.disconnect(id).await;
+
+    // A plain SSH shell: the logger started by typing.
+    let log = scratch.join("shell.log");
+    let mut bench = direct(&sshd);
+    let id = bench.sessions.connect(spec(sshd.port));
+    bench.connected(id).await;
+    let (_, panes) = bench.panes(id, 20).await;
+    let term = Term::attach(panes[0].stream);
+    let program = format!("exec python3 -I {} {}\r", script.display(), log.display());
+    assert!(term.write(program.as_bytes()));
+    logger_ready(&log).await;
+    let apart = paste_then_return(&term, &log).await;
+    eprintln!("shell: the Return came {apart:.3} s after the paste");
+    assert!(apart >= 0.1, "shell: {apart:.3} s");
+    drop(term);
+    let _ = bench.sessions.disconnect(id).await;
+}
+
+/// B485, on herdr (the user's own pane is herdr's): the paste goes as one
+/// bracketed paste with nothing after it (Insert submits nothing), and the
+/// Return given with it reaches the program apart, 150 ms behind it, over
+/// herdr's frame channel as over tmux.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[ignore = "needs sshd, herdr and python3"]
+async fn a_return_given_with_a_paste_reaches_a_herdr_pane_apart() {
+    if !PrivateHerdr::available() {
+        eprintln!("skipped: no {HERDR}");
+        return;
+    }
+    let scratch = Scratch::new("rc1-paste-herdr");
+    let script = scratch.join("reads.py");
+    std::fs::write(&script, READ_LOGGER).unwrap();
+    let log = scratch.join("herdr.log");
+    let herdr = PrivateHerdr::start();
+    let pane = herdr.panes().first().cloned().expect("a pane");
+    let program = format!(
+        "exec /usr/bin/python3 -I {} {}",
+        script.display(),
+        log.display()
+    );
+    herdr.run(&["pane", "run", &pane, &program]);
+    logger_ready(&log).await;
+    let home = herdr.home.display().to_string();
+    let sshd = Sshd::start_with(&[("HOME", &home), ("ZDOTDIR", &home)]).await;
+    let mut bench = Bench::with(sshd.addr(), Timing::default());
+    let mut wanted = spec(sshd.port);
+    wanted.multiplexer = Multiplexer::Herdr;
+    wanted.herdr_path = Some(herdr.custom_path());
+    wanted.pty_command = None;
+    let id = bench.sessions.connect(wanted);
+    bench.sessions.set_visible(Some(id));
+    bench.connected(id).await;
+    let (_, panes) = bench.panes(id, 20).await;
+    let shown = panes.iter().find(|p| p.active).unwrap_or(&panes[0]);
+    assert_eq!(shown.pane, pane, "{panes:?}");
+    let term = Term::attach(shown.stream);
+    settle(&mut bench, 2000).await;
+    let apart = paste_then_return(&term, &log).await;
+    eprintln!("herdr: the Return came {apart:.3} s after the paste");
+    let got = reads(&log);
+    let paste = got
+        .iter()
+        .find(|(_, b)| b.contains(r"\x1b[201~"))
+        .map(|(_, b)| b.clone())
+        .unwrap();
+    assert!(
+        paste.starts_with(r"b'\x1b[200~ /tmp/IMG-")
+            && (apart == 0.0 || paste.ends_with(r"\x1b[201~'")),
+        "one bracketed paste, nothing after it: {paste}"
+    );
+    assert!(apart >= 0.1, "herdr: {apart:.3} s");
+    drop(term);
     let _ = bench.sessions.disconnect(id).await;
 }
 

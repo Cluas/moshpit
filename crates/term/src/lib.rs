@@ -573,7 +573,7 @@ pub struct Terminal {
     search: Option<(String, regex::Regex)>,
     found: Option<(StableRowIndex, usize, StableRowIndex, usize)>,
     /// The found match's rows as they read when it was shown, and when:
-    /// the mark stays only on its text (B485).
+    /// the mark stays only on its text (B520).
     found_rows: Vec<(StableRowIndex, (String, bool))>,
     found_seqno: SequenceNo,
     // What the last frame showed.
@@ -2034,7 +2034,7 @@ impl Terminal {
     /// The match shown stays marked while its rows are kept and read as
     /// they did (a repaint of the same text keeps it, B480); other text
     /// there now (a full-screen program redrawing, a `clear`) takes the
-    /// mark with it, every row it covered drawn again (B485).
+    /// mark with it, every row it covered drawn again (B520).
     fn check_found(&mut self) {
         if self.found.is_none() {
             return;

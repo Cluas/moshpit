@@ -607,6 +607,7 @@
   "The icon is separate from the accent color, because iOS only allows switching between icons bundled with the app — a custom accent can't have matching artwork generated for it.": "圖像和強調色分開選，是因為 iOS 只允許在 App 內建的幾個圖像之間切換，沒辦法替自訂強調色現做一個配套圖像。",
   "Not attached to the pane yet — input wasn't sent": "還沒連上這個窗格，剛才的輸入沒有送出",
   "That pane is closed": "那個窗格已經關了",
+  "Couldn't switch to that pane": "切不到那個窗格",
   "Couldn't switch to that pane — nothing was sent": "沒能切到那個窗格，什麼都沒有送出",
   "What you just typed wasn't sent: the connection dropped, and it's back now": "剛才輸入的內容沒有送出：連線斷了，現在已經重新連上",
   "This pane is open on another device": "這個窗格已在另一台裝置上開啟",

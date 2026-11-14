@@ -27,4 +27,13 @@ struct ForegroundPresentationTests {
                     == [.list])
         }
     }
+
+    /// B449: a pushed finish of the pane on screen isn't shown at all; one
+    /// of another pane shows as before.
+    @Test func aFinishOfThePaneOnScreenIsNotShown() {
+        #expect(AgentNotificationHandler.foregroundPresentation(level: .active, paneVisible: true,
+                                                                 finished: true).isEmpty)
+        #expect(AgentNotificationHandler.foregroundPresentation(level: .active, paneVisible: false,
+                                                                 finished: true) == [.banner, .sound, .list])
+    }
 }

@@ -1086,3 +1086,29 @@ fn with_the_live_activity_off_the_first_sync_ends_an_island_left_up() {
     let effects = bench.poll("%1", "working", T0, T0);
     assert_eq!((islands(&effects), ends(&effects)), (0, 1), "{effects:?}");
 }
+
+// MARK: - A finish on screen (B449)
+
+/// B449: a turn that finished while its pane was on screen posted a finish
+/// card all the same — over the pane the person was watching, then left in
+/// the list. No card now, and the finish counts as rung so the pushed copy
+/// is quiet. Another pane's finish still posts.
+#[test]
+fn a_turn_that_finishes_on_screen_posts_no_card() {
+    let mut bench = Bench::new(Settings::default(), &[]);
+    let visible = Visible { conn: CONN.into(), pane: Some("%1".into()) };
+    bench.monitor.sweep(Some(&visible), T0);
+    bench.monitor.take_effects();
+    bench.poll("%1", "working", T0, T0 + 595.0);
+    let effects = bench.poll("%1", "done", T0 + 597.0, T0 + 597.0);
+    assert!(posts(&effects).iter().all(|c| !c.id.starts_with(DONE_CARD)), "{effects:?}");
+    assert!(!bench.finishes.note_ring(CONN, "%1", (T0 + 597.0) as i64, Date::from_unix(T0 + 598.0)), "not counted as rung");
+
+    // Another pane's finish posts.
+    let mut bench = Bench::new(Settings::default(), &[]);
+    bench.monitor.sweep(Some(&visible), T0);
+    bench.monitor.take_effects();
+    bench.poll("%2", "working", T0, T0 + 595.0);
+    let effects = bench.poll("%2", "done", T0 + 597.0, T0 + 597.0);
+    assert!(posts(&effects).iter().any(|c| c.id.starts_with(DONE_CARD)), "{effects:?}");
+}

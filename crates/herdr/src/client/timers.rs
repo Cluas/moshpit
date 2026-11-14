@@ -45,6 +45,8 @@ pub(crate) enum Slot {
     Debounce,
     /// Re-open a push channel that died.
     PushRetry,
+    /// A one-off notice comes down (B491).
+    NoticeFlash,
 }
 
 #[derive(Debug, Default)]

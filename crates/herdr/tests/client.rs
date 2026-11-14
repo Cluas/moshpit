@@ -401,8 +401,12 @@ fn typing_at_the_pane_just_picked_waits_for_its_attach_and_follows_it() {
     );
 }
 
+/// B493: typing at a pane the desktop switched to, before its attach is
+/// up, was dropped and said (herdr drops input that reaches an attach
+/// before it is). It waits for the attach now, as a pick's does, and
+/// follows it.
 #[test]
-fn typing_at_a_pane_the_desktop_switched_to_is_dropped_until_it_is_attached() {
+fn typing_at_a_pane_the_desktop_switched_to_waits_for_its_attach() {
     let mut rig = attached();
     // The desktop moves the focus; the next read reports it.
     rig.host.focused = Some("w1:p2".to_owned());
@@ -411,11 +415,38 @@ fn typing_at_a_pane_the_desktop_switched_to_is_dropped_until_it_is_attached() {
     assert_eq!(rig.client.frame_target(), Some("w1:p2"));
     rig.type_text("w1:p2", "y\r");
     rig.run(2_000);
-    assert_eq!(rig.typed("w1:p2"), "");
+    assert_eq!(
+        rig.typed("w1:p2"),
+        "y\r",
+        "held, then sent after the first frame"
+    );
+    assert!(rig.frames.lost.is_empty(), "lost: {:?}", rig.frames.lost);
     assert_eq!(rig.client.attached_pane(), Some("w1:p2"));
     rig.type_text("w1:p2", "z");
     rig.run(200);
-    assert_eq!(rig.typed("w1:p2"), "z");
+    assert_eq!(rig.typed("w1:p2"), "y\rz");
+}
+
+/// Held two seconds at most: an attach that takes longer drops it, and
+/// says so.
+#[test]
+fn typing_held_for_a_follow_is_dropped_and_said_past_two_seconds() {
+    let mut rig = attached();
+    rig.frames.attach_ms = 6_000;
+    rig.host.focused = Some("w1:p2".to_owned());
+    rig.act(Action::Refresh);
+    rig.run(100);
+    assert_eq!(rig.client.frame_target(), Some("w1:p2"));
+    rig.type_text("w1:p2", "y");
+    rig.run(2_500);
+    assert_eq!(rig.typed("w1:p2"), "");
+    assert!(
+        rig.events()
+            .iter()
+            .any(|e| matches!(e, Event::InputDropped { .. }))
+    );
+    rig.run(6_000);
+    assert_eq!(rig.typed("w1:p2"), "", "not sent late");
 }
 
 const WIPE: &str = "\u{1b}[H\u{1b}[2J\u{1b}[3J";
@@ -2429,4 +2460,32 @@ fn a_new_server_version_asks_again_at_once() {
     rig.run(1_000);
     assert_eq!(p1_attaches(&rig), 2);
     assert_eq!(rig.client.attached_pane(), Some("w1:p1"));
+}
+
+// MARK: - B491: a pick that couldn't be made is said
+
+/// The pick's focus couldn't run, even asked again (B470): the next read
+/// pulled the screen back to the pane it was on without a word. It says
+/// so now, for a moment.
+#[test]
+fn a_pick_that_couldnt_be_made_is_said_for_a_moment() {
+    let mut rig = attached();
+    rig.host
+        .rules
+        .push(rule("agent focus 'w1:p2'", None, Fate::Unreachable));
+    rig.act(Action::SelectPane("w1:p2".to_owned()));
+    rig.run(500);
+    assert_eq!(
+        rig.commands("agent focus 'w1:p2'").len(),
+        2,
+        "asked once more first"
+    );
+    assert_eq!(
+        rig.client
+            .notice()
+            .map(|(notice, action)| (notice.clone(), action)),
+        Some((Notice::SwitchFailed, None))
+    );
+    rig.run(4_000);
+    assert_eq!(rig.client.notice(), None, "only for a moment");
 }

@@ -97,6 +97,11 @@ final class HostCare {
         }
         core.setSaved(listed: store.connections.map(\.id.uuidString),
                       all: store.savedIds.map { $0.map(\.uuidString) })
+        // A rename reaches the pairing's name, and with it pushed cards, at
+        // once (B451).
+        for connection in store.connections {
+            core.nameConnection(connection: connection.id.uuidString, label: connection.displayName)
+        }
     }
 
     /// Follow the store: a connection gone from it gets nothing more done.

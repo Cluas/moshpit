@@ -48,6 +48,10 @@ use crate::snapshot;
 /// lie the person acts on.
 const CLEAR_SCREEN: &[u8] = b"\x1b[H\x1b[2J\x1b[3J";
 
+/// How long typing waits for the attach of a pane a follow is on its way
+/// to (B493), in ms.
+const FOLLOW_HOLD: u64 = 2_000;
+
 /// How often a pane another device held is asked for plainly once the
 /// focus has left it (B487), in ms.
 const PROBE_EVERY: u64 = 10_000;
@@ -677,7 +681,8 @@ impl Client {
         if self
             .notice
             .as_ref()
-            .is_some_and(|(notice, _)| *notice != Notice::Restarting)
+            // A one-off goes on its own clock (B491).
+            .is_some_and(|(notice, _)| !matches!(notice, Notice::Restarting | Notice::SwitchFailed))
         {
             self.clear_notice();
         }
@@ -1022,6 +1027,17 @@ impl Client {
                 Some(request) => HeldStep::Delivery { request, bytes },
                 None => HeldStep::Input(bytes),
             });
+        } else if delivery.is_none()
+            && self.attach.held.pane.is_none()
+            && self.attach.target.as_deref() == Some(pane)
+        {
+            // B493: the pane a follow is on its way to (the desktop switched
+            // to it), typed at before its attach is up: held for it, as a
+            // pick's typing is, for two seconds at most, then sent once it
+            // paints. It was dropped and said.
+            self.attach.held.pane = Some(pane.to_owned());
+            self.arm(Slot::HeldInput, FOLLOW_HOLD);
+            self.attach.held.steps.push(HeldStep::Input(bytes));
         } else {
             match delivery {
                 Some(request) => self.event(Event::Delivered {

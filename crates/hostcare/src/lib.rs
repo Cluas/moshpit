@@ -380,6 +380,32 @@ impl HostCare {
         });
     }
 
+    /// What the person calls connection `connection` now (B451): its
+    /// pairing takes the name at once, as a pushed card names its place by
+    /// it. B440 heals it on care's next pass, which comes once a run: a
+    /// rename showed on pushed cards only from the next. Only the phone's
+    /// pairing changes (the name isn't in the host's conf); a blank name, or
+    /// a connection with no pairing, changes nothing.
+    pub fn name_connection(&mut self, connection: Uuid, label: &str, clock: Clock) {
+        self.input(clock, |m| {
+            m.with(|s| {
+                if label.trim().is_empty() {
+                    return;
+                }
+                let Some(mut pairing) = s.store.pairing(connection) else {
+                    return;
+                };
+                if pairing.host_label == label {
+                    return;
+                }
+                pairing.host_label = label.to_owned();
+                if s.store.upsert(&pairing) {
+                    s.changed(Change::Push);
+                }
+            })
+        });
+    }
+
     // MARK: - Care
 
     /// A session's control plane for `conn` came up: walk its host once

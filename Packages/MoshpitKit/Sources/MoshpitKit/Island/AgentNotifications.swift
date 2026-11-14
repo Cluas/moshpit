@@ -88,9 +88,11 @@ public final class AgentNotificationHandler: NSObject, UNUserNotificationCenterD
         let content = notification.request.content
         let target = target(of: content.userInfo)
         let level = content.interruptionLevel
+        let finished = content.userInfo[PushRemoteNotification.stateKey] as? String == "done"
         Task { @MainActor in
             let visible = target.map { AgentControlBridge.shared.isPaneVisible?($0.0, $0.1) == true } ?? false
-            completionHandler(Self.foregroundPresentation(level: level, paneVisible: visible))
+            completionHandler(Self.foregroundPresentation(level: level, paneVisible: visible,
+                                                          finished: finished))
         }
     }
 
@@ -107,8 +109,14 @@ public final class AgentNotificationHandler: NSObject, UNUserNotificationCenterD
     /// answered, a short turn's finish. In the background it lands in the
     /// list without lighting the screen; in the foreground it bannered all
     /// the same, every redraw, because this answered every card alike (B315).
+    ///
+    /// A finish of the pane on screen isn't shown at all (B449): the person
+    /// watched the turn end, and the pushed copy of it is not news — not
+    /// even in the list. (The app posts no local one for it.)
     public static func foregroundPresentation(level: UNNotificationInterruptionLevel,
-                                              paneVisible: Bool) -> UNNotificationPresentationOptions {
+                                              paneVisible: Bool,
+                                              finished: Bool = false) -> UNNotificationPresentationOptions {
+        if paneVisible && finished { return [] }
         if paneVisible || level == .passive { return [.list] }
         return [.banner, .sound, .list]
     }

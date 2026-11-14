@@ -1327,6 +1327,7 @@ add("The icon is separate from the accent color, because iOS only allows switchi
 add("Not attached to the pane yet — input wasn't sent",
     "还没连上这个窗格，刚才的输入没发出去", "まだペインに接続していません。入力は送信されませんでした")
 add("That pane is closed", "那个窗格已经关了", "そのペインはもう閉じています")
+add("Couldn't switch to that pane", "切不到那个窗格", "そのペインに切り替えられませんでした")
 add("Couldn't switch to that pane — nothing was sent",
     "没能切到那个窗格，什么都没发出去", "そのペインに切り替えられませんでした。何も送信していません")
 # A plain shell's keys typed while the way back found the connection dead (B396)

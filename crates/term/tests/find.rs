@@ -107,7 +107,7 @@ fn paint(shown: &mut [String], f: &moshpit_term::Frame) {
     }
 }
 
-/// B485: the match drawn marked stays on its text. A full-screen program
+/// B520: the match drawn marked stays on its text. A full-screen program
 /// redrawing, or a `clear`, put other text where it was: the mark went, and
 /// a repaint of the same text keeps it (tmux's repair frame, B480). It
 /// stayed on the cells, over whatever was there now.
@@ -138,7 +138,7 @@ fn the_match_mark_goes_when_its_text_does() {
     );
 }
 
-/// B485: the width changes (the phone turned, the split view resized) and
+/// B520: the width changes (the phone turned, the split view resized) and
 /// the lines flow again: the match shown is the same one, marked on its
 /// text where it now is. The mark stayed on the rows it had been on.
 #[test]

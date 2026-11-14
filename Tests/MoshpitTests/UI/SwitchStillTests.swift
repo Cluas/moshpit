@@ -104,6 +104,8 @@ struct SwitchStillTests {
 
     @Test("A switch keeps the pane's picture on top of the slot until it is released")
     func theStageHoldsThePicture() throws {
+        // The core's terminal, as the app ships (its picture is drawn from
+        // its rows): a fresh test host leaves the core's switch off.
         let controller = CoreController(sshSession: MockTmuxTransport())
         let stage = TerminalNSHStage()
         let (slot, window) = TerminalNSHTests.slot(for: stage)
@@ -174,5 +176,17 @@ struct SwitchStillTests {
         #expect(TerminalScreen.retrySecondsLeft(until: now.addingTimeInterval(0.4), now: now) == 1)
         #expect(TerminalScreen.retrySecondsLeft(until: now, now: now) == nil, "over")
         #expect(TerminalScreen.retrySecondsLeft(until: now.addingTimeInterval(-3), now: now) == nil)
+    }
+
+    @Test("B497: SwiftTerm's terminal gives a picture for the switch even before it was drawn")
+    func swiftTermGivesAPicture() throws {
+        let controller = TmuxSessionController(sshSession: MockTmuxTransport(), surfaceKind: .swiftTerm)
+        let stage = TerminalNSHStage()
+        let (_, window) = TerminalNSHTests.slot(for: stage)
+        defer { window.isHidden = true }
+        stage.show(.init(source: .pane(controller, "%1"), inset: 4))
+        stage.holdStill()
+        #expect(stage.still != nil, "the switch keeps a picture on SwiftTerm's path too")
+        stage.releaseStill()
     }
 }

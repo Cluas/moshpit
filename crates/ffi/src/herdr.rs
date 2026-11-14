@@ -503,6 +503,9 @@ pub enum HerdrNoticeValue {
     InputDropped,
     /// A reply (or a share) couldn't be put on its pane: nothing was sent.
     CouldntSwitch,
+    /// The person's pick couldn't be made; the screen stayed where it was
+    /// (B491).
+    SwitchFailed,
     Restarting,
     RestartFailed,
 }
@@ -583,6 +586,7 @@ pub(crate) fn read_model(view: &HerdrView) -> HerdrReadModel {
                 Notice::OnAnotherDevice => HerdrNoticeValue::OnAnotherDevice,
                 Notice::InputDropped => HerdrNoticeValue::InputDropped,
                 Notice::CouldntSwitch => HerdrNoticeValue::CouldntSwitch,
+                Notice::SwitchFailed => HerdrNoticeValue::SwitchFailed,
                 Notice::Restarting => HerdrNoticeValue::Restarting,
                 Notice::RestartFailed => HerdrNoticeValue::RestartFailed,
             }),

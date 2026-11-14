@@ -1462,3 +1462,23 @@ fn this_phones_older_legacy_conf_goes_by_its_token() {
     assert!(host.file(&install_conf_path(c.id, None)).is_none(), "this phone's older legacy conf stayed");
     assert!(host.manifest().pairing_entry(&c.id.to_string()).is_none());
 }
+
+/// B451: a rename reached the pairing's name — and pushed cards — only on
+/// care's next pass, once a run. Saving the connection names it at once;
+/// the host isn't touched, a blank name and an unpaired connection change
+/// nothing.
+#[test]
+fn a_saved_rename_names_the_pairing_at_once() {
+    let mut rig = Rig::new().with_token();
+    let c = hooked(&mut rig, "old name");
+    rig.tend(&c);
+    let commands = rig.host(c.id).commands.len();
+    rig.act(|m, k| m.name_connection(c.id, "studio", k));
+    assert_eq!(rig.pairing(c.id).unwrap().host_label, "studio");
+    assert_eq!(rig.host(c.id).commands.len(), commands, "the host was asked");
+    rig.act(|m, k| m.name_connection(c.id, "  ", k));
+    assert_eq!(rig.pairing(c.id).unwrap().host_label, "studio");
+    let unpaired = Uuid::new_v4();
+    rig.act(|m, k| m.name_connection(unpaired, "elsewhere", k));
+    assert!(rig.pairing(unpaired).is_none());
+}

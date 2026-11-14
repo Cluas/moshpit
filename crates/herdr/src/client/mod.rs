@@ -74,6 +74,9 @@ use crate::version::{VersionNotice, VersionReport};
 use timers::{Slot, Timers};
 
 /// A pane's byte stream: the id the host attaches a terminal view to.
+/// How long a one-off notice stays up (B491), in ms.
+const NOTICE_FLASH: u64 = 3_000;
+
 pub type StreamId = u64;
 
 /// One exec the client asked for ([`Output::Exec`]).
@@ -387,6 +390,10 @@ pub enum Notice {
     /// put on its pane, so nothing was sent (mosh's raw-attach renderer:
     /// [`crate::renderer::Notice::CouldntSwitch`]).
     CouldntSwitch,
+    /// The person's pick couldn't be made (its focus never ran, even asked
+    /// again) and the screen stayed where it was: said for a moment
+    /// (B491).
+    SwitchFailed,
     Restarting,
     RestartFailed,
 }
@@ -400,6 +407,7 @@ impl Notice {
             Notice::OnAnotherDevice => "This pane is open on another device".to_owned(),
             Notice::InputDropped => "Not attached to the pane yet — input wasn't sent".to_owned(),
             Notice::CouldntSwitch => "Couldn't switch to that pane — nothing was sent".to_owned(),
+            Notice::SwitchFailed => "Couldn't switch to that pane".to_owned(),
             Notice::Restarting => "Restarting herdr server…".to_owned(),
             Notice::RestartFailed => {
                 "Restart didn't take — on the host, run: herdr server stop && herdr".to_owned()
@@ -976,6 +984,15 @@ impl Client {
             Slot::Subscribe => self.subscribe_timed_out(),
             Slot::Debounce => self.debounce_fired(),
             Slot::PushRetry => self.push_retry(),
+            Slot::NoticeFlash => {
+                if self
+                    .notice
+                    .as_ref()
+                    .is_some_and(|(notice, _)| *notice == Notice::SwitchFailed)
+                {
+                    self.clear_notice();
+                }
+            }
         }
     }
 
@@ -1533,6 +1550,17 @@ impl Client {
         match follow {
             Err((command, reason)) => {
                 let again = self.pick_to_ask_again(&reason);
+                if again.is_none() && self.newest_pick_running() {
+                    // Given up on: the next read keeps the screen where it
+                    // was. Said for a moment, over nothing else (B491).
+                    log::warn!(
+                        "herdr: a pick's focus couldn't be made: the screen stays where it was"
+                    );
+                    if self.notice.is_none() {
+                        self.set_notice(Notice::SwitchFailed, None);
+                        self.arm(Slot::NoticeFlash, NOTICE_FLASH);
+                    }
+                }
                 self.event(Event::CommandFailed { command, reason });
                 let again = again.map(|(subcommands, landed)| {
                     // In the failed step's place, ahead of what was queued
@@ -1604,6 +1632,15 @@ impl Client {
         self.pick_asked_again = true;
         log::warn!("herdr: a pane switch's focus couldn't run: asked once more");
         Some((subcommands.clone(), landed))
+    }
+
+    /// The running step moves herdr's focus for the newest pick.
+    fn newest_pick_running(&self) -> bool {
+        self.lane
+            .running
+            .as_ref()
+            .and_then(|running| running.step.landed)
+            .is_some_and(|Landed::PaneSwitch(generation)| generation == self.pane_switch_generation)
     }
 
     /// The lane is done with its running step.

@@ -118,6 +118,8 @@ enum RustCopy {
             text = String(localized: "Not attached to the pane yet — input wasn't sent")
         case .couldntSwitch:
             text = String(localized: "Couldn't switch to that pane — nothing was sent")
+        case .switchFailed:
+            text = String(localized: "Couldn't switch to that pane")
         case .restarting:
             text = String(localized: "Restarting herdr server…")
         case .restartFailed:

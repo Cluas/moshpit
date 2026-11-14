@@ -255,6 +255,14 @@ impl HostCareCore {
             .with(|m, k| m.set_saved(&listed, all.as_deref(), k));
     }
 
+    /// What the person calls `connection` now: its pairing takes the name
+    /// (B451).
+    pub fn name_connection(&self, connection: String, label: String) {
+        if let Some(id) = uuid(&connection) {
+            self.driver.with(|m, k| m.name_connection(id, &label, k));
+        }
+    }
+
     // MARK: Care
 
     /// A session's control plane for `connection` came up.

@@ -607,6 +607,7 @@
   "The icon is separate from the accent color, because iOS only allows switching between icons bundled with the app — a custom accent can't have matching artwork generated for it.": "iOS는 앱에 포함된 아이콘 사이에서만 전환을 허용하므로 아이콘은 강조 색상과 따로 고릅니다. 사용자 설정 강조 색상에 맞는 아이콘을 즉석에서 만들 수는 없습니다.",
   "Not attached to the pane yet — input wasn't sent": "아직 패널에 연결되지 않아 입력을 보내지 않았습니다",
   "That pane is closed": "그 패널은 이미 닫혔습니다",
+  "Couldn't switch to that pane": "그 패널로 전환하지 못했습니다",
   "Couldn't switch to that pane — nothing was sent": "그 패널로 전환하지 못해 아무것도 보내지 않았습니다",
   "What you just typed wasn't sent: the connection dropped, and it's back now": "방금 입력한 내용은 보내지 않았습니다. 연결이 끊겼다가 지금은 다시 연결되었습니다",
   "This pane is open on another device": "이 패널은 다른 기기에서 열려 있습니다",

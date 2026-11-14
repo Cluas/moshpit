@@ -384,7 +384,10 @@ final class SwiftTermSurface: NSObject, TerminalSurface {
     // MARK: Pictures
 
     func snapshotView() -> UIView? {
+        // A view the screen hasn't drawn yet has no picture to give without
+        // drawing it now (B497: a protocol switch's still came back empty).
         terminalView.snapshotView(afterScreenUpdates: false)
+            ?? terminalView.snapshotView(afterScreenUpdates: true)
     }
 
     /// SwiftTerm draws in `draw(_:)`: the whole view again.

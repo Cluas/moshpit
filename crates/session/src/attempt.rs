@@ -392,7 +392,7 @@ impl Attempt {
         });
         let server = match ssh.peer_addr() {
             Some(peer) => SocketAddr::new(peer.ip(), credentials.udp_port),
-            None => resolve(host, credentials.udp_port).await?,
+            None => resolve(host, credentials.udp_port, self.timing.dial_timeout).await?,
         };
         let control = if matches!(route.multiplexer, Multiplexer::Tmux | Multiplexer::Herdr) {
             Some(ssh.clone())
@@ -637,11 +637,14 @@ fn contains(haystack: &[u8], needle: &[u8]) -> bool {
         .any(|window| window == needle)
 }
 
-async fn resolve(host: &str, port: u16) -> Result<SocketAddr, Failure> {
-    tokio::net::lookup_host((host, port))
+/// The address mosh's UDP flow goes to, when the SSH connection doesn't
+/// say (through a proxy), looked up within `bound` (B452): the one step of
+/// a dial nothing bounded. A resolver that never answered left the session
+/// "Connecting" for good — every other step gives up at its own 15 s, and
+/// a dial that is still moving is never cut short.
+async fn resolve(host: &str, port: u16, bound: std::time::Duration) -> Result<SocketAddr, Failure> {
+    lookup_within(tokio::net::lookup_host((host, port)), bound)
         .await
-        .ok()
-        .and_then(|mut addresses| addresses.next())
         .ok_or_else(|| {
             Failure::new(
                 FailureKind::Unreachable,
@@ -653,6 +656,19 @@ async fn resolve(host: &str, port: u16) -> Result<SocketAddr, Failure> {
                 format!("{host} resolves to no address for mosh"),
             )
         })
+}
+
+/// The first address `lookup` finds within `bound`; none when it finds none,
+/// fails, or takes longer.
+async fn lookup_within<I: Iterator<Item = SocketAddr>>(
+    lookup: impl std::future::Future<Output = std::io::Result<I>>,
+    bound: std::time::Duration,
+) -> Option<SocketAddr> {
+    tokio::time::timeout(bound, lookup)
+        .await
+        .ok()?
+        .ok()
+        .and_then(|mut addresses| addresses.next())
 }
 
 /// Dials and signs in to `spec`'s host, asking `prompt` about a host key.
@@ -881,6 +897,20 @@ fn target_name(target: &Target) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// B452: a lookup that never answers gives up at its bound, rather than
+    /// leave the dial "Connecting" for good; one that answers is used.
+    #[tokio::test(start_paused = true)]
+    async fn mosh_s_address_lookup_gives_up_at_its_bound() {
+        let bound = std::time::Duration::from_secs(15);
+        let hung = std::future::pending::<std::io::Result<std::vec::IntoIter<SocketAddr>>>();
+        let started = tokio::time::Instant::now();
+        assert_eq!(lookup_within(hung, bound).await, None);
+        assert_eq!(started.elapsed(), bound);
+        let address: SocketAddr = "192.0.2.7:60001".parse().unwrap();
+        let found = std::future::ready(Ok(vec![address].into_iter()));
+        assert_eq!(lookup_within(found, bound).await, Some(address));
+    }
 
     fn caps(tmux: bool, mosh: bool, herdr: bool) -> HostCapabilities {
         HostCapabilities {

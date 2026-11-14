@@ -3422,6 +3422,12 @@ public protocol HostCareCoreProtocol: AnyObject, Sendable {
     func isTending(connection: String)  -> Bool
     
     /**
+     * What the person calls `connection` now: its pairing takes the name
+     * (B451).
+     */
+    func nameConnection(connection: String, label: String) 
+    
+    /**
      * Open a Host Setup screen on `connection`'s host; its page id.
      */
     func openSetup(connection: CareConnection, testPane: String?)  -> UInt64
@@ -3723,6 +3729,19 @@ open func isTending(connection: String) -> Bool  {
         FfiConverterString.lower(connection),$0
     )
 })
+}
+    
+    /**
+     * What the person calls `connection` now: its pairing takes the name
+     * (B451).
+     */
+open func nameConnection(connection: String, label: String)  {try! rustCall() {
+    uniffi_moshpit_ffi_fn_method_hostcarecore_name_connection(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(connection),
+        FfiConverterString.lower(label),$0
+    )
+}
 }
     
     /**
@@ -14635,6 +14654,11 @@ public enum HerdrNoticeValue: Equatable, Hashable {
      * A reply (or a share) couldn't be put on its pane: nothing was sent.
      */
     case couldntSwitch
+    /**
+     * The person's pick couldn't be made; the screen stayed where it was
+     * (B491).
+     */
+    case switchFailed
     case restarting
     case restartFailed
 
@@ -14676,9 +14700,11 @@ public struct FfiConverterTypeHerdrNoticeValue: FfiConverterRustBuffer {
         
         case 7: return .couldntSwitch
         
-        case 8: return .restarting
+        case 8: return .switchFailed
         
-        case 9: return .restartFailed
+        case 9: return .restarting
+        
+        case 10: return .restartFailed
         
         default: throw UniffiInternalError.unexpectedEnumCase
         }
@@ -14722,12 +14748,16 @@ public struct FfiConverterTypeHerdrNoticeValue: FfiConverterRustBuffer {
             writeInt(&buf, Int32(7))
         
         
-        case .restarting:
+        case .switchFailed:
             writeInt(&buf, Int32(8))
         
         
-        case .restartFailed:
+        case .restarting:
             writeInt(&buf, Int32(9))
+        
+        
+        case .restartFailed:
+            writeInt(&buf, Int32(10))
         
         }
     }
@@ -23398,6 +23428,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_moshpit_ffi_checksum_method_hostcarecore_is_tending() != 54536) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_moshpit_ffi_checksum_method_hostcarecore_name_connection() != 11675) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_moshpit_ffi_checksum_method_hostcarecore_open_setup() != 36115) {
