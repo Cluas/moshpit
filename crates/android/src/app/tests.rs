@@ -911,6 +911,38 @@ fn set_up_this_host_needs_a_live_session() {
     );
 }
 
+/// The page names the connection it sets up: its name and where it
+/// reaches, before what the host is.
+#[test]
+fn the_host_setup_page_names_its_connection() {
+    let host = Host::start();
+    let mut app = host.core.lock();
+    let id = moshpit_seal::foundation::uuid::Uuid::new_v4();
+    let mut saved = moshpit_store::connections::ServerConnection::new(
+        id,
+        moshpit_seal::foundation::date::Date::from_unix(1_762_800_000.0),
+    );
+    saved.name = "gpu-01".into();
+    saved.username = "dev".into();
+    saved.host = "192.0.2.10".into();
+    saved.port = 2222;
+    app.connections.add(saved);
+    let page = host_setup::HostSetupPage {
+        connection: id,
+        page: 1,
+    };
+    let named: Value = serde_json::from_str(&host_setup::identity(&app, &page).unwrap()).unwrap();
+    assert_eq!(
+        named,
+        json!({"op": "host", "name": "gpu-01", "user": "dev", "host": "192.0.2.10", "port": 2222})
+    );
+    let gone = host_setup::HostSetupPage {
+        connection: moshpit_seal::foundation::uuid::Uuid::new_v4(),
+        page: 1,
+    };
+    assert_eq!(host_setup::identity(&app, &gone), None);
+}
+
 #[test]
 fn the_host_setup_message_says_push_is_not_on_this_build() {
     let host = Host::start();
@@ -1019,4 +1051,22 @@ fn a_page_over_the_terminal_puts_its_keyboard_away_and_back() {
         "{:?}",
         host.calls
     );
+}
+
+/// B430: Settings › UDP ports said "for every connection", but a connect
+/// asked mosh-server for the range the connection stored at its last save:
+/// a narrowed range never reached a saved connection, and mosh landed
+/// outside the firewall (connected, black).
+#[test]
+fn a_mosh_connect_asks_for_settings_udp_ports_not_the_saved_ones() {
+    let mut connection = moshpit_store::connections::ServerConnection::new(
+        moshpit_seal::foundation::uuid::Uuid::new_v4(),
+        moshpit_seal::foundation::date::Date::from_unix(1_762_800_000.0),
+    );
+    connection.host = "box.example.com".into();
+    connection.connection_protocol = moshpit_store::connections::ConnectionProtocol::Mosh;
+    connection.mosh_port_range_start = 60001;
+    connection.mosh_port_range_end = 60999;
+    let spec = super::sessions::spec(&connection, &Options::default(), (60000, 60010));
+    assert_eq!(spec.mosh_port_range, (Some(60000), Some(60010)));
 }

@@ -185,6 +185,15 @@ protocol TerminalSurface: AnyObject {
 
     /// A still picture of the terminal as it shows, framed like the view.
     func snapshotView() -> UIView?
+    /// Draws every row again on the canvas there (B445): the terminal
+    /// stage asks it whenever it puts the terminal in a slot, so a picture
+    /// lost on the way never waits for the next byte, or for the screen to
+    /// be left and entered again, to come back.
+    func redrawAll()
+    /// Frames drawn since the terminal got its canvas, for the stage's
+    /// check (a terminal on screen with text on it and nothing drawn); nil
+    /// when the surface doesn't count them.
+    var framesSinceCanvas: Int? { get }
 
     // MARK: Find
 
@@ -291,18 +300,28 @@ enum TerminalSurfaceKind {
 /// were drawn for), configured as every terminal of the app is.
 @MainActor
 enum TerminalSurfaces {
+    /// Posted (on the main thread) for every terminal minted, before its
+    /// owner has it (B445): the terminal stage looks again on the next turn
+    /// whether the terminal it shows is still the one its target names, so
+    /// a new one is in the slot as soon as it exists, not when the screen is
+    /// next entered.
+    static let minted = Notification.Name("moshpit.terminal-surface-minted")
+
     static func make(_ kind: TerminalSurfaceKind = .current, font: UIFont,
                      grid: TerminalGrid) -> TerminalSurface {
         let cell = TerminalCellGeometry.measuredCell(font: font, scale: UITraitCollection.current.displayScale)
         let birth = CGRect(x: 0, y: 0, width: cell.width * CGFloat(max(1, grid.cols)),
                            height: cell.height * CGFloat(max(1, grid.rows)))
+        let surface: TerminalSurface
         switch kind {
         case .core:
             let view = CoreTerminalView(frame: birth, font: font)
             Log.ui.info("core term: minted \(view.grid.cols, privacy: .public)×\(view.grid.rows, privacy: .public) on \(view.canvasKind, privacy: .public)")
-            return view
+            surface = view
         case .swiftTerm:
-            return SwiftTermSurface(frame: birth, font: font)
+            surface = SwiftTermSurface(frame: birth, font: font)
         }
+        NotificationCenter.default.post(name: minted, object: surface)
+        return surface
     }
 }

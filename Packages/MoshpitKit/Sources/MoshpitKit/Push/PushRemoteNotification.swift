@@ -57,6 +57,12 @@ public enum PushRemoteNotification {
     /// newest-first because a freshly paired host is the likeliest sender.
     /// A MAC failure is entirely normal here (it means "not this key"), so it is
     /// never surfaced; only running out of keys is a real failure.
+    ///
+    /// Harness-only (the seal crate's `trysecrets` cases, Swift against
+    /// Rust): which connection sent it is NOT checked here. What is shown
+    /// goes through ``open(_:pairings:)`` (B435); `crates/seal/tests/
+    /// harness_only.rs` fails if the notification service or the app calls
+    /// this one.
     public static func open(_ envelope: PushSealedBox.Envelope,
                             secrets: [String]) -> PushSealedBox.Status? {
         for secret in secrets {
@@ -65,6 +71,37 @@ public enum PushRemoteNotification {
             }
         }
         return nil
+    }
+
+    /// What became of an envelope tried against this device's pairings.
+    public enum Opening: Equatable {
+        /// A pairing's key opened it, and it names that pairing's connection.
+        case opened(PushSealedBox.Status)
+        /// A pairing's key opened it, but it names another connection (B435).
+        case misnamed
+        /// No key opened it.
+        case unopened
+    }
+
+    /// Open `envelope` with `pairings`' keys, newest pairing first, and
+    /// believe it only for the connection whose key opened it (B435).
+    ///
+    /// A host holds one pairing's key and writes the connection id into what
+    /// it seals. That id was taken as given: a host paired with one
+    /// connection could seal a status naming another, and its card read as
+    /// the other connection's — its name, its waiting set and its rings,
+    /// and a tap opened its pane. ``PushPairing`` promises a compromised host
+    /// can't forge notifications that appear to come from a different one;
+    /// this is where that holds. Only the key's holder can have sealed it,
+    /// so no other key needs trying.
+    public static func open(_ envelope: PushSealedBox.Envelope,
+                            pairings: [PushPairing]) -> Opening {
+        for pairing in pairings.sorted(by: { $0.createdAt > $1.createdAt }) {
+            guard let status = try? PushSealedBox.open(envelope, secretHex: pairing.secretHex) else { continue }
+            guard UUID(uuidString: status.conn) == pairing.connectionId else { return .misnamed }
+            return .opened(status)
+        }
+        return .unopened
     }
 
     /// Where this agent is, in the form the local notifications use

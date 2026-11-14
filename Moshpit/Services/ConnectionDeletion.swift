@@ -38,7 +38,9 @@ enum ConnectionDeletion {
     /// pairing, up to three, B377; a care pass waited out, up to five). Their cards are still on Home all that time, and a tap
     /// on one used to start a new session for a connection about to go —
     /// left running, unseen, after its card and its keychain item had gone
-    /// (B327). Nothing starts a session for one of these.
+    /// (B327). Nothing starts a session for one of these — every way one
+    /// starts asks: Home's Connect, a terminal opened (a notification, a
+    /// session row), a terminal's Reconnect (B432).
     private(set) static var underWay: Set<UUID> = []
 
     /// Whether a delete is under way for connection `id`.
@@ -53,14 +55,17 @@ enum ConnectionDeletion {
     /// `tearDown` ends what is live for it (the island's tracking, the
     /// session); `dropSecret` removes the keychain item the connection
     /// signed in with, once nothing else names it (`keys`: the key records,
-    /// which name theirs); `dropShares` removes what the share extension
-    /// queued for it, photos included (B343).
+    /// which name theirs); `holdSecret` lists it to drop at a later launch
+    /// when what else names it can't be told now (B428: it used to stay for
+    /// good); `dropShares` removes what the share extension queued for it,
+    /// photos included (B343).
     static func delete(_ connection: ServerConnection,
                        from store: ConnectionStore,
                        keys: SSHKeyStore,
                        care: any ConnectionCareHandshake,
                        tearDown: () async -> Void,
                        dropSecret: (String) async -> Void,
+                       holdSecret: (String) -> Void = { _ in },
                        dropShares: (UUID) -> Void = { ShareQueue.removeEntries(for: $0) }) async throws {
         // Before anything that waits: from here on care pairs nothing for
         // it, and nothing it saves now outlives the forgetting.
@@ -79,12 +84,15 @@ enum ConnectionDeletion {
         // used to stay whenever the connection had picked a managed key —
         // also once that key's record was gone (deleting a key left its
         // item for the connections still using it): the private key was
-        // then named by nothing at all, for good. Unknown keeps it.
-        if let ref = connection.keychainRef,
-           let held = KeychainReferences.referenced(connections: store, keys: keys,
-                                                    excludingConnection: connection.id),
-           !held.contains(ref) {
-            await dropSecret(ref)
+        // then named by nothing at all, for good. Unknown keeps it, listed
+        // for a later launch to drop once nothing names it (B428).
+        if let ref = connection.keychainRef {
+            switch KeychainReferences.referenced(connections: store, keys: keys,
+                                                 excludingConnection: connection.id) {
+            case nil: holdSecret(ref)
+            case let held? where !held.contains(ref): await dropSecret(ref)
+            case _?: break
+            }
         }
         // Its queued shares can never be delivered (the drain takes an entry
         // only for a live session), and their photos stayed in the App Group

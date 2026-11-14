@@ -365,6 +365,26 @@ pub fn is_server_not_running(raw: &str) -> bool {
     error_code(raw).is_some_and(|(code, _)| code == "server_not_running")
 }
 
+/// herdr 0.7.3 with no server listening: no structured error, the socket's
+/// own (`Error: Os { code: 2, kind: NotFound, … }`, or `ConnectionRefused`
+/// where a dead server left its socket file).
+pub fn is_no_socket(raw: &str) -> bool {
+    let Some(at) = raw.find("Os {") else {
+        return false;
+    };
+    let error = &raw[at..];
+    if error.contains("kind: NotFound") || error.contains("kind: ConnectionRefused") {
+        return true;
+    }
+    // ENOENT; ECONNREFUSED on macOS and on Linux.
+    let code = error.split_once("code: ").map(|(_, rest)| {
+        rest.chars()
+            .take_while(char::is_ascii_digit)
+            .collect::<String>()
+    });
+    matches!(code.as_deref(), Some("2" | "61" | "111"))
+}
+
 /// herdr's client/server version-skew refusal (`protocol_mismatch`), whose
 /// remedy is the user's alone. Its first sentence only: the CLI's message
 /// goes on with remediation prose sized for a terminal.

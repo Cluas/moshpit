@@ -53,7 +53,11 @@ struct HostSetupNSHPage: View {
             let message = page.flatMap { source.setupMessage($0) }
             NSHPage(
                 screen: .hostSetup,
-                attach: { screen.attach($0, current: message) },
+                attach: { surface in
+                    // Which host, first: the core's page knows only its facts.
+                    _ = surface.post(HostSetupScreenModel.host(connection))
+                    screen.attach(surface, current: message)
+                },
                 onMessage: handle,
                 onFailure: { failed = true })
                 .nshPage()
@@ -104,6 +108,13 @@ final class HostSetupScreenModel {
             update(message)
         }
         attach(surface)
+    }
+
+    /// `{"op": "host", …}`: the connection the page sets up, by its name
+    /// and where it reaches (`ui/src/host_setup.rs`'s `Subject`).
+    static func host(_ connection: ServerConnection) -> [String: Any] {
+        ["op": "host", "name": connection.displayName, "user": connection.username,
+         "host": connection.host, "port": connection.port]
     }
 
     func update(_ message: String?) {

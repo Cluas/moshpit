@@ -65,9 +65,19 @@ impl Drop for Run {
     }
 }
 
+/// A `tmux` that answers every question with `desk`: a session the
+/// script must not name unless it is in that tmux.
+const STUB_TMUX: &str = "#!/bin/sh\necho desk\n";
+
 /// One run of the host script; returns the requests curl was given, each
 /// with the bearer config it was handed.
 fn run_script(args: &[&str], pane: Option<&str>) -> Vec<(Value, String)> {
+    let env: Vec<(&str, &str)> = pane.map(|pane| vec![("TMUX_PANE", pane)]).unwrap_or_default();
+    run_script_in(args, &env)
+}
+
+/// [`run_script`] with `env` set for the script.
+fn run_script_in(args: &[&str], env: &[(&str, &str)]) -> Vec<(Value, String)> {
     let script = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scripts/host/moshpit-push.sh");
     let run = Run {
         dir: std::env::temp_dir().join(format!("seal-host-{}", moshpit_seal::random::hex(8))),
@@ -78,10 +88,14 @@ fn run_script(args: &[&str], pane: Option<&str>) -> Vec<(Value, String)> {
     std::fs::create_dir_all(&capture).unwrap();
     let curl = bin.join("curl");
     std::fs::write(&curl, STUB_CURL).unwrap();
+    let tmux = bin.join("tmux");
+    std::fs::write(&tmux, STUB_TMUX).unwrap();
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&curl, std::fs::Permissions::from_mode(0o755)).unwrap();
+        for stub in [&curl, &tmux] {
+            std::fs::set_permissions(stub, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
     }
     let iat = 1_762_800_000;
     let apns = "AB".repeat(32);
@@ -110,8 +124,8 @@ fn run_script(args: &[&str], pane: Option<&str>) -> Vec<(Value, String)> {
         .env("MOSHPIT_CAPTURE", &capture)
         .env("MOSHPIT_PUSH_CONF", &conf)
         .env("MOSHPIT_PUSH_HOST", "m1-pro");
-    if let Some(pane) = pane {
-        command.env("TMUX_PANE", pane);
+    for (key, value) in env {
+        command.env(key, value);
     }
     let output = command.output().expect("sh runs");
     assert!(
@@ -545,4 +559,48 @@ fn a_conf_is_read_never_run() {
             ),
         ]
     );
+}
+
+/// B434: every push from outside tmux named the pane `%0`, which no herdr
+/// pane is. On the phone its waiting entry never matched a pane a poll
+/// names, so its card wasn't taken down once answered and the next
+/// question inside fifteen minutes came in silent; every herdr agent on
+/// the host shared one entry and one finish card. A herdr pane's push
+/// names it by herdr's own id — also inside a $TMUX herdr's server
+/// inherited, whose session it doesn't ask for — and an id no collapse id
+/// could carry falls back to `%0`.
+#[test]
+fn a_herdr_panes_push_names_it_by_herdrs_own_id() {
+    if skip() {
+        return;
+    }
+    let opened = |body: &Value| -> moshpit_seal::Status {
+        let envelope: Envelope = json::decode_value(field(body, "env")).expect("an envelope");
+        envelope::open(&envelope, SECRET).expect("Rust opens what the host sealed")
+    };
+    let requests = run_script_in(
+        &["done", "claude", "fix the build", "240"],
+        &[("HERDR_PANE_ID", "w1:p2")],
+    );
+    assert_eq!(requests.len(), 1);
+    assert_eq!(opened(&requests[0].0).pane, "w1:p2");
+    assert_eq!(
+        field(&requests[0].0, "thread").as_str(),
+        Some(format!("moshpit.done.{CONN}.w1:p2").as_str())
+    );
+
+    let inherited = run_script_in(
+        &["attention", "claude", "Bash: make"],
+        &[
+            ("HERDR_PANE_ID", "w1:p2"),
+            ("TMUX", "/tmp/desk.sock,1,0"),
+            ("TMUX_PANE", "%5"),
+        ],
+    );
+    let status = opened(&inherited[0].0);
+    assert_eq!(status.pane, "w1:p2");
+    assert_eq!(status.sess.as_deref(), Some(""), "the inherited tmux was asked");
+
+    let odd = run_script_in(&["done", "claude"], &[("HERDR_PANE_ID", "w1 p2")]);
+    assert_eq!(opened(&odd[0].0).pane, "%0");
 }

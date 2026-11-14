@@ -653,3 +653,91 @@ fn the_host_setup_follows_dynamic_type() {
     assert!(has(&app, "hostsetup-host"));
     channel.close();
 }
+
+/// The connection the host says the page sets up (`{"op": "host"}`).
+fn post_host(app: &mut nsh_testing::Headless, channel: &moshpit_ui::channel::Channel) {
+    post(
+        app,
+        channel,
+        r#"{"op":"host","name":"gpu-01","user":"dev","host":"192.0.2.10","port":2222}"#,
+    );
+}
+
+/// The text that starts with `start`, as laid out.
+fn text_node(app: &nsh_testing::Headless, start: &str) -> nsh_core::AttributedText {
+    app.screen()
+        .layout_nodes()
+        .into_iter()
+        .filter_map(|node| node.text)
+        .map(|text| (*text.text).clone())
+        .find(|text| text.text.starts_with(start))
+        .unwrap_or_else(|| panic!("no text starting {start:?}"))
+}
+
+/// The page names the host it sets up, however it was opened: the
+/// connection's name in the bar's title and first on the page, over where
+/// it reaches. While it looks at the host and when it couldn't read it too.
+#[test]
+fn the_page_names_the_host_it_sets_up() {
+    let (mut app, channel) = start(Screen::HostSetup, Params::default(), "hostsetup");
+    post_host(&mut app, &channel);
+    post_unknown(
+        &mut app,
+        &channel,
+        HostSetup {
+            phase: Phase::Inspecting,
+            phase_label: Some("Looking at the host…".into()),
+            facts: None,
+            ..fresh()
+        },
+    );
+    app.wait_for("id:hostsetup-looking").unwrap();
+    shows_all(&app, &["Set up gpu-01", "gpu-01", "dev@192.0.2.10:2222"]);
+    assert!(has(&app, "hostsetup-connection"));
+    post_setup(&mut app, &channel, installed());
+    app.wait_for("id:hostsetup-host").unwrap();
+    shows_all(&app, &["Set up gpu-01", "dev@192.0.2.10:2222", "Darwin"]);
+    post_unknown(
+        &mut app,
+        &channel,
+        HostSetup {
+            facts: None,
+            error: Some("connection refused".into()),
+            ..fresh()
+        },
+    );
+    app.wait_for("id:hostsetup-unread").unwrap();
+    shows_all(&app, &["Set up gpu-01", "dev@192.0.2.10:2222"]);
+    channel.close();
+}
+
+/// What a row explains is never cut: the hooks test's account of what it
+/// runs, where the push goes, the connection's address, each on as many
+/// lines as it takes.
+#[test]
+fn the_page_s_explanations_wrap() {
+    let (mut app, channel) = start(Screen::HostSetup, Params::default(), "hostsetup");
+    post_host(&mut app, &channel);
+    post_setup(&mut app, &channel, installed());
+    app.wait_for("id:hostsetup-host").unwrap();
+    for start in [
+        "Runs the command",
+        "https://push.example.com",
+        "dev@192.0.2.10:2222",
+    ] {
+        let text = text_node(&app, start);
+        assert_ne!(text.max_lines, 1, "{start:?} is cut to one line");
+    }
+    channel.close();
+}
+
+/// In Chinese: 配置 gpu-01.
+#[test]
+fn the_page_names_its_host_in_the_apps_language() {
+    let (mut app, channel) = start(Screen::HostSetup, zh_hans(), "hostsetup");
+    post_host(&mut app, &channel);
+    post_setup(&mut app, &channel, installed());
+    app.wait_for("id:hostsetup-host").unwrap();
+    shows_all(&app, &["配置 gpu-01", "dev@192.0.2.10:2222"]);
+    channel.close();
+}

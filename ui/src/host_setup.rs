@@ -219,11 +219,49 @@ pub struct HostSetup {
     pub removable: bool,
 }
 
+/// The connection the page sets up, as the host names it: its name and
+/// where it reaches (`{"op": "host", …}`). The core's page knows only the
+/// host's facts; the host that opened it knows which connection it is.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Subject {
+    /// The connection's name (its `user@host` when it has none).
+    pub name: String,
+    pub user: String,
+    pub host: String,
+    pub port: i64,
+}
+
+impl Subject {
+    /// Where it reaches: [`address`].
+    pub fn address(&self) -> String {
+        address(&self.user, &self.host, self.port)
+    }
+}
+
+/// `user@host:port`, the host in brackets when it is an IPv6 address
+/// (`dev@[2001:db8::1]:22`): one way of writing where a connection
+/// reaches, for every page that names one.
+pub fn address(user: &str, host: &str, port: i64) -> String {
+    let host = if host.contains(':') && !host.starts_with('[') {
+        format!("[{host}]")
+    } else {
+        host.to_owned()
+    };
+    if user.is_empty() {
+        format!("{host}:{port}")
+    } else {
+        format!("{user}@{host}:{port}")
+    }
+}
+
 /// A message from the host.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Message {
     /// `{"op": "host-setup", …}`: what the page shows now.
     HostSetup(Box<HostSetup>),
+    /// `{"op": "host", …}`: which connection the page sets up.
+    Host(Subject),
 }
 
 impl Message {
@@ -234,6 +272,9 @@ impl Message {
             "host-setup" => serde_json::from_value(serde_json::Value::Object(fields))
                 .map(|s| Message::HostSetup(Box::new(s)))
                 .map_err(|e| format!("host-setup: host-setup: {e}")),
+            "host" => serde_json::from_value(serde_json::Value::Object(fields))
+                .map(Message::Host)
+                .map_err(|e| format!("host-setup: host: {e}")),
             other => Err(format!("host-setup: no op {other:?}")),
         }
     }
@@ -244,6 +285,11 @@ impl Message {
             Message::HostSetup(setup) => {
                 let mut value = serde_json::to_value(setup).expect("a setup serializes");
                 value["op"] = json!("host-setup");
+                value.to_string()
+            }
+            Message::Host(subject) => {
+                let mut value = serde_json::to_value(subject).expect("a subject serializes");
+                value["op"] = json!("host");
                 value.to_string()
             }
         }
@@ -299,11 +345,15 @@ pub fn HostSetupScreen(props: ScreenProps) -> impl IntoElement {
     let channel = Channel::find(props.surface.get_untracked());
     let bar = BarMetrics::or_standard(channel.as_ref().and_then(|c| c.params().bar));
     let state: State = signal(None);
+    let subject = signal(None::<Subject>);
     channel::hear(
         channel.as_ref(),
         Screen::HostSetup,
         Message::parse,
-        move |Message::HostSetup(setup)| state.set(Some(*setup)),
+        move |message| match message {
+            Message::HostSetup(setup) => state.set(Some(*setup)),
+            Message::Host(named) => subject.set(Some(named)),
+        },
     );
     let tell = tell_host(channel);
     let scrolled = nav_bar::ScrollEdge::new();
@@ -323,7 +373,15 @@ pub fn HostSetupScreen(props: ScreenProps) -> impl IntoElement {
     ask_before_installing(state, tell.clone());
     let body = {
         let steps = steps.clone();
-        move || page::page(bar, scrolled, "hostsetup-list", [content(steps.clone())]).into_element()
+        move || {
+            page::page(
+                bar,
+                scrolled,
+                "hostsetup-list",
+                [identity(subject), content(steps.clone())],
+            )
+            .into_element()
+        }
     };
     let stepping = computed(move || stepping(state));
     let done = tell.clone();
@@ -336,7 +394,13 @@ pub fn HostSetupScreen(props: ScreenProps) -> impl IntoElement {
         .child(nav_bar::root_bar(nav_bar::NavBar {
             metrics: bar,
             back_title: String::new(),
-            title: nav_bar::fixed(t!("Set up a host")),
+            // Which host, always: however the page was opened.
+            title: Box::new(
+                move || match subject.with(|s| s.as_ref().map(|s| s.name.clone())) {
+                    Some(name) => t!("Set up %@", arg1 = name),
+                    None => t!("Set up a host"),
+                },
+            ),
             leading: None,
             trailing: vec![
                 nav_bar::BarButton {
@@ -395,6 +459,32 @@ fn ask_before_installing(state: State, tell: Tell) {
             tell(json!({"ev": if yes { "install-hooks-anyway" } else { "dismiss" }}));
         }));
     });
+}
+
+/// The connection the page sets up, first on the page whatever else it
+/// shows: its name over where it reaches (`user@host:port`).
+fn identity(subject: Signal<Option<Subject>>) -> AnyElement {
+    when(
+        move || subject.with(Option::is_some),
+        move || {
+            let name =
+                move || subject.with(|s| s.as_ref().map(|s| s.name.clone()).unwrap_or_default());
+            let address =
+                move || subject.with(|s| s.as_ref().map(Subject::address).unwrap_or_default());
+            section()
+                .row(
+                    row("")
+                        .title_with(move || name().into())
+                        .subtitle_with(move || address().into())
+                        .mono_subtitle()
+                        .wrap_subtitle()
+                        .leading_tile("server.rack")
+                        .test_id("hostsetup-connection"),
+                )
+                .into_element()
+        },
+    )
+    .into_element()
 }
 
 /// What the page shows under its bar: that it is looking at the host, then
@@ -658,6 +748,7 @@ fn hooks_section(steps: Steps, installed: bool, agents: Vec<Agent>) -> AnyElemen
             row(t!("Status scripts"))
                 .subtitle_with(move || read(state, |s| s.agent.config_hint.clone()).into())
                 .mono_subtitle()
+                .wrap_subtitle()
                 .label_with(move || {
                     format!("{}, {}", t!("Status scripts"), hooks_words(hooks())).into()
                 })
@@ -784,6 +875,7 @@ fn push_section(steps: Steps, paired: bool) -> AnyElement {
                     .into()
                 })
                 .mono_subtitle()
+                .wrap_subtitle()
                 .label_with(move || {
                     format!("{}, {}", t!("Pairing"), pairing_words(pairing())).into()
                 })
@@ -950,6 +1042,8 @@ fn proof_row(
             }
             .into()
         })
+        // What the test does, or what it found: whole, never cut.
+        .wrap_subtitle()
         .label_with(move || {
             let said = match verdict() {
                 ProofState::Proven => t!("Passed"),
@@ -1102,10 +1196,32 @@ mod tests {
     #[test]
     fn the_host_message_as_written() {
         let json = r#"{"op":"host-setup","phase":"inspecting","phaseLabel":"Looking at the host…","nothingWillPush":false,"agent":{"id":"claude","name":"Claude Code","configHint":"~/.claude/settings.json"},"agents":[{"id":"claude","name":"Claude Code","configHint":"~/.claude/settings.json"}],"hooks":"absent","hooksProof":{"state":"untested"},"relayURL":"https://push.example.com","pairing":"absent","pushProof":{"state":"untested"}}"#;
-        let Message::HostSetup(setup) = Message::parse(json).unwrap();
+        let Ok(Message::HostSetup(setup)) = Message::parse(json) else {
+            panic!("a host-setup message");
+        };
         assert_eq!(setup.relay_url, "https://push.example.com");
         assert_eq!(setup.phase, Phase::Inspecting);
         assert_eq!(setup.facts, None);
+    }
+
+    /// The connection the page sets up, as the host names it, and where it
+    /// reaches written one way: `user@host:port`, an IPv6 host bracketed.
+    #[test]
+    fn the_host_names_its_connection() {
+        let json = r#"{"op":"host","name":"gpu-01","user":"dev","host":"192.0.2.10","port":2222}"#;
+        let Ok(Message::Host(subject)) = Message::parse(json) else {
+            panic!("a host message");
+        };
+        assert_eq!(subject.name, "gpu-01");
+        assert_eq!(subject.address(), "dev@192.0.2.10:2222");
+        assert_eq!(
+            Message::parse(&Message::Host(subject.clone()).to_json()),
+            Ok(Message::Host(subject))
+        );
+        assert_eq!(address("dev", "2001:db8::1", 22), "dev@[2001:db8::1]:22");
+        assert_eq!(address("dev", "[2001:db8::1]", 22), "dev@[2001:db8::1]:22");
+        assert_eq!(address("", "build.example.com", 22), "build.example.com:22");
+        assert!(Message::parse(r#"{"op":"host","name":"gpu-01"}"#).is_err());
     }
 
     #[test]

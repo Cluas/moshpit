@@ -43,18 +43,53 @@ enum KeychainReferences {
     /// Drop `ref` once no saved connection and no key record names it: a
     /// connection's own item it left for a managed key (B325), which used to
     /// stay named by nothing — a password for good, a pasted key listed
-    /// again as a "Recovered key" at the next launch. Unknown keeps it.
+    /// again as a "Recovered key" at the next launch. One that can't go now
+    /// (unknown, or the keychain kept it) stays on the store's list of
+    /// items to drop, and a later launch drops it (B428). Named again, it
+    /// stays.
+    @discardableResult
     static func release(_ ref: String, connections: ConnectionStore, keys: SSHKeyStore,
-                        keychain: KeychainService) async {
-        guard let held = referenced(connections: connections, keys: keys), !held.contains(ref) else {
-            Log.store.info("keychain: an item a connection left is named elsewhere, or that can't be told; kept")
-            return
+                        keychain: KeychainService,
+                        preferences: PreferencesHost = RustStoreSwitch.preferences) async -> StoreSecretFate {
+        let held = referenced(connections: connections, keys: keys)
+        let fate = storeRelease(preferences: preferences, mode: .system, account: ref,
+                                referenced: held.map(Array.init), keychain: keychain.storeHost)
+        Log.store.info("keychain: an item a connection left: \(String(describing: fate), privacy: .public)")
+        return fate
+    }
+
+    /// Put `ref` on the store's list of items to drop (B428): a connection
+    /// let go of it, but it can't go yet — its session still signs in with
+    /// it (B325), or the drop failed. ``release(_:connections:keys:keychain:preferences:)``
+    /// drops it once the session lets go; if the app ends first, the next
+    /// launch does (``settleReleasesOnce``). Never offered back as a key.
+    static func hold(_ ref: String, preferences: PreferencesHost = RustStoreSwitch.preferences) {
+        if !storeHoldRelease(preferences: preferences, mode: .system, account: ref) {
+            Log.store.error("keychain: an item a connection left couldn't be listed to drop later")
         }
-        do {
-            try await keychain.delete(forRef: ref)
-        } catch {
-            Log.store.error("keychain: couldn't drop an item a connection left (\(String(describing: error), privacy: .public))")
+    }
+
+    /// Whether this launch has settled the list (``settleReleasesOnce``).
+    private static var settled = false
+
+    /// Drop what earlier launches listed (B428): once a launch, the first
+    /// time both stores can be trusted, before recovery looks. An item no
+    /// saved record names goes; one named again stays; one the keychain
+    /// keeps is tried at the next launch. What this launch listed waits for
+    /// its session. Returns what became of each.
+    @discardableResult
+    static func settleReleasesOnce(connections: ConnectionStore, keys: SSHKeyStore,
+                                   keychain: KeychainService,
+                                   preferences: PreferencesHost = RustStoreSwitch.preferences)
+        -> [StoreSettledRelease] {
+        guard !settled, let held = referenced(connections: connections, keys: keys) else { return [] }
+        settled = true
+        let done = storeSettleReleases(preferences: preferences, mode: .system,
+                                       referenced: Array(held), keychain: keychain.storeHost)
+        if !done.isEmpty {
+            Log.store.notice("keychain: \(done.count, privacy: .public) item(s) connections let go of settled")
         }
+        return done
     }
 
     // MARK: - Orphans
@@ -82,9 +117,13 @@ enum KeychainReferences {
     /// later launch adds nothing for it.
     @discardableResult
     static func recoverOrphansOnce(connections: ConnectionStore, keys: SSHKeyStore,
-                                   keychain: KeychainService) async -> [SSHKeyRecord] {
+                                   keychain: KeychainService,
+                                   preferences: PreferencesHost = RustStoreSwitch.preferences) async -> [SSHKeyRecord] {
         guard !looked else { return [] }
-        guard referenced(connections: connections, keys: keys) != nil else {
+        // What a connection let go of is to be dropped, not offered back
+        // as a key (B428).
+        guard referenced(connections: connections, keys: keys) != nil,
+              let listed = storeToRelease(preferences: preferences, mode: .system).map(Set.init) else {
             Log.store.info("keychain recovery: which items are named can't be told yet — not looking")
             return []
         }
@@ -99,7 +138,7 @@ enum KeychainReferences {
             return []
         }
         var recovered: [SSHKeyRecord] = []
-        for account in accounts.sorted() where isOurs(account) {
+        for account in accounts.sorted() where isOurs(account) && !listed.contains(account) {
             guard let held = referenced(connections: connections, keys: keys),
                   !held.contains(account) else { continue }
             let secret: Data
@@ -152,8 +191,11 @@ enum KeychainReferences {
     }
 
     #if DEBUG
-    /// Tests look more than once a process.
-    static func resetForTesting() { looked = false }
+    /// Tests look, and settle, more than once a process.
+    static func resetForTesting() {
+        looked = false
+        settled = false
+    }
     #endif
 }
 

@@ -34,6 +34,13 @@ enum SettingsPage: String, Hashable, Identifiable {
 /// same screen again, told which page in its params.
 enum SettingsPart: String, Hashable, Identifiable, CaseIterable {
     case appearance, terminal, connections, notifications, voice
+    /// Set up a host's list of saved connections, pushed for the hub's row
+    /// when there is not exactly one (``HostSetupRoute``).
+    case hosts
+    /// Pages a page of the hub's pushes (R18): Connections › UDP port
+    /// range, Notifications › How notifications work.
+    case udpRange = "udp-range"
+    case notificationInfo = "notification-info"
 
     var id: String { rawValue }
 
@@ -78,14 +85,22 @@ struct SettingsNSHPage: View {
     /// A row asked for a page, sheet or link (`ui/src/settings.rs`'s `Page`).
     var onOpen: (String) -> Void
     var onDone: () -> Void
+    /// The saved connections, for Set up a host's list (the `hosts` part).
+    var hosts: [SettingsHost] = []
+    /// A connection picked on that list.
+    var onSetup: (UUID) -> Void = { _ in }
     var onFailure: () -> Void
 
     @Environment(\.dismiss) private var dismiss
     /// A page one of this page's rows pushed (Terminal's Theme…): pushed
     /// over this page, not from the stack's root.
     @State private var pushed: SettingsPage?
+    /// A page of Settings one of this page's rows pushed (Connections' UDP
+    /// range): the screen again, over this page, not from the stack's root.
+    @State private var pushedPart: SettingsPart?
     @State private var model = SettingsModel()
     @State private var menus = NSHContextMenus()
+    @State private var hostsFeed = SettingsHostsFeed()
 
     var body: some View {
         let snapshot = SettingsSnapshot(
@@ -96,6 +111,7 @@ struct SettingsNSHPage: View {
             page: part?.rawValue,
             attach: { surface in
                 model.attach(surface, current: snapshot)
+                if part == .hosts { hostsFeed.attach(surface, hosts) }
                 menus.menus = [SettingsModel.versionID: {
                     [UIAction(title: String(localized: "Copy")) { _ in
                         UIPasteboard.general.string = SettingsScreen.versionLine
@@ -104,6 +120,10 @@ struct SettingsNSHPage: View {
                 menus.install(on: surface)
             },
             onMessage: { message in
+                if message["ev"] as? String == "setup" {
+                    if let id = (message["id"] as? String).flatMap(UUID.init(uuidString:)) { onSetup(id) }
+                    return
+                }
                 model.handle(message, settings: settings, onOpen: open, onDone: onDone,
                              onBack: { dismiss() })
             },
@@ -111,7 +131,12 @@ struct SettingsNSHPage: View {
             .nshPage()
             .onAppear { model.update(snapshot) }
             .onChange(of: snapshot) { _, new in model.update(new) }
+            .onChange(of: hosts) { _, new in hostsFeed.update(new) }
             .navigationDestination(item: $pushed) { page in page.page }
+            .navigationDestination(item: $pushedPart) { part in
+                SettingsNSHPage(part: part, liveSession: liveSession, showsFilingNumber: showsFilingNumber,
+                                onOpen: onOpen, onDone: onDone, onFailure: onFailure)
+            }
     }
 
     /// What a row asked for: on a page of the hub, a page of Settings' is
@@ -120,6 +145,8 @@ struct SettingsNSHPage: View {
     private func open(_ page: String) {
         if part != nil, let pushed = SettingsPage(rawValue: page) {
             self.pushed = pushed
+        } else if part != nil, let sub = SettingsPart(rawValue: page) {
+            pushedPart = sub
         } else {
             onOpen(page)
         }
@@ -336,6 +363,15 @@ final class SettingsModel {
         case "appearance":
             guard let appearance = (value as? String).flatMap(AppAppearance.init(rawValue:)) else { return false }
             settings.appearance = appearance
+        case "udpRange":
+            // The UDP range's page checked it (`udp_ports`); checked again,
+            // as the SwiftUI editor checks it.
+            guard let range = value as? [Any], range.count == 2,
+                  let from = (range[0] as? NSNumber)?.intValue, let to = (range[1] as? NSNumber)?.intValue,
+                  case .success(let (start, end)) = UDPPortRange.validate(from: String(from), to: String(to))
+            else { return false }
+            settings.udpRangeStart = start
+            settings.udpRangeEnd = end
         default:
             guard let flag, let setting = Self.flags[key] else { return false }
             settings[keyPath: setting] = flag
@@ -425,4 +461,87 @@ enum SettingsAnchor: String, CaseIterable {
         }
     }
     #endif
+}
+
+// MARK: - Set up a host
+
+/// A saved connection on Settings › Set up a host's list
+/// (`ui/src/settings.rs`'s `HostEntry`).
+struct SettingsHost: Equatable, Identifiable {
+    let id: UUID
+    /// Its name (its `user@host` when it has none).
+    let name: String
+    let user: String
+    let host: String
+    let port: Int
+    /// A session of it is connected: its host can be set up now.
+    let live: Bool
+
+    init(id: UUID, name: String, user: String, host: String, port: Int, live: Bool) {
+        self.id = id
+        self.name = name
+        self.user = user
+        self.host = host
+        self.port = port
+        self.live = live
+    }
+
+    init(_ connection: ServerConnection, live: Bool) {
+        self.init(id: connection.id, name: connection.displayName, user: connection.username,
+                  host: connection.host, port: connection.port, live: live)
+    }
+
+    /// `{"op": "hosts", …}` for `hosts`, in their order.
+    static func message(_ hosts: [SettingsHost]) -> [String: Any] {
+        ["op": "hosts",
+         "hosts": hosts.map {
+             ["id": $0.id.uuidString, "name": $0.name, "user": $0.user, "host": $0.host,
+              "port": $0.port, "live": $0.live] as [String: Any]
+         }]
+    }
+}
+
+/// Where Settings › Set up a host goes, from the hub's row or a pick on the
+/// list. Setup runs over a connection's live session, so a connection that
+/// isn't connected is offered Connect first.
+enum HostSetupRoute: Equatable {
+    /// The saved connections, to pick the one to set up.
+    case list
+    /// The connection's Host Setup.
+    case setup(UUID)
+    /// Ask to connect it first.
+    case connect(UUID)
+
+    /// The hub's row: straight in with exactly one saved connection, the
+    /// list with none or several.
+    static func entering(_ hosts: [SettingsHost]) -> HostSetupRoute {
+        guard hosts.count == 1, let only = hosts.first else { return .list }
+        return only.live ? .setup(only.id) : .connect(only.id)
+    }
+
+    /// A pick on the list; nil for a connection no longer saved.
+    static func choosing(_ id: UUID, in hosts: [SettingsHost]) -> HostSetupRoute? {
+        guard let host = hosts.first(where: { $0.id == id }) else { return nil }
+        return host.live ? .setup(id) : .connect(id)
+    }
+}
+
+/// What Set up a host's list was last told, posted again to a surface made
+/// again, and as connections come and go.
+@MainActor
+final class SettingsHostsFeed {
+    private weak var surface: NSHSurface?
+    private var hosts: [SettingsHost]?
+
+    func attach(_ surface: NSHSurface, _ hosts: [SettingsHost]) {
+        self.surface = surface
+        self.hosts = hosts
+        _ = surface.post(SettingsHost.message(hosts))
+    }
+
+    func update(_ hosts: [SettingsHost]) {
+        guard hosts != self.hosts else { return }
+        self.hosts = hosts
+        _ = surface?.post(SettingsHost.message(hosts))
+    }
 }

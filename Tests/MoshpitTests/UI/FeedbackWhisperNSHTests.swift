@@ -178,6 +178,9 @@ struct FeedbackWhisperNSHTests {
             ("connections", "connections", "settings-mosh-group"),
             ("notifications", "notifications", "settings-notifications-group"),
             ("voice", "voice", "settings-voice-group"),
+            // R18: the pages two of those push, once SwiftUI sheets.
+            ("udp-range", "udp-range", "settings-udp-group"),
+            ("notification-info", "notification-info", "settings-notification-info-group"),
         ]
         return pages.map { shown in
             Shot(screen: .settings, root: shown.root, state: shown.state, message: message, page: shown.page)

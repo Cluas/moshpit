@@ -83,6 +83,54 @@ fn a_failed_or_garbage_read_keeps_the_last_good_tree() {
     assert_eq!(state.snapshot.sessions.len(), 2);
 }
 
+/// B445: a read that failed for another reason than "no server" (herdr's
+/// request timed out, its CLI crashed) is nothing new. It emptied the tree
+/// and dropped the terminal out of its slot until the next good read.
+#[test]
+fn only_a_read_that_says_no_server_is_no_server() {
+    assert_eq!(
+        control::read_poll(&exited(
+            1,
+            r#"{"error":{"code":"server_not_running","message":"no server"}}"#
+        )),
+        PollReading::NoServer
+    );
+    assert_eq!(
+        control::read_poll(&exited(
+            1,
+            r#"Error: Os { code: 2, kind: NotFound, message: "No such file or directory" }"#
+        )),
+        PollReading::NoServer,
+        "herdr 0.7.3, no socket"
+    );
+    assert_eq!(
+        control::read_poll(&exited(
+            1,
+            r#"Error: Os { code: 61, kind: ConnectionRefused, message: "Connection refused" }"#
+        )),
+        PollReading::NoServer,
+        "0.7.3, a dead server's socket"
+    );
+    assert_eq!(
+        control::read_poll(&exited(127, "sh: herdr: command not found")),
+        PollReading::NoServer,
+        "no herdr, no server"
+    );
+    assert_eq!(
+        control::read_poll(&exited(1, "herdr: request timed out")),
+        PollReading::NoNews
+    );
+    assert_eq!(
+        control::read_poll(&exited(101, "thread 'main' panicked at src/cli.rs")),
+        PollReading::NoNews
+    );
+    let mut state = PollState::new();
+    state.apply(read(TWO_WORKSPACES));
+    state.apply(control::read_poll(&exited(1, "herdr: request timed out")));
+    assert_eq!(state.snapshot.sessions.len(), 2, "the tree stays");
+    assert!(!state.server_not_running);
+}
+
 #[test]
 fn server_not_running_empties_the_tree_but_remembers_it_was_attached() {
     let mut state = PollState::new();
@@ -691,8 +739,14 @@ fn the_client_reads_the_trailer_only_at_the_end_of_the_output() {
     let read = read_result(whole.as_bytes());
     assert_eq!(read.exit_code, Some(3));
     assert_eq!(read.output, format!("{cut}\"}}}}}}\n"));
-    assert_eq!(read_result(format!("ok\n{marker}0").as_bytes()).exit_code, Some(0));
-    assert_eq!(read_result(format!("x{marker}007z").as_bytes()).exit_code, None);
+    assert_eq!(
+        read_result(format!("ok\n{marker}0").as_bytes()).exit_code,
+        Some(0)
+    );
+    assert_eq!(
+        read_result(format!("x{marker}007z").as_bytes()).exit_code,
+        None
+    );
 }
 
 #[test]

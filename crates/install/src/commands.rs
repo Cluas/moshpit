@@ -341,13 +341,23 @@ pub const PAIRING_PHONES: &str = "for f in \"$HOME/.moshpit/push.d\"/*.conf; do 
 /// the host had the test go out on whichever pairing sorted first, so
 /// proving one connection could pass on the other's pairing. The sender has
 /// long taken the connection as its third argument; it now gets it.
+///
+/// The test names the pane [`SELF_TEST_PANE`] (B439). Run outside any pane,
+/// it named `%0` — tmux's first pane, where an agent often runs — and the
+/// phone's notification service took the test's "done" for that pane's:
+/// a question waiting there left the waiting set, and rang again as a new
+/// one. No herdr pane either: an inherited `HERDR_PANE_ID` would name one.
 pub fn self_test_push(nonce: &str, conn: &str) -> String {
     format!(
-        "sh \"{DIR}/moshpit-push.sh\" --test {} {} 2>&1",
+        "HERDR_PANE_ID= TMUX_PANE={SELF_TEST_PANE} sh \"{DIR}/moshpit-push.sh\" --test {} {} 2>&1",
         quote(nonce),
         quote(conn)
     )
 }
+
+/// The pane a push test names: one no tmux pane (`%N`) or herdr pane
+/// (`w1:p2`) can be, short enough for the relay's 64-byte collapse id.
+pub const SELF_TEST_PANE: &str = "selftest";
 
 /// Is this a path we are willing to interpolate into a command
 /// (`isSafePath`)? Paths reach the installer from the host's manifest and
@@ -531,7 +541,7 @@ mod tests {
         );
         assert_eq!(
             self_test_push("selftest-ab12", "3F2504E0-4F89-11D3-9A0C-0305E82C3301"),
-            "sh \"$HOME/.moshpit/moshpit-push.sh\" --test 'selftest-ab12' \
+            "HERDR_PANE_ID= TMUX_PANE=selftest sh \"$HOME/.moshpit/moshpit-push.sh\" --test 'selftest-ab12' \
              '3F2504E0-4F89-11D3-9A0C-0305E82C3301' 2>&1"
         );
     }

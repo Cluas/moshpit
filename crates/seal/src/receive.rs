@@ -20,9 +20,8 @@ use crate::envelope::Envelope;
 use crate::foundation::date::Date;
 use crate::foundation::json::Value;
 use crate::foundation::uuid::Uuid;
-use crate::notification::{self, Card, Render};
+use crate::notification::{self, Card, Opening, Render};
 use crate::pairing::PushPairing;
-use crate::pairing_file::newest_first;
 use crate::prefs::Prefs;
 use crate::standing::{Entry, PushStandingFile};
 
@@ -31,10 +30,11 @@ use crate::standing::{Entry, PushStandingFile};
 pub enum Delivery {
     /// No sealed envelope: the notification as it came.
     AsReceived,
-    /// An envelope none of this device's secrets opened: the relay's
-    /// fallback text, no actions. `secrets_tried` is the diagnosis: 0 means
-    /// the pairing store did not reach the service, more means the sending
-    /// host is paired to a different install.
+    /// An envelope none of this device's secrets opened — or one a key
+    /// opened that names another connection than the key's (B435): the
+    /// relay's fallback text, no actions. `secrets_tried` is the
+    /// diagnosis: 0 means the pairing store did not reach the service, more
+    /// means the sending host is paired to a different install.
     Fallback { secrets_tried: usize },
     /// Opened and rendered.
     Card(Card),
@@ -72,22 +72,35 @@ pub fn receive(
             diagnostics,
         };
     };
-    let secrets: Vec<String> = newest_first(pairings.to_vec())
-        .into_iter()
-        .map(|p| p.secret_hex)
-        .collect();
-    let Some(status) = notification::open(&envelope, &secrets) else {
-        diagnostics.push(format!(
-            "no key opened this envelope ({} available) — showed the fallback",
-            secrets.len()
-        ));
-        return Received {
-            delivery: Delivery::Fallback {
-                secrets_tried: secrets.len(),
-            },
-            sound_allowed,
-            diagnostics,
-        };
+    let status = match notification::open_paired(&envelope, pairings) {
+        Opening::Opened(status) => status,
+        Opening::Misnamed => {
+            // Sealed with one connection's key, naming another: nothing in
+            // it is shown, as if no key had opened it (B435).
+            diagnostics.push(
+                "a push opened with one connection's key named another — showed the fallback".to_owned(),
+            );
+            return Received {
+                delivery: Delivery::Fallback {
+                    secrets_tried: pairings.len(),
+                },
+                sound_allowed,
+                diagnostics,
+            };
+        }
+        Opening::Unopened => {
+            diagnostics.push(format!(
+                "no key opened this envelope ({} available) — showed the fallback",
+                pairings.len()
+            ));
+            return Received {
+                delivery: Delivery::Fallback {
+                    secrets_tried: pairings.len(),
+                },
+                sound_allowed,
+                diagnostics,
+            };
+        }
     };
     let self_test = if status.agent.as_deref() == Some(notification::SELF_TEST_AGENT) {
         format!(" (self-test {})", status.title.as_deref().unwrap_or("?"))
@@ -107,7 +120,12 @@ pub fn receive(
         language,
         ..Render::default()
     };
-    let card = if status.state == "attention" {
+    let card = if status.agent.as_deref() == Some(notification::SELF_TEST_AGENT) {
+        // A pairing self-test is no agent's turn (B439): it neither joins
+        // nor leaves the waiting set, and rings no finish. Its "done" used
+        // to clear the pane it named — `%0`, where an agent often waits.
+        notification::render(&status, how)
+    } else if status.state == "attention" {
         let edge = standing.note_standing(
             &status.conn,
             Entry {
@@ -177,8 +195,13 @@ mod tests {
 
     /// A payload in the shape the relay produces.
     fn payload(state: &str, title: Option<&str>, key: &str) -> Value {
+        payload_naming(CONN, state, title, key)
+    }
+
+    /// [`payload`] for a status that names `conn`.
+    fn payload_naming(conn: &str, state: &str, title: Option<&str>, key: &str) -> Value {
         let status = Status {
-            conn: CONN.into(),
+            conn: conn.into(),
             host: "m1-pro".into(),
             sess: Some("work".into()),
             pane: "%3".into(),
@@ -223,6 +246,78 @@ mod tests {
     }
 
     // MARK: - PushNotificationServiceTests
+
+    /// B439: the push test named `%0` (it runs outside any pane), and its
+    /// "done" cleared that pane's waiting entry: a question standing in
+    /// tmux's first pane left the set, and rang again as a new one. A
+    /// self-test leaves the set as it found it, whatever pane it names.
+    #[test]
+    fn a_push_self_test_leaves_the_waiting_set_alone() {
+        let dir = TempDir::new("nse-selftest");
+        let standing = PushStandingFile::new(dir.path(PushStandingFile::FILE_NAME));
+        let asked = Date::now();
+        let entry = Entry {
+            pane: "%0".into(),
+            agent: Some("claude".into()),
+            title: None,
+            location: None,
+            since: asked.unix() as i64,
+            recorded_at: asked,
+        };
+        assert!(standing.note_standing(CONN, entry, asked));
+        for pane in ["%0", "selftest"] {
+            let status = Status {
+                conn: CONN.into(),
+                host: "m1-pro".into(),
+                sess: Some(String::new()),
+                pane: pane.into(),
+                agent: Some(notification::SELF_TEST_AGENT.into()),
+                state: "done".into(),
+                title: Some("selftest-ab12".into()),
+                ts: asked.unix() as i64,
+                dur: None,
+            };
+            let sealed = seal(status.to_json().as_bytes(), SECRET, None).unwrap();
+            let text = format!(r#"{{"aps":{{"mutable-content":1}},"mp":{}}}"#, json::encode(&sealed));
+            let payload = json::parse(text.as_bytes(), Dialect::Serialization { fragments_allowed: false }).unwrap();
+            let received = deliver(&payload, &[pairing(SECRET, "m1-pro")], &dir);
+            assert!(matches!(received.delivery, Delivery::Card(_)), "{:?}", received.delivery);
+            let panes: Vec<String> = standing.standing(CONN, Date::now()).into_iter().map(|e| e.pane).collect();
+            assert_eq!(panes, ["%0"], "the test's {pane} cleared a waiting pane");
+        }
+    }
+
+    /// B435: a host holds one pairing's key and writes the connection id
+    /// into what it seals. Sealed with this pairing's key but naming
+    /// another connection, the push read as that connection's: its name,
+    /// its waiting set, a tap into its pane. It keeps the fallback, as if
+    /// unopened, and records nothing; the connection id is still matched as
+    /// a UUID, whatever its case.
+    #[test]
+    fn a_push_sealed_with_one_connections_key_naming_another_keeps_the_fallback() {
+        let dir = TempDir::new("nse-misnamed");
+        let other = "9B2C1D3E-0000-4000-8000-00000000000A";
+        let received = deliver(
+            &payload_naming(other, "attention", Some("approve the deploy"), SECRET),
+            &[pairing(SECRET, "m1-pro")],
+            &dir,
+        );
+        assert_eq!(received.delivery, Delivery::Fallback { secrets_tried: 1 });
+        assert!(
+            received.diagnostics.iter().any(|line| line.contains("named another")),
+            "{:?}",
+            received.diagnostics
+        );
+        let standing = PushStandingFile::new(dir.path(PushStandingFile::FILE_NAME));
+        assert!(standing.standing(other, Date::now()).is_empty());
+
+        let lower = deliver(
+            &payload_naming(&CONN.to_lowercase(), "attention", None, SECRET),
+            &[pairing(SECRET, "m1-pro")],
+            &dir,
+        );
+        assert!(matches!(lower.delivery, Delivery::Card(_)), "{:?}", lower.delivery);
+    }
 
     #[test]
     fn the_service_opens_the_envelope_and_rewrites_the_notification() {

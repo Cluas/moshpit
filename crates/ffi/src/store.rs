@@ -569,19 +569,8 @@ impl ConnectionStoreHandle {
         let mut connections = lock(&self.0);
         let mut keys = lock(&keys.0);
         Ok(
-            match secrets::delete_connection(
-                id,
-                &mut connections,
-                &mut keys,
-                &HostKeychain(keychain),
-            ) {
-                secrets::ItemFate::Deleted => StoreSecretFate::Deleted,
-                secrets::ItemFate::Kept => StoreSecretFate::Kept,
-                secrets::ItemFate::Unknown => StoreSecretFate::Unknown,
-                secrets::ItemFate::Failed(error) => StoreSecretFate::Failed {
-                    message: error.to_string(),
-                },
-            },
+            secrets::delete_connection(id, &mut connections, &mut keys, &HostKeychain(keychain))
+                .into(),
         )
     }
 }
@@ -593,10 +582,109 @@ pub enum StoreSecretFate {
     Deleted,
     /// Kept: something else names it (or there was none).
     Kept,
-    /// Kept: what else names it can't be told now.
+    /// Kept: what else names it can't be told now. Listed for a later
+    /// launch (B428).
     Unknown,
-    /// The keychain wouldn't delete it.
+    /// The keychain wouldn't delete it. Listed for a later launch (B428).
     Failed { message: String },
+}
+
+impl From<secrets::ItemFate> for StoreSecretFate {
+    fn from(fate: secrets::ItemFate) -> Self {
+        match fate {
+            secrets::ItemFate::Deleted => Self::Deleted,
+            secrets::ItemFate::Kept => Self::Kept,
+            secrets::ItemFate::Unknown => Self::Unknown,
+            secrets::ItemFate::Failed(error) => Self::Failed {
+                message: error.to_string(),
+            },
+        }
+    }
+}
+
+// MARK: - Items let go of (B428)
+
+/// Put `account` on the list of items a connection let go of and can't drop
+/// yet — its session still signs in with it (B325), or the drop couldn't
+/// happen now — so it goes later, never offered back as a recovered key
+/// (`secrets::hold_release`). Whether it is listed (only the app's own
+/// accounts, only while the preferences can be believed).
+#[uniffi::export]
+pub fn store_hold_release(
+    preferences: Arc<dyn PreferencesHost>,
+    mode: ReadinessMode,
+    account: String,
+) -> bool {
+    secrets::hold_release(&HostDefaults(preferences), &readiness(mode), &account)
+}
+
+/// Drop `account` now if no saved record names it — `referenced`: every
+/// account the saved connections and key records name, `None` when that
+/// can't be told — keeping it listed until it is dropped
+/// (`secrets::release`): what a connection's item it let go of gets once its
+/// session no longer reads it.
+#[uniffi::export]
+pub fn store_release(
+    preferences: Arc<dyn PreferencesHost>,
+    mode: ReadinessMode,
+    account: String,
+    referenced: Option<Vec<String>>,
+    keychain: Arc<dyn KeychainHost>,
+) -> StoreSecretFate {
+    let named = referenced.map(|refs| refs.into_iter().collect::<BTreeSet<_>>());
+    secrets::release(
+        &HostDefaults(preferences),
+        &readiness(mode),
+        &account,
+        named.as_ref(),
+        &HostKeychain(keychain),
+    )
+    .into()
+}
+
+/// One listed item, as a launch's settling left it.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct StoreSettledRelease {
+    pub account: String,
+    pub fate: StoreSecretFate,
+}
+
+/// The listed items, at a launch once the saved records can be told
+/// (`secrets::settle_releases`): each one nothing names is deleted, one
+/// named again is kept, one the keychain keeps stays listed; the ones this
+/// process listed wait for their session. Unknown (`referenced` `None`)
+/// changes nothing.
+#[uniffi::export]
+pub fn store_settle_releases(
+    preferences: Arc<dyn PreferencesHost>,
+    mode: ReadinessMode,
+    referenced: Option<Vec<String>>,
+    keychain: Arc<dyn KeychainHost>,
+) -> Vec<StoreSettledRelease> {
+    let named = referenced.map(|refs| refs.into_iter().collect::<BTreeSet<_>>());
+    secrets::settle_releases(
+        &HostDefaults(preferences),
+        &readiness(mode),
+        named.as_ref(),
+        &HostKeychain(keychain),
+    )
+    .into_iter()
+    .map(|(account, fate)| StoreSettledRelease {
+        account,
+        fate: fate.into(),
+    })
+    .collect()
+}
+
+/// The accounts waiting to be dropped, as stored; `None` while the
+/// preferences can't be believed. Recovery never offers one of
+/// these as a key.
+#[uniffi::export]
+pub fn store_to_release(
+    preferences: Arc<dyn PreferencesHost>,
+    mode: ReadinessMode,
+) -> Option<Vec<String>> {
+    secrets::to_release(&HostDefaults(preferences), &readiness(mode))
 }
 
 // MARK: - SSH keys

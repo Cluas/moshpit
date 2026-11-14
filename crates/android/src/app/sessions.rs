@@ -135,11 +135,12 @@ impl Live {
     }
 
     /// Connects `connection` unless a session is up or on its way; the
-    /// session's id.
+    /// session's id. `udp` is Settings' UDP range (B430).
     pub fn connect(
         &mut self,
         connection: &ServerConnection,
         options: &Options,
+        udp: (i64, i64),
     ) -> Option<SessionId> {
         let sessions = self.sessions.as_ref()?;
         if let Some(conn) = self.by_connection.get(&connection.id) {
@@ -153,7 +154,7 @@ impl Live {
                 _ => return Some(conn.id),
             }
         }
-        let id = sessions.connect(spec(connection, options));
+        let id = sessions.connect(spec(connection, options, udp));
         log::info!(target: "moshpit", "session {id}: connecting {}", connection.display_name());
         self.by_connection.insert(
             connection.id,
@@ -329,8 +330,12 @@ pub(crate) fn active_pane(conn: &Conn) -> Option<&PaneInfo> {
         .or_else(|| panes.first())
 }
 
-/// What a session dials for `connection`.
-pub fn spec(connection: &ServerConnection, options: &Options) -> ConnectionSpec {
+/// What a session dials for `connection`. mosh-server's UDP ports are
+/// Settings' (`udp`): the one source, "set in Settings, for every
+/// connection". The connection's stored range is only what the setting was
+/// at its last save, kept for older builds (J1): dialled from, a narrowed
+/// setting never reached a saved connection (B430).
+pub fn spec(connection: &ServerConnection, options: &Options, udp: (i64, i64)) -> ConnectionSpec {
     let port = u16::try_from(connection.port).unwrap_or(22);
     let mut spec = ConnectionSpec::ssh(
         connection.id.to_string(),
@@ -361,10 +366,7 @@ pub fn spec(connection: &ServerConnection, options: &Options) -> ConnectionSpec 
     spec.tmux_path = path(&connection.tmux_path);
     spec.herdr_path = path(&connection.herdr_path);
     spec.mosh_server_path = path(&connection.mosh_server_path);
-    spec.mosh_port_range = (
-        Some(connection.mosh_port_range_start),
-        Some(connection.mosh_port_range_end),
-    );
+    spec.mosh_port_range = (Some(udp.0), Some(udp.1));
     spec.locale = options.shell_locale.clone();
     spec
 }
@@ -538,7 +540,8 @@ impl App {
         else {
             return;
         };
-        self.sessions.connect(&saved, &self.options);
+        let udp = self.settings.udp_range();
+        self.sessions.connect(&saved, &self.options, udp);
         self.refresh_home();
     }
 

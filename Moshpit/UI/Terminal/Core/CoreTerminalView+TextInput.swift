@@ -95,7 +95,7 @@ extension CoreTerminalView: UITextInput {
     private func sendFocus(_ focused: Bool) {
         guard let term else { return }
         let b = mp_term_focus(term, focused)
-        if let p = b.ptr { surfaceDelegate?.surface(self, send: Data(bytes: p, count: b.len)) }
+        if let p = b.ptr { sendReply(Data(bytes: p, count: b.len)) }
         mp_bytes_free(b)
     }
 

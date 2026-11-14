@@ -49,6 +49,24 @@ enum NSHDiagnostics {
         _ = forwarding
     }
 
+    /// Makes the trail's file when it isn't there yet, once a process, and
+    /// says in the log when it can't (B445): a phone without the file read
+    /// as a broken trail, when nothing had failed yet to write one.
+    static func prepareTrail() {
+        _ = preparing
+    }
+
+    private static let preparing: Void = {
+        switch trail.prepare() {
+        case .ready:
+            break
+        case .noContainer:
+            Log.ui.notice("nsh trail: no App Group container, so earlier runs' failures are not kept")
+        case .failed(let why):
+            Log.ui.notice("nsh trail: can't make the file: \(why, privacy: .public)")
+        }
+    }()
+
     private static let forwarding: Void = {
         mp_ui_set_log_handler({ _, level, target, message in
             NSHDiagnostics.error(NSHDiagnostics.rustLine(
@@ -105,7 +123,44 @@ final class NSHTrail: @unchecked Sendable {
         guard let data = try? Self.encoder.encode(lines) else { return }
         // Readable after the first unlock, as the push trail is: a launch
         // before it writes nothing (the line is in `Log.ui` regardless).
-        try? data.write(to: url, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+        do {
+            try data.write(to: url, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+        } catch {
+            guard !writeFailureSaid else { return }
+            writeFailureSaid = true
+            Log.ui.notice("nsh trail: can't write: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    /// A failed write was said (once a process: the trail is never what
+    /// floods the log).
+    private var writeFailureSaid = false
+
+    /// What ``prepare()`` found.
+    enum Readiness: Equatable {
+        /// No App Group (a test host): nothing is kept.
+        case noContainer
+        /// The file is there (or made now, empty).
+        case ready
+        /// It could not be made: why.
+        case failed(String)
+    }
+
+    /// Makes the file, an empty ring, when it isn't there yet: then a phone
+    /// without it is one that could not write it, not one where nothing
+    /// failed (B445).
+    @discardableResult
+    func prepare() -> Readiness {
+        guard let url else { return .noContainer }
+        lock.lock()
+        defer { lock.unlock() }
+        if FileManager.default.fileExists(atPath: url.path) { return .ready }
+        do {
+            try Data("[]".utf8).write(to: url, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+            return .ready
+        } catch {
+            return .failed(error.localizedDescription)
+        }
     }
 
     /// Every line kept, oldest first.

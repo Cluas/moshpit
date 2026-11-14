@@ -301,6 +301,39 @@ fn a_push_test_with_no_pairing_to_send_with_says_so() {
     assert!(said.contains("no usable pairing"), "{said:?}");
 }
 
+/// B439: the push test runs outside any pane, so it named `%0` — tmux's
+/// first pane, where an agent often waits — and the phone's notification
+/// service cleared that pane's waiting entry on the test's "done". It names
+/// a pane no tmux or herdr pane can be, even where a herdr pane id is in
+/// the environment.
+#[test]
+fn the_push_test_names_a_pane_no_real_pane_can_be() {
+    use moshpit_seal::foundation::json::{self, Dialect};
+    let home = home();
+    let (shell, capture) = paired_host(&home.0, &[pairing(PROVED, PHONE)]);
+    let pane_sent = |capture: &Path| -> String {
+        let request = std::fs::read_dir(capture).unwrap().next().unwrap().unwrap().path();
+        let body = json::parse(&std::fs::read(&request).unwrap(), Dialect::Decoder).expect("JSON");
+        std::fs::remove_file(request).unwrap();
+        let env = body.as_object().and_then(|o| o.get("env")).expect("an envelope");
+        let envelope: moshpit_seal::Envelope = json::decode_value(env).expect("an envelope");
+        let status = moshpit_seal::envelope::open(&envelope, &"ab".repeat(32)).expect("it opens");
+        assert_eq!(status.agent.as_deref(), Some("moshpit-selftest"));
+        status.pane
+    };
+    let said = block_on(HostInstaller::new(&shell).self_test_push("selftest-ab12", PROVED))
+        .expect("the test runs");
+    assert_eq!(said, "");
+    assert_eq!(pane_sent(&capture), moshpit_install::commands::SELF_TEST_PANE);
+    // A shell whose environment names a herdr pane and a tmux one.
+    let inherited = format!(
+        "export HERDR_PANE_ID=w1:p2 TMUX_PANE=%5; {}",
+        moshpit_install::commands::self_test_push("selftest-ab12", PROVED)
+    );
+    block_on(shell.run(&inherited)).expect("the test runs");
+    assert_eq!(pane_sent(&capture), moshpit_install::commands::SELF_TEST_PANE);
+}
+
 /// B354: which of the host's pairings push to a phone, read with the
 /// host's own `sh` and `sed`. Only the confs carrying that phone's APNs
 /// token, named for a connection; no secret or send token is ever printed.
@@ -1364,4 +1397,40 @@ fn a_hand_written_factory_hooks_file_keeps_its_layout_through_install_and_remova
     let report = block_on(installer.uninstall_hooks(&factory, &state)).unwrap();
     assert!(report.succeeded(), "{:?}", report.failures());
     assert_eq!(std::fs::read_to_string(&file).unwrap(), original);
+}
+
+/// B434: herdr's panes inherit a $TMUX (and $TMUX_PANE) when its server
+/// was started inside tmux. The stamp script took that for its own pane:
+/// a herdr agent's stamps landed on whichever tmux pane the variable named,
+/// on an island that has nothing to do with it. A herdr pane keeps its
+/// stamps as outside tmux, under its own pane's directory, and still
+/// pushes.
+#[test]
+fn a_herdr_pane_with_an_inherited_tmux_keeps_its_stamps_out_of_that_tmux() {
+    let home = home();
+    let Some(tmux) = Tmux::start(&home.0) else {
+        return;
+    };
+    let pushed = untmuxed_host(&home.0);
+    let pane = tmux.pane();
+    for state in ["working", "done"] {
+        let status = std::process::Command::new("sh")
+            .arg(home.0.join(".moshpit/moshpit-stamp.sh"))
+            .args([state, "claude"])
+            .stdin(std::process::Stdio::null())
+            .env_clear()
+            .env("HOME", &home.0)
+            .env("PATH", format!("{}:/usr/bin:/bin", tmux.bin.display()))
+            .env("TMUX", format!("{},1,0", tmux.socket.display()))
+            .env("TMUX_PANE", &pane)
+            .env("HERDR_PANE_ID", "w1:p2")
+            .env("MOSHPIT_NOTIFY_GRACE", "0")
+            .status()
+            .unwrap();
+        assert!(status.success());
+    }
+    assert_eq!(appears(&pushed).as_deref(), Some("done claude\n"));
+    assert_eq!(tmux.stamps(&pane), ["-", "-", "-", "-", "-"], "stamped the inherited tmux's pane");
+    let run = home.0.join(".moshpit/run/s-w1_p2");
+    assert_eq!(std::fs::read_to_string(run.join("state")).unwrap(), "done");
 }

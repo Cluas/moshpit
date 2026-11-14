@@ -312,11 +312,13 @@ impl Client {
             self.hold_for(pane);
         }
         if had_target {
-            // Cover the pane for the length of the swap, and wipe what is
-            // under the cover: the release, the reattach and the repaint are
-            // round trips, and the cover can come off early.
+            // Cover the pane for the length of the swap: the release, the
+            // reattach and the repaint are round trips. What is under the
+            // cover is wiped with the new attach's first full frame, not now
+            // (B445): an attach refused, taken over or closed before it
+            // painted lifted the cover onto a wiped screen, blank until a
+            // resize made herdr paint again.
             self.view(pane, ViewAction::Veil);
-            self.pane_bytes(pane, CLEAR_SCREEN.to_vec());
             let grace = self.cover_grace();
             self.view(pane, ViewAction::ExtendCover { seconds: grace });
             self.attach.awaiting_full = Some(pane.to_owned());
@@ -610,6 +612,15 @@ impl Client {
         else {
             return;
         };
+        if full
+            && self.attach.releasing.is_none()
+            && self.attach.target.as_deref() == Some(pane.as_str())
+            && self.attach.awaiting_full.as_deref() == Some(pane.as_str())
+        {
+            // The switch's own frame is here: what was under its cover goes
+            // now (the history with it), the new pane's picture right after.
+            self.pane_bytes(&pane, CLEAR_SCREEN.to_vec());
+        }
         self.pane_bytes(&pane, bytes);
         if self.attach.releasing.is_some() || self.attach.target.as_deref() != Some(pane.as_str()) {
             // The attach being let go: its last frames are its own, and say
@@ -675,10 +686,15 @@ impl Client {
         self.attach.take_over = false;
         self.dirty = true;
         self.drop_all_held(true);
-        if self.attach.awaiting_full.take().is_some() {
-            self.view(&pane, ViewAction::Reveal);
-        }
         let reason = reason.unwrap_or_default();
+        if self.attach.awaiting_full.take().is_some() {
+            log::warn!(
+                "herdr: the attach to {pane} closed before its first full frame ({reason}): its cover lifts over what the pane showed"
+            );
+            self.view(&pane, ViewAction::Reveal);
+        } else {
+            log::warn!("herdr: the attach to {pane} closed ({reason})");
+        }
         if reason.contains("taken over") || crate::launch::held_elsewhere(&reason) {
             if wanted && !asked {
                 // The person picked the pane a follow's plain attach was
@@ -689,6 +705,9 @@ impl Client {
             // Another device has the pane: said, and never taken back
             // without the person. It used to be asked for again on the next
             // read (`--takeover`), three times in 30 s before a backoff.
+            log::warn!(
+                "herdr: {pane} is held by another device; not taken back without the person"
+            );
             self.attach.held_elsewhere = Some(pane);
             self.set_notice(Notice::OnAnotherDevice, Some(super::NoticeAction::OpenHere));
             return;
@@ -732,6 +751,7 @@ impl Client {
             self.event(Event::InputIgnored(message));
             return;
         }
+        let refused = message.clone();
         if snapshot::looks_like_version_skew(&message) {
             self.offer_restart(message);
         } else {
@@ -757,7 +777,15 @@ impl Client {
         self.drop_all_held(true);
         self.attach.retry_after = Some(self.now + self.config.budgets.refusal_backoff);
         self.dirty = true;
-        if let Some(awaiting) = self.attach.awaiting_full.take() {
+        let awaiting = self.attach.awaiting_full.take();
+        log::warn!(
+            "herdr: an attach was refused ({refused}); asked again in {} ms{}",
+            self.config.budgets.refusal_backoff,
+            awaiting.as_ref().map_or(String::new(), |pane| format!(
+                ", the cover over {pane} lifts without its frame"
+            ))
+        );
+        if let Some(awaiting) = awaiting {
             self.view(&awaiting, ViewAction::Reveal);
         }
     }

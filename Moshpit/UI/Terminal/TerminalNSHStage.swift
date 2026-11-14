@@ -144,7 +144,17 @@ final class TerminalNSHStage {
     /// stuck (its cap is under a second; resync passes extend it a little).
     static let staleVeil: TimeInterval = 5
 
+    /// How long after a terminal is put in a slot the stage looks at what
+    /// shows (``check(why:now:)``, B445).
+    static let checkDelay: TimeInterval = 2
+
     private var activeObserver: NSObjectProtocol?
+    private var mintObserver: NSObjectProtocol?
+    /// A ``verify(why:)`` queued for the next turn.
+    private var verifyQueued = false
+    /// The ``check(why:now:)`` due ``checkDelay`` after the last time a
+    /// terminal was put in a slot.
+    private var pendingCheck: DispatchWorkItem?
 
     init() {
         // Back from the background (B386): what the slot should show is in
@@ -154,35 +164,201 @@ final class TerminalNSHStage {
         ) { [weak self] _ in
             MainActor.assumeIsolated { self?.reassert() }
         }
+        // A terminal was minted (B445): it may be the one the target names
+        // now (a pane's terminal made again under the same controller), and
+        // then it goes in the slot at once, not when the screen is next
+        // entered. On the next turn: its owner has it by then.
+        mintObserver = NotificationCenter.default.addObserver(
+            forName: TerminalSurfaces.minted, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.queueVerify() }
+        }
     }
 
     deinit {
         if let activeObserver { NotificationCenter.default.removeObserver(activeObserver) }
+        if let mintObserver { NotificationCenter.default.removeObserver(mintObserver) }
     }
 
     /// What shows is what the target names, in the slot on screen, with no
     /// stuck veil over it (B386): on the app's return the terminal may have
     /// been taken by another host, or left out of the slot, or still be
     /// veiled for a switch long over. Each is said in the log, then put
-    /// right. What it found.
+    /// right (``verify(why:)``), and what shows is looked at again a moment
+    /// later (``check(why:now:)``). What it found.
     @discardableResult
     func reassert(now: CFTimeInterval = CACurrentMediaTime()) -> Reassert {
-        guard let target else { return .nothing }
-        guard let hosted, hosted.owns, current(target) === hosted.terminal else {
-            Log.ui.notice("terminal stage: \(target.key, privacy: .public) is not in its host on return (hosted \(self.hosted != nil, privacy: .public), owns \(self.hosted?.owns ?? false, privacy: .public)): showing it again")
-            show(target)
-            return .rehosted
-        }
+        guard target != nil else { return .nothing }
+        defer { scheduleCheck(why: "the app's return") }
         var found = Reassert.fine
-        if let slot, hosted.container.superview !== slot {
-            Log.ui.notice("terminal stage: \(target.key, privacy: .public) is not in the slot on screen on return: moving it in")
-            adopt(into: slot)
-            found = .adopted
+        switch verify(why: "on return") {
+        case .rehosted: return .rehosted
+        case .adopted: found = .adopted
+        case .fine, .nothing: break
         }
-        if hosted.coordinator?.liftStaleVeil(olderThan: Self.staleVeil, now: now) == true {
+        if hosted?.coordinator?.liftStaleVeil(olderThan: Self.staleVeil, now: now) == true {
             found = .unveiled
         }
         return found
+    }
+
+    /// What ``verify(why:)`` did.
+    enum Verify: Equatable {
+        /// Nothing to look at: no target, no slot on screen, or a handover
+        /// under way (the next slot takes the terminal).
+        case nothing
+        /// What shows is the terminal the target names, in the slot.
+        case fine
+        /// It was not (a new terminal under the same target, or one another
+        /// host took): hosted now, at once.
+        case rehosted
+        /// Its host was out of the slot on screen: moved in.
+        case adopted
+    }
+
+    /// What shows is the terminal the target names now, in the slot on
+    /// screen (B445). A new terminal under the same target — a pane's made
+    /// again under its controller — is hosted at once; so is one another
+    /// host took (B386). Nothing without a slot on screen: a screen out of
+    /// sight never takes the terminal from the one in sight. Each fix is
+    /// said in the log.
+    @discardableResult
+    func verify(why: String) -> Verify {
+        guard let target, let slot, CACurrentMediaTime() >= parkedUntil else { return .nothing }
+        guard let hosted, hosted.owns, current(target) === hosted.terminal else {
+            let had = self.hosted != nil, owned = self.hosted?.owns ?? false
+            let same = self.hosted.map { current(target) === $0.terminal } ?? false
+            Log.ui.notice("terminal stage: \(target.key, privacy: .public) is not in its host \(why, privacy: .public) (hosted \(had, privacy: .public), owns \(owned, privacy: .public), the same terminal \(same, privacy: .public)): hosting it")
+            show(target, instant: true)
+            return .rehosted
+        }
+        if hosted.container.superview !== slot {
+            Log.ui.notice("terminal stage: \(target.key, privacy: .public) is not in the slot on screen \(why, privacy: .public): moving it in")
+            adopt(into: slot)
+            return .adopted
+        }
+        return .fine
+    }
+
+    /// One ``verify(why:)`` on the next turn, however many terminals are
+    /// minted in this one.
+    private func queueVerify() {
+        guard !verifyQueued, target != nil else { return }
+        verifyQueued = true
+        DispatchQueue.main.async { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.verifyQueued = false
+                self.verify(why: "after a terminal was minted")
+            }
+        }
+    }
+
+    // MARK: The look at what shows (B445)
+
+    /// What ``check(why:now:)`` found, and what it put right.
+    struct Health: Equatable {
+        var key: String
+        /// Its host is in the slot on screen.
+        var inSlot: Bool
+        /// The terminal's size, in points.
+        var size: CGSize
+        /// Its host's opacity.
+        var alpha: CGFloat
+        /// How long a pane-switch veil has been up over it; nil: none.
+        var veil: TimeInterval?
+        /// A protocol switch's picture is over the slot.
+        var still: Bool
+        /// The terminal's rows have text.
+        var text: Bool
+        /// Frames drawn since it got its canvas; nil: not counted.
+        var frames: Int?
+        /// How long since bytes last reached it; nil: none ever did.
+        var fed: TimeInterval?
+        /// What was wrong and is put right; empty: nothing was.
+        var fixed: [String] = []
+
+        var line: String {
+            func seconds(_ t: TimeInterval?) -> String {
+                t.map { String(format: "%.1f s", $0) } ?? "never"
+            }
+            let state = "in slot \(inSlot), \(Int(size.width))×\(Int(size.height)) pt, alpha \(String(format: "%.2f", alpha))"
+                + ", veil \(veil.map { String(format: "up %.1f s", $0) } ?? "none"), still \(still)"
+                + ", text \(text), frames \(frames.map { "\($0)" } ?? "uncounted"), fed \(fed == nil ? "never" : seconds(fed) + " ago")"
+            return "\(key): \(state)" + (fixed.isEmpty ? ": fine" : ": fixed \(fixed.joined(separator: ", "))")
+        }
+    }
+
+    /// Looks at what shows (B445), ``checkDelay`` after a terminal was put
+    /// in a slot: the terminal the target names, in the slot on screen,
+    /// sized, opaque, under no stuck veil, and drawn when it has text.
+    /// Whatever is not is put right and said as an error (the earlier-runs
+    /// trail keeps it); otherwise one notice line says what shows. Nil with
+    /// nothing to look at.
+    @discardableResult
+    func check(why: String, now: CFTimeInterval = CACurrentMediaTime()) -> Health? {
+        guard let target, let slot, CACurrentMediaTime() >= parkedUntil else { return nil }
+        var fixed: [String] = []
+        switch verify(why: "at the check") {
+        case .rehosted: fixed.append("hosted it again")
+        case .adopted: fixed.append("moved it into the slot")
+        case .fine, .nothing: break
+        }
+        guard let hosted, hosted.owns else { return nil }
+        let container = hosted.container
+        if container.bounds.width < 1 || container.bounds.height < 1, slot.bounds.width > 0, slot.bounds.height > 0 {
+            hosted.place(in: slot)
+            fixed.append("sized it to the slot")
+        }
+        let animating = !(container.layer.animationKeys() ?? []).isEmpty
+        if (container.alpha < 1 || container.isHidden), !animating, !leaving.contains(where: { $0 === hosted }) {
+            container.alpha = 1
+            container.isHidden = false
+            container.transform = .identity
+            fixed.append("made it opaque")
+        }
+        let veil = hosted.coordinator?.veilAge(now: now)
+        if let veil, veil > Self.staleVeil,
+           hosted.coordinator?.liftStaleVeil(olderThan: Self.staleVeil, now: now) == true {
+            fixed.append("lifted a veil up \(Int(veil)) s")
+        } else if let veil {
+            // Up, not stale yet: looked at again once it would be.
+            scheduleCheck(why: "a veil was up", after: Self.staleVeil - veil + 0.5)
+        }
+        let text = Self.hasText(hosted.surface)
+        let frames = hosted.surface.framesSinceCanvas
+        // Nothing is drawn in the background (B386): no frame then is not a
+        // fault, and the return looks again.
+        if text, frames == 0, !CoreTermMemory.inBackground {
+            hosted.surface.redrawAll()
+            fixed.append("drew it again (text, nothing drawn)")
+        }
+        let health = Health(
+            key: target.key, inSlot: container.superview === slot, size: hosted.terminal.bounds.size,
+            alpha: container.alpha, veil: veil, still: still != nil, text: text, frames: frames,
+            fed: hosted.coordinator?.fedAgo(now: now), fixed: fixed)
+        if fixed.isEmpty {
+            Log.ui.notice("terminal stage: check after \(why, privacy: .public): \(health.line, privacy: .public)")
+        } else {
+            NSHDiagnostics.error("terminal stage: check after \(why): \(health.line)")
+        }
+        return health
+    }
+
+    /// Whether any row of `surface`'s screen has text.
+    static func hasText(_ surface: TerminalSurface) -> Bool {
+        (0..<min(surface.grid.rows, 300)).contains { !surface.rowText($0).isEmpty }
+    }
+
+    /// One ``check(why:now:)`` ``checkDelay`` from now, in place of one
+    /// already due.
+    private func scheduleCheck(why: String, after delay: TimeInterval = TerminalNSHStage.checkDelay) {
+        pendingCheck?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            MainActor.assumeIsolated { _ = self?.check(why: why) }
+        }
+        pendingCheck = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + max(0.1, delay), execute: work)
     }
 
     /// What ``reassert(now:)`` found.
@@ -295,7 +471,12 @@ final class TerminalNSHStage {
             Log.ui.notice("terminal stage: \(host.key, privacy: .public) into slot \(slot.serial, privacy: .public), owns \(host.owns, privacy: .public), first responder \(wasFirst, privacy: .public) -> \(host.terminal.isFirstResponder, privacy: .public)")
         }
         parkedUntil = 0
-        if let hosted { bringForward(hosted, in: slot) }
+        if let hosted {
+            bringForward(hosted, in: slot)
+            // A picture lost on the way waits for no byte (B445).
+            if hosted.owns { hosted.surface.redrawAll() }
+            scheduleCheck(why: "slot \(slot.serial) took it")
+        }
         keepStillOnTop(in: slot)
         applyFocus()
     }
@@ -421,6 +602,15 @@ final class TerminalNSHStage {
             hosted.place(in: slot)
             slot.addSubview(hosted.container)
             keepStillOnTop(in: slot)
+            // Every terminal put in a slot is said, tmux's and herdr's alike
+            // (B445: only a slot's own adoption was, so a swap's terminal
+            // looked as if it never arrived), and drawn whole at once.
+            let size = hosted.container.bounds.size
+            Log.ui.notice("terminal stage: \(target.key, privacy: .public) hosted into slot \(slot.serial, privacy: .public), \(Int(size.width), privacy: .public)×\(Int(size.height), privacy: .public) pt\(target.frozen ? ", frozen" : "", privacy: .public)")
+            surface.redrawAll()
+            scheduleCheck(why: "hosted in slot \(slot.serial)")
+        } else {
+            Log.ui.notice("terminal stage: \(target.key, privacy: .public) hosted, no slot on screen yet")
         }
         return hosted
     }
@@ -439,6 +629,7 @@ final class TerminalNSHStage {
     /// Takes `host` away: slid out the side opposite the new pane's, or
     /// faded, then out of the hierarchy.
     private func retire(_ host: Hosted, duration: TimeInterval, slideForward: Bool?) {
+        Log.ui.info("terminal stage: \(host.key, privacy: .public) leaves the slot over \(duration, privacy: .public) s")
         leaving.append(host)
         host.container.isUserInteractionEnabled = false
         let width = host.container.superview?.bounds.width ?? host.container.bounds.width
@@ -459,6 +650,7 @@ final class TerminalNSHStage {
 
     /// Takes `host` away at once (a protocol switch's swap).
     private func dismiss(_ host: Hosted) {
+        Log.ui.info("terminal stage: \(host.key, privacy: .public) leaves the slot at once")
         leaving.removeAll { $0 === host }
         host.container.layer.removeAllAnimations()
         host.container.removeFromSuperview()

@@ -3703,8 +3703,9 @@ final class SessionHub {
                     over: ssh,
                     host: ssh.peerAddress ?? connection.host,
                     serverBinary: connection.moshServerPath ?? "mosh-server",
-                    portRangeStart: connection.moshPortRangeStart,
-                    portRangeEnd: connection.moshPortRangeEnd,
+                    // Settings' ports, for every connection (B430).
+                    portRangeStart: AppSettings.shared.udpRangeStart,
+                    portRangeEnd: AppSettings.shared.udpRangeEnd,
                     program: renderer)
                 // Stopped or replaced while the server was starting: nothing
                 // else will ever know this pid — reap it here (B168). From the
@@ -5472,8 +5473,9 @@ final class SessionHub {
     @ObservationIgnored private let metrics: SessionMetricsRegistry
     @ObservationIgnored private var keepAliveTimer: Timer?
     @ObservationIgnored private var lastBackgroundedAt: Date?
-    /// Foreground per `setForeground` — the path watch only acts while true.
-    @ObservationIgnored private var isForeground = false
+    /// Foreground per `setForeground` — the path watch only acts while
+    /// true, and no pane is on screen while false (``PaneOnScreen``, B438).
+    @ObservationIgnored private(set) var isForeground = false
     /// Started on the first foreground and never stopped: iOS suspends us in
     /// the background anyway, and whatever changed while we were away is
     /// delivered as one update on resume — which is exactly the case this

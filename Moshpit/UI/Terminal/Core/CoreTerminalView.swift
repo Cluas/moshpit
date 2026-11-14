@@ -62,6 +62,13 @@ final class CoreTerminalView: UIView {
     private var renderDue = false
     /// Frames the GPU has not finished.
     private let inFlight = CoreTermCounter()
+    /// Whether the frames drawn reached the screen (B445).
+    private let presentation = CoreTermPresentation()
+    /// This view, for a frame's fate told on Metal's thread.
+    private lazy var presentBox = CoreTermViewBox(self)
+    /// The last frame's fate, looked for ``CoreTermPresentation/fateTimeout``
+    /// after it was drawn.
+    private var fateWatch: DispatchWorkItem?
 
     // The cursor's blink.
     private var blinkTimer: Timer?
@@ -131,6 +138,9 @@ final class CoreTerminalView: UIView {
     var pathPass: DispatchWorkItem?
     /// A frame the pass takes for its own links starts no pass.
     var pathPassFraming = false
+    /// The terminal's own answers are on their way out
+    /// (CoreTerminalView+Surface's `sendReply`).
+    var sendingReply = false
 
     // Accessibility (CoreTerminalView+Accessibility).
     var accessibilityRows: [CoreTermRowElement] = []
@@ -226,7 +236,8 @@ final class CoreTerminalView: UIView {
             restartBlink()
             // Drawables the size of the view again, if they were let go.
             (canvas as? CoreTermMetalCanvas)?.fitDrawables()
-            requestRender()
+            // Every row, whatever was drawn before it left (B445).
+            redrawAll()
             // Back on screen: its path links were held back while it was not.
             schedulePathPass()
         }
@@ -305,7 +316,7 @@ final class CoreTerminalView: UIView {
         frameDue = false
         let replies = mp_term_take_replies(term)
         if replies.len > 0, let ptr = replies.ptr {
-            surfaceDelegate?.surface(self, send: Data(bytes: ptr, count: replies.len))
+            sendReply(Data(bytes: ptr, count: replies.len))
         }
         mp_bytes_free(replies)
         let eventsAt = CACurrentMediaTime()
@@ -483,13 +494,29 @@ final class CoreTerminalView: UIView {
                     NSHDiagnostics.error("core term: the GPU refused a frame (app \(Self.appState)): \(refused)")
                 }
             }
-            if !metal.render(rows: rows, completion: { counter.add(-1) }) {
+            let frame = presentation.issue()
+            let presentation = self.presentation, box = presentBox
+            let drawn = metal.render(rows: rows, completion: { shown in
+                counter.add(-1)
+                if shown { return presentation.shown(frame) }
+                DispatchQueue.main.async { MainActor.assumeIsolated { box.view?.frameNeverShown(frame) } }
+            })
+            if !drawn {
                 counter.add(-1)
                 cannotPresent(metal)
                 renderDue = true
                 resumePacer()
                 return
             }
+            fateWatch?.cancel()
+            let watch = DispatchWorkItem { [weak self] in
+                MainActor.assumeIsolated {
+                    guard let self, self.presentation.unresolved(frame) else { return }
+                    self.frameNeverShown(frame)
+                }
+            }
+            fateWatch = watch
+            DispatchQueue.main.asyncAfter(deadline: .now() + CoreTermPresentation.fateTimeout, execute: watch)
             if failedRenders > 0 {
                 Log.ui.notice("core term: presents again after \(self.failedRenders, privacy: .public) frames it could not")
                 failedRenders = 0
@@ -502,6 +529,35 @@ final class CoreTerminalView: UIView {
 
     /// Renders in a row that drew nothing (B386).
     private(set) var failedRenders = 0
+
+    /// A frame drawn never reached the screen (B445): the layer dropped it
+    /// or the GPU refused it. With nothing newer on its way, it is drawn
+    /// again; an idle pane sends nothing that would, and its rows stayed
+    /// unseen until something unrelated drew. After
+    /// ``CoreTermPresentation/retryCap`` in a row, a new canvas.
+    func frameNeverShown(_ frame: Int) {
+        let active = window != nil && !CoreTermMemory.inBackground
+            && UIApplication.shared.applicationState == .active
+        switch presentation.neverReached(frame, active: active) {
+        case .nothingLost:
+            return
+        case .drawAgain:
+            if presentation.currentStreak == 1 {
+                Log.ui.notice("core term: a frame never reached the screen (app \(Self.appState, privacy: .public), \(self.drawableSummary, privacy: .public)): drawing it again")
+            }
+            renderDue = true
+            resumePacer()
+        case .giveUp:
+            NSHDiagnostics.error("core term: \(CoreTermPresentation.retryCap) frames in a row never reached the screen (app \(Self.appState), \(drawableSummary)): a new canvas")
+            remakeCanvas(why: "frames never reached the screen")
+        }
+    }
+
+    /// Frames that reached the screen (B445; tests, the stage's check).
+    var framesShown: Int { presentation.shownFrames }
+
+    /// Frames that never did (B445).
+    var framesNeverShown: Int { presentation.framesNeverShown }
 
     /// A render drew nothing: said once a streak (and again every 120
     /// tries), and after a few the drawables are made anew, whatever held
@@ -520,6 +576,28 @@ final class CoreTerminalView: UIView {
     /// Canvases this view has had (tests: a foreground makes a new one).
     private(set) var canvasesMade = 1
 
+    /// ``renders`` and ``framesShown`` when the canvas there was made.
+    private var rendersAtCanvas = 0
+    private var shownAtCanvas = 0
+
+    /// Frames on the screen from the canvas there (B445: the stage's
+    /// check): those that reached it on Metal, those drawn on CoreGraphics.
+    var framesSinceCanvas: Int? {
+        canvas is CoreTermMetalCanvas ? framesShown - shownAtCanvas : renders - rendersAtCanvas
+    }
+
+    /// Every row encoded again and drawn (B445): what the stage asks
+    /// whenever it puts this terminal in a slot. Nothing is drawn while the
+    /// app is in the background (``requestRender()``); the return draws.
+    func redrawAll() {
+        canvas.update(rows, changed: [], all: true)
+        fullRedraws += 1
+        requestRender()
+    }
+
+    /// Times every row was encoded again for a whole redraw (tests).
+    private(set) var fullRedraws = 0
+
     /// A new Metal canvas in place of the one there, everything encoded
     /// again from the rows (B386). What a redial cured, without one: a
     /// terminal blank after the background had its rows right (the keyboard
@@ -533,6 +611,8 @@ final class CoreTerminalView: UIView {
         insertSubview(fresh, belowSubview: old)
         canvas = fresh
         canvasesMade += 1
+        rendersAtCanvas = renders
+        shownAtCanvas = framesShown
         layerSuspect = nil
         canvas.setCursorShown(cursorOn && !canvasCursorHidden)
         canvas.update(rows, changed: [], all: true)
@@ -696,8 +776,21 @@ final class CoreTerminalView: UIView {
         if markedLabel != nil { positionMarkedText() }
         if handles != nil { positionHandles() }
         accessibilityStale = true
-        requestRender()
+        if bounds.size != laidOutSize {
+            // A new size (the first layout, the keyboard, a rotation): every
+            // row encoded again and drawn into drawables of that size, not
+            // only the rows the next bytes change (B445: a first open's one
+            // full frame came before the first layout, and an idle pane
+            // sends no other).
+            laidOutSize = bounds.size
+            redrawAll()
+        } else {
+            requestRender()
+        }
     }
+
+    /// The size the last layout gave (B445).
+    private var laidOutSize: CGSize = .zero
 
     private func applyCellPixels() {
         guard let term else { return }
@@ -1130,6 +1223,12 @@ enum CoreTermMemory {
 }
 
 /// A counter shared with Metal's completion threads.
+/// A terminal view, weakly, for what Metal's threads tell it (B445).
+final class CoreTermViewBox: @unchecked Sendable {
+    weak var view: CoreTerminalView?
+    init(_ view: CoreTerminalView) { self.view = view }
+}
+
 final class CoreTermCounter: @unchecked Sendable {
     private let atomic = Atomic<Int>(0)
     var value: Int { atomic.load(ordering: .relaxed) }

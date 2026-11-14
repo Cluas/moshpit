@@ -154,6 +154,14 @@ struct ServerConnection: Identifiable, Codable, Equatable {
     /// `nil` ⇒ 1080, the conventional SOCKS5 default.
     var socksProxyPort: Int?
 
+    /// Whether a connect to this goes to another box than one to `before`:
+    /// another host (case aside, as DNS compares names), port or SSH port
+    /// (`ServerConnection::points_elsewhere_than` in crates/store).
+    func pointsElsewhere(than before: ServerConnection) -> Bool {
+        host.caseInsensitiveCompare(before.host) != .orderedSame
+            || port != before.port || sshPort != before.sshPort
+    }
+
     var sshKeyAlgorithm: SSHKeyAlgorithm? {
         sshKeyAlgorithmRaw.flatMap(SSHKeyAlgorithm.init(rawValue:))
     }

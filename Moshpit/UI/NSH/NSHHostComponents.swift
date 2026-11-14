@@ -429,8 +429,26 @@ private final class ColorWellComponent: NSHComponent {
     }
 
     /// Lays its one subview out at that view's own size, in its middle (as
-    /// SwiftUI's `.frame(width:)` places a `ColorPicker`).
+    /// SwiftUI's `.frame(width:)` places a `ColorPicker`). Its touches reach
+    /// as far as a touch target (44 pt) around its middle, however small the
+    /// box: the element's hit slop brings them here (the screen's
+    /// `color_well`), and every one goes to the well.
     private final class Centering: UIView {
+        /// A touch target's side.
+        static let target: CGFloat = 44
+
+        override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
+            let dx = max(0, (Self.target - bounds.width) / 2)
+            let dy = max(0, (Self.target - bounds.height) / 2)
+            return bounds.insetBy(dx: -dx, dy: -dy).contains(point)
+        }
+
+        override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+            guard isUserInteractionEnabled, !isHidden, alpha > 0.01,
+                  self.point(inside: point, with: event) else { return nil }
+            return subviews.last ?? self
+        }
+
         override func layoutSubviews() {
             super.layoutSubviews()
             let scale = max(traitCollection.displayScale, 1)

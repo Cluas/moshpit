@@ -157,8 +157,13 @@ final class RustSessionDriver: RustSessionListener {
         if expectsTmux || expectsHerdr { session.rustSetAwaitingFirstFrame(true) }
     }
 
-    /// What the core connects to.
-    static func spec(for connection: ServerConnection, grid: (cols: Int, rows: Int)) -> SessionSpec {
+    /// What the core connects to. mosh-server's UDP ports are Settings'
+    /// (`udp`, ``AppSettings/udpRange``): the one source, "set in Settings,
+    /// for every connection". A connection's stored range is only what the
+    /// setting was at its last save, kept for older builds (J1) — dialled
+    /// from, a narrowed setting never reached a saved connection (B430).
+    static func spec(for connection: ServerConnection, grid: (cols: Int, rows: Int),
+                     udp: (low: Int, high: Int) = AppSettings.shared.udpRange) -> SessionSpec {
         let proxy = connection.useSOCKSProxy == true ? connection.socksProxyHost : nil
         return SessionSpec(
             connectionId: connection.id.uuidString,
@@ -177,8 +182,8 @@ final class RustSessionDriver: RustSessionListener {
             }(),
             tmuxPath: connection.tmuxPath,
             moshServerPath: connection.moshServerPath,
-            moshPortLow: Int64(connection.moshPortRangeStart),
-            moshPortHigh: Int64(connection.moshPortRangeEnd),
+            moshPortLow: Int64(udp.low),
+            moshPortHigh: Int64(udp.high),
             herdrPath: connection.herdrPath,
             locale: "en_US.UTF-8",
             cols: UInt16(clamping: grid.cols),
@@ -463,8 +468,14 @@ final class RustSessionDriver: RustSessionListener {
         if expectsHerdr {
             // herdr renders one pane at a time: the terminal follows the
             // focused pane's channel.
-            if let focused = panes.first(where: \.active) ?? panes.first {
-                attachHerdrPane(stream: focused.stream)
+            let active = panes.first(where: \.active)
+            if let focused = active ?? panes.first {
+                // Which channel the terminal reads, against where herdr's
+                // frames go (B445).
+                let model = id.flatMap { core.sessions.herdrView(session: $0) }
+                let listed = panes.map { "\($0.pane):\($0.stream)\($0.active ? "*" : "")" }.joined(separator: " ")
+                Log.ssh.notice("rust session \(self.id ?? 0, privacy: .public): herdr panes \(listed, privacy: .public); the terminal reads \(focused.pane, privacy: .public) (\(active == nil ? "no active pane: the first" : "active", privacy: .public)); frames for \(model?.frameTarget ?? "-", privacy: .public), attached \(model?.attachedPane ?? "-", privacy: .public), server focus \(model?.activePaneId ?? "-", privacy: .public)")
+                attachHerdrPane(stream: focused.stream, pane: focused.pane)
             }
             return
         }
@@ -506,11 +517,20 @@ final class RustSessionDriver: RustSessionListener {
 
     /// herdr's focused pane, on the session's terminal: its veil and its
     /// reveal come as marks among its frames.
-    private func attachHerdrPane(stream: UInt64) {
+    private func attachHerdrPane(stream: UInt64, pane: String) {
         guard shell?.stream != stream else { return }
         shell?.detach()
         let coordinator = session.coordinator
         let feeder = RustPaneFeeder(stream: stream, coordinator: coordinator)
+        // What reaches the terminal from it in its first two seconds (B445:
+        // a blank herdr terminal is bytes that never came, or bytes drawn
+        // and not shown).
+        let session = self.id ?? 0
+        Log.ssh.notice("rust session \(session, privacy: .public): herdr's terminal follows \(pane, privacy: .public) on stream \(stream, privacy: .public)")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak feeder] in
+            guard let feeder else { return }
+            Log.ssh.notice("rust session \(session, privacy: .public): herdr stream \(stream, privacy: .public) (\(pane, privacy: .public)) fed \(feeder.bytesFed, privacy: .public) bytes in its first 2 s")
+        }
         // Among the frames' bytes, acted on once the bytes before each are
         // on screen (``TerminalSurface/feed(mark:)``).
         feeder.onMark = { [weak coordinator] mark in

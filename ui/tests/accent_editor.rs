@@ -7,11 +7,17 @@
 
 mod common;
 
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+};
+
 use common::{emit, hear, next, post, quiet, start_observing, zh_hans};
 use moshpit_ui::{
     accent_editor::{AccentDraft, Message},
     screen::{Params, Screen},
 };
+use nsh_core::{EdgeInsets, MountItem, NodeId};
 use nsh_testing::Headless;
 use serde_json::json;
 
@@ -175,5 +181,65 @@ fn text_follows_dynamic_type_as_face_resolves_it() {
     assert_eq!(size(&app, "text:mosh"), 18.0);
     assert_eq!(size(&app, "text:selected row"), 23.0);
     assert_eq!(size(&app, "text:#2FD8A8"), 21.0);
+    channel.close();
+}
+
+/// The color well is a whole touch target (44 × 44 pt, R18): its box stays
+/// UIKit's well's (34 × 28), so the row keeps its height and the well its
+/// look, and the box's hit slop takes the rest (the host's component hands
+/// those touches to the well).
+#[test]
+fn the_color_well_is_a_whole_touch_target() {
+    let (mut app, channel, _) =
+        start_observing(Screen::AccentEditor, Params::default(), "accent-editor");
+    // Each component's name and each view's hit slop, as mounted.
+    type Seen = (HashMap<NodeId, String>, HashMap<NodeId, EdgeInsets>);
+    let seen: Arc<Mutex<Seen>> = Arc::default();
+    let observed = seen.clone();
+    app.observe(move |_, batch| {
+        let mut seen = observed.lock().unwrap();
+        for item in &batch.items {
+            match item {
+                MountItem::Component { id, name } => {
+                    seen.0.insert(*id, name.to_string());
+                }
+                MountItem::ViewProps { id, props } => {
+                    seen.1.insert(*id, props.hit_slop);
+                }
+                _ => {}
+            }
+        }
+    });
+    post(&mut app, &channel, &mint("Mint Seed"));
+    app.wait_for("id:accent-editor-name").unwrap();
+    let (names, slops) = seen.lock().unwrap().clone();
+    let well = names
+        .iter()
+        .find(|(_, name)| *name == "moshpit/color-well")
+        .map(|(id, _)| *id)
+        .expect("the color well");
+    let bounds = app
+        .screen()
+        .layout_nodes()
+        .into_iter()
+        .find(|node| node.id == well)
+        .expect("the well is laid out")
+        .bounds;
+    assert_eq!(
+        (bounds.size.width.0, bounds.size.height.0),
+        (34.0, 28.0),
+        "the well's box, as before"
+    );
+    let slop = slops.get(&well).copied().unwrap_or_default();
+    let (w, h) = (
+        bounds.size.width.0 + slop.left.0 + slop.right.0,
+        bounds.size.height.0 + slop.top.0 + slop.bottom.0,
+    );
+    assert!(
+        w >= 44.0 && h >= 44.0,
+        "the well takes touches over {w} × {h} pt"
+    );
+    assert_eq!(slop.left, slop.right, "centered across");
+    assert_eq!(slop.top, slop.bottom, "centered down");
     channel.close();
 }

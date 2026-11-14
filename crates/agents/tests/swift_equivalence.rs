@@ -38,13 +38,37 @@ fn swift() -> (Language, BTreeMap<String, Vec<String>>) {
 }
 
 /// The scripts on which the two may differ, each with why and what the
-/// machine must print instead (`fixtures/swift/divergences.json`).
+/// machine must print instead (`fixtures/swift/divergences.json`) — the
+/// whole transcript, so anything else that moves in such a script fails
+/// as it would in any other. `id` names the reason; one fix's entries share
+/// it (B437's deletes: `B437-delete-withdraws`), so they can go together
+/// once the Swift monitor they're held against is gone.
 #[derive(serde::Deserialize)]
 struct Divergence {
     script: String,
+    id: String,
     #[allow(dead_code)]
     why: String,
     rust: Vec<String>,
+}
+
+/// Whether `rust`, a divergent script's transcript, is exactly what its
+/// entry pins — and still differs from the Swift monitor's.
+fn held_to(divergence: &Divergence, rust: &[String], swift: &[String]) -> Result<(), String> {
+    if rust != divergence.rust.as_slice() {
+        let at = rust.iter().zip(&divergence.rust).position(|(a, b)| a != b).unwrap_or(rust.len().min(divergence.rust.len()));
+        return Err(format!(
+            "{} ({}): not what the divergence records (line {at}):\n  recorded {:?}\n  rust     {:?}",
+            divergence.script,
+            divergence.id,
+            divergence.rust.get(at).map_or("<end>", String::as_str),
+            rust.get(at).map_or("<end>", String::as_str),
+        ));
+    }
+    if normalize(rust) == normalize(swift) {
+        return Err(format!("{} ({}): no longer a divergence", divergence.script, divergence.id));
+    }
+    Ok(())
 }
 
 fn divergences() -> Vec<Divergence> {
@@ -85,13 +109,9 @@ fn every_script_does_what_the_swift_monitor_did() {
     for script in &scripts {
         if let Some(divergence) = divergences.iter().find(|d| d.script == script.name) {
             let rust = harness::run(script, &dir, language);
-            assert_eq!(rust, divergence.rust, "{}: not what the divergence records", script.name);
-            assert_ne!(
-                normalize(&rust),
-                normalize(&swift[&script.name]),
-                "{}: no longer a divergence",
-                script.name
-            );
+            if let Err(difference) = held_to(divergence, &rust, &swift[&script.name]) {
+                differences.push(difference);
+            }
             continue;
         }
         let raw = harness::run(script, &dir, language);
@@ -119,4 +139,32 @@ fn every_script_does_what_the_swift_monitor_did() {
         scripts.len(),
         differences.join("\n")
     );
+}
+
+/// A divergence pins its script's whole transcript: a script with a delete
+/// that moves anywhere else — a card more, a line changed — fails as any
+/// other script would. Checked on every B437 entry, by moving one line of
+/// what the machine prints.
+#[test]
+fn a_divergence_holds_its_script_to_the_whole_transcript() {
+    let (language, swift) = swift();
+    let scripts = scripts();
+    let divergences = divergences();
+    let deletes: Vec<&Divergence> = divergences.iter().filter(|d| d.id == "B437-delete-withdraws").collect();
+    assert_eq!(deletes.len(), 136);
+    let dir = std::env::temp_dir().join(format!("agents-divergence-{}", std::process::id()));
+    for divergence in deletes {
+        let script = scripts.iter().find(|s| s.name == divergence.script).expect("its script");
+        let rust = harness::run(script, &dir, language);
+        let theirs = &swift[&script.name];
+        assert_eq!(held_to(divergence, &rust, theirs), Ok(()));
+        let mut extra = rust.clone();
+        extra.insert(1, "post moshpit.attention.C %9 | claude needs you | — devbox | sound=true | time-sensitive".to_owned());
+        assert!(held_to(divergence, &extra, theirs).is_err(), "{}: a card more passed", script.name);
+        let mut moved = rust.clone();
+        let last = moved.len() - 1;
+        moved[last].push_str(",%9=1");
+        assert!(held_to(divergence, &moved, theirs).is_err(), "{}: a moved line passed", script.name);
+    }
+    let _ = std::fs::remove_dir_all(&dir);
 }

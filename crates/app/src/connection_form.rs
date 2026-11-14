@@ -165,11 +165,10 @@ pub struct SavePlan {
 }
 
 /// Whether `after` points at another host or port than `before` (host
-/// names compare as DNS does: case aside).
+/// names compare as DNS does: case aside): the store's rule, which also
+/// forgets what sessions remembered about the old box (B431).
 pub fn moved(before: &ServerConnection, after: &ServerConnection) -> bool {
-    !before.host.eq_ignore_ascii_case(&after.host)
-        || before.port != after.port
-        || before.ssh_port != after.ssh_port
+    after.points_elsewhere_than(before)
 }
 
 impl Draft {

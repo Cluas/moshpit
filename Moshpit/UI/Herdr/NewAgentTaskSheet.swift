@@ -59,7 +59,7 @@ struct NewAgentTaskSheet: View {
                         if let hint = branchHint {
                             Text(hint)
                                 .font(Face.mono(11))
-                                .foregroundStyle(Ink.warn)
+                                .foregroundStyle(Ink.warnText)
                                 .padding(.bottom, 8)
                         }
                     }
@@ -81,7 +81,7 @@ struct NewAgentTaskSheet: View {
                                 .fixedSize(horizontal: false, vertical: true)
                         } icon: {
                             Image(systemName: "exclamationmark.circle.fill")
-                                .foregroundStyle(Ink.warn)
+                                .foregroundStyle(Ink.warnText)
                         }
                         .foregroundStyle(Ink.secondary)
                     }
@@ -100,24 +100,24 @@ struct NewAgentTaskSheet: View {
                             startTask?.cancel()
                             dismiss()
                         }
-                        .foregroundStyle(Ink.accent)
+                        .foregroundStyle(Ink.accentText)
                     }
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     if taskExists {
                         Button("Done") { dismiss() }
-                            .foregroundStyle(Ink.accent)
+                            .foregroundStyle(Ink.accentText)
                             .accessibilityIdentifier("agent-task-done")
                     } else {
                         Button(starting ? "Starting…" : "Start") { run() }
-                            .foregroundStyle(canStart ? Ink.accent : Ink.disabledNav)
+                            .foregroundStyle(canStart ? Ink.accentText : Ink.disabledNav)
                             .disabled(!canStart)
                             .accessibilityIdentifier("start-agent-task")
                     }
                 }
             }
         }
-        .darkOnlyPage()
+        // The app's appearance (R18): its form inks have both sides.
         .onAppear {
             if repos.isEmpty { repos = initialRepos }
             if request.repoPath.isEmpty, let first = repos.first { request.repoPath = first }

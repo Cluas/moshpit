@@ -223,6 +223,10 @@ final class AppSettings {
         set { withMutation(keyPath: \.moshServerBinary) { put(newValue, "moshpit.settings.moshServerBinary") } }
     }
 
+    /// mosh-server's UDP ports, for every connection: what a mosh connect
+    /// asks for (B430), whatever a connection stored at its last save.
+    var udpRange: (low: Int, high: Int) { (udpRangeStart, udpRangeEnd) }
+
     var udpRangeStart: Int {
         get { access(keyPath: \.udpRangeStart); return get("moshpit.settings.udpRangeStart", 60000) }
         set { withMutation(keyPath: \.udpRangeStart) { put(newValue, "moshpit.settings.udpRangeStart") } }

@@ -601,7 +601,10 @@ struct TerminalScreen: View {
         }
         // A protocol switch is over once the new session's frame is
         // uncovered: its picture goes, motion comes back.
-        .onChange(of: paneCover) { _, cover in
+        .onChange(of: paneCover) { old, cover in
+            // What covers the pane, said (B445): a page left in the
+            // terminal's colour under its bar reads as a blank terminal.
+            Log.ui.notice("terminal: the pane's cover \(String(describing: old), privacy: .public) -> \(String(describing: cover), privacy: .public) (\(String(describing: connState), privacy: .public), settling \(settling, privacy: .public))")
             if stillSwitch, cover == .none, connState == .live { endStillSwitch() }
         }
         .onChange(of: connState) { old, state in
@@ -831,8 +834,12 @@ struct TerminalScreen: View {
         // uncovered (``stillSwitch``); the pane's last picture stays.
         stillSwitch = true
         holdStill()
-        connection.connectionProtocol = connection.connectionProtocol == .mosh ? .ssh : .mosh
-        connectionHolder.store.update(connection)
+        // The protocol alone, onto the saved record: this screen's copy is
+        // from when it opened, and writing it back undid an edit saved
+        // since — the iPad's sidebar edits beside it (B429).
+        if let switched = connectionHolder.store.switchProtocol(of: connection.id) {
+            connection = switched
+        }
         Haptics.select()
         reconnect(still: true)
     }
@@ -929,6 +936,11 @@ struct TerminalScreen: View {
         // here for the same reason it collapses there.
         keyboardIntent = .down
         Task {
+            // A delete under way starts nothing (B432). The saved record,
+            // not this screen's copy from when it opened (B429); a debug
+            // seed's connection is saved nowhere, and dials as given.
+            guard !ConnectionDeletion.isUnderWay(connection.id) else { return }
+            connection = connectionHolder.store.saved(connection.id) ?? connection
             await hub.disconnect(connection.id)
             let session = hub.prepare(connection)
             self.active = session
@@ -1709,6 +1721,11 @@ struct TerminalScreen: View {
     /// this closure was one straw too many for the view body's already-huge
     /// modifier-chain expression, blowing the type checker's budget.
     private func connectAndAttach() async {
+        // A delete under way starts nothing (B432). The saved record, not
+        // this screen's copy from when it opened (B429); a debug seed's
+        // connection is saved nowhere, and dials as given.
+        guard !ConnectionDeletion.isUnderWay(connection.id) else { return }
+        connection = connectionHolder.store.saved(connection.id) ?? connection
         let session = hub.prepare(connection)
         active = session
         // Foreground/background transitions re-pin/release for the terminal

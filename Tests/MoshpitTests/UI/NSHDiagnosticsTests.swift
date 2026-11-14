@@ -56,6 +56,43 @@ struct NSHDiagnosticsTests {
         let trail = NSHTrail(url: nil)
         trail.record("nowhere")
         #expect(trail.read().isEmpty)
+        #expect(trail.prepare() == .noContainer)
+    }
+
+    @Test("B445: prepared, the trail's file is there before anything failed, and still a ring after")
+    func preparedTrailExists() {
+        let url = Self.trailURL()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let trail = NSHTrail(url: url, capacity: 2, launch: "a")
+        #expect(!FileManager.default.fileExists(atPath: url.path))
+        #expect(trail.prepare() == .ready)
+        #expect(FileManager.default.fileExists(atPath: url.path), "a phone without it could not write it")
+        #expect(trail.read().isEmpty, "nothing failed yet")
+        for n in 0..<3 { trail.record("line \(n)") }
+        #expect(trail.read().map(\.text) == ["line 1", "line 2"])
+    }
+
+    @Test("B445: preparing a trail that is there keeps every line of it")
+    func preparingKeepsTheLines() {
+        let url = Self.trailURL()
+        defer { try? FileManager.default.removeItem(at: url) }
+        NSHTrail(url: url, launch: "before").record("kept")
+        let trail = NSHTrail(url: url, launch: "after")
+        #expect(trail.prepare() == .ready)
+        #expect(trail.read().map(\.text) == ["kept"])
+    }
+
+    @Test("B445: a trail that can't be made says why")
+    func unwritableTrail() {
+        let url = URL(fileURLWithPath: "/nonexistent-\(UUID().uuidString)/nsh-diagnostics.json")
+        let trail = NSHTrail(url: url)
+        guard case .failed(let why) = trail.prepare() else {
+            Issue.record("a file in a folder that isn't there was made")
+            return
+        }
+        #expect(!why.isEmpty)
+        trail.record("lost")
+        #expect(trail.read().isEmpty)
     }
 
     // MARK: Refused posts

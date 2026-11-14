@@ -11,7 +11,8 @@
 //!   can still keep the lane ([`Row::reserve_leading`]) so its title starts
 //!   where its neighbours' do.
 //! - The title takes one line; a subtitle under it one more. A path in the
-//!   subtitle shortens in its middle ([`Row::mono_subtitle`]).
+//!   subtitle shortens in its middle ([`Row::mono_subtitle`]). A subtitle
+//!   that explains the row wraps instead ([`Row::wrap_subtitle`]).
 //! - The value sits at the trailing edge. The title keeps its own width and
 //!   the value takes what is left (B317): when the two do not fit, the value
 //!   gives way four times faster than the title, so a label never wraps
@@ -92,6 +93,7 @@ pub struct Row {
     title: Rc<dyn Fn() -> SharedString>,
     subtitle: Option<Rc<dyn Fn() -> SharedString>>,
     mono_subtitle: bool,
+    wrap_subtitle: bool,
     detail: Option<Rc<dyn Fn() -> SharedString>>,
     /// The words of a badge in the accessory lane, said after the title.
     badge: Option<SharedString>,
@@ -126,6 +128,7 @@ pub fn row(title: impl Into<SharedString>) -> Row {
         title: Rc::new(move || title.clone()),
         subtitle: None,
         mono_subtitle: false,
+        wrap_subtitle: false,
         detail: None,
         badge: None,
         subtitle_mono: None,
@@ -165,6 +168,13 @@ impl Row {
 
     pub fn subtitle_with(mut self, subtitle: impl Fn() -> SharedString + 'static) -> Self {
         self.subtitle = Some(Rc::new(subtitle));
+        self
+    }
+
+    /// The subtitle wraps onto as many lines as it needs, cut nowhere: it
+    /// says what the row does, which a shortened line would lose.
+    pub fn wrap_subtitle(mut self) -> Self {
+        self.wrap_subtitle = true;
         self
     }
 
@@ -425,6 +435,7 @@ impl IntoElement for Row {
             title,
             subtitle,
             mono_subtitle,
+            wrap_subtitle,
             detail,
             badge,
             subtitle_mono,
@@ -587,18 +598,18 @@ impl IntoElement for Row {
                 );
             }
             (Some(subtitle), None) => {
-                content = content.child(
-                    line(
-                        if mono_subtitle {
-                            TextToken::MonoSubhead
-                        } else {
-                            TextToken::Subhead
-                        },
-                        text(move || subtitle()),
-                        mono_subtitle,
-                    )
-                    .text_color(move || token("muted-foreground")),
-                );
+                let style = if mono_subtitle {
+                    TextToken::MonoSubhead
+                } else {
+                    TextToken::Subhead
+                };
+                let words = text(move || subtitle());
+                let words = if wrap_subtitle {
+                    style.apply(words)
+                } else {
+                    line(style, words, mono_subtitle)
+                };
+                content = content.child(words.text_color(move || token("muted-foreground")));
             }
             _ => {}
         }

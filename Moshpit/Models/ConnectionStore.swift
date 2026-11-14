@@ -103,9 +103,37 @@ final class ConnectionStore {
         guard let index = connections.firstIndex(where: { $0.id == connection.id }) else {
             return
         }
+        let moved = connection.pointsElsewhere(than: connections[index])
         connections[index] = connection
         persist()
+        // Pointed at another box: what sessions remembered about the old
+        // one (its capabilities, its tmux landing) isn't this one's (B431).
+        if moved, isAuthoritative, readiness.isReadable(defaults) {
+            for key in SessionMemory.keys(connection.id) { defaults.removeObject(forKey: key) }
+        }
     }
+
+    /// Connection `id`'s saved record now: what a connect dials and what a
+    /// change to one field writes onto, never a view's copy from when it
+    /// opened (B429).
+    func saved(_ id: UUID) -> ServerConnection? {
+        connections.first { $0.id == id }
+    }
+
+    /// Switch connection `id` between SSH and mosh on its saved record, and
+    /// change nothing else; the record as saved, nil when there is none
+    /// (B429: the terminal wrote its own copy back, undoing an edit saved
+    /// meanwhile — on the iPad, from the sidebar beside it).
+    @discardableResult
+    func switchProtocol(of id: UUID) -> ServerConnection? {
+        guard var current = saved(id) else { return nil }
+        current.connectionProtocol = current.connectionProtocol == .mosh ? .ssh : .mosh
+        update(current)
+        return saved(id)
+    }
+
+    // `update` forgets what sessions remember about a connection pointed
+    // at another box (B431), as the Rust store's does.
 
     /// Deletes the connection, and what sessions remember about it
     /// (``SessionMemory``: its last tmux selection, its host's capabilities)

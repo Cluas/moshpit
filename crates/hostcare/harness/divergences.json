@@ -38,7 +38,7 @@
     "id": "self-test-scope",
     "swift": "HostCommands.selfTestPush (the nonce alone)",
     "symptom": "The push test sent after pairing names no connection, so the host's sender tests every pairing it holds: every other phone paired with the host gets the test push, and a phone with two connections there can pass on the other's pairing.",
-    "rust": "The test names the connection it proves (install's self-test-scope, B353): `--test '<nonce>' '<connection>'`. Every other command and the outcome are the same.",
+    "rust": "The test names the connection it proves (install's self-test-scope, B353): `--test '<nonce>' '<connection>'`, and the pane `selftest`, which no tmux or herdr pane can be (B439): `HERDR_PANE_ID= TMUX_PANE=selftest sh …`. Every other command and the outcome are the same.",
     "trigger": "Pair on any host; seen in the last command."
   },
   "prove-hooks-stamped": {

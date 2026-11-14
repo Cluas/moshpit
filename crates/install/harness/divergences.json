@@ -117,8 +117,8 @@
       "trigger": "Testing push on a host paired with more than one connection, or with none for this one.",
       "minimal_input": "cmd pushtest selftest-ab12 3F2504E0-4F89-11D3-9A0C-0305E82C3301",
       "swift_before": "sh \"$HOME/.moshpit/moshpit-push.sh\" --test 'selftest-ab12' 2>&1",
-      "fix": "The command names the connection the test proves (the sender has long taken it as its third argument, and sends on that pairing alone); a test the sender finds nothing to send with says so.",
-      "rust_outcome": "sh \"$HOME/.moshpit/moshpit-push.sh\" --test 'selftest-ab12' '3F2504E0-4F89-11D3-9A0C-0305E82C3301' 2>&1",
+      "fix": "The command names the connection the test proves (the sender has long taken it as its third argument, and sends on that pairing alone); a test the sender finds nothing to send with says so. Since B439 it also names the pane `selftest` (TMUX_PANE, with HERDR_PANE_ID emptied): run outside any pane it named `%0`, tmux's first pane, and the phone's notification service cleared the waiting entry of an agent there on the test's \"done\".",
+      "rust_outcome": "HERDR_PANE_ID= TMUX_PANE=selftest sh \"$HOME/.moshpit/moshpit-push.sh\" --test 'selftest-ab12' '3F2504E0-4F89-11D3-9A0C-0305E82C3301' 2>&1",
       "severity": "medium: a stray notification on every other paired phone per test, and a test that can pass on the wrong pairing",
       "committed_cases": "Regenerated from Rust as atomic-write: the sender script changed, so the `scripts` case prints its new text and digest, 76 flows that install it differ in its digest and the fingerprints of its write and the manifest's, and the 4 `flow push` cases differ in the fingerprint of the test command."
     },

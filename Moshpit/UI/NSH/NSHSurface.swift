@@ -89,7 +89,10 @@ final class NSHSurface: UIView {
     /// A surface, empty until a screen runs; nil when this build cannot host
     /// NSH or NSH failed to start (the reason is in the log).
     static func make(frame: CGRect = .zero) -> NSHSurface? {
-        if available { NSHDiagnostics.forwardRustLog() }
+        if available {
+            NSHDiagnostics.forwardRustLog()
+            NSHDiagnostics.prepareTrail()
+        }
         guard available, let surface = mp_ui_surface_create(frame) else {
             NSHDiagnostics.error("NSH surface not made (library available: \(available))")
             return nil

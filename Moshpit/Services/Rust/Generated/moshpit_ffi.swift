@@ -1036,6 +1036,13 @@ public protocol AgentMachineProtocol: AnyObject, Sendable {
     func cycleHeadline(now: Double)  -> [AgentEffectValue]
     
     /**
+     * The agent cards the notification center holds, by identifier, and
+     * the saved connections' ids (none while they can't be told): a card
+     * nothing stands behind any more is withdrawn (B433).
+     */
+    func delivered(ids: [String], saved: [String]?, now: Double)  -> [AgentEffectValue]
+    
+    /**
      * One poll of `conn`'s stamps. `interval`: how often its stamps
      * arrive, in seconds — tmux's, the sweep that polls them; herdr's,
      * [`herdr_stamp_interval`]. A stamp holds that long and a margin
@@ -1047,7 +1054,11 @@ public protocol AgentMachineProtocol: AnyObject, Sendable {
     
     func output(conn: String, pane: String, place: AgentPaneWhereValue, now: Double)  -> [AgentEffectValue]
     
-    func setSettings(settings: AgentSettingsValue) 
+    /**
+     * The switches as they are now, and what changing them does: the
+     * island ended when the Live Activity is switched off (B436).
+     */
+    func setSettings(settings: AgentSettingsValue)  -> [AgentEffectValue]
     
     func stateSinceByPane(conn: String)  -> [String: Double]
     
@@ -1179,6 +1190,22 @@ open func cycleHeadline(now: Double) -> [AgentEffectValue]  {
 }
     
     /**
+     * The agent cards the notification center holds, by identifier, and
+     * the saved connections' ids (none while they can't be told): a card
+     * nothing stands behind any more is withdrawn (B433).
+     */
+open func delivered(ids: [String], saved: [String]?, now: Double) -> [AgentEffectValue]  {
+    return try!  FfiConverterSequenceTypeAgentEffectValue.lift(try! rustCall() {
+    uniffi_moshpit_ffi_fn_method_agentmachine_delivered(
+            self.uniffiCloneHandle(),
+        FfiConverterSequenceString.lower(ids),
+        FfiConverterOptionSequenceString.lower(saved),
+        FfiConverterDouble.lower(now),$0
+    )
+})
+}
+    
+    /**
      * One poll of `conn`'s stamps. `interval`: how often its stamps
      * arrive, in seconds — tmux's, the sweep that polls them; herdr's,
      * [`herdr_stamp_interval`]. A stamp holds that long and a margin
@@ -1216,12 +1243,17 @@ open func output(conn: String, pane: String, place: AgentPaneWhereValue, now: Do
 })
 }
     
-open func setSettings(settings: AgentSettingsValue)  {try! rustCall() {
+    /**
+     * The switches as they are now, and what changing them does: the
+     * island ended when the Live Activity is switched off (B436).
+     */
+open func setSettings(settings: AgentSettingsValue) -> [AgentEffectValue]  {
+    return try!  FfiConverterSequenceTypeAgentEffectValue.lift(try! rustCall() {
     uniffi_moshpit_ffi_fn_method_agentmachine_set_settings(
             self.uniffiCloneHandle(),
         FfiConverterTypeAgentSettingsValue_lower(settings),$0
     )
-}
+})
 }
     
 open func stateSinceByPane(conn: String) -> [String: Double]  {
@@ -11579,6 +11611,63 @@ public func FfiConverterTypeShortcutRecord_lower(_ value: ShortcutRecord) -> Rus
 
 
 /**
+ * One listed item, as a launch's settling left it.
+ */
+public struct StoreSettledRelease: Equatable, Hashable {
+    public var account: String
+    public var fate: StoreSecretFate
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(account: String, fate: StoreSecretFate) {
+        self.account = account
+        self.fate = fate
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension StoreSettledRelease: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeStoreSettledRelease: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> StoreSettledRelease {
+        return
+            try StoreSettledRelease(
+                account: FfiConverterString.read(from: &buf), 
+                fate: FfiConverterTypeStoreSecretFate.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: StoreSettledRelease, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.account, into: &buf)
+        FfiConverterTypeStoreSecretFate.write(value.fate, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeStoreSettledRelease_lift(_ buf: RustBuffer) throws -> StoreSettledRelease {
+    return try FfiConverterTypeStoreSettledRelease.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeStoreSettledRelease_lower(_ value: StoreSettledRelease) -> RustBuffer {
+    return FfiConverterTypeStoreSettledRelease.lower(value)
+}
+
+
+/**
  * A terminal colour scheme (`TerminalTheme`), colours as bare hex.
  */
 public struct ThemeRecord: Equatable, Hashable {
@@ -19015,11 +19104,12 @@ public enum StoreSecretFate: Equatable, Hashable {
      */
     case kept
     /**
-     * Kept: what else names it can't be told now.
+     * Kept: what else names it can't be told now. Listed for a later
+     * launch (B428).
      */
     case unknown
     /**
-     * The keychain wouldn't delete it.
+     * The keychain wouldn't delete it. Listed for a later launch (B428).
      */
     case failed(message: String
     )
@@ -21263,6 +21353,31 @@ fileprivate struct FfiConverterSequenceTypeShortcutRecord: FfiConverterRustBuffe
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterSequenceTypeStoreSettledRelease: FfiConverterRustBuffer {
+    typealias SwiftType = [StoreSettledRelease]
+
+    public static func write(_ value: [StoreSettledRelease], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeStoreSettledRelease.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [StoreSettledRelease] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [StoreSettledRelease]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeStoreSettledRelease.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceTypeThemeRecord: FfiConverterRustBuffer {
     typealias SwiftType = [ThemeRecord]
 
@@ -22490,6 +22605,22 @@ public func storeDefaultsReadable(host: PreferencesHost, mode: ReadinessMode) ->
 })
 }
 /**
+ * Put `account` on the list of items a connection let go of and can't drop
+ * yet — its session still signs in with it (B325), or the drop couldn't
+ * happen now — so it goes later, never offered back as a recovered key
+ * (`secrets::hold_release`). Whether it is listed (only the app's own
+ * accounts, only while the preferences can be believed).
+ */
+public func storeHoldRelease(preferences: PreferencesHost, mode: ReadinessMode, account: String) -> Bool  {
+    return try!  FfiConverterBool.lift(try! rustCall() {
+    uniffi_moshpit_ffi_fn_func_store_hold_release(
+        FfiConverterTypePreferencesHost_lower(preferences),
+        FfiConverterTypeReadinessMode_lower(mode),
+        FfiConverterString.lower(account),$0
+    )
+})
+}
+/**
  * The map's key for a host: `host:port`.
  */
 public func storeKnownHostsEntry(host: String, port: UInt16) -> String  {
@@ -22552,6 +22683,24 @@ public func storeRecoverOrphanedKeys(connections: ConnectionStoreHandle, keys: K
 })
 }
 /**
+ * Drop `account` now if no saved record names it — `referenced`: every
+ * account the saved connections and key records name, `None` when that
+ * can't be told — keeping it listed until it is dropped
+ * (`secrets::release`): what a connection's item it let go of gets once its
+ * session no longer reads it.
+ */
+public func storeRelease(preferences: PreferencesHost, mode: ReadinessMode, account: String, referenced: [String]?, keychain: KeychainHost) -> StoreSecretFate  {
+    return try!  FfiConverterTypeStoreSecretFate_lift(try! rustCall() {
+    uniffi_moshpit_ffi_fn_func_store_release(
+        FfiConverterTypePreferencesHost_lower(preferences),
+        FfiConverterTypeReadinessMode_lower(mode),
+        FfiConverterString.lower(account),
+        FfiConverterOptionSequenceString.lower(referenced),
+        FfiConverterTypeKeychainHost_lower(keychain),$0
+    )
+})
+}
+/**
  * The modulus size of the `ssh-rsa` key on an `authorized_keys` line.
  */
 public func storeRsaBits(publicKeyLine: String) -> Int64?  {
@@ -22567,6 +22716,23 @@ public func storeRsaBits(publicKeyLine: String) -> Int64?  {
 public func storeSettingNames() -> [String]  {
     return try!  FfiConverterSequenceString.lift(try! rustCall() {
     uniffi_moshpit_ffi_fn_func_store_setting_names($0
+    )
+})
+}
+/**
+ * The listed items, at a launch once the saved records can be told
+ * (`secrets::settle_releases`): each one nothing names is deleted, one
+ * named again is kept, one the keychain keeps stays listed; the ones this
+ * process listed wait for their session. Unknown (`referenced` `None`)
+ * changes nothing.
+ */
+public func storeSettleReleases(preferences: PreferencesHost, mode: ReadinessMode, referenced: [String]?, keychain: KeychainHost) -> [StoreSettledRelease]  {
+    return try!  FfiConverterSequenceTypeStoreSettledRelease.lift(try! rustCall() {
+    uniffi_moshpit_ffi_fn_func_store_settle_releases(
+        FfiConverterTypePreferencesHost_lower(preferences),
+        FfiConverterTypeReadinessMode_lower(mode),
+        FfiConverterOptionSequenceString.lower(referenced),
+        FfiConverterTypeKeychainHost_lower(keychain),$0
     )
 })
 }
@@ -22599,6 +22765,19 @@ public func storeThemePalette(theme: ThemeRecord) -> [String]  {
     return try!  FfiConverterSequenceString.lift(try! rustCall() {
     uniffi_moshpit_ffi_fn_func_store_theme_palette(
         FfiConverterTypeThemeRecord_lower(theme),$0
+    )
+})
+}
+/**
+ * The accounts waiting to be dropped, as stored; `None` while the
+ * preferences can't be believed. Recovery never offers one of
+ * these as a key.
+ */
+public func storeToRelease(preferences: PreferencesHost, mode: ReadinessMode) -> [String]?  {
+    return try!  FfiConverterOptionSequenceString.lift(try! rustCall() {
+    uniffi_moshpit_ffi_fn_func_store_to_release(
+        FfiConverterTypePreferencesHost_lower(preferences),
+        FfiConverterTypeReadinessMode_lower(mode),$0
     )
 })
 }
@@ -22834,6 +23013,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_moshpit_ffi_checksum_func_store_defaults_readable() != 56737) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_moshpit_ffi_checksum_func_store_hold_release() != 60402) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_moshpit_ffi_checksum_func_store_known_hosts_entry() != 42246) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -22849,10 +23031,16 @@ private let initializationResult: InitializationResult = {
     if (uniffi_moshpit_ffi_checksum_func_store_recover_orphaned_keys() != 42524) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_moshpit_ffi_checksum_func_store_release() != 36788) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_moshpit_ffi_checksum_func_store_rsa_bits() != 1422) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_moshpit_ffi_checksum_func_store_setting_names() != 32008) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_moshpit_ffi_checksum_func_store_settle_releases() != 37032) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_moshpit_ffi_checksum_func_store_shortcut_stages() != 57831) {
@@ -22864,6 +23052,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_moshpit_ffi_checksum_func_store_theme_palette() != 30619) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_moshpit_ffi_checksum_func_store_to_release() != 39472) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_moshpit_ffi_checksum_method_agentmachine_adopt_announced() != 15711) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -22871,6 +23062,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_moshpit_ffi_checksum_method_agentmachine_cycle_headline() != 48282) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_moshpit_ffi_checksum_method_agentmachine_delivered() != 4140) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_moshpit_ffi_checksum_method_agentmachine_hooks() != 13790) {
@@ -22882,7 +23076,7 @@ private let initializationResult: InitializationResult = {
     if (uniffi_moshpit_ffi_checksum_method_agentmachine_output() != 7407) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_moshpit_ffi_checksum_method_agentmachine_set_settings() != 30580) {
+    if (uniffi_moshpit_ffi_checksum_method_agentmachine_set_settings() != 32826) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_moshpit_ffi_checksum_method_agentmachine_state_since_by_pane() != 58286) {

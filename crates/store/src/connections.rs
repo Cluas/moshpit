@@ -245,6 +245,16 @@ impl ServerConnection {
             .and_then(SshKeyAlgorithm::from_raw)
     }
 
+    /// Whether a connect to `self` goes to another box than one to
+    /// `before`: another host (names compare as DNS does, case aside), port
+    /// or SSH port. What was learned about `before`'s box — its push
+    /// pairing (B328), what sessions remembered (B431) — isn't this one's.
+    pub fn points_elsewhere_than(&self, before: &ServerConnection) -> bool {
+        !self.host.eq_ignore_ascii_case(&before.host)
+            || self.port != before.port
+            || self.ssh_port != before.ssh_port
+    }
+
     /// The name, or `user@host` when it has none.
     pub fn display_name(&self) -> String {
         if self.name.is_empty() {
@@ -330,6 +340,13 @@ impl ConnectionStore {
         &self.connections
     }
 
+    /// The preferences it reads and writes, and their readiness: where the
+    /// items its connections let go of wait to be dropped
+    /// ([`crate::secrets::hold_release`]).
+    pub(crate) fn preferences(&self) -> (&dyn Defaults, &Readiness) {
+        (self.defaults.as_ref(), &self.readiness)
+    }
+
     /// Whether what is shown came from a read that can be trusted; until
     /// then nothing is written back.
     pub fn is_authoritative(&self) -> bool {
@@ -348,13 +365,22 @@ impl ConnectionStore {
     }
 
     /// Replace the connection with the same id; a no-op for an unknown id.
+    /// Pointed at another box ([`ServerConnection::points_elsewhere_than`]),
+    /// it forgets what sessions remembered about the old one — its
+    /// capabilities, its tmux landing — once the list is trusted (B431: the
+    /// first connect to the new host routed on the old one's).
     pub fn update(&mut self, connection: ServerConnection) {
         self.reload_if_needed();
         let Some(index) = self.connections.iter().position(|c| c.id == connection.id) else {
             return;
         };
+        let moved = connection.points_elsewhere_than(&self.connections[index]);
+        let id = connection.id;
         self.connections[index] = connection;
         self.persist();
+        if moved && self.is_authoritative {
+            session_memory::forget(self.defaults.as_ref(), &self.readiness, id);
+        }
     }
 
     /// Delete connection `id`, and what sessions remember about it
@@ -962,6 +988,56 @@ mod tests {
         store.delete(gone.id);
         assert_eq!(remembers(&defaults, gone.id), [false, false]);
         assert_eq!(remembers(&defaults, kept.id), [true, true]);
+    }
+
+    /// B431: a connection pointed at another host (or port) kept what
+    /// sessions remembered about the box it pointed at before — the first
+    /// connect to the new host routed on the old one's capabilities (tmux
+    /// "missing", mosh falling back to SSH) and landed on its tmux `$N`.
+    /// A move forgets both; a save that keeps the address keeps them.
+    #[test]
+    fn a_move_to_another_host_or_port_forgets_what_sessions_remembered() {
+        let defaults = defaults();
+        let mut store = ConnectionStore::new(defaults.clone(), Readiness::Always);
+        let box_ = sample("box");
+        store.add(box_.clone());
+
+        remember(&defaults, box_.id);
+        let mut renamed = box_.clone();
+        renamed.name = "renamed".into();
+        renamed.username = "bob".into();
+        store.update(renamed.clone());
+        assert_eq!(remembers(&defaults, box_.id), [true, true], "a rename");
+        let mut cased = renamed.clone();
+        cased.host = "EXAMPLE.com".into();
+        store.update(cased.clone());
+        assert_eq!(remembers(&defaults, box_.id), [true, true], "host case");
+
+        let mut moved = cased.clone();
+        moved.host = "other.example.com".into();
+        store.update(moved.clone());
+        assert_eq!(
+            remembers(&defaults, box_.id),
+            [false, false],
+            "another host"
+        );
+
+        for change in [
+            |c: &mut ServerConnection| c.port = 2222,
+            |c: &mut ServerConnection| c.ssh_port = 2200,
+        ] {
+            remember(&defaults, box_.id);
+            let mut next = store.connections()[0].clone();
+            change(&mut next);
+            store.update(next);
+            assert_eq!(
+                remembers(&defaults, box_.id),
+                [false, false],
+                "another port"
+            );
+        }
+        assert!(moved.points_elsewhere_than(&cased));
+        assert!(!cased.points_elsewhere_than(&renamed));
     }
 
     /// A delete on a sealed launch writes nothing — the list or the keys.

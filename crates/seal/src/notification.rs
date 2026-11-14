@@ -5,6 +5,9 @@
 use crate::copy::{self, InterruptionLevel, Language};
 use crate::envelope::{self, Envelope};
 use crate::foundation::text;
+use crate::foundation::uuid::Uuid;
+use crate::pairing::PushPairing;
+use crate::pairing_file::newest_first;
 use crate::prefs::Prefs;
 use crate::status::Status;
 
@@ -32,10 +35,51 @@ pub const DONE_SOUND_THRESHOLD: i64 = 180;
 /// Try every secret this device holds until one authenticates (newest
 /// first is the caller's order). A MAC failure is the normal "not this
 /// host"; only running out of keys is a failure, and it is `None`.
+///
+/// Harness-only (the `trysecrets` cases, Rust against Swift): which
+/// connection sent it is not checked here. What is shown goes through
+/// [`open_paired`] (B435); `tests/harness_only.rs` fails if Android or the
+/// rest of this crate calls this one.
 pub fn open(envelope: &Envelope, secrets: &[String]) -> Option<Status> {
     secrets
         .iter()
         .find_map(|secret| envelope::open(envelope, secret).ok())
+}
+
+/// What became of an envelope tried against this device's pairings.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Opening {
+    /// A pairing's key opened it, and it names that pairing's connection.
+    Opened(Status),
+    /// A pairing's key opened it, but it names another connection (B435).
+    Misnamed,
+    /// No key opened it.
+    Unopened,
+}
+
+/// Open `envelope` with `pairings`' keys, newest pairing first, and believe
+/// it only for the connection whose key opened it (B435).
+///
+/// A host holds one pairing's key and writes the connection id into what it
+/// seals. That id was taken as given: a host paired with one connection
+/// could seal a status naming another, and its card read as the other
+/// connection's — its name, its waiting set and its rings, and a tap opened
+/// its pane. A pairing promises a compromised host can't forge
+/// notifications that appear to come from a different one; this is where
+/// that holds. Only the key's holder can have sealed it, so no other key
+/// needs trying.
+pub fn open_paired(envelope: &Envelope, pairings: &[PushPairing]) -> Opening {
+    for pairing in newest_first(pairings.to_vec()) {
+        let Ok(status) = envelope::open(envelope, &pairing.secret_hex) else {
+            continue;
+        };
+        return if Uuid::parse(&status.conn) == Some(pairing.connection_id) {
+            Opening::Opened(status)
+        } else {
+            Opening::Misnamed
+        };
+    }
+    Opening::Unopened
 }
 
 /// Where the agent is, as the local cards say it: the name the user gave the

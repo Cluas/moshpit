@@ -232,6 +232,12 @@ final class HostCapabilityCache {
         return capabilities(for: id)
     }
 
+    /// Forget what this process holds for `id` — its connection now points
+    /// at another box (B431); the stored copy goes with the store's update.
+    func forget(_ id: UUID) {
+        memory[id] = nil
+    }
+
     func store(_ caps: HostCapabilities, for id: UUID) {
         memory[id] = caps
         if let data = try? JSONEncoder().encode(caps) {

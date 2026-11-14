@@ -365,16 +365,19 @@ struct HomeRecord: Equatable {
     /// the hub's session for it), `agents` the monitor whose clock dates
     /// the panes' stamps. Read in a view, it is read again after every
     /// batch of the sessions' events (``RustCore/changes``).
+    /// A mosh card's UDP port is Settings' first, the one its connect asks
+    /// for (B430).
     @MainActor
     static func now(core: RustCore, connections: [ServerConnection],
                     session: (ServerConnection) -> UInt64?, agents: AgentMachine?,
-                    disconnecting: Set<UUID>, sidebar: Bool) -> HomeRecord {
+                    disconnecting: Set<UUID>, sidebar: Bool,
+                    udpPort: Int = AppSettings.shared.udpRangeStart) -> HomeRecord {
         _ = core.changes.batches
         let connections = connections.map { connection in
             HomeConnection(
                 id: connection.id.uuidString, name: connection.displayName, user: connection.username,
                 host: connection.host, mosh: connection.connectionProtocol == .mosh,
-                udpPort: UInt32(clamping: connection.moshPortRangeStart),
+                udpPort: UInt32(clamping: udpPort),
                 tmux: connection.multiplexer == .tmux,
                 disconnecting: disconnecting.contains(connection.id),
                 session: session(connection))

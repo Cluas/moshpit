@@ -268,15 +268,15 @@ fn a_card_redrawn_from_a_pushed_entry_keeps_show_detail_off_and_says_where() {
         recorded_at: Date::from_unix(T0),
     };
     let off = Settings { show_detail: false, ..Settings::default() };
-    let hidden = digest(&pushed, 1, off, false, "devbox · work");
+    let hidden = digest(&pushed, 1, off, false, "devbox · work", "devbox");
     assert!(!hidden.body.contains("id_ed25519"));
     assert_eq!(hidden.body, "devbox · work");
-    let shown = digest(&pushed, 2, Settings::default(), false, "devbox · work");
+    let shown = digest(&pushed, 2, Settings::default(), false, "devbox · work", "devbox");
     assert_eq!(shown.body, "Bash: cat ~/.ssh/id_ed25519 — devbox · work");
     assert_eq!(shown.title, "claude +1 needs you");
     let mut placed = pushed.clone();
     placed.location = Some("m1-pro · api".into());
-    assert_eq!(digest(&placed, 1, off, false, "devbox · work").body, "m1-pro · api");
+    assert_eq!(digest(&placed, 1, off, false, "devbox · work", "devbox").body, "m1-pro · api");
 }
 
 // MARK: - Sending only what changed (B304)
@@ -893,4 +893,174 @@ fn a_question_announced_before_a_sealed_launch_is_not_announced_again() {
     bench.poll("%1", "attention", T0 + 60.0, T0 + 60.0);
     bench.monitor.sweep(None, T0 + 91.0);
     assert_eq!(posts(&bench.monitor.take_effects()).len(), 1);
+}
+
+// MARK: - The cards the notification center holds (B433)
+
+fn waiting_card() -> String {
+    format!("{ATTENTION_CARD}{CONN}")
+}
+
+fn saved(conns: &[&str]) -> BTreeSet<String> {
+    conns.iter().map(|conn| (*conn).to_owned()).collect()
+}
+
+/// The app asleep: the push rang for %1's question, the person answered it
+/// at the desk, and the turn's `done` push took the prompt out of the set.
+/// The card it rang with was left up. The app comes forward, its first
+/// poll says nothing waits there, and the card goes — not before that poll.
+#[test]
+fn a_pushed_card_whose_turn_ended_after_the_answer_is_withdrawn_once_the_poll_says_so() {
+    let mut bench = Bench::new(Settings::default(), &[]);
+    assert!(bench.pushed("%1", T0 as i64 + 31, T0 + 31.0));
+    bench.standing.clear(CONN, "%1", Date::from_unix(T0 + 200.0));
+    bench.monitor.delivered(&[waiting_card()], Some(&saved(&[CONN])), T0 + 300.0);
+    assert!(withdrawn(&bench.monitor.take_effects()).is_empty(), "judged before the first poll");
+    let effects = bench.poll("%1", "done", T0 + 190.0, T0 + 302.0);
+    assert!(withdrawn(&effects).contains(&waiting_card().as_str()), "{effects:?}");
+}
+
+/// The question answered at the desk, the app opened more than fifteen
+/// minutes later, without connecting: the entry has expired, and the card
+/// goes at once.
+#[test]
+fn a_pushed_card_found_past_the_sets_lifetime_is_withdrawn() {
+    let mut bench = Bench::new(Settings::default(), &[]);
+    bench.monitor.untrack(CONN, true, T0);
+    bench.monitor.take_effects();
+    assert!(bench.pushed("%1", T0 as i64 + 31, T0 + 31.0));
+    let later = T0 + 31.0 + 16.0 * 60.0;
+    bench.monitor.delivered(&[waiting_card()], Some(&saved(&[CONN])), later);
+    assert!(withdrawn(&bench.monitor.take_effects()).contains(&waiting_card().as_str()));
+}
+
+/// While the prompt is in the set the card stays: the set's own rules take
+/// it down when it is answered.
+#[test]
+fn a_pushed_card_whose_prompt_is_in_the_set_stays() {
+    let mut bench = Bench::new(Settings::default(), &[]);
+    bench.monitor.untrack(CONN, true, T0);
+    bench.monitor.take_effects();
+    assert!(bench.pushed("%1", T0 as i64 + 31, T0 + 31.0));
+    bench.monitor.delivered(&[waiting_card()], Some(&saved(&[CONN])), T0 + 120.0);
+    assert!(withdrawn(&bench.monitor.take_effects()).is_empty());
+}
+
+/// Past the set's lifetime, but the poll shows the question still
+/// standing: the card is true and stays — and goes once it is answered,
+/// as one this app posted would.
+#[test]
+fn a_pushed_card_for_a_question_still_waiting_stays_and_goes_with_its_answer() {
+    let mut bench = Bench::new(Settings::default(), &[]);
+    assert!(bench.pushed("%1", T0 as i64 + 31, T0 + 31.0));
+    let later = T0 + 31.0 + 16.0 * 60.0;
+    bench.monitor.delivered(&[waiting_card()], Some(&saved(&[CONN])), later);
+    let effects = bench.poll("%1", "attention", T0, later + 1.0);
+    assert!(withdrawn(&effects).is_empty(), "{effects:?}");
+    let effects = bench.poll("%1", "working", later + 5.0, later + 6.0);
+    assert!(withdrawn(&effects).contains(&waiting_card().as_str()), "{effects:?}");
+}
+
+/// A connection no longer saved takes its waiting card, its entries and its
+/// finish cards along; another connection's are left, and with the saved
+/// connections unknown (before the first unlock) no finish card is judged.
+#[test]
+fn the_cards_of_a_connection_no_longer_saved_go_with_its_entries() {
+    const OTHER: &str = "0F0E0D0C-0000-4000-8000-000000000009";
+    let mut bench = Bench::new(Settings::default(), &[]);
+    bench.monitor.untrack(CONN, true, T0);
+    bench.monitor.take_effects();
+    assert!(bench.pushed("%1", T0 as i64 + 31, T0 + 31.0));
+    let done = format!("{DONE_CARD}{CONN}.%1");
+    let other_done = format!("{DONE_CARD}{OTHER}.%2");
+    let ids = [waiting_card(), done.clone(), other_done.clone()];
+    bench.monitor.delivered(&ids, None, T0 + 60.0);
+    assert!(withdrawn(&bench.monitor.take_effects()).is_empty());
+    bench.monitor.delivered(&ids, Some(&saved(&[OTHER])), T0 + 60.0);
+    let gone = bench.monitor.take_effects();
+    assert_eq!(withdrawn(&gone), [waiting_card().as_str(), done.as_str()]);
+    assert!(bench.standing_panes(T0 + 60.0).is_empty());
+}
+
+// MARK: - A delete takes the whole wait (B437)
+
+/// The app posted %1's card; the notification service recorded %2 as
+/// well. The delete used to clear %1 only and redraw the card from %2: a
+/// fresh "needs you" for the connection just deleted. Now the whole set
+/// goes and the card is withdrawn, nothing posted.
+#[test]
+fn deleting_a_connection_takes_the_whole_wait_and_posts_nothing() {
+    let asked = T0;
+    let mut bench = Bench::new(Settings::default(), &[("%1", asked)]);
+    bench.poll("%1", "attention", asked, asked + 1.0);
+    let _ = bench.pushed("%2", asked as i64 + 31, asked + 31.0);
+    bench.monitor.untrack(CONN, false, asked + 40.0);
+    let effects = bench.monitor.take_effects();
+    assert!(posts(&effects).is_empty(), "{effects:?}");
+    assert!(withdrawn(&effects).contains(&waiting_card().as_str()));
+    assert!(bench.standing_panes(asked + 40.0).is_empty());
+}
+
+/// The push rang while the app slept and the connection is deleted before
+/// it ever connected: its card goes and its entry with it.
+#[test]
+fn deleting_a_connection_the_app_never_posted_for_takes_the_pushed_card() {
+    let mut bench = Bench::new(Settings::default(), &[]);
+    assert!(bench.pushed("%1", T0 as i64 + 31, T0 + 31.0));
+    bench.monitor.untrack(CONN, false, T0 + 40.0);
+    let effects = bench.monitor.take_effects();
+    assert!(withdrawn(&effects).contains(&waiting_card().as_str()), "{effects:?}");
+    assert!(bench.standing_panes(T0 + 40.0).is_empty());
+}
+
+/// An entry with no agent named the card "agent needs you", in English
+/// whatever the language; the notification service names such a push by
+/// its host. It is the connection's name now, and the place without one.
+#[test]
+fn a_card_for_an_entry_with_no_agent_names_the_connection() {
+    let entry = Entry {
+        pane: "%1".into(),
+        agent: None,
+        title: None,
+        location: Some("devbox · work".into()),
+        since: T0 as i64,
+        recorded_at: Date::from_unix(T0),
+    };
+    let zh = Settings { language: Language::ZhHans, ..Settings::default() };
+    assert_eq!(digest(&entry, 1, Settings::default(), false, "devbox · work", "devbox").title, "devbox needs you");
+    assert!(digest(&entry, 1, zh, false, "devbox · work", "devbox").title.starts_with("devbox"));
+    assert_eq!(digest(&entry, 1, Settings::default(), false, "devbox · work", "").title, "devbox · work needs you");
+}
+
+// MARK: - The Live Activity switch (B436)
+
+fn ends(effects: &[Effect]) -> usize {
+    effects.iter().filter(|e| matches!(e, Effect::EndIsland)).count()
+}
+
+/// Switched off with agents listed, the island used to stay up, frozen,
+/// until every agent left. It ends at once, once; nothing is sent to it
+/// while off; switched on again, the next change asks for a new one.
+#[test]
+fn switching_the_live_activity_off_ends_the_island_at_once_and_on_brings_it_back() {
+    let mut bench = Bench::quiet();
+    assert_eq!(islands(&bench.poll("%1", "working", T0, T0)), 1);
+    let off = Settings { live_activity: false, ..bench.monitor.settings() };
+    bench.monitor.set_settings(off);
+    assert_eq!(ends(&bench.monitor.take_effects()), 1);
+    bench.monitor.set_settings(off);
+    let effects = bench.poll("%1", "attention", T0 + 5.0, T0 + 6.0);
+    assert_eq!((islands(&effects), ends(&effects)), (0, 0), "{effects:?}");
+    bench.monitor.set_settings(Settings { live_activity: true, ..off });
+    let effects = bench.poll("%1", "working", T0 + 10.0, T0 + 11.0);
+    assert_eq!(islands(&effects), 1, "{effects:?}");
+}
+
+/// A launch with the switch off may find an island an earlier process
+/// left up: the first state it would have sent ends it instead.
+#[test]
+fn with_the_live_activity_off_the_first_sync_ends_an_island_left_up() {
+    let mut bench = Bench::new(Settings { live_activity: false, ..Settings::default() }, &[]);
+    let effects = bench.poll("%1", "working", T0, T0);
+    assert_eq!((islands(&effects), ends(&effects)), (0, 1), "{effects:?}");
 }

@@ -121,9 +121,24 @@ case "$STATE" in
   *) exit 0 ;;
 esac
 
+# The pane this status is about: where a tap lands, and the key of its
+# waiting entry and its finish card on the phone. A herdr pane goes by
+# herdr's own id (B434). Every push from outside tmux used to name `%0`, a
+# pane herdr never has: its card was not taken down once answered, the next
+# question inside fifteen minutes came in silent, and every agent on the
+# host shared one entry and one finish card. herdr's panes can inherit a
+# $TMUX (its server started inside tmux) that knows nothing of them, so in
+# a herdr pane tmux is not asked for the session. An id that couldn't be a
+# collapse id (the relay's rule) falls back to `%0`.
 PANE="${TMUX_PANE:-%0}"
 SESSION=""
-if [ -n "${TMUX:-}" ] && command -v tmux >/dev/null 2>&1; then
+if [ -n "${HERDR_PANE_ID:-}" ]; then
+  PANE="%0"
+  case "$HERDR_PANE_ID" in
+    *[!A-Za-z0-9:._-]*) ;;
+    *) [ ${#HERDR_PANE_ID} -le 24 ] && PANE=$HERDR_PANE_ID ;;
+  esac
+elif [ -n "${TMUX:-}" ] && command -v tmux >/dev/null 2>&1; then
   SESSION=$(tmux display-message -p "#S" 2>/dev/null || echo "")
 fi
 HOST="${MOSHPIT_PUSH_HOST:-$(hostname 2>/dev/null || echo host)}"

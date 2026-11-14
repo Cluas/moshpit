@@ -27,11 +27,14 @@ import WidgetKit
 @Observable
 final class AgentActivityMonitor {
 
-    /// The three things the monitor asks of the notification center.
+    /// What the monitor asks of the notification center.
     struct Notifier {
         var add: (UNNotificationRequest) -> Void
         var withdraw: (_ identifier: String) -> Void
         var requestAuthorization: () -> Void
+        /// The identifiers of the notifications it holds, handed to the
+        /// completion on any queue.
+        var delivered: (_ completion: @escaping @Sendable ([String]) -> Void) -> Void = { $0([]) }
 
         static var system: Notifier { Notifier(
             add: { UNUserNotificationCenter.current().add($0) },
@@ -42,8 +45,18 @@ final class AgentActivityMonitor {
             },
             requestAuthorization: {
                 UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { _, _ in }
+            },
+            delivered: { completion in
+                UNUserNotificationCenter.current().getDeliveredNotifications { notes in
+                    completion(notes.map(\.request.identifier))
+                }
             }) }
     }
+
+    /// The saved connections' ids, nil while they can't be told (before the
+    /// first unlock): a card of a connection no longer saved goes with it.
+    /// Set by the app; nil until then, which judges no connection gone.
+    @ObservationIgnored var savedConnections: () -> Set<UUID>? = { nil }
 
     private struct ConnRef {
         let connection: ServerConnection
@@ -157,6 +170,25 @@ final class AgentActivityMonitor {
         startSweepTimerIfNeeded()
         drive { $0.track(conn: id.uuidString, label: connection.displayName) }
         sendTree(connectionId: id)
+        sweepDelivered()
+    }
+
+    /// Hand the machine the agent cards the notification center holds, so a
+    /// card nothing stands behind any more is taken down (B433): a pushed
+    /// "needs you" whose question ended while the app was away. On every
+    /// track and every return to the foreground.
+    func sweepDelivered() {
+        notifier.delivered { [weak self] ids in
+            Task { @MainActor in self?.judgeDelivered(ids) }
+        }
+    }
+
+    private func judgeDelivered(_ ids: [String]) {
+        let ours = ids.filter { $0.hasPrefix("moshpit.attention.") || $0.hasPrefix("moshpit.done.") }
+        guard !ours.isEmpty else { return }
+        let saved = savedConnections().map { $0.map(\.uuidString) }
+        let now = self.now
+        drive { $0.delivered(ids: ours, saved: saved, now: now) }
     }
 
     /// Track a connection once its multiplexer control plane exists — and
@@ -277,7 +309,11 @@ final class AgentActivityMonitor {
     // MARK: - The machine's answers
 
     private func drive(_ step: (AgentMachine) -> [AgentEffectValue]) {
-        machine.setSettings(settings: Self.value(of: settings))
+        // What a switch changed does first: the island ended when the Live
+        // Activity was turned off (B436), within a sweep of it.
+        for effect in machine.setSettings(settings: Self.value(of: settings)) {
+            apply(effect)
+        }
         for effect in step(machine) {
             apply(effect)
         }

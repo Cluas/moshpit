@@ -88,7 +88,9 @@ extension View {
     func moshpitForm() -> some View {
         self
             .scrollContentBackground(.hidden)
-            .background(Ink.screenBG)
+            // The page's paper in the light appearance, the theme's screen
+            // in the dark one (R18).
+            .background(Ink.pageBG)
     }
 
     /// Rows in the app's ink rather than the system's grey: the navy-black

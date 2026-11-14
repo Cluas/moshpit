@@ -49,9 +49,13 @@ use crate::{
     ui::{
         button::{IconButtonSize, IconVariant, icon_button},
         control::{option, segmented, select, switch},
+        empty::{EmptyVariant, empty},
+        field::{field, number_input},
+        icon::{IconSize, Tone, icon},
         page,
-        row::{Row, row},
+        row::{GAP, LEADING, PADDING_X, Row, row},
         section::{Inset, section},
+        status::Status,
         swatch::{self, CursorColor, cursor_colors},
         tokens::{number, token},
         typography::TextToken,
@@ -300,6 +304,31 @@ pub enum Message {
     Settings(Box<SettingsState>),
     /// `{"op": "reveal", "anchor": …}`: scroll the list to `anchor`.
     Reveal(Anchor),
+    /// `{"op": "hosts", "hosts": […]}`: the saved connections, for Set up a
+    /// host's list ([`Part::Hosts`]).
+    Hosts(Vec<HostEntry>),
+}
+
+/// A saved connection on Set up a host's list.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct HostEntry {
+    /// The connection's id, which a pick tells (`{"ev": "setup", "id": …}`).
+    pub id: String,
+    /// Its name (its `user@host` when it has none).
+    pub name: String,
+    pub user: String,
+    pub host: String,
+    pub port: i64,
+    /// A session of it is connected: its host can be set up now.
+    pub live: bool,
+}
+
+/// `{"op": "hosts"}`'s fields.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Hosts {
+    hosts: Vec<HostEntry>,
 }
 
 /// `{"op": "reveal"}`'s fields.
@@ -321,6 +350,9 @@ impl Message {
             "reveal" => serde_json::from_value::<Reveal>(fields)
                 .map(|reveal| Message::Reveal(reveal.anchor))
                 .map_err(|e| format!("settings: reveal: {e}")),
+            "hosts" => serde_json::from_value::<Hosts>(fields)
+                .map(|hosts| Message::Hosts(hosts.hosts))
+                .map_err(|e| format!("settings: hosts: {e}")),
             other => Err(format!("settings: no op {other:?}")),
         }
     }
@@ -334,6 +366,7 @@ impl Message {
                 value.to_string()
             }
             Message::Reveal(anchor) => json!({"op": "reveal", "anchor": anchor}).to_string(),
+            Message::Hosts(hosts) => json!({"op": "hosts", "hosts": hosts}).to_string(),
         }
     }
 }
@@ -439,6 +472,8 @@ pub enum Setting {
     LockScreenDetail(bool),
     VoiceInput(bool),
     Appearance(AppearanceChoice),
+    /// The UDP ports mosh binds in, from and to ([`udp_ports`]).
+    UdpRange([i64; 2]),
 }
 
 impl Setting {
@@ -463,6 +498,7 @@ impl Setting {
             Setting::LockScreenDetail(on) => ("lockScreenDetail", json!(on)),
             Setting::VoiceInput(on) => ("voiceInput", json!(on)),
             Setting::Appearance(choice) => ("appearance", json!(choice.id())),
+            Setting::UdpRange(range) => ("udpRange", json!(range)),
         };
         json!({"ev": "set", "key": key, "value": value})
     }
@@ -482,8 +518,10 @@ const RETENTION: [i64; 3] = [1, 7, 0];
 const FONT_MIN: f64 = 8.0;
 const FONT_MAX: f64 = 18.0;
 
-/// A page of Settings: the hub, or a page it opens (`{"page": …}` in the
-/// screen's params; `{"ev": "open", "page": …}` asks the host for one).
+/// A page of Settings: the hub, a page it opens, or a page the host pushes
+/// on top: for one of the hub's rows, or one of those pages opens on the
+/// stack (`{"page": …}` in the screen's params;
+/// `{"ev": "open", "page": …}` asks the host for one).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Part {
     Hub,
@@ -492,6 +530,14 @@ pub enum Part {
     Connections,
     Notifications,
     Voice,
+    /// Set up a host: the saved connections, to pick the one to set up
+    /// (pushed for the hub's Set up a host when there is not exactly one).
+    Hosts,
+    /// Connections › UDP port range (UI-DESIGN §6.4: an edit page, two
+    /// number fields).
+    UdpRange,
+    /// Notifications › How notifications work.
+    NotificationInfo,
 }
 
 impl Part {
@@ -504,6 +550,11 @@ impl Part {
         Part::Voice,
     ];
 
+    /// The pages the host pushes beside [`Self::PAGES`], the screen again on
+    /// that page: for a row of the hub's (Set up a host's list) and for the
+    /// pages those pages open on the stack (R18).
+    pub const PUSHED: [Part; 3] = [Part::Hosts, Part::UdpRange, Part::NotificationInfo];
+
     /// What the host calls it (the hub: nothing).
     pub fn id(self) -> &'static str {
         match self {
@@ -513,14 +564,29 @@ impl Part {
             Part::Connections => "connections",
             Part::Notifications => "notifications",
             Part::Voice => "voice",
+            Part::Hosts => "hosts",
+            Part::UdpRange => "udp-range",
+            Part::NotificationInfo => "notification-info",
         }
     }
 
-    /// The part a screen's params name: the hub for none, or for a name no
-    /// page has.
+    /// The page of the hub's called `id` ([`Self::PAGES`]); the hub for
+    /// none, or for a name no page of the hub's has. What a host routes the
+    /// hub's rows by.
     pub fn named(id: Option<&str>) -> Part {
         Self::PAGES
             .into_iter()
+            .find(|part| Some(part.id()) == id)
+            .unwrap_or(Part::Hub)
+    }
+
+    /// The part a screen's params name: a page of the hub's or one the host
+    /// pushes ([`Self::PUSHED`]); the hub for none, or for a name no part
+    /// has.
+    pub fn of(id: Option<&str>) -> Part {
+        Self::PAGES
+            .into_iter()
+            .chain(Self::PUSHED)
             .find(|part| Some(part.id()) == id)
             .unwrap_or(Part::Hub)
     }
@@ -534,6 +600,9 @@ impl Part {
             Part::Connections => t!("Connections"),
             Part::Notifications => t!("Notifications"),
             Part::Voice => t!("Voice input"),
+            Part::Hosts => t!("Set up a host"),
+            Part::UdpRange => t!("UDP Port Range"),
+            Part::NotificationInfo => t!("How notifications work"),
         }
     }
 
@@ -571,8 +640,9 @@ pub fn SettingsScreen(props: ScreenProps) -> impl IntoElement {
     let params = channel.as_ref().map(|c| c.params()).unwrap_or_default();
     let bar = BarMetrics::or_standard(params.bar);
     let ran_with = params.theme;
-    let part = Part::named(params.page.as_deref());
+    let part = Part::of(params.page.as_deref());
     let state = State(signal(None::<SettingsState>));
+    let hosts = signal(Vec::<HostEntry>::new());
     let anchors = Anchors {
         cursor: element_ref(),
         behavior: element_ref(),
@@ -595,6 +665,7 @@ pub fn SettingsScreen(props: ScreenProps) -> impl IntoElement {
                 state.0.set(Some(*next));
             }
             Message::Reveal(anchor) => anchors.reveal(anchor),
+            Message::Hosts(next) => hosts.set(next),
         },
     );
     let tell = tell_host(channel);
@@ -608,7 +679,7 @@ pub fn SettingsScreen(props: ScreenProps) -> impl IntoElement {
         Part::Hub => hub(root, state, tell, anchors, ready),
         part => {
             let back = params.back.clone().unwrap_or_else(|| t!("Settings"));
-            subpage(root, part, back, state, tell, anchors, ready)
+            subpage(root, part, back, state, hosts, tell, anchors)
         }
     }
 }
@@ -969,20 +1040,28 @@ fn subpage(
     part: Part,
     back: String,
     state: State,
+    hosts: Signal<Vec<HostEntry>>,
     tell: Tell,
     anchors: Anchors,
-    ready: Memo<bool>,
 ) -> AnyElement {
+    // The body waits for the host's first post.
+    let ready = computed(move || state.0.with(Option::is_some));
     let bar = anchors.bar;
     let scrolled = nav_bar::ScrollEdge::new();
+    // The UDP range's page edits a draft, which its bar's Save keeps.
+    let ports = (part == Part::UdpRange).then(|| Ports::new(state, tell.clone()));
     let body = {
         let tell = tell.clone();
+        let ports = ports.clone();
         move || {
             let groups = match part {
                 Part::Appearance => appearance(state, &tell),
                 Part::Terminal => terminal(state, &tell, anchors),
                 Part::Connections => connections(state, &tell, anchors),
                 Part::Notifications => notifications(state, &tell, anchors),
+                Part::Hosts => host_list(hosts, &tell),
+                Part::UdpRange => ports.clone().map(udp_range).unwrap_or_default(),
+                Part::NotificationInfo => notification_info(),
                 Part::Voice | Part::Hub => voice(state, &tell),
             };
             page::page(
@@ -1004,11 +1083,355 @@ fn subpage(
         back_title: back,
         title: nav_bar::fixed(part.title()),
         leading: None,
-        trailing: Vec::new(),
+        trailing: ports.map(|ports| ports.save_button()).into_iter().collect(),
         on_back: Box::new(move || tell(json!({"ev": "back"}))),
         scrolled,
     }))
     .into_element()
+}
+
+/// Set up a host's list: every saved connection, its name over where it
+/// reaches, connected or not; a pick tells the host (`{"ev": "setup",
+/// "id": …}`), which opens the host's setup or offers to connect first.
+fn host_list(hosts: Signal<Vec<HostEntry>>, tell: &Tell) -> Vec<AnyElement> {
+    let tell = tell.clone();
+    vec![
+        dynamic(move || {
+            let list = hosts.get();
+            let tell = tell.clone();
+            untracked(move || {
+                let mut group = section().test_id("settings-hosts-group");
+                if list.is_empty() {
+                    group = group.item(
+                        empty(t!("No connections yet"))
+                            .variant(EmptyVariant::Inline)
+                            .icon("server.rack")
+                            .test_id("settings-hosts-none"),
+                        Inset::Content,
+                    );
+                }
+                for host in list {
+                    let (id, tell) = (host.id.clone(), tell.clone());
+                    group = group.row(
+                        row(host.name.clone())
+                            .subtitle(crate::host_setup::address(&host.user, &host.host, host.port))
+                            .mono_subtitle()
+                            .value(if host.live {
+                                t!("Connected")
+                            } else {
+                                t!("Not connected")
+                            })
+                            .value_dot(if host.live {
+                                Status::Live
+                            } else {
+                                Status::Offline
+                            })
+                            .chevron()
+                            .on_press(move || tell(json!({"ev": "setup", "id": id})))
+                            .test_id(&format!("settings-host-{}", host.id)),
+                    );
+                }
+                group
+                    .footer(t!(
+                        "Host setup is automatic. Connecting to a host installs and repairs everything it needs — scripts, hooks registration, push pairing — and asks before its first install. Connect to a host to inspect or remove its setup here."
+                    ))
+                    .into_element()
+            })
+        })
+        .into_element(),
+    ]
+}
+
+// --- Connections › UDP port range -----------------------------------------------
+
+/// Which of the range's two ports.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Side {
+    From,
+    To,
+}
+
+/// What is wrong with a UDP port range ([`udp_ports`]), and on which of its
+/// fields it shows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PortsError {
+    /// Not a whole number.
+    NotNumeric(Side),
+    /// Outside 1–65535.
+    OutOfBounds(Side),
+    /// From is past To (shown under To).
+    Inverted,
+}
+
+impl PortsError {
+    /// The field it shows under.
+    pub fn side(self) -> Side {
+        match self {
+            PortsError::NotNumeric(side) | PortsError::OutOfBounds(side) => side,
+            PortsError::Inverted => Side::To,
+        }
+    }
+
+    /// What it says, in the app's language.
+    pub fn words(self) -> String {
+        match self {
+            PortsError::NotNumeric(_) => t!("Enter numeric ports."),
+            PortsError::OutOfBounds(_) => t!("Ports must be 1–65535."),
+            PortsError::Inverted => t!("From must be ≤ To."),
+        }
+    }
+}
+
+/// The UDP port range `from`–`to` as typed: both whole numbers (spaces
+/// around them ignored), each a port (1–65535), from no later than to. The
+/// rule the SwiftUI editor keeps (`UDPPortRange.validate`); the first
+/// field wrong is the one named.
+pub fn udp_ports(from: &str, to: &str) -> Result<[i64; 2], PortsError> {
+    let number = |text: &str, side| {
+        text.trim()
+            .parse::<i64>()
+            .map_err(|_| PortsError::NotNumeric(side))
+    };
+    let (from, to) = (number(from, Side::From)?, number(to, Side::To)?);
+    for (port, side) in [(from, Side::From), (to, Side::To)] {
+        if !(1..=65535).contains(&port) {
+            return Err(PortsError::OutOfBounds(side));
+        }
+    }
+    if from > to {
+        return Err(PortsError::Inverted);
+    }
+    Ok([from, to])
+}
+
+/// The UDP range's page: the draft its two fields edit, and its Save.
+#[derive(Clone)]
+struct Ports {
+    state: State,
+    tell: Tell,
+    /// What each field holds once edited; the stored port until then.
+    from: Signal<Option<String>>,
+    to: Signal<Option<String>>,
+    /// What Save found wrong, until the field it names is edited.
+    error: Signal<Option<PortsError>>,
+}
+
+impl Ports {
+    fn new(state: State, tell: Tell) -> Ports {
+        Ports {
+            state,
+            tell,
+            from: signal(None),
+            to: signal(None),
+            error: signal(None),
+        }
+    }
+
+    /// The stored port on `side`.
+    fn stored(&self, side: Side) -> i64 {
+        let at = side as usize;
+        self.state.read(|s| s.udp_range[at])
+    }
+
+    /// Keeps the range the fields hold and goes back, or says what is wrong
+    /// under the field it names. A range left as it was tells nothing.
+    fn save(&self) {
+        let typed = |draft: Signal<Option<String>>, side| {
+            draft
+                .get_untracked()
+                .unwrap_or_else(|| self.stored(side).to_string())
+        };
+        match udp_ports(&typed(self.from, Side::From), &typed(self.to, Side::To)) {
+            Ok(range) => {
+                if range != [self.stored(Side::From), self.stored(Side::To)] {
+                    (self.tell)(Setting::UdpRange(range).event());
+                }
+                (self.tell)(json!({"ev": "back"}));
+            }
+            Err(error) => {
+                haptic(Haptic::Notification(HapticNotification::Error));
+                self.error.set(Some(error));
+            }
+        }
+    }
+
+    /// The bar's Save.
+    fn save_button(self) -> nav_bar::BarButton {
+        nav_bar::BarButton {
+            label: t!("Save"),
+            content: nav_bar::BarContent::Text,
+            enabled: computed(|| true),
+            emphasized: true,
+            test_id: "settings-udp-save",
+            on_press: Box::new(move || self.save()),
+            menu: None,
+        }
+    }
+
+    /// The field for `side`: the stored port to start, the draft as typed,
+    /// what Save found wrong with it under it.
+    fn field(
+        &self,
+        side: Side,
+        label: String,
+        placeholder: &'static str,
+        next: Option<ElementRef>,
+        me: ElementRef,
+    ) -> AnyElement {
+        let (draft, error) = (
+            match side {
+                Side::From => self.from,
+                Side::To => self.to,
+            },
+            self.error,
+        );
+        let stored = self.stored(side);
+        let mut input = number_input()
+            .default_value(move || stored.to_string())
+            .placeholder(placeholder)
+            .max_length(5)
+            .element_ref(&me)
+            .on_change(move |text: String| {
+                draft.set(Some(text));
+                if error.get_untracked().is_some_and(|e| e.side() == side) {
+                    error.set(None);
+                }
+            });
+        input = match next {
+            Some(next) => input.next(&next),
+            None => {
+                let ports = self.clone();
+                input.on_submit(move || ports.save())
+            }
+        };
+        let id = match side {
+            Side::From => "settings-udp-from",
+            Side::To => "settings-udp-to",
+        };
+        field(label, input)
+            .error(move || {
+                error
+                    .get()
+                    .filter(|e| e.side() == side)
+                    .map(|e| e.words().into())
+            })
+            .test_id(id)
+            .into_element()
+    }
+}
+
+/// Connections › UDP port range: From and To, in a group whose footer says
+/// what the range is for.
+fn udp_range(ports: Ports) -> Vec<AnyElement> {
+    let (from, to) = (element_ref(), element_ref());
+    vec![
+        section()
+            .header(t!("UDP PORT RANGE"))
+            .item(
+                ports.field(Side::From, t!("From"), "60000", Some(to), from),
+                Inset::Content,
+            )
+            .item(
+                ports.field(Side::To, t!("To"), "61000", None, to),
+                Inset::Content,
+            )
+            .footer(t!(
+                "mosh binds one UDP port in this range per session. Open it outbound from your iPhone and inbound on the server (default 60000–61000)."
+            ))
+            .test_id("settings-udp-group")
+            .into_element(),
+    ]
+}
+
+// --- Notifications › How notifications work ----------------------------------------
+
+/// How notifications work: what each part of them does, a symbol in its
+/// colour before a title over what it says.
+fn notification_info() -> Vec<AnyElement> {
+    let mut parts = vec![(
+        "bell.fill",
+        Tone::Warning,
+        t!("Agents stamp their state"),
+        t!(
+            "Coding agents (Claude Code, Codex, …) report working / needs-you / done through hooks Moshpit installs on your host — precise states, not guesses. The terminal bell still works as a fallback for everything else."
+        ),
+    )];
+    if rows(Os::current()).live_activity {
+        parts.push((
+            "bubbles.and.sparkles.fill",
+            Tone::Primary,
+            t!("Live Activity"),
+            t!(
+                "While a session is attached, the Dynamic Island shows whether the agent is working, idle, or waiting on you. Tapping it deep-links straight back to that pane."
+            ),
+        ));
+    }
+    parts.push((
+        "paperplane.fill",
+        Tone::Info,
+        t!("Push, sealed end-to-end"),
+        t!(
+            "When the app isn’t running, your host sends the alert through Moshpit’s push relay. It is encrypted on your host with a key only this device holds — the relay and Apple carry ciphertext and can read none of it. Delivered even from a locked phone."
+        ),
+    ));
+    parts.push((
+        "moon.zzz.fill",
+        Tone::Muted,
+        t!("Quiet by design"),
+        t!(
+            "A question must stand for 30 seconds before any phone hears about it — answered at your desk means never announced. All waiting agents share one summary card; only the first rings. A finished turn shows the prompt it answered and only chimes if it ran three minutes or more. Parked agents stay silent."
+        ),
+    ));
+    let mut group = section().test_id("settings-notification-info-group");
+    for (n, (symbol, tone, title, words)) in parts.into_iter().enumerate() {
+        group = group.item(explained(symbol, tone, title, words, n), Inset::Lead);
+    }
+    vec![group.into_element()]
+}
+
+/// One part of the explainer: its symbol in the rows' leading lane, its
+/// title over its words, which wrap.
+fn explained(
+    symbol: &'static str,
+    tone: Tone,
+    title: String,
+    words: String,
+    n: usize,
+) -> AnyElement {
+    view()
+        .w_full()
+        .flex_row()
+        .items_start()
+        .gap(px(GAP))
+        .px(px(PADDING_X))
+        .py(px(12.0))
+        .test_id(&format!("settings-notification-info-{n}"))
+        .child(
+            view()
+                .w(px(LEADING))
+                .flex_shrink_0()
+                .items_center()
+                .accessibility_elements_hidden(true)
+                .child(icon(symbol).size(IconSize::Md).tone(tone)),
+        )
+        .child(
+            view()
+                .flex_1()
+                .min_w(px(0.0))
+                .gap(px(4.0))
+                .child(
+                    TextToken::Headline
+                        .apply(text(title))
+                        .text_color(move || token("foreground"))
+                        .role(AccessibilityRole::Header),
+                )
+                .child(
+                    TextToken::Subhead
+                        .apply(text(words))
+                        .text_color(move || token("muted-foreground")),
+                ),
+        )
+        .into_element()
 }
 
 /// A switch row: `title` (and a one-line `subtitle`), the switch on while

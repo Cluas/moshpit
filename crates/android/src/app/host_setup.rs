@@ -35,6 +35,25 @@ pub struct HostSetupPage {
     pub page: u64,
 }
 
+/// `{"op": "host", …}`: which connection `page` sets up, by its name and
+/// where it reaches (the page names it, however it was opened).
+pub fn identity(app: &App, page: &HostSetupPage) -> Option<String> {
+    let connection = app
+        .connections
+        .connections()
+        .iter()
+        .find(|c| c.id == page.connection)?;
+    Some(
+        moshpit_ui::host_setup::Message::Host(moshpit_ui::host_setup::Subject {
+            name: connection.display_name(),
+            user: connection.username.clone(),
+            host: connection.host.clone(),
+            port: connection.port,
+        })
+        .to_json(),
+    )
+}
+
 /// `{"op": "host-setup", …}` for `page`.
 pub fn message(app: &App, page: &HostSetupPage) -> Option<String> {
     let care = app.care.as_ref()?;
@@ -237,7 +256,11 @@ impl App {
         else {
             return;
         };
-        if let Some(json) = message(self, page) {
+        let (host, setup) = (identity(self, page), message(self, page));
+        if let Some(json) = host {
+            self.post_changed(surface, "host", json);
+        }
+        if let Some(json) = setup {
             self.post_changed(surface, "host-setup", json);
         }
     }

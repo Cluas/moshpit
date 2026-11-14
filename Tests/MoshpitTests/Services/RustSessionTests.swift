@@ -205,7 +205,7 @@ struct RustSessionTests {
         connection.multiplexer = .tmux
         connection.useSOCKSProxy = true
         connection.socksProxyHost = "proxy"
-        let spec = RustSessionDriver.spec(for: connection, grid: (cols: 70, rows: 40))
+        let spec = RustSessionDriver.spec(for: connection, grid: (cols: 70, rows: 40), udp: (60001, 60999))
         #expect(spec.connectionId == connection.id.uuidString)
         #expect(spec.user == "me" && spec.host == "box.local" && spec.port == 2222)
         #expect(spec.mosh && spec.multiplexer == .tmux)
@@ -215,6 +215,21 @@ struct RustSessionTests {
         #expect(spec.cols == 70 && spec.rows == 40)
         connection.useSOCKSProxy = false
         #expect(RustSessionDriver.spec(for: connection, grid: (80, 24)).proxyHost == nil)
+    }
+
+    /// B430: Settings › UDP ports said "for every connection", but a
+    /// connect asked mosh-server for the range the connection stored at its
+    /// last save — a narrowed range never reached a saved connection, and
+    /// mosh landed outside the firewall: connected, black.
+    @Test("a mosh connect asks for Settings' UDP ports, not the ones the connection last saved")
+    func specTakesSettingsUDPRange() {
+        var connection = ServerConnection(host: "box.local", username: "me", connectionProtocol: .mosh)
+        connection.moshPortRangeStart = 60001
+        connection.moshPortRangeEnd = 60999
+        let spec = RustSessionDriver.spec(for: connection, grid: (80, 24), udp: (60000, 60010))
+        let ports = (spec.moshPortLow, spec.moshPortHigh)
+        #expect(ports.0 == 60000)
+        #expect(ports.1 == 60010)
     }
 
     @Test("a Secure Enclave key's public half is an authorized_keys line")

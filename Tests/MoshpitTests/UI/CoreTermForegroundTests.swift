@@ -183,6 +183,49 @@ struct CoreTermForegroundTests {
         #expect(orphan.superview == nil)
     }
 
+    // MARK: B445: a first open's frame, drawn whole
+
+    @Test("B445: into a window, every row is encoded and drawn again, whatever was drawn before")
+    func intoAWindowDrawsWhole() throws {
+        let view = makeView()
+        guard view.canvasKind == "metal" else { return }
+        view.feed(Data("first open\r\nidle pane".utf8))
+        #expect(view.settle { $0.rowText(0) == "first open" })
+        let before = view.fullRedraws
+        let window = inWindow(view)
+        defer { window.isHidden = true }
+        #expect(view.fullRedraws > before, "the one full frame came before the window: drawn whole on arrival")
+    }
+
+    @Test("B445: a new size draws every row again at once, with no new bytes")
+    func aNewSizeDrawsWhole() throws {
+        let view = makeView()
+        guard view.canvasKind == "metal" else { return }
+        view.feed(Data("idle pane".utf8))
+        let window = inWindow(view)
+        defer { window.isHidden = true }
+        #expect(view.settle { $0.rowText(0) == "idle pane" })
+        let before = view.fullRedraws
+        view.frame = CGRect(x: 0, y: 0, width: 360, height: 400)
+        view.layoutIfNeeded()
+        #expect(view.fullRedraws == before + 1, "the keyboard, a rotation, the slot's first layout")
+        view.setNeedsLayout()
+        view.layoutIfNeeded()
+        #expect(view.fullRedraws == before + 1, "the same size again: a render, nothing encoded anew")
+    }
+
+    @Test("B445: frames drawn in a window on screen are followed to the screen")
+    func framesAreFollowedToTheScreen() async throws {
+        let view = makeView()
+        guard view.canvasKind == "metal" else { return }
+        view.feed(Data("shown".utf8))
+        let window = inWindow(view)
+        defer { window.isHidden = true }
+        try await settle { view.framesShown > 0 }
+        #expect(view.framesShown > 0, "a drawable on screen reports its presentation")
+        #expect((view.framesSinceCanvas ?? 0) > 0, "what the stage's check reads")
+    }
+
     // MARK: The NSH stage on the app's return
 
     @Test("On return, a terminal another host took is hosted in the slot again")
@@ -229,5 +272,60 @@ struct CoreTermForegroundTests {
         #expect(stage.reassert() == .fine, "a veil inside its cap stays")
         #expect(stage.reassert(now: CACurrentMediaTime() + 60) == .unveiled)
         #expect(!coordinator.isCoverPresented)
+    }
+}
+
+/// B445: a frame the core's terminal drew can be dropped by the layer or
+/// refused by the GPU, and an idle pane sends nothing that would draw
+/// again; every frame is followed to the screen, and one lost with nothing
+/// newer on its way is drawn again, a few times at most (headless).
+@Suite("a frame followed to the screen (B445)")
+struct CoreTermPresentationTests {
+    @Test("A frame lost with nothing newer on its way is drawn again")
+    func aLostFrameIsDrawnAgain() {
+        let p = CoreTermPresentation()
+        let frame = p.issue()
+        #expect(p.unresolved(frame))
+        #expect(p.neverReached(frame, active: true) == .drawAgain)
+        #expect(!p.unresolved(frame))
+        #expect(p.framesNeverShown == 1)
+    }
+
+    @Test("Nothing is lost when a newer frame got there or is on its way, or the app is not active")
+    func nothingLost() {
+        let p = CoreTermPresentation()
+        let old = p.issue()
+        let newer = p.issue()
+        #expect(p.neverReached(old, active: true) == .nothingLost, "its successor decides")
+        p.shown(newer)
+        #expect(p.neverReached(old, active: true) == .nothingLost, "a newer one is on screen")
+        let last = p.issue()
+        #expect(p.neverReached(last, active: false) == .nothingLost, "the app's return draws")
+        #expect(p.currentStreak == 0)
+    }
+
+    @Test("Drawn again up to the cap, then a new canvas once, then nothing until a frame is shown")
+    func theCap() {
+        let p = CoreTermPresentation()
+        var verdicts: [CoreTermPresentation.Verdict] = []
+        for _ in 0..<(CoreTermPresentation.retryCap + 3) {
+            verdicts.append(p.neverReached(p.issue(), active: true))
+        }
+        #expect(verdicts.prefix(CoreTermPresentation.retryCap).allSatisfy { $0 == .drawAgain })
+        #expect(verdicts[CoreTermPresentation.retryCap] == .giveUp)
+        #expect(verdicts.dropFirst(CoreTermPresentation.retryCap + 1).allSatisfy { $0 == .nothingLost })
+        p.shown(p.issue())
+        #expect(p.neverReached(p.issue(), active: true) == .drawAgain, "a frame on screen starts it over")
+        #expect(p.shownFrames == 1)
+    }
+
+    @Test("A frame's fate is said once, whichever of its two reports comes first")
+    func aFateIsSaidOnce() {
+        final class Heard: @unchecked Sendable { var said: [Bool] = [] }
+        let heard = Heard()
+        let fate = CoreTermFrameFate { heard.said.append($0) }
+        fate.resolve(shown: false)
+        fate.resolve(shown: true)
+        #expect(heard.said == [false])
     }
 }

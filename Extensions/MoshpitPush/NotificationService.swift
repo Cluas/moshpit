@@ -56,17 +56,29 @@ final class NotificationService: UNNotificationServiceExtension {
             contentHandler(content)
             return
         }
-        let secrets = PushPairingStore.secretsNewestFirst()
-        guard let status = PushRemoteNotification.open(envelope, secrets: secrets) else {
+        let pairings = PushPairingStore.read()
+        let status: PushSealedBox.Status
+        switch PushRemoteNotification.open(envelope, pairings: pairings) {
+        case .opened(let opened):
+            status = opened
+        case .misnamed:
+            // Sealed with one connection's key, naming another: nothing in it
+            // is shown, as if no key had opened it (B435).
+            Log.push.error("a push opened with one connection's key named another — showing the generic fallback")
+            PushDiagnostics.record("a push opened with one connection's key named another — showed the fallback")
+            content.categoryIdentifier = ""
+            contentHandler(content)
+            return
+        case .unopened:
             // The count is the whole diagnosis: 0 means the store did not reach
             // the extension (App Group or file protection), while n > 0 means the
             // sending host is paired to a different install of the app. Those
             // have completely different fixes and look identical on screen.
-            Log.push.error("no key opened this envelope (\(secrets.count, privacy: .public) available) — showing the generic fallback")
+            Log.push.error("no key opened this envelope (\(pairings.count, privacy: .public) available) — showing the generic fallback")
             // The number is the diagnosis: 0 means this process could not reach
             // the pairing store at all, anything else means the sending host is
             // paired to a different install.
-            PushDiagnostics.record("no key opened this envelope (\(secrets.count) available) — showed the fallback")
+            PushDiagnostics.record("no key opened this envelope (\(pairings.count) available) — showed the fallback")
             // And WITHOUT its action buttons. The category the relay set is
             // Allow/Deny/Reply, but those actions need the connection and pane
             // ids that only live inside the envelope we just failed to open — so
@@ -89,11 +101,16 @@ final class NotificationService: UNNotificationServiceExtension {
         // remembers the label the app gave it. A local card uses the same name,
         // so the two copies of one event finally read alike.
         let label = UUID(uuidString: status.conn)
-            .flatMap { PushPairingStore.pairing(for: $0)?.hostLabel }
+            .flatMap { id in pairings.first { $0.connectionId == id }?.hostLabel }
         // The standing store is what lets this process and the app agree on the
         // 0→1 edge — whichever of the push and the local announcement lands
         // first rings; the other sees "already standing" and stays silent.
-        if status.state == "attention" {
+        if status.agent == PushRemoteNotification.selfTestAgent {
+            // A pairing self-test is no agent's turn (B439): it neither joins
+            // nor leaves the waiting set, and rings no finish. Its "done" used
+            // to clear the pane it named — `%0`, where an agent often waits.
+            PushRemoteNotification.apply(status, to: content, prefs: prefs, label: label)
+        } else if status.state == "attention" {
             // With its place, as the card says it: the app redraws this card
             // from the entry when the set changes, and has only what is here.
             let edge = PushStanding.noteStanding(

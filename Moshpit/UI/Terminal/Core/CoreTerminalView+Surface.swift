@@ -73,9 +73,23 @@ extension CoreTerminalView: TerminalSurface {
     /// a drag begun in the local history (the flags not known yet) went to
     /// the program while the view stayed up there: old rows on top, the
     /// program's repaints underneath, until a keystroke — which didn't
-    /// bring it down either.
-    func releaseScrollHold() { scrollToBottom() }
+    /// bring it down either. Not for the terminal's own answers (B426).
+    func releaseScrollHold() {
+        guard !sendingReply else { return }
+        scrollToBottom()
+    }
     func discardScrollHold() {}
+
+    /// The terminal's own answers (to a cursor-position or colour query, a
+    /// focus report) out on the session's input path, which releases the
+    /// scroll hold for what it sends: they are not the person's, and leave
+    /// a history reader where it is (B426). They sent it to the bottom
+    /// whenever a program asked the terminal something.
+    func sendReply(_ data: Data) {
+        sendingReply = true
+        defer { sendingReply = false }
+        surfaceDelegate?.surface(self, send: data)
+    }
 
     // MARK: The program's mouse and paste
 
@@ -84,6 +98,8 @@ extension CoreTerminalView: TerminalSurface {
     // MARK: Pictures
 
     func snapshotView() -> UIView? { snapshot() }
+
+    // `redrawAll()` and `framesSinceCanvas`: CoreTerminalView.
 
     // MARK: mosh's predictive echo (crates/term/src/predict.rs)
 

@@ -28,15 +28,189 @@
 //! Nothing here guesses: a store whose read can't be trusted (the
 //! sealed-launch rule, [`crate::readiness`]), or one carrying an entry whose
 //! ref can't be read, makes the answer unknown, and unknown changes nothing.
+//!
+//! Fix (B428): an item a connection let go of but couldn't drop at once was
+//! left to "the sweep" — and the only sweep was recovery, which deletes
+//! nothing. A save that moved a connection off its own password or pasted
+//! key onto a managed key, while its session still signed in with the old
+//! item (B325), held the drop in memory until the session reconnected or
+//! ended; an app ended before that left the item for good: a password in
+//! the keychain with nothing naming it, a pasted key listed again as a
+//! "Recovered key". A drop the keychain refused, or one whose users couldn't
+//! be told, ended the same way. Now such an item goes on a list in the
+//! preferences ([`hold_release`], [`TO_RELEASE_KEY`]): dropped when its
+//! session lets go ([`release`]), and at a later launch once nothing names
+//! it ([`settle_releases`]); recovery never offers one as a key. Only what
+//! the list recorded is ever deleted this way — and only once no record
+//! names it at that moment — never an orphan nobody listed.
 
 use std::collections::BTreeSet;
+use std::sync::{Mutex, MutexGuard};
 
 use moshpit_seal::foundation::date::Date;
 use moshpit_seal::foundation::uuid::Uuid;
 
 use crate::connections::ConnectionStore;
-use crate::host::{KEYCHAIN_REF_PREFIX, Keychain, KeychainError, minted_this_launch};
+use crate::host::{Defaults, KEYCHAIN_REF_PREFIX, Keychain, KeychainError, minted_this_launch};
+use crate::plist::{self, Plist};
+use crate::readiness::Readiness;
 use crate::ssh_keys::{SshKeyAlgorithm, SshKeyRecord, SshKeySource, SshKeyStore};
+
+/// Where the items a connection let go of wait until they can be dropped
+/// (B428): the keychain accounts, a list of strings in the preferences.
+pub const TO_RELEASE_KEY: &str = "moshpit.secrets.toRelease";
+
+/// The accounts put on the list in this process. A session of this launch
+/// may still sign in with one (its reconnects read the item it started
+/// with, B325), so this launch's [`settle_releases`] leaves them; their own
+/// [`release`] drops them.
+static HELD: Mutex<BTreeSet<String>> = Mutex::new(BTreeSet::new());
+
+fn held() -> MutexGuard<'static, BTreeSet<String>> {
+    HELD.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// What a test calls a later launch: `account` no longer held by this
+/// process (as if it had ended), the list as stored untouched.
+#[cfg(test)]
+pub(crate) fn as_if_relaunched(account: &str) {
+    held().remove(account);
+}
+
+/// The accounts waiting to be dropped, as stored; `None` while the
+/// preferences can't be believed (a launch before the first unlock reads
+/// the list as empty).
+pub fn to_release(defaults: &dyn Defaults, readiness: &Readiness) -> Option<Vec<String>> {
+    if !readiness.is_readable(defaults) {
+        return None;
+    }
+    Some(plist::strings_in(defaults.get(TO_RELEASE_KEY).as_ref()).unwrap_or_default())
+}
+
+fn write_list(defaults: &dyn Defaults, list: Vec<String>) {
+    let value =
+        (!list.is_empty()).then(|| Plist::Array(list.into_iter().map(Plist::String).collect()));
+    defaults.set(TO_RELEASE_KEY, value);
+}
+
+/// Put `account` on the list: a connection let go of it and it can't be
+/// dropped now — its session still signs in with it (B325), what else
+/// names it can't be told, or the keychain kept it. It goes when its
+/// session lets go ([`release`]) or at a later launch once nothing names it
+/// ([`settle_releases`]), and is never listed as a recovered key. Only an
+/// account the app makes for a secret (`moshpit.secret.…`) goes on it, and
+/// only while the preferences can be believed. Whether it is on the list.
+pub fn hold_release(defaults: &dyn Defaults, readiness: &Readiness, account: &str) -> bool {
+    if !account.starts_with(KEYCHAIN_REF_PREFIX) {
+        return false;
+    }
+    held().insert(account.to_owned());
+    let Some(mut list) = to_release(defaults, readiness) else {
+        return false;
+    };
+    if !list.iter().any(|listed| listed == account) {
+        list.push(account.to_owned());
+        write_list(defaults, list);
+    }
+    true
+}
+
+/// Take `account` off the list (and out of this process's holds).
+fn unlist(defaults: &dyn Defaults, readiness: &Readiness, account: &str) {
+    held().remove(account);
+    if let Some(list) = to_release(defaults, readiness)
+        && list.iter().any(|listed| listed == account)
+    {
+        write_list(
+            defaults,
+            list.into_iter()
+                .filter(|listed| listed != account)
+                .collect(),
+        );
+    }
+}
+
+/// Drop `account` now if nothing names it — `referenced`: every account a
+/// saved record names ([`referenced`]), `None` when that can't be told —
+/// and keep it listed until it is dropped: what a connection that let go of
+/// its item does once its session no longer reads it (B325, B428).
+///
+/// - nothing names it: deleted, and off the list ([`ItemFate::Deleted`]);
+/// - something names it again: kept, and off the list — the record naming
+///   it has it now ([`ItemFate::Kept`]);
+/// - the keychain keeps it: listed, tried again at a later launch
+///   ([`ItemFate::Failed`]);
+/// - unknown: listed, nothing deleted ([`ItemFate::Unknown`]).
+pub fn release(
+    defaults: &dyn Defaults,
+    readiness: &Readiness,
+    account: &str,
+    referenced: Option<&BTreeSet<String>>,
+    keychain: &dyn Keychain,
+) -> ItemFate {
+    let Some(named) = referenced else {
+        hold_release(defaults, readiness, account);
+        return ItemFate::Unknown;
+    };
+    if named.contains(account) {
+        unlist(defaults, readiness, account);
+        return ItemFate::Kept;
+    }
+    // "Not found" is gone already: a keychain that says so for an item it
+    // doesn't have has nothing left to drop.
+    match keychain.delete(account) {
+        Ok(()) | Err(KeychainError::NotFound) => {
+            unlist(defaults, readiness, account);
+            ItemFate::Deleted
+        }
+        Err(error) => {
+            log::error!("keychain: it kept an item nothing names ({error}); listed for later");
+            hold_release(defaults, readiness, account);
+            ItemFate::Failed(error)
+        }
+    }
+}
+
+/// What a later launch does with the list once the saved records can be
+/// told (`referenced`, [`referenced`]'s): each account on it that nothing
+/// names now is deleted and comes off it; one something names again stays
+/// in the keychain and comes off it; one the keychain keeps stays on it.
+/// Accounts listed in this process are left (a session of this launch may
+/// still read one), and so is everything when the records can't be told.
+/// An entry that isn't an account the app makes comes off untouched. What
+/// became of each account looked at.
+pub fn settle_releases(
+    defaults: &dyn Defaults,
+    readiness: &Readiness,
+    referenced: Option<&BTreeSet<String>>,
+    keychain: &dyn Keychain,
+) -> Vec<(String, ItemFate)> {
+    let (Some(list), Some(named)) = (to_release(defaults, readiness), referenced) else {
+        return Vec::new();
+    };
+    let mut settled = Vec::new();
+    for account in list {
+        if held().contains(&account) {
+            continue;
+        }
+        let fate = if !account.starts_with(KEYCHAIN_REF_PREFIX) || named.contains(&account) {
+            ItemFate::Kept
+        } else {
+            match keychain.delete(&account) {
+                Ok(()) | Err(KeychainError::NotFound) => ItemFate::Deleted,
+                Err(error) => {
+                    log::error!("keychain: a listed item stays ({error}); tried again later");
+                    ItemFate::Failed(error)
+                }
+            }
+        };
+        if !matches!(fate, ItemFate::Failed(_)) {
+            unlist(defaults, readiness, &account);
+        }
+        settled.push((account, fate));
+    }
+    settled
+}
 
 /// Every keychain account a saved connection or a stored key record names;
 /// `None` when either store can't say. `excluding_connection` and
@@ -146,39 +320,19 @@ pub enum ItemFate {
     /// Kept: another connection or a key record names it, or the connection
     /// had none (or wasn't saved).
     Kept,
-    /// Kept: what else names it can't be told now. The sweep has it later.
+    /// Kept: what else names it can't be told now. Listed: a later launch
+    /// drops it once nothing names it (B428).
     Unknown,
-    /// The keychain wouldn't delete it. The sweep has it later.
+    /// The keychain wouldn't delete it. Listed: a later launch tries again
+    /// (B428).
     Failed(KeychainError),
-}
-
-/// Drop `account` once no saved connection and no key record names it
-/// (`excluding_connection`: the record about to go is not counted): what a
-/// connection deleted (B232) or no longer naming its own item (B325) does
-/// with the item.
-fn drop_unnamed(
-    account: &str,
-    connections: &ConnectionStore,
-    keys: &SshKeyStore,
-    excluding_connection: Option<Uuid>,
-    keychain: &dyn Keychain,
-) -> ItemFate {
-    match referenced(connections, keys, excluding_connection, None) {
-        None => ItemFate::Unknown,
-        Some(held) if held.contains(account) => ItemFate::Kept,
-        Some(_) => match keychain.delete(account) {
-            Ok(()) => ItemFate::Deleted,
-            Err(error) => {
-                log::error!("keychain: it kept an item nothing names ({error})");
-                ItemFate::Failed(error)
-            }
-        },
-    }
 }
 
 /// A saved connection's own item it no longer names (it signs in with a
 /// managed key now, B325): dropped once nothing else names it, by
-/// [`delete_connection`]'s rule. Call it after the connection is saved.
+/// [`delete_connection`]'s rule, and listed until it is ([`release`]). Call
+/// it after the connection is saved, and once its session no longer reads
+/// the item ([`hold_release`] until then).
 pub fn release_item(
     account: &str,
     connections: &mut ConnectionStore,
@@ -187,14 +341,30 @@ pub fn release_item(
 ) -> ItemFate {
     connections.reload_if_needed();
     keys.reload_if_needed();
-    drop_unnamed(account, connections, keys, None, keychain)
+    let named = referenced(connections, keys, None, None);
+    let (defaults, readiness) = connections.preferences();
+    release(defaults, readiness, account, named.as_ref(), keychain)
+}
+
+/// The list's items, at a launch once both stores can be trusted
+/// ([`settle_releases`] over what they name now).
+pub fn release_pending(
+    connections: &mut ConnectionStore,
+    keys: &mut SshKeyStore,
+    keychain: &dyn Keychain,
+) -> Vec<(String, ItemFate)> {
+    connections.reload_if_needed();
+    keys.reload_if_needed();
+    let named = referenced(connections, keys, None, None);
+    let (defaults, readiness) = connections.preferences();
+    settle_releases(defaults, readiness, named.as_ref(), keychain)
 }
 
 /// Delete connection `id`, and its keychain item with it once no other
 /// connection and no key record names it — a managed key's item stays while
 /// the key is listed; one whose key's record is already gone goes with the
 /// last connection on it. The record goes whatever becomes of the item: an
-/// item left behind is the sweep's.
+/// item left behind is listed for a later launch ([`release`], B428).
 pub fn delete_connection(
     id: Uuid,
     connections: &mut ConnectionStore,
@@ -210,7 +380,11 @@ pub fn delete_connection(
         .and_then(|c| c.keychain_ref.clone());
     let fate = match account {
         None => ItemFate::Kept,
-        Some(account) => drop_unnamed(&account, connections, keys, Some(id), keychain),
+        Some(account) => {
+            let named = referenced(connections, keys, Some(id), None);
+            let (defaults, readiness) = connections.preferences();
+            release(defaults, readiness, &account, named.as_ref(), keychain)
+        }
     };
     connections.delete(id);
     fate
@@ -248,7 +422,9 @@ pub fn is_ours(account: &str) -> bool {
 }
 
 /// Give every orphaned private key a key record again — its account
-/// [`is_ours`], no saved connection and no key record names it — and return
+/// [`is_ours`], no saved connection and no key record names it, and no
+/// connection let go of it (on the list [`hold_release`] keeps, B428:
+/// those are to be dropped, not offered back) — and return
 /// the records added. Each item is read without asking
 /// ([`Keychain::load_silently`]: one behind Face ID is left for now) and
 /// becomes a record only if `describe` reads it as a private key; anything
@@ -268,11 +444,15 @@ pub fn recover_orphans(
     now: Date,
 ) -> Result<Vec<SshKeyRecord>, RecoveryError> {
     referenced(connections, keys, None, None).ok_or(RecoveryError::Unknown)?;
+    // What a connection let go of is to be dropped, not offered back as a
+    // key (B428).
+    let (defaults, readiness) = connections.preferences();
+    let to_release = to_release(defaults, readiness).ok_or(RecoveryError::Unknown)?;
     let mut accounts = keychain.accounts().map_err(RecoveryError::Keychain)?;
     accounts.sort();
     let mut recovered = Vec::new();
     for account in accounts {
-        if !is_ours(&account) {
+        if !is_ours(&account) || to_release.contains(&account) || held().contains(&account) {
             continue;
         }
         let held = referenced(connections, keys, None, None).ok_or(RecoveryError::Unknown)?;
@@ -749,5 +929,276 @@ mod tests {
         ));
         assert!(keychain.0.exists(&orphan));
         assert!(s.keys.keys().is_empty());
+    }
+
+    // --- B428: what a connection let go of, listed until it is dropped ----
+
+    /// The list as stored.
+    fn listed(s: &Stores) -> Vec<String> {
+        to_release(s.defaults.as_ref(), &Readiness::Always).unwrap()
+    }
+
+    /// Connection `c`, saved, now signs in with managed key `key`: the item
+    /// it held for itself is named by nothing (B325).
+    fn moved_onto(s: &mut Stores, c: &ServerConnection, key: &SshKeyRecord) {
+        let mut moved = c.clone();
+        moved.auth_method = AuthMethod::Key;
+        moved.keychain_ref = key.keychain_ref.clone();
+        moved.ssh_key_id = Some(key.id);
+        s.connections.update(moved);
+    }
+
+    /// B428: a save let go of a connection's own pasted key while its
+    /// session still signed in with it; the app ended before the session
+    /// did. At the next launch the item is dropped — not listed in SSH Keys
+    /// as a "Recovered key".
+    #[test]
+    fn an_item_let_go_of_while_its_session_ran_is_dropped_at_the_next_launch_not_recovered() {
+        let mut s = stores();
+        let (pasted, managed) = (account(), account());
+        let keychain = MemoryKeychain::with([
+            (pasted.clone(), b"KEY pasted".to_vec()),
+            (managed.clone(), b"KEY managed".to_vec()),
+        ]);
+        let laptop = key("laptop", Some(&managed));
+        s.keys.add(laptop.clone());
+        let pi = connection("pi", None, Some(&pasted));
+        s.connections.add(pi.clone());
+        moved_onto(&mut s, &pi, &laptop);
+        // Its session still reads the item: held, not dropped.
+        let (defaults, readiness) = s.connections.preferences();
+        assert!(hold_release(defaults, readiness, &pasted));
+        assert_eq!(listed(&s), std::slice::from_ref(&pasted));
+        assert!(keychain.exists(&pasted));
+
+        // The app ends; the next launch.
+        as_if_relaunched(&pasted);
+        let mut next = stores_over(&s);
+        let recovered = recover(&mut next, &keychain).unwrap();
+        assert!(recovered.is_empty(), "offered back as a key: {recovered:?}");
+        let settled = release_pending(&mut next.connections, &mut next.keys, &keychain);
+        assert_eq!(settled, [(pasted.clone(), ItemFate::Deleted)]);
+        assert!(!keychain.exists(&pasted));
+        assert!(keychain.exists(&managed));
+        assert!(listed(&next).is_empty());
+    }
+
+    /// Stores over `s`'s preferences, read afresh: the next launch's.
+    fn stores_over(s: &Stores) -> Stores {
+        Stores {
+            connections: ConnectionStore::new(s.defaults.clone(), Readiness::Always),
+            keys: SshKeyStore::new(s.defaults.clone(), Readiness::Always),
+            defaults: s.defaults.clone(),
+        }
+    }
+
+    /// While this launch's session may still read it, this launch's
+    /// settling leaves a held item alone; the session letting go drops it.
+    #[test]
+    fn a_held_item_waits_for_its_session_not_for_this_launchs_settling() {
+        let mut s = stores();
+        let pasted = account();
+        let keychain = MemoryKeychain::with([(pasted.clone(), b"KEY pasted".to_vec())]);
+        let (defaults, readiness) = s.connections.preferences();
+        assert!(hold_release(defaults, readiness, &pasted));
+        assert_eq!(
+            release_pending(&mut s.connections, &mut s.keys, &keychain),
+            []
+        );
+        assert!(keychain.exists(&pasted));
+        // The session reconnected as saved, or ended.
+        assert_eq!(
+            release_item(&pasted, &mut s.connections, &mut s.keys, &keychain),
+            ItemFate::Deleted
+        );
+        assert!(!keychain.exists(&pasted));
+        assert!(listed(&s).is_empty());
+    }
+
+    /// Deleting can't be undone: a listed item a record names again — a
+    /// connection or a key picked it up since — stays in the keychain, and
+    /// comes off the list (that record has it now).
+    #[test]
+    fn a_listed_item_something_names_again_is_kept() {
+        let mut s = stores();
+        let (by_connection, by_key) = (account(), account());
+        let keychain = MemoryKeychain::with([
+            (by_connection.clone(), b"pw".to_vec()),
+            (by_key.clone(), b"KEY listed".to_vec()),
+        ]);
+        // An earlier launch listed both.
+        s.defaults.set(
+            TO_RELEASE_KEY,
+            Some(Plist::Array(vec![
+                Plist::String(by_connection.clone()),
+                Plist::String(by_key.clone()),
+            ])),
+        );
+        s.connections
+            .add(connection("pi", None, Some(&by_connection)));
+        s.keys.add(key("laptop", Some(&by_key)));
+        let settled = release_pending(&mut s.connections, &mut s.keys, &keychain);
+        assert_eq!(
+            settled,
+            [
+                (by_connection.clone(), ItemFate::Kept),
+                (by_key.clone(), ItemFate::Kept)
+            ]
+        );
+        assert!(keychain.exists(&by_connection));
+        assert!(keychain.exists(&by_key));
+        assert!(listed(&s).is_empty());
+        // Named again at the moment of the release, too.
+        let (defaults, readiness) = s.connections.preferences();
+        assert!(hold_release(defaults, readiness, &by_key));
+        assert_eq!(
+            release_item(&by_key, &mut s.connections, &mut s.keys, &keychain),
+            ItemFate::Kept
+        );
+        assert!(keychain.exists(&by_key));
+        assert!(listed(&s).is_empty());
+    }
+
+    /// A drop the keychain refuses is listed and tried again at a later
+    /// launch; so is one whose users can't be told — and unknown deletes
+    /// nothing.
+    #[test]
+    fn a_refused_or_unknown_drop_is_listed_and_tried_again() {
+        let mut s = stores();
+        let (refused, unknown) = (account(), account());
+        let keychain = MemoryKeychain::with([
+            (refused.clone(), b"pw".to_vec()),
+            (unknown.clone(), b"pw".to_vec()),
+        ]);
+        keychain.set_locked(true);
+        let (defaults, readiness) = s.connections.preferences();
+        assert!(matches!(
+            release(
+                defaults,
+                readiness,
+                &refused,
+                Some(&BTreeSet::new()),
+                &keychain
+            ),
+            ItemFate::Failed(_)
+        ));
+        assert_eq!(
+            release(defaults, readiness, &unknown, None, &keychain),
+            ItemFate::Unknown
+        );
+        assert_eq!(listed(&s), [refused.clone(), unknown.clone()]);
+        keychain.set_locked(false);
+        assert!(keychain.exists(&refused) && keychain.exists(&unknown));
+        // Unknown at the next launch too: nothing goes.
+        as_if_relaunched(&refused);
+        as_if_relaunched(&unknown);
+        let (defaults, readiness) = s.connections.preferences();
+        assert_eq!(settle_releases(defaults, readiness, None, &keychain), []);
+        assert!(keychain.exists(&refused) && keychain.exists(&unknown));
+        // Told: both go.
+        let settled = release_pending(&mut s.connections, &mut s.keys, &keychain);
+        assert_eq!(
+            settled,
+            [
+                (refused.clone(), ItemFate::Deleted),
+                (unknown.clone(), ItemFate::Deleted)
+            ]
+        );
+        assert!(keychain.snapshot().is_empty());
+        assert!(listed(&s).is_empty());
+    }
+
+    /// A deleted connection whose item the keychain wouldn't drop: the
+    /// record goes, the item is listed for a later launch.
+    #[test]
+    fn a_deleted_connections_item_the_keychain_keeps_is_listed() {
+        let mut s = stores();
+        let own = account();
+        let keychain = MemoryKeychain::with([(own.clone(), b"pw".to_vec())]);
+        let pi = connection("pi", None, Some(&own));
+        s.connections.add(pi.clone());
+        keychain.set_locked(true);
+        assert!(matches!(
+            delete_connection(pi.id, &mut s.connections, &mut s.keys, &keychain),
+            ItemFate::Failed(_)
+        ));
+        assert!(s.connections.connections().is_empty());
+        assert_eq!(listed(&s), std::slice::from_ref(&own));
+        keychain.set_locked(false);
+        as_if_relaunched(&own);
+        let mut next = stores_over(&s);
+        assert_eq!(
+            release_pending(&mut next.connections, &mut next.keys, &keychain),
+            [(own.clone(), ItemFate::Deleted)]
+        );
+        assert!(!keychain.exists(&own));
+    }
+
+    /// A keychain that answers "not found" for a listed item has nothing
+    /// left to drop: it comes off the list rather than being tried at every
+    /// launch.
+    #[test]
+    fn a_listed_item_the_keychain_no_longer_has_comes_off_the_list() {
+        struct Absent;
+        impl Keychain for Absent {
+            fn save(&self, _: &str, _: &[u8], _: bool) -> Result<(), KeychainError> {
+                Ok(())
+            }
+            fn load(&self, _: &str, _: &str) -> Result<Vec<u8>, KeychainError> {
+                Err(KeychainError::NotFound)
+            }
+            fn delete(&self, _: &str) -> Result<(), KeychainError> {
+                Err(KeychainError::NotFound)
+            }
+            fn exists(&self, _: &str) -> bool {
+                false
+            }
+        }
+        let mut s = stores();
+        let gone = account();
+        s.defaults.set(
+            TO_RELEASE_KEY,
+            Some(Plist::Array(vec![Plist::String(gone.clone())])),
+        );
+        assert_eq!(
+            release_pending(&mut s.connections, &mut s.keys, &Absent),
+            [(gone.clone(), ItemFate::Deleted)]
+        );
+        assert!(listed(&s).is_empty());
+    }
+
+    /// Only an account the app makes for a secret is ever listed or dropped
+    /// this way: never the trusted host keys, never another app's item;
+    /// and nothing is listed while the preferences can't be believed.
+    #[test]
+    fn only_the_apps_own_accounts_are_listed_and_only_while_readable() {
+        let s = stores();
+        let keychain = MemoryKeychain::with([
+            ("moshpit.knownHosts".into(), b"{}".to_vec()),
+            ("someone.else".into(), b"pw".to_vec()),
+        ]);
+        let (defaults, readiness) = s.connections.preferences();
+        assert!(!hold_release(defaults, readiness, "moshpit.knownHosts"));
+        assert!(listed(&s).is_empty());
+        // Listed by something else: taken off, never deleted.
+        s.defaults.set(
+            TO_RELEASE_KEY,
+            Some(Plist::Array(vec![
+                Plist::String("moshpit.knownHosts".into()),
+                Plist::String("someone.else".into()),
+            ])),
+        );
+        let settled = settle_releases(defaults, readiness, Some(&BTreeSet::new()), &keychain);
+        assert_eq!(settled.len(), 2);
+        assert!(settled.iter().all(|(_, fate)| *fate == ItemFate::Kept));
+        assert_eq!(keychain.snapshot().len(), 2);
+        assert!(listed(&s).is_empty());
+        // Sealed: not readable, nothing written.
+        let sealed = MemoryDefaults::new();
+        sealed.set_protected_data_available(false);
+        let system = Readiness::System;
+        assert_eq!(to_release(&sealed, &system), None);
+        assert!(!hold_release(&sealed, &system, &account()));
+        assert_eq!(sealed.get(TO_RELEASE_KEY), None);
     }
 }

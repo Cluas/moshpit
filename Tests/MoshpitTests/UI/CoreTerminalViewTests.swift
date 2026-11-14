@@ -19,10 +19,15 @@ struct CoreTerminalViewTests {
         var links: [String] = []
         var pastes: [String] = []
         var clicks: [(Int, Int)] = []
+        /// What the session's input path does with what it sends.
+        var onSend: ((TerminalSurface) -> Void)?
         var text: String { String(decoding: sent, as: UTF8.self) }
         func take() -> String { defer { sent = Data() }; return text }
 
-        func surface(_ surface: TerminalSurface, send data: Data) { sent.append(data) }
+        func surface(_ surface: TerminalSurface, send data: Data) {
+            sent.append(data)
+            onSend?(surface)
+        }
         func surface(_ surface: TerminalSurface, sizeChanged cols: Int, rows: Int) { sizes.append((cols, rows)) }
         func surface(_ surface: TerminalSurface, titleChanged title: String) {}
         func surfaceBell(_ surface: TerminalSurface) {}
@@ -322,6 +327,30 @@ struct CoreTerminalViewTests {
         view.scrollToBottom()
         #expect(!view.isReadingScrollback)
         #expect(view.settle { $0.rowText(4) == "more" })
+    }
+
+    /// B426: the terminal's answer to a program's question goes out on the
+    /// session's input path, which releases the scroll hold for what it
+    /// sends; a history reader stays where it is all the same. A key still
+    /// brings it back. It went to the bottom whenever a program asked.
+    @Test func aReplyLeavesAHistoryReaderWhereItIs() {
+        let (view, sink) = makeView(cols: 20, rows: 5)
+        // As the session's coordinator: everything sent releases the hold.
+        sink.onSend = { $0.releaseScrollHold() }
+        var text = ""
+        for i in 0..<50 { text += "\(i)\r\n" }
+        feed(view, text + "$", until: { $0.rowText(4) == "$" })
+        view.scrollLines(10)
+        let reading = view.isReadingScrollback
+        #expect(reading)
+        view.push(Data("\u{1b}[6n".utf8))
+        let answered = view.settle { _ in sink.text.contains("R") }
+        #expect(answered)
+        let stillReading = view.isReadingScrollback
+        #expect(stillReading, "the reply sent the reader to the bottom")
+        view.sendKey(UInt32(MP_KEY_CHAR), scalar: 0x78, mods: 0)
+        let live = !view.isReadingScrollback
+        #expect(live, "a key goes back to the live screen")
     }
 
     @Test func aDoubleTapSelectsAWordAndCopies() {

@@ -535,7 +535,13 @@ impl App {
             PageKind::Theme { deleting } => Some(looks::themes_message(self, deleting.as_deref())),
             // An editor keeps its own copy: posted once, as its view starts.
             PageKind::AccentEditor(_) | PageKind::ThemeEditor(_) => None,
-            PageKind::HostSetup(page) => host_setup::message(self, page),
+            PageKind::HostSetup(page) => {
+                // Which host first: the page names it.
+                if let Some(host) = host_setup::identity(self, page) {
+                    self.post(surface, host);
+                }
+                host_setup::message(self, page)
+            }
             PageKind::MuxPicker(page) => Some(picker::message(self, page)),
             PageKind::InstallAssist(page) => Some(install_assist::message(self, page)),
             PageKind::RecentLog => None,

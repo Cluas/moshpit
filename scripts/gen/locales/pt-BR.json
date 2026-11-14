@@ -1148,5 +1148,10 @@
   "Finished": "Concluído",
   "Idle": "Ocioso",
   "%lld more": {"one": "mais %lld", "other": "mais %lld"},
-  "System": "Sistema"
+  "System": "Sistema",
+  "Set up %@": "Configurar %@",
+  "Connected": "Conectado",
+  "Not connected": "Não conectado",
+  "%@ isn't connected": "%@ não está conectado",
+  "Setup runs on the host over a live session. Connect first, then set it up here.": "A configuração é feita no host por uma sessão ativa. Conecte-se primeiro e depois configure-o aqui."
 }

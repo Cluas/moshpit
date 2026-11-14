@@ -387,6 +387,12 @@ final class SwiftTermSurface: NSObject, TerminalSurface {
         terminalView.snapshotView(afterScreenUpdates: false)
     }
 
+    /// SwiftTerm draws in `draw(_:)`: the whole view again.
+    func redrawAll() { terminalView.setNeedsDisplay() }
+
+    /// SwiftTerm's drawing isn't counted.
+    var framesSinceCanvas: Int? { nil }
+
     /// The app gives SwiftTerm's view no find bar.
     var isFinding: Bool { false }
 

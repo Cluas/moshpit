@@ -105,6 +105,14 @@ struct SettingsRootNSHTests {
         #expect(settings.predictMode == .never)
         #expect(!SettingsModel.apply("keepAlive", "yes", to: settings))
         #expect(!SettingsModel.apply("colour", true, to: settings))
+        // The UDP range's page (R18): a range the rule allows, or nothing.
+        #expect(SettingsModel.apply("udpRange", [50000, 50010], to: settings))
+        #expect(settings.udpRangeStart == 50000 && settings.udpRangeEnd == 50010)
+        let refused: [Any] = [[61000, 60000], [0, 10], [10, 65536], [1], "60000-61000"]
+        for value in refused {
+            #expect(!SettingsModel.apply("udpRange", value, to: settings), "\(value)")
+        }
+        #expect(settings.udpRangeStart == 50000 && settings.udpRangeEnd == 50010)
     }
 
     @Test("open, done and back reach the page's owner")
@@ -132,7 +140,8 @@ struct SettingsRootNSHTests {
         #expect(SettingsPage(rawValue: "voice-engine") == .voiceEngine)
         #expect(SettingsPage(rawValue: "shortcuts") == nil, "a sheet, not a page")
         #expect(SettingsPart.allCases.map(\.rawValue)
-            == ["appearance", "terminal", "connections", "notifications", "voice"])
+            == ["appearance", "terminal", "connections", "notifications", "voice", "hosts",
+                "udp-range", "notification-info"])
         #expect(SettingsPart(rawValue: "terminal") != nil && SettingsPage(rawValue: "terminal") == nil)
     }
 
@@ -266,6 +275,70 @@ struct AppAppearanceWindowTests {
         window.overrideUserInterfaceStyle = .light
         try? await Task.sleep(for: .milliseconds(300))
         #expect(row.traitCollection.userInterfaceStyle == .light, "the same page, now light")
+    }
+
+    @Test("the SwiftUI pages' accent as words is the NSH pages' primary-text: Signal Room's 4E4DEC")
+    func accentText() {
+        let accent = UIColor(red: 0x6C / 255, green: 0x6B / 255, blue: 0xEF / 255, alpha: 1)
+        #expect(Self.bytes(InkContrast.readable(accent)) == [0x4E, 0x4D, 0xEC, 255])
+        // Already readable: kept.
+        let deep = UIColor(red: 0x1F / 255, green: 0x3A / 255, blue: 0x93 / 255, alpha: 1)
+        #expect(Self.bytes(InkContrast.readable(deep)) == Self.bytes(deep))
+        // Its dark side is the accent itself, as before.
+        let dark = UITraitCollection(userInterfaceStyle: .dark)
+        #expect(Self.bytes(UIColor(Ink.accentText).resolvedColor(with: dark))
+                == Self.bytes(UIColor(Ink.accent).resolvedColor(with: dark)))
+    }
+
+    @Test("the form inks the SwiftUI sheets draw with have a light side, and the dark one as before")
+    func formInks() {
+        let light = UITraitCollection(userInterfaceStyle: .light)
+        let dark = UITraitCollection(userInterfaceStyle: .dark)
+        let side = { (color: Color, traits: UITraitCollection) in Self.bytes(UIColor(color).resolvedColor(with: traits)) }
+        #expect(side(Ink.group, light) == [0xFF, 0xFF, 0xFF, 255])
+        #expect(side(Ink.group, dark) == Self.bytes(UIColor(Color(hex: "11141A").opacity(0.94))))
+        #expect(side(Ink.pageBG, light) == [0xF3, 0xF2, 0xEE, 255])
+        #expect(side(Ink.sectionTitle, light) == [0x5E, 0x5C, 0x56, 255])
+        #expect(side(Ink.warnText, light) == [0x93, 0x52, 0x00, 255])
+        #expect(side(Ink.warnText, dark) == side(Ink.warn, dark))
+        // Words on the light page read (4.5:1).
+        let page = (Double(0xF3) / 255, Double(0xF2) / 255, Double(0xEE) / 255)
+        for (name, ink) in [("warn", Ink.warnText), ("section", Ink.sectionTitle)] {
+            let rgb = side(ink, light).prefix(3).map { Double($0) / 255 }
+            #expect(InkContrast.contrast((rgb[0], rgb[1], rgb[2]), page) >= 4.5, "\(name)")
+        }
+    }
+
+    /// Draws `view` alone in a phone-sized window of `style` to the app's tmp
+    /// folder as `<name>.png`.
+    private static func shoot<V: View>(_ view: V, _ style: UIUserInterfaceStyle, _ name: String) async {
+        let scene = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first
+        let window = scene.map { UIWindow(windowScene: $0) } ?? UIWindow(frame: NavBarNSHTests.phone)
+        window.frame = NavBarNSHTests.phone
+        window.overrideUserInterfaceStyle = style
+        window.rootViewController = UIHostingController(rootView: view.environment(AppSettings.shared))
+        window.isHidden = false
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+        }
+        try? await Task.sleep(for: .milliseconds(700))
+        let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+            window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+        }
+        try? image.pngData()?.write(to: FileManager.default.temporaryDirectory.appendingPathComponent("\(name).png"))
+    }
+
+    @Test("the SwiftUI sheets that follow the app draw dark and light (R18 E)")
+    func swiftUISheetShots() async {
+        for (look, style) in [("dark", UIUserInterfaceStyle.dark), ("light", .light)] {
+            await Self.shoot(OfflineHostInfoView(), style, "r18e-offline-host-\(look)")
+            await Self.shoot(NewAgentTaskSheet(
+                initialRepos: ["~/src/api", "~/src/web"],
+                load: { (repos: ["~/src/api", "~/src/web"], agents: ["claude", "codex"]) },
+                start: { _ in .failed("The host refused: branch already exists") }),
+                style, "r18e-agent-task-\(look)")
+        }
     }
 
     /// `color`'s 8-bit sRGB components and alpha.
@@ -405,5 +478,59 @@ struct AppAppearanceWindowTests {
         print("[r18 status bar]\n" + report)
         try? report.write(to: FileManager.default.temporaryDirectory.appendingPathComponent("r18-status-bar.txt"),
                           atomically: true, encoding: .utf8)
+    }
+}
+
+/// Settings › Set up a host never picks a host silently: with one saved
+/// connection it goes straight in, with none or several it lists them; a
+/// connected one opens its Host Setup, one that isn't is offered Connect.
+/// The list's message and the page's "which host" message are the screens'.
+@Suite("Set up a host: which host")
+@MainActor
+struct HostSetupRouteTests {
+    static func host(_ n: Int, live: Bool) -> SettingsHost {
+        SettingsHost(id: UUID(), name: "host-\(n)", user: "dev", host: "192.0.2.\(n)", port: 22, live: live)
+    }
+
+    @Test("the hub's row: straight in with one saved connection, the list with none or several")
+    func entering() {
+        let (live, cold) = (Self.host(1, live: true), Self.host(2, live: false))
+        #expect(HostSetupRoute.entering([]) == .list)
+        #expect(HostSetupRoute.entering([live]) == .setup(live.id))
+        #expect(HostSetupRoute.entering([cold]) == .connect(cold.id))
+        #expect(HostSetupRoute.entering([live, cold]) == .list)
+        // Two connected: the user picks; the first in Home's order is not taken.
+        #expect(HostSetupRoute.entering([live, Self.host(3, live: true)]) == .list)
+    }
+
+    @Test("a pick on the list: a connected one's setup, Connect first for one that isn't")
+    func choosing() {
+        let (live, cold) = (Self.host(1, live: true), Self.host(2, live: false))
+        let hosts = [live, cold]
+        #expect(HostSetupRoute.choosing(live.id, in: hosts) == .setup(live.id))
+        #expect(HostSetupRoute.choosing(cold.id, in: hosts) == .connect(cold.id))
+        #expect(HostSetupRoute.choosing(UUID(), in: hosts) == nil, "a connection no longer saved")
+    }
+
+    @Test("a saved connection on the list is its name (user@host without one), user, host and port")
+    func entries() {
+        let named = ServerConnection(name: "gpu-01", host: "192.0.2.10", port: 2222, username: "dev")
+        let host = SettingsHost(named, live: true)
+        #expect(host.name == "gpu-01" && host.user == "dev" && host.host == "192.0.2.10" && host.port == 2222)
+        #expect(host.id == named.id && host.live)
+        let nameless = ServerConnection(host: "192.0.2.11", username: "ci")
+        #expect(SettingsHost(nameless, live: false).name == "ci@192.0.2.11")
+    }
+
+    @Test("the list's message and the page's host message are the screens'")
+    func messages() {
+        let hosts = [Self.host(1, live: true), Self.host(2, live: false)]
+        let list = SettingsHost.message(hosts)
+        #expect(NSHSurface.check(screen: NSHScreen.settings.name, message: list))
+        #expect((list["hosts"] as? [[String: Any]])?.count == 2)
+        let connection = ServerConnection(name: "gpu-01", host: "192.0.2.10", port: 2222, username: "dev")
+        let named = HostSetupScreenModel.host(connection)
+        #expect(NSHSurface.check(screen: NSHScreen.hostSetup.name, message: named))
+        #expect(named["name"] as? String == "gpu-01")
     }
 }

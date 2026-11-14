@@ -240,7 +240,10 @@ fn a_sequence_whose_step_outlasts_the_hold_sends_nothing_after_it() {
         "{:?}",
         rig.host.landed
     );
-    assert_eq!(rig.client.snapshot().active_pane_id.as_deref(), Some("w1:p2"));
+    assert_eq!(
+        rig.client.snapshot().active_pane_id.as_deref(),
+        Some("w1:p2")
+    );
 }
 
 #[test]
@@ -415,35 +418,71 @@ fn typing_at_a_pane_the_desktop_switched_to_is_dropped_until_it_is_attached() {
     assert_eq!(rig.typed("w1:p2"), "z");
 }
 
+const WIPE: &str = "\u{1b}[H\u{1b}[2J\u{1b}[3J";
+
+/// What `stream` was told to do, in order.
+fn views_on(rig: &Rig, stream: moshpit_herdr::client::StreamId) -> Vec<ViewAction> {
+    rig.log
+        .iter()
+        .filter_map(|(_, output)| match output {
+            Output::View {
+                stream: s, action, ..
+            } if *s == stream => Some(action.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
 #[test]
-fn a_switch_veils_and_wipes_the_new_panes_terminal_until_its_full_frame() {
+fn a_switch_veils_the_new_panes_terminal_and_wipes_it_with_its_full_frame() {
     let mut rig = attached();
     rig.act(Action::SelectPane("w1:p2".to_owned()));
     let p2 = rig.client.streams()["w1:p2"];
-    let views: Vec<ViewAction> = rig
-        .log
-        .iter()
-        .filter_map(|(_, output)| match output {
-            Output::View { stream, action, .. } if *stream == p2 => Some(action.clone()),
-            _ => None,
-        })
-        .collect();
     assert!(matches!(
-        views.as_slice(),
+        views_on(&rig, p2).as_slice(),
         [ViewAction::Veil, ViewAction::ExtendCover { .. }]
     ));
-    assert!(
-        rig.screen("w1:p2")
-            .starts_with("\u{1b}[H\u{1b}[2J\u{1b}[3J")
-    );
+    // B445: nothing is wiped under a cover that may come off before the
+    // new pane has painted.
+    assert_eq!(rig.screen("w1:p2"), "");
     rig.run(1_000);
-    assert!(rig.screen("w1:p2").contains("[w1:p2 #"));
-    assert!(rig.log.iter().any(|(_, output)| matches!(
-        output,
-        Output::View { stream, action: ViewAction::Reveal, .. } if *stream == p2
-    )));
+    let screen = rig.screen("w1:p2");
+    assert!(
+        screen.starts_with(WIPE),
+        "wiped, history too, with its frame: {screen:?}"
+    );
+    assert!(screen.contains("[w1:p2 #"));
+    assert!(views_on(&rig, p2).contains(&ViewAction::Reveal));
     // The pane left keeps its own screen; nothing of p2's is in it.
     assert!(!rig.screen("w1:p1").contains("w1:p2"));
+}
+
+/// B445: the attach a switch asked for was refused before it painted. Its
+/// cover lifted onto a screen the switch had wiped, and stayed blank until
+/// a resize made herdr paint again (leaving the screen and coming back);
+/// now nothing was wiped, and the cover lifts over what the pane showed.
+#[test]
+fn a_switch_refused_before_its_frame_lifts_its_cover_over_an_unwiped_terminal() {
+    let mut rig = attached();
+    // The release's close takes long: the new attach never gets to paint.
+    rig.frames.latency = 10_000;
+    rig.act(Action::SelectPane("w1:p2".to_owned()));
+    rig.run(100);
+    let now = rig.now;
+    rig.client
+        .frame_bytes(b"herdr: terminal attach refused: busy\r\n", now);
+    rig.pump();
+    let p2 = rig.client.streams()["w1:p2"];
+    assert_eq!(
+        views_on(&rig, p2).last(),
+        Some(&ViewAction::Reveal),
+        "the cover lifts"
+    );
+    let screen = rig.screen("w1:p2");
+    assert!(
+        !screen.contains("\u{1b}[2J"),
+        "nothing wiped under it: {screen:?}"
+    );
 }
 
 #[test]

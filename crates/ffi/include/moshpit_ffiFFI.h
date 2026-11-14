@@ -501,6 +501,11 @@ RustBuffer uniffi_moshpit_ffi_fn_method_agentmachine_bell(uint64_t ptr, RustBuff
 RustBuffer uniffi_moshpit_ffi_fn_method_agentmachine_cycle_headline(uint64_t ptr, double now, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_AGENTMACHINE_DELIVERED
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_AGENTMACHINE_DELIVERED
+RustBuffer uniffi_moshpit_ffi_fn_method_agentmachine_delivered(uint64_t ptr, RustBuffer ids, RustBuffer saved, double now, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_AGENTMACHINE_HOOKS
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_AGENTMACHINE_HOOKS
 RustBuffer uniffi_moshpit_ffi_fn_method_agentmachine_hooks(uint64_t ptr, RustBuffer conn, RustBuffer hooks, double now, double interval, RustCallStatus *_Nonnull out_status
@@ -518,7 +523,7 @@ RustBuffer uniffi_moshpit_ffi_fn_method_agentmachine_output(uint64_t ptr, RustBu
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_AGENTMACHINE_SET_SETTINGS
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_AGENTMACHINE_SET_SETTINGS
-void uniffi_moshpit_ffi_fn_method_agentmachine_set_settings(uint64_t ptr, RustBuffer settings, RustCallStatus *_Nonnull out_status
+RustBuffer uniffi_moshpit_ffi_fn_method_agentmachine_set_settings(uint64_t ptr, RustBuffer settings, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_AGENTMACHINE_STATE_SINCE_BY_PANE
@@ -2289,6 +2294,11 @@ RustBuffer uniffi_moshpit_ffi_fn_func_store_blend_hex(RustBuffer hex, RustBuffer
 int8_t uniffi_moshpit_ffi_fn_func_store_defaults_readable(uint64_t host, RustBuffer mode, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_STORE_HOLD_RELEASE
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_STORE_HOLD_RELEASE
+int8_t uniffi_moshpit_ffi_fn_func_store_hold_release(uint64_t preferences, RustBuffer mode, RustBuffer account, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_STORE_KNOWN_HOSTS_ENTRY
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_STORE_KNOWN_HOSTS_ENTRY
 RustBuffer uniffi_moshpit_ffi_fn_func_store_known_hosts_entry(RustBuffer host, uint16_t port, RustCallStatus *_Nonnull out_status
@@ -2315,6 +2325,11 @@ RustBuffer uniffi_moshpit_ffi_fn_func_store_normalized_hex(RustBuffer hex, RustC
 RustBuffer uniffi_moshpit_ffi_fn_func_store_recover_orphaned_keys(uint64_t connections, uint64_t keys, uint64_t keychain, RustBuffer name_template, double now, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_STORE_RELEASE
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_STORE_RELEASE
+RustBuffer uniffi_moshpit_ffi_fn_func_store_release(uint64_t preferences, RustBuffer mode, RustBuffer account, RustBuffer referenced, uint64_t keychain, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_STORE_RSA_BITS
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_STORE_RSA_BITS
 RustBuffer uniffi_moshpit_ffi_fn_func_store_rsa_bits(RustBuffer public_key_line, RustCallStatus *_Nonnull out_status
@@ -2324,6 +2339,11 @@ RustBuffer uniffi_moshpit_ffi_fn_func_store_rsa_bits(RustBuffer public_key_line,
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_STORE_SETTING_NAMES
 RustBuffer uniffi_moshpit_ffi_fn_func_store_setting_names(RustCallStatus *_Nonnull out_status
     
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_STORE_SETTLE_RELEASES
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_STORE_SETTLE_RELEASES
+RustBuffer uniffi_moshpit_ffi_fn_func_store_settle_releases(uint64_t preferences, RustBuffer mode, RustBuffer referenced, uint64_t keychain, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_STORE_SHORTCUT_STAGES
@@ -2339,6 +2359,11 @@ RustBuffer uniffi_moshpit_ffi_fn_func_store_theme_export_json(RustBuffer theme, 
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_STORE_THEME_PALETTE
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_STORE_THEME_PALETTE
 RustBuffer uniffi_moshpit_ffi_fn_func_store_theme_palette(RustBuffer theme, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_STORE_TO_RELEASE
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_STORE_TO_RELEASE
+RustBuffer uniffi_moshpit_ffi_fn_func_store_to_release(uint64_t preferences, RustBuffer mode, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_FFI_MOSHPIT_FFI_RUSTBUFFER_ALLOC
@@ -3033,6 +3058,12 @@ uint16_t uniffi_moshpit_ffi_checksum_func_store_defaults_readable(void
     
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_STORE_HOLD_RELEASE
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_STORE_HOLD_RELEASE
+uint16_t uniffi_moshpit_ffi_checksum_func_store_hold_release(void
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_STORE_KNOWN_HOSTS_ENTRY
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_STORE_KNOWN_HOSTS_ENTRY
 uint16_t uniffi_moshpit_ffi_checksum_func_store_known_hosts_entry(void
@@ -3063,6 +3094,12 @@ uint16_t uniffi_moshpit_ffi_checksum_func_store_recover_orphaned_keys(void
     
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_STORE_RELEASE
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_STORE_RELEASE
+uint16_t uniffi_moshpit_ffi_checksum_func_store_release(void
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_STORE_RSA_BITS
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_STORE_RSA_BITS
 uint16_t uniffi_moshpit_ffi_checksum_func_store_rsa_bits(void
@@ -3072,6 +3109,12 @@ uint16_t uniffi_moshpit_ffi_checksum_func_store_rsa_bits(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_STORE_SETTING_NAMES
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_STORE_SETTING_NAMES
 uint16_t uniffi_moshpit_ffi_checksum_func_store_setting_names(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_STORE_SETTLE_RELEASES
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_STORE_SETTLE_RELEASES
+uint16_t uniffi_moshpit_ffi_checksum_func_store_settle_releases(void
     
 );
 #endif
@@ -3093,6 +3136,12 @@ uint16_t uniffi_moshpit_ffi_checksum_func_store_theme_palette(void
     
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_STORE_TO_RELEASE
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_STORE_TO_RELEASE
+uint16_t uniffi_moshpit_ffi_checksum_func_store_to_release(void
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_AGENTMACHINE_ADOPT_ANNOUNCED
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_AGENTMACHINE_ADOPT_ANNOUNCED
 uint16_t uniffi_moshpit_ffi_checksum_method_agentmachine_adopt_announced(void
@@ -3108,6 +3157,12 @@ uint16_t uniffi_moshpit_ffi_checksum_method_agentmachine_bell(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_AGENTMACHINE_CYCLE_HEADLINE
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_AGENTMACHINE_CYCLE_HEADLINE
 uint16_t uniffi_moshpit_ffi_checksum_method_agentmachine_cycle_headline(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_AGENTMACHINE_DELIVERED
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_AGENTMACHINE_DELIVERED
+uint16_t uniffi_moshpit_ffi_checksum_method_agentmachine_delivered(void
     
 );
 #endif

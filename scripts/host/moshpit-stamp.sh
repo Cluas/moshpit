@@ -85,16 +85,19 @@ if command -v jq >/dev/null 2>&1 && [ ! -t 0 ]; then
   fi
 fi
 # Where the stamps live: the tmux pane's options, or — outside tmux — files
-# of the agent session (by its session id when jq could read one, else by the
-# agent), private, since a prompt is among them.
-if [ -n "${TMUX:-}" ]; then
+# of the agent session (by its session id when jq could read one, else by its
+# herdr pane, else by the agent), private, since a prompt is among them. A
+# herdr pane keeps its stamps outside tmux even with a $TMUX inherited from
+# where herdr's server started (B434): that tmux has no such pane, and its
+# stamps landed on whichever pane the variable named.
+if [ -n "${TMUX:-}" ] && [ -z "${HERDR_PANE_ID:-}" ]; then
   get() { tmux display-message -p -t "$TMUX_PANE" "#{@moshpit_$1}" 2>/dev/null; }
   put() { tmux set -p -t "$TMUX_PANE" "@moshpit_$1" "$2" 2>/dev/null; }
   del() { tmux set -pu -t "$TMUX_PANE" "@moshpit_$1" 2>/dev/null; }
   prev() { tmux display-message -p -t "$TMUX_PANE" "#{@moshpit_state}|#{@moshpit_since}" 2>/dev/null; }
 else
   umask 077
-  RUN="$HOME/.moshpit/run/s-$(printf '%s' "${SID:-$AG}" | tr -c 'A-Za-z0-9._-' '_' | cut -c1-64)"
+  RUN="$HOME/.moshpit/run/s-$(printf '%s' "${SID:-${HERDR_PANE_ID:-$AG}}" | tr -c 'A-Za-z0-9._-' '_' | cut -c1-64)"
   mkdir -p "$RUN" 2>/dev/null || exit 0
   get() { cat "$RUN/$1" 2>/dev/null; }
   put() { printf '%s' "$2" > "$RUN/$1" 2>/dev/null; }

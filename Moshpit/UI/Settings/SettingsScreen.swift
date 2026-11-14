@@ -13,10 +13,16 @@ struct SettingsScreen: View {
     @Environment(SSHKeyStore.self) private var keyStore
     @Environment(ThemeStore.self) private var themes
 
-    /// The foreground live session, if any — used by the agent-hooks installer
-    /// so "Run in terminal" / "Re-check" can run against a real shell. nil →
-    /// the installer shows command + Copy only (its `.noChannel` state).
-    var liveSession: SessionHub.ActiveSession?
+    /// The saved connections, connected or not: Set up a host picks one
+    /// (``HostSetupRoute``).
+    var hosts: [SettingsHost] = []
+    /// A connection's live session, which its Host Setup runs over.
+    var session: (UUID) -> SessionHub.ActiveSession? = { _ in nil }
+    /// Connect a saved connection and open it (Home closes Settings first).
+    var onConnect: (UUID) -> Void = { _ in }
+
+    /// Some connection is live: Set up a host can inspect a host now.
+    private var liveSession: Bool { hosts.contains(where: \.live) }
 
     #if DEBUG
     @State private var showShortcuts = CaptureScreen.requested.map(CaptureScreen.opensShortcuts.contains) ?? false
@@ -39,8 +45,10 @@ struct SettingsScreen: View {
     @State private var showServerBinaryEditor = false
     @State private var showUDPEditor = false
     @State private var showNotifInfo = false
-    @State private var showHooksInstall = false
-    @State private var showOfflineHostInfo = false
+    /// The host Set up a host opened, over its live session.
+    @State private var settingUp: HostSetupTarget?
+    /// A connection picked that isn't connected: asked to connect first.
+    @State private var asking: SettingsHost?
     @State private var showFeedback = false
     /// The hidden Core Switches page (seven taps on the version line).
     @State private var showCoreSwitches = false
@@ -64,10 +72,12 @@ struct SettingsScreen: View {
             .navigationDestination(item: $pushedPart) { part in
                 SettingsNSHPage(
                     part: part,
-                    liveSession: liveSession != nil,
+                    liveSession: liveSession,
                     showsFilingNumber: showsFilingNumber,
                     onOpen: open,
                     onDone: { dismiss() },
+                    hosts: hosts,
+                    onSetup: { go(HostSetupRoute.choosing($0, in: hosts)) },
                     onFailure: {
                         pushedPart = nil
                         nshFailed = true
@@ -121,15 +131,18 @@ struct SettingsScreen: View {
         .appSheet(isPresented: $showNotifInfo) {
             NotificationInfoView()
         }
-        .appSheet(isPresented: $showHooksInstall) {
-            if let liveSession {
-                HostSetupPage(
-                    connection: liveSession.connection,
-                    testPane: liveSession.tmuxControl?.snapshot.activePaneId)
-            }
+        .appSheet(item: $settingUp) { target in
+            HostSetupPage(connection: target.connection, testPane: target.testPane)
         }
-        .appSheet(isPresented: $showOfflineHostInfo) {
-            OfflineHostInfoView()
+        // Setup runs over a live session: a connection that isn't connected
+        // is offered Connect, which opens it.
+        .alert(Text("\(asking?.name ?? "") isn't connected"),
+               isPresented: Binding(get: { asking != nil }, set: { if !$0 { asking = nil } }),
+               presenting: asking) { host in
+            Button("Connect") { onConnect(host.id) }
+            Button("Cancel", role: .cancel) {}
+        } message: { _ in
+            Text("Setup runs on the host over a live session. Connect first, then set it up here.")
         }
         .appSheet(isPresented: $showFeedback) { FeedbackPage() }
         .appSheet(isPresented: $showCoreSwitches) { CoreSwitchesView() }
@@ -143,7 +156,7 @@ struct SettingsScreen: View {
     private func root(settings: Bindable<AppSettings>) -> some View {
         if showsNSH {
             SettingsNSHPage(
-                liveSession: liveSession != nil,
+                liveSession: liveSession,
                 showsFilingNumber: showsFilingNumber,
                 onOpen: open,
                 onDone: { dismiss() },
@@ -238,8 +251,8 @@ struct SettingsScreen: View {
                         // hook script is what FIRES a push even where its
                         // tmux stamping is inert. The sheet says which half
                         // applies.
-                        if liveSession != nil {
-                            ChevronRow(label: "Set up this host") { showHooksInstall = true }
+                        if liveSession {
+                            ChevronRow(label: "Set up this host") { go(HostSetupRoute.entering(hosts)) }
                                 .accessibilityIdentifier("settings-host-setup")
                         } else {
                             // Not a dead grey row. Host setup happens ON the
@@ -251,7 +264,7 @@ struct SettingsScreen: View {
                             // have: which hosts are paired.
                             ChevronRow(label: "Set up this host",
                                        subtitle: "Automatic — connect to inspect") {
-                                showOfflineHostInfo = true
+                                go(HostSetupRoute.entering(hosts))
                             }
                             .accessibilityIdentifier("settings-host-setup")
                         }
@@ -343,6 +356,27 @@ struct SettingsScreen: View {
         return NSHScreen.settings.isOn
     }
 
+    /// Set up a host, where `route` goes: the list pushed, the host's setup
+    /// presented over its live session, or Connect asked first.
+    private func go(_ route: HostSetupRoute?) {
+        switch route {
+        case .list?:
+            pushedPart = .hosts
+        case .setup(let id)?:
+            // Live when the route was chosen; asked to connect if it dropped.
+            guard let live = session(id) else {
+                asking = hosts.first { $0.id == id }
+                return
+            }
+            settingUp = HostSetupTarget(connection: live.connection,
+                                        testPane: live.tmuxControl?.snapshot.activePaneId)
+        case .connect(let id)?:
+            asking = hosts.first { $0.id == id }
+        case nil:
+            break
+        }
+    }
+
     /// What a row of the NSH page asked for (`ui/src/settings.rs`'s `Page`):
     /// a page pushed on the stack, a sheet, or a link, as the SwiftUI rows
     /// open them.
@@ -362,7 +396,7 @@ struct SettingsScreen: View {
         case "udp-range": showUDPEditor = true
         case "notification-info": showNotifInfo = true
         case "host-setup":
-            if liveSession != nil { showHooksInstall = true } else { showOfflineHostInfo = true }
+            go(HostSetupRoute.entering(hosts))
         case "feedback": showFeedback = true
         case "github-issue": openURL(FeedbackChannels.newIssueURL)
         case "filing": openURL(Self.icpFilingURL)
@@ -730,11 +764,12 @@ struct OfflineHostInfoView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { dismiss() }.foregroundStyle(Ink.accent)
+                    Button("Done") { dismiss() }.foregroundStyle(Ink.accentText)
                 }
             }
         }
-        .darkOnlyPage()
+        // The app's appearance (R18): its form inks have both sides. Also
+        // what Host Setup shows if its NSH page can't run.
     }
 }
 
@@ -993,3 +1028,11 @@ extension CaptureScreen {
     }
 }
 #endif
+
+/// The host Settings' Set up a host opened: its connection, and the tmux
+/// pane the hooks test fires into.
+struct HostSetupTarget: Identifiable {
+    let connection: ServerConnection
+    let testPane: String?
+    var id: UUID { connection.id }
+}

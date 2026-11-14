@@ -56,6 +56,7 @@ struct MoshpitApp: App {
         // forward (reloadStoresIfNeeded).
         AppLanguage.recordIfTrusted()
         let monitor = AgentActivityMonitor(settings: settings)
+        monitor.savedConnections = { [weak store] in store?.savedIds }
         let router = DeepLinkRouter()
         let notificationHandler = AgentNotificationHandler()
         _metrics = State(initialValue: metrics)
@@ -118,11 +119,12 @@ struct MoshpitApp: App {
         // "Is this exact pane on screen?" — lets willPresent skip the
         // banner + chime when the user is already looking at the prompt.
         AgentControlBridge.shared.isPaneVisible = { connectionId, paneId in
-            PaneOnScreen.shows(hub.visibleSession, connectionId: connectionId, paneId: paneId)
+            PaneOnScreen.shows(hub.visibleSession, foreground: hub.isForeground,
+                               connectionId: connectionId, paneId: paneId)
         }
         // The same, as the agent machine's sweep asks it: which pane.
         AgentControlBridge.shared.visiblePane = {
-            PaneOnScreen.of(hub.visibleSession)
+            PaneOnScreen.of(hub.visibleSession, foreground: hub.isForeground)
         }
         // A pairing self-test push proves the whole chain works; the
         // sheet that asked for it is waiting on this hop.
@@ -164,11 +166,16 @@ struct MoshpitApp: App {
         if !swept.isEmpty {
             Log.store.notice("forgot \(swept.count, privacy: .public) session-memory keys of connections no longer saved")
         }
-        // Private keys earlier builds left in the keychain with no record
-        // naming them (B232) — a deleted key's, or one whose record a lost
-        // key list took with it: listed in SSH Keys again, once, the first
-        // time both stores can be trusted. Nothing is deleted.
+        // Items connections let go of that an earlier launch couldn't drop
+        // (B428: its session still read one when the app ended, or the
+        // keychain refused) go first, once both stores can be trusted —
+        // only what was listed, only what nothing names now. Then private
+        // keys earlier builds left in the keychain with no record naming
+        // them (B232) — a deleted key's, or one whose record a lost key list
+        // took with it: listed in SSH Keys again, once. Recovery deletes
+        // nothing, and never offers a listed item back.
         Task { [store, sshKeys, keychain] in
+            KeychainReferences.settleReleasesOnce(connections: store, keys: sshKeys, keychain: keychain)
             await KeychainReferences.recoverOrphansOnce(connections: store, keys: sshKeys, keychain: keychain)
         }
     }
@@ -243,6 +250,8 @@ struct MoshpitApp: App {
                 case .active:
                     reloadStoresIfNeeded()
                     hub.setForeground(true)
+                    // Cards whose questions ended while we were away (B433).
+                    monitor.sweepDelivered()
                     // Re-announce this phone to its relays. Unconditional: a
                     // relay that lost its registry would otherwise never hear
                     // from us again, and every push it was asked to send would
@@ -270,20 +279,30 @@ struct MoshpitApp: App {
 /// nil for herdr: every herdr pane on the connection counted as on screen,
 /// so another pane's prompt came without a banner and its card was cleared
 /// within a sweep.
+///
+/// Nothing is on screen while the app isn't in the foreground (B438). The
+/// terminal stays presented when the phone locks or the person switches
+/// away, and for the seconds the app runs on after that, the sweep took its
+/// pane for the one being looked at: a prompt there was "acknowledged" —
+/// its card taken down about two seconds after it rang, the push's copy with
+/// it — on a locked phone.
 @MainActor
 enum PaneOnScreen {
     /// The visible session's connection and pane: `""` when its
     /// multiplexer focuses none yet (no card is the one on screen), `nil`
-    /// when it runs none (the session on screen is the pane).
-    static func of(_ session: SessionHub.ActiveSession?) -> (UUID, String?)? {
-        guard let session else { return nil }
+    /// when it runs none (the session on screen is the pane). Nothing when
+    /// the app isn't in the `foreground`.
+    static func of(_ session: SessionHub.ActiveSession?, foreground: Bool) -> (UUID, String?)? {
+        guard foreground, let session else { return nil }
         guard let tree = multiplexerTree(of: session) else { return (session.connection.id, nil) }
         return (session.connection.id, tree.activePaneId ?? "")
     }
 
     /// Whether `paneId` of `connectionId` is the pane on screen.
-    static func shows(_ session: SessionHub.ActiveSession?, connectionId: UUID, paneId: String) -> Bool {
-        guard let (connection, pane) = of(session), connection == connectionId else { return false }
+    static func shows(_ session: SessionHub.ActiveSession?, foreground: Bool,
+                      connectionId: UUID, paneId: String) -> Bool {
+        guard let (connection, pane) = of(session, foreground: foreground),
+              connection == connectionId else { return false }
         return pane.map { $0 == paneId } ?? true
     }
 

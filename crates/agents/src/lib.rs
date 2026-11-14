@@ -254,6 +254,13 @@ const AGENT_COMMANDS: &[&str] = &[
 /// Moshpit's own plumbing stamps a pane for real (a pairing self-test).
 pub const SELF_TEST_AGENT: &str = "moshpit-selftest";
 
+/// A connection's waiting card, `<this><conn>`: the identifier the app
+/// posts it under and the pushed copy's collapse id.
+pub const ATTENTION_CARD: &str = "moshpit.attention.";
+
+/// A pane's finish card, `<this><conn>.<pane>`, likewise.
+pub const DONE_CARD: &str = "moshpit.done.";
+
 fn is_shell(command: &str) -> bool {
     SHELLS.contains(&command)
 }
@@ -291,6 +298,12 @@ pub struct Monitor {
     announced: BTreeMap<Key, f64>,
     pending: BTreeMap<Key, (f64, f64)>,
     posted_attention: BTreeSet<Key>,
+    /// Connections a poll has come in for since they were tracked: what
+    /// stands there can be told.
+    polled: BTreeSet<String>,
+    /// Connections with a waiting card up that is judged once their first
+    /// poll is in ([`Monitor::delivered`]).
+    unjudged: BTreeSet<String>,
     headline_offset: usize,
     widget_sent: Option<(IslandState, f64)>,
     island_sent: Option<(IslandState, f64)>,
@@ -330,6 +343,8 @@ impl Monitor {
             announced,
             pending: BTreeMap::new(),
             posted_attention: BTreeSet::new(),
+            polled: BTreeSet::new(),
+            unjudged: BTreeSet::new(),
             headline_offset: 0,
             widget_sent: None,
             island_sent: None,
@@ -378,8 +393,28 @@ impl Monitor {
         std::mem::take(&mut self.effects)
     }
 
+    /// The user's switches, as they are now. Turning the Live Activity off
+    /// ends the island at once (B436): it used to stay up, frozen and read
+    /// as "paused", until every agent it listed was gone — while connected,
+    /// a finished agent stays listed, so in practice until a disconnect, or
+    /// iOS's eight hours.
     pub fn set_settings(&mut self, settings: Settings) {
+        let switched_off = self.settings.live_activity && !settings.live_activity;
         self.settings = settings;
+        if switched_off {
+            self.end_island_while_off();
+        }
+    }
+
+    /// With the Live Activity off, no island stays up: ended once, and
+    /// asked for afresh when it is switched on again.
+    fn end_island_while_off(&mut self) {
+        if !self.island_ended {
+            self.effects.push(Effect::Note("live activity switched off — island ended".to_owned()));
+            self.effects.push(Effect::EndIsland);
+            self.island_ended = true;
+        }
+        self.island_sent = None;
     }
 
     pub fn settings(&self) -> Settings {
@@ -412,12 +447,96 @@ impl Monitor {
     pub fn untrack(&mut self, conn: &str, keep_waiting_cards: bool, now: f64) {
         if keep_waiting_cards {
             self.posted_attention.retain(|key| key.0 != conn);
+        } else {
+            // A delete (B437): only the prompts this app posted used to
+            // leave, and the card was then redrawn from what was left —
+            // the notification service's — so a delete could post a fresh
+            // "needs you" for the connection it deleted, and one the app
+            // never posted for kept the pushed card for good. Its whole
+            // waiting set goes, its record, and its card, not redrawn.
+            if let Some(standing) = &self.standing {
+                standing.clear_all(conn, Date::from_unix(now));
+            }
+            self.posted_attention.retain(|key| key.0 != conn);
+            if self.announced.keys().any(|key| key.0 == conn) {
+                self.announced.retain(|key, _| key.0 != conn);
+                self.save_announced();
+            }
+            self.effects.push(Effect::Note(format!("deleted: {conn} — its waiting card withdrawn")));
+            self.effects.push(Effect::Withdraw(format!("{ATTENTION_CARD}{conn}")));
         }
         self.conns.remove(conn);
         self.trees.remove(conn);
+        self.polled.remove(conn);
+        self.unjudged.remove(conn);
         self.panes.retain(|key, _| key.0 != conn);
         self.pending.retain(|key, _| key.0 != conn);
         self.sync(now);
+    }
+
+    /// The agent cards the notification center holds, by identifier (B433),
+    /// and the connections saved on this phone — `None` while that can't be
+    /// told (before the first unlock). The platform hands them over when a
+    /// connection is tracked and when the app comes forward.
+    ///
+    /// A waiting card the notification service posted is one this machine
+    /// knew nothing of. Its prompt left the waiting set when the turn's
+    /// `done` was pushed, or expired from it after fifteen minutes, and
+    /// nothing was left to take the card down: a question answered at the
+    /// desk stayed "needs you" on the lock screen, beside its own
+    /// "finished", for good. A connection's waiting card goes now when
+    /// nothing there waits: no entry in the set, no card of this app's, no
+    /// pane of it in attention — once its first poll has said which panes
+    /// are; one with a pane still waiting is this machine's to take down
+    /// when that pane is answered. A connection that is no longer saved
+    /// takes its waiting card, its entries and its finish cards along.
+    pub fn delivered(&mut self, ids: &[String], saved: Option<&BTreeSet<String>>, now: f64) {
+        let is_saved = |conn: &str| saved.is_none_or(|saved| saved.iter().any(|id| id.eq_ignore_ascii_case(conn)));
+        let at = Date::from_unix(now);
+        for id in ids {
+            if let Some(conn) = id.strip_prefix(ATTENTION_CARD) {
+                if !is_saved(conn) {
+                    self.effects.push(Effect::Note(format!("delivered: {conn} is not saved — its card withdrawn")));
+                    if let Some(standing) = &self.standing {
+                        standing.clear_all(conn, at);
+                    }
+                    self.posted_attention.retain(|key| key.0 != conn);
+                    self.effects.push(Effect::Withdraw(id.clone()));
+                } else if self.conns.contains_key(conn) && !self.polled.contains(conn) {
+                    self.unjudged.insert(conn.to_owned());
+                } else {
+                    self.judge_waiting_card(conn, now);
+                }
+            } else if let Some((conn, _pane)) = id.strip_prefix(DONE_CARD).and_then(|rest| rest.split_once('.'))
+                && !is_saved(conn)
+            {
+                self.effects.push(Effect::Withdraw(id.clone()));
+            }
+        }
+    }
+
+    /// Whether `conn`'s waiting card still says something true; withdrawn
+    /// when it doesn't ([`Monitor::delivered`]).
+    fn judge_waiting_card(&mut self, conn: &str, now: f64) {
+        let at = Date::from_unix(now);
+        let standing = self.standing.as_ref().is_some_and(|file| !file.standing(conn, at).is_empty());
+        if standing || self.posted_attention.iter().any(|key| key.0 == conn) {
+            return;
+        }
+        let waiting: Vec<Key> = self
+            .panes
+            .iter()
+            .filter(|(key, p)| key.0 == conn && p.state == AgentState::Attention)
+            .map(|(key, _)| key.clone())
+            .collect();
+        if waiting.is_empty() {
+            self.effects.push(Effect::Note(format!("delivered: nothing waits on {conn} — its card withdrawn")));
+            self.effects.push(Effect::Withdraw(format!("{ATTENTION_CARD}{conn}")));
+        } else {
+            // The card is up for a question still standing: taken down with
+            // it, as one this app posted would be.
+            self.posted_attention.extend(waiting);
+        }
     }
 
     /// The connection's tree: where each of its panes lives. What a card
@@ -667,6 +786,10 @@ impl Monitor {
         if changed {
             self.sync(now);
         }
+        self.polled.insert(conn.to_owned());
+        if self.unjudged.remove(conn) {
+            self.judge_waiting_card(conn, now);
+        }
     }
 
     /// The panes of `conn` that are gone: neither this poll — which lists
@@ -894,7 +1017,7 @@ impl Monitor {
     /// Draw — or withdraw — the one card a connection's waiting prompts
     /// share, from the newest standing entry.
     fn render_digest(&mut self, conn: &str, edge: bool, now: f64) {
-        let id = format!("moshpit.attention.{conn}");
+        let id = format!("{ATTENTION_CARD}{conn}");
         let standing = self
             .standing
             .as_ref()
@@ -905,7 +1028,8 @@ impl Monitor {
             return;
         };
         let fallback = self.place(&(conn.to_owned(), newest.pane.clone()));
-        let text = digest(newest, standing.len(), self.settings, edge, &fallback);
+        let name = self.conns.get(conn).cloned().unwrap_or_default();
+        let text = digest(newest, standing.len(), self.settings, edge, &fallback, &name);
         self.effects.push(Effect::Post(Card {
             id,
             text,
@@ -937,7 +1061,7 @@ impl Monitor {
             self.settings.language,
         );
         self.effects.push(Effect::Post(Card {
-            id: format!("moshpit.done.{}.{}", key.0, key.1),
+            id: format!("{DONE_CARD}{}.{}", key.0, key.1),
             text,
             connection_id: key.0.clone(),
             pane_id: key.1.clone(),
@@ -1012,10 +1136,12 @@ impl Monitor {
             self.island_sent = None;
             return;
         }
-        self.island_ended = false;
         if !self.settings.live_activity {
+            // Also an island a launch with the switch off finds up.
+            self.end_island_while_off();
             return;
         }
+        self.island_ended = false;
         if needs_sending(&state, self.island_sent.as_ref(), now, self.tunables.resend_unchanged_after) {
             self.effects.push(Effect::Island(state.clone()));
             self.island_sent = Some((state, now));
@@ -1176,9 +1302,13 @@ pub fn decode_announced(raw: &BTreeMap<String, f64>, now: f64, ttl: f64) -> BTre
 /// The waiting card, drawn from the newest standing entry. The entry may
 /// be the notification service's, which records what the push said: the
 /// detail is held to the switch here, and `fallback` stands in for a place
-/// the entry doesn't carry.
-pub fn digest(newest: &Entry, count: usize, settings: Settings, edge: bool, fallback: &str) -> CardText {
-    let who = newest.agent.as_deref().filter(|agent| !agent.is_empty()).unwrap_or("agent");
+/// the entry doesn't carry. `name` (the connection's) names an entry with
+/// no agent, as the notification service names a push with none (the
+/// card read "agent needs you" in English, whatever the language), and the
+/// place when there is no name either.
+pub fn digest(newest: &Entry, count: usize, settings: Settings, edge: bool, fallback: &str, name: &str) -> CardText {
+    let named = if name.trim().is_empty() { fallback } else { name };
+    let who = newest.agent.as_deref().filter(|agent| !agent.is_empty()).unwrap_or(named);
     let stored = newest.location.as_deref().map(str::trim).unwrap_or("");
     copy::attention(
         who,

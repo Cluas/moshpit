@@ -509,6 +509,12 @@ actor KeychainService {
         KeychainService(backend: InMemoryKeychainBackend(seed: seed))
     }
 
+    /// These items as the Rust store reaches them (``KeychainReferences``'
+    /// list of items to drop, B428): the same backend, nothing laid over it.
+    nonisolated var storeHost: RustKeychainHost {
+        RustKeychainHost(backend: backend, launchTrust: nil)
+    }
+
     // MARK: - References
 
     /// What every ref ``generateRef()`` makes starts with — the only items

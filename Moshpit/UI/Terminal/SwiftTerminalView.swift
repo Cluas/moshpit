@@ -794,6 +794,12 @@ struct SwiftTerminalView: UIViewRepresentable {
         /// after its safety cap is a stuck one).
         private var veiledAt: CFTimeInterval = 0
 
+        /// How long the pane-switch veil has been up; nil when none is
+        /// (B445: the terminal stage's check).
+        func veilAge(now: CFTimeInterval = CACurrentMediaTime()) -> TimeInterval? {
+            transitionCover == nil ? nil : now - veiledAt
+        }
+
         /// What a pane-switch veil is called in the view tree: a veil left
         /// in a terminal no coordinator lifts any more can still be found.
         static let veilIdentifier = "terminal-switch-veil"
@@ -878,6 +884,12 @@ struct SwiftTerminalView: UIViewRepresentable {
         private var coverRelease: DispatchWorkItem?
         /// When output last landed (`CACurrentMediaTime`).
         private var lastFedAt: CFTimeInterval = 0
+
+        /// How long since output last landed; nil when none ever did
+        /// (B445: the terminal stage's check, whether bytes reach it).
+        func fedAgo(now: CFTimeInterval = CACurrentMediaTime()) -> TimeInterval? {
+            lastFedAt > 0 ? now - lastFedAt : nil
+        }
         /// When the terminal last took a new size from its container: at the
         /// end of a keyboard move (``unlockFrame()``), or when a resize held
         /// for its repaint is applied (``applyDeferredResize()``). The remote

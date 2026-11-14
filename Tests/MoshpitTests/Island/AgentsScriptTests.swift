@@ -133,17 +133,30 @@ struct AgentsScriptTests {
     func aHerdrSessionsPaneIsTheOneOnScreen() throws {
         let connection = Self.connection()
         let session = Self.herdrSession(connection, focused: "w1:p1")
-        let (conn, pane) = try #require(PaneOnScreen.of(session))
+        let (conn, pane) = try #require(PaneOnScreen.of(session, foreground: true))
         #expect(conn == connection.id)
         #expect(pane == "w1:p1")
-        #expect(PaneOnScreen.shows(session, connectionId: connection.id, paneId: "w1:p1"))
-        #expect(!PaneOnScreen.shows(session, connectionId: connection.id, paneId: "w1:p2"))
-        #expect(!PaneOnScreen.shows(session, connectionId: UUID(), paneId: "w1:p1"))
+        #expect(PaneOnScreen.shows(session, foreground: true, connectionId: connection.id, paneId: "w1:p1"))
+        #expect(!PaneOnScreen.shows(session, foreground: true, connectionId: connection.id, paneId: "w1:p2"))
+        #expect(!PaneOnScreen.shows(session, foreground: true, connectionId: UUID(), paneId: "w1:p1"))
         let plain = SessionHub.ActiveSession(connection: connection)
-        let (_, none) = try #require(PaneOnScreen.of(plain))
+        let (_, none) = try #require(PaneOnScreen.of(plain, foreground: true))
         #expect(none == nil)
-        #expect(PaneOnScreen.shows(plain, connectionId: connection.id, paneId: "any"))
-        #expect(PaneOnScreen.of(nil) == nil)
+        #expect(PaneOnScreen.shows(plain, foreground: true, connectionId: connection.id, paneId: "any"))
+        #expect(PaneOnScreen.of(nil, foreground: true) == nil)
+    }
+
+    /// B438: the terminal stays presented when the phone locks; for the
+    /// seconds the app runs on, its pane counted as looked at, and a prompt
+    /// there was acknowledged — its card taken down — on a locked phone.
+    @Test
+    func noPaneIsOnScreenOutsideTheForeground() {
+        let connection = Self.connection()
+        let session = Self.herdrSession(connection, focused: "w1:p1")
+        #expect(PaneOnScreen.of(session, foreground: false) == nil)
+        #expect(!PaneOnScreen.shows(session, foreground: false, connectionId: connection.id, paneId: "w1:p1"))
+        let plain = SessionHub.ActiveSession(connection: connection)
+        #expect(!PaneOnScreen.shows(plain, foreground: false, connectionId: connection.id, paneId: "any"))
     }
 
     static func connection() -> ServerConnection {

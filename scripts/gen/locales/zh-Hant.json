@@ -1148,5 +1148,10 @@
   "Finished": "已完成",
   "Idle": "閒置",
   "%lld more": "另外 %lld 個",
-  "System": "跟隨系統"
+  "System": "跟隨系統",
+  "Set up %@": "設定 %@",
+  "Connected": "已連線",
+  "Not connected": "未連線",
+  "%@ isn't connected": "%@ 還沒連上",
+  "Setup runs on the host over a live session. Connect first, then set it up here.": "設定要透過連線中的工作階段在主機上進行。先連上，再回來設定。"
 }

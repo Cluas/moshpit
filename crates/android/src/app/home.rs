@@ -22,6 +22,9 @@ pub fn message(app: &App) -> String {
 
 /// What Home shows now.
 pub fn state(app: &App) -> HomeState {
+    // A mosh card's port is Settings' first, the one its connect asks for
+    // (B430).
+    let udp_port = u32::try_from(app.settings.udp_range().0).unwrap_or(60001);
     let connections = app
         .connections
         .connections()
@@ -40,7 +43,7 @@ pub fn state(app: &App) -> HomeState {
                 user: saved.username.clone(),
                 host: saved.host.clone(),
                 mosh: saved.connection_protocol == ConnectionProtocol::Mosh,
-                udp_port: u32::try_from(saved.mosh_port_range_start).unwrap_or(60001),
+                udp_port,
                 link: conn.map_or(Link::Saved, link),
                 transport: conn.map_or(Transport::Live, transport),
                 degraded: conn.is_some_and(|c| {

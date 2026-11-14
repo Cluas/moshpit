@@ -442,4 +442,73 @@ struct KeychainReferencesTests {
         #expect(open.keys.keys.isEmpty, "a connection's own key was listed as an orphan")
         #expect(keychain.accountsNow == [named])
     }
+
+    // MARK: - Items connections let go of (B428)
+
+    /// The scratch defaults, as the Rust store's list reads them.
+    private static func preferences(_ s: Stores) -> PreferencesHost {
+        RustPreferencesHost(defaults: s.defaults, available: { true })
+    }
+
+    private static let toRelease = "moshpit.secrets.toRelease"
+
+    @Test("B428: a pasted key a save let go of while its session ran is dropped at the next launch, never offered back")
+    func aListedItemIsDroppedAtTheNextLaunch() async throws {
+        KeychainReferences.resetForTesting()
+        let s = Self.stores()
+        defer { s.defaults.removePersistentDomain(forName: s.suite) }
+        let pasted = Self.ref()
+        let managed = Self.ref()
+        let keychain = SlowKeychain([pasted: try Self.privateKey("pasted").privateBlob,
+                                     managed: try Self.privateKey("managed").privateBlob])
+        let service = KeychainService(backend: keychain)
+        let laptop = Self.key("laptop", ref: managed)
+        s.keys.add(laptop)
+        s.connections.add(Self.connection("pi", key: laptop))
+        // An earlier launch let go of it while its session still signed in
+        // with it, and ended before the session did.
+        s.defaults.set([pasted], forKey: Self.toRelease)
+        let preferences = Self.preferences(s)
+
+        let recovered = await KeychainReferences.recoverOrphansOnce(
+            connections: s.connections, keys: s.keys, keychain: service, preferences: preferences)
+        #expect(recovered.isEmpty, "offered back as a key: \(recovered.map(\.name))")
+        let settled = KeychainReferences.settleReleasesOnce(
+            connections: s.connections, keys: s.keys, keychain: service, preferences: preferences)
+        let accounts = settled.map(\.account)
+        #expect(accounts == [pasted])
+        #expect(keychain.accountsNow == [managed])
+        let left = s.defaults.stringArray(forKey: Self.toRelease)
+        #expect(left == nil)
+    }
+
+    @Test("B428: an item listed this launch waits for its session; one a record names again stays")
+    func aHeldItemWaitsAndANamedOneStays() async throws {
+        KeychainReferences.resetForTesting()
+        let s = Self.stores()
+        defer { s.defaults.removePersistentDomain(forName: s.suite) }
+        let held = Self.ref()
+        let named = Self.ref()
+        let keychain = SlowKeychain([held: Data("pw".utf8), named: Data("pw2".utf8)])
+        let service = KeychainService(backend: keychain)
+        let preferences = Self.preferences(s)
+        // This launch's session still reads `held`.
+        KeychainReferences.hold(held, preferences: preferences)
+        // An earlier launch listed `named`, which a connection picked up since.
+        s.connections.add(Self.connection("pi", ownRef: named))
+        s.defaults.set([held, named], forKey: Self.toRelease)
+
+        let settled = KeychainReferences.settleReleasesOnce(
+            connections: s.connections, keys: s.keys, keychain: service, preferences: preferences)
+        let accounts = settled.map(\.account)
+        #expect(accounts == [named])
+        #expect(keychain.accountsNow == [held, named])
+        // The session reconnected as saved, or ended.
+        let fate = await KeychainReferences.release(held, connections: s.connections, keys: s.keys,
+                                                    keychain: service, preferences: preferences)
+        #expect(fate == .deleted)
+        #expect(keychain.accountsNow == [named])
+        let left = s.defaults.stringArray(forKey: Self.toRelease)
+        #expect(left == nil)
+    }
 }

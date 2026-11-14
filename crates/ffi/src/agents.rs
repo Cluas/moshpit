@@ -213,8 +213,10 @@ impl AgentMachine {
         })
     }
 
-    pub fn set_settings(&self, settings: AgentSettingsValue) {
-        self.drive(|monitor| monitor.set_settings((&settings).into()));
+    /// The switches as they are now, and what changing them does: the
+    /// island ended when the Live Activity is switched off (B436).
+    pub fn set_settings(&self, settings: AgentSettingsValue) -> Vec<AgentEffectValue> {
+        self.drive(|monitor| monitor.set_settings((&settings).into()))
     }
 
     pub fn is_tracking(&self) -> bool {
@@ -285,6 +287,14 @@ impl AgentMachine {
 
     pub fn cycle_headline(&self, now: f64) -> Vec<AgentEffectValue> {
         self.drive(|monitor| monitor.cycle_headline(now))
+    }
+
+    /// The agent cards the notification center holds, by identifier, and
+    /// the saved connections' ids (none while they can't be told): a card
+    /// nothing stands behind any more is withdrawn (B433).
+    pub fn delivered(&self, ids: Vec<String>, saved: Option<Vec<String>>, now: f64) -> Vec<AgentEffectValue> {
+        let saved: Option<std::collections::BTreeSet<String>> = saved.map(|ids| ids.into_iter().collect());
+        self.drive(|monitor| monitor.delivered(&ids, saved.as_ref(), now))
     }
 
     pub fn state_since_by_pane(&self, conn: String) -> HashMap<String, f64> {

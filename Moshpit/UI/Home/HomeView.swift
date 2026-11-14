@@ -105,14 +105,19 @@ struct HomeView: View {
         connecting.first { $0.viewModel.errorMessage?.isEmpty == false }
     }
 
-    /// A live session for the Settings agent-hooks installer to run against.
-    /// Prefer one with an attached tmux control surface (so Run-in-terminal +
-    /// Re-check both work); fall back to any connected session, else nil so the
-    /// installer shows command + Copy only.
-    private var liveSessionForHooks: SessionHub.ActiveSession? {
-        let connected = store.connections.compactMap { hub.session(for: $0) }
-            .filter { if case .connected = $0.viewModel.status { return true } else { return false } }
-        return connected.first { $0.tmuxControl != nil } ?? connected.first
+    /// Connection `id`'s session while it is connected: what its Host Setup
+    /// runs over.
+    private func liveSession(_ id: UUID) -> SessionHub.ActiveSession? {
+        guard let connection = store.connections.first(where: { $0.id == id }),
+              let session = hub.session(for: connection),
+              case .connected = session.viewModel.status else { return nil }
+        return session
+    }
+
+    /// The saved connections for Settings › Set up a host, in Home's order,
+    /// each connected or not.
+    private var settingsHosts: [SettingsHost] {
+        store.connections.map { SettingsHost($0, live: liveSession($0.id) != nil) }
     }
 
     /// + on Home: adds a new connection. No free-tier cap — every feature is
@@ -222,7 +227,11 @@ struct HomeView: View {
             KeyPassphrasePromptCard(prompt: prompt)
         }
         .appSheet(isPresented: $showSettings) {
-            SettingsScreen(liveSession: liveSessionForHooks)
+            SettingsScreen(hosts: settingsHosts, session: liveSession, onConnect: { id in
+                // Connect from Set up a host: Settings closes, the terminal opens.
+                showSettings = false
+                open(id)
+            })
         }
         .appSheet(isPresented: $showAddConnection) {
             connectionForm(existing: nil)
@@ -272,16 +281,19 @@ struct HomeView: View {
     /// session runs, only once that session has connected again as the
     /// connection was saved, or has ended (B329) — until then its
     /// reconnects read the item it started with. A session on the Swift
-    /// path keeps it (the next launch's recovery has it then).
+    /// path keeps it until the app ends. Either way the item is listed to
+    /// drop first, so an app that ends before its session lets go drops it
+    /// at the next launch, never offers it back as a key (B428).
     private func releaseSecret(_ id: UUID, _ ref: String) async {
         let release = { [store, keyStore, keychain] in
-            await KeychainReferences.release(ref, connections: store, keys: keyStore, keychain: keychain)
+            _ = await KeychainReferences.release(ref, connections: store, keys: keyStore, keychain: keychain)
         }
         if let active = hub.sessions[id] {
             switch active.viewModel.status {
             case .connecting, .connected, .reconnecting:
+                KeychainReferences.hold(ref)
                 if !hub.releaseAfterReconnect(id, release) {
-                    Log.store.info("connection save: its old item stays while its session runs")
+                    Log.store.info("connection save: its old item stays while its session runs; the next launch drops it")
                 }
                 return
             default:
@@ -305,7 +317,18 @@ struct HomeView: View {
                         monitor.untrack(connectionId: connection.id)
                         await hub.disconnect(connection.id)
                     },
-                    dropSecret: { ref in _ = try? await keychain.delete(forRef: ref) })
+                    dropSecret: { ref in
+                        do {
+                            try await keychain.delete(forRef: ref)
+                        } catch {
+                            // A later launch tries again (B428).
+                            Log.store.error("delete: the keychain kept its item (\(String(describing: error), privacy: .public)); listed to drop later")
+                            KeychainReferences.hold(ref)
+                        }
+                    },
+                    holdSecret: { KeychainReferences.hold($0) })
+                // Its finish cards, now that it is no longer saved (B437).
+                monitor.sweepDelivered()
             } catch {
                 Log.push.error("delete \(connection.displayName, privacy: .public) stopped: \(error.localizedDescription, privacy: .public)")
                 cardModal = ConnectionCard.Modal(kind: .notice(ConnectionCard.NoticeRequest(
@@ -1364,7 +1387,8 @@ struct ConnectionCard: View {
     private var subtitle: String {
         var parts = ["\(connection.username)@\(connection.host)"]
         if connection.connectionProtocol == .mosh {
-            parts.append("UDP \(connection.moshPortRangeStart)")
+            // Settings' ports, the ones a connect asks for (B430).
+            parts.append("UDP \(AppSettings.shared.udpRangeStart)")
         }
         if let connectedAt = metrics?.connectedAt {
             let hours = max(1, Int(Date().timeIntervalSince(connectedAt) / 3600))

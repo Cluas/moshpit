@@ -920,9 +920,11 @@ final class CoreTermMetalCanvas: UIView {
     // MARK: Drawing
 
     /// Draws into the layer's next drawable; false when none was free.
-    /// `completion` runs once the picture is on screen.
+    /// `completion` runs once the frame's fate is known: true when the
+    /// picture reached the screen, false when the layer dropped it (its
+    /// presentation time is zero) or the GPU refused it (B445).
     @discardableResult
-    func render(rows: CoreTermRows, completion: (@Sendable () -> Void)?) -> Bool {
+    func render(rows: CoreTermRows, completion: (@Sendable (Bool) -> Void)?) -> Bool {
         guard bounds.width > 0, bounds.height > 0 else {
             lastFailure = "no size"
             return false
@@ -940,11 +942,13 @@ final class CoreTermMetalCanvas: UIView {
         }
         lastFailure = nil
         encodePass(into: drawable.texture, buffer: buffer, rows: rows)
-        if let completion { drawable.addPresentedHandler { _ in completion() } }
+        let fate = completion.map(CoreTermFrameFate.init)
+        if let fate { drawable.addPresentedHandler { shown in fate.resolve(shown: shown.presentedTime > 0) } }
         let failure = gpuFailure
         buffer.addCompletedHandler { buffer in
             if buffer.status == .error {
                 failure.note(buffer.error.map { "\($0)" } ?? "error")
+                fate?.resolve(shown: false)
             }
         }
         buffer.present(drawable)

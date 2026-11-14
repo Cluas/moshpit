@@ -900,6 +900,12 @@ pub enum PollReading {
 
 /// Classify one read: a tree, a refusal over skew, no server, or nothing
 /// new — in that order.
+///
+/// No server is what says so: herdr's structured `server_not_running`,
+/// 0.7.3's bare socket error, or no herdr at all (127). Any other failed
+/// read — a request that timed out, a CLI that crashed — is nothing new
+/// (B445): taken for no server, it emptied the tree and dropped the
+/// terminal out of its slot for the beat until the next good read.
 pub fn read_poll(result: &CommandResult) -> PollReading {
     if let Some(decoded) = snapshot::decode(&result.output) {
         return PollReading::Tree(Box::new(decoded));
@@ -907,7 +913,10 @@ pub fn read_poll(result: &CommandResult) -> PollReading {
     if let Some(mismatch) = snapshot::protocol_mismatch(&result.output) {
         return PollReading::Mismatch(mismatch);
     }
-    if result.failed() || snapshot::is_server_not_running(&result.output) {
+    if snapshot::is_server_not_running(&result.output)
+        || (result.failed()
+            && (result.exit_code == Some(127) || snapshot::is_no_socket(&result.output)))
+    {
         return PollReading::NoServer;
     }
     PollReading::NoNews

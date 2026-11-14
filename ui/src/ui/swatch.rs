@@ -490,16 +490,30 @@ const COLOR_WELL_HEIGHT: f32 = 28.0;
 /// picker (without opacity: a palette entry has none), and `on_change`
 /// hears each color picked there. Screen readers hear `label`; `id` is the
 /// well's accessibility identifier, which tests find it by.
+///
+/// A touch target whole (44 pt): the box stays UIKit's well's size, so the
+/// row keeps its height and the well its look, and its hit slop takes the
+/// rest, which the host's component hands to the well.
 pub fn color_well(
     color: impl Fn() -> Rgba + 'static,
     id: Option<&str>,
     label: String,
     on_change: impl Fn(Rgba) + 'static,
 ) -> AnyElement {
+    let (x, y) = (
+        ((touch_target() - COLOR_WELL_WIDTH) / 2.0).max(0.0),
+        ((touch_target() - COLOR_WELL_HEIGHT) / 2.0).max(0.0),
+    );
     native("moshpit/color-well")
         .w(px(COLOR_WELL_WIDTH))
         .h(px(COLOR_WELL_HEIGHT))
         .flex_shrink_0()
+        .hit_slop(EdgeInsets {
+            top: Points(y),
+            right: Points(x),
+            bottom: Points(y),
+            left: Points(x),
+        })
         .prop("color", move || json!(hex_string(color())))
         .prop(
             "identifier",

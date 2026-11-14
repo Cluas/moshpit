@@ -489,4 +489,37 @@ struct ConnectionStoreTests {
         #expect(earlier.map(\.name) == ["studio"])
         #expect(earlier.first?.useTmux == true)
     }
+
+    /// B429: the terminal kept its own copy of the connection from when it
+    /// opened and wrote it back whole on a SSH ⇄ mosh switch — on the iPad
+    /// an edit saved from the sidebar beside it (another host, user, key)
+    /// was undone, and the live session pointed back at the old box. The
+    /// switch now changes the protocol alone, on the saved record.
+    @Test("switching the protocol keeps an edit saved since the terminal opened")
+    func switchingTheProtocolKeepsAnEditSavedSince() throws {
+        let (defaults, name) = Self.makeDefaults()
+        defer { defaults.removePersistentDomain(forName: name) }
+        let store = ConnectionStore(defaults: defaults)
+        let opened = Self.sample(host: "old.example.com")
+        store.add(opened)
+        // Edited and saved from the sidebar while the terminal is open.
+        var edited = opened
+        edited.host = "new.example.com"
+        edited.username = "bob"
+        store.update(edited)
+
+        let switched = try #require(store.switchProtocol(of: opened.id))
+
+        #expect(switched.connectionProtocol == .mosh)
+        #expect(switched.host == "new.example.com")
+        #expect(switched.username == "bob")
+        let reread = ConnectionStore(defaults: defaults)
+        let stored = try #require(reread.saved(opened.id))
+        #expect(stored.host == "new.example.com")
+        #expect(stored.connectionProtocol == .mosh)
+        // What the old switch wrote: the copy from when it opened.
+        #expect(opened.host == "old.example.com")
+        let unknown = store.switchProtocol(of: UUID())
+        #expect(unknown == nil)
+    }
 }

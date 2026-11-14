@@ -103,6 +103,9 @@ extension ConnectionDraft {
         }
         if plan.moved {
             try (forgetPairing ?? { try HostCare.shared.hostChanged($0) })(connection.id)
+            // What this process learned about the old box; the store's
+            // update forgets the stored copy (B431).
+            HostCapabilityCache.shared.forget(connection.id)
         }
         if let write = plan.write, let ref = connection.keychainRef {
             switch write {

@@ -43,9 +43,11 @@ struct PushNotificationServiceTests {
     private func request(state: String = "attention",
                          title: String? = "Bash: rm -rf build",
                          dur: Int? = nil, ts: Int = Int(Date().timeIntervalSince1970),
-                         sealedWith key: String = secret) throws -> UNNotificationRequest {
-        let status = PushSealedBox.Status(conn: Self.conn, host: "m1-pro", sess: "work",
-                                         pane: "%3", agent: "claude", state: state,
+                         sealedWith key: String = secret,
+                         naming conn: String = conn,
+                         agent: String = "claude") throws -> UNNotificationRequest {
+        let status = PushSealedBox.Status(conn: conn, host: "m1-pro", sess: "work",
+                                         pane: "%3", agent: agent, state: state,
                                          title: title,
                                          // See PushRemoteNotificationTests: a
                                          // frozen ts would silently exercise the
@@ -171,6 +173,38 @@ struct PushNotificationServiceTests {
         let content = try #require(delivered)
         #expect(content.title == "An agent needs you")
         #expect(content.userInfo[AgentNotifications.connectionKey] == nil)
+    }
+
+    /// B435: a host holds one pairing's key and writes the connection id
+    /// into what it seals. Sealed with this pairing's key but naming another
+    /// connection, the push read as that connection's: its name, its waiting
+    /// set, a tap into its pane. It keeps the fallback, as if unopened.
+    @Test("a push sealed with one connection's key, naming another, keeps the fallback")
+    func misnamedPushFallsBack() throws {
+        let other = "9B2C1D3E-0000-4000-8000-00000000000A"
+        let delivered = try withPairing { deliver(try request(naming: other)) }
+        let content = try #require(delivered)
+        #expect(content.title == "An agent needs you")
+        #expect(content.userInfo[AgentNotifications.connectionKey] == nil)
+        #expect(PushStanding.standing(conn: other).isEmpty, "recorded as the other connection's")
+    }
+
+    /// B439: a push self-test named the pane it ran outside of (`%0`, where
+    /// an agent often waits), and its "done" cleared that pane's waiting
+    /// entry: the question left the set and rang again as a new one. A
+    /// self-test leaves the set as it found it.
+    @Test("a push self-test leaves the waiting set as it found it")
+    func selfTestLeavesTheWaitingSet() throws {
+        defer { PushStanding.clear(conn: Self.conn, pane: "%3") }
+        let asked = Int(Date().timeIntervalSince1970)
+        PushStanding.noteStanding(conn: Self.conn,
+                                  entry: .init(pane: "%3", agent: "claude", since: asked, recordedAt: Date()))
+        let delivered = try withPairing {
+            deliver(try request(state: "done", title: "selftest-ab12",
+                                agent: PushRemoteNotification.selfTestAgent))
+        }
+        _ = try #require(delivered)
+        #expect(PushStanding.standing(conn: Self.conn).map(\.pane) == ["%3"])
     }
 
     @Test("with nothing paired the fallback arrives, and its buttons are gone")
