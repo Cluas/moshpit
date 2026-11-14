@@ -9,171 +9,123 @@ import ActivityKit
 import WidgetKit
 #endif
 
-/// Vibe Island — iOS adaptation of github.com/Octane0411/open-vibe-island.
+/// Vibe Island — the platform half.
 ///
-/// Watches live tmux panes for coding-agent activity and mirrors them into a
-/// SINGLE aggregate Dynamic Island Live Activity + local notifications:
-///   * pane output flowing (non-shell foreground) → `.working`
-///   * terminal bell (BEL)                         → `.attention` + notification
-///   * quiet for `idleAfter` after working         → `.done`
-///   * `.done` for `doneLinger`                    → removed
+/// What Moshpit makes of its coding agents is decided in Rust
+/// (`crates/agents`, through `AgentMachine`): per-pane states from the
+/// hooks and the output, the announce grace, the waiting set's 0→1 edge, a
+/// long finish's one ring, what the island, the widget and the cards show,
+/// and only when it changes. This class feeds it — the multiplexer's hook
+/// polls, tmux's output and bells, a sweep every two seconds with the pane
+/// on screen — and does what it answers: the Live Activity (ActivityKit),
+/// the cards (the notification center), the widget's snapshot (the App
+/// Group and WidgetCenter), the announced-episode record (UserDefaults).
 ///
-/// Phase A uses this output-flow heuristic (no remote install). A pane only
-/// becomes a row once a non-shell foreground process has been active for
-/// `promotionDelay` — so a quick `ls` never flickers a card and idle shells
-/// never appear. Phase B will replace the heuristic with hook events stamped
-/// onto tmux pane options (see project_vibe_island).
-///
-/// Tapping the island deep-links to the most-urgent agent's pane via
+/// Tapping the island deep-links to the headline agent's pane via
 /// `moshpit://connection/<uuid>?pane=<paneId>`.
 @MainActor
 @Observable
 final class AgentActivityMonitor {
 
-    // MARK: Tunables
-    private let idleAfter: TimeInterval = 4      // working → done after this much quiet
-    private let promotionDelay: TimeInterval = 2 // sustained non-shell before a row appears
-    private let doneLinger: TimeInterval = 25    // keep a finished agent visible this long
-    private let maxAgents = 4                    // rows carried in the ContentState
-    // Phase B — a hook-owned pane that stops appearing in the poll for longer
-    // than this reverts to the output heuristic. The sweep runs every 2s and
-    // polls each sweep, so ~2 poll intervals of slack avoids flapping on a
-    // single dropped round-trip.
-    private let hookGrace: TimeInterval = 5
+    /// The three things the monitor asks of the notification center.
+    struct Notifier {
+        var add: (UNNotificationRequest) -> Void
+        var withdraw: (_ identifier: String) -> Void
+        var requestAuthorization: () -> Void
 
-    /// Agent labels that are Moshpit's own plumbing, never a row on the island.
-    ///
-    /// A pairing self-test stamps a pane exactly as a real hook would — that is
-    /// what makes it a real proof — so without this the act of verifying an
-    /// install would flash a phantom agent for the length of a sweep.
-    private static let reservedAgents: Set<String> = [PushRemoteNotification.selfTestAgent]
+        static var system: Notifier { Notifier(
+            add: { UNUserNotificationCenter.current().add($0) },
+            withdraw: { id in
+                let center = UNUserNotificationCenter.current()
+                center.removeDeliveredNotifications(withIdentifiers: [id])
+                center.removePendingNotificationRequests(withIdentifiers: [id])
+            },
+            requestAuthorization: {
+                UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { _, _ in }
+            }) }
+    }
 
-    /// Foreground commands that are NOT agents — never promoted to a row.
-    private static let shells: Set<String> = [
-        "zsh", "bash", "sh", "fish", "dash", "ksh", "tmux",
-        "login", "-zsh", "-bash", "-sh", "ssh", "mosh", ""
-    ]
-
-    /// Foreground commands the OUTPUT HEURISTIC may promote to an island row.
-    /// Anything else producing output (builds, tails, servers, vim…) stays off
-    /// the island — promoting every busy pane buried the actual agents in
-    /// meaningless rows. Mirrors the hook installer's agent list (the hook path
-    /// is authoritative and unaffected by this filter; a stamped pane always
-    /// shows). BELs also bypass this — a bell is an explicit signal.
-    private static let agentCommands: Set<String> = [
-        "claude", "codex", "gemini", "qwen", "qoder", "factory", "codebuddy",
-        "aider", "goose", "opencode",
-    ]
-
-    // MARK: State
     private struct ConnRef {
         let connection: ServerConnection
-        /// Either multiplexer's control surface. The Island only needs the
-        /// tree and the agent stamps, both of which are on the protocol —
-        /// tmux's output/bell heuristics are wired separately in `track`
-        /// because only tmux has them.
+        /// Either multiplexer's control surface: the tree and the hook
+        /// stamps are on the protocol; tmux's output and bells are wired in
+        /// `track`, because only tmux has them.
         weak var controller: (any MultiplexerControlling)?
     }
-    private struct PaneKey: Hashable { let conn: UUID; let pane: String }
-    private struct PaneActivity {
-        let conn: UUID
-        let paneId: String
-        var command: String
-        var location: String
-        /// What the agent is doing/asking — the hook's `@moshpit_title`. nil on the
-        /// output heuristic (no precise content) and once a turn ends (cleared).
-        var detail: String?
-        var state: AgentActivityAttributes.AgentState
-        var stateSince: Date     // entry into the current state — drives the timer
-        var lastOutput: Date
-        var firstActive: Date    // when sustained non-shell activity began
-        var visible: Bool        // promoted into the Live Activity?
-        // Phase B — hook bridge. A pane whose `@moshpit_state` is set is governed
-        // by the precise hook stamp, not the output heuristic. `hookOwned` makes
-        // the hook authoritative; `lastHookSeen` is when the poll last carried a
-        // state for it, so the heuristic can resume cleanly when the option is
-        // unset (the pane drops out of the poll for ~2 intervals).
-        var hookOwned: Bool = false
-        var lastHookSeen: Date = .distantPast
-        /// What the host's stamp said on the last poll that carried one —
-        /// before ``reclassify`` and never written by the output heuristic —
-        /// so a `done` is judged against what the HOST last said, not against
-        /// what this record last showed.
-        var lastHookState: AgentActivityAttributes.AgentState?
-    }
 
-    private var conns: [UUID: ConnRef] = [:]
-    private var panes: [PaneKey: PaneActivity] = [:]
+    /// Where the announced-episode record lives.
+    static let announcedKey = "island.announcedEpisodes"
 
-    /// When each pane's most recently ANNOUNCED attention episode began.
-    ///
-    /// This exists because the thing it replaced was not a record of anything.
-    /// The old test was `!(wasAttention && wasHookOwned)`, and `wasHookOwned` is
-    /// `hookGoverns` — a five-second liveness window. Any gap longer than that in
-    /// hook polling (a reconnect, a spell in the background, a slow host) made the
-    /// sweep drop `hookOwned`, while `.attention` deliberately sticks. The next
-    /// poll then saw an unchanged prompt as a new one and announced it again, once
-    /// per reconnect, for as long as the agent kept waiting.
-    /// Persisted, because an app RELAUNCH has the same problem a reconnect does.
-    /// A device log caught four notifications added in one millisecond right after
-    /// a fresh launch — every pane still standing in `attention`, re-announced,
-    /// one of them re-added two seconds after being withdrawn. In-memory alone
-    /// would have fixed the reconnect the user reported and left that.
-    private var announcedEpisode: [PaneKey: Date] = [:]
+    @ObservationIgnored private var conns: [UUID: ConnRef] = [:]
+    /// The machine: Home's record reads its clock (`homeMessage`).
+    @ObservationIgnored let machine: AgentMachine
+    @ObservationIgnored private var sweepTimer: Timer?
+    @ObservationIgnored private let settings: AppSettings
+    @ObservationIgnored private let island: AgentIsland
+    @ObservationIgnored private let notifier: Notifier
+    @ObservationIgnored private let writeWidget: (AgentWidgetState) -> Void
+    /// The clock; nil: the wall's. A test drives the machine on its own.
+    @ObservationIgnored private let clock: (() -> Date)?
 
-    private static let announcedKey = "island.announcedEpisodes"
-
-    /// Entries older than this are dropped on load: a pane whose prompt has stood
-    /// untouched for a day is not one this record needs to keep suppressing, and
-    /// unbounded growth in UserDefaults is its own bug.
-    private static let announcedTTL: TimeInterval = 24 * 60 * 60
-
-    /// `"<uuid>|<pane>" -> epoch seconds`, flat so it survives as a plist.
-    static func encodeAnnounced(_ v: [String: Date]) -> [String: Double] {
-        v.mapValues { $0.timeIntervalSince1970 }
-    }
-
-    static func decodeAnnounced(_ raw: [String: Double], now: Date,
-                                ttl: TimeInterval) -> [String: Date] {
-        raw.compactMapValues { seconds in
-            let date = Date(timeIntervalSince1970: seconds)
-            // A future timestamp means a clock moved, not a real episode; drop it
-            // rather than let it suppress notifications until the clock catches up.
-            guard date <= now.addingTimeInterval(60),
-                  now.timeIntervalSince(date) <= ttl else { return nil }
-            return date
+    /// `standing` and `finishes` are the files the notification service
+    /// extension shares (the App Group's; a test's own); the rest are where
+    /// the machine's answers go.
+    init(settings: AppSettings, standing: PushStandingFile? = PushStanding.appGroupFile,
+         writeWidget: ((AgentWidgetState) -> Void)? = nil, island: AgentIsland? = nil,
+         finishes: PushFinishesFile? = PushFinishes.appGroupFile, notifier: Notifier = .system,
+         clock: (() -> Date)? = nil, readiness: DefaultsReadiness = .system) {
+        self.settings = settings
+        self.readiness = readiness
+        self.island = island ?? ActivityKitIsland(settings: settings)
+        self.notifier = notifier
+        self.clock = clock
+        self.writeWidget = writeWidget ?? { snapshot in
+            AgentWidgetStore.write(snapshot)
+            #if canImport(WidgetKit)
+            WidgetCenter.shared.reloadAllTimelines()
+            #endif
         }
+        // Read sealed (a prewarm before the first unlock), the record is
+        // nothing: it is read again once it can be believed (B348).
+        let trusted = readiness.isReadable(settings.store)
+        recordTrusted = trusted
+        let record = trusted ? Self.storedRecord(settings.store) : [:]
+        machine = AgentMachine(settings: Self.value(of: settings),
+                               standingPath: standing?.url.path,
+                               finishesPath: finishes?.url.path,
+                               announced: record,
+                               announceGrace: Self.announceGrace,
+                               now: (clock?() ?? Date()).timeIntervalSince1970)
     }
 
-    private func loadAnnounced() {
-        let raw = settings.store.dictionary(forKey: Self.announcedKey) as? [String: Double] ?? [:]
-        let kept = Self.decodeAnnounced(raw, now: Date(), ttl: Self.announcedTTL)
-        announcedEpisode = kept.reduce(into: [:]) { out, pair in
-            let parts = pair.key.split(separator: "|", maxSplits: 1)
-            guard parts.count == 2, let conn = UUID(uuidString: String(parts[0])) else { return }
-            out[PaneKey(conn: conn, pane: String(parts[1]))] = pair.value
-        }
+    private var now: Double { (clock?() ?? Date()).timeIntervalSince1970 }
+
+    @ObservationIgnored private let readiness: DefaultsReadiness
+    /// Whether the announced record read so far can be believed. Until it
+    /// can, nothing is written over the stored one: a launch before the
+    /// first unlock read it as empty, and its first save wrote that over
+    /// it — every question still standing announced again after a reboot,
+    /// its earlier card never withdrawn (B348).
+    @ObservationIgnored private var recordTrusted: Bool
+
+    private static func storedRecord(_ defaults: UserDefaults) -> [String: Double] {
+        defaults.dictionary(forKey: announcedKey) as? [String: Double] ?? [:]
     }
 
-    private func saveAnnounced() {
-        let flat = announcedEpisode.reduce(into: [String: Date]()) { out, pair in
-            out["\(pair.key.conn.uuidString)|\(pair.key.pane)"] = pair.value
-        }
-        settings.store.set(Self.encodeAnnounced(flat), forKey: Self.announcedKey)
+    /// The app came forward: the record a sealed launch couldn't read joins
+    /// what the machine kept meanwhile, and is saved (B348). A no-op once
+    /// the record has been read.
+    func reloadIfNeeded() {
+        guard !recordTrusted, readiness.isReadable(settings.store) else { return }
+        recordTrusted = true
+        let stored = Self.storedRecord(settings.store)
+        let now = self.now
+        drive { $0.adoptAnnounced(announced: stored, now: now) }
     }
-    /// Attention notifications we have DELIVERED, so leaving the attention
-    /// state can revoke them — a stale "needs you" on the lock screen invites
-    /// answering a prompt that no longer exists (possibly approving a newer,
-    /// more dangerous one).
-    @ObservationIgnored private var postedAttention: Set<PaneKey> = []
 
-    /// How long a prompt must STAND before the phone hears about it. A question
-    /// answered at the desk inside this window never interrupts anyone — which
-    /// is most of them, most days. The cost is honesty about the tail: when the
-    /// user really is away, they learn about the wait this much later.
-    ///
-    /// `-MOSHPIT_ANNOUNCE_GRACE <seconds>` overrides it so the device harness
-    /// does not spend half a minute per phase watching a timer.
+    /// How long a prompt must stand before the phone hears about it.
+    /// `-MOSHPIT_ANNOUNCE_GRACE <seconds>` shortens it so a device harness
+    /// doesn't spend half a minute per phase watching a timer.
     nonisolated static let announceGrace: TimeInterval = {
         let args = ProcessInfo.processInfo.arguments
         if let i = args.firstIndex(of: "-MOSHPIT_ANNOUNCE_GRACE"), i + 1 < args.count,
@@ -183,99 +135,35 @@ final class AgentActivityMonitor {
         return 30
     }()
 
-    private struct PendingAnnounce { var episode: Date; var task: Task<Void, Never> }
-    @ObservationIgnored private var pendingAnnounce: [PaneKey: PendingAnnounce] = [:]
-
-    /// Wait out the grace, re-check that the SAME question is still standing,
-    /// and only then announce. The re-check is the point: a prompt answered at
-    /// the desk leaves `attention` (or starts a new episode) inside the window,
-    /// and the scheduled announcement evaporates without a trace.
-    private func scheduleAnnounce(key: PaneKey, episode: Date,
-                                  location: String, command: String, detail: String?) {
-        if let pending = pendingAnnounce[key], pending.episode == episode { return }
-        pendingAnnounce[key]?.task.cancel()
-        Log.island.info("announce scheduled: pane \(key.pane, privacy: .public) grace \(Self.announceGrace, privacy: .public)s")
-        let task = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(Self.announceGrace))
-            guard !Task.isCancelled, let self else { return }
-            self.pendingAnnounce[key] = nil
-            guard let p = self.panes[key], p.state == .attention,
-                  p.stateSince == episode else {
-                // The window did its job: the question this was scheduled for is
-                // gone (answered at the desk) or superseded. Logged, because a
-                // silently swallowed announcement and a scheduling bug look
-                // identical from a phone.
-                Log.island.info("announce cancelled: pane \(key.pane, privacy: .public) left the episode within the grace")
-                return
-            }
-            self.announcedEpisode[key] = episode
-            self.saveAnnounced()
-            self.postAttention(connectionId: key.conn, paneId: key.pane,
-                               location: p.location, command: p.command,
-                               detail: self.settings.lockScreenDetailEnabled ? p.detail : nil,
-                               episode: episode)
-        }
-        pendingAnnounce[key] = PendingAnnounce(episode: episode, task: task)
-    }
-    @ObservationIgnored private var sweepTimer: Timer?
-    @ObservationIgnored private let settings: AppSettings
-    #if canImport(ActivityKit)
-    @ObservationIgnored private var activity: Activity<AgentActivityAttributes>?
-    #endif
-
-    init(settings: AppSettings) {
-        self.settings = settings
-        loadAnnounced()
-    }
-
     // MARK: - Lifecycle
 
-    /// Track a connection's multiplexer, whichever it is.
-    ///
-    /// The output/bell heuristics are tmux-only, and deliberately so: they
-    /// exist to GUESS at agent state from a pane's byte stream when no hook is
-    /// installed. herdr reports `agent_status` itself, so on herdr the guess
-    /// would be a strictly worse second opinion competing with the truth.
+    /// Track a connection's multiplexer, whichever it is. The output and
+    /// bell heuristics are tmux-only: herdr reports `agent_status` itself.
     func track<C: MultiplexerControlling>(connection: ServerConnection, controller: C) {
         guard settings.liveActivityEnabled || settings.notificationsEnabled else { return }
-
-        conns[connection.id] = ConnRef(connection: connection, controller: controller)
+        let id = connection.id
+        conns[id] = ConnRef(connection: connection, controller: controller)
         if let tmux = controller as? TmuxSessionController {
             tmux.onPaneActivity = { [weak self] paneId in
-                self?.noteOutput(connectionId: connection.id, paneId: paneId)
+                self?.output(connectionId: id, paneId: paneId)
             }
             tmux.onPaneBell = { [weak self] paneId in
-                self?.noteBell(connectionId: connection.id, paneId: paneId)
+                self?.bell(connectionId: id, paneId: paneId)
             }
         }
-        // Re-sync the island the instant fresh agent state lands, instead of
-        // waiting for the next sweep tick.
         controller.onAgentHooksUpdated = { [weak self] in
-            self?.applyAgentHooks(connectionId: connection.id)
+            self?.applyAgentHooks(connectionId: id)
         }
         startSweepTimerIfNeeded()
-        requestNotificationAuthorizationIfNeeded()
+        drive { $0.track(conn: id.uuidString, label: connection.displayName) }
+        sendTree(connectionId: id)
     }
 
-    /// Track a connection once its multiplexer control plane exists.
-    ///
-    /// Views used to sample `session.tmuxController` right after
-    /// `hub.start()` returned and wire nothing when it was nil. Over mosh
-    /// that is always: both control planes come up in detached tasks seconds
-    /// later, so mosh+tmux never fed the island at all — no Live Activity,
-    /// no lock-screen alerts, an empty Agents section — while the same
-    /// connection over SSH lit up fine. Waiting on the session makes the
-    /// wiring transport-agnostic; `track` still applies the tmux-vs-herdr
-    /// distinction (heuristics vs native `agent_status`) once the concrete
-    /// controller is known.
+    /// Track a connection once its multiplexer control plane exists — and
+    /// every controller it ever wires: a reconnect rebuilds it, and the weak
+    /// ref `track` keeps goes nil with the old one.
     func trackWhenReady(connection: ServerConnection, session: SessionHub.ActiveSession) {
         guard settings.liveActivityEnabled || settings.notificationsEnabled else { return }
-        // Subscribe to every controller this session will ever wire, not just
-        // the first: a mid-session reconnect rebuilds the controller, and the
-        // weak ref `track` stores went nil with the old one — hook polling
-        // silently stopped and no prompt after a reconnect ever announced.
-        // `track` is idempotent (it overwrites the ref and rewires callbacks),
-        // so re-tracking the same controller is harmless.
         session.onMultiplexerControlChanged = { [weak self] controller in
             self?.track(connection: connection, controller: controller)
         }
@@ -285,730 +173,220 @@ final class AgentActivityMonitor {
         }
     }
 
-    func untrack(connectionId: UUID) {
+    /// Stop watching a connection. `keepWaitingCards`: the user
+    /// disconnected (or is reconnecting) and the agents there still wait —
+    /// their cards stay up; a deleted connection takes them (the default).
+    func untrack(connectionId: UUID, keepWaitingCards: Bool = false) {
         conns[connectionId] = nil
-        panes = panes.filter { $0.key.conn != connectionId }
-        for (key, pending) in pendingAnnounce where key.conn == connectionId {
-            pending.task.cancel()
-            pendingAnnounce[key] = nil
-        }
         if conns.isEmpty {
             sweepTimer?.invalidate()
             sweepTimer = nil
         }
-        sync()
+        let now = self.now
+        drive { $0.untrack(conn: connectionId.uuidString, keepWaitingCards: keepWaitingCards, now: now) }
+    }
+
+    /// Cycle the Dynamic Island headline to the next agent.
+    func cycleHeadline() {
+        let now = self.now
+        drive { $0.cycleHeadline(now: now) }
+    }
+
+    /// Every tracked pane's state-entry time for one connection, keyed by
+    /// pane id.
+    func stateSinceByPane(connectionId: UUID) -> [String: Date] {
+        machine.stateSinceByPane(conn: connectionId.uuidString)
+            .mapValues { Date(timeIntervalSince1970: $0) }
     }
 
     // MARK: - Signals
 
-    private func noteOutput(connectionId: UUID, paneId: String) {
-        let key = PaneKey(conn: connectionId, pane: paneId)
-        let now = Date()
+    private func output(connectionId: UUID, paneId: String) {
+        let place = place(connectionId: connectionId, paneId: paneId)
+        let now = self.now
+        drive { $0.output(conn: connectionId.uuidString, pane: paneId, place: place, now: now) }
+    }
 
-        // Phase B precedence — a pane the hook currently governs is authoritative;
-        // the output heuristic must not fight it. Track lastOutput for the
-        // fallback path but never touch its state/visibility.
-        if var p = panes[key], hookGoverns(p, now: now) {
-            p.lastOutput = now
-            panes[key] = p
-            return
+    private func bell(connectionId: UUID, paneId: String) {
+        let place = place(connectionId: connectionId, paneId: paneId)
+        let now = self.now
+        drive { $0.bell(conn: connectionId.uuidString, pane: paneId, place: place, now: now) }
+    }
+
+    private func applyAgentHooks(connectionId: UUID) {
+        guard let controller = conns[connectionId]?.controller else { return }
+        sendTree(connectionId: connectionId)
+        let hooks = controller.agentHooks.map { paneId, hook in
+            AgentHookInValue(pane: paneId, state: hook.state, agent: hook.agent,
+                             since: hook.since?.timeIntervalSince1970,
+                             command: hook.command, title: hook.title,
+                             place: place(connectionId: connectionId, paneId: paneId))
         }
-
-        let cmd = command(connectionId: connectionId, paneId: paneId)
-        let loc = location(connectionId: connectionId, paneId: paneId)
-
-        // Shell foreground = not an agent. If a visible agent just dropped back
-        // to its shell, it has finished its turn → mark done; otherwise ignore.
-        if Self.shells.contains(cmd) {
-            if var existing = panes[key], existing.visible, existing.state == .working {
-                existing.state = .done
-                existing.stateSince = now
-                panes[key] = existing
-                sync()
-            }
-            return
-        }
-
-        let isKnownAgent = Self.agentCommands.contains(cmd)
-        if var p = panes[key] {
-            p.command = cmd
-            p.location = loc
-            p.lastOutput = now
-            if !p.visible {
-                // Promotion is agent-only; other busy panes (builds, tails,
-                // servers) never earn a row from mere output.
-                if isKnownAgent, now.timeIntervalSince(p.firstActive) >= promotionDelay {
-                    p.visible = true
-                    p.state = .working
-                    p.stateSince = now
-                }
-            } else if p.state != .working {
-                p.state = .working
-                p.stateSince = now
-            }
-            panes[key] = p
-        } else if isKnownAgent {
-            panes[key] = PaneActivity(
-                conn: connectionId, paneId: paneId,
-                command: cmd, location: loc,
-                state: .working, stateSince: now,
-                lastOutput: now, firstActive: now, visible: false)
-        } else {
-            return   // not an agent, nothing visible to age out — no bookkeeping
-        }
-        sync()
-    }
-
-    private func noteBell(connectionId: UUID, paneId: String) {
-        let key = PaneKey(conn: connectionId, pane: paneId)
-        let now = Date()
-
-        // Phase B precedence — if a hook governs this pane, its precise state
-        // (e.g. still `working`) wins over a stray BEL. The hook's own
-        // `.attention` path posts the notification instead.
-        if let p = panes[key], hookGoverns(p, now: now) { return }
-
-        let cmd = command(connectionId: connectionId, paneId: paneId)
-        let loc = location(connectionId: connectionId, paneId: paneId)
-
-        // A bell always matters — surface immediately, even for a shell prompt.
-        var p = panes[key] ?? PaneActivity(
-            conn: connectionId, paneId: paneId,
-            command: cmd, location: loc,
-            state: .attention, stateSince: now,
-            lastOutput: now, firstActive: now, visible: true)
-        p.command = Self.shells.contains(cmd) ? p.command : cmd
-        p.location = loc
-        p.state = .attention
-        p.stateSince = now
-        p.visible = true
-        panes[key] = p
-
-        // Through the same grace and bookkeeping as the hook path. A bell sets
-        // a fresh `stateSince`, so a genuinely new bell still announces; the
-        // grace re-check quietly swallows one the user handled at the desk.
-        if Self.shouldAnnounce(state: .attention, episode: p.stateSince,
-                               lastAnnounced: announcedEpisode[key]) {
-            scheduleAnnounce(key: key, episode: p.stateSince,
-                             location: loc, command: p.command, detail: nil)
-        }
-        sync()
-    }
-
-    /// Announce a standing prompt — as ONE summary per connection, not one card
-    /// per pane. Shared by the BEL path (``noteBell``) and the hook path, both
-    /// arriving through ``scheduleAnnounce``'s grace window.
-    ///
-    /// The sound and the Focus breach belong to the 0→1 EDGE alone: the moment
-    /// "nobody is waiting on you" becomes "someone is". A second agent joining
-    /// the wait updates the summary's count silently at `.passive`. The edge is
-    /// read from ``PushStanding`` — the App Group set the notification service
-    /// extension shares — so the push and the local path cannot both ring for
-    /// one prompt: whichever lands first takes the edge.
-    private func postAttention(connectionId: UUID, paneId: String,
-                               location: String, command: String,
-                               detail: String? = nil, episode: Date = Date()) {
-        // Logged before the authorization gate, so "we decided to announce" and
-        // "iOS delivered something" stay separable (the reconnect bug was only
-        // diagnosable because of this line).
-        Log.island.info("announcing attention: pane \(paneId, privacy: .public) on \(location, privacy: .public)")
-        guard settings.notificationsEnabled else { return }
-        let conn = connectionId.uuidString
-        // The entry carries the card's WHERE in card form (`place`, not the
-        // island's `location`): the digest below is drawn from the standing
-        // set alone, newest first, so what it can say is what was stored.
-        let edge = PushStanding.noteStanding(conn: conn, entry: .init(
-            pane: paneId, agent: displayCommand(command), title: detail,
-            location: place(connectionId: connectionId, paneId: paneId),
-            since: Int(episode.timeIntervalSince1970),
-            recordedAt: Date()))
-        postedAttention.insert(PaneKey(conn: connectionId, pane: paneId))
-        renderAttentionDigest(connectionId: connectionId, edge: edge)
-    }
-
-    /// Draw (or withdraw) the one summary card a connection's waiting prompts
-    /// share. `edge` decides sound and interruption level; everything else is
-    /// read from the standing set, newest first.
-    private func renderAttentionDigest(connectionId: UUID, edge: Bool) {
-        let conn = connectionId.uuidString
-        let id = "moshpit.attention.\(conn)"
-        let standing = PushStanding.standing(conn: conn)
-        let center = UNUserNotificationCenter.current()
-        guard let newest = standing.first else {
-            center.removeDeliveredNotifications(withIdentifiers: [id])
-            center.removePendingNotificationRequests(withIdentifiers: [id])
-            return
-        }
-        let content = UNMutableNotificationContent()
-        let who = newest.agent?.isEmpty == false ? newest.agent! : "agent"
-        // The same words the notification service extension puts on the pushed
-        // copy of this card — one renderer, so the two never drift again. The
-        // edge is ELIGIBLE to break through Focus (see the entitlement notes in
-        // docs/PUSH.md — each Focus still decides for itself); updates are
-        // `.passive`: they change a count on a card, they wake no one.
-        AgentNotificationCopy.attention(agent: who, standingCount: standing.count,
-                                        detail: newest.title, place: newest.location ?? "",
-                                        edge: edge, sound: settings.attentionSoundEnabled,
-                                        into: content)
-        content.userInfo = [
-            AgentNotifications.connectionKey: conn,
-            AgentNotifications.paneKey: newest.pane
-        ]
-        center.add(UNNotificationRequest(identifier: id, content: content, trigger: nil))
-    }
-
-    /// Post the "agent finished" notification. Hook-driven only — a precise
-    /// `Stop` stamp flipping a pane to `.done` is a real end-of-turn signal,
-    /// whereas the output heuristic's `.done` (4s of quiet) is too fuzzy to ping
-    /// on. `detail` is the prompt the turn answered (the hook's title on a
-    /// `done`), already gated by the Show detail switch by the caller; `duration`
-    /// is how long the closing episode ran — the card shows it, and at the
-    /// shared threshold (PushRemoteNotification.doneSoundThreshold) it decides
-    /// whether this finish is worth a sound: the user walked away from a build,
-    /// tell them it is over; a twenty-second answer is information, not an
-    /// interruption. A tap opens the pane.
-    private func postDone(connectionId: UUID, paneId: String,
-                          command: String, detail: String?,
-                          duration: TimeInterval = 0) {
-        guard settings.notificationsEnabled else { return }
-        let content = UNMutableNotificationContent()
-        AgentNotificationCopy.done(agent: displayCommand(command), detail: detail,
-                                   place: place(connectionId: connectionId, paneId: paneId),
-                                   duration: Int(duration), sound: settings.attentionSoundEnabled,
-                                   threshold: PushRemoteNotification.doneSoundThreshold,
-                                   into: content)
-        content.userInfo = [
-            AgentNotifications.connectionKey: connectionId.uuidString,
-            AgentNotifications.paneKey: paneId
-        ]
-        let request = UNNotificationRequest(
-            identifier: "moshpit.done.\(connectionId.uuidString).\(paneId)",
-            content: content, trigger: nil)
-        UNUserNotificationCenter.current().add(request)
-    }
-
-    /// True when a pane is currently governed by a fresh hook stamp — the
-    /// heuristic must defer to it. `hookOwned` flips on in ``applyAgentHooks``;
-    /// `lastHookSeen` keeps it authoritative for ``hookGrace`` after the last
-    /// poll that carried a state, so a single dropped round-trip never lets the
-    /// heuristic clobber a live agent.
-    /// Whether a pane in `state`, whose current episode began at `episode`,
-    /// should announce itself given what was last announced for it.
-    ///
-    /// Deliberately static and free of the state machine: the version this
-    /// replaced was three terms inline in `applyAgentHooks`, unreachable from a
-    /// test without a live tmux controller, and wrong for two years' worth of
-    /// reconnects. An `episode` is a pane's `stateSince` — stable while a prompt
-    /// stands, different when a new one begins — so "have I said this already"
-    /// becomes a comparison rather than a guess about liveness.
-    static func shouldAnnounce(state: AgentActivityAttributes.AgentState,
-                               episode: Date,
-                               lastAnnounced: Date?) -> Bool {
-        guard state == .attention else { return false }
-        return lastAnnounced != episode
-    }
-
-    /// Whether a poll reading `hook` from the host (shown as `shown` after
-    /// ``reclassify``) is a turn ENDING — the one moment a finish card is for.
-    ///
-    /// Three things must hold, and each is a phantom this rule has met:
-    ///
-    /// * The host says `done` now and it is shown as done. A reclassified
-    ///   fossil (a day-old idle-nag `attention` healed to done, a killed
-    ///   agent's frozen stamp) is bookkeeping, not a finish — healing two of
-    ///   them must not chime twice.
-    /// * The host said `working` or `attention` LAST poll. The record's own
-    ///   state is not evidence: the output heuristic writes it too, and on an
-    ///   attach every pane redraws. A done Claude pane whose stamp had gone
-    ///   stale was flipped to heuristic `working` by that redraw; the next poll
-    ///   read the host's standing `done` plus the prompt still stored on the
-    ///   pane, and a lock screen showed "✓ claude finished" for a turn that had
-    ///   ended nine hours earlier. Four of them, in one minute.
-    /// * That last word was RECENT — within `grace`, the same window that
-    ///   decides whether a hook governs a pane at all. A finish that happened
-    ///   while this device was not polling (background, disconnected) was the
-    ///   remote push's to deliver, and it did; repeating it on the next
-    ///   foreground, hours later, is the same phantom on a longer fuse.
-    static func isTurnEnding(hook: AgentActivityAttributes.AgentState,
-                             shown: AgentActivityAttributes.AgentState,
-                             previousHook: AgentActivityAttributes.AgentState?,
-                             previousHookSeen: Date?,
-                             now: Date, grace: TimeInterval) -> Bool {
-        guard hook == .done, shown == .done else { return false }
-        guard previousHook == .working || previousHook == .attention else { return false }
-        guard let previousHookSeen else { return false }
-        return now.timeIntervalSince(previousHookSeen) <= grace
-    }
-
-    private func hookGoverns(_ p: PaneActivity, now: Date) -> Bool {
-        p.hookOwned && now.timeIntervalSince(p.lastHookSeen) <= hookGrace
+        let now = self.now
+        let interval = Self.stampInterval(of: controller)
+        drive { $0.hooks(conn: connectionId.uuidString, hooks: hooks, now: now, interval: interval) }
     }
 
     // MARK: - Sweep
 
+    /// How often the sweep runs — and so how often tmux's stamps are polled.
+    static let sweepInterval: TimeInterval = 2
+
+    /// How often `controller`'s stamps arrive, for how long the machine
+    /// holds one (B346): tmux's are polled by this sweep; herdr's by its own
+    /// client, at its pace (slower while its push channel is up).
+    static func stampInterval(of controller: any MultiplexerControlling) -> TimeInterval {
+        if let herdr = controller as? HerdrControlClient { return herdr.stampInterval }
+        return sweepInterval
+    }
+
     private func startSweepTimerIfNeeded() {
         guard sweepTimer == nil else { return }
-        sweepTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
+        sweepTimer = Timer.scheduledTimer(withTimeInterval: Self.sweepInterval, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.sweep() }
         }
     }
 
-    private func sweep() {
-        let now = Date()
-
-        // Phase B — drive a hook poll for every tracked controller on the same
-        // cadence as the heuristic sweep. Each completion calls back into
-        // applyAgentHooks (via onAgentHooksUpdated) which re-syncs the island.
-        for ref in conns.values {
+    /// Every two seconds: a hook poll for every tracked controller, and the
+    /// machine's sweep with the pane on screen.
+    func sweep() {
+        for (id, ref) in conns {
             ref.controller?.pollAgentHooks()
+            sendTree(connectionId: id)
         }
-
-        // Looking at a prompt acknowledges it. The island keeps showing the
-        // factual state (the agent IS still waiting until it is answered), but
-        // the lock-screen card's job — get you to the pane — is done the moment
-        // you are there. Clear the standing entry and let the summary re-render
-        // around whoever you have NOT seen, or come down entirely.
-        //
-        // `announcedEpisode` is untouched, so this never re-arms a re-announce:
-        // an acknowledged prompt stays acknowledged for its whole episode.
-        for key in postedAttention {
-            if AgentControlBridge.shared.isPaneVisible?(key.conn, key.pane) == true {
-                // Logged for the same reason the announce decision is: an
-                // acknowledgment that silently fails and one that never ran look
-                // identical from a lock screen that still shows the card.
-                Log.island.info("acknowledged: pane \(key.pane, privacy: .public) viewed — standing cleared")
-                PushStanding.clear(conn: key.conn.uuidString, pane: key.pane)
-                postedAttention.remove(key)
-                renderAttentionDigest(connectionId: key.conn, edge: false)
-            }
-        }
-
-        var changed = false
-        for (key, var p) in panes {
-            // Fallback restoration — a hook-owned pane whose stamp has gone
-            // stale (option unset, dropped from the poll past hookGrace) returns
-            // to heuristic governance. Re-arm its bookkeeping from now so the
-            // heuristic doesn't immediately mark it done off an ancient
-            // lastOutput, then let the normal heuristic branches below run.
-            if p.hookOwned && now.timeIntervalSince(p.lastHookSeen) > hookGrace {
-                p.hookOwned = false
-                p.lastOutput = now
-                p.firstActive = now
-                panes[key] = p
-                changed = true
-                continue
-            }
-            // A live hook-owned pane is fully governed by applyAgentHooks; the
-            // heuristic's idle/done/linger transitions must not touch it.
-            if hookGoverns(p, now: now) { continue }
-            if p.visible {
-                switch p.state {
-                case .working:
-                    if now.timeIntervalSince(p.lastOutput) > idleAfter {
-                        p.state = .done; p.stateSince = now; panes[key] = p; changed = true
-                    }
-                case .done:
-                    if now.timeIntervalSince(p.stateSince) > doneLinger {
-                        panes[key] = nil; announcedEpisode[key] = nil; saveAnnounced(); changed = true
-                    }
-                case .idle:
-                    panes[key] = nil; announcedEpisode[key] = nil; saveAnnounced(); changed = true
-                case .attention:
-                    break   // sticks until the human acts / new output flows
-                }
-            } else if now.timeIntervalSince(p.lastOutput) > promotionDelay + idleAfter {
-                // Never promoted and now quiet — drop the bookkeeping.
-                panes[key] = nil; announcedEpisode[key] = nil; saveAnnounced(); changed = true
-            }
-        }
-        if changed { sync() }
+        let visible = AgentControlBridge.shared.visiblePane?()
+        let now = self.now
+        drive { $0.sweep(visibleConn: visible?.0.uuidString, visiblePane: visible?.1 ?? nil, now: now) }
     }
 
-    // MARK: - Hook bridge (Phase B)
+    /// A test's output and bell, as tmux's callbacks deliver them.
+    func outputForScript(connectionId: UUID, paneId: String) { output(connectionId: connectionId, paneId: paneId) }
+    func bellForScript(connectionId: UUID, paneId: String) { bell(connectionId: connectionId, paneId: paneId) }
 
-    /// Map the controller's string-typed hook state onto the aggregate schema's
-    /// `AgentState`. Only the three hook-emitted phases are valid; a `nil`/other
-    /// value means "no precise hook data" and the pane stays on the heuristic
-    /// (so this never returns `.idle`, which hooks never emit).
-    private func hookState(_ raw: String?) -> AgentActivityAttributes.AgentState? {
-        switch raw {
-        case "working":   return .working
-        case "attention": return .attention
-        case "done":      return .done
-        default:          return nil
+    /// The connection's tree, for what a card says about a pane no poll
+    /// has named yet (a prompt the notification service recorded).
+    private func sendTree(connectionId: UUID) {
+        guard let snapshot = conns[connectionId]?.controller?.snapshot else { return }
+        var places: [String: AgentPaneWhereValue] = [:]
+        for paneId in snapshot.panes.keys {
+            places[paneId] = place(connectionId: connectionId, paneId: paneId)
+        }
+        machine.tree(conn: connectionId.uuidString, places: places)
+    }
+
+    // MARK: - The machine's answers
+
+    private func drive(_ step: (AgentMachine) -> [AgentEffectValue]) {
+        machine.setSettings(settings: Self.value(of: settings))
+        for effect in step(machine) {
+            apply(effect)
         }
     }
 
-    /// Reclassify a stamp the host got wrong (or that time made wrong).
-    ///
-    /// Two fossils this heals, both seen standing on a real phone for a DAY:
-    ///
-    /// - An `attention` whose title is Claude's idle reminder ("Claude is
-    ///   waiting for your input"). Older stamp scripts recorded idle nags as
-    ///   attention; the current one refuses them, which also means it never
-    ///   overwrites the old ones — the pane would show NEEDS YOU forever. An
-    ///   idle reminder means the agent is at its prompt: that is `done`.
-    ///
-    /// - Any hook state on a pane whose FOREGROUND is back to a shell. The
-    ///   stamp only ever gets written by hooks, and a killed agent fires no
-    ///   final hook — `attention` freezes at the moment of death. What is
-    ///   actually running in the pane is the ground truth the options cannot
-    ///   provide. (Same insight the reply-path waiter used, for the same
-    ///   reason.)
-    static func reclassify(state: AgentActivityAttributes.AgentState,
-                           title: String?,
-                           foregroundCommand: String?) -> AgentActivityAttributes.AgentState {
-        if let cmd = foregroundCommand, shells.contains(cmd) {
-            return .done
-        }
-        if state == .attention, let title,
-           title.localizedCaseInsensitiveContains("waiting for your input") {
-            return .done
-        }
-        return state
-    }
-
-    /// Merge one controller's freshly-polled `@moshpit_*` stamps into the per-pane
-    /// model. For each pane carrying a precise state, the hook is AUTHORITATIVE:
-    /// it upserts a visible row (no `promotionDelay`/shell filtering — a stamp is
-    /// an explicit "this is an agent" signal), sets state/stateSince from the
-    /// stamp, and flags the pane `hookOwned` so the heuristic defers to it.
-    /// Panes WITHOUT a precise state are left untouched here — `sweep()` reverts
-    /// any that were previously hook-owned once their stamp goes stale, and the
-    /// output heuristic governs them in the meantime.
-    private func applyAgentHooks(connectionId: UUID) {
-        guard let controller = conns[connectionId]?.controller else { return }
-        let now = Date()
-        var changed = false
-
-        for (paneId, hook) in controller.agentHooks {
-            guard let mapped = hookState(hook.state) else { continue }
-            // The foreground command comes from the hook poll itself (fresh every
-            // round), NOT from the discovery snapshot — that copy can be minutes
-            // stale, and a stale "zsh" would suppress a just-launched agent.
-            let newState = Self.reclassify(state: mapped, title: hook.title,
-                                           foregroundCommand: hook.command)
-            // Moshpit's own plumbing stamps a pane for real — that is what makes
-            // an install self-test a proof rather than a claim — so it has to be
-            // filtered here rather than by not stamping.
-            if let agent = hook.agent, Self.reservedAgents.contains(agent) { continue }
-            let key = PaneKey(conn: connectionId, pane: paneId)
-            let cmd = hook.agent ?? command(connectionId: connectionId, paneId: paneId)
-            let loc = location(connectionId: connectionId, paneId: paneId)
-            let since = hook.since ?? now
-
-            let prevSince = panes[key]?.stateSince
-            let prevHook = panes[key]?.lastHookState
-            let prevHookSeen = panes[key]?.lastHookSeen
-
-            if var p = panes[key] {
-                // A state flip (or first stamp) resets the timer to the stamp's
-                // `since`; an unchanged state keeps its original start so the
-                // live timer doesn't restart every 2s poll. agent/title may
-                // refine the label each poll.
-                let stateChanged = p.state != newState || !p.hookOwned
-                p.command = cmd
-                p.location = loc
-                p.detail = hook.title
-                p.state = newState
-                p.stateSince = stateChanged ? since : p.stateSince
-                p.visible = true
-                p.hookOwned = true
-                p.lastHookSeen = now
-                p.lastHookState = mapped
-                p.lastOutput = now
-                panes[key] = p
+    private func apply(_ effect: AgentEffectValue) {
+        switch effect {
+        case .island(let state):
+            let content = Self.content(state)
+            if island.live() != nil {
+                island.update(content)
             } else {
-                panes[key] = PaneActivity(
-                    conn: connectionId, paneId: paneId,
-                    command: cmd, location: loc,
-                    detail: hook.title,
-                    state: newState, stateSince: since,
-                    lastOutput: now, firstActive: now, visible: true,
-                    hookOwned: true, lastHookSeen: now, lastHookState: mapped)
+                _ = island.request(content)
             }
-            changed = true
-
-            // A hook flipping a pane INTO attention fires the same notification
-            // a BEL would — once per episode, never once per poll and never
-            // again on reconnect. `stateSince` is read back from the pane after
-            // the update above, so it is the resolved episode start (the host's
-            // `@moshpit_since` when the stamp carried one) rather than `now`,
-            // which would differ on every poll and announce on every one.
-            let episode = panes[key]?.stateSince ?? since
-            if Self.shouldAnnounce(state: newState, episode: episode,
-                                   lastAnnounced: announcedEpisode[key]) {
-                // Through the grace window, not straight to the lock screen: a
-                // question answered at the desk within `announceGrace` never
-                // reaches a phone. The record is written when the announcement
-                // FIRES — an episode that evaporates in the window was never
-                // announced, so its next occurrence starts clean.
-                scheduleAnnounce(key: key, episode: episode,
-                                 location: loc, command: cmd,
-                                 detail: settings.lockScreenDetailEnabled ? hook.title : nil)
-            }
-
-            // A hook flipping a pane INTO done (from a live working/attention
-            // turn) is a real `Stop` — ping once. The rule is ``isTurnEnding``
-            // and it is judged against what the HOST said on the previous
-            // poll, not against this record's state: the output heuristic
-            // writes that state too, and that is how four "finished" cards for
-            // day-old prompts landed on one lock screen in a single minute.
-            if Self.isTurnEnding(hook: mapped, shown: newState,
-                                 previousHook: prevHook, previousHookSeen: prevHookSeen,
-                                 now: now, grace: hookGrace) {
-                // How long the closing episode ran decides whether this finish
-                // is worth a sound. `prevSince` is the episode the pane is
-                // leaving — since the host stopped rewriting `@moshpit_since`
-                // on same-state stamps, that is "time since the last human
-                // interaction", which is exactly the walked-away measure.
-                let duration = prevSince.map { since.timeIntervalSince($0) } ?? 0
-                // On a `done` the hook's title is the prompt the turn answered
-                // (`@moshpit_prompt`, carried over by the stamp script), so the
-                // card can say WHAT finished — behind the same switch as every
-                // other lock-screen detail.
-                postDone(connectionId: connectionId, paneId: paneId,
-                         command: cmd,
-                         detail: settings.lockScreenDetailEnabled ? hook.title : nil,
-                         duration: duration)
-            }
+        case .endIsland:
+            island.endAll()
+        case .widget(let state):
+            writeWidget(Self.widget(state, at: Date(timeIntervalSince1970: now)))
+        case .post(let card):
+            notifier.add(Self.request(card))
+        case .withdraw(let id):
+            notifier.withdraw(id)
+        case .saveAnnounced(let record):
+            // Kept in the machine until the stored one can be read.
+            guard recordTrusted else { return }
+            settings.store.set(record, forKey: Self.announcedKey)
+        case .requestAuthorization:
+            notifier.requestAuthorization()
+        case .note(let text):
+            Log.island.info("\(text, privacy: .public)")
         }
-
-        if changed { sync() }
     }
 
-    // MARK: - Snapshot helpers
-
-    private func command(connectionId: UUID, paneId: String) -> String {
-        guard let snapshot = conns[connectionId]?.controller?.snapshot,
-              let pane = snapshot.panes[paneId] else { return "" }
-        return pane.command
+    /// The machine's switches and language: the app's own localization, so
+    /// a card reads in the language the rest of the app does.
+    static func value(of settings: AppSettings) -> AgentSettingsValue {
+        AgentSettingsValue(notifications: settings.notificationsEnabled,
+                           liveActivity: settings.liveActivityEnabled,
+                           showDetail: settings.lockScreenDetailEnabled,
+                           sound: settings.attentionSoundEnabled,
+                           language: AppLanguage.current())
     }
 
-    /// Where an agent lives, as one line for the lock screen, the island and
-    /// the notification body.
-    ///
-    /// This is the only place that formats a window without going through
-    /// `displayTitle`, and on herdr that showed. herdr labels a tab after its
-    /// own number, so `"\(index):\(name)"` rendered `1:1`; worse, the session
-    /// was missing entirely, so two agents in different workspaces produced a
-    /// byte-identical location — on a card whose buttons are Allow and Deny.
-    private func location(connectionId: UUID, paneId: String) -> String {
-        let host = conns[connectionId]?.connection.displayName ?? ""
+    /// Where a pane lives, from the controller's tree: what runs in it, its
+    /// session's and its window's names. Nothing for a pane the tree
+    /// doesn't show (the line is then the host alone).
+    private func place(connectionId: UUID, paneId: String) -> AgentPaneWhereValue {
         let vocab = (conns[connectionId]?.connection.multiplexer ?? .tmux).vocabulary
         guard let snapshot = conns[connectionId]?.controller?.snapshot,
-              let pane = snapshot.panes[paneId],
-              let window = snapshot.windows[pane.windowId]
-        else { return host }
+              let pane = snapshot.panes[paneId] else {
+            return AgentPaneWhereValue(command: "", session: nil, window: nil)
+        }
+        guard let window = snapshot.windows[pane.windowId] else {
+            return AgentPaneWhereValue(command: pane.command, session: nil, window: nil)
+        }
         let session = snapshot.sessions[window.sessionId].map { snapshot.sessionDisplayName($0) }
-        let place = [session, window.displayTitle(vocab)]
-            .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
-        return place.isEmpty ? host : "\(host) · \(place)"
+        return AgentPaneWhereValue(command: pane.command, session: session,
+                                   window: window.displayTitle(vocab))
     }
 
-    /// Where an agent is, as a notification names it: the connection's own
-    /// name and the session — the two words that tell workspaces apart. Not
-    /// ``location(connectionId:paneId:)``, which the island and the Agents list
-    /// use and which adds the window: on a lock screen that read as
-    /// "work · 0 · 14: bl", and the card's body now says WHAT instead of
-    /// narrowing down WHERE. Same rule as the pushed copy
-    /// (``AgentNotificationCopy/place(label:session:)``), so a card reads the
-    /// same however it reached the phone.
-    private func place(connectionId: UUID, paneId: String) -> String {
-        let label = conns[connectionId]?.connection.displayName ?? ""
-        guard let snapshot = conns[connectionId]?.controller?.snapshot,
-              let pane = snapshot.panes[paneId],
-              let window = snapshot.windows[pane.windowId],
-              let session = snapshot.sessions[window.sessionId]
-        else { return label }
-        return AgentNotificationCopy.place(label: label,
-                                           session: snapshot.sessionDisplayName(session))
-    }
-
-    /// Clean a foreground command for display (drop a leading login "-").
-    private func displayCommand(_ cmd: String) -> String {
-        cmd.hasPrefix("-") ? String(cmd.dropFirst()) : cmd
-    }
-
-    /// Whether a pane is still awaiting approval. nil = we have no record
-    /// (e.g. the app was relaunched) — callers should NOT block on nil, only
-    /// on an explicit "no longer attention".
-    func attentionState(connectionId: UUID, paneId: String) -> Bool? {
-        panes[PaneKey(conn: connectionId, pane: paneId)].map { $0.state == .attention }
-    }
-
-    /// When a pane entered its current state — the Agents section's "waiting
-    /// for how long" answer, off the same clock the island's timer runs on.
-    /// nil = no record (relaunch, or the pane never registered); the row just
-    /// shows no duration rather than inventing one.
-    func stateSince(connectionId: UUID, paneId: String) -> Date? {
-        panes[PaneKey(conn: connectionId, pane: paneId)]?.stateSince
-    }
-
-    /// Every tracked pane's state-entry time for one connection, keyed by pane
-    /// id — the Agents section reads the whole map once per rebuild instead of
-    /// probing pane by pane.
-    func stateSinceByPane(connectionId: UUID) -> [String: Date] {
-        var result: [String: Date] = [:]
-        for (key, pane) in panes where key.conn == connectionId {
-            result[key.pane] = pane.stateSince
-        }
-        return result
-    }
-
-    // MARK: - Live Activity sync
-
-    private func buildState() -> AgentActivityAttributes.ContentState {
-        let visible = panes.values.filter(\.visible).sorted {
-            if $0.state.rank != $1.state.rank { return $0.state.rank < $1.state.rank }
-            return $0.stateSince > $1.stateSince
-        }
-        let agents = visible.prefix(maxAgents).map { p in
+    static func content(_ state: AgentIslandValue) -> AgentActivityAttributes.ContentState {
+        let agents = state.agents.map { row in
             AgentActivityAttributes.Agent(
-                id: "\(p.conn.uuidString):\(p.paneId)",
-                connectionId: p.conn.uuidString,
-                paneId: p.paneId,
-                command: displayCommand(p.command),
-                location: p.location,
-                // Privacy: the title (what the agent runs/asks) shows on the lock
-                // screen, so honor the user's opt-out. Gating here covers BOTH the
-                // Live Activity and the widget (writeWidgetSnapshot reads this).
-                detail: settings.lockScreenDetailEnabled ? p.detail : nil,
-                state: p.state,
-                startedAt: p.stateSince)
+                id: row.id, connectionId: row.connectionId, paneId: row.paneId,
+                command: row.command, location: row.location, detail: row.detail,
+                state: AgentActivityAttributes.AgentState(rawValue: row.state) ?? .working,
+                startedAt: Date(timeIntervalSince1970: row.startedAt))
         }
-        let ordered = Array(agents)
-        // Which agent the pill shows: the most-urgent (first) by default, or the
-        // user-cycled one (the "switch agent" control rotates through the list).
-        let headline = ordered.isEmpty
-            ? nil
-            : ordered[((headlineOffset % ordered.count) + ordered.count) % ordered.count]
-        let deepLink = headline.map {
-            AgentDeepLink.string(connectionId: $0.connectionId, paneId: $0.paneId)
-        }
+        let headline = agents.first { $0.id == state.headlineId }
         return AgentActivityAttributes.ContentState(
-            agents: ordered,
-            workingCount: visible.filter { $0.state == .working }.count,
-            attentionCount: visible.filter { $0.state == .attention }.count,
-            headlineDeepLink: deepLink,
-            headlineId: headline?.id)
+            agents: agents,
+            workingCount: Int(state.workingCount),
+            attentionCount: Int(state.attentionCount),
+            headlineDeepLink: headline.map {
+                AgentDeepLink.string(connectionId: $0.connectionId, paneId: $0.paneId)
+            },
+            headlineId: state.headlineId)
     }
 
-    /// Rotation chosen by the "switch agent" control — which agent the Dynamic
-    /// Island pill shows. Advanced by ``cycleHeadline()``; harmlessly wraps as
-    /// the agent set changes.
-    @ObservationIgnored private var headlineOffset = 0
-
-    /// Cycle the Dynamic Island headline to the next agent and push an update.
-    func cycleHeadline() {
-        headlineOffset += 1
-        sync()
+    static func widget(_ state: AgentIslandValue, at now: Date) -> AgentWidgetState {
+        let content = content(state)
+        return AgentWidgetState(
+            items: content.agents.map {
+                AgentWidgetState.Item(id: $0.id, command: $0.command, location: $0.location,
+                                      detail: $0.detail, state: $0.state.rawValue,
+                                      startedAt: $0.startedAt,
+                                      deepLink: AgentDeepLink.string(connectionId: $0.connectionId,
+                                                                     paneId: $0.paneId))
+            },
+            attentionCount: content.attentionCount,
+            workingCount: content.workingCount,
+            headlineDeepLink: content.headlineDeepLink,
+            updatedAt: now)
     }
 
-    private func sync() {
-        // Panes that moved on leave the standing set, and each connection's
-        // summary card follows: re-rendered silently around whoever is still
-        // waiting, withdrawn outright when nobody is. (This used to remove
-        // per-pane cards; there is one card per connection now.)
-        let attentionNow = Set(panes.filter { $0.value.state == .attention }.map(\.key))
-        let stale = postedAttention.subtracting(attentionNow)
-        if !stale.isEmpty {
-            for key in stale {
-                PushStanding.clear(conn: key.conn.uuidString, pane: key.pane)
-            }
-            postedAttention = postedAttention.intersection(attentionNow)
-            for conn in Set(stale.map(\.conn)) {
-                renderAttentionDigest(connectionId: conn, edge: false)
-            }
+    static func request(_ card: AgentCardValue) -> UNNotificationRequest {
+        let content = UNMutableNotificationContent()
+        content.title = card.title
+        content.body = card.body
+        content.sound = card.sound ? .default : nil
+        switch card.level {
+        case .passive: content.interruptionLevel = .passive
+        case .active: content.interruptionLevel = .active
+        case .timeSensitive: content.interruptionLevel = .timeSensitive
         }
-
-        let state = buildState()
-        // Mirror to the App Group for the home/lock-screen Widget (it PULLs on
-        // the OS schedule and can't read the pushed Live Activity state).
-        writeWidgetSnapshot(state)
-
-        #if canImport(ActivityKit)
-        guard !state.agents.isEmpty else {
-            endAllActivities()
-            return
-        }
-
-        guard settings.liveActivityEnabled,
-              ActivityAuthorizationInfo().areActivitiesEnabled else { return }
-
-        // staleDate: the island's data is pushed by OUR 2s poll, which stops the
-        // moment iOS suspends the app — the island would silently show frozen
-        // "working" forever. Marking content stale after 2 missed sweeps lets
-        // the views render an honest "paused" hint (context.isStale) instead.
-        let content = ActivityContent(state: state, staleDate: Date().addingTimeInterval(120))
-        if activity == nil { adoptOrphanedActivities() }
-        if let activity {
-            Task { await activity.update(content) }
-        } else {
-            let attributes = AgentActivityAttributes()
-            activity = try? Activity.request(attributes: attributes, content: content)
-        }
-        #endif
-    }
-
-    #if canImport(ActivityKit)
-    /// Reclaim Live Activities left behind by earlier processes.
-    ///
-    /// `activity` is an in-memory handle, but the activity itself belongs to
-    /// the system and outlives us (up to 8h). Every relaunch — jetsam, a
-    /// crash, a swipe-kill, a TestFlight install — used to find the handle
-    /// nil and request a fresh island, so they multiplied: one frozen
-    /// "paused" pill per dead process, all showing the same agents. Keep one
-    /// (it gets fresh content on this very sync) and end the rest.
-    private func adoptOrphanedActivities() {
-        let live = Activity<AgentActivityAttributes>.activities
-        guard let keep = live.first(where: { $0.activityState == .active }) ?? live.first else { return }
-        activity = keep
-        let orphans = live.filter { $0.id != keep.id }
-        Log.island.info("island: adopted \(keep.id, privacy: .public), ending \(orphans.count) orphan(s)")
-        for orphan in orphans {
-            Task { await orphan.end(nil, dismissalPolicy: .immediate) }
-        }
-    }
-
-    /// End every island this app owns — ours and any orphan — not just the
-    /// one this process requested.
-    private func endAllActivities() {
-        let live = Activity<AgentActivityAttributes>.activities
-        if !live.isEmpty {
-            Log.island.info("island: no agents, ending \(live.count) activity(ies)")
-        }
-        for a in live {
-            Task { await a.end(nil, dismissalPolicy: .immediate) }
-        }
-        activity = nil
-    }
-    #endif
-
-    /// Mirror the current agent list into the App Group for the home/lock-screen
-    /// Widget, then nudge WidgetKit to refresh (the widget otherwise only pulls
-    /// on the OS's slow schedule).
-    private func writeWidgetSnapshot(_ state: AgentActivityAttributes.ContentState) {
-        let items = state.agents.map {
-            AgentWidgetState.Item(id: $0.id, command: $0.command, location: $0.location,
-                                  detail: $0.detail,
-                                  state: $0.state.rawValue, startedAt: $0.startedAt,
-                                  deepLink: AgentDeepLink.string(connectionId: $0.connectionId,
-                                                                 paneId: $0.paneId))
-        }
-        AgentWidgetStore.write(AgentWidgetState(
-            items: items,
-            attentionCount: state.attentionCount,
-            workingCount: state.workingCount,
-            headlineDeepLink: state.headlineDeepLink,
-            updatedAt: Date()))
-        #if canImport(WidgetKit)
-        WidgetCenter.shared.reloadAllTimelines()
-        #endif
-    }
-
-    private func requestNotificationAuthorizationIfNeeded() {
-        guard settings.notificationsEnabled else { return }
-        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { _, _ in }
+        content.userInfo = [
+            AgentNotifications.connectionKey: card.connectionId,
+            AgentNotifications.paneKey: card.paneId,
+        ]
+        return UNNotificationRequest(identifier: card.id, content: content, trigger: nil)
     }
 }

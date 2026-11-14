@@ -1,0 +1,43 @@
+[package]
+name = "moshpit-ui"
+description = "Moshpit's UI in NSH, the screens moved from SwiftUI one at a time, and on iOS the layer that embeds them in the Swift app (a C ABI: include/moshpit_ui.h)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+# Linked into the app through crates/ffi, the one static library.
+crate-type = ["rlib"]
+
+[dependencies]
+# The core's runtime, which NSH runs the screens' async tasks on.
+moshpit-runtime = { path = "../crates/runtime" }
+# The rules the stored themes follow (a derived bright color, the background
+# an accent derives), so an editor's preview shows what will be saved.
+moshpit-store = { path = "../crates/store" }
+# Host care's views (Host Setup, Install Assist), which the screens' hosts
+# turn into the pages' messages here (src/host_care.rs).
+moshpit-hostcare = { path = "../crates/hostcare" }
+moshpit-install = { path = "../crates/install" }
+nsh-core.workspace = true
+nsh-base.workspace = true
+log = "0.4"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["sync"] }
+
+# UIKit exists on iOS, the simulator and Mac Catalyst (all `target_os =
+# "ios"`): the embedding layer. Elsewhere the crate is the screens alone,
+# which the tests run headless.
+[target.'cfg(target_os = "ios")'.dependencies]
+# No `js`: a Rust app links no QuickJS.
+nsh-platform-ios.workspace = true
+nsh-engine.workspace = true
+objc2 = "0.6.5"
+objc2-core-foundation = { version = "0.3.2", default-features = false, features = ["std", "CFCGTypes"] }
+objc2-ui-kit = { version = "0.3.2", default-features = false, features = ["std", "UIView", "UIResponder"] }
+
+[dev-dependencies]
+nsh-engine.workspace = true
+nsh-testing.workspace = true

@@ -1,0 +1,32 @@
+t=0 exec api snapshot
+t=40 focus w1:p1
+t=300 exec worktree create --cwd '/home/dev/code/app' --branch 'fix-scroll' --label 'fix-scroll' --focus --json
+t=340 exec api snapshot
+t=340 exec pane run 'w2:p3' 'claude'
+t=380 exec api snapshot
+t=380 exec status
+t=420 focus w2:p3
+t=2040 exec api snapshot
+t=2080 focus w2:p3
+t=2380 exec agent prompt 'w2:p3' 'fix the bug'
+t=2420 exec api snapshot
+t=2460 focus w2:p3
+t=3420 exec agent prompt 'w2:p3' 'fix the bug'
+t=3460 exec api snapshot
+t=3500 focus w2:p3
+t=4080 exec api snapshot
+t=4120 focus w2:p3
+t=4460 exec agent prompt 'w2:p3' 'fix the bug'
+t=4500 exec api snapshot
+t=4500 exec api snapshot
+t=4540 focus w2:p3
+t=4540 focus w2:p3
+t=4540 outcome task started
+t=12120 exec api snapshot
+t=12160 focus w2:p3
+t=14160 exec api snapshot
+t=14200 focus w2:p3
+landed worktree create fix-scroll
+landed run w2:p3 claude
+landed prompt w2:p3
+state focus=w2:p3 server=w2:p3 sessions=2 notrunning=false mismatch=false

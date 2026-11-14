@@ -1,0 +1,7 @@
+# B89: the create never answers: the task fails in bounded time, and the tap
+# queued behind it waits only the lane's hold.
+host rule worktree_create - hang
+at 0 start
+at 300 task /home/dev/code/app fix-scroll claude go
+at 400 select-pane w1:p2
+end 70000

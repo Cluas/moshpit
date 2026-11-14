@@ -85,19 +85,32 @@ public final class AgentNotificationHandler: NSObject, UNUserNotificationCenterD
             }
             return
         }
-        // Surface attention even while Moshpit is foreground (the user may be on
-        // a different screen than the agent's pane) — EXCEPT when the user is
-        // looking at that exact pane: a banner + chime over the prompt you are
-        // already reading is triple noise. Keep it in the list only.
-        let target = target(of: notification.request.content.userInfo)
+        let content = notification.request.content
+        let target = target(of: content.userInfo)
+        let level = content.interruptionLevel
         Task { @MainActor in
-            if let (connectionId, paneId) = target,
-               AgentControlBridge.shared.isPaneVisible?(connectionId, paneId) == true {
-                completionHandler([.list])
-            } else {
-                completionHandler([.banner, .sound, .list])
-            }
+            let visible = target.map { AgentControlBridge.shared.isPaneVisible?($0.0, $0.1) == true } ?? false
+            completionHandler(Self.foregroundPresentation(level: level, paneVisible: visible))
         }
+    }
+
+    /// How a card shows while Moshpit is in the foreground.
+    ///
+    /// The moments worth an interruption — the first prompt of a wait, a
+    /// long turn finishing — come `.timeSensitive` or `.active`, and banner
+    /// even in the foreground: the user may be on another screen than the
+    /// agent's pane. But not over that very pane: a banner and a chime over
+    /// the prompt being read is noise, so it goes to the list only.
+    ///
+    /// A `.passive` card is an update to one the user already has — the
+    /// waiting card redrawn because a second agent joined or one was
+    /// answered, a short turn's finish. In the background it lands in the
+    /// list without lighting the screen; in the foreground it bannered all
+    /// the same, every redraw, because this answered every card alike (B315).
+    public static func foregroundPresentation(level: UNNotificationInterruptionLevel,
+                                              paneVisible: Bool) -> UNNotificationPresentationOptions {
+        if paneVisible || level == .passive { return [.list] }
+        return [.banner, .sound, .list]
     }
 
     public func userNotificationCenter(_ center: UNUserNotificationCenter,

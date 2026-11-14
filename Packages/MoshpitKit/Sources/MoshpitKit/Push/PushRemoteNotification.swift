@@ -79,42 +79,6 @@ public enum PushRemoteNotification {
                                            session: status.sess)
     }
 
-    /// Rewrite a notification with the decrypted content.
-    ///
-    /// The `userInfo` merge is what makes a pushed notification interchangeable
-    /// with a local one: `AgentNotificationHandler` reads exactly these two keys
-    /// to route a lock-screen Allow/Deny to a live pane, so once they are present
-    /// the entire T1 control surface works on the push path with no new code.
-    /// How old a status may be and still be worth acting on.
-    ///
-    /// Currently unused for gating, because a pushed notification carries no
-    /// actions at all (see `apply`). Kept, with its reasoning, because it is the
-    /// rule a real reply path will need on day one: `ts` is the only timestamp
-    /// inside the sealed envelope, so it is the only one a compromised relay
-    /// cannot move.
-    ///
-    /// The relay sets `apns-expiration` for this — 10 minutes for an attention,
-    /// an hour for a done — but the relay is the party this design does not
-    /// trust: a compromised one can hold an envelope and replay it whenever it
-    /// likes, and a phone that was off has no record of whether the prompt still
-    /// exists. `ts` is inside the sealed envelope, so it is the one timestamp an
-    /// attacker cannot move; checking it here puts the guarantee back on the
-    /// device.
-    ///
-    /// Both states are checked, not just attention. `done`'s only action is
-    /// Reply, which types the user's text into the pane — less dangerous than a
-    /// blind Enter, because they are actively composing, but a replayed done
-    /// still aims that text at whatever the pane holds NOW, and the hour that
-    /// bounds it was otherwise enforced only by the untrusted party. An
-    /// exemption here would have been an implicit one, which is worse than either
-    /// answer.
-    ///
-    /// Both are generous against the relay's own limits, because host and phone
-    /// clocks disagree and a false "stale" costs a real prompt its buttons.
-    public static func lifetime(forState state: String) -> TimeInterval {
-        state == "done" ? 2 * 60 * 60 : 15 * 60
-    }
-
     /// How long a finished turn must have RUN for its completion to make a
     /// sound. A three-minute build ending is worth a chime; a twenty-second
     /// answer is list-only. The turn length rides in `Status.dur`, computed on
@@ -134,14 +98,15 @@ public enum PushRemoteNotification {
     /// `standingCount` is how many prompts are waiting INCLUDING this one; a
     /// count above one renders as "+N" on the agent's name, one card for the
     /// whole wait. `label` is what the phone calls this connection (see
-    /// ``location(_:label:)``).
+    /// ``location(_:label:)``). `doneRings` false: this turn's finish has
+    /// already rung (``PushFinishes``), so a `done` only updates the card.
     public static func apply(_ status: PushSealedBox.Status,
                              to content: UNMutableNotificationContent,
                              attentionEdge: Bool = true,
                              standingCount: Int = 1,
                              prefs: PushPrefs.Values = .default,
                              label: String? = nil,
-                             now: Date = Date()) {
+                             doneRings: Bool = true) {
         let who = status.agent?.isEmpty == false ? status.agent! : status.host
         let place = location(status, label: label)
         // "Show detail on lock screen" is a promise this renderer has to keep
@@ -161,7 +126,8 @@ public enum PushRemoteNotification {
             // "quieter than intended" is the recoverable direction.
             AgentNotificationCopy.done(agent: who, detail: detail, place: place,
                                        duration: status.dur ?? 0, sound: prefs.sound,
-                                       threshold: Self.doneSoundThreshold, into: content)
+                                       threshold: Self.doneSoundThreshold,
+                                       rings: doneRings, into: content)
         } else {
             // No hook title — no jq on the host, a bell-only signal, or detail
             // hidden by the switch — leaves the body to the location alone,
@@ -173,6 +139,9 @@ public enum PushRemoteNotification {
         }
 
         var info = content.userInfo
+        // The two routing keys a local notification carries too, so a tap
+        // lands on this pane through `AgentNotificationHandler` exactly as a
+        // local one does — there is no push-specific branch.
         info[AgentNotifications.connectionKey] = status.conn
         info[AgentNotifications.paneKey] = status.pane
         info[agentKey] = status.agent ?? ""

@@ -88,6 +88,39 @@ struct MoshWireTests {
         #expect(decoded == message)
     }
 
+    @Test("resize width and height are int32: a varint keeps its low 32 bits, sign included")
+    func resizeFieldsAreInt32() throws {
+        var resize = ProtoWriter()
+        resize.appendField(5, varint: (1 << 32) + 80)
+        resize.appendField(6, varint: (1 << 40) + 24)
+        var instruction = ProtoWriter()
+        instruction.appendField(3, bytes: resize.bytes)
+        var message = ProtoWriter()
+        message.appendField(1, bytes: instruction.bytes)
+
+        #expect(try UserMessage(parsing: message.data).events == [.resize(width: 80, height: 24)])
+        let host = try #require(try HostMessage(parsing: message.data).resize)
+        #expect(host.width == 80)
+        #expect(host.height == 24)
+        // A negative int32 goes out sign-extended to ten bytes and comes back.
+        let negative = UserMessage(events: [.resize(width: -1, height: -2)])
+        #expect(try UserMessage(parsing: negative.encoded()) == negative)
+    }
+
+    @Test("an event's encoded length is what it adds to a UserMessage")
+    func userEventEncodedLengthMatchesTheEncoder() {
+        var events: [UserEvent] = [0, 1, 2, 120, 121, 127, 128, 16_370, 16_383, 16_384, 65_504, 65_536,
+                                   2_097_151, 2_097_152].map { .keystroke(keys: Data(repeating: 0x6B, count: $0)) }
+        for (width, height) in [(80, 24), (127, 128), (16_384, 1), (-1, -1),
+                                (Int(Int32.max), Int(Int32.min))] {
+            events.append(.resize(width: width, height: height))
+        }
+        for event in events {
+            #expect(event.encodedLength == UserMessage(events: [event]).encoded().count, "\(event.encodedLength)")
+        }
+        #expect(events.reduce(0) { $0 + $1.encodedLength } == UserMessage(events: events).encoded().count)
+    }
+
     @Test("UserMessage decode ignores instructions with unknown extensions")
     func userMessageIgnoresUnknownExtensions() throws {
         var unknownInstruction = ProtoWriter()
@@ -145,6 +178,19 @@ struct MoshWireTests {
         #expect(fragments[0].isFinal == false)
         #expect(fragments[1].isFinal == true)
         #expect(fragments.map(\.fragmentNum) == [0, 1])
+    }
+
+    @Test("fragmenting into 65,536 pieces or more never traps; numbers wrap in 15 bits")
+    func fragmentingPastTheCounterDoesNotTrap() {
+        // One byte per fragment: the 65,536th piece overflowed a UInt16
+        // counter and crashed the app.
+        let fragments = TransportFragment.fragment(payload: Data(count: 65_536), id: 1, mtu: 11)
+        #expect(fragments.count == 65_536)
+        #expect(fragments.last?.isFinal == true)
+        #expect(fragments.filter(\.isFinal).count == 1)
+        #expect(fragments[32_767].fragmentNum == 0x7FFF)
+        #expect(fragments[32_768].fragmentNum == 0)
+        #expect(fragments.last?.fragmentNum == 0x7FFF)
     }
 
     @Test("empty payload still produces one final fragment")

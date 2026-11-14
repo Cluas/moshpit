@@ -1,0 +1,24 @@
+// The Rust library's C ABI as Clang modules, so Swift can `import
+// MoshpitFFI` without a bridging header: the app target puts this directory
+// on SWIFT_INCLUDE_PATHS (project.yml). Linking libmoshpit_ffi.a is
+// project.yml's job too (OTHER_LDFLAGS), not this file's.
+module MoshpitFFI {
+    header "moshpit_ffi.h"
+    // The NSH screens' host (ui/src/ios.rs), from the same library.
+    header "../../../ui/include/moshpit_ui.h"
+    // The byte channel's view end (crates/stream), from the same library:
+    // what a terminal view on a Rust session reads and writes.
+    header "../../stream/include/moshpit_stream.h"
+    // The shared terminal core (crates/term), from the same library: what
+    // the app's new terminal view draws and encodes keys with.
+    header "../../term/include/moshpit_term.h"
+    export *
+}
+
+// The C side of the UniFFI bindings (moshpit_ffiFFI.h, written by
+// scripts/rust/gen-bindings.sh with the Swift side the app compiles,
+// Moshpit/Services/Rust/Generated/moshpit_ffi.swift, which imports it).
+module moshpit_ffiFFI {
+    header "moshpit_ffiFFI.h"
+    export *
+}

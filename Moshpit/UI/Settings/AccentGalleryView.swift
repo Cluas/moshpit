@@ -92,7 +92,8 @@ struct AccentGalleryView: View {
             }
         }
         .appSheet(item: $editing) { theme in
-            AccentEditorView(theme: theme) { saved in
+            // The editor its own switch picks (the NSH one or this file's).
+            AccentEditorPage(theme: theme) { saved in
                 // Persist immediately (the user pressed Save), but route the
                 // selection through `pendingID` like any other pick.
                 store.save(saved)
@@ -100,19 +101,24 @@ struct AccentGalleryView: View {
             }
         }
         .moshpitCard(item: $deleting) { theme in
-            MoshpitModalCard(
-                icon: "trash.fill", tone: .danger,
-                title: "Delete \(theme.name)?",
-                message: Text("This accent will be removed. Built-in accents are unaffected."),
-                buttons: [
-                    ModalButton("Cancel", kind: .secondary) { deleting = nil },
-                    ModalButton("Delete", kind: .danger) {
-                        remove(theme)
-                        deleting = nil
-                    },
-                ]
-            ) { EmptyView() }
+            AccentDeleteCard(theme: theme, onCancel: { deleting = nil }) {
+                remove(theme)
+                deleting = nil
+            }
         }
+        #if DEBUG
+        // A capture run's editor or delete card, over the first custom accent.
+        .task {
+            if let request = CaptureScreen.editorRequested, !request.theme {
+                try? await Task.sleep(for: .milliseconds(500))
+                editing = store.customThemes.first
+                    ?? store.makeDraft(basedOn: AppThemeCatalog.theme(for: settings.appThemeId))
+            }
+            if let request = CaptureScreen.deleteRequested, !request.theme, !request.nsh {
+                deleting = store.customThemes.first
+            }
+        }
+        #endif
     }
 
     private func select(_ theme: AppTheme) {
@@ -140,6 +146,26 @@ struct AccentGalleryView: View {
                 settings.appThemeId = AppThemeCatalog.signalRoom.id
             }
         }
+    }
+}
+
+/// The confirmation a custom accent's Delete asks for (the NSH page draws
+/// its own: `ui/src/card.rs`).
+struct AccentDeleteCard: View {
+    let theme: AppTheme
+    let onCancel: () -> Void
+    let onDelete: () -> Void
+
+    var body: some View {
+        MoshpitModalCard(
+            icon: "trash.fill", tone: .danger,
+            title: "Delete \(theme.name)?",
+            message: Text("This accent will be removed. Built-in accents are unaffected."),
+            buttons: [
+                ModalButton("Cancel", kind: .secondary, identifier: "accent-delete-cancel", action: onCancel),
+                ModalButton("Delete", kind: .danger, identifier: "accent-delete-confirm", action: onDelete),
+            ]
+        ) { EmptyView() }
     }
 }
 
@@ -214,8 +240,9 @@ private struct AccentRow: View {
 
 // MARK: - Editor
 
-/// One color well plus a name, previewed on a mock of the app's own chrome.
-private struct AccentEditorView: View {
+/// One color well plus a name, previewed on a mock of the app's own chrome
+/// (``AccentEditorPage`` shows it while the NSH editor's switch is off).
+struct AccentEditorView: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var name: String
@@ -246,6 +273,7 @@ private struct AccentEditorView: View {
 
                 FormGroup(title: "NAME") {
                     FieldRow(placeholder: "Accent name", text: $name)
+                        .accessibilityIdentifier("accent-editor-name")
                 }
 
                 FormGroup(
@@ -263,6 +291,7 @@ private struct AccentEditorView: View {
                             set: { accentHex = $0.hexString }
                         ), supportsOpacity: false)
                         .labelsHidden()
+                        .accessibilityIdentifier("accent-editor-color")
                         .frame(width: 34)
                     }
                 }
@@ -273,6 +302,7 @@ private struct AccentEditorView: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
+                        .accessibilityIdentifier("accent-editor-cancel")
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {

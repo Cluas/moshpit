@@ -31,9 +31,11 @@ struct MoshpitIslandBundle: WidgetBundle {
 // State colours come from the shared palette so the island can never drift
 // from the app's dots again (it did: amber here was more saturated, and the
 // app's "working" was the theme accent rather than this teal).
-private let teal = AgentPalette.working
-private let amber = AgentPalette.attention
-private let green = AgentPalette.done
+// Adaptive (R18 D): deep enough to read on a light lock screen, the colours
+// above in the Dynamic Island, which is always dark.
+private let teal = AgentPalette.workingAdaptive
+private let amber = AgentPalette.attentionAdaptive
+private let green = AgentPalette.doneAdaptive
 
 // MARK: - Typography
 //
@@ -51,9 +53,7 @@ private let green = AgentPalette.done
 struct MoshpitIslandLiveActivity: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: AgentActivityAttributes.self) { context in
-            LockScreenView(state: context.state, isStale: context.isStale)
-                .activityBackgroundTint(Color.black.opacity(0.85))
-                .activitySystemActionForegroundColor(.white)
+            LockScreenCard(state: context.state, isStale: context.isStale)
         } dynamicIsland: { context in
             let headline = context.state.headline
             return DynamicIsland {
@@ -62,14 +62,16 @@ struct MoshpitIslandLiveActivity: Widget {
                         StateDot(state: headline?.state ?? .idle)
                         Text(headline.map { displayCommand($0) } ?? "Moshpit")
                             .font(.system(size: 14, weight: .semibold))
-                            .foregroundStyle(.white)
+                            .foregroundStyle(Color.primary)
                             .lineLimit(1)
                     }
                     .padding(.leading, 4)
+                    .environment(\.colorScheme, .dark)
                 }
                 DynamicIslandExpandedRegion(.trailing) {
                     if let headline {
                         StatusBadge(agent: headline, compact: true).padding(.trailing, 4)
+                            .environment(\.colorScheme, .dark)
                     }
                 }
                 DynamicIslandExpandedRegion(.center) {
@@ -83,9 +85,10 @@ struct MoshpitIslandLiveActivity: Widget {
                                 .foregroundStyle(stateColor(headline.state))
                             Text(headline.location)
                                 .font(.system(size: 10, design: .monospaced))
-                                .foregroundStyle(.white.opacity(0.55))
+                                .foregroundStyle(Color.primary.opacity(0.55))
                                 .lineLimit(1)
                         }
+                        .environment(\.colorScheme, .dark)
                     }
                 }
                 DynamicIslandExpandedRegion(.bottom) {
@@ -97,7 +100,7 @@ struct MoshpitIslandLiveActivity: Widget {
                         if let headline, let detail = headline.detail, !detail.isEmpty {
                             Text(smartTruncate(detail))
                                 .font(.system(size: 11, design: .monospaced))
-                                .foregroundStyle(headline.state == .attention ? amber : .white.opacity(0.7))
+                                .foregroundStyle(headline.state == .attention ? amber : Color.primary.opacity(0.7))
                                 .lineLimit(1)
                         }
                         // The OTHER agents as real rows (dot · name · live timer),
@@ -112,23 +115,29 @@ struct MoshpitIslandLiveActivity: Widget {
                         }
                     }
                     .padding(.horizontal, 4)
+                    .environment(\.colorScheme, .dark)
                 }
             } compactLeading: {
                 StateDot(state: headline?.state ?? .idle)
+                    .environment(\.colorScheme, .dark)
             } compactTrailing: {
                 CompactTrailing(state: context.state)
+                    .environment(\.colorScheme, .dark)
             } minimal: {
                 // The one slot visible alongside another app's activity — show
                 // the strongest signal we have, not just a dot: attention count
                 // in amber, else the working dot.
-                if context.state.attentionCount > 0 {
-                    Text("\(context.state.attentionCount)")
-                        .font(.system(size: 12, weight: .heavy))
-                        .monospacedDigit()
-                        .foregroundStyle(amber)
-                } else {
-                    StateDot(state: headline?.state ?? .idle)
+                Group {
+                    if context.state.attentionCount > 0 {
+                        Text("\(context.state.attentionCount)")
+                            .font(.system(size: 12, weight: .heavy))
+                            .monospacedDigit()
+                            .foregroundStyle(amber)
+                    } else {
+                        StateDot(state: headline?.state ?? .idle)
+                    }
                 }
+                .environment(\.colorScheme, .dark)
             }
             .widgetURL(context.state.headlineDeepLink.flatMap(URL.init(string:)))
             .keylineTint(teal)
@@ -137,6 +146,21 @@ struct MoshpitIslandLiveActivity: Widget {
 }
 
 // MARK: - Lock screen
+
+/// The lock-screen card in the lock screen's appearance (R18 D): dark on a
+/// dark one as it always was, light on a light one. Its words and dots
+/// follow (`Color.primary`, the adaptive state colours).
+struct LockScreenCard: View {
+    let state: AgentActivityAttributes.ContentState
+    var isStale: Bool = false
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        LockScreenView(state: state, isStale: isStale)
+            .activityBackgroundTint(scheme == .dark ? Color.black.opacity(0.85) : Color.white.opacity(0.85))
+            .activitySystemActionForegroundColor(scheme == .dark ? .white : .black)
+    }
+}
 
 struct LockScreenView: View {
     let state: AgentActivityAttributes.ContentState
@@ -159,13 +183,13 @@ struct LockScreenView: View {
             HStack {
                 Text("Moshpit")
                     .font(.system(size: 13, weight: .bold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(Color.primary)
                 Spacer()
                 // A phrase ("1 needs you · 2 working"), not a code fragment —
                 // default font, not the mono the rest of the old header ran.
                 Text(summary)
                     .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.6))
+                    .foregroundStyle(Color.primary.opacity(0.6))
             }
             // Full controls only for the most-urgent agent; the rest collapse to
             // one line each — and CRUCIALLY, only as many of them as fit.
@@ -197,12 +221,23 @@ struct LockScreenView: View {
         .padding(.vertical, 12)
     }
 
-    private var summary: String {
+    private var summary: String { Self.summary(for: state) }
+
+    /// The header's phrase ("1 needs you · 2 working"), in the language
+    /// Moshpit shows (``AppLanguage``) — not this extension's, which is the
+    /// system's — from `bundle`'s catalog.
+    static func summary(for state: AgentActivityAttributes.ContentState,
+                        language: String = AppLanguage.current(),
+                        in bundle: Bundle = .main) -> String {
         var parts: [String] = []
-        if state.attentionCount > 0 { parts.append(String(localized: "\(state.attentionCount) needs you")) }
-        if state.workingCount > 0 { parts.append(String(localized: "\(state.workingCount) working")) }
+        if state.attentionCount > 0 {
+            parts.append(AppLanguage.string("\(state.attentionCount) needs you", language: language, in: bundle))
+        }
+        if state.workingCount > 0 {
+            parts.append(AppLanguage.string("\(state.workingCount) working", language: language, in: bundle))
+        }
         let done = state.agents.filter { $0.state == .done }.count
-        if done > 0 { parts.append(String(localized: "\(done) done")) }
+        if done > 0 { parts.append(AppLanguage.string("\(done) done", language: language, in: bundle)) }
         return parts.joined(separator: " · ")
     }
 }
@@ -224,11 +259,11 @@ private struct AgentRow: View {
                     // padding instead, which every row benefits from.
                     Text(displayCommand(agent))
                         .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(Color.primary)
                         .lineLimit(1)
                     Text(agent.location)
                         .font(.system(size: 10, design: .monospaced))
-                        .foregroundStyle(.white.opacity(0.4))
+                        .foregroundStyle(Color.primary.opacity(0.4))
                         .lineLimit(1)
                         .layoutPriority(-1)
                 } else {
@@ -244,11 +279,11 @@ private struct AgentRow: View {
                         // wants what IS the card's whole job now.
                         Text(displayCommand(agent))
                             .font(.system(size: 16, weight: .semibold))
-                            .foregroundStyle(.white)
+                            .foregroundStyle(Color.primary)
                             .lineLimit(1)
                         Text(agent.location)
                             .font(.system(size: 11, design: .monospaced))
-                            .foregroundStyle(.white.opacity(0.45))
+                            .foregroundStyle(Color.primary.opacity(0.45))
                             .lineLimit(1)
                     }
                 }
@@ -262,7 +297,7 @@ private struct AgentRow: View {
             if !compact, let detail = agent.detail, !detail.isEmpty {
                 Text(smartTruncate(detail))
                     .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(agent.state == .attention ? amber : .white.opacity(0.6))
+                    .foregroundStyle(agent.state == .attention ? amber : Color.primary.opacity(0.6))
                     .lineLimit(1)
                     .padding(.leading, 18)
             }
@@ -279,13 +314,13 @@ private struct SwitchAgentButton: View {
             HStack(spacing: 4) {
                 Image(systemName: "arrow.left.arrow.right")
                     .font(.system(size: 9, weight: .semibold))
-                Text(String(localized: "Switch"))
+                Text(AppLanguage.string("Switch"))
                     .font(.system(size: 11, weight: .medium))
             }
-            .foregroundStyle(.white.opacity(0.75))
+            .foregroundStyle(Color.primary.opacity(0.75))
             .padding(.horizontal, 10)
             .padding(.vertical, 4)
-            .overlay(Capsule().strokeBorder(.white.opacity(0.22), lineWidth: 1))
+            .overlay(Capsule().strokeBorder(Color.primary.opacity(0.22), lineWidth: 1))
         }
         .buttonStyle(.plain)
     }
@@ -378,7 +413,7 @@ private struct CompactTrailing: View {
             Text("\(state.workingCount)")
                 .font(.system(size: 13, weight: .bold))
                 .monospacedDigit()
-                .foregroundStyle(.white)
+                .foregroundStyle(Color.primary)
         } else if let headline = state.headline, headline.state == .done {
             Image(systemName: "checkmark")
                 .font(.system(size: 12, weight: .bold))
@@ -389,7 +424,7 @@ private struct CompactTrailing: View {
             // the right call, since there's no room for anything else.
             Text(String(headline.command.prefix(4)))
                 .font(.system(size: 12, weight: .bold, design: .monospaced))
-                .foregroundStyle(.white)
+                .foregroundStyle(Color.primary)
         }
     }
 }
@@ -408,11 +443,11 @@ private struct OtherAgentRows: View {
                 StateDot(state: agent.state)
                 Text(displayCommand(agent))
                     .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.white.opacity(0.85))
+                    .foregroundStyle(Color.primary.opacity(0.85))
                     .lineLimit(1)
                 Text(agent.location)
                     .font(.system(size: 10, design: .monospaced))
-                    .foregroundStyle(.white.opacity(0.45))
+                    .foregroundStyle(Color.primary.opacity(0.45))
                     .lineLimit(1)
                 Spacer(minLength: 4)
                 switch agent.state {
@@ -431,9 +466,9 @@ private struct OtherAgentRows: View {
             }
         }
         if others.count > 2 {
-            Text("+\(others.count - 2) more")
+            Text(AppLanguage.string("+\(others.count - 2) more"))
                 .font(.system(size: 10, weight: .medium))
-                .foregroundStyle(.white.opacity(0.4))
+                .foregroundStyle(Color.primary.opacity(0.4))
         }
     }
 }
@@ -449,10 +484,10 @@ private struct StaleHint: View {
                 .font(.system(size: 10))
             // A sentence, not a code fragment — default font, matching the
             // header summary this sits directly under.
-            Text("paused — open Moshpit to refresh")
+            Text(AppLanguage.string("paused — open Moshpit to refresh"))
                 .font(.system(size: 10, weight: .medium))
         }
-        .foregroundStyle(.white.opacity(0.45))
+        .foregroundStyle(Color.primary.opacity(0.45))
     }
 }
 
@@ -485,7 +520,7 @@ private func stateColor(_ state: AgentActivityAttributes.AgentState) -> Color {
     case .working:   return teal
     case .attention: return amber
     case .done:      return green
-    case .idle:      return Color.white.opacity(0.45)
+    case .idle:      return Color.primary.opacity(0.45)
     }
 }
 

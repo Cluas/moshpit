@@ -1,0 +1,8 @@
+# B7: tap A then B, A's exec the slower one. Both must land in the order
+# tapped, and the app must end on B.
+host rule agent_focus_'w1:p2' 400 normal
+host rule agent_focus_'w1:p1' 10 normal
+at 0 start
+at 500 select-pane w1:p2
+at 500 select-pane w1:p1
+end 6000

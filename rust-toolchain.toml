@@ -1,0 +1,9 @@
+# One toolchain for every Rust build, pinned: the app ships a Rust library
+# (crates/ffi), and a compiler change should reach it in a commit that says
+# so, not with whatever `stable` meant on the machine that built it. rustup
+# installs it on first use; scripts/rust/build-ios.sh adds the iOS targets
+# the app builds for, other targets are `rustup target add`.
+[toolchain]
+channel = "1.99.1"
+profile = "minimal"
+components = ["clippy", "rustfmt"]

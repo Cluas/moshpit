@@ -1,0 +1,39 @@
+{
+ "tmux": "3.6a",
+ "capture": "session-switch",
+ "pane": 1,
+ "cols": 80,
+ "rows": 24,
+ "history": [],
+ "screen": [
+  "echo in the other session",
+  "in the other session",
+  "sh-3.2$",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  ""
+ ],
+ "cursor": [
+  8,
+  2
+ ],
+ "alt_screen": false
+}

@@ -18,7 +18,19 @@ sentence that lets the reader reconstruct the English. Apple's own UI
 vocabulary for that language wins when it exists (Settings, Lock Screen,
 Dynamic Island, Live Activity, Keychain, Face ID, Wi-Fi, cellular…).
 Product and tool names stay in English: Moshpit, tmux, herdr, mosh, SSH,
-Claude Code, Codex, git worktree, hooks, Whisper, Hugging Face, PATH.
+Claude Code, Codex, git worktree, hooks (not in Chinese: see below),
+Whisper, Hugging Face, PATH.
+
+The Chinese copy (zh-Hans in `gen_xcstrings.py`, zh-Hant here) has rules a
+test enforces: `cargo test -p moshpit-copy` (crates/copy, run by CI's
+`cargo test --workspace`) reads every catalog and fails on 钩子, 中继, 密封,
+封装 or 您 (either script), on "agent" rendered as anything but 智能体 /
+智能體, on a term of the UI word list (`docs/nsh/UI-DESIGN.md` §9) rendered
+some other way (hooks are 状态脚本 / 狀態腳本, the relay is 推送服务 /
+推播服務, "needs you" is 在等你, the toolbar is 快捷键栏 / 快速鍵列, Connecting…
+is 正在连接… / 正在連線…), and on a simplified-only character in zh-Hant.
+The rules are data in crates/copy/src/lib.rs.
+
 Format specifiers must match the English (positions may be reordered with
 `%1$@`). Placeholders such as `%@` and `%lld` are filled at runtime — leave a
 space around them where the language needs one.
@@ -29,8 +41,12 @@ space around them where the language needs one.
   行動網路、連接埠、伺服器、裝置、檔案、資料夾、鍵盤、快速鍵、工具列、字體、字級。
 - tmux 詞彙：session＝工作階段、window＝視窗、pane＝窗格、tab＝分頁、workspace＝工作區。
 - 密碼學：金鑰（不是密鑰）、公開金鑰、私密金鑰、指紋、密碼短語。
-- agent 保留英文（台灣科技寫作慣用英文；「代理」會和代理伺服器混淆）。prompt＝提示詞。
-  hooks 保留英文。relay＝中繼伺服器。
+- 跟 zh-Hans 同一份詞表（UI-DESIGN.md §9），用台灣的字和說法寫，不是把簡體字串轉成繁體：
+  agent＝智能體（不寫英文，也不寫「代理」，那是代理伺服器）；coding agent＝寫程式的智能體。
+  hooks＝狀態腳本（說它做什麼；Codex 的 `/hooks` 指令照寫）。relay＝推播服務。
+  needs you＝在等你。工具列（toolbar）在這個 App 裡就是快速鍵列。
+  連線狀態：正在連線…、正在重新連線…、正在中斷連線…（首頁卡片的「linking」＝正在連線）。
+  prompt＝提示詞。不用 中繼、鉤子、密封、封裝、您；不出現簡體字（crates/copy 的測試會擋）。
 - 動作：點一下、長按、拖移、滑動。用「你」。全形標點，中英文之間空一格。
 
 ## ko

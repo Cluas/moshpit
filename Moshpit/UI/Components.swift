@@ -14,7 +14,6 @@ enum Haptics {
         UIImpactFeedbackGenerator(style: style).impactOccurred()
     }
     static func success() { UINotificationFeedbackGenerator().notificationOccurred(.success) }
-    static func warning() { UINotificationFeedbackGenerator().notificationOccurred(.warning) }
 }
 
 // MARK: - Form group (a Form section)
@@ -115,13 +114,15 @@ enum Chrome {
     /// The segmented control in the app's ink — dark track, raised pill — so
     /// Password / SSH Key and Block / Bar / Underline stop reading as a
     /// Settings.app control dropped into a dark screen. UIAppearance, because
-    /// `.pickerStyle(.segmented)` exposes nothing else.
+    /// `.pickerStyle(.segmented)` exposes nothing else. Every segmented
+    /// control takes it, the NSH pages' too, so its colours follow the
+    /// appearance where the control shows (R18).
     @MainActor static func installAppearance() {
         let seg = UISegmentedControl.appearance()
-        seg.backgroundColor = UIColor(Ink.segTrack)
-        seg.selectedSegmentTintColor = UIColor(Ink.segActive)
-        seg.setTitleTextAttributes([.foregroundColor: UIColor(Ink.secondary)], for: .normal)
-        seg.setTitleTextAttributes([.foregroundColor: UIColor(Ink.primary)], for: .selected)
+        seg.backgroundColor = InkUI.segTrack
+        seg.selectedSegmentTintColor = InkUI.segActive
+        seg.setTitleTextAttributes([.foregroundColor: InkUI.secondary], for: .normal)
+        seg.setTitleTextAttributes([.foregroundColor: InkUI.primary], for: .selected)
     }
 }
 
@@ -169,19 +170,30 @@ struct NumberFieldRow: View {
     let placeholder: LocalizedStringKey
     @Binding var text: String
     var mono: Bool = false
+    /// What is wrong with the text, shown under the field in the danger
+    /// ink while there is something (a port that is not one).
+    var issue: LocalizedStringKey? = nil
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
         let stacked = dynamicTypeSize.isAccessibilitySize
-        LabeledContent {
-            TextField(placeholder, text: $text)
-                .keyboardType(.numberPad)
-                .font(mono ? .system(.body, design: .monospaced) : .body)
-                .foregroundStyle(Ink.fixedValue)
-                .multilineTextAlignment(stacked ? .leading : .trailing)
-                .frame(width: stacked ? nil : 100)
-        } label: {
-            Text(label).font(.body).foregroundStyle(Ink.primary)
+        VStack(alignment: .leading, spacing: 4) {
+            LabeledContent {
+                TextField(placeholder, text: $text)
+                    .keyboardType(.numberPad)
+                    .font(mono ? .system(.body, design: .monospaced) : .body)
+                    .foregroundStyle(Ink.fixedValue)
+                    .multilineTextAlignment(stacked ? .leading : .trailing)
+                    .frame(width: stacked ? nil : 100)
+            } label: {
+                Text(label).font(.body).foregroundStyle(Ink.primary)
+            }
+            if let issue {
+                Text(issue)
+                    .font(.footnote)
+                    .foregroundStyle(Ink.danger)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
     }
 }
@@ -318,10 +330,6 @@ struct MenuChevron: View {
 struct SegItem<Value: Hashable>: Identifiable {
     let value: Value
     let label: LocalizedStringKey
-    /// Kept for call-site compatibility; the system segmented control shows
-    /// titles only, so glyph and badge are not drawn.
-    var systemImage: String?
-    var trailingBadge: LocalizedStringKey?
     var id: Value { value }
 }
 
@@ -428,6 +436,9 @@ extension TransportConnState {
 struct TransportPill: View {
     let kind: TransportPillKind
     var connState: TransportConnState = .live
+    /// A protocol switch is under way: the word changes at once (nothing
+    /// moves through a switch).
+    var still = false
     @State private var pulsing = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -464,7 +475,7 @@ struct TransportPill: View {
         switch new {
         case .live, .connecting:
             // Good news and no-text states apply at once.
-            withAnimation(.snappy(duration: 0.25)) { labelState = new }
+            withAnimation(still ? nil : .snappy(duration: 0.25)) { labelState = new }
         case .reconnecting, .offline:
             labelDebounce = Task {
                 try? await Task.sleep(for: .milliseconds(800))
@@ -504,7 +515,7 @@ struct TransportPill: View {
         }
         // The width change itself animates, so when "offline" does earn its
         // place the pill grows instead of teleporting.
-        .animation(.snappy(duration: 0.25), value: label)
+        .animation(still ? nil : .snappy(duration: 0.25), value: label)
         .onChange(of: connState, initial: true) { _, new in
             adoptLabelState(new)
         }
@@ -555,6 +566,9 @@ struct ShortcutChip: View {
 struct HostChipsRow: View {
     let hosts: [String]
     @Binding var selected: Set<String>
+    /// Each chip's accessibility identifier is this and its host (UI tests;
+    /// the NSH pages' chips carry the same).
+    var identifierPrefix: String?
 
     var body: some View {
         FlowLayout(spacing: 6) {
@@ -580,6 +594,7 @@ struct HostChipsRow: View {
                             on ? Ink.hostChipOnBorder : Ink.faintFill, lineWidth: 1))
                 }
                 .buttonStyle(.plain)
+                .accessibilityIdentifier(identifierPrefix.map { $0 + host } ?? "")
             }
         }
         .padding(EdgeInsets(top: 10, leading: 0, bottom: 8, trailing: 0))
@@ -628,6 +643,8 @@ struct ColorSwatchRow: View {
     let colors: [(id: String, color: Color)]
     @Binding var selection: String
     var diameter: CGFloat = 22
+    /// Each swatch's accessibility identifier is this and its id (UI tests).
+    var identifierPrefix: String?
 
     var body: some View {
         HStack(spacing: 8) {
@@ -649,38 +666,9 @@ struct ColorSwatchRow: View {
                         .padding(2)
                 }
                 .buttonStyle(.plain)
+                .accessibilityIdentifier(identifierPrefix.map { $0 + entry.id } ?? "")
             }
         }
-    }
-}
-
-// MARK: - Warn box (§3.7)
-
-struct WarnBox: View {
-    let title: LocalizedStringKey
-    let body_: LocalizedStringKey
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 10) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .font(.system(size: 15))
-                .foregroundStyle(Ink.warn)
-                .frame(width: 22)
-            VStack(alignment: .leading, spacing: 3) {
-                Text(title).font(Face.text(12, .semibold)).foregroundStyle(Ink.warnBoxTitle)
-                Text(body_)
-                    .font(Face.text(11))
-                    .foregroundStyle(Color.white.opacity(0.55))
-                    .lineSpacing(2)
-            }
-        }
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Ink.warn.opacity(0.10), in: RoundedRectangle(cornerRadius: Metrics.cardRadius, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: Metrics.cardRadius, style: .continuous)
-                .strokeBorder(Ink.warn.opacity(0.22), lineWidth: 1))
-        .padding(.vertical, 10)
     }
 }
 
@@ -762,7 +750,7 @@ struct CompactSheet<Content: View>: View {
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
         .sheetSurface()
-        .preferredColorScheme(.dark)
+        .darkOnlyPage()
     }
 
     /// Once per presentation: a later refresh must not yank the list out
@@ -778,7 +766,8 @@ struct CompactSheet<Content: View>: View {
 extension View {
     /// The tmux sheets' surface: nothing on iOS 26 (the system sheet is
     /// already glass, and any explicit background replaces it with paint),
-    /// the app's dark sheet fill on iOS 18 where the default is flat.
+    /// the app's sheet fill on iOS 18 where the default is flat: dark, or
+    /// light under an NSH sheet in the light appearance (R18).
     @ViewBuilder func sheetSurface() -> some View {
         if #available(iOS 26.0, *) {
             self
@@ -867,11 +856,15 @@ struct ModalButton: Identifiable {
     let id = UUID()
     let title: LocalizedStringKey
     let kind: Kind
+    /// What UI tests find it by (the NSH cards' buttons carry the same).
+    let identifier: String?
     let action: () -> Void
 
-    init(_ title: LocalizedStringKey, kind: Kind = .secondary, action: @escaping () -> Void) {
+    init(_ title: LocalizedStringKey, kind: Kind = .secondary, identifier: String? = nil,
+         action: @escaping () -> Void) {
         self.title = title
         self.kind = kind
+        self.identifier = identifier
         self.action = action
     }
 }
@@ -892,25 +885,26 @@ private struct ModalButtonView: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .accessibilityIdentifier(button.identifier ?? "")
     }
 
     private var fg: Color {
         switch button.kind {
         case .secondary: return Ink.secondary
-        case .primary: return Color(hex: "CFCEFF")
-        case .danger: return Color(hex: "FFC4C4")
+        case .primary: return Ink.modalPrimaryText
+        case .danger: return Ink.modalDangerText
         }
     }
     private var bg: Color {
         switch button.kind {
-        case .secondary: return Color.white.opacity(0.06)
+        case .secondary: return Ink.modalButtonFill
         case .primary: return Ink.accent.opacity(0.16)
         case .danger: return Ink.danger.opacity(0.15)
         }
     }
     private var border: Color {
         switch button.kind {
-        case .secondary: return Color.white.opacity(0.10)
+        case .secondary: return Ink.modalEdge
         case .primary: return Ink.accent.opacity(0.42)
         case .danger: return Ink.danger.opacity(0.42)
         }
@@ -942,7 +936,7 @@ struct MonoCodeBlock: View {
         }
         .padding(EdgeInsets(top: 9, leading: 11, bottom: 9, trailing: 11))
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+        .background(Ink.neutralFill, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).strokeBorder(Ink.hairline, lineWidth: 1))
     }
 }
@@ -1000,13 +994,15 @@ struct MoshpitModalCard<Extra: View>: View {
         }
         .frame(maxWidth: 340)
         .background(Ink.modalBG, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).strokeBorder(Color.white.opacity(0.10), lineWidth: 1))
-        .shadow(color: .black.opacity(0.55), radius: 30, y: 18)
+        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).strokeBorder(Ink.modalEdge, lineWidth: 1))
+        .shadow(color: Ink.modalShadow, radius: 30, y: 18)
     }
 }
 
 /// Scrim + centred card with a scale/fade transition. Not dismissed by tapping
-/// the scrim — modals here demand a real decision.
+/// the scrim — modals here demand a real decision. The card takes the
+/// appearance of what it shows over (R18): light over the NSH Home in the
+/// light appearance, dark over a page still forced dark.
 private struct MoshpitCardPresenter<CardContent: View>: View {
     @ViewBuilder var card: () -> CardContent
 
@@ -1020,7 +1016,6 @@ private struct MoshpitCardPresenter<CardContent: View>: View {
                 .padding(24)
                 .transition(.scale(scale: 0.94).combined(with: .opacity))
         }
-        .preferredColorScheme(.dark)
     }
 }
 
@@ -1098,6 +1093,8 @@ struct MoshpitInputCard: View {
     let placeholder: LocalizedStringKey
     @Binding var text: String
     let confirmLabel: LocalizedStringKey
+    /// A field whose text is never shown (a passphrase).
+    var secure = false
     let onCancel: () -> Void
     let onConfirm: () -> Void
     @FocusState private var focused: Bool
@@ -1110,7 +1107,7 @@ struct MoshpitInputCard: View {
                 ModalButton(confirmLabel, kind: .primary, action: onConfirm),
             ]
         ) {
-            TextField(placeholder, text: $text)
+            field
                 .font(Face.mono(14))
                 .foregroundStyle(Ink.primary)
                 .autocorrectionDisabled()
@@ -1119,7 +1116,7 @@ struct MoshpitInputCard: View {
                 .onSubmit(onConfirm)
                 .focused($focused)
                 .padding(EdgeInsets(top: 12, leading: 13, bottom: 12, trailing: 13))
-                .background(Color.white.opacity(0.045),
+                .background(Ink.neutralFill,
                             in: RoundedRectangle(cornerRadius: 11, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: 11, style: .continuous)
                     .strokeBorder(Ink.hairline, lineWidth: 1))
@@ -1130,6 +1127,38 @@ struct MoshpitInputCard: View {
                     focused = true
                 }
         }
+    }
+
+    @ViewBuilder
+    private var field: some View {
+        if secure {
+            SecureField(placeholder, text: $text)
+        } else {
+            TextField(placeholder, text: $text)
+        }
+    }
+}
+
+/// The card that asks once for the passphrase of a key stored behind one
+/// (``TerminalViewModel/KeyPassphrasePrompt``), shared by the home and
+/// terminal screens like ``hostKeyPromptCard(_:)``.
+struct KeyPassphrasePromptCard: View {
+    let prompt: TerminalViewModel.KeyPassphrasePrompt
+    @State private var passphrase = ""
+
+    var body: some View {
+        MoshpitInputCard(
+            icon: "key.fill",
+            title: "Key Passphrase",
+            message: Text(prompt.wrong
+                ? String(localized: "That passphrase doesn't unlock this key.")
+                : String(localized: "The key for \(prompt.host) is locked with a passphrase. Enter it once: from then on the Keychain on this device protects the key, as it does every key you import.")),
+            placeholder: "Passphrase",
+            text: $passphrase,
+            confirmLabel: "Unlock",
+            secure: true,
+            onCancel: { prompt.decide(nil) },
+            onConfirm: { prompt.decide(passphrase) })
     }
 }
 

@@ -1,11 +1,10 @@
 import SwiftUI
+import UIKit
 
-/// Moshpit Phase 1 visual system.
+/// Moshpit's visual tokens.
 ///
 /// Direction: "Signal Room" — a graphite-black iOS shell with citron focus,
 /// blue transport signal, ember attention, and compact mechanical surfaces.
-/// Existing token names stay in place so Phase 2 can migrate call sites
-/// incrementally without breaking the rest of the app.
 enum Ink {
     // MARK: - Core Palette
     // Accent, accentPressed, and the two base surface tones come from the
@@ -25,41 +24,48 @@ enum Ink {
 
     // MARK: - Surfaces
     static var screenBG: Color { AppThemeCatalog.current.screenBG }
-    static let backgroundTop = Color(hex: "11141A")
-    static let backgroundMid = Color(hex: "0A0C10")
-    static let backgroundBottom = Color(hex: "040507")
     static var terminalBG: Color { AppThemeCatalog.current.terminalBG }
+    /// Behind an NSH page: the tokens' `background`, the paper in the light
+    /// appearance (R18) and the theme's screen in the dark one.
+    static var pageBG: Color { Color(light: Color(hex: "F3F2EE"), dark: screenBG) }
     static let terminalGrid = Color(hex: "26303C").opacity(0.24)
-    static let modalBG = Color(hex: "0C0E12")
+    // The modal card's colours follow the appearance where it shows (R18):
+    // over the NSH Home or terminal it is light in the light appearance.
+    static let modalBG = Color(light: Color(hex: "FFFFFF"), dark: Color(hex: "0C0E12"))
+    static let modalEdge = Color(light: Color.black.opacity(0.08), dark: Color.white.opacity(0.10))
+    static let modalShadow = Color(light: Color.black.opacity(0.18), dark: Color.black.opacity(0.55))
+    static let modalButtonFill = Color(light: Color.black.opacity(0.05), dark: Color.white.opacity(0.06))
+    static let modalPrimaryText = Color(light: Color(hex: "4E4DEC"), dark: Color(hex: "CFCEFF"))
+    static let modalDangerText = Color(light: Color(hex: "BC262C"), dark: Color(hex: "FFC4C4"))
     static let group = Color(hex: "11141A").opacity(0.94)
     static let groupRaised = Color(hex: "171B22").opacity(0.96)
-    static let sheet = Color(hex: "10131A").opacity(0.98)
+    static let sheet = Color(light: Color(hex: "F3F2EE").opacity(0.98), dark: Color(hex: "10131A").opacity(0.98))
     static let navGlass = Color(hex: "0B0D12").opacity(0.82)
     static let shortcutBarBG = Color(hex: "0B0D11").opacity(0.98)
     static let shortcutKeyBG = Color(hex: "1B2028").opacity(0.98)
     static var shortcutKeyActiveBG: Color { accent }
-    static let hairline = Color.white.opacity(0.075)
+    static let hairline = Color(light: Color.black.opacity(0.08), dark: Color.white.opacity(0.075))
     static let cardDivider = Color.white.opacity(0.105)
     static let cardBorder = Color.white.opacity(0.115)
     static let groupBorder = Color.white.opacity(0.075)
-    static let insetShadow = Color.black.opacity(0.38)
     // Faint neutral fill on dark chrome (SSH pill, inactive sheet-row icon).
-    static let neutralFill = Color.white.opacity(0.045)
+    static let neutralFill = Color(light: Color.black.opacity(0.04), dark: Color.white.opacity(0.045))
     // Subtle neutral element (inactive chip outline, empty meter track).
     static let faintFill = Color.white.opacity(0.08)
 
     // MARK: - Text
-    static let primary = Color(hex: "F4F1E8").opacity(0.96)
-    static let secondary = Color(hex: "E8E3D6").opacity(0.72)
-    static let tertiary = Color(hex: "DED7C9").opacity(0.48)
-    static let meta = Color(hex: "C7C1B5").opacity(0.44)
+    // Light in the light appearance (R18), as the tokens' `foreground` and
+    // `muted-foreground`; the dark pages draw the dark side, as before.
+    static let primary = Color(uiColor: InkUI.primary)
+    static let secondary = Color(uiColor: InkUI.secondary)
+    static let tertiary = Color(light: Color(hex: "5E5C56"), dark: Color(hex: "DED7C9").opacity(0.48))
+    static let meta = Color(light: Color(hex: "5E5C56").opacity(0.85), dark: Color(hex: "C7C1B5").opacity(0.44))
     // Section headers are structural chrome, not emphasis — HIG favors
     // spacing/tone over color for grouping. Neutral, not accent-tinted.
     static let sectionTitle = Color(hex: "DED7C9").opacity(0.42)
     static let placeholder = Color(hex: "DAD3C3").opacity(0.32)
     static let disabledNav = Color.white.opacity(0.22)
     static let fixedValue = Color(hex: "E8E3D6").opacity(0.66)
-    static let termDefault = Color(hex: "E7E2D5").opacity(0.66)
     static let termMuted = Color(hex: "AEB7C5").opacity(0.46)
 
     // MARK: - Semantic Chips
@@ -77,7 +83,6 @@ enum Ink {
     static let sshPillBG = neutralFill
     static let sshPillText = secondary
     static var promptGreen: Color { accent }
-    static var cursorGreen: Color { accent }
     static var customChipBG: Color { accent.opacity(0.12) }
     static let customChipText = Color(hex: "EEFFB2")
     static var customChipBorder: Color { accent.opacity(0.28) }
@@ -87,24 +92,19 @@ enum Ink {
     static var modkeyOnBG: Color { accent.opacity(0.20) }
     static var modkeyOnBorder: Color { accent.opacity(0.42) }
     static let modkeyOnText = Color(hex: "F3FFC4")
-    static var paneActiveBG: Color { accent.opacity(0.13) }
-    static var paneActiveRing: Color { accent.opacity(0.34) }
-    static let paneActiveTag = Color(hex: "F0FFB8")
     static var rowActiveBG: Color { accent.opacity(0.12) }
     static let seBadgeBG = success.opacity(0.14)
     static let seBadgeText = Color(hex: "B7F5C0")
     static let seBadgeBorder = success.opacity(0.30)
     static let fpPreviewText = Color(hex: "DFF89A")
-    static let warnBoxTitle = Color(hex: "FFD39A")
     static let keyChipBG = Color.white.opacity(0.085)
     static let keyChipText = Color(hex: "E8E3D6").opacity(0.74)
     static let chipNeutralBG = Color(hex: "252B35").opacity(0.96)
-    static let keyBG = Color(hex: "2C323C").opacity(0.96)
-    static let segTrack = Color(hex: "090B10").opacity(0.70)
-    static let segActive = Color(hex: "2A303A").opacity(0.98)
-    static let toggleOff = Color(hex: "3A404B").opacity(0.54)
+    // Every segmented control's track and pill (`Chrome.installAppearance`):
+    // the tokens' `muted` and `card` in the light appearance (R18).
+    static let segTrack = Color(uiColor: InkUI.segTrack)
+    static let segActive = Color(uiColor: InkUI.segActive)
     static let termAmber = warn
-    static var predictUnderline: Color { accent.opacity(0.55) }
 
     // MARK: - Gradients
     // `static var`, not `static let` — these reference the theme-dependent
@@ -133,11 +133,6 @@ enum Ink {
     )
     static let roamBanner = LinearGradient(
         colors: [warn.opacity(0.20), Color(hex: "22160B").opacity(0.86)],
-        startPoint: .topLeading,
-        endPoint: .bottomTrailing
-    )
-    static let chromeSheen = LinearGradient(
-        colors: [Color.white.opacity(0.075), Color.white.opacity(0.018), Color.black.opacity(0.20)],
         startPoint: .topLeading,
         endPoint: .bottomTrailing
     )
@@ -197,19 +192,14 @@ enum Metrics {
     // previous 7-8pt values on every card/control/group read as boxy/flat.
     // `.continuous` (squircle) corner style was already used everywhere
     // these feed into; only the radius magnitude needed to change.
-    static let groupRadius: CGFloat = 20
     static let cardRadius: CGFloat = 20
-    static let sheetRadius: CGFloat = 32
     static let controlRadius: CGFloat = 14
-    static let groupInset: CGFloat = 14
     /// Fixed (not minimum) width for every shortcut-bar keycap — "ctrl"/"esc"
     /// used to hug their own label while "^End"/"⇧Tab" stretched wider,
     /// so the row read as uneven. One width for all of them, sized to the
     /// longest label ("⇧Tab"/"^End" at 11pt mono semibold) plus padding.
     static let shortcutKeyWidth: CGFloat = 46
-    static let cellMinHeight: CGFloat = 46
     static let pageHPad: CGFloat = 16
-    static let homeHPad: CGFloat = 18
     /// Ceiling on the home column's width. Only iPad and iPhone landscape ever
     /// reach it — an iPhone in portrait is far narrower — and without it the
     /// cards stretch the full 1032pt of a 13" iPad, which reads as an iPhone
@@ -218,11 +208,39 @@ enum Metrics {
     /// Settings and the galleries on iPad, so the root screen and the sheets
     /// presented over it look like they belong to the same app.
     static let homeMaxWidth: CGFloat = 640
-    static let sheetMaxFraction: CGFloat = 0.68
 }
 
 enum Motion {
-    static let quick = Animation.easeOut(duration: 0.16)
     static let settle = Animation.snappy(duration: 0.24, extraBounce: 0.08)
     static let roamPulse = Animation.easeInOut(duration: 0.75).repeatForever(autoreverses: true)
+}
+
+/// The adaptive inks UIKit draws with (`Chrome.installAppearance`), as
+/// `UIColor`s whose provider picks the side: `Ink`'s are made from these.
+enum InkUI {
+    static let primary = UIColor(light: UIColor(Color(hex: "16171B").opacity(0.96)),
+                                 dark: UIColor(Color(hex: "F4F1E8").opacity(0.96)))
+    static let secondary = UIColor(light: UIColor(Color(hex: "16171B").opacity(0.72)),
+                                   dark: UIColor(Color(hex: "E8E3D6").opacity(0.72)))
+    static let segTrack = UIColor(light: UIColor(Color(hex: "ECEBE6")),
+                                  dark: UIColor(Color(hex: "090B10").opacity(0.70)))
+    static let segActive = UIColor(light: UIColor(Color(hex: "FFFFFF")),
+                                   dark: UIColor(Color(hex: "2A303A").opacity(0.98)))
+}
+
+extension Color {
+    /// `light` where it is drawn in the light appearance and `dark` everywhere
+    /// else, resolved by the trait where it is drawn (R18). A SwiftUI page
+    /// still forced dark (a fallback on the dark-only palette) draws `dark`,
+    /// as it did.
+    init(light: Color, dark: Color) {
+        self.init(uiColor: UIColor(light: UIColor(light), dark: UIColor(dark)))
+    }
+}
+
+extension UIColor {
+    /// `light` in the light appearance, `dark` in every other.
+    convenience init(light: UIColor, dark: UIColor) {
+        self.init { $0.userInterfaceStyle == .light ? light : dark }
+    }
 }

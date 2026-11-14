@@ -56,11 +56,21 @@ struct SessionLifecycleTests {
         }
 
         let writer = RecordingWriter()
+        private var _programs: [String?] = []
+        /// Each PTY's program, in order (nil: the login shell).
+        var programs: [String?] { lock.withLock { _programs } }
 
         func openPTY(rows: Int, cols: Int,
                      onOutput: @escaping @Sendable (Data) -> Void,
-                     onEnd: @escaping @Sendable () -> Void) async throws -> any SSHPTYWriter {
-            writer
+                     onEnd: @escaping @Sendable (SSHChannelEnd) -> Void) async throws -> any SSHPTYWriter {
+            try await openPTY(rows: rows, cols: cols, command: nil, onOutput: onOutput, onEnd: onEnd)
+        }
+
+        func openPTY(rows: Int, cols: Int, command: String?,
+                     onOutput: @escaping @Sendable (Data) -> Void,
+                     onEnd: @escaping @Sendable (SSHChannelEnd) -> Void) async throws -> any SSHPTYWriter {
+            lock.withLock { _programs.append(command) }
+            return writer
         }
 
         func shutdown() async {}
@@ -204,6 +214,67 @@ struct SessionLifecycleTests {
         #expect(connects.count == 1, "keepAlive on mosh must reach the sidecar rebuild")
     }
 
+    /// The sidecar's `-CC` channel can die on a connection that is otherwise
+    /// fine — a wedged tmux, a stalled channel, a parser that gave up. The
+    /// keepalive's exec probe opens a fresh channel and keeps passing; the
+    /// controller's own watchdog is what notices, and over mosh nobody was
+    /// listening to it: the breadcrumb and the sheets froze for good.
+    @Test("A sidecar whose control channel dies on a live connection is rebuilt")
+    func silentSidecarIsRebuilt() async throws {
+        let session = makeSession(ScriptedTransport(.fail))
+        // Replacement sidecars answer every exec: the probe keeps passing.
+        let connects = wireConnector(session, replacement: .reply(""))
+        #expect(await bounded { await session.resumeIfNeeded() })
+        try #require(connects.count == 1)
+        let first = try #require(session.moshControl)
+
+        // The channel dies under a connection that still answers.
+        await first.client.rustParserFailed(reason: "injected", latch: TmuxParserBackend.Latch())
+
+        let deadline = ContinuousClock.now + .seconds(10)
+        while connects.count < 2, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        #expect(connects.count == 2, "nobody rebuilt the sidecar whose channel died")
+        #expect(session.moshControl !== first)
+        // What used to be the only check: it passes, and rebuilds nothing.
+        let afterSilence = connects.count
+        #expect(await bounded { await session.resumeIfNeeded() })
+        #expect(connects.count == afterSilence, "a healthy rebuilt sidecar was rebuilt again")
+        await session.stop()
+    }
+
+    /// A session renamed while the app was away is lost by the name the
+    /// sidecar knew: the rebuild asked for `=work`, tmux said "can't find
+    /// session", and the chain fell through to the most recent session.
+    @Test("A rebuilt sidecar goes back to its session by id first")
+    func rebuildGoesBackById() async throws {
+        let tmux = MockTmuxTransport()
+        let control = TmuxSessionController(sshSession: tmux, rendersOutput: false)
+        await control.beginControlMode()
+        tmux.pushText("%session-changed $3 work\n")
+        let deadline = ContinuousClock.now + .seconds(5)
+        while control.snapshot.activeSessionId != "$3", ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        try #require(control.snapshot.activeSessionId == "$3")
+        let session = makeSession(ScriptedTransport(.fail), moshControl: control)
+        let replacement = ScriptedTransport(.reply(""))
+        session.sidecarConnect = { SSHSession(connection: $0, transport: replacement) }
+
+        #expect(await bounded { await session.resumeIfNeeded() })
+
+        // The chain is the sidecar terminal's program (B267), nothing typed.
+        #expect(replacement.writer.written.isEmpty)
+        let boot = replacement.programs.compactMap { $0 }.joined(separator: "\n")
+        #expect(boot.contains("-CC attach -t '$3' 2>/dev/null || "),
+                "the rebuild asked for its session by name only: \(boot)")
+        if let byId = boot.range(of: "'$3'"), let byName = boot.range(of: "'=work'") {
+            #expect(byId.lowerBound < byName.lowerBound, "the name was tried before the id")
+        }
+        await session.stop()
+    }
+
     // MARK: - Liveness probing
 
     /// A dead socket and a slow one look identical to a boolean probe, and
@@ -256,19 +327,35 @@ struct SessionLifecycleTests {
                 "a mosh-server that never got a reply back must be killed on teardown")
     }
 
-    /// The critical trap this whole feature has to avoid: a session that
-    /// really did talk to its server must NEVER be killed just because
-    /// `stop()` happens to run — mosh's entire point is that the server
-    /// outlives a torn-down client so a later reconnect can resume it.
-    @Test("stop() never kills a mosh-server that already made first contact")
-    func stopLeavesContactedMoshServerAlone() async {
+    /// A reconnect leaves a server the session talked to alone: it holds the
+    /// user's shell (crates/session: a drop never stops a reached server).
+    @Test("a reconnect teardown never kills a mosh-server that already made first contact")
+    func reconnectLeavesContactedMoshServerAlone() async {
         let session = makeMoshSession(pid: 4242, hadFirstContact: true)
         let connects = wireConnector(session, replacement: .reply(""))
 
-        #expect(await bounded { await session.stop() })
+        #expect(await bounded { await session.stop(forReconnect: true) })
         // swiftlint:disable:next empty_count - `Counter.count` is a tally, not a collection
         #expect(connects.count == 0,
-                "first contact must latch stop() off the reap path entirely — no sidecar should even be dialed")
+                "first contact keeps a reconnect off the reap path entirely — no sidecar should even be dialed")
+    }
+
+    /// B164: the user closing a session stops its server, contacted or not.
+    /// It used to be left running "so a later reconnect can resume it" —
+    /// but the app keeps no session key and starts a new server on every
+    /// connect: every disconnect and protocol switch left a mosh-server and
+    /// its shell on the host for good.
+    @Test("stop() stops a mosh-server the user closed, even one it talked to")
+    func stopReapsContactedMoshServerTheUserClosed() async {
+        let session = makeMoshSession(pid: 4242, hadFirstContact: true)
+        let reapTransport = ScriptedTransport(.reply(""))
+        session.sidecarConnect = { connection in
+            SSHSession(connection: connection, transport: reapTransport)
+        }
+
+        #expect(await bounded { await session.stop() })
+        #expect(reapTransport.commands.contains { $0.contains("kill 4242") },
+                "nothing can ever come back to a server the user closed")
     }
 
     // MARK: - Reconnect teardown

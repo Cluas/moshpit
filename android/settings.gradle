@@ -1,0 +1,27 @@
+// Moshpit for Android, the Gradle build: what CI's Linux runner builds the
+// Play bundle with (`gradle -p android :app:bundleRelease`). On the
+// development Mac no JDK 17+ starts, so android/build.sh builds the same
+// sources without Gradle. Java only (no Kotlin): see crates/android/src/lib.rs.
+pluginManagement {
+    repositories {
+        google()
+        mavenCentral()
+        gradlePluginPortal()
+    }
+}
+
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+
+rootProject.name = 'moshpit-android'
+include ':app'
+// Termux's terminal libraries, vendored (termux/NOTICE), each its own module as
+// in termux-app.
+include ':terminal-emulator', ':terminal-view'
+project(':terminal-emulator').projectDir = file('termux/terminal-emulator')
+project(':terminal-view').projectDir = file('termux/terminal-view')

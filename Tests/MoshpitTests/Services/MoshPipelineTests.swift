@@ -26,6 +26,55 @@ struct MoshPipelineTests {
         #expect(MoshCompression.adler32(Data("Wikipedia".utf8)) == 0x11E6_0398)
     }
 
+    private static func hex(_ text: String) -> Data {
+        var out = Data()
+        var index = text.startIndex
+        while index < text.endIndex {
+            let next = text.index(index, offsetBy: 2)
+            out.append(UInt8(text[index..<next], radix: 16)!)
+            index = next
+        }
+        return out
+    }
+
+    @Test("inflation checks what zlib's uncompress checks: header, DEFLATE, Adler-32, 4 MiB")
+    func decompressionIsStrict() throws {
+        typealias Failure = MoshCompression.CompressionError
+        let hello = Data("hello".utf8)
+        let good = try MoshCompression.compress(hello)
+        #expect(try MoshCompression.decompress(good) == hello)
+        // Bytes after the trailer are ignored, as zlib ignores them.
+        #expect(try MoshCompression.decompress(good + Data([1, 2, 3])) == hello)
+
+        var trailer = good
+        trailer[trailer.count - 1] ^= 1
+        #expect(throws: Failure.badChecksum) { try MoshCompression.decompress(trailer) }
+        #expect(throws: Failure.inflateFailed) { try MoshCompression.decompress(good.dropLast()) }
+        for header: [UInt8] in [[0x78, 0x9D],     // check bits
+                                [0x79, 0x18],     // method 9
+                                [0x88, 0x1C],     // a 64 KiB window
+                                [0x78, 0xBB]] {   // a preset dictionary
+            var bad = good
+            bad.replaceSubrange(0..<2, with: header)
+            #expect(throws: Failure.badHeader) { try MoshCompression.decompress(bad) }
+        }
+        // Two DEFLATE faults Apple's raw decoder let through: a stored block
+        // whose NLEN is not ~LEN, and an invalid code-length set.
+        #expect(throws: Failure.inflateFailed) {
+            try MoshCompression.decompress(Self.hex(
+                "789c013000cfbfffefc612fec5929a8c0c3cfb3e28ff1d7e18a2919ea37be12928e1e85a8b5d908552fd5b2919877dc420bc53d54f0c9436692617bc"))
+        }
+        #expect(throws: Failure.inflateFailed) {
+            try MoshCompression.decompress(Self.hex("789c95c0810000000180207fc37066389e00e09d2881"))
+        }
+        // mosh's own buffer: exactly 4 MiB inflates, one byte more does not.
+        let limit = MoshCompression.maxDecompressedSize
+        #expect(try MoshCompression.decompress(MoshCompression.compress(Data(count: limit))).count == limit)
+        #expect(throws: Failure.tooLarge) {
+            try MoshCompression.decompress(MoshCompression.compress(Data(count: limit + 1)))
+        }
+    }
+
     // MARK: Crypto framing
 
     @Test("seal → open round-trips a Message and recovers seq/direction")
@@ -111,6 +160,49 @@ struct MoshPipelineTests {
     func bootstrapAcceptsPortRange(_ input: String, _ expected: UInt16) throws {
         let creds = try MoshBootstrap.parse(output: Self.connectLine(port: input), host: "h")
         #expect(creds.udpPort == expected)
+    }
+
+    @Test("the connect line is matched by scalar: a combining mark after a space does not glue fields")
+    func bootstrapMatchesScalarsNotCharacters() throws {
+        // By grapheme cluster, " \u{0301}" is one Character: the first connect
+        // line no longer had the "MOSH CONNECT " prefix and was skipped, and
+        // the second one won.
+        let glued = "MOSH CONNECT \u{0301} 60001 AAECAwQFBgcICQoLDA0ODw\n"
+            + Self.connectLine(port: "60002")
+        do {
+            let creds = try MoshBootstrap.parse(output: glued, host: "h")
+            Issue.record("parsed port \(creds.udpPort) from a later line")
+        } catch MoshBootstrap.BootstrapError.noConnectLine {
+        }
+        // Every newline Character.isNewline knows still ends a line.
+        for newline in ["\n", "\r", "\r\n", "\u{0B}", "\u{0C}", "\u{85}", "\u{2028}", "\u{2029}"] {
+            let output = "banner" + newline + "MOSH CONNECT 60003 AAECAwQFBgcICQoLDA0ODw" + newline
+            #expect(try MoshBootstrap.parse(output: output, host: "h").udpPort == 60003)
+        }
+    }
+
+    @Test("the server pid comes only from mosh-server's own detach line")
+    func bootstrapPidComesFromTheDetachLine() throws {
+        // The session `kill`s this pid on the user's host to reap a server
+        // that never heard from us. A shell startup file printing something
+        // pid-like first used to name an unrelated process.
+        let output = "rapid = 5\n" + Self.connectLine(port: "60001")
+            + "\nmosh-server (mosh 1.4.0) [build mosh 1.4.0]\n[mosh-server detached, pid = 77]\n"
+        #expect(try MoshBootstrap.parse(output: output, host: "h").serverPid == 77)
+    }
+
+    @Test("no pid to kill unless the detach line names one above 1",
+          arguments: [
+            "[mosh-server detached, pid = 0]\n",     // `kill 0`: the whole process group
+            "[mosh-server detached, pid = 1]\n",     // init
+            "pid = 4242\n",                          // not mosh-server's line
+            "[mosh-server detached, pid = ]\n",
+            "[mosh-server detached, pid = 99999999999999999999]\n",
+            "",
+          ])
+    func bootstrapLeavesNothingToKill(_ tail: String) throws {
+        let creds = try MoshBootstrap.parse(output: Self.connectLine(port: "60001") + tail, host: "h")
+        #expect(creds.serverPid == nil)
     }
 
     @Test("a non-numeric port field is still the missing-line error")

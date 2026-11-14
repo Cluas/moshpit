@@ -518,23 +518,42 @@ type throttle struct {
 }
 
 type bucket struct {
-	last  time.Time
-	hour  time.Time
-	count int
+	last time.Time
+	// recent: when this thread's pushes inside the floor's window passed,
+	// oldest first — never more than floorBurst of them.
+	recent []time.Time
+	hour   time.Time
+	count  int
 }
 
 const (
 	minInterval = 3 * time.Second
-	hourlyCap   = 120
+	// floorBurst pushes per thread may pass inside one minInterval.
+	//
+	// The floor was one push per thread per window when a thread was a pane.
+	// It stopped being one: every attention push of a connection now shares
+	// the thread `moshpit.attention.<conn>`, because they collapse into one
+	// summary card ("claude +2") — and the floor went on treating it as one
+	// pane. Two agents on one host asking within three seconds of each other
+	// (a fan-out of agents meets its permission prompts together) got a 429
+	// for the second, the host does not retry an HTTP answer, and that
+	// question never reached the phone: the card said "claude needs you" to
+	// one of them, and nothing told the user about the other. The hourly cap
+	// is the real ceiling either way (a host can already evade the floor by
+	// varying its thread); four at once is room for a burst of real ones.
+	floorBurst = 4
+	hourlyCap  = 120
 )
 
 func newThrottle() *throttle { return &throttle{seen: map[string]*bucket{}} }
 
-// allow applies the per-pane floor and the per-device hourly cap.
+// allow applies the per-thread floor and the per-device hourly cap.
 //
 // `device` bounds how much a runaway host can spend of a user's attention;
-// `thread` (the collapse id, one per pane) is what the floor is measured
-// against, so one pane going quiet cannot silence another.
+// `thread` (the collapse id: one per pane for `done`, one per connection for
+// `attention`) is what the floor is measured against, so one pane going quiet
+// cannot silence another — and, with floorBurst, agents asking together on
+// one connection cannot silence each other either.
 //
 // A host CAN evade the floor by varying its thread, and that is accepted: the
 // per-device hourly cap is the real ceiling and is unaffected, so the worst case
@@ -559,9 +578,17 @@ func (t *throttle) allow(device, thread string, now time.Time) (time.Duration, b
 		return hourly.hour.Add(time.Hour).Sub(now), false
 	}
 	floor := t.bucket(device+"\x00"+thread, now)
-	if !floor.last.IsZero() && now.Sub(floor.last) < minInterval {
-		return minInterval - now.Sub(floor.last), false
+	inWindow := floor.recent[:0]
+	for _, at := range floor.recent {
+		if now.Sub(at) < minInterval {
+			inWindow = append(inWindow, at)
+		}
 	}
+	floor.recent = inWindow
+	if len(floor.recent) >= floorBurst {
+		return minInterval - now.Sub(floor.recent[0]), false
+	}
+	floor.recent = append(floor.recent, now)
 	floor.last = now
 	hourly.last = now
 	hourly.count++

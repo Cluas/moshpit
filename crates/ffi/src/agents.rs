@@ -1,0 +1,294 @@
+//! The agent-activity machine (`moshpit-agents`, W15c) for the app: what
+//! `AgentActivityMonitor` drives, through UniFFI. The machine decides; the
+//! app applies — ActivityKit, the notification center, WidgetCenter and the
+//! App Group writes stay Swift.
+
+use std::collections::{BTreeMap, HashMap};
+use std::sync::{Arc, Mutex};
+
+use moshpit_agents::{self as agents, Effect, Monitor};
+use moshpit_seal::copy::{InterruptionLevel, Language};
+use moshpit_seal::{PushFinishesFile, PushStandingFile};
+
+/// The user's switches, and the language the cards are written in (a BCP-47
+/// tag; the app's own localization).
+#[derive(Debug, Clone, PartialEq, uniffi::Record)]
+pub struct AgentSettingsValue {
+    pub notifications: bool,
+    pub live_activity: bool,
+    pub show_detail: bool,
+    pub sound: bool,
+    pub language: String,
+}
+
+impl From<&AgentSettingsValue> for agents::Settings {
+    fn from(value: &AgentSettingsValue) -> Self {
+        Self {
+            notifications: value.notifications,
+            live_activity: value.live_activity,
+            show_detail: value.show_detail,
+            sound: value.sound,
+            language: Language::from_tag(&value.language),
+        }
+    }
+}
+
+/// Where a pane lives, from the app's tree.
+#[derive(Debug, Clone, PartialEq, uniffi::Record)]
+pub struct AgentPaneWhereValue {
+    pub command: String,
+    pub session: Option<String>,
+    pub window: Option<String>,
+}
+
+impl From<AgentPaneWhereValue> for agents::PaneWhere {
+    fn from(value: AgentPaneWhereValue) -> Self {
+        Self { command: value.command, session: value.session, window: value.window }
+    }
+}
+
+/// One pane of a hook poll; `since` in unix seconds.
+#[derive(Debug, Clone, PartialEq, uniffi::Record)]
+pub struct AgentHookInValue {
+    pub pane: String,
+    pub state: Option<String>,
+    pub agent: Option<String>,
+    pub since: Option<f64>,
+    pub command: Option<String>,
+    pub title: Option<String>,
+    pub place: AgentPaneWhereValue,
+}
+
+/// One row of the island and the widget; `started_at` in unix seconds,
+/// `state` the raw word (`working`, `attention`, `done`, `idle`).
+#[derive(Debug, Clone, PartialEq, uniffi::Record)]
+pub struct AgentRowValue {
+    pub id: String,
+    pub connection_id: String,
+    pub pane_id: String,
+    pub command: String,
+    pub location: String,
+    pub detail: Option<String>,
+    pub state: String,
+    pub started_at: f64,
+}
+
+#[derive(Debug, Clone, PartialEq, uniffi::Record)]
+pub struct AgentIslandValue {
+    pub agents: Vec<AgentRowValue>,
+    pub working_count: u32,
+    pub attention_count: u32,
+    pub headline_id: Option<String>,
+}
+
+/// How a card may interrupt.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum AgentCardLevel {
+    Passive,
+    Active,
+    TimeSensitive,
+}
+
+#[derive(Debug, Clone, PartialEq, uniffi::Record)]
+pub struct AgentCardValue {
+    pub id: String,
+    pub title: String,
+    pub body: String,
+    pub sound: bool,
+    pub level: AgentCardLevel,
+    pub connection_id: String,
+    pub pane_id: String,
+}
+
+/// What the app does, in order.
+#[derive(Debug, Clone, PartialEq, uniffi::Enum)]
+pub enum AgentEffectValue {
+    Island { state: AgentIslandValue },
+    EndIsland,
+    Widget { state: AgentIslandValue },
+    Post { card: AgentCardValue },
+    Withdraw { id: String },
+    SaveAnnounced { record: HashMap<String, f64> },
+    RequestAuthorization,
+    /// A line for the log.
+    Note { text: String },
+}
+
+fn island(state: agents::IslandState) -> AgentIslandValue {
+    AgentIslandValue {
+        agents: state
+            .agents
+            .into_iter()
+            .map(|a| AgentRowValue {
+                id: a.id,
+                connection_id: a.connection_id,
+                pane_id: a.pane_id,
+                command: a.command,
+                location: a.location,
+                detail: a.detail,
+                state: a.state.raw().to_owned(),
+                started_at: a.started_at,
+            })
+            .collect(),
+        working_count: state.working_count as u32,
+        attention_count: state.attention_count as u32,
+        headline_id: state.headline_id,
+    }
+}
+
+fn effect(effect: Effect) -> AgentEffectValue {
+    match effect {
+        Effect::Island(state) => AgentEffectValue::Island { state: island(state) },
+        Effect::EndIsland => AgentEffectValue::EndIsland,
+        Effect::Widget(state) => AgentEffectValue::Widget { state: island(state) },
+        Effect::Post(card) => AgentEffectValue::Post {
+            card: AgentCardValue {
+                id: card.id,
+                title: card.text.title,
+                body: card.text.body,
+                sound: card.text.sound,
+                level: match card.text.level {
+                    InterruptionLevel::Passive => AgentCardLevel::Passive,
+                    InterruptionLevel::Active => AgentCardLevel::Active,
+                    InterruptionLevel::TimeSensitive => AgentCardLevel::TimeSensitive,
+                },
+                connection_id: card.connection_id,
+                pane_id: card.pane_id,
+            },
+        },
+        Effect::Withdraw(id) => AgentEffectValue::Withdraw { id },
+        Effect::SaveAnnounced(record) => AgentEffectValue::SaveAnnounced { record: record.into_iter().collect() },
+        Effect::RequestAuthorization => AgentEffectValue::RequestAuthorization,
+        Effect::Note(text) => AgentEffectValue::Note { text },
+    }
+}
+
+/// The machine. Every call says what time it is and answers with what to
+/// do.
+#[derive(uniffi::Object)]
+pub struct AgentMachine {
+    monitor: Mutex<Monitor>,
+}
+
+impl AgentMachine {
+    /// When each of `conn`'s panes entered the state it is in (Home's
+    /// record reads it, `home`).
+    pub(crate) fn since(&self, conn: &str) -> BTreeMap<String, f64> {
+        let monitor = self.monitor.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        monitor.state_since_by_pane(conn)
+    }
+
+    fn drive(&self, step: impl FnOnce(&mut Monitor)) -> Vec<AgentEffectValue> {
+        let mut monitor = self.monitor.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        step(&mut monitor);
+        monitor.take_effects().into_iter().map(effect).collect()
+    }
+}
+
+#[uniffi::export]
+impl AgentMachine {
+    /// `standing_path` and `finishes_path` are the files the notification
+    /// service shares (none without the App Group); `announced` the record
+    /// as stored; `announce_grace` how long a question stands before it is
+    /// announced (30 s; a device harness shortens it).
+    #[uniffi::constructor]
+    pub fn new(
+        settings: AgentSettingsValue,
+        standing_path: Option<String>,
+        finishes_path: Option<String>,
+        announced: HashMap<String, f64>,
+        announce_grace: f64,
+        now: f64,
+    ) -> Arc<Self> {
+        let announced: BTreeMap<String, f64> = announced.into_iter().collect();
+        Arc::new(Self {
+            monitor: Mutex::new(Monitor::new(
+                agents::Tunables { announce_grace, ..agents::Tunables::default() },
+                (&settings).into(),
+                standing_path.map(PushStandingFile::new),
+                finishes_path.map(PushFinishesFile::new),
+                &announced,
+                now,
+            )),
+        })
+    }
+
+    pub fn set_settings(&self, settings: AgentSettingsValue) {
+        self.drive(|monitor| monitor.set_settings((&settings).into()));
+    }
+
+    pub fn is_tracking(&self) -> bool {
+        self.monitor.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).is_tracking()
+    }
+
+    pub fn track(&self, conn: String, label: String) -> Vec<AgentEffectValue> {
+        self.drive(|monitor| monitor.track(&conn, &label))
+    }
+
+    pub fn untrack(&self, conn: String, keep_waiting_cards: bool, now: f64) -> Vec<AgentEffectValue> {
+        self.drive(|monitor| monitor.untrack(&conn, keep_waiting_cards, now))
+    }
+
+    /// The connection's tree: where each of its panes lives.
+    pub fn tree(&self, conn: String, places: HashMap<String, AgentPaneWhereValue>) {
+        let places = places.into_iter().map(|(pane, place)| (pane, place.into())).collect();
+        self.drive(|monitor| monitor.tree(&conn, places));
+    }
+
+    /// One poll of `conn`'s stamps. `interval`: how often its stamps
+    /// arrive, in seconds — tmux's, the sweep that polls them; herdr's,
+    /// [`herdr_stamp_interval`]. A stamp holds that long and a margin
+    /// (`moshpit_agents::stamp_hold`, B346).
+    pub fn hooks(
+        &self,
+        conn: String,
+        hooks: Vec<AgentHookInValue>,
+        now: f64,
+        interval: f64,
+    ) -> Vec<AgentEffectValue> {
+        let hooks = hooks
+            .into_iter()
+            .map(|h| agents::Hook {
+                pane: h.pane,
+                state: h.state,
+                agent: h.agent,
+                since: h.since,
+                command: h.command,
+                title: h.title,
+                place: h.place.into(),
+            })
+            .collect();
+        self.drive(|monitor| monitor.hooks(&conn, hooks, now, interval))
+    }
+
+    pub fn output(&self, conn: String, pane: String, place: AgentPaneWhereValue, now: f64) -> Vec<AgentEffectValue> {
+        self.drive(|monitor| monitor.output(&conn, &pane, place.into(), now))
+    }
+
+    pub fn bell(&self, conn: String, pane: String, place: AgentPaneWhereValue, now: f64) -> Vec<AgentEffectValue> {
+        self.drive(|monitor| monitor.bell(&conn, &pane, place.into(), now))
+    }
+
+    /// `visible_conn`/`visible_pane`: the pane on screen (no pane: every
+    /// pane of that connection).
+    pub fn sweep(&self, visible_conn: Option<String>, visible_pane: Option<String>, now: f64) -> Vec<AgentEffectValue> {
+        let visible = visible_conn.map(|conn| agents::Visible { conn, pane: visible_pane });
+        self.drive(|monitor| monitor.sweep(visible.as_ref(), now))
+    }
+
+    /// The announced record as stored, once it can be believed: it joins
+    /// the one this process kept, then is saved (B348).
+    pub fn adopt_announced(&self, announced: HashMap<String, f64>, now: f64) -> Vec<AgentEffectValue> {
+        let announced: BTreeMap<String, f64> = announced.into_iter().collect();
+        self.drive(|monitor| monitor.adopt_announced(&announced, now))
+    }
+
+    pub fn cycle_headline(&self, now: f64) -> Vec<AgentEffectValue> {
+        self.drive(|monitor| monitor.cycle_headline(now))
+    }
+
+    pub fn state_since_by_pane(&self, conn: String) -> HashMap<String, f64> {
+        let monitor = self.monitor.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        monitor.state_since_by_pane(&conn).into_iter().collect()
+    }
+}

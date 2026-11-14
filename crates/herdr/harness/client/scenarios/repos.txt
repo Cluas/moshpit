@@ -1,0 +1,4 @@
+# Repo discovery: the panes' repos first, then the scan.
+at 0 start
+at 300 repos
+end 3000

@@ -1,0 +1,13 @@
+[package]
+name = "moshpit-install"
+description = "What Moshpit puts on a dev host, as pure logic: the host scripts and their digests, the install manifest, the seven agents' hook configs, the push conf, the commands that land them, and the probes that say what a host can do"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+moshpit-seal = { path = "../seal" }
+# The manifest's content digests.
+sha2 = "0.10"
+serde = { version = "1", features = ["derive"] }

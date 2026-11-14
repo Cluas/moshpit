@@ -21,9 +21,16 @@ struct AddShortcutView: View {
     @State private var colorId = "accent"
     @State private var scopeHosts: Set<String> = []
     @State private var onlyInTmux = false
+    /// Saved while the toolbar was full: said before the editor goes (B252).
+    @State private var savedOffToolbar = false
+    /// The shared model's editor (``AddShortcutModel``, the NSH page's
+    /// too): Save's rule, and a second Save of a new shortcut updating the
+    /// one the first added (B288).
+    @State private var editor: AddShortcutModel
 
     init(existing: TerminalShortcut? = nil) {
         self.existing = existing
+        _editor = State(initialValue: AddShortcutModel(existing: existing))
         if let sc = existing {
             _kind = State(initialValue: sc.kind)
             _modifiers = State(initialValue: sc.modifiers)
@@ -39,8 +46,19 @@ struct AddShortcutView: View {
         }
     }
 
+    /// The form's fields, as the shared editor reads a draft.
+    private var draft: [String: Any] {
+        [
+            "kind": kind.rawValue, "modifiers": modifiers.sorted().map(\.rawValue), "key": key,
+            "payload": payload, "appendReturn": appendReturn, "repeatOnHold": repeatOnHold,
+            "chipLabel": chipLabel, "summary": summary, "colorId": colorId,
+            "scopeHosts": scopeHosts.sorted(), "onlyInTmux": onlyInTmux,
+        ]
+    }
+
     private var canSave: Bool {
-        !chipLabel.isEmpty && (kind == .keyCombo ? (!key.isEmpty || !payload.isEmpty) : !payload.isEmpty)
+        editor.apply(draft)
+        return editor.canSave
     }
 
     private var comboCap: String {
@@ -65,11 +83,12 @@ struct AddShortcutView: View {
                 ) {
                     PillSegmentedControl(
                         items: [
-                            SegItem(value: ShortcutKind.keyCombo, label: "Key Combo", systemImage: "keyboard"),
-                            SegItem(value: ShortcutKind.text, label: "Text", systemImage: "text.alignleft"),
-                            SegItem(value: ShortcutKind.command, label: "Command", systemImage: "terminal"),
+                            SegItem(value: ShortcutKind.keyCombo, label: "Key Combo"),
+                            SegItem(value: ShortcutKind.text, label: "Text"),
+                            SegItem(value: ShortcutKind.command, label: "Command"),
                         ],
                         selection: $kind)
+                    .accessibilityIdentifier("shortcut-type")
                 }
 
                 if kind == .keyCombo {
@@ -115,6 +134,7 @@ struct AddShortcutView: View {
                     footer: "In Key Combo mode the payload is the escape sequence sent to the PTY, honoring the transport transcription rules."
                 ) {
                     TextEditor(text: $payload)
+                        .accessibilityIdentifier("shortcut-payload")
                         .font(Face.mono(13))
                         .foregroundStyle(Ink.primary)
                         .scrollContentBackground(.hidden)
@@ -136,8 +156,10 @@ struct AddShortcutView: View {
                                     .allowsHitTesting(false)
                             }
                         }
-                    ToggleRow(label: "Append Return", subtitle: "Automatically appends ⏎ to submit", isOn: $appendReturn)
-                    ToggleRow(label: "Repeat on hold", subtitle: "Repeats at 30/s after a 0.4s hold", isOn: $repeatOnHold)
+                    ToggleRow(label: "Append Return", subtitle: "Automatically appends ⏎ to submit",
+                              identifier: "shortcut-append-return", isOn: $appendReturn)
+                    ToggleRow(label: "Repeat on hold", subtitle: "Repeats at 30/s after a 0.4s hold",
+                              identifier: "shortcut-repeat", isOn: $repeatOnHold)
                 }
 
                 FormGroup(
@@ -177,7 +199,8 @@ struct AddShortcutView: View {
                                 ("amber", Ink.termAmber),
                             ],
                             selection: $colorId,
-                            diameter: 26)
+                            diameter: 26,
+                            identifierPrefix: "shortcut-color-")
                     }
                 }
 
@@ -186,8 +209,9 @@ struct AddShortcutView: View {
                     titleSuffix: "(optional)",
                     footer: "Available everywhere when nothing is selected. When bound, it appears only in the toolbar of the selected hosts, saving slots in the 12-slot budget."
                 ) {
-                    HostChipsRow(hosts: hostNames, selected: $scopeHosts)
-                    ToggleRow(label: "Only in a multiplexer", subtitle: "Show only while the session runs tmux or herdr", isOn: $onlyInTmux)
+                    HostChipsRow(hosts: hostNames, selected: $scopeHosts, identifierPrefix: "shortcut-host-")
+                    ToggleRow(label: "Only in a multiplexer", subtitle: "Show only while the session runs tmux or herdr",
+                              identifier: "shortcut-only-multiplexer", isOn: $onlyInTmux)
                 }
             }
             .moshpitForm()
@@ -197,19 +221,30 @@ struct AddShortcutView: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
                         .foregroundStyle(Ink.accent)
+                        .accessibilityIdentifier("shortcut-cancel")
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") { save() }
                         .foregroundStyle(canSave ? Ink.accent : Ink.disabledNav)
                         .disabled(!canSave)
+                        .accessibilityIdentifier("shortcut-save")
                 }
             }
+            .savedOffToolbarAlert(isPresented: $savedOffToolbar) { dismiss() }
         }
-        .preferredColorScheme(.dark)
+        .darkOnlyPage()
     }
 
     private var hostNames: [String] {
-        connections.store.connections.map(\.displayName)
+        Self.chipHosts(connections.store.connections.map(\.displayName), bound: scopeHosts)
+    }
+
+    /// The host chips: the user's hosts, then any the shortcut is bound to
+    /// that is gone since (renamed or deleted), so the binding shows and
+    /// can come off — bound only to gone hosts, the shortcut is in no
+    /// toolbar while the footer says it is everywhere.
+    static func chipHosts(_ names: [String], bound: Set<String>) -> [String] {
+        names + bound.subtracting(names).sorted()
     }
 
     // MARK: Preview row
@@ -281,7 +316,7 @@ struct AddShortcutView: View {
     // MARK: Quick keys (Attach-style preset picker)
 
     /// One tappable preset that fills the trigger fields in one tap.
-    private struct KeyPreset: Identifiable {
+    struct KeyPreset: Identifiable {
         let label: String          // button text
         let chip: String           // chip label to fill
         var mods: Set<ShortcutModifier> = []
@@ -291,7 +326,7 @@ struct AddShortcutView: View {
         var id: String { label }
     }
 
-    private static let presetGroups: [(String, [KeyPreset])] = [
+    static let presetGroups: [(String, [KeyPreset])] = [
         ("PREFIX", [
             KeyPreset(label: "PREFIX", chip: "C-b", mods: [.ctrl], key: "b", summary: "multiplexer prefix"),
             KeyPreset(label: "C-c", chip: "^C", mods: [.ctrl], key: "c", summary: "Interrupt"),
@@ -344,7 +379,7 @@ struct AddShortcutView: View {
         VStack(alignment: .leading, spacing: 12) {
             ForEach(Self.presetGroups, id: \.0) { group in
                 VStack(alignment: .leading, spacing: 8) {
-                    Text(group.0)
+                    Text(verbatim: ShortcutCopy.group(group.0))
                         .font(Face.mono(10, .semibold)).kerning(1.4)
                         .foregroundStyle(Ink.meta)
                     // Adaptive, so large text gets three (or two) columns
@@ -376,30 +411,38 @@ struct AddShortcutView: View {
         key = preset.key
         payload = preset.payload
         chipLabel = preset.chip
-        if summary.isEmpty { summary = preset.summary }
+        // In the app's language (B234): what the person sees is what they
+        // keep.
+        if summary.isEmpty { summary = ShortcutCopy.describe(preset.summary) }
     }
 
     // MARK: Save
 
     private func save() {
-        var sc = existing ?? TerminalShortcut()
-        sc.kind = kind
-        sc.modifiers = modifiers
-        sc.key = key
-        sc.payload = payload
-        sc.appendReturn = appendReturn
-        sc.repeatOnHold = repeatOnHold
-        sc.chipLabel = chipLabel
-        sc.summary = summary.isEmpty ? chipLabel : summary
-        sc.colorId = colorId
-        sc.scopeHosts = scopeHosts
-        sc.onlyInTmux = onlyInTmux
-        if existing == nil {
-            store.add(sc)
-        } else {
-            store.update(sc)
+        editor.apply(draft)
+        switch editor.save(to: store) {
+        case .saved:
+            dismiss()
+        case .savedOffToolbar:
+            // A full toolbar keeps it under AVAILABLE: said, not left to be
+            // found (B252).
+            savedOffToolbar = true
+        case .notSaved:
+            break
         }
-        dismiss()
+    }
+}
+
+extension View {
+    /// A new shortcut saved while the toolbar was full (B252): where it went
+    /// and how to put it on the bar. `done` runs once it is read (the
+    /// editor goes). The SwiftUI editor and the NSH one's host say it alike.
+    func savedOffToolbarAlert(isPresented: Binding<Bool>, done: @escaping () -> Void) -> some View {
+        alert("Saved under AVAILABLE", isPresented: isPresented) {
+            Button("OK") { done() }
+        } message: {
+            Text("The toolbar is full: it holds \(ShortcutStore.toolbarLimit) shortcuts. Take one off with −, then add this one with ＋.")
+        }
     }
 }
 

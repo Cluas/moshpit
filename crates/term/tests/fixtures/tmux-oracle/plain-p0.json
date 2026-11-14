@@ -1,0 +1,39 @@
+{
+ "tmux": "3.6a",
+ "capture": "plain",
+ "pane": 0,
+ "cols": 80,
+ "rows": 24,
+ "history": [],
+ "screen": [
+  "printf \"hello world\\n\"",
+  "hello world",
+  "sh-3.2$ echo plain text: the quick brown fox; echo second line",
+  "plain text: the quick brown fox",
+  "second line",
+  "sh-3.2$ printf \"%s\\n\" one two three four five",
+  "one",
+  "two",
+  "three",
+  "four",
+  "five",
+  "sh-3.2$ echo $((6 * 7)); printf \"tab:[\\t] backslash:[\\\\] percent:[100%%]\\n\"",
+  "42",
+  "tab:[   ] backslash:[\\] percent:[100%]",
+  "sh-3.2$ echo %begin 1 2 0 and %end 1 2 0 as pane text",
+  "%begin 1 2 0 and %end 1 2 0 as pane text",
+  "sh-3.2$ printf \"%%end 1 2 0\\n%%exit\\n%%output %%9 fake\\n\"",
+  "%end 1 2 0",
+  "%exit",
+  "%output %9 fake",
+  "sh-3.2$",
+  "",
+  "",
+  ""
+ ],
+ "cursor": [
+  8,
+  20
+ ],
+ "alt_screen": false
+}

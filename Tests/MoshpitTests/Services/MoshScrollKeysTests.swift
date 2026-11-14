@@ -104,6 +104,15 @@ struct MoshScrollKeysTests {
         #expect(S.wheelBytes(lines: 0, col: 5, row: 5) == Data())
         #expect(S.wheelBytes(lines: -1, col: 0, row: 0) == Data("\u{1b}[<65;1;1M".utf8))
     }
+
+    /// B149: `abs(Int.min)` trapped.
+    @Test("the most lines Int can say is six wheel ticks, either way")
+    func wheelExtremes() {
+        let up = Data(String(repeating: "\u{1b}[<64;1;1M", count: 6).utf8)
+        let down = Data(String(repeating: "\u{1b}[<65;1;1M", count: 6).utf8)
+        #expect(S.wheelBytes(lines: .max, col: 1, row: 1) == up)
+        #expect(S.wheelBytes(lines: .min, col: 1, row: 1) == down)
+    }
 }
 
 /// Tap-to-position sends a mouse-aware program (Claude Code's prompt, vim) the
@@ -126,6 +135,15 @@ struct ClickBytesTests {
     func origin() {
         #expect(S.clickBytes(col: 0, row: 0) == Data("\u{1b}[<0;1;1M\u{1b}[<0;1;1m".utf8))
         #expect(S.clickBytes(col: -3, row: -1) == Data("\u{1b}[<0;1;1M\u{1b}[<0;1;1m".utf8))
+    }
+
+    /// B149: `col + 1` trapped on Int.max.
+    @Test("a cell at Int's end saturates instead of trapping")
+    func extremes() {
+        let max = String(Int.max)
+        #expect(S.clickBytes(col: .max, row: .max)
+                == Data("\u{1b}[<0;\(max);\(max)M\u{1b}[<0;\(max);\(max)m".utf8))
+        #expect(S.clickBytes(col: .min, row: .min) == Data("\u{1b}[<0;1;1M\u{1b}[<0;1;1m".utf8))
     }
 }
 

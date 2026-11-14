@@ -25,8 +25,8 @@ private func waitUntil(
 
 private func block(_ num: Int, _ body: String) -> String {
     body.isEmpty
-        ? "%begin \(num) \(num) 0\n%end \(num) \(num) 0\n\n"
-        : "%begin \(num) \(num) 0\n\(body)\n%end \(num) \(num) 0\n\n"
+        ? "%begin \(num) \(num) 1\n%end \(num) \(num) 1\n\n"
+        : "%begin \(num) \(num) 1\n\(body)\n%end \(num) \(num) 1\n\n"
 }
 
 /// The lease line the other device would have written: `client|label|stamp`.
@@ -94,11 +94,11 @@ private struct Rig {
 }
 
 @MainActor
-private func makeRig(replies: TmuxReplies) async -> Rig {
+private func makeRig(replies: TmuxReplies, clientName: String = "moshpit-a") async -> Rig {
     let transport = MockTmuxTransport()
     let controller = TmuxSessionController(sshSession: transport)
     controller.setInitialClientSize(cols: 70, rows: 35)
-    controller.ourClientName = "moshpit-a"
+    controller.ourClientName = clientName
     controller.sizeOwnerLabel = "iPhone"
     // Keep the quiet re-check out of tests that do not ask for it.
     controller.foreignQuietRepinDelay = 30
@@ -106,15 +106,15 @@ private func makeRig(replies: TmuxReplies) async -> Rig {
     transport.pushText("%begin 100 0 0\n%end 100 0 0\n\n")
     _ = await waitUntil { await transport.recordedCommands().count >= 3 }
     transport.pushText("""
-    %begin 1 1 0
+    %begin 1 1 1
     $0 1 main
-    %end 1 1 0
-    %begin 2 2 0
+    %end 1 1 1
+    %begin 2 2 1
     $0 @0 0 200x50,0,0,0 1 1 main
-    %end 2 2 0
-    %begin 3 3 0
+    %end 2 2 1
+    %begin 3 3 1
     %0 @0 0 200 50 1 0 0 bash
-    %end 3 3 0
+    %end 3 3 1
 
     """)
     _ = await waitUntil { controller.snapshot.activePaneId == "%0" }
@@ -128,7 +128,7 @@ private func screenText(_ terminal: Terminal) -> String {
 
 // MARK: - Suite
 
-@Suite("tmux window size lease", .serialized)
+@Suite("tmux window size lease", .serialized, .tmuxParserUnderTest)
 @MainActor
 struct TmuxSizeLeaseTests {
 
@@ -147,6 +147,20 @@ struct TmuxSizeLeaseTests {
         let claim = try #require(commands.firstIndex { $0.hasPrefix(claimPrefix) })
         let pin = try #require(commands.firstIndex { $0.hasPrefix(pinPrefix) })
         #expect(claim < pin, "the claim is written before the pin")
+    }
+
+    /// B139: the client name is what tmux's reply to `display-message -p
+    /// '#{client_name}'` said — a reply that, once the FIFO desyncs, can be
+    /// any line of a pane — and it was spliced bare into double quotes: a
+    /// `"` ended the value, a `;` started the next command, `$HOME` expanded.
+    @Test("our lease goes out as one command-string literal, whatever the client name holds")
+    func leaseValueIsOneLiteral() async throws {
+        let name = #"x" ; run-shell "touch INJECTED" ; set -g @y "$HOME"#
+        let rig = await makeRig(replies: TmuxReplies(clients: [name]), clientName: name)
+        let commands = await rig.transport.recordedCommands()
+        let claim = try #require(commands.first(prefix: claimPrefix))
+        #expect(claim == claimPrefix + #" "x\" ; run-shell \"touch INJECTED\" ; set -g @y \"\$HOME|iPhone|0""# + "\n",
+                "\(claim)")
     }
 
     @Test("a window another live device just used is left at its size: no pin, no claim")
@@ -499,7 +513,7 @@ struct TmuxSizeLeaseTests {
 
 // MARK: - Lease line parsing
 
-@Suite("tmux size lease line")
+@Suite("tmux size lease line", .tmuxParserUnderTest)
 struct TmuxSizeLeaseParsingTests {
     typealias Lease = TmuxSessionController.SizeLease
 

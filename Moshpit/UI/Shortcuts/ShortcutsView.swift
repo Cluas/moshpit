@@ -55,12 +55,22 @@ struct ShortcutsView: View {
                     }
                 }
 
-                FormGroup(title: "AVAILABLE") {
+                // Every shortcut off the bar, the user's own too — the
+                // footnote above promises it (B233). With the bar full each
+                // ＋ is greyed out and the footer says why, rather than a ＋
+                // that does nothing.
+                FormGroup(
+                    title: "AVAILABLE",
+                    footer: store.toolbarIsFull
+                        ? "The toolbar is full: it holds \(ShortcutStore.toolbarLimit) shortcuts. Take one off with − to add another."
+                        : nil
+                ) {
                     ForEach(store.available) { shortcut in
                         ShortcutEditRow(
                             shortcut: shortcut,
                             onAdd: { store.addToToolbar(id: shortcut.id) },
-                            onTap: nil)
+                            addDisabled: store.toolbarIsFull,
+                            onTap: shortcut.isBuiltin ? nil : { editing = shortcut })
                     }
                 }
             }
@@ -72,6 +82,7 @@ struct ShortcutsView: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Done") { dismiss() }
                         .foregroundStyle(Ink.accent)
+                        .accessibilityIdentifier("shortcuts-done")
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button {
@@ -84,15 +95,16 @@ struct ShortcutsView: View {
                             .background(Ink.accent.opacity(0.11), in: Circle())
                             .overlay(Circle().strokeBorder(Ink.accent.opacity(0.24), lineWidth: 1))
                     }
+                    .accessibilityIdentifier("shortcuts-add")
                 }
             }
         }
-        .preferredColorScheme(.dark)
+        .darkOnlyPage()
         .appSheet(isPresented: $showAdd) {
-            AddShortcutView()
+            AddShortcutPage()
         }
         .appSheet(item: $editing) { shortcut in
-            AddShortcutView(existing: shortcut)
+            AddShortcutPage(existing: shortcut)
         }
     }
 
@@ -139,6 +151,8 @@ struct ShortcutEditRow: View {
     /// Present on AVAILABLE rows: the green ＋ that puts the shortcut back on
     /// the toolbar. IN TOOLBAR and CUSTOM rows get their − from edit mode.
     var onAdd: (() -> Void)?
+    /// The ＋ greyed out: the toolbar is full.
+    var addDisabled = false
     let onTap: (() -> Void)?
 
     /// SF Symbol for the kinds the toolbar draws as an icon; nil for kinds
@@ -180,7 +194,9 @@ struct ShortcutEditRow: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("Add \(shortcut.summary) to toolbar")
+                .disabled(addDisabled)
+                .opacity(addDisabled ? 0.35 : 1)
+                .accessibilityLabel("Add \(shortcut.displaySummary) to toolbar")
             }
 
             glyph
@@ -188,7 +204,7 @@ struct ShortcutEditRow: View {
                 // Dynamic Type and must widen rather than wrap "es/c".
                 .frame(minWidth: 56, alignment: .leading)
 
-            Text(shortcut.summary)
+            Text(shortcut.displaySummary)
                 .font(.body)
                 .foregroundStyle(Ink.primary)
 

@@ -1,0 +1,22 @@
+# Written by keyfile::tests::write_keys_for_older_builds: file, fingerprint, record algorithm, comment.
+imported-ed25519---openssh	SHA256:xAkBH7hhH0UcvbA7og4c2msFj6z8kXVit2sHkXKmzrQ	ED25519	fixture-ed25519-openssh-none
+imported-ed25519---openssh---passphrase	SHA256:j+R2+kwYLnU/bEsM47JoOgEJehBaEyEaiYT/VFnIJ0w	ED25519	fixture-ed25519-openssh-pass
+imported-ecdsa-p-256---openssh	SHA256:Y82atu0ehMoZKkgZksBoszn80yjGIvGqADbZjBF3FYg	ECDSA	fixture-ecdsa-openssh-none
+imported-ecdsa-p-256---openssh---passphrase	SHA256:APIgVrQOaxMJ/9pRXeVdH3RjwnphRkRLBMwLFIYWzE0	ECDSA	fixture-ecdsa-openssh-pass
+imported-ecdsa-p-256---pem--ssh-keygen--m-pem-	SHA256:XFbI/FPigXEko28jplfLrxvOZGg2EyWEQXaHTBuks48	ECDSA	
+imported-ecdsa-p-256---pem--ssh-keygen--m-pem----passphrase	SHA256:OfiT58XTmkfdooiUphe2fnVwNoLKIXg9cJvdvFCN5+A	ECDSA	
+imported-ecdsa-p-256---pkcs--8--ssh-keygen--m-pkcs8-	SHA256:8xF7LQ2wk7Q0Z46K5kU3wYsNT6mKEVV32VouZMWkD0M	ECDSA	
+imported-ecdsa-p-256---pkcs--8--ssh-keygen--m-pkcs8----passphrase	SHA256:X7qawxpm6LDptiKm9MsvLVKYsPsDhE1ZpRtOQA3sNdE	ECDSA	
+imported-rsa-2048---openssh	SHA256:LiItbQtl6CHkW7yQ+csOZyCHC40L55z+WMHP/04mdGM	RSA-4096	fixture-rsa-openssh-none
+imported-rsa-2048---openssh---passphrase	SHA256:z2boqPbNa5FJZBqquyGF/Xf5AZsonjyntcR1n7wmIKA	RSA-4096	fixture-rsa-openssh-pass
+imported-rsa-2048---pem--ssh-keygen--m-pem-	SHA256:CR/ABltpTCVdiTo1WNUSd6D1D9Ig94Kj10zjuWz0neA	RSA-4096	
+imported-rsa-2048---pem--ssh-keygen--m-pem----passphrase	SHA256:BsGnb2OvohFu0VeAdA9X1MUFgbrPaY9qjHtj9OLTw9I	RSA-4096	
+imported-rsa-2048---pkcs--8--ssh-keygen--m-pkcs8-	SHA256:q3iPPU651gJ9F4FRZFp1mmQYawsEQQKDh7DAh9+gLiY	RSA-4096	
+imported-rsa-2048---pkcs--8--ssh-keygen--m-pkcs8----passphrase	SHA256:3nXnCQ7kew+BTgpc+2MHoaCfsg5D2N3p5mlG5zKlB1s	RSA-4096	
+imported-ed25519---pkcs--8--openssl-genpkey-	SHA256:yWRwu5241ntvp30i+4Y9dJ9Cz4E5v5gSbi1flri6KWI	ED25519	
+imported-ed25519---pkcs--8--openssl-genpkey----passphrase	SHA256:yWRwu5241ntvp30i+4Y9dJ9Cz4E5v5gSbi1flri6KWI	ED25519	
+imported-keygen-ecdsa384-openssh-chacha20-poly1305	SHA256:92ES9zwSSwUw/uzCuj+p1cmPT8rKSpqFbMaTssARZ10	ECDSA	ecdsa384@matrix
+imported-openssl-p521-pkcs8-explicit	SHA256:XB3W3O6VCX4ZHSIHwB5VntYHEIqw6N6Ts1Q1Va5yTbs	ECDSA	
+imported-p256-zero-led-scalar	SHA256:2SZASd2dREh7G4BQYjjzcm0ZYrMIT6FRt+6HOvoddyo	ECDSA	zero-led scalar
+generated-ed25519	SHA256:RpwOa4kVBQqCaQod+DwBJhxBNYT641XUjjBjh3oY1gM	ED25519	made here
+generated-rsa4096	SHA256:0DLoWDjArY86wSMx5mo438ZIr5WSF1zz5tQwzpekuZo	RSA-4096	made here

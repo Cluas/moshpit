@@ -18,7 +18,6 @@ import os
 /// ```swift
 /// Log.ssh.info("connecting to \(host, privacy: .public):\(port, privacy: .public)")
 /// Log.ssh.error("handshake failed: \(error.localizedDescription, privacy: .public)")
-/// Log.mosh.debug("udp datagram \(bytes.count) bytes")
 /// ```
 ///
 /// Lives in MoshpitKit so the extensions log under the same subsystem and
@@ -31,9 +30,6 @@ public enum Log {
 
     /// SSH transport: connection lifecycle, auth, channel and host-key events.
     public static let ssh = Logger(subsystem: subsystem, category: "ssh")
-
-    /// Mosh transport: UDP session bring-up, roaming, and predictive echo.
-    public static let mosh = Logger(subsystem: subsystem, category: "mosh")
 
     /// Voice input: engine selection, model downloads, capture failures.
     public static let voice = Logger(subsystem: subsystem, category: "voice")
@@ -75,4 +71,19 @@ public enum Log {
     /// announcing and for which episode, which is what makes the difference
     /// between "it announced again" and "iOS re-delivered" visible at all.
     public static let island = Logger(subsystem: subsystem, category: "island")
+
+    /// The app's own persisted lists (connections, SSH keys, shortcuts,
+    /// themes): entries a load could not decode, and where they were kept.
+    ///
+    /// A list that would not decode used to load as empty without a word, and
+    /// the next save made that permanent — every host gone, nothing anywhere
+    /// saying why. Skipped entries are still kept (see `StoredList`); this is
+    /// the trace that it happened and which entries it was.
+    public static let store = Logger(subsystem: subsystem, category: "store")
+
+    /// The NSH screens (`ui/` in the Rust workspace, behind a switch each):
+    /// surfaces made or refused, screens run, messages the screen did not
+    /// take. A screen that fails to come up falls back to its SwiftUI page;
+    /// this says why it did.
+    public static let ui = Logger(subsystem: subsystem, category: "ui")
 }

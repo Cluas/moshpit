@@ -90,6 +90,24 @@ struct HerdrFrameChannelTests {
         #expect(!message.hasSuffix("\r"))
     }
 
+    /// herdr 0.9.5 turning one line away on an attach that goes on (probed
+    /// live: a line that isn't JSON, a 70000-column resize). It reaches the
+    /// session as a fault — and is told apart from a refused attach (B117).
+    @Test("`input ignored` is a fault the session tells apart from a refused attach")
+    func inputIgnoredIsToldApart() throws {
+        var parser = HerdrFrameParser()
+        let blob = "herdr: terminal session control input ignored: invalid json command: "
+            + "expected value at line 1 column 1\r\n"
+        let frames = parser.consume(Data(blob.utf8))
+        guard case .fault(let message) = try #require(frames.first) else {
+            Issue.record("expected .fault, got \(frames)"); return
+        }
+        #expect(HerdrFrame.isInputIgnored(message))
+        #expect(!HerdrFrame.isInputIgnored("server rejected handshake (version 16): client version 19 is newer"))
+        #expect(!HerdrFrame.isInputIgnored("lost connection to server"))
+        #expect(!HerdrFrame.isInputIgnored("client protocol 19 is newer than server protocol 16"))
+    }
+
     @Test("A JSON error envelope is a fault too — protocol_mismatch is the live case")
     func parsesErrorEnvelope() throws {
         var parser = HerdrFrameParser()
@@ -145,7 +163,8 @@ struct HerdrFrameChannelTests {
 
     @Test("The boot line disables echo and does not exec")
     func startCommand() {
-        let command = HerdrFrameCommand.start(target: "w1:p2", cols: 52, rows: 30, customPath: nil)
+        let command = HerdrFrameCommand.start(target: "w1:p2", cols: 52, rows: 30, customPath: nil,
+                                              takeover: false)
         // Without `-echo` the PTY would feed our own JSON back into the frame
         // stream; without raw mode, canonical input truncates at 4096 bytes.
         #expect(command.hasPrefix("stty raw -echo; "))
@@ -153,15 +172,18 @@ struct HerdrFrameChannelTests {
         // the shell to survive.
         #expect(!command.contains("exec "))
         #expect(command.contains("terminal session control 'w1:p2'"))
-        #expect(command.contains("--cols 52 --rows 30"))
-        // Reconnecting must be able to evict our own stale attach.
-        #expect(command.contains("--takeover"))
+        #expect(command.hasSuffix("--cols 52 --rows 30"))
+        // `--takeover` only on the person's word: following the focus took
+        // the pane from whichever device had it.
+        #expect(!command.contains("--takeover"))
+        #expect(HerdrFrameCommand.start(target: "w1:p2", cols: 52, rows: 30, customPath: nil, takeover: true)
+            .hasSuffix("--cols 52 --rows 30 --takeover"))
     }
 
     @Test("A custom herdr path is honored in the boot line")
     func startCommandCustomPath() {
         let command = HerdrFrameCommand.start(target: "w1:p1", cols: 40, rows: 20,
-                                              customPath: "/opt/herdr/bin/herdr")
+                                              customPath: "/opt/herdr/bin/herdr", takeover: false)
         #expect(command.contains("/opt/herdr/bin/herdr terminal session control"))
         #expect(!command.contains("$HOME/.local/bin"))
     }
@@ -220,7 +242,7 @@ struct HerdrFrameChannelTests {
     @Test("The boot line carries its first target and keeps reading for more")
     func bootLineShape() {
         let command = HerdrFrameCommand.boot(target: "term_abc", cols: 52, rows: 30,
-                                             customPath: nil)
+                                             customPath: nil, takeover: false, connectionId: "C1")
         // Same two PTY hazards the one-shot line documents — and again inside
         // the loop, because the attach that just exited owned the tty.
         #expect(command.hasPrefix("stty raw -echo; "))
@@ -232,17 +254,49 @@ struct HerdrFrameChannelTests {
         // line would race the outer shell, which would run it as a command.
         #expect(command.hasSuffix("'term_abc' 52 30"))
         #expect(command.contains("terminal session control \"$1\""))
-        #expect(command.contains("--takeover"))
+        // `--takeover` only for a target the person chose: a fourth word on
+        // the line (the first target's rides in as `$4`).
+        #expect(command.contains(#"--cols "${2:-80}" --rows "${3:-24}" ${4:+--takeover}; fi"#))
+        #expect(HerdrFrameCommand.boot(target: "term_abc", cols: 52, rows: 30, customPath: nil,
+                                       takeover: true, connectionId: "C1").hasSuffix("'term_abc' 52 30 take"))
         // EOF ends the loop; a failed attach does not.
-        #expect(command.contains("read -r t c r || break"))
+        #expect(command.contains("read -r t c r k || break"))
+        #expect(command.contains(#"set -- "$t" "$c" "$r" "$k"; done"#))
         // The marker is what tells the app the loop is really there.
         #expect(command.contains(HerdrFrameCommand.readyMarker))
+    }
+
+    @Test("The loop drops our own JSON commands instead of attaching to them")
+    func bootLineDropsCommandLines() {
+        let command = HerdrFrameCommand.boot(target: "t", cols: 10, rows: 10, customPath: nil,
+                                             takeover: false, connectionId: "C1")
+        // With the attach dead, the resize/release/keystrokes we write land on
+        // the loop's `read`. Taken as targets they spawned attaches at
+        // `{"type":"terminal.resize",…}` (herdr-client.log, 2026-11-11). A `{`
+        // line is ours, never a pane id: drop it, and the stale target with it.
+        #expect(command.contains(#"case "$t" in "{"*) set --; continue;; esac"#))
+        // …checked BEFORE the line becomes the next target.
+        let drop = command.range(of: "case \"$t\"")
+        let adopt = command.range(of: "set -- \"$t\"")
+        #expect(drop != nil && adopt != nil && drop!.lowerBound < adopt!.lowerBound)
+    }
+
+    @Test("A hang-up mid-handshake is told apart from other faults")
+    func handshakeDrop() {
+        // The exact line herdr 0.8.0's attach printed against a 0.9.5 server.
+        var parser = HerdrFrameParser()
+        let frames = parser.consume(Data("herdr: lost connection to server: server closed connection\r\n".utf8))
+        #expect(frames == [.fault(message: "lost connection to server: server closed connection")])
+        #expect(HerdrFrame.isHandshakeDrop("lost connection to server: server closed connection"))
+        #expect(!HerdrFrame.isHandshakeDrop("lost connection to remote Herdr: broken pipe"))
+        #expect(!HerdrFrame.isHandshakeDrop("terminal session control input ignored: invalid json command"))
     }
 
     @Test("A custom herdr path can't break out of the boot line's quoting")
     func bootLineQuotesCustomPath() {
         let command = HerdrFrameCommand.boot(target: "t", cols: 10, rows: 10,
-                                             customPath: "/opt/o'clock/herdr")
+                                             customPath: "/opt/o'clock/herdr", takeover: false,
+                                             connectionId: "C1")
         // Every literal quote inside the script is closed, escaped, reopened —
         // otherwise a path with an apostrophe would end the `sh -c` argument
         // and run the rest of the loop as commands.
@@ -258,9 +312,40 @@ struct HerdrFrameChannelTests {
 
     @Test("A retarget is one line the loop's `read` can split")
     func retargetLine() {
-        let line = HerdrFrameCommand.retarget(target: "term_abc", cols: 52, rows: 30)
+        let line = HerdrFrameCommand.retarget(target: "term_abc", cols: 52, rows: 30, takeover: false)
         #expect(line == "term_abc 52 30")
+        // The person's pick: a fourth word, `--takeover` in the loop.
+        #expect(HerdrFrameCommand.retarget(target: "term_abc", cols: 52, rows: 30, takeover: true)
+                == "term_abc 52 30 take")
         // The loop passes these straight to --cols/--rows, which reject 0.
-        #expect(HerdrFrameCommand.retarget(target: "t", cols: 0, rows: -3) == "t 1 1")
+        #expect(HerdrFrameCommand.retarget(target: "t", cols: 0, rows: -3, takeover: false) == "t 1 1")
+    }
+
+    @Test("The boot line stops only this connection's stale attach, then records its own loop")
+    func bootLineStopsThisConnectionsGhost() throws {
+        let id = "6F9619FF-8B86-D011-B42D-00C04FC964FF"
+        let command = HerdrFrameCommand.boot(target: "w1:p1", cols: 80, rows: 24, customPath: nil,
+                                             takeover: false, connectionId: id)
+        // The loop's script: the one quoted word after `/bin/sh -c`.
+        let body = try #require(command.range(of: "/bin/sh -c "))
+        let args = try #require(command.range(of: " moshpit-herdr ", options: .backwards))
+        let script = try #require(PosixShell.unquote(String(command[body.upperBound..<args.lowerBound])))
+        // The previous loop of this connection: its pid file, its command
+        // line naming that file — never what reused the pid.
+        #expect(script.hasPrefix("f=\"$HOME/.moshpit/herdr-frame-\(id).pid\"; "))
+        #expect(script.contains("case \"$a\" in *\"herdr-frame-\(id).pid\"*) "))
+        // Its children; only an attach is killed.
+        #expect(script.contains("pgrep -P \"$l\""))
+        #expect(script.contains("case \"$a\" in *\"terminal session control\"*) kill -9 \"$c\""))
+        // Then this loop's own pid, before its ready marker and first attach.
+        let record = try #require(script.range(of: "{ echo $$ > \"$f\"; } 2>/dev/null; "))
+        let ready = try #require(script.range(of: HerdrFrameCommand.readyMarker))
+        let kill = try #require(script.range(of: "kill -9"))
+        #expect(kill.upperBound <= record.lowerBound && record.upperBound <= ready.lowerBound)
+        #expect(HerdrFrame.isHeldElsewhere("terminal attach taken over"))
+        #expect(HerdrFrame.isHeldElsewhere(
+            "terminal attach failed: terminal w1:p1 already has an attached client; retry with --takeover"))
+        #expect(!HerdrFrame.isHeldElsewhere("terminal attach ended: terminal term_1 not found"))
+        #expect(!HerdrFrame.isHeldElsewhere(nil))
     }
 }

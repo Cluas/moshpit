@@ -1,0 +1,253 @@
+//! R12's top bar on a headless engine (UI-DESIGN §6.3, §8): the breadcrumb
+//! names `session › project › agent` by Home's rules from the tree the
+//! host sends (not the window's automatic name), the waiting agent's
+//! segment is amber, every piece of the bar is a 44 pt target, and the
+//! chrome follows the terminal theme's appearance, not the app's.
+
+mod common;
+
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex, mpsc},
+};
+
+use common::{App, hear, post, start_observing};
+use moshpit_ui::{
+    channel::Channel,
+    screen::{Params, Screen},
+    theme::AppTheme,
+    ui::tokens,
+};
+use nsh_core::{
+    EdgeInsets, NodeId, Points, Size,
+    color::Rgba,
+    platform::{Idiom, Os},
+};
+use nsh_engine::EngineConfig;
+use nsh_testing::Headless;
+use serde_json::{Value, json};
+
+/// The next intent the screen told the host, the anchors it reports as it
+/// lays out skipped.
+fn next_intent(rx: &mpsc::Receiver<String>) -> Value {
+    loop {
+        let value = common::next(rx);
+        if value["ev"] != "anchor" {
+            return value;
+        }
+    }
+}
+
+/// The hit slop each view was given, as the engine mounted it.
+#[derive(Clone, Default)]
+struct Slops(Arc<Mutex<HashMap<NodeId, EdgeInsets>>>);
+
+impl Slops {
+    fn apply(&self, batch: &nsh_core::MountBatch) {
+        let mut slops = self.0.lock().unwrap();
+        for item in &batch.items {
+            if let nsh_core::MountItem::ViewProps { id, props } = item {
+                slops.insert(*id, props.hit_slop);
+            }
+        }
+    }
+
+    fn of(&self, node: NodeId) -> EdgeInsets {
+        self.0
+            .lock()
+            .unwrap()
+            .get(&node)
+            .copied()
+            .unwrap_or_default()
+    }
+}
+
+/// The screen on an iPhone-sized engine, the hit slops observed from its
+/// first mount.
+fn phone() -> (App, Arc<Channel>, Slops) {
+    let channel = Channel::open();
+    let mut config = EngineConfig::new(Screen::Terminal.root(&channel, &Params::default()));
+    config.viewport = Size::new(Points(402.0), Points(874.0));
+    config.environment.os = Os::Ios;
+    config.environment.os_version = (26, 0);
+    config.environment.idiom = Idiom::Phone;
+    config.environment.pixel_ratio = 3.0;
+    config.clock = nsh_core::time::Clock::manual(std::time::SystemTime::now());
+    let mut app = Headless::start(config).expect("the engine starts");
+    let slops = Slops::default();
+    let observed = slops.clone();
+    app.observe(move |_, batch| observed.apply(batch));
+    app.wait_for("id:terminal-screen").unwrap();
+    (App(app), channel, slops)
+}
+
+/// A tmux session `train` whose window tmux named after Claude Code's
+/// version, the pane working in `~/src/trainer`, its agent waiting.
+fn chrome() -> Value {
+    json!({
+        "op": "chrome",
+        "name": "gpu-01",
+        "user": "cluas",
+        "host": "gpu-01.example.com",
+        "port": 22,
+        "mosh": true,
+        "mux": "tmux",
+        "pill": "mosh",
+        "state": "live",
+        "crumbs": {
+            "session": "train",
+            "squeezable": true,
+            "window": "1:2.1.322",
+            "pane": "claude",
+            "signal": "attention",
+            "paneLabel": "claude, needs you",
+            "sessionIcon": "square.stack.3d.up",
+            "windowIcon": "macwindow",
+            "live": true,
+            "tree": {
+                "mux": "tmux", "attached": true,
+                "sessions": [{"id": "$0", "name": "train"}],
+                "windows": [{"id": "@1", "session": "$0", "index": 1, "name": "2.1.322", "paneCount": 1}],
+                "panes": [{"id": "%3", "window": "@1", "index": 0, "command": "2.1.322",
+                           "path": "/home/cluas/src/trainer"}],
+                "hooks": [{"pane": "%3", "state": "attention", "agent": "claude"}],
+                "activeSession": "$0", "activeWindow": "@1", "activePane": "%3"
+            }
+        },
+        "cover": {"kind": "none", "state": "live"},
+        "content": "terminal"
+    })
+}
+
+/// A token's value in one appearance.
+fn token(name: &str, light: bool) -> Rgba {
+    tokens::colors(&AppTheme::default())
+        .into_iter()
+        .find(|(n, ..)| *n == name)
+        .map(|(_, l, d)| if light { l } else { d })
+        .unwrap_or_else(|| panic!("no token {name}"))
+}
+
+/// The color of `text` in the breadcrumb as shown (its measuring copy, an
+/// invisible twin laid out first, is the first match).
+fn color_of(app: &common::App, text: &str) -> Rgba {
+    app.0
+        .screen()
+        .span_style(&format!("text:{text} >> nth=1"))
+        .unwrap()
+        .color
+        .into()
+}
+
+fn close(a: Rgba, b: Rgba) -> bool {
+    (a.r - b.r).abs() < 0.01 && (a.g - b.g).abs() < 0.01 && (a.b - b.b).abs() < 0.01
+}
+
+#[test]
+fn the_breadcrumb_says_session_project_agent() {
+    let (mut app, channel, _) =
+        start_observing(Screen::Terminal, Params::default(), "terminal-screen");
+    let heard = hear(&channel);
+    post(&mut app.0, &channel, &chrome().to_string());
+    app.0.wait_for("id:terminal-breadcrumb").unwrap();
+    for text in ["train", "trainer", "claude", "mosh"] {
+        assert!(
+            app.0.screen().shows(text),
+            "{text}: {:?}",
+            app.0.screen().texts()
+        );
+    }
+    assert!(
+        !app.0.screen().shows("1:2.1.322"),
+        "the window's automatic name"
+    );
+    app.0.press("label:trainer").unwrap();
+    assert_eq!(
+        next_intent(&heard),
+        json!({"ev": "crumb", "crumb": "window"})
+    );
+    app.0.press("label:claude, needs you").unwrap();
+    assert_eq!(next_intent(&heard), json!({"ev": "crumb", "crumb": "pane"}));
+    // The agent waits: its words are `warning-text`; the others `foreground`.
+    assert!(close(
+        color_of(&app, "claude"),
+        token("warning-text", false)
+    ));
+    assert!(close(color_of(&app, "trainer"), token("foreground", false)));
+    channel.close();
+}
+
+/// The terminal isn't on the device pictures' light list (`draws_light`):
+/// its light comes from its terminal theme alone, and the light the host
+/// asks for pictures doesn't make a dark terminal theme's chrome light.
+#[test]
+fn the_terminal_goes_light_from_its_theme_not_the_light_list() {
+    assert!(!Screen::Terminal.draws_light());
+    for (background, asked, light) in [("#FDF6E3", false, true), ("#0D1117", true, false)] {
+        let params = Params {
+            terminal: Some(background.to_owned()),
+            light: Some(asked),
+            ..Params::default()
+        };
+        let (mut app, channel, _) = start_observing(Screen::Terminal, params, "terminal-screen");
+        post(&mut app.0, &channel, &chrome().to_string());
+        app.0.wait_for("text:trainer").unwrap();
+        assert!(
+            close(color_of(&app, "trainer"), token("foreground", light)),
+            "{background}, light asked {asked}: the chrome is {}",
+            if light { "light" } else { "dark" }
+        );
+        channel.close();
+    }
+}
+
+#[test]
+fn the_chrome_follows_the_terminal_theme_not_the_app() {
+    for (background, light) in [("#FDF6E3", true), ("#0D1117", false)] {
+        let params = Params {
+            terminal: Some(background.to_owned()),
+            ..Params::default()
+        };
+        let (mut app, channel, _) = start_observing(Screen::Terminal, params, "terminal-screen");
+        post(&mut app.0, &channel, &chrome().to_string());
+        app.0.wait_for("text:trainer").unwrap();
+        assert!(
+            close(color_of(&app, "trainer"), token("foreground", light)),
+            "{background}: the project's words in the {} appearance",
+            if light { "light" } else { "dark" }
+        );
+        channel.close();
+    }
+}
+
+#[test]
+fn the_bar_pieces_take_a_44_pt_touch() {
+    let (mut app, channel, slops) = phone();
+    post(&mut app.0, &channel, &chrome().to_string());
+    app.0.wait_for("id:terminal-breadcrumb").unwrap();
+    for selector in [
+        "id:terminal-back",
+        "id:terminal-transport-switch",
+        "label:trainer",
+        "label:claude, needs you",
+    ] {
+        let node = app
+            .0
+            .screen()
+            .press_target(selector)
+            .unwrap()
+            .unwrap_or_else(|| panic!("{selector} takes no press"));
+        let bounds = app
+            .0
+            .screen()
+            .layout_nodes()
+            .into_iter()
+            .find(|n| n.id == node)
+            .map(|n| n.bounds)
+            .unwrap();
+        let slop = slops.of(node);
+        let height = bounds.size.height.0 + slop.top.0 + slop.bottom.0;
+        assert!(height >= 44.0, "{selector}: {height} pt to the touch");
+    }
+    channel.close();
+}

@@ -12,11 +12,6 @@ struct SettingsScreen: View {
     @Environment(ShortcutStore.self) private var shortcutStore
     @Environment(SSHKeyStore.self) private var keyStore
     @Environment(ThemeStore.self) private var themes
-    /// Saved hosts — read only to decide whether the tmux hooks installer is
-    /// worth offering when nothing is connected (see `hooksApplicable`).
-    /// Comes through the same holder the shortcut editor uses; `ConnectionStore`
-    /// itself is not in the environment.
-    @Environment(ConnectionStoreHolder.self) private var connectionHolder
 
     /// The foreground live session, if any — used by the agent-hooks installer
     /// so "Run in terminal" / "Re-check" can run against a real shell. nil →
@@ -24,21 +19,22 @@ struct SettingsScreen: View {
     var liveSession: SessionHub.ActiveSession?
 
     #if DEBUG
-    @State private var showShortcuts = CaptureScreen.requested == .shortcuts
-        || CaptureScreen.requested == .shortcutLibrary
-    @State private var showKeys = CaptureScreen.requested == .sshKeys
-    // The two galleries are pushed, not presented, so a capture run pushes
-    // them through these rather than tapping a row it has to find first.
-    // Set once the sheet is on screen (see the .task below): a push requested
-    // while the sheet is still presenting is dropped by SwiftUI, and the
-    // capture run then filed a picture of Home under the gallery's name.
+    @State private var showShortcuts = CaptureScreen.requested.map(CaptureScreen.opensShortcuts.contains) ?? false
+    @State private var showKeys = CaptureScreen.requested.map(CaptureScreen.opensSSHKeys.contains) ?? false
+    // The galleries and the other pushed pages are pushed, not presented, so
+    // a capture run pushes them through these rather than tapping a row it
+    // has to find first. Set once the sheet is on screen (see the .task
+    // below): a push requested while the sheet is still presenting is
+    // dropped by SwiftUI, and the capture run then filed a picture of Home
+    // under the gallery's name.
     @State private var pushTheme = false
-    @State private var pushAppIcon = false
+    /// A page of Settings' stack a capture run pushes (the NSH page or the
+    /// SwiftUI one: ``CaptureScreen/pushedInSettings``).
+    @State private var pushCapture: CaptureScreen?
     #else
     @State private var showShortcuts = false
     @State private var showKeys = false
     @State private var pushTheme = false
-    @State private var pushAppIcon = false
     #endif
     @State private var showServerBinaryEditor = false
     @State private var showUDPEditor = false
@@ -46,194 +42,57 @@ struct SettingsScreen: View {
     @State private var showHooksInstall = false
     @State private var showOfflineHostInfo = false
     @State private var showFeedback = false
+    /// The hidden Core Switches page (seven taps on the version line).
+    @State private var showCoreSwitches = false
+    /// The NSH page could not run here: the SwiftUI one shows instead.
+    @State private var nshFailed = false
+    /// A page the NSH page's rows asked for, pushed on Settings' stack.
+    @State private var pushed: SettingsPage?
+    /// A page of the NSH hub (Appearance, Terminal…), pushed on the stack.
+    @State private var pushedPart: SettingsPart?
     /// Whether the MIIT filing line is shown; resolved once per appearance from
     /// the App Store storefront (see MainlandStorefront).
     @State private var showsFilingNumber = false
-
-    /// True when the session this sheet would act on runs herdr, whose agent
-    /// status needs no host-side hooks at all.
-    private var liveSessionUsesHerdr: Bool {
-        liveSession?.connection.multiplexer == .herdr
-    }
-
-    /// Whether the tmux hooks installer is worth offering at all.
-    ///
-    /// The optional chain above makes "nothing connected" read as "not herdr",
-    /// so a herdr-only user opening Settings from Home was offered an
-    /// installer whose own screen ends with "connect to a host with tmux" —
-    /// the app telling them to install tmux for something herdr gives free.
-    /// With no live session, ask their saved hosts instead.
-    private var hooksApplicable: Bool {
-        if let liveSession { return liveSession.connection.multiplexer != .herdr }
-        return connectionHolder.store.connections.contains { $0.multiplexer != .herdr }
-    }
 
     var body: some View {
         @Bindable var settings = settings
 
         NavigationStack {
-            Form {
-                appearanceGroup(settings: $settings)
-                displayGroup(settings: $settings)
-                cursorGroup(settings: $settings)
-
-                FormGroup(title: "BEHAVIOR") {
-                    ToggleRow(
-                        label: "Keep Connections Alive",
-                        subtitle: "Send keepalive pings so the server does not drop idle connections",
-                        isOn: $settings.keepConnectionsAlive)
-                    ToggleRow(
-                        label: "Keyboard on Open",
-                        subtitle: "Raise the keyboard as soon as a terminal opens, instead of after you tap it",
-                        isOn: $settings.raiseKeyboardOnOpen)
-                    ToggleRow(
-                        label: "Remote Clipboard Read",
-                        subtitle: "Let remote programs read your clipboard text (OSC 52) — off answers with an empty clipboard",
-                        isOn: $settings.remoteClipboardReadEnabled)
-                }
-
-                FormGroup(
-                    title: "ATTACHED IMAGES",
-                    footer: "Images you attach are uploaded to ~/.moshpit/uploads on the server. Each connect deletes uploads older than this — they are working files for an agent, not a backup."
-                ) {
-                    PillSegmentedControl(
-                        items: [
-                            SegItem(value: 1, label: "24 hours"),
-                            SegItem(value: 7, label: "7 days"),
-                            SegItem(value: 0, label: "Keep forever"),
-                        ],
-                        selection: $settings.uploadRetentionDays)
-                }
-
-                moshGroup(settings: $settings)
-
-                FormGroup(title: "KEYBOARD · KEYS") {
-                    ChevronRow(
-                        label: "Shortcuts",
-                        value: "\(shortcutStore.toolbarCount)/\(ShortcutStore.toolbarLimit)"
-                    ) { showShortcuts = true }
-                    ChevronRow(
-                        label: "SSH Keys",
-                        value: String(localized: "\(keyStore.keys.count) keys")
-                    ) { showKeys = true }
-                }
-
-                FormGroup(
-                    title: "NOTIFICATIONS",
-                    footer: "Moshpit watches the active session for agent activity and posts a local alert when your agent needs attention — natively on herdr, via the bell and hooks on tmux."
-                ) {
-                    ToggleRow(
-                        label: "Notifications",
-                        subtitle: "Alert when an agent needs you",
-                        isOn: $settings.notificationsEnabled)
-                    ToggleRow(
-                        label: "Live Activity",
-                        subtitle: "Show agent session status in the Dynamic Island",
-                        isOn: $settings.liveActivityEnabled)
-                    ToggleRow(
-                        label: "Alert sound",
-                        subtitle: "Play a sound when the agent needs you",
-                        isOn: $settings.attentionSoundEnabled)
-                    ToggleRow(
-                        label: "Show detail on lock screen",
-                        subtitle: "Display what the agent is running, asking, or was asked — off keeps it private",
-                        isOn: $settings.lockScreenDetailEnabled)
-                    ChevronRow(label: "How notifications work") { showNotifInfo = true }
-                    // Shown on herdr too, unlike the sheet this
-                    // replaced. That one only installed tmux hooks, so
-                    // hiding it on herdr was right — herdr reports agent
-                    // status itself. This screen also pairs the host for
-                    // pushes, which works on any multiplexer, and the
-                    // hook script is what FIRES a push even where its
-                    // tmux stamping is inert. The sheet says which half
-                    // applies.
-                    if liveSession != nil {
-                        ChevronRow(label: "Set up this host") { showHooksInstall = true }
-                    } else {
-                        // Not a dead grey row. Host setup happens ON the
-                        // host — the phone only holds its half of each
-                        // pairing — so with nothing connected there is
-                        // nothing to act on. But since auto-care made
-                        // setup automatic, this row's job offline is to
-                        // SAY that, and to show the half the phone does
-                        // have: which hosts are paired.
-                        ChevronRow(label: "Set up this host",
-                                   subtitle: "Automatic — connect to inspect") {
-                            showOfflineHostInfo = true
-                        }
-                    }
-                }
-
-                voiceGroup(settings: $settings)
-
-                FormGroup(
-                    title: "DIAGNOSTICS",
-                    footer: "What the app logged about this session: every terminal resize with its before-and-after size, and the cause of every reconnect. Screenshot it — or copy it — when something looks wrong."
-                ) {
-                    NavigationLink { DiagnosticsLogView() } label: {
-                        HStack(spacing: 10) {
-                            Text("Recent Log")
-                                .font(.body).foregroundStyle(Ink.primary)
-                            Spacer()
-                        }
-                    }
-                }
-
-                FormGroup(
-                    title: "FEEDBACK",
-                    footer: "Mail goes to support@cluas.eu.org through your own Mail app and leaves only when you tap Send there. Issues are public and sit next to the code; keep security reports to mail."
-                ) {
-                    ChevronRow(label: "Send Feedback",
-                               subtitle: "A bug, an idea, a screen that reads wrong") {
-                        showFeedback = true
-                    }
-                    .accessibilityIdentifier("settings-feedback")
-                    // The public channel — the site's Support page already
-                    // points at it, and Settings should agree. Opens GitHub's
-                    // template chooser in Safari, so a bug report and a
-                    // feature request each start in shape.
-                    ChevronRow(label: "Open a GitHub Issue",
-                               subtitle: "Bug reports and feature requests, in the open",
-                               external: true) {
-                        openURL(FeedbackChannels.newIssueURL)
-                    }
-                    .accessibilityIdentifier("settings-github-issue")
-                }
-
-                // Build identity — long-press to copy (for bug reports) — and,
-                // on mainland-store copies, the MIIT APP filing. China's
-                // regulator requires the number shown inside the app, not only
-                // on the store listing, and the filing is what keeps the app on
-                // sale there. To everyone else it is a line of regulatory
-                // Chinese, so only that storefront shows it.
-                Section {
-                    VStack(spacing: 6) {
-                        Text(Self.versionLine)
-                            .contextMenu {
-                                Button("Copy") { UIPasteboard.general.string = Self.versionLine }
-                            }
-                        if showsFilingNumber {
-                            Link(destination: Self.icpFilingURL) {
-                                Text("APP filing \(Self.icpFilingNumber)")
-                            }
-                            .accessibilityIdentifier("settings-icp")
-                        }
-                    }
-                    .font(.system(.caption2, design: .monospaced))
-                    .foregroundStyle(Ink.meta)
-                    .frame(maxWidth: .infinity)
-                }
-                .listRowBackground(Color.clear)
-                .listRowInsets(EdgeInsets())
+            root(settings: $settings)
+            .navigationDestination(isPresented: $pushTheme) { ThemePage() }
+            .navigationDestination(item: $pushed) { page in page.page }
+            .navigationDestination(item: $pushedPart) { part in
+                SettingsNSHPage(
+                    part: part,
+                    liveSession: liveSession != nil,
+                    showsFilingNumber: showsFilingNumber,
+                    onOpen: open,
+                    onDone: { dismiss() },
+                    onFailure: {
+                        pushedPart = nil
+                        nshFailed = true
+                    })
             }
-            .moshpitForm()
-            .navigationDestination(isPresented: $pushTheme) { ThemeGalleryView() }
-            .navigationDestination(isPresented: $pushAppIcon) { AppIconGalleryView() }
+            #if DEBUG
+            .navigationDestination(item: $pushCapture) { screen in screen.settingsPage }
+            #endif
             .task {
                 #if DEBUG
-                if let screen = CaptureScreen.requested, screen == .theme || screen == .appIcon {
+                if CaptureScreen.requested == .theme {
                     try? await Task.sleep(for: .milliseconds(600))
-                    if screen == .theme { pushTheme = true } else { pushAppIcon = true }
+                    pushTheme = true
+                }
+                if let screen = CaptureScreen.requested, CaptureScreen.pushedInSettings.contains(screen) {
+                    try? await Task.sleep(for: .milliseconds(600))
+                    pushCapture = screen
+                }
+                if CaptureScreen.requested == .feedback || CaptureScreen.requested == .feedbackNSH {
+                    try? await Task.sleep(for: .milliseconds(600))
+                    showFeedback = true
+                }
+                if showsNSH, let part = SettingsPart.requested {
+                    try? await Task.sleep(for: .milliseconds(600))
+                    pushedPart = part
                 }
                 #endif
                 showsFilingNumber = await MainlandStorefront.isMainland()
@@ -244,12 +103,15 @@ struct SettingsScreen: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Done") { dismiss() }
                         .foregroundStyle(Ink.accent)
+                        .accessibilityIdentifier("settings-done")
                 }
             }
         }
-        .preferredColorScheme(.dark)
-        .appSheet(isPresented: $showShortcuts) { ShortcutsView() }
-        .appSheet(isPresented: $showKeys) { SSHKeysView() }
+        // The NSH page follows the app's appearance (R18); the SwiftUI one
+        // is on the dark-only palette.
+        .preferredColorScheme(showsNSH ? nil : .dark)
+        .appSheet(isPresented: $showShortcuts) { ShortcutsPage() }
+        .appSheet(isPresented: $showKeys) { SSHKeysPage() }
         .appSheet(isPresented: $showServerBinaryEditor) {
             MoshServerBinaryEditor(settings: settings)
         }
@@ -261,15 +123,252 @@ struct SettingsScreen: View {
         }
         .appSheet(isPresented: $showHooksInstall) {
             if let liveSession {
-                HostSetupView(
-                    model: HostSetupModel(session: liveSession),
+                HostSetupPage(
+                    connection: liveSession.connection,
                     testPane: liveSession.tmuxControl?.snapshot.activePaneId)
             }
         }
         .appSheet(isPresented: $showOfflineHostInfo) {
             OfflineHostInfoView()
         }
-        .appSheet(isPresented: $showFeedback) { FeedbackView() }
+        .appSheet(isPresented: $showFeedback) { FeedbackPage() }
+        .appSheet(isPresented: $showCoreSwitches) { CoreSwitchesView() }
+    }
+
+    /// The page at the root of Settings' stack: the SwiftUI form, or the NSH
+    /// page while its switch is on (``NSHScreen/settings``). Either way the
+    /// stack is SwiftUI's: the NSH page's rows ask for a page (``open(_:)``)
+    /// and it is pushed here, the one its own switch picks.
+    @ViewBuilder
+    private func root(settings: Bindable<AppSettings>) -> some View {
+        if showsNSH {
+            SettingsNSHPage(
+                liveSession: liveSession != nil,
+                showsFilingNumber: showsFilingNumber,
+                onOpen: open,
+                onDone: { dismiss() },
+                onFailure: { nshFailed = true })
+        } else {
+            ScrollViewReader { proxy in
+                Form {
+                    appearanceGroup(settings: settings)
+                    displayGroup(settings: settings)
+                    cursorGroup(settings: settings)
+
+                    FormGroup(title: "BEHAVIOR") {
+                        ToggleRow(
+                            label: "Keep Connections Alive",
+                            subtitle: "Send keepalive pings so the server does not drop idle connections",
+                            identifier: "settings-keep-alive",
+                            isOn: settings.keepConnectionsAlive)
+                        .id(SettingsAnchor.behavior)
+                        ToggleRow(
+                            label: "Keyboard on Open",
+                            subtitle: "Raise the keyboard as soon as a terminal opens, instead of after you tap it",
+                            identifier: "settings-keyboard-on-open",
+                            isOn: settings.raiseKeyboardOnOpen)
+                        ToggleRow(
+                            label: "Remote Clipboard Read",
+                            subtitle: "Let remote programs read your clipboard text (OSC 52) — off answers with an empty clipboard",
+                            identifier: "settings-remote-clipboard",
+                            isOn: settings.remoteClipboardReadEnabled)
+                    }
+
+                    FormGroup(
+                        title: "ATTACHED IMAGES",
+                        footer: "Images you attach are uploaded to ~/.moshpit/uploads on the server. Each connect deletes uploads older than this — they are working files for an agent, not a backup."
+                    ) {
+                        PillSegmentedControl(
+                            items: [
+                                SegItem(value: 1, label: "24 hours"),
+                                SegItem(value: 7, label: "7 days"),
+                                SegItem(value: 0, label: "Keep forever"),
+                            ],
+                            selection: settings.uploadRetentionDays)
+                        .accessibilityIdentifier("settings-upload-retention")
+                    }
+
+                    moshGroup(settings: settings)
+
+                    FormGroup(title: "KEYBOARD · KEYS") {
+                        ChevronRow(
+                            label: "Shortcuts",
+                            value: "\(shortcutStore.toolbarCount)/\(ShortcutStore.toolbarLimit)"
+                        ) { showShortcuts = true }
+                        .accessibilityIdentifier("settings-shortcuts")
+                        ChevronRow(
+                            label: "SSH Keys",
+                            value: String(localized: "\(keyStore.keys.count) keys")
+                        ) { showKeys = true }
+                        .accessibilityIdentifier("settings-ssh-keys")
+                    }
+
+                    FormGroup(
+                        title: "NOTIFICATIONS",
+                        footer: "Moshpit watches the active session for agent activity and posts a local alert when your agent needs attention — natively on herdr, via the bell and hooks on tmux."
+                    ) {
+                        ToggleRow(
+                            label: "Notifications",
+                            subtitle: "Alert when an agent needs you",
+                            identifier: "settings-notifications",
+                            isOn: settings.notificationsEnabled)
+                        .id(SettingsAnchor.notifications)
+                        ToggleRow(
+                            label: "Live Activity",
+                            subtitle: "Show agent session status in the Dynamic Island",
+                            identifier: "settings-live-activity",
+                            isOn: settings.liveActivityEnabled)
+                        ToggleRow(
+                            label: "Alert sound",
+                            subtitle: "Play a sound when the agent needs you",
+                            identifier: "settings-alert-sound",
+                            isOn: settings.attentionSoundEnabled)
+                        ToggleRow(
+                            label: "Show detail on lock screen",
+                            subtitle: "Display what the agent is running, asking, or was asked — off keeps it private",
+                            identifier: "settings-lock-screen-detail",
+                            isOn: settings.lockScreenDetailEnabled)
+                        ChevronRow(label: "How notifications work") { showNotifInfo = true }
+                            .accessibilityIdentifier("settings-notification-info")
+                        // Shown on herdr too, unlike the sheet this
+                        // replaced. That one only installed tmux hooks, so
+                        // hiding it on herdr was right — herdr reports agent
+                        // status itself. This screen also pairs the host for
+                        // pushes, which works on any multiplexer, and the
+                        // hook script is what FIRES a push even where its
+                        // tmux stamping is inert. The sheet says which half
+                        // applies.
+                        if liveSession != nil {
+                            ChevronRow(label: "Set up this host") { showHooksInstall = true }
+                                .accessibilityIdentifier("settings-host-setup")
+                        } else {
+                            // Not a dead grey row. Host setup happens ON the
+                            // host — the phone only holds its half of each
+                            // pairing — so with nothing connected there is
+                            // nothing to act on. But since auto-care made
+                            // setup automatic, this row's job offline is to
+                            // SAY that, and to show the half the phone does
+                            // have: which hosts are paired.
+                            ChevronRow(label: "Set up this host",
+                                       subtitle: "Automatic — connect to inspect") {
+                                showOfflineHostInfo = true
+                            }
+                            .accessibilityIdentifier("settings-host-setup")
+                        }
+                    }
+
+                    voiceGroup(settings: settings)
+
+                    FormGroup(
+                        title: "DIAGNOSTICS",
+                        footer: "What the app logged about this session: every terminal resize with its before-and-after size, and the cause of every reconnect. Screenshot it — or copy it — when something looks wrong."
+                    ) {
+                        // The SwiftUI page, or its NSH one behind a switch.
+                        NavigationLink { RecentLogPage() } label: {
+                            HStack(spacing: 10) {
+                                Text("Recent Log")
+                                    .font(.body).foregroundStyle(Ink.primary)
+                                Spacer()
+                            }
+                        }
+                        .accessibilityIdentifier("settings-recent-log")
+                    }
+
+                    FormGroup(
+                        title: "FEEDBACK",
+                        footer: "Mail goes to support@cluas.eu.org through your own Mail app and leaves only when you tap Send there. Issues are public and sit next to the code; keep security reports to mail."
+                    ) {
+                        ChevronRow(label: "Send Feedback",
+                                   subtitle: "A bug, an idea, a screen that reads wrong") {
+                            showFeedback = true
+                        }
+                        .accessibilityIdentifier("settings-feedback")
+                        // The public channel — the site's Support page already
+                        // points at it, and Settings should agree. Opens GitHub's
+                        // template chooser in Safari, so a bug report and a
+                        // feature request each start in shape.
+                        ChevronRow(label: "Open a GitHub Issue",
+                                   subtitle: "Bug reports and feature requests, in the open",
+                                   external: true) {
+                            openURL(FeedbackChannels.newIssueURL)
+                        }
+                        .accessibilityIdentifier("settings-github-issue")
+                    }
+
+                    // Build identity — long-press to copy (for bug reports) — and,
+                    // on mainland-store copies, the MIIT APP filing. China's
+                    // regulator requires the number shown inside the app, not only
+                    // on the store listing, and the filing is what keeps the app on
+                    // sale there. To everyone else it is a line of regulatory
+                    // Chinese, so only that storefront shows it.
+                    Section {
+                        VStack(spacing: 6) {
+                            Text(Self.versionLine)
+                                .contextMenu {
+                                    Button("Copy") { UIPasteboard.general.string = Self.versionLine }
+                                }
+                                // The Rust core's runtime switches, for the
+                                // developer and the Canary group: hidden.
+                                .onTapGesture(count: 7) { showCoreSwitches = true }
+                                .accessibilityIdentifier("settings-version")
+                            if showsFilingNumber {
+                                Link(destination: Self.icpFilingURL) {
+                                    Text("APP filing \(Self.icpFilingNumber)")
+                                }
+                                .accessibilityIdentifier("settings-icp")
+                            }
+                        }
+                        .font(.system(.caption2, design: .monospaced))
+                        .foregroundStyle(Ink.meta)
+                        .frame(maxWidth: .infinity)
+                        .id(SettingsAnchor.bottom)
+                    }
+                    .listRowBackground(Color.clear)
+                    .listRowInsets(EdgeInsets())
+                }
+                .moshpitForm()
+                #if DEBUG
+                .task { await SettingsAnchor.scroll(proxy) }
+                #endif
+            }
+        }
+    }
+
+    /// Whether the root is the NSH page: its switch is on and NSH runs here.
+    private var showsNSH: Bool {
+        guard !nshFailed else { return false }
+        #if DEBUG
+        if CaptureScreen.requested == .settingsNSH { return NSHSurface.available }
+        #endif
+        return NSHScreen.settings.isOn
+    }
+
+    /// What a row of the NSH page asked for (`ui/src/settings.rs`'s `Page`):
+    /// a page pushed on the stack, a sheet, or a link, as the SwiftUI rows
+    /// open them.
+    private func open(_ page: String) {
+        if let part = SettingsPart(rawValue: page) {
+            pushedPart = part
+            return
+        }
+        if let pushed = SettingsPage(rawValue: page) {
+            self.pushed = pushed
+            return
+        }
+        switch page {
+        case "shortcuts": showShortcuts = true
+        case "ssh-keys": showKeys = true
+        case "server-binary": showServerBinaryEditor = true
+        case "udp-range": showUDPEditor = true
+        case "notification-info": showNotifInfo = true
+        case "host-setup":
+            if liveSession != nil { showHooksInstall = true } else { showOfflineHostInfo = true }
+        case "feedback": showFeedback = true
+        case "github-issue": openURL(FeedbackChannels.newIssueURL)
+        case "filing": openURL(Self.icpFilingURL)
+        case "core-switches": showCoreSwitches = true
+        default: Log.ui.error("settings: no page \(page, privacy: .public)")
+        }
     }
 
     /// Build identity for the footer: marketing version + build number from the
@@ -307,8 +406,9 @@ struct SettingsScreen: View {
             title: "APPEARANCE",
             footer: "The accent color tints the app's controls and highlights. The home-screen icon is a separate choice. Both are separate from the terminal color scheme (Display → Theme, below)."
         ) {
+            // The SwiftUI page, or its NSH one behind a switch.
             NavigationLink {
-                AccentGalleryView()
+                AccentPage()
             } label: {
                 // `LabeledContent` so the value drops under the label at
                 // accessibility sizes instead of truncating.
@@ -324,9 +424,10 @@ struct SettingsScreen: View {
                     Text("Accent").font(.body).foregroundStyle(Ink.primary)
                 }
             }
+            .accessibilityIdentifier("settings-accent")
 
             NavigationLink {
-                AppIconGalleryView()
+                AppIconPage()
             } label: {
                 LabeledContent {
                     HStack(spacing: 10) {
@@ -337,6 +438,7 @@ struct SettingsScreen: View {
                     Text("App Icon").font(.body).foregroundStyle(Ink.primary)
                 }
             }
+            .accessibilityIdentifier("settings-app-icon")
         }
     }
 
@@ -361,10 +463,12 @@ struct SettingsScreen: View {
                 }
                 .contentShape(Rectangle())
             }
+            .accessibilityIdentifier("settings-font")
             ValueRow(label: "Font Size", value: String(localized: "\(Int(settings.wrappedValue.fontSize))pt"))
             VStack(spacing: 10) {
                 Slider(value: settings.fontSize, in: 8...18, step: 1)
                     .tint(Ink.accent)
+                    .accessibilityIdentifier("settings-font-slider")
                 Text("ABCdef 012 ~/ssh $")
                     .font(Face.mono(settings.wrappedValue.fontSize * 0.85))
                     .foregroundStyle(Ink.secondary)
@@ -373,13 +477,15 @@ struct SettingsScreen: View {
                     .overlay(
                         RoundedRectangle(cornerRadius: Metrics.controlRadius, style: .continuous)
                             .strokeBorder(Ink.groupBorder, lineWidth: 1))
+                    .accessibilityIdentifier("settings-font-preview")
             }
             .padding(.vertical, 8)
             // Themes get their own screen rather than a menu: a list of names
             // can't answer "what will my terminal look like", which is the only
             // question being asked here.
+            // The SwiftUI page, or its NSH one behind a switch.
             NavigationLink {
-                ThemeGalleryView()
+                ThemePage()
             } label: {
                 LabeledContent {
                     HStack(spacing: 10) {
@@ -390,6 +496,7 @@ struct SettingsScreen: View {
                     Text("Theme").font(.body).foregroundStyle(Ink.primary)
                 }
             }
+            .accessibilityIdentifier("settings-theme")
         }
     }
 
@@ -406,14 +513,16 @@ struct SettingsScreen: View {
                 Text("Applies to all sessions").font(.footnote).foregroundStyle(Ink.meta)
                 PillSegmentedControl(
                     items: [
-                        SegItem(value: CursorShape.block, label: "Block", systemImage: "rectangle.fill"),
-                        SegItem(value: CursorShape.bar, label: "Bar", systemImage: "poweron"),
-                        SegItem(value: CursorShape.underline, label: "Underline", systemImage: "underline"),
+                        SegItem(value: CursorShape.block, label: "Block"),
+                        SegItem(value: CursorShape.bar, label: "Bar"),
+                        SegItem(value: CursorShape.underline, label: "Underline"),
                     ],
                     selection: settings.cursorShape)
                     .padding(.top, 6)
+                    .accessibilityIdentifier("settings-cursor-shape")
             }
             .padding(.vertical, 4)
+            .id(SettingsAnchor.cursor)
 
             // Swatches beside the text, or under it at accessibility sizes —
             // four swatches next to four lines of wrapped footnote is neither.
@@ -430,19 +539,17 @@ struct SettingsScreen: View {
                 }
                 if !stacked { Spacer() }
                 ColorSwatchRow(
-                    colors: [
-                        ("teal", Ink.mosh),
-                        ("green", Ink.cursorGreen),
-                        ("white", Color.white.opacity(0.86)),
-                        ("accent", Ink.accent),
-                    ],
-                    selection: settings.cursorColorId)
+                    colors: ["teal", "green", "white", "accent"].map { (id: $0, color: TerminalCursor.color(forId: $0)) },
+                    selection: settings.cursorColorId,
+                    identifierPrefix: "settings-cursor-color-")
             }
 
-            ToggleRow(label: "Blink", subtitle: "1.1s cadence, follows the iOS system default", isOn: settings.cursorBlink)
+            ToggleRow(label: "Blink", subtitle: "1.1s cadence, follows the iOS system default",
+                      identifier: "settings-cursor-blink", isOn: settings.cursorBlink)
             ToggleRow(
                 label: "Trail on predict",
                 subtitle: "Leaves a signal trail behind the cursor while mosh predicts ahead of the server",
+                identifier: "settings-cursor-trail",
                 isOn: settings.trailOnPredict)
 
             CursorPreview(
@@ -450,6 +557,7 @@ struct SettingsScreen: View {
                 colorId: settings.wrappedValue.cursorColorId,
                 blink: settings.wrappedValue.cursorBlink,
                 trail: settings.wrappedValue.trailOnPredict)
+            .accessibilityIdentifier("settings-cursor-preview")
         }
     }
 
@@ -486,33 +594,38 @@ struct SettingsScreen: View {
             ToggleRow(
                 label: "Enable Voice Input",
                 subtitle: "Adds a mic key to the terminal bar",
+                identifier: "settings-voice-input",
                 isOn: settings.voiceInputEnabled)
             if settings.wrappedValue.voiceInputEnabled {
+                // The SwiftUI pages, or their NSH ones behind switches.
                 NavigationLink {
-                    VoiceEngineView()
+                    VoiceEnginePage()
                 } label: {
                     settingsValueRow(
                         title: String(localized: "Recognition"),
                         value: settings.wrappedValue.voiceEngine.displayName)
                 }
+                .accessibilityIdentifier("settings-voice-engine")
 
                 if settings.wrappedValue.voiceEngine == .whisper {
                     NavigationLink {
-                        WhisperModelView()
+                        WhisperModelPage()
                     } label: {
                         settingsValueRow(
                             title: String(localized: "Model"),
                             value: voiceModelName(settings.wrappedValue))
                     }
+                    .accessibilityIdentifier("settings-voice-model")
                 }
 
                 NavigationLink {
-                    VoiceLanguageView()
+                    VoiceLanguagePage()
                 } label: {
                     settingsValueRow(
                         title: String(localized: "Language"),
                         value: voiceLanguageName(settings.wrappedValue))
                 }
+                .accessibilityIdentifier("settings-voice-language")
             }
         }
     }
@@ -537,7 +650,9 @@ struct SettingsScreen: View {
             ToggleRow(
                 label: "Mosh by default",
                 subtitle: "Wrap new SSH hosts with mosh-server on connect",
+                identifier: "settings-mosh-default",
                 isOn: settings.moshByDefault)
+            .id(SettingsAnchor.mosh)
             Menu {
                 ForEach(PredictMode.allCases, id: \.self) { mode in
                     Button(mode.label) { settings.wrappedValue.predictMode = mode }
@@ -557,12 +672,15 @@ struct SettingsScreen: View {
                 }
                 .contentShape(Rectangle())
             }
+            .accessibilityIdentifier("settings-predict")
             ChevronRow(label: "Server binary",
                        value: settings.wrappedValue.moshServerBinary) { showServerBinaryEditor = true }
+                .accessibilityIdentifier("settings-server-binary")
             ChevronRow(
                 label: "UDP port range",
                 value: "\(settings.wrappedValue.udpRangeStart) – \(settings.wrappedValue.udpRangeEnd)"
             ) { showUDPEditor = true }
+            .accessibilityIdentifier("settings-udp-range")
         }
     }
 }
@@ -616,7 +734,7 @@ struct OfflineHostInfoView: View {
                 }
             }
         }
-        .preferredColorScheme(.dark)
+        .darkOnlyPage()
     }
 }
 
@@ -651,7 +769,7 @@ struct NotificationInfoView: View {
                 }
             }
         }
-        .preferredColorScheme(.dark)
+        .darkOnlyPage()
     }
 
     private func row(_ icon: String, _ tint: Color, _ title: LocalizedStringKey, _ body: LocalizedStringKey) -> some View {
@@ -702,7 +820,7 @@ struct MoshServerBinaryEditor: View {
                 }
             }
         }
-        .preferredColorScheme(.dark)
+        .darkOnlyPage()
         .onAppear { path = settings.moshServerBinary }
     }
 }
@@ -746,7 +864,7 @@ struct UDPRangeEditor: View {
                 }
             }
         }
-        .preferredColorScheme(.dark)
+        .darkOnlyPage()
         .onAppear {
             start = String(settings.udpRangeStart)
             end = String(settings.udpRangeEnd)
@@ -780,14 +898,8 @@ struct CursorPreview: View {
     @State private var visible = true
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    private var cursorColor: Color {
-        switch colorId {
-        case "green": return Ink.cursorGreen
-        case "white": return Color.white.opacity(0.86)
-        case "accent": return Ink.accent
-        default: return Ink.mosh
-        }
-    }
+    /// The colour the terminal draws it in.
+    private var cursorColor: Color { TerminalCursor.color(forId: colorId) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -852,3 +964,32 @@ struct CursorPreview: View {
         .opacity(active ? 1 : 0.6)
     }
 }
+
+#if DEBUG
+extension CaptureScreen {
+    /// The page a capture run pushes in Settings' stack
+    /// (``pushedInSettings``): the one its switch picks, or the NSH one.
+    @ViewBuilder
+    var settingsPage: some View {
+        switch self {
+        case .appIcon: AppIconPage()
+        case .appIconNSH: AppIconNSHPage()
+        case .recentLog: RecentLogPage()
+        case .recentLogNSH: RecentLogNSHPage()
+        case .accent: AccentPage()
+        case .accentNSH: AccentNSHPage()
+        case .voiceEngine: VoiceEnginePage()
+        case .voiceEngineNSH: VoiceEngineNSHPage()
+        case .voiceLanguage: VoiceLanguagePage()
+        case .voiceLanguageNSH: VoiceLanguageNSHPage()
+        case .whisperModel: WhisperModelPage()
+        case .whisperModelNSH: WhisperModelNSHPage()
+        case .themeNSH, .themeDeleteNSH: ThemeGalleryNSHPage()
+        case .themeEditor, .themeEditorNSH, .themeDelete: ThemePage()
+        case .accentEditor, .accentEditorNSH, .accentDelete: AccentPage()
+        case .accentDeleteNSH: AccentNSHPage()
+        default: EmptyView()
+        }
+    }
+}
+#endif

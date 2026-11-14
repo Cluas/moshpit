@@ -47,7 +47,7 @@ xcodegen generate
 # Build for the simulator
 xcodebuild -project Moshpit.xcodeproj -scheme Moshpit \
   -sdk iphonesimulator \
-  -destination 'platform=iOS Simulator,name=iPhone 16 Pro' build
+  -destination 'platform=iOS Simulator,name=iPhone 17 Pro' build
 
 # Or open in Xcode and Cmd+R
 open Moshpit.xcodeproj
@@ -61,8 +61,12 @@ targets. Run them locally before opening a PR:
 ```bash
 xcodebuild test -project Moshpit.xcodeproj -scheme Moshpit \
   -sdk iphonesimulator \
-  -destination 'platform=iOS Simulator,name=iPhone 16 Pro'
+  -destination 'platform=iOS Simulator,name=iPhone 17 Pro'
 ```
+
+For the unit tests alone, use the `MoshpitUnitTests` scheme instead: it leaves
+the UI-test runner out of the build and the install, which is most of the
+wait (the reasoning is next to the scheme in `project.yml`).
 
 New behavior should come with tests. The hard system boundaries are already
 built for this (see below), so most logic can be exercised without a live
@@ -141,8 +145,8 @@ mock/in-memory implementation for tests:
 - **Keychain** — `KeychainBackend` (`Moshpit/Services/KeychainService.swift`),
   with `InMemoryKeychainBackend` and `KeychainService.inMemory(...)` for tests,
   plus a file-vault backend for the simulator.
-- **tmux transport** — `TmuxTransport` / `TmuxControlling`
-  (`Moshpit/Services/Tmux/`), with `MockTmuxTransport`
+- **tmux transport** — `TmuxTransport`
+  (`Moshpit/Services/Tmux/TmuxTransport.swift`), with `MockTmuxTransport`
   (`Tests/MoshpitTests/Mocks/MockTmuxTransport.swift`).
 
 New code that crosses one of these boundaries should follow the same pattern:

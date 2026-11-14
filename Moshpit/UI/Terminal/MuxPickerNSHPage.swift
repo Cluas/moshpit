@@ -1,0 +1,328 @@
+import MoshpitKit
+import SwiftUI
+import UIKit
+
+/// Which of the multiplexer's lists a picker shows.
+enum MuxPickerKind: String {
+    case windows, sessions, panes
+}
+
+/// The breadcrumb's pickers: drawn by NSH (``MuxPickerNSHPage``) when `nsh`
+/// says so — the NSH terminal's, or their own switch
+/// (``NSHScreen/muxPicker``) — else SwiftUI's sheets. Generic over the
+/// concrete controller (not an existential) so Observation tracking on its
+/// snapshot survives.
+struct MuxPicker<C: MultiplexerControlling>: View {
+    let controller: C
+    let kind: MuxPickerKind
+    let nsh: Bool
+
+    var body: some View {
+        if nsh {
+            MuxPickerNSHPage(controller: controller, kind: kind)
+        } else {
+            MuxPickerSwiftUI(controller: controller, kind: kind)
+        }
+    }
+}
+
+/// SwiftUI's sheets (`TmuxSheets.swift`).
+private struct MuxPickerSwiftUI<C: MultiplexerControlling>: View {
+    let controller: C
+    let kind: MuxPickerKind
+
+    var body: some View {
+        switch kind {
+        case .windows: WindowsSheet(controller: controller)
+        case .sessions: SessionsSheet(controller: controller)
+        case .panes: SelectPaneSheet(controller: controller)
+        }
+    }
+}
+
+/// A picker drawn by NSH (`ui/src/terminal/picker.rs`) in the sheet's own
+/// stack, in the container the SwiftUI sheets have (`CompactSheet`: medium
+/// and large detents and the grabber on a phone, the 400 × 380 popover on
+/// an iPad, iOS 26's glass or the app's sheet fill below). The list is the
+/// controller's, posted as it changes (``MuxPickerState``); a row's
+/// long-press menu is UIKit's on the surface (``NSHContextMenus``), its
+/// pick handed back to the screen, which asks for a name (UIKit's alert
+/// with a text field, ``NSHTextPrompt``) or confirms a kill (NSH's action
+/// sheet) before the host acts. If NSH cannot run here, the SwiftUI sheet
+/// shows.
+struct MuxPickerNSHPage<C: MultiplexerControlling>: View {
+    let controller: C
+    let kind: MuxPickerKind
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var model = MuxPickerModel()
+    @State private var menus = NSHContextMenus()
+    @State private var failed = false
+
+    var body: some View {
+        if failed {
+            MuxPickerSwiftUI(controller: controller, kind: kind)
+        } else {
+            let state = MuxPickerState(kind: kind, controller: controller)
+            NavigationStack {
+                NSHPage(
+                    screen: .muxPicker,
+                    attach: { surface in
+                        model.attach(surface, current: state)
+                        menus.install(on: surface)
+                    },
+                    onMessage: handle,
+                    onFailure: { failed = true })
+                    .nshPage()
+                    .onAppear { show(state) }
+                    .onChange(of: state) { _, new in show(new) }
+            }
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
+            .sheetSurface()
+            .task { controller.refresh() }
+        }
+    }
+
+    private func show(_ state: MuxPickerState) {
+        model.update(state)
+        menus.menus = MuxPickerModel.menus(for: state) { [weak model] action, id in
+            model?.post(["op": "act", "action": action, "id": id])
+        }
+        menus.cornerRadius = [:]
+    }
+
+    /// What the screen tells the host.
+    private func handle(_ message: [String: Any]) {
+        switch MuxPickerModel.event(message) {
+        case .select(let id)?:
+            Haptics.select()
+            switch kind {
+            case .windows: controller.selectWindow(id)
+            case .sessions: controller.selectSession(id)
+            case .panes: controller.selectPane(id)
+            }
+            dismiss()
+        case .new(let name)?:
+            Haptics.tap()
+            switch kind {
+            case .windows:
+                controller.newWindow(named: name)
+                // The new window becomes active: the person lands on it.
+                dismiss()
+            case .sessions:
+                controller.newSession(named: name)
+                dismiss()
+            case .panes:
+                controller.newPane()
+            }
+        case .rename(let id, let name)?:
+            switch kind {
+            case .windows: controller.renameWindow(id, to: name)
+            case .sessions: controller.renameSession(id, to: name)
+            case .panes: break
+            }
+        case .kill(let id)?:
+            switch kind {
+            case .windows: controller.killWindow(id)
+            case .sessions: controller.killSession(id)
+            case .panes: break
+            }
+        case .prompt(let question)?:
+            guard let surface = model.surface else { return }
+            NSHTextPrompt.present(question, from: surface) { [weak model] answer in
+                model?.post(answer)
+            }
+        case nil:
+            Log.ui.error("mux picker: no event in \(String(describing: message["ev"]), privacy: .public)")
+        }
+    }
+}
+
+/// What the NSH picker shows: the controller's list as `{"op": "picker",
+/// …}` carries it (`ui/src/terminal/picker.rs`'s `Picker`), the facts of
+/// each row; the screen words them.
+struct MuxPickerState: Equatable {
+    struct Row: Equatable {
+        var id: String
+        var index: Int?
+        var name = ""
+        var panes: Int?
+        var command = ""
+        var agent: String?
+        var signal: AgentSignal?
+        var attached = false
+        var windows: Int?
+        var window: String?
+    }
+
+    var kind: MuxPickerKind
+    var mux: Multiplexer
+    var rows: [Row] = []
+    var active: String?
+
+    init(kind: MuxPickerKind, mux: Multiplexer, rows: [Row], active: String?) {
+        self.kind = kind
+        self.mux = mux
+        self.rows = rows
+        self.active = active
+    }
+
+    /// `controller`'s list of `kind`, as the SwiftUI sheets read it.
+    @MainActor
+    init<C: MultiplexerControlling>(kind: MuxPickerKind, controller: C) {
+        let snapshot = controller.snapshot
+        let hooks = controller.agentHooks
+        self.kind = kind
+        mux = controller.multiplexer
+        switch kind {
+        case .windows:
+            active = snapshot.activeWindowId
+            rows = snapshot.sortedWindows.map { window in
+                let panes = snapshot.panes.values.filter { $0.windowId == window.id }
+                let command = panes.first { $0.isActive }?.command ?? panes.first?.command ?? ""
+                let signal = AgentSignal.aggregate(panes.map { AgentSignal(hooks[$0.id]?.state) })
+                return Row(id: window.id, index: window.index, name: window.name, panes: window.paneCount,
+                           command: command, signal: signal)
+            }
+        case .sessions:
+            active = snapshot.activeSessionId
+            let windows = snapshot.sortedWindows
+            let activeWindow = snapshot.activeWindowId.flatMap { snapshot.windows[$0] }
+            rows = snapshot.sortedSessions.map { session in
+                var row = Row(id: session.id, name: session.name, attached: session.isAttached)
+                if session.id == snapshot.activeSessionId {
+                    row.windows = windows.count
+                    row.window = activeWindow.map { "\($0.index):\($0.name)" }
+                }
+                return row
+            }
+        case .panes:
+            active = snapshot.activePaneId
+            rows = snapshot.activePanes.sorted { $0.index < $1.index }.map { pane in
+                let hook = hooks[pane.id]
+                return Row(id: pane.id, index: pane.index, command: pane.command, agent: hook?.agent,
+                           signal: AgentSignal(hook?.state))
+            }
+        }
+    }
+
+    var message: [String: Any] {
+        var message: [String: Any] = [
+            "op": "picker",
+            "kind": kind.rawValue,
+            "mux": mux == .herdr ? "herdr" : "tmux",
+            "rows": rows.map(Self.json),
+        ]
+        if let active { message["active"] = active }
+        return message
+    }
+
+    private static func json(_ row: Row) -> [String: Any] {
+        var json: [String: Any] = ["id": row.id, "name": row.name, "command": row.command,
+                                   "attached": row.attached]
+        if let index = row.index { json["index"] = index }
+        if let panes = row.panes { json["panes"] = panes }
+        if let agent = row.agent { json["agent"] = agent }
+        if let signal = row.signal {
+            json["signal"] = switch signal {
+            case .attention: "attention"
+            case .working: "working"
+            case .done: "done"
+            }
+        }
+        if let windows = row.windows { json["windows"] = windows }
+        if let window = row.window { json["window"] = window }
+        return json
+    }
+}
+
+/// What the NSH picker was last told, kept so a surface made again starts
+/// from it, and what it tells the host.
+@MainActor
+final class MuxPickerModel {
+    private(set) weak var surface: NSHSurface?
+    private var state: MuxPickerState?
+
+    func attach(_ surface: NSHSurface) {
+        self.surface = surface
+        if let state { surface.post(state.message) }
+    }
+
+    /// ``attach(_:)``, the model filled from `current` (the page's picker as
+    /// its body has it now) while it has none (B366): the screen starts from
+    /// the page's state whether or not `onAppear` came first. A state the
+    /// model has is newer (`onChange` keeps it) and stays.
+    func attach(_ surface: NSHSurface, current state: MuxPickerState) {
+        if self.state == nil {
+            self.surface = nil
+            update(state)
+        }
+        attach(surface)
+    }
+
+    func update(_ state: MuxPickerState) {
+        guard state != self.state else { return }
+        self.state = state
+        surface?.post(state.message)
+    }
+
+    @discardableResult
+    func post(_ message: [String: Any]) -> Bool {
+        surface?.post(message) ?? false
+    }
+
+    /// What the screen asks the host.
+    enum Event: Equatable {
+        case select(String)
+        case new(String?)
+        case rename(String, String)
+        case kill(String)
+        case prompt(NSHTextPrompt.Question)
+    }
+
+    static func event(_ message: [String: Any]) -> Event? {
+        switch message["ev"] as? String {
+        case "select":
+            return (message["id"] as? String).map(Event.select)
+        case "new":
+            return .new(message["name"] as? String)
+        case "rename":
+            guard let id = message["id"] as? String, let name = message["name"] as? String else { return nil }
+            return .rename(id, name)
+        case "kill":
+            return (message["id"] as? String).map(Event.kill)
+        case "prompt":
+            return NSHTextPrompt.Question(message).map(Event.prompt)
+        default:
+            return nil
+        }
+    }
+
+    /// The long-press menus of `state`'s rows, by the row's identifier
+    /// (`mux-picker-row-<id>`): Rename and the kill, as the SwiftUI rows'
+    /// `.contextMenu`; panes have none. A pick goes back to the screen
+    /// (`perform(action, id)`), which asks before the host acts.
+    static func menus(for state: MuxPickerState,
+                      perform: @escaping (String, String) -> Void) -> [String: () -> [UIMenuElement]] {
+        guard state.kind != .panes else { return [:] }
+        let vocab = state.mux.vocabulary
+        let noun = state.kind == .sessions ? vocab.session : vocab.window
+        var menus: [String: () -> [UIMenuElement]] = [:]
+        for row in state.rows {
+            let id = row.id
+            menus["mux-picker-row-\(id)"] = {
+                [
+                    UIAction(title: String(localized: "Rename"), image: UIImage(systemName: "pencil")) { _ in
+                        perform("rename", id)
+                    },
+                    UIAction(title: String(localized: "\(vocab.killVerb) \(noun)"),
+                             image: UIImage(systemName: "trash"), attributes: .destructive) { _ in
+                        perform("kill", id)
+                    },
+                ]
+            }
+        }
+        return menus
+    }
+}

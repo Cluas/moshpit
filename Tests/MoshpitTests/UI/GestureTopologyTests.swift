@@ -13,7 +13,7 @@ struct GestureTopologyTests {
     private func makeWired() -> (TerminalView, SwiftTerminalView.Coordinator) {
         let terminal = TerminalView(frame: CGRect(x: 0, y: 0, width: 390, height: 700))
         let coordinator = SwiftTerminalView.Coordinator()
-        TerminalScrollGesture.attach(to: terminal, coordinator: coordinator)
+        coordinator.attach(to: terminal)
         return (terminal, coordinator)
     }
 
@@ -91,6 +91,8 @@ struct GestureTopologyTests {
                 "SwiftTerm must not also report touches as mouse drags — the app's gestures own that")
         #expect(view.linkReporting == .explicit,
                 "implicit link regex mis-underlines bare file paths")
+        #expect(view.getTerminal().options.hostOwnsColumns,
+                "a remote's DECCOLM could resize the phone's grid")
     }
 
     @Test("a selection can be dismissed without first responder")

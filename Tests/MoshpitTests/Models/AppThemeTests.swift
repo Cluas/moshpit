@@ -118,18 +118,6 @@ struct AppThemeTests {
         }
     }
 
-    @Test("pre-split installs migrate to the icon their app theme implied")
-    func iconMigration() {
-        // Before the split, picking a theme also swapped the icon; those users
-        // must keep the icon already on their home screen.
-        #expect(AppIconCatalog.migratedID(fromAppThemeID: "moshpit-classic") == "teal")
-        #expect(AppIconCatalog.migratedID(fromAppThemeID: "terminal-green") == "green")
-        #expect(AppIconCatalog.migratedID(fromAppThemeID: "amber-console") == "amber")
-        #expect(AppIconCatalog.migratedID(fromAppThemeID: "signal-room") == "default")
-        // A custom accent has no implied icon → the primary one.
-        #expect(AppIconCatalog.migratedID(fromAppThemeID: "app-abc123") == "default")
-    }
-
     @Test("an unknown icon id resolves to the primary icon")
     func iconFallback() {
         #expect(AppIconCatalog.option(for: "nope").id == AppIconCatalog.primary.id)

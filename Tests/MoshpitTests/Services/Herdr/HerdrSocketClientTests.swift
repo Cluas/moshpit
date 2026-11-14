@@ -10,13 +10,9 @@ import Testing
 @Suite("herdr socket client")
 struct HerdrSocketClientTests {
 
+    /// A capture, from the test bundle — see ``TestFixtures``.
     private func fixture(_ name: String) throws -> String {
-        let path = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()   // …/MoshpitTests/Services/Herdr
-            .deletingLastPathComponent()   // …/MoshpitTests/Services
-            .deletingLastPathComponent()   // …/MoshpitTests
-            .appendingPathComponent("Fixtures/\(name)")
-        return try String(contentsOf: path, encoding: .utf8)
+        try TestFixtures.string(name)
     }
 
     /// A scripted far end: captures each outgoing line, extracts the request

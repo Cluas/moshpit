@@ -1,0 +1,185 @@
+{
+  "_": "Home's cross-check fixtures: what the store, the session layer and the agents monitor say, run through the Swift HomeSnapshot (swift/main.swift) and app::home (examples/home_crosscheck.rs). A connection's `session` is its SessionView as the Rust session path has it (on iOS the driver mirrors it into the Swift session objects: RustSessionDriver, RustTmuxController, RustHerdrController); `since` is the monitor's clock for its panes.",
+  "scenarios": [
+    {
+      "name": "empty",
+      "connections": []
+    },
+    {
+      "name": "saved",
+      "connections": [
+        {"id": "C0FFEE00-0000-4000-8000-000000000001", "name": "studio", "host": "studio.local"},
+        {"id": "C0FFEE00-0000-4000-8000-000000000002", "name": "pi", "host": "192.0.2.7", "user": "root", "mosh": true, "udpPort": 60100, "mux": "none"},
+        {"id": "C0FFEE00-0000-4000-8000-000000000003", "name": "trainer", "mux": "herdr"}
+      ]
+    },
+    {
+      "name": "initials",
+      "connections": [
+        {"id": "C0FFEE00-0000-4000-8000-000000000011", "name": "école"},
+        {"id": "C0FFEE00-0000-4000-8000-000000000012", "name": "école"},
+        {"id": "C0FFEE00-0000-4000-8000-000000000013", "name": "ßeta"},
+        {"id": "C0FFEE00-0000-4000-8000-000000000014", "name": "👩‍💻 box"},
+        {"id": "C0FFEE00-0000-4000-8000-000000000015", "name": "🇯🇵 tokyo"},
+        {"id": "C0FFEE00-0000-4000-8000-000000000016", "name": "研发机"},
+        {"id": "C0FFEE00-0000-4000-8000-000000000017", "name": "ǆungla"}
+      ]
+    },
+    {
+      "name": "dialling",
+      "connections": [
+        {"id": "C0FFEE00-0000-4000-8000-000000000021", "name": "a", "session": {"state": "connecting"}},
+        {"id": "C0FFEE00-0000-4000-8000-000000000022", "name": "b", "session": {"state": "reconnecting", "connectedAt": 1762800000}},
+        {"id": "C0FFEE00-0000-4000-8000-000000000023", "name": "c", "session": {"state": "failed"}},
+        {"id": "C0FFEE00-0000-4000-8000-000000000024", "name": "d", "session": {"state": "ended"}},
+        {"id": "C0FFEE00-0000-4000-8000-000000000025", "name": "e", "session": {"state": "failed", "stalled": true}}
+      ]
+    },
+    {
+      "name": "tmux-attaching",
+      "connections": [
+        {"id": "C0FFEE00-0000-4000-8000-000000000031", "name": "first", "session": {"state": "connected", "tmux": {"attached": false, "everAttached": false}}},
+        {"id": "C0FFEE00-0000-4000-8000-000000000032", "name": "stalled", "session": {"state": "connected", "stalled": true, "tmux": {"attached": false, "everAttached": false}}},
+        {"id": "C0FFEE00-0000-4000-8000-000000000033", "name": "detached-since", "session": {"state": "connected", "tmux": {"attached": false, "everAttached": true}}},
+        {"id": "C0FFEE00-0000-4000-8000-000000000034", "name": "no-plane-yet", "session": {"state": "connected"}},
+        {"id": "C0FFEE00-0000-4000-8000-000000000035", "name": "plain", "mux": "none", "session": {"state": "connected", "stalled": true}}
+      ]
+    },
+    {
+      "name": "tmux-live",
+      "connections": [
+        {
+          "id": "C0FFEE00-0000-4000-8000-000000000041", "name": "studio", "mosh": true,
+          "session": {
+            "state": "connected", "connectedAt": 1762800000.5,
+            "since": {"%3": 1762800100, "%2": 1762800200, "%9": 1762800300},
+            "tmux": {
+              "attached": true, "everAttached": true, "refreshing": true,
+              "sessions": [{"id": "$10", "name": "work", "attached": true}, {"id": "$2", "name": "dots"}],
+              "windows": [
+                {"id": "@12", "session": "$10", "name": "api", "index": 1, "paneCount": 2},
+                {"id": "@3", "session": "$2", "name": "zsh", "index": 0, "paneCount": 1}
+              ],
+              "panes": [
+                {"id": "%3", "window": "@12", "index": 0, "command": "claude", "path": "/srv/api"},
+                {"id": "%2", "window": "@12", "index": 1, "command": "zsh"},
+                {"id": "%10", "window": "@3", "index": 0, "command": "vim", "path": "/home/cluas/dots"}
+              ],
+              "activeSession": "$10", "activeWindow": "@12", "activePane": "%3",
+              "hooks": [
+                {"pane": "%3", "state": "attention", "agent": "claude", "since": 1762800050},
+                {"pane": "%2", "state": "working", "agent": "codex"},
+                {"pane": "%10", "agent": "claude"},
+                {"pane": "%7"}
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "tmux-empty-tree",
+      "connections": [
+        {"id": "C0FFEE00-0000-4000-8000-000000000051", "name": "fresh", "session": {"state": "connected", "tmux": {"attached": true, "everAttached": true}}}
+      ]
+    },
+    {
+      "name": "tmux-no-session",
+      "connections": [
+        {"id": "C0FFEE00-0000-4000-8000-0000000000A1", "name": "fresh", "mosh": true, "session": {"state": "connected", "tmux": {"noSession": true}}},
+        {"id": "C0FFEE00-0000-4000-8000-0000000000A2", "name": "gave-up", "mosh": true, "session": {"state": "connected", "stalled": true, "tmux": {"noSession": true}}},
+        {"id": "C0FFEE00-0000-4000-8000-0000000000A3", "name": "dropped", "mosh": true, "session": {"state": "reconnecting", "tmux": {"noSession": true}}}
+      ]
+    },
+    {
+      "name": "dead-with-tree",
+      "connections": [
+        {
+          "id": "C0FFEE00-0000-4000-8000-000000000061", "name": "dropped",
+          "session": {
+            "state": "failed", "connectedAt": 1762800000,
+            "tmux": {"attached": true, "everAttached": true, "sessions": [{"id": "$0", "name": "main", "attached": true}], "activeSession": "$0"}
+          }
+        },
+        {
+          "id": "C0FFEE00-0000-4000-8000-000000000062", "name": "back-soon",
+          "session": {
+            "state": "reconnecting", "connectedAt": 1762800000,
+            "tmux": {"attached": false, "everAttached": true, "sessions": [{"id": "$0", "name": "main"}]}
+          }
+        }
+      ]
+    },
+    {
+      "name": "herdr-live",
+      "connections": [
+        {
+          "id": "C0FFEE00-0000-4000-8000-000000000071", "name": "trainer", "mux": "herdr",
+          "session": {
+            "state": "connected",
+            "since": {"w1:p1": 1762800400, "w2:p1": 1762800500},
+            "herdr": {
+              "attached": true, "everAttached": true, "refreshing": true,
+              "sessions": [{"id": "w2", "name": "fix-login"}, {"id": "w1", "name": "trainer", "attached": true}],
+              "windows": [
+                {"id": "w1:t1", "session": "w1", "name": "Tab 1", "index": 0, "paneCount": 2},
+                {"id": "w2:t1", "session": "w2", "name": "Tab 1", "index": 0, "paneCount": 1}
+              ],
+              "panes": [
+                {"id": "w1:p2", "window": "w1:t1", "index": 1, "command": "zsh"},
+                {"id": "w1:p1", "window": "w1:t1", "index": 0, "command": "claude"},
+                {"id": "w2:p1", "window": "w2:t1", "index": 0, "command": "codex"}
+              ],
+              "activeSession": "w1", "activeWindow": "w1:t1", "activePane": "w1:p1",
+              "cwds": {"w1:p1": "/srv/trainer", "w2:p1": "/srv/trainer-fix-login"},
+              "worktrees": {"w2": "trainer", "w9": "closed-since"},
+              "hooks": [
+                {"pane": "w1:p1", "state": "working", "agent": "claude"},
+                {"pane": "w2:p1", "state": "attention", "agent": "codex"},
+                {"pane": "w1:p2", "state": "idle"}
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "herdr-skew",
+      "connections": [
+        {
+          "id": "C0FFEE00-0000-4000-8000-000000000081", "name": "old-path", "mux": "herdr",
+          "session": {"state": "connected", "herdr": {"mismatch": "lost connection to server: server closed connection", "skew": {"client": "0.8.0", "server": "0.9.5"}}}
+        },
+        {
+          "id": "C0FFEE00-0000-4000-8000-000000000082", "name": "old-server", "mux": "herdr",
+          "session": {"state": "connected", "herdr": {"mismatch": "client protocol 22 is newer than server protocol 19", "skew": {"client": "0.10.0", "server": "0.9.5"}, "restarting": true}}
+        },
+        {
+          "id": "C0FFEE00-0000-4000-8000-000000000083", "name": "said-older", "mux": "herdr",
+          "session": {"state": "connected", "herdr": {"mismatch": "client protocol 19 is older than server protocol 22"}}
+        },
+        {
+          "id": "C0FFEE00-0000-4000-8000-000000000084", "name": "said-other", "mux": "herdr",
+          "session": {"state": "connected", "herdr": {"mismatch": "protocol 3, server speaks 2"}}
+        },
+        {
+          "id": "C0FFEE00-0000-4000-8000-000000000085", "name": "skew-only", "mux": "herdr",
+          "session": {"state": "connected", "herdr": {"skew": {"client": "0.8.0", "server": "0.9.5"}}}
+        }
+      ]
+    },
+    {
+      "name": "card-flags",
+      "version": "v1.0.9 · 2026-11-14 abc1234",
+      "sidebar": true,
+      "connections": [
+        {
+          "id": "C0FFEE00-0000-4000-8000-000000000091", "name": "roamer", "mosh": true, "udpPort": 61000,
+          "session": {"state": "connected", "connectedAt": 1762800000, "degraded": true, "roaming": true}
+        },
+        {"id": "C0FFEE00-0000-4000-8000-000000000092", "name": "leaving", "disconnecting": true, "session": {"state": "connected"}},
+        {"id": "C0FFEE00-0000-4000-8000-000000000093", "name": "gone", "disconnecting": true}
+      ]
+    }
+  ]
+}

@@ -1,0 +1,31 @@
+{"ev":"session-changed","session":"$0","name":"g2"}
+{"ev":"response","id":1794337414,"num":287,"error":false,"lines":[]}
+{"ev":"response","id":1794337414,"num":288,"error":false,"lines":["$0 1 g2"]}
+{"ev":"response","id":1794337414,"num":289,"error":false,"lines":["$0 @0 0 b25d,80x24,0,0,0 1 1 sh"]}
+{"ev":"layout-change","window":"@0","layout":"b25d,80x24,0,0,0","zoomed":false}
+{"ev":"response","id":1794337414,"num":292,"error":false,"lines":["%0 @0 0 80 24 1 0 0 bash"]}
+{"ev":"response","id":1794337414,"num":293,"error":false,"lines":["C-b"]}
+{"ev":"response","id":1794337414,"num":294,"error":false,"lines":["1|g2|/dev/ttys022"]}
+{"ev":"response","id":1794337414,"num":295,"error":false,"lines":["G2SYNC1"]}
+{"ev":"response","id":1794337414,"num":296,"error":false,"lines":[]}
+{"ev":"response","id":1794337414,"num":297,"error":false,"lines":["G2SYNC2"]}
+{"ev":"response","id":1794337414,"num":298,"error":false,"lines":[]}
+{"ev":"response","id":1794337414,"num":299,"error":false,"lines":[]}
+{"ev":"window-renamed","window":"@0","name":"seq"}
+{"ev":"pause","pane":"%0"}
+{"ev":"window-renamed","window":"@0","name":"bash"}
+{"ev":"response","id":1794337418,"num":306,"error":false,"lines":["%continue %0"]}
+{"ev":"response","id":1794337418,"num":307,"error":false,"lines":["G2SYNC3"]}
+{"ev":"response","id":1794337418,"num":308,"error":false,"lines":[]}
+{"ev":"response","id":1794337418,"num":309,"error":false,"lines":["G2SYNC4"]}
+{"ev":"response","id":1794337418,"num":310,"error":false,"lines":[]}
+{"ev":"response","id":1794337418,"num":311,"error":false,"lines":[]}
+{"ev":"response","id":1794337418,"num":312,"error":false,"lines":["G2SYNC5"]}
+{"ev":"output","pane":"%0","hex":"65"}
+{"ev":"output","pane":"%0","hex":"63686f20"}
+{"ev":"output","pane":"%0","hex":"726573756d65640d0a"}
+{"ev":"output","pane":"%0","hex":"726573756d65640d0a"}
+{"ev":"output","pane":"%0","hex":"73682d332e322420"}
+{"ev":"response","id":1794337418,"num":313,"error":false,"lines":[]}
+{"ev":"exit","reason":null}
+{"ev":"end","plan":"whole","feeds":1,"resets":0,"bytes":1620,"cuts":0,"in_utf8":0,"in_octal":0,"plan_hash":"65e005f60acbe147"}

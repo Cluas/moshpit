@@ -1,27 +1,21 @@
 #if DEBUG
 import Foundation
+import Observation
 import SwiftUI
 import MoshpitKit
 
-/// A DEBUG-only way to put `HostSetupView` on screen in each of its states, so
-/// they can be screenshotted and reviewed.
+/// A DEBUG-only way to put Set up this host on screen in each of its states,
+/// so they can be screenshotted and reviewed, and its NSH page tested.
 ///
-/// It exists because the real screen is gated on a live SSH session — Settings
-/// disables its row when there is none, and the sheet's content is empty — so a
-/// UI test in a simulator can never reach it. That is not an idb quirk; it is the
-/// screen's own precondition.
-///
-/// Driving it with a canned channel is also strictly BETTER than reaching a real
-/// host would be. A real host is in exactly one state at a time, and the two
-/// states most in need of a look — an out-of-date install, and a relay that does
-/// not know this phone — are the two hardest to arrange on purpose.
-///
-/// Compiled out of Release entirely: everything here, including the launch-flag
-/// read, sits inside `#if DEBUG`, the same as `-MOSHPIT_RESET`.
+/// The real screen needs a live SSH session; this runs the core's machine
+/// (``HostCareCore``) of its own over a canned host whose answers are the
+/// core's too (`host_setup_demo_reply`), so every state — an out-of-date
+/// install, a relay that does not know this phone — is one launch argument
+/// away. Compiled out of Release entirely.
 enum HostSetupDemo {
 
-    /// The one connection id every demo scenario shares — the manifest's pairing
-    /// key must name the same id or "paired" scenarios render as unpaired.
+    /// The one connection id every demo scenario shares: the manifest's
+    /// pairing names it.
     static let demoConn = "3F2504E0-4F89-11D3-9A0C-0305E82C3301"
 
     static let flag = "-MOSHPIT_HOSTSETUP_DEMO"
@@ -32,11 +26,9 @@ enum HostSetupDemo {
         case fresh
         /// Hooks and pairing both current.
         case installed
-        /// Installed, but from an older build — the case with no mechanism at all
-        /// before the manifest existed.
+        /// Installed, but from an older build.
         case stale
-        /// Paired, with a stamp script too old to fire: secrets on the host and
-        /// nothing that will ever send.
+        /// Paired, with a stamp script too old to fire.
         case nothingWillPush
         /// The host is fine; this PHONE is not registered with the relay.
         case relayUnreachable
@@ -52,96 +44,122 @@ enum HostSetupDemo {
         return s
     }
 
+    /// A capture run's scenario (`-MOSHPIT_SEED_HOSTSETUP <scenario>` with
+    /// `-MOSHPIT_SEED_SCREEN host-setup[-nsh]`): fresh unless it names one.
+    static var seededScenario: Scenario {
+        let arguments = ProcessInfo.processInfo.arguments
+        guard let i = arguments.firstIndex(of: "-MOSHPIT_SEED_HOSTSETUP"), i + 1 < arguments.count,
+              let scenario = Scenario(rawValue: arguments[i + 1])
+        else { return .fresh }
+        return scenario
+    }
+
+    static let connection = ServerConnection(
+        id: UUID(uuidString: demoConn)!,
+        name: "m1-pro", host: "10.0.0.2", port: 22, username: "dev",
+        authMethod: .key, connectionProtocol: .ssh, sshPort: 22, keychainRef: nil)
+
     @MainActor
     static func view(_ scenario: Scenario) -> some View {
-        HostSetupView(model: model(scenario), testPane: "%3")
+        HostSetupPage(connection: connection, testPane: "%3", source: DemoHostCare(scenario))
     }
+}
 
-    @MainActor
-    static func model(_ scenario: Scenario) -> HostSetupModel {
-        let push = DemoPush()
+/// The machine of one demo scenario, over its canned host.
+@MainActor
+@Observable
+final class DemoHostCare: HostSetupSource {
+    let scenario: HostSetupDemo.Scenario
+    private(set) var revisions: [UInt64: Int] = [:]
+    @ObservationIgnored private(set) var core: HostCareCore!
+
+    init(_ scenario: HostSetupDemo.Scenario) {
+        self.scenario = scenario
+        let platform = DemoPlatform(scenario: scenario)
+        // A paired scenario's phone holds the pairing its host was given.
+        let paired = scenario == .installed || scenario == .nothingWillPush
+        let pairings = DemoPairings(paired ? [hostSetupDemoPairing(relay: AppSettings.defaultPushRelay)] : [])
+        core = HostCareCore(platform: platform, pairings: pairings, environment: "sandbox",
+                            autocareOff: true)
+        platform.owner = self
+        core.setSettings(notifications: true, liveActivity: true,
+                         relayUrl: AppSettings.defaultPushRelay, declined: [], unpaired: [])
         if scenario == .relayUnreachable {
-            push.lastRelayError = "Relay rejected the registration (401): unknown or expired send token"
-        }
-        let connection = ServerConnection(
-            id: UUID(uuidString: HostSetupDemo.demoConn)!,
-            name: "m1-pro", host: "10.0.0.2", port: 22, username: "dev",
-            authMethod: .key, connectionProtocol: .ssh, sshPort: 22, keychainRef: nil)
-        let model = HostSetupModel(connection: connection, push: push) {
-            HostInstaller(channel: DemoChannel(scenario: scenario))
-        }
-        if scenario == .stale || scenario == .nothingWillPush {
-            // A failed proof is part of what these states look like, and there is
-            // no host here to fail against.
-            Task { @MainActor in await model.proveHooks(pane: nil) }
-        }
-        return model
-    }
-
-    /// Answers the installer's commands from a fixture.
-    private struct DemoChannel: HostChannel {
-        let scenario: Scenario
-
-        func run(_ command: String) async throws -> Data {
-            Data(reply(to: command).utf8)
-        }
-
-        private func reply(to command: String) -> String {
-            if command.contains("printf 'home=") {
-                let tools = scenario == .missingTools
-                    ? "openssl=no\ncurl=no\njq=no\ntmux=yes\nbase64=yes"
-                    : "openssl=yes\ncurl=yes\njq=yes\ntmux=yes\nbase64=yes"
-                return "home=/Users/dev\nshell=/bin/zsh\nuname=Darwin\n" + tools
-            }
-            if command.contains("manifest.json") { return manifest }
-            return ""
-        }
-
-        private var manifest: String {
-            switch scenario {
-            case .fresh, .missingTools, .relayUnreachable:
-                return ""
-            case .installed:
-                return json(stampDigest: ContentDigest.of(HostScripts.stamp), paired: true)
-            case .stale:
-                return json(stampDigest: "an-older-build", paired: false)
-            case .nothingWillPush:
-                return json(stampDigest: "an-older-build", paired: true)
-            }
-        }
-
-        private func json(stampDigest: String, paired: Bool) -> String {
-            var components: [String: InstallManifest.Component] = [
-                InstallComponent.stamp.key: .init(digest: stampDigest, installedAt: Date()),
-                InstallComponent.sender.key: .init(
-                    digest: ContentDigest.of(HostScripts.sender), installedAt: Date()),
-                InstallComponent.hooks(agent: "claude").key: .init(
-                    digest: "cfg", installedAt: Date(),
-                    configPath: "$HOME/.claude/settings.json"),
-            ]
-            if paired {
-                components[InstallComponent.pairing(conn: HostSetupDemo.demoConn).key] = .init(
-                    installedAt: Date(),
-                    connectionId: HostSetupDemo.demoConn,
-                    relayURL: AppSettings.defaultPushRelay)
-            }
-            let manifest = InstallManifest(schema: InstallManifest.currentSchema,
-                                           components: components)
-            guard let data = try? JSONEncoder.moshpitInstall.encode(manifest) else { return "" }
-            return String(decoding: data, as: UTF8.self)
+            core.registrationFailed(why: "Relay rejected the registration (401): unknown or expired send token")
         }
     }
 
-    @MainActor
-    private final class DemoPush: PushCoordinating {
-        var lastRelayError: String?
-        func pair(connectionId: UUID, hostLabel: String, relayURL: String) async throws -> PushPairing {
-            PushPairing.make(connectionId: connectionId, hostLabel: hostLabel, relayURL: relayURL)
+    func openSetup(_ connection: ServerConnection, testPane: String?) -> UInt64 {
+        // The stale states look like a hook test that couldn't run.
+        let stale = scenario == .stale || scenario == .nothingWillPush
+        let page = core.openSetup(connection: HostCare.conn(connection), testPane: stale ? nil : testPane)
+        if stale { core.setupEvent(page: page, ev: "prove-hooks", agent: nil) }
+        return page
+    }
+
+    func closeSetup(_ page: UInt64) { core.closeSetup(page: page) }
+
+    func setupMessage(_ page: UInt64) -> String? {
+        _ = revisions[page]
+        return core.setupMessage(page: page, locale: HostCare.locale)
+    }
+
+    func setupEvent(_ page: UInt64, _ ev: String, agent: String?) {
+        core.setupEvent(page: page, ev: ev, agent: agent)
+    }
+
+    fileprivate func changed(_ change: HostCareChange) {
+        if case .page(let page) = change { revisions[page, default: 0] += 1 }
+    }
+
+    /// Whether `page` has read its host (for a test to wait on).
+    func isIdle(_ page: UInt64) -> Bool {
+        core.setupMessage(page: page, locale: "en")?.contains("\"phase\":\"idle\"") == true
+    }
+}
+
+private final class DemoPlatform: HostCarePlatform, @unchecked Sendable {
+    let scenario: HostSetupDemo.Scenario
+    weak var owner: DemoHostCare?
+
+    init(scenario: HostSetupDemo.Scenario) { self.scenario = scenario }
+
+    func exec(connection: String, command: String) async throws -> Data {
+        hostSetupDemoReply(scenario: scenario.rawValue, command: command, relay: AppSettings.defaultPushRelay)
+    }
+
+    func post(url: String, body: String, timeoutSeconds: UInt32) async throws -> HttpReplyValue {
+        throw HostCareFailure.Failed(why: "the demo has no relay")
+    }
+
+    func registerForPush() {}
+    func rememberDeclined(connection: String) {}
+    func rememberUnpaired(connection: String, unpaired: Bool) {}
+
+    func changed(change: HostCareChange) {
+        Task { @MainActor [weak owner] in owner?.changed(change) }
+    }
+}
+
+private final class DemoPairings: PairingsFile, @unchecked Sendable {
+    private let lock = NSLock()
+    private var pairings: [PairingRecord]
+
+    init(_ pairings: [PairingRecord]) { self.pairings = pairings }
+
+    func read() -> [PairingRecord] { lock.withLock { pairings } }
+
+    func upsert(pairing: PairingRecord) -> Bool {
+        lock.withLock {
+            pairings.removeAll { $0.connectionId == pairing.connectionId }
+            pairings.append(pairing)
         }
-        func ensureReady(connectionId: UUID) async -> PushPairing? { nil }
-        func unpair(connectionId: UUID) {}
-        func awaitSelfTest(nonce: String, timeout: Duration) async -> Bool { false }
-        func forgetSelfTest(nonce: String) {}
+        return true
+    }
+
+    func remove(connectionId: String) -> Bool {
+        lock.withLock { pairings.removeAll { $0.connectionId == connectionId } }
+        return true
     }
 }
 #endif

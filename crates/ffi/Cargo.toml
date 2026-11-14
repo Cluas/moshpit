@@ -1,0 +1,64 @@
+[package]
+name = "moshpit-ffi"
+description = "The one Rust static library the iOS app links: the core crates it uses, re-exported, and their C ABI (include/moshpit_ffi.h, imported into Swift as the MoshpitFFI module)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+# What the app links (scripts/rust/build-ios.sh builds it from Xcode's "Build
+# Rust" phase). Nothing else: with an rlib alongside, rustc skips the `app`
+# profile's link-time optimisation and the archive carries every crate's
+# objects unmerged (20.6 MB against 6.3 MB). The tests are unit tests.
+crate-type = ["staticlib"]
+
+[dependencies]
+moshpit-tmux = { path = "../tmux" }
+# The byte channel (G1), in the library already so the app keeps linking one
+# Rust library when the terminal starts reading it; its C ABI is
+# crates/stream/include/moshpit_stream.h.
+moshpit-stream = { path = "../stream" }
+# The shared terminal core (our wezterm-term fork behind Moshpit's API), with
+# its C ABI (crates/term/include/moshpit_term.h): what the app's new terminal
+# view draws and encodes keys with, behind its MOSHPIT_TERM_CORE switch.
+moshpit-term = { path = "../term" }
+# The NSH screens and, on iOS, their host's C ABI (ui/include/moshpit_ui.h),
+# with NSH itself: in this library, not one of their own, as the design
+# requires of every Rust crate the app links.
+moshpit-ui = { path = "../../ui" }
+# The screens' host models, shared with Android (src/app.rs exports them
+# through UniFFI): the hosts keep only the platform's pieces.
+moshpit-app = { path = "../app" }
+# What the app persists and the rules for it (src/store.rs exports them
+# through UniFFI); moshpit-seal for the Date and UUID it crosses with.
+moshpit-store = { path = "../store" }
+moshpit-seal = { path = "../seal" }
+# What the app makes of its coding agents (src/agents.rs, W15c): the island,
+# the widget and the cards, decided in Rust.
+moshpit-agents = { path = "../agents" }
+# The session layer the app runs a terminal on behind its switch
+# (src/session.rs, through UniFFI), on the core's one runtime; ssh and
+# install for the types its API crosses with.
+moshpit-session = { path = "../session" }
+moshpit-runtime = { path = "../runtime" }
+moshpit-ssh = { path = "../ssh" }
+moshpit-install = { path = "../install" }
+# Host care (src/hostcare.rs, through UniFFI): the machine and its driver.
+moshpit-hostcare = { path = "../hostcare" }
+serde_json = "1"
+# herdr's intents, outcomes and notices, as the session layer's herdr API
+# crosses with them.
+moshpit-herdr = { path = "../herdr" }
+tokio = { version = "1", features = ["rt", "sync", "macros"] }
+# UniFFI's async foreign trait methods (the keychain's credentials, the
+# Secure Enclave's signatures) are declared through it.
+async-trait = "0.1"
+# The core's non-hot API for Swift and Kotlin: proc-macro scaffolding only
+# (no cargo_metadata in the app's library).
+uniffi = { version = "0.31", default-features = false }
+
+[dev-dependencies]
+# examples/uniffi-bindgen.rs, which writes the Swift and Kotlin bindings.
+uniffi = { version = "0.31", default-features = false, features = ["cli"] }
+

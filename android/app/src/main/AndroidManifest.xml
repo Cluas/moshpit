@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Moshpit for Android. The Gradle build (android/app/build.gradle) and the scripted one (android/build.sh) both use
+     this manifest; versions and SDK levels come from them. The package is the build's namespace (AGP 8 takes no
+     package attribute here), and the native library stays stored in the APK (extractNativeLibs false): Gradle's
+     useLegacyPackaging false says so; android/build.sh adds both to its copy for aapt2. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <application android:label="@string/app_name"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher"
+        android:allowBackup="false"
+        android:enableOnBackInvokedCallback="true"
+        android:supportsRtl="true"
+        android:theme="@style/Moshpit">
+        <!-- NSH's file provider (SystemUi.openPath), as nsh package declares it. -->
+        <provider android:name="com.longbridge.nsh.FilesProvider"
+            android:authorities="com.cluas.moshpit.files"
+            android:exported="false"
+            android:grantUriPermissions="true" />
+        <activity android:name="com.cluas.moshpit.MainActivity"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:windowSoftInputMode="adjustResize"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|uiMode|density|fontScale|locale|layoutDirection">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <!-- Text shared from another app: into the share queue (iOS: the share extension). -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+            <!-- A notification's tap: moshpit://connection/<id>?pane=<pane>. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="moshpit" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

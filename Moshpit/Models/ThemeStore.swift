@@ -1,4 +1,5 @@
 import Foundation
+import MoshpitKit
 import Observation
 
 /// Owns the terminal themes available to the app: the built-in set plus any the
@@ -14,27 +15,87 @@ final class ThemeStore {
     private(set) var customThemes: [TerminalTheme] = []
 
     @ObservationIgnored private let defaults: UserDefaults
-    @ObservationIgnored private let storageKey = "moshpit.settings.customThemes"
     @ObservationIgnored private let readiness: DefaultsReadiness
+    /// Read one theme at a time — see ``StoredList``.
+    private static let list = StoredList<TerminalTheme>(key: "moshpit.settings.customThemes")
     /// True once `customThemes` came from defaults known to be readable
-    /// (``DefaultsReadiness``); until then nothing here is written back.
+    /// (``DefaultsReadiness``) and anything the read skipped is safe; until
+    /// then nothing here is written back.
     @ObservationIgnored private(set) var isAuthoritative = false
+    /// Stored themes this build could not decode, written back as stored.
+    @ObservationIgnored private var carried: [Any] = []
+
+    /// What reads and writes the themes when it isn't the code below: the
+    /// Rust store, behind the `MOSHPIT_RUST_STORE` switch
+    /// (``ThemeStoreBacking``). nil: the code below, as ever.
+    @ObservationIgnored private let backing: ThemeStoreBacking?
 
     init(defaults: UserDefaults = .standard, readiness: DefaultsReadiness = .always) {
         self.defaults = defaults
         self.readiness = readiness
+        backing = nil
         load()
+    }
+
+    /// A store whose every read and write is `backing`'s; this object keeps
+    /// what the views observe. `defaults` and `readiness` go unused.
+    init(backing: ThemeStoreBacking) {
+        defaults = .standard
+        readiness = .always
+        self.backing = backing
+        adopt(backing)
+    }
+
+    /// Take what `backing` holds now, changing only what changed.
+    private func adopt(_ backing: ThemeStoreBacking) {
+        let held = backing.customThemes
+        if held != customThemes { customThemes = held }
+        isAuthoritative = backing.isAuthoritative
     }
 
     /// Read again if the last read could not be trusted; a no-op otherwise.
     func reloadIfNeeded() {
+        if let backing {
+            backing.reloadIfNeeded()
+            return adopt(backing)
+        }
         if !isAuthoritative { load() }
     }
 
     private func load() {
-        customThemes = Self.load(from: defaults, key: storageKey)
-        isAuthoritative = readiness.isReadable(defaults)
-        if isAuthoritative { readiness.markReadable(defaults) }
+        let readable = readiness.isReadable(defaults)
+        let contents = Self.list.read(from: defaults)
+        // Decoded themes are custom by construction (`isBuiltIn` is not
+        // encoded), but be explicit — a persisted `true` would make the theme
+        // uneditable and undeletable with no way back.
+        customThemes = contents.elements.map { theme in
+            var t = theme
+            t.isBuiltIn = false
+            return t
+        }
+        carried = contents.carried
+        isAuthoritative = readable && Self.list.secure(contents, in: defaults)
+        if readable { readiness.markReadable(defaults) }
+        // A stored theme without an id is given one as it is decoded, a
+        // fresh one on every read: the id it was selected by named nothing
+        // at the next launch (B160). The one given now is written once the
+        // read can be trusted, so it is the theme's id from then on.
+        if isAuthoritative, Self.storedWithoutID(contents.stored) {
+            Log.store.notice("\(Self.list.key, privacy: .public): a theme stored without an id; its id written")
+            persist()
+        }
+    }
+
+    /// Whether the stored list holds a theme this build reads that has no id
+    /// (missing or null) — one `TerminalTheme(from:)` mints an id for.
+    private static func storedWithoutID(_ stored: Any?) -> Bool {
+        guard let data = stored as? Data,
+              let entries = (try? StoredJSON.object(with: data)) as? [Any] else { return false }
+        return entries.contains { entry in
+            guard let fields = entry as? [String: Any], fields["id"] == nil || fields["id"] is NSNull,
+                  let single = try? JSONSerialization.data(withJSONObject: [entry]) else { return false }
+            return (try? JSONDecoder().decode([TerminalTheme].self, from: single)) != nil
+        }
     }
 
     // MARK: - Lookup
@@ -60,6 +121,10 @@ final class ThemeStore {
     /// compiled in and would silently resurrect on next launch, so the gallery
     /// routes "edit a built-in" through ``duplicate(_:)`` instead.
     func save(_ theme: TerminalTheme) {
+        if let backing {
+            backing.save(theme)
+            return adopt(backing)
+        }
         guard !theme.isBuiltIn else { return }
         reloadIfNeeded()
         var updated = theme
@@ -73,6 +138,10 @@ final class ThemeStore {
     }
 
     func delete(id: String) {
+        if let backing {
+            backing.delete(id: id)
+            return adopt(backing)
+        }
         reloadIfNeeded()
         customThemes.removeAll { $0.id == id }
         persist()
@@ -83,6 +152,10 @@ final class ThemeStore {
     /// reinstall in the simulator, so without this a UI test's "fresh install"
     /// still sees themes left behind by the previous run.
     func removeAllCustom() {
+        if let backing {
+            backing.removeAllCustom()
+            return adopt(backing)
+        }
         reloadIfNeeded()
         guard !customThemes.isEmpty else { return }
         customThemes.removeAll()
@@ -92,6 +165,7 @@ final class ThemeStore {
     /// An editable copy of any theme, with a fresh id and a "Copy" name. This is
     /// the only way to get from a built-in to something editable.
     func duplicate(_ theme: TerminalTheme) -> TerminalTheme {
+        if let backing { return backing.duplicate(theme) }
         var copy = theme
         copy.id = Self.mintID()
         copy.isBuiltIn = false
@@ -103,6 +177,7 @@ final class ThemeStore {
     /// palette so every slot has a sane value and the preview is legible before
     /// the user has touched anything.
     func makeDraft() -> TerminalTheme {
+        if let backing { return backing.makeDraft() }
         var draft = TerminalTheme.fallback
         draft.id = Self.mintID()
         draft.isBuiltIn = false
@@ -129,6 +204,7 @@ final class ThemeStore {
     /// Pretty-printed JSON for one theme, with keys in a stable order so a
     /// re-export produces a reviewable diff rather than a reshuffle.
     func exportJSON(_ theme: TerminalTheme) throws -> String {
+        if let backing { return backing.exportJSON(theme) }
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         return String(decoding: try encoder.encode(theme), as: UTF8.self)
@@ -143,6 +219,10 @@ final class ThemeStore {
     /// import gets a fresh id.
     @discardableResult
     func importThemes(json: String) throws -> [TerminalTheme] {
+        if let backing {
+            defer { adopt(backing) }
+            return try backing.importThemes(json: json)
+        }
         guard let data = json.data(using: .utf8), !json.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw ImportError.notJSON
         }
@@ -189,22 +269,26 @@ final class ThemeStore {
 
     private func persist() {
         guard isAuthoritative else { return }
-        let encoder = JSONEncoder()
-        guard let data = try? encoder.encode(customThemes) else { return }
-        defaults.set(data, forKey: storageKey)
+        guard let data = Self.list.encode(customThemes, carrying: carried) else { return }
+        defaults.set(data, forKey: Self.list.key)
     }
+}
 
-    private static func load(from defaults: UserDefaults, key: String) -> [TerminalTheme] {
-        guard let data = defaults.data(forKey: key),
-              let decoded = try? JSONDecoder().decode([TerminalTheme].self, from: data)
-        else { return [] }
-        // Decoded themes are custom by construction (`isBuiltIn` is not encoded),
-        // but be explicit — a persisted `true` would make the theme uneditable
-        // and undeletable with no way back.
-        return decoded.map { theme in
-            var t = theme
-            t.isBuiltIn = false
-            return t
-        }
-    }
+/// What a ``ThemeStore`` reads and writes through when it isn't its own
+/// Swift code: the Rust store (crates/store, through crates/ffi), behind the
+/// `MOSHPIT_RUST_STORE` switch (`RustStoreSwitch`). Each member keeps the
+/// contract of the store's member of the same name — built-ins refused,
+/// names made unique, ids minted, an import's errors as
+/// ``ThemeStore/ImportError``.
+protocol ThemeStoreBacking: AnyObject {
+    var customThemes: [TerminalTheme] { get }
+    var isAuthoritative: Bool { get }
+    func reloadIfNeeded()
+    func save(_ theme: TerminalTheme)
+    func delete(id: String)
+    func removeAllCustom()
+    func duplicate(_ theme: TerminalTheme) -> TerminalTheme
+    func makeDraft() -> TerminalTheme
+    func exportJSON(_ theme: TerminalTheme) -> String
+    func importThemes(json: String) throws -> [TerminalTheme]
 }

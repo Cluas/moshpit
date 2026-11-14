@@ -1,0 +1,105 @@
+{
+  "about": "Where the Rust port (crates/seal) deliberately differs from the app's Swift push code (Packages/MoshpitKit/Sources/MoshpitKit/Push/ as at 4449f119, the sources harness/build-swift.sh compiles). Each fix is marked 'Fix (<id>)' in the Rust source and has minimal cases in tests/fixtures/swift/divergences.txt: divergences.swift.txt is what the Swift code prints for them, divergences.rust.txt what Rust prints (tests/swift_equivalence.rs and harness/equivalence.py hold both). Every other input of the 40,000 equivalence.py generates prints the same on both sides. None of the fixes is reachable from the three senders (the host's openssl pipeline, Go's sealbox, Swift's PushSealedBox): all of them write lower-case hex, canonical base64 and PKCS#7 padding. 'notes' are differences that remain, with their reason.",
+  "fixes": [
+    {
+      "id": "hex-sign",
+      "swift": "PushSealedBox.swift:225-236 (Data(moshpitHex:) parses each pair with UInt8(_:radix: 16)), used at :101 (IV), :132 (pinned IV) and :170 (secret)",
+      "symptom": "Hex pairs may carry a sign: '+f' decodes as 0x0f and '-0' as 0x00. A 64-character secret of '+f' pairs passes the check and derives keys over that ASCII; an IV of '+0+1…' decodes to sixteen bytes and, MAC'd as written, opens.",
+      "trigger": "A pairing secret or an envelope IV holding '+' or '-'.",
+      "minimal_input": "derive '+f' x 32; open with iv '+0+1+2+3+4+5+6+7+8+9+a+b+c+d+e+f' and a MAC over that string",
+      "swift_before": "derive: ok (keys); open: raw=7b7d",
+      "fix": "Strict hex: ASCII digit pairs of either case only, as Go's hex.DecodeString and the shell's openssl rand -hex have it.",
+      "rust_outcome": "derive: err badSecret; open: malformed",
+      "severity": "none reachable: the app's CSPRNG secrets and every sender's IVs are plain hex"
+    },
+    {
+      "id": "base64-padding",
+      "swift": "PushSealedBox.swift:102,104 (Data(base64Encoded:) on ct and mac)",
+      "symptom": "Foundation on macOS 27 decodes '=' in odd places: 'AAAA=' is three zero bytes, 'AA=Q' is 00 10 (the third character's byte dropped, the fourth's kept), '====' is one zero byte. An envelope whose mac has an extra '=' appended still opens.",
+      "trigger": "A ct or mac field in non-canonical base64.",
+      "minimal_input": "b64 'AAAA=', 'AA=Q', '===='; open with mac + '='",
+      "swift_before": "000000 / 0010 / 00; the envelope opens",
+      "fix": "Canonical padded base64, as Go's StdEncoding and openssl decode it (bits after the last byte still ignored, as both of those do).",
+      "rust_outcome": "refused; the envelope is malformed",
+      "severity": "none: only the error class of a garbage field changes, and the one acceptance is a key holder's own tag re-encoded"
+    },
+    {
+      "id": "padding-lenient",
+      "swift": "PushSealedBox.swift:121 and :190-211 (CCCrypt with kCCOptionPKCS7Padding)",
+      "symptom": "CommonCrypto never refuses bad PKCS#7 padding: it strips as many bytes as the last one says without checking the others, and for a last byte of 0 or above 16 returns the whole block. decryptFailed is unreachable; an authenticated ciphertext with garbage padding hands garbage plaintext on.",
+      "trigger": "An envelope with a valid MAC over a ciphertext that is not PKCS#7-padded.",
+      "minimal_input": "one raw block ending 09 02, or 00, or 11, encrypted without padding and MAC'd",
+      "swift_before": "raw=4141…41 (14 bytes), raw=…4100 (16), raw=…4111 (16); status malformed",
+      "fix": "Strict PKCS#7, as Go's sealbox.Open and openssl enc -d check it.",
+      "rust_outcome": "decryptFailed",
+      "severity": "none reachable: the MAC is checked first, so only a key holder can make one, and no sender does"
+    },
+    {
+      "id": "bom-host-label",
+      "swift": "PushPairing.swift:342 (PushPairingFile reads the file through JSONSerialization) and :384-385 (a save carrying entries writes them back through it)",
+      "symptom": "JSONSerialization drops a leading U+FEFF from every string it parses: a pairing's host label that starts with one (pasted from a file with a byte order mark) loses it when the file is read, and for good at the next save of any pairing.",
+      "trigger": "A pairing whose hostLabel starts with U+FEFF, saved and read back, or stored and carried through a save of another pairing.",
+      "minimal_input": "pfile - u:<a pairing labelled U+FEFF 'box'> R; pfile [that pairing] u:<another pairing> R",
+      "swift_before": "the label reads back as 'box'",
+      "fix": "Fix (B264), pairing_file.rs `as_stored`: the bytes are still checked by JSONSerialization's rules, the tree comes from JSONDecoder's, with strings as stored (the store crate's Fix (bom-strip)). Recorded here as well as in the store harness (`pairing-label-bom`): equivalence.py's generator draws no label that starts with one.",
+      "rust_outcome": "the label keeps its U+FEFF",
+      "severity": "display only: the invisible mark is gone from the Swift build's settings row and notification card; nothing else reads the label"
+    },
+    {
+      "id": "send-token-shape",
+      "swift": "PushRelayClient.mint (takes the answer's sendToken as any string)",
+      "symptom": "The send token is written as it came into the host's push conf, and from there into curl's config at every push. The sender sourced its confs before B357, so a relay answering with shell in the token, or a second line, ran it on every host paired through it; a quote in it could add curl options.",
+      "trigger": "A relay (compromised, or a DEBUG build's override) answering a mint with a sendToken that isn't 64 hex digits.",
+      "minimal_input": "{\"ok\":true,\"sendToken\":\"x;touch /tmp/p\",\"iat\":1756000000}",
+      "swift_before": "accepted: the token is stored and written to the host",
+      "fix": "token::MintResponse::from_json takes only a token shaped as token::mint makes one (64 hex digits); anything else is a malformed answer (B357). The sender reads its confs as text and skips a non-hex token, on hosts paired before.",
+      "rust_outcome": "None (RelayFailure::Malformed): nothing stored, nothing written to a host",
+      "evidence": [
+        "src/token.rs: only_a_token_shaped_as_the_relay_mints_one_is_taken",
+        "crates/hostcare/tests/push.rs: a_send_token_the_relay_couldnt_have_minted_never_reaches_a_host",
+        "tests/host_script.rs: a_conf_is_read_never_run"
+      ],
+      "severity": "high: code execution on every paired host for whoever controls the relay's answers",
+      "cases": "No minimal case in divergences.txt: the harness has no mint kind; the tests above hold it."
+    }
+  ],
+  "notes": [
+    {
+      "id": "decimal-bridge",
+      "what": "`as? Int` / `as? Double` on a number JSONSerialization keeps as an NSDecimalNumber (more than 17 digits): Swift bridges it — truncating for Int (41775049572655816.6 is 41775049572655816), through NSDecimalNumber's own, inexact, doubleValue for Double — and Rust reads it as no Int and no Double.",
+      "where": "PushRemoteNotification.swift:45 (the payload's v), PushStanding.swift:262 (a carried entry's recordedAt)",
+      "why_kept": "Unreachable: the relay always sends v as 1, and recordedAt is written by JSONEncoder, which never writes more than 17 digits. Reproducing NSDecimalNumber's conversions is not worth a decimal library.",
+      "cases": "tests/fixtures/swift/divergences.txt, decimal-bridge"
+    },
+    {
+      "id": "durations",
+      "what": "The duration on a finished card: Swift formats it in Locale.current through Foundation's unit formatter, Rust in one of the app's nine languages from tables measured on macOS 27 (the same nine its sentences come in). A device language outside the nine gets English durations from Rust, its own from Swift.",
+      "why_kept": "The card's sentences already come only in nine languages; a platform passes its locale through copy::Language::from_tag."
+    },
+    {
+      "id": "graphemes",
+      "what": "Character counts (the 72-character detail cut) use unicode-segmentation's Unicode 17 grapheme rules; the Swift 6.4 runtime has Unicode 16. Only characters new in Unicode 17 can be counted differently.",
+      "why_kept": "No difference in 40,000 cases full of combining marks, ZWJ emoji and flags."
+    },
+    {
+      "id": "iso8601-old-dates",
+      "what": "Foundation's ISO 8601 coder counts dates before 1583 in the Julian calendar (0001-01-01 proleptic Gregorian encodes as 0001-01-03); Rust's is proleptic Gregorian throughout.",
+      "why_kept": "Only the diagnostics ring and the install manifest store ISO 8601 dates, and both store 'now'."
+    },
+    {
+      "id": "platform",
+      "what": "Not ported: the App Group paths, NSFileProtectionCompleteUntilFirstUserAuthentication, the backup exclusion of the pairings file, UserDefaults for the two switches, os_log. A platform keeps the files in its own private storage with its own protection.",
+      "why_kept": "Platform concerns (docs/nsh/DESIGN.md 3.2: the core calls no platform API)."
+    },
+    {
+      "id": "key-order",
+      "what": "JSONEncoder writes an object's members in a per-process hash order (two encodes of one value in one process differ); the Rust encoder writes them in code point order. The stores read either.",
+      "why_kept": "Nothing can depend on Swift's order; equivalence.py compares store files as JSON."
+    },
+    {
+      "id": "sorted-keys",
+      "what": "JSONSerialization's .sortedKeys order is CoreFoundation's CFStringCompareWithOptionsAndLocale ([.numeric, .caseInsensitive, .forcedOrdering], system locale), ported step for step in foundation/collation.rs, over ICU's root collation, which is reproduced for ASCII, the characters it ignores, the other spaces and the line breaks, and approximated beyond them: keys holding letters beyond ASCII, CJK or emoji mostly come out in another order, and a comparison that reaches the collator with more than 64 UTF-16 code units left is made in one piece where CoreFoundation makes it piecewise.",
+      "why_kept": "Only agent configs (moshpit-install) are written with sorted keys, and their keys are ASCII in practice; only the order of the members could differ, never their content. Reproducing ICU's collation beyond ASCII needs its tables."
+    }
+  ]
+}

@@ -174,21 +174,6 @@ struct HostCapabilitiesTests {
 
     // MARK: - Cached-probe decoding
 
-    @Test("A cache entry written before hasHerdr existed still decodes")
-    func legacyCacheDecodes() throws {
-        // Synthesized Codable would THROW on the missing key, and a throw here
-        // silently discards the whole cached probe.
-        let legacy = Data("""
-        {"hasTmux":true,"hasMoshServer":true,"os":"Linux","packageManager":"aptGet"}
-        """.utf8)
-        let caps = try JSONDecoder().decode(HostCapabilities.self, from: legacy)
-        #expect(caps.hasTmux)
-        #expect(caps.packageManager == .aptGet)
-        // Absent → assume missing. A stale "present" would boot herdr on a
-        // host without it; a stale "missing" only costs one banner.
-        #expect(!caps.hasHerdr)
-    }
-
     @Test("Capabilities round-trip through the cache encoding")
     func capsRoundTrip() throws {
         let caps = HostCapabilities(

@@ -1,0 +1,126 @@
+# Made by harness/make_key_matrix.py with OpenSSH_10.3p1, LibreSSL 3.3.6 and OpenSSL 3.6.4 25 Aug 2026 (Library: OpenSSL 3.6.4 25 Aug 2026); passphrase: matrix pass
+keygen-ed25519-openssh	-	SHA256:uCR2RbttFKbWVUjWaW2oh2ow0KZ4BIFNRs23M9EKmzA
+keygen-ed25519-openssh-aes128-ctr	matrix pass	SHA256:uCR2RbttFKbWVUjWaW2oh2ow0KZ4BIFNRs23M9EKmzA
+keygen-ed25519-openssh-aes192-ctr	matrix pass	SHA256:uCR2RbttFKbWVUjWaW2oh2ow0KZ4BIFNRs23M9EKmzA
+keygen-ed25519-openssh-aes256-ctr	matrix pass	SHA256:uCR2RbttFKbWVUjWaW2oh2ow0KZ4BIFNRs23M9EKmzA
+keygen-ed25519-openssh-aes128-cbc	matrix pass	SHA256:uCR2RbttFKbWVUjWaW2oh2ow0KZ4BIFNRs23M9EKmzA
+keygen-ed25519-openssh-aes192-cbc	matrix pass	SHA256:uCR2RbttFKbWVUjWaW2oh2ow0KZ4BIFNRs23M9EKmzA
+keygen-ed25519-openssh-aes256-cbc	matrix pass	SHA256:uCR2RbttFKbWVUjWaW2oh2ow0KZ4BIFNRs23M9EKmzA
+keygen-ed25519-openssh-aes128-gcm	matrix pass	SHA256:uCR2RbttFKbWVUjWaW2oh2ow0KZ4BIFNRs23M9EKmzA
+keygen-ed25519-openssh-aes256-gcm	matrix pass	SHA256:uCR2RbttFKbWVUjWaW2oh2ow0KZ4BIFNRs23M9EKmzA
+keygen-ed25519-openssh-chacha20-poly1305	matrix pass	SHA256:uCR2RbttFKbWVUjWaW2oh2ow0KZ4BIFNRs23M9EKmzA
+keygen-ecdsa256-openssh	-	SHA256:KnFKIFsCW21T1F1ZXyhCDmF1g9V0POAWLf1Lvgr4lSA
+keygen-ecdsa256-openssh-aes128-ctr	matrix pass	SHA256:KnFKIFsCW21T1F1ZXyhCDmF1g9V0POAWLf1Lvgr4lSA
+keygen-ecdsa256-openssh-aes192-ctr	matrix pass	SHA256:KnFKIFsCW21T1F1ZXyhCDmF1g9V0POAWLf1Lvgr4lSA
+keygen-ecdsa256-openssh-aes256-ctr	matrix pass	SHA256:KnFKIFsCW21T1F1ZXyhCDmF1g9V0POAWLf1Lvgr4lSA
+keygen-ecdsa256-openssh-aes128-cbc	matrix pass	SHA256:KnFKIFsCW21T1F1ZXyhCDmF1g9V0POAWLf1Lvgr4lSA
+keygen-ecdsa256-openssh-aes192-cbc	matrix pass	SHA256:KnFKIFsCW21T1F1ZXyhCDmF1g9V0POAWLf1Lvgr4lSA
+keygen-ecdsa256-openssh-aes256-cbc	matrix pass	SHA256:KnFKIFsCW21T1F1ZXyhCDmF1g9V0POAWLf1Lvgr4lSA
+keygen-ecdsa256-openssh-aes128-gcm	matrix pass	SHA256:KnFKIFsCW21T1F1ZXyhCDmF1g9V0POAWLf1Lvgr4lSA
+keygen-ecdsa256-openssh-aes256-gcm	matrix pass	SHA256:KnFKIFsCW21T1F1ZXyhCDmF1g9V0POAWLf1Lvgr4lSA
+keygen-ecdsa256-openssh-chacha20-poly1305	matrix pass	SHA256:KnFKIFsCW21T1F1ZXyhCDmF1g9V0POAWLf1Lvgr4lSA
+keygen-ecdsa256-pem	-	SHA256:KnFKIFsCW21T1F1ZXyhCDmF1g9V0POAWLf1Lvgr4lSA
+keygen-ecdsa256-pem-encrypted	matrix pass	SHA256:KnFKIFsCW21T1F1ZXyhCDmF1g9V0POAWLf1Lvgr4lSA
+keygen-ecdsa256-pkcs8	-	SHA256:KnFKIFsCW21T1F1ZXyhCDmF1g9V0POAWLf1Lvgr4lSA
+keygen-ecdsa256-pkcs8-encrypted	matrix pass	SHA256:KnFKIFsCW21T1F1ZXyhCDmF1g9V0POAWLf1Lvgr4lSA
+keygen-ecdsa384-openssh	-	SHA256:92ES9zwSSwUw/uzCuj+p1cmPT8rKSpqFbMaTssARZ10
+keygen-ecdsa384-openssh-aes128-ctr	matrix pass	SHA256:92ES9zwSSwUw/uzCuj+p1cmPT8rKSpqFbMaTssARZ10
+keygen-ecdsa384-openssh-aes192-ctr	matrix pass	SHA256:92ES9zwSSwUw/uzCuj+p1cmPT8rKSpqFbMaTssARZ10
+keygen-ecdsa384-openssh-aes256-ctr	matrix pass	SHA256:92ES9zwSSwUw/uzCuj+p1cmPT8rKSpqFbMaTssARZ10
+keygen-ecdsa384-openssh-aes128-cbc	matrix pass	SHA256:92ES9zwSSwUw/uzCuj+p1cmPT8rKSpqFbMaTssARZ10
+keygen-ecdsa384-openssh-aes192-cbc	matrix pass	SHA256:92ES9zwSSwUw/uzCuj+p1cmPT8rKSpqFbMaTssARZ10
+keygen-ecdsa384-openssh-aes256-cbc	matrix pass	SHA256:92ES9zwSSwUw/uzCuj+p1cmPT8rKSpqFbMaTssARZ10
+keygen-ecdsa384-openssh-aes128-gcm	matrix pass	SHA256:92ES9zwSSwUw/uzCuj+p1cmPT8rKSpqFbMaTssARZ10
+keygen-ecdsa384-openssh-aes256-gcm	matrix pass	SHA256:92ES9zwSSwUw/uzCuj+p1cmPT8rKSpqFbMaTssARZ10
+keygen-ecdsa384-openssh-chacha20-poly1305	matrix pass	SHA256:92ES9zwSSwUw/uzCuj+p1cmPT8rKSpqFbMaTssARZ10
+keygen-ecdsa384-pem	-	SHA256:92ES9zwSSwUw/uzCuj+p1cmPT8rKSpqFbMaTssARZ10
+keygen-ecdsa384-pem-encrypted	matrix pass	SHA256:92ES9zwSSwUw/uzCuj+p1cmPT8rKSpqFbMaTssARZ10
+keygen-ecdsa384-pkcs8	-	SHA256:92ES9zwSSwUw/uzCuj+p1cmPT8rKSpqFbMaTssARZ10
+keygen-ecdsa384-pkcs8-encrypted	matrix pass	SHA256:92ES9zwSSwUw/uzCuj+p1cmPT8rKSpqFbMaTssARZ10
+keygen-ecdsa521-openssh	-	SHA256:AAVeTpUhgFOlaGiKx/abLzCJggX+QIRwk2nEnbZcGB8
+keygen-ecdsa521-openssh-aes128-ctr	matrix pass	SHA256:AAVeTpUhgFOlaGiKx/abLzCJggX+QIRwk2nEnbZcGB8
+keygen-ecdsa521-openssh-aes192-ctr	matrix pass	SHA256:AAVeTpUhgFOlaGiKx/abLzCJggX+QIRwk2nEnbZcGB8
+keygen-ecdsa521-openssh-aes256-ctr	matrix pass	SHA256:AAVeTpUhgFOlaGiKx/abLzCJggX+QIRwk2nEnbZcGB8
+keygen-ecdsa521-openssh-aes128-cbc	matrix pass	SHA256:AAVeTpUhgFOlaGiKx/abLzCJggX+QIRwk2nEnbZcGB8
+keygen-ecdsa521-openssh-aes192-cbc	matrix pass	SHA256:AAVeTpUhgFOlaGiKx/abLzCJggX+QIRwk2nEnbZcGB8
+keygen-ecdsa521-openssh-aes256-cbc	matrix pass	SHA256:AAVeTpUhgFOlaGiKx/abLzCJggX+QIRwk2nEnbZcGB8
+keygen-ecdsa521-openssh-aes128-gcm	matrix pass	SHA256:AAVeTpUhgFOlaGiKx/abLzCJggX+QIRwk2nEnbZcGB8
+keygen-ecdsa521-openssh-aes256-gcm	matrix pass	SHA256:AAVeTpUhgFOlaGiKx/abLzCJggX+QIRwk2nEnbZcGB8
+keygen-ecdsa521-openssh-chacha20-poly1305	matrix pass	SHA256:AAVeTpUhgFOlaGiKx/abLzCJggX+QIRwk2nEnbZcGB8
+keygen-ecdsa521-pem	-	SHA256:AAVeTpUhgFOlaGiKx/abLzCJggX+QIRwk2nEnbZcGB8
+keygen-ecdsa521-pem-encrypted	matrix pass	SHA256:AAVeTpUhgFOlaGiKx/abLzCJggX+QIRwk2nEnbZcGB8
+keygen-ecdsa521-pkcs8	-	SHA256:AAVeTpUhgFOlaGiKx/abLzCJggX+QIRwk2nEnbZcGB8
+keygen-ecdsa521-pkcs8-encrypted	matrix pass	SHA256:AAVeTpUhgFOlaGiKx/abLzCJggX+QIRwk2nEnbZcGB8
+keygen-rsa2048-openssh	-	SHA256:/0oMA7hmnrMEcGfKKGdBmHikVtX37Jnj9u+BT1KUW+4
+keygen-rsa2048-openssh-aes128-ctr	matrix pass	SHA256:/0oMA7hmnrMEcGfKKGdBmHikVtX37Jnj9u+BT1KUW+4
+keygen-rsa2048-openssh-aes192-ctr	matrix pass	SHA256:/0oMA7hmnrMEcGfKKGdBmHikVtX37Jnj9u+BT1KUW+4
+keygen-rsa2048-openssh-aes256-ctr	matrix pass	SHA256:/0oMA7hmnrMEcGfKKGdBmHikVtX37Jnj9u+BT1KUW+4
+keygen-rsa2048-openssh-aes128-cbc	matrix pass	SHA256:/0oMA7hmnrMEcGfKKGdBmHikVtX37Jnj9u+BT1KUW+4
+keygen-rsa2048-openssh-aes192-cbc	matrix pass	SHA256:/0oMA7hmnrMEcGfKKGdBmHikVtX37Jnj9u+BT1KUW+4
+keygen-rsa2048-openssh-aes256-cbc	matrix pass	SHA256:/0oMA7hmnrMEcGfKKGdBmHikVtX37Jnj9u+BT1KUW+4
+keygen-rsa2048-openssh-aes128-gcm	matrix pass	SHA256:/0oMA7hmnrMEcGfKKGdBmHikVtX37Jnj9u+BT1KUW+4
+keygen-rsa2048-openssh-aes256-gcm	matrix pass	SHA256:/0oMA7hmnrMEcGfKKGdBmHikVtX37Jnj9u+BT1KUW+4
+keygen-rsa2048-openssh-chacha20-poly1305	matrix pass	SHA256:/0oMA7hmnrMEcGfKKGdBmHikVtX37Jnj9u+BT1KUW+4
+keygen-rsa2048-pem	-	SHA256:/0oMA7hmnrMEcGfKKGdBmHikVtX37Jnj9u+BT1KUW+4
+keygen-rsa2048-pem-encrypted	matrix pass	SHA256:/0oMA7hmnrMEcGfKKGdBmHikVtX37Jnj9u+BT1KUW+4
+keygen-rsa2048-pkcs8	-	SHA256:/0oMA7hmnrMEcGfKKGdBmHikVtX37Jnj9u+BT1KUW+4
+keygen-rsa2048-pkcs8-encrypted	matrix pass	SHA256:/0oMA7hmnrMEcGfKKGdBmHikVtX37Jnj9u+BT1KUW+4
+openssl-ed25519-pkcs8	-	SHA256:StSGZbpsdFCl4ZUU/EhQ0j2e4PDSH1GOIVF+iQABe6g
+openssl-ed25519-pkcs8-pbes2-aes-128-cbc	matrix pass	SHA256:StSGZbpsdFCl4ZUU/EhQ0j2e4PDSH1GOIVF+iQABe6g
+openssl-ed25519-pkcs8-pbes2-aes-192-cbc	matrix pass	SHA256:StSGZbpsdFCl4ZUU/EhQ0j2e4PDSH1GOIVF+iQABe6g
+openssl-ed25519-pkcs8-pbes2-aes-256-cbc	matrix pass	SHA256:StSGZbpsdFCl4ZUU/EhQ0j2e4PDSH1GOIVF+iQABe6g
+openssl-ed25519-pkcs8-pbes2-des3	matrix pass	SHA256:StSGZbpsdFCl4ZUU/EhQ0j2e4PDSH1GOIVF+iQABe6g
+openssl-ed25519-pkcs8-pbes2-hmacWithSHA1	matrix pass	SHA256:StSGZbpsdFCl4ZUU/EhQ0j2e4PDSH1GOIVF+iQABe6g
+openssl-ed25519-pkcs8-pbes2-hmacWithSHA224	matrix pass	SHA256:StSGZbpsdFCl4ZUU/EhQ0j2e4PDSH1GOIVF+iQABe6g
+openssl-ed25519-pkcs8-pbes2-hmacWithSHA256	matrix pass	SHA256:StSGZbpsdFCl4ZUU/EhQ0j2e4PDSH1GOIVF+iQABe6g
+openssl-ed25519-pkcs8-pbes2-hmacWithSHA384	matrix pass	SHA256:StSGZbpsdFCl4ZUU/EhQ0j2e4PDSH1GOIVF+iQABe6g
+openssl-ed25519-pkcs8-pbes2-hmacWithSHA512	matrix pass	SHA256:StSGZbpsdFCl4ZUU/EhQ0j2e4PDSH1GOIVF+iQABe6g
+openssl-p256-sec1	-	SHA256:ymmErxUAgIrJg8Vbe3LmwEO/vCFHYvSy9MyH0Fx8eWM
+openssl-p256-sec1-no-public	-	SHA256:ymmErxUAgIrJg8Vbe3LmwEO/vCFHYvSy9MyH0Fx8eWM
+openssl-p256-sec1-explicit	-	SHA256:ymmErxUAgIrJg8Vbe3LmwEO/vCFHYvSy9MyH0Fx8eWM
+openssl-p256-pkcs8	-	SHA256:ymmErxUAgIrJg8Vbe3LmwEO/vCFHYvSy9MyH0Fx8eWM
+openssl-p256-pkcs8-explicit	-	SHA256:ymmErxUAgIrJg8Vbe3LmwEO/vCFHYvSy9MyH0Fx8eWM
+openssl-p256-pkcs8-pbes2	matrix pass	SHA256:ymmErxUAgIrJg8Vbe3LmwEO/vCFHYvSy9MyH0Fx8eWM
+openssl-p256-sec1-traditional-aes128	matrix pass	SHA256:ymmErxUAgIrJg8Vbe3LmwEO/vCFHYvSy9MyH0Fx8eWM
+openssl-p256-sec1-traditional-aes192	matrix pass	SHA256:ymmErxUAgIrJg8Vbe3LmwEO/vCFHYvSy9MyH0Fx8eWM
+openssl-p256-sec1-traditional-aes256	matrix pass	SHA256:ymmErxUAgIrJg8Vbe3LmwEO/vCFHYvSy9MyH0Fx8eWM
+openssl-p256-sec1-traditional-des3	matrix pass	SHA256:ymmErxUAgIrJg8Vbe3LmwEO/vCFHYvSy9MyH0Fx8eWM
+openssl-p384-sec1	-	SHA256:CGFdpnrmjD1PXTTyYBsPaWpmS9idqhbszYe9wQLqI6c
+openssl-p384-sec1-no-public	-	SHA256:CGFdpnrmjD1PXTTyYBsPaWpmS9idqhbszYe9wQLqI6c
+openssl-p384-sec1-explicit	-	SHA256:CGFdpnrmjD1PXTTyYBsPaWpmS9idqhbszYe9wQLqI6c
+openssl-p384-pkcs8	-	SHA256:CGFdpnrmjD1PXTTyYBsPaWpmS9idqhbszYe9wQLqI6c
+openssl-p384-pkcs8-explicit	-	SHA256:CGFdpnrmjD1PXTTyYBsPaWpmS9idqhbszYe9wQLqI6c
+openssl-p384-pkcs8-pbes2	matrix pass	SHA256:CGFdpnrmjD1PXTTyYBsPaWpmS9idqhbszYe9wQLqI6c
+openssl-p384-sec1-traditional-aes128	matrix pass	SHA256:CGFdpnrmjD1PXTTyYBsPaWpmS9idqhbszYe9wQLqI6c
+openssl-p384-sec1-traditional-aes192	matrix pass	SHA256:CGFdpnrmjD1PXTTyYBsPaWpmS9idqhbszYe9wQLqI6c
+openssl-p384-sec1-traditional-aes256	matrix pass	SHA256:CGFdpnrmjD1PXTTyYBsPaWpmS9idqhbszYe9wQLqI6c
+openssl-p384-sec1-traditional-des3	matrix pass	SHA256:CGFdpnrmjD1PXTTyYBsPaWpmS9idqhbszYe9wQLqI6c
+openssl-p521-sec1	-	SHA256:XB3W3O6VCX4ZHSIHwB5VntYHEIqw6N6Ts1Q1Va5yTbs
+openssl-p521-sec1-no-public	-	SHA256:XB3W3O6VCX4ZHSIHwB5VntYHEIqw6N6Ts1Q1Va5yTbs
+openssl-p521-sec1-explicit	-	SHA256:XB3W3O6VCX4ZHSIHwB5VntYHEIqw6N6Ts1Q1Va5yTbs
+openssl-p521-pkcs8	-	SHA256:XB3W3O6VCX4ZHSIHwB5VntYHEIqw6N6Ts1Q1Va5yTbs
+openssl-p521-pkcs8-explicit	-	SHA256:XB3W3O6VCX4ZHSIHwB5VntYHEIqw6N6Ts1Q1Va5yTbs
+openssl-p521-pkcs8-pbes2	matrix pass	SHA256:XB3W3O6VCX4ZHSIHwB5VntYHEIqw6N6Ts1Q1Va5yTbs
+openssl-p521-sec1-traditional-aes128	matrix pass	SHA256:XB3W3O6VCX4ZHSIHwB5VntYHEIqw6N6Ts1Q1Va5yTbs
+openssl-p521-sec1-traditional-aes192	matrix pass	SHA256:XB3W3O6VCX4ZHSIHwB5VntYHEIqw6N6Ts1Q1Va5yTbs
+openssl-p521-sec1-traditional-aes256	matrix pass	SHA256:XB3W3O6VCX4ZHSIHwB5VntYHEIqw6N6Ts1Q1Va5yTbs
+openssl-p521-sec1-traditional-des3	matrix pass	SHA256:XB3W3O6VCX4ZHSIHwB5VntYHEIqw6N6Ts1Q1Va5yTbs
+openssl-rsa2048-pkcs8	-	SHA256:VEsSdH11NmrnXAzIsYzZkS1Zwxxd4y9bNnsfNzBnPDc
+openssl-rsa2048-pkcs1	-	SHA256:VEsSdH11NmrnXAzIsYzZkS1Zwxxd4y9bNnsfNzBnPDc
+openssl-rsa2048-pkcs1-traditional-aes128	matrix pass	SHA256:VEsSdH11NmrnXAzIsYzZkS1Zwxxd4y9bNnsfNzBnPDc
+openssl-rsa2048-pkcs1-traditional-aes192	matrix pass	SHA256:VEsSdH11NmrnXAzIsYzZkS1Zwxxd4y9bNnsfNzBnPDc
+openssl-rsa2048-pkcs1-traditional-aes256	matrix pass	SHA256:VEsSdH11NmrnXAzIsYzZkS1Zwxxd4y9bNnsfNzBnPDc
+openssl-rsa2048-pkcs1-traditional-des3	matrix pass	SHA256:VEsSdH11NmrnXAzIsYzZkS1Zwxxd4y9bNnsfNzBnPDc
+openssl-rsa2048-pkcs8-pbes2	matrix pass	SHA256:VEsSdH11NmrnXAzIsYzZkS1Zwxxd4y9bNnsfNzBnPDc
+openssl-rsa2048-pkcs8-pkcs12-3des	matrix pass	error UnsupportedEncryption PKCS #12 PBE
+openssl-rsa2048-pkcs8-scrypt	matrix pass	error UnsupportedEncryption 1.3.6.1.4.1.11591.4.11
+openssl-rsa2048-3primes-pkcs1	-	error Unsupported multi-prime RSA
+openssl-rsa2048-3primes-pkcs8	-	error Unsupported multi-prime RSA
+openssl-secp256k1-sec1	-	error Unsupported ECDSA secp256k1
+openssl-secp256k1-pkcs8	-	error Unsupported ECDSA secp256k1
+openssl-secp256k1-sec1-explicit	-	error Unsupported ECDSA (custom curve)
+openssl-brainpool256-sec1	-	error Unsupported ECDSA 1.3.36.3.3.2.8.1.1.7
+openssl-ed448-pkcs8	-	error Unsupported Ed448
+openssl-x25519-pkcs8	-	error Unsupported 1.3.101.110
+openssl-dsa-pkcs8	-	error Unsupported DSA
+openssl-dsa-traditional	-	error Unsupported DSA

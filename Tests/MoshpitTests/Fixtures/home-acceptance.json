@@ -1,0 +1,517 @@
+{
+  "connections": [
+    {
+      "connectedAt": -14000.0,
+      "control": {
+        "attached": true,
+        "hooks": [
+          {
+            "agent": "claude",
+            "pane": "w1:p1",
+            "since": 2000.0,
+            "state": "working"
+          },
+          {
+            "agent": "claude",
+            "pane": "w2:p1",
+            "since": 2500.0,
+            "state": "working"
+          },
+          {
+            "agent": "claude",
+            "pane": "w3:p1",
+            "since": 1000.0,
+            "state": "attention"
+          },
+          {
+            "agent": "claude",
+            "pane": "w4:p1",
+            "state": "idle"
+          },
+          {
+            "agent": "claude",
+            "pane": "w5:p1",
+            "since": 3000.0,
+            "state": "done"
+          },
+          {
+            "agent": "claude",
+            "pane": "w6:p1",
+            "state": "idle"
+          },
+          {
+            "agent": "claude",
+            "pane": "w7:p1",
+            "state": "idle"
+          },
+          {
+            "agent": "claude",
+            "pane": "w8:p1",
+            "state": "idle"
+          },
+          {
+            "agent": "claude",
+            "pane": "w9:p1",
+            "state": "idle"
+          },
+          {
+            "agent": "claude",
+            "pane": "w10:p1",
+            "state": "idle"
+          },
+          {
+            "agent": "claude",
+            "pane": "w11:p1",
+            "state": "idle"
+          },
+          {
+            "agent": "claude",
+            "pane": "w12:p1",
+            "state": "idle"
+          },
+          {
+            "agent": "codex",
+            "pane": "w1:p2",
+            "state": "idle"
+          }
+        ],
+        "mux": "herdr",
+        "panes": [
+          {
+            "command": "2.1.322",
+            "id": "w1:p1",
+            "index": 0,
+            "path": "/home/dev/src/api",
+            "window": "w1:t1"
+          },
+          {
+            "command": "2.1.322",
+            "id": "w2:p1",
+            "index": 0,
+            "path": "/home/dev/src/web",
+            "window": "w2:t1"
+          },
+          {
+            "command": "2.1.322",
+            "id": "w3:p1",
+            "index": 0,
+            "path": "/home/dev/src/trainer",
+            "window": "w3:t1"
+          },
+          {
+            "command": "2.1.322",
+            "id": "w4:p1",
+            "index": 0,
+            "path": "/home/dev/src/proj-4",
+            "window": "w4:t1"
+          },
+          {
+            "command": "2.1.322",
+            "id": "w5:p1",
+            "index": 0,
+            "path": "/home/dev/src/docs",
+            "window": "w5:t1"
+          },
+          {
+            "command": "2.1.322",
+            "id": "w6:p1",
+            "index": 0,
+            "path": "/home/dev/src/infra",
+            "window": "w6:t1"
+          },
+          {
+            "command": "2.1.322",
+            "id": "w7:p1",
+            "index": 0,
+            "path": "/home/dev/src/proj-7",
+            "window": "w7:t1"
+          },
+          {
+            "command": "2.1.322",
+            "id": "w8:p1",
+            "index": 0,
+            "path": "/home/dev/src/ml",
+            "window": "w8:t1"
+          },
+          {
+            "command": "2.1.322",
+            "id": "w9:p1",
+            "index": 0,
+            "path": "/home/dev/src/site",
+            "window": "w9:t1"
+          },
+          {
+            "command": "2.1.322",
+            "id": "w10:p1",
+            "index": 0,
+            "path": "/home/dev/src/bot",
+            "window": "w10:t1"
+          },
+          {
+            "command": "2.1.322",
+            "id": "w11:p1",
+            "index": 0,
+            "path": "/home/dev/src/cli",
+            "window": "w11:t1"
+          },
+          {
+            "command": "2.1.322",
+            "id": "w12:p1",
+            "index": 0,
+            "path": "/home/dev/src/proj-12",
+            "window": "w12:t1"
+          },
+          {
+            "command": "codex",
+            "id": "w1:p2",
+            "index": 1,
+            "path": "/home/dev/src/api",
+            "window": "w1:t1"
+          }
+        ],
+        "refreshing": false,
+        "sessions": [
+          {
+            "id": "w1",
+            "name": "api"
+          },
+          {
+            "id": "w2",
+            "name": "web"
+          },
+          {
+            "id": "w3",
+            "name": "trainer"
+          },
+          {
+            "id": "w4",
+            "name": "~"
+          },
+          {
+            "id": "w5",
+            "name": "docs"
+          },
+          {
+            "id": "w6",
+            "name": "infra"
+          },
+          {
+            "id": "w7",
+            "name": "~"
+          },
+          {
+            "id": "w8",
+            "name": "ml"
+          },
+          {
+            "id": "w9",
+            "name": "site"
+          },
+          {
+            "id": "w10",
+            "name": "bot"
+          },
+          {
+            "id": "w11",
+            "name": "cli"
+          },
+          {
+            "id": "w12",
+            "name": "~"
+          }
+        ],
+        "windows": [
+          {
+            "id": "w1:t1",
+            "index": 0,
+            "name": "Tab 1",
+            "paneCount": 1,
+            "session": "w1"
+          },
+          {
+            "id": "w2:t1",
+            "index": 0,
+            "name": "Tab 1",
+            "paneCount": 1,
+            "session": "w2"
+          },
+          {
+            "id": "w3:t1",
+            "index": 0,
+            "name": "Tab 1",
+            "paneCount": 1,
+            "session": "w3"
+          },
+          {
+            "id": "w4:t1",
+            "index": 0,
+            "name": "Tab 1",
+            "paneCount": 1,
+            "session": "w4"
+          },
+          {
+            "id": "w5:t1",
+            "index": 0,
+            "name": "Tab 1",
+            "paneCount": 1,
+            "session": "w5"
+          },
+          {
+            "id": "w6:t1",
+            "index": 0,
+            "name": "Tab 1",
+            "paneCount": 1,
+            "session": "w6"
+          },
+          {
+            "id": "w7:t1",
+            "index": 0,
+            "name": "Tab 1",
+            "paneCount": 1,
+            "session": "w7"
+          },
+          {
+            "id": "w8:t1",
+            "index": 0,
+            "name": "Tab 1",
+            "paneCount": 1,
+            "session": "w8"
+          },
+          {
+            "id": "w9:t1",
+            "index": 0,
+            "name": "Tab 1",
+            "paneCount": 1,
+            "session": "w9"
+          },
+          {
+            "id": "w10:t1",
+            "index": 0,
+            "name": "Tab 1",
+            "paneCount": 1,
+            "session": "w10"
+          },
+          {
+            "id": "w11:t1",
+            "index": 0,
+            "name": "Tab 1",
+            "paneCount": 1,
+            "session": "w11"
+          },
+          {
+            "id": "w12:t1",
+            "index": 0,
+            "name": "Tab 1",
+            "paneCount": 1,
+            "session": "w12"
+          }
+        ],
+        "worktrees": []
+      },
+      "degraded": false,
+      "disconnecting": false,
+      "host": "gpu-01.example.com",
+      "id": "c-gpu",
+      "initial": "G",
+      "link": "live",
+      "mosh": false,
+      "name": "gpu-01",
+      "roaming": false,
+      "transport": "live",
+      "udpPort": 0,
+      "user": "dev"
+    },
+    {
+      "connectedAt": -6800.0,
+      "control": {
+        "attached": true,
+        "hooks": [
+          {
+            "pane": "%1",
+            "since": 4000.0,
+            "state": "working"
+          },
+          {
+            "agent": "claude",
+            "pane": "%2",
+            "state": "idle"
+          },
+          {
+            "pane": "%3",
+            "since": 4500.0,
+            "state": "done"
+          }
+        ],
+        "mux": "tmux",
+        "panes": [
+          {
+            "command": "2.1.322",
+            "id": "%1",
+            "index": 0,
+            "path": "/Users/me/src/trainer",
+            "window": "@1"
+          },
+          {
+            "command": "claude",
+            "id": "%2",
+            "index": 0,
+            "path": "/Users/me/src/api",
+            "window": "@2"
+          },
+          {
+            "command": "aider",
+            "id": "%3",
+            "index": 0,
+            "path": "/Users/me/src/cli",
+            "window": "@3"
+          },
+          {
+            "command": "zsh",
+            "id": "%4",
+            "index": 0,
+            "path": "/Users/me",
+            "window": "@4"
+          },
+          {
+            "command": "nvim",
+            "id": "%5",
+            "index": 0,
+            "path": "/Users/me/src/api",
+            "window": "@5"
+          },
+          {
+            "command": "tail",
+            "id": "%6",
+            "index": 0,
+            "path": "/var/log",
+            "window": "@6"
+          },
+          {
+            "command": "htop",
+            "id": "%7",
+            "index": 0,
+            "path": "/Users/me",
+            "window": "@7"
+          },
+          {
+            "command": "bash",
+            "id": "%8",
+            "index": 0,
+            "path": "/tmp",
+            "window": "@8"
+          }
+        ],
+        "refreshing": false,
+        "sessions": [
+          {
+            "id": "$0",
+            "name": "work"
+          }
+        ],
+        "windows": [
+          {
+            "id": "@1",
+            "index": 1,
+            "name": "2.1.322",
+            "paneCount": 1,
+            "session": "$0"
+          },
+          {
+            "id": "@2",
+            "index": 2,
+            "name": "frontend",
+            "paneCount": 1,
+            "session": "$0"
+          },
+          {
+            "id": "@3",
+            "index": 3,
+            "name": "aider",
+            "paneCount": 1,
+            "session": "$0"
+          },
+          {
+            "id": "@4",
+            "index": 4,
+            "name": "zsh",
+            "paneCount": 1,
+            "session": "$0"
+          },
+          {
+            "id": "@5",
+            "index": 5,
+            "name": "nvim",
+            "paneCount": 1,
+            "session": "$0"
+          },
+          {
+            "id": "@6",
+            "index": 6,
+            "name": "logs",
+            "paneCount": 1,
+            "session": "$0"
+          },
+          {
+            "id": "@7",
+            "index": 7,
+            "name": "htop",
+            "paneCount": 1,
+            "session": "$0"
+          },
+          {
+            "id": "@8",
+            "index": 8,
+            "name": "bash",
+            "paneCount": 1,
+            "session": "$0"
+          }
+        ],
+        "worktrees": []
+      },
+      "degraded": false,
+      "disconnecting": false,
+      "host": "build.example.com",
+      "id": "c-box",
+      "initial": "B",
+      "link": "live",
+      "mosh": false,
+      "name": "build-box",
+      "roaming": false,
+      "transport": "live",
+      "udpPort": 0,
+      "user": "me"
+    },
+    {
+      "degraded": false,
+      "disconnecting": false,
+      "host": "edge.example.com",
+      "id": "c-edge",
+      "initial": "E",
+      "link": "dead",
+      "lostAt": 2500.0,
+      "mosh": false,
+      "name": "edge",
+      "roaming": false,
+      "transport": "live",
+      "udpPort": 0,
+      "user": "root"
+    },
+    {
+      "degraded": false,
+      "disconnecting": false,
+      "host": "lab.example.com",
+      "id": "c-lab",
+      "initial": "L",
+      "link": "saved",
+      "mosh": false,
+      "name": "lab",
+      "roaming": false,
+      "transport": "live",
+      "udpPort": 0,
+      "user": "pi"
+    }
+  ],
+  "op": "home",
+  "sidebar": false,
+  "version": "v1.0.9 (1)"
+}

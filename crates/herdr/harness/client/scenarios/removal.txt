@@ -1,0 +1,6 @@
+# A dirty checkout needs force; forcing removes it.
+host dirty w7
+at 0 start
+at 300 remove w7 0
+at 2000 remove w7 1
+end 5000

@@ -41,9 +41,19 @@ private func makeAttachedController() async -> (TmuxSessionController, MockTmuxT
 
 // MARK: - Suite
 
-@Suite("TmuxSessionController state machine", .serialized)
+@Suite("TmuxSessionController state machine", .serialized, .tmuxParserUnderTest)
 @MainActor
 struct TmuxSessionControllerTests {
+
+    /// Ceiling for a wait on an event that does come, just late: the full
+    /// suite runs in parallel on a loaded device, where a step that takes a
+    /// third of a second alone has been seen to take several. A wait this
+    /// long only costs time when the test is failing anyway.
+    private static let loadedDeviceTimeout: TimeInterval = 15
+
+    /// The reply an unowned window gives the size-lease probe — and, harmless
+    /// elsewhere, what the settle helpers answer every other command with.
+    private static let unownedReply = "%begin 900 900 1\n0 0\n%end 900 900 1\n\n"
 
     // ─────────────────────────────────────────────────────────────
     // attach() / initial discovery
@@ -90,10 +100,10 @@ struct TmuxSessionControllerTests {
         _ = await waitUntil { await transport.recordedCommands().count >= 1 }
 
         transport.pushText("""
-        %begin 1 1 0
+        %begin 1 1 1
         $0 1 main
         $1 0 alt
-        %end 1 1 0
+        %end 1 1 1
 
         """)
 
@@ -111,13 +121,13 @@ struct TmuxSessionControllerTests {
 
         // First reply consumes the list-sessions callback (empty).
         transport.pushText("""
-        %begin 1 1 0
+        %begin 1 1 1
         $0 1 main
-        %end 1 1 0
-        %begin 2 2 0
+        %end 1 1 1
+        %begin 2 2 1
         $0 @0 0 81x24,0,0,0 1 1 main
         $0 @1 1 81x24,0,0,1 0 1 logs
-        %end 2 2 0
+        %end 2 2 1
 
         """)
 
@@ -134,16 +144,16 @@ struct TmuxSessionControllerTests {
         _ = await waitUntil { await transport.recordedCommands().count >= 3 }
 
         transport.pushText("""
-        %begin 1 1 0
+        %begin 1 1 1
         $0 1 main
-        %end 1 1 0
-        %begin 2 2 0
+        %end 1 1 1
+        %begin 2 2 1
         $0 @0 0 81x24,0,0,0 1 2 main
-        %end 2 2 0
-        %begin 3 3 0
+        %end 2 2 1
+        %begin 3 3 1
         %0 @0 0 80 24 1 0 0 bash
         %1 @0 1 80 24 0 0 0 vim
-        %end 3 3 0
+        %end 3 3 1
 
         """)
 
@@ -166,15 +176,15 @@ struct TmuxSessionControllerTests {
         // Drain the 3 discovery callbacks (list-sessions / -windows / -panes) so
         // activeWindowId resolves to @0 and the FIFO response queue is empty.
         transport.pushText("""
-        %begin 1 1 0
+        %begin 1 1 1
         $0 1 main
-        %end 1 1 0
-        %begin 2 2 0
+        %end 1 1 1
+        %begin 2 2 1
         $0 @0 0 81x24,0,0,0 1 1 main
-        %end 2 2 0
-        %begin 3 3 0
+        %end 2 2 1
+        %begin 3 3 1
         %0 @0 0 80 24 1 0 0 bash
-        %end 3 3 0
+        %end 3 3 1
 
         """)
         #expect(await waitUntil { controller.snapshot.activeWindowId == "@0" })
@@ -253,7 +263,7 @@ struct TmuxSessionControllerTests {
             let cmds = await transport.recordedCommands()
             while answered < cmds.count {
                 transport.pushText(reply?(cmds[answered], answered)
-                                   ?? "%begin 900 900 0\n0 0\n%end 900 900 0\n\n")
+                                   ?? "%begin 900 900 1\n0 0\n%end 900 900 1\n\n")
                 answered += 1
             }
             try? await Task.sleep(for: .milliseconds(20))
@@ -277,8 +287,8 @@ struct TmuxSessionControllerTests {
 
     private func block(_ num: Int, _ body: String) -> String {
         body.isEmpty
-            ? "%begin \(num) \(num) 0\n%end \(num) \(num) 0\n\n"
-            : "%begin \(num) \(num) 0\n\(body)\n%end \(num) \(num) 0\n\n"
+            ? "%begin \(num) \(num) 1\n%end \(num) \(num) 1\n\n"
+            : "%begin \(num) \(num) 1\n\(body)\n%end \(num) \(num) 1\n\n"
     }
 
     /// Discovery replies that resolve one session/window/pane (@0/%0 active).
@@ -286,15 +296,15 @@ struct TmuxSessionControllerTests {
                                         alternate: Bool = false,
                                         inCopyMode: Bool = false) {
         transport.pushText("""
-        %begin 1 1 0
+        %begin 1 1 1
         $0 1 main
-        %end 1 1 0
-        %begin 2 2 0
+        %end 1 1 1
+        %begin 2 2 1
         $0 @0 0 81x24,0,0,0 1 1 main
-        %end 2 2 0
-        %begin 3 3 0
+        %end 2 2 1
+        %begin 3 3 1
         %0 @0 0 80 24 1 \(alternate ? 1 : 0) \(inCopyMode ? 1 : 0) bash
-        %end 3 3 0
+        %end 3 3 1
 
         """)
     }
@@ -378,17 +388,17 @@ struct TmuxSessionControllerTests {
         // is recorded), the window pin (no callback, but it still takes a reply
         // slot), then the dump the first probe's reply enqueued.
         transport.pushText("""
-        %begin 4 4 0
+        %begin 4 4 1
         0 0
-        %end 4 4 0
-        %begin 5 5 0
+        %end 4 4 1
+        %begin 5 5 1
         1 0 %0 81x24,0,0,0
-        %end 5 5 0
-        %begin 6 6 0
-        %end 6 6 0
-        %begin 7 7 0
+        %end 5 5 1
+        %begin 6 6 1
+        %end 6 6 1
+        %begin 7 7 1
         hello
-        %end 7 7 0
+        %end 7 7 1
 
         """)
         _ = await waitUntil {
@@ -428,22 +438,32 @@ struct TmuxSessionControllerTests {
         // Real tmux answers the boot line with the connection's first reply
         // block; the client swallows it (see makeAttachedController).
         transport.pushText("%begin 100 0 0\n%end 100 0 0\n\n")
-        _ = await waitUntil { await transport.recordedCommands().count >= 3 }
+        // Each step waits for its own event. This used to answer whatever
+        // had been written within a fixed 20 polls and then give the pin two
+        // seconds: alone it takes a third of a second, but in a full parallel
+        // run on a loaded device the probe could be written after the
+        // answering had stopped, and the pin then never came.
+        try #require(await waitUntil(timeout: Self.loadedDeviceTimeout) {
+            await transport.recordedCommands().count >= 3
+        }, "discovery goes out")
         pushOneWindowDiscovery(transport)
         // The pin goes through the size-lease gate: with no %session-changed
         // pre-read (this harness skips that event) it probes first. Answer
-        // like an unowned window would.
-        _ = await settleControlChatter(transport, answered: 3)
-
+        // every command as it is written, like an unowned window would, for
+        // as long as the pin takes to show up.
+        //
         // No resizeClient() here on purpose: `window-size latest` leaves the
         // window at whatever an already-attached desktop client made it, and
         // nothing else claims it on a fresh attach — the pane's program would
         // render to that width while this narrower client hard-wraps every line.
-        #expect(await waitUntil(timeout: 2.0) {
-            await transport.recordedCommands().contains {
+        var answered = 3
+        let pinned = await waitUntil(timeout: Self.loadedDeviceTimeout) {
+            answered = await answerPending(transport, answered: answered) { _, _ in Self.unownedReply }
+            return await transport.recordedCommands().contains {
                 $0.hasPrefix("resize-window -t @0 -x 69 -y 60")
             }
-        }, "discovery must pin the active window to the phone grid on its own")
+        }
+        #expect(pinned, "discovery must pin the active window to the phone grid on its own")
     }
 
     @Test("the terminal view's FIRST size report commits even when it matches the seeded estimate")
@@ -561,6 +581,47 @@ struct TmuxSessionControllerTests {
         }, "resync must capture the frame, then query the cursor, in stream order")
     }
 
+    /// B142: the cursor query's reply goes to whichever callback is next in
+    /// the FIFO; once that is out of step (B139's line break did it) the
+    /// cursor callback can get any line — and `row + 1` on Int.max trapped.
+    @Test("a cursor reply carrying Int.max moves nothing out of range and traps nothing")
+    func cursorReplyAtIntMaxDoesNotTrap() async throws {
+        let (controller, transport) = await makeAttachedController()
+        _ = await waitUntil { await transport.recordedCommands().count >= 3 }
+        pushOneWindowDiscovery(transport)
+        #expect(await waitUntil { controller.snapshot.activePaneId == "%0" })
+        await settleControlChatter(transport, answered: 3)
+        let terminal = controller.terminalView(for: "%0").getTerminal()
+
+        let before = await transport.recordedCommands().count
+        controller.resyncActivePane()
+        _ = await waitUntil { await transport.recordedCommands().count > before + 1 }
+        transport.pushText("""
+        %begin 100 100 1
+        frame
+        %end 100 100 1
+        %begin 101 101 1
+        9223372036854775807 9223372036854775807
+        %end 101 101 1
+
+        """)
+        try? await Task.sleep(for: .milliseconds(200))
+        // Still answering: the next resync's cursor lands where it says.
+        let again = await transport.recordedCommands().count
+        controller.resyncActivePane()
+        _ = await waitUntil { await transport.recordedCommands().count > again + 1 }
+        transport.pushText("""
+        %begin 102 102 1
+        frame
+        %end 102 102 1
+        %begin 103 103 1
+        4 2
+        %end 103 103 1
+
+        """)
+        #expect(await waitUntil { terminal.getCursorLocation().x == 4 && terminal.getCursorLocation().y == 2 })
+    }
+
     @Test("resyncActivePane(reveal: false) corrects the buffer without lifting an active cover; the default reveals")
     func resyncRevealParameterGatesCoverLift() async throws {
         let (controller, transport) = await makeAttachedController()
@@ -590,12 +651,12 @@ struct TmuxSessionControllerTests {
         controller.resyncActivePane(reveal: false)
         _ = await waitUntil { await transport.recordedCommands().count > before }
         transport.pushText("""
-        %begin 100 100 0
+        %begin 100 100 1
         resynced without reveal
-        %end 100 100 0
-        %begin 101 101 0
+        %end 100 100 1
+        %begin 101 101 1
         0 0
-        %end 101 101 0
+        %end 101 101 1
 
         """)
         try? await Task.sleep(for: .milliseconds(200))
@@ -607,12 +668,12 @@ struct TmuxSessionControllerTests {
 
         controller.resyncActivePane()   // default reveal: true
         transport.pushText("""
-        %begin 102 102 0
+        %begin 102 102 1
         resynced and revealed
-        %end 102 102 0
-        %begin 103 103 0
+        %end 102 102 1
+        %begin 103 103 1
         0 0
-        %end 103 103 0
+        %end 103 103 1
 
         """)
         #expect(await waitUntil { controller.activeCoordinator?.isCoverPresented == false },
@@ -658,17 +719,17 @@ struct TmuxSessionControllerTests {
         let (controller, transport) = await makeAttachedController()
         _ = await waitUntil { await transport.recordedCommands().count >= 3 }
         transport.pushText("""
-        %begin 1 1 0
+        %begin 1 1 1
         $0 1 main
-        %end 1 1 0
-        %begin 2 2 0
+        %end 1 1 1
+        %begin 2 2 1
         $0 @0 0 81x24,0,0,0 1 1 main
         $0 @1 1 81x24,0,0,1 0 1 work
-        %end 2 2 0
-        %begin 3 3 0
+        %end 2 2 1
+        %begin 3 3 1
         %0 @0 0 80 24 1 0 0 bash
         %1 @1 0 80 24 1 0 0 vim
-        %end 3 3 0
+        %end 3 3 1
 
         """)
         #expect(await waitUntil { controller.snapshot.windows.count == 2 })
@@ -694,18 +755,18 @@ struct TmuxSessionControllerTests {
     /// session we are NOT attached to has somewhere to land.
     private func twoSessionTree() -> String {
         """
-        %begin 1 1 0
+        %begin 1 1 1
         $0 1 main
         $1 0 dev
-        %end 1 1 0
-        %begin 2 2 0
+        %end 1 1 1
+        %begin 2 2 1
         $0 @0 0 81x24,0,0,0 1 1 main
         $1 @1 0 81x24,0,0,1 1 1 work
-        %end 2 2 0
-        %begin 3 3 0
+        %end 2 2 1
+        %begin 3 3 1
         %0 @0 0 80 24 1 0 0 bash
         %1 @1 0 80 24 1 0 0 vim
-        %end 3 3 0
+        %end 3 3 1
 
         """
     }
@@ -772,15 +833,15 @@ struct TmuxSessionControllerTests {
         // "%0||||" payload painted into a visible pane as its "frame".
         transport.pushText("%begin 100 0 0\n%end 100 0 0\n\n")
         transport.pushText("""
-        %begin 1 1 0
+        %begin 1 1 1
         $0 1 main
-        %end 1 1 0
-        %begin 2 2 0
+        %end 1 1 1
+        %begin 2 2 1
         $0 @0 0 81x24,0,0,0 1 1 main
-        %end 2 2 0
-        %begin 3 3 0
+        %end 2 2 1
+        %begin 3 3 1
         %0 @0 0 80 24 1 0 0 bash
-        %end 3 3 0
+        %end 3 3 1
 
         """)
 
@@ -867,17 +928,17 @@ struct TmuxSessionControllerTests {
         _ = await waitUntil { await transport.recordedCommands().count >= 3 }
         let three = "3992,47x40,0,0{45x40,0,0,0,1x40,46,0[1x20,46,0,1,1x19,46,21,2]}"
         transport.pushText("""
-        %begin 1 1 0
+        %begin 1 1 1
         $0 1 main
-        %end 1 1 0
-        %begin 2 2 0
+        %end 1 1 1
+        %begin 2 2 1
         $0 @0 0 \(three) 1 3 claude
-        %end 2 2 0
-        %begin 3 3 0
+        %end 2 2 1
+        %begin 3 3 1
         %0 @0 0 45 40 0 0 0 claude
         %1 @0 1 1 20 1 0 0 claude
         %2 @0 2 1 19 0 0 0 claude
-        %end 3 3 0
+        %end 3 3 1
 
         """)
         #expect(await waitUntil { controller.snapshot.activePaneId == "%1" })
@@ -939,9 +1000,9 @@ struct TmuxSessionControllerTests {
         let before = await transport.recordedCommands().count
         controller.resyncActivePane()
         _ = await waitUntil { await transport.recordedCommands().count > before }
-        var reply = "%begin 200 200 0\n"
+        var reply = "%begin 200 200 1\n"
         for i in 1...70 { reply += "wide-frame-row-\(i)\n" }
-        reply += "%end 200 200 0\n%begin 201 201 0\n0 0\n%end 201 201 0\n\n"
+        reply += "%end 200 200 1\n%begin 201 201 1\n0 0\n%end 201 201 1\n\n"
         transport.pushText(reply)
         try? await Task.sleep(for: .milliseconds(200))
         // The paired cursor reply still applies (a bare CUP — harmless); the
@@ -1190,7 +1251,7 @@ struct TmuxSessionControllerTests {
         let before = await transport.recordedCommands().count
         controller.resyncActivePane()
         _ = await waitUntil { await transport.recordedCommands().count > before }
-        transport.pushText("%begin 400 400 0\nROW-A%end 400 400 0\n")
+        transport.pushText("%begin 400 400 1\nROW-A%end 400 400 1\n")
         answered = await answerPending(transport, answered: before + 1) { cmd, n in
             if cmd.hasPrefix("display-message") { return block(500 + n, "0 0") }
             return block(500 + n, "")
@@ -1229,9 +1290,9 @@ struct TmuxSessionControllerTests {
         controller.resyncActivePane()
         _ = await waitUntil { await transport.recordedCommands().count > before }
         let wide = String(repeating: "W", count: 200)
-        var reply = "%begin 200 200 0\n"
+        var reply = "%begin 200 200 1\n"
         for _ in 1...30 { reply += wide + "\n" }
-        reply += "%end 200 200 0\n%begin 201 201 0\n0 0\n%end 201 201 0\n\n"
+        reply += "%end 200 200 1\n%begin 201 201 1\n0 0\n%end 201 201 1\n\n"
         transport.pushText(reply)
         try? await Task.sleep(for: .milliseconds(200))
         let row0 = terminal.getText(start: Position(col: 0, row: 0),
@@ -1302,17 +1363,17 @@ struct TmuxSessionControllerTests {
         let (controller, transport) = await makeAttachedController()
         _ = await waitUntil { await transport.recordedCommands().count >= 3 }
         transport.pushText("""
-        %begin 1 1 0
+        %begin 1 1 1
         $0 1 main
-        %end 1 1 0
-        %begin 2 2 0
+        %end 1 1 1
+        %begin 2 2 1
         $0 @0 0 81x24,0,0,0 1 1 main
         $0 @1 1 81x24,0,0,1 0 1 work
-        %end 2 2 0
-        %begin 3 3 0
+        %end 2 2 1
+        %begin 3 3 1
         %0 @0 0 80 24 1 0 0 bash
         %1 @1 0 80 24 1 0 0 vim
-        %end 3 3 0
+        %end 3 3 1
 
         """)
         #expect(await waitUntil { controller.snapshot.windows.count == 2 })
@@ -1446,17 +1507,17 @@ struct TmuxSessionControllerTests {
         let (controller, transport) = await makeAttachedController()
         _ = await waitUntil { await transport.recordedCommands().count >= 3 }
         transport.pushText("""
-        %begin 1 1 0
+        %begin 1 1 1
         $0 1 main
-        %end 1 1 0
-        %begin 2 2 0
+        %end 1 1 1
+        %begin 2 2 1
         $0 @0 0 81x24,0,0,0 1 1 main
         $0 @1 1 81x24,0,0,1 0 1 work
-        %end 2 2 0
-        %begin 3 3 0
+        %end 2 2 1
+        %begin 3 3 1
         %0 @0 0 80 24 1 0 0 bash
         %9 @1 0 80 24 1 0 0 vim
-        %end 3 3 0
+        %end 3 3 1
 
         """)
         #expect(await waitUntil { controller.snapshot.activePaneId == "%0" })
@@ -1554,9 +1615,7 @@ struct TmuxSessionControllerTests {
                     .trimmingCharacters(in: .whitespacesAndNewlines)
                 return self.block(n, "") + "%window-pane-changed @1 \(active)\n"
             }
-            if command.hasPrefix("if-shell -F -t '@1' '#{?window_zoomed_flag,,1}' 'resize-pane -Z -t @1'") {
-                zoomed = true
-            } else if command.hasPrefix("resize-pane -Z -t '@1'") || command.hasPrefix("resize-pane -Z -t @1") {
+            if command.hasPrefix("resize-pane -Z -t '@1'") || command.hasPrefix("resize-pane -Z -t @1") {
                 zoomed.toggle()
             }
             return self.block(n, "")
@@ -1576,6 +1635,77 @@ struct TmuxSessionControllerTests {
         #expect(zoomed, "the split window must end up zoomed")
     }
 
+    // ─────────────────────────────────────────────────────────────
+    // B139: what a control-mode line carries
+    // ─────────────────────────────────────────────────────────────
+
+    /// One line is one command in control mode: a name holding a line break
+    /// ended `rename-window` there and ran the rest as a tmux command of its
+    /// own — `run-shell` included, on a private tmux 3.6a server — and every
+    /// reply after it went to the wrong callback.
+    @Test("A name holding a line break is refused with a reason, and no line break reaches tmux")
+    func lineBreakInANameIsRefused() async throws {
+        let (controller, transport) = await makeAttachedController()
+        _ = await waitUntil { await transport.recordedCommands().count >= 3 }
+        let baseline = await transport.recordedCommands().count
+        let name = "x\nrun-shell \"touch INJECTED\" #"
+
+        controller.renameWindow("@1", to: name)
+        controller.renameSession("$1", to: name)
+        controller.newSession(named: name)
+        controller.newWindow(named: "a\rb")
+        controller.newWindow(inSession: "$1", named: "tab\there")
+        controller.runCommand("display-message -p x\nrun-shell \"touch INJECTED\"")
+        try? await Task.sleep(for: .milliseconds(100))
+
+        let sent = await transport.recordedCommands().dropFirst(baseline)
+        #expect(!sent.contains { $0.contains("run-shell") || $0.contains("\r") }, "\(sent)")
+        #expect(!sent.contains { $0.dropLast().contains("\n") || $0.contains("\t") }, "\(sent)")
+        #expect(controller.notice == MultiplexerName.refusal(name))
+        #expect(controller.notice?.isEmpty == false)
+    }
+
+    /// tmux expands a name as a format before it keeps it: `#{session_name}`
+    /// was stored as the session's name (tmux 3.6a). `##` is a `#`; and a
+    /// name that starts with `-` is a flag unless it follows `--`.
+    @Test("A name reaches tmux exactly as typed")
+    func namesReachTmuxExactly() async throws {
+        let (controller, transport) = await makeAttachedController()
+        _ = await waitUntil { await transport.recordedCommands().count >= 3 }
+        let baseline = await transport.recordedCommands().count
+
+        controller.renameWindow("@1", to: #"#{session_name} $HOME ~ "q" \b"#)
+        controller.renameSession("$1", to: "-x")
+        controller.newSession(named: "a#b")
+        controller.newWindow(named: "#(touch INJECTED)")
+        controller.renameWindow("@2", to: "#\u{FE0F}\u{20E3} keycap")
+
+        #expect(await waitUntil { await transport.recordedCommands().contains { $0.contains("keycap") } })
+        let sent = await transport.recordedCommands().dropFirst(baseline)
+            .map { $0.trimmingCharacters(in: .newlines) }
+        #expect(sent.contains(###"rename-window -t @1 -- "##{session_name} \$HOME \~ \"q\" \\b""###), "\(sent)")
+        #expect(sent.contains(###"rename-session -t $1 -- "-x""###), "\(sent)")
+        #expect(sent.contains(###"new-session -d -P -F '#{session_id}' -s "a##b""###), "\(sent)")
+        #expect(sent.contains(###"new-window -P -F '#{window_id}' -n "##(touch INJECTED)""###), "\(sent)")
+        #expect(sent.contains("rename-window -t @2 -- \"##\u{FE0F}\u{20E3} keycap\""), "\(sent)")
+    }
+
+    @Test("Only a tmux id is spliced into a target")
+    func targetsAreIds() async throws {
+        let (controller, transport) = await makeAttachedController()
+        _ = await waitUntil { await transport.recordedCommands().count >= 3 }
+        let baseline = await transport.recordedCommands().count
+
+        controller.renameWindow("@1 ; run-shell x", to: "n")
+        controller.renameSession("=main", to: "n")
+        controller.killWindow("@1;kill-server")
+        controller.killSession("main")
+        controller.killPane("%1 ; kill-server")
+        try? await Task.sleep(for: .milliseconds(100))
+
+        #expect(await transport.recordedCommands().count == baseline)
+    }
+
     @Test("newWindow lands ON the window it just created")
     func newWindowSelectsTheNewWindow() async throws {
         let (controller, transport) = await makeAttachedController()
@@ -1589,24 +1719,24 @@ struct TmuxSessionControllerTests {
 
         #expect(await waitUntil {
             await transport.recordedCommands().contains {
-                $0.hasPrefix("new-window -P -F '#{window_id}' -n 'logs'")
+                $0.hasPrefix("new-window -P -F '#{window_id}' -n \"logs\"")
             }
         }, "new-window must print the new window's id so we can land on it")
 
         // Reply in send order: the printed id, then the re-list that gives
         // selectWindow a snapshot to work with.
         transport.pushText("""
-        %begin 20 20 0
+        %begin 20 20 1
         @1
-        %end 20 20 0
-        %begin 21 21 0
+        %end 20 20 1
+        %begin 21 21 1
         $0 @0 0 81x24,0,0,0 0 1 main
         $0 @1 1 81x24,0,0,1 1 1 logs
-        %end 21 21 0
-        %begin 22 22 0
+        %end 21 21 1
+        %begin 22 22 1
         %0 @0 0 80 24 1 0 0 bash
         %1 @1 0 80 24 1 0 0 bash
-        %end 22 22 0
+        %end 22 22 1
 
         """)
 
@@ -1631,16 +1761,16 @@ struct TmuxSessionControllerTests {
         // them; cycling must swap the zoomed pane in ONE layout change, not
         // unzoom → select → re-zoom (split flash on every swipe).
         transport.pushText("""
-        %begin 1 1 0
+        %begin 1 1 1
         $0 1 main
-        %end 1 1 0
-        %begin 2 2 0
+        %end 1 1 1
+        %begin 2 2 1
         $0 @0 0 81x24,0,0,0 1 2 main
-        %end 2 2 0
-        %begin 3 3 0
+        %end 2 2 1
+        %begin 3 3 1
         %0 @0 0 80 24 1 0 0 bash
         %1 @0 1 80 24 0 0 0 vim
-        %end 3 3 0
+        %end 3 3 1
 
         """)
         #expect(await waitUntil { controller.snapshot.panes.count == 2 })
@@ -1660,7 +1790,7 @@ struct TmuxSessionControllerTests {
         controller.refreshActivePaneMouse()
         var count = answered
         _ = await waitUntil { await transport.recordedCommands().count > count }
-        transport.pushText("%begin 900 900 0\n1\n%end 900 900 0\n\n")
+        transport.pushText("%begin 900 900 1\n1\n%end 900 900 1\n\n")
         count += 1
         _ = await waitUntil { controller.activePaneWantsMouse }
         return count
@@ -1742,9 +1872,11 @@ struct TmuxSessionControllerTests {
     @Test("a drag over a plain shell pane moves the pixels, holds output, and docks back onto the bottom")
     func dragMovesLocalScrollbackByPixels() async throws {
         let (controller, transport) = await makeAttachedController()
-        _ = await waitUntil { await transport.recordedCommands().count >= 3 }
+        try #require(await waitUntil(timeout: Self.loadedDeviceTimeout) {
+            await transport.recordedCommands().count >= 3
+        })
         pushOneWindowDiscovery(transport)
-        #expect(await waitUntil { controller.snapshot.activePaneId == "%0" })
+        #expect(await waitUntil(timeout: Self.loadedDeviceTimeout) { controller.snapshot.activePaneId == "%0" })
         _ = await settleControlChatter(transport, answered: 3)
         #expect(!controller.activePaneWantsMouse, "a plain shell: the local scrollback is the route")
 
@@ -1754,9 +1886,20 @@ struct TmuxSessionControllerTests {
         let lines = terminal.rows + 40
         var blob = ""
         for i in 0..<lines { blob += "%output %0 history-\(i)\\015\\012\n" }
+        // …then a marker with no line break of its own, and wait for THAT.
+        // Waiting for the viewport to pass row 40 returned one line early —
+        // the history ends with the viewport at row 41 — and under load the
+        // sample landed there: the bottom below was measured a row short, the
+        // last history line arrived during the hold, and docking replayed it,
+        // moving the very bottom the dock is checked against. The marker is
+        // the last thing in the stream, so seeing it means the rest is in.
+        let marker = "end-of-history"
+        blob += "%output %0 \(marker)\n"
         transport.pushText(blob)
-        #expect(await waitUntil(timeout: 4) { terminal.getTopVisibleRow() >= 40 },
-                "the output must scroll the buffer before the drag")
+        #expect(await waitUntil(timeout: Self.loadedDeviceTimeout) {
+            terminal.getCursorLocation().x == marker.count
+        }, "the whole history must be painted before the drag")
+        #expect(terminal.getTopVisibleRow() >= 40, "the output must scroll the buffer before the drag")
 
         let cellHeight = view.cellHeight
         #expect(cellHeight > 0)
@@ -1794,8 +1937,9 @@ struct TmuxSessionControllerTests {
         controller.scrollDidEnd()
         #expect(abs(view.contentOffset.y - bottomOffset) < 0.5, "docked onto the bottom")
         #expect(terminal.getTopVisibleRow() == bottomRow)
-        #expect(await waitUntil { terminal.getCursorLocation().x == xBefore + 13 },
-                "docking releases the hold and the held output replays")
+        #expect(await waitUntil(timeout: Self.loadedDeviceTimeout) {
+            terminal.getCursorLocation().x == xBefore + 13
+        }, "docking releases the hold and the held output replays")
     }
 
     @Test("a swipe over an empty pane never freezes its output")
@@ -1845,7 +1989,7 @@ struct TmuxSessionControllerTests {
         for _ in 0..<20 { controller.pollAgentHooks() }
         // …then interleave: %output, reply, %output, reply, … in ONE stream.
         for _ in 0..<20 {
-            transport.pushText("%output %0 x\n%begin 9 9 0\n%end 9 9 0\n")
+            transport.pushText("%output %0 x\n%begin 9 9 1\n%end 9 9 1\n")
         }
 
         #expect(await waitUntil(timeout: 2.0) { recorder.seq.count == 40 })
@@ -1861,17 +2005,17 @@ struct TmuxSessionControllerTests {
 
         // Two windows in the active session; @0 active, @1 idle.
         transport.pushText("""
-        %begin 1 1 0
+        %begin 1 1 1
         $0 1 main
-        %end 1 1 0
-        %begin 2 2 0
+        %end 1 1 1
+        %begin 2 2 1
         $0 @0 0 81x24,0,0,0 1 1 main
         $0 @1 1 81x24,0,0,1 0 1 work
-        %end 2 2 0
-        %begin 3 3 0
+        %end 2 2 1
+        %begin 3 3 1
         %0 @0 0 80 24 1 0 0 bash
         %1 @1 0 80 24 1 0 0 vim
-        %end 3 3 0
+        %end 3 3 1
 
         """)
         #expect(await waitUntil { controller.snapshot.windows.count == 2 })
@@ -1977,17 +2121,17 @@ struct TmuxSessionControllerTests {
 
         // Seed two windows + pane each via list-* responses.
         transport.pushText("""
-        %begin 1 1 0
+        %begin 1 1 1
         $0 1 main
-        %end 1 1 0
-        %begin 2 2 0
+        %end 1 1 1
+        %begin 2 2 1
         $0 @0 0 81x24,0,0,0 1 1 main
         $0 @1 1 81x24,0,0,1 0 1 logs
-        %end 2 2 0
-        %begin 3 3 0
+        %end 2 2 1
+        %begin 3 3 1
         %0 @0 0 80 24 1 0 0 bash
         %1 @1 0 80 24 0 0 0 tail
-        %end 3 3 0
+        %end 3 3 1
 
         """)
 
@@ -2008,15 +2152,15 @@ struct TmuxSessionControllerTests {
     func windowRenamedMutatesInPlace() async throws {
         let (controller, transport) = await makeAttachedController()
         transport.pushText("""
-        %begin 1 1 0
+        %begin 1 1 1
         $0 1 main
-        %end 1 1 0
-        %begin 2 2 0
+        %end 1 1 1
+        %begin 2 2 1
         $0 @0 0 81x24,0,0,0 1 1 main
-        %end 2 2 0
-        %begin 3 3 0
+        %end 2 2 1
+        %begin 3 3 1
         %0 @0 0 80 24 1 0 0 bash
-        %end 3 3 0
+        %end 3 3 1
 
         """)
         _ = await waitUntil { controller.snapshot.windows["@0"]?.name == "main" }
@@ -2057,15 +2201,15 @@ struct TmuxSessionControllerTests {
         let (controller, transport) = await makeAttachedController()
         // Seed: our session $0 owns window @0 (active) with pane %7.
         transport.pushText("""
-        %begin 1 1 0
+        %begin 1 1 1
         $0 1 main
-        %end 1 1 0
-        %begin 2 2 0
+        %end 1 1 1
+        %begin 2 2 1
         $0 @0 0 81x24,0,0,0 1 1 main
-        %end 2 2 0
-        %begin 3 3 0
+        %end 2 2 1
+        %begin 3 3 1
         %7 @0 0 80 24 1 0 0 zsh
-        %end 3 3 0
+        %end 3 3 1
 
         """)
         _ = await waitUntil { controller.snapshot.windows["@0"] != nil }
@@ -2147,13 +2291,16 @@ struct TmuxSessionControllerTests {
         #expect(nothingAttached.snapshot.activeSessionId == "$5", "no client anywhere: the first by id")
     }
 
-    @Test("the mosh control-plane sidecar still follows the attached (visible) client's session")
-    func sidecarFollowsAttachedSession() async throws {
+    /// `#{session_attached}` counts every client on a session, the desktop's
+    /// and the sidecar's own included; which session the PHONE is on only
+    /// the renderer's own row says (TmuxSidecarRendererFollowTests).
+    @Test("the mosh control-plane sidecar takes no session from tmux's attached flags")
+    func sidecarIgnoresAttachedFlags() async throws {
         let sidecar = TmuxSessionController(sshSession: MockTmuxTransport(), rendersOutput: false)
         sidecar.parseListSessions(["$0 1 0"])
-        #expect(sidecar.snapshot.activeSessionId == "$0")
+        #expect(sidecar.snapshot.activeSessionId == nil)
         sidecar.parseListSessions(["$0 0 0", "$1 1 dev"])
-        #expect(sidecar.snapshot.activeSessionId == "$1")
+        #expect(sidecar.snapshot.activeSessionId == nil, "an attached desktop session is not the phone's")
     }
 
     // ─────────────────────────────────────────────────────────────
@@ -2256,6 +2403,31 @@ struct TmuxSessionControllerTests {
         try? await Task.sleep(for: .milliseconds(80))
         let after = await transport.recordedCommands().count
         #expect(after == baseline, "empty input must not produce a send-keys")
+    }
+
+    // A key typed into the pane's own terminal reaches the write chain before
+    // the delegate call returns. It used to hop through a Task per keystroke,
+    // so anything sent synchronously right after it — the shortcut bar goes
+    // straight to `sendInput` — was queued first and overtook it, every time.
+    @Test("A key typed into a pane keeps its place ahead of whatever is sent right after it")
+    func paneKeystrokeIsQueuedInPlace() async throws {
+        let (controller, transport) = await makeAttachedController()
+        _ = await waitUntil { await transport.recordedCommands().count >= 3 }
+        let baseline = await transport.recordedCommands().count
+        let view = controller.terminalView(for: "%0")
+        let surface = try #require(view.terminalDelegate as? SwiftTermSurface)
+
+        surface.send(source: view, data: ArraySlice<UInt8>([0x61]))       // typed "a"
+        controller.sendInput(Data([0x62]), paneId: "%0")                  // then "b" from the bar
+
+        let keys = { @MainActor () async -> [String] in
+            await transport.recordedCommands().dropFirst(baseline)
+                .map { $0.trimmingCharacters(in: .newlines) }
+                .filter { $0.hasPrefix("send-keys") }
+        }
+        let landed = await waitUntil(timeout: 0.5) { await keys().count >= 2 }
+        #expect(landed)
+        #expect(await keys() == ["send-keys -t %0 -H 61", "send-keys -t %0 -H 62"])
     }
 
     // ─────────────────────────────────────────────────────────────
@@ -2451,17 +2623,17 @@ struct TmuxSessionControllerTests {
     ) async {
         _ = await waitUntil { await transport.recordedCommands().count >= 3 }
         transport.pushText("""
-        %begin 1 1 0
+        %begin 1 1 1
         $0 1 main
-        %end 1 1 0
-        %begin 2 2 0
+        %end 1 1 1
+        %begin 2 2 1
         $0 @0 0 81x24,0,0,0 1 1 main
         $0 @1 1 81x24,0,0,1 0 1 logs
-        %end 2 2 0
-        %begin 3 3 0
+        %end 2 2 1
+        %begin 3 3 1
         %0 @0 0 80 24 1 0 0 zsh
         %1 @1 0 80 24 1 0 0 vim
-        %end 3 3 0
+        %end 3 3 1
 
         """)
         _ = await waitUntil {
@@ -2505,23 +2677,23 @@ struct TmuxSessionControllerTests {
         // (see `pristineLayouts`), which is why there is one filler more than
         // commands listed above.
         transport.pushText("""
-        %begin 4 4 0
+        %begin 4 4 1
         0 0
-        %end 4 4 0
-        %begin 5 5 0
+        %end 4 4 1
+        %begin 5 5 1
         0 0
-        %end 5 5 0
-        %begin 6 6 0
-        %end 6 6 0
-        %begin 7 7 0
+        %end 5 5 1
+        %begin 6 6 1
+        %end 6 6 1
+        %begin 7 7 1
         0 0
-        %end 7 7 0
-        %begin 8 8 0
-        %end 8 8 0
-        %begin 9 9 0
-        %end 9 9 0
-        %begin 10 10 0
-        %end 10 10 0
+        %end 7 7 1
+        %begin 8 8 1
+        %end 8 8 1
+        %begin 9 9 1
+        %end 9 9 1
+        %begin 10 10 1
+        %end 10 10 1
 
         """)
 
@@ -2531,14 +2703,14 @@ struct TmuxSessionControllerTests {
         transport.pushText("%window-add @9\n")
         _ = await waitUntil { controller.snapshot.windows["@9"] != nil }
         transport.pushText("""
-        %begin 11 11 0
+        %begin 11 11 1
         $0 @0 0 81x24,0,0,0 0 1 main
         $0 @1 1 81x24,0,0,1 1 1 logs
-        %end 11 11 0
-        %begin 12 12 0
+        %end 11 11 1
+        %begin 12 12 1
         %0 @0 0 80 24 1 0 0 zsh
         %1 @1 0 80 24 1 0 0 vim
-        %end 12 12 0
+        %end 12 12 1
 
         """)
 
@@ -2615,17 +2787,17 @@ struct TmuxSessionControllerTests {
     /// the case where our phone-sized pin squashes a real layout.
     private func pushThreePaneDiscovery(_ transport: MockTmuxTransport) {
         transport.pushText("""
-        %begin 1 1 0
+        %begin 1 1 1
         $0 1 main
-        %end 1 1 0
-        %begin 2 2 0
+        %end 1 1 1
+        %begin 2 2 1
         $0 @0 0 \(splitLayout) 1 3 main
-        %end 2 2 0
-        %begin 3 3 0
+        %end 2 2 1
+        %begin 3 3 1
         %0 @0 0 203 30 1 0 0 bash
         %1 @0 1 101 29 0 0 0 bash
         %2 @0 2 101 29 0 0 0 bash
-        %end 3 3 0
+        %end 3 3 1
 
         """)
     }
@@ -2766,10 +2938,138 @@ struct TmuxSessionControllerTests {
         let commands = controller.pristineLayoutRestoreCommands()
         // Unquoted @/% targets: these run through the login shell of the
         // one-shot exec channel, and the layout string is single-quoted so its
-        // braces survive it.
-        #expect(commands == ["select-layout -t @0 '\(splitLayout)'", "resize-pane -Z -t %1"])
+        // braces survive it. With no client name of ours to report a size
+        // with (B150), each window is sized to its record for the replay and
+        // handed back to automatic sizing after it.
+        #expect(commands == ["resize-window -t @0 -x 203 -y 60",
+                             "select-layout -t @0 '\(splitLayout)'",
+                             "set-option -u -w -t @0 window-size",
+                             "resize-pane -Z -t %1"])
         #expect(controller.pristineLayoutRestoreCommands().isEmpty,
                 "records are consumed — a second teardown pass must not replay them")
+    }
+
+    /// B150: the phone alone with its session. The attach's own
+    /// `refresh-client -C` makes it tmux's latest — and only — client, so
+    /// every window of the session is at the phone's grid before discovery,
+    /// and the probe ahead of the pin read the squashed layout. And on
+    /// release tmux 3.6a ignores an `ignore-size` client only while another
+    /// client is attached: the windows stayed at the phone's size.
+    @Test("phone alone: the layouts are read before our first size, and handed back at their own size (B150)")
+    func phoneAloneRecordsBeforeItsSizeAndHandsBackAtThatSize() async throws {
+        let squashed = "b2b1,70x35,0,0[70x17,0,0,0,70x17,0,18{35x17,0,18,1,34x17,36,18,2}]"
+        let transport = MockTmuxTransport()
+        let controller = TmuxSessionController(sshSession: transport)
+        controller.setInitialClientSize(cols: 70, rows: 35)
+        await controller.beginControlMode()
+        transport.pushText("%begin 100 0 0\n%end 100 0 0\n\n%session-changed $0 main\n")
+        #expect(await waitUntil(timeout: 2.0) {
+            await transport.recordedCommands().contains { $0.hasPrefix("list-panes -a -F '#{pane_id} ") }
+        })
+        let boot = await transport.recordedCommands()
+        let before = boot.firstIndex { $0.hasPrefix("list-windows -t '$0'") }
+        let report = boot.firstIndex { $0.hasPrefix("refresh-client -C 70x35") }
+        let after = boot.lastIndex { $0.hasPrefix("list-windows -t '$0'") }
+        #expect(before != nil && report != nil && after != nil && before! < report! && report! < after!,
+                "the session's layouts are read on both sides of our first size: \(boot)")
+
+        // tmux: before our size the split window is the user's; after, squashed.
+        var probes = 0
+        var answered = 0
+        for _ in 0..<6 {
+            answered = await answerPending(transport, answered: answered) { cmd, i in
+                if cmd.hasPrefix("list-windows -t '$0'") {
+                    probes += 1
+                    return self.block(i + 10, probes == 1 ? "@0 3 0 %0 \(self.splitLayout)" : "@0 3 0 %0 \(squashed)")
+                }
+                if cmd.hasPrefix("list-sessions") { return self.block(i + 10, "$0 1 main") }
+                if cmd.hasPrefix("list-windows -a") { return self.block(i + 10, "$0 @0 0 \(squashed) 1 3 main") }
+                if cmd.hasPrefix("list-panes -a -F '#{pane_id} ") {
+                    return self.block(i + 10, "%0 @0 0 70 17 1 0 0 bash\n%1 @0 1 35 17 0 0 0 bash\n%2 @0 2 34 17 0 0 0 bash")
+                }
+                // The pin's own probe, behind our size: the squashed layout.
+                if cmd.contains("#{window_layout}") { return self.block(i + 10, "3 0 %0 \(squashed)") }
+                if cmd.hasPrefix("display-message -p '#{client_name}'") { return self.block(i + 10, "/dev/ttys003") }
+                return self.block(i + 10, "")
+            }
+            try? await Task.sleep(for: .milliseconds(30))
+        }
+        #expect(await waitUntil { controller.snapshot.activeWindowId == "@0" })
+        #expect(probes == 2)
+
+        let baseline = await transport.recordedCommands().count
+        controller.releaseWindowPins()
+        #expect(await waitUntil {
+            await transport.recordedCommands().contains { $0.hasPrefix("select-layout -t '@0'") }
+        }, "the layout from before our size is replayed")
+        let release = await transport.recordedCommands().dropFirst(baseline)
+            .map { $0.trimmingCharacters(in: .newlines) }
+        let flag = release.firstIndex { $0 == "refresh-client -f ignore-size" }
+        let claim = release.firstIndex { $0 == "refresh-client -C 203x60" }
+        let replay = release.firstIndex { $0 == "select-layout -t '@0' '\(splitLayout)'" }
+        #expect(flag != nil && claim != nil && replay != nil && flag! < claim! && claim! < replay!,
+                "out of the sizing math, the recorded size reported as ours, then the replay: \(release)")
+    }
+
+    // MARK: Only over a layout of ours (round 34)
+
+    /// The squashed split at the phone's 70x35, then after the keyboard came
+    /// up (70x20), and a desktop's own arrangement at the phone's size.
+    private static let squashed = "b2b1,70x35,0,0[70x17,0,0,0,70x17,0,18{35x17,0,18,1,34x17,36,18,2}]"
+    private static let squashedShorter = "a1b2,70x20,0,0[70x10,0,0,0,70x9,0,11{35x9,0,11,1,34x9,36,11,2}]"
+    private static let rearranged = "c3d4,70x35,0,0[70x11,0,0,0,70x11,0,12,1,70x11,0,24,2]"
+
+    private func layoutChange(_ transport: MockTmuxTransport, _ controller: TmuxSessionController,
+                              _ layout: String) async {
+        transport.pushText("%layout-change @0 \(layout) \(layout) *\n")
+        _ = await waitUntil { controller.snapshot.windows["@0"]?.layout == layout }
+    }
+
+    /// With a desktop attached, the disconnect replayed the record over
+    /// whatever the window had become. The record now knows the layouts our
+    /// sizing left the window in — tmux's reflow at our pin, and that reflow
+    /// reflowed again when our grid moved — and the teardown script replays
+    /// it only over one of them, read before anything is unpinned.
+    @Test("round 34: the teardown script replays a record only over a layout of ours")
+    func handBackOnlyOverOurs() async throws {
+        let (controller, transport, _) = await pinnedSplitWorld(capture: "3 0 %0 \(splitLayout)")
+        await layoutChange(transport, controller, Self.squashed)
+        await layoutChange(transport, controller, Self.squashedShorter)
+        let script = try #require(controller.pinHandBackScript(tmux: "tmux", first: []))
+        let steps = [
+            "l0=$(tmux display-message -p -t @0 '#{window_layout}' 2>/dev/null)",
+            "tmux set-option -u -w -t @0 window-size",
+            "case \"$l0\" in \"\(splitLayout)\"|\"\(Self.squashed)\"|\"\(Self.squashedShorter)\") "
+                + "tmux resize-window -t @0 -x 203 -y 60; tmux select-layout -t @0 '\(splitLayout)'; "
+                + "tmux set-option -u -w -t @0 window-size;; esac",
+            "true",
+        ]
+        // crates/tmux's `pin_hand_back_script` builds the same string.
+        #expect(script == "sh -c " + Shell.quote(steps.joined(separator: "; ")), "\(script)")
+        #expect(controller.pinHandBackScript(tmux: "tmux", first: []) == nil, "pins and records are consumed")
+    }
+
+    @Test("round 34: a rearrangement by someone else is not a layout of ours, nor what it reflows into")
+    func rearrangementIsNotOurs() async throws {
+        let (controller, transport, _) = await pinnedSplitWorld(capture: "3 0 %0 \(splitLayout)")
+        await layoutChange(transport, controller, Self.squashed)
+        await layoutChange(transport, controller, Self.rearranged)
+        await layoutChange(transport, controller, Self.squashedShorter)
+        let script = try #require(controller.pinHandBackScript(tmux: "tmux", first: []))
+        #expect(script.contains("case \"$l0\" in \"\(splitLayout)\"|\"\(Self.squashed)\") "), "\(script)")
+        #expect(!script.contains(Self.rearranged), "\(script)")
+        #expect(!script.contains(Self.squashedShorter), "\(script)")
+    }
+
+    @Test("teardown with our client attached hands the recorded size back first (B150)")
+    func teardownReportsTheRecordedSizeFirst() async throws {
+        let (controller, _, _) = await pinnedSplitWorld(capture: "3 0 %0 \(splitLayout)")
+        controller.ourClientName = "/dev/ttys003"
+        #expect(controller.pristineLayoutRestoreCommands() == [
+            "refresh-client -t '/dev/ttys003' -f ignore-size",
+            "refresh-client -t '/dev/ttys003' -C 203x60",
+            "select-layout -t @0 '\(splitLayout)'",
+        ])
     }
 
     @Test("re-pinning after a release re-captures, so a desktop rearrange isn't clobbered")
@@ -2801,7 +3101,7 @@ struct TmuxSessionControllerTests {
 }
 
 /// The gate that keeps a surprise control reply out of `select-layout`.
-@Suite("tmux layout string sanity")
+@Suite("tmux layout string sanity", .tmuxParserUnderTest)
 struct TmuxPlausibleLayoutTests {
     @Test("accepts a real tmux layout string")
     func acceptsRealLayouts() {
@@ -2824,7 +3124,7 @@ struct TmuxPlausibleLayoutTests {
 /// The window-width parser behind the multi-client re-pin: when a layout-change
 /// shows the active window was sized by another (wide desktop) client,
 /// TmuxSessionController reclaims it to the phone width.
-@Suite("tmux layout width")
+@Suite("tmux layout width", .tmuxParserUnderTest)
 struct TmuxLayoutWidthTests {
     typealias C = TmuxSessionController
 
@@ -2864,7 +3164,7 @@ struct TmuxLayoutWidthTests {
 /// NOT the CLI-with-pre-split-argv path, which bypasses tmux's own
 /// command-string parser and would make an escaper look correct here while
 /// doing nothing on the wire).
-@Suite("tmux paste escaping")
+@Suite("tmux paste escaping", .tmuxParserUnderTest)
 struct TmuxPasteEscapingTests {
     typealias C = TmuxSessionController
 
@@ -2947,7 +3247,7 @@ struct TmuxPasteEscapingTests {
 /// ActiveSession's death (protocol switch, app relaunch), which is exactly
 /// when it's needed: the mosh renderer attaches the REMEMBERED session by
 /// name instead of tmux's "most recent".
-@Suite("tmux selection store")
+@Suite("tmux selection store", .tmuxParserUnderTest)
 struct TmuxSelectionStoreTests {
     private func isolatedDefaults() -> UserDefaults {
         let name = "moshpit-tests-\(UUID().uuidString)"
@@ -2982,7 +3282,7 @@ struct TmuxSelectionStoreTests {
 /// What a reconnect moves from the controller it retires to its replacement,
 /// and how the replacement announces that it has something on screen — see
 /// `SessionHub.ActiveSession.stop(forReconnect:)`.
-@Suite("tmux reconnect handoff", .serialized)
+@Suite("tmux reconnect handoff", .serialized, .tmuxParserUnderTest)
 @MainActor
 struct TmuxReconnectHandoffTests {
 
@@ -2995,15 +3295,15 @@ struct TmuxReconnectHandoffTests {
         let (controller, transport) = await makeAttachedController()
         _ = await waitUntil { await transport.recordedCommands().count >= 3 }
         transport.pushText("""
-        %begin 1 1 0
+        %begin 1 1 1
         $0 1 main
-        %end 1 1 0
-        %begin 2 2 0
+        %end 1 1 1
+        %begin 2 2 1
         $0 @0 0 81x24,0,0,0 1 1 main
-        %end 2 2 0
-        %begin 3 3 0
+        %end 2 2 1
+        %begin 3 3 1
         %0 @0 0 80 24 1 0 0 bash
-        %end 3 3 0
+        %end 3 3 1
 
         """)
         #expect(await waitUntil { controller.snapshot.activeWindowId == "@0" })
@@ -3035,10 +3335,10 @@ struct TmuxReconnectHandoffTests {
         _ = await waitUntil { await transport.recordedCommands().count >= 3 }
         // Answer the three discovery commands with nothing (no panes, so no
         // repaint chain follows) — the FIFO is then empty for the poll.
-        for n in 1...3 { transport.pushText("%begin \(n) \(n) 0\n%end \(n) \(n) 0\n") }
+        for n in 1...3 { transport.pushText("%begin \(n) \(n) 1\n%end \(n) \(n) 1\n") }
         controller.pollAgentHooks()
         _ = await waitUntil { await transport.recordedCommands().count >= 4 }
-        transport.pushText("%begin 9 9 0\n%5|working|claude|1758000000|2.1.269|\n%end 9 9 0\n")
+        transport.pushText("%begin 9 9 1\n%5|working|claude|1758000000|2.1.269|\n%end 9 9 1\n")
         #expect(await waitUntil { controller.agentHooksLoaded })
         #expect(controller.agentHooks["%5"]?.agent == "claude")
 
@@ -3076,16 +3376,16 @@ struct TmuxReconnectHandoffTests {
         let (controller, transport) = await makeAttachedController()
         _ = await waitUntil { await transport.recordedCommands().count >= 3 }
         transport.pushText("""
-        %begin 1 1 0
+        %begin 1 1 1
         $0 1 main
-        %end 1 1 0
-        %begin 2 2 0
+        %end 1 1 1
+        %begin 2 2 1
         $0 @0 0 81x24,0,0,0 1 1 main
-        %end 2 2 0
-        %begin 3 3 0
+        %end 2 2 1
+        %begin 3 3 1
         %0 @0 0 80 24 1 0 0 bash
         %1 @0 1 80 24 0 0 0 vim
-        %end 3 3 0
+        %end 3 3 1
 
         """)
         #expect(await waitUntil { controller.snapshot.panes.count == 2 })
@@ -3106,5 +3406,542 @@ struct TmuxReconnectHandoffTests {
         controller.coordinator(for: "%0")?.reveal()
         controller.coordinator(for: "%1")?.reveal()
         #expect(fired == 1, "later reveals (pane switches, repaints) are not first frames")
+    }
+}
+
+// MARK: - The control channel closing
+
+/// Nothing still queued when the control channel closes is ever answered.
+/// Whoever waits on a reply must hear that, and the queue must not outlive
+/// the control session it belonged to.
+@Suite("tmux control channel closing", .serialized, .tmuxParserUnderTest)
+@MainActor
+struct TmuxChannelCloseTests {
+
+    private static let loadedDeviceTimeout: TimeInterval = 15
+
+    private func block(_ num: Int, _ lines: [String]) -> String {
+        lines.isEmpty
+            ? "%begin \(num) \(num) 1\n%end \(num) \(num) 1\n\n"
+            : "%begin \(num) \(num) 1\n\(lines.joined(separator: "\n"))\n%end \(num) \(num) 1\n\n"
+    }
+
+    /// An attached controller whose discovery has been answered (one empty
+    /// listing each), so the queue holds only what the test sends next.
+    private func attachedAndDiscovered() async -> (TmuxSessionController, MockTmuxTransport) {
+        let (controller, transport) = await makeAttachedController()
+        _ = await waitUntil(timeout: Self.loadedDeviceTimeout) {
+            await transport.recordedCommands().count >= 3
+        }
+        transport.pushText(block(1, ["$0 1 main"]) + block(2, []) + block(3, []))
+        _ = await waitUntil(timeout: Self.loadedDeviceTimeout) { controller.snapshot.sessions["$0"] != nil }
+        return (controller, transport)
+    }
+
+    /// What a confirmed paste answered, once it has.
+    @MainActor final class Answer {
+        var value: Bool?
+    }
+
+    /// A paste whose confirmation waits on tmux's reply
+    /// (``TmuxSessionController/pasteConfirmed(_:paneId:timeout:)``, the
+    /// share queue's), once it is on the wire. Its own deadline is far past
+    /// the test's: an answer within the test's wait came from the queue.
+    private func pasteQueued(_ controller: TmuxSessionController, _ transport: MockTmuxTransport) async -> Answer {
+        let answer = Answer()
+        Task { answer.value = await controller.pasteConfirmed("x", paneId: "%0", timeout: 600) }
+        _ = await waitUntil(timeout: Self.loadedDeviceTimeout) {
+            await transport.recordedCommands().contains { $0.hasPrefix("paste-buffer") }
+        }
+        return answer
+    }
+
+    @Test("a reply still waited on when the controller detaches is answered as failed, not never")
+    func answeredOnDetach() async throws {
+        let (controller, transport) = await attachedAndDiscovered()
+        let pasted = await pasteQueued(controller, transport)
+        await controller.detach()
+        #expect(await waitUntil(timeout: Self.loadedDeviceTimeout) { pasted.value != nil },
+                "the share queue waited on this until its own deadline when the sidecar died")
+        #expect(pasted.value == false)
+    }
+
+    @Test("a reply still waited on at %exit is answered as failed")
+    func answeredOnExit() async throws {
+        let (controller, transport) = await attachedAndDiscovered()
+        let pasted = await pasteQueued(controller, transport)
+        transport.pushText("%exit\n")
+        #expect(await waitUntil(timeout: Self.loadedDeviceTimeout) { pasted.value != nil })
+        #expect(pasted.value == false)
+    }
+
+    @Test("a reply still waited on when the byte stream ends is answered as failed")
+    func answeredOnStreamEnd() async throws {
+        let (controller, transport) = await attachedAndDiscovered()
+        let pasted = await pasteQueued(controller, transport)
+        transport.finish()
+        #expect(await waitUntil(timeout: Self.loadedDeviceTimeout) { pasted.value != nil })
+        #expect(pasted.value == false)
+    }
+
+    /// The mosh sidecar's boot chain (`while ! tmux -CC attach …`) can start
+    /// another control session on the same stream after `%exit`.
+    @Test("after %exit the next control session's replies pair with its own commands")
+    func queueEmptiedAtExit() async throws {
+        let (controller, transport) = await attachedAndDiscovered()
+        _ = await pasteQueued(controller, transport)
+        transport.pushText("%exit\n")
+        #expect(await waitUntil(timeout: Self.loadedDeviceTimeout) { !controller.snapshot.isAttached })
+
+        let before = await transport.recordedCommands().count
+        transport.pushText("%begin 300 300 0\n%end 300 300 0\n%session-changed $7 again\n")
+        // Answer what the new session sends, in order: its session listing
+        // holds `again` and `other`, everything else is empty.
+        var answered = before
+        let deadline = Date().addingTimeInterval(Self.loadedDeviceTimeout)
+        while Date() < deadline, controller.snapshot.sessions["$8"] == nil {
+            let commands = await transport.recordedCommands()
+            while answered < commands.count {
+                let lines = commands[answered].hasPrefix("list-sessions") ? ["$7 1 again", "$8 0 other"] : []
+                transport.pushText(block(400 + answered, lines))
+                answered += 1
+            }
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(controller.snapshot.sessions["$8"]?.name == "other",
+                "a slot left over from the ended session shifted every reply by one")
+        #expect(controller.snapshot.sessions["$0"] == nil, "the listing replaced the old session's")
+    }
+
+    @Test("a failed parser starts the control session over: the queue is answered, the hub told")
+    func parserFailureStartsOver() async throws {
+        let (controller, transport) = await attachedAndDiscovered()
+        let pasted = await pasteQueued(controller, transport)
+        var silent = 0
+        controller.onChannelSilent = { silent += 1 }
+        // What TmuxRustParser.swift does when the Rust parser panics, with a
+        // latch of the test's own: the process keeps its parser choice.
+        await controller.client.rustParserFailed(reason: "injected", latch: TmuxParserBackend.Latch())
+        #expect(await waitUntil(timeout: Self.loadedDeviceTimeout) { silent == 1 },
+                "the hub reconnects on onChannelSilent; the new client gets the Swift parser")
+        #expect(await waitUntil(timeout: Self.loadedDeviceTimeout) { pasted.value != nil },
+                "a reply the failed parser dropped would have paired with the next command")
+        #expect(pasted.value == false)
+        #expect(await controller.client.backend == .swift)
+    }
+}
+
+// MARK: - Windows closed by another client
+
+/// tmux 3.6a tells a -CC client about a killed window with
+/// `%unlinked-window-close` — for its own session's windows too (the window
+/// is already unlinked when the notification goes out) — and never with the
+/// `%window-close` this controller listened for, so a window killed from the
+/// desktop stayed in the tree, and on screen, until something re-listed.
+@Suite("tmux windows closed elsewhere", .serialized, .tmuxParserUnderTest)
+@MainActor
+struct TmuxUnlinkedWindowCloseTests {
+
+    private static let loadedDeviceTimeout: TimeInterval = 15
+
+    private func twoWindows() async -> (TmuxSessionController, MockTmuxTransport) {
+        let (controller, transport) = await makeAttachedController()
+        _ = await waitUntil(timeout: Self.loadedDeviceTimeout) {
+            await transport.recordedCommands().count >= 3
+        }
+        transport.pushText("""
+        %begin 1 1 1
+        $0 1 main
+        %end 1 1 1
+        %begin 2 2 1
+        $0 @0 0 b25d,80x24,0,0,0 1 1 main
+        $0 @1 1 b25e,80x24,0,0,1 0 1 logs
+        %end 2 2 1
+        %begin 3 3 1
+        %0 @0 0 80 24 1 0 0 bash
+        %1 @1 0 80 24 1 0 0 tail
+        %end 3 3 1
+
+        """)
+        _ = await waitUntil(timeout: Self.loadedDeviceTimeout) { controller.snapshot.panes.count == 2 }
+        return (controller, transport)
+    }
+
+    @Test("a window of our session killed elsewhere leaves the tree with its pane")
+    func otherWindowKilled() async throws {
+        let (controller, transport) = await twoWindows()
+        transport.pushText("%unlinked-window-close @1\n")
+        #expect(await waitUntil(timeout: Self.loadedDeviceTimeout) { controller.snapshot.windows["@1"] == nil })
+        #expect(controller.snapshot.panes["%1"] == nil)
+        #expect(controller.snapshot.activeWindowId == "@0")
+    }
+
+    @Test("the window on screen killed elsewhere: the phone lands on the survivor")
+    func windowOnScreenKilled() async throws {
+        let (controller, transport) = await twoWindows()
+        #expect(controller.snapshot.activeWindowId == "@0")
+        transport.pushText("%session-window-changed $0 @1\n%unlinked-window-close @0\n")
+        #expect(await waitUntil(timeout: Self.loadedDeviceTimeout) { controller.snapshot.windows["@0"] == nil })
+        #expect(controller.snapshot.activeWindowId == "@1")
+        #expect(controller.snapshot.activePaneId == "%1")
+    }
+
+    /// tmux moves the session's current window to the one used last and
+    /// says so just BEFORE the close (3.6a, private socket): `%session-
+    /// window-changed $0 @0`, then `%unlinked-window-close @1`.
+    @Test("the window on screen killed elsewhere: the phone lands where tmux did, not on the first by index")
+    func windowOnScreenKilledLandsOnTmuxChoice() async throws {
+        let (controller, transport) = await makeAttachedController()
+        _ = await waitUntil(timeout: Self.loadedDeviceTimeout) {
+            await transport.recordedCommands().count >= 3
+        }
+        transport.pushText("""
+        %begin 1 1 1
+        $0 1 main
+        %end 1 1 1
+        %begin 2 2 1
+        $0 @0 0 b25d,80x24,0,0,0 0 1 main
+        $0 @2 1 b25e,80x24,0,0,2 0 1 logs
+        $0 @1 2 b25f,80x24,0,0,1 1 1 vim
+        %end 2 2 1
+        %begin 3 3 1
+        %0 @0 0 80 24 1 0 0 bash
+        %2 @2 0 80 24 1 0 0 tail
+        %1 @1 0 80 24 1 0 0 vim
+        %end 3 3 1
+
+        """)
+        _ = await waitUntil(timeout: Self.loadedDeviceTimeout) { controller.snapshot.panes.count == 3 }
+        #expect(controller.snapshot.activeWindowId == "@1")
+        transport.pushText("%session-window-changed $0 @2\n%unlinked-window-close @1\n")
+        #expect(await waitUntil(timeout: Self.loadedDeviceTimeout) { controller.snapshot.windows["@1"] == nil })
+        #expect(controller.snapshot.activeWindowId == "@2")
+        #expect(controller.snapshot.activePaneId == "%2")
+    }
+}
+
+// MARK: - Listings tmux refuses
+
+/// tmux answers a listing it cannot run with `%error` and its complaint.
+/// Every listing used to parse that reply as an answer — no rows — and so
+/// emptied what it was asked for: the sessions, the windows, the panes and
+/// their terminals, the agent stamps, until the next listing came back whole.
+@Suite("tmux listings answered with %error", .serialized, .tmuxParserUnderTest)
+@MainActor
+struct TmuxRefusedListingTests {
+
+    private static let loadedDeviceTimeout: TimeInterval = 15
+
+    /// Answers every command in the order it went out: the listings from the
+    /// tree below — or, once `refusing`, with tmux's `%error` — and anything
+    /// else with an empty reply.
+    @MainActor final class Server {
+        let transport: MockTmuxTransport
+        var refusing = false
+        private var answered = 0
+        private var number = 500
+
+        init(_ transport: MockTmuxTransport) { self.transport = transport }
+
+        private func rows(for command: String) -> [String] {
+            if command.hasPrefix("list-sessions") { return ["$0 1 main", "$2 0 work"] }
+            if command.hasPrefix("list-windows") { return ["$0 @0 0 b25d,80x24,0,0,0 1 1 main"] }
+            if command.hasPrefix("list-panes -a -F \(TmuxSessionController.paneDiscoveryFormat)") {
+                return ["%0 @0 0 80 24 1 0 0 bash"]
+            }
+            if command.hasPrefix("list-panes"), command.contains("@moshpit_state") {
+                return ["%0|working|claude|1700000000|claude|fixing the scroll"]
+            }
+            return []
+        }
+
+        func answerPending() async {
+            let commands = await transport.recordedCommands()
+            while answered < commands.count {
+                let command = commands[answered]
+                number += 1
+                let n = number
+                if refusing, command.hasPrefix("list-") {
+                    transport.pushText("%begin \(n) \(n) 1\nserver exited unexpectedly\n%error \(n) \(n) 1\n\n")
+                } else {
+                    let lines = rows(for: command)
+                    transport.pushText(lines.isEmpty
+                        ? "%begin \(n) \(n) 1\n%end \(n) \(n) 1\n\n"
+                        : "%begin \(n) \(n) 1\n\(lines.joined(separator: "\n"))\n%end \(n) \(n) 1\n\n")
+                }
+                answered += 1
+            }
+        }
+
+        /// Answer until `done` holds and nothing new has gone out for a while.
+        @discardableResult
+        func settle(until done: @MainActor () -> Bool = { true }) async -> Bool {
+            var quiet = 0
+            var seen = -1
+            let deadline = Date().addingTimeInterval(TmuxRefusedListingTests.loadedDeviceTimeout)
+            while Date() < deadline {
+                await answerPending()
+                try? await Task.sleep(for: .milliseconds(40))
+                let count = await transport.recordedCommands().count
+                quiet = (count == seen && count == answered) ? quiet + 1 : 0
+                seen = count
+                if done(), quiet >= 3 { return true }
+            }
+            return done()
+        }
+    }
+
+    @Test("a refused listing keeps the sessions, windows, panes and agent stamps listed before")
+    func refusedListingKeepsTheTree() async throws {
+        let (controller, transport) = await makeAttachedController()
+        let server = Server(transport)
+        try #require(await server.settle {
+            controller.snapshot.sessions.count == 2 && controller.snapshot.panes["%0"] != nil
+        }, "discovery never filled the tree")
+        controller.pollAgentHooks()
+        try #require(await server.settle { controller.agentHooks["%0"] != nil })
+
+        // From here every listing is refused — re-listed by every path that
+        // lists: the refresh, a rename, a window added elsewhere, a session
+        // change, the stamp poll.
+        server.refusing = true
+        controller.refresh()
+        controller.renameSession("$2", to: "work2")
+        transport.pushText("%window-add @0\n")
+        controller.pollAgentHooks()
+        await server.settle()
+
+        #expect(controller.snapshot.sessions.keys.sorted() == ["$0", "$2"],
+                "a refused list-sessions emptied the sessions")
+        #expect(controller.snapshot.windows["@0"]?.name == "main", "a refused list-windows emptied the windows")
+        #expect(controller.snapshot.panes["%0"] != nil, "a refused list-panes emptied the panes")
+        #expect(controller.snapshot.activeWindowId == "@0")
+        #expect(controller.snapshot.activePaneId == "%0")
+        #expect(controller.agentHooks["%0"]?.state == "working",
+                "a refused stamp poll read every pane's agent as gone")
+    }
+
+    /// The positive control: a listing that is ANSWERED with fewer rows
+    /// still replaces the tree — only a refusal keeps it.
+    @Test("an answered listing still replaces what was listed before")
+    func answeredListingReplaces() async throws {
+        let (controller, transport) = await makeAttachedController()
+        let server = Server(transport)
+        try #require(await server.settle { controller.snapshot.sessions.count == 2 })
+
+        controller.parseListSessions(["$0 1 main"])
+
+        #expect(controller.snapshot.sessions.keys.sorted() == ["$0"])
+    }
+}
+
+// MARK: - Ids in number order
+
+/// tmux numbers its sessions, windows and panes, and the order they were
+/// made in is the order of those numbers. Sorting the ids as strings put
+/// `$10` ahead of `$2`: with ten sessions, the session to fall back to — a
+/// fresh listing with none attached, the one on screen killed — was the
+/// tenth, not the first.
+@Suite("tmux ids in number order", .serialized, .tmuxParserUnderTest)
+@MainActor
+struct TmuxIdOrderTests {
+
+    @Test("with no session attached anywhere, a listing lands on the first made, not the first spelled")
+    func listingFallsBackToTheFirstMade() {
+        let controller = TmuxSessionController(sshSession: MockTmuxTransport())
+        controller.parseListSessions(["$10 0 ten", "$2 0 two", "$11 0 eleven"])
+        #expect(controller.snapshot.activeSessionId == "$2")
+    }
+
+    @Test("killing the session on screen falls back to the first made")
+    func killFallsBackToTheFirstMade() {
+        let controller = TmuxSessionController(sshSession: MockTmuxTransport())
+        controller.parseListSessions(["$10 0 ten", "$2 0 two", "$3 1 three"])
+        #expect(controller.snapshot.activeSessionId == "$3")
+
+        controller.killSession("$3")
+
+        #expect(controller.snapshot.activeSessionId == "$2")
+    }
+
+    @Test("panes and sessions are listed in the order they were made")
+    func listedInTheOrderMade() {
+        var snapshot = TmuxSnapshot()
+        snapshot.activeWindowId = "@1"
+        for id in ["%10", "%2", "%9"] {
+            snapshot.panes[id] = PaneInfo(id: id, windowId: "@1", index: 0, command: "bash",
+                                          width: 80, height: 24, isActive: false)
+        }
+        for id in ["$10", "$1", "$2"] {
+            snapshot.sessions[id] = SessionInfo(id: id, name: "s\(id)", isAttached: false)
+        }
+
+        #expect(snapshot.activePanes.map(\.id) == ["%2", "%9", "%10"],
+                "the pane input falls back to was %10, not %2")
+        #expect(snapshot.sortedSessions.map(\.id) == ["$1", "$2", "$10"])
+        #expect(TmuxSnapshot.idPrecedes("w1:p2", "w1:p10"), "herdr's ids number the same way")
+        #expect(!TmuxSnapshot.idPrecedes("$2", "$2"))
+    }
+}
+
+// MARK: - Whose a reply is (B275)
+
+/// A reply is the command's whose it is. tmux answers each line a control
+/// client writes with one `%begin … %end` block, flagged 1, and the
+/// controller pairs blocks with commands by position. tmux also writes
+/// blocks for commands nobody here sent, flagged 0 (tmux 3.6a, read off a
+/// private server): an `after-<command>` hook one of ours fired
+/// (`set-hook -g after-split-window 'select-layout tiled'` answers the
+/// new-pane button with two blocks), the late half of an `if-shell -b`.
+/// Taken for replies, they put every later reply one command off — the
+/// crates/tmux rule (B273), missing from the app's controller (B275).
+@Suite("tmux replies flagged 0 answer nothing of ours", .serialized, .tmuxParserUnderTest)
+@MainActor
+struct TmuxReplyFlagsTests {
+
+    private static let loadedDeviceTimeout: TimeInterval = 15
+
+    /// tmux with one session, two windows, a pane each. `flags` is what it
+    /// writes on a reply to one of our lines; `after` what it adds behind a
+    /// command's own block (a hook's, flagged 0).
+    @MainActor final class Server {
+        let transport: MockTmuxTransport
+        var flags = 1
+        var after: (String) -> String = { _ in "" }
+        private(set) var answered = 0
+        private var number = 500
+        private var hooks = 9000
+
+        init(_ transport: MockTmuxTransport) { self.transport = transport }
+
+        static let path1 = "/srv/work"
+
+        private func rows(for command: String) -> [String] {
+            if command.hasPrefix("list-sessions") { return ["$0 1 main"] }
+            if command.hasPrefix("list-windows") {
+                return ["$0 @0 0 81x24,0,0,0 1 1 main", "$0 @1 1 81x24,0,0,1 0 1 work"]
+            }
+            if command.hasPrefix("list-panes -a -F \(TmuxSessionController.paneDiscoveryFormat)") {
+                return ["%0 @0 0 80 24 1 0 0 bash", "%1 @1 0 80 24 1 0 0 vim"]
+            }
+            if command.hasPrefix("capture-pane -p -e -S ") { return ["HISTORY"] }
+            if command.hasPrefix("capture-pane -p -e -t ") { return ["SCREEN"] }
+            // Recorded as written, newline and all.
+            if command.hasPrefix("display-message -p -t %1 '#{pane_current_path}'") { return [Self.path1] }
+            if command.hasPrefix("display-message -p -t %1 '#{cursor_x} #{cursor_y}'") { return ["0 0"] }
+            return []
+        }
+
+        /// A block tmux writes for a command nobody here sent.
+        func hookBlock(_ lines: [String] = []) -> String {
+            hooks += 1
+            let n = hooks
+            return "%begin \(n) \(n) 0\n" + lines.map { $0 + "\n" }.joined() + "%end \(n) \(n) 0\n"
+        }
+
+        func answerPending() async {
+            let commands = await transport.recordedCommands()
+            while answered < commands.count {
+                let command = commands[answered]
+                number += 1
+                let n = number
+                let lines = rows(for: command)
+                transport.pushText("%begin \(n) \(n) \(flags)\n" + lines.map { $0 + "\n" }.joined()
+                    + "%end \(n) \(n) \(flags)\n" + after(command))
+                answered += 1
+            }
+        }
+
+        /// Answer until `done` holds and nothing new has gone out for a while.
+        @discardableResult
+        func settle(until done: @MainActor () -> Bool = { true }) async -> Bool {
+            var quiet = 0
+            var seen = -1
+            let deadline = Date().addingTimeInterval(TmuxReplyFlagsTests.loadedDeviceTimeout)
+            while Date() < deadline {
+                await answerPending()
+                try? await Task.sleep(for: .milliseconds(40))
+                let count = await transport.recordedCommands().count
+                quiet = (count == seen && count == answered) ? quiet + 1 : 0
+                seen = count
+                if done(), quiet >= 3 { return true }
+            }
+            return done()
+        }
+    }
+
+    private func inStep(_ controller: TmuxSessionController) -> Bool {
+        let s = controller.snapshot
+        return s.sessions.mapValues(\.name) == ["$0": "main"]
+            && s.windows.mapValues(\.name) == ["@0": "main", "@1": "work"]
+            && Set(s.panes.keys) == ["%0", "%1"]
+    }
+
+    /// The pane's path, asked now, with the server answering until it is
+    /// in: the request goes out a couple of task hops later, past what a
+    /// plain settle may wait for on a loaded device.
+    private func path(_ controller: TmuxSessionController, _ pane: String, _ server: Server) async -> String? {
+        @MainActor final class Box { var answer: String?? }
+        let box = Box()
+        Task { @MainActor in box.answer = .some(await controller.panePath(pane)) }
+        await server.settle { box.answer != nil }
+        return box.answer ?? nil
+    }
+
+    private func attached() async throws -> (TmuxSessionController, MockTmuxTransport, Server) {
+        let (controller, transport) = await makeAttachedController()
+        let server = Server(transport)
+        try #require(await server.settle { inStep(controller) }, "discovery never filled the tree")
+        return (controller, transport, server)
+    }
+
+    @Test("an after-hook's block behind our command's answers nothing of ours")
+    func hookBlockAnswersNothing() async throws {
+        let (controller, _, server) = try await attached()
+        // `after-select-window` and `after-split-window` hooks, as people
+        // set them: each select-window and split-window of ours is answered
+        // by its own block and then the hook's.
+        server.after = { command in
+            command.hasPrefix("select-window") || command.hasPrefix("split-window")
+                ? server.hookBlock() : ""
+        }
+        // The pane's path asked right behind the switch: its reply comes
+        // after the hook's block (the live case, crates/tmux user-hooks).
+        controller.selectWindow("@1")
+        #expect(await path(controller, "%1", server) == Server.path1,
+                "one block off, the path read another command's reply")
+
+        // The new-pane button and a refresh in one burst: the split's hook
+        // block sits between them.
+        controller.newPane()
+        controller.refresh()
+        await server.settle()
+        #expect(inStep(controller), "the refresh's listings were filed one command off: \(controller.snapshot)")
+    }
+
+    @Test("a late -b block between our replies answers nothing of ours")
+    func lateBackgroundBlockAnswersNothing() async throws {
+        let (controller, transport, server) = try await attached()
+        // `if-shell -b` / `run-shell -b` from a binding or a hook: its
+        // command's block comes whenever the job ends, flagged 0 — here
+        // before any of the refresh's replies, with a session row in it.
+        controller.refresh()
+        _ = await waitUntil(timeout: Self.loadedDeviceTimeout) {
+            await transport.recordedCommands().count >= server.answered + 3
+        }
+        transport.pushText(server.hookBlock(["$9 1 intruder"]))
+        await server.settle()
+        #expect(inStep(controller), "the late block was read as the session listing: \(controller.snapshot)")
+    }
+
+    @Test("a server that flags no reply as ours is read the old way, every block a reply")
+    func unflaggedServerStillLoads() async throws {
+        let (controller, transport) = await makeAttachedController()
+        let server = Server(transport)
+        server.flags = 0
+        #expect(await server.settle { inStep(controller) },
+                "every reply was turned away and nothing loaded")
+        controller.selectWindow("@1")
+        #expect(await path(controller, "%1", server) == Server.path1)
     }
 }

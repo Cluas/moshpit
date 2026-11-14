@@ -1,0 +1,16 @@
+t=0 exec api snapshot
+t=40 focus w1:p1
+t=300 exec worktree remove --workspace 'w7'
+t=340 outcome removal needs-force
+t=340 exec api snapshot
+t=380 focus w1:p1
+t=2000 exec worktree remove --workspace 'w7' --force
+t=2040 exec api snapshot
+t=2040 exec api snapshot
+t=2040 exec api snapshot
+t=2080 outcome removal removed
+t=2080 focus w1:p1
+t=4080 exec api snapshot
+t=4120 focus w1:p1
+landed worktree remove w7
+state focus=w1:p1 server=w1:p1 sessions=1 notrunning=false mismatch=false

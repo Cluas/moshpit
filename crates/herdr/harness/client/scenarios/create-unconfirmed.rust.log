@@ -1,0 +1,11 @@
+t=0 exec api snapshot
+t=40 focus w1:p1
+t=300 exec worktree create --cwd '/home/dev/code/app' --branch 'fix-scroll' --label 'fix-scroll' --focus --json
+t=340 outcome task failed herdr didn't confirm the worktree, so no agent was started. Look for a “fix-scroll” workspace before trying again.
+t=340 exec api snapshot
+t=380 focus w1:p1
+t=2380 exec api snapshot
+t=2420 focus w1:p1
+t=4420 exec api snapshot
+t=4460 focus w1:p1
+state focus=w1:p1 server=w1:p1 sessions=1 notrunning=false mismatch=false

@@ -1,0 +1,72 @@
+P1000p%begin 1794337414 282 0
+%end 1794337414 282 0
+%session-changed $0 g2
+%begin 1794337414 287 1
+%end 1794337414 287 1
+%begin 1794337414 288 1
+$0 1 g2
+%end 1794337414 288 1
+%begin 1794337414 289 1
+$0 @0 0 b25d,80x24,0,0,0 1 1 sh
+%end 1794337414 289 1
+%layout-change @0 b25d,80x24,0,0,0 b25d,80x24,0,0,0 *
+%begin 1794337414 292 1
+%0 @0 0 80 24 1 0 0 bash
+%end 1794337414 292 1
+%begin 1794337414 293 1
+C-b
+%end 1794337414 293 1
+%begin 1794337414 294 1
+1|g2|/dev/ttys022
+%end 1794337414 294 1
+%begin 1794337414 295 1
+G2SYNC1
+%end 1794337414 295 1
+%begin 1794337414 296 1
+%end 1794337414 296 1
+%begin 1794337414 297 1
+G2SYNC2
+%end 1794337414 297 1
+%begin 1794337414 298 1
+%end 1794337414 298 1
+%begin 1794337414 299 1
+%end 1794337414 299 1
+%extended-output %0 0 : s
+%extended-output %0 0 : eq
+%extended-output %0 0 :  
+%extended-output %0 0 : 1 
+%extended-output %0 0 : 30
+%extended-output %0 0 : 0
+%extended-output %0 0 : 0
+%extended-output %0 0 : 0
+%extended-output %0 0 : ;
+%window-renamed @0 seq
+%pause %0
+%window-renamed @0 bash
+%begin 1794337418 306 1
+%continue %0
+%end 1794337418 306 1
+%begin 1794337418 307 1
+G2SYNC3
+%end 1794337418 307 1
+%begin 1794337418 308 1
+%end 1794337418 308 1
+%begin 1794337418 309 1
+G2SYNC4
+%end 1794337418 309 1
+%begin 1794337418 310 1
+%end 1794337418 310 1
+%begin 1794337418 311 1
+%end 1794337418 311 1
+%begin 1794337418 312 1
+G2SYNC5
+%end 1794337418 312 1
+%output %0 e
+%output %0 cho 
+%output %0 resumed\015\012
+%output %0 resumed\015\012
+%output %0 sh-3.2$ 
+%begin 1794337418 313 1
+%end 1794337418 313 1
+%exit
+\

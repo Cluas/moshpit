@@ -1,0 +1,58 @@
+[package]
+name = "moshpit-ssh"
+description = "The SSH transport of Moshpit's Rust core: connections over TCP or a SOCKS5 proxy, trust on first use for host keys, password, key and hardware-signer sign-in, exec and terminal channels, SFTP."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+bytes = "1"
+log = "0.4"
+# The known-hosts model the decisions here are made from, and its keychain
+# item's format.
+moshpit-store = { path = "../store" }
+# ring rather than aws-lc-rs: it cross-compiles to iOS and Android with plain
+# cc, no cmake. No `flate2`: the app has never compressed SSH (NIOSSH can't),
+# and OpenSSH's own client doesn't by default either.
+russh = { version = "0.65", default-features = false, features = ["ring", "rsa"] }
+# The client over any byte stream; russh only as a dev-dependency of its own.
+russh-sftp = "3.0"
+thiserror = "2"
+tokio = { version = "1", features = ["net", "io-util", "time", "rt", "sync", "macros"] }
+# Cuts the socket from outside russh's session task (a connect given up).
+tokio-util = "0.7"
+# Passwords and key text, wiped when dropped.
+zeroize = "1.8"
+# The system's randomness for the keys the app generates (src/keyfile.rs);
+# the same rand the tests already used.
+rand = { version = "0.10", features = ["thread_rng"] }
+# Reading the key files people paste (src/keyfile): the primitives russh
+# already builds on, at its versions — PBKDF2 and bcrypt-pbkdf, AES and
+# 3DES in CBC, MD5 for OpenSSL's traditional PEM encryption, the NIST
+# curves to derive a public point, and rsa to check a key's numbers.
+aes = "0.9"
+bcrypt-pbkdf = "0.11"
+cbc = "0.2"
+des = "0.9"
+md5 = "0.8"
+p256 = { version = "0.14", default-features = false, features = ["arithmetic"] }
+p384 = { version = "0.14", default-features = false, features = ["arithmetic"] }
+p521 = { version = "0.14", default-features = false, features = ["arithmetic"] }
+pbkdf2 = { version = "0.13", default-features = false, features = ["hmac"] }
+rsa = { version = "=0.10.0-rc.18", default-features = false }
+sha1 = { version = "0.11", default-features = false }
+sha2 = { version = "0.11", default-features = false }
+
+[dev-dependencies]
+rand = { version = "0.10", features = ["thread_rng"] }
+# The tests' stand-in for the Secure Enclave: a P-256 key that signs to DER.
+p256 = { version = "0.14", features = ["ecdsa"] }
+# The recorded Swift answers (tests/fixtures/swift) are JSON strings.
+serde_json = "1"
+# examples/shell_cases.rs: every command line the app hands a login shell,
+# built by the crates that build them, for harness/shells.py (B138).
+moshpit-herdr = { path = "../herdr" }
+moshpit-install = { path = "../install" }
+moshpit-tmux = { path = "../tmux" }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "io-util", "net", "time", "process", "sync", "test-util"] }

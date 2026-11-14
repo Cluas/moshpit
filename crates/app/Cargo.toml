@@ -1,0 +1,32 @@
+[package]
+name = "moshpit-app"
+description = "The app's screen models, one Rust copy for iOS and Android: what each NSH screen's host keeps and decides (the connection form's draft and save rules, the shortcut bar's operations, the host folder, image attachments, remote paths). No I/O and no platform API: the hosts give it records and flags and do what it decides (the keychain, the pickers, the share sheet stay theirs)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+# The screens' message types (what a host posts and hears): the models feed
+# them, and the screens' own rules (a port, Save) are the ones used here.
+moshpit-ui = { path = "../../ui" }
+moshpit-store = { path = "../store" }
+# The colours the editors post (`Rgba`).
+nsh-core.workspace = true
+moshpit-seal = { path = "../seal" }
+# The app's one shell quoter (the same as moshpit-ssh's), for the commands
+# the remote-path model builds.
+moshpit-install = { path = "../install" }
+log = "0.4"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# A chip's six characters, as a person counts them (Swift's `prefix(6)`).
+unicode-segmentation = "1.13"
+# Home's record (src/home.rs) is built from the session layer's views, and
+# the tmux and herdr trees in them.
+moshpit-session = { path = "../session" }
+moshpit-tmux = { path = "../tmux" }
+moshpit-herdr = { path = "../herdr" }
+# Names compare in one Unicode form (B332: "café" composed on the phone,
+# decomposed on an old Mac disk).
+unicode-normalization = "0.1.26"

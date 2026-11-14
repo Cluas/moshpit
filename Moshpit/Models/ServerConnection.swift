@@ -107,24 +107,15 @@ struct ServerConnection: Identifiable, Codable, Equatable {
     var createdAt: Date
     var lastConnectedAt: Date?
 
-    // MARK: - Enhance page fields
+    // MARK: - Legacy
 
-    /// Startup command to run after connection (e.g. "cd ~/project")
-    var startupCommand: String?
-    /// Forward SSH agent to remote host
-    var forwardAgent: Bool
-    /// Enable SSH compression
-    var compression: Bool
-    /// Keep-alive interval in seconds (0 = disabled)
-    var keepAliveInterval: Int
-    /// Jump host for ProxyJump (e.g. "bastion.example.com")
-    var jumpHost: String?
-    /// Route connection through Tailscale VPN
-    var useTailscale: Bool
-    /// Auto-attach to tmux session if only one exists
-    var tmuxAutoAttach: Bool
-    /// Offer to create a new tmux session
-    var tmuxCreateNew: Bool
+    // The prototype's "Enhance" page also stored startupCommand,
+    // forwardAgent, keepAliveInterval, jumpHost, useTailscale, tmuxAutoAttach
+    // and tmuxCreateNew (and compression). Nothing ever read them, so they
+    // are gone; lists that still carry them decode fine, since unknown keys
+    // are ignored, and ConnectionStore keeps writing the non-optional ones
+    // for builds that still require them (`rollbackFields`).
+
     /// Enable tmux integration.
     ///
     /// LEGACY — superseded by ``multiplexer``. Kept as a stored field so
@@ -213,14 +204,6 @@ struct ServerConnection: Identifiable, Codable, Equatable {
         keychainRef: String? = nil,
         createdAt: Date = Date(),
         lastConnectedAt: Date? = nil,
-        startupCommand: String? = nil,
-        forwardAgent: Bool = false,
-        compression: Bool = false,
-        keepAliveInterval: Int = 60,
-        jumpHost: String? = nil,
-        useTailscale: Bool = false,
-        tmuxAutoAttach: Bool = true,
-        tmuxCreateNew: Bool = true,
         useTmux: Bool = false,
         predictModeRaw: String? = nil,
         roamOnCellular: Bool? = nil,
@@ -242,14 +225,6 @@ struct ServerConnection: Identifiable, Codable, Equatable {
         self.keychainRef = keychainRef
         self.createdAt = createdAt
         self.lastConnectedAt = lastConnectedAt
-        self.startupCommand = startupCommand
-        self.forwardAgent = forwardAgent
-        self.compression = compression
-        self.keepAliveInterval = keepAliveInterval
-        self.jumpHost = jumpHost
-        self.useTailscale = useTailscale
-        self.tmuxAutoAttach = tmuxAutoAttach
-        self.tmuxCreateNew = tmuxCreateNew
         self.useTmux = useTmux
         self.predictModeRaw = predictModeRaw
         self.roamOnCellular = roamOnCellular

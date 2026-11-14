@@ -1,0 +1,184 @@
+P1000p%begin 1794337381 282 0
+%end 1794337381 282 0
+%session-changed $0 g2
+%begin 1794337381 287 1
+%end 1794337381 287 1
+%layout-change @0 b25d,80x24,0,0,0 b25d,80x24,0,0,0 *
+%begin 1794337381 290 1
+$0 1 g2
+%end 1794337381 290 1
+%begin 1794337381 291 1
+$0 @0 0 b25d,80x24,0,0,0 1 1 sh
+%end 1794337381 291 1
+%begin 1794337381 292 1
+%0 @0 0 80 24 1 0 0 bash
+%end 1794337381 292 1
+%begin 1794337381 293 1
+C-b
+%end 1794337381 293 1
+%begin 1794337381 294 1
+1|g2|/dev/ttys022
+%end 1794337381 294 1
+%begin 1794337381 295 1
+G2SYNC1
+%end 1794337381 295 1
+%begin 1794337381 296 1
+%end 1794337381 296 1
+%begin 1794337381 297 1
+%end 1794337381 297 1
+%begin 1794337381 298 1
+G2SYNC2
+%end 1794337381 298 1
+%output %0 pr
+%output %0 in
+%output %0 tf
+%output %0  "
+%output %0 h
+%output %0 e
+%output %0 l
+%output %0 lo
+%output %0  
+%output %0 wo
+%output %0 r
+%output %0 ld
+%output %0 \134
+%output %0 n
+%output %0 "
+%output %0 \015\012
+%output %0 hello world\015\012
+%output %0 sh-3.2$ 
+%window-renamed @0 bash
+%begin 1794337382 300 1
+%end 1794337382 300 1
+%begin 1794337382 301 1
+%end 1794337382 301 1
+%begin 1794337382 302 1
+G2SYNC3
+%end 1794337382 302 1
+%output %0 echo 
+%output %0 pl
+%output %0 a
+%output %0 in
+%output %0  
+%output %0 t
+%output %0 e
+%output %0 x
+%output %0 t:
+%output %0  
+%output %0 th
+%output %0 e
+%output %0  
+%output %0 q
+%output %0 ui
+%output %0 c
+%output %0 k
+%output %0  
+%output %0 b
+%output %0 r
+%output %0 ow
+%output %0 n 
+%output %0 f
+%output %0 o
+%output %0 x
+%output %0 ;
+%output %0  e
+%output %0 cho second line\015\012plain text: the quick brown fox\015\012second line\015\012sh-3.2$ 
+%begin 1794337382 303 1
+%end 1794337382 303 1
+%begin 1794337382 304 1
+%end 1794337382 304 1
+%begin 1794337382 305 1
+G2SYNC4
+%end 1794337382 305 1
+%output %0 printf "%s\134n" one two three four five\015\012one\015\012two\015\012three\015\012four\015\012five\015\012sh-3.2$ 
+%begin 1794337383 306 1
+%end 1794337383 306 1
+%begin 1794337383 307 1
+%end 1794337383 307 1
+%begin 1794337383 308 1
+G2SYNC5
+%end 1794337383 308 1
+%output %0 echo $((6 * 7)); printf "tab:[\134t] backslash:[\134\134] percent:[100%%]\134n"\015\01242\015\012tab:[\011] backslash:[\134] percent:[100%]\015\012sh-3.2$ 
+%begin 1794337383 309 1
+%end 1794337383 309 1
+%begin 1794337383 310 1
+%end 1794337383 310 1
+%begin 1794337383 311 1
+G2SYNC6
+%end 1794337383 311 1
+%output %0 echo %be
+%output %0 gi
+%output %0 n 1 2
+%output %0  0
+%output %0  
+%output %0 an
+%output %0 d
+%output %0  
+%output %0 %
+%output %0 en
+%output %0 d 
+%output %0 1
+%output %0  
+%output %0 2
+%output %0  0
+%output %0  
+%output %0 a
+%output %0 s
+%output %0  p
+%output %0 an
+%output %0 e 
+%output %0 text
+%output %0 \015\012%begin 1 2 0 and %end 1 2 0 as pane text\015\012sh-3.2$ 
+%begin 1794337383 312 1
+%end 1794337383 312 1
+%begin 1794337383 313 1
+%end 1794337383 313 1
+%begin 1794337383 314 1
+G2SYNC7
+%end 1794337383 314 1
+%output %0 printf "%%en
+%output %0 d
+%output %0  1
+%output %0  2 0\134n%%exit\134n%%output %%9 fake\134n"\015\012%end 1 2 0\015\012%exit\015\012%output %9 fake\015\012sh-3.2$ 
+%begin 1794337384 315 1
+0 0
+%end 1794337384 315 1
+%begin 1794337384 316 1
+sh-3.2$ printf "hello world\n"
+%end 1794337384 316 1
+%begin 1794337384 317 1
+sh-3.2$ printf "hello world\n"
+hello world
+sh-3.2$ echo plain text: the quick brown fox; echo second line
+plain text: the quick brown fox
+second line
+sh-3.2$ printf "%s\n" one two three four five
+one
+two
+three
+four
+five
+sh-3.2$ echo $((6 * 7)); printf "tab:[\t] backslash:[\\] percent:[100%%]\n"
+42
+tab:[	] backslash:[\] percent:[100%]
+sh-3.2$ echo %begin 1 2 0 and %end 1 2 0 as pane text
+%begin 1 2 0 and %end 1 2 0 as pane text
+sh-3.2$ printf "%%end 1 2 0\n%%exit\n%%output %%9 fake\n"
+%end 1 2 0
+%exit
+%output %9 fake
+sh-3.2$
+
+
+
+%end 1794337384 317 1
+%begin 1794337384 318 1
+8 20
+%end 1794337384 318 1
+%begin 1794337384 319 1
+G2SYNC8
+%end 1794337384 319 1
+%begin 1794337384 320 1
+%end 1794337384 320 1
+%exit
+\

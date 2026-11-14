@@ -1,0 +1,200 @@
+{
+  "about": "Every difference between the Swift TmuxSessionController (5337db09) and the Rust controller on the harness's scripts, triaged. kind: swift-wrong (Swift misbehaves; Rust does what tmux 3.6a and the app's rules call for) or on-purpose (a design change). Each fixture must differ as described (rust_has / swift_has are lines each log must contain); every other script must be identical but for the normalisations. Evidence marked live:<name> is a case of harness/controller/live.py on a private tmux 3.6a server. A divergence since fixed in the app carries status 'fixed' (what changed under 'fixed'): its fixtures must now print the same logs on both sides.",
+  "normalisations": [
+    {
+      "pattern": " #\\{pane_current_path\\}'",
+      "replace": "'",
+      "kind": "on-purpose",
+      "why": "UI-DESIGN §10.5: the Rust pane listing also reads each pane's working directory (#{pane_current_path}, after the command); the Swift controller's listing does not. The field is taken out of the Rust log's listing command, the rest of the line and every other line still compared. Replies without the field (every script's) parse as before."
+    },
+    {
+      "pattern": "\\\\x1b\\[0m\\\\x1b\\[H\\\\x1b\\[K\\\\x1b\\[2;1H\\\\x1b\\[J\\\\x1b\\[3J\\\\x1b\\[H(.*?)\\\\x1b\\[0m\\\\x1b\\[9999;1H(?:\\\\x0a)+$",
+      "replace": "\\1\\\\x0d\\\\x0a",
+      "kind": "on-purpose",
+      "why": "B364: the Rust backfill makes the dump the pane's local history exactly. It blanks the screen without ED 2, erases the local history (ED 3), prints the dump from home and pushes it whole into the history from the bottom row (one line feed a printed row), instead of printing it with a trailing CRLF and leaving its last screenful for the next frame's ED 2 to push. Written back to the Swift form (the dump, CRLF) before comparing."
+    },
+    {
+      "pattern": "\\\\x1b\\[0m\\\\x1b\\[H\\\\x1b\\[K\\\\x1b\\[2;1H\\\\x1b\\[J\\\\x1b\\[H",
+      "replace": "\\\\x1b[H\\\\x1b[2J",
+      "kind": "on-purpose",
+      "why": "B364: a Rust repair frame blanks the screen without ED 2 (the first row with EL, then ED 0 from the second row, default pen): the terminal core moves the screen into its history on ED 2 (tmux's scroll-on-clear), so every repaint left one more copy of the screen there. Written back to the Swift form (ESC [H ESC [2J) before comparing."
+    },
+    {
+      "pattern": "(#\\{cursor_y\\}) #\\{mouse_any_flag\\} #\\{alternate_on\\}'",
+      "replace": "\\1'",
+      "kind": "on-purpose",
+      "why": "B363: the Rust repaint's cursor query also reads the pane program's flags (#{mouse_any_flag} #{alternate_on}), so they are known from the attach's own repaint on, per pane, with no round trip of their own; the Swift controller asks only for the cursor. Written back to the Swift query before comparing (replies with only the cursor parse as before)."
+    }
+  ],
+  "divergences": [
+    {
+      "id": "refused-capture",
+      "kind": "swift-wrong",
+      "fixture": "div-refused-capture",
+      "swift": "Moshpit/Services/Tmux/TmuxSessionController.swift:2914, :3106, :3134",
+      "symptom": "A capture-pane tmux refuses (%error 'can't find pane: %N') is painted into the pane as history or as a repair frame, and its cursor reply moves the cursor home.",
+      "trigger": "The pane exits or is killed while its backfill or repaint is on the wire (a resize or %continue repaint of a pane that just died).",
+      "rust": "A refused capture or cursor query paints nothing.",
+      "evidence": "live:refused-capture",
+      "rust_has": [],
+      "swift_has": [". pane %0 \\x1b[H\\x1b[2Jcan't find pane: %0\\x1b[0m"]
+    },
+    {
+      "id": "cursor-overflow",
+      "kind": "swift-wrong",
+      "fixture": "div-cursor-overflow",
+      "swift": "Moshpit/Services/Tmux/TmuxSessionController.swift:3134",
+      "symptom": "The app traps (Int overflow in `row + 1`) when a cursor reply carries Int.max.",
+      "trigger": "A reply paired with the wrong command (a desynced FIFO hands pane text to the cursor callback); not tmux's own cursor reply.",
+      "rust": "The CUP is formatted in i128.",
+      "evidence": "harness: the Swift binary exits with SIGTRAP on the fixture",
+      "rust_has": [". pane %0 \\x1b[9223372036854775808;1H"],
+      "swift_has": ["!trap"],
+      "status": "fixed",
+      "fixed": "In the app since round 21 (B142): the Swift controller formats the CUP in Int128 too; the fixture's logs now agree."
+    },
+    {
+      "id": "dead-pane-terminals",
+      "kind": "swift-wrong",
+      "fixture": "div-dead-pane-terminals",
+      "swift": "Moshpit/Services/Tmux/TmuxSessionController.swift:4232 (the only place a terminal is freed); B87",
+      "symptom": "A pane that exits inside a window that lives on (tmux sends only %layout-change), or every pane of a killed session, keeps its terminal for the controller's life; switches go on releasing its scroll hold.",
+      "trigger": "exit in one pane of a split window; kill-session.",
+      "rust": "A pane missing from a whole-server list-panes -a is dead (tmux never reuses an id): its stream is closed.",
+      "evidence": "live:pane-exit-layout-only",
+      "rust_has": [". close %1"],
+      "swift_has": [". view %1 release-hold"]
+    },
+    {
+      "id": "sidecar-current-window",
+      "kind": "swift-wrong",
+      "fixture": "div-sidecar-current-window",
+      "fixtures": ["div-sidecar-current-window", "div-sidecar-window-close"],
+      "swift": "Moshpit/Services/Tmux/TmuxSessionController.swift:3343-3362, :3698; B80",
+      "symptom": "Over mosh the breadcrumb (and the next pin and zoom) stays on the old window after prefix-n in the mosh TUI or a desktop's select-window.",
+      "trigger": "mosh + tmux: the session's current window changes from another client or from the TUI itself.",
+      "rust": "The sidecar follows tmux's current window of its session: the renderer is a regular client, and a session's current window is shared by all its clients.",
+      "evidence": "live:shared-current-window",
+      "rust_has": ["= attached=1 ever=1 session=$0 window=@2"],
+      "swift_has": ["= attached=1 ever=1 session=$0 window=@0"],
+      "status": "fixed",
+      "fixed": "In the app since round 35 (B80): over mosh the Swift sidecar follows tmux's current window on %session-window-changed and on every listing, as the port does; both fixtures' logs now agree."
+    },
+    {
+      "id": "probe-stuck-after-exit",
+      "kind": "swift-wrong",
+      "fixture": "div-probe-stuck-after-exit",
+      "swift": "Moshpit/Services/Tmux/TmuxSessionController.swift:4463 (closePendingCommands keeps sizeLeaseProbesInFlight), :722",
+      "symptom": "After %exit with a size-lease probe unanswered, a new control session on the same channel never reads that window's lease again: no claim, no follow.",
+      "trigger": "A second control session on one channel (the boot chain re-attaching) — latent on the SSH path today.",
+      "rust": "Closing the queue clears the probes in flight.",
+      "evidence": "rule: tmux answers nothing a control session sent before its %exit",
+      "rust_has": ["> show-options -wqv -t @0 @moshpit_size_owner"],
+      "swift_has": []
+    },
+    {
+      "id": "flags-refused",
+      "kind": "swift-wrong",
+      "fixture": "div-flags-refused",
+      "swift": "Moshpit/Services/Tmux/TmuxSessionController.swift:1707",
+      "symptom": "A refused mouse-flag probe reads as 'no mouse, primary screen', routing the next swipes of a mouse app to the local scrollback.",
+      "trigger": "The probe races the pane's exit.",
+      "rust": "A refusal leaves the flags (the main tree's uncommitted fix does the same).",
+      "evidence": "live:refused-capture (the same refusal)",
+      "rust_has": ["mouse=1 alt=1"],
+      "swift_has": ["mouse=0 alt=0"]
+    },
+    {
+      "id": "path-target",
+      "kind": "swift-wrong",
+      "fixture": "div-path-target",
+      "swift": "Moshpit/Services/Tmux/TmuxSessionController.swift:1859",
+      "symptom": "panePath splices its caller's pane id unchecked into a control command; a ';' in it is a command separator in control mode.",
+      "trigger": "Latent: today's callers pass snapshot ids.",
+      "rust": "The id must be %<digits>; otherwise the answer is None and nothing is sent.",
+      "evidence": "live:semicolon-separates",
+      "rust_has": [],
+      "swift_has": ["> display-message -p -t not-a-pane '#{pane_current_path}'"],
+      "status": "fixed",
+      "fixed": "In the app since round 21 (B139): panePath answers nil for anything but a tmux id, as the port does; the fixture's logs now agree."
+    },
+    {
+      "id": "prefix-unanswered",
+      "kind": "on-purpose",
+      "fixture": "div-prefix-unanswered",
+      "swift": "Moshpit/Services/Tmux/TmuxSessionController.swift:1840",
+      "symptom": "queryPrefixKey never calls back before attach or when the channel closes first.",
+      "trigger": "Asking while detached or reconnecting.",
+      "rust": "Every request is answered: C-b when tmux can't say (the default Swift falls back to for an empty reply).",
+      "evidence": "API contract",
+      "rust_has": [". note prefix 1 C-b"],
+      "swift_has": []
+    },
+    {
+      "id": "lease-clients-refused",
+      "kind": "swift-wrong",
+      "fixture": "div-lease-clients-refused",
+      "swift": "Moshpit/Services/Tmux/TmuxSessionController.swift:726, :4398",
+      "symptom": "A refused list-clients puts tmux's complaint in the client set, so a live holder reads as gone and its window is taken.",
+      "trigger": "Latent: list-clients without -t is not refused by tmux 3.6a.",
+      "rust": "A refused listing is a failed one: no clients, holder live (the rule the code's own comment states).",
+      "evidence": "rule: SizeLease(parsing:) 'a reply with no clients at all is a failed listing ... err toward live'",
+      "rust_has": [],
+      "swift_has": ["> resize-window -t @0 -x 70 -y 35"]
+    },
+    {
+      "id": "hook-blocks",
+      "kind": "swift-wrong",
+      "fixture": "div-hook-blocks",
+      "swift": "Moshpit/Services/Tmux/TmuxSessionController.swift:5115 (every block pops a slot); TmuxControlClient.swift:635 (the %begin flags are not read); B273",
+      "symptom": "An after-<command> hook one of our commands fires (after-select-window, after-split-window, ...) answers with a block of its own right behind the command's: every reply after it lands one command off until the queue drains - a window switch fills the pane with the wrong captures, a pane path reads a cursor position.",
+      "trigger": "A tmux.conf with an after-* hook on a command the app sends (`set-hook -g after-split-window 'select-layout tiled'`).",
+      "rust": "A block whose %begin flags are 0 came from no line of this client's (a hook, an -b command's late half, the boot command) and answers no command: CommandResponse::from_client.",
+      "evidence": "live:user-hooks",
+      "rust_has": [". pane %1 history 1\\x0d\\x0ahistory 2\\x0d\\x0a"],
+      "swift_has": [". pane %1 0 0\\x0d\\x0a"],
+      "status": "fixed",
+      "fixed": "In the app since round 36 (B275): TmuxControlClient reads the %begin flags (and the Rust parser's C event carries them, ABI 2), and the Swift controller turns a block flagged 0 away once the server has flagged a reply of ours 1; the fixture's logs now agree."
+    },
+    {
+      "id": "multi-reply-run",
+      "kind": "swift-wrong",
+      "fixture": "div-multi-reply-run",
+      "swift": "Moshpit/Services/Tmux/TmuxSessionController.swift:1807 runCommand (no app caller); B273",
+      "symptom": "A command that answers with more than one block (an if-shell that runs its command, source-file, `a ; b`) takes one slot: its second block answers the next command, and so on - the B271 misfiling through runCommand.",
+      "trigger": "runCommand with such a command (nothing in the app sends one today).",
+      "rust": "A command answers_once() can't vouch for is fenced: a `display-message -p 'moshpit-fence-N'` right behind it, and every block up to the fence's is its own.",
+      "evidence": "live:multi-reply-run",
+      "rust_has": ["> display-message -p 'moshpit-fence-1'", "= s $0 att=1 name=main"],
+      "swift_has": ["= attached=1 ever=1 session=- window=@0 pane=%0 fwd=1 swiped=0"]
+    },
+    {
+      "id": "linked-window-close",
+      "kind": "swift-wrong",
+      "fixture": "div-linked-window-close",
+      "swift": "Moshpit/Services/Tmux/TmuxSessionController.swift handleWindowClose, parseListWindows (the last row of a linked window wins); B87",
+      "symptom": "A window linked into two sessions: unlinked from the other one, tmux tells our client %window-close (the window still ours) and Swift removes it, its pane's terminal with it, and the screen leaves it until the next listing; listed, it is filed under whichever session came last, so the phone's own window can be missing from its tree.",
+      "trigger": "link-window / unlink-window on a desktop.",
+      "rust": "A window linked into more than one session is relisted on a close instead of removed; a linked window is filed under our session.",
+      "evidence": "live:linked-window-close",
+      "rust_has": ["= attached=1 ever=1 session=$0 window=@1 pane=%1 fwd=1 swiped=0"],
+      "swift_has": ["= attached=1 ever=1 session=$0 window=@0 pane=%0 fwd=1 swiped=0"]
+    },
+    {
+      "id": "pane-input-flags",
+      "kind": "on-purpose",
+      "fixture": "attach-alternate-copy-mode",
+      "swift": "Moshpit/Services/Tmux/TmuxSessionController.swift (activePaneWantsMouse / activePaneOnAltScreen: one pair for the active pane, false until a drag's probe answers)",
+      "symptom": "After every attach the program's flags read false until a drag begins, so the first ticks of a swipe over a full-screen program already running (every reconnect) went to the pane's local history: old frames under the live program, and with the wheel that followed the view stayed up there.",
+      "trigger": "A pane on the alternate screen at attach, no flag probe answered yet.",
+      "rust": "Flags kept per pane, read with every repaint's cursor query; until tmux has said, discovery's alternate_on stands in for the screen, so the tick is dropped instead of paging stale frames (B363, the 11-01 fixes).",
+      "evidence": "B363; crates/session/tests/live_scroll.rs (a full-screen program running across an attach), crates/tmux/tests/scroll.rs",
+      "rust_has": [
+        "mouse=0 alt=1"
+      ],
+      "swift_has": [
+        "mouse=0 alt=0"
+      ]
+    }
+  ]
+}

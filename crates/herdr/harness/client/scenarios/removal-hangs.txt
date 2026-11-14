@@ -1,0 +1,6 @@
+# B119: a removal the host never answers.
+host rule worktree_remove - hang
+host clean w7
+at 0 start
+at 300 remove w7 0
+end 70000

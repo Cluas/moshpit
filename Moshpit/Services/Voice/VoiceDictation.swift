@@ -181,6 +181,24 @@ final class VoiceDictationController {
     @ObservationIgnored private let audioSource: DictationAudioSource
     @ObservationIgnored private var engine: DictationEngine?
     @ObservationIgnored private var consumeTask: Task<Void, Never>?
+    /// Bumped by every `start` and `cancel`. A `start` still awaiting its
+    /// engine when this moves on has been cancelled (or replaced) and must
+    /// not wire anything up — and a `finish` still waiting on the engine's
+    /// last words must not hand them out.
+    @ObservationIgnored private var attempt = 0
+    /// The stop in progress — mic off, engine finalizing — so a second
+    /// caller (Insert tapped while an interruption is finalizing) waits for
+    /// the same one instead of reading a half-finished transcript.
+    @ObservationIgnored private var stopping: Task<Void, Never>?
+    /// Set by a session's first `finish()`. Insert stays tappable while the
+    /// engine finalizes, which can take seconds with Whisper; a second
+    /// Insert (or Insert, then Send) used to get the transcript as well, and
+    /// it was typed into the terminal twice.
+    @ObservationIgnored private var finishClaimed = false
+    /// The engine's final pass, while it runs: a cancel stops it the way the
+    /// budget running out does, rather than leaving a Whisper decode working
+    /// for nobody.
+    @ObservationIgnored private var finalPass: Task<Void, Never>?
 
     init(engineFactory: @escaping (DictationRequest, [String]) async throws -> [DictationEngine]
              = DictationEngineFactory.candidates,
@@ -201,9 +219,12 @@ final class VoiceDictationController {
         volatileText = ""
         level = 0
         engineLabel = ""
+        finishClaimed = false
+        attempt += 1
+        let attempt = self.attempt
 
         guard await audioSource.requestPermission() else {
-            phase = .failed(.microphoneDenied)
+            if attempt == self.attempt { phase = .failed(.microphoneDenied) }
             return
         }
 
@@ -229,8 +250,14 @@ final class VoiceDictationController {
         var lastError: Error?
         do {
             for candidate in try await makeEngines(request, spoken) {
+                // Cancelled meanwhile: don't go on preparing the next one.
+                guard attempt == self.attempt else { break }
                 do {
                     try await candidate.prepare(onProgress: onProgress)
+                    guard attempt == self.attempt else {
+                        candidate.cancel()
+                        break
+                    }
                     try await candidate.start()
                     selected = candidate
                     break
@@ -245,10 +272,19 @@ final class VoiceDictationController {
                 }
             }
         } catch let failure as DictationFailure {
-            phase = .failed(failure)
+            if attempt == self.attempt { phase = .failed(failure) }
             return
         } catch {
-            phase = .failed(.engine(error.localizedDescription))
+            if attempt == self.attempt { phase = .failed(.engine(error.localizedDescription)) }
+            return
+        }
+        // Cancelled while the engine was being prepared — a Whisper model
+        // loading takes seconds, and the mic key or Cancel is right there.
+        // Nothing may start now: this used to open the mic and go on
+        // listening behind an overlay that was already gone, holding the
+        // engine (and a Whisper model) for good.
+        guard attempt == self.attempt else {
+            selected?.cancel()
             return
         }
         guard let engine = selected else {
@@ -300,8 +336,20 @@ final class VoiceDictationController {
 
     /// Stop the mic, let the engine finalize, and return the transcript
     /// (nil when nothing usable was heard). Ends in `.idle`.
+    ///
+    /// nil, too, for everything but the session's first call, and when the
+    /// session is cancelled before the engine is done. Cancel stays on screen
+    /// while the engine finalizes — seconds, with Whisper decoding the whole
+    /// utterance here — and the transcript used to come back anyway once it
+    /// was: the overlay had gone, and the words the user had just cancelled
+    /// were typed into the terminal, with a Return after them if Send had
+    /// started the finish.
     func finish() async -> String? {
+        guard !finishClaimed else { return nil }
+        finishClaimed = true
+        let attempt = self.attempt
         await stopListening()
+        guard attempt == self.attempt else { return nil }
         let text = transcript
         reset()
         return text.isEmpty ? nil : text
@@ -309,9 +357,13 @@ final class VoiceDictationController {
 
     /// Abandon the session and discard the transcript.
     func cancel() {
+        attempt += 1
         stopAudio()
         engine?.cancel()
         consumeTask?.cancel()
+        finalPass?.cancel()
+        finalizedText = ""
+        volatileText = ""
         reset()
     }
 
@@ -325,14 +377,29 @@ final class VoiceDictationController {
     /// park in `.interrupted` so the user can still insert it.
     private func handleInterruption() async {
         guard phase == .listening || isPreparing else { return }
+        let attempt = self.attempt
         await stopListening()
+        // Cancelled, or finished, meanwhile: the session is over.
+        guard attempt == self.attempt, !finishClaimed else { return }
         phase = .interrupted
     }
 
     /// Mic off + engine finalization (bounded — a wedged recognizer must not
-    /// hold the overlay hostage; whatever transcript exists is kept).
+    /// hold the overlay hostage; whatever transcript exists is kept). A call
+    /// while one is already running waits for that one.
     private func stopListening() async {
+        if let stopping {
+            await stopping.value
+            return
+        }
         guard phase == .listening || isPreparing else { return }
+        let stop = Task { @MainActor in await self.finalize() }
+        stopping = stop
+        await stop.value
+        stopping = nil
+    }
+
+    private func finalize() async {
         phase = .finishing
         stopAudio()
         guard let engine else { return }
@@ -341,22 +408,33 @@ final class VoiceDictationController {
         // already delivered nearly everything, while Whisper hasn't started —
         // decoding a minute of speech happens entirely inside finishAudio(),
         // and cutting it off at 5 s would throw away the whole transcript.
+        //
+        // The wait has to END at the budget, which a task group racing the
+        // two (as this did) never does: it returns only once every child has,
+        // so the timer winning changed nothing while the finishing side sat on
+        // an await nothing can cancel — `consumeTask.value`, behind a
+        // recognizer that never delivered its final result once the audio
+        // ended, or a final pass stuck inside `finishAudio()`. The overlay
+        // stayed on "finishing" for good, and the `engine.cancel()` below
+        // never ran. `WriteLane.wait` stops waiting at the budget instead.
         let budget = engine.finalizeTimeout
-        let finalized = await withTaskGroup(of: Bool.self) { group in
-            group.addTask {
-                await engine.finishAudio()
-                await consumeTask?.value
-                return true
-            }
-            group.addTask {
-                try? await Task.sleep(for: budget)
-                return false
-            }
-            let first = await group.next() ?? false
-            group.cancelAll()
-            return first
+        let finishing = Task { @MainActor in
+            await engine.finishAudio()
+            await consumeTask?.value
         }
-        if !finalized { engine.cancel() }
+        finalPass = finishing
+        defer { finalPass = nil }
+        let finalized = await WriteLane.wait(atMost: budget) { await finishing.value }
+        if !finalized {
+            // Out of budget. Stop the final pass where it can still be
+            // stopped — a Whisper decode checks between windows, and would
+            // otherwise hold the model past this session — let the recognizer
+            // go, and stop reading it: its final result, should it ever come,
+            // has nobody left to show it.
+            finishing.cancel()
+            engine.cancel()
+            consumeTask?.cancel()
+        }
     }
 
     private func stopAudio() {

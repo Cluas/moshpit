@@ -26,11 +26,25 @@ struct VoiceDictationControllerTests {
         /// Report a `.loading` step after any download progress.
         var reportsLoading = false
         var label = "Fake · Test"
+        var finalizeTimeout: Duration = .seconds(5)
+        /// `finishAudio()` returns but `updates` never ends: a recognizer that
+        /// never delivers its final result once the audio has ended.
+        var finalNeverArrives = false
+        /// `finishAudio()` itself doesn't return until `releaseFinish()`: a
+        /// final pass stuck inside the engine.
+        var finishAudioHangs = false
 
         private(set) var started = false
         private(set) var appended = 0
         private(set) var finishAudioCalled = false
+        /// Set as a hanging `finishAudio()` returns: whether the work it was
+        /// doing had been cancelled by then.
+        private(set) var finishSawCancellation: Bool?
         private(set) var cancelCalled = false
+
+        private let finishGate = NSLock()
+        private var finishWaiter: CheckedContinuation<Void, Never>?
+        private var finishReleased = false
 
         init() {
             (updates, continuation) = AsyncThrowingStream.makeStream()
@@ -49,13 +63,42 @@ struct VoiceDictationControllerTests {
         func append(_: AVAudioPCMBuffer) { appended += 1 }
         func finishAudio() async {
             finishAudioCalled = true
-            continuation.finish()
+            if finishAudioHangs {
+                // Not cancellable, like the awaits a real engine sits on.
+                await withCheckedContinuation { (waiter: CheckedContinuation<Void, Never>) in
+                    let released = finishGate.withLock { () -> Bool in
+                        if !finishReleased { finishWaiter = waiter }
+                        return finishReleased
+                    }
+                    if released { waiter.resume() }
+                }
+                finishSawCancellation = Task.isCancelled
+            }
+            if !finalNeverArrives { continuation.finish() }
+        }
+
+        /// Lets a hanging `finishAudio()` return.
+        func releaseFinish() {
+            let waiter = finishGate.withLock { () -> CheckedContinuation<Void, Never>? in
+                finishReleased = true
+                defer { finishWaiter = nil }
+                return finishWaiter
+            }
+            waiter?.resume()
         }
 
         func cancel() {
             cancelCalled = true
             continuation.finish()
         }
+    }
+
+    /// Where a stuck engine is stuck once the mic stops.
+    enum Stall: CaseIterable, Sendable {
+        /// The final result never arrives after `finishAudio()` returned.
+        case finalResult
+        /// `finishAudio()` never returns.
+        case finishAudio
     }
 
     final class FakeAudioSource: DictationAudioSource {
@@ -159,6 +202,31 @@ struct VoiceDictationControllerTests {
 
         #expect(engine.cancelCalled)
         #expect(audio.stopped)
+        #expect(controller.phase == .idle)
+    }
+
+    @Test("Cancelled while the model loads: the mic never opens and the engine is let go")
+    func cancelWhilePreparing() async {
+        let engine = FakeEngine()
+        engine.reportsLoading = true
+        engine.holdPrepare = true
+        let audio = FakeAudioSource()
+        let controller = makeController(engine: engine, audio: audio)
+
+        let startTask = Task { await controller.start(DictationRequest()) }
+        #expect(await waitUntil(controller.phase == .loadingModel))
+
+        // The mic key (or Cancel) while "Loading model…" is up. The overlay
+        // goes away with it, so a session that carried on would be listening
+        // where nobody can see or stop it — and a Whisper engine left running
+        // holds its model for good.
+        controller.cancel()
+        engine.holdPrepare = false
+        await startTask.value
+
+        #expect(!audio.started)
+        #expect(!engine.started)
+        #expect(engine.cancelCalled)
         #expect(controller.phase == .idle)
     }
 
@@ -267,6 +335,118 @@ struct VoiceDictationControllerTests {
 
         let text = await controller.finish()
         #expect(text == "tail the logs")
+    }
+
+    @Test("An engine that never finishes can't hold the overlay on finishing: the budget ends it",
+          arguments: Stall.allCases)
+    func finishingIsBounded(stall: Stall) async {
+        let engine = FakeEngine()
+        engine.finalizeTimeout = .milliseconds(100)
+        engine.finalNeverArrives = true
+        engine.finishAudioHangs = stall == .finishAudio
+        let audio = FakeAudioSource()
+        let controller = makeController(engine: engine, audio: audio)
+
+        await controller.start(DictationRequest())
+        engine.continuation.yield(DictationUpdate(finalizedText: "git status", volatileText: ""))
+        #expect(await waitUntil(controller.finalizedText == "git status"))
+
+        let finishing = Task { await controller.finish() }
+        // Thirty times the budget. The task group this replaced never got
+        // there: it waited for the finishing side however long that took.
+        let ended = await waitUntil(controller.phase == .idle, timeout: .seconds(3))
+        #expect(ended, "still on \(controller.phase) long after the 100 ms budget")
+        #expect(engine.cancelCalled, "the engine was never let go")
+
+        // Unstick the fake so a failing run still ends instead of hanging.
+        engine.releaseFinish()
+        engine.continuation.finish()
+        #expect(await finishing.value == "git status", "what was heard is kept")
+        if stall == .finishAudio {
+            // The abandoned final pass was told to stop, not left decoding.
+            #expect(await waitUntil(engine.finishSawCancellation != nil))
+            #expect(engine.finishSawCancellation == true)
+        }
+    }
+
+    /// Cancel stays on screen while the engine finalizes — seconds, with
+    /// Whisper decoding the whole utterance inside `finishAudio()`. The
+    /// transcript came back anyway once the engine was done: the overlay had
+    /// gone, and the words just cancelled were typed into the terminal — with
+    /// a Return after them when Send had started the finish.
+    @Test("Cancel while the engine finalizes: nothing is handed out")
+    func cancelWhileFinishing() async {
+        let engine = FakeEngine()
+        engine.finishAudioHangs = true
+        let audio = FakeAudioSource()
+        let controller = makeController(engine: engine, audio: audio)
+
+        await controller.start(DictationRequest())
+        engine.continuation.yield(DictationUpdate(finalizedText: "rm -rf build", volatileText: ""))
+        #expect(await waitUntil(controller.finalizedText == "rm -rf build"))
+
+        // Send.
+        let send = Task { await controller.finish() }
+        #expect(await waitUntil(controller.phase == .finishing))
+        // Cancel, while the final pass is still running.
+        controller.cancel()
+        engine.releaseFinish()
+
+        let typed = await send.value
+        #expect(typed == nil, "a cancelled dictation was typed into the terminal: \(typed ?? "")")
+        #expect(controller.transcript.isEmpty)
+    }
+
+    /// Insert stays tappable while the engine finalizes; the second tap got
+    /// the transcript too (half of it, straight away) and the words went into
+    /// the terminal twice.
+    @Test("Insert tapped twice while the engine finalizes inserts once")
+    func finishTwiceInsertsOnce() async {
+        let engine = FakeEngine()
+        engine.finishAudioHangs = true
+        let audio = FakeAudioSource()
+        let controller = makeController(engine: engine, audio: audio)
+
+        await controller.start(DictationRequest())
+        engine.continuation.yield(DictationUpdate(finalizedText: "git push", volatileText: ""))
+        #expect(await waitUntil(controller.finalizedText == "git push"))
+
+        let first = Task { await controller.finish() }
+        #expect(await waitUntil(controller.phase == .finishing))
+        let second = Task { await controller.finish() }
+        try? await Task.sleep(for: .milliseconds(50))
+        engine.releaseFinish()
+
+        let results = [await first.value, await second.value].compactMap { $0 }
+        #expect(results == ["git push"], "handed out \(results.count) times: \(results)")
+        #expect(controller.phase == .idle)
+    }
+
+    /// Insert while an interruption is still finalizing waits for it and
+    /// gets the whole transcript, and the session ends there.
+    @Test("Insert during an interruption's finalize gets the full transcript")
+    func finishJoinsTheInterruptionsStop() async {
+        let engine = FakeEngine()
+        engine.finishAudioHangs = true
+        let audio = FakeAudioSource()
+        let controller = makeController(engine: engine, audio: audio)
+
+        await controller.start(DictationRequest())
+        engine.continuation.yield(DictationUpdate(finalizedText: "tail", volatileText: ""))
+        #expect(await waitUntil(controller.finalizedText == "tail"))
+
+        audio.onInterruption?()
+        #expect(await waitUntil(controller.phase == .finishing))
+        let insert = Task { await controller.finish() }
+        try? await Task.sleep(for: .milliseconds(50))
+        // The engine's last words land while both are waiting.
+        engine.continuation.yield(DictationUpdate(finalizedText: "tail the logs", volatileText: ""))
+        try? await Task.sleep(for: .milliseconds(50))
+        engine.releaseFinish()
+
+        #expect(await insert.value == "tail the logs")
+        try? await Task.sleep(for: .milliseconds(50))
+        #expect(controller.phase == .idle, "the finished session went back to \(controller.phase)")
     }
 
     @Test("Engine failure mid-listen surfaces and stops capture")

@@ -144,7 +144,7 @@ struct SessionsSheet<C: MultiplexerControlling>: View {
             focus: controller.snapshot.activeSessionId
         ) {
             let snapshot = controller.snapshot
-            let sessions = snapshot.sessions.values.sorted { $0.id < $1.id }
+            let sessions = snapshot.sortedSessions
             ForEach(sessions) { session in
                 SheetListRow(
                     icon: vocab.sessionIcon,

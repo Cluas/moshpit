@@ -1,10 +1,8 @@
-# Moshpit 原生质感优化方案
+# Moshpit 原生质感改造记录
 
-日期：2026-09-11。范围：Moshpit iOS App（SwiftUI，iOS 18+，Xcode 26）。证据来自当前 v2 分支源码的 grep 计数、站点仓库 `moshpit-site` 的 `shots/*.png`
-里的当前构建截图，以及 2026-09-11 在 iPhone 17 Pro 模拟器（iOS 26.2）上的实机截图。本方案只提建议，不改代码。
-
-与 `docs/APP-DESIGN-AUDIT.md`（2026-09-10）的关系：那份讲**信息架构**（首页放什么、任务怎么排、终端顶栏两行）；这份讲**质感**：
-界面用什么零件做出来、摸起来像不像系统 App。两份互补，落地时可以合成一张任务表；重叠处本文注明。
+日期：2026-09-11。范围：Moshpit iOS App（SwiftUI，iOS 18+，Xcode 26）。P0–P3 已全部落地（分支 v2）。
+最初的方案（改造前的 grep 计数、逐屏现状、A–H 分项建议、首页前后对照图和分期估时）描述的是改造之前的
+App，已从本文删去，git 历史里有原文；这里留下结论、原则、每一期实际做了什么，以及不做的事。
 
 ## 一句话结论
 
@@ -12,7 +10,7 @@
 > 设置.app；P3 把 App 自己的视觉语言收回到这些容器上（见文末「P3 回收」）。留着原文，是因为它解释了为什么容器还是系统件：行为（Dynamic Type、滑动操作、编辑模式、
 > 键盘避让、玻璃）来自容器，性格来自容器里画什么。
 
-App 不像原生，根源不是颜色，而是**零件不是系统的**。`Moshpit/UI` 下 27 个视图文件里没有一个 `List` 或 `Form`；
+改造前 App 不像原生，根源不是颜色，而是**零件不是系统的**：当时 `Moshpit/UI` 下 27 个视图文件里没有一个 `List` 或 `Form`；
 导航页头、分组列表、表单、底部弹层、拖拽编辑手柄、空状态，全是 `VStack`/`HStack` 手画的；字号全部是固定 pt，
 不跟随系统字号；没有 Reduce Motion 分支。这些手画件在 iOS 26 上尤其吃亏：系统零件自动拿到 Liquid Glass 的材质、
 圆角、转场和玻璃工具栏，手画件永远停在上一代。
@@ -20,154 +18,13 @@ App 不像原生，根源不是颜色，而是**零件不是系统的**。`Moshp
 方案的核心动作只有一条：**容器和控件交还系统，个性收缩到三处**：终端外壳（顶栏 + 快捷栏）、强调色、图标与 mark。
 这样 App 会"免费"和系统同一代，而且往后每个 iOS 大版本都跟着走。
 
-## 现状证据
-
-grep 于 2026-09-11，范围 `Moshpit/`（不含测试）：
-
-| 指标 | 数值 | 含义 |
-|---|---|---|
-| `List` / `Form` 使用 | 0 | 所有列表、分组、表单都是自绘 |
-| 固定字号：`.system(size:)` + `Face.text/mono/display(...)` | 86 + 303 | 全部字号写死 pt |
-| 语义文本样式 `.body/.headline/.subheadline/.caption…` | 0 | Dynamic Type 完全无效 |
-| `@ScaledMetric` / `relativeTo:` | 0 | 图标、间距也不随字号缩放 |
-| `accessibilityReduceMotion` | 0 | 循环动画（连接页 loader、PulseDots）无法关闭 |
-| `.swipeActions` / `.refreshable` / `.searchable` / `ContentUnavailableView` | 0 / 0 / 0 / 0 | 四个最"iOS"的列表惯用法都没用 |
-| `.contextMenu` / `Menu` / `.confirmationDialog` / `.alert` | 12 / 22 / 7 / 8 | 这一块做得对，保留 |
-| `Haptics.` / `sensoryFeedback` | 33 / 1 | 触感有基础，但没接到 SwiftUI 状态 |
-| `horizontalSizeClass` / `NavigationSplitView` / `.keyboardShortcut` | 0 / 0 / 0 | iPad 只有 `Metrics.homeMaxWidth = 640` 一条限宽 |
-| `preferredColorScheme(.dark)` | 21 | 强制深色，且不走系统语义色 |
-| 20–39pt 固定 `frame` 的控件 | 25 | 热区待逐个核 44pt |
-| 等宽大写 + 字距的分组标题（`kerning`/`uppercased`） | 18 | 系统分组标题是 SF 小字，不是等宽 |
-| `accessibilityIdentifier` / `accessibilityLabel` | 72 / 24 | 测试钩子多，读屏标签少 |
-
-按屏幕看（截图见站点仓库 `moshpit-site` 的 `shots/`）：
-
-1. **首页** `01-agents.png`，`Moshpit/UI/Home/HomeView.swift`：隐藏了系统导航栏（`.toolbar(.hidden, for: .navigationBar)` :220），
-   用一张品牌卡片代替（`HomeHeader` :344：46pt 图标 + 38pt 圆体字标 + 等宽口号 + 两颗圆形按钮）；主机卡片自绘（左侧强调竖条、
-   内嵌会话树、底部 `Edit`/`Disconnect` 按钮条 `CardActionButton` :1953）；空状态自绘卡片（:323）；整页铺 `MoshpitBackground` 网格 + 斜纹。
-   系统 App 里没有一个首页长这样：它们是大标题导航栏 + inset grouped 列表 + 右上角两个工具栏按钮。
-2. **设置** `Moshpit/UI/Settings/SettingsScreen.swift`：已经用了 `NavigationStack` + `.toolbar { Button("Done") }`（:211，iOS 26 上
-   自动成了玻璃胶囊，模拟器截图里能看到），这是对的；但内容是 `ScrollView` + 自绘分组行，不是 `Form`；分组标题是等宽大写字距；
-   `preferredColorScheme(.dark)` :219。
-3. **添加连接** `34-add-connection.png`，`AddConnectionView.swift`：结构已经是表单，但每一行都是自绘，Password/SSH Key 是自绘分段控件。
-   这一屏离 `Form` 只差一层壳。
-4. **终端** `07-tmux-terminal.png`，`TerminalScreen.swift`：顶栏自绘（`topBar` :647：圆形返回 + 传输胶囊 + 面包屑胶囊）；
-   快捷栏 `ShortcutBarView` :1588；Sessions/Windows 弹层用了系统 `.sheet` + `.presentationDetents([.height])`
-   （`CompactSheet` `Components.swift:678`，对的），但弹层内容是自绘行 `SheetListRow` :1114。
-5. **快捷栏编辑** `11-shortcuts.png`，`Shortcuts/ShortcutsView.swift:128`：红色减号和三横手柄是**画出来模仿**系统编辑模式的，
-   拖拽用 `.draggable`/`.dropDestination`（:139）自己实现，而不是 `List` + `.onMove`/`.onDelete` + `EditButton`。
-   模仿得越像，和真的差一点点越刺眼。
-6. **连接中** `TerminalConnectingView` :2594：自绘舞台（网格 + 光晕 + 循环动画），这是全 App 最有个性的一屏，可以保留，
-   但要加 Reduce Motion 分支。
-
-好的一面也要说清：`Menu`/`contextMenu`/`confirmationDialog` 用得多、`Haptics` 有统一封装、tmux 弹层已经走系统 sheet、
-设置页已经用系统工具栏、`.continuous` 圆角处处一致。这些不用推倒。
-
 ## 三条原则
 
 1. **容器交给系统，内容保留个性。** 导航栏、列表、表单、弹层、编辑模式、空状态、搜索，一律用系统件；行里面画什么随意。
 2. **字号用语义，尺寸用系统节律。** `.headline/.subheadline/.footnote/.caption`；边距 16/20，行高 ≥44，8pt 栅格；等宽只给路径、命令、技术值。
 3. **动效来自系统。** 导航、sheet、列表增删用默认转场；自定义动画只留给"状态变化的那一瞬"（连上了、需要你了），并且尊重 Reduce Motion。
 
-## 方案
-
-### A. 导航与页头
-
-- 首页：删掉 `HomeHeader` 品牌卡，改 `.navigationTitle("Moshpit")` + `.navigationBarTitleDisplayMode(.large)`；
-  右上角 `ToolbarItemGroup` 放 ＋ 和 ⚙（iOS 26 自动成玻璃按钮，iOS 18 是标准工具栏）。口号 "THE PIT NEVER CLOSES" 移到设置页脚 / About。
-  "1 live connection · agents quiet" 这条状态保留，做成列表第一节的一行（可点），不再是卡片里的胶囊。
-  与 `APP-DESIGN-AUDIT.md`「紧凑页头」一致，这里给出的是原生实现方式。
-- 主机 → 终端：`.navigationTransition(.zoom(sourceID:in:))`（iOS 18 起有），从主机行放大进终端，返回缩回去。这是 iOS 18/26 系统 App 的标准手感。
-- 终端顶栏保留自绘（终端外壳是这个 App 该有的差异），但按系统尺寸：返回热区 44×44、胶囊高 32、整条高度不超过系统导航栏；
-  iOS 26 用 `.glassEffect(.regular.interactive(), in: Capsule())` 画胶囊，iOS 18 回退 `Material.bar`。两行结构按 `APP-DESIGN-AUDIT.md`。
-
-### B. 列表与表单
-
-- 首页主机列表：`List` + `.listStyle(.insetGrouped)`。每台主机一个 `Section`（header：主机名 · 传输 · 状态），会话/窗口是行，
-  行尾 `›` 由 `NavigationLink` 自带。`Edit`/`Disconnect` 从卡片底部按钮条改成 `.swipeActions`（右滑）+ 现有 `.contextMenu`（长按），
-  按钮条删除。多于 6 台主机时加 `.searchable`。
-- 空状态：`ContentUnavailableView("No connections yet", systemImage: "server.rack", description: Text(...))` + 一个主按钮，
-  替换 `HomeView.swift:323` 的自绘卡。
-- 设置：整页改 `Form`（默认 inset grouped）。`Section("Appearance") { NavigationLink { … } label: { LabeledContent("Accent") { … } } }`，
-  `Slider`/`Toggle`/`Picker(.segmented)` 直接用系统件（现在的自绘分段和滑杆删掉），小字说明放 `Section(footer:)`。
-  去掉 `preferredColorScheme(.dark)`，改用语义色（见 D）。
-- 添加连接：`Form` + `TextField`/`SecureField`/`Picker(.segmented)`/`Toggle`，`Save` 放 `ToolbarItem(placement: .confirmationAction)`，
-  `Cancel` 放 `.cancellationAction`。字段校验用 `.textContentType`、`.keyboardType(.numberPad)`（端口）。
-- 快捷栏编辑：`List` + `.environment(\.editMode, .constant(.active))` + `.onMove`/`.onDelete`，系统画手柄和减号，
-  删掉 `ShortcutEditRow` 的模仿件和 `.draggable` 实现。
-- Sessions / Windows / Select Pane 弹层：保留 `.sheet` + detents；内容改 `List`（`.listStyle(.insetGrouped)`），
-  `.presentationDragIndicator(.visible)`，iOS 26 加 `.presentationBackground(.thinMaterial)` 拿到玻璃 sheet；
-  当前项用系统 `checkmark` 附件，不再整行高饱和填充（同 `APP-DESIGN-AUDIT.md`）。
-
-### C. 字体
-
-- 把 `Face.text(12)` 这类固定字号换成语义样式：行标题 `.headline`，正文 `.body`，次级 `.subheadline`，元数据 `.footnote`/`.caption`；
-  等宽用 `.system(.footnote, design: .monospaced)`，语义和等宽兼得。`Face` 保留为薄封装（`Face.title/.body/.meta/.monoMeta`）
-  以便 303 处机械替换，之后 `Face.text(_ size:)` 标记 deprecated。
-- 分组标题改用 `Section` 的系统 header（自动小字大写，SF 字体），删掉 18 处等宽 + 字距的自绘标题。
-- 图标、行高、圆角里依赖字号的数值用 `@ScaledMetric`。终端本体字号不动（那是用户设置）。
-
-### D. 颜色与材质
-
-- 深色仍是默认外观，但底色和前景改用系统语义色：`Color(.systemGroupedBackground)`、`.secondarySystemGroupedBackground`、
-  `.primary/.secondary/.tertiary`。`Ink` 只保留强调色（跟随主题）、状态色（signal/success/warn/danger）和终端色。
-  这样高对比、增大字体、iOS 26 玻璃材质的取色都自动正确，将来做浅色模式也只是放开开关。
-- 去掉日常页面的 `MoshpitBackground` 网格与斜纹（首页、设置、图库），只在连接中页面保留为舞台。系统 App 的底是平的。
-- 不再自己画玻璃（`Ink.chromeSheen` 之类的高光渐变）。iOS 26 上用 `glassEffect`、系统工具栏、sheet 材质；iOS 18 回退 `Material`。
-- 浅色模式：本轮不做。用了语义色之后成本很低，P2 评估。
-
-### E. 动效与触感
-
-- 全局统一 `.animation(.snappy)` 或默认 spring；导航、sheet、列表增删用系统转场，不再手写 `.transition`。
-- 加 `@Environment(\.accessibilityReduceMotion)`：开启时连接页 loader 不循环、PulseDots 不闪、光晕不呼吸（当前 0 处判断）。
-- 把 `Haptics` 接到 SwiftUI 状态：`.sensoryFeedback(.success, trigger: connected)`、`.warning` 给断线、`.selection` 给切换图标/主题/窗格。
-- "需要你" 出现的那一瞬允许一次强调动画（琥珀短竖线滑入、数字 `contentTransition(.numericText())`），平时不闪。
-
-### F. 终端外壳（唯一整块保留自绘的地方）
-
-- 快捷栏要像键盘的一部分：底色用 `.background(.bar)` 与系统键盘同材质，按键 44 宽 × 36 高的热区、`.callout` 等宽字，
-  修饰键锁定态用实心填充 + `accessibilityValue("locked")`，不能只靠颜色深一点。
-- 顶栏两行（项目/会话名为主，主机 · 传输 · agent 为辅），点标题打开切换器（系统 `Menu` 或 sheet）；跟 `APP-DESIGN-AUDIT.md` 一致。
-- 不改终端渲染、不加纹理、不动输出颜色语义。
-
-### G. iPad 与外接键盘
-
-- `NavigationSplitView`：左栏主机/会话，右栏终端；`horizontalSizeClass == .regular` 时弹层改 popover
-  （`.presentationCompactAdaptation(.popover)`）。
-- `.keyboardShortcut`：⌘N 新连接、⌘, 设置、⌘K 切换器、⌘W 断开、⌘1–9 切窗口；`.hoverEffect()` 给可点行。
-- 这一条覆盖 `APP-DESIGN-AUDIT.md` P3 的 iPad 分栏。
-
-### H. 无障碍
-
-- Dynamic Type 到 AX3 不截断：行用 `ViewThatFits` 或允许换行，图标按钮用 `Label` 而不是裸 `Image`。
-- 25 处 20–39pt 固定 frame 的控件补 `.frame(minWidth: 44, minHeight: 44)` 或 `.contentShape`。
-- `accessibilityLabel` 从 24 处补到所有图标按钮；`accessibilityIdentifier` 72 处全部保留（UI 测试依赖）。
-
-### 首页改造前后
-
-```
-现在                                      改为（大标题 + inset grouped）
-┌──────────────────────────────┐          Moshpit                        ⚙  ＋
-│ [icon] Moshpit               │          ─────────────────────────────────────
-│        THE PIT NEVER CLOSES  │          ● 1 live connection · agents quiet  ›
-│ ⚡ 1 live connection …     › │
-└──────────────────────────────┘          MAC-STUDIO · SSH · LIVE 1h
-┌──────────────────────────────┐          ┌─────────────────────────────────┐
-│▌ M  mac-studio  ·SSH·        │          │ payments-api        3 windows › │
-│  SESSIONS 2                  │          │ dashboard  OPEN      1 window › │
-│  ▾ payments-api   3 windows  │          └─────────────────────────────────┘
-│     1: server  2: tests …    │            ← 右滑：Edit · Disconnect
-│  [ Edit ]        [Disconnect]│            长按：现有 contextMenu
-└──────────────────────────────┘
-```
-
-## 分期
-
-| 阶段 | 内容 | 估时 | 不碰的东西 |
-|---|---|---|---|
-| P0 | 首页导航栏化 + `List(.insetGrouped)` + `ContentUnavailableView` + `swipeActions`；设置、添加连接改 `Form`；`Face` 语义化机械替换；去网格背景；Reduce Motion 分支 | 1–2 天 | 网络、终端渲染、数据模型 |
-| P1 | tmux 弹层 `List` 化 + 玻璃材质；快捷栏编辑改 `List`/EditMode；终端顶栏尺寸与 `glassEffect`；`sensoryFeedback` 补齐；zoom 转场 | 2–3 天 | `TerminalScreen` 的 identity（重建会重连） |
-| P2 | `NavigationSplitView` + 快捷键 + popover 适配；Dynamic Type AX 验证；浅色模式评估 | 3–5 天 | 终端字号设置 |
+## 落地记录
 
 ### P0 状态（2026-09-11，已完成，分支 v2）
 
@@ -259,14 +116,6 @@ grep 于 2026-09-11，范围 `Moshpit/`（不含测试）：
 
 风险：`TerminalScreen` 外壳改动必须保证视图 identity 不变（纯视觉变化不能触发 SSH 重连或终端重建）；`Ink.accent`
 主题 API 和 `AppIconMark`/`MoshpitMark` 规则保留；72 处 `accessibilityIdentifier` 一个不能丢。
-
-## 验收（全部自动化）
-
-- 截图矩阵：扩展 `scripts/capture/capture-marketing-shots.sh`，每屏 × {默认, Dynamic Type AX3（`-UIPreferredContentSizeCategoryName
-  UICTContentSizeCategoryAccessibilityL`）, Reduce Motion, iPad 13"}，iOS 26 模拟器 + 一台 iOS 18 模拟器各跑一遍。
-- 对照拼图：同一屏与系统「设置」App 并排，核字号、边距、圆角、分组标题样式是否一致。
-- XCUITest：现有套件（含 `AppearanceFlowUITest`）全绿；新增热区断言（所有 `buttons` frame ≥ 44×44）；VoiceOver 标签非空。
-- 终端回归：`verify-e2e-mosh-tmux.sh` 等既有脚本，确认外壳改动没有导致重连或滚动位置丢失。
 
 ## 不做的事
 

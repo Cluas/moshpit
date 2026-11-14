@@ -1,0 +1,23 @@
+{"ev":"session-changed","session":"$0","name":"g2"}
+{"ev":"response","id":1794337411,"num":287,"error":false,"lines":[]}
+{"ev":"response","id":1794337411,"num":288,"error":false,"lines":["$0 1 g2"]}
+{"ev":"layout-change","window":"@0","layout":"b25d,80x24,0,0,0","zoomed":false}
+{"ev":"response","id":1794337411,"num":291,"error":false,"lines":["$0 @0 0 b25d,80x24,0,0,0 1 1 sh"]}
+{"ev":"response","id":1794337411,"num":292,"error":false,"lines":["%0 @0 0 80 24 1 0 0 bash"]}
+{"ev":"response","id":1794337411,"num":293,"error":false,"lines":["C-b"]}
+{"ev":"response","id":1794337411,"num":294,"error":false,"lines":["1|g2|/dev/ttys022"]}
+{"ev":"response","id":1794337411,"num":295,"error":false,"lines":["G2SYNC1"]}
+{"ev":"response","id":1794337411,"num":296,"error":true,"lines":["parse error: unknown command: bogus-command"]}
+{"ev":"response","id":1794337411,"num":297,"error":true,"lines":["can't find window: @999"]}
+{"ev":"response","id":1794337411,"num":298,"error":true,"lines":["can't find pane: %999"]}
+{"ev":"response","id":1794337411,"num":299,"error":false,"lines":["%0"]}
+{"ev":"response","id":1794337411,"num":300,"error":true,"lines":["can't find window: no-such-session"]}
+{"ev":"response","id":1794337411,"num":301,"error":true,"lines":["parse error: command set-option: too few arguments (need at least 1)"]}
+{"ev":"response","id":1794337411,"num":302,"error":false,"lines":["sh-3.2$"]}
+{"ev":"response","id":1794337411,"num":303,"error":false,"lines":[]}
+{"ev":"response","id":1794337411,"num":304,"error":false,"lines":["@0"]}
+{"ev":"response","id":1794337411,"num":305,"error":false,"lines":["G2SYNC2"]}
+{"ev":"window-renamed","window":"@0","name":"bash"}
+{"ev":"response","id":1794337411,"num":307,"error":false,"lines":[]}
+{"ev":"exit","reason":null}
+{"ev":"end","plan":"whole","feeds":1,"resets":0,"bytes":1389,"cuts":0,"in_utf8":0,"in_octal":0,"plan_hash":"bfad98223ff47a8f"}

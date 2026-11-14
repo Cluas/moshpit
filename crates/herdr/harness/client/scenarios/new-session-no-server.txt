@@ -1,0 +1,7 @@
+# The empty state's create on a host with no server: start one, and name
+# its first workspace as asked.
+host running false
+host empty
+at 0 start
+at 500 new-session work
+end 10000

@@ -1,0 +1,149 @@
+{
+ "passphrase": "correct horse battery",
+ "keys": [
+  {
+   "name": "Ed25519 · OpenSSH",
+   "file": "ed25519-openssh",
+   "encrypted": false,
+   "publicKey": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAICHiGnKeZ3Su4BXqHVH3iFvzrXAce6MZum6GVGW3zCUd fixture-ed25519-openssh-none",
+   "fingerprint": "SHA256:xAkBH7hhH0UcvbA7og4c2msFj6z8kXVit2sHkXKmzrQ",
+   "algorithm": "ed25519",
+   "bits": 256
+  },
+  {
+   "name": "Ed25519 · OpenSSH · passphrase",
+   "file": "ed25519-openssh-passphrase",
+   "encrypted": true,
+   "publicKey": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPubZIEf+pfR+PyWi2MdzOIa4QJL0/qFRbXWuq9ldLPY fixture-ed25519-openssh-pass",
+   "fingerprint": "SHA256:j+R2+kwYLnU/bEsM47JoOgEJehBaEyEaiYT/VFnIJ0w",
+   "algorithm": "ed25519",
+   "bits": 256
+  },
+  {
+   "name": "ECDSA P-256 · OpenSSH",
+   "file": "ecdsa-p-256-openssh",
+   "encrypted": false,
+   "publicKey": "ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBF5LnCor21W2q2oFpk4UcJDQF8+/3Fkk0s7nU/NedTf3LMXMvWNT11NMl7j0sAyvRC9HJp38227evrvYu8VUVgA= fixture-ecdsa-openssh-none",
+   "fingerprint": "SHA256:Y82atu0ehMoZKkgZksBoszn80yjGIvGqADbZjBF3FYg",
+   "algorithm": "ecdsa",
+   "bits": 256
+  },
+  {
+   "name": "ECDSA P-256 · OpenSSH · passphrase",
+   "file": "ecdsa-p-256-openssh-passphrase",
+   "encrypted": true,
+   "publicKey": "ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBGygHIFlNSgGgaMbUigTnALuBGL5KI3FsJGvCeCZpNkk1h0N6qsm1qz4YWbJzxIE60ZZberNOcJh38GAPEKhOl4= fixture-ecdsa-openssh-pass",
+   "fingerprint": "SHA256:APIgVrQOaxMJ/9pRXeVdH3RjwnphRkRLBMwLFIYWzE0",
+   "algorithm": "ecdsa",
+   "bits": 256
+  },
+  {
+   "name": "ECDSA P-256 · PEM (ssh-keygen -m PEM)",
+   "file": "ecdsa-p-256-pem-ssh-keygen-m-pem",
+   "encrypted": false,
+   "publicKey": "ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBJ16MGqBLbVA4v6vUOK6WJobFfYTROvYgJSa0QgPbxLeKBnbD2y2hUFhuh4u0b7mfuHi4O+P2dV+kGU3k2e1SHU= fixture-ecdsa-PEM-none",
+   "fingerprint": "SHA256:XFbI/FPigXEko28jplfLrxvOZGg2EyWEQXaHTBuks48",
+   "algorithm": "ecdsa",
+   "bits": 256
+  },
+  {
+   "name": "ECDSA P-256 · PEM (ssh-keygen -m PEM) · passphrase",
+   "file": "ecdsa-p-256-pem-ssh-keygen-m-pem-passphrase",
+   "encrypted": true,
+   "publicKey": "ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBJO+UPqce+D/OcXUBjzO953Hi48l9UrTgcsLg6YIh6W0F7elqXZBrA7Ls7ZCRBAJd9L6CyVWueL3IAlJ/Ai6TME= fixture-ecdsa-PEM-pass",
+   "fingerprint": "SHA256:OfiT58XTmkfdooiUphe2fnVwNoLKIXg9cJvdvFCN5+A",
+   "algorithm": "ecdsa",
+   "bits": 256
+  },
+  {
+   "name": "ECDSA P-256 · PKCS #8 (ssh-keygen -m PKCS8)",
+   "file": "ecdsa-p-256-pkcs-8-ssh-keygen-m-pkcs8",
+   "encrypted": false,
+   "publicKey": "ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBB1kj5NEdpUG1qd71dcqlnKHeXGIB3sKOhABq+JTmi45VkuzMxhqDDYP8FOuZT/A5Ca3Foucjwkwq/SliPVKvm0= fixture-ecdsa-PKCS8-none",
+   "fingerprint": "SHA256:8xF7LQ2wk7Q0Z46K5kU3wYsNT6mKEVV32VouZMWkD0M",
+   "algorithm": "ecdsa",
+   "bits": 256
+  },
+  {
+   "name": "ECDSA P-256 · PKCS #8 (ssh-keygen -m PKCS8) · passphrase",
+   "file": "ecdsa-p-256-pkcs-8-ssh-keygen-m-pkcs8-passphrase",
+   "encrypted": true,
+   "publicKey": "ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBKT0sVMJZ4FosoXtP95QEad1ngMnl6BlKo9fRrIdY13tQQP1MMnz/nDWOmDXKjTmtm6JYsRrSDNz9JfQLZsFcrU= fixture-ecdsa-PKCS8-pass",
+   "fingerprint": "SHA256:X7qawxpm6LDptiKm9MsvLVKYsPsDhE1ZpRtOQA3sNdE",
+   "algorithm": "ecdsa",
+   "bits": 256
+  },
+  {
+   "name": "RSA 2048 · OpenSSH",
+   "file": "rsa-2048-openssh",
+   "encrypted": false,
+   "publicKey": "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDkYs+QICsPo/VgCPbUXwgMestI7VPDYen1WcQ6K8o6e++LVX8B/HqOMs7XL0DWIrU7J4vVuPdL7Pyvhc1Gc946Z8woOaE/BpUnydTWZCTORrjUqWAkZ5NnlWpTPf92RVXbp2qpjXXKTiDmP0COkQfbyfubOpN3O0bcy0LZQplOt4DIn5iCEuV01qU4d2OJIrZhZwxwIegMfLYSid7sYa0EoJhW2JWMoi4LuYRDhFLusotZaT/Qahxxd587CQz+Tch5hLUeeL1Cei8EI78o2ZOhguryU8zA+r3ncyrjH5hls9p91MWE8UDf7f2mK8Ecfux1GOlFhgfqNpqwEYpUQDsN fixture-rsa-openssh-none",
+   "fingerprint": "SHA256:LiItbQtl6CHkW7yQ+csOZyCHC40L55z+WMHP/04mdGM",
+   "algorithm": "rsa4096",
+   "bits": 2048
+  },
+  {
+   "name": "RSA 2048 · OpenSSH · passphrase",
+   "file": "rsa-2048-openssh-passphrase",
+   "encrypted": true,
+   "publicKey": "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDQyyDWbVNq2oq32qb4UwMuS1pHcE9ChcMZo/RyVgycgKf8dGuwC/JcqUglxWveq+j3W2bbXNWsoKeNaLSGdNMyWJx4/CeKlqFVIKQouajmuSeW3g8HutxfJc1htAjuU1CqFhJt6mGVt6Awq+b72uOK2Vx5UuF/e6AAvM0xHKvttkUYyrBNVn+r7UQ6xjc4QooqMRyFQejegG1YDpqQNANx14SuGw4KO3pPyh7l+sOF/GCfdc3f0ohYql3CFKOm8u7xY7+rLK+Y6ZNr3wBE9A1jrKMTEa+Kx1rdL8h5j1LgXEuEg2WUJuKTsGLoR2CKzNz5ZhQ3C+OZRVSYxLV/JgMh fixture-rsa-openssh-pass",
+   "fingerprint": "SHA256:z2boqPbNa5FJZBqquyGF/Xf5AZsonjyntcR1n7wmIKA",
+   "algorithm": "rsa4096",
+   "bits": 2048
+  },
+  {
+   "name": "RSA 2048 · PEM (ssh-keygen -m PEM)",
+   "file": "rsa-2048-pem-ssh-keygen-m-pem",
+   "encrypted": false,
+   "publicKey": "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDQeWiGPh8UmWLqxoOIfFV5sIVawKIoTV1Q5hVHJevRLueYxiK7IR+jr8DFL8uXNjSteO2KGwpQJJNapNGDaTnhhKrGNs9k5F3lzYlaF8HbJwbRzx5iT3O6g2BrI0VrbfLkKIWkgmcwnB+GlZdXZoiWEdRVatlRexnV+2ZC7IMsFRC1DsXHthTbviaMKMRh0/lauO/6t/DEX4gFgN692TRVQHItBhtz6hcUI5baXCWyHgZh2zzMINHbcKjfHrY8CmT+vSX7bBrD39tc9ceDsHMi3DsOHqTuOyWElPL650MGqoiQrvbDJPL9WnrNO/QR6bbPEJ2BbHd1790PkjO70bP9 fixture-rsa-PEM-none",
+   "fingerprint": "SHA256:CR/ABltpTCVdiTo1WNUSd6D1D9Ig94Kj10zjuWz0neA",
+   "algorithm": "rsa4096",
+   "bits": 2048
+  },
+  {
+   "name": "RSA 2048 · PEM (ssh-keygen -m PEM) · passphrase",
+   "file": "rsa-2048-pem-ssh-keygen-m-pem-passphrase",
+   "encrypted": true,
+   "publicKey": "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCsHV33CiaAnRA3YbZjswpw4ZOiUjdiFT/D2QiGQoII+Q9F6M6rWm7hbrFcjiqhcRQ9reaasQDlJthaqJjoijCxgG+P/GClPrqCO4xfNw8E30HX9GL13PGV6OZMgMq6PjdzmoNeB5mzRmHxQrHsbmDMwKPdoaguFmcGB3Ant4MGsMFDMvWM223ZXEsTDULSPB21SPTOUBAhhuwt2inFAJHX/Hk9FbkX5n+Rwr+6GsWM4iUGODKQRTpo12gvmhz6vdGWuKt/HY8kRfoMviAuIgt1k0ee2BNR+6HhegnJdamhbXYfqxmZa2G3kI4dNe76Aafm6T5YMxN8np0eHCeNajJ5 fixture-rsa-PEM-pass",
+   "fingerprint": "SHA256:BsGnb2OvohFu0VeAdA9X1MUFgbrPaY9qjHtj9OLTw9I",
+   "algorithm": "rsa4096",
+   "bits": 2048
+  },
+  {
+   "name": "RSA 2048 · PKCS #8 (ssh-keygen -m PKCS8)",
+   "file": "rsa-2048-pkcs-8-ssh-keygen-m-pkcs8",
+   "encrypted": false,
+   "publicKey": "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDFdOSrLWixba+mBIht0Mid/oHxZoNQ336Qhmbpbv1PbuLPfMnD+bEBf3mf60hhvA0ZOJpJA78ZRQ4XuguHSJ1mUxx8ux5kSYm0GpryngTHbXrMXn+246OVyV0jTBaqKcQQbCqO4+5lSfhjJyFxkZocCOXBaLuXIkJs/6OKCP0aYbLJCnKsMmIKMRW95rDZuMOy9xh6IjB7WbYUYsUqnZMZXQF09bB/VOCsPgmEA7RREp+Wku7iwUqo2j0r4SDWdIAMMpqGO+AkJbGAPsuv5OnG6Ecc6+zkiZbWYDvoroK0ewt6ziICcW24PI6NfY4QUPl4XC172XChKs4FLWdMnxjR fixture-rsa-PKCS8-none",
+   "fingerprint": "SHA256:q3iPPU651gJ9F4FRZFp1mmQYawsEQQKDh7DAh9+gLiY",
+   "algorithm": "rsa4096",
+   "bits": 2048
+  },
+  {
+   "name": "RSA 2048 · PKCS #8 (ssh-keygen -m PKCS8) · passphrase",
+   "file": "rsa-2048-pkcs-8-ssh-keygen-m-pkcs8-passphrase",
+   "encrypted": true,
+   "publicKey": "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDXuy0LusZMU9tAnYIKjUHj1eBOvtNbfPt5B0YAQvnqUqe67NTGrJE6/8F0zE9yzjvjYioFBsYNjrM1jL/shVy9m4DeqFUe3vxymMhDfzGsrlDGADscw6MVAtFlW028lwQEsYHPuUbC+HOfcRRTxX76VVy9IKMnXyXsSOluBm7hMCSNUvd/cx6iTVwDIAOW93h+aFkrXV+hlBr83bBdzeSRY6HWieAD3T0SXsyNZOtFHevkRkACYLn6Fk0GlLi98+qGMz6F4rZ102i7FD1LHErXiWQovExgMOMKzWSfazla8bR9WDnvXn+aT9T9pDwyc4q7IH2q8KPQrngAEA4o9qxF fixture-rsa-PKCS8-pass",
+   "fingerprint": "SHA256:3nXnCQ7kew+BTgpc+2MHoaCfsg5D2N3p5mlG5zKlB1s",
+   "algorithm": "rsa4096",
+   "bits": 2048
+  },
+  {
+   "name": "Ed25519 · PKCS #8 (openssl genpkey)",
+   "file": "ed25519-pkcs-8-openssl-genpkey",
+   "encrypted": false,
+   "publicKey": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIO/Fd9cU40IzSCX6Y4tYO6U8qSv1cntEIyhWNeZOfMoZ",
+   "fingerprint": "SHA256:yWRwu5241ntvp30i+4Y9dJ9Cz4E5v5gSbi1flri6KWI",
+   "algorithm": "ed25519",
+   "bits": 256
+  },
+  {
+   "name": "Ed25519 · PKCS #8 (openssl genpkey) · passphrase",
+   "file": "ed25519-pkcs-8-openssl-genpkey-passphrase",
+   "encrypted": true,
+   "publicKey": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIO/Fd9cU40IzSCX6Y4tYO6U8qSv1cntEIyhWNeZOfMoZ",
+   "fingerprint": "SHA256:yWRwu5241ntvp30i+4Y9dJ9Cz4E5v5gSbi1flri6KWI",
+   "algorithm": "ed25519",
+   "bits": 256
+  }
+ ]
+}

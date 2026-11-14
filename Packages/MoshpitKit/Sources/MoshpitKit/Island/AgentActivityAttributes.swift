@@ -23,10 +23,10 @@ public struct AgentActivityAttributes: ActivityAttributes {
         /// these four keys in all three.
         public var label: String {
             switch self {
-            case .working:   return String(localized: "working")
-            case .attention: return String(localized: "needs you")
-            case .done:      return String(localized: "done")
-            case .idle:      return String(localized: "idle")
+            case .working:   return AppLanguage.string("working")
+            case .attention: return AppLanguage.string("needs you")
+            case .done:      return AppLanguage.string("done")
+            case .idle:      return AppLanguage.string("idle")
             }
         }
 

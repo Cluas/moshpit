@@ -1,0 +1,13 @@
+[package]
+name = "moshpit-herdr"
+description = "herdr frame channel, snapshot, socket and control-plane logic for Moshpit's Rust core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+# The JSON, base64 and text rules are the app's (Foundation's, as Moshpit
+# relies on them), written out in src/ so they can be matched exactly.
+[dependencies]
+# Unlicense OR MIT. Newline and brace searches over frame lines.
+memchr = "2.8"

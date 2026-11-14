@@ -1,8 +1,8 @@
 import UIKit
-import SwiftTerm
 
-/// Point → grid cell for a SwiftTerm ``TerminalView``: which character did the
-/// user touch?
+/// Cell boxes and point → grid cell: which character did the user touch?
+/// SwiftTerm's view is measured in `TerminalCellGeometry+SwiftTerm.swift`;
+/// the core's view knows its own cells (``CoreTermMetrics``).
 ///
 /// SwiftTerm knows this exactly — it lays the grid out on a `cellDimension`
 /// computed from the font's "W" advance and line metrics, snapped to the pixel
@@ -14,22 +14,6 @@ import SwiftTerm
 /// at most one cell across a full row — a wrong-by-one column beats a
 /// wrong-by-anything one.
 enum TerminalCellGeometry {
-
-    /// The visible cell box in points, or the divided-bounds estimate.
-    static func cellSize(of terminalView: TerminalView) -> CGSize {
-        let terminal = terminalView.getTerminal()
-        let cols = max(1, terminal.cols)
-        let rows = max(1, terminal.rows)
-        let bounds = terminalView.bounds.size
-        let divided = CGSize(width: bounds.width / CGFloat(cols),
-                             height: bounds.height / CGFloat(rows))
-        guard bounds.width > 0, bounds.height > 0 else { return divided }
-        let scale = terminalView.window?.screen.scale ?? 0
-        guard scale > 0 else { return divided }
-        let measured = measuredCell(font: terminalView.font, scale: scale)
-        guard grid(for: bounds, cell: measured) == (cols, rows) else { return divided }
-        return measured
-    }
 
     /// The `cols × rows` a cell box yields for `bounds` — SwiftTerm's own
     /// truncating division, so a box that really is the view's reproduces the
@@ -49,23 +33,6 @@ enum TerminalCellGeometry {
         guard scale > 0 else { return CGSize(width: width, height: height) }
         return CGSize(width: ceil(width * scale) / scale,
                       height: ceil(height * scale) / scale)
-    }
-
-    /// The cell under `point` (in `terminalView`'s own coordinate space),
-    /// clamped to the visible grid.
-    ///
-    /// Rows count from the top of the VIEWPORT, not of the buffer: the caller
-    /// turns this into a mouse report, and the program reading it thinks in
-    /// screen rows. `TerminalView` is a scroll view, so a point in its
-    /// coordinate space is a *content* point — subtracting `contentOffset` is
-    /// what makes the two agree once there's scrollback above the fold.
-    static func cell(at point: CGPoint, in terminalView: TerminalView) -> (col: Int, row: Int) {
-        let terminal = terminalView.getTerminal()
-        let cell = cellSize(of: terminalView)
-        return Self.cell(at: CGPoint(x: point.x, y: point.y - terminalView.contentOffset.y),
-                         cell: cell,
-                         cols: terminal.cols,
-                         rows: terminal.rows)
     }
 
     /// Clamped viewport-point → cell. Pure, for testing.

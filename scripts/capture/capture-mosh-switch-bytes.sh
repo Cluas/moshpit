@@ -8,8 +8,8 @@
 # loss is involved — which means it must reproduce over loopback.
 #
 # What this captures, using the app's OWN SSP client (MoshTransport, the same
-# source the app ships — compiled here into a CLI exactly like
-# spike-mosh-per-window.sh does):
+# source the app ships — compiled here into a CLI, with the two types it needs
+# from MoshBootstrap stubbed by scripts/spikes/spike_mosh_shims.swift):
 #
 #   phaseN.bin   every host byte mosh delivered during phase N
 #   truthN.txt   `tmux capture-pane -p -e` of the pane visible during phase N
@@ -21,8 +21,8 @@
 # truth. Divergence = the bug, and the mismatching row tells you which of the
 # content generator's tagged cases seeded it.
 #
-# Isolation: a private tmux socket (-L) with `-f /dev/null`, same trick as
-# spike-mosh-per-window.sh — never touches real tmux sessions.
+# Isolation: a private tmux socket (-L) with `-f /dev/null` — never touches
+# real tmux sessions.
 #
 # Prereqs: Remote Login on (ssh 127.0.0.1 works with keys); tmux, mosh-server
 # and python3 on PATH; Xcode command-line tools.

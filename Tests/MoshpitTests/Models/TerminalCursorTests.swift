@@ -18,9 +18,19 @@ struct TerminalCursorTests {
     private static func makeTerminal() -> (TerminalView, SwiftTerminalView.Coordinator) {
         let terminal = TerminalView(frame: .zero, font: .monospacedSystemFont(ofSize: 13, weight: .regular))
         let coordinator = SwiftTerminalView.Coordinator()
-        terminal.terminalDelegate = coordinator
         coordinator.attach(to: terminal)
         return (terminal, coordinator)
+    }
+
+    /// The user's cursor through the seam: the surface applies it and
+    /// re-asserts it after every feed.
+    @discardableResult
+    private static func enforce(_ coordinator: SwiftTerminalView.Coordinator, shape: CursorShape,
+                                colorId: String, blink: Bool) -> (style: CursorStyle, color: UIColor) {
+        let surface = coordinator.swiftTermSurface!
+        surface.reassert(look: TerminalLook(theme: .dracula, cursorShape: shape, cursorColorId: colorId,
+                                            cursorBlink: blink))
+        return surface.enforcedCursor!
     }
 
     @Test("shape+blink map to the matching SwiftTerm caret style")
@@ -43,8 +53,7 @@ struct TerminalCursorTests {
     @Test("remote DECSCUSR in fed output cannot override the enforced style")
     func remoteDecscusrIsOverruled() {
         let (terminal, coordinator) = Self.makeTerminal()
-        coordinator.enforcedCursor = TerminalCursor.apply(
-            shape: .underline, colorId: "green", blink: false, to: terminal)
+        Self.enforce(coordinator, shape: .underline, colorId: "green", blink: false)
 
         // A remote app (vim insert mode) asks for a blinking bar.
         coordinator.feed(data: Data("\u{1B}[5 q".utf8))
@@ -56,9 +65,7 @@ struct TerminalCursorTests {
     @Test("remote OSC 12 in fed output cannot override the enforced colour")
     func remoteOsc12IsOverruled() {
         let (terminal, coordinator) = Self.makeTerminal()
-        let desired = TerminalCursor.apply(
-            shape: .block, colorId: "teal", blink: true, to: terminal)
-        coordinator.enforcedCursor = desired
+        let desired = Self.enforce(coordinator, shape: .block, colorId: "teal", blink: true)
 
         // A remote program recolours the cursor red.
         coordinator.feed(data: Data("\u{1B}]12;#ff0000\u{07}".utf8))
@@ -74,11 +81,55 @@ struct TerminalCursorTests {
         #expect(terminal.getTerminal().options.cursorStyle == .steadyBar)
     }
 
+    /// `color` as 0xRRGGBBAA, as the terminal draws it.
+    private static func rgba(_ color: UIColor) -> UInt32 {
+        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        color.getRed(&r, green: &g, blue: &b, alpha: &a)
+        let byte = { (c: CGFloat) in UInt32((min(max(c, 0), 1) * 255).rounded()) }
+        return byte(r) << 24 | byte(g) << 16 | byte(b) << 8 | byte(a)
+    }
+
+    /// The colour SwiftTerm's caret and the core's style take for `id`.
+    private static func drawn(_ id: String, under theme: AppTheme) -> UInt32 {
+        let (terminal, _) = makeTerminal()
+        let swiftTerm = rgba(TerminalCursor.apply(shape: .block, colorId: id, blink: false, theme: theme,
+                                                  to: terminal).color)
+        #expect(swiftTerm == rgba(UIColor(TerminalCursor.color(forId: id, theme: theme))),
+                "both terminals draw the one mapping")
+        return swiftTerm
+    }
+
+    @Test("B318: the stored green draws the success green, not the accent")
+    func greenIsNotTheAccent() {
+        let theme = AppThemeCatalog.signalRoom
+        #expect(Self.drawn("green", under: theme) == 0x4CC3_8AFF)
+        #expect(Self.drawn("accent", under: theme) == 0x6C6B_EFFF, "Accent is the theme's accent")
+        #expect(Self.drawn("green", under: theme) != Self.drawn("accent", under: theme))
+        #expect(Self.drawn("teal", under: theme) == 0x7AA7_FFFF, "Blue is the info blue")
+    }
+
+    @Test("a stored choice the swatches hide draws as the accent")
+    func hiddenChoiceDrawsAsAccent() {
+        // Terminal Green's accent is a green: Settings hides Green and shows
+        // Accent picked, and the cursor is the accent.
+        let theme = AppThemeCatalog.terminalGreen
+        #expect(Self.drawn("green", under: theme) == Self.drawn("accent", under: theme))
+        #expect(Self.drawn("green", under: theme) == 0x2FA8_71FF)
+        #expect(Self.drawn("teal", under: theme) != Self.drawn("accent", under: theme))
+    }
+
+    @Test("a new app theme is a new look, so an open terminal takes its accent")
+    func appThemeIsPartOfTheLook() {
+        let signal = TerminalLook(theme: .dracula, cursorColorId: "accent", appTheme: AppThemeCatalog.signalRoom)
+        var green = signal
+        green.appTheme = AppThemeCatalog.terminalGreen
+        #expect(signal != green)
+    }
+
     @Test("a DECSCUSR split across feed chunks is still overruled after the closing byte")
     func splitSequenceIsOverruled() {
         let (terminal, coordinator) = Self.makeTerminal()
-        coordinator.enforcedCursor = TerminalCursor.apply(
-            shape: .bar, colorId: "white", blink: true, to: terminal)
+        Self.enforce(coordinator, shape: .bar, colorId: "white", blink: true)
 
         // Chunk boundary mid-sequence — the parser holds state across feeds.
         coordinator.feed(data: Data("\u{1B}[3".utf8))

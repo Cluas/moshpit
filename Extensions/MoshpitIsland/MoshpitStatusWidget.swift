@@ -6,16 +6,18 @@ import MoshpitKit
 /// Activity (push-updated), this PULLs from the App Group snapshot the app writes
 /// (see AgentWidgetStore); the app nudges WidgetCenter on every change. Tapping
 /// opens the headline agent's pane.
-private let wTeal = AgentPalette.working
-private let wAmber = AgentPalette.attention
-private let wGreen = AgentPalette.done
+// Adaptive (R18 D): deep enough to read on a light Home Screen or lock
+// screen, the colours above on a dark one.
+private let wTeal = AgentPalette.workingAdaptive
+private let wAmber = AgentPalette.attentionAdaptive
+private let wGreen = AgentPalette.doneAdaptive
 
 private func color(forState raw: String) -> Color {
     switch raw {
     case "working":   return wTeal
     case "attention": return wAmber
     case "done":      return wGreen
-    default:          return .white.opacity(0.45)
+    default:          return Color.primary.opacity(0.45)
     }
 }
 
@@ -72,6 +74,7 @@ struct MoshpitStatusWidget: Widget {
 
 struct AgentStatusWidgetView: View {
     @Environment(\.widgetFamily) private var family
+    @Environment(\.colorScheme) private var scheme
     let state: AgentWidgetState
     var isStale: Bool = false
 
@@ -79,7 +82,9 @@ struct AgentStatusWidgetView: View {
         content
             .containerBackground(for: .widget) {
                 if family == .systemSmall || family == .systemMedium {
-                    Color.black.opacity(0.92)
+                    // The Home Screen's appearance (R18 D): near black on a
+                    // dark one, as it was, white on a light one.
+                    scheme == .dark ? Color.black.opacity(0.92) : Color.white
                 } else {
                     Color.clear
                 }
@@ -99,7 +104,7 @@ struct AgentStatusWidgetView: View {
     /// State dot colour, dimmed uniformly when the snapshot is stale —
     /// a suspended app's "working" teal would be a lie.
     private func dotColor(_ raw: String) -> Color {
-        isStale ? Color.white.opacity(0.35) : color(forState: raw)
+        isStale ? Color.primary.opacity(0.35) : color(forState: raw)
     }
 
     private var total: Int { state.items.count }
@@ -114,11 +119,12 @@ struct AgentStatusWidgetView: View {
     }
 
     private var summaryLine: String {
-        if isStale { return String(localized: "paused — open Moshpit") }
+        // In the language Moshpit shows (AppLanguage), not the system's.
+        if isStale { return AppLanguage.string("paused — open Moshpit") }
         var parts: [String] = []
-        if state.attentionCount > 0 { parts.append(String(localized: "\(state.attentionCount) needs you")) }
-        if state.workingCount > 0 { parts.append(String(localized: "\(state.workingCount) working")) }
-        return parts.isEmpty ? String(localized: "no active agents") : parts.joined(separator: " · ")
+        if state.attentionCount > 0 { parts.append(AppLanguage.string("\(state.attentionCount) needs you")) }
+        if state.workingCount > 0 { parts.append(AppLanguage.string("\(state.workingCount) working")) }
+        return parts.isEmpty ? AppLanguage.string("no active agents") : parts.joined(separator: " · ")
     }
 
     // MARK: families
@@ -127,7 +133,7 @@ struct AgentStatusWidgetView: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 5) {
                 Circle().fill(wTeal).frame(width: 7, height: 7)
-                Text("Moshpit").font(.system(size: 12, weight: .bold)).foregroundStyle(.white)
+                Text("Moshpit").font(.system(size: 12, weight: .bold)).foregroundStyle(Color.primary)
                 Spacer()
                 if state.attentionCount > 0 {
                     Text("\(state.attentionCount)")
@@ -141,16 +147,16 @@ struct AgentStatusWidgetView: View {
                     Circle().fill(dotColor(headline.state)).frame(width: 8, height: 8)
                     Text(headline.command.isEmpty ? "shell" : headline.command)
                         .font(.system(size: 15, weight: .semibold, design: .monospaced))
-                        .foregroundStyle(.white).lineLimit(1)
+                        .foregroundStyle(Color.primary).lineLimit(1)
                 }
                 Text(secondary(headline))
                     .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(.white.opacity(0.55)).lineLimit(1)
+                    .foregroundStyle(Color.primary.opacity(0.55)).lineLimit(1)
             }
             Spacer(minLength: 0)
             Text(summaryLine)
                 .font(.system(size: 10, weight: .medium, design: .monospaced))
-                .foregroundStyle(.white.opacity(0.6)).lineLimit(1)
+                .foregroundStyle(Color.primary.opacity(0.6)).lineLimit(1)
         }
     }
 
@@ -158,17 +164,17 @@ struct AgentStatusWidgetView: View {
         VStack(alignment: .leading, spacing: 7) {
             HStack(spacing: 5) {
                 Circle().fill(wTeal).frame(width: 7, height: 7)
-                Text("Moshpit").font(.system(size: 12, weight: .bold)).foregroundStyle(.white)
+                Text("Moshpit").font(.system(size: 12, weight: .bold)).foregroundStyle(Color.primary)
                 Spacer()
                 Text(summaryLine)
                     .font(.system(size: 10, weight: .medium, design: .monospaced))
-                    .foregroundStyle(.white.opacity(0.6)).lineLimit(1)
+                    .foregroundStyle(Color.primary.opacity(0.6)).lineLimit(1)
             }
             if state.items.isEmpty {
                 Spacer()
-                Text("no active agents")
+                Text(AppLanguage.string("no active agents"))
                     .font(.system(size: 12, design: .monospaced))
-                    .foregroundStyle(.white.opacity(0.4))
+                    .foregroundStyle(Color.primary.opacity(0.4))
                 Spacer()
             } else {
                 ForEach(state.items.prefix(3)) { item in
@@ -176,10 +182,10 @@ struct AgentStatusWidgetView: View {
                         Circle().fill(dotColor(item.state)).frame(width: 7, height: 7)
                         Text(item.command.isEmpty ? "shell" : item.command)
                             .font(.system(size: 13, weight: .semibold, design: .monospaced))
-                            .foregroundStyle(.white).lineLimit(1)
+                            .foregroundStyle(Color.primary).lineLimit(1)
                         Text(secondary(item))
                             .font(.system(size: 11, design: .monospaced))
-                            .foregroundStyle(item.state == "attention" ? wAmber : .white.opacity(0.5))
+                            .foregroundStyle(item.state == "attention" ? wAmber : Color.primary.opacity(0.5))
                             .lineLimit(1)
                         Spacer()
                     }
@@ -206,7 +212,7 @@ struct AgentStatusWidgetView: View {
             VStack(spacing: 0) {
                 Text("\(state.attentionCount > 0 ? state.attentionCount : total)")
                     .font(.system(size: 18, weight: .bold, design: .rounded))
-                Text(state.attentionCount > 0 ? LocalizedStringKey("wait") : LocalizedStringKey("agt"))
+                Text(state.attentionCount > 0 ? AppLanguage.string("wait") : AppLanguage.string("agt"))
                     .font(.system(size: 8, weight: .medium))
             }
         }
@@ -216,11 +222,11 @@ struct AgentStatusWidgetView: View {
     /// — an SF Symbol + one line of text, leading with needs-you.
     @ViewBuilder private var inline: some View {
         if state.attentionCount > 0 {
-            Label("\(state.attentionCount) needs you", systemImage: "exclamationmark.bubble.fill")
+            Label(AppLanguage.string("\(state.attentionCount) needs you"), systemImage: "exclamationmark.bubble.fill")
         } else if let headline {
             Label(headline.command.isEmpty ? "shell" : headline.command, systemImage: "circle.fill")
         } else {
-            Label("Moshpit · no agents", systemImage: "circle")
+            Label(AppLanguage.string("Moshpit · no agents"), systemImage: "circle")
         }
     }
 }

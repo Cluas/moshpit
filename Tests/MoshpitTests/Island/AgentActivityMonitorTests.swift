@@ -2,17 +2,15 @@ import Foundation
 import Testing
 @testable import Moshpit
 import MoshpitKit
+#if canImport(ActivityKit)
+import ActivityKit
+#endif
 
-/// `AgentActivityMonitor` is a `@MainActor` state machine whose interesting
-/// logic (output-heuristic promotion, the idle/done/linger sweep) is `private`
-/// and driven exclusively by live `TmuxSessionController` callbacks and timers.
-///
-/// One decision has been lifted out of that: whether to ANNOUNCE an attention
-/// episode. It used to be three terms inline in `applyAgentHooks`, and this
-/// header used to note that it could not be reached "without a live tmux fixture
-/// or source changes" — which was true, and which is why it shipped wrong and
-/// re-notified on every reconnect. Untestable is not a property of the code; it
-/// is a decision about where to put a boundary.
+/// What is left of the monitor in Swift: the platform half. Its rules —
+/// announcing an episode once, the record across relaunches, reclassifying
+/// fossils, telling a turn ending from an attach redraw — are the Rust
+/// machine's now, tested in `crates/agents` (`src/tests.rs`, and against
+/// the Swift monitor they replaced in `tests/swift_equivalence.rs`).
 @Suite("AgentActivityMonitor")
 @MainActor
 struct AgentActivityMonitorTests {
@@ -21,162 +19,21 @@ struct AgentActivityMonitorTests {
         let name = "test.agentmonitor.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: name)!
         let settings = AppSettings(defaults: defaults)
-        return (AgentActivityMonitor(settings: settings), defaults, name)
+        return (AgentActivityMonitor(settings: settings, writeWidget: { _ in }), defaults, name)
     }
 
-    // MARK: - Announcing an attention episode
-
-    // The reported bug: a reconnect re-notified for a prompt already on screen,
-    // once per reconnect, for as long as the agent kept waiting.
-    //
-    // The decision used to be `!(wasAttention && wasHookOwned)` inline in
-    // `applyAgentHooks`, where `wasHookOwned` is a FIVE-SECOND liveness window.
-    // Any longer gap in hook polling — a reconnect, time in the background, a
-    // slow host — made the sweep drop `hookOwned` while `.attention` stuck by
-    // design, so the next poll read an unchanged prompt as a new one.
-    //
-    // This suite exists as much for its reachability as its assertions. The
-    // comment at the top of this file used to say the hook path could not be
-    // tested "without a live tmux fixture or source changes", and that was true
-    // and is exactly why the bug shipped. The rule is now a static function.
-
-    @Test("a standing prompt is announced once, not once per poll")
-    func announcedOncePerEpisode() {
-        let episode = Date(timeIntervalSince1970: 1_756_000_000)
-        #expect(AgentActivityMonitor.shouldAnnounce(
-            state: .attention, episode: episode, lastAnnounced: nil))
-        // Every subsequent poll of the same standing prompt.
-        #expect(!AgentActivityMonitor.shouldAnnounce(
-            state: .attention, episode: episode, lastAnnounced: episode))
+    #if canImport(ActivityKit)
+    /// iOS ends a Live Activity after eight hours, and the user can swipe one
+    /// away. The monitor kept updating that handle — and adopted an ended one
+    /// at launch — so the island never came back while any agent was listed.
+    @Test("an island iOS ended or the user swiped away is let go, not updated")
+    func endedIslandIsLetGo() {
+        #expect(ActivityKitIsland.takesUpdates(.active))
+        #expect(ActivityKitIsland.takesUpdates(.stale))
+        #expect(!ActivityKitIsland.takesUpdates(.ended))
+        #expect(!ActivityKitIsland.takesUpdates(.dismissed))
     }
-
-    @Test("a reconnect does not re-announce a prompt that has not changed")
-    func reconnectDoesNotReAnnounce() {
-        // The exact sequence: announce, lose the connection for longer than
-        // hookGrace, come back, poll. The pane is still in the same episode —
-        // the host's `@moshpit_since` has not moved, because nothing happened.
-        let episode = Date(timeIntervalSince1970: 1_756_000_000)
-        var announced: Date?
-
-        if AgentActivityMonitor.shouldAnnounce(state: .attention, episode: episode,
-                                               lastAnnounced: announced) {
-            announced = episode
-        }
-        // …disconnect, any length at all, then the first poll after reconnect.
-        #expect(!AgentActivityMonitor.shouldAnnounce(
-            state: .attention, episode: episode, lastAnnounced: announced),
-                "a reconnect re-announced a prompt the user is already looking at")
-        // And a second reconnect, because the old bug fired on every one.
-        #expect(!AgentActivityMonitor.shouldAnnounce(
-            state: .attention, episode: episode, lastAnnounced: announced))
-    }
-
-    @Test("a genuinely new prompt is announced, even on the same pane")
-    func newEpisodeAnnouncesAgain() {
-        // The other half, and the reason suppression is keyed on the episode
-        // rather than just "have I ever announced this pane": the agent asked,
-        // was answered, worked, and is now asking something else. That is a new
-        // question and has to ring.
-        let first = Date(timeIntervalSince1970: 1_756_000_000)
-        let second = first.addingTimeInterval(90)
-        #expect(AgentActivityMonitor.shouldAnnounce(
-            state: .attention, episode: second, lastAnnounced: first))
-    }
-
-    @Test("only attention announces")
-    func otherStatesAreSilent() {
-        let episode = Date(timeIntervalSince1970: 1_756_000_000)
-        for state in [AgentActivityAttributes.AgentState.working, .done, .idle] {
-            #expect(!AgentActivityMonitor.shouldAnnounce(
-                state: state, episode: episode, lastAnnounced: nil),
-                    "\(state) asked for an attention notification")
-        }
-    }
-
-    @Test("the record survives a relaunch, so a fresh launch does not re-announce")
-    func announcedRecordRoundTrips() {
-        // A device log caught FOUR notifications added within one millisecond of
-        // a fresh app launch — every pane still standing in attention, announced
-        // again, one of them re-added two seconds after being withdrawn. An
-        // in-memory record fixes the reconnect and leaves that untouched.
-        let episode = Date(timeIntervalSince1970: 1_756_000_000)
-        let encoded = AgentActivityMonitor.encodeAnnounced(["conn|%3": episode])
-        let back = AgentActivityMonitor.decodeAnnounced(
-            encoded, now: episode.addingTimeInterval(300), ttl: 86_400)
-        #expect(back["conn|%3"] == episode)
-        #expect(!AgentActivityMonitor.shouldAnnounce(
-            state: .attention, episode: episode, lastAnnounced: back["conn|%3"]))
-    }
-
-    @Test("an ancient record is dropped rather than suppressing forever")
-    func staleRecordExpires() {
-        let old = Date(timeIntervalSince1970: 1_756_000_000)
-        let encoded = AgentActivityMonitor.encodeAnnounced(["conn|%3": old])
-        let back = AgentActivityMonitor.decodeAnnounced(
-            encoded, now: old.addingTimeInterval(86_400 + 60), ttl: 86_400)
-        #expect(back.isEmpty)
-        // …and with the record gone, a standing prompt can ring again.
-        #expect(AgentActivityMonitor.shouldAnnounce(
-            state: .attention, episode: old, lastAnnounced: back["conn|%3"]))
-    }
-
-    @Test("a record from the future is discarded, not trusted")
-    func futureRecordDiscarded() {
-        // A clock that jumped — timezone change, NTP correction, a restored
-        // backup — must not be able to silence notifications until real time
-        // catches up to it.
-        let now = Date(timeIntervalSince1970: 1_756_000_000)
-        let encoded = AgentActivityMonitor.encodeAnnounced(
-            ["conn|%3": now.addingTimeInterval(7 * 86_400)])
-        #expect(AgentActivityMonitor.decodeAnnounced(encoded, now: now, ttl: 86_400).isEmpty)
-    }
-
-    // MARK: - Reclassifying stamps the host got wrong
-
-    // Found as "NEEDS YOU 我明明已经点开看了，那个状态一直都在": two panes on a
-    // real phone frozen in attention for 16 and 24 HOURS. Older stamp scripts
-    // recorded Claude's idle reminder as attention; the current one refuses
-    // idle nags — which also means it never overwrites the fossils, and nothing
-    // else ever would have.
-
-    @Test("an idle-reminder attention is a parked agent, not a question")
-    func idleTitleHeals() {
-        #expect(AgentActivityMonitor.reclassify(
-            state: .attention, title: "Claude is waiting for your input",
-            foregroundCommand: "claude") == .done)
-        // A real question keeps its urgency.
-        #expect(AgentActivityMonitor.reclassify(
-            state: .attention, title: "Bash: rm -rf build",
-            foregroundCommand: "claude") == .attention)
-        #expect(AgentActivityMonitor.reclassify(
-            state: .attention, title: nil,
-            foregroundCommand: "claude") == .attention)
-    }
-
-    @Test("a stamp whose agent is dead heals, whatever it says")
-    func shellForegroundHeals() {
-        // Hooks only ever write the options; a killed agent fires no final hook,
-        // so its last state freezes at the moment of death. The pane's actual
-        // foreground is the only truth available.
-        for state in [AgentActivityAttributes.AgentState.attention, .working] {
-            #expect(AgentActivityMonitor.reclassify(
-                state: state, title: "Bash: make", foregroundCommand: "zsh") == .done,
-                    "\(state) survived its agent")
-        }
-        // No foreground info (older controller data) changes nothing.
-        #expect(AgentActivityMonitor.reclassify(
-            state: .attention, title: "Bash: make", foregroundCommand: nil) == .attention)
-    }
-
-    @Test("attentionState is nil for a pane the monitor has no record of")
-    func attentionStateNilWhenUntracked() {
-        let (monitor, defaults, name) = makeMonitor()
-        defer { defaults.removePersistentDomain(forName: name) }
-
-        // nil (not false) is the documented contract: callers must not block on
-        // an absence of data, only on an explicit "no longer attention".
-        #expect(monitor.attentionState(connectionId: UUID(), paneId: "%0") == nil)
-    }
+    #endif
 
     @Test("untracking an unknown connection is a harmless no-op")
     func untrackUnknownIsSafe() {
@@ -184,7 +41,6 @@ struct AgentActivityMonitorTests {
         defer { defaults.removePersistentDomain(forName: name) }
 
         monitor.untrack(connectionId: UUID())
-        #expect(monitor.attentionState(connectionId: UUID(), paneId: "%1") == nil)
     }
 
     @Test("cycleHeadline is safe to call with no agents present")
@@ -192,80 +48,95 @@ struct AgentActivityMonitorTests {
         let (monitor, defaults, name) = makeMonitor()
         defer { defaults.removePersistentDomain(forName: name) }
 
-        // No tracked panes → buildState() yields an empty agent list; cycling the
-        // headline offset must wrap harmlessly rather than divide/index by zero.
         monitor.cycleHeadline()
         monitor.cycleHeadline()
-        #expect(monitor.attentionState(connectionId: UUID(), paneId: "%0") == nil)
     }
 
-    // MARK: - A turn ending
-
-    // The reported bug: four "✓ claude finished" cards for prompts answered
-    // hours earlier, on one lock screen, within a minute of the phone attaching.
-    // The relay had sent nothing that night — the cards were local. On attach
-    // every pane redraws; the output heuristic flipped each stale done pane to
-    // `working`; the next poll read the host's standing `done` plus the prompt
-    // still stored on the pane; and `prevState == .working` waved it through.
-    // The rule now asks what the HOST said last, and how long ago.
-
-    private var grace: TimeInterval { 5 }
-    private var t0: Date { Date(timeIntervalSince1970: 1_789_400_000) }
-
-    @Test("a live working→done poll is a turn ending")
-    func liveStopIsATurnEnding() {
-        #expect(AgentActivityMonitor.isTurnEnding(
-            hook: .done, shown: .done, previousHook: .working,
-            previousHookSeen: t0.addingTimeInterval(-2), now: t0, grace: grace))
-        // A question answered and then finished rings too.
-        #expect(AgentActivityMonitor.isTurnEnding(
-            hook: .done, shown: .done, previousHook: .attention,
-            previousHookSeen: t0.addingTimeInterval(-2), now: t0, grace: grace))
+    /// The announced-episode record the machine keeps is the one earlier
+    /// builds wrote: `"<uuid>|<pane>" -> epoch seconds` under the same key,
+    /// so updating the app doesn't re-announce what is still standing.
+    @Test("the announced record is read and written where earlier builds kept it")
+    func announcedRecordKeepsItsKey() {
+        #expect(AgentActivityMonitor.announcedKey == "island.announcedEpisodes")
     }
 
-    @Test("the attach redraw: heuristic working over a host that said done is no turn")
-    func heuristicWorkingIsNotATurn() {
-        // The host's last word was `done`, hours ago. Only this record said
-        // working, and only because a redraw produced output.
-        #expect(!AgentActivityMonitor.isTurnEnding(
-            hook: .done, shown: .done, previousHook: .done,
-            previousHookSeen: t0.addingTimeInterval(-9 * 3600), now: t0, grace: grace))
-        // Even when the polls themselves never paused.
-        #expect(!AgentActivityMonitor.isTurnEnding(
-            hook: .done, shown: .done, previousHook: .done,
-            previousHookSeen: t0.addingTimeInterval(-2), now: t0, grace: grace))
+    /// A monitor made the way a prewarm before the first unlock makes it:
+    /// the preferences can't be believed until `unlocked` says so. A
+    /// question was announced before the reboot (`%9`).
+    private final class Device: @unchecked Sendable {
+        var unlocked = false
+        var now = Date(timeIntervalSince1970: 1_790_000_000)
     }
 
-    @Test("the first poll after a launch or reconnect never rings")
-    func firstPollIsSilent() {
-        #expect(!AgentActivityMonitor.isTurnEnding(
-            hook: .done, shown: .done, previousHook: nil,
-            previousHookSeen: nil, now: t0, grace: grace))
+    private func sealedMonitor() -> (AgentActivityMonitor, AgentStandingTests.FakeMux, ServerConnection,
+                                     UserDefaults, String, Device) {
+        let name = "test.agentmonitor.sealed.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: name)!
+        let settings = AppSettings(defaults: defaults)
+        settings.notificationsEnabled = false
+        settings.liveActivityEnabled = true
+        // A sealed file holds no sentinel either.
+        defaults.removeObject(forKey: DefaultsReadiness.sentinelKey)
+        let connection = ServerConnection(name: "sealed", host: "192.0.2.1", port: 22,
+                                          username: "tester", authMethod: .password)
+        defaults.set(["\(connection.id.uuidString)|%9": 1_789_999_000.0],
+                     forKey: AgentActivityMonitor.announcedKey)
+        let device = Device()
+        let monitor = AgentActivityMonitor(
+            settings: settings, standing: nil, writeWidget: { _ in },
+            island: AgentStandingTests.CountingIsland(), finishes: nil,
+            notifier: AgentStandingTests.Cards().notifier, clock: { device.now },
+            readiness: DefaultsReadiness { device.unlocked })
+        let mux = AgentStandingTests.FakeMux()
+        monitor.track(connection: connection, controller: mux)
+        return (monitor, mux, connection, defaults, name, device)
     }
 
-    @Test("a finish that happened while not polling was the push's to deliver")
-    func staleWorkingIsNotATurn() {
-        // Seen working, then an hour in the background. The host finished in
-        // the gap and pushed; the first foreground poll must not repeat it.
-        #expect(!AgentActivityMonitor.isTurnEnding(
-            hook: .done, shown: .done, previousHook: .working,
-            previousHookSeen: t0.addingTimeInterval(-3600), now: t0, grace: grace))
-        // Just past the grace is a gap too — the same window that hands the
-        // pane back to the heuristic.
-        #expect(!AgentActivityMonitor.isTurnEnding(
-            hook: .done, shown: .done, previousHook: .working,
-            previousHookSeen: t0.addingTimeInterval(-(grace + 0.5)), now: t0, grace: grace))
+    /// A question announced while the record can't be believed: the stored
+    /// record is not written over (B348).
+    @Test("a launch before the first unlock writes nothing over the announced record")
+    func sealedWritesNothing() {
+        let (monitor, mux, connection, defaults, name, device) = sealedMonitor()
+        defer {
+            monitor.untrack(connectionId: connection.id)
+            defaults.removePersistentDomain(forName: name)
+        }
+        let before = defaults.dictionary(forKey: AgentActivityMonitor.announcedKey) as? [String: Double]
+        mux.poll(["%1": AgentHook(state: "attention", agent: "claude", since: device.now,
+                                  command: "claude", title: "Bash: npm test")])
+        device.now += AgentActivityMonitor.announceGrace + 1
+        monitor.sweep()
+        let after = defaults.dictionary(forKey: AgentActivityMonitor.announcedKey) as? [String: Double]
+        let unchanged = after == before
+        #expect(unchanged, "the stored record was written over")
     }
 
-    @Test("a healed fossil is bookkeeping, not a finish")
-    func reclassifiedFossilIsSilent() {
-        // The host still says attention; reclassify shows it as done.
-        #expect(!AgentActivityMonitor.isTurnEnding(
-            hook: .attention, shown: .done, previousHook: .working,
-            previousHookSeen: t0.addingTimeInterval(-2), now: t0, grace: grace))
-        // And a host `done` shown as anything else is not a finish either.
-        #expect(!AgentActivityMonitor.isTurnEnding(
-            hook: .done, shown: .working, previousHook: .working,
-            previousHookSeen: t0.addingTimeInterval(-2), now: t0, grace: grace))
+    /// Once the device is unlocked and the app comes forward, the stored
+    /// record joins what was announced meanwhile, and both are saved (B348).
+    @Test("coming forward after the unlock keeps the stored episodes and the new one")
+    func adoptionKeepsStoredEpisodes() {
+        let (monitor, mux, connection, defaults, name, device) = sealedMonitor()
+        defer {
+            monitor.untrack(connectionId: connection.id)
+            defaults.removePersistentDomain(forName: name)
+        }
+        let asked = device.now
+        mux.poll(["%1": AgentHook(state: "attention", agent: "claude", since: asked,
+                                  command: "claude", title: "Bash: npm test")])
+        device.now += AgentActivityMonitor.announceGrace + 1
+        monitor.sweep()
+        monitor.reloadIfNeeded()
+        let sealed = defaults.dictionary(forKey: AgentActivityMonitor.announcedKey) as? [String: Double]
+        let untouched = sealed == ["\(connection.id.uuidString)|%9": 1_789_999_000.0]
+        #expect(untouched, "nothing adopted while sealed")
+        device.unlocked = true
+        monitor.reloadIfNeeded()
+        let stored = defaults.dictionary(forKey: AgentActivityMonitor.announcedKey) as? [String: Double]
+        let record = stored ?? [:]
+        let conn = connection.id.uuidString
+        let before = record["\(conn)|%9"]
+        let meanwhile = record["\(conn)|%1"]
+        #expect(before == 1_789_999_000.0, "the stored episode")
+        #expect(meanwhile == asked.timeIntervalSince1970, "the one announced meanwhile")
     }
 }

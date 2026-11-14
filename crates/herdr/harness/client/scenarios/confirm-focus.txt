@@ -1,0 +1,6 @@
+# The server's focus once the queued commands have landed.
+host rule agent_focus 300 normal
+at 0 start
+at 500 select-pane w1:p2
+at 500 confirm-focus 5000
+end 4000

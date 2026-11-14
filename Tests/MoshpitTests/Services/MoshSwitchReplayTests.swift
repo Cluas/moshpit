@@ -37,14 +37,10 @@ struct MoshSwitchReplayTests {
 
     // MARK: - Fixtures
 
-    /// Read from the source tree rather than the bundle — same reason as
-    /// ``HerdrSnapshotTests``: whether a fixture gets copied as a bundle
-    /// resource depends on how the target was generated.
+    /// From the test bundle, where `Fixtures/` ships with its layout — see
+    /// ``TestFixtures``.
     private static func fixture(_ name: String) -> URL {
-        URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()   // …/MoshpitTests/Services
-            .deletingLastPathComponent()   // …/MoshpitTests
-            .appendingPathComponent("Fixtures/mosh-switch/\(name)")
+        TestFixtures.url("mosh-switch/\(name)")
     }
 
     private static func bytes(_ name: String) throws -> [UInt8] {
@@ -258,11 +254,11 @@ struct MoshSwitchReplayTests {
     /// available:
     ///   * `capture-pane` trims trailing spaces regardless of attributes, so
     ///     it cannot see a block parked at a line end;
-    ///   * ``MoshTransport/requestFullRedraw()`` does NOT make a stock
-    ///     mosh-server repaint — transportsender.cc culls sent states older
-    ///     than the last ack and IGNORES an ack naming a culled state. The
-    ///     capture's `redraw.bin` came back empty, so the diagnostics
-    ///     popover's repaint button is a no-op against a real server.
+    ///   * the capture's `redraw.bin` came back empty: when it was recorded,
+    ///     ``MoshTransport/requestFullRedraw()`` sent both of its resizes in
+    ///     one user state, which a stock mosh-server applies before it
+    ///     renders, so it saw no size change and repainted nothing. (It now
+    ///     sends the narrower width alone; see that method.)
     ///
     /// Every mismatch is a cell mosh believes is already correct and will
     /// never resend.

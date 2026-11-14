@@ -73,4 +73,21 @@ struct AppSettingsTests {
         let reread = AppSettings(defaults: defaults)
         #expect(reread.themeId == "nord")
     }
+
+    @Test("B159: a declined host list with one item that isn't a string keeps its hosts, and the next decline lands beside them")
+    func declinedHostsSurviveANonString() {
+        let (defaults, name) = Self.makeDefaults()
+        defer { defaults.removePersistentDomain(forName: name) }
+        let key = "moshpit.settings.hostSetupDeclined"
+        defaults.set(["b", 1, "a"] as [Any], forKey: key)
+
+        let settings = AppSettings(defaults: defaults)
+        #expect(settings.hostSetupDeclined == ["a", "b"], "one non-string read the whole list as empty")
+        settings.hostSetupDeclined.insert("c")
+        #expect(defaults.array(forKey: key) as? [String] == ["a", "b", "c"],
+                "the next decline was written over the hosts already declined")
+
+        defaults.set("a", forKey: key)
+        #expect(AppSettings(defaults: defaults).hostSetupDeclined.isEmpty)
+    }
 }

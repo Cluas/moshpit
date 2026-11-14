@@ -28,6 +28,36 @@ enum HerdrFrame: Equatable {
     /// black pane with no explanation (and, until the click-recursion fix, a
     /// crash on the first tap).
     case fault(message: String)
+
+    /// The attach CLI saw the server hang up mid-handshake — the only place
+    /// `terminal session control` prints this (a drop AFTER the handshake
+    /// ends the stream silently). The live cause is client/server version
+    /// skew the server can't even parse: herdr 0.9.5 drops a 0.8.0 hello
+    /// without a word, so the message names no versions and no direction
+    /// (2026-11-11). Worth a `herdr status` before it reaches the user raw.
+    static func isHandshakeDrop(_ message: String) -> Bool {
+        message.hasPrefix("lost connection to server")
+    }
+
+    /// herdr turned ONE line away and the attach that read it goes on:
+    /// `terminal session control input ignored: invalid json command: …`
+    /// (herdr 0.9.5, probed live — a line that isn't JSON, a resize past
+    /// u16, a mouse event to a server before 0.9.2, an attach line read by
+    /// an attach that is still alive). Not a refused attach: nothing about
+    /// the pane or the channel changed (B117, after the Rust client's
+    /// `fault`, `crates/herdr/src/client/attach.rs`).
+    static func isInputIgnored(_ message: String) -> Bool {
+        message.contains("input ignored")
+    }
+
+    /// A `terminal.closed` whose reason says another client has the pane:
+    /// it took our attach over ("terminal attach taken over"), or held the
+    /// terminal when a plain attach went for it ("… already has an attached
+    /// client; retry with --takeover") — herdr 0.9.5, measured.
+    static func isHeldElsewhere(_ reason: String?) -> Bool {
+        guard let reason else { return false }
+        return reason.contains("taken over") || HerdrLaunch.heldElsewhere(reason)
+    }
 }
 
 /// Incremental newline-delimited JSON parser for the frame channel.
@@ -139,10 +169,24 @@ enum HerdrFrameCommand {
     ///   retarget to another pane without rebuilding the SSH channel. The
     ///   prompt printed in between never reaches the screen, because only
     ///   decoded frame bytes are fed to the terminal.
-    static func start(target: String, cols: Int, rows: Int, customPath: String?) -> String {
+    /// * **`--takeover` only when the person chose the pane** (`takeover`: a
+    ///   tap, a reply for it, "Open here"). Following the shared focus always
+    ///   took over, so a second device lost its pane whenever this one
+    ///   followed the focus onto it; a plain attach to a terminal another
+    ///   client holds is refused instead (`terminal.closed`, "… already has
+    ///   an attached client; retry with --takeover", herdr 0.9.5).
+    static func start(target: String, cols: Int, rows: Int, customPath: String?, takeover: Bool) -> String {
         let herdr = HerdrLaunch.attachCommand(customPath: customPath)
         return "stty raw -echo; \(herdr) terminal session control "
-            + "\(HerdrLaunch.quote(target)) --cols \(cols) --rows \(rows) --takeover"
+            + "\(HerdrLaunch.quote(target)) --cols \(cols) --rows \(rows)"
+            + (takeover ? " --takeover" : "")
+    }
+
+    /// Where the frame loop (``boot(target:cols:rows:customPath:takeover:connectionId:)``)
+    /// records its own pid, per connection: the next connection's boot line
+    /// stops the attach a connection that dropped left holding its pane.
+    static func loopPidPath(connectionId: String) -> String {
+        "$HOME/.moshpit/herdr-frame-\(connectionId).pid"
     }
 
     /// The `type` of ``readyMarker``, in herdr's own frame namespace-by-
@@ -184,24 +228,77 @@ enum HerdrFrameCommand {
     /// * **`read … || break`** — EOF means the channel is gone; anything else
     ///   (a failed attach, an unknown target) loops back to read, so one bad
     ///   switch can't strand the session.
-    static func boot(target: String, cols: Int, rows: Int, customPath: String?) -> String {
-        let herdr = HerdrLaunch.attachCommand(customPath: customPath)
-        let script = "printf '%s\\n' '\(readyMarker)'; while :; do "
-            + "if [ -n \"$1\" ]; then stty raw -echo; "
-            + "\(herdr) terminal session control \"$1\" "
-            + "--cols \"${2:-80}\" --rows \"${3:-24}\" --takeover; fi; "
-            + "read -r t c r || break; set -- \"$t\" \"$c\" \"$r\"; done"
-        return "stty raw -echo; /bin/sh -c \(HerdrLaunch.quote(script)) "
+    /// * **A line opening with `{` is dropped, and so is the target.** Those
+    ///   are OUR commands (resize, release, keystrokes) meant for an attach
+    ///   that has already died. Read as a target, each one spawned an attach
+    ///   at `{"type":"terminal.resize",…}`, whose "not found" close the app
+    ///   counted as an eviction — four attaches in 300 ms behind a dead
+    ///   first one (herdr-client.log, 2026-11-11). `set --` rather than
+    ///   keeping the old target: re-attaching to what just failed is the
+    ///   app's call, not the loop's.
+    /// * **`--takeover` only for a target the person chose**: a fourth word
+    ///   on the line (`take`, ``retarget(target:cols:rows:takeover:)``); the
+    ///   first target's rides in as `$4`. A follow's attach is plain, and
+    ///   herdr refuses it while another client holds the terminal.
+    /// * **This connection's stale attach is stopped first.** sshd keeps a
+    ///   dropped connection's session — its loop and its attach, holding the
+    ///   pane — until TCP gives up on it, and a plain attach to the pane this
+    ///   device had would be refused by this device's own ghost. The loop
+    ///   records its pid (``loopPidPath(connectionId:)``); the next boot
+    ///   kills a child of that loop (its command line names this
+    ///   connection's pid file) whose command line is `terminal session
+    ///   control` — never what reused a pid.
+    static func boot(target: String, cols: Int, rows: Int, customPath: String?, takeover: Bool,
+                     connectionId: String) -> String {
+        "stty raw -echo; /bin/sh -c \(HerdrLaunch.quote(loopScript(customPath: customPath, connectionId: connectionId))) "
             + "moshpit-herdr \(HerdrLaunch.quote(target)) \(cols) \(rows)"
+            + (takeover ? " take" : "")
     }
 
-    /// One line for the loop's `read`: where to point next, at what size.
-    /// Only valid after ``boot(target:cols:rows:customPath:)`` announced
+    /// The reader loop of ``boot(target:cols:rows:customPath:takeover:connectionId:)``
+    /// as the SSH terminal channel's own program (`requestPTY(command:)`),
+    /// with no first target: it says it reads (``readyMarker``) and waits
+    /// for one (``retarget(target:cols:rows:takeover:)`` lines). Nothing is
+    /// typed into a login shell — there is none (B267): typed into the
+    /// channel's interactive login shell, the boot line met shells still
+    /// starting (a flushed type-ahead, a plugin re-highlighting every
+    /// character, a startup prompt reading stdin), and the channel never
+    /// came up. The loop ending (EOF) ends the channel. crates/herdr's
+    /// `frame::loop_program`, the same string.
+    static func loopProgram(customPath: String?, connectionId: String) -> String {
+        "stty raw -echo; exec /bin/sh -c \(HerdrLaunch.quote(loopScript(customPath: customPath, connectionId: connectionId))) moshpit-herdr"
+    }
+
+    private static func loopScript(customPath: String?, connectionId: String) -> String {
+        let herdr = HerdrLaunch.attachCommand(customPath: customPath)
+        let pid = loopPidPath(connectionId: connectionId)
+        return "f=\"\(pid)\"; mkdir -p \"$HOME/.moshpit\" 2>/dev/null; "
+            + "l=$(cat \"$f\" 2>/dev/null); case \"$l\" in ''|*[!0-9]*) ;; *) "
+            + HerdrLaunch.commandLineOf("$l")
+            + "case \"$a\" in *\"herdr-frame-\(connectionId).pid\"*) "
+            + "for c in $(pgrep -P \"$l\" 2>/dev/null || ps -A -o pid= -o ppid= 2>/dev/null "
+            + "| awk -v l=\"$l\" '$2 == l { print $1 }'); do "
+            + HerdrLaunch.commandLineOf("$c")
+            + "case \"$a\" in *\"terminal session control\"*) kill -9 \"$c\" 2>/dev/null ;; esac; "
+            + "done ;; esac ;; esac; "
+            + "{ echo $$ > \"$f\"; } 2>/dev/null; "
+            + "printf '%s\\n' '\(readyMarker)'; while :; do "
+            + "if [ -n \"$1\" ]; then stty raw -echo; "
+            + "\(herdr) terminal session control \"$1\" "
+            + "--cols \"${2:-80}\" --rows \"${3:-24}\" ${4:+--takeover}; fi; "
+            + "read -r t c r k || break; "
+            + "case \"$t\" in \"{\"*) set --; continue;; esac; "
+            + "set -- \"$t\" \"$c\" \"$r\" \"$k\"; done"
+    }
+
+    /// One line for the loop's `read`: where to point next, at what size, and
+    /// `take` when the person chose it (`--takeover`). Only valid after
+    /// ``boot(target:cols:rows:customPath:takeover:connectionId:)`` announced
     /// itself with ``readyMarker`` — and only once the previous attach has
     /// released, because until then the attach still owns stdin and swallows
     /// this line whole (verified: pipelining it with the release loses it).
-    static func retarget(target: String, cols: Int, rows: Int) -> String {
-        "\(target) \(max(1, cols)) \(max(1, rows))"
+    static func retarget(target: String, cols: Int, rows: Int, takeover: Bool) -> String {
+        "\(target) \(max(1, cols)) \(max(1, rows))" + (takeover ? " take" : "")
     }
 
     /// Keystrokes. Sent as base64 so arbitrary bytes — escape sequences, UTF-8

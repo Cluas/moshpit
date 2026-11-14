@@ -1,50 +1,32 @@
 import Foundation
 
+// The remote-path model (W6) is the shared Rust one
+// (`crates/app/src/remote_paths.rs`, through crates/ffi/src/app.rs), the
+// same Android runs: what a path is worth, the probe that asks the host
+// about the paths a terminal shows, the link a confirmed path carries, a
+// folder's listing, and the exec forms of reading and changing files. The
+// enums below are this app's names for it, so the services and views that
+// call them read as before. What stays Swift: the candidates the SwiftTerm
+// view's lines yield (``TerminalPathScanner``; the new terminal view's are
+// the terminal core's, `crates/term/src/paths.rs`), and the windowed SFTP
+// reads (``WindowedRead``, ``InOrderBytes``), which are this app's SFTP
+// client's async loops.
+
 // MARK: - What a tap can open
 
 /// Files a tap on a terminal path opens in place — what QuickLook shows on
-/// iOS without help: images, video, audio, PDF, Office/iWork documents and
-/// plain text. Agents report their output as paths ("对比图：qchar/out/
-/// GripLab.png"); this list is what makes such a path worth a link.
-///
-/// Source code is deliberately NOT here. Claude Code mentions dozens of
-/// source paths per turn, and underlining every one of them would bury the
-/// handful of outputs a person actually wants to look at.
+/// iOS without help (the shared model's list). Source code is deliberately
+/// not there: Claude Code mentions dozens of source paths per turn.
 enum PreviewableFile {
-    enum Kind: Equatable, Sendable {
-        case image, video, audio, pdf, document, text
-    }
+    typealias Kind = RemoteFileKind
 
-    static let kinds: [String: Kind] = {
-        var map: [String: Kind] = [:]
-        for ext in ["png", "jpg", "jpeg", "gif", "webp", "heic", "heif", "bmp", "tif", "tiff", "avif", "ico"] {
-            map[ext] = .image
-        }
-        for ext in ["mp4", "mov", "m4v"] { map[ext] = .video }
-        for ext in ["mp3", "m4a", "wav", "aac", "aiff", "flac"] { map[ext] = .audio }
-        map["pdf"] = .pdf
-        for ext in ["docx", "doc", "xlsx", "xls", "pptx", "ppt", "key", "pages", "numbers", "rtf"] {
-            map[ext] = .document
-        }
-        for ext in ["md", "markdown", "txt", "csv", "tsv", "json", "html", "htm", "svg", "log"] {
-            map[ext] = .text
-        }
-        return map
-    }()
+    /// Every extension worth a link, without its dot.
+    static let extensions: [String] = remoteFileExtensions()
 
     /// The kind a path's extension names, case-insensitively. nil for
     /// anything QuickLook wouldn't show (or that isn't worth a link).
     static func kind(of path: String) -> Kind? {
-        guard let dot = path.lastIndex(of: "."),
-              path[dot...].count > 1,
-              !path[dot...].contains("/") else { return nil }
-        return kinds[path[path.index(after: dot)...].lowercased()]
-    }
-
-    /// The extensions as one ERE, for the host-side probe's "does this
-    /// folder hold anything previewable" check.
-    static var extensionPattern: String {
-        "\\.(" + kinds.keys.sorted().joined(separator: "|") + ")$"
+        remoteFileKind(path: path)
     }
 }
 
@@ -229,155 +211,53 @@ enum TerminalPathScanner {
 
 // MARK: - Asking the host
 
-/// One exec round trip that settles a batch of candidates: which of them
-/// name a previewable file or a folder of them, and where. Pure builders and
-/// a parser, unit tested — the script runs on someone else's machine.
-///
-/// Strict POSIX sh, run through `sh -c` so the login shell (zsh, fish…)
-/// never parses it; every argument goes through the one quoter
-/// (`ExecUploadCommands.quote`).
-///
-/// A relative path resolves against the pane's working directory. When it
-/// isn't there, it is looked up BELOW that directory too, newest match wins:
-/// an agent that ran `cd v2 && …` reports `out/a.png` relative to `v2`,
-/// while the pane (the agent's own process) never left the parent. One
-/// `find` covers every miss in the batch, and a pane sitting in `$HOME` or
-/// `/` is never searched — those trees are too big to walk on a whim.
+/// Asks the host which candidates are files (or folders holding something
+/// previewable), below the working directory too (the shared model's
+/// probe script).
 enum PathProbe {
     struct Hit: Equatable, Sendable {
         let path: String
         let isDirectory: Bool
     }
 
-    /// How deep the below-the-working-directory lookup goes. Enough for
-    /// `repo/episodes/name/build/concept/v2/a.png`; about a second on a
-    /// 65k-entry project tree.
-    static let searchDepth = 6
-
-    static let script = """
-        cwd=$1; re=$2; shift 2; i=0; miss=; tab=$(printf '\\t')
-        for a in "$@"; do
-          t=${a#?}; k=${a%"$t"}
-          case $t in
-            "~/"*) p=$HOME/${t#??} ;;
-            /*) p=$t ;;
-            *) p=${cwd:-$HOME}/$t ;;
-          esac
-          hit=
-          case $k in
-            F) [ -f "$p" ] && hit=f ;;
-          esac
-          if [ -z "$hit" ] && [ -d "$p" ]; then
-            ls -1 "$p" 2>/dev/null | grep -qiE "$re" && hit=d
-          fi
-          if [ -n "$hit" ]; then
-            printf '%s\\t%s\\t%s\\n' "$i" "$hit" "$p"
-          else
-            case $t in
-              /*|"~/"*|../*) ;;
-              *) s=${t#./}; miss="$miss$i$tab$k$tab${s%/}
-        " ;;
-            esac
-          fi
-          i=$((i+1))
-        done
-        case $cwd in ""|/|"$HOME") exit 0 ;; esac
-        set --
-        while IFS=$tab read -r i k s; do
-          [ -n "$s" ] || continue
-          [ $# -eq 0 ] || set -- "$@" -o
-          set -- "$@" -name "${s##*/}"
-        done <<EOF
-        $miss
-        EOF
-        [ $# -gt 0 ] || exit 0
-        found=$(find "$cwd" -maxdepth \(searchDepth) \\( -name .git -o -name node_modules -o -name Library \
-          -o -name .cache -o -name .build -o -name DerivedData -o -name Pods \\) -prune \
-          -o \\( "$@" \\) -print 2>/dev/null)
-        [ -n "$found" ] || exit 0
-        while IFS=$tab read -r i k s; do
-          [ -n "$s" ] || continue
-          set --
-          while IFS= read -r f; do
-            case $f in
-              */"$s")
-                if [ "$k" = F ] && [ -f "$f" ]; then set -- "$@" "$f"
-                elif [ -d "$f" ] && ls -1 "$f" 2>/dev/null | grep -qiE "$re"; then set -- "$@" "$f"
-                fi ;;
-            esac
-          done <<EOF
-        $found
-        EOF
-          [ $# -gt 0 ] || continue
-          h=$(ls -1td -- "$@" 2>/dev/null | head -n 1)
-          [ -n "$h" ] || continue
-          if [ -d "$h" ]; then hit=d; else hit=f; fi
-          printf '%s\\t%s\\t%s\\n' "$i" "$hit" "$h"
-        done <<EOF
-        $miss
-        EOF
-        """
-
-    /// The full command line for one batch. `cwd` nil = unknown (a plain
-    /// shell that never reported one): relative paths then resolve against
-    /// `$HOME` and nothing is searched for.
+    /// The full command line for one batch. `cwd` nil = unknown: relative
+    /// paths then resolve against `$HOME` and nothing is searched for.
     static func command(cwd: String?, candidates: [TerminalPathScanner.Candidate]) -> String {
-        let q = ExecUploadCommands.quote
-        let args = candidates.map { q(($0.directoryOnly ? "D" : "F") + $0.token) }
-        return (["sh", "-c", q(script), "moshpit-probe", q(cwd ?? ""), q(PreviewableFile.extensionPattern)]
-                + args).joined(separator: " ")
+        remotePathProbeCommand(cwd: cwd, candidates: candidates.map {
+            PathCandidateRecord(token: $0.token, directoryOnly: $0.directoryOnly)
+        })
     }
 
-    /// Parse the probe's `index<TAB>f|d<TAB>path` lines back onto the batch.
-    /// Indexes outside the batch and malformed lines are ignored.
+    /// The probe's `index<TAB>f|d<TAB>path` lines, back onto the batch.
     static func parse(_ output: String, count: Int) -> [Int: Hit] {
         var hits: [Int: Hit] = [:]
-        for line in output.split(separator: "\n") {
-            let fields = line.split(separator: "\t", maxSplits: 2, omittingEmptySubsequences: false)
-            guard fields.count == 3, let index = Int(fields[0]), index >= 0, index < count,
-                  fields[1] == "f" || fields[1] == "d", fields[2].hasPrefix("/") else { continue }
-            hits[index] = Hit(path: tidy(String(fields[2])), isDirectory: fields[1] == "d")
+        for (index, hit) in remotePathParseProbe(output: output, count: UInt32(clamping: max(0, count))) {
+            hits[Int(index)] = Hit(path: hit.path, isDirectory: hit.isDirectory)
         }
         return hits
     }
 
     /// Lexical cleanup of what the shell built (`/repo/./out/`, `//`).
-    /// `..` is left alone: resolving it lexically can disagree with the
-    /// filesystem once symlinks are involved, and the host is the authority.
     static func tidy(_ path: String) -> String {
-        var parts: [Substring] = []
-        for part in path.split(separator: "/", omittingEmptySubsequences: true) where part != "." {
-            parts.append(part)
-        }
-        return "/" + parts.joined(separator: "/")
+        remotePathTidy(path: path)
     }
 }
 
 // MARK: - The link a tap carries
 
 /// What a confirmed path is tagged with on the terminal cells, and what a
-/// tap hands back: a private scheme only this app interprets, so the link
-/// handler can tell a host path from a web URL without guessing. Claude
-/// Code's own OSC-8 `file://` links (rare, but real) route the same way.
+/// tap hands back: a private scheme only this app reads.
 enum RemotePathLink {
     static let scheme = "moshpit-preview"
 
     static func url(for path: String) -> String {
-        var components = URLComponents()
-        components.scheme = scheme
-        components.host = ""
-        components.path = path
-        return components.string ?? "\(scheme)://\(path)"
+        remotePathLink(path: path)
     }
 
     /// The host path a tapped link names, or nil if it isn't one of ours or
     /// a `file://` link.
     static func path(from link: String) -> String? {
-        guard let url = URL(string: link.trimmingCharacters(in: .whitespacesAndNewlines)),
-              let scheme = url.scheme?.lowercased(),
-              scheme == Self.scheme || scheme == "file" else { return nil }
-        let path = url.path
-        return path.hasPrefix("/") ? path : nil
+        remotePathFromLink(link: link)
     }
 }
 
@@ -394,80 +274,54 @@ struct RemoteFileEntry: Sendable, Hashable, Identifiable {
     var id: String { path }
     var name: String { (path as NSString).lastPathComponent }
     var kind: PreviewableFile.Kind? { isDirectory ? nil : PreviewableFile.kind(of: name) }
-    /// Images and video — what a folder shows as thumbnails, ahead of
-    /// everything else: they are what an agent's output folder is opened for.
+    /// Images and video — what a folder shows as thumbnails.
     var isMedia: Bool { kind == .image || kind == .video }
 
-    /// The folders enclosing `path`, nearest first, down to `/` — the
-    /// folder sheet's title menu, for climbing out of where it opened.
+    /// The folders enclosing `path`, nearest first, down to `/`.
     static func enclosingFolders(of path: String) -> [String] {
-        var parts = path.split(separator: "/", omittingEmptySubsequences: true).map(String.init)
-        guard path.hasPrefix("/"), !parts.isEmpty else { return [] }
-        var folders: [String] = []
-        while !parts.isEmpty {
-            parts.removeLast()
-            folders.append("/" + parts.joined(separator: "/"))
-        }
-        return folders
+        remotePathEnclosingFolders(path: path)
     }
 
     /// What a folder view shows: subfolders and previewable files, no dot
-    /// files, newest first (a folder an agent just wrote into leads with
-    /// what it wrote). Entries the host gave no time for keep their order,
-    /// after the dated ones.
+    /// files, newest first; undated entries keep their order, last.
     static func browsable(_ entries: [RemoteFileEntry]) -> [RemoteFileEntry] {
-        let shown = entries.filter { !$0.name.hasPrefix(".") && ($0.isDirectory || $0.kind != nil) }
-        return shown.enumerated().sorted { a, b in
-            switch (a.element.modified, b.element.modified) {
-            case let (x?, y?) where x != y: return x > y
-            case (.some, nil): return true
-            case (nil, .some): return false
-            default: return a.offset < b.offset
-            }
-        }.map(\.element)
+        remoteFilesBrowsable(entries: entries.map(RemoteFileRecord.init)).map(RemoteFileEntry.init)
+    }
+}
+
+extension RemoteFileRecord {
+    init(_ e: RemoteFileEntry) {
+        self.init(path: e.path, isDirectory: e.isDirectory, size: e.size,
+                  modified: e.modified?.timeIntervalSince1970)
+    }
+}
+
+extension RemoteFileEntry {
+    init(_ r: RemoteFileRecord) {
+        self.init(path: r.path, isDirectory: r.isDirectory, size: r.size,
+                  modified: r.modified.map(Date.init(timeIntervalSince1970:)))
     }
 }
 
 /// The exec-channel fallbacks for a host whose sshd has the SFTP subsystem
-/// turned off — the same situation `ExecUploadCommands` covers for uploads.
-/// Pure builders and parsers; strict POSIX sh through the one quoter.
+/// turned off (the shared model's commands and parsers).
 enum RemoteFileCommands {
-    /// The fallback download moves the file as base64 in ONE exec reply;
-    /// past this it isn't worth holding in memory twice.
-    static let execDownloadLimit: UInt64 = 32 * 1024 * 1024
+    /// The fallback download moves the file as base64 in ONE exec reply.
+    static let execDownloadLimit: UInt64 = remoteFileExecDownloadLimit()
 
-    static func stat(_ path: String) -> String {
-        let q = ExecUploadCommands.quote(path)
-        return "if [ -d \(q) ]; then echo d; elif [ -f \(q) ]; then printf 'f '; wc -c < \(q); fi"
-    }
+    static func stat(_ path: String) -> String { remoteFileStatCommand(path: path) }
 
     static func parseStat(_ output: String, path: String) -> RemoteFileEntry? {
-        let line = output.trimmingCharacters(in: .whitespacesAndNewlines)
-        if line == "d" { return RemoteFileEntry(path: path, isDirectory: true, size: nil, modified: nil) }
-        guard line.hasPrefix("f") else { return nil }
-        let size = UInt64(line.dropFirst().trimmingCharacters(in: .whitespaces))
-        return RemoteFileEntry(path: path, isDirectory: false, size: size, modified: nil)
+        remoteFileParseStat(output: output, path: path).map(RemoteFileEntry.init)
     }
 
-    /// `ls -t` is the one portable way to get mtime order without parsing
-    /// `ls -l` dates; `-p` marks folders, `-A` drops `.` and `..`.
-    static func list(_ path: String) -> String {
-        "cd \(ExecUploadCommands.quote(path)) && ls -1Apt"
-    }
+    static func list(_ path: String) -> String { remoteFileListCommand(path: path) }
 
     static func parseList(_ output: String, in folder: String) -> [RemoteFileEntry] {
-        let base = folder.hasSuffix("/") ? String(folder.dropLast()) : folder
-        return output.split(separator: "\n").compactMap { line in
-            let isDirectory = line.hasSuffix("/")
-            let name = isDirectory ? line.dropLast() : line[...]
-            guard !name.isEmpty, !name.contains("/") else { return nil }
-            return RemoteFileEntry(path: base + "/" + name, isDirectory: isDirectory, size: nil, modified: nil)
-        }
+        remoteFileParseList(output: output, folder: folder).map(RemoteFileEntry.init)
     }
 
-    static func cat(_ path: String) -> String {
-        "base64 < \(ExecUploadCommands.quote(path))"
-    }
+    static func cat(_ path: String) -> String { remoteFileCatCommand(path: path) }
 }
 
 // MARK: - Pulling a file down
@@ -571,63 +425,39 @@ struct InOrderBytes {
 // MARK: - Changing files on the host
 
 /// The folder sheet's create / rename / delete / upload, as far as they are
-/// names and command lines: pure, unit tested. SFTP does the work when the
-/// host has it; these exec forms are the fallback for one that doesn't.
-/// Every script runs through `sh -c` with its paths as positional
-/// arguments, so neither the login shell (zsh, fish…) nor a quote in a file
-/// name ever gets to reinterpret it.
+/// names and command lines (the shared model's). SFTP does the work when
+/// the host has it; these exec forms are the fallback.
 enum RemoteFileEdits {
     /// Printed by an exec form that did what it was asked.
-    static let okMarker = "MOSHPIT_EDIT_OK"
+    static let okMarker = remoteFileEditMarkers()[0]
     /// Printed when the target name is already taken.
-    static let takenMarker = "MOSHPIT_EDIT_TAKEN"
+    static let takenMarker = remoteFileEditMarkers()[1]
 
     /// A name the user typed, trimmed; nil when it can't name one item in a
-    /// folder (empty, `.`/`..`, or carrying a `/`).
-    static func validName(_ raw: String) -> String? {
-        let name = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !name.isEmpty, name != ".", name != "..",
-              !name.contains("/"), !name.contains("\0") else { return nil }
-        return name
-    }
+    /// folder (B141: a `/` or NUL among the scalars).
+    static func validName(_ raw: String) -> String? { remoteFileValidName(raw: raw) }
 
-    /// `name`, or the first Finder-style variant not in `taken`:
-    /// `shot.png` → `shot 2.png` → `shot 3.png`. An upload never overwrites.
+    /// `name`, or the first Finder-style variant not in `taken`.
     static func uniqueName(_ name: String, taken: Set<String>) -> String {
-        guard taken.contains(name) else { return name }
-        let ns = name as NSString
-        let ext = ns.pathExtension
-        let stem = ext.isEmpty || ns.deletingPathExtension.isEmpty ? name : ns.deletingPathExtension
-        let suffix = stem == name ? "" : "." + ext
-        var n = 2
-        while taken.contains("\(stem) \(n)\(suffix)") { n += 1 }
-        return "\(stem) \(n)\(suffix)"
+        remoteFileUniqueName(name: name, taken: Array(taken))
     }
 
     static func child(_ name: String, of directory: String) -> String {
-        directory.hasSuffix("/") ? directory + name : directory + "/" + name
+        remoteFileChild(name: name, directory: directory)
     }
 
-    /// Whether a path may be deleted from the sheet at all: absolute and at
-    /// least two levels deep — never `/`, never a top-level `/usr`.
-    static func deletable(_ path: String) -> Bool {
-        path.hasPrefix("/") && path.split(separator: "/").filter { $0 != "." }.count >= 2
-            && !path.split(separator: "/").contains("..")
-    }
+    /// Absolute and at least two levels deep — never `/`, never `/usr`.
+    static func deletable(_ path: String) -> Bool { remoteFileDeletable(path: path) }
 
-    static func makeDirectory(_ path: String) -> String {
-        sh("mkdir -- \"$1\" && echo \(okMarker)", [path])
-    }
+    static func makeDirectory(_ path: String) -> String { remoteFileMakeDirectoryCommand(path: path) }
 
     static func rename(_ path: String, to newPath: String) -> String {
-        sh("if [ -e \"$2\" ] || [ -L \"$2\" ]; then echo \(takenMarker); exit 1; fi; "
-           + "mv -- \"$1\" \"$2\" && echo \(okMarker)", [path, newPath])
+        remoteFileRenameCommand(path: path, newPath: newPath)
     }
 
     /// nil for a path `deletable` refuses.
     static func remove(_ path: String, isDirectory: Bool) -> String? {
-        guard deletable(path) else { return nil }
-        return sh((isDirectory ? "rm -rf" : "rm -f") + " -- \"$1\" && echo \(okMarker)", [path])
+        remoteFileRemoveCommand(path: path, isDirectory: isDirectory)
     }
 
     /// An upload over exec: base64 appended to a side file, decoded at the
@@ -636,20 +466,14 @@ enum RemoteFileEdits {
         let begin: String
         let append: (String) -> String
         let finish: String
+        /// What an upload given up — stopped, or failed at any step — runs:
+        /// its side files removed from the person's folder (B331).
+        let abandon: String
     }
 
     static func upload(to path: String) -> UploadPlan {
-        UploadPlan(
-            begin: sh("if [ -e \"$1\" ] || [ -L \"$1\" ]; then echo \(takenMarker); exit 1; fi; "
-                      + ": > \"$1.b64part\" && echo \(okMarker)", [path]),
-            // The base64 alphabet is inert inside single quotes.
-            append: { chunk in sh("printf %s \"$2\" >> \"$1.b64part\"", [path, chunk]) },
-            finish: sh("{ base64 -d < \"$1.b64part\" > \"$1\" 2>/dev/null || base64 -D < \"$1.b64part\" > \"$1\"; } "
-                       + "&& rm -f \"$1.b64part\" && echo \(okMarker)", [path]))
-    }
-
-    private static func sh(_ script: String, _ args: [String]) -> String {
-        let q = ExecUploadCommands.quote
-        return (["sh", "-c", q(script), "moshpit-edit"] + args.map(q)).joined(separator: " ")
+        let plan = remoteFileUploadPlan(path: path)
+        return UploadPlan(begin: plan.begin, append: { remoteFileUploadAppend(path: path, chunk: $0) },
+                          finish: plan.finish, abandon: plan.abandon)
     }
 }

@@ -1,0 +1,4 @@
+{"ev":"protocol-error","message":"%window-renamed @1 ́x"}
+{"ev":"session-changed","session":"$1 ́s","name":""}
+{"ev":"window-add","window":"@2"}
+{"ev":"end","plan":"whole","feeds":1,"resets":0,"bytes":134,"cuts":0,"in_utf8":0,"in_octal":0,"plan_hash":"e835eea589e0b603"}

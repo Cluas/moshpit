@@ -1,0 +1,353 @@
+step 2 start
+diag received=0 parseFailures=0 gaps=0 applied=0 srtt=0
+step 3 recv
+tx seq=0 id=1 num=0 final=1 ts=16960 tsr=38259
+inst old=0 new=1 ack=2 thr=0 events=r98x37
+diag received=1 parseFailures=0 gaps=0 applied=2 srtt=4656906732654559232
+step 4 recv
+diag received=2 parseFailures=0 gaps=0 applied=3 srtt=4656906732654559232
+step 5 redraw
+diag received=2 parseFailures=0 gaps=0 applied=3 srtt=4656906732654559232
+step 6 recv
+diag received=3 parseFailures=0 gaps=0 applied=5 srtt=4656906732654559232
+step 7 recv
+diag received=4 parseFailures=0 gaps=0 applied=6 srtt=4657008437480128512
+step 8 recv
+diag received=5 parseFailures=0 gaps=0 applied=6 srtt=4657008437480128512
+step 9 tick
+tx seq=1 id=2 num=0 final=1 ts=18609 tsr=65535
+inst old=1 new=3 ack=6 thr=1 events=r97x37,r98x37
+diag received=5 parseFailures=0 gaps=0 applied=6 srtt=4657008437480128512
+step 10 tick
+diag received=5 parseFailures=0 gaps=0 applied=6 srtt=4657008437480128512
+step 11 send
+num 4
+tx seq=2 id=3 num=0 final=1 ts=19459 tsr=65535
+inst old=1 new=4 ack=6 thr=1 events=r97x37,r98x37,k64
+diag received=5 parseFailures=0 gaps=0 applied=6 srtt=4657008437480128512
+step 12 tick
+diag received=5 parseFailures=0 gaps=0 applied=6 srtt=4657008437480128512
+step 13 send
+num 5
+tx seq=3 id=4 num=0 final=1 ts=19742 tsr=65535
+inst old=1 new=5 ack=6 thr=1 events=r97x37,r98x37,k64,k373f23
+diag received=5 parseFailures=0 gaps=0 applied=6 srtt=4657008437480128512
+step 14 recv
+diag received=6 parseFailures=1 gaps=0 applied=6 srtt=4657008437480128512
+step 15 redraw
+diag received=6 parseFailures=1 gaps=0 applied=6 srtt=4657008437480128512
+step 16 send
+num 7
+diag received=6 parseFailures=1 gaps=0 applied=6 srtt=4657008437480128512
+step 17 send
+num 8
+diag received=6 parseFailures=1 gaps=0 applied=6 srtt=4657008437480128512
+step 18 recv
+diag received=7 parseFailures=1 gaps=0 applied=6 srtt=4657008437480128512
+step 19 recv
+diag received=8 parseFailures=1 gaps=0 applied=9 srtt=4656847840062996480
+step 20 recv
+diag received=9 parseFailures=1 gaps=0 applied=9 srtt=4656847840062996480
+step 21 recv
+diag received=10 parseFailures=1 gaps=0 applied=9 srtt=4656847840062996480
+step 22 tick
+tx seq=4 id=5 num=0 final=1 ts=21380 tsr=65535
+inst old=2 new=8 ack=9 thr=2 events=r98x37,k64,k373f23,r97x37,k67214c,k302c58385d
+diag received=10 parseFailures=1 gaps=0 applied=9 srtt=4656847840062996480
+step 23 send
+num -
+diag received=10 parseFailures=1 gaps=0 applied=9 srtt=4656847840062996480
+step 24 resume
+tx seq=5 id=6 num=0 final=1 ts=21380 tsr=65535
+inst old=2 new=8 ack=9 thr=2 events=r98x37,k64,k373f23,r97x37,k67214c,k302c58385d
+diag received=10 parseFailures=1 gaps=0 applied=9 srtt=4656847840062996480
+step 25 resume
+tx seq=6 id=7 num=0 final=1 ts=21380 tsr=65535
+inst old=2 new=8 ack=9 thr=2 events=r98x37,k64,k373f23,r97x37,k67214c,k302c58385d
+diag received=10 parseFailures=1 gaps=0 applied=9 srtt=4656847840062996480
+step 26 tick
+diag received=10 parseFailures=1 gaps=0 applied=9 srtt=4656847840062996480
+step 27 recv
+diag received=11 parseFailures=1 gaps=0 applied=9 srtt=4656847840062996480
+step 28 recv
+diag received=12 parseFailures=1 gaps=0 applied=9 srtt=4656847840062996480
+step 29 send
+num 9
+tx seq=7 id=8 num=0 final=1 ts=22445 tsr=21250
+inst old=2 new=9 ack=9 thr=2 events=r98x37,k64,k373f23,r97x37,k67214c,k302c58385d,k2174
+diag received=12 parseFailures=1 gaps=0 applied=9 srtt=4656847840062996480
+step 30 send
+num 10
+diag received=12 parseFailures=1 gaps=0 applied=9 srtt=4656847840062996480
+step 31 recv
+diag received=13 parseFailures=1 gaps=0 applied=9 srtt=4656847840062996480
+step 32 idle
+tx seq=8 id=9 num=0 final=1 ts=28603 tsr=65535
+inst old=2 new=10 ack=9 thr=2 events=r98x37,k64,k373f23,r97x37,k67214c,k302c58385d,k2174,k4a74322e
+diag received=13 parseFailures=1 gaps=0 applied=9 srtt=4656847840062996480
+step 33 resize
+diag received=13 parseFailures=1 gaps=0 applied=9 srtt=4656847840062996480
+step 34 recv
+diag received=14 parseFailures=1 gaps=0 applied=20 srtt=4656847840062996480
+step 35 send
+num 11
+diag received=14 parseFailures=1 gaps=0 applied=20 srtt=4656847840062996480
+step 36 recv
+diag received=15 parseFailures=1 gaps=0 applied=20 srtt=4656847840062996480
+step 37 tick
+diag received=15 parseFailures=1 gaps=0 applied=20 srtt=4656847840062996480
+step 38 tick
+tx seq=9 id=10 num=0 final=1 ts=28930 tsr=49002
+inst old=10 new=11 ack=20 thr=10 events=k742b52
+diag received=15 parseFailures=1 gaps=0 applied=20 srtt=4656847840062996480
+step 39 send
+num 12
+diag received=15 parseFailures=1 gaps=0 applied=20 srtt=4656847840062996480
+step 40 send
+num -
+diag received=15 parseFailures=1 gaps=0 applied=20 srtt=4656847840062996480
+step 41 recv
+diag received=16 parseFailures=1 gaps=0 applied=20 srtt=4656847840062996480
+step 42 recv
+diag received=17 parseFailures=1 gaps=0 applied=20 srtt=4656847840062996480
+step 43 recv
+diag received=18 parseFailures=1 gaps=0 applied=20 srtt=4656847840062996480
+step 44 recv
+diag received=19 parseFailures=1 gaps=0 applied=20 srtt=4656847840062996480
+step 45 idle
+tx seq=10 id=11 num=0 final=1 ts=32019 tsr=65535
+inst old=10 new=12 ack=20 thr=10 events=k742b52,k25
+diag received=19 parseFailures=1 gaps=0 applied=20 srtt=4656847840062996480
+step 46 tick
+diag received=19 parseFailures=1 gaps=0 applied=20 srtt=4656847840062996480
+step 47 tick
+diag received=19 parseFailures=1 gaps=0 applied=20 srtt=4656847840062996480
+step 48 resize
+tx seq=11 id=12 num=0 final=1 ts=32339 tsr=65535
+inst old=10 new=13 ack=20 thr=10 events=k742b52,k25,r179x65
+diag received=19 parseFailures=1 gaps=0 applied=20 srtt=4656847840062996480
+step 49 recv
+diag received=20 parseFailures=1 gaps=0 applied=20 srtt=4656847840062996480
+step 50 recv
+diag received=21 parseFailures=1 gaps=0 applied=20 srtt=4656847840062996480
+step 51 send
+num 14
+diag received=21 parseFailures=1 gaps=0 applied=20 srtt=4656847840062996480
+step 52 send
+num 15
+diag received=21 parseFailures=1 gaps=0 applied=20 srtt=4656847840062996480
+step 53 recv
+diag received=22 parseFailures=1 gaps=0 applied=20 srtt=4656847840062996480
+step 54 tick
+diag received=22 parseFailures=1 gaps=0 applied=20 srtt=4656847840062996480
+step 55 recv
+diag received=23 parseFailures=1 gaps=0 applied=22 srtt=4656847840062996480
+step 56 recv
+diag received=24 parseFailures=1 gaps=1 applied=22 srtt=4656847840062996480
+step 57 recv
+diag received=25 parseFailures=1 gaps=2 applied=22 srtt=4657061085189242880
+step 58 recv
+diag received=26 parseFailures=1 gaps=2 applied=22 srtt=4657061085189242880
+step 59 recv
+diag received=27 parseFailures=1 gaps=2 applied=22 srtt=4657061085189242880
+step 60 tick
+tx seq=12 id=13 num=0 final=1 ts=34688 tsr=65535
+inst old=10 new=15 ack=22 thr=10 events=k742b52,k25,r179x65,k473b6550,k53637b4b
+diag received=27 parseFailures=1 gaps=2 applied=22 srtt=4657061085189242880
+step 61 recv
+diag received=28 parseFailures=1 gaps=3 applied=22 srtt=4657569006947926016
+step 62 resize
+diag received=28 parseFailures=1 gaps=3 applied=22 srtt=4657569006947926016
+step 63 recv
+diag received=29 parseFailures=1 gaps=3 applied=22 srtt=4657569006947926016
+step 64 idle
+tx seq=13 id=14 num=0 final=1 ts=35924 tsr=65535
+inst old=13 new=16 ack=22 thr=13 events=k473b6550,k53637b4b,r108x79
+diag received=29 parseFailures=1 gaps=3 applied=22 srtt=4657569006947926016
+step 65 idle
+tx seq=14 id=15 num=0 final=1 ts=40907 tsr=65535
+inst old=13 new=17 ack=22 thr=13 events=k473b6550,k53637b4b,r108x79
+diag received=29 parseFailures=1 gaps=3 applied=22 srtt=4657569006947926016
+step 66 tick
+diag received=29 parseFailures=1 gaps=3 applied=22 srtt=4657569006947926016
+step 67 send
+num 18
+tx seq=15 id=16 num=0 final=1 ts=41192 tsr=65535
+inst old=13 new=18 ack=22 thr=13 events=k473b6550,k53637b4b,r108x79,k6b3f58573a
+diag received=29 parseFailures=1 gaps=3 applied=22 srtt=4657569006947926016
+step 68 recv
+diag received=30 parseFailures=1 gaps=3 applied=36 srtt=4657569006947926016
+step 69 recv
+diag received=31 parseFailures=1 gaps=3 applied=36 srtt=4657311400312438784
+step 70 recv
+diag received=32 parseFailures=1 gaps=3 applied=36 srtt=4657311400312438784
+step 71 idle
+tx seq=16 id=17 num=0 final=1 ts=41932 tsr=50670
+inst old=13 new=18 ack=36 thr=13 events=k473b6550,k53637b4b,r108x79,k6b3f58573a
+diag received=32 parseFailures=1 gaps=3 applied=36 srtt=4657311400312438784
+step 72 send
+num 19
+diag received=32 parseFailures=1 gaps=3 applied=36 srtt=4657311400312438784
+step 73 tick
+diag received=32 parseFailures=1 gaps=3 applied=36 srtt=4657311400312438784
+step 74 recv
+diag received=33 parseFailures=1 gaps=3 applied=36 srtt=4657311400312438784
+step 75 recv
+diag received=34 parseFailures=1 gaps=3 applied=36 srtt=4657311400312438784
+step 76 recv
+diag received=35 parseFailures=1 gaps=4 applied=36 srtt=4657311400312438784
+step 77 resume
+tx seq=17 id=18 num=0 final=1 ts=42167 tsr=65535
+inst old=13 new=19 ack=36 thr=13 events=k473b6550,k53637b4b,r108x79,k6b3f58573a,k3b213373
+diag received=35 parseFailures=1 gaps=4 applied=36 srtt=4657311400312438784
+step 78 resume-force
+diag received=35 parseFailures=1 gaps=4 applied=36 srtt=4657311400312438784
+step 79 tick
+diag received=35 parseFailures=1 gaps=4 applied=36 srtt=4657311400312438784
+step 80 resize
+diag received=35 parseFailures=1 gaps=4 applied=36 srtt=4657311400312438784
+step 81 recv
+diag received=36 parseFailures=1 gaps=4 applied=36 srtt=4657311400312438784
+step 82 tick
+tx seq=18 id=19 num=0 final=1 ts=42526 tsr=65535
+inst old=13 new=21 ack=36 thr=13 events=k473b6550,k53637b4b,r108x79,k6b3f58573a,k3b213373,r107x79,r128x75
+diag received=36 parseFailures=1 gaps=4 applied=36 srtt=4657311400312438784
+step 83 resume
+tx seq=19 id=20 num=0 final=1 ts=42526 tsr=65535
+inst old=13 new=21 ack=36 thr=13 events=k473b6550,k53637b4b,r108x79,k6b3f58573a,k3b213373,r107x79,r128x75
+diag received=36 parseFailures=1 gaps=4 applied=36 srtt=4657311400312438784
+step 84 recv
+diag received=37 parseFailures=1 gaps=4 applied=36 srtt=4657311400312438784
+step 85 resume
+tx seq=20 id=21 num=0 final=1 ts=42526 tsr=65535
+inst old=13 new=21 ack=36 thr=13 events=k473b6550,k53637b4b,r108x79,k6b3f58573a,k3b213373,r107x79,r128x75
+diag received=37 parseFailures=1 gaps=4 applied=36 srtt=4657311400312438784
+step 86 recv
+diag received=38 parseFailures=1 gaps=5 applied=36 srtt=4657311400312438784
+step 87 idle
+tx seq=21 id=22 num=0 final=1 ts=47913 tsr=65535
+inst old=13 new=22 ack=36 thr=13 events=k473b6550,k53637b4b,r108x79,k6b3f58573a,k3b213373,r107x79,r128x75
+diag received=38 parseFailures=1 gaps=5 applied=36 srtt=4657311400312438784
+step 88 tick
+diag received=38 parseFailures=1 gaps=5 applied=36 srtt=4657311400312438784
+step 89 send
+num 23
+diag received=38 parseFailures=1 gaps=5 applied=36 srtt=4657311400312438784
+step 90 tick
+tx seq=22 id=23 num=0 final=1 ts=48199 tsr=65535
+inst old=13 new=23 ack=36 thr=13 events=k473b6550,k53637b4b,r108x79,k6b3f58573a,k3b213373,r107x79,r128x75,k74377e3a
+diag received=38 parseFailures=1 gaps=5 applied=36 srtt=4657311400312438784
+step 91 redraw
+diag received=38 parseFailures=1 gaps=5 applied=36 srtt=4657311400312438784
+step 92 tick
+diag received=38 parseFailures=1 gaps=5 applied=36 srtt=4657311400312438784
+step 93 recv
+diag received=39 parseFailures=2 gaps=5 applied=36 srtt=4657311400312438784
+step 94 recv
+diag received=40 parseFailures=2 gaps=5 applied=47 srtt=4657311400312438784
+step 95 redraw
+diag received=40 parseFailures=2 gaps=5 applied=47 srtt=4657311400312438784
+step 96 resize
+diag received=40 parseFailures=2 gaps=5 applied=47 srtt=4657311400312438784
+step 97 recv
+diag received=41 parseFailures=2 gaps=6 applied=47 srtt=4657311400312438784
+step 98 resize
+diag received=41 parseFailures=2 gaps=6 applied=47 srtt=4657311400312438784
+step 99 recv
+diag received=42 parseFailures=2 gaps=6 applied=47 srtt=4657311400312438784
+step 100 recv
+diag received=43 parseFailures=2 gaps=7 applied=47 srtt=4657311400312438784
+step 101 recv
+diag received=44 parseFailures=2 gaps=7 applied=47 srtt=4657311400312438784
+step 102 recv
+diag received=45 parseFailures=2 gaps=7 applied=47 srtt=4657311400312438784
+step 103 recv
+diag received=46 parseFailures=2 gaps=8 applied=47 srtt=4657311400312438784
+step 104 recv
+diag received=47 parseFailures=2 gaps=9 applied=47 srtt=4657311400312438784
+step 105 send
+num 27
+diag received=47 parseFailures=2 gaps=9 applied=47 srtt=4657311400312438784
+step 106 send
+num 28
+diag received=47 parseFailures=2 gaps=9 applied=47 srtt=4657311400312438784
+step 107 recv
+diag received=48 parseFailures=2 gaps=10 applied=47 srtt=4657433165302857728
+step 108 recv
+diag received=49 parseFailures=2 gaps=10 applied=47 srtt=4657433165302857728
+step 109 recv
+diag received=50 parseFailures=2 gaps=10 applied=47 srtt=4657433165302857728
+step 110 recv
+diag received=51 parseFailures=3 gaps=10 applied=47 srtt=4657433165302857728
+step 111 recv
+diag received=52 parseFailures=4 gaps=10 applied=47 srtt=4657433165302857728
+step 112 resize
+diag received=52 parseFailures=4 gaps=10 applied=47 srtt=4657433165302857728
+step 113 resize
+diag received=52 parseFailures=4 gaps=10 applied=47 srtt=4657433165302857728
+step 114 send
+num -
+diag received=52 parseFailures=4 gaps=10 applied=47 srtt=4657433165302857728
+step 115 recv
+diag received=53 parseFailures=4 gaps=11 applied=47 srtt=4657010569698607104
+step 116 resume-force
+diag received=53 parseFailures=4 gaps=11 applied=47 srtt=4657010569698607104
+step 117 resume
+tx seq=23 id=24 num=0 final=1 ts=48324 tsr=45972
+inst old=13 new=24 ack=47 thr=13 events=k473b6550,k53637b4b,r108x79,k6b3f58573a,k3b213373,r107x79,r128x75,k74377e3a,r127x75
+tx seq=24 id=25 num=0 final=1 ts=48324 tsr=65535
+inst old=24 new=30 ack=47 thr=24 events=r127x75,r212x41,k2a70,k36695c34,r119x47,r118x47
+diag received=53 parseFailures=4 gaps=11 applied=47 srtt=4657010569698607104
+step 118 idle
+tx seq=25 id=26 num=0 final=1 ts=50492 tsr=65535
+inst old=13 new=24 ack=47 thr=13 events=k473b6550,k53637b4b,r108x79,k6b3f58573a,k3b213373,r107x79,r128x75,k74377e3a,r127x75
+tx seq=26 id=27 num=0 final=1 ts=50492 tsr=65535
+inst old=24 new=30 ack=47 thr=24 events=r127x75,r212x41,k2a70,k36695c34,r119x47,r118x47
+diag received=53 parseFailures=4 gaps=11 applied=47 srtt=4657010569698607104
+step 119 tick
+diag received=53 parseFailures=4 gaps=11 applied=47 srtt=4657010569698607104
+step 120 recv
+diag received=54 parseFailures=4 gaps=12 applied=47 srtt=4657010569698607104
+step 121 resize
+diag received=54 parseFailures=4 gaps=12 applied=47 srtt=4657010569698607104
+step 122 send
+num 32
+diag received=54 parseFailures=4 gaps=12 applied=47 srtt=4657010569698607104
+step 123 recv
+diag received=55 parseFailures=4 gaps=12 applied=47 srtt=4657010569698607104
+step 124 recv
+diag received=56 parseFailures=4 gaps=13 applied=47 srtt=4657010569698607104
+step 125 recv
+diag received=57 parseFailures=4 gaps=13 applied=72 srtt=4657010569698607104
+step 126 recv
+diag received=58 parseFailures=4 gaps=14 applied=72 srtt=4657010569698607104
+step 127 recv
+diag received=59 parseFailures=4 gaps=14 applied=72 srtt=4657010569698607104
+step 128 recv
+diag received=60 parseFailures=4 gaps=14 applied=72 srtt=4657010569698607104
+step 129 recv
+diag received=61 parseFailures=4 gaps=15 applied=72 srtt=4657010569698607104
+step 130 recv
+diag received=62 parseFailures=4 gaps=15 applied=18446744073709551615 srtt=4657010569698607104
+step 131 tick
+tx seq=27 id=28 num=0 final=1 ts=50943 tsr=300
+inst old=30 new=32 ack=18446744073709551615 thr=30 events=r75x37,k452d3d5b7a
+ended
+diag received=62 parseFailures=4 gaps=15 applied=18446744073709551615 srtt=4657010569698607104
+step 132 send
+num 33
+diag received=62 parseFailures=4 gaps=15 applied=18446744073709551615 srtt=4657010569698607104
+step 133 tick
+diag received=62 parseFailures=4 gaps=15 applied=18446744073709551615 srtt=4657010569698607104
+step 134 resume
+diag received=62 parseFailures=4 gaps=15 applied=18446744073709551615 srtt=4657010569698607104
+step 135 idle
+diag received=62 parseFailures=4 gaps=15 applied=18446744073709551615 srtt=4657010569698607104
+step 136 close
+diag received=62 parseFailures=4 gaps=15 applied=18446744073709551615 srtt=4657010569698607104
+frame 0 2d8239550f24a9d33cd147a1be6a87b7505ae1a09ed321d7c7a60d81fe2b9188bb5384d030bc57c58c670491c3378bdd
+frame 0 ab3c98414333b36021ca93967307bf
+frame 0 1aa58c15f268b8ad3a70faec8b7778697beeae949bcd7e07d1396e4ae5c9a40f11df0584ae07389f8855e7128c85046b83ec7d5bbacc92291a2efa5c1f80ec76
+frame 3 26eafab18b039ce18e4a58bb8d1e0f044348346e767ffb2110bcd249543c15045a57
+frame 3 b0792bd2e009db1b1e9100204801e251e30aed1ae9e3fa40009242655930cdd58086ba15
+frame 8 6a0d4269ccfc8c469a61

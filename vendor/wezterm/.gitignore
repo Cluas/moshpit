@@ -1,0 +1,4 @@
+# Our file. Built on its own only to run upstream tests; the app resolves
+# these crates through the root Cargo.lock.
+/Cargo.lock
+/target/

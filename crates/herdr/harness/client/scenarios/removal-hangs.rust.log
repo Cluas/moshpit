@@ -1,0 +1,27 @@
+t=0 exec api snapshot
+t=40 focus w1:p1
+t=300 exec worktree remove --workspace 'w7'
+t=2040 exec api snapshot
+t=4080 exec api snapshot
+t=5300 exec api snapshot
+t=5340 focus w1:p1
+t=7340 exec api snapshot
+t=7380 focus w1:p1
+t=9380 exec api snapshot
+t=9420 focus w1:p1
+t=17420 exec api snapshot
+t=17460 focus w1:p1
+t=25460 exec api snapshot
+t=25500 focus w1:p1
+t=33500 exec api snapshot
+t=33540 focus w1:p1
+t=41540 exec api snapshot
+t=41580 focus w1:p1
+t=49580 exec api snapshot
+t=49620 focus w1:p1
+t=57620 exec api snapshot
+t=57660 focus w1:p1
+t=60300 outcome removal failed The host stopped answering while the worktree was being removed.
+t=65660 exec api snapshot
+t=65700 focus w1:p1
+state focus=w1:p1 server=w1:p1 sessions=2 notrunning=false mismatch=false

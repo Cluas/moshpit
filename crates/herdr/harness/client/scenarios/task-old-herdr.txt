@@ -1,0 +1,7 @@
+# herdr before 0.7.5: `agent send` types the message, then Enter is pressed.
+host version 0.7.3
+host client-version 0.7.3
+host no-version
+at 0 start
+at 300 task /home/dev/code/app fix-scroll claude go
+end 12000

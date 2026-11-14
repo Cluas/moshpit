@@ -1,0 +1,216 @@
+{
+  "about": "Where the Rust control client (crates/herdr/src/client) behaves differently from the app's Swift herdr client at 635d5b27: HerdrControlClient.swift as harness/client/build-swift.sh compiles it (clocks swapped, nothing else), and SessionHub.swift's herdr frame channel plus HerdrPushDriver.swift, which the harness cannot compile (UIKit, SwiftTerm, Citadel) and which were checked against real herdr 0.9.5 instead (examples/live_herdr.rs; probes under 'evidence'). 'divergences' are the app's bugs, with the scenario (harness/client/scenarios/) or live run that shows each; equivalence.py fails on a scenario that differs without an entry. 'on_purpose' are differences the Rust client makes deliberately. Swift is not fixed here: per docs/nsh/PROGRESS.md (以 Rust 版为主) a Swift bug is fixed in the app only when it hurts users now.",
+  "divergences": [
+    {
+      "id": "input-before-attach",
+      "swift": "SessionHub.swift:2132 (herdrTargetWritten = paneId right after the attach line is queued), so sendInput :1049 writes typing right behind the line; deliverInput :1206-1208 writes a notification's reply right behind it after awaiting the retarget task",
+      "symptom": "Input written right behind an attach line is lost: herdr 0.9.5 drops what reaches an attach before it is up. Typing in the first moments after a pane switch disappears silently; a lock-screen or notification reply (Allow, Deny, a typed answer) to an agent in a pane other than the attached one is lost while deliverInput returns true, so the app reports it sent.",
+      "trigger": "Typing right after a switch; any deliverInput to a pane the frame channel was not attached to.",
+      "evidence": "Live probe on a private herdr 0.9.5 session over a PTY (the reader loop as the app boots it): input written immediately after the `<pane> <cols> <rows>` line was lost 9 times in 10; written after the new attach's first frame, 0 in 10. examples/live_herdr.rs switch_panes: the Rust client's typing at the picked pane arrives.",
+      "rust": "Input for a pane goes out only once its attach has painted (its first frame); what was typed at the pane the person picked waits for that and follows it; a delivery reports delivered only then (src/client/attach.rs write_attach_line, screen). tests/client.rs nothing_reaches_an_attach_before_it_is_up (the rig drops what reaches an attach before it is up, as herdr does).",
+      "severity": "high: notification replies to another pane's agent silently lost and reported sent",
+      "ledger": "new"
+    },
+    {
+      "id": "double-release",
+      "swift": "SessionHub.swift:2085-2087 (every retarget task writes a release and bumps herdrExpectedCloses, even with an earlier release still unanswered)",
+      "symptom": "herdr answers two releases with one terminal.closed. After switches that overtake each other within a release's round trip (A, B, C), the count stays one too high and the next close nobody asked for (another client's --takeover, a pane closed) is taken for the missing one: the target stays set and painted, the poll's repeated focus report never re-asks it (the retarget guard), typing goes into the reader loop's `read` (which drops `{` lines), and the screen freezes until the person switches panes.",
+      "trigger": "Two pane switches within one round trip, then any eviction.",
+      "evidence": "Live probe (herdr 0.9.5): two releases back to back, one `{\"reason\":\"detached\",\"type\":\"terminal.closed\"}`. examples/live_herdr.rs switch_panes: three quick switches write one release; takeover: the eviction is seen and the pane asked for again.",
+      "rust": "One release for the attach that is reading; a switch overtaken while it is out waits for the same close (src/client/attach.rs retarget). tests/client.rs three_quick_switches_write_one_release_and_still_see_the_next_eviction.",
+      "severity": "medium: silent input loss and a frozen screen after a takeover",
+      "ledger": "new"
+    },
+    {
+      "id": "B117",
+      "swift": "SessionHub.swift:1955-1985 (every Fault, `input ignored` included, clears the target, sets herdrRetryAfter = now + 30 s, shows herdr's words)",
+      "symptom": "A line herdr turns away on a live attach is taken for a refused attach: the app stops claiming the pane and backs off 30 s while the attach keeps painting; typing is dropped with a notice meanwhile.",
+      "trigger": "Any line herdr can't parse: a size past u16, a mouse event to herdr < 0.9.2, an attach line read by an attach that is still alive.",
+      "evidence": "Live probe: `herdr: terminal session control input ignored: invalid json command: …` and the attach stays alive (non-JSON line and a 70000-column resize). examples/live_herdr.rs attach_and_type writes such a line past the client: attach kept, no notice, typing goes on.",
+      "rust": "Event::InputIgnored, nothing else (src/client/attach.rs fault). tests/client.rs input_ignored_is_not_a_refused_attach.",
+      "severity": "medium: a black, backed-off pane for 30 s from one rejected line",
+      "ledger": "B117",
+      "app": "Fixed in the app in round 23 (2250ebf7): SessionHub's frame channel logs `input ignored` and changes nothing else, as src/client/attach.rs fault does. Tests: HerdrFrameSwitchTests, after `input ignored` no banner goes up and typing still reaches the pane."
+    },
+    {
+      "id": "old-frames-paint-new-target",
+      "swift": "SessionHub.swift:1901 (herdrFramePainted = true for any frame, including the attach being released)",
+      "symptom": "Frames the old attach prints between the switch and its close mark the new target painted; if the new attach then never paints (its line eaten), the repeated focus report never re-asks it (the guard needs !herdrFramePainted), so the pane stays veiled or blank until the next switch.",
+      "trigger": "Output in the pane being left during a switch, then a lost attach line.",
+      "evidence": "Code reading against the retarget guard (SessionHub.swift:2041-2044).",
+      "rust": "Frames are attributed to the attach that printed them: the pane being released keeps its own until its close, and only the target's frames count as its paint (src/client/attach.rs screen). tests/client.rs frames_from_the_pane_being_released_stay_on_its_own_terminal.",
+      "severity": "low",
+      "ledger": "new"
+    },
+    {
+      "id": "push-death-cadence",
+      "swift": "SessionHub.swift:2370-2378 (the pump's end only shuts the driver down) and :2384 (pushActive set true, never back); HerdrPushDriver.swift:175 (isActive false is the driver's own)",
+      "symptom": "When the push channel ends (a herdr server restart closes the socket under the pump, the push connection drops), HerdrControlClient.pushActive stays true: after three unchanged reads the poll eases to the 45 s safety-net cadence with no events coming, so agent states and tree changes lag up to 45 s for the rest of the session, and push is never tried again.",
+      "trigger": "Restarting the herdr server (the banner's own button), or losing the push connection.",
+      "evidence": "Code reading; examples/live_herdr.rs push: with the Rust client the cadence is back at 2 s the moment the channel goes, and it is reopened after push_retry.",
+      "rust": "Push death sets push_active false at once (the fast cadence and a read now) and tries again once if the channel had been up (src/client/push.rs). tests/client.rs a_push_channel_that_dies_puts_the_poll_back_in_charge_and_comes_back.",
+      "severity": "medium-low: stale agent state (the Vibe Island, needs-you prompts) by up to 45 s",
+      "ledger": "new"
+    },
+    {
+      "id": "read-unbounded",
+      "swift": "HerdrControlClient.swift:220 (poll awaits run(\"api snapshot\") with no bound) and :155-161 (the poll loop awaits each poll)",
+      "symptom": "One snapshot read that never answers stops the poll loop for good: no tree updates, no focus reports, so the frame channel's recovery (the repeated focus report) never runs again; only extra reads (quicken, the lane's re-read) still happen, each one hanging the same way.",
+      "trigger": "A half-open connection, a wedged herdr server.",
+      "scenarios": ["read-hangs"],
+      "evidence": "Swift: after the read hangs at 1 s and the host recovers at 20 s, no focus report ever comes (2 reads in 40 s); Rust: reads go on at their budget and the new focus is reported at 26 s.",
+      "rust": "Every read bounded (Budgets::poll), one in flight, the next scheduled either way.",
+      "severity": "medium",
+      "ledger": "new (B119/B120 class)"
+    },
+    {
+      "id": "skew-diagnosis-unbounded",
+      "swift": "HerdrControlClient.swift:262 (poll awaits diagnoseVersionSkew) and :1100-1101 (`herdr status` with no bound)",
+      "symptom": "A protocol mismatch whose `herdr status` never answers stops the poll loop for good, before the mismatch is even reported: no banner, no tree, nothing after the host recovers.",
+      "trigger": "Version skew on a host whose `herdr status` hangs (a stale client against a server it can't talk to, a wedged link).",
+      "scenarios": ["skew-status-hangs"],
+      "evidence": "Swift: one read, never another, state focus=nil sessions=0 after the skew clears; Rust: the status read is given up at 5 s, reads go on, the tree comes back.",
+      "rust": "The status read is bounded and off the read's path (src/client/mod.rs poll_effect DiagnoseSkew).",
+      "severity": "medium",
+      "ledger": "new"
+    },
+    {
+      "id": "B119-unbounded",
+      "swift": "HerdrControlClient.swift:774 (removeWorktree awaits runOnLane with no bound)",
+      "symptom": "A removal the host never answers never returns: the sheet spins for good.",
+      "trigger": "A half-open connection.",
+      "scenarios": ["removal-hangs"],
+      "evidence": "Swift: no outcome in 70 s; Rust: failed at 60 s, \"The host stopped answering while the worktree was being removed.\"",
+      "rust": "Budgets::worktree_remove (60 s), RemovalFailure::NoAnswer.",
+      "severity": "medium",
+      "ledger": "B119",
+      "app": "Fixed in the app in round 23 (15af0306): removeWorktree waits at most 60 s and then says the host stopped answering; equivalence.py reports removal-hangs as same effects against today's HerdrControlClient.swift. The recorded <scenario>.swift.log stays the 635d5b27 one, which tests/client_scenarios.rs keeps as the divergence's evidence."
+    },
+    {
+      "id": "B119-cut",
+      "swift": "HerdrControlClient.swift:777-788 (no JSON and no exit status is not `failed`, so it reads as removed)",
+      "symptom": "A removal whose answer was cut off before its trailer, with nothing printed, is reported removed.",
+      "trigger": "The exec channel ending before the trailer.",
+      "scenarios": ["removal-cut"],
+      "evidence": "Swift: outcome removal removed; Rust: failed, herdr's answer was cut off.",
+      "rust": "control::worktree_removal takes evidence: herdr's result or exit 0.",
+      "severity": "low-medium: a worktree reported gone that may still be there",
+      "ledger": "B119",
+      "app": "Fixed in the app in round 23 (15af0306): a removal is removed only on evidence, herdr's result printed or exit status 0, as control::worktree_removal reads it; equivalence.py reports removal-cut as same effects. The recorded <scenario>.swift.log stays the 635d5b27 one."
+    },
+    {
+      "id": "B120",
+      "swift": "HerdrControlClient.swift:383-390 (paneRepos) and :447-451 (agentNames): no bound",
+      "symptom": "The New agent task form's repo list (\"Finding repositories…\") and agent list never finish on a half-open connection.",
+      "trigger": "A half-open connection when the form opens.",
+      "scenarios": ["repos-hang", "agents"],
+      "evidence": "Swift: no repos outcome in 30 s; the second agent list never answers. Rust: the raw directories at 10 s; an empty list (answered=false) at 10 s.",
+      "rust": "Budgets::discovery (10 s) for both; the resolve falls back to the panes' directories.",
+      "severity": "low-medium",
+      "ledger": "B120",
+      "app": "Fixed in the app in round 23 (93ba1f0d): the repo resolve and the agent list go through one bounded run (10 s, as Budgets::discovery; the $HOME scan keeps its 8 s), a resolve that never answers falls back to the raw directories and a list that never answers is empty; equivalence.py reports repos-hang and agents as identical. The recorded <scenario>.swift.log stays the 635d5b27 one."
+    },
+    {
+      "id": "B121",
+      "swift": "HerdrControlClient.swift:1253-1266 (runInOrder stops only on result.failed, and a missing exit status is not failed)",
+      "symptom": "A sequence goes on after a step whose answer was cut off: `workspace focus` lost, `tab create --focus` still runs, in whichever workspace is focused.",
+      "trigger": "The exec channel ending before a step's trailer.",
+      "scenarios": ["sequence-cut"],
+      "evidence": "Swift: landed tab create (in w1, not w9); Rust: the sequence stops, CommandFailed (herdr's answer was cut off).",
+      "rust": "A sequence's next step goes only on evidence (src/client/mod.rs lane_answered).",
+      "severity": "low",
+      "ledger": "B121",
+      "app": "Fixed in the app in round 38 (ee34a59b): runInOrder sends the next step only on the evidence `refusal` takes; equivalence.py reports sequence-cut as same effects against today's HerdrControlClient.swift. The recorded <scenario>.swift.log stays the 635d5b27 one, which tests/client_scenarios.rs keeps as the divergence's evidence."
+    },
+    {
+      "id": "sequence-after-hold",
+      "swift": "HerdrControlClient.swift:1214-1229 (enqueueCommand stops waiting after commandBudget for the whole runInOrder step, which keeps running)",
+      "symptom": "A sequence whose first step outlasts the lane's hold sends its later steps outside the lane's order: after commands queued later. New tab in another workspace, then a pane tap: the tap lands at 5 s, the sequence's `tab create --focus` at 6 s, and the server's focus ends on the new tab instead of the tapped pane.",
+      "trigger": "A slow `workspace focus`/`tab focus` (a busy server, a bad link) with a tap right behind it.",
+      "scenarios": ["sequence-slow"],
+      "evidence": "Swift: landed focus w1:p2, workspace focus w9, tab create; final focus w1:p3. Rust: no tab create after the hold; final focus w1:p2.",
+      "rust": "A sequence sends nothing more once the lane has let it go (src/client/mod.rs lane_hold_expired; tests/client.rs a_sequence_whose_step_outlasts_the_hold_sends_nothing_after_it).",
+      "severity": "low",
+      "ledger": "B191",
+      "app": "Fixed in the app in round 38 (ee34a59b): the lane hands each step its hold (LaneHold) and runInOrder sends nothing once it is released; equivalence.py reports sequence-slow as same effects. The recorded <scenario>.swift.log stays the 635d5b27 one."
+    },
+    {
+      "id": "owner-gave-up",
+      "swift": "HerdrControlClient.swift:1237-1251 (runOnLane's step stays queued after its caller stopped waiting, e.g. :498 WriteLane.wait(atMost: worktreeCreateBudget)) and still runs when its turn comes",
+      "symptom": "A worktree create queued behind steps that hold the lane longer than the task waits: the form says the host stopped answering and no agent was started, then the worktree is made anyway (and takes the focus).",
+      "trigger": "Several commands stuck ahead of a New agent task on a link that stopped answering, then recovered.",
+      "scenarios": ["owner-gave-up"],
+      "evidence": "Swift: landed worktree create late at ~65 s, after the task failed at 60 s; Rust: never sent.",
+      "rust": "A queued owned command whose owner gave up is taken off the lane (src/client/mod.rs patience_expired; tests/client.rs a_create_still_queued_when_its_owner_gives_up_is_never_sent).",
+      "severity": "low",
+      "ledger": "B191",
+      "app": "Fixed in the app in round 38 (ee34a59b): runOnLane(_:mutation:within:) takes the caller's patience, and a step whose caller gave up before its turn sends nothing (LaneTicket); equivalence.py reports owner-gave-up as same effects. The recorded <scenario>.swift.log stays the 635d5b27 one."
+    },
+    {
+      "id": "restart-unbounded",
+      "swift": "HerdrControlClient.swift:1073-1083 and :1136-1153 (restartServer: diagnoseVersionSkew :1101, `server stop` :1079, the daemon start :1137, up to ten polls, the first workspace's runOnLane :1143 — none bounded)",
+      "symptom": "A restart on a link that stopped answering never ends: the banner stays \"Restarting herdr server…\" and the spinner turns for good.",
+      "trigger": "Tapping restart on a half-open connection.",
+      "scenarios": ["restart-dead"],
+      "evidence": "Swift: one `status`, no outcome in 200 s; Rust: every step given up at its budget, `failed` at 140 s, \"Restart didn't take\" with Retry.",
+      "rust": "Each step bounded; a restart whose reads never answered is not taken for restarted (src/client/task.rs).",
+      "severity": "low-medium",
+      "ledger": "new"
+    },
+    {
+      "id": "bootstrap-drops-name",
+      "swift": "HerdrControlClient.swift:1050-1054 (newSession on a host with no server calls bootstrapServer without the name) and :1143 (`workspace create --focus`)",
+      "symptom": "Creating a workspace from the empty state of a host with no server starts one, but the first workspace doesn't get the name typed into the sheet.",
+      "trigger": "The empty state's create with a name, on a host whose herdr server isn't running.",
+      "scenarios": ["new-session-no-server"],
+      "evidence": "Swift: landed workspace create; Rust: landed workspace create work.",
+      "rust": "The bootstrap carries the label (src/client/task.rs bootstrap).",
+      "severity": "low",
+      "ledger": "B192",
+      "app": "Fixed in the app in round 36 (e56ba496): equivalence.py reports new-session-no-server as same effects against today's HerdrControlClient.swift. The recorded <scenario>.swift.log stays the 635d5b27 one, which tests/client_scenarios.rs keeps as the divergence's evidence."
+    },
+    {
+      "id": "trailer-at-end",
+      "swift": "HerdrControlClient.swift:335 (parse takes the marker's last occurrence anywhere in the output)",
+      "symptom": "Output cut off before the real trailer but carrying `__moshpit_rc=N` inside herdr's own text (a pane title, a working directory, a label: anything a program on the host can set) reads as that command's exit status.",
+      "trigger": "A truncated answer whose JSON holds the marker.",
+      "evidence": "Code reading; src/client/exec.rs read_result requires the trailer to be the last thing printed.",
+      "rust": "client::read_result.",
+      "severity": "low",
+      "ledger": "B193",
+      "app": "Fixed in the app in round 36 (9db688e8): HerdrControlClient.parse takes the trailer only as the last thing printed. Tests: tests/control.rs the_client_reads_the_trailer_only_at_the_end_of_the_output, tests/client.rs a_cut_off_answer_whose_text_carries_the_marker_is_no_exit_status."
+    }
+  ],
+  "on_purpose": [
+    {
+      "id": "read-schedule",
+      "what": "One snapshot read in flight at a time; a request for a read while one is out is a second read right after it; the cadence restarts after every read. The app's poll loop keeps its own rhythm beside the extra reads (quicken, refresh, the lane's re-read), so it reads more and at other times.",
+      "where": "src/client/mod.rs poll_now, poll_answered. Every scenario's read count."
+    },
+    {
+      "id": "answer-before-reread",
+      "what": "An outcome is answered as soon as it is known; the re-read follows on its own (the lane's). The app awaits a poll before it returns startAgentTask's and removeWorktree's outcomes (HerdrControlClient.swift:518, :547, :556, :787), one read later.",
+      "where": "equivalence.py TOLERANCE_MS."
+    },
+    {
+      "id": "version-from-snapshot",
+      "what": "herdr 0.9's snapshot names the server's version; the first message's command is chosen from it without the app's `herdr status` read (still read when the snapshot doesn't say).",
+      "where": "src/client/task.rs task_launched. Scenarios task-started, prompt-cut (Swift's extra `exec status`, a read)."
+    },
+    {
+      "id": "switch-input-held",
+      "what": "Typing at the pane the person just picked waits for that pane's attach and follows it; the app drops typing during a switch (B25's fix). Input here is addressed to a pane, so it can't reach another one; a switch the person didn't make (the desktop moved the focus) still drops it, as the app does.",
+      "where": "src/client/attach.rs route_input, hold_for."
+    },
+    {
+      "id": "closes-told-apart",
+      "what": "A close whose reason says the pane is gone (\"… not found\") is not counted toward the contention backoff; the app counts every close it didn't ask for as another client's eviction.",
+      "where": "src/client/attach.rs closed. Live: takeover (a closed pane)."
+    },
+    {
+      "id": "push-socket-path",
+      "what": "The pump's socket is configurable (Config::socket_path, default the app's ~/.config/herdr/herdr.sock), so a named herdr session's socket can be reached; the live runs use it for their private sessions.",
+      "where": "src/client/push.rs pump_boot_line_for."
+    }
+  ]
+}

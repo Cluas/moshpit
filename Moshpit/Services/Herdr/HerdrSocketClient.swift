@@ -5,14 +5,13 @@ import Foundation
 /// The envelope is `{"event":"<kind>","data":{…}}` — note there is NO id and
 /// NO sequence number (herdr's event stream cannot be replayed; on reconnect
 /// the client re-snapshots instead — see docs/design/roaming-transport.md).
-/// `raw` is the full line so consumers that need the payload can decode it
-/// with the tolerant `[String: Any]` machinery `HerdrSnapshot` already uses.
+/// Only the kind is kept: the one consumer (`HerdrPushDriver`) treats every
+/// event as "something changed" and re-reads the snapshot.
 struct HerdrSocketEvent: Equatable {
     /// The `event` field, e.g. `pane_agent_status_changed`, `tab_created`.
     /// Snake_case on the wire (subscription REQUESTS use dotted names —
     /// `pane.agent_status_changed` — the asymmetry is herdr's, not ours).
     let kind: String
-    let raw: String
 }
 
 enum HerdrSocketError: Error, Equatable {
@@ -33,9 +32,8 @@ enum HerdrSocketError: Error, Equatable {
 /// Phase 0 of docs/design/roaming-transport.md: the client is deliberately
 /// transport-agnostic — whoever owns the connection feeds inbound bytes via
 /// ``feed(_:)`` (the `TmuxControlClient.feed` pattern) and provides a `write`
-/// closure at init. Today that pipe is an SSH channel pumping to
-/// `~/.config/herdr/herdr.sock`; Phase 1 swaps in a roaming-bridge channel
-/// without touching this file.
+/// closure at init. The pipe is an SSH channel pumping to
+/// `~/.config/herdr/herdr.sock`.
 ///
 /// Wire facts this encodes (verified against herdr 0.8.0 / protocol 19,
 /// captures in MoshpitTests/Fixtures/herdr-socket-*.json*):
@@ -162,7 +160,7 @@ actor HerdrSocketClient {
         }
         guard let object = HerdrSnapshot.firstJSONObject(in: line) else { return }
         if let kind = object["event"] as? String {
-            eventContinuation.yield(HerdrSocketEvent(kind: kind, raw: line))
+            eventContinuation.yield(HerdrSocketEvent(kind: kind))
             return
         }
         guard let id = object["id"] as? String else { return }

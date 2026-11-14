@@ -1,0 +1,24 @@
+t=0 exec api snapshot
+t=40 focus w1:p1
+t=300 exec workspace focus 'w9'
+t=1000 focus w1:p2
+t=2040 exec api snapshot
+t=4080 exec api snapshot
+t=5300 exec agent focus 'w1:p2' 2>/dev/null || { PATH="$PATH:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:$HOME/.local/bin" herdr pane zoom --pane 'w1:p2' --on >/dev/null 2>&1; PATH="$PATH:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:$HOME/.local/bin" herdr pane zoom --pane 'w1:p2' --off >/dev/null 2>&1; }
+t=5340 exec api snapshot
+t=5380 focus w1:p2
+t=6120 exec api snapshot
+t=6160 focus w1:p2
+t=6300 exec tab create --focus --label 'logs'
+t=8160 exec api snapshot
+t=8200 focus w1:p3
+t=10200 exec api snapshot
+t=10240 focus w1:p3
+t=12240 exec api snapshot
+t=12280 focus w1:p3
+t=14280 exec api snapshot
+t=14320 focus w1:p3
+landed focus w1:p2
+landed workspace focus w9
+landed tab create
+state focus=w1:p3 server=w1:p3 sessions=2 notrunning=false mismatch=false

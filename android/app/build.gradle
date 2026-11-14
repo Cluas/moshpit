@@ -1,0 +1,125 @@
+import groovy.json.JsonSlurper
+
+plugins {
+    alias(libs.plugins.android.application)
+}
+
+// The repository's root: the Cargo workspace.
+def workspace = rootDir.parentFile
+
+// NSH's Java runtime, from the very checkout Cargo.lock pins: its Java and Rust
+// halves must match (docs/nsh/DESIGN.md, NSH 版本). `cargo metadata` fetches
+// the pinned revision when it is not there yet.
+def nshJava = {
+    def json = providers.exec {
+        workingDir workspace
+        commandLine 'cargo', 'metadata', '--locked', '--format-version', '1',
+                '--filter-platform', 'aarch64-linux-android'
+    }.standardOutput.asText.get()
+    def pkg = new JsonSlurper().parseText(json).packages.find { it.name == 'nsh-platform-android' }
+    if (pkg == null) throw new GradleException('nsh-platform-android is not in Cargo.lock')
+    new File(new File(pkg.manifest_path).parentFile, 'java')
+}
+
+android {
+    namespace 'com.cluas.moshpit'
+    compileSdk libs.versions.compileSdk.get().toInteger()
+    ndkVersion libs.versions.ndk.get()
+
+    defaultConfig {
+        applicationId 'com.cluas.moshpit'
+        minSdk libs.versions.minSdk.get().toInteger()
+        targetSdk libs.versions.targetSdk.get().toInteger()
+        // CI passes the store's numbers: -PversionCode=… -PversionName=….
+        versionCode((project.findProperty('versionCode') ?: '1').toString().toInteger())
+        versionName((project.findProperty('versionName') ?: '0.1.0').toString())
+        ndk {
+            // Phones are arm64; android/rust.sh builds what ABIS lists.
+            abiFilters 'arm64-v8a'
+        }
+    }
+
+    // The upload key (Play App Signing keeps the app's signing key): from the
+    // environment when CI has the secrets, else the bundle is unsigned.
+    signingConfigs {
+        if (System.getenv('MOSHPIT_UPLOAD_KEYSTORE')) {
+            upload {
+                storeFile file(System.getenv('MOSHPIT_UPLOAD_KEYSTORE'))
+                storePassword System.getenv('MOSHPIT_UPLOAD_STORE_PASSWORD')
+                keyAlias System.getenv('MOSHPIT_UPLOAD_KEY_ALIAS')
+                keyPassword System.getenv('MOSHPIT_UPLOAD_KEY_PASSWORD')
+            }
+        }
+    }
+
+    buildTypes {
+        debug {
+            debuggable true
+        }
+        release {
+            // The Java side is small and its JNI names are looked up by Rust:
+            // no shrinking, no renaming.
+            minifyEnabled false
+            if (System.getenv('MOSHPIT_UPLOAD_KEYSTORE')) signingConfig signingConfigs.upload
+        }
+    }
+
+    sourceSets {
+        main {
+            java.srcDirs += [nshJava()]
+        }
+        // libnsh.so, as android/rust.sh writes it for each build type.
+        debug {
+            jniLibs.srcDirs = ["$buildDir/rust/debug/jniLibs"]
+        }
+        release {
+            jniLibs.srcDirs = ["$buildDir/rust/release/jniLibs"]
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    packaging {
+        jniLibs {
+            // Stored, page-aligned: the system maps libnsh.so from the APK.
+            useLegacyPackaging false
+        }
+    }
+
+    testOptions {
+        unitTests.returnDefaultValues = true
+    }
+
+    lint {
+        // NSH's Java runtime is compiled as part of the app; its findings are
+        // upstream's.
+        abortOnError false
+    }
+}
+
+dependencies {
+    implementation project(':terminal-view')
+    testImplementation libs.junit
+}
+
+// The Rust library: the fast `release` profile for debug builds, the shipping
+// `app` profile (size-optimised, LTO) for release builds.
+['debug': 'release', 'release': 'app'].each { buildType, profile ->
+    def task = tasks.register("cargoBuild${buildType.capitalize()}", Exec) {
+        group 'build'
+        description "Builds libnsh.so (crates/android, cargo profile ${profile}) for the ${buildType} build"
+        workingDir workspace
+        environment 'ANDROID_NDK_HOME', android.ndkDirectory.absolutePath
+        environment 'ANDROID_HOME', android.sdkDirectory.absolutePath
+        commandLine 'bash', "${rootDir}/rust.sh", profile,
+                "$buildDir/rust/${buildType}/jniLibs", "$buildDir/rust/${buildType}/symbols"
+        // Cargo decides what to rebuild; Gradle always asks it.
+        outputs.upToDateWhen { false }
+    }
+    tasks.matching { it.name == "merge${buildType.capitalize()}JniLibFolders" }.configureEach {
+        dependsOn task
+    }
+}

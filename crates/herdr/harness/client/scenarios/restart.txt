@@ -1,0 +1,7 @@
+# A restart: stop, start, read until the new server answers. The server is
+# older than the host's herdr: what the restart is for (B408: on a server
+# already as new, it does nothing; restart-unneeded).
+host version 0.8.0
+at 0 start
+at 500 restart
+end 15000

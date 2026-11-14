@@ -14,11 +14,19 @@ struct HerdrPushDriverTests {
         // A raw newline would submit the shell command early — the script's
         // newlines must live as \n escapes inside python's exec() string.
         #expect(!line.contains("\n"))
-        // The whole -c argument rides in shell single quotes; a third quote
-        // anywhere in the body would end them.
-        #expect(line.filter { $0 == "'" }.count == 2)
-        #expect(line.hasPrefix("stty raw -echo; "))
-        #expect(line.contains("exec python3 -c"))
+        // python3 found as the capability probe finds it (B267: the pump is
+        // its channel's program, run by a non-interactive shell).
+        let prefix = "stty raw -echo; PATH=\"$PATH:\(HostCapabilities.extraPathDirs)\" exec python3 -c "
+        #expect(line.hasPrefix(prefix))
+        // The -c argument is one word that every login shell reads alike
+        // (B138): hand-quoted, fish read its `\\n` as `\n` and python met
+        // a raw newline in a bytes literal.
+        let word = String(line.dropFirst(prefix.count))
+        let program = PosixShell.unquote(word)
+        #expect(program != nil)
+        #expect(PosixShell.unquoteAsFish(word) == program)
+        #expect(program?.hasPrefix("exec(\"import os,socket,threading\\n") == true)
+        #expect(program?.contains("b\\\"MOSHPIT_PUMP_READY\\\\n\\\")") == true)
         #expect(line.contains("~/.config/herdr/herdr.sock"))
     }
 
@@ -66,6 +74,36 @@ struct HerdrPushDriverTests {
         #expect(driver.isActive)
         await driver.shutdown()
         #expect(!driver.isActive)
+    }
+
+    /// A herdr server restart ends the pump's transport. The driver went
+    /// inactive and told nobody, so its owner kept counting on push (B188).
+    @Test("Push that ends on its own says so, once; a shutdown says nothing")
+    func endingIsTold() async throws {
+        final class Count: @unchecked Sendable { var value = 0 }
+        let ended = Count()
+        let driver = await makeActivatedDriver { }
+        driver.onEnded = { ended.value += 1 }
+        #expect(await driver.activate())
+
+        await driver.transportEnded()
+        let deadline = ContinuousClock.now + .seconds(5)
+        while ended.value == 0, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(ended.value == 1, "push ended and its owner was never told")
+        #expect(!driver.isActive)
+        await driver.shutdown()
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(ended.value == 1)
+
+        let quiet = Count()
+        let stopped = await makeActivatedDriver { }
+        stopped.onEnded = { quiet.value += 1 }
+        #expect(await stopped.activate())
+        await stopped.shutdown()
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(quiet.value == 0, "the owner's own shutdown was reported as push dying")
     }
 
     @Test("Silence (no python3 on the host) fails activation without throwing")
@@ -168,11 +206,6 @@ struct HerdrPushDriverTests {
         """)
         #expect(caps.hasPython3)
         #expect(!HostCapabilities.parse("::Linux::").hasPython3)
-        // Old cached entries (no key) decode to false, not a throw.
-        let old = try? JSONDecoder().decode(
-            HostCapabilities.self,
-            from: Data(#"{"hasTmux":true,"hasMoshServer":true,"os":"Linux"}"#.utf8))
-        #expect(old?.hasPython3 == false)
         // Pre-probe optimism: unknown assumes present, so a cold session
         // attempts the upgrade and settles on polling if it was wrong.
         #expect(HostCapabilities.unknown.hasPython3)

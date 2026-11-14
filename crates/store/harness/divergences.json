@@ -1,0 +1,116 @@
+{
+  "about": "Where moshpit-store deliberately differs from the app's Swift storage code (as at 5337db09, the sources harness/build-swift.sh compiles). The Rust store is the primary implementation; the formats the app has written and what 1.0.8 can read are kept, but where the Swift logic loses or corrupts data it is not copied. Each fix is marked 'Fix (<id>)' in the Rust source; tests/fixtures/swift/divergences.txt holds minimal cases (divergences.swift.txt: what the Swift prints for them, divergences.rust.txt: what Rust prints; both compared in strict canonical form). The generated cases of harness/equivalence.py keep clear of these inputs, and every one of them prints the same on both sides after canonicalisation. A fix since ported to the app carries 'status': 'fixed' (what changed under 'fixed'): its cases must now print the same on both sides, and divergences.swift.sha256 keeps the hash of what the Swift printed before the fix, which tests/swift_equivalence.rs still tells the fix apart from. 'notes' are differences that remain, with their reason.",
+  "fixes": [
+    {
+      "id": "files-downgrade",
+      "swift": "Moshpit/Models/TerminalShortcut.swift:57 (ShortcutKind.files, newer than 1.0.8) and :566 (the built-in that puts it in every set); 1.0.8's ShortcutStore.load (8c10490a, TerminalShortcut.swift: `try? JSONDecoder().decode([TerminalShortcut].self, ...)`, then `shortcuts = Self.builtins; persist()`)",
+      "symptom": "Every shortcut set the current app saves holds the files chip as \"kind\":\"files\". 1.0.8 decodes the set in one piece, reads it as nothing, seeds its built-ins and saves them over the set: installing 1.0.8 over the current build (TestFlight keeps it a tap away) erases every custom chip and the user's bar layout.",
+      "trigger": "Any downgrade to 1.0.8 (or any build before 2026-10-18) after the current build has saved the shortcut set once — which it does on its first launch (the reconcile step adds the files chip).",
+      "minimal_input": "divergences.txt cases 3 and 4: a set with the built-in files chip, saved back; and the same set in Rust's form, read back",
+      "swift_before": "writes \"kind\":\"files\"; 1.0.8 measured on such a set (harness phase D on Swift-written data): undecodable, then its built-ins written over the set",
+      "fix": "As B32 did for key algorithms: `kind` holds a kind every build since 1.0.8 decodes — a kind newer than 1.0.8 is stored as an inert key combo there (no key, no payload: a tap in 1.0.8 sends nothing) — and the real kind goes in a new `shortcutKind`, preferred on read. A set an older build saved back without it still names the built-in by its summary (\"Browse files\", key combo, no key, no payload, built-in) and reads as the files chip again. \"kind\":\"files\" as the app stored it reads as before.",
+      "rust_outcome": "writes \"kind\":\"keyCombo\",\"shortcutKind\":\"files\"; 1.0.8 decodes every set Rust writes (harness phase D); the current Swift reads the chip as an inert key combo (the cost of the fix while the Swift store is the fallback: the same change in Swift — read `shortcutKind` — removes it)",
+      "severity": "high for downgrades: every custom chip lost",
+      "status": "fixed",
+      "fixed": "In the app since round 21 (B153): TerminalShortcut's own Codable writes `kind` as ShortcutKind.olderBuildsName and the real kind in `shortcutKind`, reads `shortcutKind` first and finds the built-in files chip a 1.0.8 save left again by its summary — this crate's encoding. The current Swift reads Rust's files chip as the files chip, and 1.0.8 decodes every set the current Swift writes (harness phase D')."
+    },
+    {
+      "id": "bom-strip",
+      "swift": "Moshpit/Models/StoredList.swift:62 (the stored array through JSONSerialization), :71 (each entry written back out by it before JSONDecoder decodes it), :121 (a save that carries entries); Moshpit/Models/ConnectionStore.swift:164 (every connection save, through addingRollbackFields); Moshpit/Services/HostKeyValidator.swift:106 (salvage)",
+      "symptom": "JSONSerialization drops a leading U+FEFF from every string it parses, keys included. A connection's name, host or user, a key's comment, a shortcut's text — anything that starts with U+FEFF — loses it at the next launch, and the next save writes the change (a host name that changed this way connects somewhere else).",
+      "trigger": "A stored string starting with U+FEFF (text pasted from a file with a byte order mark).",
+      "minimal_input": "divergences.txt cases 1 and 2",
+      "swift_before": "name \"work\", host \"box.example.com\" after the first read; written so",
+      "fix": "The stored array is still checked by JSONSerialization's rules (a malformed number anywhere makes the value no list, as in Swift) but read, and written back, with every string as stored (stored_list::serialization_tree).",
+      "rust_outcome": "name \"\\uFEFFwork\", host \"\\uFEFFbox.example.com\", kept through every save",
+      "severity": "low: needs a leading byte order mark",
+      "status": "fixed",
+      "fixed": "In the app since round 21 (B155): StoredList.read and .encode, ConnectionStore.addingRollbackFields and KeychainKnownHostsStore's salvage parse through StoredJSON — JSONSerialization's rules, every string and key as stored (each U+FEFF inside a string, raw or escaped, goes in as a private-use scalar the data holds nowhere else and comes back out as U+FEFF) — as this crate's serialization_tree reads them."
+    },
+    {
+      "id": "toolbar-overflow",
+      "swift": "Moshpit/Models/TerminalShortcut.swift:390-399 (ShortcutStore.moveInToolbar)",
+      "symptom": "The set is rebuilt from the toolbar (the first twelve chips marked for it) and the unmarked rest: a set with more than twelve chips marked for the toolbar loses the extras on the first drag in the editor.",
+      "trigger": "A set with more than twelve chips marked inToolbar — which builds before 1.0.0 could leave (their reconcile steps inserted the D-pad, ctrl and the scroll thumb at the front without the cap) — and one drag in the toolbar editor.",
+      "minimal_input": "divergences.txt case 5: thirteen chips marked, move:0:2",
+      "swift_before": "twelve chips left",
+      "fix": "The chips past the twelfth follow the toolbar, in their order.",
+      "rust_outcome": "thirteen chips, the first two swapped",
+      "severity": "low: needs a set from a pre-1.0 build",
+      "status": "fixed",
+      "fixed": "In the app since b85f84d1 (11-13): ShortcutStore is an observable over this crate's store whatever MOSHPIT_RUST_STORE says, its moveInToolbar this crate's; the case prints the same on both sides."
+    },
+    {
+      "id": "known-hosts-canonical-keys",
+      "swift": "Moshpit/Services/HostKeyValidator.swift:87 (`JSONDecoder().decode([String: String].self)`), then :111 (the write of the whole map)",
+      "symptom": "JSONDecoder reads two hosts whose names differ only in Unicode normalisation (\"é\" precomposed and decomposed) as one entry, the first; the next trust writes the map back without the second fingerprint.",
+      "trigger": "Trusting the same host typed in two normal forms (a keyboard that decomposes, a pasted name).",
+      "minimal_input": "divergences.txt case 6",
+      "swift_before": "read: one entry (SHA256:a); after a write: one entry",
+      "fix": "Both entries are kept: a host's key is its exact text (moshpit-ssh matches it exactly).",
+      "rust_outcome": "read: both entries; after a write: both",
+      "severity": "low"
+    },
+    {
+      "id": "known-hosts-backup",
+      "swift": "Moshpit/Services/HostKeyValidator.swift:98-103 (KeychainKnownHostsStore.salvage)",
+      "symptom": "One backup account: a second undecodable map (another build's, or the same build's next format) is copied over the first one's copy, the only one left of it.",
+      "trigger": "Two different undecodable maps in a row.",
+      "minimal_input": "divergences.txt case 7: an undecodable map beside an earlier one's copy",
+      "swift_before": "moshpit.knownHosts.backup overwritten with the second map",
+      "fix": "The backup account is written only while empty; a different map goes to moshpit.knownHosts.backup-<unix seconds> (a counter added when taken), as the pairing file keeps its copies.",
+      "rust_outcome": "both copies kept",
+      "severity": "low"
+    },
+    {
+      "id": "negative-overflow",
+      "swift": "Moshpit/Models/StoredList.swift:62 then :71 (JSONSerialization.data(withJSONObject:) on an entry holding -infinity)",
+      "symptom": "CRASH: JSONSerialization reads -1e400 as -infinity and raises NSInvalidArgumentException ('Invalid number value (infinite) in JSON write', exit 134) writing the entry back out — in StoredList.read, which every list store runs at launch: the app crashes on every start until the value is gone. A number nothing reads (a dropped field) is enough.",
+      "trigger": "Any stored list entry holding a number below -1.8e308 (corruption, or a build that writes one); measured with the app's StoredList on macOS 27.",
+      "minimal_input": "divergences.txt case 8: a connection list whose one entry has \"keepAliveInterval\":-1e400; its Swift record in divergences.swift.sha256 is the hash of \"swift died: NSInvalidArgumentException 'Invalid number value (infinite) in JSON write' (exit 134)\", what the Swift harness did with it before the fix",
+      "swift_before": "crash (NSInvalidArgumentException)",
+      "fix": "Such a number is out of range for both signs (moshpit-seal's Fix (negative-overflow)): the value is no list — copied to the backup, nothing shown, never written over unsecured.",
+      "rust_outcome": "an empty list, the value kept in moshpit.connections.backup",
+      "severity": "crash loop at launch, but needs a value the app never writes",
+      "status": "fixed",
+      "fixed": "In the app since round 21 (B154): StoredList.read takes a list holding a number out of Double's range, of either sign, for no list — the value is kept in the backup, nothing shown, nothing written over it — as this crate does; the case now prints the same on both sides."
+    }
+  ],
+  "notes": [
+    {
+      "id": "key-order",
+      "what": "JSONEncoder (without .sortedKeys) writes an object's members in a Swift Dictionary's order, seeded per process, and JSONSerialization in NSDictionary's: the app's own bytes differ from launch to launch. Rust writes members sorted by code point.",
+      "why_kept": "There is no order of the app's to match. Results are compared with members sorted; every scalar (number text, string escapes, dates) must still be byte-identical. The one output the app sorts — a theme's export, .sortedKeys and pretty — is byte-identical as written."
+    },
+    {
+      "id": "set-order",
+      "what": "A Swift Set (a shortcut's modifiers and scope hosts, the declined hosts) is written in hash order; Rust writes modifiers ⌃⌥⇧⌘ and hosts in insertion order (the declined hosts sorted, as the app sorts them).",
+      "why_kept": "Compared as sets."
+    },
+    {
+      "id": "equal-values",
+      "what": "UserDefaults.set(_:forKey:) keeps the stored value when the new one isEqual to it (false over a stored 0 keeps the integer 0, measured on macOS 27). A host may do the same; MemoryDefaults does, so the harness compares like with like.",
+      "why_kept": "Equal values read back the same through every bridging rule the stores use."
+    },
+    {
+      "id": "base64-padding",
+      "what": "An RSA key's size off its public key line decodes the base64 strictly (moshpit-seal's), where Foundation also takes '=' in odd places.",
+      "why_kept": "Only a malformed public key line can tell them apart, and then only the badge's size."
+    },
+    {
+      "id": "graphemes-and-case",
+      "what": "Characters (extended grapheme clusters) come from unicode-segmentation and case mappings from Rust's char tables; both may be a Unicode version apart from the Swift runtime's.",
+      "why_kept": "No difference in the generated cases, which are full of combining marks, ZWJ emoji, flags, final sigma, dotted I and ß."
+    },
+    {
+      "id": "lenient-dates",
+      "what": "ISO 8601 dates are read as macOS 27's Foundation reads them (moshpit-seal's parser: single-digit fields, 02-30, offsets); older Foundations on older iOS may refuse some of those.",
+      "why_kept": "The app only ever writes yyyy-MM-ddTHH:mm:ssZ, which every version reads alike."
+    },
+    {
+      "id": "pairing-label-bom",
+      "what": "A pairing's host label that starts with U+FEFF: moshpit-seal's PushPairingFile reads and writes it as stored (Fix (B264), crates/seal/src/pairing_file.rs `as_stored`); the Swift PushPairingFile (Packages/MoshpitKit/.../PushPairing.swift:342,384) parses the file through JSONSerialization, which drops it. The adapter pairings run (harness/adapters/Stores.swift) draws no label that starts with one; one later in a label is kept by both.",
+      "why_kept": "Only the label's display: the invisible mark is gone in the Swift build's settings row and notification card, nothing else reads the label. The Swift fix needs the app's StoredJSON in MoshpitKit, which the notification service links too; not worth it for the Swift file, which the Rust store replaces."
+    }
+  ]
+}

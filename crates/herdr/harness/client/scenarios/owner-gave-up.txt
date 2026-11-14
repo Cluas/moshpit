@@ -1,0 +1,20 @@
+# A task's create queued behind steps that hold the lane longer than the
+# task waits: the form is told no agent was started; the create must not
+# land afterwards.
+host rule tab_create - hang
+at 0 start
+at 300 new-window a
+at 300 new-window b
+at 300 new-window c
+at 300 new-window d
+at 300 new-window e
+at 300 new-window f
+at 300 new-window g
+at 300 new-window h
+at 300 new-window i
+at 300 new-window j
+at 300 new-window k
+at 300 new-window l
+at 300 new-window m
+at 300 task /home/dev/code/app late claude -
+end 80000

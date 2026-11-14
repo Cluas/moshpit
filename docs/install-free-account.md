@@ -122,8 +122,8 @@ xcrun devicectl device install app --device <UDID> \
   推送。把 `project.yml` 里 Moshpit target entitlements 下的 `aps-environment:
   development` 那一行注释掉,`xcodegen generate` 后重试;同理可以照灵动岛扩展那条把
   `MoshpitPush` 从 `dependencies` 里去掉。代价是**远程推送整个失效**——agent 在你没
-  开着 App 时叫不到你(`docs/PUSH.md` 讲的就是这条链路)。App 开着时的灵动岛、本地
-  通知、锁屏 Allow/Deny 都不受影响,因为那条路不经过 APNs。
+  开着 App 时叫不到你(`docs/PUSH.md` 讲的就是这条链路)。App 开着时的灵动岛和本地
+  通知都不受影响,因为那条路不经过 APNs。
   注意 `project.yml` 是 Info.plist 和 entitlements 的**唯一源头**:直接改生成出来的
   `Moshpit.entitlements` 会在下次 generate 时被覆盖回去。
 - **签名报 Time Sensitive Notifications 相关的 capability 错误** → 同一个原因,同一个

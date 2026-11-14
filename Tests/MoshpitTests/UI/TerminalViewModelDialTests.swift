@@ -61,6 +61,31 @@ struct TerminalViewModelDialTests {
         #expect(fresh.shutdowns == 0)
     }
 
+    /// B151: Cancel on the new-host card is the user's own decision. It used
+    /// to end in the error card — "The connection failed for a reason
+    /// Moshpit didn't recognise…" — over a screen they meant to leave.
+    @Test("a declined host key ends the connect quietly, for the shell and for mosh")
+    func declinedHostKeyIsQuiet() async throws {
+        let script = DialScript { _ in throw SSHError.map(HostKeyRejected()) }
+        let viewModel = TerminalViewModel(connection: connection(), dial: script.dialer)
+        await viewModel.start()
+        #expect(viewModel.status == .disconnected)
+        #expect(viewModel.errorMessage == nil, "no error card for the user's own Cancel")
+        #expect(viewModel.declinedHostKey)
+
+        let mosh = TerminalViewModel(connection: connection(), dial: script.dialer)
+        #expect(await mosh.connectForExec() == nil)
+        #expect(mosh.errorMessage == nil && mosh.declinedHostKey)
+
+        // Any other failure still says why.
+        let failing = TerminalViewModel(connection: connection(), dial: DialScript { _ in
+            throw SSHError.connectionFailed
+        }.dialer)
+        await failing.start()
+        #expect(failing.errorMessage?.isEmpty == false)
+        #expect(!failing.declinedHostKey)
+    }
+
     @Test("a disowned dial that later fails leaves the replacement alone")
     func staleFailureIsDropped() async throws {
         let gate = DialGate()

@@ -1,0 +1,26 @@
+t=0 exec api snapshot
+t=40 focus w1:p1
+t=300 exec worktree remove --workspace 'w7'
+t=2040 exec api snapshot
+t=4080 exec api snapshot
+t=5300 exec api snapshot
+t=5340 focus w1:p1
+t=6120 exec api snapshot
+t=6160 focus w1:p1
+t=8160 exec api snapshot
+t=8200 focus w1:p1
+t=16200 exec api snapshot
+t=16240 focus w1:p1
+t=24240 exec api snapshot
+t=24280 focus w1:p1
+t=32280 exec api snapshot
+t=32320 focus w1:p1
+t=40320 exec api snapshot
+t=40360 focus w1:p1
+t=48360 exec api snapshot
+t=48400 focus w1:p1
+t=56400 exec api snapshot
+t=56440 focus w1:p1
+t=64440 exec api snapshot
+t=64480 focus w1:p1
+state focus=w1:p1 server=w1:p1 sessions=2 notrunning=false mismatch=false

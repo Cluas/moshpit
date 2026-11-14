@@ -1,0 +1,5 @@
+# B90: the first message loses its trailer and prints nothing: not sent.
+host rule agent_prompt - empty
+at 0 start
+at 300 task /home/dev/code/app fix-scroll claude go
+end 10000

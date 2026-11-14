@@ -14,8 +14,8 @@ struct NewAgentTaskSheet: View {
     /// Looks for repositories on the host (~1s) and asks herdr which agents it
     /// knows. Runs when the sheet appears, not before it.
     let load: () async -> (repos: [String], agents: [String])
-    /// Runs the task; returns nil on success or a message to show.
-    let start: (AgentTaskRequest) async -> String?
+    /// Runs the task and says how it went.
+    let start: (AgentTaskRequest) async -> AgentTaskOutcome
 
     @Environment(\.dismiss) private var dismiss
     @State private var request = AgentTaskRequest()
@@ -28,7 +28,13 @@ struct NewAgentTaskSheet: View {
     /// looks broken and gets tapped again — the same trap the Create Session
     /// button fell into.
     @State private var starting = false
+    /// The start in flight, so Cancel can call it off: the create already
+    /// sent can't be taken back, but no agent is typed into its pane after.
+    @State private var startTask: Task<Void, Never>?
     @State private var failure: String?
+    /// The worktree exists but the run came back incomplete. Start would
+    /// only collide with the branch it made, so Done takes its place.
+    @State private var taskExists = false
 
     private var repoValue: String {
         request.repoPath.isEmpty ? String(localized: "Choose") : request.repoName
@@ -87,19 +93,31 @@ struct NewAgentTaskSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+                    // Live while starting too: a host that stopped answering
+                    // used to hold the form on "Starting…" with no way out.
+                    if !taskExists {
+                        Button("Cancel") {
+                            startTask?.cancel()
+                            dismiss()
+                        }
                         .foregroundStyle(Ink.accent)
-                        .disabled(starting)
+                    }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button(starting ? "Starting…" : "Start") { run() }
-                        .foregroundStyle(canStart ? Ink.accent : Ink.disabledNav)
-                        .disabled(!canStart)
-                        .accessibilityIdentifier("start-agent-task")
+                    if taskExists {
+                        Button("Done") { dismiss() }
+                            .foregroundStyle(Ink.accent)
+                            .accessibilityIdentifier("agent-task-done")
+                    } else {
+                        Button(starting ? "Starting…" : "Start") { run() }
+                            .foregroundStyle(canStart ? Ink.accent : Ink.disabledNav)
+                            .disabled(!canStart)
+                            .accessibilityIdentifier("start-agent-task")
+                    }
                 }
             }
         }
-        .preferredColorScheme(.dark)
+        .darkOnlyPage()
         .onAppear {
             if repos.isEmpty { repos = initialRepos }
             if request.repoPath.isEmpty, let first = repos.first { request.repoPath = first }
@@ -210,15 +228,23 @@ struct NewAgentTaskSheet: View {
         let value = resolved()
         failure = nil
         starting = true
-        Task {
-            let error = await start(value)
+        startTask = Task {
+            let outcome = await start(value)
             starting = false
-            if let error {
-                failure = error
-            } else {
+            // Cancelled: the form is gone, and there is no one to tell.
+            guard !Task.isCancelled else { return }
+            switch outcome {
+            case .started:
                 // The host focuses the new workspace, so the terminal is
                 // already showing it by the time this closes.
                 dismiss()
+            case .failed(let message):
+                failure = message
+            case .incomplete(let message):
+                // Stay open: what didn't land has to be said, and a first
+                // message that never arrived is still in its field to copy.
+                failure = message
+                taskExists = true
             }
         }
     }

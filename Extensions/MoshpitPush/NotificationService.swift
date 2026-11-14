@@ -94,10 +94,14 @@ final class NotificationService: UNNotificationServiceExtension {
         // 0→1 edge — whichever of the push and the local announcement lands
         // first rings; the other sees "already standing" and stays silent.
         if status.state == "attention" {
+            // With its place, as the card says it: the app redraws this card
+            // from the entry when the set changes, and has only what is here.
             let edge = PushStanding.noteStanding(
                 conn: status.conn,
                 entry: .init(pane: status.pane, agent: status.agent,
-                             title: status.title, since: status.ts,
+                             title: status.title,
+                             location: PushRemoteNotification.location(status, label: label),
+                             since: status.ts,
                              recordedAt: Date()))
             let count = PushStanding.standing(conn: status.conn).count
             PushRemoteNotification.apply(status, to: content,
@@ -106,7 +110,16 @@ final class NotificationService: UNNotificationServiceExtension {
         } else {
             // A `done` closes its pane's turn — that pane is no longer waiting.
             PushStanding.clear(conn: status.conn, pane: status.pane)
-            PushRemoteNotification.apply(status, to: content, prefs: prefs, label: label)
+            // A long turn's finish rings once between this card and the
+            // app's local copy of it: whichever lands first.
+            var rings = true
+            if status.state == "done",
+               AgentNotificationCopy.doneRings(duration: status.dur ?? 0, sound: prefs.sound,
+                                               threshold: PushRemoteNotification.doneSoundThreshold) {
+                rings = PushFinishes.noteRing(conn: status.conn, pane: status.pane, endedAt: status.ts)
+            }
+            PushRemoteNotification.apply(status, to: content, prefs: prefs, label: label,
+                                         doneRings: rings)
         }
         contentHandler(content)
     }

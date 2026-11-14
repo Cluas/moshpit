@@ -71,8 +71,14 @@ struct CaptureMoshSwitchBytes {
         guard let transport = try? MoshTransport(credentials: credentials) else {
             fail("MoshTransport init failed")
         }
+        // Bytes only. The stream also carries frames whose bytes are empty
+        // because only the echo ack moved (predictive echo needs those);
+        // logging one would restart the quiescence clock and satisfy
+        // `needData` with nothing, moving the phase boundaries.
         let pump = Task {
-            for await data in transport.hostStream { await log.append(data) }
+            for await frame in transport.hostStream where !frame.bytes.isEmpty {
+                await log.append(frame.bytes)
+            }
         }
         await transport.start(cols: cols, rows: rows)
 

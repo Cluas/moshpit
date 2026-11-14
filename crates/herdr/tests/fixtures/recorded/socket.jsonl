@@ -1,0 +1,9 @@
+{"id":"mp1","result":{"type":"subscription_started"}}
+{"data":{"type":"workspace_focused","workspace_id":"w1"},"event":"workspace_focused"}
+{"data":{"tab":{"agent_status":"unknown","focused":true,"label":"socket-tab","number":3,"pane_count":1,"tab_id":"w1:t3","workspace_id":"w1"},"type":"tab_created"},"event":"tab_created"}
+{"data":{"tab_id":"w1:t3","type":"tab_focused","workspace_id":"w1"},"event":"tab_focused"}
+{"data":{"pane":{"agent_status":"unknown","cwd":"/private/tmp/mpw28fkb_sv4","focused":true,"foreground_cwd":"/private/tmp/mpw28fkb_sv4","pane_id":"w1:p4","revision":0,"scroll":{"max_offset_from_bottom":0,"offset_from_bottom":0,"viewport_rows":40},"tab_id":"w1:t3","terminal_id":"term_65ff660df46357","workspace_id":"w1"},"type":"pane_created"},"event":"pane_created"}
+{"data":{"pane_id":"w1:p4","type":"pane_focused","workspace_id":"w1"},"event":"pane_focused"}
+{"data":{"layout":{"area":{"height":40,"width":120,"x":0,"y":0},"focused_pane_id":"w1:p4","panes":[{"focused":true,"pane_id":"w1:p4","rect":{"height":40,"width":120,"x":0,"y":0}}],"splits":[],"tab_id":"w1:t3","workspace_id":"w1","zoomed":false},"type":"layout_updated"},"event":"layout_updated"}
+{"data":{"label":"renamed","type":"workspace_renamed","workspace_id":"w1"},"event":"workspace_renamed"}
+{"data":{"tab_id":"w1:t3","type":"tab_closed","workspace_id":"w1"},"event":"tab_closed"}

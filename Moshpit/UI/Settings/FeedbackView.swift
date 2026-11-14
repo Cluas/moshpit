@@ -75,6 +75,7 @@ struct FeedbackView: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }.foregroundStyle(Ink.accent)
+                        .accessibilityIdentifier("feedback-cancel")
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Send") { send() }
@@ -84,7 +85,7 @@ struct FeedbackView: View {
                 }
             }
         }
-        .preferredColorScheme(.dark)
+        .darkOnlyPage()
         .sheet(item: $composing) { request in
             MailComposer(mail: request.mail) { result in
                 composing = nil
@@ -153,7 +154,8 @@ extension FeedbackMail.Environment {
 
 /// `MFMailComposeViewController` in SwiftUI clothes: pre-filled from a
 /// `FeedbackMail`, the log as a text attachment, one callback on finish.
-private struct MailComposer: UIViewControllerRepresentable {
+/// (The NSH page presents the same.)
+struct MailComposer: UIViewControllerRepresentable {
     let mail: FeedbackMail
     let onFinish: (MFMailComposeResult) -> Void
 

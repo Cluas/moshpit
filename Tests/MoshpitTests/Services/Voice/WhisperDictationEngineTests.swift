@@ -23,6 +23,11 @@ struct WhisperDictationEngineTests {
         private var warmUpError: Error?
         /// Delay before each answer, to keep a preview in flight.
         private var latency: Duration = .zero
+        /// Sessions holding the model right now, and every release made.
+        private(set) var openSessions: Set<UUID> = []
+        private(set) var ended: [UUID] = []
+        /// begin / warmUp / transcribe / end, in the order they happened.
+        private(set) var events: [String] = []
 
         init(answers: [String], warmUpError: Error? = nil) {
             self.answers = answers
@@ -33,10 +38,25 @@ struct WhisperDictationEngineTests {
 
         func warmUp(variant: String) async throws {
             warmUps.append(variant)
+            events.append("warmUp")
             if let warmUpError { throw warmUpError }
         }
 
+        func beginSession() -> UUID {
+            let id = UUID()
+            openSessions.insert(id)
+            events.append("begin")
+            return id
+        }
+
+        func endSession(_ id: UUID) {
+            openSessions.remove(id)
+            ended.append(id)
+            events.append("end")
+        }
+
         func transcribe(samples: [Float], language: String?, variant _: String) async throws -> String {
+            events.append("transcribe")
             sampleCounts.append(samples.count)
             languages.append(language)
             if latency != .zero { try? await Task.sleep(for: latency) }
@@ -64,6 +84,17 @@ struct WhisperDictationEngineTests {
                             language: String? = "zh") -> WhisperDictationEngine {
         WhisperDictationEngine(store: store, variant: "openai_whisper-small",
                                language: language, label: "Small · Chinese")
+    }
+
+    /// Polls an actor-held condition: `cancel()` and `deinit` release the
+    /// model from a task of their own.
+    private func eventually(_ condition: @escaping () async -> Bool) async -> Bool {
+        let deadline = ContinuousClock.now + .seconds(2)
+        while ContinuousClock.now < deadline {
+            if await condition() { return true }
+            try? await Task.sleep(for: .milliseconds(5))
+        }
+        return await condition()
     }
 
     @Test("Final pass reads every sample appended, and lands as finalized text")
@@ -253,5 +284,76 @@ struct WhisperDictationEngineTests {
         #expect(preview.finalizedText.isEmpty)
         #expect(preview.volatileText == "部署 staging")
         engine.cancel()
+    }
+
+    // MARK: Holding the model
+
+    @Test("The model is held from prepare until after the final pass")
+    func holdsModelThroughFinalPass() async throws {
+        let store = ScriptedTranscriber(answers: ["ok"])
+        let engine = makeEngine(store)
+        try await engine.prepare { _ in }
+        // Held before the load, so an unload can't land between the two.
+        #expect(await store.openSessions.count == 1)
+        #expect(await store.events.prefix(2) == ["begin", "warmUp"])
+
+        try await engine.start()
+        engine.append(try buffer(frames: 16_000))
+        await engine.finishAudio()
+        for try await _ in engine.updates {}
+
+        #expect(await store.openSessions.isEmpty)
+        // Let go after the pass that counts, never before it.
+        #expect(await store.events.suffix(2) == ["transcribe", "end"])
+    }
+
+    @Test("Cancel lets the model go")
+    func cancelReleasesModel() async throws {
+        let store = ScriptedTranscriber(answers: ["ok"])
+        let engine = makeEngine(store)
+        try await engine.prepare { _ in }
+        #expect(await store.openSessions.count == 1)
+        try await engine.start()
+        engine.cancel()
+
+        #expect(await eventually { await store.openSessions.isEmpty })
+    }
+
+    @Test("A model that fails to load is let go at once")
+    func failedPrepareReleasesModel() async throws {
+        let store = ScriptedTranscriber(
+            answers: [], warmUpError: WhisperModelFailure.notInstalled("Small"))
+        let engine = makeEngine(store)
+        await #expect(throws: DictationFailure.noWhisperModel) {
+            try await engine.prepare { _ in }
+        }
+        #expect(await store.openSessions.isEmpty)
+        #expect(await store.ended.count == 1)
+    }
+
+    @Test("Finish, then a late cancel: the hold is given back once")
+    func releasesOnce() async throws {
+        let store = ScriptedTranscriber(answers: ["ok"])
+        let engine = makeEngine(store)
+        try await engine.prepare { _ in }
+        try await engine.start()
+        engine.append(try buffer(frames: 16_000))
+        await engine.finishAudio()
+        // What the controller does when finishing overran its budget.
+        engine.cancel()
+        try await Task.sleep(for: .milliseconds(50))
+
+        #expect(await store.ended.count == 1)
+    }
+
+    @Test("An engine dropped without finish or cancel still lets the model go")
+    func droppedEngineReleasesModel() async throws {
+        let store = ScriptedTranscriber(answers: ["ok"])
+        var engine: WhisperDictationEngine? = makeEngine(store)
+        try await engine?.prepare { _ in }
+        #expect(await store.openSessions.count == 1)
+
+        engine = nil
+        #expect(await eventually { await store.openSessions.isEmpty })
     }
 }

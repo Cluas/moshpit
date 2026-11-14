@@ -1,0 +1,39 @@
+{
+ "tmux": "3.6a",
+ "capture": "pause",
+ "pane": 0,
+ "cols": 80,
+ "rows": 24,
+ "history": [],
+ "screen": [
+  "seq 1 30000;echo resumed",
+  "resumed",
+  "sh-3.2$",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  ""
+ ],
+ "cursor": [
+  8,
+  2
+ ],
+ "alt_screen": false
+}

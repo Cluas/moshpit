@@ -12,9 +12,13 @@ DERIVED="build/ipa"
 APP="$DERIVED/Build/Products/$CONFIG-iphoneos/Moshpit.app"
 
 echo "▶ Building $CONFIG (device, unsigned)…"
+# The Rust library is the shipping build (cargo profile `app`) whatever the
+# configuration: this IPA is installed on people's phones. A Debug build
+# would otherwise get `app-test`, the device test runs' profile
+# (project.yml, scripts/rust/build-ios.sh).
 xcodebuild -project Moshpit.xcodeproj -scheme Moshpit -configuration "$CONFIG" \
   -sdk iphoneos -derivedDataPath "$DERIVED" \
-  CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build >/dev/null
+  CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO MOSHPIT_RUST_PROFILE=app build >/dev/null
 
 [ -d "$APP" ] || { echo "✘ build produced no app at $APP" >&2; exit 1; }
 

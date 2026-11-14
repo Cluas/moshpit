@@ -91,8 +91,7 @@ struct MoshpitGlyph: View {
     var ink: Color = .white
 
     /// The design geometry, in the icon's 1024-unit tile. Mirrors the layer
-    /// PNGs in `Moshpit/Resources/AppIcon.icon/Assets` (rendered by
-    /// `marketing/redesign/icon-drafts/glass/layers.mjs`).
+    /// PNGs in `Moshpit/Resources/AppIcon.icon/Assets`; change both together.
     enum Metrics {
         static let tile: CGFloat = 1024
         /// The pane you are in — full height, white.

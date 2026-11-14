@@ -22,7 +22,6 @@ struct TerminalParserResetTests {
             frame: CGRect(x: 0, y: 0, width: 400, height: 300),
             font: UIFont.monospacedSystemFont(ofSize: 12, weight: .regular))
         let coordinator = SwiftTerminalView.Coordinator()
-        terminal.terminalDelegate = coordinator
         coordinator.attach(to: terminal)
         return (terminal, coordinator)
     }

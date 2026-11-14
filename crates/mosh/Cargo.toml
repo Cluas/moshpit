@@ -1,0 +1,12 @@
+[package]
+name = "moshpit-mosh"
+description = "mosh client protocol (SSP over AES-128-OCB3) for Moshpit's Rust core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+aes = "0.9"
+ocb3 = "0.2"
+miniz_oxide = "0.8"

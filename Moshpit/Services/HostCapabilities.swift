@@ -34,25 +34,6 @@ struct HostCapabilities: Codable, Equatable, Sendable {
         self.hasPython3 = hasPython3
     }
 
-    /// Hand-written so a cache entry written by an older build — which had no
-    /// `hasHerdr` key — still decodes instead of throwing. Synthesized
-    /// `Codable` does NOT fall back to a property's default value on a missing
-    /// key, and a throw here would silently discard the whole cached probe.
-    init(from decoder: Decoder) throws {
-        let c = try decoder.container(keyedBy: CodingKeys.self)
-        hasTmux = try c.decodeIfPresent(Bool.self, forKey: .hasTmux) ?? false
-        hasMoshServer = try c.decodeIfPresent(Bool.self, forKey: .hasMoshServer) ?? false
-        os = try c.decodeIfPresent(String.self, forKey: .os) ?? ""
-        packageManager = try c.decodeIfPresent(PackageManager.self, forKey: .packageManager)
-        // Absent (old cache) → false. A stale "missing" only costs one banner
-        // that the in-session re-probe clears; a stale "present" would boot
-        // herdr on a host without it.
-        hasHerdr = try c.decodeIfPresent(Bool.self, forKey: .hasHerdr) ?? false
-        // Same fallback, cheaper stakes: a stale "missing" just delays push
-        // mode until the re-probe lands; polling covers the gap.
-        hasPython3 = try c.decodeIfPresent(Bool.self, forKey: .hasPython3) ?? false
-    }
-
     /// "Everything present" — the optimistic default used before the first
     /// probe completes, so a cold session behaves exactly as it does today and
     /// only degrades if the probe actually finds something missing.
@@ -241,6 +222,16 @@ final class HostCapabilityCache {
         return decoded
     }
 
+    /// What `UserDefaults` holds for `id` now, read again: the Rust core
+    /// probes and writes the same `hostcaps.<UUID>` behind this cache
+    /// (crates/store's `session_memory`), so the copy held in memory may be
+    /// older than the core's (B336).
+    @discardableResult
+    func reload(for id: UUID) -> HostCapabilities? {
+        memory[id] = nil
+        return capabilities(for: id)
+    }
+
     func store(_ caps: HostCapabilities, for id: UUID) {
         memory[id] = caps
         if let data = try? JSONEncoder().encode(caps) {
@@ -254,7 +245,7 @@ final class HostCapabilityCache {
     /// everything is present. Clobbering a known-degraded host with the
     /// optimistic default would retry `tmux -CC attach` on a tmux-less box and
     /// stall — a `nil` means "no new information", not "all present".
-    func probe(over ssh: SSHSession, for id: UUID) async -> HostCapabilities? {
+    func probe(over ssh: any HostConnection, for id: UUID) async -> HostCapabilities? {
         guard let output = try? await ssh.executeCommand(HostCapabilities.probeCommand),
               let text = String(data: output, encoding: .utf8)
         else { return nil }

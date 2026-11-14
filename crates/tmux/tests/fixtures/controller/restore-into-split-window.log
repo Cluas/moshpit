@@ -1,0 +1,105 @@
+@1 restore $0 @1 %4
+@2 attach
+> list-sessions -F '#{session_id} #{session_attached} #{session_name}'
+> list-windows -a -F '#{session_id} #{window_id} #{window_index} #{window_layout} #{window_active} #{window_panes} #{window_name}'
+> list-panes -a -F '#{pane_id} #{window_id} #{pane_index} #{pane_width} #{pane_height} #{pane_active} #{alternate_on} #{pane_in_mode} #{pane_current_command} #{pane_current_path}'
+@3 recv %begin 100 0 0\n%end 100 0 0\n\n%session-changed $0 0\n
+> refresh-client -C 80x24
+> display-message -p '#{client_name}'
+> list-clients -F '#{client_name}'
+> show-options -wqv @moshpit_size_owner
+> list-sessions -F '#{session_id} #{session_attached} #{session_name}'
+> list-windows -a -F '#{session_id} #{window_id} #{window_index} #{window_layout} #{window_active} #{window_panes} #{window_name}'
+> list-panes -a -F '#{pane_id} #{window_id} #{pane_index} #{pane_width} #{pane_height} #{pane_active} #{alternate_on} #{pane_in_mode} #{pane_current_command} #{pane_current_path}'
+@4 rule ok list-sessions => $0 1 0
+@5 rule ok list-windows => $0 @1 1 ed9b,499x62,0,0{215x62,0,0,0,283x62,216,0[283x11,216,0,1,283x10,216,12,2,283x9,216,23,3,283x9,216,33,4,283x9,216,43,5,283x9,216,53,6]} 1 7 team
+@6 rule ok list-panes -a -F '#{pane_id}| => -
+@7 rule ok list-panes -a -F '#{pane_id}\s => %0 @1 0 80 9 0 0 0 claude\n%1 @1 1 80 9 0 0 0 claude\n%2 @1 2 80 9 0 0 0 claude\n%3 @1 3 80 9 0 0 0 claude\n%4 @1 4 80 9 0 0 0 claude\n%5 @1 5 80 9 0 0 0 claude\n%6 @1 6 80 9 1 0 0 claude
+@8 rule ok display-message -p -t '@1' => 7 0 %6 ed9b,499x62,0,0{215x62,0,0,0,283x62,216,0[283x11,216,0,1,283x10,216,12,2,283x9,216,23,3,283x9,216,33,4,283x9,216,43,5,283x9,216,53,6]}
+@9 rule ok select-pane -Z -t %4 => - => %window-pane-changed @1 %4\n
+@10 settle
+. open %0
+. open %1
+. open %2
+. open %3
+. open %4
+. open %5
+. open %6
+. view %6 veil
+. view %6 extend 2.000
+. view %0 release-hold
+. view %1 release-hold
+. view %2 release-hold
+. view %3 release-hold
+. view %4 release-hold
+. view %5 release-hold
+. view %6 release-hold
+. view %4 veil
+. view %4 extend 2.000
+. view %4 extend 2.000
+. pane %0 \x1b[0m\x1b[H\x1b[K\x1b[2;1H\x1b[J\x1b[3J\x1b[H0 0\x1b[0m\x1b[9999;1H\x0a
+. pane %1 \x1b[0m\x1b[H\x1b[K\x1b[2;1H\x1b[J\x1b[3J\x1b[H0 0\x1b[0m\x1b[9999;1H\x0a
+. pane %2 \x1b[0m\x1b[H\x1b[K\x1b[2;1H\x1b[J\x1b[3J\x1b[H0 0\x1b[0m\x1b[9999;1H\x0a
+. pane %3 \x1b[0m\x1b[H\x1b[K\x1b[2;1H\x1b[J\x1b[3J\x1b[H0 0\x1b[0m\x1b[9999;1H\x0a
+. pane %4 \x1b[0m\x1b[H\x1b[K\x1b[2;1H\x1b[J\x1b[3J\x1b[H0 0\x1b[0m\x1b[9999;1H\x0a
+. view %4 cover?
+. view %4 veil
+. view %4 extend 2.000
+. pane %5 \x1b[0m\x1b[H\x1b[K\x1b[2;1H\x1b[J\x1b[3J\x1b[H0 0\x1b[0m\x1b[9999;1H\x0a
+. pane %6 \x1b[0m\x1b[H\x1b[K\x1b[2;1H\x1b[J\x1b[3J\x1b[H0 0\x1b[0m\x1b[9999;1H\x0a
+. view %6 cover?
+. view %6 veil
+. view %6 extend 2.000
+. pane %4 \x1b[0m\x1b[H\x1b[K\x1b[2;1H\x1b[J\x1b[H0 0\x1b[0m
+. pane %4 \x1b[1;1H
+. pane %6 \x1b[0m\x1b[H\x1b[K\x1b[2;1H\x1b[J\x1b[H0 0\x1b[0m
+. view %6 reveal
+. note first-frame
+. pane %6 \x1b[1;1H
+> display-message -p -t '@1' '#{window_panes} #{window_zoomed_flag} #{pane_id} #{window_layout}'
+> capture-pane -p -e -S -400 -E -1 -t %0
+> capture-pane -p -e -S -400 -E -1 -t %1
+> capture-pane -p -e -S -400 -E -1 -t %2
+> capture-pane -p -e -S -400 -E -1 -t %3
+> capture-pane -p -e -S -400 -E -1 -t %4
+> capture-pane -p -e -S -400 -E -1 -t %5
+> capture-pane -p -e -S -400 -E -1 -t %6
+> list-clients -F '#{client_name}'
+> show-options -wqv -t @1 @moshpit_size_owner
+> select-pane -Z -t %4
+> display-message -p -t '@1' '#{window_panes} #{window_zoomed_flag} #{pane_id} #{window_layout}'
+> display-message -p -t %4 '#{mouse_any_flag} #{alternate_on}'
+> resize-pane -Z -t @1
+> capture-pane -p -e -t %4
+> display-message -p -t %4 '#{cursor_x} #{cursor_y} #{mouse_any_flag} #{alternate_on}'
+> capture-pane -p -e -t %6
+> display-message -p -t %6 '#{cursor_x} #{cursor_y} #{mouse_any_flag} #{alternate_on}'
+> set-option -w -t @1 @moshpit_size_owner "0 0|iPhone|0"
+> resize-window -t @1 -x 80 -y 24
+> display-message -p -t '@1' '#{window_panes} #{window_zoomed_flag} #{pane_id} #{window_layout}'
+> resize-pane -Z -t @1
+@11 wait 800
+. view %4 extend 2.000
+> capture-pane -p -e -t %4
+> display-message -p -t %4 '#{cursor_x} #{cursor_y} #{mouse_any_flag} #{alternate_on}'
+@12 settle
+. pane %4 \x1b[0m\x1b[H\x1b[K\x1b[2;1H\x1b[J\x1b[H0 0\x1b[0m
+. view %4 reveal
+. pane %4 \x1b[1;1H
+. pane %4 \x1b[0m\x1b[H\x1b[K\x1b[2;1H\x1b[J\x1b[H0 0\x1b[0m
+. view %4 reveal
+. pane %4 \x1b[1;1H
+> capture-pane -p -e -t %4
+> display-message -p -t %4 '#{cursor_x} #{cursor_y} #{mouse_any_flag} #{alternate_on}'
+@13 dump
+= attached=1 ever=1 session=$0 window=@1 pane=%4 fwd=1 swiped=0
+= s $0 att=1 name=0
+= w @1 s=$0 idx=1 act=1 panes=7 zoom=0 name=team layout=ed9b,499x62,0,0{215x62,0,0,0,283x62,216,0[283x11,216,0,1,283x10,216,12,2,283x9,216,23,3,283x9,216,33,4,283x9,216,43,5,283x9,216,53,6]}
+= p %0 w=@1 idx=0 act=0 80x9 cmd=claude
+= p %1 w=@1 idx=1 act=0 80x9 cmd=claude
+= p %2 w=@1 idx=2 act=0 80x9 cmd=claude
+= p %3 w=@1 idx=3 act=0 80x9 cmd=claude
+= p %4 w=@1 idx=4 act=1 80x9 cmd=claude
+= p %5 w=@1 idx=5 act=0 80x9 cmd=claude
+= p %6 w=@1 idx=6 act=1 80x9 cmd=claude
+= follow=- notice=- refreshing=0 resized=@1 mouse=0 alt=0 client=0 0 hooks-loaded=0 painted=1 renderer=- renderer-session=- owned=

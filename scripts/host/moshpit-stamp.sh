@@ -6,6 +6,11 @@
 # @moshpit_state / @moshpit_agent / @moshpit_since, so Moshpit reads precise
 # agent status over the tmux control channel instead of guessing from output.
 #
+# Outside tmux (herdr, a plain ssh or mosh shell) there is no pane to stamp,
+# but the pushes below still go out (B370): what the pane would hold is kept
+# instead in a private directory per agent session, ~/.moshpit/run/s-<id>,
+# for the grace check and the finish's duration and prompt to read.
+#
 # It also hands `attention` and `done` — and only those two — to
 # moshpit-push.sh, detached and silenced, so a paired host can wake a phone that
 # is not running Moshpit. `working` fires on every tool call and is deliberately
@@ -23,22 +28,34 @@
 # card can say what finished. Whenever no title is derivable it is cleared, so a
 # stale one never lingers.
 #
-# Canonical copy. Moshpit/Services/Install/HostScripts.swift carries a
-# byte-identical literal (the app cannot read a repo file on a phone);
-# scripts/gen/gen-host-scripts.py regenerates it and a test fails if they drift.
-[ -n "$TMUX" ] || exit 0
-ST="$1"; AG="${2:-agent}"; TITLE=""
+# Canonical copy. The installer (crates/install/src/scripts.rs) builds it in
+# as it is here; its SHA-256 is how a host's copy is judged current.
+ST="$1"; AG="${2:-agent}"; TITLE=""; SID=""; KEEP=""
+# That this agent's hooks really fire on this host: Codex runs a new hook only
+# once the person trusts it, and the setup screen reads this to know whether
+# that step is still to take. Not for a test (MOSHPIT_SELFTEST, Moshpit's own
+# fires).
+if [ -z "${MOSHPIT_SELFTEST:-}" ] && [ "$AG" != "moshpit-selftest" ]; then
+  case "$AG" in
+    */*|.*|"") ;;
+    *) [ -e "$HOME/.moshpit/seen/$AG" ] || { mkdir -p "$HOME/.moshpit/seen" && : > "$HOME/.moshpit/seen/$AG"; } 2>/dev/null ;;
+  esac
+fi
+# The setup screen's test runs an agent's registered command itself (B380):
+# its stamp carries the test's own label, which the island and the push ignore.
+[ -z "${MOSHPIT_SELFTEST:-}" ] || AG=moshpit-selftest
 if command -v jq >/dev/null 2>&1 && [ ! -t 0 ]; then
   IN=$(cat)
   EV=$(printf "%s" "$IN" | jq -r ".hook_event_name // empty" 2>/dev/null)
+  SID=$(printf "%s" "$IN" | jq -r ".session_id // empty" 2>/dev/null)
   case "$EV" in
-    PreToolUse|PermissionRequest)
+    PreToolUse|PermissionRequest|BeforeTool)
       TN=$(printf "%s" "$IN" | jq -r ".tool_name // empty" 2>/dev/null)
-      AR=$(printf "%s" "$IN" | jq -r ".tool_input.command // .tool_input.file_path // .tool_input.path // .tool_input.pattern // .tool_input.url // empty" 2>/dev/null)
+      AR=$(printf "%s" "$IN" | jq -r ".tool_input.command // .tool_input.file_path // .tool_input.path // .tool_input.dir_path // .tool_input.pattern // .tool_input.url // empty" 2>/dev/null)
       if [ -n "$AR" ]; then TITLE="$TN: $AR"; else TITLE="$TN"; fi ;;
     Notification)
       TITLE=$(printf "%s" "$IN" | jq -r ".message // empty" 2>/dev/null) ;;
-    UserPromptSubmit)
+    UserPromptSubmit|BeforeAgent)
       TITLE=$(printf "%s" "$IN" | jq -r ".prompt // empty" 2>/dev/null) ;;
   esac
   TITLE=$(printf "%s" "$TITLE" | tr "\n" " " | cut -c1-80)
@@ -62,14 +79,33 @@ if command -v jq >/dev/null 2>&1 && [ ! -t 0 ]; then
   # text of its own. Already cut to 80 bytes above — a prompt can be a
   # paragraph, and a lock screen shows two lines (the phone cuts again, by
   # character, before showing it).
-  if [ "$EV" = "UserPromptSubmit" ] && [ -n "$TITLE" ]; then
-    tmux set -p -t "$TMUX_PANE" @moshpit_prompt "$TITLE" 2>/dev/null
+  # (Gemini CLI calls the same moment BeforeAgent.)
+  if { [ "$EV" = "UserPromptSubmit" ] || [ "$EV" = "BeforeAgent" ]; } && [ -n "$TITLE" ]; then
+    KEEP=1
   fi
 fi
+# Where the stamps live: the tmux pane's options, or — outside tmux — files
+# of the agent session (by its session id when jq could read one, else by the
+# agent), private, since a prompt is among them.
+if [ -n "${TMUX:-}" ]; then
+  get() { tmux display-message -p -t "$TMUX_PANE" "#{@moshpit_$1}" 2>/dev/null; }
+  put() { tmux set -p -t "$TMUX_PANE" "@moshpit_$1" "$2" 2>/dev/null; }
+  del() { tmux set -pu -t "$TMUX_PANE" "@moshpit_$1" 2>/dev/null; }
+  prev() { tmux display-message -p -t "$TMUX_PANE" "#{@moshpit_state}|#{@moshpit_since}" 2>/dev/null; }
+else
+  umask 077
+  RUN="$HOME/.moshpit/run/s-$(printf '%s' "${SID:-$AG}" | tr -c 'A-Za-z0-9._-' '_' | cut -c1-64)"
+  mkdir -p "$RUN" 2>/dev/null || exit 0
+  get() { cat "$RUN/$1" 2>/dev/null; }
+  put() { printf '%s' "$2" > "$RUN/$1" 2>/dev/null; }
+  del() { rm -f "$RUN/$1" 2>/dev/null; }
+  prev() { printf '%s|%s' "$(get state)" "$(get since)"; }
+fi
+[ -n "$KEEP" ] && put prompt "$TITLE"
 # What the pane was doing BEFORE this stamp, read in one round trip. Two things
 # hang off it below: telling a real question apart from an idle nag, and
 # measuring how long a finished turn ran.
-PREV=$(tmux display-message -p -t "$TMUX_PANE" "#{@moshpit_state}|#{@moshpit_since}" 2>/dev/null)
+PREV=$(prev)
 PREV_ST=${PREV%%|*}
 PREV_SINCE=${PREV#*|}
 
@@ -96,17 +132,17 @@ if [ "$ST" = "attention" ]; then
     # hours — because this branch used to exit without touching it and nothing
     # else ever would. Silent: no push, no title; just the truth.
     if [ "$PREV_ST" = "attention" ]; then
-      tmux set -p -t "$TMUX_PANE" @moshpit_state done 2>/dev/null
-      tmux set -p -t "$TMUX_PANE" @moshpit_since "$(date +%s)" 2>/dev/null
-      tmux set -pu -t "$TMUX_PANE" @moshpit_title 2>/dev/null
+      put state done
+      put since "$(date +%s)"
+      del title
     fi
     exit 0
   fi
 fi
 
 NOW=$(date +%s)
-tmux set -p -t "$TMUX_PANE" @moshpit_state "$ST" 2>/dev/null
-tmux set -p -t "$TMUX_PANE" @moshpit_agent "$AG" 2>/dev/null
+put state "$ST"
+put agent "$AG"
 # `@moshpit_since` marks when the pane ENTERED its state — the episode's
 # identity — so it moves only when the state does. It used to be overwritten on
 # every fire, which made "how long did this run" unanswerable: PostToolUse
@@ -114,9 +150,9 @@ tmux set -p -t "$TMUX_PANE" @moshpit_agent "$AG" 2>/dev/null
 # not the turn's. (The app already kept its own stable copy for the same reason;
 # now the host agrees with it.)
 if [ "$PREV_ST" != "$ST" ]; then
-  tmux set -p -t "$TMUX_PANE" @moshpit_since "$NOW" 2>/dev/null
+  put since "$NOW"
 else
-  case "$PREV_SINCE" in *[!0-9]*|"") tmux set -p -t "$TMUX_PANE" @moshpit_since "$NOW" 2>/dev/null ;; esac
+  case "$PREV_SINCE" in *[!0-9]*|"") put since "$NOW" ;; esac
 fi
 # The episode id the grace fork below must match: the standing since.
 EPISODE=$NOW
@@ -126,12 +162,12 @@ fi
 # A `done` carries the prompt this turn answered: "what finished" is the one
 # thing a finish card is for, and the Stop event itself says nothing.
 if [ "$ST" = "done" ]; then
-  TITLE=$(tmux display-message -p -t "$TMUX_PANE" "#{@moshpit_prompt}" 2>/dev/null)
+  TITLE=$(get prompt)
 fi
 if [ -n "$TITLE" ]; then
-  tmux set -p -t "$TMUX_PANE" @moshpit_title "$TITLE" 2>/dev/null
+  put title "$TITLE"
 else
-  tmux set -pu -t "$TMUX_PANE" @moshpit_title 2>/dev/null
+  del title
 fi
 case "$ST" in
   attention)
@@ -139,13 +175,18 @@ case "$ST" in
     # never reaches a phone. The fork sleeps, then re-reads the pane — same
     # state AND same episode (`@moshpit_since` unchanged) — before sending.
     # Detached, so the agent's turn is never held. Overridable for tests.
-    if [ -x "$HOME/.moshpit/moshpit-push.sh" ]; then
+    #
+    # The sender runs through `sh`, as the hooks run this script (B358): a
+    # home mounted noexec fails `-x` and refuses to exec it, and every push
+    # was dropped without a word while the setup screen's push test, which
+    # runs it with `sh`, said all was well.
+    if [ -f "$HOME/.moshpit/moshpit-push.sh" ]; then
       GRACE=${MOSHPIT_NOTIFY_GRACE:-30}
       (
         sleep "$GRACE"
-        CUR=$(tmux display-message -p -t "$TMUX_PANE" "#{@moshpit_state}|#{@moshpit_since}" 2>/dev/null)
+        CUR=$(prev)
         [ "$CUR" = "attention|$EPISODE" ] || exit 0
-        exec "$HOME/.moshpit/moshpit-push.sh" attention "$AG" "$TITLE"
+        exec sh "$HOME/.moshpit/moshpit-push.sh" attention "$AG" "$TITLE"
       ) >/dev/null 2>&1 &
     fi
     ;;
@@ -154,7 +195,7 @@ case "$ST" in
     # phone can tell a three-minute build (worth a chime) from a twenty-second
     # answer (list-only, silent). Only a turn measured from `working` counts;
     # anything else sends no duration and reads as short.
-    if [ -x "$HOME/.moshpit/moshpit-push.sh" ]; then
+    if [ -f "$HOME/.moshpit/moshpit-push.sh" ]; then
       DUR=0
       if [ "$PREV_ST" = "working" ] || [ "$PREV_ST" = "attention" ]; then
         case "$PREV_SINCE" in
@@ -162,7 +203,7 @@ case "$ST" in
           *) [ "$NOW" -ge "$PREV_SINCE" ] && DUR=$((NOW - PREV_SINCE)) ;;
         esac
       fi
-      ( "$HOME/.moshpit/moshpit-push.sh" done "$AG" "$TITLE" "$DUR" >/dev/null 2>&1 & )
+      ( sh "$HOME/.moshpit/moshpit-push.sh" done "$AG" "$TITLE" "$DUR" >/dev/null 2>&1 & )
     fi
     ;;
 esac

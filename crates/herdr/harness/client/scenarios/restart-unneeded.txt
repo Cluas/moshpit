@@ -1,0 +1,5 @@
+# B408: a restart on a server that already runs the host's herdr does
+# nothing: `server stop` would exit every pane's process.
+at 0 start
+at 500 restart
+end 10000

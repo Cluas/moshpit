@@ -1,0 +1,13 @@
+t=0 exec api snapshot
+t=40 focus w1:p1
+t=300 exec worktree create --cwd '/home/dev/code/app' --branch 'fix-scroll' --label 'fix-scroll' --focus --json
+t=800 exec api snapshot
+t=800 exec api snapshot
+t=800 outcome task incomplete Cancelled. The worktree is ready, but no agent was started in it.
+t=840 focus w2:p3
+t=2040 exec api snapshot
+t=2080 focus w2:p3
+t=4080 exec api snapshot
+t=4120 focus w2:p3
+landed worktree create fix-scroll
+state focus=w2:p3 server=w2:p3 sessions=2 notrunning=false mismatch=false

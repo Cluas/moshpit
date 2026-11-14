@@ -1,0 +1,4 @@
+t=0 exec api snapshot
+t=40 focus w1:p1
+t=2040 exec api snapshot
+state focus=w1:p1 server=w1:p2 sessions=1 notrunning=false mismatch=false

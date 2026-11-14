@@ -1,0 +1,29 @@
+{
+  "_": "Keyed by scenario: why its Swift and Rust messages differ ({id, swift, symptom, rust, paths}). None does. B228 (a server with no session) is compared: tmux-no-session. What the comparison leaves out, and why, is listed under _not_compared.",
+  "_not_compared": [
+    {
+      "id": "r5-fields",
+      "what": "lostAt and failure",
+      "why": "Only the Rust record carries them (R5's dead card: when it was lost, a closed reason and the log). The Swift builder never sent them; crosscheck.py drops them from the Rust side. Held by app::home's a_dead_connection_says_when_it_was_lost_and_why_it_failed."
+    },
+    {
+      "id": "card-flag-lifetimes",
+      "what": "connectedAt, degraded, roaming over a session's life",
+      "swift": "SessionMetricsRegistry (SessionHub.start, SessionHub.swift:5715-5724, and disconnect, :5780-5784 at 95f649ab): connectedAt and moshDegraded stamped once when a connect finished; connectedAt kept while a failed or ended session stayed in the hub (its card said 'Nh up' while offline); moshDegraded never cleared, so a disconnected card stayed degraded; a mosh fall back to SSH on a reconnect never showed.",
+      "rust": "SessionView: connected_at stamped at Connected, kept through reconnecting, dropped at Failed or Ended (SessionView::stamp; session's a_session_says_when_it_went_live_and_when_it_was_lost); degrade set by the session's own Degraded event; no session, no flags.",
+      "why": "A difference in the builders' inputs, not in the builders: the fixture gives both the same facts."
+    },
+    {
+      "id": "tree-across-a-reconnect",
+      "what": "a tmux card between a reconnect's Connected and the new attach's first tree",
+      "swift": "RustSessionDriver.wireTmuxIfExpected (RustSessionDriver.swift:473-479 at 95f649ab) installs a new RustTmuxController on Connected, its tree empty: the card read attaching until the new attach's first tree was mirrored.",
+      "rust": "SessionView.tmux_view keeps the last attach's tree until the new attach sends its own (session.rs's TmuxNote::Tree): the card shows the tree it had, live, for that moment.",
+      "why": "A difference in the builders' inputs, for one moment of a reconnect; the fixture gives both the same tree."
+    },
+    {
+      "id": "other-languages",
+      "what": "the herdr skew notice outside English",
+      "why": "A command-line Swift has no app bundle, so String(localized:) gives the English source. app::home's a_herdr_version_skew_is_said_in_the_apps_language_with_the_right_remedy holds the translated notice; the catalog keys are the app's own."
+    }
+  ]
+}

@@ -2,7 +2,6 @@ import MoshpitKit
 import PhotosUI
 import QuickLook
 import SwiftUI
-import SwiftTerm
 import UIKit
 
 /// Live terminal screen. The UI chrome is visual-only; SwiftTerm, tmux routing,
@@ -94,6 +93,9 @@ struct TerminalScreen: View {
     @State private var pendingPaneSelection: String?
     /// Sticky-Ctrl armed: the next typed key goes out as its control code.
     @State private var ctrlArmed = false
+    /// The coordinator it is armed on: one at a time, let go when typing
+    /// moves elsewhere (B411).
+    @State private var stickyCtrl = StickyCtrl()
     /// URL found in text the user just copied in-terminal — drives the
     /// transient "Open link" chip (plain-text URLs aren't tappable; select +
     /// copy is the natural gesture, so meet the user right after it).
@@ -121,8 +123,28 @@ struct TerminalScreen: View {
     /// Whether this screen's session has ever been `.live` — the difference
     /// between a first connect (nothing behind the cover but the void, so the
     /// poster is the honest picture) and a reconnect (a frame worth keeping
-    /// on screen is right there). Reset when the session object changes.
+    /// on screen is right there). Reset when the session object changes,
+    /// unless this screen swapped it in itself (``swapCarriesLive``).
     @State private var wasEverLive = false
+    /// A manual reconnect (a protocol switch, Install Assist, the ended
+    /// card's Reconnect) is swapping in a new session while this screen
+    /// shows a reconnect's frame: the new session comes up as a reconnect
+    /// too, under the veil, never the first connect's poster (the owner's
+    /// rule: a reconnect never shows the poster). A protocol switch always
+    /// carries it. Read and cleared when the session changes
+    /// (``sessionSwapped()``).
+    @State private var swapCarriesLive = false
+    /// A protocol switch (mosh ⇄ SSH) is under way, from its confirm until
+    /// the new session's first frame is uncovered: nothing moves (the
+    /// owner: 「mosh 切换 ssh 有个动画 我们直接去掉」). The veil and its
+    /// capsule are there at once, the pane's last picture stays under it
+    /// (``switchStill``, the NSH stage's own on that page) and goes at once
+    /// with the veil, the pill and the breadcrumb change at once. Ordinary
+    /// drops and resumes keep their motion.
+    @State private var stillSwitch = false
+    /// The SwiftUI chrome's picture of the pane through a protocol switch
+    /// (the NSH page's stage holds its own).
+    @State private var switchStill: TerminalStill?
 
     /// Whether this screen has put the cover up for a phase that was not
     /// `.live` — the only licence for a cover to still be up once the
@@ -144,6 +166,10 @@ struct TerminalScreen: View {
     /// the label it keeps while the cover waits for the first frame, so a
     /// reconnect does not read "Opening the pit" for its last few hundred ms.
     @State private var lastCoverState: TransportConnState = .connecting
+    /// When the live session last dropped, or the screen was entered onto
+    /// one that wasn't live (the veil came up): read by the tap that marks
+    /// the way back (``connectionFeedback(from:to:droppedAt:now:)``).
+    @State private var droppedAt: Date?
     /// Camera capture sheet (an attach-image source; menu entry hidden where
     /// there is no camera, e.g. the simulator).
     @State private var showCamera = false
@@ -403,6 +429,10 @@ struct TerminalScreen: View {
     /// since the whole chain is jointly inferred as a single expression).
     /// Breaking the chain into two separately-typed expressions bounds that.
     private var contentWithLifecycle: some View {
+        Group {
+        if usesNSH {
+            nshPage
+        } else {
         ZStack(alignment: .top) {
             Ink.terminalBG.ignoresSafeArea()
 
@@ -478,6 +508,8 @@ struct TerminalScreen: View {
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
+        }
+        }
         .animation(.easeOut(duration: 0.2), value: copiedURL)
         .animation(.easeOut(duration: 0.2), value: active?.tmuxControl?.notice)
         .onReceive(NotificationCenter.default.publisher(
@@ -502,21 +534,23 @@ struct TerminalScreen: View {
                 // geometry (an IME was up when the app left; iOS restores the
                 // scene before the keyboard story settles) — reported on
                 // device as the terminal missing its bottom chunk. Re-run
-                // layout against the CURRENT bounds once things settle, and
-                // repaint the full screen the way the IME-switch observer
-                // already does. Cheap and idempotent when nothing is stale.
+                // layout against the CURRENT bounds once things settle. Cheap
+                // and idempotent when nothing is stale. No repaint of our own:
+                // SwiftTerm redraws the whole view on its way back to the
+                // foreground (its pixels may have been dropped) and when a
+                // layout changes its size (fork patch 26).
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
-                    guard let coordinator = active?.coordinator else { return }
-                    coordinator.hostContainer?.setNeedsLayout()
-                    if let terminal = coordinator.terminalView {
-                        terminal.getTerminal().updateFullScreen()
-                        terminal.setNeedsDisplay()
-                    }
+                    active?.coordinator.hostContainer?.setNeedsLayout()
                 }
             }
         }
         .onChange(of: anySheetOpen) { _, open in
             if !open { releaseGeometryHold() }
+        }
+        // Another pane or session takes the typing: an armed Ctrl doesn't
+        // stay behind on the one left (B411).
+        .onChange(of: typingTarget) { _, target in
+            stickyCtrl.typingMoved(to: target)
         }
         .onReceive(NotificationCenter.default.publisher(
             for: UIResponder.keyboardWillShowNotification)) { _ in
@@ -527,12 +561,15 @@ struct TerminalScreen: View {
             keyboardIntent = .up
         }
         .navigationBarHidden(true)
-        .preferredColorScheme(.dark)
+        // The NSH terminal takes its colour scheme's appearance on its own
+        // surface (R12, `Screen::Terminal`), not the window's: Home under the
+        // back swipe keeps the app's. The SwiftUI terminal is dark only.
+        .preferredColorScheme(usesNSH ? nil : .dark)
         .onGeometryChange(for: Bool.self) { proxy in
             UIDevice.current.userInterfaceIdiom == .pad
                 && proxy.size.width > proxy.size.height
         } action: { compactChrome = $0 }
-        .safeAreaInset(edge: .bottom, spacing: 0) { bottomAccessory }
+        .safeAreaInset(edge: .bottom, spacing: 0) { if !usesNSH { bottomAccessory } }
         .task {
             if settings.raiseKeyboardOnOpen { keyboardIntent = .up }
             await connectAndAttach()
@@ -551,17 +588,26 @@ struct TerminalScreen: View {
         .onChange(of: active?.viewModel.errorMessage) { _, message in
             showError = message?.isEmpty == false
         }
+        // The user's own no to the server's key ends the connect quietly
+        // (B151): back where they came from, no error card.
+        .onChange(of: active?.viewModel.declinedHostKey) { _, declined in
+            if declined == true { leave() }
+        }
         // The physical version of the transport pill: a tap when the link
         // comes up, a warning buzz when a live session drops. Driven by the
         // state itself, so it fires however the change happened.
         .sensoryFeedback(trigger: connState) { old, new in
-            switch (old, new) {
-            case (.connecting, .live), (.reconnecting, .live): return .success
-            case (.live, .reconnecting), (.live, .offline): return .warning
-            default: return nil
-            }
+            Self.connectionFeedback(from: old, to: new, droppedAt: droppedAt, now: Date())
         }
-        .onChange(of: connState) { _, state in
+        // A protocol switch is over once the new session's frame is
+        // uncovered: its picture goes, motion comes back.
+        .onChange(of: paneCover) { _, cover in
+            if stillSwitch, cover == .none, connState == .live { endStillSwitch() }
+        }
+        .onChange(of: connState) { old, state in
+            // When the veil came up for this drop: the tap on the way back
+            // is for a drop the person waited through (B324).
+            if old == .live, state != .live { droppedAt = Date() }
             // A reconnect used to collapse the keyboard at cycle start: tmux
             // mints a fresh controller per reconnect (see TmuxPaneSplitView's
             // `.id`), so first responder died with the old pane view and the
@@ -586,13 +632,13 @@ struct TerminalScreen: View {
                 settleGrace = true
                 Task {
                     try? await Task.sleep(for: .milliseconds(500))
-                    withAnimation(.easeOut(duration: 0.28)) { settleGrace = false }
+                    withAnimation(stillSwitch ? nil : .easeOut(duration: 0.28)) { settleGrace = false }
                 }
             }
         }
     }
 
-    @State private var autoCare = HostAutoCare.shared
+    @State private var autoCare = HostCare.shared
 
     /// Identity of the session this screen is showing — a new object (protocol
     /// switch, Install Assist's fresh session) starts from "never live" again.
@@ -600,9 +646,34 @@ struct TerminalScreen: View {
         active.map { ObjectIdentifier($0) }
     }
     @State private var hardwareKeyOwner = UUID()
+    /// The NSH page (`MOSHPIT_NSH_TERMINAL`, read when the screen is made: a
+    /// screen keeps the UI it opened with), its model, and whether NSH
+    /// failed to start (the SwiftUI chrome then shows).
+    @State private var nshTerminal = NSHScreen.terminal.isOn
+    @State private var nshFailed = false
+    @State private var nshModel = TerminalNSHModel()
 
     var body: some View {
         contentWithLifecycle
+        .terminalDirector(keyboard: { keyboardIntent = $0 ? .up : .down }, present: { what in
+            switch what {
+            case "windows": presentSheet { showWindowsSheet = true }
+            case "sessions": presentSheet { showSessionsSheet = true }
+            case "panes": presentSheet { showPaneSheet = true }
+            case "switch": showProtocolSwitchConfirm = true
+            case "diagnostics": showMoshDiagnostics = true
+            case "install": installPackages = active?.herdrControl != nil ? ["herdr"] : ["tmux"]
+            case "folder": active?.openWorkingDirectory()
+            default:
+                installPackages = nil
+                if remoteFolder != nil { remoteFolder = nil }
+                showWindowsSheet = false
+                showSessionsSheet = false
+                showPaneSheet = false
+                showProtocolSwitchConfirm = false
+                showMoshDiagnostics = false
+            }
+        })
         // The shell is keyboard-like chrome — 30pt chips, one-line crumbs, a
         // fixed-height bar — and, like the system keyboard, it does not grow
         // with the reading size. Text still scales one step; the terminal's
@@ -616,30 +687,32 @@ struct TerminalScreen: View {
         .alert(
             String(localized: "Enable agent notifications on \(connection.displayName)?"),
             isPresented: Binding(
-                get: { autoCare.needsConsent?.id == connection.id },
+                get: { autoCare.needsConsent?.id == connection.id.uuidString },
                 set: { if !$0 { autoCare.dismissConsent() } })
         ) {
             Button(String(localized: "Enable")) {
-                if let session = active {
-                    autoCare.grantConsent(connection: connection, session: session)
-                }
+                autoCare.grantConsent(connection)
             }
             Button(String(localized: "Not Now"), role: .cancel) { autoCare.dismissConsent() }
             Button(String(localized: "Don't Ask Again"), role: .destructive) {
-                autoCare.decline(connection: connection)
+                autoCare.decline(connection)
             }
         } message: {
             Text(String(localized: "Moshpit installs its hook scripts in ~/.moshpit and registers them in Claude Code's settings, so agents can reach you when they need you. Everything can be removed from Host Setup."))
         }
         .moshpitCard(isPresented: $showError) {
-            MoshpitNoticeCard(
-                icon: "bolt.slash.fill",
-                title: "Connection Error",
-                message: active?.viewModel.errorMessage ?? ""
-            ) {
-                showError = false
-                active?.viewModel.errorMessage = nil
-                leave()
+            if active?.viewModel.endedByServer == true {
+                sessionEndedCard
+            } else {
+                MoshpitNoticeCard(
+                    icon: "bolt.slash.fill",
+                    title: "Connection Error",
+                    message: active?.viewModel.errorMessage ?? ""
+                ) {
+                    showError = false
+                    active?.viewModel.errorMessage = nil
+                    leave()
+                }
             }
         }
         .moshpitCard(
@@ -650,12 +723,24 @@ struct TerminalScreen: View {
         ) { prompt in
             hostKeyPromptCard(prompt)
         }
+        .moshpitCard(
+            item: Binding(
+                get: { active?.viewModel.keyPassphrasePrompt },
+                set: { if $0 == nil { /* dismissal handled via decide() */ } }
+            )
+        ) { prompt in
+            KeyPassphrasePromptCard(prompt: prompt)
+        }
         .appSheet(item: installTargetBinding) { target in
             if let active {
-                InstallAssistView(
-                    session: active,
-                    packages: target.packages,
-                    onReconnect: { reconnect() })
+                if usesNSH || NSHScreen.installAssist.isOn {
+                    InstallAssistNSHPage(session: active, packages: target.packages, onReconnect: { reconnect() })
+                } else {
+                    InstallAssistView(
+                        session: active,
+                        packages: target.packages,
+                        onReconnect: { reconnect() })
+                }
             }
         }
         .photosPicker(isPresented: $photoPickerPresented,
@@ -684,7 +769,11 @@ struct TerminalScreen: View {
             if url == nil { dismissRemotePreview() }
         }
         .appSheet(item: $remoteFolder, onDismiss: { dismissRemotePreview() }) { target in
-            RemoteFolderSheet(folder: target.folder, files: target.files)
+            if usesNSH || NSHScreen.remoteFolder.isOn {
+                RemoteFolderNSHSheet(folder: target.folder, files: target.files)
+            } else {
+                RemoteFolderSheet(folder: target.folder, files: target.files)
+            }
         }
         .onChange(of: active?.remotePreview?.phase) { _, phase in
             switch phase {
@@ -738,17 +827,102 @@ struct TerminalScreen: View {
     /// `switchProtocol()` runs — a tap alone no longer reconnects immediately.
     private func switchProtocol() {
         guard active != nil else { return }
+        // Nothing moves from here until the new session's first frame is
+        // uncovered (``stillSwitch``); the pane's last picture stays.
+        stillSwitch = true
+        holdStill()
         connection.connectionProtocol = connection.connectionProtocol == .mosh ? .ssh : .mosh
         connectionHolder.store.update(connection)
         Haptics.select()
-        reconnect()
+        reconnect(still: true)
+    }
+
+    /// The pane's picture as the switch begins, kept until it ends.
+    private func holdStill() {
+        if usesNSH {
+            nshModel.stage.holdStill()
+        } else {
+            switchStill = TerminalStill(of: stillSurface)
+        }
+    }
+
+    /// The terminal the SwiftUI chrome shows alone: a window of one pane's,
+    /// or the session's single terminal. A window of several panes side by
+    /// side has no one picture: none then.
+    private var stillSurface: TerminalSurface? {
+        guard let active else { return nil }
+        if let controller = active.retiredTmuxController ?? active.tmuxController {
+            let panes = controller.snapshot.activePanes
+            guard panes.count == 1, let pane = panes.first?.id else { return nil }
+            return controller.surface(for: pane)
+        }
+        return active.coordinator.surface
+    }
+
+    /// The switch is over: the new session's frame is uncovered. Its
+    /// picture goes at once, and motion is back.
+    private func endStillSwitch() {
+        stillSwitch = false
+        switchStill = nil
+        nshModel.stage.releaseStill()
+    }
+
+    /// The session this screen shows changed (``activeIdentity``): a new
+    /// object starts from "never live", unless this screen swapped it in
+    /// over a reconnect's frame (``swapCarriesLive``).
+    private func sessionSwapped() {
+        wasEverLive = Self.liveAfterSwap(carried: swapCarriesLive)
+        swapCarriesLive = false
+        // The session resolving while still connecting is the first
+        // connect's normal path (`connState` reads `.connecting` both
+        // before and after, so the state change above never fires).
+        coverArmed = (active?.viewModel.connState ?? .live) != .live
+        droppedAt = coverArmed ? Date() : nil
+    }
+
+    /// Whether a session this screen swapped in counts as having been live:
+    /// it carries the old one's, so it comes up under the veil.
+    nonisolated static func liveAfterSwap(carried: Bool) -> Bool {
+        carried
+    }
+
+    /// The card for a session the server ended — its shell exited, or
+    /// mosh-server sent its shutdown. Not an error: it used to arrive as
+    /// "Connection Error", whose only button left the screen. It says what
+    /// happened, and offers the reconnect nothing automatic will make.
+    private var sessionEndedCard: some View {
+        let reason = active?.viewModel.errorMessage ?? ""
+        return MoshpitModalCard(
+            icon: "power",
+            tone: .neutral,
+            title: "Session ended",
+            message: reason.isEmpty ? nil : Text(reason),
+            buttons: [
+                ModalButton("Done", kind: .secondary) {
+                    showError = false
+                    active?.viewModel.errorMessage = nil
+                    leave()
+                },
+                ModalButton("Reconnect", kind: .primary) {
+                    showError = false
+                    active?.viewModel.errorMessage = nil
+                    reconnect()
+                },
+            ]
+        ) { EmptyView() }
     }
 
     /// Tear down and re-run the start flow at full feature — used after the
-    /// user installs the missing dependency. The probe re-runs during start,
-    /// so a now-present tmux / mosh-server is picked up automatically.
-    private func reconnect() {
+    /// user installs the missing dependency, and to reconnect a session the
+    /// server ended. The probe re-runs during start, so a now-present tmux /
+    /// mosh-server is picked up automatically.
+    private func reconnect(still: Bool = false) {
         guard let active else { return }
+        // A switch moves nothing; any other manual reconnect moves as a
+        // reconnect does. Either way the new session is a reconnect when
+        // this one was (or always, for a switch): the veil, not the poster.
+        if !still, stillSwitch { endStillSwitch() }
+        swapCarriesLive = still || isReconnect
         // Manual reconnects (protocol switch, Install Assist) swap in a
         // brand-new session whose connState opens .connecting, so the
         // .reconnecting onChange never fires for them — collapse the keyboard
@@ -769,7 +943,7 @@ struct TerminalScreen: View {
             // The buttons the Host Setup sheet used to require, run silently:
             // refresh drifted scripts, mint/repair this device's pairing. Asks
             // (once) before ever touching a host that has no hooks.
-            HostAutoCare.shared.tend(connection: connection, session: session)
+            HostCare.shared.tend(connection)
             _ = active
         }
     }
@@ -786,6 +960,20 @@ struct TerminalScreen: View {
     /// use for up the chain, so they also work mid-typing. ⌘W leaves the way
     /// the back button does: the session stays alive.
     private var hardwareKeyCommands: [HardwareKeys.Command] {
+        // The NSH page decides what a chord does (its keymap gets the
+        // presses the menu leaves; the menu's own come here and go there).
+        if usesNSH {
+            let model = nshModel
+            return ["k", "w"].map(Character.init) .map { key in
+                HardwareKeys.Command(title: key == "k" ? "Switch Window" : "Back to Home", key: key) {
+                    model.post(["op": "key", "stroke": "mod+\(key)"])
+                }
+            } + (1..<10).map { number in
+                HardwareKeys.Command(title: "Window \(number)", key: Character(String(number))) {
+                    model.post(["op": "key", "stroke": "mod+\(number)"])
+                }
+            }
+        }
         var list: [HardwareKeys.Command] = [
             .init(title: "Switch Window", key: "k") { presentSheet { showWindowsSheet = true } },
             .init(title: "Back to Home", key: "w") { leave() },
@@ -833,7 +1021,7 @@ struct TerminalScreen: View {
             Button {
                 showProtocolSwitchConfirm = true
             } label: {
-                TransportPill(kind: transportKind, connState: connState)
+                TransportPill(kind: transportKind, connState: connState, still: stillSwitch)
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("terminal-transport-switch")
@@ -856,7 +1044,7 @@ struct TerminalScreen: View {
                     // the white-block reports: blocks that VANISH on repaint
                     // are render divergence (SwiftTerm vs mosh-server state),
                     // not lost content.
-                    Task { await active?.moshTransport?.requestFullRedraw() }
+                    active?.requestRepaint()
                     showMoshDiagnostics = false
                 }
                 .presentationCompactAdaptation(.popover)
@@ -882,13 +1070,13 @@ struct TerminalScreen: View {
                 .adaptivePresentation(isPresented: $showWindowsSheet) {
                     // Generic over the concrete controller (not an existential) so
                     // Observation tracking on `snapshot` survives — hence the branch.
-                    if let c = active?.tmuxControl { WindowsSheet(controller: c) } else if let h = active?.herdrControl { WindowsSheet(controller: h) }
+                    if let c = active?.tmuxControl { MuxPicker(controller: c, kind: .windows, nsh: nshPickers) } else if let h = active?.herdrControl { MuxPicker(controller: h, kind: .windows, nsh: nshPickers) }
                 }
                 .adaptivePresentation(isPresented: $showSessionsSheet) {
-                    if let c = active?.tmuxControl { SessionsSheet(controller: c) } else if let h = active?.herdrControl { SessionsSheet(controller: h) }
+                    if let c = active?.tmuxControl { MuxPicker(controller: c, kind: .sessions, nsh: nshPickers) } else if let h = active?.herdrControl { MuxPicker(controller: h, kind: .sessions, nsh: nshPickers) }
                 }
                 .adaptivePresentation(isPresented: $showPaneSheet) {
-                    if let c = active?.tmuxControl { SelectPaneSheet(controller: c) } else if let h = active?.herdrControl { SelectPaneSheet(controller: h) }
+                    if let c = active?.tmuxControl { MuxPicker(controller: c, kind: .panes, nsh: nshPickers) } else if let h = active?.herdrControl { MuxPicker(controller: h, kind: .panes, nsh: nshPickers) }
                 }
 
             Spacer(minLength: 0)
@@ -991,7 +1179,8 @@ struct TerminalScreen: View {
     private var livePlan: BreadcrumbPlan? {
         guard let snapshot = tmuxSnapshot,
               let plan = BreadcrumbPlan.make(snapshot: snapshot, hooks: multiplexerAgentHooks,
-                                             hooksLoaded: multiplexerAgentHooksLoaded),
+                                             hooksLoaded: multiplexerAgentHooksLoaded,
+                                             mux: connection.multiplexer == .herdr ? "herdr" : "tmux"),
               plan.isComplete else { return nil }
         return plan
     }
@@ -1095,7 +1284,7 @@ struct TerminalScreen: View {
         // can navigate a controller that is being rebuilt.
         .opacity(livePlan == nil && retainedPlan != nil ? 0.45 : 1)
         .disabled(livePlan == nil && retainedPlan != nil)
-        .animation(.easeOut(duration: 0.2), value: livePlan == nil)
+        .animation(stillSwitch ? nil : .easeOut(duration: 0.2), value: livePlan == nil)
         .onChange(of: livePlan) { _, plan in
             if let plan { lastBreadcrumb = plan }
         }
@@ -1137,6 +1326,11 @@ struct TerminalScreen: View {
     private var terminalBody: some View {
         ZStack {
             terminalContent
+            if let switchStill {
+                // A protocol switch's last picture, until the new frame.
+                TerminalStillView(still: switchStill)
+                    .allowsHitTesting(false)
+            }
             if posterVisible {
                 TerminalConnectingView(connection: connection, state: posterState)
                     // Fades both ways: beneath it is the terminal background
@@ -1150,7 +1344,8 @@ struct TerminalScreen: View {
             }
             if veilVisible {
                 ReconnectVeil(state: posterState,
-                              isMosh: connection.connectionProtocol == .mosh)
+                              isMosh: connection.connectionProtocol == .mosh,
+                              ended: active?.viewModel.endedByServer == true)
                     .allowsHitTesting(false)
                     .transition(.opacity)
             }
@@ -1161,14 +1356,8 @@ struct TerminalScreen: View {
                 .transition(.opacity)
             }
         }
-        .animation(.easeInOut(duration: 0.3), value: transitionKey)
-        .onChange(of: activeIdentity) { _, _ in
-            wasEverLive = false
-            // The session resolving while still connecting is the first
-            // connect's normal path (`connState` reads `.connecting` both
-            // before and after, so the state change above never fires).
-            coverArmed = (active?.viewModel.connState ?? .live) != .live
-        }
+        .animation(Self.coverAnimation(still: stillSwitch), value: transitionKey)
+        .onChange(of: activeIdentity) { _, _ in sessionSwapped() }
     }
 
     /// What the cover says. Once the transport is back the state reads
@@ -1178,24 +1367,65 @@ struct TerminalScreen: View {
         connState == .live ? lastCoverState : connState
     }
 
-    /// The transport is up but there is nothing to uncover yet: tmux until
-    /// its controller reveals a frame, everything else for the beat
-    /// `settleGrace` holds. Never both — on a fast attach the first frame
-    /// lands inside the grace period, and letting the grace outlive the
-    /// signal put the poster up for the leftover ~170ms right as the frozen
-    /// frame gave way to the new one (a poster flash in the crossfade,
-    /// measured on the rig's short-suspension run).
+    /// The transport is up but there is nothing to uncover yet: tmux and
+    /// herdr until their first frame is painted, everything else for the
+    /// beat `settleGrace` holds. Never both — on a fast attach the first
+    /// frame lands inside the grace period, and letting the grace outlive
+    /// the signal put the poster up for the leftover ~170ms right as the
+    /// frozen frame gave way to the new one (a poster flash in the
+    /// crossfade, measured on the rig's short-suspension run).
     private var settling: Bool {
         guard let active, connState == .live, coverArmed else { return false }
-        return expectsTmuxPanes(active) ? active.awaitingFirstFrame : settleGrace
+        let waits = Self.waitsForFirstFrame(transport: active.connection.connectionProtocol,
+                                            multiplexer: active.connection.multiplexer,
+                                            degraded: active.degrade != nil,
+                                            onRustCore: active.rust != nil)
+        return waits ? active.awaitingFirstFrame : settleGrace
     }
 
-    /// Whether this session paints through tmux pane hosts (which report
-    /// their first frame) rather than the persistent single-pane terminal
-    /// (plain SSH, mosh, a tmux connect degraded to a plain shell).
-    private func expectsTmuxPanes(_ active: SessionHub.ActiveSession) -> Bool {
-        active.connection.connectionProtocol == .ssh
-            && active.connection.multiplexer == .tmux && active.degrade == nil
+    /// The veil must have been up this long for the way back to tap: a
+    /// redial the person barely saw got a warning buzz and a success tap
+    /// within a second of each other (B324).
+    nonisolated static let feedbackAfterDrop: TimeInterval = 1
+
+    /// The haptic for a change of the connection's state: a tap when a
+    /// first connect comes up, a warning buzz when a live session drops, a
+    /// tap when it is back — only after a drop the person waited through
+    /// (`feedbackAfterDrop`); back sooner, the buzz was enough. A drop with
+    /// no start on record counts as not seen: no tap.
+    nonisolated static func connectionFeedback(from old: TransportConnState,
+                                               to new: TransportConnState,
+                                               droppedAt: Date?,
+                                               now: Date) -> SensoryFeedback? {
+        switch (old, new) {
+        case (.connecting, .live): return .success
+        case (.reconnecting, .live):
+            guard let droppedAt else { return nil }
+            return now.timeIntervalSince(droppedAt) >= feedbackAfterDrop ? .success : nil
+        case (.live, .reconnecting), (.live, .offline): return .warning
+        default: return nil
+        }
+    }
+
+    /// Whether the cover waits for the session's first painted frame
+    /// (`ActiveSession.awaitingFirstFrame`) rather than the `settleGrace`
+    /// beat. tmux's pane hosts report it on either path. herdr over SSH
+    /// reports it on the Rust core, where the driver clears the wait on
+    /// herdr's first frame (B323): on the grace, the veil lifted 500 ms
+    /// after transport-up — over a stale frame whose input herdr was still
+    /// dropping, 1.3 s of it at 510 ms RTT. Plain SSH, mosh and a connect
+    /// degraded to a plain shell paint into the persistent terminal and
+    /// take the grace.
+    nonisolated static func waitsForFirstFrame(transport: ConnectionProtocol,
+                                               multiplexer: Multiplexer,
+                                               degraded: Bool,
+                                               onRustCore: Bool) -> Bool {
+        guard transport == .ssh, !degraded else { return false }
+        switch multiplexer {
+        case .tmux: return true
+        case .herdr: return onRustCore
+        case .none: return false
+        }
     }
 
     /// This is a connection coming BACK, not a first one: the screen has been
@@ -1213,26 +1443,55 @@ struct TerminalScreen: View {
     /// full-screen animation that kept surfacing). It holds until the
     /// replacement has painted, not until the transport says so. `.offline`
     /// shows no poster: nothing is being attempted.
-    private var posterVisible: Bool {
-        // No session resolved yet: NOT a poster. `active` is a `@State` set
-        // on appear, so every screen renders one frame without it — for a
-        // first connect the poster follows a frame later over the same
-        // colour; for a screen entering a live session it must never come
-        // (see `coverArmed`).
-        guard active != nil, !isReconnect else { return false }
-        return connState == .connecting || connState == .reconnecting || settling
-    }
+    private var posterVisible: Bool { paneCover == .poster }
 
     /// The reconnect dim and status capsule — over the kept frame, the
     /// persistent pane, or the bare background; and also over a dropped line
     /// that is no longer being redialled (the frame is still what the person
     /// was reading).
-    private var veilVisible: Bool {
-        guard active != nil, isReconnect else { return false }
-        switch connState {
-        case .connecting, .reconnecting, .offline: return true
-        case .live: return settling
+    private var veilVisible: Bool { paneCover == .veil }
+
+    /// What covers the pane now (``paneCover(resolved:reconnect:state:settling:)``).
+    private var paneCover: PaneCover {
+        Self.paneCover(resolved: active != nil, reconnect: isReconnect, state: connState, settling: settling)
+    }
+
+    /// What covers the pane: nothing, the first connect's poster, or a
+    /// reconnect's veil.
+    enum PaneCover: Equatable {
+        case none, poster, veil
+    }
+
+    /// The cover for a session `resolved` (or not yet: no session object,
+    /// no cover — `active` is a `@State` set on appear, so every screen
+    /// renders one frame without it; for a first connect the poster follows
+    /// a frame later over the same colour, for a screen entering a live
+    /// session it must never come, see `coverArmed`), coming back or not
+    /// (`reconnect`), its transport in `state`, `settling` while the
+    /// transport is up but nothing has painted. A reconnect — a protocol
+    /// switch always is one — gets the veil, never the poster, through the
+    /// whole cycle and over a line no longer redialled (`.offline`); a first
+    /// connect gets the poster while something is attempted.
+    nonisolated static func paneCover(resolved: Bool, reconnect: Bool,
+                                      state: TransportConnState, settling: Bool) -> PaneCover {
+        guard resolved else { return .none }
+        if reconnect {
+            switch state {
+            case .connecting, .reconnecting, .offline: return .veil
+            case .live: return settling ? .veil : .none
+            }
         }
+        switch state {
+        case .connecting, .reconnecting: return .poster
+        case .live: return settling ? .poster : .none
+        case .offline: return .none
+        }
+    }
+
+    /// How the cover stack moves: not at all through a protocol switch
+    /// (``stillSwitch``), else its 0.3 s ease.
+    nonisolated static func coverAnimation(still: Bool) -> Animation? {
+        still ? nil : .easeInOut(duration: 0.3)
     }
 
     /// Another Moshpit device holds the live window's size: the pane is
@@ -1282,7 +1541,8 @@ struct TerminalScreen: View {
                                       focusPolicy: focusPolicy,
                                       geometryHeld: geometryHold,
                                       compactChrome: compactChrome,
-                                      frozen: ghost != nil)
+                                      frozen: ghost != nil,
+                                      onPaste: { [weak active] text in active?.sendPaste(text) })
                         // A frozen frame has nobody to send touches to.
                         .allowsHitTesting(ghost == nil)
                 } else if isReconnect && (connState != .live || active.awaitingFirstFrame) {
@@ -1305,6 +1565,7 @@ struct TerminalScreen: View {
                         connection: connection,
                         connectionState: connState,
                         quietWait: isReconnect,
+                        failure: controller.notice,
                         onCreate: { active.createFirstTmuxSession() },
                         onInstall: { installPackages = ["tmux"] })
                 }
@@ -1345,6 +1606,24 @@ struct TerminalScreen: View {
                     // coordinator's identity forces a fresh makeUIView exactly
                     // when (and only when) it actually changes.
                     .id(ObjectIdentifier(active.coordinator))
+                    // mosh + tmux on a server with no session (B228): the
+                    // empty state over the renderer's shell — which stays
+                    // mounted, waiting, and attaches the session made here —
+                    // instead of a bare shell with nothing to say. Settled at
+                    // once: the hub asked the server before this shows.
+                    .overlay {
+                        if active.awaitingFirstSession {
+                            MultiplexerEmptyStateView(
+                                multiplexer: .tmux,
+                                binaryMissing: false,
+                                connection: connection,
+                                connectionState: connState,
+                                startsSettled: true,
+                                failure: active.tmuxControl?.notice,
+                                onCreate: { active.createFirstTmuxSession() },
+                                onInstall: {})
+                        }
+                    }
             }
         } else {
             // No session yet (the screen exists because one is being opened) —
@@ -1362,19 +1641,24 @@ struct TerminalScreen: View {
         active?.tmuxController?.activeCoordinator ?? active?.coordinator
     }
 
+    /// The coordinator typing goes to, by identity (what the armed Ctrl
+    /// follows).
+    private var typingTarget: ObjectIdentifier? {
+        typingCoordinator.map(ObjectIdentifier.init)
+    }
+
     /// Arm/disarm sticky Ctrl on whatever the user is typing into. One-shot:
-    /// the coordinator clears itself after folding the next key.
+    /// the coordinator clears itself after folding the next key. Off is off
+    /// on the coordinator it was armed on, wherever typing went since.
     private func toggleStickyCtrl() {
-        guard let coordinator = typingCoordinator else { return }
         if ctrlArmed {
-            coordinator.pendingCtrl = false
-            ctrlArmed = false
-        } else {
-            Haptics.tap()
-            coordinator.pendingCtrl = true
-            coordinator.onPendingCtrlConsumed = { ctrlArmed = false }
-            ctrlArmed = true
+            stickyCtrl.disarm()
+            return
         }
+        guard let coordinator = typingCoordinator else { return }
+        Haptics.tap()
+        stickyCtrl.onChange = { armed in ctrlArmed = armed }
+        stickyCtrl.arm(coordinator)
     }
 
     /// Sticky-Ctrl only folds into an actual typed key (`Coordinator.send`
@@ -1386,9 +1670,8 @@ struct TerminalScreen: View {
     /// Any other bar action means "I'm done with ctrl" — disarm it the same
     /// way an explicit second tap on the chip would.
     private func disarmStickyCtrlIfNeeded() {
-        guard ctrlArmed, let coordinator = typingCoordinator else { return }
-        coordinator.pendingCtrl = false
-        ctrlArmed = false
+        guard ctrlArmed else { return }
+        stickyCtrl.disarm()
     }
 
     /// Copying inside the terminal is how users grab dev-server/OAuth links
@@ -1452,7 +1735,7 @@ struct TerminalScreen: View {
             // The buttons the Host Setup sheet used to require, run silently:
             // refresh drifted scripts, mint/repair this device's pairing. Asks
             // (once) before ever touching a host that has no hooks.
-            HostAutoCare.shared.tend(connection: connection, session: session)
+            HostCare.shared.tend(connection)
         // Deep-link path: if already attached with the pane present, land on
         // it now; otherwise the .onChange below retries as snapshots arrive.
         claimPendingPaneRequestIfNeeded()
@@ -1778,7 +2061,10 @@ struct TerminalScreen: View {
                 }
                 Haptics.success()
             }
-            self.dictation = nil
+            // Only this session's panel: Cancel while the engine finished and
+            // the mic key straight after start a new session, which this
+            // late return must not take off the screen with its mic still on.
+            if self.dictation === dictation { self.dictation = nil }
         }
     }
 
@@ -1794,7 +2080,7 @@ struct TerminalScreen: View {
 /// render tmux's split layout — the controller zooms the active pane on the
 /// server so it uses the full width, and restores the layout when we switch
 /// away (other clients may be viewing the split). Switching panes/windows just
-/// swaps which persistent `TerminalView` is shown, keyed by `activePaneId`.
+/// swaps which persistent pane terminal is shown, keyed by `activePaneId`.
 struct TmuxPaneSplitView: View {
     let controller: TmuxSessionController
     /// How the pane should treat first responder — `.resign` while a
@@ -1809,15 +2095,18 @@ struct TmuxPaneSplitView: View {
     /// only — see `TerminalScreen.terminalContent`. Its pane leaves by fading,
     /// never by sliding: the replacement is not "the next pane over".
     var frozen: Bool = false
+    /// Where the pane's own Paste and ⌘V go — see ``PaneTerminalHost/onPaste``.
+    var onPaste: ((String) -> Void)?
 
     var body: some View {
         let snapshot = controller.snapshot
         Group {
             if let paneId = snapshot.activePaneId ?? snapshot.activePanes.first?.id {
-                PaneTerminalHost(terminal: controller.terminalView(for: paneId),
+                PaneTerminalHost(surface: controller.surface(for: paneId),
                                  coordinator: controller.coordinator(for: paneId),
                                  focusPolicy: focusPolicy,
-                                 geometryHeld: geometryHeld)
+                                 geometryHeld: geometryHeld,
+                                 onPaste: onPaste)
                     // Keyed on the CONTROLLER's identity too, not just paneId:
                     // a reconnect mints a brand-new TmuxSessionController (and
                     // fresh per-pane terminals/coordinators) even when the
@@ -1868,14 +2157,14 @@ struct TmuxPaneSplitView: View {
     }
 }
 
-/// Hosts a persistent SwiftTerm `TerminalView` minted by the controller.
+/// Hosts a persistent pane terminal minted by the controller.
 /// The active pane grabs keyboard focus so the system keyboard (with our
 /// shortcut bar riding above it) is up as soon as the terminal is usable.
 /// The terminal sits inside a ``TerminalHostContainer`` so keyboard
 /// transitions can freeze its frame (see that type's doc — this is the
 /// keyboard/IME-switch garble fix), same as the single-pane path.
 struct PaneTerminalHost: UIViewRepresentable {
-    let terminal: TerminalView
+    let surface: TerminalSurface
     /// The pane's coordinator — hooked to the container so the keyboard
     /// frame-lock covers tmux panes too. nil-safe for previews/tests.
     var coordinator: SwiftTerminalView.Coordinator?
@@ -1883,55 +2172,41 @@ struct PaneTerminalHost: UIViewRepresentable {
     /// Hold this pane at the size it has — see
     /// ``TerminalHostContainer/geometryHeld``.
     var geometryHeld: Bool = false
+    /// Where the pane's own Paste and ⌘V go: the session's paste path, which
+    /// asks tmux to bracket (`paste-buffer -p`) from the pane's real mode.
+    /// Installed on the pane's coordinator (``SwiftTerminalView/Coordinator/onPaste``);
+    /// without it SwiftTerm brackets by the local flag, which a `-CC` attach
+    /// never sets — a multi-line paste ran line by line.
+    var onPaste: ((String) -> Void)?
 
     func makeUIView(context: Context) -> TerminalHostContainer {
-        // The scroll/zoom gesture is installed by the coordinator's attach(to:)
-        // when the controller mints this pane's terminal, so it's already on by
-        // the time we host it here — no need (and idempotent if it weren't).
+        // The terminal's gestures came with it when the controller minted it,
+        // so they're already on by the time we host it here.
+        coordinator?.onPaste = onPaste
         if focusPolicy == .take {
+            let terminal = surface.view
             DispatchQueue.main.async { [weak terminal] in
                 _ = terminal?.becomeFirstResponder()
             }
         }
         // A pane/window switch re-hosts a *persistent* terminal (its `.id` flips).
-        // SwiftTerm only repaints on new output or input, so an idle switched-to
-        // pane keeps showing whatever pixels it last drew — stale/garbled from a
-        // previous size, and a stale caret colour/shape — until the user types or
-        // forces a refresh. Force a full repaint from the (correct) buffer once it
-        // has laid out, so the switch lands clean without waiting for output.
-        DispatchQueue.main.async { [weak terminal] in
-            terminal?.getTerminal().updateFullScreen()
-            terminal?.setNeedsDisplay()
-        }
+        // No repaint is forced here: SwiftTerm repaints a view that comes back
+        // into a window, every row of one laid out at a new size, and the rows
+        // that changed while it was away (fork patches 26–27); the core's view
+        // draws what it holds when it reaches a window. Forcing it on top cost
+        // a second whole-screen draw on every switch.
         let container = TerminalHostContainer()
-        container.host(terminal)
+        container.host(surface)
         coordinator?.hostContainer = container
         container.geometryHeld = geometryHeld
         return container
     }
 
     func updateUIView(_ uiView: TerminalHostContainer, context: Context) {
-        guard let terminal = uiView.terminalView else { return }
+        guard let terminal = uiView.surface else { return }
         if uiView.geometryHeld != geometryHeld { uiView.geometryHeld = geometryHeld }
-        switch focusPolicy {
-        case .take:
-            if !terminal.isFirstResponder, terminal.window != nil {
-                DispatchQueue.main.async { [weak terminal] in
-                    _ = terminal?.becomeFirstResponder()
-                }
-            }
-        case .allow:
-            // Nobody has asked for the keyboard: leave first responder exactly
-            // as the user left it, so a tap on the pane can raise it.
-            break
-        case .resign:
-            if terminal.isFirstResponder {
-                // Keyboard put away (toggle) or a sheet is up — drop it.
-                DispatchQueue.main.async { [weak terminal] in
-                    _ = terminal?.resignFirstResponder()
-                }
-            }
-        }
+        coordinator?.onPaste = onPaste
+        SwiftTerminalView.applyFocus(focusPolicy, to: terminal)
     }
 }
 
@@ -2572,10 +2847,6 @@ struct ArrowCluster: View {
     /// re-checking that clips `→` at rest on small phones.
     static let zoneWidth: CGFloat = 32
 
-    /// Total laid-out width: four zones plus the three hairlines between them.
-    /// Mirrored by the toolbar-width test, which can't measure a live view.
-    static var totalWidth: CGFloat { zoneWidth * CGFloat(zones.count) + CGFloat(zones.count - 1) }
-
     var body: some View {
         HStack(spacing: 0) {
             ForEach(Array(Self.zones.enumerated()), id: \.element.direction) { index, zone in
@@ -3133,8 +3404,9 @@ struct TerminalConnectingView: View {
 /// panes (one is a handset, one is a house, one is the characters `:wq`), so
 /// animating them the same way is not merely wrong, it is undefined. They
 /// breathe instead: the same tempo as the cursor, carried by the artwork the
-/// user chose.
-private struct PaneLoaderMark: View {
+/// user chose. (Internal, not private: the NSH page's poster hosts it,
+/// `moshpit/pane-loader`.)
+struct PaneLoaderMark: View {
     var side: CGFloat
     var accent: SwiftUI.Color
     @Environment(AppSettings.self) private var settings
@@ -3256,13 +3528,24 @@ private struct PulseDots: View {
 /// status capsule at the top, in the transport pill's colour family. Nothing
 /// else moves — the frame the person was reading stays put and comes back
 /// into focus when the replacement crossfades in over it.
-private struct ReconnectVeil: View {
+///
+/// It also lies over the last frame of a session the server ENDED (`exit`,
+/// mosh-server's shutdown), and there it says so rather than "line dropped":
+/// nothing dropped, and nothing is coming back on its own.
+struct ReconnectVeil: View {
     let state: TransportConnState
     let isMosh: Bool
+    /// The server ended the session (`TerminalViewModel.endedByServer`).
+    var ended = false
 
-    private var accent: SwiftUI.Color { state.transientTint ?? Ink.accent }
+    private var accent: SwiftUI.Color {
+        // An end is not a fault: the calm ink, not the dropped line's red.
+        ended ? Ink.secondary : (state.transientTint ?? Ink.accent)
+    }
 
-    private var label: String {
+    /// What the capsule says.
+    static func label(state: TransportConnState, isMosh: Bool, ended: Bool) -> String {
+        if ended { return String(localized: "Session ended") }
         switch state {
         case .offline: return String(localized: "Line dropped")
         case .connecting: return String(localized: "Opening the pit")
@@ -3273,11 +3556,13 @@ private struct ReconnectVeil: View {
         }
     }
 
+    private var label: String { Self.label(state: state, isMosh: isMosh, ended: ended) }
+
     var body: some View {
         ZStack(alignment: .top) {
             Color.black.opacity(0.45)
             HStack(spacing: 10) {
-                if state == .offline {
+                if state == .offline || ended {
                     Circle()
                         .fill(accent)
                         .frame(width: 8, height: 8)
@@ -3363,10 +3648,28 @@ private struct MultiplexerEmptyStateView: View {
     /// full-screen connecting animation — that is for a first connect only
     /// (see `terminalBody`).
     var quietWait = false
+    /// What the creating said when it failed (the controller's notice):
+    /// the Create button is back.
+    var failure: String?
     let onCreate: () -> Void
     let onInstall: () -> Void
-    @State private var settled = false
+    @State private var settled: Bool
     @State private var creating = false
+
+    init(multiplexer: Multiplexer, binaryMissing: Bool, connection: ServerConnection,
+         connectionState: TransportConnState, quietWait: Bool = false,
+         startsSettled: Bool = false, failure: String? = nil,
+         onCreate: @escaping () -> Void, onInstall: @escaping () -> Void) {
+        self.multiplexer = multiplexer
+        self.binaryMissing = binaryMissing
+        self.connection = connection
+        self.connectionState = connectionState
+        self.quietWait = quietWait
+        self.failure = failure
+        self.onCreate = onCreate
+        self.onInstall = onInstall
+        _settled = State(initialValue: startsSettled)
+    }
 
     var body: some View {
         VStack(spacing: 14) {
@@ -3388,8 +3691,12 @@ private struct MultiplexerEmptyStateView: View {
         .padding(settled ? 24 : 0)
         .background(Ink.terminalBG)
         .task {
+            guard !settled else { return }
             try? await Task.sleep(nanoseconds: 4_000_000_000)
             withAnimation(.easeOut(duration: 0.25)) { settled = true }
+        }
+        .onChange(of: failure) { _, failure in
+            if failure != nil { creating = false }
         }
     }
 
@@ -3474,6 +3781,7 @@ struct MoshDiagnosticsView: View {
                     Text(d.channelState).font(Face.mono(12, .bold))
                         .foregroundStyle(d.channelState == "ready" ? Ink.primary : Ink.warn)
                 }
+                if d.inputHeld { Text("input held until the server answers").font(Face.mono(12, .bold)).foregroundStyle(Ink.warn) }
             } else {
                 Text("No datagrams yet.")
                     .font(Face.mono(12))
@@ -3504,6 +3812,416 @@ struct MoshDiagnosticsView: View {
             Text(label).font(Face.mono(12)).foregroundStyle(Ink.meta)
             Spacer(minLength: 20)
             Text("\(value)").font(Face.mono(12, .bold)).foregroundStyle(Ink.primary)
+        }
+    }
+}
+
+// MARK: - The NSH page (`MOSHPIT_NSH_TERMINAL`)
+
+/// The seam where the screen draws through NSH (``TerminalNSHPage``)
+/// instead of its SwiftUI chrome. Everything that is not drawn stays the
+/// screen's: the session, the keyboard intent, the presentations, the
+/// lifecycle above. What the chrome shows is read here as the SwiftUI
+/// body reads it, and what the person asks for runs the same code.
+extension TerminalScreen {
+    /// Whether this screen draws through NSH: its switch, as it was when the
+    /// screen was made, unless NSH could not start.
+    private var usesNSH: Bool { nshTerminal && !nshFailed }
+
+    /// Whether the breadcrumb's pickers are NSH's: always with the NSH
+    /// terminal, else by their own switch.
+    private var nshPickers: Bool { usesNSH || NSHScreen.muxPicker.isOn }
+
+    /// mosh's counters while the page shows them (`{"op": "diagnostics"}`).
+    private var nshDiagnostics: TerminalNSHDiagnostics {
+        TerminalNSHDiagnostics(shown: showMoshDiagnostics && connection.connectionProtocol == .mosh,
+                               counters: metrics?.moshDiagnostics)
+    }
+
+    private var nshPage: some View {
+        TerminalNSHPage(
+            model: nshModel,
+            chrome: nshChrome,
+            bar: nshBar,
+            diagnostics: nshDiagnostics,
+            dictation: dictation,
+            attachment: imageAttachment,
+            preview: active?.remotePreview,
+            target: nshTarget,
+            focus: focusPolicy,
+            geometryHeld: geometryHold,
+            appearance: TerminalNSHStage.Appearance(
+                theme: theme, fontSize: settings.fontSize, fontName: settings.fontName,
+                cursorShape: settings.cursorShape, cursorColorId: effectiveCursorColorId,
+                cursorBlink: settings.cursorBlink),
+            onPaste: { [weak active] text in active?.sendPaste(text) },
+            perform: nshPerform,
+            onFailure: {
+                Log.ui.error("terminal: NSH did not start; the SwiftUI chrome shows")
+                nshFailed = true
+            }
+        ) {
+            nshAnchors
+        }
+        // What the SwiftUI chrome's own views watch (the pane a deep link
+        // asked for, the breadcrumb kept across a reconnect, a new session's
+        // first-live bookkeeping), watched here while they are not drawn.
+        .onChange(of: paneReadinessSignal) { selectPendingPaneIfReady() }
+        .onChange(of: router.paneRequest) {
+            claimPendingPaneRequestIfNeeded()
+            selectPendingPaneIfReady()
+        }
+        .onChange(of: livePlan) { _, plan in
+            if let plan { lastBreadcrumb = plan }
+        }
+        .onChange(of: activeIdentity) { _, _ in sessionSwapped() }
+    }
+
+    /// What the chrome shows now.
+    private var nshChrome: TerminalNSHChrome {
+        var chrome = TerminalNSHChrome()
+        chrome.name = connection.displayName
+        chrome.user = connection.username
+        chrome.host = connection.host
+        chrome.port = connection.port
+        chrome.mosh = connection.connectionProtocol == .mosh
+        chrome.mux = connection.multiplexer
+        chrome.sidebar = onToggleSidebar != nil
+        chrome.pill = transportKind
+        chrome.state = connState
+        if let plan = livePlan ?? retainedPlan {
+            let vocabulary = connection.multiplexer.vocabulary
+            chrome.crumbs = .init(plan: plan, sessionIcon: vocabulary.sessionIcon,
+                                  windowIcon: vocabulary.windowIcon, live: livePlan != nil)
+        }
+        chrome.still = stillSwitch
+        if posterVisible {
+            chrome.cover = .init(kind: .poster, state: posterState, touches: connState != .live)
+        } else if veilVisible {
+            chrome.cover = .init(kind: .veil, state: posterState,
+                                 ended: active?.viewModel.endedByServer == true)
+        } else if let follow = sizeFollow {
+            chrome.cover = .init(kind: .follow, state: connState, owner: follow.ownerLabel, touches: true)
+        }
+        (chrome.content, chrome.empty) = nshContent
+        if active?.moshReturnPathDead == true {
+            chrome.banner = .returnPath
+        } else if metrics?.isRoaming == true {
+            chrome.banner = .roam(srtt: metrics?.srttMs, history: metrics?.srttHistory ?? [])
+        } else if let notice = active?.degrade {
+            chrome.banner = .degrade(notice.missing)
+        }
+        if let text = active?.tmuxControl?.notice ?? active?.herdrNotice {
+            chrome.notice = .init(text: text, action: active?.herdrNoticeAction)
+        }
+        chrome.link = copiedURL.map { $0.host() ?? $0.absoluteString }
+        chrome.compact = compactChrome
+        return chrome
+    }
+
+    /// The shortcut bar (`bottomAccessory`'s `ShortcutBarView`).
+    private var nshBar: TerminalNSHBar {
+        let toolbar = shortcutStore.toolbar(
+            forHost: connection.displayName,
+            inMultiplexer: active?.tmuxControl != nil || active?.herdrControl != nil)
+        return TerminalNSHBar(
+            chips: toolbar.map(TerminalNSHBar.chip),
+            keyboardDown: keyboardIntent != .up,
+            ctrlArmed: ctrlArmed,
+            voice: settings.voiceInputEnabled,
+            micActive: dictation != nil,
+            clipboardHasImage: clipboardHasImage,
+            camera: CameraCaptureView.isAvailable,
+            sent: (active?.imageUploads.entries ?? []).map {
+                TerminalNSHBar.Sent(id: $0.id.uuidString, number: $0.number, filename: $0.filename)
+            })
+    }
+
+    /// What the pane area holds (`terminalContent`'s branches).
+    private var nshContent: (TerminalNSHChrome.Content, TerminalNSHChrome.Empty?) {
+        guard let active else { return (.none, nil) }
+        return Self.paneContent(of: active, isReconnect: isReconnect, connState: connState)
+    }
+
+    /// ``nshContent`` of `active`: a reconnect's terminal (`isReconnect`),
+    /// its transport in `connState`.
+    @MainActor
+    static func paneContent(of active: SessionHub.ActiveSession, isReconnect: Bool,
+                           connState: TransportConnState)
+        -> (TerminalNSHChrome.Content, TerminalNSHChrome.Empty?) {
+        let ghost = active.retiredTmuxController
+        if let controller = ghost ?? active.tmuxController {
+            if ghost != nil || controller.snapshot.isAttached { return (.terminal, nil) }
+            if isReconnect && (connState != .live || active.awaitingFirstFrame) { return (.blank, nil) }
+            // Missing is the host's probe's answer: known. No sessions isn't
+            // yet: the attach may only be on its way.
+            let missing = active.capabilities?.hasTmux == false
+            return (.empty, .init(mux: .tmux, missing: missing, quiet: isReconnect, settled: missing))
+        }
+        if let herdr = active.herdrControl, herdr.serverNotRunning {
+            // The server answered that it isn't running: known.
+            return (.empty, .init(mux: .herdr, missing: active.capabilities?.hasHerdr == false,
+                                  quiet: isReconnect, settled: true))
+        }
+        // mosh + tmux on a server with no session (B228): the renderer on
+        // screen waits for one in silence. The empty state with its Create
+        // goes over it, as the SwiftUI terminal's overlay does; without it
+        // the screen stayed black (B337). The server was asked already, so
+        // the answer is known: it shows at once (settled), with nothing, not
+        // the poster, before it.
+        if active.awaitingFirstSession, connState == .live {
+            return (.empty, .init(mux: .tmux, missing: false, quiet: true, settled: true))
+        }
+        return (.terminal, nil)
+    }
+
+    /// The terminal the slot shows (`terminalContent`, `TmuxPaneSplitView`).
+    private var nshTarget: TerminalNSHStage.Target? {
+        guard let active else { return nil }
+        let ghost = active.retiredTmuxController
+        if let controller = ghost ?? active.tmuxController {
+            let snapshot = controller.snapshot
+            guard ghost != nil || snapshot.isAttached,
+                  let pane = snapshot.activePaneId ?? snapshot.activePanes.first?.id else { return nil }
+            let frozen = ghost != nil
+            return .init(source: .pane(controller, pane), inset: compactChrome ? 2 : 4, frozen: frozen,
+                         slide: snapshot.hasSwipedSinceAttach && !frozen ? snapshot.lastSwitchForward : nil)
+        }
+        if let herdr = active.herdrControl, herdr.serverNotRunning { return nil }
+        return .init(source: .plain(active))
+    }
+
+    /// The host's presentations, hung where the screen draws what they
+    /// belong to: the pickers from the breadcrumb (a popover on the iPad, a
+    /// sheet on the phone), their content NSH's (``MuxPicker``). The pill's
+    /// question and mosh's counters are the page's own.
+    @ViewBuilder
+    private var nshAnchors: some View {
+        let anchors = nshModel.anchors
+        let crumb = anchors.breadcrumb ?? CGRect(x: 0, y: 0, width: 1, height: 1)
+        Color.clear
+            .frame(width: crumb.width, height: crumb.height)
+            .adaptivePresentation(isPresented: $showWindowsSheet) {
+                if let c = active?.tmuxControl { MuxPicker(controller: c, kind: .windows, nsh: nshPickers) } else if let h = active?.herdrControl { MuxPicker(controller: h, kind: .windows, nsh: nshPickers) }
+            }
+            .adaptivePresentation(isPresented: $showSessionsSheet) {
+                if let c = active?.tmuxControl { MuxPicker(controller: c, kind: .sessions, nsh: nshPickers) } else if let h = active?.herdrControl { MuxPicker(controller: h, kind: .sessions, nsh: nshPickers) }
+            }
+            .adaptivePresentation(isPresented: $showPaneSheet) {
+                if let c = active?.tmuxControl { MuxPicker(controller: c, kind: .panes, nsh: nshPickers) } else if let h = active?.herdrControl { MuxPicker(controller: h, kind: .panes, nsh: nshPickers) }
+            }
+            .position(x: crumb.midX, y: crumb.midY)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+    }
+
+    /// What the NSH screen asked for, done as the SwiftUI chrome does it.
+    private func nshPerform(_ intent: TerminalNSHIntent) {
+        switch intent {
+        case .back:
+            leave()
+        case .sidebar:
+            if let onToggleSidebar { onToggleSidebar() } else { leave() }
+        case .transport:
+            // Confirmed on the page's own action sheet.
+            switchProtocol()
+        case .diagnostics:
+            if connection.connectionProtocol == .mosh { showMoshDiagnostics = true }
+        case .diagnosticsDismiss:
+            showMoshDiagnostics = false
+        case .repaint:
+            // Ack state 0: the server rediffs from blank (MoshDiagnosticsView).
+            active?.requestRepaint()
+            showMoshDiagnostics = false
+        case .crumb(let crumb):
+            // The remembered tree is inert: its controller is being rebuilt.
+            guard livePlan != nil else { return }
+            switch crumb {
+            case .session: presentSheet { showSessionsSheet = true }
+            case .window: presentSheet { showWindowsSheet = true }
+            case .pane: presentSheet { showPaneSheet = true }
+            }
+        case .window(let number):
+            selectWindow(number: number)
+        case .takeOver:
+            active?.tmuxController?.takeSizeOwnership()
+        case .create:
+            if let herdr = active?.herdrControl, herdr.serverNotRunning {
+                herdr.newSession(named: nil)
+            } else {
+                active?.createFirstTmuxSession()
+            }
+        case .install:
+            installPackages = active?.herdrControl != nil ? ["herdr"] : ["tmux"]
+        case .bannerAction:
+            if active?.moshReturnPathDead == true {
+                switchProtocol()
+            } else if let notice = active?.degrade {
+                installPackages = notice.packages
+            }
+        case .bannerDismiss:
+            if active?.moshReturnPathDead == true {
+                active?.moshReturnPathDead = false
+            } else {
+                active?.degrade = nil
+            }
+        case .noticeAction:
+            active?.runHerdrNoticeAction()
+        case .openLink:
+            if let url = copiedURL {
+                UIApplication.shared.open(url)
+                copiedURL = nil
+            }
+        case .chip(let id):
+            let toolbar = shortcutStore.toolbar(
+                forHost: connection.displayName,
+                inMultiplexer: active?.tmuxControl != nil || active?.herdrControl != nil)
+            if let shortcut = toolbar.first(where: { $0.id.uuidString == id }) { send(shortcut: shortcut) }
+        case .arrow(let direction):
+            sendArrow(direction)
+        case .scroll(let direction):
+            scrollHistory(direction)
+        case .keyboard:
+            keyboardIntent = keyboardIntent == .up ? .down : .up
+        case .mic:
+            if settings.voiceInputEnabled { toggleDictation() }
+        case .image:
+            disarmStickyCtrlIfNeeded()
+            photoPickerPresented = true
+        case .imagePaste:
+            beginClipboardImageAttachment()
+        case .imageCamera:
+            if CameraCaptureView.isAvailable { presentSheet { showCamera = true } }
+        case .imageSent(let id):
+            if let entry = active?.imageUploads.entries.first(where: { $0.id.uuidString == id }) {
+                insertUploadedImage(entry)
+            }
+        case .dictation(let action):
+            switch action {
+            case .cancel: cancelDictation()
+            case .insert: finishDictation()
+            case .send: finishDictation(submit: true)
+            case .settings:
+                if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
+                cancelDictation()
+            default: break
+            }
+        case .attachment(let action):
+            switch action {
+            case .cancel: cancelImageAttachment()
+            case .retry: imageAttachment?.retry()
+            case .insert: finishImageAttachment()
+            case .send: finishImageAttachment(submit: true)
+            default: break
+            }
+        case .preview(let action):
+            switch action {
+            case .cancel: dismissRemotePreview()
+            case .confirm:
+                Haptics.tap()
+                active?.remotePreview?.confirm()
+            default: break
+            }
+        }
+    }
+}
+
+/// The bar's sticky Ctrl: armed on one coordinator at a time — the one
+/// typing went to when it was armed — and let go when typing moves to
+/// another pane or session (B411). It used to stay armed on the pane left,
+/// for good, while the chip followed the screen: back in that pane, the
+/// first letter typed went out as a control code (^C interrupting an
+/// agent, ^D ending a shell), and the chip's "off" cleared only the pane on
+/// screen.
+@MainActor
+final class StickyCtrl {
+    private(set) weak var coordinator: SwiftTerminalView.Coordinator?
+    /// Whether it is armed, for the chip.
+    var onChange: ((Bool) -> Void)?
+
+    var isArmed: Bool { coordinator?.pendingCtrl == true }
+
+    /// The next key typed into `coordinator` goes out as its control code.
+    func arm(_ coordinator: SwiftTerminalView.Coordinator) {
+        if let armed = self.coordinator, armed !== coordinator { armed.pendingCtrl = false }
+        self.coordinator = coordinator
+        coordinator.pendingCtrl = true
+        coordinator.onPendingCtrlConsumed = { [weak self, weak coordinator] in
+            guard let self, self.coordinator === coordinator else { return }
+            self.coordinator = nil
+            self.onChange?(false)
+        }
+        onChange?(true)
+    }
+
+    func disarm() {
+        coordinator?.pendingCtrl = false
+        coordinator = nil
+        onChange?(false)
+    }
+
+    /// Typing now goes to `target`'s coordinator (nil: nowhere).
+    func typingMoved(to target: ObjectIdentifier?) {
+        guard let armed = coordinator, ObjectIdentifier(armed) != target else { return }
+        disarm()
+    }
+}
+
+// MARK: - A protocol switch's still picture (the SwiftUI chrome)
+
+/// The terminal on screen as a protocol switch began, drawn from its own
+/// rows (``TerminalSurface/snapshotView()``: a Metal layer's snapshot is not
+/// to be trusted), and where it was in the window. The SwiftUI chrome lays
+/// it over the pane until the new session's frame is uncovered; the NSH
+/// page's stage keeps its own (``TerminalNSHStage/holdStill()``).
+struct TerminalStill {
+    let picture: UIView
+    /// Its frame in the window's coordinates.
+    let frame: CGRect
+
+    /// `surface`'s picture, if it is on screen.
+    @MainActor
+    init?(of surface: TerminalSurface?) {
+        guard let surface, let window = surface.view.window,
+              let picture = surface.snapshotView() else { return nil }
+        picture.isUserInteractionEnabled = false
+        self.picture = picture
+        frame = surface.view.convert(surface.view.bounds, to: window)
+    }
+}
+
+/// ``TerminalStill`` where it was in the window, whatever the SwiftUI layout
+/// around it does meanwhile.
+struct TerminalStillView: UIViewRepresentable {
+    let still: TerminalStill
+
+    func makeUIView(context: Context) -> Host {
+        let host = Host()
+        host.isUserInteractionEnabled = false
+        host.clipsToBounds = true
+        host.show(still)
+        return host
+    }
+
+    func updateUIView(_ uiView: Host, context: Context) {
+        uiView.show(still)
+    }
+
+    final class Host: UIView {
+        private var still: TerminalStill?
+
+        func show(_ still: TerminalStill) {
+            guard self.still?.picture !== still.picture else { return }
+            self.still?.picture.removeFromSuperview()
+            self.still = still
+            addSubview(still.picture)
+            setNeedsLayout()
+        }
+
+        override func layoutSubviews() {
+            super.layoutSubviews()
+            guard let still else { return }
+            still.picture.frame = window == nil ? still.frame : convert(still.frame, from: nil)
         }
     }
 }

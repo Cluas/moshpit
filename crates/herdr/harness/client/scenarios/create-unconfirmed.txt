@@ -1,0 +1,5 @@
+# B72: the create prints no answer (and its trailer is lost): not started.
+host rule worktree_create - empty
+at 0 start
+at 300 task /home/dev/code/app fix-scroll claude go
+end 6000

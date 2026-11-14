@@ -17,13 +17,13 @@ import UserNotifications
 ///     claude needs you
 ///     Bash: rm -rf build — mac-mini · work
 ///
-/// Localization: `String(localized:)` resolves against `Bundle.main`, which is
-/// the app inside the app and the extension inside the extension. Both bundles
-/// carry the keys used here — `scripts/gen/gen_xcstrings.py` writes the
-/// extension's catalog (`Extensions/MoshpitPush/Localizable.xcstrings`) from the
-/// same table as the app's — so a sentence composed here is translated in either
-/// process. Durations go through Foundation's own unit formatter, which needs no
-/// catalog at all.
+/// Localization: in the language Moshpit shows (``AppLanguage``), looked up in
+/// `Bundle.main` — the app inside the app, the extension inside the extension.
+/// Both bundles carry the keys used here — `scripts/gen/gen_xcstrings.py`
+/// writes the extension's catalog (`Extensions/MoshpitPush/Localizable.xcstrings`)
+/// from the same table as the app's — so a card reads the same, in the same
+/// language, whichever process wrote it. Durations go through Foundation's own
+/// unit formatter, in that language's locale.
 public enum AgentNotificationCopy {
 
     /// The longest detail (a prompt, a question, a tool line) a card shows.
@@ -73,7 +73,7 @@ public enum AgentNotificationCopy {
     /// How long a turn ran, as a card shows it — "12 min", "1 hr, 5 min" — in
     /// the device's language via Foundation. nil under ``durationFloor``.
     /// Whole minutes only: a card is not a stopwatch.
-    public static func duration(_ seconds: Int, locale: Locale = .current) -> String? {
+    public static func duration(_ seconds: Int, locale: Locale = AppLanguage.locale()) -> String? {
         guard seconds >= durationFloor else { return nil }
         let minutes = Duration.seconds((seconds / 60) * 60)
         return minutes.formatted(
@@ -87,17 +87,28 @@ public enum AgentNotificationCopy {
     /// three-minute build ending is worth a chime; a twenty-second answer is
     /// information, not an interruption: silent, `.passive`, in the list for
     /// whenever the user next looks.
+    ///
+    /// `rings` false: this turn's finish already rang — the other copy of it,
+    /// pushed or local (``PushFinishes``) — and this one only updates the
+    /// card, silent and `.passive`, however long the turn ran.
     public static func done(agent: String, detail: String?, place: String,
                             duration: Int, sound: Bool, threshold: Int,
+                            rings: Bool = true,
                             into content: UNMutableNotificationContent) {
-        var title = String(localized: "✓ \(agent) finished",
-                           comment: "Notification title: an agent's turn ended. %@ is the agent's name.")
+        var title = AppLanguage.string("✓ \(agent) finished",
+                                       comment: "Notification title: an agent's turn ended. %@ is the agent's name.")
         if let ran = self.duration(duration) { title += " · \(ran)" }
         content.title = title
         content.body = body(detail: detail, place: place)
-        let isLong = duration >= threshold
+        let isLong = duration >= threshold && rings
         content.sound = (isLong && sound) ? .default : nil
         content.interruptionLevel = isLong ? .active : .passive
+    }
+
+    /// Whether a finish of a turn that ran `duration` seconds would make a
+    /// sound at all — the only finishes ``PushFinishes`` has to share.
+    public static func doneRings(duration: Int, sound: Bool, threshold: Int) -> Bool {
+        sound && duration >= threshold
     }
 
     /// The needs-you card. `standingCount` is how many prompts are waiting
@@ -110,8 +121,8 @@ public enum AgentNotificationCopy {
                                  place: String, edge: Bool, sound: Bool,
                                  into content: UNMutableNotificationContent) {
         let who = standingCount > 1 ? "\(agent) +\(standingCount - 1)" : agent
-        content.title = String(localized: "\(who) needs you",
-                               comment: "Notification title: an agent stopped for the user. %@ is the agent's name, possibly with a +N count.")
+        content.title = AppLanguage.string("\(who) needs you",
+                                           comment: "Notification title: an agent stopped for the user. %@ is the agent's name, possibly with a +N count.")
         content.body = body(detail: detail, place: place)
         content.sound = (edge && sound) ? .default : nil
         content.interruptionLevel = edge ? .timeSensitive : .passive

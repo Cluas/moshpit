@@ -1,0 +1,16 @@
+t=0 exec api snapshot
+t=500 exec PATH="$PATH:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:$HOME/.local/bin" nohup herdr server >/dev/null 2>&1 </dev/null &
+t=1040 exec api snapshot
+t=1080 exec workspace create --focus --label 'work'
+t=1120 exec api snapshot
+t=1160 exec api snapshot
+t=1200 focus w2:p3
+t=3200 exec api snapshot
+t=3240 focus w2:p3
+t=5240 exec api snapshot
+t=5280 focus w2:p3
+t=7280 exec api snapshot
+t=7320 focus w2:p3
+landed server start
+landed workspace create work
+state focus=w2:p3 server=w2:p3 sessions=1 notrunning=false mismatch=false

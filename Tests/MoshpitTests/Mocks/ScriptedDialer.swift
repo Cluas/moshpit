@@ -28,7 +28,7 @@ final class DialScript: @unchecked Sendable {
 
     /// The `TerminalViewModel.Dialer` shape.
     var dialer: TerminalViewModel.Dialer {
-        { [self] connection, _, _ in try await self.dial(connection) }
+        { [self] connection, _ in try await self.dial(connection) }
     }
 }
 
@@ -80,7 +80,7 @@ final class QuietTransport: SSHClientTransport, @unchecked Sendable {
 
     func openPTY(rows: Int, cols: Int,
                  onOutput: @escaping @Sendable (Data) -> Void,
-                 onEnd: @escaping @Sendable () -> Void) async throws -> any SSHPTYWriter {
+                 onEnd: @escaping @Sendable (SSHChannelEnd) -> Void) async throws -> any SSHPTYWriter {
         Writer()
     }
 

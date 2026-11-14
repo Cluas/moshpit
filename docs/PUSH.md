@@ -91,13 +91,12 @@ equivalence and the notification kept offering the button. The honest reading of
 "why this change is as small as it is" is that it was small because it had not
 done the part that needed doing.
 
-**So a pushed notification now carries no action buttons at all**, only the wake
-and the tap that opens to the pane; local notifications keep theirs, where the
-session is live by construction. A button that cannot succeed is the thing this
-feature has spent its whole life removing, and this one could not succeed in
-precisely the case it was built for. The real answer — the host, which is awake
-and has the tmux pane, collecting the decision instead of the phone trying to
-deliver it — is designed but not built; see Known gaps.
+**So a pushed notification carries no action buttons at all**, only the wake
+and the tap that opens to the pane. A button that cannot succeed is the thing
+this feature has spent its whole life removing, and this one could not succeed
+in precisely the case it was built for. Local notifications have since lost
+theirs too, and the host-side decision path built to replace them was deleted
+on purpose — see "Why there are no buttons".
 
 ## The privacy boundary
 
@@ -119,9 +118,9 @@ nothing anywhere else; the pane id is a small integer like `%3`.
 
 The host name, the session name, the agent, and every character of what the
 agent asked. Those travel inside a sealed envelope whose key is stored in
-exactly two places: this phone, and your own `~/.moshpit/push.conf` at mode
-0600. The relay is never told the key, and a stolen relay database does not
-contain one.
+exactly two places: this phone, and your own
+`~/.moshpit/push.d/<connection-id>.conf` at mode 0600. The relay is never told
+the key, and a stolen relay database does not contain one.
 
 **A caveat that belongs next to that claim, not below it.** "Stored in two
 places" is about storage. While the sender runs, openssl takes its key as a
@@ -135,16 +134,12 @@ encryption key cannot be, portably. On a machine you share with people you would
 not hand your agent transcripts to, either do not pair it or run with
 `hidepid=2`.
 
-Since the reply path landed, that paragraph is worth reading a second time with
-a harder question in mind. It used to describe a confidentiality loss: someone
-polling `ps` learns what your agents are asking. The pairing secret now also
-authenticates decisions travelling the other way, so the same capture is a
-capability — with the secret and a delivery path to the relay, a local user can
-seal an `allow` and have your host press Enter on a permission prompt. The
-waiter narrows this (only Enter, Esc and Ctrl-C, only into a pane whose agent is
-still alive and still on the same question, only for ten minutes), which is why
-its whitelist is a whitelist. It does not close it. On a shared host, `hidepid=2`
-stopped being hardening and became the precondition.
+While the reply path existed (see "Why there are no buttons"), that paragraph had
+a harder second reading: the pairing secret also authenticated decisions
+travelling the other way, so the same capture was a capability — a local user
+could seal an `allow` and have the host press Enter on a permission prompt. With
+the reply path gone it is a confidentiality loss again: someone polling `ps`
+learns what your agents are asking.
 
 It does not even hold the credential that authorises sending: it stores
 `sha256(SEND_TOKEN)`, so its database can route pushes but cannot originate
@@ -274,7 +269,7 @@ cannot be blocked by an agent holding the one that happens to be active.
   * **Files go up as base64.** The base64 alphabet cannot contain a quote, a
     dollar or a newline, so there is no escaping to get wrong and nothing in a
     config file or a secret can survive into the command line.
-  * **`push.conf` is written with `umask 077`, not chmod'd after** — a chmod
+  * **A pairing conf is written with `umask 077`, not chmod'd after** — a chmod
     leaves a window where a file holding two secrets is world-readable.
   * **The sender lands before the secrets it reads.** A host must never hold a
     pairing secret with no program that could use it.
@@ -320,34 +315,24 @@ plumbing.
 
 ## Two safety properties worth naming
 
-**Attention pushes expire in 10 minutes.** Allow/Deny from a lock screen is a
-blind keystroke — Enter or Esc into whatever prompt the pane holds *now*. The
-app refuses one when it knows the prompt has moved on
-(`AgentActivityMonitor.attentionState`), but a phone that was off for an hour
-has no such record and would let it through. So a stale attention push must
-never arrive at all. `done` gets an hour; it is only ever informational.
+**Attention pushes expire in 10 minutes.** The relay sets `apns-expiration`, so a
+phone that was off for an hour does not wake to a permission prompt that has long
+since moved on. `done` gets an hour; it is only ever informational. When
+notifications still carried Allow/Deny this bounded something worse — a stale
+attention push was a blind keystroke into whatever the pane held *now* — and the
+limit stays because a prompt from an hour ago is still the wrong thing to wake
+someone for.
 
-**Only a decrypted push is actionable.** The payload carries NO notification
-category; the extension adds one after it opens the envelope. So Allow and Deny
-appear exactly when the pane ids needed to act on them are present, and never
-otherwise — not when no key matches, and not when the extension never runs
-because it timed out. Those cases show the translated fallback with no buttons,
-and a body tap that opens the app.
+**No push carries a category.** The payload has none and the extension adds none,
+so a push that decrypts and the translated fallback for one that does not differ
+only in what they say and where a tap lands: the decrypted one knows its pane, the
+fallback opens the app. The relay is told `attention` or `done` only to pick the
+fallback wording and the expiry.
 
-That is the second version of this design. The first put the category in the
-payload and argued the fallback should stay actionable; a peer review pointed out
-the fallback *cannot* be actionable, because what you would need in order to act
-on it is exactly what failed to arrive — and that a dead Allow is this feature's
-worst outcome, since the user walks away believing they approved while the agent
-is still waiting. The relay is still told `attention` or `done`, but only to pick
-the fallback wording and the expiry.
-
-**Attention expires on the device, too.** `apns-expiration` is set by the relay,
-which is the party this design does not trust — a compromised one could hold an
-envelope and replay it at will. `ts` is inside the sealed envelope, so the
-extension checks it (`PushRemoteNotification.attentionLifetime`, 15 minutes with
-slack for clock skew) and drops the buttons on anything older, putting that
-guarantee back on the phone.
+The sealed `ts` is the one timestamp a compromised relay cannot move. The device
+does not check it, because nothing on a notification is left for a replayed push
+to trigger; anything actionable that ever returns to a notification needs that
+check first.
 
 ## Why there are no buttons
 
@@ -616,7 +601,7 @@ Then hand the `.p8` and the two ids to the relay via the environment above.
 A device build with `-allowProvisioningUpdates` can fail with **"No Accounts: Add
 a new account in Accounts settings."** That does not mean there is no developer
 account: `security find-identity -v -p codesigning` shows an
-`Apple Development: Wenlong Hu` certificate on this Mac. It means the CLI has no
+`Apple Development: <your name>` certificate on this Mac. It means the CLI has no
 signed-in Xcode account SESSION with which to register the two new App IDs and
 mint their profiles. Doing steps 2 and 3 in the portal (or once in Xcode with the
 account signed in) is what clears it — not adding an account you already have.
@@ -803,7 +788,7 @@ account signed in) is what clears it — not adding an account you already have.
 | **the real shell sender against the real relay** | `TestShellSenderInterop` | `go test ./...` |
 | the same vector, opened by CryptoKit | `Tests/MoshpitTests/Services/PushSealedBoxTests.swift` | `xcodebuild -scheme MoshpitUnitTests test` |
 | pairing material (the one-liner's tests went with it) | `Tests/MoshpitTests/Services/PushPairingTests.swift` | same |
-| the shell↔Swift drift guard for both host scripts | `Tests/MoshpitTests/Services/HostScriptsTests.swift` | same |
+| the installed host scripts are the repo's files | `crates/install/src/scripts.rs` | `cargo test -p moshpit-install` |
 | install engine: commands, digests, staleness, uninstall | `Tests/MoshpitTests/Services/HostInstallerTests.swift` | same |
 | agent config merge and removal, JSON and TOML | `Tests/MoshpitTests/Services/AgentHookConfigTests.swift` | same |
 | the setup screen's state machine | `Tests/MoshpitTests/Services/HostSetupModelTests.swift` | same |
@@ -926,12 +911,7 @@ push rendered as `✓ claude / m1-pro` beside it, and repeated attention pushes 
 the same pane collapsed into one card carrying a "2" badge rather than buzzing
 twice — the collapse-id design working as described above.
 
-**What is still unverified:** the lock-screen ACTION BUTTONS on a pushed
-notification (Allow / Deny / Reply). The categories are registered at launch and
-their identifiers are pinned by tests, and the buttons work on local
-notifications, but `idb ui tap --duration` does not produce the force-press that
-reveals them, so the pushed variant has not been driven end to end. Also
-unverified: Time Sensitive delivery, which is still waiting on the entitlement
-decision (the simulator reports `timeSensitiveSetting: NotSupported`, as expected
-while it is absent). The physical-device gap is closed — see the real-device run
-above.
+**What this section once listed as unverified is gone or done:** the lock-screen
+action buttons on a pushed notification no longer exist (see "Why there are no
+buttons"), Time Sensitive shipped on 2026-08-25 (see Known gaps), and the
+physical-device gap is closed — see the real-device run above.

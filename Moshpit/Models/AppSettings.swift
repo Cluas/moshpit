@@ -6,6 +6,14 @@ enum CursorShape: String, CaseIterable {
     case block, bar, underline
 }
 
+/// The app's appearance (Settings › Appearance, R18): the system's, or
+/// always light, or always dark. Read by the NSH screens' params
+/// (`NSHScreenParams`); nothing changes a window's style by it until R18's
+/// host part.
+enum AppAppearance: String, CaseIterable {
+    case system, light, dark
+}
+
 enum PredictMode: String, CaseIterable {
     case adaptive, always, never, experimental
 
@@ -29,9 +37,10 @@ final class AppSettings {
     /// that hand in a scratch suite keep isolating everything.
     @ObservationIgnored var store: UserDefaults { defaults }
 
-    /// App-wide instance so non-View code (design tokens, icon switching)
-    /// can read the active settings without environment injection.
-    static let shared = AppSettings(readiness: .system)
+    // The app-wide instance, `shared` — so non-View code (design tokens, icon
+    // switching) can read the active settings without environment injection —
+    // is made where the app reads its storage switch (`RustStoreSwitch.swift`):
+    // on this class's own code, or on the Rust store.
 
     @ObservationIgnored private let readiness: DefaultsReadiness
     /// Settings read the defaults live, so a sealed launch heals itself the
@@ -41,9 +50,16 @@ final class AppSettings {
     /// the extension "detail on, sound on" for a user who turned both off.
     @ObservationIgnored private var isAuthoritative = false
 
+    /// What reads and writes the settings when it isn't the code below:
+    /// the Rust store, behind the `MOSHPIT_RUST_STORE` switch
+    /// (``AppSettingsBacking``) — which also keeps the notification
+    /// service's mirror. nil: the code below, as ever.
+    @ObservationIgnored private let backing: AppSettingsBacking?
+
     init(defaults: UserDefaults = .standard, readiness: DefaultsReadiness = .always) {
         self.defaults = defaults
         self.readiness = readiness
+        backing = nil
         // Seed the App Group mirror the notification service extension reads
         // (see PushPrefs). At launch rather than lazily: a pushed notification
         // can land before the user ever opens Settings, and it must see the
@@ -51,9 +67,21 @@ final class AppSettings {
         reloadIfNeeded()
     }
 
+    /// Settings whose every read and write is `backing`'s, over the
+    /// preferences in `defaults` (``store`` hands those out, for the
+    /// bookkeeping that isn't a setting). `readiness` goes unused: the
+    /// backing has the sealed-launch rule, and mirrors the switches itself.
+    init(defaults: UserDefaults = .standard, backing: AppSettingsBacking) {
+        self.defaults = defaults
+        readiness = .always
+        self.backing = backing
+        reloadIfNeeded()
+    }
+
     /// Mirror the extension-visible switches once the defaults can be
     /// trusted; a no-op once that has happened.
     func reloadIfNeeded() {
+        if let backing { return backing.reloadIfNeeded() }
         guard !isAuthoritative, readiness.isReadable(defaults) else { return }
         isAuthoritative = true
         readiness.markReadable(defaults)
@@ -63,6 +91,8 @@ final class AppSettings {
     /// Push the two extension-visible switches into the App Group. Called from
     /// init and from the two setters those switches own.
     private func mirrorPushPrefs() {
+        // The backing's setters mirror their own.
+        guard backing == nil else { return }
         PushPrefs.write(
             showDetail: defaults.object(forKey: "moshpit.settings.lockScreenDetail") as? Bool ?? true,
             sound: defaults.object(forKey: "moshpit.settings.attentionSound") as? Bool ?? true)
@@ -71,19 +101,48 @@ final class AppSettings {
     // MARK: Generic accessors
 
     private func get<T>(_ key: String, _ fallback: T) -> T {
-        defaults.object(forKey: key) as? T ?? fallback
+        if let backing { return backing.value(forKey: key) as? T ?? fallback }
+        return defaults.object(forKey: key) as? T ?? fallback
+    }
+
+    // Store a value under its key, as each setter writes it: one overload
+    // per type, so each calls the very `UserDefaults.set` it always did.
+
+    private func put(_ value: Bool, _ key: String) {
+        if let backing { return backing.set(value, forKey: key) }
+        defaults.set(value, forKey: key)
+    }
+
+    private func put(_ value: Int, _ key: String) {
+        if let backing { return backing.set(value, forKey: key) }
+        defaults.set(value, forKey: key)
+    }
+
+    private func put(_ value: Double, _ key: String) {
+        if let backing { return backing.set(value, forKey: key) }
+        defaults.set(value, forKey: key)
+    }
+
+    private func put(_ value: String, _ key: String) {
+        if let backing { return backing.set(value, forKey: key) }
+        defaults.set(value, forKey: key)
+    }
+
+    private func put(_ value: [String], _ key: String) {
+        if let backing { return backing.set(value, forKey: key) }
+        defaults.set(value, forKey: key)
     }
 
     // MARK: DISPLAY
 
     var fontSize: Double {
         get { access(keyPath: \.fontSize); return get("moshpit.settings.fontSize", 9.0) }
-        set { withMutation(keyPath: \.fontSize) { defaults.set(newValue, forKey: "moshpit.settings.fontSize") } }
+        set { withMutation(keyPath: \.fontSize) { put(newValue, "moshpit.settings.fontSize") } }
     }
 
     var themeId: String {
         get { access(keyPath: \.themeId); return get("moshpit.settings.themeId", "github-dark") }
-        set { withMutation(keyPath: \.themeId) { defaults.set(newValue, forKey: "moshpit.settings.themeId") } }
+        set { withMutation(keyPath: \.themeId) { put(newValue, "moshpit.settings.themeId") } }
     }
 
     // MARK: APPEARANCE (app chrome theme, distinct from the terminal `themeId` above)
@@ -93,32 +152,22 @@ final class AppSettings {
     /// see ``appIconId``.
     var appThemeId: String {
         get { access(keyPath: \.appThemeId); return get("moshpit.settings.appThemeId", AppThemeCatalog.signalRoom.id) }
-        set { withMutation(keyPath: \.appThemeId) { defaults.set(newValue, forKey: "moshpit.settings.appThemeId") } }
+        set { withMutation(keyPath: \.appThemeId) { put(newValue, "moshpit.settings.appThemeId") } }
     }
 
     /// One of `AppIconCatalog.all[].id`. Independent of ``appThemeId``: iOS only
     /// switches between icons bundled at build time, so an icon can't follow a
     /// custom accent.
-    ///
-    /// Installs that predate the split have no stored value, and their icon was
-    /// implied by the app theme — the default reads through
-    /// `AppIconCatalog.migratedID(fromAppThemeID:)` so those users keep the icon
-    /// they already have on their home screen instead of silently reverting to
-    /// the primary one.
     var appIconId: String {
-        get {
-            access(keyPath: \.appIconId)
-            return get("moshpit.settings.appIconId",
-                       AppIconCatalog.migratedID(fromAppThemeID: appThemeId))
-        }
-        set { withMutation(keyPath: \.appIconId) { defaults.set(newValue, forKey: "moshpit.settings.appIconId") } }
+        get { access(keyPath: \.appIconId); return get("moshpit.settings.appIconId", AppIconCatalog.primary.id) }
+        set { withMutation(keyPath: \.appIconId) { put(newValue, "moshpit.settings.appIconId") } }
     }
 
     /// Monospaced font family for the terminal. "system" = the SF Mono system
     /// font; otherwise a `UIFont(name:)` family (see TerminalFont.families).
     var fontName: String {
         get { access(keyPath: \.fontName); return get("moshpit.settings.fontName", "system") }
-        set { withMutation(keyPath: \.fontName) { defaults.set(newValue, forKey: "moshpit.settings.fontName") } }
+        set { withMutation(keyPath: \.fontName) { put(newValue, "moshpit.settings.fontName") } }
     }
 
     // MARK: CURSOR
@@ -128,37 +177,37 @@ final class AppSettings {
             access(keyPath: \.cursorShape)
             return CursorShape(rawValue: get("moshpit.settings.cursorShape", "block")) ?? .block
         }
-        set { withMutation(keyPath: \.cursorShape) { defaults.set(newValue.rawValue, forKey: "moshpit.settings.cursorShape") } }
+        set { withMutation(keyPath: \.cursorShape) { put(newValue.rawValue, "moshpit.settings.cursorShape") } }
     }
 
     /// "teal" | "green" | "white" | "accent"
     var cursorColorId: String {
         get { access(keyPath: \.cursorColorId); return get("moshpit.settings.cursorColor", "teal") }
-        set { withMutation(keyPath: \.cursorColorId) { defaults.set(newValue, forKey: "moshpit.settings.cursorColor") } }
+        set { withMutation(keyPath: \.cursorColorId) { put(newValue, "moshpit.settings.cursorColor") } }
     }
 
     var cursorBlink: Bool {
         get { access(keyPath: \.cursorBlink); return get("moshpit.settings.cursorBlink", true) }
-        set { withMutation(keyPath: \.cursorBlink) { defaults.set(newValue, forKey: "moshpit.settings.cursorBlink") } }
+        set { withMutation(keyPath: \.cursorBlink) { put(newValue, "moshpit.settings.cursorBlink") } }
     }
 
     var trailOnPredict: Bool {
         get { access(keyPath: \.trailOnPredict); return get("moshpit.settings.trailOnPredict", true) }
-        set { withMutation(keyPath: \.trailOnPredict) { defaults.set(newValue, forKey: "moshpit.settings.trailOnPredict") } }
+        set { withMutation(keyPath: \.trailOnPredict) { put(newValue, "moshpit.settings.trailOnPredict") } }
     }
 
     // MARK: BEHAVIOR
 
     var keepConnectionsAlive: Bool {
         get { access(keyPath: \.keepConnectionsAlive); return get("moshpit.settings.keepAlive", true) }
-        set { withMutation(keyPath: \.keepConnectionsAlive) { defaults.set(newValue, forKey: "moshpit.settings.keepAlive") } }
+        set { withMutation(keyPath: \.keepConnectionsAlive) { put(newValue, "moshpit.settings.keepAlive") } }
     }
 
     // MARK: MOSH · ROAMING
 
     var moshByDefault: Bool {
         get { access(keyPath: \.moshByDefault); return get("moshpit.settings.moshByDefault", true) }
-        set { withMutation(keyPath: \.moshByDefault) { defaults.set(newValue, forKey: "moshpit.settings.moshByDefault") } }
+        set { withMutation(keyPath: \.moshByDefault) { put(newValue, "moshpit.settings.moshByDefault") } }
     }
 
     var predictMode: PredictMode {
@@ -166,30 +215,47 @@ final class AppSettings {
             access(keyPath: \.predictMode)
             return PredictMode(rawValue: get("moshpit.settings.predictMode", "adaptive")) ?? .adaptive
         }
-        set { withMutation(keyPath: \.predictMode) { defaults.set(newValue.rawValue, forKey: "moshpit.settings.predictMode") } }
+        set { withMutation(keyPath: \.predictMode) { put(newValue.rawValue, "moshpit.settings.predictMode") } }
     }
 
     var moshServerBinary: String {
         get { access(keyPath: \.moshServerBinary); return get("moshpit.settings.moshServerBinary", "/opt/homebrew/bin/mosh-server") }
-        set { withMutation(keyPath: \.moshServerBinary) { defaults.set(newValue, forKey: "moshpit.settings.moshServerBinary") } }
+        set { withMutation(keyPath: \.moshServerBinary) { put(newValue, "moshpit.settings.moshServerBinary") } }
     }
 
     var udpRangeStart: Int {
         get { access(keyPath: \.udpRangeStart); return get("moshpit.settings.udpRangeStart", 60000) }
-        set { withMutation(keyPath: \.udpRangeStart) { defaults.set(newValue, forKey: "moshpit.settings.udpRangeStart") } }
+        set { withMutation(keyPath: \.udpRangeStart) { put(newValue, "moshpit.settings.udpRangeStart") } }
     }
 
     var udpRangeEnd: Int {
         get { access(keyPath: \.udpRangeEnd); return get("moshpit.settings.udpRangeEnd", 61000) }
-        set { withMutation(keyPath: \.udpRangeEnd) { defaults.set(newValue, forKey: "moshpit.settings.udpRangeEnd") } }
+        set { withMutation(keyPath: \.udpRangeEnd) { put(newValue, "moshpit.settings.udpRangeEnd") } }
     }
 
     // MARK: NOTIFICATIONS (Vibe Island)
 
     var notificationsEnabled: Bool {
-        get { access(keyPath: \.notificationsEnabled); return get("moshpit.settings.notifications", true) }
-        set { withMutation(keyPath: \.notificationsEnabled) { defaults.set(newValue, forKey: "moshpit.settings.notifications") } }
+        get {
+            access(keyPath: \.notificationsEnabled)
+            #if DEBUG
+            if Self.quietForThisLaunch { return false }
+            #endif
+            return get("moshpit.settings.notifications", true)
+        }
+        set { withMutation(keyPath: \.notificationsEnabled) { put(newValue, "moshpit.settings.notifications") } }
     }
+
+    #if DEBUG
+    /// `-MOSHPIT_SEED_QUIET 1`: local notifications off for this launch, the
+    /// stored switch left as it is. The smoke seed used to turn the switch
+    /// itself off, for good (B200).
+    static let quietForThisLaunch: Bool = {
+        let args = ProcessInfo.processInfo.arguments
+        guard let index = args.firstIndex(of: "-MOSHPIT_SEED_QUIET"), index + 1 < args.count else { return false }
+        return args[index + 1] == "1"
+    }()
+    #endif
 
     /// Relay a paired host is pointed at.
     ///
@@ -209,11 +275,34 @@ final class AppSettings {
     var hostSetupDeclined: Set<String> {
         get {
             access(keyPath: \.hostSetupDeclined)
-            return Set(defaults.stringArray(forKey: "moshpit.settings.hostSetupDeclined") ?? [])
+            let key = "moshpit.settings.hostSetupDeclined"
+            // The strings of an array that holds something else too (B159):
+            // `stringArray(forKey:)` read it as no array at all, and the next
+            // host declined stored that nothing plus the one. The setter
+            // writes the strings only, so every build reads it again.
+            let stored: Any? = backing != nil ? backing?.value(forKey: key) : defaults.object(forKey: key)
+            return Set((stored as? [Any])?.compactMap { $0 as? String } ?? [])
         }
         set {
             withMutation(keyPath: \.hostSetupDeclined) {
-                defaults.set(Array(newValue).sorted(), forKey: "moshpit.settings.hostSetupDeclined")
+                put(Array(newValue).sorted(), "moshpit.settings.hostSetupDeclined")
+            }
+        }
+    }
+
+    /// Connections the user unpaired in Host Setup. Auto-care pairs nothing
+    /// for them until the user pairs again there (B371); the core says when
+    /// to add or drop one.
+    var hostSetupUnpaired: Set<String> {
+        get {
+            access(keyPath: \.hostSetupUnpaired)
+            let key = "moshpit.settings.hostSetupUnpaired"
+            let stored: Any? = backing != nil ? backing?.value(forKey: key) : defaults.object(forKey: key)
+            return Set((stored as? [Any])?.compactMap { $0 as? String } ?? [])
+        }
+        set {
+            withMutation(keyPath: \.hostSetupUnpaired) {
+                put(Array(newValue).sorted(), "moshpit.settings.hostSetupUnpaired")
             }
         }
     }
@@ -247,12 +336,12 @@ final class AppSettings {
             #endif
             return Self.defaultPushRelay
         }
-        set { withMutation(keyPath: \.pushRelayURL) { defaults.set(newValue, forKey: "moshpit.settings.pushRelay") } }
+        set { withMutation(keyPath: \.pushRelayURL) { put(newValue, "moshpit.settings.pushRelay") } }
     }
 
     var liveActivityEnabled: Bool {
         get { access(keyPath: \.liveActivityEnabled); return get("moshpit.settings.liveActivity", true) }
-        set { withMutation(keyPath: \.liveActivityEnabled) { defaults.set(newValue, forKey: "moshpit.settings.liveActivity") } }
+        set { withMutation(keyPath: \.liveActivityEnabled) { put(newValue, "moshpit.settings.liveActivity") } }
     }
 
     /// Play a sound with the "agent needs you" alert. When off, attention
@@ -260,7 +349,7 @@ final class AppSettings {
     var attentionSoundEnabled: Bool {
         get { access(keyPath: \.attentionSoundEnabled); return get("moshpit.settings.attentionSound", true) }
         set {
-            withMutation(keyPath: \.attentionSoundEnabled) { defaults.set(newValue, forKey: "moshpit.settings.attentionSound") }
+            withMutation(keyPath: \.attentionSoundEnabled) { put(newValue, "moshpit.settings.attentionSound") }
             mirrorPushPrefs()
         }
     }
@@ -272,7 +361,7 @@ final class AppSettings {
     var lockScreenDetailEnabled: Bool {
         get { access(keyPath: \.lockScreenDetailEnabled); return get("moshpit.settings.lockScreenDetail", true) }
         set {
-            withMutation(keyPath: \.lockScreenDetailEnabled) { defaults.set(newValue, forKey: "moshpit.settings.lockScreenDetail") }
+            withMutation(keyPath: \.lockScreenDetailEnabled) { put(newValue, "moshpit.settings.lockScreenDetail") }
             mirrorPushPrefs()
         }
     }
@@ -287,7 +376,7 @@ final class AppSettings {
         get { access(keyPath: \.raiseKeyboardOnOpen); return get("moshpit.settings.raiseKeyboardOnOpen", false) }
         set {
             withMutation(keyPath: \.raiseKeyboardOnOpen) {
-                defaults.set(newValue, forKey: "moshpit.settings.raiseKeyboardOnOpen")
+                put(newValue, "moshpit.settings.raiseKeyboardOnOpen")
             }
         }
     }
@@ -305,7 +394,7 @@ final class AppSettings {
         get { access(keyPath: \.remoteClipboardReadEnabled); return get("moshpit.settings.remoteClipboardRead", false) }
         set {
             withMutation(keyPath: \.remoteClipboardReadEnabled) {
-                defaults.set(newValue, forKey: "moshpit.settings.remoteClipboardRead")
+                put(newValue, "moshpit.settings.remoteClipboardRead")
             }
         }
     }
@@ -321,7 +410,7 @@ final class AppSettings {
         get { access(keyPath: \.uploadRetentionDays); return get("moshpit.settings.uploadRetentionDays", 7) }
         set {
             withMutation(keyPath: \.uploadRetentionDays) {
-                defaults.set(newValue, forKey: "moshpit.settings.uploadRetentionDays")
+                put(newValue, "moshpit.settings.uploadRetentionDays")
             }
         }
     }
@@ -333,7 +422,7 @@ final class AppSettings {
     /// nothing until tapped.
     var voiceInputEnabled: Bool {
         get { access(keyPath: \.voiceInputEnabled); return get("moshpit.settings.voiceInput", true) }
-        set { withMutation(keyPath: \.voiceInputEnabled) { defaults.set(newValue, forKey: "moshpit.settings.voiceInput") } }
+        set { withMutation(keyPath: \.voiceInputEnabled) { put(newValue, "moshpit.settings.voiceInput") } }
     }
 
     /// BCP-47 identifier of the dictation language ("en-US", "zh-CN"…).
@@ -342,7 +431,7 @@ final class AppSettings {
     /// overlap nor use the same identifiers.
     var voiceInputLocaleId: String {
         get { access(keyPath: \.voiceInputLocaleId); return get("moshpit.settings.voiceInputLocale", "") }
-        set { withMutation(keyPath: \.voiceInputLocaleId) { defaults.set(newValue, forKey: "moshpit.settings.voiceInputLocale") } }
+        set { withMutation(keyPath: \.voiceInputLocaleId) { put(newValue, "moshpit.settings.voiceInputLocale") } }
     }
 
     /// Which speech engine dictation runs on. Defaults to Apple: it needs no
@@ -356,7 +445,7 @@ final class AppSettings {
         }
         set {
             withMutation(keyPath: \.voiceEngine) {
-                defaults.set(newValue.rawValue, forKey: "moshpit.settings.voiceEngine")
+                put(newValue.rawValue, "moshpit.settings.voiceEngine")
             }
         }
     }
@@ -366,14 +455,25 @@ final class AppSettings {
     /// configuration.
     var whisperLanguage: String {
         get { access(keyPath: \.whisperLanguage); return get("moshpit.settings.whisperLanguage", "") }
-        set { withMutation(keyPath: \.whisperLanguage) { defaults.set(newValue, forKey: "moshpit.settings.whisperLanguage") } }
+        set { withMutation(keyPath: \.whisperLanguage) { put(newValue, "moshpit.settings.whisperLanguage") } }
     }
 
     /// WhisperKit model variant. Empty = use whichever supported model is
     /// installed, so deleting the chosen one degrades instead of breaking.
     var whisperModelId: String {
         get { access(keyPath: \.whisperModelId); return get("moshpit.settings.whisperModel", "") }
-        set { withMutation(keyPath: \.whisperModelId) { defaults.set(newValue, forKey: "moshpit.settings.whisperModel") } }
+        set { withMutation(keyPath: \.whisperModelId) { put(newValue, "moshpit.settings.whisperModel") } }
+    }
+
+    /// The app's appearance; the system's when nothing (or nothing known) is
+    /// stored. No migration: an install from before R18 follows the system.
+    var appearance: AppAppearance {
+        get {
+            access(keyPath: \.appearance)
+            return AppAppearance(rawValue: get("moshpit.settings.appearance", AppAppearance.system.rawValue))
+                ?? .system
+        }
+        set { withMutation(keyPath: \.appearance) { put(newValue.rawValue, "moshpit.settings.appearance") } }
     }
 
     /// Snapshot of everything a dictation session needs, taken when the mic
@@ -385,4 +485,21 @@ final class AppSettings {
             whisperLanguage: whisperLanguage,
             whisperModelId: whisperModelId)
     }
+}
+
+/// What ``AppSettings`` reads and writes through when it isn't its own
+/// Swift code: the Rust store (crates/store, through crates/ffi), behind the
+/// `MOSHPIT_RUST_STORE` switch (`RustStoreSwitch`). By preferences key, as
+/// the settings' getters and setters go: a value read is what is stored if
+/// it is of the setting's type, else the setting's default (an enum-backed
+/// one's raw string, which its getter checks); a value written is the
+/// setter's — and the notification service's mirror follows its two
+/// switches, as ``AppSettings`` mirrors them.
+protocol AppSettingsBacking: AnyObject {
+    /// `Bool`, `Int`, `Double`, `String` or `[String]`; nil for a key that
+    /// is no setting's.
+    func value(forKey key: String) -> Any?
+    func set(_ value: Any, forKey key: String)
+    /// Mirror the switches once the preferences can be trusted.
+    func reloadIfNeeded()
 }

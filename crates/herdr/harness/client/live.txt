@@ -1,0 +1,54 @@
+# examples/live_herdr.rs, 2026-11-11 14:33, macOS 27.0.1, private sessions only
+herdr 0.9.5
+attach_and_type:
+  attached w1:p1; boot line: 1 write(s)
+  keys: `pane send-keys` ran 1 time(s), between the typing
+  paste with an inner end marker: not run (INJ42 absent)
+  `input ignored` from herdr: attach kept, no notice, typing goes on
+  private server stopped: true; /tmp/w2bl-<pid>-type removed
+  PASS (4754 ms)
+switch_panes:
+  w1:p1 -> w1:p2: new pane got its typing, the old one none; 1 release; server focus w1:p2
+  three quick switches: 2 release(s) in all
+  private server stopped: true; /tmp/w2bl-<pid>-switch removed
+  PASS (2954 ms)
+pipelined_retarget:
+  input ignored seen: false; target kept: Some("w1:p2"); notice: None
+  private server stopped: true; /tmp/w2bl-<pid>-pipe removed
+  PASS (1644 ms)
+takeover:
+  evicted by another client's --takeover; asked again with: ["w1:p1 80 24"]
+  re-attached and typing; a closed pane read as gone, not contention
+  private server stopped: true; /tmp/w2bl-<pid>-take removed
+  PASS (4436 ms)
+agent_task:
+  task: Some(Started); prompts tried: 1
+  first message in the agent; removal: needs force, then removed
+  private server stopped: true; /tmp/w2bl-<pid>-task removed
+  PASS (4639 ms)
+half_open:
+  stopped server: task Some(Failed(HostStoppedAnswering { branch: "never" })), removal Some(Failed(NoAnswer)), agents answered Some(false) — all within 6024 ms
+  reads kept going while stopped: 2 in 6685 ms
+  resumed; the abandoned create landed anyway after all: false
+  private server stopped: true; /tmp/w2bl-<pid>-halfopen removed
+  PASS (8425 ms)
+restart:
+  restart: Some(Restarted); server pid Some("1684") -> Some("1742")
+  re-attached to w1:p1 (was w1:p1) and typing
+  private server stopped: true; /tmp/w2bl-<pid>-restart removed
+  PASS (3677 ms)
+skew_client_older:
+  notice: "herdr on the host's PATH is 0.8.0, its server 0.9.5 — update that copy" / None
+  restart refused (would downgrade); `server stop` never sent; server pid unchanged
+  private server stopped: true; /tmp/w2bl-<pid>-skewold removed
+  PASS (1370 ms)
+skew_server_older:
+  notice: "The host's herdr server is 0.8.0, older than its herdr 0.9.5" / Some(RestartServer)
+  restart: Some(Failed) (the shim still refuses); server pid Some("1974") -> Some("2036"); notice Some(("Restart didn't take — on the host, run: herdr server stop && herdr", Some(Retry)))
+  private server stopped: true; /tmp/w2bl-<pid>-skewnew removed
+  PASS (3329 ms)
+push:
+  push active; cadence 45000 ms; the new tab seen 346 ms after it was made (1 read(s))
+  push channel gone: cadence 2000 ms
+  private server stopped: true; /tmp/w2bl-<pid>-push removed
+  PASS (11469 ms)

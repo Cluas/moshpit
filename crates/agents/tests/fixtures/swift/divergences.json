@@ -1,0 +1,32 @@
+[
+ {
+  "script": "random-41-22",
+  "why": "Two graces run out before the same sweep (%2's at 51 s, %1's at 55 s). The app's monitor gives each grace its own timer, so %2's fires first; the Swift side of this harness fired its manual graces in dictionary order (%1 first). The machine fires them in the order they ran out.",
+  "rust": [
+   "auth",
+   "widget [] w=0 a=0 h=-",
+   "end-island",
+   "widget [%1:done:claude:devbox · work · 1: api:Bash: npm test:4.5] w=0 a=0 h=%1",
+   "island [%1:done:claude:devbox · work · 1: api:Bash: npm test:4.5] w=0 a=0 h=%1",
+   "widget [%1:done:claude:devbox · work · 1: api:Claude is waiting for your input:4.5] w=0 a=0 h=%1",
+   "island [%1:done:claude:devbox · work · 1: api:Claude is waiting for your input:4.5] w=0 a=0 h=%1",
+   "widget [%1:done:claude:devbox · work · 1: api:Claude is waiting for your input:4.5;%2:done:codex:devbox · work · 1: api:Bash: npm test:-181.5] w=0 a=0 h=%2",
+   "island [%1:done:claude:devbox · work · 1: api:Claude is waiting for your input:4.5;%2:done:codex:devbox · work · 1: api:Bash: npm test:-181.5] w=0 a=0 h=%2",
+   "widget [%2:attention:codex:devbox · work · 1: api:Edit: src/main.rs:21;%1:done:claude:devbox · work · 1: api:Claude is waiting for your input:4.5] w=0 a=1 h=%1",
+   "island [%2:attention:codex:devbox · work · 1: api:Edit: src/main.rs:21;%1:done:claude:devbox · work · 1: api:Claude is waiting for your input:4.5] w=0 a=1 h=%1",
+   "widget [%2:attention:codex:devbox · work · 1: api:Edit: src/main.rs:21;%1:attention:claude:devbox · work · 1: api:Edit: src/main.rs:-175] w=0 a=2 h=%1",
+   "island [%2:attention:codex:devbox · work · 1: api:Edit: src/main.rs:21;%1:attention:claude:devbox · work · 1: api:Edit: src/main.rs:-175] w=0 a=2 h=%1",
+   "post moshpit.attention.C %2 | codex needs you | Edit: src/main.rs — devbox · work | sound=true | time-sensitive",
+   "post moshpit.attention.C %2 | codex +1 needs you | Edit: src/main.rs — devbox · work | sound=false | passive",
+   "post moshpit.attention.C %2 | codex needs you | Edit: src/main.rs — devbox · work | sound=false | passive",
+   "widget [%2:attention:codex:devbox · work · 1: api:Edit: src/main.rs:21;%1:attention:claude:devbox · work · 1: api:Edit: src/main.rs:-175] w=0 a=2 h=%2",
+   "island [%2:attention:codex:devbox · work · 1: api:Edit: src/main.rs:21;%1:attention:claude:devbox · work · 1: api:Edit: src/main.rs:-175] w=0 a=2 h=%2",
+   "widget [%2:attention:codex:devbox · work · 1: api:Edit: src/main.rs:21;%1:done:claude:devbox · work · 1: api:Claude is waiting for your input:101.5] w=0 a=1 h=%2",
+   "island [%2:attention:codex:devbox · work · 1: api:Edit: src/main.rs:21;%1:done:claude:devbox · work · 1: api:Claude is waiting for your input:101.5] w=0 a=1 h=%2",
+   "widget [%2:attention:codex:devbox · work · 1: api:Edit: src/main.rs:21;%1:done:claude:devbox · work · 1: api:Claude is waiting for your input:101.5] w=0 a=1 h=%1",
+   "island [%2:attention:codex:devbox · work · 1: api:Edit: src/main.rs:21;%1:done:claude:devbox · work · 1: api:Claude is waiting for your input:101.5] w=0 a=1 h=%1",
+   "standing %2@21",
+   "announced %1=-175,%2=21"
+  ]
+ }
+]

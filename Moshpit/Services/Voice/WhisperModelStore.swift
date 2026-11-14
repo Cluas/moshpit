@@ -102,6 +102,31 @@ enum WhisperLanguageCatalog {
     }
 }
 
+// MARK: - Model seam
+
+/// One loaded Whisper model, as the store drives it: the real one is
+/// `WhisperKit` (``WhisperModelLoader/whisperKit``), tests stand in a scripted
+/// one, since the real thing is hundreds of megabytes of CoreML.
+///
+/// Not Sendable, and never handed out: the store keeps it and runs one
+/// transcription on it at a time.
+protocol WhisperLoadedModel: AnyObject {
+    /// Transcribe 16 kHz mono samples. `language` nil = let Whisper detect.
+    func transcribe(samples: [Float], language: String?) async throws -> String
+}
+
+/// Where the store's models come from.
+struct WhisperModelLoader: Sendable {
+    /// Every CoreML bundle the variant needs is on disk.
+    var isInstalled: @Sendable (String) -> Bool
+    /// Build the variant's model from disk. Seconds, and hundreds of MB.
+    var load: @Sendable (String) async throws -> any WhisperLoadedModel
+
+    static let whisperKit = WhisperModelLoader(
+        isInstalled: { WhisperModelStore.isInstalled($0) },
+        load: { try await WhisperKitModel.load(variant: $0) })
+}
+
 // MARK: - Store
 
 /// Owns everything about local Whisper models: which variants this device is
@@ -114,8 +139,23 @@ enum WhisperLanguageCatalog {
 /// that it has to be shared across dictation sessions instead of rebuilt per
 /// session. Nothing hands the instance out — callers ask the store to
 /// transcribe, so the model never escapes the actor.
+///
+/// Being an actor is not, on its own, what keeps those two promises. An actor
+/// runs one call at a time only BETWEEN awaits: at every await — a
+/// transcription running, a model loading — the next call gets in. So a
+/// cancelled live preview still decoding ran side by side with the final pass
+/// on the same instance, and tapping the mic while a just-downloaded model was
+/// still loading loaded it a second time. Both are now explicit: transcriptions
+/// take turns (``transcribe(samples:language:variant:)``), and a load in flight
+/// is waited for rather than repeated (`model(for:)`).
 actor WhisperModelStore {
     static let shared = WhisperModelStore()
+
+    private let loader: WhisperModelLoader
+
+    init(loader: WhisperModelLoader = .whisperKit) {
+        self.loader = loader
+    }
 
     /// Variants worth offering, best first.
     ///
@@ -154,7 +194,25 @@ actor WhisperModelStore {
 
     /// Currently loaded model, keyed by variant so switching models in
     /// Settings drops the old one instead of stacking two in memory.
-    private var loaded: (variant: String, kit: WhisperKit)?
+    private var loaded: (variant: String, model: any WhisperLoadedModel)?
+
+    /// The variant being loaded right now, if any. Anyone else who needs a
+    /// model meanwhile waits in `loadWaiters` and looks again once it settles.
+    private var loading: String?
+    private var loadWaiters: [CheckedContinuation<Void, Never>] = []
+
+    /// A transcription holds the model. The rest wait in `turnWaiters`,
+    /// first come first served.
+    private var transcribing = false
+    private var turnWaiters: [CheckedContinuation<Void, Never>] = []
+
+    /// Which dictation sessions are using `loaded`, and whether it should go
+    /// once they're done.
+    private var sessions = WhisperSessionLedger()
+
+    /// How many times each variant was removed: a load of a variant removed
+    /// while it was loading keeps nothing once it lands (B124).
+    private var removals: [String: Int] = [:]
 
     // MARK: Locations
 
@@ -222,12 +280,6 @@ actor WhisperModelStore {
                 installedBytes: isInstalled(entry.id) ? directorySize(folder(for: entry.id)) : nil,
                 partialBytes: isInstalled(entry.id) ? 0 : partialBytes(for: entry.id))
         }
-    }
-
-    /// What a fresh install should download: the best variant this device is
-    /// offered, which the curated ordering already puts first.
-    nonisolated static func recommendedVariant() -> String {
-        catalog().first?.id ?? "openai_whisper-base"
     }
 
     /// The variant to actually use — the stored choice when it's installed,
@@ -312,18 +364,15 @@ actor WhisperModelStore {
     /// occupies the first 90%, the load the last 10% (it has no progress of
     /// its own, so it lands as a single step rather than a fake ramp).
     func install(variant: String, onProgress: @escaping @Sendable (Double) -> Void) async throws {
-        if !Self.isInstalled(variant) {
-            // Two attempts, because the first one after a hard kill reliably
-            // fails and the second reliably works.
-            //
-            // The Hub downloader's background-session identifier is hardcoded
-            // in the library, so it is process-wide and outlives the app. When
-            // iOS relaunches after a kill, the new session adopts the dead
-            // one's state ("will reconnect to existing state by requesting
-            // pending callbacks") and the in-flight task dies with
-            // NSURLErrorBackgroundSessionWasDisconnected (-997). Measured: the
-            // immediate retry gets a clean session and resumes from the
-            // `.incomplete` file, so this costs a moment rather than a restart.
+        if !loader.isInstalled(variant) {
+            // Two attempts. They date from when this downloaded on a background
+            // session: its identifier is hardcoded in the Hub downloader, so
+            // after a hard kill the relaunched app adopted the dead session and
+            // the first task died with NSURLErrorBackgroundSessionWasDisconnected
+            // (-997), while the immediate retry went through. Downloads no
+            // longer use a background session (`downloadOnce` says why); the
+            // retry stays because it costs a moment, not a restart — it resumes
+            // from the `.incomplete` file.
             var lastError: Error?
             for attempt in 1 ... 2 {
                 do {
@@ -343,12 +392,12 @@ actor WhisperModelStore {
             if let lastError {
                 throw WhisperModelFailure.download(lastError.localizedDescription)
             }
-            guard Self.isInstalled(variant) else {
+            guard loader.isInstalled(variant) else {
                 throw WhisperModelFailure.incomplete(Self.displayName(for: variant))
             }
         }
         onProgress(0.9)
-        _ = try await kit(for: variant)
+        _ = try await model(for: variant)
         onProgress(1)
     }
 
@@ -389,6 +438,9 @@ actor WhisperModelStore {
     /// download they just discarded, and Storage would under-report it.
     func remove(variant: String) throws {
         if loaded?.variant == variant { loaded = nil }
+        // Still loading, it lands after this: `model(for:)` sees the count
+        // moved and does not keep it.
+        removals[variant, default: 0] += 1
         for folder in [Self.folder(for: variant), Self.resumeCache(for: variant)]
         where FileManager.default.fileExists(atPath: folder.path) {
             try FileManager.default.removeItem(at: folder)
@@ -402,18 +454,36 @@ actor WhisperModelStore {
         try FileManager.default.removeItem(at: cache)
     }
 
-    /// Drop the loaded model. Called when dictation is disabled or the user
-    /// picks a different engine — several hundred MB is too much to keep
-    /// resident for a feature that isn't in use.
+    /// Drop the loaded model — several hundred MB is too much to keep
+    /// resident for a feature that isn't in use. `WhisperModelResidency`
+    /// calls this when voice input is switched off or moved to Apple's
+    /// engine, and on a memory warning. A dictation in progress keeps the
+    /// model until its session ends; the next one loads it again.
     func unload() {
+        if sessions.requestUnload() { dropModel() }
+    }
+
+    /// A dictation session starts using the model: until `endSession`, an
+    /// unload waits instead of pulling the model out from under it.
+    func beginSession() -> UUID {
+        sessions.open()
+    }
+
+    func endSession(_ id: UUID) {
+        if sessions.close(id) { dropModel() }
+    }
+
+    private func dropModel() {
+        guard let variant = loaded?.variant else { return }
         loaded = nil
+        Log.voice.info("whisper model unloaded: \(variant, privacy: .public)")
     }
 
     /// Make sure a variant is loaded and ready to transcribe. Cheap after the
     /// first call in a process; the first call is where CoreML compilation and
     /// tokenizer setup are paid for.
     func warmUp(variant: String) async throws {
-        _ = try await kit(for: variant)
+        _ = try await model(for: variant)
     }
 
     // MARK: Transcription
@@ -427,9 +497,115 @@ actor WhisperModelStore {
     /// which is exactly why it handles a sentence that switches language
     /// halfway through, and exactly why the caller treats its output as a
     /// replaceable hypothesis rather than an append-only transcript.
+    ///
+    /// One at a time, in the order asked. A dictation's live preview is
+    /// cancelled when the mic stops, but a pass already decoding runs on until
+    /// WhisperKit next checks for cancellation — so the final pass waits for
+    /// it here instead of decoding on the same instance beside it. A pass
+    /// cancelled while it waits never starts.
     func transcribe(samples: [Float], language: String?, variant: String) async throws -> String {
         guard samples.count >= Self.minimumSamples else { return "" }
-        let kit = try await kit(for: variant)
+        let model = try await model(for: variant)
+        await takeTurn()
+        defer { passTurn() }
+        try Task.checkCancellation()
+        return try await model.transcribe(samples: samples, language: language)
+    }
+
+    /// Whisper needs at least a window's worth of audio to say anything
+    /// useful; below ~0.6 s it reliably hallucinates a stock phrase — an
+    /// invented sentence is far worse here than an empty one, because the
+    /// user is about to paste it into a shell. Enforced on both sides of the
+    /// boundary: here so no caller can get a hallucination out of the model,
+    /// and in the engine so a stray tap never reaches this far.
+    static let minimumSamples = 9_600 // 0.6 s at 16 kHz
+
+    private func takeTurn() async {
+        guard transcribing else {
+            transcribing = true
+            return
+        }
+        // Resumed by `passTurn`, which hands the turn over without letting
+        // it go — nobody can slip in between.
+        await withCheckedContinuation { turnWaiters.append($0) }
+    }
+
+    private func passTurn() {
+        if turnWaiters.isEmpty {
+            transcribing = false
+        } else {
+            turnWaiters.removeFirst().resume()
+        }
+    }
+
+    // MARK: Loading
+
+    /// The loaded model for `variant`, loading it if it isn't.
+    ///
+    /// A load already in flight is waited for, not repeated: the mic tapped
+    /// while a just-downloaded model was still loading used to start a second
+    /// load of it — two copies in memory, and the first thrown away.
+    private func model(for variant: String) async throws -> any WhisperLoadedModel {
+        // Whatever is loading may be this very variant; once it settles, look
+        // again (another waiter may have started a load by then, too).
+        while loading != nil {
+            await withCheckedContinuation { loadWaiters.append($0) }
+        }
+        if let loaded, loaded.variant == variant { return loaded.model }
+        guard loader.isInstalled(variant) else {
+            throw WhisperModelFailure.notInstalled(Self.displayName(for: variant))
+        }
+        // Release the previous model before building the next — two large
+        // variants resident at once is an OOM on a phone.
+        loaded = nil
+        loading = variant
+        defer {
+            loading = nil
+            let waiting = loadWaiters
+            loadWaiters.removeAll()
+            for waiter in waiting { waiter.resume() }
+        }
+        let generation = sessions.generation
+        let removal = removals[variant, default: 0]
+        let model = try await loader.load(variant)
+        // An unload, or a removal of this variant, that landed while this
+        // loaded wins: the caller gets the model for this one use, but it is
+        // not kept.
+        guard sessions.generation == generation, removals[variant, default: 0] == removal else { return model }
+        loaded = (variant, model)
+        Log.voice.info("whisper model loaded: \(variant, privacy: .public)")
+        return model
+    }
+
+    /// Builds a variant's WhisperKit from the downloaded folder.
+    fileprivate static func loadWhisperKit(variant: String) async throws -> WhisperKit {
+        let config = WhisperKitConfig(
+            model: variant,
+            downloadBase: downloadBase,
+            modelRepo: repo,
+            modelFolder: folder(for: variant).path,
+            verbose: false,
+            logLevel: .error,
+            prewarm: false,
+            load: true,
+            download: false)
+        return try await WhisperKit(config)
+    }
+}
+
+/// WhisperKit, decoding the way dictation wants it.
+private final class WhisperKitModel: WhisperLoadedModel {
+    private let kit: WhisperKit
+
+    private init(kit: WhisperKit) {
+        self.kit = kit
+    }
+
+    static func load(variant: String) async throws -> WhisperKitModel {
+        WhisperKitModel(kit: try await WhisperModelStore.loadWhisperKit(variant: variant))
+    }
+
+    func transcribe(samples: [Float], language: String?) async throws -> String {
         let options = DecodingOptions(
             verbose: false,
             task: .transcribe,
@@ -441,7 +617,7 @@ actor WhisperModelStore {
             skipSpecialTokens: true,
             withoutTimestamps: true,
             wordTimestamps: false,
-            promptTokens: promptTokens(for: language, kit: kit),
+            promptTokens: promptTokens(for: language),
             compressionRatioThreshold: 2.4,
             logProbThreshold: -1.0,
             noSpeechThreshold: 0.6,
@@ -451,14 +627,6 @@ actor WhisperModelStore {
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    /// Whisper needs at least a window's worth of audio to say anything
-    /// useful; below ~0.6 s it reliably hallucinates a stock phrase — an
-    /// invented sentence is far worse here than an empty one, because the
-    /// user is about to paste it into a shell. Enforced on both sides of the
-    /// boundary: here so no caller can get a hallucination out of the model,
-    /// and in the engine so a stray tap never reaches this far.
-    static let minimumSamples = 9_600 // 0.6 s at 16 kHz
-
     /// A short primer in the target language, fed as Whisper's "previous
     /// text" context.
     ///
@@ -467,7 +635,7 @@ actor WhisperModelStore {
     /// Simplified, and a Simplified primer flips that; the primer also
     /// establishes that Latin words appearing mid-sentence are expected, which
     /// keeps it from transliterating "git rebase" into Chinese characters.
-    private func promptTokens(for language: String?, kit: WhisperKit) -> [Int]? {
+    private func promptTokens(for language: String?) -> [Int]? {
         guard let tokenizer = kit.tokenizer else { return nil }
         let primer: String
         switch language {
@@ -482,31 +650,5 @@ actor WhisperModelStore {
         }
         let tokens = tokenizer.encode(text: primer)
         return tokens.isEmpty ? nil : tokens
-    }
-
-    // MARK: Loading
-
-    private func kit(for variant: String) async throws -> WhisperKit {
-        if let loaded, loaded.variant == variant { return loaded.kit }
-        guard Self.isInstalled(variant) else {
-            throw WhisperModelFailure.notInstalled(Self.displayName(for: variant))
-        }
-        // Release the previous model before building the next — two large
-        // variants resident at once is an OOM on a phone.
-        loaded = nil
-        let config = WhisperKitConfig(
-            model: variant,
-            downloadBase: Self.downloadBase,
-            modelRepo: Self.repo,
-            modelFolder: Self.folder(for: variant).path,
-            verbose: false,
-            logLevel: .error,
-            prewarm: false,
-            load: true,
-            download: false)
-        let kit = try await WhisperKit(config)
-        loaded = (variant, kit)
-        Log.voice.info("whisper model loaded: \(variant, privacy: .public)")
-        return kit
     }
 }

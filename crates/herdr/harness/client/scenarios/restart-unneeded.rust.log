@@ -1,0 +1,11 @@
+t=0 exec api snapshot
+t=40 focus w1:p1
+t=500 exec status
+t=540 exec api snapshot
+t=540 outcome restart unneeded
+t=580 focus w1:p1
+t=2580 exec api snapshot
+t=2620 focus w1:p1
+t=4620 exec api snapshot
+t=4660 focus w1:p1
+state focus=w1:p1 server=w1:p1 sessions=1 notrunning=false mismatch=false

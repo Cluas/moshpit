@@ -66,12 +66,12 @@ private struct StubProviderError: Error {}
 private struct StubClientProvider: SSHClientProvider {
     func connect(host: String, port: Int,
                  authenticationMethod: SSHAuthenticationMethod,
-                 hostKeyValidator: SSHHostKeyValidator) async throws -> SSHClient {
+                 hostKeyValidator: SSHHostKeyValidator) async throws -> SignedInClient {
         throw StubProviderError()
     }
     func connect(on channel: Channel,
                  authenticationMethod: SSHAuthenticationMethod,
-                 hostKeyValidator: SSHHostKeyValidator) async throws -> SSHClient {
+                 hostKeyValidator: SSHHostKeyValidator) async throws -> SignedInClient {
         throw StubProviderError()
     }
 }

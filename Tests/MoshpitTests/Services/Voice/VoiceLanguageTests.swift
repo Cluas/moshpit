@@ -64,32 +64,6 @@ struct VoiceLanguageTests {
         #expect(codes.count == candidates.count)
     }
 
-    @MainActor
-    @Test("Automatic for Apple honours an explicit choice and probes support otherwise")
-    func appleLocaleResolution() {
-        // Explicit setting is passed through untouched.
-        let explicit = VoiceLanguageResolver.appleLocale(stored: "zh-CN", isSupported: { _ in false })
-        #expect(explicit.language.languageCode?.identifier == "zh")
-
-        // Automatic skips languages no engine can transcribe rather than
-        // stopping at the first preferred one — the bug that left a Chinese
-        // speaker on an English phone with an English acoustic model.
-        // Candidates are pinned: the default list is the HOST's language
-        // settings, and this assertion was green only on machines with
-        // Chinese configured (red on the en-only CI runner).
-        let chinese = VoiceLanguageResolver.appleLocale(
-            stored: "", candidates: ["en-US", "zh-CN"]) { locale in
-            locale.language.languageCode?.identifier == "zh"
-        }
-        #expect(chinese.language.languageCode?.identifier == "zh")
-
-        // Nothing supported: still returns a real locale so the error message
-        // can name a language instead of substituting one.
-        let fallback = VoiceLanguageResolver.appleLocale(
-            stored: "", candidates: ["en-US"], isSupported: { _ in false })
-        #expect(fallback.language.languageCode != nil)
-    }
-
     @Test("Whisper's language catalog spans far more than the CJK set")
     func whisperCatalog() {
         let options = WhisperLanguageCatalog.options()
@@ -168,12 +142,6 @@ struct WhisperModelStoreTests {
             #expect(!option.name.isEmpty)
             #expect(!option.summary.isEmpty)
         }
-    }
-
-    @Test("Recommended variant is one the catalog actually offers")
-    func recommendedIsOffered() {
-        let recommended = WhisperModelStore.recommendedVariant()
-        #expect(WhisperModelStore.catalog().contains { $0.id == recommended })
     }
 
     @Test("Model paths sit under Application Support, not Documents")

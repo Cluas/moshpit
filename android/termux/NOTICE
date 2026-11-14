@@ -1,0 +1,33 @@
+Termux terminal libraries, vendored for Moshpit's Android app (from the
+spike of gate G3, 2026-11-11; the app since W12, 2026-11-12)
+
+Source: https://github.com/termux/termux-app, tag v0.118.3
+        (archive termux-app-v0.118.3.tar.gz, SHA-256
+        5511ed1b9470be051181173d7571b6b66faea56c79a5fe7e2fc613cc432dd394)
+Taken:  terminal-emulator/src/main/java, terminal-view/src/main/java and
+        terminal-view/src/main/res, unchanged except as listed below.
+
+Licenses: the termux-app repository is GPL-3.0-only (COPYING.GPL-3.0); its
+terminal-emulator and terminal-view libraries contain code of Terminal
+Emulator for Android (jackpal/Android-Terminal-Emulator) under the Apache
+License 2.0 (LICENSE.Apache-2.0). See LICENSE.md, Termux's own statement.
+Moshpit is GPL-3.0-only, which both permit.
+
+Modified by Moshpit (Cluas), 2026-11-11:
+- terminal-emulator/.../TerminalSession.java is replaced: instead of running
+  a local process on a pseudo-terminal (JNI.createSubprocess, two I/O threads
+  and one main-thread message per 4 KB read), a session writes to and is fed
+  by a Transport, the app's byte channel to its Rust core. Termux's public
+  surface (getEmulator, updateSize, write, writeCodePoint, the client
+  callbacks) and its UTF-8 encoding of code points are kept.
+- terminal-emulator/.../TerminalEmulator.java eats screen's window title
+  sequence (ESC k ... ST) as it eats APC (2026-11-12): a tmux -CC client gets
+  a pane's bytes raw, and a shell in tmux sets its title that way, which was
+  printed into the pane.
+- terminal-emulator/.../JNI.java, ByteQueue.java and src/main/jni (the pty
+  and process natives, libtermux.so) are removed: nothing uses them.
+- The scripted build has no AndroidX: androidx.annotation.Nullable and
+  RequiresApi come from compile-time stand-ins in androidx-stubs/ (the
+  Gradle build uses the real androidx.annotation).
+- Each library has a build.gradle of its own (Android library modules of
+  android/settings.gradle), as in termux-app.

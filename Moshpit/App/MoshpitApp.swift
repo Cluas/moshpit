@@ -6,9 +6,11 @@ struct MoshpitApp: App {
     @State private var store: ConnectionStore
     @State private var settings: AppSettings
     @State private var metrics: SessionMetricsRegistry
-    @State private var shortcuts = ShortcutStore(readiness: .system)
-    @State private var sshKeys = SSHKeyStore(readiness: .system)
-    @State private var themes = ThemeStore(readiness: .system)
+    // Every store on the side the storage switch picked for this launch
+    // (RustStoreSwitch): its own Swift code, or the Rust core's store.
+    @State private var shortcuts = AppStores.shortcuts()
+    @State private var sshKeys = AppStores.sshKeys()
+    @State private var themes = AppStores.themes()
     @State private var appThemes = AppThemeStore.shared
     @State private var hub: SessionHub
     @State private var monitor: AgentActivityMonitor
@@ -16,32 +18,43 @@ struct MoshpitApp: App {
     @State private var keychainHolder: KeychainServiceHolder
     @State private var router: DeepLinkRouter
     @State private var notificationHandler: AgentNotificationHandler
+    /// Lets the Whisper model go when voice input stops using it, or memory
+    /// runs short. Held here only to live as long as the app.
+    @State private var whisperResidency: WhisperModelResidency
     /// Remote-push tokens are delivered to a UIApplicationDelegate and nowhere
     /// else — SwiftUI has no equivalent hook, so the app keeps a minimal one
-    /// whose only job is forwarding them to PushService.
+    /// whose only job is forwarding them to PushRegistration.
     @UIApplicationDelegateAdaptor(PushAppDelegate.self) private var pushDelegate
     @Environment(\.scenePhase) private var scenePhase
 
     private let keychain = KeychainService()
 
     init() {
+        // A Canary build's switches, before anything reads one.
+        CanaryDefaults.register()
+        // The device's protected-data state, made here on the main thread
+        // so the keychain readers that ask it from their own threads (the
+        // trusted host keys, B226) never wait on the main queue for it.
+        _ = ProtectedDataFlag.app
+        // The push pairings through the Rust store when its switch is on —
+        // before anything below reads one.
+        RustStoreSwitch.installPushPairings()
         let metrics = SessionMetricsRegistry()
         let settings = AppSettings.shared
-        #if DEBUG
-        // Screenshot runs must not inherit the relay address a previous scenario
-        // typed, or no shot stands on its own.
-        //
-        // It has to happen HERE. Two earlier attempts did nothing: -MOSHPIT_RESET
-        // is handled in RootView's task, which the demo branch never mounts; and
-        // a `.task` on the demo view races HostSetupView's own task, which reads
-        // the setting into its field. `init()` is the only point that is before
-        // every reader.
-        if HostSetupDemo.scenario(from: ProcessInfo.processInfo.arguments) != nil {
-            settings.pushRelayURL = ""
-        }
-        #endif
-        let store = ConnectionStore(readiness: .system)
+        let store = AppStores.connections()
+        // Host care pairs only connections this store holds — not one being
+        // deleted, or already gone, when a pass comes back from the host —
+        // and reaches a host through its session in the hub.
+        HostCare.shared.connectionStore = store
         let hub = SessionHub(metrics: metrics)
+        HostCare.shared.hub = hub
+        // The language Moshpit shows, for the island, the widget and the
+        // notification service extension to write in (AppLanguage). iOS
+        // relaunches the app whenever it changes, so launch is enough —
+        // unless the launch came before the first unlock, when the App
+        // Group can't be written safely; then the next time the app comes
+        // forward (reloadStoresIfNeeded).
+        AppLanguage.recordIfTrusted()
         let monitor = AgentActivityMonitor(settings: settings)
         let router = DeepLinkRouter()
         let notificationHandler = AgentNotificationHandler()
@@ -52,6 +65,7 @@ struct MoshpitApp: App {
         _monitor = State(initialValue: monitor)
         _router = State(initialValue: router)
         _notificationHandler = State(initialValue: notificationHandler)
+        _whisperResidency = State(initialValue: WhisperModelResidency(settings: settings))
         _connectionHolder = State(initialValue: ConnectionStoreHolder(store: store))
         _keychainHolder = State(initialValue: KeychainServiceHolder(service: KeychainService()))
 
@@ -104,24 +118,23 @@ struct MoshpitApp: App {
         // "Is this exact pane on screen?" — lets willPresent skip the
         // banner + chime when the user is already looking at the prompt.
         AgentControlBridge.shared.isPaneVisible = { connectionId, paneId in
-            guard let session = hub.visibleSession,
-                  session.connection.id == connectionId else { return false }
-            if let control = session.tmuxControl {
-                return control.snapshot.activePaneId == paneId
-            }
-            return true   // non-tmux: the session on screen IS the pane
+            PaneOnScreen.shows(hub.visibleSession, connectionId: connectionId, paneId: paneId)
+        }
+        // The same, as the agent machine's sweep asks it: which pane.
+        AgentControlBridge.shared.visiblePane = {
+            PaneOnScreen.of(hub.visibleSession)
         }
         // A pairing self-test push proves the whole chain works; the
         // sheet that asked for it is waiting on this hop.
         AgentControlBridge.shared.pushSelfTest = { nonce in
             Log.push.info("self-test push arrived: \(nonce, privacy: .public)")
-            PushService.shared.noteSelfTestArrived(nonce: nonce)
+            HostCare.shared.selfTestArrived(nonce: nonce)
         }
         AgentNotifications.configure(delegate: notificationHandler)
         // Ask iOS for a device token when at least one host is paired.
         // No-op otherwise: an unpaired install must not prompt, and has
         // nothing to register.
-        PushService.shared.registerForRemoteNotifications()
+        HostCare.shared.registerForPush()
     }
 
     /// Every UserDefaults-backed store re-reads if what it loaded could not be
@@ -129,12 +142,35 @@ struct MoshpitApp: App {
     /// return to the foreground rather than trying to predict the one that
     /// follows an unattended launch.
     private func reloadStoresIfNeeded() {
+        AppLanguage.recordIfTrusted()
         store.reloadIfNeeded()
         shortcuts.reloadIfNeeded()
         sshKeys.reloadIfNeeded()
         themes.reloadIfNeeded()
         appThemes.reloadIfNeeded()
         settings.reloadIfNeeded()
+        // The agents' announced record a sealed launch couldn't read (B348).
+        monitor.reloadIfNeeded()
+        // Pairings left by connections deleted before a delete took its
+        // pairing along: forgotten once per launch, the first time the saved
+        // connections can be trusted (before `.active` asks the relay to
+        // mint). A launch before the first unlock can't trust them, and
+        // sweeps nothing until it can.
+        HostCare.shared.forgetOrphanedPairings()
+        // What sessions remembered about connections deleted before a
+        // delete took it along (B199): swept once per launch, by the same
+        // rule — only once the saved connections can be told.
+        let swept = store.sweepSessionMemoryOnce()
+        if !swept.isEmpty {
+            Log.store.notice("forgot \(swept.count, privacy: .public) session-memory keys of connections no longer saved")
+        }
+        // Private keys earlier builds left in the keychain with no record
+        // naming them (B232) — a deleted key's, or one whose record a lost
+        // key list took with it: listed in SSH Keys again, once, the first
+        // time both stores can be trusted. Nothing is deleted.
+        Task { [store, sshKeys, keychain] in
+            await KeychainReferences.recoverOrphansOnce(connections: store, keys: sshKeys, keychain: keychain)
+        }
     }
 
     var body: some Scene {
@@ -146,6 +182,11 @@ struct MoshpitApp: App {
             // out of Release entirely, like -MOSHPIT_RESET.
             if let scenario = HostSetupDemo.scenario(from: ProcessInfo.processInfo.arguments) {
                 HostSetupDemo.view(scenario)
+                    .environment(settings)
+                    .tint(Ink.accent)
+            } else if let screen = CaptureScreen.requested, [.hostSetup, .hostSetupNSH].contains(screen) {
+                // The same seam for a capture run, with no setting written.
+                HostSetupDemo.view(HostSetupDemo.seededScenario)
                     .environment(settings)
                     .tint(Ink.accent)
             } else {
@@ -167,26 +208,11 @@ struct MoshpitApp: App {
                 store: store,
                 settings: settings,
                 hub: hub,
-                keychain: keychain,
-                router: router
+                keychain: keychain
             )
-            // Brand tint: system controls (toggles, pickers, alerts) render
-            // in the active app theme's accent instead of iOS defaults.
-            .tint(Ink.accent)
-            // Force a full subtree rebuild on theme change. `Ink.accent` etc.
-            // are plain computed properties (not tracked by Observation), so
-            // views that don't otherwise read `settings` wouldn't repaint on
-            // their own; `.id()` guarantees every screen re-evaluates fresh
-            // with the new theme instead of only the ones that happen to.
-            // `.transition(.opacity)` + the `withAnimation` around the
-            // mutation (the accent picker) turn what would otherwise be an
-            // instant hard cut into a cross-fade.
-            //
-            // The key includes the accent VALUE, not just the theme id: editing
-            // a custom accent keeps its id, so an id-only key left the whole app
-            // painted in the pre-edit color.
-            .id(settings.appThemeId + AppThemeCatalog.current.accentHex)
-            .transition(.opacity)
+            // The accent: system controls in it, and every view following
+            // it without the root being made again (B293).
+            .appThemeRoot()
             // One bundle, injected here and re-injected at every sheet /
             // cover / popover boundary (see AppEnvironment.swift for why).
             .appEnvironment(AppEnvironment(
@@ -221,7 +247,7 @@ struct MoshpitApp: App {
                     // relay that lost its registry would otherwise never hear
                     // from us again, and every push it was asked to send would
                     // 401 with nothing anywhere saying why.
-                    PushService.shared.refreshRegistration()
+                    HostCare.shared.foreground()
                     // Images queued from the share sheet while we were away:
                     // deliver the ones whose sessions are live, leave the
                     // rest for the next drain (session start re-drains too).
@@ -232,6 +258,38 @@ struct MoshpitApp: App {
                 }
             }
         }
+    }
+}
+
+/// Which pane of which connection is on screen, as the notifications ask
+/// it: the banner and chime skipped for the pane being looked at, and the
+/// agent machine's sweep acknowledging its card (B407). The pane is the
+/// focused one of whichever multiplexer the visible session runs: tmux's
+/// in-band `-CC` controller (SSH), its sidecar (mosh), or herdr's client
+/// (either transport, Swift or Rust path). It read `tmuxControl`, which is
+/// nil for herdr: every herdr pane on the connection counted as on screen,
+/// so another pane's prompt came without a banner and its card was cleared
+/// within a sweep.
+@MainActor
+enum PaneOnScreen {
+    /// The visible session's connection and pane: `""` when its
+    /// multiplexer focuses none yet (no card is the one on screen), `nil`
+    /// when it runs none (the session on screen is the pane).
+    static func of(_ session: SessionHub.ActiveSession?) -> (UUID, String?)? {
+        guard let session else { return nil }
+        guard let tree = multiplexerTree(of: session) else { return (session.connection.id, nil) }
+        return (session.connection.id, tree.activePaneId ?? "")
+    }
+
+    /// Whether `paneId` of `connectionId` is the pane on screen.
+    static func shows(_ session: SessionHub.ActiveSession?, connectionId: UUID, paneId: String) -> Bool {
+        guard let (connection, pane) = of(session), connection == connectionId else { return false }
+        return pane.map { $0 == paneId } ?? true
+    }
+
+    /// In ``TerminalScreen``'s order (its `tmuxSnapshot`).
+    private static func multiplexerTree(of session: SessionHub.ActiveSession) -> TmuxSnapshot? {
+        session.tmuxController?.snapshot ?? session.moshControl?.snapshot ?? session.herdrControl?.snapshot
     }
 }
 
@@ -285,7 +343,6 @@ struct RootView: View {
     let settings: AppSettings
     let hub: SessionHub
     let keychain: KeychainService
-    let router: DeepLinkRouter
 
     /// Read from the environment (rather than passed in) because only the
     /// DEBUG reset seam below needs it; the theme-aware screens resolve their
@@ -294,6 +351,11 @@ struct RootView: View {
     @Environment(ShortcutStore.self) private var shortcuts
 
     @State private var autoSeededConnection: ServerConnection?
+    #if DEBUG
+    /// The smoke seed's connection, for this launch only (B200): Home shows
+    /// it in place of the saved connections, which stay as they are.
+    @State private var smokeSeedStore: ConnectionStore?
+    #endif
 
     var body: some View {
         Group {
@@ -305,14 +367,21 @@ struct RootView: View {
                     TerminalScreen(connection: conn, hub: hub)
                 }
             } else {
+                #if DEBUG
+                // `-MOSHPIT_SEED_HOME_FIXTURE`: Home shows a seeded set of
+                // connections for this launch, written nowhere (HomeSeed);
+                // so does the smoke seed with `-MOSHPIT_SEED_HOME 1`.
+                HomeView(store: smokeSeedStore ?? HomeSeed.store ?? store, hub: hub, keychain: keychain)
+                #else
                 HomeView(store: store, hub: hub, keychain: keychain)
+                #endif
             }
         }
         .task {
-            // DEBUG-only: the reset + smoke-seed launch args wipe the connection
-            // store and plant a non-biometric private key. That data-wiping /
-            // key-planting behavior must never ship in a Release build, so it is
-            // compiled out entirely — the smoke-test scripts build Debug.
+            // DEBUG-only, compiled out of Release entirely — the smoke-test
+            // scripts build Debug. The reset wipes the connection store and
+            // the appearance settings (it says so); the smoke seed writes
+            // nothing that outlives the launch.
             #if DEBUG
             // Test-only: start from an empty store so UI tests are deterministic.
             if ProcessInfo.processInfo.arguments.contains("-MOSHPIT_RESET") {
@@ -336,21 +405,66 @@ struct RootView: View {
     #if DEBUG
     @MainActor
     private func applySmokeSeedIfRequested() async {
-        guard
-            let user = launchArg("-MOSHPIT_SEED_USER"),
-            let keyB64 = launchArg("-MOSHPIT_SEED_KEY_B64"),
-            let keyData = Data(base64Encoded: keyB64),
-            let pem = String(data: keyData, encoding: .utf8),
-            autoSeededConnection == nil
+        // W14a's rig: a connection for this launch only, written nowhere.
+        if autoSeededConnection == nil, let seeded = await RustSessionSeed.connectionFromLaunchArguments() {
+            autoSeededConnection = seeded
+            return
+        }
+        guard autoSeededConnection == nil,
+              let seed = await SmokeSeed.prepare(arguments: ProcessInfo.processInfo.arguments)
         else { return }
+        smokeSeedStore = seed.store
+        if seed.opensTerminal { autoSeededConnection = seed.connection }
+    }
 
-        let host = launchArg("-MOSHPIT_SEED_HOST") ?? "127.0.0.1"
-        let port = Int(launchArg("-MOSHPIT_SEED_PORT") ?? "22") ?? 22
+    #endif
+}
+
+#if DEBUG
+/// The smoke seed (`-MOSHPIT_SEED_USER u -MOSHPIT_SEED_KEY_B64 <key>` and the
+/// flags below): one connection to a test host, for this launch only. Used by
+/// `scripts/verify/smoke-localhost.sh` and the other self-driven checks.
+///
+/// It used to delete every saved connection, add its own to the store, plant
+/// its key in the keychain, trust the host key for good and turn
+/// notifications off in the settings: a debug build run on a phone in daily
+/// use took the person's connections with it (B200). Now the connection is in
+/// a store of its own that is never written
+/// (``HomeSeed/launchOnlyStore(_:suite:)``), its key in the connect path's
+/// launch-only secrets (keychain ref `smoke.seed.<id>`, never read), the host
+/// key trusted for this launch (``LaunchTrust``), and `-MOSHPIT_SEED_QUIET`
+/// silences this launch only (``AppSettings/quietForThisLaunch``).
+@MainActor
+enum SmokeSeed {
+    struct Seed {
+        let connection: ServerConnection
+        /// Home's store for this launch: the seeded connection alone.
+        let store: ConnectionStore
+        /// Straight to the terminal, unless `-MOSHPIT_SEED_HOME 1` asks to
+        /// stay on Home (for the connection-card flow).
+        let opensTerminal: Bool
+    }
+
+    /// The seed `arguments` ask for, made ready to connect; nil when they
+    /// ask for none.
+    static func prepare(arguments: [String]) async -> Seed? {
+        func arg(_ flag: String) -> String? {
+            guard let i = arguments.firstIndex(of: flag), i + 1 < arguments.count else { return nil }
+            return arguments[i + 1]
+        }
+        guard let user = arg("-MOSHPIT_SEED_USER"),
+              let keyB64 = arg("-MOSHPIT_SEED_KEY_B64"),
+              let keyData = Data(base64Encoded: keyB64),
+              let pem = String(data: keyData, encoding: .utf8)
+        else { return nil }
+
+        let host = arg("-MOSHPIT_SEED_HOST") ?? "127.0.0.1"
+        let port = Int(arg("-MOSHPIT_SEED_PORT") ?? "22") ?? 22
         // `-MOSHPIT_SEED_TRUST_FP SHA256:…` pre-answers the New Host card, for
         // rigs with no way to tap it (Xcode 27 ships no Simulator.app, so
         // idb's HID path is gone).
-        if let fingerprint = launchArg("-MOSHPIT_SEED_TRUST_FP") {
-            await SSHService.shared.preTrustHostKey(host: host, port: port, fingerprint: fingerprint)
+        if let fingerprint = arg("-MOSHPIT_SEED_TRUST_FP") {
+            LaunchTrust.trust(host: host, port: port, fingerprint: fingerprint)
         }
 
         // `-MOSHPIT_SEED_ID` fixes the connection's id so a harness can address
@@ -358,63 +472,43 @@ struct RootView: View {
         // drive a window switch on a real device, where XCUITest (the only thing
         // that can tap) cannot be signed for the test runner's bundle id.
         // Random when absent, as before.
-        let id = launchArg("-MOSHPIT_SEED_ID").flatMap(UUID.init(uuidString:)) ?? UUID()
-        let ref = id.uuidString
-        do {
-            try await keychain.savePrivateKey(pem, forRef: ref, requireBiometry: false)
-        } catch {
-            print("[smoke seed] keychain save failed: \(error)")
-            return
-        }
+        let id = arg("-MOSHPIT_SEED_ID").flatMap(UUID.init(uuidString:)) ?? UUID()
+        await SSHService.shared.seedSecretForThisLaunch(connectionId: id, secret: pem)
+        // What an earlier seeded run's sessions remembered about this id.
+        RustSessionSeed.forget(id)
 
-        let useMosh = launchArg("-MOSHPIT_SEED_MOSH") == "1"
+        let useMosh = arg("-MOSHPIT_SEED_MOSH") == "1"
         let connection = ServerConnection(
             id: id,
             // `-MOSHPIT_SEED_NAME` names the seeded connection. Verification
             // runs keep the default; marketing captures pass a host name a
             // person would actually have, because "smoke-localhost" on a
             // screenshot says "we photographed our test rig".
-            name: launchArg("-MOSHPIT_SEED_NAME") ?? "smoke-localhost",
+            name: arg("-MOSHPIT_SEED_NAME") ?? "smoke-localhost",
             host: host,
             port: port,
             username: user,
             authMethod: .key,
             connectionProtocol: useMosh ? .mosh : .ssh,
             sshPort: port,
-            moshServerPath: launchArg("-MOSHPIT_SEED_MOSH_BIN"),
-            keychainRef: ref,
+            moshServerPath: arg("-MOSHPIT_SEED_MOSH_BIN"),
+            keychainRef: "smoke.seed.\(id.uuidString)",
             // `-MOSHPIT_SEED_TMUX 1` still works (existing e2e scripts pass
             // it); `-MOSHPIT_SEED_MUX none|tmux|herdr` picks explicitly and
             // wins when both are present.
-            useTmux: launchArg("-MOSHPIT_SEED_TMUX") == "1",
-            tmuxPath: launchArg("-MOSHPIT_SEED_TMUX_BIN"),
-            herdrPath: launchArg("-MOSHPIT_SEED_HERDR_BIN"),
-            multiplexerRaw: launchArg("-MOSHPIT_SEED_MUX")
+            useTmux: arg("-MOSHPIT_SEED_TMUX") == "1",
+            tmuxPath: arg("-MOSHPIT_SEED_TMUX_BIN"),
+            herdrPath: arg("-MOSHPIT_SEED_HERDR_BIN"),
+            multiplexerRaw: arg("-MOSHPIT_SEED_MUX")
         )
-
-        for existing in store.connections {
-            store.delete(id: existing.id)
-        }
-        store.add(connection)
         // `-MOSHPIT_SEED_QUIET 1` silences local notifications for a capture
-        // run. Simulator banners don't auto-dismiss the way a device's do, so
-        // a "needs you" alert sits over the nav bar and ruins every shot after
-        // it — and the Vibe Island has its own coverage elsewhere.
-        if launchArg("-MOSHPIT_SEED_QUIET") == "1" {
-            settings.notificationsEnabled = false
-        }
-        // `-MOSHPIT_SEED_HOME 1` seeds the connection but stays on the Attach
-        // home screen (instead of auto-pushing the terminal), so the home
-        // connection-card flow can be exercised/screenshotted.
-        if launchArg("-MOSHPIT_SEED_HOME") != "1" {
-            autoSeededConnection = connection
-        }
+        // run (``AppSettings/quietForThisLaunch``). Simulator banners don't
+        // auto-dismiss the way a device's do, so a "needs you" alert sits over
+        // the nav bar and ruins every shot after it — and the Vibe Island has
+        // its own coverage elsewhere.
+        return Seed(connection: connection,
+                    store: HomeSeed.launchOnlyStore([connection], suite: "moshpit.smoke-seed"),
+                    opensTerminal: arg("-MOSHPIT_SEED_HOME") != "1")
     }
-
-    private func launchArg(_ flag: String) -> String? {
-        let args = ProcessInfo.processInfo.arguments
-        guard let i = args.firstIndex(of: flag), i + 1 < args.count else { return nil }
-        return args[i + 1]
-    }
-    #endif
 }
+#endif

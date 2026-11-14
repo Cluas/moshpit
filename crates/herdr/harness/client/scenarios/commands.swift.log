@@ -1,0 +1,21 @@
+t=0 exec api snapshot
+t=40 focus w1:p1
+t=300 exec tab create --focus --label 'logs'
+t=340 exec tab rename 'w1:t1' 'main'
+t=380 exec pane split 'w1:p1' --direction right --focus
+t=420 exec tab focus 'w1:t1'
+t=460 exec workspace focus 'w1'
+t=500 exec pane close 'w1:p2'
+t=540 exec api snapshot
+t=580 focus w1:p1
+t=2040 exec api snapshot
+t=2080 focus w1:p1
+t=4080 exec api snapshot
+t=4120 focus w1:p1
+landed tab create
+landed rename w1:t1 main
+landed split w1:p1
+landed tab focus w1:t1
+landed workspace focus w1
+landed close w1:p2
+state focus=w1:p1 server=w1:p1 sessions=1 notrunning=false mismatch=false

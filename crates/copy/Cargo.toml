@@ -1,0 +1,15 @@
+[package]
+name = "moshpit-copy"
+description = "The rules Moshpit's Chinese copy keeps (the owner's banned words and the en/zh word list of docs/nsh/UI-DESIGN.md §9), and a test that holds every string the app ships to them"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+
+[dev-dependencies]
+# The catalogs and translation tables are JSON.
+serde_json = "1"
+# The notification card's sentences, written out in Rust (crates/seal/src/copy.rs).
+moshpit-seal = { path = "../seal" }

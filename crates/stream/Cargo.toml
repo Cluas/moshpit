@@ -1,0 +1,29 @@
+[package]
+name = "moshpit-stream"
+description = "The byte channel: one ordered, lossless byte queue per pane in each direction between the Rust core and a native terminal view, behind a C ABI (include/moshpit_stream.h)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+crate-type = ["rlib"]
+
+[dependencies]
+futures-core = "0.3"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros", "time", "sync"] }
+
+# The model checker, only under `RUSTFLAGS="--cfg moshpit_loom"` (src/loom_tests.rs).
+# A cfg of our own, not `loom`: tokio reads `--cfg loom` as "build against
+# loom" and stops compiling.
+[target.'cfg(moshpit_loom)'.dev-dependencies]
+loom = "0.7"
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(moshpit_loom)"] }
+
+[[bench]]
+name = "stream"
+harness = false

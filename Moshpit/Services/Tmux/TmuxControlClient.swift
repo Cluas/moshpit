@@ -24,6 +24,22 @@ struct TmuxCommandResponse: Sendable, Equatable {
     /// Lines tmux emitted between `%begin` and the terminator, in order.
     /// Each line is the raw UTF-8 string with the trailing newline stripped.
     let lines: [String]
+    /// The block answers a line this client wrote: bit 1 of the `%begin`
+    /// line's flags, `true` when the field is missing or unreadable. tmux
+    /// also writes blocks for commands nobody here sent — an
+    /// `after-<command>` hook one of ours fired, the late half of an
+    /// `if-shell -b` / `run-shell -b` — flagged 0 (tmux 3.6a; `cmdq_guard`
+    /// passes `CMDQ_STATE_CONTROL` for a control client's own lines). Those
+    /// answer no command of ours (B275, the app's half of B273).
+    let fromClient: Bool
+
+    init(commandId: Int, commandNum: Int, isError: Bool, lines: [String], fromClient: Bool = true) {
+        self.commandId = commandId
+        self.commandNum = commandNum
+        self.isError = isError
+        self.lines = lines
+        self.fromClient = fromClient
+    }
 }
 
 // MARK: - TmuxControlClient
@@ -51,10 +67,20 @@ struct TmuxCommandResponse: Sendable, Equatable {
 ///   - **No transport.** The caller pumps bytes via ``feed(_:)``; the client
 ///     never reads the SSH stream itself.
 ///
+/// ### Two parsers
+/// The parser below, or the Rust port of it (crates/tmux, through the app's
+/// Rust library — TmuxRustParser.swift) when the switch says so
+/// (``TmuxParserBackend``). Same callbacks, same order, same values: the
+/// tmux test suites run against both. A client keeps the parser it was made
+/// with, unless the Rust one fails — then it carries on with this one and
+/// says so through ``onParserFailure``.
+///
 /// ### Threading
 /// `TmuxControlClient` is an actor. Callers feed bytes via `await feed(_:)`;
 /// callbacks fire on the actor's executor — handlers that need MainActor
-/// affinity must hop themselves.
+/// affinity must hop themselves. The Rust parser runs there too, called
+/// synchronously from ``feed(_:)``, and its events fire the same callbacks
+/// before ``feed(_:)`` returns.
 actor TmuxControlClient {
 
     // MARK: - Callbacks
@@ -64,7 +90,8 @@ actor TmuxControlClient {
     var onPaneOutput: (@Sendable (_ paneId: String, _ data: Data) -> Void)?
 
     /// Invoked for every `%layout-change @windowId <layout> [...]` line.
-    /// `zoomed` is true when the line contains a `*Z` marker.
+    /// `zoomed` is true when the window's flags carry `Z` (`*Z`, `-Z`,
+    /// `*MZ`, …).
     var onLayoutChange: (@Sendable (_ windowId: String, _ layout: String, _ zoomed: Bool) -> Void)?
 
     /// Invoked for `%window-add @windowId`.
@@ -79,8 +106,38 @@ actor TmuxControlClient {
     /// Invoked for `%session-changed $sessionId <name>`.
     var onSessionChanged: (@Sendable (_ sessionId: String, _ name: String) -> Void)?
 
+    /// Invoked for `%session-renamed $sessionId <name>` — any client's
+    /// rename of any session; the name is the rest of the line.
+    var onSessionRenamed: (@Sendable (_ sessionId: String, _ name: String) -> Void)?
+
     /// Invoked for `%session-window-changed $sessionId @windowId`.
     var onSessionWindowChanged: (@Sendable (_ sessionId: String, _ windowId: String) -> Void)?
+
+    /// Invoked for `%sessions-changed`: a session was created or destroyed,
+    /// anywhere on the server.
+    var onSessionsChanged: (@Sendable () -> Void)?
+
+    /// Invoked for `%unlinked-window-add @windowId`: a window was linked into
+    /// a session that is not this client's (a window or a whole session
+    /// created elsewhere).
+    var onUnlinkedWindowAdd: (@Sendable (_ windowId: String) -> Void)?
+
+    /// Invoked for `%unlinked-window-close @windowId`. tmux 3.6a sends this,
+    /// not `%window-close`, for a window killed in this client's own session
+    /// too: the window is already unlinked when the notification goes out
+    /// (captures/layout.bin, `kill-window`).
+    var onUnlinkedWindowClose: (@Sendable (_ windowId: String) -> Void)?
+
+    /// Invoked for `%unlinked-window-renamed @windowId <name>`; the name is
+    /// the rest of the line.
+    var onUnlinkedWindowRenamed: (@Sendable (_ windowId: String, _ name: String) -> Void)?
+
+    /// Invoked for `%client-session-changed <client> $sessionId <name>`:
+    /// ANOTHER client attached to or switched to a session (this client's
+    /// own switches arrive as `%session-changed`). The client name is a tty
+    /// path or `client-<pid>` and holds no space; the session name is the
+    /// rest of the line.
+    var onClientSessionChanged: (@Sendable (_ client: String, _ sessionId: String, _ name: String) -> Void)?
 
     /// Invoked for `%window-pane-changed @windowId %paneId`.
     var onActivePaneChanged: (@Sendable (_ windowId: String, _ paneId: String) -> Void)?
@@ -92,8 +149,8 @@ actor TmuxControlClient {
     /// Invoked for `%continue %paneId`.
     var onContinue: (@Sendable (_ paneId: String) -> Void)?
 
-    /// Invoked for `%client-detached <client>` / `%client-session-changed …`.
-    /// The single string is whatever tmux placed after the directive.
+    /// Invoked for `%client-detached <client>`. The single string is
+    /// whatever tmux placed after the directive.
     var onClientDetached: (@Sendable (_ payload: String) -> Void)?
 
     /// Invoked when tmux closes the control mode session (`%exit [reason]`).
@@ -106,16 +163,39 @@ actor TmuxControlClient {
     /// are *not* errors — they pass through silently for forward-compat.
     var onProtocolError: (@Sendable (_ error: TmuxControlError) -> Void)?
 
+    /// Invoked when the Rust parser failed (a caught panic — a bug) and this
+    /// client went on with the Swift parser. What the Rust parser held when
+    /// it failed is lost: the rest of the chunk, maybe the end of a reply
+    /// some command still waits for. Start the control session over.
+    var onParserFailure: (@Sendable (_ reason: String) -> Void)?
+
+    // MARK: - Parser
+
+    /// The parser this client runs; ``TmuxParserBackend/current`` when it was
+    /// made, `.swift` if the Rust parser was asked for but is not in this
+    /// build or has failed since.
+    private(set) var backend: TmuxParserBackend
+
+    #if canImport(MoshpitFFI)
+    /// The Rust parser while ``backend`` is `.rust` (TmuxRustParser.swift).
+    var rustParser: TmuxRustParser?
+    #endif
+
     // MARK: - Internal state
 
-    /// Raw transport bytes that have arrived but do not yet form a full line.
-    /// Lines are separated by `\n`; a dangling final `\r` is stripped during
-    /// line extraction so CRLF and LF transports look identical to the rest
-    /// of the parser.
-    private var buffer = Data()
+    /// Raw transport bytes after the last `\n` fed so far: a line still on
+    /// its way. Complete lines never wait here — ``drainLines(_:)``
+    /// dispatches them straight out of the data ``feed(_:)`` was given.
+    private var partialLine = Data()
 
     /// `%begin` data captured at block open; cleared at `%end` / `%error`.
-    private var openBlock: (commandId: Int, commandNum: Int, lines: [String])?
+    private var openBlock: (commandId: Int, commandNum: Int, fromClient: Bool, lines: [String])?
+
+    /// The open block's own terminators, `%end <cid> <num>` and
+    /// `%error <cid> <num>`, built once at `%begin`: the embedded-terminator
+    /// check runs on every line of the block, and a backfill reply is
+    /// thousands of lines (B102).
+    private var openBlockNeedles: [[UInt8]] = []
 
     /// Ids of the most recent REAL `%begin`, for the truncated-line recovery
     /// below: command numbers increment per command on a connection, so a
@@ -152,7 +232,18 @@ actor TmuxControlClient {
 
     // MARK: - Init
 
-    init() {}
+    /// A client running `backend`'s parser — by default whichever the
+    /// switch picks (``TmuxParserBackend/current``).
+    init(backend: TmuxParserBackend = .current) {
+        #if canImport(MoshpitFFI)
+        if backend == .rust, let parser = TmuxRustParser() {
+            rustParser = parser
+            self.backend = .rust
+            return
+        }
+        #endif
+        self.backend = .swift
+    }
 
     // MARK: - Public API
 
@@ -160,17 +251,37 @@ actor TmuxControlClient {
     /// data; partial lines are buffered until the next call.
     func feed(_ data: Data) {
         guard !data.isEmpty else { return }
-        buffer.append(data)
-        drainLines()
+        #if canImport(MoshpitFFI)
+        if let rustParser {
+            feedRust(rustParser, data)
+            return
+        }
+        #endif
+        drainLines(data)
     }
 
     /// Discard any partial line in the buffer and any open response block.
     /// Use when reconnecting or after a protocol error to resync.
     func reset() {
-        buffer.removeAll(keepingCapacity: false)
+        #if canImport(MoshpitFFI)
+        rustParser?.reset()
+        #endif
+        partialLine.removeAll(keepingCapacity: false)
         openBlock = nil
         awaitingBootBlock = true
     }
+
+    #if canImport(MoshpitFFI)
+    /// The Rust parser failed (TmuxRustParser.swift): drop it and go on with
+    /// the Swift parser, from a clean state as after ``reset()``.
+    func dropRustParser() {
+        rustParser = nil
+        backend = .swift
+        partialLine.removeAll(keepingCapacity: false)
+        openBlock = nil
+        awaitingBootBlock = true
+    }
+    #endif
 
     // MARK: - Callback installers
 
@@ -184,14 +295,21 @@ actor TmuxControlClient {
         onWindowClose: (@Sendable (String) -> Void)? = nil,
         onWindowRenamed: (@Sendable (String, String) -> Void)? = nil,
         onSessionChanged: (@Sendable (String, String) -> Void)? = nil,
+        onSessionRenamed: (@Sendable (String, String) -> Void)? = nil,
         onSessionWindowChanged: (@Sendable (String, String) -> Void)? = nil,
+        onSessionsChanged: (@Sendable () -> Void)? = nil,
+        onUnlinkedWindowAdd: (@Sendable (String) -> Void)? = nil,
+        onUnlinkedWindowClose: (@Sendable (String) -> Void)? = nil,
+        onUnlinkedWindowRenamed: (@Sendable (String, String) -> Void)? = nil,
+        onClientSessionChanged: (@Sendable (String, String, String) -> Void)? = nil,
         onActivePaneChanged: (@Sendable (String, String) -> Void)? = nil,
         onPause: (@Sendable (String) -> Void)? = nil,
         onContinue: (@Sendable (String) -> Void)? = nil,
         onClientDetached: (@Sendable (String) -> Void)? = nil,
         onExit: (@Sendable (String?) -> Void)? = nil,
         onCommandResponse: (@Sendable (TmuxCommandResponse) -> Void)? = nil,
-        onProtocolError: (@Sendable (TmuxControlError) -> Void)? = nil
+        onProtocolError: (@Sendable (TmuxControlError) -> Void)? = nil,
+        onParserFailure: (@Sendable (String) -> Void)? = nil
     ) {
         if let onPaneOutput { self.onPaneOutput = onPaneOutput }
         if let onLayoutChange { self.onLayoutChange = onLayoutChange }
@@ -199,7 +317,13 @@ actor TmuxControlClient {
         if let onWindowClose { self.onWindowClose = onWindowClose }
         if let onWindowRenamed { self.onWindowRenamed = onWindowRenamed }
         if let onSessionChanged { self.onSessionChanged = onSessionChanged }
+        if let onSessionRenamed { self.onSessionRenamed = onSessionRenamed }
         if let onSessionWindowChanged { self.onSessionWindowChanged = onSessionWindowChanged }
+        if let onSessionsChanged { self.onSessionsChanged = onSessionsChanged }
+        if let onUnlinkedWindowAdd { self.onUnlinkedWindowAdd = onUnlinkedWindowAdd }
+        if let onUnlinkedWindowClose { self.onUnlinkedWindowClose = onUnlinkedWindowClose }
+        if let onUnlinkedWindowRenamed { self.onUnlinkedWindowRenamed = onUnlinkedWindowRenamed }
+        if let onClientSessionChanged { self.onClientSessionChanged = onClientSessionChanged }
         if let onActivePaneChanged { self.onActivePaneChanged = onActivePaneChanged }
         if let onPause { self.onPause = onPause }
         if let onContinue { self.onContinue = onContinue }
@@ -207,32 +331,50 @@ actor TmuxControlClient {
         if let onExit { self.onExit = onExit }
         if let onCommandResponse { self.onCommandResponse = onCommandResponse }
         if let onProtocolError { self.onProtocolError = onProtocolError }
+        if let onParserFailure { self.onParserFailure = onParserFailure }
     }
 
     // MARK: - Line extraction
 
-    /// Pull every complete line out of ``buffer`` and dispatch it. A trailing
-    /// partial line (no `\n`) is preserved for the next ``feed(_:)``.
-    private func drainLines() {
+    /// Dispatch every complete line in ``partialLine`` + `data`, and keep
+    /// what follows the last `\n` for the next ``feed(_:)``. Lines are
+    /// separated by `\n`; one trailing `\r` is stripped so CRLF and LF
+    /// transports look identical to the rest of the parser.
+    ///
+    /// Linear in the bytes fed: complete lines are dispatched as slices of
+    /// `data`, never copied; only the NEW bytes are searched for a newline
+    /// (the partial line has none); only the trailing partial line is
+    /// copied. The old loop kept everything in one buffer and re-copied the
+    /// rest of it after every line — O(lines × bytes) per feed, so a single
+    /// 3.8 MB feed (a burst of output, a reconnect's backlog) parsed at
+    /// 0.6 MB/s on an M2, 40 times slower than the same bytes in 4 KB feeds.
+    private func drainLines(_ data: Data) {
         let newline = UInt8(ascii: "\n")
-        let carriageReturn = UInt8(ascii: "\r")
-
-        while let nlIndex = buffer.firstIndex(of: newline) {
-            let lineSlice = buffer[buffer.startIndex..<nlIndex]
-            // Strip trailing CR if present (CRLF line endings).
-            let stripped: Data
-            if let last = lineSlice.last, last == carriageReturn {
-                stripped = lineSlice.dropLast()
-            } else {
-                stripped = Data(lineSlice)
+        var rest = data
+        if !partialLine.isEmpty {
+            guard let end = rest.firstIndex(of: newline) else {
+                partialLine.append(rest)
+                return
             }
-            // Advance past the newline byte.
-            buffer = Data(buffer[buffer.index(after: nlIndex)...])
-
+            partialLine.append(rest[..<end])
+            let line = partialLine
+            partialLine = Data()
+            dispatchLine(Self.droppingCarriageReturn(line))
+            rest = rest[rest.index(after: end)...]
+        }
+        while let end = rest.firstIndex(of: newline) {
             // Defer UTF-8 decoding to the dispatcher so we can capture the
             // raw payload of malformed lines.
-            dispatchLine(stripped)
+            dispatchLine(Self.droppingCarriageReturn(rest[..<end]))
+            rest = rest[rest.index(after: end)...]
         }
+        // A copy, so a short partial line never pins the caller's buffer.
+        partialLine = Data(rest)
+    }
+
+    /// `line` without one trailing `\r` (CRLF line endings).
+    private static func droppingCarriageReturn(_ line: Data) -> Data {
+        line.last == UInt8(ascii: "\r") ? line.dropLast() : line
     }
 
     /// Decode and route a single raw line.
@@ -246,28 +388,19 @@ actor TmuxControlClient {
         if openBlock != nil {
             let blockLine = String(data: raw, encoding: .utf8)
                 ?? String(decoding: raw, as: UTF8.self)
+            // Its bytes, for the terminator checks: protocol syntax is
+            // matched on bytes, never on Characters (see "Protocol bytes"
+            // at the end of this file).
+            let bytes = ArraySlice(blockLine.utf8)
             // Truncated-line recovery, in-block half: a lossy hop can drop a
             // content line's tail, gluing the block's OWN terminator onto it
             // ("<content>%end <cid> <num> 1" as one line). The prefix checks
             // below then miss it and the block never closes. The suffix must
             // echo the open block's EXACT ids to count — content quoting some
             // other dump can't match a live command's unique pair.
-            if let (content, terminator) = splitEmbeddedTerminator(blockLine) {
-                if !content.isEmpty { openBlock?.lines.append(content) }
+            if let (content, terminator) = splitEmbeddedTerminator(bytes) {
+                if !content.isEmpty { openBlock?.lines.append(content.string) }
                 handleBlockEnd(line: terminator, isError: terminator.hasPrefix("%error"))
-                return
-            }
-            // Runaway block: its terminator was lost outright. Deliver what
-            // accumulated as an error (the sender's callback occupies a FIFO
-            // slot — silence would shift pairing forever) and re-dispatch the
-            // current line as if the block had closed.
-            if let block = openBlock, block.lines.count >= maxBlockLines {
-                openBlock = nil
-                onProtocolError?(.malformedLine(
-                    "block #\(block.commandId) exceeded \(maxBlockLines) lines — forcing close"))
-                deliverBlock(commandId: block.commandId, commandNum: block.commandNum,
-                             isError: true, lines: block.lines)
-                dispatchLine(raw)
                 return
             }
             // A terminator must carry the OPEN block's ids to count. tmux
@@ -280,13 +413,33 @@ actor TmuxControlClient {
             // into the notification parser, and let a content "%begin" open
             // a phantom block that swallowed the NEXT real reply — from
             // there, command↔response pairing was shifted for good.
-            if terminatesOpenBlock(blockLine, prefix: "%end") {
-                handleBlockEnd(line: blockLine, isError: false)
-            } else if terminatesOpenBlock(blockLine, prefix: "%error") {
-                handleBlockEnd(line: blockLine, isError: true)
-            } else {
-                openBlock?.lines.append(blockLine)
+            //
+            // Checked BEFORE the line cap below: a reply of exactly
+            // `maxBlockLines` lines is complete, not runaway — the cap used
+            // to fire on its own terminator, delivering the reply as an
+            // error and then reporting the real %end as a stray one.
+            if terminatesOpenBlock(bytes, prefix: "%end") {
+                handleBlockEnd(line: bytes, isError: false)
+                return
             }
+            if terminatesOpenBlock(bytes, prefix: "%error") {
+                handleBlockEnd(line: bytes, isError: true)
+                return
+            }
+            // Runaway block: its terminator was lost outright. Deliver what
+            // accumulated as an error (the sender's callback occupies a FIFO
+            // slot — silence would shift pairing forever) and re-dispatch the
+            // current line as if the block had closed.
+            if let block = openBlock, block.lines.count >= maxBlockLines {
+                openBlock = nil
+                onProtocolError?(.malformedLine(
+                    "block #\(block.commandId) exceeded \(maxBlockLines) lines — forcing close"))
+                deliverBlock(commandId: block.commandId, commandNum: block.commandNum,
+                             isError: true, fromClient: block.fromClient, lines: block.lines)
+                dispatchLine(raw)
+                return
+            }
+            openBlock?.lines.append(blockLine)
             return
         }
 
@@ -306,6 +459,8 @@ actor TmuxControlClient {
 
         // Some DCS-style transports wrap the first burst in `\ePxxxp%begin…`.
         // Skip leading non-`%` bytes when present so we still see the marker.
+        // From here on `line` is the decoded line's UTF-8 BYTES: every
+        // keyword, delimiter and number below is matched on bytes.
         let line = decodeLine(raw)
 
         // Outside a block: only `%` lines are notifications. Anything else is
@@ -324,23 +479,35 @@ actor TmuxControlClient {
             handleWindowRenamed(line)
         } else if line.hasPrefix("%session-changed ") {
             handleSessionChanged(line)
+        } else if line.hasPrefix("%session-renamed ") {
+            handleSessionRenamed(line)
         } else if line.hasPrefix("%session-window-changed ") {
             handleSessionWindowChanged(line)
         } else if line.hasPrefix("%window-pane-changed ") {
             handleWindowPaneChanged(line)
+        } else if line.equals("%sessions-changed") || line.hasPrefix("%sessions-changed ") {
+            onSessionsChanged?()
+        } else if line.hasPrefix("%unlinked-window-add ") {
+            handleWindowId(line, prefix: "%unlinked-window-add ", onUnlinkedWindowAdd)
+        } else if line.hasPrefix("%unlinked-window-close ") {
+            handleWindowId(line, prefix: "%unlinked-window-close ", onUnlinkedWindowClose)
+        } else if line.hasPrefix("%unlinked-window-renamed ") {
+            handleUnlinkedWindowRenamed(line)
+        } else if line.hasPrefix("%client-session-changed ") {
+            handleClientSessionChanged(line)
         } else if line.hasPrefix("%pause ") {
             handlePause(line)
         } else if line.hasPrefix("%continue ") {
             handleContinue(line)
         } else if line.hasPrefix("%client-detached") {
             handleClientDetached(line)
-        } else if line == "%exit" || line.hasPrefix("%exit ") {
+        } else if line.equals("%exit") || line.hasPrefix("%exit ") {
             handleExit(line)
-        } else if line.hasPrefix("%end ") || line == "%end" ||
-                  line.hasPrefix("%error ") || line == "%error" {
+        } else if line.hasPrefix("%end ") || line.equals("%end") ||
+                  line.hasPrefix("%error ") || line.equals("%error") {
             // Block terminator without a matching `%begin`: ignore but report
             // so logs can surface the desync.
-            onProtocolError?(.malformedLine(line))
+            onProtocolError?(.malformedLine(line.string))
         } else {
             // Unknown directive — forward-compat: silent skip.
         }
@@ -348,23 +515,25 @@ actor TmuxControlClient {
 
     /// UTF-8 decode the line and strip any leading bytes before the first
     /// `%`-starting tmux keyword. This handles transports that prepend DCS
-    /// (`\eP1000p…`) or shell banners on the very first line.
-    private func decodeLine(_ raw: Data) -> String {
+    /// (`\eP1000p…`) or shell banners on the very first line. Returns the
+    /// decoded line's UTF-8 bytes.
+    private func decodeLine(_ raw: Data) -> ArraySlice<UInt8> {
         let decoded = String(data: raw, encoding: .utf8) ?? String(
             decoding: raw, as: UTF8.self
         )
-        guard !decoded.hasPrefix("%") else { return decoded }
-        guard let pct = decoded.firstIndex(of: "%") else { return decoded }
-        let candidate = decoded[pct...]
+        let line = ArraySlice(decoded.utf8)
+        guard !line.hasPrefix("%") else { return line }
+        guard let pct = line.firstIndex(of: UInt8(ascii: "%")) else { return line }
+        let candidate = line[pct...]
         if candidate.hasPrefix("%begin") || candidate.hasPrefix("%end") ||
             candidate.hasPrefix("%error") || candidate.hasPrefix("%output") ||
             candidate.hasPrefix("%layout") || candidate.hasPrefix("%window") ||
             candidate.hasPrefix("%session") || candidate.hasPrefix("%pause") ||
             candidate.hasPrefix("%continue") || candidate.hasPrefix("%client") ||
-            candidate.hasPrefix("%exit") {
-            return String(candidate)
+            candidate.hasPrefix("%exit") || candidate.hasPrefix("%unlinked") {
+            return candidate
         }
-        return decoded
+        return line
     }
 
     // MARK: - Block lifecycle
@@ -379,19 +548,58 @@ actor TmuxControlClient {
 
     /// `"<content>%end <cid> <num> …"` where cid/num are the OPEN block's own
     /// ids → `(content, terminator)`. nil when no such suffix.
-    private func splitEmbeddedTerminator(_ line: String) -> (String, String)? {
-        guard let block = openBlock else { return nil }
-        for keyword in ["%end ", "%error "] {
-            guard let range = line.range(of: "\(keyword)\(block.commandId) \(block.commandNum)",
-                                         options: .backwards) else { continue }
+    private func splitEmbeddedTerminator(
+        _ line: ArraySlice<UInt8>
+    ) -> (ArraySlice<UInt8>, ArraySlice<UInt8>)? {
+        guard openBlock != nil else { return nil }
+        for needle in openBlockNeedles {
+            guard let range = Self.lastRange(of: needle, nearEndOf: line,
+                                             tail: Self.maxTerminatorTail) else { continue }
             // Must run to end-of-line (allowing trailing flags) — a mention
-            // mid-line is content.
+            // mid-line is content. Flags are ASCII digits: a "٣" there is
+            // content too.
             let tail = line[range.upperBound...]
-            guard tail.count <= 8, !tail.contains(where: { !$0.isNumber && $0 != " " }) else { continue }
+            guard tail.count <= Self.maxTerminatorTail,
+                  tail.allSatisfy({ $0 == UInt8(ascii: " ") || $0.isASCIIDigit }) else { continue }
+            // …and the number must END where the needle does: block 10's
+            // needle "%end <cid> 10" also matches the front of
+            // "%end <cid> 105 1", a content line (a log quoting another
+            // reply) that closed block 10 early and spilled the rest of
+            // the reply out as stray lines.
+            guard tail.isEmpty || tail.first == UInt8(ascii: " ") else { continue }
             // The prefix checks in dispatchLine already handled range at
             // line start; here we only accept a strictly embedded suffix.
             guard range.lowerBound != line.startIndex else { return nil }
-            return (String(line[..<range.lowerBound]), String(line[range.lowerBound...]))
+            return (line[..<range.lowerBound], line[range.lowerBound...])
+        }
+        return nil
+    }
+
+    /// Bytes an embedded terminator may carry after its ids: a space and
+    /// the flags digit(s).
+    private static let maxTerminatorTail = 8
+
+    /// The last occurrence of `needle` in `line` that leaves at most `tail`
+    /// bytes after it — the only kind an embedded terminator can be. Only
+    /// the line's last `needle + tail` bytes are searched, so the check
+    /// costs the same on a 10 000-byte line as on a short one; an earlier
+    /// occurrence could not count, and a later one would be in the window
+    /// too (B102: searching the whole line with a needle formatted for every
+    /// line made a backfill reply parse at 3–6 MB/s).
+    static func lastRange(
+        of needle: [UInt8], nearEndOf line: ArraySlice<UInt8>, tail: Int
+    ) -> Range<Int>? {
+        guard !needle.isEmpty, line.count >= needle.count else { return nil }
+        let lowest = max(line.startIndex, line.endIndex - needle.count - tail)
+        var start = line.endIndex - needle.count
+        while start >= lowest {
+            var matched = true
+            for offset in 0..<needle.count where line[start + offset] != needle[offset] {
+                matched = false
+                break
+            }
+            if matched { return start..<(start + needle.count) }
+            start -= 1
         }
         return nil
     }
@@ -403,13 +611,23 @@ actor TmuxControlClient {
     private func embeddedBeginOffset(in raw: Data) -> Data.Index? {
         let marker = Data("%begin ".utf8)
         guard let range = raw.lastRange(of: marker), range.lowerBound != raw.startIndex else { return nil }
-        guard let suffix = String(data: raw[range.lowerBound...], encoding: .utf8) else { return nil }
-        let parts = suffix.split(separator: " ", omittingEmptySubsequences: false)
+        // Valid UTF-8 or not a protocol line; then its fields, as bytes. The
+        // flag is ONE ASCII digit — `Character.isNumber` took "五" for one
+        // and opened a phantom block that swallowed the next real reply.
+        guard String(data: raw[range.lowerBound...], encoding: .utf8) != nil else { return nil }
+        let parts = ArraySlice(raw[range.lowerBound...])
+            .split(separator: UInt8(ascii: " "), omittingEmptySubsequences: false)
         guard parts.count == 4,
-              let cid = Int(parts[1]), let num = Int(parts[2]),
-              parts[3].count == 1, parts[3].allSatisfy(\.isNumber) else { return nil }
-        guard num > lastBlockNum, num - lastBlockNum <= 200,
-              abs(cid - lastBlockCid) <= 86_400 else { return nil }
+              let cid = parts[1].int, let num = parts[2].int,
+              parts[3].count == 1, parts[3].allSatisfy(\.isASCIIDigit) else { return nil }
+        // Both distances without trapping: the ids are pane TEXT — anything
+        // that parses as an Int, `-9223372036854775808` included — and
+        // `num - lastBlockNum`, `cid - lastBlockCid` and `abs` all trap on
+        // overflow. One line of pane output crashed the app.
+        let (numGap, numOverflow) = num.subtractingReportingOverflow(lastBlockNum)
+        let (cidGap, cidOverflow) = cid.subtractingReportingOverflow(lastBlockCid)
+        guard num > lastBlockNum, !numOverflow, numGap <= 200,
+              !cidOverflow, cidGap.magnitude <= 86_400 else { return nil }
         return range.lowerBound
     }
 
@@ -417,26 +635,32 @@ actor TmuxControlClient {
     /// echoing the ids from its `%begin` (or the bare keyword, kept for
     /// defensive symmetry — tmux always sends the ids). Anything else that
     /// merely starts with the keyword is content. See dispatchLine.
-    private func terminatesOpenBlock(_ line: String, prefix: String) -> Bool {
+    private func terminatesOpenBlock(_ line: ArraySlice<UInt8>, prefix: String) -> Bool {
         guard let block = openBlock else { return false }
-        if line == prefix { return true }
+        if line.equals(prefix) { return true }
         guard line.hasPrefix(prefix + " ") else { return false }
-        let parts = line.split(separator: " ", maxSplits: 4, omittingEmptySubsequences: false)
-        guard parts.count >= 3, let cid = Int(parts[1]), let num = Int(parts[2]) else {
+        let parts = line.split(separator: UInt8(ascii: " "), maxSplits: 4,
+                               omittingEmptySubsequences: false)
+        guard parts.count >= 3, let cid = parts[1].int, let num = parts[2].int else {
             return false
         }
         return cid == block.commandId && num == block.commandNum
     }
 
     /// `%begin <commandId> <commandNum> [flags]`
-    private func handleBegin(_ line: String) {
-        let parts = line.split(separator: " ", maxSplits: 4, omittingEmptySubsequences: false)
+    private func handleBegin(_ line: ArraySlice<UInt8>) {
+        let parts = line.split(separator: UInt8(ascii: " "), maxSplits: 4,
+                               omittingEmptySubsequences: false)
         guard parts.count >= 3,
-              let cid = Int(parts[1]),
-              let num = Int(parts[2]) else {
-            onProtocolError?(.malformedLine(line))
+              let cid = parts[1].int,
+              let num = parts[2].int else {
+            onProtocolError?(.malformedLine(line.string))
             return
         }
+        // `[flags]`: a block for a command that came from this client's own
+        // input has bit 1 set. Missing or unreadable reads as ours, the old
+        // way of reading every block (crates/tmux reads it the same way).
+        let fromClient = parts.count >= 4 ? (parts[3].int.map { $0 & 1 == 1 } ?? true) : true
         // A previous block still open means its terminator never came (or
         // was mangled in transit). Surface the desync, but ALSO deliver the
         // stale block as an error response: its sender's callback occupies a
@@ -447,30 +671,32 @@ actor TmuxControlClient {
             openBlock = nil
             onProtocolError?(.malformedLine("orphan %begin while block #\(stale.commandId) open"))
             deliverBlock(commandId: stale.commandId, commandNum: stale.commandNum,
-                         isError: true, lines: stale.lines)
+                         isError: true, fromClient: stale.fromClient, lines: stale.lines)
         }
         lastBlockCid = cid
         lastBlockNum = num
-        openBlock = (commandId: cid, commandNum: num, lines: [])
+        openBlock = (commandId: cid, commandNum: num, fromClient: fromClient, lines: [])
+        openBlockNeedles = [Array("%end \(cid) \(num)".utf8), Array("%error \(cid) \(num)".utf8)]
     }
 
     /// Handle `%end <id> <num>` or `%error <id> <num>`.
-    private func handleBlockEnd(line: String, isError: Bool) {
+    private func handleBlockEnd(line: ArraySlice<UInt8>, isError: Bool) {
         guard let block = openBlock else {
-            onProtocolError?(.malformedLine(line))
+            onProtocolError?(.malformedLine(line.string))
             return
         }
         openBlock = nil
         // We don't strictly need to re-parse the ids on the terminator (tmux
         // matches them to the open block by ordering), but log a mismatch.
-        let parts = line.split(separator: " ", maxSplits: 4, omittingEmptySubsequences: false)
+        let parts = line.split(separator: UInt8(ascii: " "), maxSplits: 4,
+                               omittingEmptySubsequences: false)
         if parts.count >= 3,
-           let cid = Int(parts[1]),
+           let cid = parts[1].int,
            cid != block.commandId {
             onProtocolError?(.malformedLine("mismatched terminator id \(cid) for block #\(block.commandId)"))
         }
         deliverBlock(commandId: block.commandId, commandNum: block.commandNum,
-                     isError: isError, lines: block.lines)
+                     isError: isError, fromClient: block.fromClient, lines: block.lines)
     }
 
     /// Single exit for EVERY completed block — normal, orphaned, or
@@ -479,7 +705,7 @@ actor TmuxControlClient {
     /// boot block leaves through, it must be swallowed here exactly once.
     /// See `awaitingBootBlock`.
     private func deliverBlock(commandId: Int, commandNum: Int,
-                              isError: Bool, lines: [String]) {
+                              isError: Bool, fromClient: Bool, lines: [String]) {
         if awaitingBootBlock {
             awaitingBootBlock = false
             return
@@ -488,7 +714,8 @@ actor TmuxControlClient {
             commandId: commandId,
             commandNum: commandNum,
             isError: isError,
-            lines: lines))
+            lines: lines,
+            fromClient: fromClient))
     }
 
     // MARK: - Notification handlers
@@ -520,7 +747,7 @@ actor TmuxControlClient {
         // good. The number-window check keeps pane content that merely QUOTES
         // an old dump intact.
         if let beginAt = embeddedBeginOffset(in: payload) {
-            let beginLine = String(decoding: payload.suffix(from: beginAt), as: UTF8.self)
+            let beginLine = ArraySlice(payload.suffix(from: beginAt))
             onProtocolError?(.malformedLine("recovered %begin glued to truncated %output"))
             let decoded = Self.decodeOctalEscapes(Data(payload.prefix(upTo: beginAt)))
             onPaneOutput?(paneId, decoded)
@@ -531,131 +758,200 @@ actor TmuxControlClient {
         onPaneOutput?(paneId, decoded)
     }
 
-    /// `%layout-change @windowId <layout> [visible_layout] [*Z]`
-    private func handleLayoutChange(_ line: String) {
-        let body = line.dropFirst("%layout-change ".count)
-        let parts = body.split(separator: " ", maxSplits: 3, omittingEmptySubsequences: true)
+    /// `%layout-change @windowId <layout> [visible_layout] [flags]`
+    private func handleLayoutChange(_ line: ArraySlice<UInt8>) {
+        let body = line.dropFirst("%layout-change ".utf8.count)
+        let parts = body.split(separator: UInt8(ascii: " "), maxSplits: 3,
+                               omittingEmptySubsequences: true)
         guard parts.count >= 2 else {
-            onProtocolError?(.malformedLine(line))
+            onProtocolError?(.malformedLine(line.string))
             return
         }
-        let windowId = String(parts[0])
-        let layout = String(parts[1])
-        let zoomed: Bool
-        if parts.count > 2 {
-            zoomed = parts[2...].contains(where: { $0 == "*Z" })
-        } else {
-            zoomed = false
-        }
+        let windowId = parts[0].string
+        let layout = parts[1].string
+        // Zoomed when a window-flags field carries `Z`. tmux 3.6a sends
+        // `#{window_raw_flags}` there, and `*Z` only for the session's
+        // current window with no other flag set: a zoomed window that is
+        // not current reads `-Z` or `Z`, a marked pane makes it `*MZ`,
+        // activity or a bell `#*Z` / `!*Z`. Matching `*Z` exactly reported
+        // all of those as unzoomed.
+        let zoomed = parts.dropFirst(2).contains(where: Self.isZoomedFlags)
         onLayoutChange?(windowId, layout, zoomed)
     }
 
-    private func handleWindowAdd(_ line: String) {
-        let id = String(line.dropFirst("%window-add ".count))
+    /// A tmux window-flags field — only the characters `#!~*-MZ` — with
+    /// the zoomed flag `Z` in it. A layout never qualifies: it always
+    /// contains digits.
+    private static func isZoomedFlags(_ field: ArraySlice<UInt8>) -> Bool {
+        field.contains(UInt8(ascii: "Z")) && field.allSatisfy { "#!~*-MZ".utf8.contains($0) }
+    }
+
+    private func handleWindowAdd(_ line: ArraySlice<UInt8>) {
+        let id = line.dropFirst("%window-add ".utf8.count).string
         guard !id.isEmpty else {
-            onProtocolError?(.malformedLine(line))
+            onProtocolError?(.malformedLine(line.string))
             return
         }
         onWindowAdd?(id)
     }
 
-    private func handleWindowClose(_ line: String) {
-        let id = String(line.dropFirst("%window-close ".count))
+    private func handleWindowClose(_ line: ArraySlice<UInt8>) {
+        let id = line.dropFirst("%window-close ".utf8.count).string
         guard !id.isEmpty else {
-            onProtocolError?(.malformedLine(line))
+            onProtocolError?(.malformedLine(line.string))
             return
         }
         onWindowClose?(id)
     }
 
-    private func handleWindowRenamed(_ line: String) {
-        let body = line.dropFirst("%window-renamed ".count)
-        guard let space = body.firstIndex(of: " ") else {
-            onProtocolError?(.malformedLine(line))
+    private func handleWindowRenamed(_ line: ArraySlice<UInt8>) {
+        let body = line.dropFirst("%window-renamed ".utf8.count)
+        guard let space = body.firstIndex(of: UInt8(ascii: " ")) else {
+            onProtocolError?(.malformedLine(line.string))
             return
         }
-        let id = String(body[body.startIndex..<space])
-        let name = String(body[body.index(after: space)...])
+        let id = body[body.startIndex..<space].string
+        let name = body[body.index(after: space)...].string
         onWindowRenamed?(id, name)
     }
 
-    private func handleSessionChanged(_ line: String) {
-        let body = line.dropFirst("%session-changed ".count)
-        guard let space = body.firstIndex(of: " ") else {
+    private func handleSessionChanged(_ line: ArraySlice<UInt8>) {
+        let body = line.dropFirst("%session-changed ".utf8.count)
+        guard let space = body.firstIndex(of: UInt8(ascii: " ")) else {
             // Some tmux builds emit just the id with no name — tolerate it.
-            let id = String(body)
+            let id = body.string
             guard !id.isEmpty else {
-                onProtocolError?(.malformedLine(line))
+                onProtocolError?(.malformedLine(line.string))
                 return
             }
             onSessionChanged?(id, "")
             return
         }
-        let id = String(body[body.startIndex..<space])
-        let name = String(body[body.index(after: space)...])
+        let id = body[body.startIndex..<space].string
+        let name = body[body.index(after: space)...].string
         onSessionChanged?(id, name)
     }
 
-    private func handleSessionWindowChanged(_ line: String) {
-        let body = line.dropFirst("%session-window-changed ".count)
-        let parts = body.split(separator: " ", maxSplits: 1)
-        guard parts.count == 2 else {
-            onProtocolError?(.malformedLine(line))
+    /// `%session-renamed $sessionId <name>` (tmux 3.6a, verified on a
+    /// private server). Cut at the FIRST space: the id never holds one, and
+    /// the name is the rest of the line — spaces, `|` and all.
+    private func handleSessionRenamed(_ line: ArraySlice<UInt8>) {
+        let body = line.dropFirst("%session-renamed ".utf8.count)
+        guard let space = body.firstIndex(of: UInt8(ascii: " ")), space > body.startIndex else {
+            onProtocolError?(.malformedLine(line.string))
             return
         }
-        onSessionWindowChanged?(String(parts[0]), String(parts[1]))
+        let id = body[body.startIndex..<space].string
+        let name = body[body.index(after: space)...].string
+        onSessionRenamed?(id, name)
     }
 
-    private func handleWindowPaneChanged(_ line: String) {
-        let body = line.dropFirst("%window-pane-changed ".count)
-        let parts = body.split(separator: " ", maxSplits: 1)
+    private func handleSessionWindowChanged(_ line: ArraySlice<UInt8>) {
+        let body = line.dropFirst("%session-window-changed ".utf8.count)
+        let parts = body.split(separator: UInt8(ascii: " "), maxSplits: 1)
         guard parts.count == 2 else {
-            onProtocolError?(.malformedLine(line))
+            onProtocolError?(.malformedLine(line.string))
             return
         }
-        onActivePaneChanged?(String(parts[0]), String(parts[1]))
+        onSessionWindowChanged?(parts[0].string, parts[1].string)
     }
 
-    private func handlePause(_ line: String) {
-        let id = String(line.dropFirst("%pause ".count))
+    private func handleWindowPaneChanged(_ line: ArraySlice<UInt8>) {
+        let body = line.dropFirst("%window-pane-changed ".utf8.count)
+        let parts = body.split(separator: UInt8(ascii: " "), maxSplits: 1)
+        guard parts.count == 2 else {
+            onProtocolError?(.malformedLine(line.string))
+            return
+        }
+        onActivePaneChanged?(parts[0].string, parts[1].string)
+    }
+
+    /// `<prefix>@windowId` — the id is the rest of the line, as for
+    /// `%window-add`.
+    private func handleWindowId(_ line: ArraySlice<UInt8>, prefix: String,
+                                _ callback: (@Sendable (String) -> Void)?) {
+        let id = line.dropFirst(prefix.utf8.count).string
         guard !id.isEmpty else {
-            onProtocolError?(.malformedLine(line))
+            onProtocolError?(.malformedLine(line.string))
+            return
+        }
+        callback?(id)
+    }
+
+    /// `%unlinked-window-renamed @windowId <name>`, cut like
+    /// `%window-renamed`: at the first space, the name the rest.
+    private func handleUnlinkedWindowRenamed(_ line: ArraySlice<UInt8>) {
+        let body = line.dropFirst("%unlinked-window-renamed ".utf8.count)
+        guard let space = body.firstIndex(of: UInt8(ascii: " ")) else {
+            onProtocolError?(.malformedLine(line.string))
+            return
+        }
+        let id = body[body.startIndex..<space].string
+        let name = body[body.index(after: space)...].string
+        onUnlinkedWindowRenamed?(id, name)
+    }
+
+    /// `%client-session-changed <client> $sessionId <name>` (tmux 3.6a,
+    /// captures/session-switch.bin: `%client-session-changed /dev/ttys024 $1
+    /// renamed`). The client name and the id hold no space, so both cuts
+    /// are at the first space; the name is the rest of the line.
+    private func handleClientSessionChanged(_ line: ArraySlice<UInt8>) {
+        let body = line.dropFirst("%client-session-changed ".utf8.count)
+        guard let first = body.firstIndex(of: UInt8(ascii: " ")), first > body.startIndex else {
+            onProtocolError?(.malformedLine(line.string))
+            return
+        }
+        let rest = body[body.index(after: first)...]
+        guard let second = rest.firstIndex(of: UInt8(ascii: " ")), second > rest.startIndex else {
+            onProtocolError?(.malformedLine(line.string))
+            return
+        }
+        let client = body[body.startIndex..<first].string
+        let id = rest[rest.startIndex..<second].string
+        let name = rest[rest.index(after: second)...].string
+        onClientSessionChanged?(client, id, name)
+    }
+
+    private func handlePause(_ line: ArraySlice<UInt8>) {
+        let id = line.dropFirst("%pause ".utf8.count).string
+        guard !id.isEmpty else {
+            onProtocolError?(.malformedLine(line.string))
             return
         }
         onPause?(id)
     }
 
-    private func handleContinue(_ line: String) {
-        let id = String(line.dropFirst("%continue ".count))
+    private func handleContinue(_ line: ArraySlice<UInt8>) {
+        let id = line.dropFirst("%continue ".utf8.count).string
         guard !id.isEmpty else {
-            onProtocolError?(.malformedLine(line))
+            onProtocolError?(.malformedLine(line.string))
             return
         }
         onContinue?(id)
     }
 
-    private func handleClientDetached(_ line: String) {
+    private func handleClientDetached(_ line: ArraySlice<UInt8>) {
         // Accept both `%client-detached <client>` and the bare directive.
         let payload: String
         if line.hasPrefix("%client-detached ") {
-            payload = String(line.dropFirst("%client-detached ".count))
+            payload = line.dropFirst("%client-detached ".utf8.count).string
         } else {
             payload = ""
         }
         onClientDetached?(payload)
     }
 
-    private func handleExit(_ line: String) {
+    private func handleExit(_ line: ArraySlice<UInt8>) {
         // A control session just ended on this stream. If another one boots
         // behind it (a failed preferred attach falling through its `||`
         // chain, the `-CC new` fallback), its first block is that boot
         // line's own reply — swallow it too. See `awaitingBootBlock`.
         awaitingBootBlock = true
-        if line == "%exit" {
+        if line.equals("%exit") {
             onExit?(nil)
             return
         }
-        let reason = String(line.dropFirst("%exit ".count))
+        let reason = line.dropFirst("%exit ".utf8.count).string
         onExit?(reason.isEmpty ? nil : reason)
     }
 
@@ -709,4 +1005,97 @@ actor TmuxControlClient {
 
         return result
     }
+}
+
+// MARK: - TmuxParserBackend
+
+/// Which parser reads the control stream: ``TmuxControlClient``'s own, or
+/// the Rust port of it (crates/tmux, through crates/ffi — see
+/// TmuxRustParser.swift).
+///
+/// The first of the runtime switches of docs/nsh/DESIGN.md §3.6: a module
+/// the Rust core replaces keeps its Swift implementation behind a switch
+/// until the Rust one has shipped for two releases. Off by default.
+enum TmuxParserBackend: String, CaseIterable, Sendable {
+    case swift
+    case rust
+
+    /// The switch: a Bool in `UserDefaults.standard`, set on the hidden Core
+    /// Switches page (Settings: tap the version line seven times), or for
+    /// one launch with the launch argument `-MOSHPIT_RUST_TMUX_PARSER 1` —
+    /// launch arguments land in the argument domain, which beats the stored
+    /// value.
+    static let switchKey = "MOSHPIT_RUST_TMUX_PARSER"
+
+    /// A test's choice, for the rest of its task: it beats the switch and
+    /// ``rustFailure``.
+    @TaskLocal static var taskOverride: TmuxParserBackend?
+
+    /// The parser a new client gets. Read when the client is made — at
+    /// every connect and reconnect, never while it runs: the partial line
+    /// and the open reply block live in the parser. Before the first unlock
+    /// the defaults read as empty, so a launch in the background gets the
+    /// Swift parser.
+    static var current: TmuxParserBackend {
+        if let taskOverride { return taskOverride }
+        return chosen(switchOn: UserDefaults.standard.bool(forKey: switchKey),
+                      rustFailed: rustFailure.isSet)
+    }
+
+    /// The switch's choice, unless the Rust parser has already failed in
+    /// this process.
+    static func chosen(switchOn: Bool, rustFailed: Bool) -> TmuxParserBackend {
+        switchOn && !rustFailed ? .rust : .swift
+    }
+
+    /// Set the first time the Rust parser fails in this process (a caught
+    /// panic, TmuxRustParser.swift). From then on new clients get the Swift
+    /// parser, so one bad stream does not fail every reconnect.
+    static let rustFailure = Latch()
+
+    /// A flag that is only ever set.
+    final class Latch: @unchecked Sendable {
+        private let lock = NSLock()
+        private var tripped = false
+
+        var isSet: Bool {
+            lock.lock(); defer { lock.unlock() }
+            return tripped
+        }
+
+        func trip() {
+            lock.lock(); defer { lock.unlock() }
+            tripped = true
+        }
+    }
+}
+
+// MARK: - Protocol bytes
+
+/// tmux writes its control protocol in ASCII, so keywords, delimiters, ids
+/// and flags are matched on a line's UTF-8 BYTES — never through String's
+/// Character view, which lets the remote text around them change what
+/// they mean: a space or `%` followed by a combining mark is ONE Character
+/// (a window named "\u{301}x" made its `%window-renamed` unparseable, a
+/// session id swallow its name, the junk strip skip a keyword), and
+/// `Character.isNumber` accepts "五" or "٣" as a flag digit. A field cut at
+/// ASCII bytes of a valid UTF-8 line is valid UTF-8 itself, so ``string``
+/// returns it exactly.
+private extension ArraySlice where Element == UInt8 {
+    /// Whether these bytes begin with `prefix`'s UTF-8.
+    func hasPrefix(_ prefix: String) -> Bool { starts(with: prefix.utf8) }
+
+    /// Whether these bytes are exactly `text`'s UTF-8.
+    func equals(_ text: String) -> Bool { elementsEqual(text.utf8) }
+
+    /// The bytes as a String (lossy only for invalid UTF-8).
+    var string: String { String(decoding: self, as: UTF8.self) }
+
+    /// `Int(_:)` of the field: an optional sign and ASCII digits, nil on
+    /// overflow.
+    var int: Int? { Int(string) }
+}
+
+private extension UInt8 {
+    var isASCIIDigit: Bool { self >= UInt8(ascii: "0") && self <= UInt8(ascii: "9") }
 }

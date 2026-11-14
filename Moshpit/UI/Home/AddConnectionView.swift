@@ -11,59 +11,29 @@ struct AddConnectionView: View {
     let keychain: KeychainService
     var existing: ServerConnection?
 
-    @State private var name = ""
-    @State private var host = ""
-    @State private var port = "22"
-    @State private var username = ""
-    @State private var authMethod: AuthMethod = .password
-    @State private var password = ""
-    @State private var privateKeyPEM = ""
-    /// Managed key picked from SSH Keys; nil = paste-a-PEM mode.
-    @State private var selectedKeyId: UUID?
-    @State private var useMosh = false
-    @State private var predictMode: PredictMode = .adaptive
-    @State private var roamOnCellular = true
-    /// Defaults to tmux: every connection saved before this picker existed ran
-    /// tmux (the form hardcoded it), so a new connection behaving the same way
-    /// is the least surprising thing.
-    @State private var multiplexer: Multiplexer = .tmux
-    @State private var tmuxPath = ""
-    @State private var herdrPath = ""
-    // Empty by default: a non-nil path SKIPS the capability probe (the user
-    // "vouches" for it), so prefilling the Apple-Silicon Homebrew path made
-    // every Linux host bypass the graceful mosh degrade and die on a raw
-    // "command not found". Empty → `mosh-server` on PATH + probe intact.
-    @State private var moshServerPath = ""
-    @State private var compressOutput = false
+    /// What the form holds: the shared model's draft (the NSH form's and
+    /// Android's too), so all of them save — and decide whether they can —
+    /// the same way.
+    @State private var draft: ConnectionDraft
+    /// The password and the pasted key: this host's, never the model's.
+    @State private var secrets = ConnectionSecrets()
     @State private var saveError: String?
     @State private var showKeyPicker = false
-    @State private var useSOCKSProxy = false
-    @State private var socksProxyHost = ""
-    @State private var socksProxyPort = "1080"
 
-    init(store: ConnectionStore, keychain: KeychainService, existing: ServerConnection? = nil) {
+    /// Drops a keychain item the saved connection left (B325), as Home
+    /// decides (not while its session runs).
+    var releaseSecret: (UUID, String) async -> Void = { _, _ in }
+
+    init(store: ConnectionStore, keychain: KeychainService, existing: ServerConnection? = nil,
+         releaseSecret: @escaping (UUID, String) async -> Void = { _, _ in }) {
+        self.releaseSecret = releaseSecret
         self.store = store
         self.keychain = keychain
         self.existing = existing
-        if let c = existing {
-            _name = State(initialValue: c.name)
-            _host = State(initialValue: c.host)
-            _port = State(initialValue: String(c.port))
-            _username = State(initialValue: c.username)
-            _authMethod = State(initialValue: c.authMethod)
-            _selectedKeyId = State(initialValue: c.sshKeyId)
-            _useMosh = State(initialValue: c.connectionProtocol == .mosh)
-            _predictMode = State(initialValue: c.predictMode)
-            _roamOnCellular = State(initialValue: c.roamOnCellular ?? true)
-            _multiplexer = State(initialValue: c.multiplexer)
-            _tmuxPath = State(initialValue: c.tmuxPath ?? "")
-            _herdrPath = State(initialValue: c.herdrPath ?? "")
-            _moshServerPath = State(initialValue: c.moshServerPath ?? "")
-            _compressOutput = State(initialValue: c.compression)
-            _useSOCKSProxy = State(initialValue: c.useSOCKSProxy ?? false)
-            _socksProxyHost = State(initialValue: c.socksProxyHost ?? "")
-            _socksProxyPort = State(initialValue: c.socksProxyPort.map(String.init) ?? "1080")
-        }
+        // A new connection starts from the settings, as the NSH form's
+        // draft does (B256): the app's one settings object — the
+        // environment's too, which an init can't read.
+        _draft = State(initialValue: existing.map(ConnectionDraft.init) ?? ConnectionDraft(newWith: .shared))
     }
 
     /// Keys that can actually authenticate: everything except hardware-token
@@ -73,19 +43,27 @@ struct AddConnectionView: View {
     }
 
     private var selectedKey: SSHKeyRecord? {
-        selectedKeyId.flatMap { id in keyStore.keys.first { $0.id == id } }
+        draft.selectedKeyId.flatMap { id in keyStore.keys.first { $0.id == id } }
     }
 
-    private var canSave: Bool { !name.isEmpty && !host.isEmpty }
+    private var canSave: Bool { draft.canSave(keys: keyStore.keys, secrets: secrets) }
+
+    /// What a port must be, under a port field whose text is not one.
+    private static let portIssue: LocalizedStringKey = "Must be a whole number from 1 to 65535"
 
     var body: some View {
         NavigationStack {
             Form {
                 FormGroup(title: "CONNECTION") {
-                    FieldRow(placeholder: "Name", text: $name)
-                    FieldRow(placeholder: "Host", text: $host)
-                    NumberFieldRow(label: "Port", placeholder: "22", text: $port)
-                    FieldRow(placeholder: "Username", text: $username)
+                    FieldRow(placeholder: "Name", text: $draft.name)
+                        .accessibilityIdentifier("connection-form-name")
+                    FieldRow(placeholder: "Host", text: $draft.host)
+                        .accessibilityIdentifier("connection-form-host")
+                    NumberFieldRow(label: "Port", placeholder: "22", text: $draft.port,
+                                   issue: draft.portIsWrong ? Self.portIssue : nil)
+                        .accessibilityIdentifier("connection-form-port")
+                    FieldRow(placeholder: "Username", text: $draft.username)
+                        .accessibilityIdentifier("connection-form-username")
                 }
 
                 FormGroup(title: "AUTHENTICATION") {
@@ -94,9 +72,11 @@ struct AddConnectionView: View {
                             SegItem(value: AuthMethod.password, label: "Password"),
                             SegItem(value: AuthMethod.key, label: "SSH Key"),
                         ],
-                        selection: $authMethod)
-                    if authMethod == .password {
-                        FieldRow(placeholder: "Password", text: $password, secure: true)
+                        selection: $draft.authMethod)
+                    .accessibilityIdentifier("connection-form-auth")
+                    if draft.authMethod == .password {
+                        FieldRow(placeholder: "Password", text: $secrets.password, secure: true)
+                            .accessibilityIdentifier("connection-form-password")
                     } else {
                         // Always rendered — even with zero saved keys — so there's
                         // always a way into KeyPickerSheet's generate/import CTA
@@ -117,7 +97,7 @@ struct AddConnectionView: View {
                                 Text("Private Key (PEM)")
                                     .font(.footnote)
                                     .foregroundStyle(Ink.meta)
-                                TextEditor(text: $privateKeyPEM)
+                                TextEditor(text: $secrets.privateKeyPEM)
                                     .font(Face.mono(11))
                                     .foregroundStyle(Ink.primary)
                                     .scrollContentBackground(.hidden)
@@ -143,24 +123,24 @@ struct AddConnectionView: View {
                         label: "Use Mosh",
                         subtitle: "Wrap SSH with mosh-server (UDP)",
                         identifier: "toggle-use-mosh",
-                        isOn: $useMosh)
+                        isOn: $draft.useMosh)
                     // The tuning rows only exist when Mosh does. With
                     // the toggle off they were pure expert noise — and
                     // "Roam on Cellular: ON" under a disabled Mosh was
                     // a lie about what would happen.
-                    if useMosh {
+                    if draft.useMosh {
                         ValueRow(
                             label: "UDP Port Range",
                             value: "\(settings.udpRangeStart) – \(settings.udpRangeEnd)")
                         Menu {
                             ForEach(PredictMode.allCases, id: \.self) { mode in
                                 Button {
-                                    predictMode = mode
+                                    draft.predictMode = mode
                                 } label: {
                                     Label {
                                         Text(mode.label)
                                     } icon: {
-                                        if predictMode == mode {
+                                        if draft.predictMode == mode {
                                             Image(systemName: "checkmark")
                                         }
                                     }
@@ -170,17 +150,20 @@ struct AddConnectionView: View {
                             HStack(spacing: 10) {
                                 Text("Predict Mode").font(.body).foregroundStyle(Ink.primary)
                                 Spacer()
-                                Text(predictMode.label).font(.body).foregroundStyle(Ink.meta)
+                                Text(draft.predictMode.label).font(.body).foregroundStyle(Ink.meta)
                                 MenuChevron()
                             }
                             .contentShape(Rectangle())
                         }
+                        .accessibilityIdentifier("connection-form-predict")
                         ToggleRow(
                             label: "Roam on Cellular",
                             subtitle: "Reconnect over 5G/LTE when Wi-Fi drops",
-                            isOn: $roamOnCellular)
+                            identifier: "connection-form-roam",
+                            isOn: $draft.roamOnCellular)
                         FieldRow(placeholder: "mosh-server path",
-                                 text: $moshServerPath)
+                                 text: $draft.moshServerPath)
+                            .accessibilityIdentifier("connection-form-mosh-server")
                     }
                 }
 
@@ -191,10 +174,14 @@ struct AddConnectionView: View {
                     ToggleRow(
                         label: "Use SOCKS5 Proxy",
                         subtitle: "Route this connection through a local or corporate SOCKS5 proxy",
-                        isOn: $useSOCKSProxy)
-                    if useSOCKSProxy {
-                        FieldRow(placeholder: "Proxy Host", text: $socksProxyHost)
-                        NumberFieldRow(label: "Proxy Port", placeholder: "1080", text: $socksProxyPort)
+                        identifier: "connection-form-socks",
+                        isOn: $draft.useSocksProxy)
+                    if draft.useSocksProxy {
+                        FieldRow(placeholder: "Proxy Host", text: $draft.socksProxyHost)
+                            .accessibilityIdentifier("connection-form-proxy-host")
+                        NumberFieldRow(label: "Proxy Port", placeholder: "1080", text: $draft.socksProxyPort,
+                                       issue: draft.proxyPortIsWrong ? Self.portIssue : nil)
+                            .accessibilityIdentifier("connection-form-proxy-port")
                     }
                 }
 
@@ -205,7 +192,7 @@ struct AddConnectionView: View {
                     Menu {
                         ForEach(Multiplexer.allCases, id: \.self) { mux in
                             Button {
-                                multiplexer = mux
+                                draft.multiplexer = mux
                             } label: {
                                 // Checkmark on the current choice — the
                                 // menu used to give no clue which one
@@ -223,7 +210,7 @@ struct AddConnectionView: View {
                                     // tool names. The collapsed row
                                     // below carries the current one's
                                     // symbol, so it is never hidden.
-                                    Image(systemName: multiplexer == mux
+                                    Image(systemName: draft.multiplexer == mux
                                           ? "checkmark" : mux.symbol)
                                 }
                             }
@@ -233,9 +220,9 @@ struct AddConnectionView: View {
                             Text("Multiplexer").font(.body).foregroundStyle(Ink.primary)
                             Spacer()
                             HStack(spacing: 5) {
-                                Image(systemName: multiplexer.symbol)
+                                Image(systemName: draft.multiplexer.symbol)
                                     .font(.system(size: 12, weight: .medium))
-                                Text(multiplexer.label).font(.body)
+                                Text(draft.multiplexer.label).font(.body)
                             }
                             .foregroundStyle(Ink.meta)
                             MenuChevron()
@@ -246,15 +233,16 @@ struct AddConnectionView: View {
                     // The path field follows the choice: it's the one
                     // that skips the capability probe, so offering the
                     // wrong binary's path would be a trap.
-                    switch multiplexer {
+                    switch draft.multiplexer {
                     case .tmux:
-                        FieldRow(placeholder: "Custom tmux Path", text: $tmuxPath)
+                        FieldRow(placeholder: "Custom tmux Path", text: $draft.tmuxPath)
+                            .accessibilityIdentifier("connection-form-tmux-path")
                     case .herdr:
-                        FieldRow(placeholder: "Custom herdr Path", text: $herdrPath)
+                        FieldRow(placeholder: "Custom herdr Path", text: $draft.herdrPath)
+                            .accessibilityIdentifier("connection-form-herdr-path")
                     case .none:
                         EmptyView()
                     }
-                    ToggleRow(label: "Compress Output", isOn: $compressOutput)
                 }
             }
             .moshpitForm()
@@ -264,6 +252,7 @@ struct AddConnectionView: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
                         .foregroundStyle(Ink.accent)
+                        .accessibilityIdentifier("connection-form-cancel")
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") { Task { await save() } }
@@ -280,60 +269,21 @@ struct AddConnectionView: View {
                 }
             }
             .appSheet(isPresented: $showKeyPicker) {
-                KeyPickerSheet(keys: connectableKeys, selectedKeyId: $selectedKeyId)
+                KeyPickerSheet(keys: connectableKeys, selectedKeyId: $draft.selectedKeyId)
             }
         }
-        .preferredColorScheme(.dark)
+        .darkOnlyPage()
     }
 
     private func save() async {
-        var connection = existing ?? ServerConnection()
-        connection.name = name
-        connection.host = host
-        connection.port = Int(port) ?? 22
-        connection.sshPort = Int(port) ?? 22
-        connection.username = username
-        connection.authMethod = authMethod
-        connection.connectionProtocol = useMosh ? .mosh : .ssh
-        connection.moshPortRangeStart = settings.udpRangeStart
-        connection.moshPortRangeEnd = settings.udpRangeEnd
-        // Per-connection mosh-server (`--server`). Empty → nil → bootstrap uses
-        // `mosh-server` on PATH (more portable than a hardcoded absolute path).
-        connection.moshServerPath = moshServerPath.isEmpty ? nil : moshServerPath
-        connection.useSOCKSProxy = useSOCKSProxy
-        connection.socksProxyHost = socksProxyHost.isEmpty ? nil : socksProxyHost
-        connection.socksProxyPort = Int(socksProxyPort) ?? 1080
-        connection.predictMode = predictMode
-        connection.roamOnCellular = roamOnCellular
-        connection.tmuxPath = tmuxPath.isEmpty ? nil : tmuxPath
-        connection.herdrPath = herdrPath.isEmpty ? nil : herdrPath
-        connection.compression = compressOutput
-        // Also keeps the legacy `useTmux` flag in sync — see `multiplexer`.
-        connection.multiplexer = multiplexer
-
         do {
-            if let secret = ConnectionCredential.apply(
-                to: &connection, authMethod: authMethod, selectedKeyId: selectedKeyId,
-                keys: keyStore.keys, password: password, privateKeyPEM: privateKeyPEM,
-                newRef: { keychain.generateRef() }),
-               let ref = connection.keychainRef {
-                if authMethod == .password {
-                    try await keychain.savePassword(secret, forRef: ref, requireBiometry: false)
-                } else {
-                    try await keychain.savePrivateKey(secret, forRef: ref, requireBiometry: false)
-                }
-            }
-            // Drop any cached (possibly stale) credential so the new one is used.
-            await SSHService.shared.clearCachedSecret(for: connection.id)
+            let id = existing?.id
+            try await draft.save(existing: existing, store: store, keychain: keychain,
+                                 settings: settings, keys: keyStore.keys, secrets: secrets,
+                                 release: { ref in if let id { await releaseSecret(id, ref) } })
         } catch {
             saveError = String(describing: error)
             return
-        }
-
-        if existing == nil {
-            store.add(connection)
-        } else {
-            store.update(connection)
         }
         dismiss()
     }

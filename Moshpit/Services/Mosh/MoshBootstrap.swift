@@ -22,8 +22,8 @@ struct MoshCredentials: Equatable {
     /// session REAP the server after a dead-return-path bootstrap: a server
     /// whose client never completed first contact waits forever, and every
     /// failed attempt used to leave one behind (7 zombies on one host,
-    /// 2026-08-19). nil when the line wasn't captured — reaping is then
-    /// skipped, never guessed.
+    /// 2026-08-19). nil when the line wasn't captured (or named pid 0 or 1)
+    /// — reaping is then skipped, never guessed.
     var serverPid: Int?
 }
 
@@ -109,14 +109,20 @@ enum MoshBootstrap {
     ///   - portRangeStart/portRangeEnd: the connection's configured UDP port
     ///     range, forwarded as `-p start:end` so a user whose firewall only
     ///     opens a specific range actually gets a port inside it.
+    ///   - program: what mosh-server runs instead of the login shell (a
+    ///     command line, after `--`): the multiplexer's renderer — tmux's
+    ///     client, herdr's raw-attach loop — as the session's own program,
+    ///     never a line typed into the mosh shell once it is up (B267).
     static func start(over session: SSHSession,
                       host: String,
                       serverBinary: String = "mosh-server",
                       locale: String = "en_US.UTF-8",
                       portRangeStart: Int? = nil,
-                      portRangeEnd: Int? = nil) async throws -> MoshCredentials {
+                      portRangeEnd: Int? = nil,
+                      program: String? = nil) async throws -> MoshCredentials {
         let command = command(serverBinary: serverBinary, locale: locale,
-                              portRangeStart: portRangeStart, portRangeEnd: portRangeEnd)
+                              portRangeStart: portRangeStart, portRangeEnd: portRangeEnd,
+                              program: program)
         let output = String(decoding: try await session.executeCommand(command), as: UTF8.self)
         return try parse(output: output, host: host)
     }
@@ -141,7 +147,8 @@ enum MoshBootstrap {
     static func command(serverBinary: String,
                         locale: String,
                         portRangeStart: Int?,
-                        portRangeEnd: Int?) -> String {
+                        portRangeEnd: Int?,
+                        program: String? = nil) -> String {
         var cmd = "\(serverBinary) new -s -c 256"
         if !serverBinary.contains("/") {
             cmd = "PATH=\"$PATH:\(HostCapabilities.extraPathDirs)\" " + cmd
@@ -154,19 +161,25 @@ enum MoshBootstrap {
             }
         }
         cmd += " -l LANG=\(locale)"
+        if let program { cmd += " -- " + program }
         return cmd
     }
 
     /// Parses the `MOSH CONNECT <port> <base64key>` line. Exposed for tests.
+    ///
+    /// The line, its prefix and its space-separated fields are matched by
+    /// Unicode scalar — as mosh-server writes them — not by `Character`:
+    /// grapheme clustering glued a combining mark right after a space to the
+    /// next field, so such a connect line was skipped (and a later one won)
+    /// or split differently. Lines end at CR, LF, VT, FF, NEL, U+2028 and
+    /// U+2029 (what `Character.isNewline` accepts).
     static func parse(output: String, host: String) throws -> MoshCredentials {
-        // `\r\n` is a single Swift grapheme, so match on `isNewline` (handles
-        // CR, LF, and CRLF) rather than comparing to "\n"/"\r" characters.
-        guard let line = output
-            .split(whereSeparator: \.isNewline)
-            .first(where: { $0.hasPrefix("MOSH CONNECT ") })
+        guard let line = output.unicodeScalars
+            .split(whereSeparator: isNewline)
+            .first(where: { $0.starts(with: "MOSH CONNECT ".unicodeScalars) })
         else { throw BootstrapError.noConnectLine(output) }
 
-        let parts = line.split(separator: " ")
+        let parts = line.split(separator: " ").map { String(String.UnicodeScalarView($0)) }
         guard parts.count >= 4, let port = Int(parts[2]) else {
             throw BootstrapError.noConnectLine(output)
         }
@@ -183,15 +196,37 @@ enum MoshBootstrap {
         guard let udpPort = UInt16(exactly: port), udpPort != 0 else {
             throw BootstrapError.unusablePort(port)
         }
-        let key = try decodeKey(String(parts[3]))
-        // mosh-server announces "[mosh-server detached, pid = N]" on stderr;
-        // the exec channel interleaves it with stdout, so it is usually here.
-        var pid: Int?
-        if let range = output.range(of: #"pid\s*=\s*(\d+)"#, options: .regularExpression) {
-            pid = Int(output[range].split(separator: "=").last?
-                .trimmingCharacters(in: .whitespaces) ?? "")
+        let key = try decodeKey(parts[3])
+        return MoshCredentials(host: host, udpPort: udpPort, key: key,
+                               serverPid: detachedPid(in: output))
+    }
+
+    private static func isNewline(_ scalar: Unicode.Scalar) -> Bool {
+        switch scalar {
+        case "\n", "\r", "\u{0B}", "\u{0C}", "\u{85}", "\u{2028}", "\u{2029}": return true
+        default: return false
         }
-        return MoshCredentials(host: host, udpPort: udpPort, key: key, serverPid: pid)
+    }
+
+    /// The pid from mosh-server's own `[mosh-server detached, pid = N]`
+    /// stderr line, which the exec channel interleaves with stdout.
+    ///
+    /// The session later runs `kill <pid>` on the user's host to reap a
+    /// server that never heard from its client, so only that line may name
+    /// it. This used to take the first `pid\s*=\s*\d+` anywhere in the
+    /// output: a shell startup file printing e.g. `rapid = 5` before
+    /// mosh-server's line named an unrelated process, and `pid = 0` made it
+    /// `kill 0`, the whole process group. Matched on bytes, as mosh-server
+    /// writes it. pid 0 and 1 are refused (a forked server is never either):
+    /// reaping is then skipped, never guessed.
+    static func detachedPid(in output: String) -> Int? {
+        let bytes = Array(output.utf8)
+        guard let marker = bytes.firstRange(of: Array("mosh-server detached, pid = ".utf8)) else {
+            return nil
+        }
+        let digits = bytes[marker.upperBound...].prefix { (UInt8(ascii: "0")...UInt8(ascii: "9")).contains($0) }
+        guard let pid = Int(String(decoding: digits, as: UTF8.self)), pid > 1 else { return nil }
+        return pid
     }
 
     /// mosh prints the key as 22 unpadded base64 chars = 16 bytes.

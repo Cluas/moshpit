@@ -1,0 +1,13 @@
+t=0 exec api snapshot
+t=40 focus w1:p1
+t=2040 exec api snapshot
+t=14040 exec api snapshot
+t=26040 exec api snapshot
+t=26080 focus w1:p2
+t=28080 exec api snapshot
+t=28120 focus w1:p2
+t=30120 exec api snapshot
+t=30160 focus w1:p2
+t=32160 exec api snapshot
+t=32200 focus w1:p2
+state focus=w1:p2 server=w1:p2 sessions=1 notrunning=false mismatch=false

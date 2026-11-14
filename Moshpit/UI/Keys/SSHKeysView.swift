@@ -5,12 +5,17 @@ import SwiftUI
 struct SSHKeysView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(SSHKeyStore.self) private var keyStore
+    @Environment(ConnectionStoreHolder.self) private var connections
+    @Environment(KeychainServiceHolder.self) private var keychainHolder
 
     @State private var showAdd = false
     /// The key whose delete is awaiting confirmation. Deleting is not
     /// undoable — a Secure Enclave key's private half never existed anywhere
     /// else — so a long-press menu item alone is too easy to hit.
     @State private var deleting: SSHKeyRecord?
+    /// Why a key wasn't deleted: connections still use it, or the keychain
+    /// kept it (``SSHKeyDeletion``).
+    @State private var notice: KeyDeletionNotice?
 
     var body: some View {
         NavigationStack {
@@ -26,7 +31,8 @@ struct SSHKeysView: View {
                     } else {
                         ForEach(keyStore.deviceKeys) { key in
                             SSHKeyRow(record: key)
-                                .contextMenu { keyRowMenu(key) { deleting = key } }
+                                .contextMenu { keyRowMenu(key) { requestDelete(key) } }
+                                .accessibilityIdentifier(SSHKeysModel.rowID(key.id))
                         }
                     }
                 }
@@ -39,7 +45,8 @@ struct SSHKeysView: View {
                     } else {
                         ForEach(keyStore.importedKeys) { key in
                             SSHKeyRow(record: key)
-                                .contextMenu { keyRowMenu(key) { deleting = key } }
+                                .contextMenu { keyRowMenu(key) { requestDelete(key) } }
+                                .accessibilityIdentifier(SSHKeysModel.rowID(key.id))
                         }
                     }
                 }
@@ -51,6 +58,7 @@ struct SSHKeysView: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Done") { dismiss() }
                         .foregroundStyle(Ink.accent)
+                        .accessibilityIdentifier("ssh-keys-done")
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button {
@@ -71,21 +79,83 @@ struct SSHKeysView: View {
                 MoshpitModalCard(
                     icon: "trash.fill", tone: .danger,
                     title: "Delete \(key.name)?",
-                    message: Text("It leaves this list for good: its public key can't be copied again or picked for a new connection. Connections already using it keep working."),
+                    message: Text("Its private key is erased from this device for good; Moshpit keeps no other copy. Servers that only trust this key will need another one."),
                     buttons: [
-                        ModalButton("Cancel", kind: .secondary) { deleting = nil },
-                        ModalButton("Delete", kind: .danger) {
-                            keyStore.remove(id: key.id)
+                        ModalButton("Cancel", kind: .secondary, identifier: "ssh-key-delete-cancel") { deleting = nil },
+                        ModalButton("Delete", kind: .danger, identifier: "ssh-key-delete-confirm") {
                             deleting = nil
+                            delete(key)
                         },
                     ]
                 ) { EmptyView() }
             }
+            .moshpitCard(item: $notice) { notice in
+                MoshpitModalCard(
+                    icon: notice.failure.isInUse ? "link" : "exclamationmark.triangle.fill", tone: .danger,
+                    title: notice.failure.isInUse ? "Key in use" : "Couldn't delete the key",
+                    message: Text(notice.failure.message),
+                    buttons: [
+                        ModalButton("OK", kind: .secondary, identifier: "ssh-key-notice-ok") { self.notice = nil },
+                    ]
+                ) { EmptyView() }
+            }
+            #if DEBUG
+            .task {
+                // A capture run's keys are in memory, named by no connection:
+                // the confirmation, as for any key nothing uses.
+                if let id = KeysCapture.deleteRequested(nsh: false, in: SSHKeysSnapshot(store: keyStore)) {
+                    deleting = keyStore.keys.first { $0.id == id }
+                }
+            }
+            #endif
         }
-        .preferredColorScheme(.dark)
+        .darkOnlyPage()
         .appSheet(isPresented: $showAdd) {
-            AddKeyView()
+            AddKeyPage()
         }
+    }
+
+    /// Delete Key, from a row's menu: the confirmation when nothing uses the
+    /// key, or why it can't go (connections still sign in with it).
+    private func requestDelete(_ key: SSHKeyRecord) {
+        switch SSHKeyDeletion.check(key, connections: connections.store, keys: keyStore) {
+        case .free: deleting = key
+        case .inUse(let names): notice = KeyDeletionNotice(.inUse(names))
+        case .unknown: notice = KeyDeletionNotice(.unknown)
+        }
+    }
+
+    /// The confirmed delete: the private key, then the record.
+    private func delete(_ key: SSHKeyRecord) {
+        let keychain = keychainHolder.service
+        Task {
+            do {
+                try await SSHKeyDeletion.delete(key, from: keyStore, connections: connections.store) {
+                    try await keychain.delete(forRef: $0)
+                }
+            } catch let failure as SSHKeyDeletion.Failure {
+                notice = KeyDeletionNotice(failure)
+            } catch {
+                notice = KeyDeletionNotice(.keychain(String(describing: error)))
+            }
+        }
+    }
+}
+
+/// A key that wasn't deleted, and why: the card that says so.
+struct KeyDeletionNotice: Identifiable {
+    let id = UUID()
+    let failure: SSHKeyDeletion.Failure
+
+    init(_ failure: SSHKeyDeletion.Failure) {
+        self.failure = failure
+    }
+}
+
+extension SSHKeyDeletion.Failure {
+    var isInUse: Bool {
+        if case .inUse = self { return true }
+        return false
     }
 }
 

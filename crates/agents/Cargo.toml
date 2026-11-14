@@ -1,0 +1,12 @@
+[package]
+name = "moshpit-agents"
+description = "What Moshpit makes of its coding agents: per-pane states from the hooks and the output, the announce grace, the waiting set's 0->1 edge, a long finish's one ring, and what the island, the widget and the local cards should show — a state machine with no platform in it"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+moshpit-seal = { path = "../seal" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

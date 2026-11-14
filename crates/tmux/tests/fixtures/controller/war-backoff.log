@@ -1,0 +1,75 @@
+@2 init-size 70 35
+@3 client-name moshpit-a
+@4 attach
+> list-sessions -F '#{session_id} #{session_attached} #{session_name}'
+> list-windows -a -F '#{session_id} #{window_id} #{window_index} #{window_layout} #{window_active} #{window_panes} #{window_name}'
+> list-panes -a -F '#{pane_id} #{window_id} #{pane_index} #{pane_width} #{pane_height} #{pane_active} #{alternate_on} #{pane_in_mode} #{pane_current_command} #{pane_current_path}'
+@5 recv %begin 100 0 0\n%end 100 0 0\n\n
+@6 rule ok list-sessions => $0 1 main
+@7 rule ok list-windows => $0 @0 0 b25d,80x24,0,0,0 1 1 main
+@8 rule ok list-panes -a -F '#{pane_id}| => %0|working|claude|1758000000|claude|fixing
+@9 rule ok list-panes -a -F '#{pane_id}\s => %0 @0 0 80 24 1 0 0 bash
+@10 rule ok capture-pane -p -e -S => history 1\nhistory 2\n\s\s
+@11 rule ok capture-pane -p -e\s\s-t => ALT SCREEN
+@12 rule ok capture-pane -p -e -t => $ ls\nREADY\n
+@13 rule ok display-message -p -t %0 '#{cursor_x} => 2 1
+@14 rule ok display-message -p -t %1 '#{cursor_x} => 0 0
+@15 settle
+. open %0
+. view %0 veil
+. view %0 extend 2.000
+. pane %0 \x1b[0m\x1b[H\x1b[K\x1b[2;1H\x1b[J\x1b[3J\x1b[Hhistory 1\x0d\x0ahistory 2\x1b[0m\x1b[9999;1H\x0a\x0a
+. view %0 cover?
+. view %0 veil
+. view %0 extend 2.000
+. pane %0 \x1b[0m\x1b[H\x1b[K\x1b[2;1H\x1b[J\x1b[H$ ls\x0d\x0aREADY\x1b[0m
+. view %0 reveal
+. note first-frame
+. pane %0 \x1b[2;3H
+> capture-pane -p -e -S -400 -E -1 -t %0
+> list-clients -F '#{client_name}'
+> show-options -wqv -t @0 @moshpit_size_owner
+> capture-pane -p -e -t %0
+> display-message -p -t %0 '#{cursor_x} #{cursor_y} #{mouse_any_flag} #{alternate_on}'
+> set-option -w -t @0 @moshpit_size_owner "moshpit-a|iPhone|0"
+> display-message -p -t '@0' '#{window_panes} #{window_zoomed_flag} #{pane_id} #{window_layout}'
+> resize-window -t @0 -x 70 -y 35
+@16 resize 70 35
+= resize 1
+@17 wait 200
+. view %0 extend 2.000
+> refresh-client -C 70x35
+> resize-window -t @0 -x 70 -y 35
+> list-clients -F '#{client_name}'
+> show-options -wqv -t @0 @moshpit_size_owner
+> capture-pane -p -e -t %0
+> display-message -p -t %0 '#{cursor_x} #{cursor_y} #{mouse_any_flag} #{alternate_on}'
+@18 settle
+. pane %0 \x1b[0m\x1b[H\x1b[K\x1b[2;1H\x1b[J\x1b[H$ ls\x0d\x0aREADY\x1b[0m
+. pane %0 \x1b[2;3H
+> set-option -w -t @0 @moshpit_size_owner "moshpit-a|iPhone|0"
+@19 recv %layout-change @0 200x24,0,0,2\n%layout-change @0 200x24,0,0,2\n%layout-change @0 200x24,0,0,2\n%layout-change @0 200x24,0,0,2\n
+> resize-window -t @0 -x 70 -y 35
+> list-clients -F '#{client_name}'
+> show-options -wqv -t @0 @moshpit_size_owner
+> resize-window -t @0 -x 70 -y 35
+@20 settle
+> set-option -w -t @0 @moshpit_size_owner "moshpit-a|iPhone|0"
+@21 wait 5100
+. view %0 extend 2.000
+> capture-pane -p -e -t %0
+> display-message -p -t %0 '#{cursor_x} #{cursor_y} #{mouse_any_flag} #{alternate_on}'
+@22 recv %layout-change @0 200x24,0,0,2\n
+> resize-window -t @0 -x 70 -y 35
+> list-clients -F '#{client_name}'
+> show-options -wqv -t @0 @moshpit_size_owner
+@23 settle
+. pane %0 \x1b[0m\x1b[H\x1b[K\x1b[2;1H\x1b[J\x1b[H$ ls\x0d\x0aREADY\x1b[0m
+. view %0 reveal
+. pane %0 \x1b[2;3H
+. pane %0 \x1b[0m\x1b[H\x1b[K\x1b[2;1H\x1b[J\x1b[H$ ls\x0d\x0aREADY\x1b[0m
+. view %0 reveal
+. pane %0 \x1b[2;3H
+> capture-pane -p -e -t %0
+> display-message -p -t %0 '#{cursor_x} #{cursor_y} #{mouse_any_flag} #{alternate_on}'
+> set-option -w -t @0 @moshpit_size_owner "moshpit-a|iPhone|0"

@@ -1,0 +1,55 @@
+# tmux 3.6a
+ok   attach
+     window 60x20 after attach at 60x20 (was 120x40)
+     lease client-63521|iPhone|0
+     19 commands, history-limit untouched
+ok   arrow-keys
+     DECCKM ?1l: ESC[A sent as `send-keys Up`, the pane read 1b5b41
+     DECCKM ?1h: ESC[A sent as `send-keys Up`, the pane read 1b4f41
+ok   paste
+     pasted `a⟨201~⟩b⟨20⟨200~⟩1~⟩c`: the pane read 1b5b3230307e6162631b5b3230317e (one bracket pair, by tmux)
+ok   lease
+     after the iPad attached: window 100x30, lease client-63756|iPad|0, phone follows Some("iPad")
+     after a keystroke on the phone: window 60x20, lease client-63742|iPhone|1794499392, iPad follows Some("iPhone")
+     7 resize-window in all: no war
+ok   layout
+     before bf8c,200x60,0,0[200x30,0,0,0,200x29,0,31{100x29,0,31,1,99x29,101,31,2}]
+     pinned + zoomed 1d2c,50x20,0,0[50x10,0,0,0,50x9,0,11{25x9,0,11,1,24x9,26,11,2}] 1
+     released with a 200x60 desktop attached bf8c,200x60,0,0[200x30,0,0,0,200x29,0,31{100x29,0,31,1,99x29,101,31,2}] 0
+ok   layout-without-desktop
+     before bf8c,200x60,0,0[200x30,0,0,0,200x29,0,31{100x29,0,31,1,99x29,101,31,2}] | d382,200x60,0,0{100x60,0,0,3,99x60,101,0,4}
+     first tmux notification after refresh-client -C 50x20: %layout-change @0 1d2c,50x20,0,0[50x10,0,0,0,50x9,0,11{25x9,0,11,1,24x9,26,11,2}] 1d2c,50x20,0,0[50x10,0,0,0,50x9,0,11{25x9,0,11,1,24x9,26,11,2}] *
+     replayed on release: select-layout -t '@0' 'bf8c,200x60,0,0[200x30,0,0,0,200x29,0,31{100x29,0,31,1,99x29,101,31,2}]'
+     after release (nobody else attached): bf8c,200x60,0,0[200x30,0,0,0,200x29,0,31{100x29,0,31,1,99x29,101,31,2}] | d382,200x60,0,0{100x60,0,0,3,99x60,101,0,4}
+ok   layout-teardown-alone
+     teardown: set-option -u -w -t @0 window-size ; refresh-client -t 'client-63949' -f ignore-size ; refresh-client -t 'client-63949' -C 200x60 ; select-layout -t @0 'bf8c,200x60,0,0[200x30,0,0,0,200x29,0,31{100x29,0,31,1,99x29,101,31,2}]' ; select-layout -t @1 'd382,200x60,0,0{100x60,0,0,3,99x60,101,0,4}'
+     after the phone left: bf8c,200x60,0,0[200x30,0,0,0,200x29,0,31{100x29,0,31,1,99x29,101,31,2}] | d382,200x60,0,0{100x60,0,0,3,99x60,101,0,4}
+ok   layout-ledger-alone
+     ledger: set-option -u -w -t @0 window-size ; resize-window -t @0 -x 200 -y 60 ; select-layout -t @0 'bf8c,200x60,0,0[200x30,0,0,0,200x29,0,31{100x29,0,31,1,99x29,101,31,2}]' ; set-option -u -w -t @0 window-size ; resize-window -t @1 -x 200 -y 60 ; select-layout -t @1 'd382,200x60,0,0{100x60,0,0,3,99x60,101,0,4}' ; set-option -u -w -t @1 window-size
+     after: bf8c,200x60,0,0[200x30,0,0,0,200x29,0,31{100x29,0,31,1,99x29,101,31,2}]
+ok   session-follow
+     another client attaching to `other`: we stay on $0 (only %client-session-changed)
+     our client switched: %session-changed $1 other, the controller follows
+ok   hooks
+     %0: AgentHook { state: Some("attention"), agent: Some("claude"), since: Some(1758000000.0), command: Some("bash"), title: Some("needs | you") }
+ok   scroll
+     shell: local scrollback
+     mouse app: the pane read "\u{1b}[<64;40;12M"
+ok   refused-capture
+     capture-pane -t %99 → %error with `can't find pane: %99` as its line
+ok   pane-exit-layout-only
+     %1 exited: tmux sent ["%layout-change @0 b25d,80x24,0,0,0 b25d,80x24,0,0,0 *", "%layout-change @0 b25d,80x24,0,0,0 b25d,80x24,0,0,0 *", "%window-pane-changed @0 %0"] (no window close)
+     the next list-panes -a has no %1: its stream is closed
+ok   shared-current-window
+     select-window main:1 from outside: client client-64220 now shows window 1
+     the sidecar's breadcrumb follows to @1
+ok   semicolon-separates
+     `display-message -p -t %0 ; display-message -p injected` ran both commands
+ok   user-hooks
+     3 hook blocks (flags 0) between our replies
+     tree in step: panes ["%0", "%1", "%2"]; %1 shows its own screen; its path "/Users/me/code/moshpit-fix35"
+ok   multi-reply-run
+     if-shell -F 1 (2 blocks) and `a ; b` (2 blocks), each fenced; the refresh behind them in step
+ok   linked-window-close
+     unlinked from other: tmux said "%window-close @2"; @2 stayed on screen, %2's terminal kept
+     unlinked from main: tmux said "%unlinked-window-close @2"; @2 listed under $1

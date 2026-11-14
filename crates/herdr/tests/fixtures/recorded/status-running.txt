@@ -1,0 +1,17 @@
+client:
+  version: 0.9.5
+  channel: stable
+  protocol: 22
+  endpoint_protocol_generation: 1
+
+server:
+  status: running
+  version: 0.9.5
+  endpoint_compatible: yes
+  private_protocol: 22
+  private_protocol_compatible: yes
+  socket: /tmp/mpw28fkb_sv4/.config/herdr/sessions/moshpit-w2/herdr.sock
+
+update:
+  restart_needed: no
+  server_binary_stale: no

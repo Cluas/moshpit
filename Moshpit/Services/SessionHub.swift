@@ -1,6 +1,5 @@
 import Foundation
 import Observation
-import SwiftTerm
 import UIKit
 import MoshpitKit
 
@@ -138,6 +137,18 @@ final class SessionHub {
         /// long — measured on paint, not on a guessed grace period.
         private(set) var awaitingFirstFrame = false
         @ObservationIgnored private var firstFrameFallback: Task<Void, Never>?
+
+        /// Input typed while the session is live but where it goes isn't
+        /// decided yet: an SSH session's PTY is open (and the session reads
+        /// connected) from the moment the dial lands, while the capability
+        /// probe, the multiplexer decision and tmux's attach still follow.
+        /// Typed then, it went straight into the login shell — ahead of the
+        /// `-CC attach` line, which then ran as `<keys>tmux -CC attach` and
+        /// failed (B169). Held here instead, in order, and handed on once the
+        /// decision is made (`releaseHeldInput`): to the shell of a plain
+        /// session, to tmux's active pane once attached — never into the
+        /// shell under a multiplexer. nil when nothing is being held.
+        @ObservationIgnored private var heldInput: [Data]?
         /// How long the cover may wait for a revealed frame before giving up
         /// once tmux has ANSWERED — attached (a pane with nothing on it), or
         /// refused (a server with no sessions never paints; the empty-state
@@ -168,6 +179,9 @@ final class SessionHub {
         @ObservationIgnored private(set) var inheritedAgentHooks: [String: AgentHook]?
         /// Single-pane data path (non-tmux).
         @ObservationIgnored let coordinator = SwiftTerminalView.Coordinator()
+        /// Set when this session runs on the Rust core (``RustSessionSwitch``,
+        /// decided when it starts): the transport methods below hand over to it.
+        @ObservationIgnored var rust: RustSessionDriver?
         /// Set when the connection runs over the real mosh UDP transport.
         @ObservationIgnored private(set) var moshTransport: MoshTransport?
         /// tmux -CC control plane for mosh+tmux, on a SEPARATE lightweight
@@ -223,7 +237,7 @@ final class SessionHub {
             while Date() < deadline {
                 if isStopping { return nil }
                 switch viewModel.status {
-                case .disconnected, .failed: return nil
+                case .disconnected, .failed, .ended: return nil
                 default: break
                 }
                 if let control = tmuxControl { return control }
@@ -239,7 +253,12 @@ final class SessionHub {
         /// pick as `recheckCapabilities`). nil on pure mosh: `startMosh`
         /// closes the bootstrap SSH right after handoff, so there is nothing
         /// to ride — callers degrade honestly instead of dialling on their own.
-        var fileTransferSSH: SSHSession? { viewModel.session ?? sidecarSSH }
+        /// On the Rust core, the session's own connection, lent call by call
+        /// and never waited for (``RustSideChannel``).
+        var fileTransferSSH: (any HostConnection)? {
+            if let rust = lendingRust { return rust.side.immediate }
+            return viewModel.session ?? sidecarSSH
+        }
 
         /// On-demand SSH dialled for file transfer when the session has no
         /// live SSH at all — pure mosh, where `startMosh` closes its
@@ -271,7 +290,12 @@ final class SessionHub {
         /// 2026-08-17). A dead channel either errors fast or times out, and
         /// the flow moves on to dialling a fresh one — the false-dead cost
         /// is one redundant dial, far cheaper than a failed upload.
-        func acquireFileTransferSSH() async throws -> SSHSession {
+        ///
+        /// On the Rust core nothing is dialled (W14b): the session's own
+        /// connection, once it answers — a reconnect under way waited for, a
+        /// session that isn't connected said so (``RustSideChannel``).
+        func acquireFileTransferSSH() async throws -> any HostConnection {
+            if let rust = lendingRust { return try await rust.side.ready() }
             if let ssh = fileTransferSSH, await answersQuickly(ssh) { return ssh }
             if let cached = onDemandTransferSSH, await answersQuickly(cached) { return cached }
             let fresh = try await sidecarConnect(connection)
@@ -282,7 +306,7 @@ final class SessionHub {
         /// True if a trivial command round-trips within 4s. Shorter than
         /// `isTransportAlive`'s 8s: a false "dead" there tears down a whole
         /// session, here it only costs an extra dial.
-        private func answersQuickly(_ ssh: SSHSession) async -> Bool {
+        private func answersQuickly(_ ssh: any HostConnection) async -> Bool {
             await withTimeoutValue(4) { try await ssh.executeCommand("true") } != nil
         }
 
@@ -350,7 +374,7 @@ final class SessionHub {
         func probeRemotePaths(cwd: String?,
                               batch: [TerminalPathScanner.Candidate]) async -> [Int: PathProbe.Hit]? {
             let command = PathProbe.command(cwd: cwd, candidates: batch)
-            func ask(_ ssh: SSHSession) async -> [Int: PathProbe.Hit]? {
+            func ask(_ ssh: any HostConnection) async -> [Int: PathProbe.Hit]? {
                 guard let output = await withTimeoutValue(8, { try await ssh.executeCommand(command) })
                 else { return nil }
                 return PathProbe.parse(String(decoding: output, as: UTF8.self), count: batch.count)
@@ -409,7 +433,24 @@ final class SessionHub {
         /// already tore down, leaking a connection and racing the NEW
         /// session's own bootstrap over the shared `SSHService.shared` host-key
         /// handler state — the "switch to mosh+tmux, screen never loads" bug.
+        /// With no session on the server it lasts until there is one (B212).
         @ObservationIgnored private var moshTmuxAttachTask: Task<Void, Never>?
+        /// The nonce of the tmux renderer mosh-server runs for this connect:
+        /// its pid file (``tmuxRendererPidPath(connectionId:nonce:)``).
+        @ObservationIgnored private var moshTmuxRendererNonce = ""
+        /// Every window's layout before mosh-server started the tmux
+        /// renderer (B270), for the first sidecar of the connect.
+        @ObservationIgnored private var moshTmuxLayoutsBeforeRenderer: String?
+
+        /// What the mosh+tmux attach waits on (``attachMoshTmux``): the
+        /// window the control plane gets to land on a session, the renderer's
+        /// attach checks, the wait for a first session. Tests move a virtual
+        /// one by hand.
+        @ObservationIgnored var moshAttachClock: any Clock<Duration> = ContinuousClock()
+
+        /// How long a tmux control-mode attach may take before the card says
+        /// it didn't complete (``attachStalled``). Tests shorten it.
+        @ObservationIgnored var attachTimeoutSeconds: Double = tmuxAttachTimeoutSeconds
 
         /// The mosh+herdr control-plane bootstrap. Stored for the same reason
         /// `moshTmuxAttachTask` is: it opens its own SSH connection, so a
@@ -429,6 +470,12 @@ final class SessionHub {
         @ObservationIgnored private var herdrPushSSH: SSHSession?
         @ObservationIgnored private var herdrPushPump: Task<Void, Never>?
         @ObservationIgnored private var herdrPushTask: Task<Void, Never>?
+        /// One more try at push after a channel that was up ended
+        /// (`herdrPushEnded`).
+        @ObservationIgnored private var herdrPushRetryTask: Task<Void, Never>?
+        /// How long after push ends it is tried again: time for a restarted
+        /// herdr server to come back up. Per instance so tests can shorten it.
+        @ObservationIgnored var herdrPushRetryDelay: Duration = .seconds(10)
 
         // MARK: Lifecycle-test seams
 
@@ -441,6 +488,14 @@ final class SessionHub {
         @ObservationIgnored var sidecarConnect:
             @Sendable (ServerConnection) async throws -> SSHSession =
             { try await SSHService.shared.connect($0) }
+
+        /// How `startMosh` builds its transport from the bootstrap's
+        /// credentials. Production opens the UDP flow they name; lifecycle
+        /// tests hand back a transport over a fake datagram channel — and see
+        /// where it was pointed.
+        @ObservationIgnored var makeMoshTransport: (MoshCredentials) throws -> MoshTransport = {
+            try MoshTransport(credentials: $0)
+        }
 
         /// Test-only state installation: lifecycle scenarios need a session
         /// that BELIEVES it is a live mosh connection without running the
@@ -458,10 +513,21 @@ final class SessionHub {
                                tmuxController: TmuxSessionController? = nil,
                                moshServerPid pid: Int? = nil,
                                moshHadFirstContact hadContact: Bool = false,
-                               armFirstFrame: Bool = false) {
+                               armFirstFrame: Bool = false,
+                               herdrRawAttachRenderer rendererKey: String? = nil,
+                               herdrRendererBooted: Bool = true) {
             self.moshTransport = transport
             self.sidecarSSH = ssh
             self.herdrControl = control
+            if let rendererKey {
+                // A mosh+herdr session whose bootstrap found `terminal attach`
+                // and booted the raw-attach loop under this key.
+                herdrRawAttach = true
+                moshRendererKey = rendererKey
+                // A session whose loop booted earlier — unless the test is
+                // about that boot.
+                if herdrRendererBooted { moshRendererBootedKey = rendererKey }
+            }
             if let moshControl { self.moshControl = moshControl }
             if let tmuxController {
                 self.tmuxController = tmuxController
@@ -478,23 +544,94 @@ final class SessionHub {
         /// Host's herdr supports `terminal attach` (probed at mosh bootstrap).
         /// Decides the mosh renderer: raw single-pane loop vs full TUI + zoom.
         @ObservationIgnored private var herdrRawAttach = false
-        /// The terminal id the raw-attach loop was last pointed at — the
+        /// The terminal id the raw-attach loop was last asked to show — the
         /// idempotence guard for `retargetMoshRawAttach` (apply() re-reports
         /// focus every poll; only a real change should bounce the attach).
         @ObservationIgnored private var moshRawAttachTarget: String?
+        /// The person chose `moshRawAttachTarget` (a tap, a reply for it,
+        /// "Open here"): its attach takes the pane from whichever client
+        /// holds it (`--takeover`). A switch that follows the shared focus
+        /// attaches plainly, which herdr refuses while another client holds
+        /// the terminal — following the focus never takes a pane from the
+        /// device that has it (`HerdrLaunch.retargetCommand`).
+        @ObservationIgnored private var moshRawAttachTakeover = false
+        /// The terminal id the last retarget exec pointed the loop at, by the
+        /// host's word that the loop came round to it
+        /// (`HerdrLaunch.retargetLanded`) — what is on screen, as far as
+        /// anything here knows. nil before the first, and after one failed,
+        /// came back without that word, or ran out its budget.
+        @ObservationIgnored private var moshRawAttachApplied: String?
+        /// Orders the retarget execs: one at a time, the newest target wins.
+        /// Replaced, not reused, on teardown — a new renderer must not wait
+        /// behind an exec meant for the old one.
+        @ObservationIgnored private var moshRetargetLane = WriteLane()
+        /// How long one retarget exec may hold up the ones behind it. A
+        /// healthy one is a single exec; past this the channel is in trouble
+        /// and the next switch must not wait on it (Citadel's own timeout on
+        /// a half-open socket is 15 s).
+        private static let moshRetargetBudget: Duration = .seconds(5)
         /// The switch veil the mosh renderer puts up while it re-attaches, and
-        /// the last time bytes arrived under it — see `beginMoshSwitchCover`.
+        /// when it comes down — see `beginMoshSwitchCover`, `MoshSwitchCover`.
         @ObservationIgnored private var moshSwitchCoverTask: Task<Void, Never>?
-        @ObservationIgnored private var moshSwitchLastPaint: Date?
-        /// How long the repaint must stay quiet before the veil lifts.
-        private static let moshSwitchQuiet: TimeInterval = 0.15
-        /// And the cap, for a pane that never paints at all.
-        private static let moshSwitchCoverCap: TimeInterval = 3
+        @ObservationIgnored private var moshSwitchCover: MoshSwitchCover?
         /// This boot's renderer generation (connection id + per-boot nonce).
         /// Retargets only ever write THIS generation's state files, which is
         /// what keeps orphaned loops from previous mosh sessions out of the
         /// takeover fight — see `HerdrLaunch.moshRendererKey`.
         @ObservationIgnored private var moshRendererKey: String?
+        /// Why the raw-attach loop shows no pane — its attach ended on its own
+        /// and it parked (`HerdrLaunch.rawAttachLoopCommand`), or it is gone —
+        /// until the next landing. nil while it shows one, or is on its way.
+        @ObservationIgnored private var moshRendererStop: MoshRendererStop?
+        /// The watch on the loop (`HerdrLaunch.rawAttachWatchCommand`), armed
+        /// after every landing.
+        @ObservationIgnored private var moshRendererWatchTask: Task<Void, Never>?
+        /// Counts landings: a watch armed for an earlier one has nothing to
+        /// say about the pane on screen now.
+        @ObservationIgnored private var moshRendererEpoch = 0
+        /// The last terminal a switch found the server no longer lists: the
+        /// poll's report of it predates its closing, and isn't followed.
+        @ObservationIgnored private var moshRendererMissingTerminal: String?
+        /// What the notice's button does, when it has one.
+        @ObservationIgnored private var herdrNoticeRemedy: HerdrNoticeRemedy?
+        /// The renderer generation whose loop the sidecar has seen running:
+        /// its start line wasn't swallowed (``confirmMoshRendererBoot(key:over:)``).
+        @ObservationIgnored private var moshRendererBootedKey: String?
+        /// How many copies of the start line a generation gets, the first
+        /// one (typed at connect, or by a reboot) included — as many as the
+        /// mosh+tmux attach line.
+        private static let moshRendererBootLines = 4
+        /// How long a retyped start line's acknowledgement by mosh-server is
+        /// waited for before the loop is asked about again.
+        @ObservationIgnored var moshRendererRetypeAckWait: TimeInterval = 2
+
+        /// Why the mosh renderer shows no pane, and so who brings it back.
+        enum MoshRendererStop: Equatable {
+            /// Another device took the pane over: said, and taken back only
+            /// with the person's tap — never by a poll, never for a reply.
+            case takenOver(String)
+            /// The pane closed or herdr stopped or restarted: the renderer goes
+            /// to the focused pane by itself (not to this terminal again — a
+            /// stale report of it is not followed).
+            case gone(String)
+            /// herdr refused the attach for another reason: its words are
+            /// the notice, and the person retries.
+            case refused(String)
+            /// The loop itself ended (its shell is the tty's again): booted
+            /// again on the person's tap.
+            case loopGone
+        }
+
+        /// What a herdr notice's button does.
+        enum HerdrNoticeRemedy: Equatable {
+            /// Restart the host's herdr server (version skew).
+            case restartServer
+            /// Bring the mosh renderer back on the pane it stopped on.
+            case takeBack
+            /// The SSH frame channel's loop never said it reads: a fresh
+            /// connection and loop (B267).
+            case redial
+        }
 
         /// True while the user is intentionally tearing this session down, so a
         /// concurrent keepalive / death callback doesn't fight it by reconnecting.
@@ -515,6 +652,10 @@ final class SessionHub {
         /// in `reconnect()`) since both ultimately do the same
         /// stop()-then-start() dance and must not run concurrently either.
         @ObservationIgnored private var isResuming = false
+        /// The mosh sidecar's controller declared its `-CC` channel dead while
+        /// a resume pass was already running (``moshSidecarWentSilent(_:)``):
+        /// the next pass rebuilds it whatever its probe says.
+        @ObservationIgnored private var moshSidecarSilent = false
 
         /// Appearance used at `start()`, kept for transparent reconnects — an
         /// automatic reconnect (triggered internally by `connectionDropped()`,
@@ -560,6 +701,7 @@ final class SessionHub {
         /// windows at the phone width. Hand the pins back here; `repinForeground()`
         /// re-applies them when the terminal returns. Covers SSH + the mosh sidecar.
         func releaseWindowPinsForBackground() {
+            guard rust == nil else { return }   // the core does it (visibility)
             tmuxController?.releaseWindowPins()
             moshControl?.releaseWindowPins()
         }
@@ -573,6 +715,7 @@ final class SessionHub {
         /// later gets the phone grid, which is the bug the release exists to
         /// prevent. Awaited under a ``BackgroundAssertion``.
         func flushBackgroundTeardown() async {
+            guard rust == nil else { return }
             await tmuxController?.flushPendingWrites()
             await moshControl?.flushPendingWrites()
         }
@@ -580,6 +723,7 @@ final class SessionHub {
         /// Re-pin the active window to the phone grid when the terminal returns to
         /// the foreground after `releaseWindowPinsForBackground()`.
         func repinForeground() {
+            guard rust == nil else { return }
             tmuxController?.repinActiveWindow()
             moshControl?.repinActiveWindow()
         }
@@ -592,6 +736,12 @@ final class SessionHub {
         /// transport, mirrored into `SessionMetrics.moshDiagnostics` for the
         /// terminal pill's long-press diagnostic overlay.
         @ObservationIgnored var diagnosticsSink: ((MoshDiagnostics) -> Void)?
+
+        /// Called on the main actor when the remote end finished this session
+        /// for good (see `moshSessionEnded`, and `ptyChannelEnded` for a plain
+        /// SSH shell that exited): the hub retires it the way Disconnect does,
+        /// so neither the keepalive nor a foreground resume redials it.
+        @ObservationIgnored var endedSink: (() -> Void)?
 
         /// Capabilities probed over the first SSH channel (tmux / mosh-server
         /// presence, OS, package manager). `nil` until the probe completes —
@@ -613,6 +763,22 @@ final class SessionHub {
         /// successful attach never shows a false-positive error.
         var attachStalled = false
 
+        /// mosh + tmux: the server had no session for the control plane to
+        /// land on (asked, not guessed: `has-session` over the sidecar), so
+        /// the person makes the first one (B228). Reset at every attach. On
+        /// the Rust core, the core's own answer for its tmux, whichever the
+        /// transport (`TmuxReadModel.noSession`, B337).
+        var moshServerHadNoSession = false
+
+        /// mosh + tmux with no session on the server and none attached yet:
+        /// not an attach that stalled, but one waiting for the person's
+        /// "New session" (B228). Home shows the empty SESSIONS list with its
+        /// +, not "Attaching…" and then the stalled notice; the terminal
+        /// shows the empty state, not the bare shell.
+        var awaitingFirstSession: Bool {
+            moshServerHadNoSession && moshControl?.snapshot.everAttached != true
+        }
+
         /// Set when a mosh session's UDP return path is dead — the socket went
         /// `.ready` and we kept flushing, but the server's replies never
         /// arrived (commonly a VPN/proxy or firewall that passes outbound UDP
@@ -632,32 +798,29 @@ final class SessionHub {
         /// bootstrap's own remaining awaits (herdr/tmux renderer probes,
         /// `MoshTransport` construction) — races past it, and that
         /// mosh-server waits forever for a client that is never coming (7
-        /// zombies on one host, 2026-08-19). `stop()` is the backstop: see
-        /// its use of this alongside `moshHadFirstContact`. nil once reaped
-        /// (or never captured, or not a mosh session) — never re-armed for
-        /// an old bootstrap by a later one; `startMosh()` overwrites it.
+        /// zombies on one host, 2026-08-19). `stop()` is the backstop, and
+        /// the one that stops a server the user closed: see its use of this
+        /// with `MoshServerReap.onTeardown`. nil once reaped (or never
+        /// captured, or not a mosh session, or ended by the server itself) —
+        /// never re-armed for an old bootstrap by a later one; `startMosh()`
+        /// overwrites it.
         @ObservationIgnored private var moshServerPid: Int?
 
         /// True once this mosh session's transport has heard back from its
         /// server at least once (`MoshDiagnostics.datagramsReceived > 0` —
         /// the same signal `MoshTransport.sawAnyDatagram` gates its own
-        /// watchdog on). This is the one-way latch that makes `stop()`'s
-        /// fallback reap safe: mosh's whole point is that the server
-        /// OUTLIVES a torn-down client so a later reconnect can resume, so
-        /// once real contact has happened `stop()` must never touch its pid
-        /// again, no matter how or why `stop()` runs.
+        /// watchdog on).
         ///
-        /// That holds for both ways `stop()` can run against a session that
-        /// actually worked: an automatic `reconnect()` — reachable only via
-        /// `connectionDropped()`, which by construction fires for a session
-        /// that WAS live (a drop presupposes a prior connect, which
-        /// presupposes contact) — and a manual teardown (protocol switch,
-        /// disconnect from `TerminalScreen`), which tears down whatever this
-        /// `ActiveSession` actually was: if it had been talking to its
-        /// server, this flag is already true by the time that `stop()` call
-        /// reaches here. The only sessions this flag is still false for at
-        /// teardown are ones that never got a reply at all — exactly the
-        /// case the reap exists for.
+        /// What it decides (`MoshServerReap`): a server that never answered
+        /// is reaped at any teardown, a reconnect included — it waits forever
+        /// for a client that is never coming. One that did answer holds the
+        /// user's shell, and is left alone by a silence (B165) and by a
+        /// reconnect. But not by the user closing the session: it used to be
+        /// left running then too, on the belief that mosh-server outlives a
+        /// client so a later connect can resume it — this app keeps no session
+        /// key and starts a new server on every connect, so nothing ever came
+        /// back to it, and every disconnect and protocol switch left a
+        /// mosh-server and its shell on the host (B164).
         @ObservationIgnored private var moshHadFirstContact = false
 
         /// Bounds the wait started by `beginAttachTimeout`. Stored (not
@@ -675,6 +838,11 @@ final class SessionHub {
             coordinator.onOpenRemotePath = { [weak self] path in
                 Task { @MainActor [weak self] in self?.openRemotePath(path) }
             }
+            // The terminal's own Paste and ⌘V take the same road as every
+            // other paste. Called synchronously (SwiftTerm is on the main
+            // thread): a hop would let a Return typed right after the paste
+            // overtake it.
+            coordinator.onPaste = { [weak self] text in self?.sendPaste(text) }
             coordinator.onHostDirectoryChange = { [weak self] directory in
                 Task { @MainActor [weak self] in
                     guard let self else { return }
@@ -707,28 +875,37 @@ final class SessionHub {
         @ObservationIgnored private var moshPrefix = Data([0x02])   // C-b
         @ObservationIgnored private var moshPrefixResolved = false
         @ObservationIgnored private var lastMoshPageAt: Date = .distantPast
-        /// Chains mosh keystroke writes so rapid-fire input (type a word, then
+        /// Orders mosh keystroke writes so rapid-fire input (type a word, then
         /// immediately tap an arrow key) can't reorder at the transport — see
         /// the matching `writeChain` in TmuxSessionController.enqueue for the
         /// same bug on the -CC control path (independently-spawned `Task`s
-        /// have no FIFO guarantee relative to each other).
-        @ObservationIgnored private var moshWriteChain: Task<Void, Never>?
+        /// have no FIFO guarantee relative to each other). mosh+herdr's
+        /// semantic arrow keys queue here too, between the typing around them.
+        @ObservationIgnored private let moshWriteLane = WriteLane()
 
         // MARK: herdr frame channel (SSH only)
 
         /// The pane the frame channel is currently rendering, or nil when the
         /// channel isn't running. Also the "am I in frame mode?" flag that
         /// `sendInput` and the scroll routing branch on.
-        @ObservationIgnored private var herdrFrameTarget: String?
+        private var herdrFrameTarget: String? { herdrAttach.target }
+        /// Which pane the channel is pointed at, which attach reads it, which
+        /// is being released and which close is our own release coming back
+        /// (`HerdrAttachLedger`).
+        @ObservationIgnored private var herdrAttach = HerdrAttachLedger()
         /// The channel carrying frames — the session's own PTY, so retargeting
         /// costs a command, not a connection.
         @ObservationIgnored private var herdrFrameSSH: SSHSession?
         /// Serializes stdin writes to the frame channel. Same hazard the mosh
         /// path has: independently-spawned writes can reorder, and a resize
         /// landing before the keystroke it was meant to follow repaints wrong.
-        @ObservationIgnored private var herdrWriteChain: Task<Void, Never>?
-        /// In-flight retarget, cancelled if another one starts first.
-        @ObservationIgnored private var herdrRetargetTask: Task<Void, Never>?
+        /// Semantic arrow keys queue here too (see `sendHerdrKey`). Replaced,
+        /// not reused, when the channel goes: a new channel must not wait on
+        /// writes meant for the old one.
+        @ObservationIgnored private var herdrWriteLane = WriteLane()
+        /// The wait for a release's close: past it the switch names its pane
+        /// anyway (a channel that stopped answering must not park it).
+        @ObservationIgnored private var herdrReleaseAckTask: Task<Void, Never>?
         /// Set when another client keeps stealing this pane's attach, so the
         /// UI can say so instead of flickering silently. Cleared once we hold
         /// the channel again.
@@ -736,31 +913,85 @@ final class SessionHub {
         /// Label for the notice's one-tap remedy, when the notice has one
         /// (herdr version skew → restart the server). nil = plain notice.
         private(set) var herdrNoticeAction: String?
-        /// When the eviction storm subsides enough to retry. herdr's direct
-        /// attach is exclusive per terminal, so two Moshpits on the same pane
-        /// evict each other forever — each re-asserting every poll. Backing
-        /// off turns a silent 2-second fistfight into one visible retry every
-        /// half minute, which recovers on its own the moment the other client
-        /// goes away. (Seen live: a stale simulator session and a phone
-        /// trading the same pane back and forth, output repainting while every
-        /// keystroke went to a channel that had just been evicted.)
+        /// When attaching may be tried again after herdr refused an attach
+        /// and said why (version skew, a refused handshake): a refusal
+        /// doesn't heal by asking again on every poll.
         @ObservationIgnored private var herdrRetryAfter: Date?
-        /// Timestamps of recent evictions — closes we did NOT ask for.
-        @ObservationIgnored private var herdrEvictions: [Date] = []
-        /// Three evictions inside this window means somebody else wants the
-        /// pane; one or two is just a reconnect racing its own old channel.
-        private static let herdrContentionWindow: TimeInterval = 30
-        private static let herdrContentionBackoff: TimeInterval = 30
+        private static let herdrRefusalBackoff: TimeInterval = 30
+        /// The pane another device has — it took ours over (`--takeover`), or
+        /// held the one the focus went to and refused our plain attach —
+        /// until the person's word ("Open here", a pick) or its closing.
+        /// herdr's direct attach is exclusive per terminal, and two Moshpits
+        /// used to fight over a pane: each one's poll asked for it again with
+        /// `--takeover`, three times in 30 s before a backoff and a "retrying
+        /// shortly", then again. Following the focus never takes over now,
+        /// and a pane another device has is said, with "Open here", and left
+        /// to it — the rule mosh+herdr's renderer keeps (round twenty-seven).
+        @ObservationIgnored private var herdrHeldElsewhere: String?
 
-        /// Channel closes we caused ourselves by releasing during a retarget.
+        /// How long a switch waits for its release's `terminal.closed` before
+        /// naming the next pane anyway.
+        private static let herdrReleaseAckTimeout: Duration = .milliseconds(1500)
+
+        /// The bound on input held for a pane (`HerdrAttachLedger`): typing
+        /// still held then is dropped and said, a delivery answered not sent.
+        @ObservationIgnored private var herdrHoldTask: Task<Void, Never>?
+        /// Deliveries waiting for their pane's attach (`deliverHerdrFrameInput`).
+        @ObservationIgnored private var herdrDeliveries: [Int: CheckedContinuation<Bool, Never>] = [:]
+        @ObservationIgnored private var herdrDeliveryCount = 0
+        /// The grid the last attach line carried: a size that moved before
+        /// that attach was up follows its first frame.
+        @ObservationIgnored private var herdrLineGrid: (cols: Int, rows: Int)?
+        /// How long typing at the pane just picked waits for its attach.
+        private static let herdrHeldInputBudget: Duration = .seconds(5)
+        /// How long a delivery to one pane — a notification's reply, a share —
+        /// waits for that pane's attach.
+        private static let herdrDeliveryBudget: Duration = .seconds(5)
+
+        /// The same window over mosh: a pane switch has been asked for and
+        /// hasn't landed, so typing would still reach the pane being LEFT.
         ///
-        /// Releasing makes the server emit `terminal.closed` for the pane we
-        /// just left, and that arrives AFTER the new target is already set.
-        /// Treating it as "the pane went away" would clear `herdrFrameTarget`
-        /// and silently drop the session back to raw-byte input — keystrokes
-        /// then go to the shell as plain text, where the frame channel ignores
-        /// them: output keeps flowing, typing dies. (Found exactly that way.)
-        @ObservationIgnored private var herdrExpectedCloses = 0
+        /// mosh carries keystrokes to the host's own herdr client — under the
+        /// raw-attach renderer the `terminal attach` the loop is running, which
+        /// types into the one terminal it is attached to until the retarget
+        /// exec has bounced it; under the full TUI herdr's client, which types
+        /// into the server's focused pane until the switch's zoom has moved
+        /// the focus. Either way, keys typed right after a switch went to the
+        /// old pane for a round trip or more. They are dropped instead, with
+        /// the same notice: the new pane isn't on screen yet, and the switch
+        /// may not be the user's (see `sendHerdrFrameInput`).
+        /// Bounded the way those steps are — a retarget exec that fails or
+        /// runs out its budget ends the switch, and so does a zoom the
+        /// command lane stops waiting for.
+        private var moshHerdrSwitching: Bool {
+            guard moshTransport != nil else { return false }
+            if herdrRawAttach {
+                guard let target = moshRawAttachTarget else { return false }
+                return target != moshRawAttachApplied
+            }
+            return herdrControl?.paneSwitchInFlight == true
+        }
+
+        /// mosh+herdr: the raw-attach loop shows no pane — its attach ended on
+        /// its own (another device took the pane, the pane closed, herdr
+        /// stopped) and it parked, or it is gone (`moshRendererStop`). What
+        /// is typed now has no pane to reach: dropped and said, never sent
+        /// into the tty, where the login shell used to take it as a command
+        /// line. The parked loop discards what reaches the tty anyway before
+        /// its next attach.
+        private var moshRendererDown: Bool {
+            herdrRawAttach && moshTransport != nil && moshRendererStop != nil
+        }
+
+        /// mosh+herdr: no pane is on screen by the host's word — before the
+        /// first switch has landed, or after one that failed. What is typed
+        /// then reached whichever pane the loop attached next (it reads what
+        /// waited in the tty), or a loop that wasn't there; dropped and said
+        /// instead (B185's rule: only the person's pick and a delivery wait
+        /// for their pane, and a delivery waits for its own landing).
+        private var moshRendererBlank: Bool {
+            herdrRawAttach && moshTransport != nil && moshRawAttachApplied == nil
+        }
 
         /// Set while a retarget's veil is up, waiting for the new pane's first
         /// FULL frame to reveal on. Incremental frames are absolutely-positioned
@@ -770,37 +1001,30 @@ final class SessionHub {
         /// which is the first moment the screen is honestly the new pane's.
         @ObservationIgnored private var herdrAwaitingFullFrame = false
 
-        /// Whether the boot line has been written for this channel. The first
-        /// attach IS the boot line (it carries its own target), so this also
-        /// answers "has anything been asked of this channel yet".
+        /// Whether the channel's reader loop is running: it is the channel's
+        /// own program (``HerdrFrameCommand/loopProgram(customPath:connectionId:)``),
+        /// so from the moment the channel opens (B267).
         @ObservationIgnored private var herdrChannelBooted = false
-        /// Whether the retarget loop announced itself. False means either
-        /// "not yet" or "this host's shell couldn't take the boot shape", and
-        /// switches fall back to the one-shot start line either way — correct
-        /// in both cases, just slower in the second.
+        /// Whether the reader loop announced itself. Until it does, nothing
+        /// is written: a target line would reach it before its `read`, or
+        /// nothing at all.
         @ObservationIgnored private var herdrLoopReady = false
-        /// When the current attach was asked for, and whether anything has
-        /// been painted since. Together they make the poller's repeated
-        /// focus report a RECOVERY: a target that never painted gets asked
-        /// for again instead of being assumed live (see `retargetHerdrFrames`).
-        @ObservationIgnored private var herdrAttachAskedAt: Date?
-        @ObservationIgnored private var herdrFramePainted = false
+        /// An attach line is due, held until the loop says it reads.
+        @ObservationIgnored private var herdrAttachWaitsForLoop = false
+        /// Just past the attach timeout after an attach line, a read: an
+        /// attach that never painted is asked for again then, not on the
+        /// poll's cadence (up to 45 s with push). The poller's repeated focus
+        /// report is that RECOVERY: a target that never painted gets asked
+        /// for again instead of being assumed live (`HerdrAttachLedger`).
+        @ObservationIgnored private var herdrAttachWatchTask: Task<Void, Never>?
         /// Measured switch cost: the retarget's first byte out to the new
         /// pane's first full frame in. The veil's safety cap scales off it.
         @ObservationIgnored private var herdrLastSwitch: TimeInterval = 0
-        /// Resumed when the release we sent comes back as `terminal.closed` —
-        /// the moment the old attach has let go of stdin and the next target
-        /// can be written. Replaces a fixed sleep with the actual event.
-        @ObservationIgnored private var herdrReleaseAck: CheckedContinuation<Void, Never>?
-        /// Watches for a boot that produced neither the loop marker nor a
-        /// frame, and falls back to the one-shot line.
+        /// Watches for a loop that never says it reads, and says so (with a
+        /// Retry that redials) instead of a blank terminal.
         @ObservationIgnored private var herdrBootFallbackTask: Task<Void, Never>?
-        /// How long an asked-for attach may stay unpainted before the next
-        /// focus report is allowed to re-drive it.
-        private static let herdrAttachTimeout: TimeInterval = 3
-        /// How long to wait for the retarget loop to announce itself before
-        /// assuming this host can't run it.
-        private static let herdrLoopProbe: Duration = .milliseconds(2500)
+        /// How long the reader loop may take to announce itself.
+        static let herdrLoopProbe: Duration = .milliseconds(2500)
         /// Home, erase display, erase scrollback. Fed to the emulator the
         /// moment a switch starts, so the buffer stops holding the pane we
         /// are leaving. The veil hides the swap either way — this is about
@@ -808,16 +1032,16 @@ final class SessionHub {
         /// honest, the previous agent's screen is a lie the user acts on.
         private static let herdrClearScreen = Data("\u{1b}[H\u{1b}[2J\u{1b}[3J".utf8)
 
-        /// The SwiftTerm terminal backing whichever pane is on screen right now —
-        /// tmux resolves the zoomed active pane's view; mosh/plain SSH have just
-        /// the one coordinator view.
-        private var activeTerminal: Terminal? {
+        /// The terminal backing whichever pane is on screen right now — tmux
+        /// resolves the zoomed active pane's; mosh/plain SSH have just the one
+        /// coordinator's.
+        private var activeTerminal: TerminalSurface? {
             if let controller = tmuxController,
                let paneId = controller.snapshot.activePaneId
                     ?? controller.snapshot.activePanes.first?.id {
-                return controller.terminalView(for: paneId).getTerminal()
+                return controller.surface(for: paneId)
             }
-            return coordinator.terminalView?.getTerminal()
+            return coordinator.surface
         }
 
         /// Whether the remote program has put the terminal in application
@@ -834,7 +1058,9 @@ final class SessionHub {
         /// a lone arrow server-side against the pane's real mode (see
         /// `TmuxSessionController.sendInput`, `HerdrControlClient.sendKey`),
         /// because there this local flag goes stale.
-        var applicationCursorKeys: Bool { activeTerminal?.applicationCursor ?? false }
+        var applicationCursorKeys: Bool {
+            activeTerminal?.modes.applicationCursorKeys ?? false
+        }
 
         /// Paste-aware send: wraps the clipboard text in bracketed-paste markers
         /// when the active terminal's app requested them (DECSET 2004 — Claude
@@ -852,31 +1078,84 @@ final class SessionHub {
         /// image path landed as literal text instead of `[Image #N]`. Mosh
         /// does not have this problem (its renderer is a regular tmux
         /// client, not a fresh `-CC` attach each time), so that path is
-        /// untouched. Gated on `connState == .live` for the same reason
-        /// `sendInput` is — a paste triggered while the cover overlay is up
-        /// (e.g. a queued Home-card action firing mid-reconnect) must not
-        /// become durable input on a transport that queues it (mosh
-        /// type-ahead).
+        /// untouched. SSH+herdr has the same problem, worse, and its own way
+        /// out — see `pastePayload`. Gated on `connState == .live` for the
+        /// same reason `sendInput` is — a paste triggered while the cover
+        /// overlay is up (e.g. a queued Home-card action firing
+        /// mid-reconnect) must not become durable input on a transport that
+        /// queues it (mosh type-ahead).
         func sendPaste(_ text: String) {
+            if let rust { rust.sendPaste(text); return }
             guard viewModel.connState == .live else { return }
+            // Undecided where it goes: held with the typing around it (B169).
+            guard inputDecided() else {
+                routeInput(pastePayload(text))
+                return
+            }
             if let controller = tmuxController,
                let paneId = controller.snapshot.activePaneId
                     ?? controller.snapshot.activePanes.first?.id {
                 controller.sendPaste(text, paneId: paneId)
                 return
             }
-            var payload = Data(text.utf8)
-            if activeTerminal?.bracketedPasteMode == true {
-                payload = Data("\u{1b}[200~".utf8) + payload + Data("\u{1b}[201~".utf8)
-            }
-            sendInput(payload)
+            sendInput(pastePayload(text))
+        }
+
+        /// The bytes a paste goes out as when no tmux controller encodes it.
+        ///
+        /// SSH+herdr: always ONE complete bracketed paste, whatever the local
+        /// emulator says. That emulator is fed herdr's repaint frames, which
+        /// carry no mode changes at all (herdr's frame encoder emits cursor
+        /// visibility and synchronized-output marks, nothing else), so its
+        /// bracketed-paste flag was never set: every paste — a multi-line
+        /// prompt, a shared image path — went out bare, a shell ran it line
+        /// by line, and Claude Code took a pasted path for typing instead of
+        /// an image. The pane's real mode lives on the server, and the server
+        /// (herdr 0.9+, `apply_terminal_attach_input`) re-encodes an input
+        /// that is exactly one bracketed paste against it: markers kept when
+        /// the program asked for them, dropped when it didn't. An older
+        /// server passes the markers through as they are — still what the
+        /// programs a phone pastes into ask for (agents, zsh, bash, fish, vim
+        /// all turn bracketed paste on); and nothing in herdr's API reports a
+        /// pane's mode, so there is nothing better to ask. mosh and plain SSH
+        /// still go by the local emulator, as before — with any marker in the
+        /// text taken out (``BracketedPaste/payload(_:bracketed:)``): wrapped
+        /// as it was, a pasted `ESC[201~` ended the paste and the line after
+        /// it ran.
+        private func pastePayload(_ text: String) -> Data {
+            if herdrFrameSSH != nil { return Self.herdrPaste(text) }
+            let bracketed = activeTerminal?.modes.bracketedPaste == true
+            return BracketedPaste.payload(text, bracketed: bracketed)
+        }
+
+        /// `text` as one complete bracketed paste. A marker inside the text
+        /// is dropped: herdr only re-encodes an input whose FIRST end marker
+        /// is its last bytes, and a pasted one would otherwise close the
+        /// paste early for the pane and send the rest as typed keys — Return
+        /// included. Dropped byte for byte and until none is left
+        /// (``BracketedPaste/body(_:)``): searched as `Character`s, a marker
+        /// carrying a combining mark stayed in, and one removal pass could
+        /// assemble a new marker from the bytes around the one it removed.
+        nonisolated static func herdrPaste(_ text: String) -> Data {
+            BracketedPaste.wrapped(text)
         }
 
         /// Single entry point for user input (keyboard, shortcut bar, paste).
         /// Routes to the correct transport so callers don't have to know
         /// whether this session is tmux / mosh / plain SSH.
         func sendInput(_ data: Data) {
-            guard !data.isEmpty else { return }
+            routeInput(data)
+        }
+
+        /// ``sendInput(_:)``'s routing, saying what became of the bytes: true
+        /// when they were handed to a transport, false when they were
+        /// dropped (nothing live, herdr between panes, no pane to take them).
+        /// The callers that keep what they deliver until it is delivered
+        /// (``deliverInput(_:toPane:)``) need to know which (B172).
+        @discardableResult
+        private func routeInput(_ data: Data) -> Bool {
+            guard !data.isEmpty else { return false }
+            if let rust { rust.sendInput(data); return true }
             // No input unless live. While the connecting poster is up the pane
             // is invisible, so every touch that lands here is accidental — and
             // some transports make accidents durable: mosh QUEUES keystrokes
@@ -888,7 +1167,26 @@ final class SessionHub {
             // must be gated here, at the single choke point, not in the UI.
             // (deliverInput/deliverPaste stay ungated on purpose — the lock
             // screen and share-queue paths do their own reconnect-first dance.)
-            guard viewModel.connState == .live else { return }
+            guard viewModel.connState == .live else { return false }
+            // Live, but where typing goes is still being decided: held, in
+            // the order typed (B169).
+            guard inputDecided() else {
+                heldInput?.append(data)
+                return true
+            }
+            // SSH+herdr: typing reaches a pane only once that pane's attach
+            // is up — see `sendHerdrFrameInput`. Arrows too.
+            if herdrFrameSSH != nil {
+                return sendHerdrFrameInput(data)
+            }
+            // mosh+herdr between panes: nothing typed now has a pane it can
+            // rightly reach — see `moshHerdrSwitching`. Arrows too: the next
+            // branch would send one by exec straight to the new pane, ahead
+            // of the text around it, which is dropped.
+            if moshHerdrSwitching || moshRendererDown || moshRendererBlank {
+                noteHerdrInputDropped()
+                return false
+            }
             // herdr (either transport): a lone arrow sequence reroutes as a
             // SEMANTIC key, encoded server-side against the pane's REAL
             // terminal modes. The client-side variant choice (ESC[A vs
@@ -901,23 +1199,20 @@ final class SessionHub {
             // D-pad and a hardware keyboard's arrows.
             if let herdr = herdrControl, let key = Self.arrowKeyName(data),
                let paneId = herdr.snapshot.activePaneId {
-                herdr.sendKey(key, paneId: paneId)
-                return
+                sendHerdrKey(key, paneId: paneId, via: herdr)
+                return true
             }
             // (SSH+tmux scrollback is LOCAL now — copy-mode is invisible to a
             // -CC client, so nothing server-side needs leaving here. The
             // controller's sendInput releases the pane's local scroll-hold so
             // typing snaps the reader back to live. Mosh copy-mode is handled
             // on its own branch below.)
-            if herdrFrameTarget != nil {
-                // Frame mode: keystrokes are a protocol message, not raw bytes
-                // on the wire. base64 so escape sequences and partial UTF-8
-                // survive the JSON round trip.
-                writeFrameCommand(HerdrFrameCommand.input(data))
-            } else if let controller = tmuxController {
+            if let controller = tmuxController {
                 let paneId = controller.snapshot.activePaneId
                     ?? controller.snapshot.activePanes.first?.id
-                if let paneId { controller.sendInput(data, paneId: paneId) }
+                guard let paneId else { return false }
+                controller.sendInput(data, paneId: paneId)
+                return true
             } else if let transport = moshTransport {
                 // Leaving mosh copy-mode? Prepend `q` (cancel) on the SAME channel
                 // so it's strictly ordered before the keystrokes — no cross-channel
@@ -931,8 +1226,174 @@ final class SessionHub {
                 // last character or two (the "history search stops matching
                 // what I typed" bug).
                 sendOverMosh(transport, out, predict: !leavingCopyMode)
+                return true
             } else {
+                guard viewModel.session != nil else { return false }
                 viewModel.send(data)
+                return true
+            }
+        }
+
+        /// Say that input went nowhere, and hurry the re-attach. A notice
+        /// already up (another client holds the pane, the server refused the
+        /// attach) says more, and stays. Cleared by the next painted frame —
+        /// over mosh, where no frame is ever parsed, after a few seconds.
+        private func noteHerdrInputDropped() {
+            Log.input.info("herdr: input dropped — not on the pane yet")
+            guard herdrNotice == nil else { return }
+            let notice = String(localized: "Not attached to the pane yet — input wasn't sent")
+            if moshTransport != nil {
+                flashHerdrNotice(notice)
+            } else {
+                herdrNotice = notice
+            }
+            herdrControl?.quicken()
+        }
+
+        /// Typing at the frame channel's pane (SSH): out once that pane's
+        /// attach is up, held if the person just picked the pane, dropped
+        /// and said otherwise (`HerdrAttachLedger`).
+        ///
+        /// Written right behind an attach line, typing was lost: herdr 0.9.5
+        /// drops what reaches an attach before its first frame (B185). Written
+        /// during a switch, before the release, it reached the pane being
+        /// LEFT; after the release but before the target line, the loop's
+        /// `read` took it for a command of ours and dropped it without a
+        /// trace. So nothing goes until the pane's attach paints. What was
+        /// typed at a pane the person just picked waits for that and follows
+        /// it, in order — they are looking at that pane. A switch that isn't
+        /// theirs (the desktop moved the focus, the poll followed it) holds
+        /// nothing: "y⏎" typed at one agent must never answer another's
+        /// prompt. Dropped, it says so: never the old pane, never silently.
+        /// Before the first attach, backing off another client, after a
+        /// refusal or a close, nothing is attached, and typing is dropped the
+        /// same way — never raw into the PTY, whose reader is the loop's
+        /// `read` or the login shell.
+        /// Whether the bytes went out or are held for their pane (true), or
+        /// were dropped (false, said) — ``routeInput(_:)``'s answer (B172).
+        @discardableResult
+        private func sendHerdrFrameInput(_ data: Data) -> Bool {
+            switch herdrAttach.route(.typed(data), to: herdrFrameTarget) {
+            case .send:
+                guard let paneId = herdrAttach.inputPane else { return false }
+                writeHerdrInput(data, to: paneId)
+                return true
+            case .held:
+                return true
+            case .dropped:
+                noteHerdrInputDropped()
+                return false
+            }
+        }
+
+        /// Bytes for the pane whose attach is up: a lone arrow as a SEMANTIC
+        /// key (see `sendHerdrKey`), anything else as one input line — base64,
+        /// so escape sequences and partial UTF-8 survive the JSON round trip.
+        private func writeHerdrInput(_ data: Data, to paneId: String) {
+            if let herdr = herdrControl, let key = Self.arrowKeyName(data) {
+                sendHerdrKey(key, paneId: paneId, via: herdr)
+            } else {
+                writeFrameCommand(HerdrFrameCommand.input(data))
+            }
+        }
+
+        /// Hold input for `paneId` until its attach is up, for at most
+        /// `budget`. A hold for another pane ends, its typing dropped (said).
+        private func holdHerdrInput(for paneId: String, budget: Duration) {
+            guard herdrAttach.heldPane != paneId else { return }
+            settleDroppedHerdrInput(herdrAttach.hold(for: paneId), tell: true)
+            armHerdrHoldExpiry(budget)
+        }
+
+        private func armHerdrHoldExpiry(_ budget: Duration) {
+            herdrHoldTask?.cancel()
+            herdrHoldTask = Task { [weak self] in
+                try? await Task.sleep(for: budget)
+                guard let self, !Task.isCancelled else { return }
+                herdrHoldTask = nil
+                settleDroppedHerdrInput(herdrAttach.dropHeld(), tell: true)
+            }
+        }
+
+        /// Input a hold gave up: typing said dropped (`tell`), deliveries
+        /// answered not sent.
+        private func settleDroppedHerdrInput(_ dropped: [HerdrAttachLedger.Held], tell: Bool) {
+            if herdrAttach.heldPane == nil {
+                herdrHoldTask?.cancel()
+                herdrHoldTask = nil
+            }
+            var typed = false
+            for input in dropped {
+                switch input {
+                case .typed:
+                    typed = true
+                case .delivery(let id, _):
+                    herdrDeliveries.removeValue(forKey: id)?.resume(returning: false)
+                }
+            }
+            if typed, tell { noteHerdrInputDropped() }
+        }
+
+        /// `paneId`'s attach is up: what was held for it goes out, in order,
+        /// and each delivery among it is answered sent.
+        private func flushHeldHerdrInput(to paneId: String) {
+            guard herdrAttach.heldPane == paneId else { return }
+            let held = herdrAttach.takeHeld(for: paneId)
+            herdrHoldTask?.cancel()
+            herdrHoldTask = nil
+            for input in held {
+                switch input {
+                case .typed(let data):
+                    writeHerdrInput(data, to: paneId)
+                case .delivery(let id, let data):
+                    writeHerdrInput(data, to: paneId)
+                    herdrDeliveries.removeValue(forKey: id)?.resume(returning: true)
+                }
+            }
+        }
+
+        /// One pane's input over the frame channel (SSH) — a notification's
+        /// reply, a share: switch there if the channel isn't, and send once
+        /// that pane's attach is up. Never right behind its attach line:
+        /// herdr 0.9.5 drops what reaches an attach before its first frame,
+        /// and the reply was lost while this said sent (B185). True only once
+        /// the bytes went out; false when no switch could happen (another
+        /// client holds the pane) or the attach didn't come up within the
+        /// delivery's wait, so the caller can say so.
+        private func deliverHerdrFrameInput(_ data: Data, toPane paneId: String,
+                                            via herdr: HerdrControlClient) async -> Bool {
+            // Another device has the pane: nothing reaches it, and a reply is
+            // no reason to take it from that device ("Open here" is the
+            // person's). A reply for another pane is the person's pick of it.
+            guard paneId != herdrHeldElsewhere else {
+                Log.input.info("herdr: \(paneId, privacy: .public) is open on another device — input not sent")
+                return false
+            }
+            if herdrAttach.inputPane != paneId {
+                if herdrFrameTarget != paneId {
+                    // The person's pick, made for them: the server's focus
+                    // moves too, and the switch holds input for this pane.
+                    herdr.selectPane(paneId)
+                } else {
+                    holdHerdrInput(for: paneId, budget: Self.herdrDeliveryBudget)
+                }
+                // Backing off another client: no switch, nothing to wait for.
+                guard herdrAttach.heldPane == paneId else { return false }
+                // The delivery's own wait.
+                armHerdrHoldExpiry(Self.herdrDeliveryBudget)
+            }
+            herdrDeliveryCount &+= 1
+            let id = herdrDeliveryCount
+            return await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
+                switch herdrAttach.route(.delivery(id: id, data), to: paneId) {
+                case .send:
+                    writeHerdrInput(data, to: paneId)
+                    continuation.resume(returning: true)
+                case .held:
+                    herdrDeliveries[id] = continuation
+                case .dropped:
+                    continuation.resume(returning: false)
+                }
             }
         }
 
@@ -952,6 +1413,41 @@ final class SessionHub {
             default: return nil
             }
         }
+
+        /// A semantic key, queued on the SAME lane as this session's typing so
+        /// the two reach the pane in the order they were pressed. The key is
+        /// an exec on the control connection while the text rides the
+        /// terminal channel; sharing the lane makes the key wait for the text
+        /// before it and the text after it wait for the key.
+        private func sendHerdrKey(_ key: String, paneId: String, via herdr: HerdrControlClient) {
+            if herdrFrameSSH != nil {
+                // SSH: frame channel and exec share one connection, and the
+                // exec has a channel-open round trip to make before herdr even
+                // starts — so text whose write has completed is already ahead.
+                herdr.sendKey(key, paneId: paneId, on: herdrWriteLane)
+            } else if let transport = moshTransport {
+                // mosh: the typing went out as UDP and the key goes as an SSH
+                // exec — two networks. A finished send only means the
+                // datagram LEFT; a lost one is retransmitted a timeout later
+                // and could arrive after the key, landing the prefix the user
+                // typed after the ↑ meant to search for it. So the key first
+                // waits for mosh-server's ack (it acks a state only after
+                // writing it into the PTY), within a budget a dead return
+                // path can't hold up.
+                herdr.sendKey(key, paneId: paneId, on: moshWriteLane) {
+                    await WriteLane.wait(atMost: Self.moshLandingBudget) {
+                        await transport.waitUntilDelivered()
+                    }
+                }
+            } else {
+                herdr.sendKey(key, paneId: paneId)
+            }
+        }
+
+        /// How long a mosh+herdr key waits for the typing ahead of it to be
+        /// acknowledged before going anyway — a few round trips on the worst
+        /// link this app is tested against (500 ms RTT, double-digit loss).
+        private static let moshLandingBudget: Duration = .milliseconds(1500)
 
         /// Deliver bytes to one SPECIFIC pane — the lock-screen Allow / Deny /
         /// Reply path, where "whatever pane happens to be focused" is wrong.
@@ -978,59 +1474,271 @@ final class SessionHub {
         /// ``sendPaste(_:)`` — rather than guessing from a local terminal
         /// that, for a pane other than the active one, usually doesn't even
         /// exist to guess from.
+        ///
+        /// Both say what really happened — true only once the bytes reached
+        /// something that takes them: tmux's own answer to the paste, the SSH
+        /// write, the live mosh transport. They used to say true whatever
+        /// happened, and the share queue deletes an entry it is told was
+        /// delivered: a paste into a tmux controller still attaching (dropped
+        /// before the attach), into a pane that is gone, or into a session no
+        /// longer live lost the shared image for good (B172).
         func deliverPaste(_ text: String, toPane paneId: String) async -> Bool {
             guard !text.isEmpty else { return false }
+            if let rust { return await rust.deliverPaste(text, toPane: paneId) }
+            guard inputDecided() else { return false }
             if let control = tmuxControl {
-                control.sendPaste(text, paneId: paneId)
-                return true
+                return await control.pasteConfirmed(text, paneId: paneId)
             }
-            var payload = Data(text.utf8)
-            if activeTerminal?.bracketedPasteMode == true {
-                payload = Data("\u{1b}[200~".utf8) + payload + Data("\u{1b}[201~".utf8)
-            }
-            return await deliverInput(payload, toPane: paneId)
+            // SSH+herdr: bracketed for the server to judge against the TARGET
+            // pane's real mode — see `pastePayload`.
+            return await deliverInput(pastePayload(text), toPane: paneId)
         }
 
         func deliverInput(_ data: Data, toPane paneId: String) async -> Bool {
             guard !data.isEmpty else { return false }
-            if let control = tmuxControl {
+            if let rust { return await rust.deliverInput(data, toPane: paneId) }
+            // Where it would land isn't decided yet (and the shell under a
+            // multiplexer is the wrong place): not now — its sender keeps it.
+            guard inputDecided() else { return false }
+            if connection.multiplexer == .tmux, tmuxController == nil {
+                // A tmux pane's input over mosh is placed by the `-CC`
+                // sidecar, by the pane's id. Before it was up — the first
+                // second or two of every connect, and while it is rebuilt —
+                // it went down the mosh shell, which is tmux's own client (or
+                // the login shell before it attaches): it landed in tmux's
+                // ACTIVE pane, whichever the desktop left focused, or ran as a
+                // command line, and was said sent either way. It waits for the
+                // sidecar now (``moshSidecarDeliveryWait``), as crates/session
+                // does. A host with no tmux — and a plain SSH shell where tmux
+                // was asked for — has no pane to place it in.
+                guard moshTransport != nil, degrade?.missing != .tmux,
+                      let control = await moshSidecar(knowing: paneId),
+                      viewModel.connState == .live else { return false }
                 control.sendInput(data, paneId: paneId)
                 return true
             }
-            if let herdr = herdrControl {
-                if herdrFrameSSH != nil {
-                    // Native frame mode (SSH). Focus first unless already there.
-                    if herdrFrameTarget != paneId {
-                        herdr.selectPane(paneId)
-                        guard await waitUntil(timeout: 5.0,
-                                              condition: { [weak self] in self?.herdrFrameTarget == paneId })
-                        else { return false }
-                    }
-                    // The retarget task writes `release`, waits for the old
-                    // attach to let go, then names the new target. A keystroke
-                    // enqueued inside that gap lands on the bare shell (or the
-                    // reader loop) and dies — so wait the task out; the write
-                    // chain then orders our input after the attach.
-                    await herdrRetargetTask?.value
-                    guard herdrFrameTarget == paneId else { return false }
-                    writeFrameCommand(HerdrFrameCommand.input(data))
-                    return true
-                }
-                // TUI mode (mosh+herdr): keystrokes go to herdr's own client,
-                // which types into the server-side focused pane. Same recipe,
-                // different confirmation signal.
-                if herdr.snapshot.activePaneId != paneId {
-                    herdr.selectPane(paneId)
-                    guard await waitUntil(timeout: 5.0,
-                                          condition: { [weak herdr] in herdr?.snapshot.activePaneId == paneId })
-                    else { return false }
-                }
-                sendInput(data)
+            if let control = tmuxControl {
+                // Before the attach the controller drops what it is given,
+                // and a pane it doesn't know has nowhere to take it.
+                guard viewModel.connState == .live, control.snapshot.isAttached,
+                      control.snapshot.panes[paneId] != nil else { return false }
+                control.sendInput(data, paneId: paneId)
                 return true
             }
-            // Plain SSH / mosh: one shell, one place the bytes can go.
-            sendInput(data)
+            if connection.multiplexer == .herdr, herdrControl == nil, moshTransport != nil {
+                // mosh+herdr: herdr's control plane comes up over its own
+                // SSH connection a moment after mosh — the first second or
+                // two of every connect, and while it is rebuilt. A reply for
+                // a herdr pane before it (a notification's Allow sent as the
+                // phone reconnects) was answered not sent at once (B248); it
+                // waits for the control plane now, as a tmux pane's waits for
+                // the sidecar, and goes once that knows the pane. A host with
+                // no herdr has no control plane coming.
+                guard degrade?.missing != .herdr,
+                      await moshHerdrControl(knowing: paneId) != nil else { return false }
+            }
+            if let herdr = herdrControl {
+                if herdrFrameSSH != nil {
+                    // Native frame mode (SSH): focus first unless already
+                    // there, and go once that pane's attach is up.
+                    return await deliverHerdrFrameInput(data, toPane: paneId, via: herdr)
+                }
+                // mosh+herdr: keystrokes go down the mosh channel to herdr's
+                // own client, which types into the server's focused pane — or,
+                // under the raw-attach renderer, into the one terminal the loop
+                // is attached to. Either way they may leave only once that is
+                // really the pane asked for.
+                guard await focusForMoshHerdrInput(paneId, via: herdr) else {
+                    flashHerdrNotice(String(localized: "Couldn't switch to that pane — nothing was sent"))
+                    return false
+                }
+                // `sendInput` drops input on a session that isn't live, and
+                // on one already off to another pane since the focus was
+                // confirmed; say so rather than report it sent.
+                guard viewModel.connState == .live, !moshHerdrSwitching, !moshRendererDown,
+                      !moshRendererBlank else { return false }
+                return routeInput(data)
+            }
+            // A herdr connection with no herdr control plane — herdr missing
+            // on the host (a plain shell), or mosh's control plane not up
+            // within the wait above: nothing here can place one pane's
+            // input. It used to go down the one shell
+            // there is, the login shell or the loop's tty, where a reply ran
+            // as a command line or reached whichever pane attached first —
+            // said sent either way (B208's shape; crates/session refuses the
+            // same). Not sent: its sender says so.
+            if connection.multiplexer == .herdr { return false }
+            // Plain SSH / mosh: one shell, one place the bytes can go — while
+            // it is live. A plain SSH shell says whether the write went out.
+            guard viewModel.connState == .live else { return false }
+            if moshTransport == nil, herdrFrameSSH == nil, tmuxController == nil,
+               viewModel.session != nil {
+                return await viewModel.deliver(data)
+            }
+            return routeInput(data)
+        }
+
+        /// How long a tmux pane's input over mosh waits for the `-CC` sidecar
+        /// to be up and list its pane (``moshSidecar(knowing:)``), and a
+        /// herdr pane's for herdr's control plane (``moshHerdrControl(knowing:)``).
+        @ObservationIgnored var moshSidecarDeliveryWait: TimeInterval = 10
+
+        /// The mosh+tmux sidecar once it is attached and lists `paneId`; nil
+        /// when it lists its panes without this one (a pane that is gone),
+        /// or isn't there within ``moshSidecarDeliveryWait``.
+        private func moshSidecar(knowing paneId: String) async -> TmuxSessionController? {
+            var found: TmuxSessionController?
+            _ = await waitUntil(timeout: moshSidecarDeliveryWait) { [weak self] in
+                guard let self, !isStopping, moshTransport != nil else { return true }
+                guard let control = moshControl, control.snapshot.isAttached else { return false }
+                if control.snapshot.panes[paneId] != nil {
+                    found = control
+                    return true
+                }
+                return !control.snapshot.panes.isEmpty
+            }
+            return found
+        }
+
+        /// mosh+herdr's control plane once it is up and its tree lists
+        /// `paneId`; nil when its tree is read without this pane (a pane
+        /// that is gone, a server that isn't running), or when it isn't up
+        /// within ``moshSidecarDeliveryWait``.
+        private func moshHerdrControl(knowing paneId: String) async -> HerdrControlClient? {
+            var found: HerdrControlClient?
+            _ = await waitUntil(timeout: moshSidecarDeliveryWait) { [weak self] in
+                guard let self, !isStopping, moshTransport != nil,
+                      degrade?.missing != .herdr else { return true }
+                guard let control = herdrControl else { return false }
+                if control.snapshot.panes[paneId] != nil {
+                    found = control
+                    return true
+                }
+                // A tree read (a running server's, or none running) without it.
+                return control.snapshot.isAttached || control.serverNotRunning
+            }
+            return found
+        }
+
+        /// Focus `paneId` for mosh+herdr input, and wait until the server has
+        /// REALLY switched.
+        ///
+        /// `selectPane` writes the new pane into the client's snapshot the
+        /// moment it is called — that is what makes a tap feel instant — so
+        /// waiting for the snapshot to say `paneId`, the old check, passed
+        /// before the focus command had even left, and the bytes were typed
+        /// into the pane being left: a reply meant for one agent answering
+        /// another. The server is asked instead, behind the focus command on
+        /// the same lane.
+        private func focusForMoshHerdrInput(_ paneId: String, via herdr: HerdrControlClient) async -> Bool {
+            let alreadyThere = herdr.snapshot.activePaneId == paneId
+            if !alreadyThere { herdr.selectPane(paneId) }
+            var focused = await herdr.confirmedFocus(within: Self.herdrFocusBudget)
+            if focused != paneId, alreadyThere {
+                // The snapshot was older than the server — the desktop moved
+                // the focus since the last poll. Ask for the pane now. (Not
+                // up front: on a pane `agent focus` refuses, the fallback's
+                // zoom bounce would unzoom a pane the desktop has zoomed.)
+                herdr.selectPane(paneId)
+                focused = await herdr.confirmedFocus(within: Self.herdrFocusBudget)
+            }
+            guard focused == paneId else {
+                Log.input.info("herdr: \(paneId, privacy: .public) never came into focus — input not sent")
+                return false
+            }
+            guard herdrRawAttach else { return true }
+            // Raw attach: typing reaches the terminal the loop is attached
+            // to, whatever the focus. Point the loop there (a no-op when it
+            // already is) and wait for that retarget to land.
+            guard let terminalId = herdr.terminalIds[paneId] else { return false }
+            // The loop stopped on this pane — another device has it, herdr
+            // refused it, it closed — or is gone: nothing reaches it now, and
+            // a reply is no reason to take a pane back from another device
+            // (that is the person's tap on the notice).
+            switch moshRendererStop {
+            case .takenOver(terminalId), .refused(terminalId), .gone(terminalId), .loopGone:
+                Log.input.info("herdr: the renderer is down on \(paneId, privacy: .public) — input not sent")
+                return false
+            default:
+                break
+            }
+            let alreadyOnScreen = moshRawAttachApplied == terminalId && moshRawAttachTarget == terminalId
+            // The person's reply, for this pane: a pick, as a tap would be.
+            retargetMoshRawAttach(to: paneId, user: true)
+            // Until the loop has come round to it — or the switch has ended
+            // without that (the retarget came back unconfirmed, failed, or a
+            // newer pane was picked): then nothing reaches this pane now.
+            _ = await waitUntil(timeout: Self.herdrRetargetWait, condition: { [weak self] in
+                guard let self else { return true }
+                return moshRawAttachApplied == terminalId || moshRawAttachTarget != terminalId
+            })
+            guard moshRawAttachApplied == terminalId else {
+                Log.input.info("herdr: the renderer never reached \(paneId, privacy: .public) — input not sent")
+                return false
+            }
+            // The pane was on screen already, so no retarget vouched for it
+            // just now — and the loop may have ended under it since (B208):
+            // another client took the pane over, the server restarted. Then
+            // mosh shows the login shell, and the reply ran there as a
+            // command line. Asked, not re-attached: a retarget would take
+            // the pane back from whoever holds it now.
+            if alreadyOnScreen {
+                let check = await moshRawAttachStillUp(terminalId)
+                guard check.up else {
+                    Log.input.info("herdr: the renderer has left \(paneId, privacy: .public) — input not sent")
+                    if let stop = check.stop {
+                        // Parked under it before the watch said so: taken
+                        // for what it is — never by resetting the target,
+                        // which had the next poll take the pane back.
+                        moshRendererStopped(stop)
+                    } else {
+                        // As a retarget that never landed: the next report
+                        // asks again.
+                        if moshRawAttachApplied == terminalId { moshRawAttachApplied = nil }
+                        if moshRawAttachTarget == terminalId { moshRawAttachTarget = nil }
+                    }
+                    return false
+                }
+            }
             return true
+        }
+
+        /// Whether the raw-attach loop is still on `terminalId`
+        /// (`HerdrLaunch.rawAttachCheckCommand`), asked on the retarget lane
+        /// so no switch runs between the answer and what it is for.
+        /// And, when it isn't, whether the loop parked (the check reads the
+        /// stop record as the watch does).
+        private func moshRawAttachStillUp(_ terminalId: String) async -> (up: Bool, stop: HerdrLaunch.RendererStop?) {
+            guard let ssh = sidecarSSH, let rendererKey = moshRendererKey else { return (false, nil) }
+            let command = HerdrLaunch.rawAttachCheckCommand(terminalId: terminalId, rendererKey: rendererKey)
+            return await withCheckedContinuation { (continuation: CheckedContinuation<(up: Bool, stop: HerdrLaunch.RendererStop?), Never>) in
+                moshRetargetLane.enqueue {
+                    var output: Data?
+                    let finished = await WriteLane.wait(atMost: Self.moshRetargetBudget) {
+                        output = try? await ssh.executeCommand(command)
+                    }
+                    guard finished, let output else { return continuation.resume(returning: (false, nil)) }
+                    continuation.resume(returning: (HerdrLaunch.rawAttachUp(output), HerdrLaunch.rendererStop(output)))
+                }
+            }
+        }
+
+        /// How long input bound for one pane waits for the server to confirm
+        /// the focus, and then for the mosh renderer to follow it.
+        private static let herdrFocusBudget: Duration = .seconds(5)
+        private static let herdrRetargetWait: TimeInterval = 5
+
+        /// A notice for a one-off failure, cleared after a few seconds — the
+        /// mosh renderer paints nothing this session parses, so no frame would
+        /// ever take it down. Never covers a notice that is already up.
+        private func flashHerdrNotice(_ message: String) {
+            guard herdrNotice == nil else { return }
+            herdrNotice = message
+            Task { [weak self] in
+                try? await Task.sleep(for: .seconds(4))
+                guard let self, self.herdrNotice == message else { return }
+                self.herdrNotice = nil
+            }
         }
 
         /// Poll `condition` on the main actor until it holds or `timeout`
@@ -1048,8 +1756,8 @@ final class SessionHub {
             return true
         }
 
-        /// Send bytes into the mosh keystroke channel, chained through
-        /// `moshWriteChain` so independently-spawned writes — a keystroke, a
+        /// Send bytes into the mosh keystroke channel, queued on
+        /// `moshWriteLane` so independently-spawned writes — a keystroke, a
         /// wheel-forwarded scroll, a copy-mode page — can't reorder at the
         /// transport (see the property's doc comment). Every write into this
         /// channel must go through here rather than a bare
@@ -1067,9 +1775,7 @@ final class SessionHub {
                 coordinator.dropPredictions()
                 batch = nil
             }
-            let previous = moshWriteChain
-            moshWriteChain = Task { [weak self] in
-                await previous?.value
+            moshWriteLane.enqueue { [weak self] in
                 let userState = await transport.send(data)
                 if let batch { self?.coordinator.predictionSent(batch: batch, userState: userState) }
             }
@@ -1080,6 +1786,7 @@ final class SessionHub {
         /// scrollback via copy-mode over the control channel; a plain shell pages
         /// the local SwiftTerm buffer. Positive = older output, negative = newer.
         func scrollActiveTerminal(lines: Int) {
+            if let rust { rust.scroll(lines: lines); return }
             // Same gate as sendInput, with one exception: a swipe on a NOT-live
             // session must never write to the wire (mosh would queue wheel or
             // copy-mode bytes and replay them after resume — the same accident
@@ -1097,8 +1804,10 @@ final class SessionHub {
                 // decides whether a wheel becomes a mouse report (an app that
                 // grabbed the mouse — Claude Code, vim) or scrollback movement.
                 // No `#{mouse_any_flag}` lookup, no copy-mode dance, no
-                // first-swipe race to self-heal.
-                writeFrameCommand(HerdrFrameCommand.scroll(up: lines > 0, lines: abs(lines)))
+                // first-swipe race to self-heal. Only into an attach that is
+                // up: before, it scrolled the pane being left, or was lost.
+                guard herdrAttach.inputPane != nil else { return }
+                writeFrameCommand(HerdrFrameCommand.scroll(up: lines > 0, lines: Int(clamping: lines.magnitude)))
             } else if let transport = moshTransport, let control = moshControl {
                 // mosh+tmux: a mouse app (Claude Code etc.) gets a wheel forwarded
                 // over the mosh transport — tmux routes it to the app, which
@@ -1106,9 +1815,11 @@ final class SessionHub {
                 // plain shell gets copy-mode keystrokes on the mosh-rendered
                 // client (the sidecar's copy-mode doesn't repaint it).
                 if control.activePaneWantsMouse {
-                    let terminal = coordinator.terminalView?.getTerminal()
-                    let col = max(1, (terminal?.cols ?? 80) / 2)
-                    let row = max(1, (terminal?.rows ?? 24) / 2)
+                    // The centre of the grid mosh paints tmux's client on
+                    // (either view's; 80×24 only before there is one).
+                    let grid = coordinator.surface?.grid
+                    let col = max(1, (grid?.cols ?? 80) / 2)
+                    let row = max(1, (grid?.rows ?? 24) / 2)
                     // Self-heal the first-swipe race: if a tick entered copy-mode
                     // before the mouse flag refreshed, prepend `q` (consumed by
                     // copy-mode, never the app) on the SAME channel so it's
@@ -1147,6 +1858,7 @@ final class SessionHub {
         /// the one path with nothing to send — its frame protocol has no click
         /// command, so a tap there still just focuses.
         func clickActiveTerminal(col: Int, row: Int) {
+            if let rust { rust.click(col: col, row: row); return }
             if herdrFrameTarget != nil {
                 return
             } else if let transport = moshTransport, let control = moshControl {
@@ -1178,8 +1890,9 @@ final class SessionHub {
         /// position with a lowercase `m`, which is how SGR distinguishes it.
         /// Pure + nonisolated for unit testing.
         nonisolated static func clickBytes(col: Int, row: Int) -> Data {
-            // SGR coordinates are 1-based on the wire.
-            let c = max(1, col + 1), r = max(1, row + 1)
+            // SGR coordinates are 1-based on the wire; saturating, so Int.max
+            // can't trap (B149, as moshpit-tmux's `click_bytes`).
+            let c = max(1, col == .max ? col : col + 1), r = max(1, row == .max ? row : row + 1)
             return Data("\u{1b}[<0;\(c);\(r)M\u{1b}[<0;\(c);\(r)m".utf8)
         }
 
@@ -1233,7 +1946,8 @@ final class SessionHub {
         nonisolated static func wheelBytes(lines: Int, col: Int, row: Int) -> Data {
             guard lines != 0 else { return Data() }
             let button = lines > 0 ? 64 : 65
-            let count = min(abs(lines), 6)
+            // `magnitude`: `abs` traps on Int.min (B149).
+            let count = Int(min(lines.magnitude, 6))
             let c = max(1, col), r = max(1, row)
             let event = "\u{1b}[<\(button);\(c);\(r)M"
             return Data(String(repeating: event, count: count).utf8)
@@ -1279,16 +1993,15 @@ final class SessionHub {
 
         /// Single-quote a value that will be spliced into a command typed
         /// into the remote LOGIN SHELL (as opposed to tmux's own control
-        /// channel — see `TmuxSessionController.tmuxQuote` for that separate
+        /// channel — see `TmuxSessionController.tmuxNameArgument` for that separate
         /// context). Used for tmux SESSION NAMES, which can originate from
         /// the remote server or another client (created, renamed) and are
         /// not otherwise validated here — a name containing a `'` would
         /// otherwise close the surrounding quote early and let the rest of
-        /// the string execute as arbitrary shell commands. Standard POSIX
-        /// single-quote escaping: close the quote, emit an escaped literal
-        /// `'`, reopen it — `'\''`.
+        /// the string execute as arbitrary shell commands. The app's one
+        /// quoter, ``Shell/quote(_:)``.
         nonisolated static func shellQuote(_ value: String) -> String {
-            "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
+            Shell.quote(value)
         }
 
         /// Open SSH, request a PTY, then either pump bytes into the single
@@ -1302,14 +2015,20 @@ final class SessionHub {
         func start(theme: TerminalTheme, fontSize: Double, fontName: String = "system",
                    cursorShape: CursorShape = .block, cursorColorId: String = "teal",
                    cursorBlink: Bool = true, automatic: Bool = false) async {
+            if await startOnRustCoreIfChosen(theme: theme, fontSize: fontSize, fontName: fontName,
+                                             cursorShape: cursorShape, cursorColorId: cursorColorId,
+                                             cursorBlink: cursorBlink, automatic: automatic) { return }
             // Idempotent for live sessions: re-entering the Terminal screen
             // while connecting/connected must not re-run the bootstrap (the
             // mosh path would exec a second mosh-server). Dead sessions
-            // (failed / disconnected) reset and retry.
+            // (failed / disconnected) reset and retry. A session being torn
+            // down for good starts nothing: every step would stop at
+            // `isCurrent` with a connection half made.
+            guard !isStopping else { return }
             switch viewModel.status {
             case .connecting, .connected, .reconnecting:
                 return
-            case .failed, .disconnected:
+            case .failed, .disconnected, .ended:
                 viewModel.resetForReconnect()
             case .idle:
                 break
@@ -1351,7 +2070,7 @@ final class SessionHub {
             }
 
             if connection.connectionProtocol == .mosh {
-                await startMosh()
+                await startMosh(attempt: attempt)
                 return
             }
 
@@ -1363,46 +2082,52 @@ final class SessionHub {
             let grid = coordinator.lastReportedSize ?? Self.estimateGrid(fontSize: fontSize)
             let startBegan = Date()
             Log.ssh.debug("resume: start() ssh connect begin")
-            await viewModel.start(rows: grid.rows, cols: grid.cols)
+            // The PTY opens (and the session reads connected) before the
+            // multiplexer has anything to show: hold what is typed until then
+            // (B169).
+            heldInput = []
+            // What the terminal runs is decided before it opens, and is its
+            // own program — tmux's control client, herdr's frame loop — never
+            // a line typed into the login shell (B267): a shell still
+            // starting swallowed it (a startup that flushes pending input,
+            // Powerlevel10k's instant prompt), and nothing attached.
+            var decided: (caps: HostCapabilities, multiplexer: Multiplexer)?
+            await viewModel.start(rows: grid.rows, cols: grid.cols) { session in
+                let caps = await self.terminalCapabilities(over: session)
+                let multiplexer = self.multiplexerToRun(given: caps)
+                decided = (caps, multiplexer)
+                return self.terminalProgram(for: multiplexer)
+            }
+            if attempt == startGeneration, viewModel.declinedHostKey {
+                retireDeclined()
+                return
+            }
             // A redial replaced this attempt while its dial was out: the
             // session now on the view model is the replacement's, and the
-            // replacement's own `start()` is wiring it up. Not twice.
-            guard attempt == startGeneration, let session = viewModel.session else { return }
+            // replacement's own `start()` is wiring it up. Not twice. (Nor
+            // after a stop: see `isCurrent`.)
+            guard isCurrent(attempt) else { return }
+            guard let session = viewModel.session else {
+                discardHeldInput()   // the dial failed: nothing will be decided
+                return
+            }
             Log.ssh.debug("resume: ssh+pty up after \(Int(Date().timeIntervalSince(startBegan) * 1000), privacy: .public)ms")
             // Auto-reconnect the moment the transport drops on its own (server
-            // reboot, network change, NIO seeing the socket die on resume).
-            await session.setOnUnexpectedClose { [weak self] in
+            // reboot, network change, NIO seeing the socket die on resume) —
+            // and end the session when the shell it carries exits instead.
+            await session.setOnUnexpectedClose { [weak self, weak session] end in
                 Task { @MainActor [weak self] in
-                    await self?.connectionDropped(reason: "transport-closed")
+                    guard let session else { return }
+                    await self?.ptyChannelEnded(end, on: session)
                 }
             }
+            guard isCurrent(attempt) else { return }
             if let size = coordinator.lastReportedSize {
                 viewModel.resize(rows: size.rows, cols: size.cols)
             }
 
-            // Probe the host before committing to a multiplexer. A custom
-            // binary path in the form means the user vouches for it — trust it
-            // and skip the degrade check (the probe walks PATH, not custom
-            // locations). Otherwise a missing multiplexer degrades to a plain
-            // pane with a banner instead of stalling on a failing attach.
-            // Known host: decide on what we know and refresh behind the boot
-            // line. Waiting for the probe cost a full round trip on every
-            // reconnect for an answer that changes about once per host
-            // lifetime; a stale "has tmux" still fails safe (the attach
-            // doesn't confirm and the empty state offers Install/Create).
-            let caps: HostCapabilities
-            if let known = HostCapabilityCache.shared.capabilities(for: connection.id) {
-                capabilities = known
-                caps = known
-                let id = connection.id
-                Task { @MainActor [weak self] in
-                    if let fresh = await HostCapabilityCache.shared.probe(over: session, for: id) {
-                        self?.capabilities = fresh
-                    }
-                }
-            } else {
-                caps = await probeCapabilities(over: session)
-            }
+            // Decided before the terminal opened (`terminalCapabilities`).
+            guard let (caps, multiplexer) = decided else { return }
             Log.ssh.debug("resume: capabilities ready after \(Int(Date().timeIntervalSince(startBegan) * 1000), privacy: .public)ms")
             // Retention sweep for uploaded images, on the channel that's
             // already warm. Fire-and-forget and silent on failure — a host
@@ -1413,16 +2138,28 @@ final class SessionHub {
                 let sweep = Self.uploadCleanupCommand(days: retentionDays)
                 Task { _ = try? await session.executeCommand(sweep) }
             }
-            let chosen = connection.multiplexer
-            let muxDegraded = connection.multiplexerPath == nil && !caps.has(chosen)
-            if muxDegraded { degrade = DegradeNotice.forMissing(chosen) }
-            // Degraded → a plain shell, never the OTHER multiplexer.
-            let multiplexer: Multiplexer = muxDegraded ? .none : chosen
-            // No controller is coming: the plain pane paints on its own.
-            if multiplexer != .tmux { awaitingFirstFrame = false }
+            if multiplexer != connection.multiplexer {
+                degrade = DegradeNotice.forMissing(connection.multiplexer)
+            }
+            // herdr's frame loop takes this PTY over; nothing typed waits for
+            // a pane there (the pane that attaches may not be the one it was
+            // typed at — see sendInput's herdr branch).
+            if multiplexer == .herdr { discardHeldInput() }
+            // No controller is coming: the plain pane paints on its own — and
+            // a frame kept from a tmux attach before this reconnect has
+            // nothing to wait for (left up, it froze the screen, B166). What
+            // was typed meanwhile goes to the shell now, in order (B169);
+            // under tmux it waits for the attach's first frame.
+            if multiplexer != .tmux { endFirstFrameWait() }
 
             if multiplexer == .tmux {
                 let controller = TmuxSessionController(sshSession: session)
+                // "New session" with nothing attached (the last session gone,
+                // the shell back at its prompt): `-CC new` in that shell, the
+                // person's own (B228).
+                controller.createsFirstSession = { [weak self] name in
+                    self?.createFirstTmuxSession(named: name)
+                }
                 if let ledger = inheritedPinLedger {
                     controller.inheritPinLedger(ledger)
                     inheritedPinLedger = nil
@@ -1452,19 +2189,16 @@ final class SessionHub {
                 // Pump + callbacks first, but NO discovery yet — tmux isn't
                 // running. %session-changed (fired by `new -A`) triggers it.
                 await controller.beginControlMode()
-                let tmux = connection.tmuxPath ?? "tmux"
-                // Raise server history-limit before attaching so future panes
-                // retain deep scrollback (Claude Code output), then start
-                // control mode. The `set` runs in the shell, pre control-mode.
-                // Attach the user's EXISTING sessions (most recent). Moshpit
-                // never creates or modifies sessions on its own — if the
-                // server has none, the terminal shows an empty state and the
-                // user creates the first one explicitly.
-                let boot = "\(tmux) set -g history-limit 50000 2>/dev/null; \(tmux) -CC attach\r"
-                if let bytes = boot.data(using: .utf8) {
-                    try? await session.write(bytes)
-                }
-                Log.ssh.debug("resume: tmux boot written after \(Int(Date().timeIntervalSince(startBegan) * 1000), privacy: .public)ms")
+                guard isCurrent(attempt) else { return await abandon(controller, over: session) }
+                // Nothing to write: the terminal's program is tmux's control
+                // client on the user's EXISTING sessions
+                // (`tmuxControlAttachProgram`), already running — what it has
+                // printed waits in the session's stream for the controller.
+                // Moshpit never creates or modifies sessions on its own — if
+                // the server has none, the terminal shows an empty state and
+                // the user creates the first one explicitly — and it sets
+                // none of the server's options either.
+                Log.ssh.debug("resume: tmux controller up after \(Int(Date().timeIntervalSince(startBegan) * 1000), privacy: .public)ms")
                 tmuxController = controller
                 armFirstFrameWait(for: controller)
                 controlPlaneWired(controller)
@@ -1513,12 +2247,30 @@ final class SessionHub {
                 self?.retargetHerdrFrames(to: paneId)
                 self?.retargetMoshRawAttach(to: paneId)
             }
+            // The person picked the pane (ahead of the report above): what
+            // they type at it waits for its attach instead of being dropped.
+            client.onPanePicked = { [weak self] paneId in
+                self?.retargetHerdrFrames(to: paneId, user: true)
+                // mosh: a pick brings a stopped renderer back (on another
+                // device's pane, the person taking it back).
+                self?.retargetMoshRawAttach(to: paneId, user: true)
+            }
             // Version skew (protocol_mismatch) reads as a banner, not as the
             // "no server running" empty state — the server IS running, and
             // the remedy (restart/upgrade herdr on the host) is the user's,
             // offered as the banner's one-tap action.
             client.onProtocolMismatch = { [weak self] message in
                 self?.offerHerdrServerRestart(message: message)
+            }
+            // The server answers again: a skew or failed-restart banner is
+            // stale, and its Restart would stop a healthy server (B408). Over
+            // SSH the next painted frame clears it; over mosh nothing would.
+            client.onServerAnswersAgain = { [weak self] in
+                guard let self, self.moshTransport != nil,
+                      self.herdrNoticeRemedy == .restartServer else { return }
+                self.herdrNotice = nil
+                self.herdrNoticeAction = nil
+                self.herdrNoticeRemedy = nil
             }
             client.start()
             herdrControl = client
@@ -1529,30 +2281,88 @@ final class SessionHub {
         /// remedy itself — `server stop` exits pane processes, and only the
         /// user knows whether what's in them survives a restart.
         func offerHerdrServerRestart(message: String) {
+            // Already diagnosed: say it with versions, and offer the restart
+            // only when it would be an upgrade.
+            if let report = herdrControl?.versionSkew {
+                showHerdrSkew(report)
+                return
+            }
             herdrNotice = message
-            herdrNoticeAction = String(localized: "Restart herdr server")
+            // An OLDER client says so in the message itself — restarting with
+            // it would downgrade the server, so no button for that one.
+            herdrNoticeAction = HerdrSnapshot.clientIsOlder(message)
+                ? nil : String(localized: "Restart herdr server")
+            herdrNoticeRemedy = herdrNoticeAction == nil ? nil : .restartServer
+        }
+
+        /// Ask `herdr status` which side is behind, then replace `message`
+        /// with the answer — unless something else has taken the banner in
+        /// the meantime (a frame painted, a newer notice). If the versions
+        /// can't be read or agree, `message` stays up as it is.
+        func explainHerdrSkew(after message: String) {
+            guard let client = herdrControl else { return }
+            Task { [weak self] in
+                guard let report = await client.diagnoseVersionSkew(),
+                      let self, self.herdrNotice == message else { return }
+                self.showHerdrSkew(report)
+            }
+        }
+
+        /// The skew, in versions. Which side is older decides the remedy: a
+        /// stale client on PATH needs upgrading on the host (a restart would
+        /// downgrade the server), a stale server is what the restart fixes.
+        private func showHerdrSkew(_ report: HerdrVersionReport) {
+            herdrNotice = report.notice
+            herdrNoticeAction = report.clientIsOlder ? nil : String(localized: "Restart herdr server")
+            herdrNoticeRemedy = herdrNoticeAction == nil ? nil : .restartServer
         }
 
         /// The banner button's tap — restart the host's herdr server with the
         /// binary our own commands resolve to (guaranteeing the protocol we
         /// speak afterwards), then let the poller re-attach everything.
         func runHerdrNoticeAction() {
+            if let rust { rust.runHerdrNoticeAction(); return }
+            if herdrNoticeRemedy == .takeBack {
+                // "Open here" (the mosh renderer's take back, or the frame
+                // channel's): the notice goes once the pane is back.
+                herdrNoticeAction = nil
+                if herdrFrameSSH != nil {
+                    openHerdrFrameHere()
+                } else {
+                    takeBackMoshRenderer()
+                }
+                return
+            }
+            if herdrNoticeRemedy == .redial {
+                // The frame loop never said it reads: a fresh connection, and
+                // the channel's program with it (B267).
+                herdrNotice = nil
+                herdrNoticeAction = nil
+                herdrNoticeRemedy = nil
+                Task { [weak self] in await self?.connectionDropped(reason: "herdr-frame-loop-silent") }
+                return
+            }
             guard herdrNoticeAction != nil, let client = herdrControl else { return }
             herdrNoticeAction = nil
+            herdrNoticeRemedy = nil
             herdrNotice = String(localized: "Restarting herdr server…")
             Task { [weak self] in
-                let ok = await client.restartServer()
+                let outcome = await client.restartServer()
                 guard let self else { return }
-                if ok {
+                switch outcome {
+                case .restarted, .unneeded:
                     self.herdrNotice = nil
                     self.herdrRetryAfter = nil
                     // Frame target was cleared by the fault; the next focus
                     // poll re-asserts it against the fresh server.
                     client.quicken()
-                } else {
+                case .wouldDowngrade(let report):
+                    self.showHerdrSkew(report)
+                case .failed:
                     self.herdrNotice = String(
                         localized: "Restart didn't take — on the host, run: herdr server stop && herdr")
                     self.herdrNoticeAction = String(localized: "Retry")
+                    self.herdrNoticeRemedy = .restartServer
                 }
             }
         }
@@ -1574,23 +2384,29 @@ final class SessionHub {
         /// so mosh+herdr keeps running herdr's own TUI.
         private func startHerdrFrames(over session: SSHSession) {
             herdrFrameSSH = session
-            // A fresh PTY, so a fresh reader loop: whatever the previous
-            // channel had booted died with it.
-            herdrChannelBooted = false
+            // A fresh PTY whose program is a fresh reader loop: whatever the
+            // previous channel ran died with it. It says it reads, or the
+            // watch below says it never did.
+            herdrChannelBooted = true
             herdrLoopReady = false
-            herdrFramePainted = false
-            herdrExpectedCloses = 0
+            herdrAttachWaitsForLoop = false
+            herdrAttach.reset()
+            armHerdrLoopWatch()
             let coordinator = self.coordinator
 
             // Keystrokes, size and scroll all become protocol messages now.
             coordinator.onInput = { [weak self] data in self?.sendInput(data) }
             coordinator.onSizeChange = { [weak self] cols, rows in
-                self?.writeFrameCommand(HerdrFrameCommand.resize(cols: cols, rows: rows))
+                self?.resizeHerdrFrame(cols: cols, rows: rows)
             }
             coordinator.onScroll = { [weak self] lines in
                 self?.scrollActiveTerminal(lines: lines)
             }
 
+            // One reader per PTY. Anything still pumping this session's
+            // stream would split it with the parser below — chunk by chunk,
+            // whoever asks first — so it stops here.
+            pumpTask?.cancel()
             pumpTask = Task { [weak self] in
                 var parser = HerdrFrameParser()
                 for await chunk in session.dataStream {
@@ -1598,28 +2414,8 @@ final class SessionHub {
                     for frame in parser.consume(chunk) {
                         switch frame {
                         case .screen(_, _, _, let full, let bytes):
-                            // Frames are ready-to-write escape sequences, and a
-                            // `full` one already starts with its own clear +
-                            // home — so both kinds just get fed.
-                            coordinator.feed(data: bytes)
                             await MainActor.run {
-                                guard let self else { return }
-                                // Painting again means we hold the channel, so
-                                // any contention warning is stale.
-                                if self.herdrNotice != nil { self.herdrNotice = nil }
-                                if self.herdrNoticeAction != nil { self.herdrNoticeAction = nil }
-                                self.herdrFramePainted = true
-                                // A retarget's veil lifts on the first full
-                                // repaint — the frame we just fed IS the new
-                                // pane's screen, so there is nothing stale left
-                                // to hide.
-                                if full, self.herdrAwaitingFullFrame {
-                                    self.herdrAwaitingFullFrame = false
-                                    if let asked = self.herdrAttachAskedAt {
-                                        self.herdrLastSwitch = Date().timeIntervalSince(asked)
-                                    }
-                                    self.coordinator.reveal()
-                                }
+                                self?.herdrFrame(bytes, full: full)
                             }
                         case .loopReady:
                             await MainActor.run {
@@ -1627,28 +2423,51 @@ final class SessionHub {
                                 self.herdrLoopReady = true
                                 self.herdrBootFallbackTask?.cancel()
                                 self.herdrBootFallbackTask = nil
+                                if self.herdrNoticeRemedy == .redial {
+                                    self.herdrNotice = nil
+                                    self.herdrNoticeAction = nil
+                                    self.herdrNoticeRemedy = nil
+                                }
+                                // The target asked for meanwhile: one word
+                                // to the loop now.
+                                if self.herdrAttachWaitsForLoop {
+                                    self.writeHerdrAttachLine()
+                                }
                             }
-                        case .closed:
+                        case .closed(let reason):
                             await MainActor.run {
                                 guard let self else { return }
-                                if self.herdrExpectedCloses > 0 {
+                                // What the attach the close ends was asked
+                                // for with, before the ledger forgets it.
+                                let wanted = self.herdrAttach.takeover
+                                let asked = self.herdrAttach.lineTookOver
+                                switch self.herdrAttach.closed(now: .now) {
+                                case .ownRelease:
                                     // Our own release during a retarget — the
                                     // new target is already set, leave it be.
-                                    self.herdrExpectedCloses -= 1
-                                    // …and this is the moment the retarget was
-                                    // waiting for: the old attach has let go of
-                                    // stdin, so the next target can be written
-                                    // without being swallowed by it.
-                                    self.signalHerdrReleaseAck()
-                                } else {
+                                    // This is the moment the switch was
+                                    // waiting for: the old attach has let go
+                                    // of stdin, so the next target can be
+                                    // written without being swallowed by it.
+                                    self.herdrChannelFree()
+                                case .stray:
+                                    // Nothing of ours was attached.
+                                    break
+                                case .evicted(let pane):
                                     // Somebody else took the pane, or it went
                                     // away. Either way stop claiming to render
-                                    // it; the poller re-asserts the target.
-                                    self.herdrFrameTarget = nil
-                                    self.noteHerdrEviction()
-                                    // Re-attaching rides the control poll, so
-                                    // don't let it wait out an idle interval.
-                                    self.herdrControl?.quicken()
+                                    // it (the ledger has). Nothing held for it
+                                    // can reach it now.
+                                    self.settleDroppedHerdrInput(self.herdrAttach.dropHeld(), tell: true)
+                                    if HerdrFrame.isHeldElsewhere(reason) {
+                                        self.herdrPaneHeldElsewhere(pane, wanted: wanted, asked: asked)
+                                    } else {
+                                        // The pane closed (or a stale focus):
+                                        // the focused one, by itself — which
+                                        // rides the control poll, so don't let
+                                        // it wait out an idle interval.
+                                        self.herdrControl?.quicken()
+                                    }
                                     // The full frame this retarget was veiling
                                     // for is never coming — the attach is gone.
                                     // Same principle as the cover's own safety
@@ -1665,6 +2484,14 @@ final class SessionHub {
                         case .fault(let message):
                             await MainActor.run {
                                 guard let self else { return }
+                                // One line turned away, the attach alive and
+                                // still painting (B117): taken for a refusal,
+                                // the pane was dropped and every attach held
+                                // off for 30 s, typing dropped meanwhile.
+                                if HerdrFrame.isInputIgnored(message) {
+                                    Log.ssh.info("herdr: a line was turned away, the attach goes on: \(message, privacy: .public)")
+                                    return
+                                }
                                 // herdr refused the attach and said why —
                                 // version skew is the live example. Show the
                                 // words, stop claiming the pane, and back off:
@@ -1675,14 +2502,21 @@ final class SessionHub {
                                     self.offerHerdrServerRestart(message: message)
                                 } else {
                                     self.herdrNotice = message
+                                    // A hang-up mid-handshake names no
+                                    // versions; ask which side is behind.
+                                    if HerdrFrame.isHandshakeDrop(message) {
+                                        self.explainHerdrSkew(after: message)
+                                    }
                                 }
-                                self.herdrFrameTarget = nil
-                                // A refusal ends the swap too — don't leave a
-                                // retarget parked on a release that has just
-                                // been overtaken by events.
-                                self.signalHerdrReleaseAck()
+                                // A refusal ends the swap too — no pane is
+                                // named after it, whatever was waiting, and
+                                // nothing held reaches one.
+                                self.herdrAttach.refused()
+                                self.settleDroppedHerdrInput(self.herdrAttach.dropHeld(), tell: true)
+                                self.herdrReleaseAckTask?.cancel()
+                                self.herdrReleaseAckTask = nil
                                 self.herdrRetryAfter = Date()
-                                    .addingTimeInterval(Self.herdrContentionBackoff)
+                                    .addingTimeInterval(Self.herdrRefusalBackoff)
                                 if self.herdrAwaitingFullFrame {
                                     self.herdrAwaitingFullFrame = false
                                     self.coordinator.reveal()
@@ -1695,17 +2529,46 @@ final class SessionHub {
             }
         }
 
-        /// Record a channel close we didn't ask for and decide whether to keep
-        /// re-attaching. Repeated evictions mean another client wants this
-        /// exact pane, and only one of us can have it.
-        private func noteHerdrEviction() {
-            let now = Date()
-            herdrEvictions.append(now)
-            herdrEvictions.removeAll { now.timeIntervalSince($0) > Self.herdrContentionWindow }
-            guard herdrEvictions.count >= 3 else { return }
-            herdrEvictions.removeAll()
-            herdrRetryAfter = now.addingTimeInterval(Self.herdrContentionBackoff)
-            herdrNotice = String(localized: "Another client is using this pane — retrying shortly")
+        /// Another device has `pane`: it took our attach over, or held the
+        /// pane when a follow's plain attach went for it. Said, with "Open
+        /// here", and never taken back without the person — not by the poll's
+        /// next report of the focus, not by a reply. It used to be asked for
+        /// again with `--takeover` on the next poll, three times in 30 s before
+        /// a backoff and "retrying shortly", then again: two devices fought
+        /// over the pane. `wanted`/`asked`: the person picked the pane while
+        /// a follow's plain attach for it was on its way, and that attach was
+        /// refused — theirs, asked again with `--takeover`.
+        private func herdrPaneHeldElsewhere(_ pane: String, wanted: Bool, asked: Bool) {
+            if wanted, !asked {
+                retargetHerdrFrames(to: pane, user: true)
+                return
+            }
+            Log.ssh.notice("herdr: \(pane, privacy: .public) is open on another device — left to it")
+            herdrHeldElsewhere = pane
+            herdrNotice = String(localized: "This pane is open on another device")
+            herdrNoticeAction = String(localized: "Open here")
+            herdrNoticeRemedy = .takeBack
+        }
+
+        /// "Open here" on the frame channel: the pane another device has,
+        /// taken from it (`--takeover`) — or, gone meanwhile, the focused one.
+        private func openHerdrFrameHere() {
+            guard let pane = herdrHeldElsewhere else { return }
+            if herdrFramePaneClosed(pane) {
+                herdrHeldElsewhere = nil
+                herdrNotice = nil
+                herdrNoticeRemedy = nil
+                herdrControl?.quicken()
+                return
+            }
+            retargetHerdrFrames(to: pane, user: true)
+        }
+
+        /// Whether the server, running and read since, no longer has `pane`.
+        private func herdrFramePaneClosed(_ pane: String) -> Bool {
+            guard let control = herdrControl, !control.serverNotRunning,
+                  !control.snapshot.panes.isEmpty else { return false }
+            return control.snapshot.panes[pane] == nil
         }
 
         /// Point the frame channel at a different pane.
@@ -1731,27 +2594,60 @@ final class SessionHub {
         /// the repeat free, and the repeat is what recovers a channel that was
         /// evicted by another client's `--takeover` (herdr's direct attach is
         /// exclusive per terminal, so that can happen with the focus unchanged).
-        private func retargetHerdrFrames(to paneId: String) {
+        ///
+        /// One release at a time (B186): herdr answers releases written back
+        /// to back with ONE close, so a switch made while an earlier one's
+        /// release is still out writes none of its own and waits for that
+        /// same close (`HerdrAttachLedger`). A release per switch left the
+        /// count of closes we were owed one too high, and the next close
+        /// nobody asked for — a takeover, the pane closed — was taken for
+        /// it: the pane stayed "attached" with nothing reading but the loop's
+        /// `read`, the screen froze and typing went nowhere.
+        ///
+        /// `user`: the person picked the pane (`HerdrControlClient.onPanePicked`)
+        /// — what they type at it is held for its attach (`sendHerdrFrameInput`).
+        private func retargetHerdrFrames(to paneId: String, user: Bool = false) {
             if let retryAfter = herdrRetryAfter {
                 guard Date() >= retryAfter else { return }
                 herdrRetryAfter = nil
             }
             guard herdrFrameSSH != nil else { return }
-            if paneId == herdrFrameTarget {
-                // Normally free: we're already rendering it. It stops being
-                // free when the attach we asked for never painted anything —
-                // a target line the shell ate, a boot the host couldn't run —
-                // because then nothing else will ever ask again. Past the
-                // timeout, the poller's repeat IS the recovery.
-                guard !herdrFramePainted,
-                      let askedAt = herdrAttachAskedAt,
-                      Date().timeIntervalSince(askedAt) > Self.herdrAttachTimeout
-                else { return }
+            if let held = herdrHeldElsewhere {
+                // Another device has the pane: a poll never takes it back,
+                // nor moves on while the notice says so — the person settles
+                // it (a pick, "Open here"). Unless its pane is gone: then the
+                // focused one, by itself.
+                if !user, !herdrFramePaneClosed(held) { return }
+                herdrHeldElsewhere = nil
+                if herdrNoticeRemedy == .takeBack {
+                    herdrNotice = nil
+                    herdrNoticeAction = nil
+                    herdrNoticeRemedy = nil
+                }
+            }
+            // Normally free for the pane already on screen. It stops being
+            // free when the attach we asked for never painted anything — a
+            // target line the shell ate, a boot the host couldn't run —
+            // because then nothing else will ever ask again. Past the
+            // timeout, the poller's repeat IS the recovery.
+            guard herdrAttach.wantsAttach(paneId, now: .now) else {
+                // Picked while its attach is still coming up: typing at it
+                // waits for it, and the pane is theirs — taken over should a
+                // follow's plain attach for it be refused.
+                if user {
+                    herdrAttach.pick(paneId)
+                    if herdrAttach.heldPane == nil, herdrAttach.inputPane != paneId {
+                        holdHerdrInput(for: paneId, budget: Self.herdrHeldInputBudget)
+                    }
+                }
+                return
             }
             let hadTarget = herdrFrameTarget != nil
-            herdrFrameTarget = paneId
-            herdrFramePainted = false
-            herdrAttachAskedAt = Date()
+            // Input held for another pane can't reach it now.
+            if herdrAttach.heldPane != paneId {
+                settleDroppedHerdrInput(herdrAttach.dropHeld(), tell: true)
+            }
+            if user { holdHerdrInput(for: paneId, budget: Self.herdrHeldInputBudget) }
             // Cover the pane we're leaving for the length of the swap. The
             // release, the reattach and herdr's repaint are all round trips,
             // and until the last one lands the emulator still holds the
@@ -1778,50 +2674,164 @@ final class SessionHub {
                 coordinator.extendCoverTimeout(by: herdrCoverGrace())
                 herdrAwaitingFullFrame = true
             }
-            herdrRetargetTask?.cancel()
-            // The task we just cancelled may be parked on the release ack;
-            // cancellation alone never resumes a continuation.
-            signalHerdrReleaseAck()
-            herdrRetargetTask = Task { [weak self] in
-                guard let self else { return }
-                if hadTarget {
-                    herdrExpectedCloses += 1
-                    writeFrameCommand(HerdrFrameCommand.release)
-                    // Whoever reads stdin next — the reader loop or the login
-                    // shell — only gets to read it once the attach that owns
-                    // it has exited. Anything written before that is consumed
-                    // by the dying client and lost (verified: pipelining the
-                    // next target with the release drops it every time). The
-                    // close IS that moment; the timeout is only for a channel
-                    // that has stopped answering at all.
-                    await awaitHerdrReleaseAck(timeout: .milliseconds(1500))
-                    guard !Task.isCancelled else { return }
-                    if !herdrLoopReady {
-                        // The one-shot line is typed at an interactive prompt,
-                        // which is not ready the instant the client exits —
-                        // this is the settle that shape was verified with.
-                        try? await Task.sleep(for: .milliseconds(400))
-                        guard !Task.isCancelled else { return }
+            // Typing waits for the pane's attach to be up (see
+            // `sendHerdrFrameInput`) — a re-ask of the same pane included.
+            // `--takeover` only on the person's word (`user`): following the
+            // focus attaches plainly, and herdr refuses that while another
+            // client holds the terminal.
+            switch herdrAttach.retarget(to: paneId, takeover: user, now: .now) {
+            case .release:
+                // Whoever reads stdin next — the reader loop or the login
+                // shell — only gets to read it once the attach that owns it
+                // has exited. Anything written before that is consumed by the
+                // dying client and lost (verified: pipelining the next target
+                // with the release drops it every time). The close IS that
+                // moment (`herdrChannelFree`); the timeout is only for a
+                // channel that has stopped answering at all.
+                writeFrameCommand(HerdrFrameCommand.release)
+                // The ack window opens once the release is actually out, not
+                // merely queued: the lane may still be busy with an arrow
+                // key's exec, and a window that expires before the release
+                // even leaves would pipeline the target right behind it — the
+                // shape that loses the target.
+                let lane = herdrWriteLane
+                lane.enqueue { [weak self, weak lane] in
+                    guard let lane else { return }
+                    self?.armHerdrReleaseAck(on: lane)
+                }
+            case .awaitClose:
+                // A release is out already, for a switch this one overtook:
+                // its close frees the channel for this pane too.
+                break
+            case .attach:
+                writeHerdrAttachLine()
+            }
+        }
+
+        /// Start the release's wait, now that it has left the lane — unless
+        /// its close is back already, or the channel it was written to is
+        /// gone (`lane` is replaced with the channel).
+        private func armHerdrReleaseAck(on lane: WriteLane) {
+            guard lane === herdrWriteLane, herdrAttach.releasing != nil else { return }
+            herdrReleaseAckTask?.cancel()
+            herdrReleaseAckTask = Task { [weak self] in
+                try? await Task.sleep(for: Self.herdrReleaseAckTimeout)
+                guard let self, !Task.isCancelled, lane === herdrWriteLane else { return }
+                herdrReleaseAckTask = nil
+                herdrAttach.releaseAckTimedOut()
+                herdrChannelFree()
+            }
+        }
+
+        /// The attach being released has let go (its close came back), or
+        /// stopped being waited for: name the pane the switch is for.
+        private func herdrChannelFree() {
+            herdrReleaseAckTask?.cancel()
+            herdrReleaseAckTask = nil
+            guard herdrAttach.pending != nil else { return }
+            writeHerdrAttachLine()
+        }
+
+        /// Name the switch's pane: one word to the reader loop, the channel's
+        /// own program. Its attach reads whatever is written from here on.
+        /// Before the loop says it reads, the line waits for it: written
+        /// earlier it would reach the loop before its `read`, or nothing.
+        ///
+        /// Nothing here is ever typed into a login shell (B267). The loop was
+        /// a boot line typed into the channel's interactive login shell, and
+        /// where it didn't answer a one-shot `terminal session control` line
+        /// was typed after it: a shell still starting swallowed them (a
+        /// startup that flushes pending input, Powerlevel10k's instant
+        /// prompt), or chewed on them (oh-my-zsh with autosuggestions and
+        /// syntax highlighting, B266 on the core) — a blank terminal for good.
+        private func writeHerdrAttachLine() {
+            guard herdrLoopReady else {
+                herdrAttachWaitsForLoop = herdrAttach.pending != nil
+                return
+            }
+            herdrAttachWaitsForLoop = false
+            guard let paneId = herdrAttach.attachLineWritten() else { return }
+            // No parser reset needed: a truncated line from the old target
+            // fails to parse and is dropped, and the new target opens with
+            // a full repaint — so at worst one dead line is skipped.
+            let grid = coordinator.lastReportedSize ?? Self.estimateGrid(fontSize: lastFontSize)
+            herdrLineGrid = grid
+            let takeover = herdrAttach.lineTookOver
+            writeFrameCommand(HerdrFrameCommand.retarget(
+                target: paneId, cols: grid.cols, rows: grid.rows, takeover: takeover))
+            armHerdrAttachWatch()
+        }
+
+        /// Ask the server's focus again just past the attach timeout, so an
+        /// attach that never paints is asked for again then (B187).
+        private func armHerdrAttachWatch() {
+            herdrAttachWatchTask?.cancel()
+            herdrAttachWatchTask = Task { [weak self] in
+                try? await Task.sleep(for: HerdrAttachLedger.attachTimeout + .milliseconds(100))
+                guard let self, !Task.isCancelled else { return }
+                herdrAttachWatchTask = nil
+                guard herdrFrameTarget != nil, !herdrAttach.painted else { return }
+                herdrControl?.quicken()
+            }
+        }
+
+        /// A frame off the channel, given to the attach that printed it.
+        ///
+        /// Until its close comes back, the attach being released still
+        /// prints, and its frames are the pane being LEFT's: fed, they
+        /// painted that pane back into the buffer wiped for the new one, and
+        /// counted as the new pane's paint — so when its attach line was then
+        /// lost, the poll's repeated focus report never asked for it again
+        /// (it re-asks only an attach that never painted) and the pane stayed
+        /// blank until the next switch (B187). They are dropped; the pane
+        /// gets a full repaint whenever it is attached again.
+        private func herdrFrame(_ bytes: Data, full: Bool) {
+            let first: Bool
+            switch herdrAttach.frame() {
+            case .releasing:
+                return
+            case .stray:
+                // Nothing of ours asked for: painted as it comes, counted as
+                // nobody's paint.
+                coordinator.feed(data: bytes)
+                return
+            case .target(let isFirst):
+                first = isFirst
+            }
+            // Frames are ready-to-write escape sequences, and a `full` one
+            // already starts with its own clear + home — so both kinds just
+            // get fed.
+            coordinator.feed(data: bytes)
+            // Painting again means we hold the channel, so any contention
+            // warning is stale.
+            if herdrNotice != nil { herdrNotice = nil }
+            if herdrNoticeAction != nil { herdrNoticeAction = nil }
+            herdrNoticeRemedy = nil
+            if first {
+                herdrAttachWatchTask?.cancel()
+                herdrAttachWatchTask = nil
+                // The attach is up and reading: input can go — its size first,
+                // if it moved since its line, then what was held for it.
+                if let paneId = herdrAttach.inputPane {
+                    if let size = coordinator.lastReportedSize, let line = herdrLineGrid,
+                       size.cols != line.cols || size.rows != line.rows {
+                        herdrLineGrid = size
+                        writeFrameCommand(HerdrFrameCommand.resize(cols: size.cols, rows: size.rows))
                     }
+                    flushHeldHerdrInput(to: paneId)
                 }
-                // No parser reset needed: a truncated line from the old target
-                // fails to parse and is dropped, and the new target opens with
-                // a full repaint — so at worst one dead line is skipped.
-                let grid = coordinator.lastReportedSize ?? Self.estimateGrid(fontSize: lastFontSize)
-                if herdrLoopReady {
-                    writeFrameCommand(HerdrFrameCommand.retarget(
-                        target: paneId, cols: grid.cols, rows: grid.rows))
-                } else if !herdrChannelBooted {
-                    herdrChannelBooted = true
-                    writeFrameCommand(HerdrFrameCommand.boot(
-                        target: paneId, cols: grid.cols, rows: grid.rows,
-                        customPath: connection.herdrPath))
-                    armHerdrBootFallback()
-                } else {
-                    writeFrameCommand(HerdrFrameCommand.start(
-                        target: paneId, cols: grid.cols, rows: grid.rows,
-                        customPath: connection.herdrPath))
+            }
+            // A retarget's veil lifts on the first full repaint — the frame
+            // we just fed IS the new pane's screen, so there is nothing stale
+            // left to hide once it is drawn (the core's view draws it a hop
+            // later: the reveal follows the frame's bytes).
+            if full, herdrAwaitingFullFrame {
+                herdrAwaitingFullFrame = false
+                if let asked = herdrAttach.askedAt {
+                    let cost = (ContinuousClock.now - asked).components
+                    herdrLastSwitch = Double(cost.seconds) + Double(cost.attoseconds) / 1e18
                 }
+                coordinator.revealWhenShown()
             }
         }
 
@@ -1836,57 +2846,41 @@ final class SessionHub {
             min(max(0.8, herdrLastSwitch * 2 + 0.4), 6.0)
         }
 
-        /// Wait for the release we just wrote to come back as
-        /// `terminal.closed`. Returns immediately if there is nothing to wait
-        /// for, and gives up after `timeout` so a wedged channel can't park a
-        /// switch forever.
-        private func awaitHerdrReleaseAck(timeout: Duration) async {
-            guard herdrExpectedCloses > 0 else { return }
-            let deadline = Task { [weak self] in
-                try? await Task.sleep(for: timeout)
-                guard !Task.isCancelled else { return }
-                self?.signalHerdrReleaseAck()
-            }
-            defer { deadline.cancel() }
-            await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-                herdrReleaseAck = continuation
-            }
-        }
-
-        /// Wake whatever switch is waiting on the release ack. Idempotent, and
-        /// safe to call from every path that ends a swap — a continuation that
-        /// is never resumed hangs its task for good.
-        private func signalHerdrReleaseAck() {
-            herdrReleaseAck?.resume()
-            herdrReleaseAck = nil
-        }
-
-        /// Boot wrote the reader loop; if neither its marker nor a frame shows
-        /// up, this host's login shell couldn't take that shape. Fall back to
-        /// the one-shot start line — the channel then behaves exactly as it
-        /// did before the loop existed, switches just cost a prompt again.
-        private func armHerdrBootFallback() {
+        /// The channel's program is the reader loop; if it never says it
+        /// reads, nothing on the channel will ever paint. Said — "Not
+        /// attached to the pane yet", with a Retry that redials for a fresh
+        /// connection and loop — never a silent blank terminal, and never a
+        /// line typed anywhere (the one-shot fallback this replaced typed
+        /// into a login shell that may still have been starting, B267).
+        private func armHerdrLoopWatch() {
             herdrBootFallbackTask?.cancel()
             herdrBootFallbackTask = Task { [weak self] in
                 try? await Task.sleep(for: Self.herdrLoopProbe)
-                guard let self, !Task.isCancelled,
-                      !herdrLoopReady, !herdrFramePainted,
-                      let target = herdrFrameTarget else { return }
-                Log.ssh.error("herdr retarget loop never answered — one-shot attach")
-                let grid = coordinator.lastReportedSize ?? Self.estimateGrid(fontSize: lastFontSize)
-                writeFrameCommand(HerdrFrameCommand.start(
-                    target: target, cols: grid.cols, rows: grid.rows,
-                    customPath: connection.herdrPath))
+                guard let self, !Task.isCancelled, herdrFrameSSH != nil,
+                      !herdrLoopReady, !herdrAttach.painted else { return }
+                herdrBootFallbackTask = nil
+                Log.ssh.error("herdr: the frame loop never said it reads")
+                herdrNotice = String(localized: "Not attached to the pane yet — input wasn't sent")
+                herdrNoticeAction = String(localized: "Retry")
+                herdrNoticeRemedy = .redial
             }
         }
 
-        /// Write one protocol line into the frame channel, chained so writes
-        /// can't reorder (see `herdrWriteChain`).
+        /// The terminal's grid moved: tell the attach that is up. Before it is
+        /// up, a resize reaches the pane being left, the loop's `read`, or an
+        /// attach that drops it; the attach line carries the grid of its
+        /// moment, and a grid that moved after it follows its first frame.
+        private func resizeHerdrFrame(cols: Int, rows: Int) {
+            guard herdrAttach.inputPane != nil else { return }
+            herdrLineGrid = (cols, rows)
+            writeFrameCommand(HerdrFrameCommand.resize(cols: cols, rows: rows))
+        }
+
+        /// Write one protocol line into the frame channel, queued so writes
+        /// can't reorder (see `herdrWriteLane`).
         private func writeFrameCommand(_ line: String) {
             guard let ssh = herdrFrameSSH else { return }
-            let previous = herdrWriteChain
-            herdrWriteChain = Task {
-                await previous?.value
+            herdrWriteLane.enqueue {
                 try? await ssh.write(Data((line + "\n").utf8))
             }
         }
@@ -1928,14 +2922,86 @@ final class SessionHub {
         /// takeover-recovery pattern), so this compares against the last
         /// target it wrote and only pays the exec — and the reattach flicker —
         /// on a real change.
-        func retargetMoshRawAttach(to paneId: String) {
-            guard herdrRawAttach, moshTransport != nil,
-                  let rendererKey = moshRendererKey else { return }
-            guard let terminalId = herdrControl?.terminalIds[paneId],
-                  terminalId != moshRawAttachTarget else { return }
+        ///
+        /// `user`: the person picked the pane (a tap, a reply for it). While
+        /// the loop is down only that brings it back: a focus report never
+        /// takes a pane back from the device that took it over, nor retries
+        /// what herdr refused — and the one the poll repeats for a pane that
+        /// just closed is old news. A pick of the very pane another device
+        /// took is the person taking it back.
+        ///
+        /// `takeover` (the person's pick unless said otherwise): the attach
+        /// takes the pane from whichever client holds it. Following the focus
+        /// — the poll's report, the focused pane after a close or a restart,
+        /// the loop booted again — never does: it used to (the loop always
+        /// ran `--takeover`), and a second device lost its pane whenever this
+        /// one followed the focus onto it. A follow that finds the pane held
+        /// is said as a takeover is ("This pane is open on another device",
+        /// "Open here").
+        func retargetMoshRawAttach(to paneId: String, user: Bool = false, takeover: Bool? = nil) {
+            guard herdrRawAttach, moshTransport != nil, moshRendererKey != nil else { return }
+            guard let terminalId = herdrControl?.terminalIds[paneId] else { return }
+            let takeover = takeover ?? user
+            var again = false
+            switch moshRendererStop {
+            case .takenOver(let stopped), .refused(let stopped):
+                // Not a `where` on the case: with two patterns it guards the
+                // last one only, and every report of a pane another device
+                // had taken went down this branch — the stop read as gone,
+                // its notice cleared, the next report of another pane
+                // attached there, and the person's take back did nothing.
+                if !user, moshRendererPaneClosed(stopped) {
+                    // Its pane closed since another device took it (or
+                    // herdr refused it): gone, and the focused pane next,
+                    // by itself.
+                    moshRendererStop = .gone(stopped)
+                    if moshRawAttachTarget == stopped { moshRawAttachTarget = nil }
+                    if herdrNoticeRemedy == .takeBack {
+                        herdrNotice = nil
+                        herdrNoticeAction = nil
+                        herdrNoticeRemedy = nil
+                    }
+                    if terminalId == stopped { return }
+                } else {
+                    guard user else { return }
+                    again = stopped == terminalId
+                }
+            case .loopGone:
+                // Nothing to point: the loop comes back on the person's tap.
+                return
+            case .gone(let closed):
+                if !user, closed == terminalId { return }
+            case nil:
+                break
+            }
+            if !user, terminalId == moshRendererMissingTerminal { return }
+            if again {
+                // The same pane, wanted again: not "already showing it".
+                moshRawAttachTarget = nil
+                moshRawAttachApplied = nil
+            }
+            if terminalId == moshRawAttachTarget {
+                // The person chose the pane a follow is on its way to: theirs
+                // now — asked again with `--takeover` unless the follow has it
+                // on screen already (that step finds nothing to do then).
+                if takeover, !moshRawAttachTakeover {
+                    moshRawAttachTakeover = true
+                    if moshRawAttachApplied != terminalId, sidecarSSH != nil {
+                        moshRetargetLane.enqueue { [weak self] in await self?.applyMoshRawAttachTarget() }
+                    }
+                }
+                return
+            }
+            // Nothing can point the loop anywhere without the sidecar, so
+            // nothing is recorded: a target with no exec behind it would read
+            // as a switch under way (`moshHerdrSwitching`) for good — typing
+            // dropped — and as already asked for by the poll's next report.
+            guard sidecarSSH != nil else { return }
             let hadTarget = moshRawAttachTarget != nil
+            // From here until the exec below has landed, typing is dropped
+            // rather than sent into the pane being left (`moshHerdrSwitching`).
             moshRawAttachTarget = terminalId
-            guard let ssh = sidecarSSH else { return }
+            moshRawAttachTakeover = takeover
             // Cover the pane we're leaving, same reason the SSH frame channel
             // does — the exec channel, the kill, the re-attach and the repaint
             // are all round trips, and until the last one lands the screen is
@@ -1951,9 +3017,336 @@ final class SessionHub {
                 coordinator.veilForSwitch()
                 beginMoshSwitchCover()
             }
-            let command = HerdrLaunch.retargetCommand(
-                terminalId: terminalId, rendererKey: rendererKey)
-            Task { _ = try? await ssh.executeCommand(command) }
+            // One exec at a time, and the one that runs points the loop at
+            // whatever is wanted WHEN ITS TURN COMES. These used to be a Task
+            // each: two quick switches were two execs racing, and when the
+            // first landed second the loop stayed on the older pane while the
+            // guard above believed the newer one was up — so the poll's
+            // repeat of the focus could never correct it.
+            moshRetargetLane.enqueue { [weak self] in await self?.applyMoshRawAttachTarget() }
+        }
+
+        /// Point the loop at `moshRawAttachTarget` — the newest target asked
+        /// for, not the one current when this step was queued — unless an
+        /// exec already did.
+        private func applyMoshRawAttachTarget() async {
+            guard let terminalId = moshRawAttachTarget, terminalId != moshRawAttachApplied else { return }
+            if let ssh = sidecarSSH, let rendererKey = moshRendererKey, moshRendererBootedKey != rendererKey {
+                // The loop is confirmed before it is first given a target —
+                // a target published for a loop that hasn't started would be
+                // taken up the moment it does, before a copy of its line
+                // typed since has reached the tty for its first read to take
+                // away.
+                guard await confirmMoshRendererBoot(key: rendererKey, over: ssh) else {
+                    guard moshRendererKey == rendererKey else { return }
+                    // Never started: the switch waiting on it is over, and the
+                    // loop is said gone — booted again on the person's word.
+                    moshRawAttachTarget = nil
+                    moshRawAttachApplied = nil
+                    endMoshSwitchCover()
+                    moshRendererStopped(.loopGone)
+                    return
+                }
+                // Asked for meanwhile: the newest target, as ever.
+                await applyMoshRawAttachTarget()
+                return
+            }
+            guard let ssh = sidecarSSH, let rendererKey = moshRendererKey else {
+                // The sidecar went (a rebuild under way) after this was
+                // queued. Forget the target, as a failed exec does, so the
+                // poll's next report asks again — and the switch ends here
+                // rather than holding typing for an exec that never runs.
+                moshRawAttachTarget = nil
+                return
+            }
+            let command = HerdrLaunch.retargetCommand(terminalId: terminalId, rendererKey: rendererKey,
+                                                      customPath: connection.herdrPath,
+                                                      takeover: moshRawAttachTakeover)
+            let deadline = ContinuousClock.now + Self.moshRetargetBudget
+            var landed = false
+            var output: Data?
+            let finished = await WriteLane.wait(atMost: Self.moshRetargetBudget) { [weak self] in
+                // Landed on the host's word that the loop came round to the
+                // target, never on the exec merely coming back (B208): the
+                // write and the kill succeed just the same when the loop is
+                // gone — evicted by another client's takeover, its pane
+                // closed — and mosh then shows a bare login shell, where a
+                // reply "sent to the pane" ran as a command line.
+                output = try? await ssh.executeCommand(command)
+                landed = output.map(HerdrLaunch.retargetLanded) ?? false
+                // Landed after the lane gave up on it: a newer switch may have
+                // run in the meantime, and this one just wrote over it. Point
+                // the loop at whatever is wanted now, once more.
+                guard landed, ContinuousClock.now >= deadline, let self else { return }
+                moshRawAttachApplied = nil
+                moshRetargetLane.enqueue { [weak self] in await self?.applyMoshRawAttachTarget() }
+            }
+            if finished, landed {
+                moshRawAttachApplied = terminalId
+                // The veil's switch landed — unless a newer one is queued,
+                // whose landing is the one that counts.
+                if moshRawAttachTarget == terminalId { moshSwitchCover?.landed(at: Date()) }
+                moshRendererLanded()
+                return
+            }
+            if finished, let output, HerdrLaunch.retargetMissing(output) {
+                moshRendererMissing(terminalId)
+                return
+            }
+            if finished, let output, let stop = HerdrLaunch.rendererStop(output), case .parked = stop {
+                // A follow's plain attach that herdr refused — another
+                // client holds the pane — and the loop parked on it: said as
+                // the watch says a takeover, taken by nobody but the person.
+                // (Unless the person picked it meanwhile: their step is
+                // queued behind this one, with `--takeover`.)
+                moshRendererStopped(stop)
+                return
+            }
+            // Failed, or still out: what the loop shows is unknown. Unless a
+            // newer target is already queued, forget this one too, so the
+            // poll's next report of the same focus asks again rather than
+            // being taken for the screen that is up.
+            moshRawAttachApplied = nil
+            if moshRawAttachTarget == terminalId {
+                moshRawAttachTarget = nil
+                // The switch is over without a pane to show: no repaint is
+                // coming to lift the veil.
+                endMoshSwitchCover()
+            }
+            // No loop came round because there is none: said, and brought
+            // back on the person's tap.
+            if finished, let output, HerdrLaunch.rendererStop(output) == .loopGone {
+                moshRendererStopped(.loopGone)
+            }
+        }
+
+        /// Whether the loop of generation `key` runs, asked over the sidecar;
+        /// its start line typed again while it doesn't — ^U first, as the
+        /// mosh+tmux attach line is (kill-line clears a half-swallowed line) —
+        /// at most ``moshRendererBootLines`` copies in all. A login shell still
+        /// starting can swallow a line typed into it (Powerlevel10k's instant
+        /// prompt flushes pending input; a startup file reads stdin), and the
+        /// loop never started: the first switch said the loop was gone after
+        /// 2 s and only the person's Retry typed the line again. Each copy is
+        /// acknowledged by mosh-server before the loop is asked about again,
+        /// and no target is published before the loop is seen running: a copy
+        /// that came behind a loop that did start is then in the tty when the
+        /// loop's first attach reads the tty away (B170's hazard for the tmux
+        /// attach line).
+        private func confirmMoshRendererBoot(key: String, over ssh: SSHSession) async -> Bool {
+            let check = HerdrLaunch.rawAttachLoopUpCommand(rendererKey: key)
+            for copy in 1...Self.moshRendererBootLines {
+                if copy > 1 {
+                    guard let transport = moshTransport, moshRendererKey == key else { return false }
+                    Log.ssh.notice("herdr: the mosh renderer's start line went unanswered — typed again (\(copy, privacy: .public))")
+                    let line = "\u{15}" + HerdrLaunch.rawAttachLoopCommand(rendererKey: key,
+                                                                          customPath: connection.herdrPath) + "\r"
+                    moshWriteLane.enqueue { _ = await transport.send(Data(line.utf8)) }
+                    await moshWriteLane.drain()
+                    _ = await withTimeoutValue(moshRendererRetypeAckWait) { await transport.waitUntilDelivered() }
+                }
+                let output = await withTimeoutValue(5) { try await ssh.executeCommand(check) }
+                guard moshRendererKey == key, !isStopping else { return false }
+                if let output, HerdrLaunch.loopUp(output) {
+                    moshRendererBootedKey = key
+                    return true
+                }
+            }
+            Log.ssh.notice("herdr: the mosh renderer's start line never started its loop")
+            return false
+        }
+
+        /// The server no longer lists `terminalId` — its pane closed since the
+        /// app's last read, a reply's agent is gone. The retarget refused it
+        /// before touching the loop, so what was on screen still is: the
+        /// switch is over, its veil comes down, the tree is read again, and
+        /// the poll's stale report of the closed pane isn't followed. (It used
+        /// to count as landed the moment the next attach had its pid, ~350 ms
+        /// before herdr refused that attach: typing for the pane went to an
+        /// attach on its way out, and the renderer was down.)
+        private func moshRendererMissing(_ terminalId: String) {
+            Log.ssh.notice("herdr: \(terminalId, privacy: .public) is gone — the mosh renderer stays where it was")
+            moshRendererMissingTerminal = terminalId
+            if moshRawAttachTarget == terminalId { moshRawAttachTarget = moshRawAttachApplied }
+            endMoshSwitchCover()
+            herdrControl?.quicken()
+        }
+
+        /// Takes the switch veil down now: no switch is coming to paint under it.
+        private func endMoshSwitchCover() {
+            guard moshSwitchCoverTask != nil else { return }
+            moshSwitchCoverTask?.cancel()
+            moshSwitchCoverTask = nil
+            moshSwitchCover = nil
+            coordinator.reveal()
+        }
+
+        /// The loop came round to the pane asked for: whatever stopped it is
+        /// over, and the watch goes on the attach it is on now.
+        private func moshRendererLanded() {
+            moshRendererEpoch &+= 1
+            moshRendererStop = nil
+            if herdrNoticeRemedy == .takeBack {
+                herdrNotice = nil
+                herdrNoticeAction = nil
+                herdrNoticeRemedy = nil
+            }
+            armMoshRendererWatch()
+        }
+
+        /// Watch the loop on the attach of the latest landing
+        /// (`HerdrLaunch.rawAttachWatchCommand`) until it stops showing it:
+        /// another device took the pane, the pane closed, herdr stopped. One
+        /// exec at a time, each a minute at most; whatever the sidecar is
+        /// now (a rebuild replaces it). A watch armed for an earlier landing
+        /// says nothing.
+        private func armMoshRendererWatch() {
+            moshRendererWatchTask?.cancel()
+            guard herdrRawAttach, let rendererKey = moshRendererKey else { return }
+            let epoch = moshRendererEpoch
+            let command = HerdrLaunch.rawAttachWatchCommand(rendererKey: rendererKey)
+            moshRendererWatchTask = Task { [weak self] in
+                var failures = 0
+                while !Task.isCancelled {
+                    guard let self, moshRendererEpoch == epoch else { return }
+                    guard let ssh = sidecarSSH else {
+                        try? await Task.sleep(for: .seconds(1))
+                        continue
+                    }
+                    let output = try? await ssh.executeCommand(command)
+                    guard !Task.isCancelled, moshRendererEpoch == epoch else { return }
+                    guard let output else {
+                        // The sidecar is in trouble; its rebuild comes with
+                        // the keepalive. Look again in a while.
+                        failures += 1
+                        try? await Task.sleep(for: .seconds(min(2 * failures, 10)))
+                        continue
+                    }
+                    failures = 0
+                    if let stop = HerdrLaunch.rendererStop(output) {
+                        moshRendererStopped(stop)
+                        return
+                    }
+                    // A minute with nothing to say, or a switch moved the
+                    // loop on (its landing arms the next watch): again.
+                }
+            }
+        }
+
+        /// The loop stopped showing its pane. Typing is dropped from now on
+        /// (`moshRendererDown`), and who brings it back depends on why:
+        /// another device took the pane → said, with a take back for the
+        /// person; the pane closed or herdr stopped or restarted → the focused
+        /// pane, by itself; anything else herdr refused, or the loop gone →
+        /// said, retried on the person's tap.
+        private func moshRendererStopped(_ stop: HerdrLaunch.RendererStop) {
+            guard herdrRawAttach, moshTransport != nil else { return }
+            moshRendererWatchTask?.cancel()
+            moshRendererWatchTask = nil
+            // Nothing is coming to paint under a veil that is up.
+            endMoshSwitchCover()
+            switch stop {
+            case .loopGone:
+                Log.ssh.notice("herdr: the mosh renderer's loop is gone")
+                moshRawAttachApplied = nil
+                moshRendererStop = .loopGone
+                sayMoshRendererDown(String(localized: "Not attached to the pane yet — input wasn't sent"),
+                                    action: String(localized: "Retry"))
+            case .parked(let status, let terminal, let said):
+                let listed = herdrControl?.terminalIds.values.contains(terminal) ?? false
+                let serverUp = herdrControl.map { !$0.serverNotRunning } ?? false
+                let kind = HerdrLaunch.rendererStopKind(status: status, said: said,
+                                                        terminalListed: listed, serverUp: serverUp)
+                Log.ssh.notice("herdr: the mosh renderer stopped (\(status, privacy: .public)): \(said, privacy: .public)")
+                if moshRawAttachApplied == terminal { moshRawAttachApplied = nil }
+                switch kind {
+                case .takenOver:
+                    moshRendererStop = .takenOver(terminal)
+                    sayMoshRendererDown(String(localized: "This pane is open on another device"),
+                                        action: String(localized: "Open here"))
+                case .refused:
+                    moshRendererStop = .refused(terminal)
+                    sayMoshRendererDown(said.isEmpty
+                                        ? String(localized: "Not attached to the pane yet — input wasn't sent")
+                                        : said,
+                                        action: String(localized: "Retry"))
+                case .gone:
+                    moshRendererStop = .gone(terminal)
+                    if moshRawAttachTarget == terminal { moshRawAttachTarget = nil }
+                    // Whatever said the other two is stale now.
+                    if herdrNoticeRemedy == .takeBack {
+                        herdrNotice = nil
+                        herdrNoticeAction = nil
+                        herdrNoticeRemedy = nil
+                    }
+                    // The focused pane, by itself — not this one again: a
+                    // poll's report of it predates its closing.
+                    if let pane = herdrControl?.snapshot.activePaneId {
+                        retargetMoshRawAttach(to: pane)
+                    }
+                    herdrControl?.quicken()
+                }
+            }
+        }
+
+        private func sayMoshRendererDown(_ notice: String, action: String) {
+            herdrNotice = notice
+            herdrNoticeAction = action
+            herdrNoticeRemedy = .takeBack
+        }
+
+        /// Whether the server, up and read since, no longer lists `terminal`.
+        private func moshRendererPaneClosed(_ terminal: String) -> Bool {
+            guard let control = herdrControl, !control.serverNotRunning,
+                  !control.terminalIds.isEmpty else { return false }
+            return !control.terminalIds.values.contains(terminal)
+        }
+
+        /// The notice's take back: the pane the loop stopped on, taken over
+        /// from whoever has it (`--takeover`), or the loop booted again.
+        private func takeBackMoshRenderer() {
+            switch moshRendererStop {
+            case .takenOver(let terminal), .refused(let terminal):
+                guard let pane = herdrControl?.terminalIds.first(where: { $0.value == terminal })?.key else {
+                    // Its pane is gone meanwhile: the focused one.
+                    moshRendererStop = .gone(terminal)
+                    if let pane = herdrControl?.snapshot.activePaneId { retargetMoshRawAttach(to: pane) }
+                    herdrControl?.quicken()
+                    return
+                }
+                retargetMoshRawAttach(to: pane, user: true)
+            case .loopGone:
+                rebootMoshRenderer()
+            case .gone, nil:
+                break
+            }
+        }
+
+        /// The loop is gone and the login shell has the tty: boot a new one
+        /// (a new generation, as at connect), then point it at the focused
+        /// pane. A leading ^U clears whatever half a line the shell holds.
+        private func rebootMoshRenderer() {
+            guard herdrRawAttach, let transport = moshTransport else { return }
+            // A loop that never started keeps its generation: a copy of its
+            // line still waiting in a slow shell runs the same one, never a
+            // loop nobody steers in front of the new one.
+            var key = moshRendererKey ?? ""
+            if key.isEmpty || moshRendererBootedKey == key {
+                key = HerdrLaunch.moshRendererKey(connectionId: connection.id,
+                                                  nonce: String(UUID().uuidString.prefix(8)))
+            }
+            moshRendererKey = key
+            moshRendererStop = nil
+            moshRawAttachTarget = nil
+            moshRawAttachApplied = nil
+            moshRetargetLane = WriteLane()
+            let boot = "\u{15}" + HerdrLaunch.rawAttachLoopCommand(rendererKey: key, customPath: connection.herdrPath) + "\r"
+            moshWriteLane.enqueue { _ = await transport.send(Data(boot.utf8)) }
+            // The focused pane, on the person's word but not their pick of
+            // it: a plain attach — held by another device, it says so.
+            if let pane = herdrControl?.snapshot.activePaneId {
+                retargetMoshRawAttach(to: pane, user: true, takeover: false)
+            }
         }
 
         /// Hold the switch veil until the new pane has finished painting.
@@ -1964,21 +3357,24 @@ final class SessionHub {
         /// lifts once those bytes stop arriving. Capped, because a pane that
         /// paints nothing at all (a dead shell, a lost attach) must not leave
         /// a rectangle sitting over the session.
+        ///
+        /// Only bytes from the switch's landing on count (`MoshSwitchCover`):
+        /// the first to come after the kill used to be the loop's own "Killed:
+        /// 9" or the pane being left, and the veil lifted on the previous
+        /// pane before herdr had repainted.
         private func beginMoshSwitchCover() {
-            moshSwitchLastPaint = nil
+            moshSwitchCover = MoshSwitchCover(since: Date())
             moshSwitchCoverTask?.cancel()
-            coordinator.extendCoverTimeout(by: Self.moshSwitchCoverCap)
+            coordinator.extendCoverTimeout(by: MoshSwitchCover.cap)
             moshSwitchCoverTask = Task { [weak self] in
-                let deadline = Date().addingTimeInterval(Self.moshSwitchCoverCap)
-                while !Task.isCancelled, Date() < deadline {
+                while !Task.isCancelled {
                     try? await Task.sleep(for: .milliseconds(60))
                     guard let self, !Task.isCancelled else { return }
-                    guard let last = moshSwitchLastPaint else { continue }
-                    if Date().timeIntervalSince(last) >= Self.moshSwitchQuiet { break }
+                    if moshSwitchCover?.lifts(at: Date()) ?? true { break }
                 }
                 guard let self, !Task.isCancelled else { return }
                 moshSwitchCoverTask = nil
-                moshSwitchLastPaint = nil
+                moshSwitchCover = nil
                 coordinator.reveal()
             }
         }
@@ -1987,7 +3383,7 @@ final class SessionHub {
         /// up — the "still painting" heartbeat `beginMoshSwitchCover` waits on.
         private func noteMoshPaint() {
             guard moshSwitchCoverTask != nil else { return }
-            moshSwitchLastPaint = Date()
+            moshSwitchCover?.painted(at: Date())
         }
 
         /// Try to upgrade the herdr control plane from polling to push.
@@ -2009,22 +3405,36 @@ final class SessionHub {
             // The pump needs a PTY: Citadel's exec channels have no writable
             // stdin (re-verified on 0.12.1 — `ExecCommandStream` is
             // stdout/stderr only), and the PTY + `stty raw -echo` shape is
-            // the one the frame channel already proved out.
-            try? await ssh.requestPTY(rows: 24, cols: 80)
+            // the one the frame channel already proved out. The pump is the
+            // PTY's program, never a line typed into its login shell (B267).
+            do {
+                try await ssh.requestPTY(rows: 24, cols: 80, command: HerdrPushBoot.bootLine())
+            } catch {
+                Log.ssh.notice("push: the pump's channel didn't open — staying on the poll")
+                await ssh.close()
+                return
+            }
             let driver = HerdrPushDriver(
                 write: { data in try await ssh.write(data) },
                 onInvalidate: { [weak self] in self?.herdrControl?.quicken() })
+            driver.onEnded = { [weak self, weak driver] in
+                guard let self, let driver else { return }
+                herdrPushEnded(driver)
+            }
             herdrPushSSH = ssh
             herdrPushPump = Task { [weak driver] in
                 for await chunk in ssh.dataStream {
                     if Task.isCancelled { break }
                     await driver?.feed(chunk)
                 }
-                // Transport gone (drop, teardown): the driver goes inactive;
-                // the poller underneath never stopped.
-                await driver?.shutdown()
+                // Teardown cancels this and shuts the driver down itself.
+                // Otherwise the transport is gone — a drop, or the pump
+                // exiting when the herdr server restarts — and the driver
+                // says whether push was up (`herdrPushEnded`). The poller
+                // underneath never stopped.
+                guard !Task.isCancelled else { return }
+                await driver?.transportEnded()
             }
-            try? await ssh.write(Data((HerdrPushBoot.bootLine() + "\r").utf8))
             if await driver.activate() {
                 Log.ssh.notice("push: active — herdr events over a persistent channel")
                 herdrPush = driver
@@ -2041,6 +3451,35 @@ final class SessionHub {
             }
         }
 
+        /// Push that was up ended on its own (B188) — a herdr server restart
+        /// closes the socket under the pump, and the pump exits. The poll had
+        /// eased to its 45 s safety net with no events coming, and push was
+        /// never tried again: agent states and the tree lagged by up to 45 s
+        /// for the rest of the session. The poll takes over at its fast
+        /// cadence and reads now; push gets one more try a little later (a
+        /// try that doesn't come up stays on the poll, as at connect).
+        private func herdrPushEnded(_ driver: HerdrPushDriver) {
+            guard herdrPush === driver else { return }
+            Log.ssh.notice("push: ended — back on the poll")
+            herdrPush = nil
+            herdrPushPump = nil
+            herdrPushTask = nil
+            if let ssh = herdrPushSSH {
+                herdrPushSSH = nil
+                Task { await ssh.close() }
+            }
+            herdrControl?.pushActive = false
+            herdrControl?.quicken()
+            herdrPushRetryTask?.cancel()
+            let delay = herdrPushRetryDelay
+            herdrPushRetryTask = Task { [weak self] in
+                try? await Task.sleep(for: delay)
+                guard let self, !Task.isCancelled, !isStopping else { return }
+                herdrPushRetryTask = nil
+                startHerdrPushUpgrade()
+            }
+        }
+
         /// Probe (or read cached) host capabilities and publish them on the
         /// session. Uses any cached value immediately for a fast first paint,
         /// then re-probes in the foreground so a freshly-installed tool is
@@ -2049,7 +3488,7 @@ final class SessionHub {
         /// session) so a transient hiccup never degrades a healthy host — and
         /// never *upgrades* a known-degraded one back to "all present".
         @discardableResult
-        func probeCapabilities(over ssh: SSHSession) async -> HostCapabilities {
+        func probeCapabilities(over ssh: any HostConnection) async -> HostCapabilities {
             let cache = HostCapabilityCache.shared
             if let cached = cache.capabilities(for: connection.id) {
                 capabilities = cached
@@ -2065,12 +3504,64 @@ final class SessionHub {
             return capabilities ?? .unknown
         }
 
+        /// What the host has, for deciding the SSH terminal's program before
+        /// the terminal opens. A known host decides on what we know and
+        /// refreshes behind it: waiting for the probe cost a full round trip
+        /// on every reconnect for an answer that changes about once per host
+        /// lifetime, and a stale "has tmux" still fails safe (the attach
+        /// doesn't confirm and the empty state offers Install/Create). A
+        /// first connect waits for the probe.
+        private func terminalCapabilities(over session: SSHSession) async -> HostCapabilities {
+            if let known = HostCapabilityCache.shared.capabilities(for: connection.id) {
+                capabilities = known
+                let id = connection.id
+                Task { @MainActor [weak self] in
+                    if let fresh = await HostCapabilityCache.shared.probe(over: session, for: id) {
+                        self?.capabilities = fresh
+                    }
+                }
+                return known
+            }
+            return await probeCapabilities(over: session)
+        }
+
+        /// The multiplexer this connection runs on a host with `caps`: the
+        /// chosen one, or — missing, and no custom binary path vouching for
+        /// it — none: a plain shell with a banner, never the OTHER
+        /// multiplexer, instead of stalling on a failing attach.
+        private func multiplexerToRun(given caps: HostCapabilities) -> Multiplexer {
+            let chosen = connection.multiplexer
+            let available = connection.multiplexerPath != nil || caps.has(chosen)
+            return available ? chosen : .none
+        }
+
+        /// The SSH terminal's own program for `multiplexer` (nil: the login
+        /// shell): tmux's control client, or herdr's frame loop. Never a line
+        /// typed into a shell (B267).
+        private func terminalProgram(for multiplexer: Multiplexer) -> String? {
+            switch multiplexer {
+            case .none:
+                return nil
+            case .tmux:
+                return Self.tmuxControlAttachProgram(tmux: connection.tmuxPath ?? "tmux")
+            case .herdr:
+                return HerdrFrameCommand.loopProgram(customPath: connection.herdrPath,
+                                                     connectionId: connection.id.uuidString)
+            }
+        }
+
         /// Re-run the probe over whichever SSH channel this session owns
         /// (in-band SSH session or the mosh sidecar). Returns the fresh caps,
         /// or nil if no SSH channel is available. Used by Install Assist's
         /// "Re-check" after the user runs the install command.
         @discardableResult
         func recheckCapabilities() async -> HostCapabilities? {
+            if let rust = lendingRust {
+                // The Rust session's own connection (W14b), or nil (→
+                // "reconnect to apply") when it isn't up.
+                guard let host = try? await rust.side.ready() else { return nil }
+                return await probeCapabilities(over: host)
+            }
             // Re-check needs a LIVE channel. Mosh closes its bootstrap SSH after
             // handoff, so there may be none — return nil (→ "reconnect to apply")
             // rather than probing a dead session, which would falsely read as
@@ -2081,22 +3572,93 @@ final class SessionHub {
         }
 
         /// Create the FIRST tmux session on a server that has none. Only
-        /// valid pre-attach: the boot `tmux -CC attach` has failed and left
-        /// the shell at its prompt, so a fresh `-CC new` line boots control
-        /// mode. (Over mosh the visible shell + retrying sidecar cover this.)
-        func createFirstTmuxSession() {
-            guard let controller = tmuxController, !controller.snapshot.isAttached else { return }
-            let tmux = connection.tmuxPath ?? "tmux"
-            // `-CC new` boots a fresh control session on the SAME stream; its
-            // banner block is swallowed by TmuxControlClient's boot-block
-            // tracking (re-armed by the failed attach's %exit) — see
-            // `awaitingBootBlock` for the pairing shift that prevents.
-            viewModel.send(Data("\(tmux) -CC new\r".utf8))
+        /// valid pre-attach. Over SSH the terminal's program is waiting for a
+        /// session (``tmuxControlAttachProgram(tmux:)``): the session is made
+        /// detached by exec on the same connection, and the waiting control
+        /// client attaches it within a second. It used to be a `-CC new` line
+        /// typed into the shell the failed attach left behind (B267: nothing
+        /// is typed into a shell). Over mosh the session is made over the
+        /// sidecar, and the waiting renderer and chain attach it.
+        func createFirstTmuxSession(named name: String? = nil) {
+            if let rust { rust.createFirstTmuxSession(); return }
+            if let control = moshControl, tmuxController == nil {
+                // mosh: the shell on screen is the renderer's, waiting; the
+                // session is made over the sidecar (B228).
+                control.newSession(named: name)
+                return
+            }
+            guard let controller = tmuxController, !controller.snapshot.isAttached,
+                  let ssh = viewModel.session else { return }
+            let command = Self.tmuxFirstSessionCommand(tmux: connection.tmuxPath ?? "tmux", name: name)
+            Task { [weak controller] in
+                let output = await withTimeoutValue(10) { try await ssh.executeCommand(command) }
+                let text = output.map { String(decoding: $0, as: UTF8.self) } ?? ""
+                var lines = text.split(separator: "\n", omittingEmptySubsequences: true).map(String.init)
+                let status = lines.popLast()
+                guard status != "moshpit-status:0" else {
+                    Log.ssh.info("tmux: made the first session the person asked for")
+                    return
+                }
+                Log.ssh.error("tmux: the first session wasn't made (\(status ?? "no answer", privacy: .public))")
+                controller?.noteSessionNotCreated(lines.last ?? "")
+            }
+        }
+
+        /// The first session on a mosh + tmux server, made over the control
+        /// plane's connection when the person asks (B228) — as crates/session
+        /// does (`tmux_leg.rs`'s `first_session`): `new-session -d`, detached;
+        /// the sidecar's attach chain and the renderer's waiting line both
+        /// land on it by themselves. tmux's refusal ("duplicate session") is
+        /// the controller's notice.
+        private func createFirstMoshSession(named name: String?, notifying control: TmuxSessionController?) async {
+            guard let ssh = sidecarSSH else {
+                control?.noteSessionNotCreated(String(localized: "Not connected to tmux yet. Try again in a moment."))
+                return
+            }
+            let command = Self.tmuxFirstSessionCommand(tmux: connection.tmuxPath ?? "tmux", name: name)
+            let output = await withTimeoutValue(10) { try await ssh.executeCommand(command) }
+            let text = output.map { String(decoding: $0, as: UTF8.self) } ?? ""
+            var lines = text.split(separator: "\n", omittingEmptySubsequences: true).map(String.init)
+            let status = lines.popLast()
+            guard status != "moshpit-status:0" else {
+                Log.ssh.info("mosh+tmux: made the first session the person asked for")
+                return
+            }
+            Log.ssh.error("mosh+tmux: the first session wasn't made (\(status ?? "no answer", privacy: .public))")
+            control?.noteSessionNotCreated(lines.last ?? "")
+        }
+
+        /// The exec that makes the first session: detached, named when the
+        /// person named it, tmux's own words and its status on the way back.
+        nonisolated static func tmuxFirstSessionCommand(tmux: String, name: String?) -> String {
+            let namePart = name.map { " -s " + TmuxSessionController.tmuxNameShellWord($0) } ?? ""
+            return "\(tmux) new-session -d\(namePart) 2>&1; echo \"moshpit-status:$?\""
+        }
+
+        /// Whether the server has no tmux session at all, asked over the
+        /// control plane's connection; nil when it can't be told.
+        private func serverHasNoSession(tmux: String) async -> Bool? {
+            guard let ssh = sidecarSSH,
+                  let output = await withTimeoutValue(5, {
+                      try await ssh.executeCommand("\(tmux) has-session 2>/dev/null; echo $?")
+                  })
+            else { return nil }
+            switch String(decoding: output, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines) {
+            case "0": return false
+            case "1": return true
+            default: return nil
+            }
         }
 
         /// Mosh path: authenticate SSH (no PTY), exec `mosh-server` to learn
         /// the UDP port + key, drop SSH, then run the real SSP transport.
-        private func startMosh() async {
+        ///
+        /// `attempt` is `start()`'s: every await resumes into ``isCurrent(_:)``
+        /// (B168). Before, a disconnect while mosh-server was starting left a
+        /// transport running and a server nobody reaped outside the hub, and
+        /// an attempt a redial had replaced could mark the new one failed or
+        /// install a second transport over it.
+        private func startMosh(attempt: Int) async {
             // Reconnect on a REUSED coordinator: a scroll-hold engaged before
             // the disconnect would silently buffer the fresh connection's
             // output (frozen screen); the held bytes belong to the dead screen
@@ -2105,7 +3667,13 @@ final class SessionHub {
             coordinator.discardScrollHold()
             coordinator.attachPrediction(nil)
             moshInCopyMode = false
-            guard let ssh = await viewModel.connectForExec() else { return }
+            guard let ssh = await viewModel.connectForExec() else {
+                if viewModel.declinedHostKey, isCurrent(attempt) { retireDeclined() }
+                return
+            }
+            // The view model's connection: a stop closes it, a newer attempt
+            // owns the view model.
+            guard isCurrent(attempt) else { return }
 
             // Probe before spending a round-trip on `mosh-server new`. A custom
             // server path means the user vouches for it — trust it. Otherwise a
@@ -2113,19 +3681,38 @@ final class SessionHub {
             // authenticated right here) with a banner, instead of surfacing a
             // raw `command not found`.
             let caps = await probeCapabilities(over: ssh)
+            guard isCurrent(attempt) else { return }
             if connection.moshServerPath == nil && !caps.hasMoshServer {
                 degrade = DegradeNotice(missing: .moshServer)
-                await fallbackToSSH(over: ssh, capabilities: caps)
+                await fallbackToSSH(over: ssh, capabilities: caps, attempt: attempt)
                 return
             }
 
             do {
+                // UDP goes where this SSH connection went: `-s` binds the
+                // server to that address, and a fresh lookup of a name with
+                // several addresses can pick another — connected and black
+                // (B171). Through a proxy there is no such address: the name.
+                // The multiplexer's renderer is mosh-server's own program,
+                // decided (and the last connects' renderers retired) before
+                // the server starts — never a line typed into the mosh shell
+                // once it is up (B267).
+                let renderer = await moshRendererProgram(over: ssh, capabilities: caps)
+                guard isCurrent(attempt) else { return }
                 let creds = try await MoshBootstrap.start(
                     over: ssh,
-                    host: connection.host,
+                    host: ssh.peerAddress ?? connection.host,
                     serverBinary: connection.moshServerPath ?? "mosh-server",
                     portRangeStart: connection.moshPortRangeStart,
-                    portRangeEnd: connection.moshPortRangeEnd)
+                    portRangeEnd: connection.moshPortRangeEnd,
+                    program: renderer)
+                // Stopped or replaced while the server was starting: nothing
+                // else will ever know this pid — reap it here (B168). From the
+                // line below on, a stop() that comes knows it, and reaps it.
+                guard isCurrent(attempt) else {
+                    await reapAbandonedServer(creds.serverPid, over: ssh)
+                    return
+                }
                 // Captured as early as possible: every await between here and
                 // `onReturnPathDead` being wired below (the herdr/tmux
                 // renderer probes, `ssh.close()`, `MoshTransport(credentials:)`)
@@ -2142,37 +3729,12 @@ final class SessionHub {
                 // reapable: nothing between here and `stop()` reads this flag.
                 moshServerPid = creds.serverPid
                 moshHadFirstContact = false
-                // mosh+herdr renderer probe, while the bootstrap channel is
-                // still open (zero extra connections): does this herdr know
-                // `terminal attach`? That raw single-pane stream — no
-                // sidebar, no header, pane PTY sized to this client alone —
-                // is the renderer the phone wants; an older herdr keeps the
-                // full-TUI + immersive-zoom fallback.
-                if connection.multiplexer == .herdr {
-                    let probe = (try? await ssh.executeCommand(
-                        HerdrLaunch.rawAttachProbeCommand(customPath: connection.herdrPath)))
-                        .map { String(decoding: $0, as: UTF8.self) } ?? ""
-                    herdrRawAttach = probe.contains("MOSHPIT_RAW_ATTACH_OK")
-                    if herdrRawAttach {
-                        // Retire previous generations' renderers before this
-                        // one boots — orphaned loops (mosh-server survives
-                        // disconnects by design) must not contest the pane.
-                        _ = try? await ssh.executeCommand(
-                            HerdrLaunch.staleRendererCleanupCommand(connectionId: connection.id))
-                    }
-                }
-                if connection.multiplexer == .tmux {
-                    // Same hygiene for the tmux renderer: previous connects'
-                    // renderer stacks (shell + tmux client, kept alive by
-                    // their surviving mosh-servers) must not stay attached —
-                    // each one is a phone-sized client contesting
-                    // `window-size latest` against every live client.
-                    _ = try? await ssh.executeCommand(
-                        Self.tmuxRendererCleanupCommand(connectionId: connection.id))
-                }
                 await ssh.close()   // mosh-server has daemonized; UDP from here
+                // The pid is the session's now: a stop that ran meanwhile has
+                // reaped it (or the next one will). Nothing to install.
+                guard isCurrent(attempt) else { return }
 
-                let transport = try MoshTransport(credentials: creds)
+                let transport = try makeMoshTransport(creds)
                 self.moshTransport = transport
 
                 await MainActor.run {
@@ -2198,27 +3760,38 @@ final class SessionHub {
                             self?.moshHadFirstContact = true
                         }
                     }
-                    transport.onReturnPathDead = { [weak self] in
-                        self?.moshReturnPathDead = true
-                        // This fires only when ZERO datagrams ever arrived —
-                        // the server we just spawned will wait forever for a
-                        // first contact that isn't coming. Reap it over a
-                        // short exec connection, or every dead-UDP attempt
-                        // leaves a zombie (7 on one host, 2026-08-19). A
-                        // mid-session stall never reaches here (sawAnyDatagram
-                        // gates it), so a resumable session is never killed.
-                        if let pid = creds.serverPid {
-                            self?.moshServerPid = nil   // handled; stop()'s fallback need not repeat it
-                            Task { [weak self] in
-                                guard let self else { return }
-                                if let ssh = try? await self.sidecarConnect(self.connection) {
-                                    _ = try? await ssh.executeCommand("kill \(pid) 2>/dev/null")
-                                    await ssh.close()
-                                }
+                    transport.onSessionEnded = { [weak self, weak transport] in
+                        guard let transport else { return }
+                        self?.moshSessionEnded(transport)
+                    }
+                    transport.onReturnPathDead = { [weak self, weak transport] heardFromServer in
+                        guard let self, let transport, self.moshTransport === transport else { return }
+                        // The banner offering SSH, either way; the session
+                        // stays connected.
+                        self.moshReturnPathDead = true
+                        // Only a server that never heard from us is reaped:
+                        // it will wait forever for a first contact that isn't
+                        // coming, and every dead-UDP attempt used to leave one
+                        // (7 on one host, 2026-08-19). This also fires for a
+                        // session that HAD talked to its server and then went
+                        // quiet through three flow rebuilds — about 15 s of
+                        // UDP silence — and that server holds the user's
+                        // shell: killing it here is what B165 was.
+                        let heard = heardFromServer || self.moshHadFirstContact
+                        guard MoshServerReap.onReturnPathDead(heardFromServer: heard),
+                              let pid = creds.serverPid else { return }
+                        self.moshServerPid = nil   // handled; stop()'s fallback need not repeat it
+                        Task { [weak self] in
+                            guard let self else { return }
+                            if let ssh = try? await self.sidecarConnect(self.connection) {
+                                _ = try? await ssh.executeCommand("kill \(pid) 2>/dev/null")
+                                await ssh.close()
                             }
                         }
                     }
                 }
+                // Installed: a stop from here on closes the transport itself.
+                guard isCurrent(attempt) else { return }
 
                 // Always render mosh as a single rendered terminal. (tmux -CC
                 // control mode CANNOT run over mosh — mosh transmits screen
@@ -2233,7 +3806,11 @@ final class SessionHub {
                 // scroll, typed keys are eaten by tmux copy-mode and input dies.
                 coordinator.onInput = { [weak self] data in self?.sendInput(data) }
                 coordinator.onSizeChange = { [weak self] cols, rows in
-                    Task { await transport.resize(cols: cols, rows: rows) }
+                    // On the mosh write lane, in order with the keystrokes and
+                    // with each other: a Task per resize gave a burst (a
+                    // rotation, the keyboard animating in) no order, and an
+                    // older size landing last would leave mosh-server there.
+                    self?.moshWriteLane.enqueue { await transport.resize(cols: cols, rows: rows) }
                     // mosh+tmux: also pin the tmux window via the -CC sidecar,
                     // else its 80×24 PTY strands the TUI at 80×24 (the renderer
                     // is raw mosh and can't size the window itself).
@@ -2289,6 +3866,7 @@ final class SessionHub {
                 if let size = coordinator.lastReportedSize {
                     await transport.resize(cols: size.cols, rows: size.rows)
                 }
+                guard isCurrent(attempt) else { return }
                 // Multiplexer chosen but absent on the host: stay on the bare
                 // mosh shell (don't send an attach line that errors, don't
                 // start the retrying sidecar — see the design's degrade
@@ -2300,57 +3878,115 @@ final class SessionHub {
 
                 switch muxDegraded ? .none : chosen {
                 case .tmux:
-                    // Control plane first: the -CC client lands on the user's
-                    // most recent existing session, then the mosh terminal
-                    // attaches the SAME one — deterministic, no most-recent
-                    // race between the two clients. Stored (not fire-and-
-                    // forget) so `stop()` can cancel it — see the property's
-                    // doc comment.
-                    moshTmuxAttachTask = Task { [weak self] in await self?.attachMoshTmux(transport) }
+                    // The renderer — mosh-server's program — attaches the
+                    // remembered session, or the most recent, or waits for
+                    // the first; the -CC control plane comes up beside it and
+                    // learns which client it is. Stored (not fire-and-forget)
+                    // so `stop()` can cancel it — see the property's doc
+                    // comment.
+                    let nonce = moshTmuxRendererNonce
+                    moshTmuxAttachTask = Task { [weak self] in await self?.attachMoshTmux(transport, rendererNonce: nonce) }
                 case .herdr:
-                    // Launch the TUI in the mosh shell (`sendInput` routes
-                    // through the ordered mosh write chain), then bring up the
-                    // control plane on its own SSH connection — mosh closed
-                    // the bootstrap one, and mosh can't carry the exec channel
-                    // `herdr api snapshot` needs.
-                    //
-                    // No ordering constraint between the two, unlike mosh+tmux:
-                    // that path has to attach its -CC sidecar FIRST so both
-                    // clients land on the same session. herdr has one server
-                    // and one focus, so the poller simply reports whatever the
-                    // TUI is showing, whenever it comes up.
-                    // Raw-attach loop when the host's herdr supports it: the
-                    // mosh screen becomes ONE pane's raw stream (the sidecar
-                    // steers which one); otherwise the classic full TUI.
-                    let boot: String
-                    if herdrRawAttach {
-                        let key = HerdrLaunch.moshRendererKey(
-                            connectionId: connection.id,
-                            nonce: String(UUID().uuidString.prefix(8)))
-                        moshRendererKey = key
-                        boot = HerdrLaunch.rawAttachLoopCommand(
-                            rendererKey: key, customPath: connection.herdrPath) + "\r"
-                    } else {
-                        boot = HerdrLaunch.attachCommand(customPath: connection.herdrPath) + "\r"
-                    }
-                    // Straight onto the transport, NOT through sendInput: this
-                    // runs before markConnected(), and sendInput drops
-                    // everything while connState isn't .live (the reconnect
-                    // input gate). The gate eating this boot line meant herdr's
-                    // TUI never launched over mosh — the session sat at a bare
-                    // shell with an empty agents tree (user report,
-                    // 2026-08-17). Same direct-send the mosh+tmux renderer
-                    // attach already uses.
-                    await transport.send(Data(boot.utf8))
+                    // The renderer is mosh-server's program (the raw-attach
+                    // loop, or herdr's full TUI on a herdr without `terminal
+                    // attach`); bring up the control plane on its own SSH
+                    // connection — mosh closed the bootstrap one, and mosh
+                    // can't carry the exec channel `herdr api snapshot` needs.
+                    // herdr has one server and one focus, so the poller
+                    // simply reports whatever the renderer shows, whenever it
+                    // comes up.
                     herdrSidecarTask = Task { [weak self] in await self?.startHerdrSidecar() }
                 case .none:
                     break
                 }
+                // The mosh terminal paints itself: a frame kept from an SSH
+                // fallback's tmux before this reconnect has nothing to wait
+                // for (B166).
+                endFirstFrameWait()
                 viewModel.markConnected()
             } catch {
+                // A replaced attempt's failure is not the new one's (B168).
+                guard isCurrent(attempt) else { return }
                 let message = String(describing: error)
                 viewModel.fail(String(localized: "Mosh: \(message)"))
             }
+        }
+
+        /// mosh-server ended the session — the remote shell exited (`exit`),
+        /// or the server was stopped — and the transport acked its shutdown
+        /// state and closed (`MoshTransport.onSessionEnded`), as mosh-client
+        /// exits. It used to apply that state and then hear nothing: a frozen
+        /// screen, flow rebuilds, and the dead-return-path banner offering to
+        /// switch to SSH. There is nothing to roam back to: the session has
+        /// ended (``endedByServer(_:)``) — the reason on the terminal's
+        /// "Session ended" card, and out of the hub the way Disconnect takes
+        /// it (a dead session left in the hub is redialled by the next
+        /// keepalive).
+        func moshSessionEnded(_ transport: MoshTransport) {
+            guard moshTransport === transport, !isStopping else { return }
+            // The server quit after its goodbye: its pid is nobody's to kill
+            // any more (and may soon be another process's).
+            moshServerPid = nil
+            moshReturnPathDead = false
+            endedByServer(String(localized: "The session ended: the remote shell exited or mosh-server was stopped."))
+        }
+
+        /// The SSH PTY channel ended on its own — never through our own
+        /// `close()` (see `SSHSession.setOnUnexpectedClose`).
+        ///
+        /// A connection that dropped is redialled, as it always was. A shell
+        /// that EXITED — `exit` or Ctrl-D in a plain SSH session, sshd closing
+        /// the channel in order behind its exit status — used to be taken for
+        /// the same thing and redialled too: the shell the user had just left
+        /// came straight back as a fresh login. When that channel carries the
+        /// user's own shell, its end is the session's end
+        /// (``remoteShellExited(on:)``). When it carries a control plane
+        /// Moshpit runs in it — tmux `-CC`, herdr's frame loop — the sessions
+        /// the user works in live on the server, beyond the shell carrying
+        /// them, and a redial brings them back as before.
+        func ptyChannelEnded(_ end: SSHChannelEnd, on session: SSHSession) async {
+            // A channel of a connection already replaced (or being torn down)
+            // is not this session's news.
+            guard !isStopping, viewModel.session === session else { return }
+            if case .exited(let status) = end, tmuxController == nil, herdrFrameSSH == nil {
+                Log.ssh.notice("health: the remote shell exited (status \(status ?? 0, privacy: .public)) — ending the session")
+                await remoteShellExited(on: session)
+                return
+            }
+            await connectionDropped(reason: end == .dropped ? "transport-closed" : "control-shell-exited")
+        }
+
+        /// The plain shell's end: the session is over, the way mosh-server's
+        /// shutdown ends a mosh session (``moshSessionEnded(_:)``, then
+        /// ``endedByServer(_:)``).
+        private func remoteShellExited(on session: SSHSession) async {
+            // The shell's last words (`logout`, the last command's output) are
+            // still in the stream ahead of its end. The pump ends with the
+            // stream; let it paint them before the teardown below cancels it.
+            await pumpTask?.value
+            guard !isStopping, viewModel.session === session else { return }
+            endedByServer(String(localized: "The session ended: the remote shell exited."))
+        }
+
+        /// The user said no to the server's key (B151): nothing to say about
+        /// it, and nothing automatic may dial it again — a foreground resume
+        /// redials a down session and would put the same card back up — so
+        /// the hub takes it out as it does a Disconnect (`endedSink`).
+        private func retireDeclined() {
+            isStopping = true
+            endedSink?()
+        }
+
+        /// The remote end finished this session for good: say so, as an end
+        /// and not as an error (`TerminalViewModel.end`), and let nothing
+        /// automatic bring it back — the keepalive, a foreground resume, a
+        /// late death callback all stand down as they do for a Disconnect —
+        /// while the hub takes it out (`endedSink`). Reconnecting is the
+        /// user's call, from the terminal's card.
+        private func endedByServer(_ reason: String) {
+            viewModel.end(reason)
+            isStopping = true
+            endedSink?()
         }
 
         /// Degrade path for a mosh connection whose host has no mosh-server:
@@ -2359,33 +3995,64 @@ final class SessionHub {
         /// host has tmux and the user asked for it, boot tmux -CC exactly like
         /// the SSH path so multiplexing still works over the fallback.
         private func fallbackToSSH(over session: SSHSession,
-                                   capabilities caps: HostCapabilities) async {
+                                   capabilities caps: HostCapabilities,
+                                   attempt: Int) async {
             // Same routing note as attempt(): sendInput is the choke point.
             coordinator.onInput = { [weak self] data in self?.sendInput(data) }
             coordinator.onSizeChange = { [viewModel] cols, rows in
                 viewModel.resize(rows: rows, cols: cols)
             }
             let grid = coordinator.lastReportedSize ?? Self.estimateGrid(fontSize: lastFontSize)
+            // If the user wanted a multiplexer and the host has it, give it to
+            // them over this SSH fallback so multiplexing still works — as the
+            // terminal's own program, never a line typed into its shell
+            // (B267). If it's also missing, the mosh-server banner already
+            // points at the same Install Assist sheet, so we don't stack a
+            // second banner — just run the bare shell.
+            let multiplexer = multiplexerToRun(given: caps)
             do {
-                try await session.requestPTY(rows: grid.rows, cols: grid.cols)
+                try await session.requestPTY(rows: grid.rows, cols: grid.cols,
+                                             command: terminalProgram(for: multiplexer))
             } catch {
+                // A replaced attempt's failure is not the new one's (B168).
+                guard isCurrent(attempt) else { return }
                 viewModel.fail((error as? SSHError)?.description ?? "\(error)")
                 return
             }
+            // Every await below resumes into the same check as startMosh's:
+            // a stop or a newer attempt since means none of this is ours to
+            // install (B168).
+            guard isCurrent(attempt) else { return }
+            // The same watch as the SSH path's: this PTY is the session now.
+            // Without it an `exit` here left a dead shell on a screen that
+            // still read connected, and a drop waited for the keepalive.
+            await session.setOnUnexpectedClose { [weak self, weak session] end in
+                Task { @MainActor [weak self] in
+                    guard let session else { return }
+                    await self?.ptyChannelEnded(end, on: session)
+                }
+            }
+            guard isCurrent(attempt) else { return }
             if let size = coordinator.lastReportedSize {
                 viewModel.resize(rows: size.rows, cols: size.cols)
             }
 
-            // If the user wanted a multiplexer and the host has it, give it to
-            // them over this SSH fallback so multiplexing still works. If it's
-            // also missing, the mosh-server banner already points at the same
-            // Install Assist sheet, so we don't stack a second banner — just
-            // run the bare shell.
-            let chosen = connection.multiplexer
-            let available = connection.multiplexerPath != nil || caps.has(chosen)
-            let multiplexer: Multiplexer = available ? chosen : .none
             if multiplexer == .tmux {
                 let controller = TmuxSessionController(sshSession: session)
+                // "New session" with nothing attached (the last session gone,
+                // the shell back at its prompt): `-CC new` in that shell, the
+                // person's own (B228).
+                controller.createsFirstSession = { [weak self] name in
+                    self?.createFirstTmuxSession(named: name)
+                }
+                // The pins the controller this reconnect retired still owes
+                // the server: this one settles them, as the SSH path's does.
+                // Left behind, the next reconnect overwrote them and nothing
+                // ever handed the desktop its window size back (B167).
+                if let ledger = inheritedPinLedger {
+                    controller.inheritPinLedger(ledger)
+                    inheritedPinLedger = nil
+                }
                 if let hooks = inheritedAgentHooks {
                     controller.inheritAgentHooks(hooks)
                     inheritedAgentHooks = nil
@@ -2409,15 +4076,48 @@ final class SessionHub {
                                                 cursorBlink: lastCursorBlink)
                 controller.setInitialClientSize(cols: grid.cols, rows: grid.rows)
                 await controller.beginControlMode()
-                let tmux = connection.tmuxPath ?? "tmux"
-                let boot = "\(tmux) set -g history-limit 50000 2>/dev/null; \(tmux) -CC attach\r"
-                if let bytes = boot.data(using: .utf8) {
-                    try? await session.write(bytes)
-                }
+                guard isCurrent(attempt) else { return await abandon(controller, over: session) }
+                // The session reads connected below, a round trip before tmux
+                // has attached and named a pane: what is typed in between was
+                // dropped without a word — there was no pane to send it to
+                // (B197; B169 held it on the SSH path only). Held instead, as
+                // there, and handed to the active pane in order once the
+                // attach has landed (`inputDecided`, `endFirstFrameWait`);
+                // dropped, never typed into the shell, if tmux refuses it.
+                heldInput = []
+                // Attach only, as the SSH path does, and nothing to write:
+                // the terminal's program is tmux's control client.
                 tmuxController = controller
+                // As the SSH path does: after a reconnect the dropped
+                // connection's last frame stands in until this controller
+                // paints, and only this wait takes it down. Without it the
+                // old frame stayed for good — frozen, and the terminal deaf
+                // to touches, after every reconnect of a mosh session fallen
+                // back to SSH with tmux (B166).
+                armFirstFrameWait(for: controller)
                 controlPlaneWired(controller)
                 beginAttachTimeout(controller: controller)
+            } else if multiplexer == .herdr {
+                // No tmux controller is coming to paint over a kept frame.
+                endFirstFrameWait()
+                // Same native frame rendering as the direct-SSH path — this
+                // fallback IS an SSH session, it just arrived here because
+                // mosh-server was missing. The frame pump is this PTY's only
+                // reader: a plain pump used to be started first and kept
+                // running beside it, the two splitting one `dataStream` —
+                // frame JSON painted into the terminal as text, and the
+                // frames it took never reaching the parser.
+                startHerdrFrames(over: session)
+                startHerdrControlPlane(over: session)
+                // As on SSH: push rides a connection of its own (the frame
+                // channel owns this PTY). Never started here, the fallback
+                // polled every 2–8 s for as long as it lasted: agent states
+                // and the tree seconds late, every exec a channel more.
+                startHerdrPushUpgrade()
             } else {
+                // The plain pane paints on its own; a kept tmux frame over it
+                // would never come down.
+                endFirstFrameWait()
                 let coordinator = self.coordinator
                 pumpTask = Task { [weak self] in
                     for await chunk in session.dataStream {
@@ -2428,22 +4128,86 @@ final class SessionHub {
                     }
                     _ = self
                 }
-                if multiplexer == .herdr {
-                    // Same native frame rendering as the direct-SSH path —
-                    // this fallback IS an SSH session, it just arrived here
-                    // because mosh-server was missing.
-                    startHerdrFrames(over: session)
-                    startHerdrControlPlane(over: session)
-                }
             }
             viewModel.markConnected()
         }
 
-        /// Attach tmux over mosh, control-plane first:
-        ///   1. The -CC sidecar attaches the user's existing session (most
-        ///      recent). If the server has none it retries every 2s — the
-        ///      moment the user creates one (here or anywhere) it latches on.
-        ///   2. The mosh terminal then attaches the SAME session by name.
+        /// What mosh-server runs for this connection's multiplexer — its
+        /// renderer — instead of the login shell; nil for a plain shell (no
+        /// multiplexer, or the chosen one missing). Decided over the
+        /// bootstrap's connection before the server starts, and the last
+        /// connects' renderers retired first: orphaned ones (mosh-server
+        /// survives disconnects by design) must not contest the pane or the
+        /// window size, and a cleanup run after the start would stop the new
+        /// renderer too.
+        ///
+        /// The renderer was a line typed into the mosh shell once it was up,
+        /// and a shell still starting swallowed it (Powerlevel10k's instant
+        /// prompt flushes pending input); for tmux it was typed again up to
+        /// four times, and a copy that ran late landed in the pane as
+        /// keystrokes (B170), its control bytes acting before its quotes did
+        /// (B140). As the session's program it runs at once, under no shell
+        /// that could take it for typing (B267).
+        private func moshRendererProgram(over ssh: SSHSession, capabilities caps: HostCapabilities) async -> String? {
+            let chosen = connection.multiplexer
+            guard connection.multiplexerPath != nil || caps.has(chosen) else { return nil }
+            switch chosen {
+            case .none:
+                return nil
+            case .tmux:
+                _ = try? await ssh.executeCommand(Self.tmuxRendererCleanupCommand(connectionId: connection.id))
+                // The windows as they are before the renderer sizes them to
+                // the phone: the sidecar records what it squashed (B270).
+                let tmux = connection.tmuxPath ?? "tmux"
+                moshTmuxLayoutsBeforeRenderer = await withTimeoutValue(5) {
+                    try await ssh.executeCommand(
+                        "\(tmux) list-windows -a -F '\(TmuxSessionController.sizeProbeFormat)' 2>/dev/null")
+                }.map { String(decoding: $0, as: UTF8.self) }
+                let nonce = String(UUID().uuidString.prefix(8))
+                moshTmuxRendererNonce = nonce
+                return Self.tmuxRendererProgram(tmux: connection.tmuxPath ?? "tmux",
+                                                remembered: lastSelection?.session,
+                                                connectionId: connection.id, nonce: nonce)
+            case .herdr:
+                // Does this herdr know `terminal attach`? That raw single-pane
+                // stream — no sidebar, no header, pane PTY sized to this client
+                // alone — is the renderer the phone wants; an older herdr keeps
+                // the full-TUI + immersive-zoom fallback.
+                let probe = (try? await ssh.executeCommand(
+                    HerdrLaunch.rawAttachProbeCommand(customPath: connection.herdrPath)))
+                    .map { String(decoding: $0, as: UTF8.self) } ?? ""
+                herdrRawAttach = probe.contains("MOSHPIT_RAW_ATTACH_OK")
+                guard herdrRawAttach else {
+                    return Self.moshHerdrProgram(HerdrLaunch.attachCommand(customPath: connection.herdrPath))
+                }
+                _ = try? await ssh.executeCommand(
+                    HerdrLaunch.staleRendererCleanupCommand(connectionId: connection.id))
+                let key = HerdrLaunch.moshRendererKey(connectionId: connection.id,
+                                                      nonce: String(UUID().uuidString.prefix(8)))
+                moshRendererKey = key
+                return Self.moshHerdrProgram(HerdrLaunch.rawAttachLoopCommand(
+                    rendererKey: key, customPath: connection.herdrPath))
+            }
+        }
+
+        /// mosh-server's program with herdr: the renderer, then the login
+        /// shell after it, under `sh -c` (B138) — crates/session's
+        /// `mosh_herdr_program`. Interrupt, quit and suspend are ignored while
+        /// the renderer runs: a `^C` between two attaches (the tty is the
+        /// loop's, in cooked mode, then) ended the loop. Should it end all the
+        /// same, the login shell takes the tty with those signals back, and
+        /// the loop is said gone and typed again on the person's word.
+        nonisolated static func moshHerdrProgram(_ renderer: String) -> String {
+            "/bin/sh -c " + Shell.quote(
+                "trap '' INT QUIT TSTP; \(renderer); trap - INT QUIT TSTP; \(loginShellAfter)")
+        }
+
+        /// Attach tmux over mosh. The renderer is mosh-server's program
+        /// (``tmuxRendererProgram(tmux:remembered:connectionId:nonce:)``): it
+        /// attaches the remembered session, else the most recent, else waits
+        /// for the first. The -CC sidecar comes up beside it on the user's
+        /// existing sessions (the remembered one restored), and is told which
+        /// client the renderer is by the pid the program recorded.
         /// Moshpit never creates a session on the user's behalf.
         /// Pin the tmux window to the current phone grid through the mosh -CC
         /// sidecar, retrying briefly until it reports an active window. Without
@@ -2461,9 +4225,10 @@ final class SessionHub {
             }
         }
 
-        private func attachMoshTmux(_ transport: MoshTransport) async {
+        private func attachMoshTmux(_ transport: MoshTransport, rendererNonce nonce: String) async {
+            moshServerHadNoSession = false
             await startMoshControlPlane()
-            guard !isStopping else { return }
+            guard attaching(on: transport) else { return }
             // Same stall latch the SSH+tmux path arms at its `-CC attach`
             // boots: without it, a sidecar whose attach never confirms (host
             // dying mid-connect, a wedged tmux server) leaves the home card
@@ -2475,72 +4240,240 @@ final class SessionHub {
             let tmux = connection.tmuxPath ?? "tmux"
             // Give the control plane a few seconds to land on a session.
             for _ in 0..<24 {
-                guard !isStopping else { return }
-                if let control = moshControl, control.snapshot.isAttached,
-                   let id = control.snapshot.activeSessionId,
-                   let fallback = control.snapshot.sessions[id]?.name {
-                    // Prefer the REMEMBERED session (persisted selection) over
-                    // whatever the -CC chain landed on ("most recent"): after a
-                    // protocol switch or relaunch, the renderer must return to
-                    // the user's session. The sidecar aligns itself (and the
-                    // window/pane) via pendingRestore; select-window/pane are
-                    // session-scoped, so they move this renderer too — but a
-                    // renderer on the WRONG SESSION could never be moved from
-                    // the sidecar, which is why the name must be right here.
-                    let name = lastSelection.flatMap {
-                        control.snapshot.sessions[$0.session]?.name
-                    } ?? fallback
-                    await attachMoshRenderer(transport, control: control, tmux: tmux, session: name)
-                    // Pin the tmux window to the phone grid through the sidecar
-                    // so the freshly-attached mosh TUI fills the screen instead
-                    // of inheriting the sidecar's 80×24.
-                    await pinMoshWindow()
-                    // A copy-mode left over from the previous connection would
-                    // show the renderer an old scrolled-away view and make the
-                    // first swipe jump to that stale offset — cancel it.
-                    control.cancelStaleCopyMode()
-                    return
+                guard attaching(on: transport) else { return }
+                if let control = moshControl, control.snapshot.isAttached { break }
+                await moshAttachPause(.milliseconds(250))
+            }
+            guard attaching(on: transport) else { return }
+            // Nothing for the control plane to land on: no session on the
+            // server (it attaches within a second or two of any there is), or
+            // no control plane at all. The renderer waits for a session
+            // itself and attaches the first there is — the person's, made
+            // from the empty state or anywhere else (B212). Moshpit makes
+            // none.
+            //
+            // Which of the two it is, asked (B228): with no session there,
+            // the attach isn't stalled — it waits for the person's "New
+            // session", which Home and the terminal now offer.
+            if moshControl?.snapshot.isAttached == false,
+               await serverHasNoSession(tmux: tmux) == true,
+               attaching(on: transport), moshControl?.snapshot.isAttached == false {
+                moshServerHadNoSession = true
+                attachStalled = false
+            }
+            await adoptMoshRenderer(transport, nonce: nonce)
+        }
+
+        /// Whether the mosh+tmux attach for `transport` is still the
+        /// session's to make: not cancelled (a stop, a reconnect), not
+        /// stopping, the transport still this session's.
+        private func attaching(on transport: MoshTransport) -> Bool {
+            !Task.isCancelled && !isStopping && moshTransport === transport
+        }
+
+        /// A pause of the mosh+tmux attach, on ``moshAttachClock``; over
+        /// early when the attach is cancelled.
+        private func moshAttachPause(_ duration: Duration) async {
+            try? await Self.sleep(on: moshAttachClock, for: duration)
+        }
+
+        private static func sleep<C: Clock>(on clock: C, for duration: C.Duration) async throws {
+            try await clock.sleep(until: clock.now.advanced(by: duration), tolerance: nil)
+        }
+
+        /// The renderer mosh-server runs attaches by itself; once the control
+        /// plane has attached too, the control plane is told which client it
+        /// is — by the pid the renderer's program recorded, never by counting
+        /// clients around an attach (B84;
+        /// ``TmuxSessionController/adoptRenderer(pid:)``) — and the window is
+        /// pinned to the phone, and a copy-mode left over from the previous
+        /// connection cancelled (it would show the renderer an old
+        /// scrolled-away view and make the first swipe jump to that stale
+        /// offset). Waits as long as the session lasts — with no session on
+        /// the server the person makes the first when they choose — at the
+        /// cost of a look at the control plane's own state once a second: no
+        /// round trip until it attached.
+        private func adoptMoshRenderer(_ transport: MoshTransport, nonce: String) async {
+            var pid: Int?
+            var looks = 0
+            while attaching(on: transport) {
+                if let control = moshControl, control.snapshot.isAttached, let ssh = sidecarSSH {
+                    if pid == nil { pid = await waitingRendererPid(over: ssh, nonce: nonce) }
+                    if let pid, await withTimeoutValue(2, { await control.adoptRenderer(pid: pid) }) == true {
+                        guard attaching(on: transport) else { return }
+                        await pinMoshWindow()
+                        control.cancelStaleCopyMode()
+                        return
+                    }
+                    // The control plane is on a session, so the renderer —
+                    // asking tmux every second — attaches within one. Not
+                    // there after ten: it isn't coming (^C gave the shell
+                    // back), and the screen is the person's own.
+                    looks += 1
+                    if looks >= 10 {
+                        Log.ssh.info("mosh+tmux: the renderer never attached — leaving the shell as it is")
+                        return
+                    }
                 }
-                try? await Task.sleep(nanoseconds: 250_000_000)
+                await moshAttachPause(.seconds(1))
             }
-            if sidecarSSH == nil {
-                // Control plane unreachable (SSH blocked?) — run tmux
-                // standalone over mosh; its own message explains an empty
-                // server ("no sessions").
-                await transport.send(Data("\(tmux) attach\r".utf8))
-            }
-            // Sidecar alive but unattached = no sessions on the server.
-            // Leave the mosh shell untouched; the user creates the first
-            // session explicitly and the retrying sidecar follows.
+        }
+
+        /// The pid the renderer's program recorded, read over the control
+        /// plane's connection; nil while there is none to read.
+        private func waitingRendererPid(over ssh: SSHSession, nonce: String) async -> Int? {
+            let path = Self.tmuxRendererPidPath(connectionId: connection.id, nonce: nonce)
+            guard let output = await withTimeoutValue(5, { try await ssh.executeCommand("cat \"\(path)\"") })
+            else { return nil }
+            let text = String(decoding: output, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+            guard let pid = Int(text), pid > 1 else { return nil }
+            return pid
         }
 
         // MARK: mosh+tmux renderer hygiene
 
-        /// Pidfile the renderer attach line writes before exec'ing tmux.
-        /// `echo $$` runs pre-exec and `exec` preserves the pid, so the
+        /// Pidfile the renderer's program writes before exec'ing tmux
+        /// (``tmuxRendererProgram(tmux:remembered:connectionId:nonce:)``):
+        /// its shell's pid is written pre-exec and `exec` preserves it, so the
         /// recorded pid IS the tmux client — killing it detaches the
-        /// renderer, and the shell having been replaced, its mosh-server
-        /// dies with it.
+        /// renderer, and mosh-server, whose program it is, ends with it.
         static func tmuxRendererPidPath(connectionId: UUID, nonce: String) -> String {
             "$HOME/.moshpit/tmuxr-\(connectionId.uuidString)-\(nonce).pid"
         }
 
-        /// The line typed into the mosh shell to attach the renderer. ^U
-        /// first (see attachMoshRenderer). `exec`, because the pre-exec shape
-        /// leaked one IMMORTAL renderer per connect: mosh-server survives
-        /// disconnects by design, so its shell — and the tmux client the
-        /// shell spawned — outlived every session. Nine of them were found
-        /// attached at 75×61, fighting the desktop client over
-        /// `window-size latest` and flooding redraws ("SSH 乱码" resize war,
-        /// 2026-08-19). `has-session` gates the exec so a vanished session
-        /// leaves the shell alive for the retry loop instead of killing the
-        /// whole mosh connection on a failed attach.
-        static func tmuxRendererAttachLine(tmux: String, session name: String,
-                                           connectionId: UUID, nonce: String) -> String {
+        /// mosh-server's program with tmux — the phone's renderer: tmux's
+        /// client on the remembered session (`remembered`, tmux's `$N`) when
+        /// it is still there, else the most recent one, and with no session
+        /// at all it waits for one (the person makes it from the empty state,
+        /// through the control plane), never makes one — crates/session's
+        /// `mosh_tmux_program`. Under `sh -c` (B138), as mosh-server's own
+        /// program (B267): typed into the mosh shell, a shell still starting
+        /// swallowed the line, and the copies typed again landed in the pane
+        /// as keystrokes once an earlier one had attached (B170), their
+        /// control bytes acting before their quotes (B140).
+        ///
+        /// The pid is recorded first (``tmuxRendererPidPath(connectionId:nonce:)``):
+        /// `exec` keeps it, so the file names the tmux client — how the
+        /// control plane knows its renderer (``adoptRenderer(pid:)``), and
+        /// what the next connect's cleanup stops
+        /// (``tmuxRendererCleanupCommand(connectionId:)``): mosh-server
+        /// survives disconnects by design, and an immortal phone-sized client
+        /// per connect fought the desktop over `window-size latest` ("SSH 乱码",
+        /// 2026-08-19). Detaching ends the mosh session, as the `exec tmux
+        /// attach` the line ran did.
+        static func tmuxRendererProgram(tmux: String, remembered: String?,
+                                        connectionId: UUID, nonce: String) -> String {
             let pid = tmuxRendererPidPath(connectionId: connectionId, nonce: nonce)
-            return "\u{15}mkdir -p \"$HOME/.moshpit\"; echo $$ > \"\(pid)\"; "
-                + "\(tmux) has-session -t \(shellQuote(name)) 2>/dev/null && "
-                + "exec \(tmux) attach -t \(shellQuote(name))\r"
+            var script = "mkdir -p \"$HOME/.moshpit\"; echo $$ > \"\(pid)\"; "
+            if let id = remembered, id.hasPrefix("$"), TmuxSessionController.isValidTmuxId(id) {
+                let target = shellQuote(id)
+                script += "if \(tmux) has-session -t \(target) 2>/dev/null; then exec \(tmux) attach -t \(target); fi; "
+            }
+            script += "until \(tmux) has-session 2>/dev/null; do sleep 1; done; exec \(tmux) attach"
+            return "/bin/sh -c " + shellQuote(script)
+        }
+
+        /// A session target that matches `name` and nothing else.
+        ///
+        /// A bare name is only tmux's FIRST try: with no session of exactly
+        /// that name, `-t` goes on to take the one session whose name starts
+        /// with it, then a pattern — a remembered `dev` renamed or killed
+        /// meanwhile, and the renderer or the sidecar attached the user's
+        /// `devops` (tmux 3.6a, private socket: `-CC attach -t devo` lands on
+        /// `devops`, `-t d*s` too; `-t =devo` is refused). The `=` prefix
+        /// makes it exact; the attach then fails, which the attach line's
+        /// `has-session` gate and the sidecar's fallback chain already
+        /// handle.
+        nonisolated static func tmuxExactSession(_ name: String) -> String {
+            "=" + name
+        }
+
+        /// The SSH terminal's program: tmux control mode on the user's existing
+        /// sessions (the most recent one), and nothing else to their server.
+        /// With no session to attach (or no server), it waits for one — the
+        /// person's "New session" from the empty state, made by exec
+        /// (``createFirstTmuxSession(named:)``) — and attaches it; after tmux's
+        /// client is gone (a detach, the server gone), the account's login
+        /// shell takes the channel, as it had it when the attach was typed.
+        ///
+        /// The terminal channel's own program (`requestPTY(command:)`, run as
+        /// `sh -c`), never a line typed into the login shell (B267): a shell
+        /// still starting swallowed it — a 3 s zsh rc that flushes pending
+        /// input, as Powerlevel10k's instant prompt does — and nothing
+        /// attached. tmux is found as the probe finds it: a non-interactive
+        /// shell's PATH lacks Homebrew's and `~/.local/bin`.
+        ///
+        /// Every control-client boot — this one, the mosh fallback's, the mosh
+        /// sidecar's chain (``tmuxSidecarAttachChain(tmux:preferred:)``) — used
+        /// to start with `tmux set -g history-limit 50000`: a global,
+        /// persistent change to the user's own server, made on every attach,
+        /// that LOWERED a limit the user had set higher (tmux 3.6a, private
+        /// socket: 200000 → 50000, and every pane made after it got 50000).
+        /// Moshpit has no need of it: a pane's backfill reads 400 lines of
+        /// history (`backfillHistoryLines`), well inside tmux's default 2000,
+        /// and the phone keeps its own scrollback of the live output. How
+        /// much history the user's panes keep is the user's setting.
+        nonisolated static func tmuxControlAttachProgram(tmux: String) -> String {
+            "\(probedPath); \(tmux) -CC attach || { until \(tmux) has-session 2>/dev/null; do sleep 1; done; "
+                + "exec \(tmux) -CC attach; }; \(loginShellAfter)"
+        }
+
+        /// The sidecar terminal's program: its attach chain
+        /// (``tmuxSidecarAttachChain(tmux:preferred:)``) with tmux found as the
+        /// probe finds it, then the account's login shell — the channel's
+        /// own program, never typed into its shell (B267).
+        nonisolated static func tmuxSidecarAttachProgram(tmux: String, preferred: SidecarReturn?) -> String {
+            "\(probedPath); \(tmuxSidecarChain(tmux: tmux, preferred: preferred)); \(loginShellAfter)"
+        }
+
+        /// PATH for the programs: what the command gets, then the directories
+        /// the capability probe searched.
+        nonisolated private static var probedPath: String {
+            "PATH=\"$PATH:\(HostCapabilities.extraPathDirs)\""
+        }
+
+        /// The account's login shell, in the place of a program of ours that
+        /// is done: the channel stays as sshd would have opened it.
+        nonisolated static let loginShellAfter = "exec \"${SHELL:-/bin/sh}\" -l"
+
+        /// The session a rebuilt sidecar goes back to: the one the old
+        /// sidecar was following, by id and by name.
+        struct SidecarReturn: Equatable {
+            /// tmux's `$N` — stable across a rename.
+            var id: String
+            var name: String?
+        }
+
+        /// What the sidecar's SSH shell runs to put it in control mode: the
+        /// `preferred` session (a rebuild going back to where it was) by its
+        /// id, then by its exact name, else — or when both are gone — the most
+        /// recent session, retried every 2s while the server has none. Attach
+        /// only: Moshpit never creates a session on its own.
+        ///
+        /// By id first: a session renamed while the app was suspended (the
+        /// desktop's `rename-session`, an agent's) is no longer found by the
+        /// name the sidecar knew — `-t '=work'` fails once `work` is `play`
+        /// (tmux 3.6a) — and the rebuild fell through to the most recent
+        /// session, someone else's as likely as not. tmux never reuses an id
+        /// while its server lives; the name still finds a session made again
+        /// under it (a server restarted since numbers its ids afresh).
+        nonisolated static func tmuxSidecarAttachChain(tmux: String, preferred: SidecarReturn?) -> String {
+            // Under `sh -c` (B138): typed into a fish login shell, the
+            // `while … do … done` was a syntax error and the sidecar never
+            // attached.
+            Shell.portable(tmuxSidecarChain(tmux: tmux, preferred: preferred))
+        }
+
+        nonisolated private static func tmuxSidecarChain(tmux: String, preferred: SidecarReturn?) -> String {
+            var chain = "while ! \(tmux) -CC attach 2>/dev/null; do sleep 2; done"
+            if let name = preferred?.name {
+                chain = "\(tmux) -CC attach -t \(shellQuote(tmuxExactSession(name))) 2>/dev/null || "
+                    + chain
+            }
+            if let id = preferred?.id, id.hasPrefix("$"), TmuxSessionController.isValidTmuxId(id) {
+                chain = "\(tmux) -CC attach -t \(shellQuote(id)) 2>/dev/null || " + chain
+            }
+            return chain
         }
 
         /// Kill any previous connect's renderer stack for this connection —
@@ -2553,48 +4486,54 @@ final class SessionHub {
                 + "rm -f \"\(base)-\"*.pid; true"
         }
 
-        /// Type the attach line into the mosh shell and VERIFY — via the
-        /// sidecar, whose `list-clients` is authoritative — that a new
-        /// non-control client actually appeared. A login shell that is still
-        /// initialising can eat pre-typed input (Powerlevel10k's instant
-        /// prompt famously flushes pending stdin), which left the renderer
-        /// sitting at a bare prompt: "mosh connected but never attached".
-        /// Retry with a leading ^U (kill-line clears any half-swallowed
-        /// junk) until the client count rises past the pre-attach baseline —
-        /// a delta, because desktop clients may already be attached.
-        private func attachMoshRenderer(_ transport: MoshTransport,
-                                        control: TmuxSessionController,
-                                        tmux: String, session name: String) async {
-            let baseline = await nonControlClientCount(control)
-            let nonce = String(UUID().uuidString.prefix(8))
-            let line = Self.tmuxRendererAttachLine(
-                tmux: tmux, session: name, connectionId: connection.id, nonce: nonce)
-            for _ in 0..<4 {
-                guard !isStopping else { return }
-                await transport.send(Data(line.utf8))
-                try? await Task.sleep(nanoseconds: 1_500_000_000)
-                let now = await nonControlClientCount(control)
-                if now < 0 || now > max(baseline, 0) { return }   // attached (or sidecar gone — stop)
+        /// Replace the mosh+tmux control plane — its SSH connection and its
+        /// `-CC` controller — back on the session it was following. The pins
+        /// and agent stamps the old one held travel to the replacement, as in
+        /// `stop()`.
+        private func rebuildMoshTmuxSidecar() async {
+            captureSelection()   // remember window/pane before rebuild
+            let preferred = moshControl.flatMap { c in
+                c.snapshot.activeSessionId.map { SidecarReturn(id: $0, name: c.snapshot.sessions[$0]?.name) }
             }
+            if let control = moshControl {
+                // Its pins travel to the rebuilt sidecar — see stop().
+                owePins(control.takePinLedger())
+                inheritedAgentHooks = control.takeAgentHooks() ?? inheritedAgentHooks
+                await control.detach()
+            }
+            moshControl = nil
+            if let ssh = sidecarSSH { await ssh.close() }
+            sidecarSSH = nil
+            await startMoshControlPlane(preferred: preferred)
+            // Rebuilt sidecar = fresh controller with everAttached
+            // false, so the card shows "Attaching…" again — bound
+            // it with the same stall latch as the initial attach.
+            if let control = moshControl { beginAttachTimeout(controller: control) }
+            // The rebuilt sidecar starts at 80×24 again — re-pin the
+            // window to the phone grid or the TUI snaps to the corner.
+            await pinMoshWindow()
         }
 
-        /// `list-clients` non-control count over the sidecar, bounded by a 2s
-        /// timeout so a dying control channel can't hang the attach loop.
-        private func nonControlClientCount(_ control: TmuxSessionController) async -> Int {
-            await withTaskGroup(of: Int.self) { group in
-                group.addTask { @MainActor in
-                    await withCheckedContinuation { cont in
-                        control.countNonControlClients { cont.resume(returning: $0) }
-                    }
-                }
-                group.addTask {
-                    try? await Task.sleep(nanoseconds: 2_000_000_000)
-                    return -1
-                }
-                let first = await group.next() ?? -1
-                group.cancelAll()
-                return first
-            }
+        /// The mosh sidecar's own controller declared its `-CC` channel dead
+        /// (`onChannelSilent`): commands pending and nothing coming back, its
+        /// parser failed, or its stream ended.
+        ///
+        /// Nobody was listening. The SSH paths reconnect on it, but over mosh
+        /// the only check was the keepalive's exec probe — a fresh channel on
+        /// the same connection, which keeps passing while the `-CC` channel
+        /// itself is stalled (a wedged tmux, a stuck channel), so the
+        /// breadcrumb and the sheets froze for good. The mosh session is
+        /// fine; only its control plane is rebuilt. A rebuild or resume
+        /// already running picks it up through `moshSidecarSilent` (now, or
+        /// at the next keepalive tick).
+        func moshSidecarWentSilent(_ controller: TmuxSessionController) async {
+            guard !isStopping, moshControl === controller, moshTransport != nil else { return }
+            Log.ssh.notice("health: mosh sidecar dropped (tmux-channel-silent) — rebuilding the control plane")
+            moshSidecarSilent = true
+            guard !isResuming, !isReconnecting else { return }
+            isResuming = true
+            defer { isResuming = false }
+            await rebuildMoshTmuxSidecar()
         }
 
         /// Open the control-plane SSH session and run a `tmux -CC` control
@@ -2602,7 +4541,7 @@ final class SessionHub {
         /// stays sizeless (`rendersOutput: false`), so it never receives pane
         /// output and never affects window sizing; it exists purely to push
         /// live session/window/pane state into the native breadcrumb + sheets.
-        private func startMoshControlPlane(preferred: String? = nil) async {
+        private func startMoshControlPlane(preferred: SidecarReturn? = nil) async {
             // No TOFU handlers are wired here on purpose: this sidecar dials
             // the SAME `connection.host`/`connection.port` as the mosh
             // bootstrap's primary SSH connection, which — every call path
@@ -2624,11 +4563,41 @@ final class SessionHub {
             guard !isStopping else { await ssh.close(); return }
             // -CC needs a controlling terminal; the PTY size is irrelevant
             // (control clients are excluded from sizing until they report one,
-            // which we never do).
-            try? await ssh.requestPTY(rows: 24, cols: 80)
+            // which we never do). Its program is the attach chain: the
+            // preferred session (resume) or the most recent one, retried
+            // while the server has none — attach only, Moshpit never creates
+            // sessions on its own, and sets nothing on the user's server. Never
+            // a line typed into the login shell (B267): a shell still
+            // starting swallowed it and the sidecar never attached.
+            let tmux = connection.tmuxPath ?? "tmux"
+            do {
+                try await ssh.requestPTY(rows: 24, cols: 80,
+                                         command: Self.tmuxSidecarAttachProgram(tmux: tmux, preferred: preferred))
+            } catch {
+                await ssh.close()
+                return
+            }
+            guard !isStopping else { await ssh.close(); return }
             sidecarSSH = ssh
 
             let controller = TmuxSessionController(sshSession: ssh, rendersOutput: false)
+            // The person's "New session" before the first attach: an exec on
+            // this connection (B228).
+            controller.createsFirstSession = { [weak self, weak controller] name in
+                Task { @MainActor [weak self, weak controller] in
+                    await self?.createFirstMoshSession(named: name, notifying: controller)
+                }
+            }
+            // A new control plane: whatever was said about the last one is
+            // settled. Its own watchdog tells on it the way the SSH paths'
+            // does — see `moshSidecarWentSilent`.
+            moshSidecarSilent = false
+            controller.onChannelSilent = { [weak self, weak controller] in
+                Task { @MainActor [weak self] in
+                    guard let self, let controller else { return }
+                    await self.moshSidecarWentSilent(controller)
+                }
+            }
             if let ledger = inheritedPinLedger {
                 controller.inheritPinLedger(ledger)
                 inheritedPinLedger = nil
@@ -2638,17 +4607,11 @@ final class SessionHub {
                 inheritedAgentHooks = nil
             }
             controller.pendingRestore = lastSelection   // restore window/pane too
-            await controller.beginControlMode()
-            let tmux = connection.tmuxPath ?? "tmux"
-            // Attach the preferred session (resume) or the most recent one;
-            // with an empty server, retry until a session appears. Attach
-            // only — Moshpit never creates sessions on its own.
-            var chain = "while ! \(tmux) -CC attach 2>/dev/null; do sleep 2; done"
-            if let preferred {
-                chain = "\(tmux) -CC attach -t \(Self.shellQuote(preferred)) 2>/dev/null || " + chain
+            if let listing = moshTmuxLayoutsBeforeRenderer {
+                moshTmuxLayoutsBeforeRenderer = nil
+                controller.noteLayoutsBeforeRenderer(listing)
             }
-            let boot = "\(tmux) set -g history-limit 50000 2>/dev/null; " + chain + "\r"
-            try? await ssh.write(Data(boot.utf8))
+            await controller.beginControlMode()
             moshControl = controller
             controlPlaneWired(controller)
         }
@@ -2668,16 +4631,28 @@ final class SessionHub {
         private func beginAttachTimeout(controller: TmuxSessionController) {
             attachTimeoutTask?.cancel()
             attachStalled = false
-            let deadline = Date().addingTimeInterval(tmuxAttachTimeoutSeconds)
+            let deadline = Date().addingTimeInterval(attachTimeoutSeconds)
             attachTimeoutTask = Task { [weak self, weak controller] in
                 while Date() < deadline {
                     if Task.isCancelled { return }
                     guard let controller, !controller.snapshot.isAttached else { return }
                     try? await Task.sleep(nanoseconds: 500_000_000)
                 }
-                guard !Task.isCancelled, let self, let controller,
-                      !controller.snapshot.isAttached else { return }
-                self.attachStalled = true
+                guard !Task.isCancelled, controller?.snapshot.isAttached == false else { return }
+                // A server with no session isn't a stalled attach: it waits
+                // for the person's first session (B228).
+                if self?.awaitingFirstSession != true { self?.attachStalled = true }
+                // An attach that lands after all lifts the notice — a mosh
+                // server that had no session until the person made one
+                // (B212), a host slower than the bound. It used to stay up
+                // over the tree it had been waiting for. Nothing held while
+                // waiting: a controller let go ends the wait.
+                while !Task.isCancelled, controller?.snapshot.isAttached == false {
+                    try? await Task.sleep(nanoseconds: 500_000_000)
+                }
+                if !Task.isCancelled, controller?.snapshot.isAttached == true {
+                    self?.attachStalled = false
+                }
             }
         }
 
@@ -2694,6 +4669,11 @@ final class SessionHub {
         /// with it (``inheritedPinLedger``); the replacement re-pins the same
         /// window on attach and settles the rest on the real disconnect.
         func stop(forReconnect: Bool = false) async {
+            // An attempt still on its way is nobody's from here (`isCurrent`),
+            // and neither is what was typed for it.
+            startGeneration += 1
+            discardHeldInput()
+            if let rust { await rust.stop(); return }
             let stopBegan = Date()
             defer { Log.ssh.debug("resume: stop(forReconnect: \(forReconnect, privacy: .public)) took \(Int(Date().timeIntervalSince(stopBegan) * 1000), privacy: .public)ms") }
             if forReconnect {
@@ -2720,40 +4700,64 @@ final class SessionHub {
             moshTmuxAttachTask = nil
             herdrSidecarTask?.cancel()
             herdrSidecarTask = nil
-            herdrRetargetTask?.cancel()
-            herdrRetargetTask = nil
+            herdrReleaseAckTask?.cancel()
+            herdrReleaseAckTask = nil
             herdrBootFallbackTask?.cancel()
             herdrBootFallbackTask = nil
-            signalHerdrReleaseAck()   // never strand a switch on a dead channel
+            herdrAttachWatchTask?.cancel()
+            herdrAttachWatchTask = nil
+            // Nothing held reaches a pane now: deliveries answered not sent.
+            settleDroppedHerdrInput(herdrAttach.dropHeld(), tell: false)
+            herdrHoldTask?.cancel()
+            herdrHoldTask = nil
+            herdrLineGrid = nil
             if herdrFrameTarget != nil {
                 // Hand the attach back: herdr's direct attach is exclusive per
                 // terminal, so leaving it claimed would make the next connect
                 // rely on `--takeover` to evict a client that no longer exists.
-                // Awaited through the write chain so it actually reaches the
+                // Awaited through the write lane so it actually reaches the
                 // wire before the channel closes.
                 writeFrameCommand(HerdrFrameCommand.release)
-                await herdrWriteChain?.value
+                await herdrWriteLane.drain()
             }
-            herdrFrameTarget = nil
+            herdrAttach.reset()
             herdrFrameSSH = nil
-            herdrWriteChain = nil
-            // The reader loop lives inside the PTY we're about to drop, so a
-            // reconnect boots a fresh one rather than inheriting this state.
+            herdrWriteLane = WriteLane()
+            herdrHeldElsewhere = nil
+            // The reader loop is the PTY we're about to drop, so a reconnect
+            // starts a fresh one rather than inheriting this state.
             herdrChannelBooted = false
             herdrLoopReady = false
-            herdrFramePainted = false
-            herdrAttachAskedAt = nil
-            herdrExpectedCloses = 0
+            herdrAttachWaitsForLoop = false
+            if herdrNoticeRemedy == .redial {
+                herdrNotice = nil
+                herdrNoticeAction = nil
+                herdrNoticeRemedy = nil
+            }
             moshSwitchCoverTask?.cancel()
             moshSwitchCoverTask = nil
-            moshSwitchLastPaint = nil
+            moshSwitchCover = nil
             // The raw-attach loop dies with the mosh shell; only the local
             // steering state needs resetting so a reconnect re-targets.
             moshRawAttachTarget = nil
+            moshRawAttachApplied = nil
+            moshRetargetLane = WriteLane()
             moshRendererKey = nil
             herdrRawAttach = false
+            moshRendererWatchTask?.cancel()
+            moshRendererWatchTask = nil
+            moshRendererStop = nil
+            moshRendererMissingTerminal = nil
+            moshRendererBootedKey = nil
+            if herdrNoticeRemedy == .takeBack {
+                herdrNotice = nil
+                herdrNoticeAction = nil
+                herdrNoticeRemedy = nil
+            }
             herdrPushTask?.cancel()
             herdrPushTask = nil
+            herdrPushRetryTask?.cancel()
+            herdrPushRetryTask = nil
             herdrPushPump?.cancel()
             herdrPushPump = nil
             if let push = herdrPush { await push.shutdown() }
@@ -2768,7 +4772,7 @@ final class SessionHub {
                 if forReconnect {
                     // Not one byte more on this transport — see the doc
                     // comment. The debt moves to the replacement.
-                    inheritedPinLedger = controller.takePinLedger()
+                    owePins(controller.takePinLedger())
                     inheritedAgentHooks = controller.takeAgentHooks() ?? inheritedAgentHooks
                 } else if let ssh = viewModel.session {
                     // Hand back the pinned window sizes so other clients get
@@ -2784,12 +4788,12 @@ final class SessionHub {
                     // grid and the restore is lost. See
                     // TmuxSessionController.pristineLayouts.
                     let tmux = connection.tmuxPath ?? "tmux"
-                    var commands = controller.resizedWindows.sorted().map {
-                        // Unset the per-window override — the real "back to
-                        // automatic" (`resize-window -A` re-pins, still manual).
-                        "\(tmux) set-option -u -w -t \($0) window-size"
-                    }
-                    commands += controller.pristineLayoutRestoreCommands().map { "\(tmux) \($0)" }
+                    // Unset the per-window override — the real "back to
+                    // automatic" (`resize-window -A` re-pins, still manual) —
+                    // and the layouts, each window's only while it is still
+                    // in a layout of ours (round thirty-four): one script
+                    // that reads them all before anything changes a size.
+                    var commands = controller.pinHandBackScript(tmux: tmux, first: []).map { [$0] } ?? []
                     // And the size lease: another device following this
                     // window must learn it is free without waiting for our
                     // client to be noticed missing.
@@ -2801,7 +4805,7 @@ final class SessionHub {
             tmuxController = nil
             if let control = moshControl {
                 if forReconnect {
-                    inheritedPinLedger = control.takePinLedger()
+                    owePins(control.takePinLedger())
                     inheritedAgentHooks = control.takeAgentHooks() ?? inheritedAgentHooks
                 } else {
                     // Restore the status bar over the LIVE control channel (a
@@ -2816,16 +4820,21 @@ final class SessionHub {
                     // order and same reasons as the SSH path above.
                     if let ssh = sidecarSSH {
                         let tmux = connection.tmuxPath ?? "tmux"
-                        var commands = control.resizedWindows.sorted().map {
-                            "\(tmux) set-option -u -w -t \($0) window-size"
-                        }
-                        commands += control.pristineLayoutRestoreCommands().map { "\(tmux) \($0)" }
+                        // The phone's renderer out first (B270): attached,
+                        // it sizes the windows straight back to the phone
+                        // when they go back to automatic sizing. The session
+                        // is ending; so is its mosh.
+                        let renderer = control.rendererDetachCommand(tmux: tmux).map { [$0] } ?? []
+                        let commands = control.pinHandBackScript(tmux: tmux, first: renderer).map { [$0] } ?? []
                         await Self.runCourtesy(commands, over: ssh)
                     }
                 }
                 await control.detach()
             }
             moshControl = nil
+            // The session's real end: pins a retired controller owed that no
+            // controller took over are handed back too (B167).
+            if !forReconnect { await payOwedPins() }
             if let ssh = sidecarSSH {
                 await ssh.close()
             }
@@ -2839,19 +4848,21 @@ final class SessionHub {
             }
             moshTransport = nil
             coordinator.attachPrediction(nil)
-            // Fallback reap for a mosh-server this session's own
-            // `onReturnPathDead` watchdog never got the chance to reach —
-            // see `moshServerPid`'s doc comment for the exact window (this
-            // covers it AND the watchdog's own few remaining seconds, since
-            // nothing here checks how much of it elapsed). Gated on
-            // `moshHadFirstContact` being false, not on anything about WHY
-            // `stop()` is running — see that flag's doc comment for why an
-            // automatic `reconnect()` or a manual teardown of a session that
-            // actually worked can never reach this branch with a pid still
-            // set. `withTimeoutValue` bounds it so a host that's gone dark
-            // can't hang teardown; `sidecarConnect`/`connection` are copied
-            // out rather than capturing `self` into the escaping closure.
-            if let pid = moshServerPid, !moshHadFirstContact {
+            // The mosh-server this session started, stopped when nothing can
+            // come back to it (`MoshServerReap.onTeardown`): one the user
+            // closed — disconnected, switched to SSH, reconnected afresh —
+            // contacted or not (B164: the app keeps no key, so it can never
+            // be resumed), and at a reconnect only one never reached (also
+            // the fallback for a server `onReturnPathDead`'s watchdog never
+            // got to — see `moshServerPid`'s doc comment for the window). A
+            // session the server ended has nothing left to stop.
+            // `withTimeoutValue` bounds it so a host that's gone dark can't
+            // hang teardown; `sidecarConnect`/`connection` are copied out
+            // rather than capturing `self` into the escaping closure.
+            let teardown: MoshServerReap.Teardown =
+                forReconnect ? .reconnect : (viewModel.endedByServer ? .ended : .userClosed)
+            if let pid = moshServerPid,
+               MoshServerReap.onTeardown(teardown, contacted: moshHadFirstContact) {
                 moshServerPid = nil   // best-effort, once — a second kill is harmless but pointless
                 let reap = sidecarConnect
                 let target = connection
@@ -2863,6 +4874,105 @@ final class SessionHub {
                 }
             }
             await viewModel.disconnect()
+        }
+
+        /// Whether start attempt `attempt` still owns this session: no stop
+        /// and no newer attempt since it began. Every await in the start paths
+        /// (`start`, `startMosh`, `fallbackToSSH`) resumes into this check,
+        /// and an attempt that fails it lets go of what it made instead of
+        /// wiring it up. They checked the dial alone: a disconnect during the
+        /// capability probe still got a tmux controller, its timers and its
+        /// monitor (B122); one while mosh-server was starting left a transport
+        /// running and a server nobody reaped; and an attempt a redial had
+        /// replaced could mark the new one failed or install a second
+        /// transport over it (B168). Every stop is a generation of its own.
+        private func isCurrent(_ attempt: Int) -> Bool {
+            attempt == startGeneration && !isStopping
+        }
+
+        /// A tmux controller its attempt never installed: what it took over —
+        /// the retired controller's pins and agent stamps — goes back to the
+        /// session (and is handed to the server now if the session is over),
+        /// and it lets go of the channel.
+        private func abandon(_ controller: TmuxSessionController, over session: SSHSession) async {
+            owePins(controller.takePinLedger())
+            inheritedAgentHooks = controller.takeAgentHooks() ?? inheritedAgentHooks
+            await controller.detach()
+            if isStopping { await payOwedPins(preferring: session) }
+        }
+
+        /// Stops the mosh-server an attempt started and was superseded before
+        /// it could tell the session its pid: nothing else ever will (B168).
+        /// Over the bootstrap's own connection while it is still open — no
+        /// new sign-in — else over one of its own, bounded.
+        private func reapAbandonedServer(_ pid: Int?, over ssh: SSHSession) async {
+            guard let pid else { return }
+            let command = "kill \(pid) 2>/dev/null"
+            if await ssh.isConnected, (try? await ssh.executeCommand(command)) != nil { return }
+            let dial = sidecarConnect
+            let target = connection
+            _ = await withTimeoutValue(4) {
+                guard let reaper = try? await dial(target) else { return }
+                _ = try? await reaper.executeCommand(command)
+                await reaper.close()
+            }
+        }
+
+        /// Add `ledger` to the pins this session still owes the server —
+        /// never in their place. Every retirement used to assign it, so a
+        /// second one before a controller took the first debt over dropped
+        /// that debt for good (B167).
+        private func owePins(_ ledger: TmuxSessionController.PinLedger) {
+            guard let owed = inheritedPinLedger, !owed.isEmpty else {
+                inheritedPinLedger = ledger
+                return
+            }
+            guard !ledger.isEmpty else { return }
+            // Through a controller: the ledger's records are its business.
+            // The older debt first — a window's pristine layout must predate
+            // its first pin, and the first record of it wins.
+            let tally = Self.pinTally()
+            tally.inheritPinLedger(owed)
+            tally.inheritPinLedger(ledger)
+            inheritedPinLedger = tally.takePinLedger()
+        }
+
+        /// Hand back pins a retired tmux controller owed that no controller
+        /// took over — the redial failed, or landed on a plain shell — at the
+        /// session's real end: over its own connection while it has a live
+        /// one, else over a connection of their own (crates/session's
+        /// `pay_pin_debt`). They used to be dropped: after a drop, a failed
+        /// redial and a disconnect, the desktop's windows stayed at the
+        /// phone's size (B167).
+        private func payOwedPins(preferring held: SSHSession? = nil) async {
+            guard let owed = inheritedPinLedger else { return }
+            inheritedPinLedger = nil
+            guard !owed.isEmpty else { return }
+            let tally = Self.pinTally()
+            tally.inheritPinLedger(owed)
+            let tmux = connection.tmuxPath ?? "tmux"
+            // The phone's mosh renderer out first (B270), then unpin, then the
+            // layouts — see stop()'s own courtesy.
+            let renderer = tally.rendererDetachCommand(tmux: tmux).map { [$0] } ?? []
+            let commands = tally.pinHandBackScript(tmux: tmux, first: renderer).map { [$0] } ?? []
+            guard !commands.isEmpty else { return }
+            for ssh in [held, viewModel.session].compactMap({ $0 }) where await ssh.isConnected {
+                await Self.runCourtesy(commands, over: ssh)
+                return
+            }
+            let dial = sidecarConnect
+            let target = connection
+            _ = await withTimeoutValue(8) {
+                guard let ssh = try? await dial(target) else { return }
+                for command in commands { _ = try? await ssh.executeCommand(command) }
+                await ssh.close()
+            }
+        }
+
+        /// A controller that never connects, for reading and merging pin
+        /// ledgers.
+        private static func pinTally() -> TmuxSessionController {
+            TmuxSessionController(sshSession: DetachedTmuxTransport(), rendersOutput: false)
         }
 
         /// Teardown round trips the server is owed but nobody is waiting on
@@ -2938,6 +5048,45 @@ final class SessionHub {
         private func endFirstFrameWait() {
             cancelFirstFrameWait()
             retiredTmuxController = nil
+            // A tmux attach's first frame (or the wait's end): the decision
+            // the held input waited for. Nothing is held on other paths.
+            releaseHeldInput()
+        }
+
+        /// Hand on what was typed while the attach was undecided
+        /// (`heldInput`), in order, to where typing goes now: a plain
+        /// session's shell, or the active pane of an attached tmux. With tmux
+        /// never attached (no session, a refusal) there is no such place, and
+        /// it is dropped.
+        private func releaseHeldInput() {
+            guard let held = heldInput else { return }
+            heldInput = nil
+            guard !held.isEmpty else { return }
+            if let controller = tmuxController, !controller.snapshot.isAttached {
+                Log.input.info("input typed before the attach dropped: tmux never attached")
+                return
+            }
+            for data in held { routeInput(data) }
+        }
+
+        /// Whether input may go out now: nothing is held, or what is held
+        /// waited for a tmux attach that has landed — then it goes first, so
+        /// the order typed stands (it would otherwise wait for the first
+        /// frame, and a keystroke or paste after the attach overtake it).
+        private func inputDecided() -> Bool {
+            guard heldInput != nil else { return true }
+            guard let controller = tmuxController, controller.snapshot.isAttached else { return false }
+            releaseHeldInput()
+            return true
+        }
+
+        /// Drop what is held: the attempt is torn down, or what it is
+        /// becoming takes no input on the way (herdr's frame loop).
+        private func discardHeldInput() {
+            if let held = heldInput, !held.isEmpty {
+                Log.input.info("input typed before the attach dropped: \(held.count, privacy: .public) writes")
+            }
+            heldInput = nil
         }
 
         /// Stop waiting but keep the ghost: the attempt being torn down is
@@ -2954,6 +5103,7 @@ final class SessionHub {
         /// several death detectors fired, and that is unanswerable after the
         /// fact unless each one says so at the time.
         func connectionDropped(reason: String = "unspecified") async {
+            guard rust == nil else { return }   // the core redials on its own
             guard !isStopping else { return }
             Log.ssh.notice("health: dropped (\(reason, privacy: .public)) — reconnecting")
             viewModel.markReconnecting()
@@ -2964,6 +5114,7 @@ final class SessionHub {
         /// app is foreground). Doubles as NAT-warmth (the probe is real
         /// traffic) and fast death detection, and retries a stalled reconnect.
         func keepAlive() async {
+            guard rust == nil else { return }   // the core keeps its own alive
             guard !isStopping, !isReconnecting else { return }
             // mosh owns its own UDP resume/roam; don't probe its closed bootstrap.
             if moshTransport != nil { await resumeIfNeeded(); return }
@@ -2998,10 +5149,18 @@ final class SessionHub {
                     viewModel.markReconnecting()
                     await reconnect()
                 }
-            case .reconnecting, .disconnected, .failed:
+            case .failed:
+                // A refused host key or sign-in waits for the user: retried
+                // here, the card came back and the server was sent the wrong
+                // password every tick (B163).
+                guard viewModel.failureRetryable else { return }
+                await reconnect()   // retry on the next tick (acts as backoff)
+            case .reconnecting, .disconnected:
                 await reconnect()   // retry on the next tick (acts as backoff)
             case .idle, .connecting:
                 break               // initial connect in flight — leave it
+            case .ended:
+                break               // the server ended it: the user's call
             }
         }
 
@@ -3014,6 +5173,7 @@ final class SessionHub {
         /// own is redialed as automatic, while a redial of a connect the user
         /// asked for keeps its right to a modal if it fails too.
         func reconnect(automatic: Bool = true) async {
+            guard rust == nil else { return }
             guard !isStopping, !isReconnecting, !isResuming else { return }
             isReconnecting = true
             defer { isReconnecting = false }
@@ -3028,6 +5188,7 @@ final class SessionHub {
         /// on a half-open socket) probe and just reconnect. mosh keeps its own
         /// UDP resume path.
         func forceResume() async {
+            guard rust == nil else { return }   // the core's own foreground rules
             guard !isStopping else { return }
             Log.ssh.debug("resume: forceResume begin")
             if let transport = moshTransport {
@@ -3039,6 +5200,9 @@ final class SessionHub {
                 await resumeIfNeeded()
                 return
             }
+            // However long the app was away, a refused host key or sign-in
+            // is still the user's to retry (B163).
+            if case .failed = viewModel.status, !viewModel.failureRetryable { return }
             // A dial that never landed is the same attempt continued (see
             // retryIfDown); a transport that dropped is redialed as automatic.
             let automatic = isDialing ? viewModel.isAutoReconnectInFlight : true
@@ -3058,6 +5222,7 @@ final class SessionHub {
         /// plus the periodic keepalive tick can both call this for the same
         /// session.
         func resumeIfNeeded(probeTimeout: Double? = nil) async {
+            guard rust == nil else { return }
             guard !isStopping, !isReconnecting, !isResuming else { return }
             // Nothing up yet, or nothing up any more: there is no transport
             // to probe, so redial / reconnect now instead of returning.
@@ -3088,30 +5253,12 @@ final class SessionHub {
                     // the breadcrumb is driven entirely by this sidecar's
                     // snapshot, so a failed re-establish would otherwise leave it
                     // blank until the app restarts. Since keepalive funnels
-                    // through here, a nil controller is retried every cycle.
+                    // through here, a nil controller is retried every cycle —
+                    // and so is a controller whose own watchdog declared its
+                    // channel dead while a pass like this one was running.
                     let alive = await isSidecarAlive(timeout: probeTimeout)
-                    if !alive || moshControl == nil {
-                        captureSelection()   // remember window/pane before rebuild
-                        let preferred = moshControl.flatMap { c in
-                            c.snapshot.activeSessionId.flatMap { c.snapshot.sessions[$0]?.name }
-                        }
-                        if let control = moshControl {
-                            // Its pins travel to the rebuilt sidecar — see stop().
-                            inheritedPinLedger = control.takePinLedger()
-                            inheritedAgentHooks = control.takeAgentHooks() ?? inheritedAgentHooks
-                            await control.detach()
-                        }
-                        moshControl = nil
-                        if let ssh = sidecarSSH { await ssh.close() }
-                        sidecarSSH = nil
-                        await startMoshControlPlane(preferred: preferred)
-                        // Rebuilt sidecar = fresh controller with everAttached
-                        // false, so the card shows "Attaching…" again — bound
-                        // it with the same stall latch as the initial attach.
-                        if let control = moshControl { beginAttachTimeout(controller: control) }
-                        // The rebuilt sidecar starts at 80×24 again — re-pin the
-                        // window to the phone grid or the TUI snaps to the corner.
-                        await pinMoshWindow()
+                    if !alive || moshControl == nil || moshSidecarSilent {
+                        await rebuildMoshTmuxSidecar()
                     }
                 }
                 return
@@ -3221,6 +5368,7 @@ final class SessionHub {
         /// caller skips its probe.
         @discardableResult
         func retryIfDown(stalledDialAfter: TimeInterval, reason: String) async -> Bool {
+            if rust != nil { return true }   // the core heard the same change
             guard !isStopping, !isReconnecting, !isResuming else { return false }
             if isDialing {
                 let age = dialBegan.map { Date().timeIntervalSince($0) } ?? .infinity
@@ -3234,6 +5382,9 @@ final class SessionHub {
             // resumeIfNeeded's transport branch and must not be preempted.
             guard moshTransport == nil else { return false }
             switch viewModel.status {
+            case .failed where !viewModel.failureRetryable:
+                // Nothing to do about it but ask the user again (B163).
+                return false
             case .failed, .disconnected:
                 Log.ssh.notice("resume: retry (\(reason, privacy: .public)) of a down session")
                 viewModel.markReconnecting()
@@ -3242,6 +5393,23 @@ final class SessionHub {
             default:
                 return false
             }
+        }
+
+        /// The device was unlocked: a session the locked keychain stopped
+        /// (``TerminalViewModel/failureWaitsForUnlock`` — the saved
+        /// credential or the trusted host keys couldn't be read) dials again
+        /// now, as crates/session's `Lifecycle::unlocked` does (B211).
+        /// Whatever else is down keeps to its own rules: the keepalive tick,
+        /// the foreground return, the person. Whether it acted.
+        @discardableResult
+        func retryAfterUnlock() async -> Bool {
+            if rust != nil { return false }   // the core hears the unlock itself (RustCore)
+            guard !isStopping, !isReconnecting, !isResuming else { return false }
+            guard case .failed = viewModel.status, viewModel.failureWaitsForUnlock else { return false }
+            Log.ssh.notice("resume: redial (unlock) of a session the locked keychain stopped")
+            viewModel.markReconnecting()
+            await reconnect()
+            return true
         }
 
         /// Probe deadline for the foreground-return check specifically. A
@@ -3253,7 +5421,8 @@ final class SessionHub {
         @ObservationIgnored var foregroundProbeTimeout: Double = 4
 
         func isTransportAlive(timeout: Double? = nil) async -> Bool {
-            await probeTransport(timeout: timeout) == .alive
+            if let rust { return rust.isLive }
+            return await probeTransport(timeout: timeout) == .alive
         }
 
         /// What a liveness probe actually found. The distinction matters:
@@ -3265,6 +5434,7 @@ final class SessionHub {
         enum ProbeResult { case alive, failed, timedOut }
 
         func probeTransport(timeout: Double? = nil) async -> ProbeResult {
+            if let rust { return rust.isLive ? .alive : .failed }
             guard let ssh = viewModel.session else { return .failed }
             return await Self.probe(ssh, timeout: timeout ?? probeTimeout)
         }
@@ -3326,9 +5496,35 @@ final class SessionHub {
     /// Background longer than this → force a fresh reconnect on return rather
     /// than trusting the liveness probe (iOS has almost certainly killed TCP).
     private let forceReconnectAfter: TimeInterval = 20
+    /// Where the device's unlock is heard: the sessions the locked keychain
+    /// stopped dial again then (``deviceUnlocked()``).
+    @ObservationIgnored private let unlocks = UnlockWatch()
 
-    init(metrics: SessionMetricsRegistry) {
+    /// `unlocks`: where `protectedDataDidBecomeAvailable` is posted (tests
+    /// post on their own).
+    init(metrics: SessionMetricsRegistry, unlocks center: NotificationCenter = .default) {
         self.metrics = metrics
+        unlocks.observe(center) { [weak self] in
+            Task { @MainActor [weak self] in await self?.deviceUnlocked() }
+        }
+    }
+
+    deinit { unlocks.stop() }
+
+    /// The device was unlocked: every session the locked keychain stopped —
+    /// its saved credential, or the trusted host keys, unreadable until now —
+    /// dials again at once (``ActiveSession/retryAfterUnlock()``), as
+    /// crates/session's sessions do on `device_unlocked` (B201, B211). It
+    /// used to wait for the next keepalive tick or foreground return — and
+    /// before the credential's lock counted as retryable at all, for the
+    /// person. Concurrent, as ``resumeAll(force:)``. A session on the Rust
+    /// core hears the unlock through ``RustCore``.
+    func deviceUnlocked() async {
+        await withTaskGroup(of: Void.self) { group in
+            for session in sessions.values {
+                group.addTask { @MainActor in _ = await session.retryAfterUnlock() }
+            }
+        }
     }
 
     /// Drive keepalive off the app's foreground state. Active → probe now and
@@ -3337,9 +5533,14 @@ final class SessionHub {
     /// Set/cleared by TerminalScreen; the foreground transition re-pins only
     /// this one — re-pinning windows nobody is looking at would shrink them
     /// for desktop clients for no benefit.
-    weak var visibleSession: ActiveSession?
+    weak var visibleSession: ActiveSession? {
+        didSet {
+            if oldValue !== visibleSession { RustCore.visibleSessionChanged(visibleSession) }
+        }
+    }
 
     func setForeground(_ active: Bool) {
+        RustCore.current?.setForeground(active)
         isForeground = active
         if active {
             startPathWatchIfNeeded()
@@ -3475,7 +5676,7 @@ final class SessionHub {
             // its transport; a dead one is rebuilt with the fresh config.
             let isDead: Bool
             switch existing.viewModel.status {
-            case .idle, .failed, .disconnected: isDead = true
+            case .idle, .failed, .disconnected, .ended: isDead = true
             case .connecting, .connected, .reconnecting: isDead = false
             }
             if !isDead || existing.connection == connection {
@@ -3506,6 +5707,12 @@ final class SessionHub {
             m.moshDiagnostics = diagnostics
             self.metrics.metrics[id] = m
         }
+        // The server ended the session (a mosh `exit`): out of the hub, as
+        // Disconnect takes it, unless something newer took its place.
+        active.endedSink = { [weak self, weak active] in
+            guard let self, let active, self.sessions[id] === active else { return }
+            Task { await self.disconnect(id) }
+        }
         return active
     }
 
@@ -3533,18 +5740,6 @@ final class SessionHub {
         if case .connected = active.viewModel.status {
             Task { await ShareQueueDrainer.drain(hub: self) }
         }
-    }
-
-    /// Returns the existing live session or creates + starts a new one.
-    /// Prefer prepare()+start() from screens that present the host-key
-    /// prompt; this convenience keeps non-UI callers working.
-    @discardableResult
-    func connect(_ connection: ServerConnection,
-                 theme: TerminalTheme,
-                 fontSize: Double) async -> ActiveSession {
-        let active = prepare(connection)
-        await start(active, theme: theme, fontSize: fontSize)
-        return active
     }
 
     /// Probe every live session after the app returns to the foreground.
@@ -3588,6 +5783,24 @@ final class SessionHub {
         return await active.deliverInput(bytes, toPane: paneId)
     }
 
+    /// Connection `saved` was saved while its session runs (B329): on the
+    /// Rust core its next connect uses the saved address, user, proxy and
+    /// credential, not the ones it started with. The Swift path keeps the
+    /// ones it started with until the person connects again (B329: Rust
+    /// 已对，Swift 不修).
+    func adopt(_ saved: ServerConnection) {
+        sessions[saved.id]?.rust?.adopt(saved)
+    }
+
+    /// Hands `release` to connection `id`'s session on the Rust core, to run
+    /// once it has connected again as the connection was saved or has
+    /// ended (B329). False: no such session.
+    func releaseAfterReconnect(_ id: UUID, _ release: @escaping () async -> Void) -> Bool {
+        guard let rust = sessions[id]?.rust, !rust.hasClosed else { return false }
+        rust.releaseAfterReconnect(release)
+        return true
+    }
+
     func disconnect(_ connectionId: UUID) async {
         guard let active = sessions[connectionId] else { return }
         active.isStopping = true   // suppress keepalive/auto-reconnect during teardown
@@ -3599,5 +5812,135 @@ final class SessionHub {
         m.connectedAt = nil
         m.isRoaming = false
         metrics.metrics[connectionId] = m
+    }
+}
+
+/// A tmux transport that carries nothing, for a controller that only reads
+/// and merges pin ledgers (`ActiveSession.pinTally`).
+private struct DetachedTmuxTransport: TmuxTransport {
+    let dataStream = AsyncStream<Data> { $0.finish() }
+    func write(_ data: Data) async throws {}
+}
+
+// MARK: - Sessions on the Rust core (W14a)
+
+extension SessionHub.ActiveSession {
+    /// Runs this session on the Rust core when the switch says so for its
+    /// connection (read once, when the session first starts: a running
+    /// session keeps the path it started on). Whether it did.
+    func startOnRustCoreIfChosen(theme: TerminalTheme, fontSize: Double, fontName: String,
+                                 cursorShape: CursorShape, cursorColorId: String,
+                                 cursorBlink: Bool, automatic: Bool) async -> Bool {
+        let appearance = RustTmuxController.Appearance(
+            theme: theme, fontSize: fontSize, fontName: fontName, cursorShape: cursorShape,
+            cursorColorId: cursorColorId, cursorBlink: cursorBlink)
+        let driver: RustSessionDriver
+        if let rust {
+            driver = rust
+        } else {
+            guard RustSessionSwitch.runsOnRust(connection) else { return false }
+            driver = RustSessionDriver(session: self, core: .shared, appearance: appearance)
+            rust = driver
+            Log.ssh.info("session \(self.connection.id.uuidString, privacy: .public): on the Rust core")
+        }
+        lastTheme = theme
+        lastFontSize = fontSize
+        lastFontName = fontName
+        lastCursorShape = cursorShape
+        lastCursorColorId = cursorColorId
+        lastCursorBlink = cursorBlink
+        if !automatic { moshReturnPathDead = false }
+        await driver.start(appearance: appearance, automatic: automatic)
+        return true
+    }
+
+    /// The Rust session's tmux surface, as the chrome reads a controller.
+    func rustSetTmux(_ controller: TmuxSessionController?) {
+        tmuxController = controller
+    }
+
+    /// The previous attach's surface, frozen on screen until the new one paints.
+    func rustSetRetired(_ controller: TmuxSessionController?) {
+        retiredTmuxController = controller
+    }
+
+    func rustSetAwaitingFirstFrame(_ awaiting: Bool) {
+        awaitingFirstFrame = awaiting
+    }
+
+    /// mosh + tmux on the core: the `-CC` sidecar's tree, where the chrome
+    /// reads the mosh control plane.
+    func rustSetMoshControl(_ controller: TmuxSessionController?) {
+        moshControl = controller
+    }
+
+    /// herdr on the core: its surface, where the chrome reads herdr.
+    func rustSetHerdr(_ client: HerdrControlClient?) {
+        herdrControl = client
+    }
+
+    /// herdr's banner and its button, worded from the core's notice.
+    func rustSetHerdrNotice(_ notice: String?, action: String?) {
+        if herdrNotice != notice { herdrNotice = notice }
+        if herdrNoticeAction != action { herdrNoticeAction = action }
+    }
+
+    /// How long the input-lost notice waits for the session to be live again,
+    /// and how long it then shows (``rustNoteInputLost()``).
+    static var inputLostWait: Duration = .seconds(30)
+    static var inputLostShown: Duration = .seconds(4)
+
+    /// What was typed on a plain shell while the way back asked a connection
+    /// that turned out dead wasn't sent: the redial is a new shell (B396).
+    /// Said once the session is live again, for a few seconds, in the
+    /// banner's slot — never over a notice of herdr's that is showing (that
+    /// one stays, and the log line says this) — then cleared, unless
+    /// something else has taken the slot meanwhile.
+    func rustNoteInputLost() {
+        let notice = String(localized: "What you just typed wasn't sent: the connection dropped, and it's back now")
+        let deadline = ContinuousClock.now + Self.inputLostWait
+        Task { @MainActor [weak self] in
+            while self?.viewModel.connState != .live {
+                guard self != nil, ContinuousClock.now < deadline else { return }
+                try? await Task.sleep(for: .milliseconds(100))
+            }
+            guard let self, self.herdrNotice == nil else { return }
+            self.herdrNotice = notice
+            self.herdrNoticeAction = nil
+            try? await Task.sleep(for: Self.inputLostShown)
+            if self.herdrNotice == notice { self.herdrNotice = nil }
+        }
+    }
+
+    /// A control plane on the core is wired as the Swift path's are: tmux's
+    /// panes get their host-path links and taps (the probe, the pane's
+    /// working directory and the preview on the session's own connection,
+    /// W14b), and whoever waits for the control plane hears of it.
+    func rustControlPlaneWired(_ control: any MultiplexerControlling) {
+        controlPlaneWired(control)
+    }
+
+    /// The person said no to the server's key on the core's card: the hub
+    /// takes the session out, as the Swift path's ``retireDeclined()``
+    /// does (B151, B334).
+    func rustRetireDeclined() {
+        retireDeclined()
+    }
+
+    /// What the core's probe found about the host, published as the Swift
+    /// path's `probeCapabilities` publishes it (B336).
+    func rustSetCapabilities(_ capabilities: HostCapabilities) {
+        self.capabilities = capabilities
+    }
+
+    /// The mosh diagnostics' Repaint: mosh-server redraws the screen from
+    /// blank, on the core's mosh as on the Swift transport. It did nothing
+    /// on the core: the Swift transport isn't there (B338).
+    func requestRepaint() {
+        if let rust {
+            rust.repaint()
+            return
+        }
+        Task { await moshTransport?.requestFullRedraw() }
     }
 }

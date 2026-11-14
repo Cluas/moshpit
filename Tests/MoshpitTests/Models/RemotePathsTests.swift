@@ -114,6 +114,25 @@ struct RemotePathsTests {
         #expect(cmd.contains("'/Users/me/it'\\''s here'"))
     }
 
+    /// B138: fish takes `\'` and `\\` as escapes inside single quotes, so a
+    /// value ending in `\` — a working directory, a path an agent printed —
+    /// left its quote open and the next value ran on unquoted. Every word of
+    /// the probe now reads the same in fish as in sh.
+    @Test("a value ending in a backslash stays one word in fish too")
+    func probeWordsReadAlikeInFish() {
+        let batch = TerminalPathScanner.scan(#"out\ out/a.png"#)
+        let cmd = PathProbe.command(cwd: #"/Users/me/odd\"#, candidates: batch)
+        let words = PosixShell.rawWords(cmd)
+        #expect(words.count >= 6, "\(words)")
+        for word in words {
+            let plain = word.unicodeScalars.allSatisfy { $0 != "'" && $0 != "\\" } ? word : nil
+            let posix = PosixShell.unquote(word) ?? plain
+            #expect(posix != nil, "\(word)")
+            #expect(PosixShell.unquoteAsFish(word) ?? plain == posix, "\(word.prefix(80))")
+        }
+        #expect(words.contains(Shell.quote(#"/Users/me/odd\"#)))
+    }
+
     #if os(macOS)
     /// Runs the probe for real against a scratch tree, through the login
     /// shell a Mac host actually has (zsh) and through plain sh.
@@ -235,9 +254,13 @@ struct RemotePathsTests {
         #expect(RemoteFileCommands.parseStat("d\n", path: "/r/plots")?.isDirectory == true)
         #expect(RemoteFileCommands.parseStat("f   1234\n", path: "/r/a.png")?.size == 1234)
         #expect(RemoteFileCommands.parseStat("", path: "/r/nope") == nil)
-        let listed = RemoteFileCommands.parseList("b.png\nsub/\na.png\n", in: "/r/")
-        #expect(listed.map(\.path) == ["/r/b.png", "/r/sub", "/r/a.png"])
-        #expect(listed.map(\.isDirectory) == [false, true, false])
+        // B333: NUL-separated `<d|f> <seconds|-> <name>` records, newest first.
+        let listed = RemoteFileCommands.parseList(
+            "f 1700000001 a.png\u{0}d 1700000002 sub\u{0}f 1700000003 b.png\u{0}", in: "/r/")
+        let paths = listed.map(\.path)
+        let kinds = listed.map(\.isDirectory)
+        #expect(paths == ["/r/b.png", "/r/sub", "/r/a.png"])
+        #expect(kinds == [false, true, false])
     }
 
     #if os(macOS)
@@ -362,6 +385,12 @@ struct RemotePathsTests {
         #expect(RemoteFileEdits.validName("") == nil)
         #expect(RemoteFileEdits.validName("..") == nil)
         #expect(RemoteFileEdits.validName("a/b") == nil)
+        // B141: a `/` or NUL hidden in one character with a combining mark
+        // after it still splits the name on the host.
+        #expect(RemoteFileEdits.validName("a/\u{301}b") == nil)
+        #expect(RemoteFileEdits.validName("x/\u{20DD}") == nil)
+        #expect(RemoteFileEdits.validName("a\0\u{301}b") == nil)
+        #expect(RemoteFileEdits.validName("e\u{301}t\u{E9}.md") == "e\u{301}t\u{E9}.md")
         let taken: Set = ["shot.png", "shot 2.png", "Makefile", "archive.tar.gz"]
         #expect(RemoteFileEdits.uniqueName("new.png", taken: taken) == "new.png")
         #expect(RemoteFileEdits.uniqueName("shot.png", taken: taken) == "shot 3.png")

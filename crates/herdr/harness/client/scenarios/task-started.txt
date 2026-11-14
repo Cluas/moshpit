@@ -1,0 +1,6 @@
+# A task on today's herdr: worktree, `pane run`, the first message once the
+# agent is detected (retried until then).
+host detect 4000
+at 0 start
+at 300 task /home/dev/code/app fix-scroll claude fix the bug
+end 15000

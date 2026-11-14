@@ -1,0 +1,38 @@
+[package]
+name = "moshpit-term"
+description = "The shared terminal core: our fork of wezterm-term (vendor/wezterm) behind Moshpit's own API (feed, resize, damage, cells to draw, history, selection, search, OSC 8 links, modes), fed from the byte channel off the main thread, behind a C ABI (include/moshpit_term.h). Design: docs/nsh/TERMINAL-CORE.md."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+# MIT. The emulator, our fork of wezterm's (vendor/wezterm, its own
+# workspace; our patches: docs/WEZTERM-PATCHES.md): grid, history with
+# stable row numbers, graphemes, kitty/sixel/iTerm2 images, the parser.
+wezterm-term = { path = "../../vendor/wezterm/term" }
+wezterm-escape-parser = { path = "../../vendor/wezterm/wezterm-escape-parser", features = ["std", "use_image"] }
+wezterm-surface = { path = "../../vendor/wezterm/wezterm-surface", features = ["std", "use_image"] }
+# Only for the keyboard-encoding type the emulator reports (no tty code).
+termwiz = { path = "../../vendor/wezterm/termwiz", default-features = false, features = ["use_image"] }
+# wezterm's kitty keyboard encoder (the emulator's own key encoder knows
+# xterm's encodings only); already in the tree through termwiz.
+wezterm-input-types = { path = "../../vendor/wezterm/wezterm-input-types", default-features = false }
+moshpit-stream = { path = "../stream" }
+# MIT OR Apache-2.0: search (already in the app's dependency tree through
+# NSH), the OSC 52 answer.
+regex = { version = "1", default-features = false, features = ["std", "unicode-perl", "unicode-case"] }
+base64 = "0.22"
+# Grapheme clusters for the input method's shadow document (already in the
+# tree through wezterm).
+unicode-segmentation = "1.12"
+# The emulator's clipboard hook returns its Result.
+anyhow = "1"
+
+[dev-dependencies]
+base64 = "0.22"
+serde_json = "1"
+
+[[bench]]
+name = "feed"
+harness = false

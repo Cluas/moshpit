@@ -1,0 +1,8 @@
+# A sequence whose first step outlasts the lane's hold, with a tap queued
+# behind it: the rest of the sequence must not land after the tap.
+host rule workspace_focus 6000 normal
+host clean w9
+at 0 start
+at 300 new-window-in w9 logs
+at 1000 select-pane w1:p2
+end 15000

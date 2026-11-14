@@ -1,0 +1,17 @@
+[package]
+name = "moshpit-runtime"
+description = "The Rust core's tokio runtime: one per process, started on first use, shared with NSH for the UI's async tasks; on Apple platforms its threads run at user-interactive quality of service."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+crate-type = ["rlib"]
+
+[dependencies]
+log = "0.4"
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "time", "sync"] }
+
+[target.'cfg(target_vendor = "apple")'.dependencies]
+libc = "0.2"

@@ -48,7 +48,7 @@
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "%lld 張圖片，選一個要看它們的 agent"
+            "value": "%lld 張圖片，選一個要看它們的智能體"
           }
         }
       }
@@ -100,7 +100,7 @@
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "1 張圖片，選一個要看它的 agent"
+            "value": "1 張圖片，選一個要看它的智能體"
           }
         }
       }
@@ -152,7 +152,7 @@
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "這份 agent 列表是 %lld 分鐘前的，對方可能已經換了地方。排隊的圖片會在工作階段下次連上時送達。"
+            "value": "這份智能體列表是 %lld 分鐘前的，對方可能已經換了地方。排隊的圖片會在工作階段下次連上時送達。"
           }
         }
       }
@@ -308,7 +308,7 @@
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "工作階段一連上，圖片就會上傳，並把路徑交給 agent；如果 Moshpit 現在正連著，馬上就到。"
+            "value": "工作階段一連上，圖片就會上傳，並把路徑交給智能體；如果 Moshpit 現在正連著，馬上就到。"
           }
         }
       }
@@ -412,7 +412,7 @@
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "沒有可以傳送的 agent"
+            "value": "沒有可以傳送的智能體"
           }
         }
       }
@@ -464,7 +464,7 @@
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "先打開 Moshpit，連上一個有 agent 在執行的工作階段。這裡會列出 Moshpit 正在留意的每個 agent。"
+            "value": "先打開 Moshpit，連上一個有智能體在執行的工作階段。這裡會列出 Moshpit 正在留意的每個智能體。"
           }
         }
       }
@@ -568,7 +568,7 @@
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "傳給 agent"
+            "value": "傳給智能體"
           }
         }
       }

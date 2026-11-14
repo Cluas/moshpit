@@ -83,6 +83,13 @@ struct ProtoReader {
         throw MoshWireError.truncatedVarint
     }
 
+    /// Reads an `int32` field: protobuf (and mosh-server's parser) keep the
+    /// varint's low 32 bits, sign included. Keeping all 64 made a resize of
+    /// 2^32 + 80 columns decode as 4294967376 instead of 80.
+    mutating func readInt32() throws -> Int {
+        Int(Int32(truncatingIfNeeded: try readVarint()))
+    }
+
     /// Reads a field key, returning the field number and wire type.
     mutating func readKey() throws -> (field: UInt64, wireType: UInt8) {
         let key = try readVarint()
@@ -210,6 +217,32 @@ enum UserEvent: Equatable {
     case resize(width: Int, height: Int)
 }
 
+extension UserEvent {
+    /// The bytes this event adds to an encoded ``UserMessage``: three nested
+    /// length-delimited fields (keys or size, the extension, the
+    /// instruction). The transport sizes its instructions with it.
+    var encodedLength: Int {
+        let body: Int
+        switch self {
+        case .keystroke(let keys):
+            body = Self.fieldLength(keys.count)
+        case .resize(let width, let height):
+            body = 2 + Self.varintLength(UInt64(bitPattern: Int64(width)))
+                + Self.varintLength(UInt64(bitPattern: Int64(height)))
+        }
+        return Self.fieldLength(Self.fieldLength(body))
+    }
+
+    private static func varintLength(_ value: UInt64) -> Int {
+        max(1, (64 - value.leadingZeroBitCount + 6) / 7)
+    }
+
+    /// A length-delimited field with a one-byte key.
+    private static func fieldLength(_ length: Int) -> Int {
+        1 + varintLength(UInt64(length)) + length
+    }
+}
+
 /// `message UserMessage { repeated Instruction instruction = 1; }`
 struct UserMessage: Equatable {
     var events: [UserEvent]
@@ -297,8 +330,8 @@ struct UserMessage: Equatable {
         while !reader.isAtEnd {
             let (field, wireType) = try reader.readKey()
             switch (field, wireType) {
-            case (5, 0): width = Int(Int64(bitPattern: try reader.readVarint()))   // width = field 5
-            case (6, 0): height = Int(Int64(bitPattern: try reader.readVarint()))  // height = field 6
+            case (5, 0): width = try reader.readInt32()    // width = field 5
+            case (6, 0): height = try reader.readInt32()   // height = field 6
             default: try reader.skipField(wireType: wireType)
             }
         }
@@ -394,8 +427,8 @@ struct HostMessage {
         while !reader.isAtEnd {
             let (field, wireType) = try reader.readKey()
             switch (field, wireType) {
-            case (5, 0): w = Int(Int64(bitPattern: try reader.readVarint()))   // width = field 5
-            case (6, 0): h = Int(Int64(bitPattern: try reader.readVarint()))   // height = field 6
+            case (5, 0): w = try reader.readInt32()   // width = field 5
+            case (6, 0): h = try reader.readInt32()   // height = field 6
             default: try reader.skipField(wireType: wireType)
             }
         }
@@ -456,6 +489,12 @@ struct TransportFragment: Equatable {
     /// Splits an instruction payload into fragments that each fit in `mtu`
     /// bytes once the 10-byte header is added. Always yields at least one
     /// fragment so empty payloads still produce a (final) fragment.
+    ///
+    /// Never traps: past 65,535 pieces (an 84 MB instruction at the
+    /// transport's MTU) the counter used to overflow `UInt16` and crash the
+    /// app. The number wraps instead, and the initializer keeps its low 15
+    /// bits, as the Rust port does. No mosh peer could use such an
+    /// instruction anyway: mosh-server inflates at most 4 MiB.
     static func fragment(payload: Data, id: UInt64, mtu: Int) -> [TransportFragment] {
         let chunkSize = max(1, mtu - headerSize)
         var fragments: [TransportFragment] = []
@@ -470,7 +509,7 @@ struct TransportFragment: Equatable {
                 contents: Data(payload[index..<end])
             ))
             index = end
-            num += 1
+            num &+= 1
         } while index < payload.endIndex
         return fragments
     }

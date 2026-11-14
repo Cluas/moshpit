@@ -24,41 +24,17 @@ struct InstallAssistView: View {
     @State private var recheckResult: RecheckResult?
     @State private var copied = false
 
-    private enum RecheckResult: Equatable { case resolved, stillMissing, noChannel }
+    private typealias RecheckResult = InstallAssistPlan.Recheck
 
-    /// herdr can't ride along with the tmux/mosh command: it ships in no
-    /// distro repository, so it needs its own installer entirely.
-    private var isHerdr: Bool { packages.contains("herdr") }
+    /// What to install and how: one plan for this sheet and the NSH one.
+    private var plan: InstallAssistPlan { InstallAssistPlan(session: session, packages: packages) }
+    private var isHerdr: Bool { plan.isHerdr }
+    private var installPackages: [String] { plan.installPackages }
+    private var packageManager: PackageManager? { plan.packageManager }
+    private var command: String? { plan.command }
 
-    /// What to install, derived from the CONNECTION rather than from the
-    /// notice's package list.
-    ///
-    /// `isHerdr` only sees the herdr-missing notice — the mosh-missing one
-    /// carries `["mosh"]`, so a herdr+mosh user (a supported combination) was
-    /// told "tmux + mosh aren't installed" and handed a command that installs
-    /// a multiplexer they deliberately did not pick. Ask the connection.
-    private var installPackages: [String] {
-        if isHerdr { return ["herdr"] }
-        return session.connection.multiplexer == .tmux ? ["tmux", "mosh"] : ["mosh"]
-    }
-
-    private var packageManager: PackageManager? {
-        session.capabilities?.packageManager
-    }
-
-    private var command: String? {
-        isHerdr
-            ? Multiplexer.herdr.installCommand(using: packageManager)
-            : packageManager?.installCommand(for: installPackages)
-    }
-
-    /// The herdr installer script drops the binary in `~/.local/bin` and
-    /// deliberately doesn't touch any rc file, which normally means "installed
-    /// but still not on PATH". Moshpit searches that directory in both the
-    /// capability probe and the launch line, so say so — otherwise the
-    /// installer's own PATH warning reads as "this didn't work".
     private var installNote: String? {
-        guard isHerdr, packageManager != .brew else { return nil }
+        guard plan.showsNote else { return nil }
         return String(localized: "Installs to ~/.local/bin. Moshpit looks there when probing and launching, so you don't need to change PATH.")
     }
 
@@ -77,7 +53,7 @@ struct InstallAssistView: View {
             }
         }
         .background(Ink.screenBG)
-        .preferredColorScheme(.dark)
+        .darkOnlyPage()
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
     }
@@ -182,7 +158,10 @@ struct InstallAssistView: View {
         } else {
             // No package manager — generic guidance.
             VStack(alignment: .leading, spacing: 10) {
-                Text("Install tmux and mosh with your platform's package manager (or build from source), then re-check.")
+                // Only mosh missing (plain mosh, herdr + mosh): no tmux to install.
+                Text(installPackages == ["mosh"]
+                     ? "Install mosh with your platform's package manager (or build from source), then re-check."
+                     : "Install tmux and mosh with your platform's package manager (or build from source), then re-check.")
                     .font(Face.text(12))
                     .foregroundStyle(Ink.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -306,29 +285,18 @@ struct InstallAssistView: View {
     /// user watches sudo prompt + apt output scroll by in the terminal behind
     /// the sheet. We send a trailing newline so it runs immediately.
     private func runInTerminal(_ command: String) {
-        if let data = (command + "\r").data(using: .utf8) {
-            session.sendInput(data)
-        }
+        plan.run(command)
         dismiss()
     }
 
     private func recheck() {
         rechecking = true
         recheckResult = nil
+        let plan = plan
         Task {
-            let caps = await session.recheckCapabilities()
+            let found = await plan.recheck()
             rechecking = false
-            guard let caps else { recheckResult = .noChannel; return }
-            // Resolved when everything the packages cover is now present.
-            let resolved: Bool
-            if isHerdr {
-                resolved = caps.hasHerdr
-            } else {
-                let wantsTmux = installPackages.contains("tmux")
-                let wantsMosh = installPackages.contains("mosh")
-                resolved = (!wantsTmux || caps.hasTmux) && (!wantsMosh || caps.hasMoshServer)
-            }
-            recheckResult = resolved ? .resolved : .stillMissing
+            recheckResult = found
         }
     }
 }

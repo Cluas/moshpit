@@ -1,0 +1,9 @@
+# The tree's actions, in order, each re-read after the last.
+at 0 start
+at 300 new-window logs
+at 300 rename-window w1:t1 main
+at 300 new-pane
+at 300 select-window w1:t1
+at 300 select-session w1
+at 300 kill-pane w1:p2
+end 5000

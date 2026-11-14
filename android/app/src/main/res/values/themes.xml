@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Dark only, as the app is; the pages draw everything, edge to edge. -->
+    <style name="Moshpit" parent="@android:style/Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/screen</item>
+        <item name="android:colorAccent">@color/accent</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+    </style>
+</resources>

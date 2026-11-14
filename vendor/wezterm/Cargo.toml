@@ -1,0 +1,100 @@
+# wezterm's terminal emulator and the crates of its repository it builds on,
+# vendored as Moshpit's fork for the shared terminal core (crates/term).
+# Upstream: https://github.com/wezterm/wezterm at the commit in UPSTREAM,
+# imported unchanged by scripts/wezterm/import.sh; our changes are commits on
+# top, listed in docs/WEZTERM-PATCHES.md.
+#
+# A workspace of its own (the root workspace excludes vendor/wezterm), so the
+# crates' `workspace = true` dependencies resolve here as they do upstream.
+# This file is ours: upstream's root manifest cut down to these crates.
+[workspace]
+resolver = "2"
+members = [
+  "bidi",
+  "color-types",
+  "filedescriptor",
+  "term",
+  "termwiz",
+  "vtparse",
+  "wezterm-blob-leases",
+  "wezterm-cell",
+  "wezterm-char-props",
+  "wezterm-dynamic",
+  "wezterm-dynamic/derive",
+  "wezterm-escape-parser",
+  "wezterm-input-types",
+  "wezterm-surface",
+]
+
+[workspace.dependencies]
+anyhow = "1.0"
+base64 = {version="0.22", default-features=false }
+bitflags = "1.3"
+cassowary = "0.3"
+criterion = "0.5"
+csscolorparser = "0.6"
+deltae = "0.3"
+downcast-rs = "1.0"
+env_logger = "0.11"
+euclid = {version="0.22", default-features=false}
+fancy-regex = {version="0.14", default-features=false, features=[]}
+filedescriptor = { version="0.8.3", path = "filedescriptor" }
+finl_unicode = { version = "1.3",  git="https://github.com/wez/finl_unicode.git", rev="a1892f26245529f2ef3877a9ebd610c96cec07a6" , default-features=false, features=["categories", "grapheme_clusters"]}
+fixedbitset = {version="0.4", default-features=false}
+fnv = "1.0"
+getrandom = "0.3.1"
+heapless = "0.8"
+hex = {version="0.4", default-features=false}
+humansize = "2.1"
+# Moshpit: the formats the image protocols bring in practice (kitty sends
+# PNG or raw pixels; iTerm2's imgcat sends the file: PNG, JPEG, GIF, WebP),
+# not image's default set (AVIF, TIFF, EXR, … and rayon's threads).
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
+k9 = "0.12.0"
+lazy_static = "1.4"
+libc = "0.2"
+log = "0.4"
+lru = "0.16"
+maplit = "1.0"
+memmem = "0.1"
+miniz_oxide = "0.7"
+nix = "0.29"
+num-derive = "0.4"
+num-traits = {version="0.2", default-features=false }
+ordered-float = {version="4.1", default-features=false}
+pest = "2.7"
+pest_derive = "2.7"
+phf = {version="0.11", default-features=false}
+proc-macro2 = "1.0"
+quote = "1.0.2"
+serde = {version="1.0", default-features=false, features = ["derive"]}
+sha2 = "0.10"
+signal-hook = "0.3"
+siphasher = "1.0.1"
+strsim = "0.11"
+syn = "1.0"
+tempfile = "3.20"
+terminfo = "0.9"
+# Without its default features: no `terminal` (termios has no iOS), no
+# tmux_cc; wezterm-term asks for use_image.
+termwiz = { version="0.24.0", path = "termwiz", default-features = false }
+termios = "0.3"
+thiserror = "2.0"
+ucd-trie = {version="0.1", default-features=false}
+unicode-normalization = "0.1.24"
+unicode-segmentation = "1.12"
+url = "2"
+utf8parse = "0.2"
+uuid = "1.13"
+vtparse = { version="0.7", path="vtparse", default-features=false }
+wezterm-bidi = { version="0.2.3", path = "bidi", default-features=false}
+wezterm-blob-leases = { version="0.1.1", path = "wezterm-blob-leases"}
+wezterm-cell = { path = "wezterm-cell"}
+wezterm-char-props = { path = "wezterm-char-props", default-features=false }
+wezterm-color-types = { version="0.3", path = "color-types", default-features=false }
+wezterm-dynamic = { version = "0.2.1", path = "wezterm-dynamic", default-features=false }
+wezterm-dynamic-derive = { version="0.1.1", path="wezterm-dynamic/derive" }
+wezterm-escape-parser = { version="0.1.0", path="wezterm-escape-parser" }
+wezterm-input-types = { version="0.1", path = "wezterm-input-types", default-features=false }
+wezterm-surface = { path = "wezterm-surface" }
+windows-sys = { version = "0.61.2", default-features = false }

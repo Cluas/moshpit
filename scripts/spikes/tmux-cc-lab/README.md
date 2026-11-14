@@ -15,9 +15,10 @@ SSH+tmux 模式下 App 是一个 **tmux 控制客户端（`-CC`）**：`TmuxSess
 `MockTmuxTransport` 把 -CC 协议行直接推进控制器，逐格断言 SwiftTerm 网格。
 关键场景（2026-08-19 新增）：
 
-- `gateHoldsUntilRepairFrame` — 尺寸战争回到本机宽度后，%output 必须继续被
-  门控**直到修复帧真正落地**：横跳期间 %output 事件会在转义序列中间截断，
-  开门早了会把 `5;210m…` 这种序列尾巴当字面量画上屏（真机录像实锤）。
+- `foreignWidthOutputPaintsAndRepairs` — 外来宽度期间的 %output 照画不丢，
+  回到本机宽度后由重绘修好（2026-08-19 的「门控到修复帧落地」后来撤掉了：
+  门控期间链路上任何一处出错都会变成永久分歧，见
+  `TmuxSessionController` 里 "NO mid-session gate" 的注释）。
 - `rejectedFrameIsRetried` — capture 帧因外来尺寸被拒后必须重试到成功；
   只 re-pin 不重抓会在横跳风暴里饿死修复（滚动时格子永久滞留的直接原因）。
 - `foreignWidthLinesRejected` — 行数合格但**行宽**超网格的帧同样要拒

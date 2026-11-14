@@ -1,0 +1,1198 @@
+//! What Moshpit makes of its coding agents (`AgentActivityMonitor`): the
+//! Vibe Island's state machine, with no platform in it.
+//!
+//! Two signals feed it. The hooks an agent fires stamp its pane
+//! (`@moshpit_state`, `@moshpit_since`, …) and the platform polls them
+//! ([`Monitor::hooks`]); on a pane no hook governs, the output it prints and
+//! the bell it rings stand in ([`Monitor::output`], [`Monitor::bell`]). Out
+//! come [`Effect`]s: what the Live Activity and the widget should show
+//! (sent only when it changes, and again before either would read as
+//! stale), which cards to post or withdraw and what they say, and the
+//! announced-episode record to keep.
+//!
+//! The rules it keeps, each with the story behind it in the Swift monitor it
+//! replaces:
+//! * a question must stand [`Tunables::announce_grace`] before it is
+//!   announced, and is announced once per episode, across reconnects and
+//!   relaunches (the record);
+//! * the waiting set ([`PushStandingFile`], shared with the notification
+//!   service) decides sound: only the 0→1 edge rings; a prompt a poll shows
+//!   answered leaves it, whoever recorded it;
+//! * a finish rings only for a turn of [`Tunables::done_threshold`] or
+//!   more, and once between this card and the pushed one
+//!   ([`PushFinishesFile`]);
+//! * a disconnect keeps the cards of prompts still waiting; a delete takes
+//!   them.
+//!
+//! Time is whatever the caller says it is: every entry point takes `now`
+//! (unix seconds), and the grace fires on the next [`Monitor::sweep`] after
+//! it runs out.
+
+use std::collections::{BTreeMap, BTreeSet};
+
+use moshpit_seal::copy::{self, CardText, Language};
+use moshpit_seal::standing::Entry;
+use moshpit_seal::{Date, PushFinishesFile, PushStandingFile};
+use serde::Serialize;
+
+/// The connection's id as the platform writes it (Swift's `uuidString`),
+/// and a pane's id within it.
+pub type Key = (String, String);
+
+/// A pane's state, as the island and the widget show it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum AgentState {
+    Working,
+    Attention,
+    Done,
+    Idle,
+}
+
+impl AgentState {
+    /// Most urgent first.
+    pub fn rank(self) -> u8 {
+        match self {
+            Self::Attention => 0,
+            Self::Working => 1,
+            Self::Done => 2,
+            Self::Idle => 3,
+        }
+    }
+
+    /// A hook's `@moshpit_state`; nil for anything a hook doesn't write.
+    pub fn from_hook(raw: Option<&str>) -> Option<Self> {
+        match raw? {
+            "working" => Some(Self::Working),
+            "attention" => Some(Self::Attention),
+            "done" => Some(Self::Done),
+            _ => None,
+        }
+    }
+
+    pub fn raw(self) -> &'static str {
+        match self {
+            Self::Working => "working",
+            Self::Attention => "attention",
+            Self::Done => "done",
+            Self::Idle => "idle",
+        }
+    }
+}
+
+/// The knobs, with the monitor's values as defaults.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Tunables {
+    /// Working becomes done after this much quiet (output heuristic).
+    pub idle_after: f64,
+    /// Sustained agent output before a pane earns a row.
+    pub promotion_delay: f64,
+    /// A heuristic finish stays listed this long.
+    pub done_linger: f64,
+    /// Rows the island carries.
+    pub max_agents: usize,
+    /// The least a stamp may come later than its poll's interval: a stamp
+    /// holds for the interval plus this or half the interval, whichever is
+    /// more ([`stamp_hold`]). A pane is hook-owned that long and goes back to
+    /// the heuristic once no stamp came in it; the same window decides
+    /// whether a finish is live. tmux's 2 s poll: 5 s, as it always was.
+    pub stamp_margin: f64,
+    /// How long a question must stand before the phone hears of it.
+    pub announce_grace: f64,
+    /// Announced-episode records older than this are dropped on load.
+    pub announced_ttl: f64,
+    /// An unchanged state is sent again after this, inside the island's
+    /// 120 s stale date and the widget's 180 s horizon.
+    pub resend_unchanged_after: f64,
+    /// A finished turn this long or longer is worth a sound.
+    pub done_threshold: i64,
+}
+
+impl Default for Tunables {
+    fn default() -> Self {
+        Self {
+            idle_after: 4.0,
+            promotion_delay: 2.0,
+            done_linger: 25.0,
+            max_agents: 4,
+            stamp_margin: 3.0,
+            announce_grace: 30.0,
+            announced_ttl: 24.0 * 60.0 * 60.0,
+            resend_unchanged_after: 60.0,
+            done_threshold: 180,
+        }
+    }
+}
+
+/// The user's switches.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Settings {
+    pub notifications: bool,
+    pub live_activity: bool,
+    /// "Show detail on lock screen".
+    pub show_detail: bool,
+    /// The attention sound.
+    pub sound: bool,
+    pub language: Language,
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Self {
+            notifications: true,
+            live_activity: true,
+            show_detail: true,
+            sound: true,
+            language: Language::En,
+        }
+    }
+}
+
+/// Where a pane lives, from the platform's view of the multiplexer.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct PaneWhere {
+    /// The foreground command the tree last showed.
+    pub command: String,
+    /// The session's display name.
+    pub session: Option<String>,
+    /// The window's display title.
+    pub window: Option<String>,
+}
+
+/// One pane of a hook poll.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Hook {
+    pub pane: String,
+    /// `@moshpit_state`.
+    pub state: Option<String>,
+    /// `@moshpit_agent`.
+    pub agent: Option<String>,
+    /// `@moshpit_since`, unix seconds.
+    pub since: Option<f64>,
+    /// What runs in the pane now, polled fresh.
+    pub command: Option<String>,
+    /// `@moshpit_title`.
+    pub title: Option<String>,
+    pub place: PaneWhere,
+}
+
+/// One row of the island and the widget.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct Agent {
+    /// `"<conn>:<pane>"`.
+    pub id: String,
+    pub connection_id: String,
+    pub pane_id: String,
+    pub command: String,
+    pub location: String,
+    pub detail: Option<String>,
+    pub state: AgentState,
+    /// Unix seconds.
+    pub started_at: f64,
+}
+
+/// What the island (and the widget) shows.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct IslandState {
+    pub agents: Vec<Agent>,
+    pub working_count: usize,
+    pub attention_count: usize,
+    /// The agent the pill shows; its pane is where a tap goes.
+    pub headline_id: Option<String>,
+}
+
+/// A card to post: the words and where a tap lands.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Card {
+    /// The notification's identifier — the pushed copy's collapse id too.
+    pub id: String,
+    pub text: CardText,
+    pub connection_id: String,
+    pub pane_id: String,
+}
+
+/// What the platform does.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Effect {
+    /// Show this on the Live Activity (asking for one if none is up).
+    Island(IslandState),
+    /// No agents: end every island.
+    EndIsland,
+    /// Mirror this for the widget (its `updatedAt` is the platform's now).
+    Widget(IslandState),
+    Post(Card),
+    Withdraw(String),
+    /// Keep the announced-episode record: `"<conn>|<pane>"` → unix seconds.
+    SaveAnnounced(BTreeMap<String, f64>),
+    /// Ask for permission to post (a connection is being watched).
+    RequestAuthorization,
+    /// A decision worth a log line: the app's diagnostics, and what the
+    /// device harnesses read (`announcing attention: pane %3 …`).
+    Note(String),
+}
+
+/// Which pane is on screen. `pane` nil: every pane of the connection (a
+/// session with no multiplexer is its one pane).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Visible {
+    pub conn: String,
+    pub pane: Option<String>,
+}
+
+/// Commands that are a shell, not an agent.
+const SHELLS: &[&str] = &[
+    "zsh", "bash", "sh", "fish", "dash", "ksh", "tmux", "login", "-zsh", "-bash", "-sh", "ssh",
+    "mosh", "",
+];
+
+/// Commands the output heuristic may promote to a row.
+const AGENT_COMMANDS: &[&str] = &[
+    "claude", "codex", "gemini", "qwen", "qoder", "factory", "codebuddy", "aider", "goose",
+    "opencode",
+];
+
+/// Moshpit's own plumbing stamps a pane for real (a pairing self-test).
+pub const SELF_TEST_AGENT: &str = "moshpit-selftest";
+
+fn is_shell(command: &str) -> bool {
+    SHELLS.contains(&command)
+}
+
+#[derive(Debug, Clone)]
+struct Pane {
+    command: String,
+    place: PaneWhere,
+    detail: Option<String>,
+    state: AgentState,
+    since: f64,
+    last_output: f64,
+    first_active: f64,
+    visible: bool,
+    hook_owned: bool,
+    last_hook_seen: f64,
+    last_hook_state: Option<AgentState>,
+    /// How long the last stamp holds ([`stamp_hold`]): until then the pane
+    /// is the hook's, and a stamp that follows within it continues the
+    /// episode.
+    hold: f64,
+}
+
+/// The machine.
+pub struct Monitor {
+    tunables: Tunables,
+    settings: Settings,
+    standing: Option<PushStandingFile>,
+    finishes: Option<PushFinishesFile>,
+    conns: BTreeMap<String, String>,
+    /// Each connection's tree as the platform last showed it: where every
+    /// pane lives, seen by a poll or not.
+    trees: BTreeMap<String, BTreeMap<String, PaneWhere>>,
+    panes: BTreeMap<Key, Pane>,
+    announced: BTreeMap<Key, f64>,
+    pending: BTreeMap<Key, (f64, f64)>,
+    posted_attention: BTreeSet<Key>,
+    headline_offset: usize,
+    widget_sent: Option<(IslandState, f64)>,
+    island_sent: Option<(IslandState, f64)>,
+    island_ended: bool,
+    effects: Vec<Effect>,
+}
+
+impl Monitor {
+    /// `announced` is the record as stored; what is a day old, or from the
+    /// future, is dropped. `standing` and `finishes` are the files shared
+    /// with the notification service; none (no shared container) means
+    /// nothing can be standing (every prompt an edge) and every long finish
+    /// rings.
+    pub fn new(
+        tunables: Tunables,
+        settings: Settings,
+        standing: Option<PushStandingFile>,
+        finishes: Option<PushFinishesFile>,
+        announced: &BTreeMap<String, f64>,
+        now: f64,
+    ) -> Self {
+        let announced = decode_announced(announced, now, tunables.announced_ttl)
+            .into_iter()
+            .filter_map(|(key, at)| {
+                let (conn, pane) = key.split_once('|')?;
+                Some(((conn.to_owned(), pane.to_owned()), at))
+            })
+            .collect();
+        Self {
+            tunables,
+            settings,
+            standing,
+            finishes,
+            conns: BTreeMap::new(),
+            trees: BTreeMap::new(),
+            panes: BTreeMap::new(),
+            announced,
+            pending: BTreeMap::new(),
+            posted_attention: BTreeSet::new(),
+            headline_offset: 0,
+            widget_sent: None,
+            island_sent: None,
+            island_ended: false,
+            effects: Vec::new(),
+        }
+    }
+
+    /// The announced record as stored, read once the preferences can be
+    /// believed (B348). A launch before the first unlock (a prewarm) read
+    /// it as empty, and its first save would have written that over the
+    /// stored one: every question still standing announced again after a
+    /// reboot, its earlier card never withdrawn. The stored episodes join the
+    /// ones this process recorded — its own win, being newer — what is a
+    /// day old or from the future is dropped, and the record is saved. A
+    /// question standing now that the stored record names is the one
+    /// announced before: its announcement is called off, and its card is
+    /// ours to withdraw once it is answered.
+    pub fn adopt_announced(&mut self, raw: &BTreeMap<String, f64>, now: f64) {
+        let stored = decode_announced(raw, now, self.tunables.announced_ttl);
+        for (flat, episode) in stored {
+            let Some((conn, pane)) = flat.split_once('|') else {
+                continue;
+            };
+            let key: Key = (conn.to_owned(), pane.to_owned());
+            if self.announced.contains_key(&key) {
+                continue;
+            }
+            self.announced.insert(key.clone(), episode);
+            let standing = self
+                .panes
+                .get(&key)
+                .is_some_and(|p| p.state == AgentState::Attention && p.since == episode);
+            if standing {
+                if self.pending.get(&key).is_some_and(|(at, _)| *at == episode) {
+                    self.pending.remove(&key);
+                }
+                self.posted_attention.insert(key);
+            }
+        }
+        self.save_announced();
+    }
+
+    /// What to do, in order, since the last call.
+    pub fn take_effects(&mut self) -> Vec<Effect> {
+        std::mem::take(&mut self.effects)
+    }
+
+    pub fn set_settings(&mut self, settings: Settings) {
+        self.settings = settings;
+    }
+
+    pub fn settings(&self) -> Settings {
+        self.settings
+    }
+
+    /// Whether anything is being watched (the platform's sweep runs while so).
+    pub fn is_tracking(&self) -> bool {
+        !self.conns.is_empty()
+    }
+
+    // MARK: - Connections
+
+    /// Watch a connection, `label` being what the user calls it. Nothing
+    /// when neither the island nor cards are on.
+    pub fn track(&mut self, conn: &str, label: &str) {
+        if !(self.settings.live_activity || self.settings.notifications) {
+            return;
+        }
+        self.conns.insert(conn.to_owned(), label.to_owned());
+        if self.settings.notifications {
+            self.effects.push(Effect::RequestAuthorization);
+        }
+    }
+
+    /// Stop watching. `keep_waiting_cards`: the user disconnected, and the
+    /// agents there are still waiting — their cards stay up, and in the
+    /// set; the next session's poll takes them up again. A deleted
+    /// connection takes its cards with it.
+    pub fn untrack(&mut self, conn: &str, keep_waiting_cards: bool, now: f64) {
+        if keep_waiting_cards {
+            self.posted_attention.retain(|key| key.0 != conn);
+        }
+        self.conns.remove(conn);
+        self.trees.remove(conn);
+        self.panes.retain(|key, _| key.0 != conn);
+        self.pending.retain(|key, _| key.0 != conn);
+        self.sync(now);
+    }
+
+    /// The connection's tree: where each of its panes lives. What a card
+    /// says about a pane no poll has named yet — a prompt the notification
+    /// service recorded — comes from here.
+    pub fn tree(&mut self, conn: &str, places: BTreeMap<String, PaneWhere>) {
+        if self.conns.contains_key(conn) {
+            self.trees.insert(conn.to_owned(), places);
+        }
+    }
+
+    /// Rotate which agent the pill shows.
+    pub fn cycle_headline(&mut self, now: f64) {
+        self.headline_offset += 1;
+        self.sync(now);
+    }
+
+    /// When each tracked pane of `conn` entered its state.
+    pub fn state_since_by_pane(&self, conn: &str) -> BTreeMap<String, f64> {
+        self.panes
+            .iter()
+            .filter(|(key, _)| key.0 == conn)
+            .map(|(key, pane)| (key.1.clone(), pane.since))
+            .collect()
+    }
+
+    // MARK: - The output heuristic (panes no hook governs)
+
+    /// Output from a pane.
+    pub fn output(&mut self, conn: &str, pane: &str, place: PaneWhere, now: f64) {
+        let key: Key = (conn.to_owned(), pane.to_owned());
+        if let Some(p) = self.panes.get_mut(&key)
+            && hook_governs(p, now)
+        {
+            p.last_output = now;
+            return;
+        }
+        let command = place.command.clone();
+        // A visible agent back at its shell has finished its turn.
+        if is_shell(&command) {
+            if let Some(p) = self.panes.get_mut(&key)
+                && p.visible
+                && p.state == AgentState::Working
+            {
+                p.state = AgentState::Done;
+                p.since = now;
+                self.sync(now);
+            }
+            return;
+        }
+        let known = AGENT_COMMANDS.contains(&command.as_str());
+        let promotion_delay = self.tunables.promotion_delay;
+        if let Some(p) = self.panes.get_mut(&key) {
+            p.command = command;
+            p.place = place;
+            p.last_output = now;
+            if !p.visible {
+                if known && now - p.first_active >= promotion_delay {
+                    p.visible = true;
+                    p.state = AgentState::Working;
+                    p.since = now;
+                }
+            } else if p.state != AgentState::Working {
+                p.state = AgentState::Working;
+                p.since = now;
+            }
+        } else if known {
+            self.panes.insert(
+                key,
+                Pane {
+                    command,
+                    place,
+                    detail: None,
+                    state: AgentState::Working,
+                    since: now,
+                    last_output: now,
+                    first_active: now,
+                    visible: false,
+                    hook_owned: false,
+                    last_hook_seen: f64::NEG_INFINITY,
+                    last_hook_state: None,
+                    // No stamp yet: read only once one makes it the hook's.
+                    hold: 0.0,
+                },
+            );
+        } else {
+            return;
+        }
+        self.sync(now);
+    }
+
+    /// A bell from a pane: attention at once, through the same grace.
+    pub fn bell(&mut self, conn: &str, pane: &str, place: PaneWhere, now: f64) {
+        let key: Key = (conn.to_owned(), pane.to_owned());
+        if let Some(p) = self.panes.get(&key)
+            && hook_governs(p, now)
+        {
+            return;
+        }
+        let command = place.command.clone();
+        let p = self.panes.entry(key.clone()).or_insert_with(|| Pane {
+            command: command.clone(),
+            place: place.clone(),
+            detail: None,
+            state: AgentState::Attention,
+            since: now,
+            last_output: now,
+            first_active: now,
+            visible: true,
+            hook_owned: false,
+            last_hook_seen: f64::NEG_INFINITY,
+            last_hook_state: None,
+            hold: 0.0,
+        });
+        if !is_shell(&command) {
+            p.command = command;
+        }
+        p.place = place;
+        p.state = AgentState::Attention;
+        p.since = now;
+        p.visible = true;
+        let episode = p.since;
+        if should_announce(AgentState::Attention, episode, self.announced.get(&key).copied()) {
+            self.schedule_announce(key, episode, now);
+        }
+        self.sync(now);
+    }
+
+    // MARK: - The hooks
+
+    /// One poll of `conn`'s hook stamps. The stamp is authoritative for
+    /// every pane it names. `interval`: how often `conn`'s stamps arrive,
+    /// in seconds — the poll that reads them (tmux: the monitor's sweep;
+    /// herdr: its client's poll, longer while its push channel is up). A
+    /// stamp holds that long and a margin ([`stamp_hold`], B346): herdr's
+    /// come every 8 s, or 45 s with push, and a fixed 5 s let every herdr
+    /// agent fall to the heuristic between polls — its time restarting, a
+    /// working one shown done, and no turn ever ending in a card.
+    pub fn hooks(&mut self, conn: &str, hooks: Vec<Hook>, now: f64, interval: f64) {
+        if !self.conns.contains_key(conn) {
+            return;
+        }
+        let hold = stamp_hold(interval, self.tunables.stamp_margin);
+        let mut changed = false;
+        let mut answered: BTreeMap<String, f64> = BTreeMap::new();
+        let named: BTreeSet<String> = hooks.iter().map(|hook| hook.pane.clone()).collect();
+        for hook in hooks {
+            let Some(mapped) = AgentState::from_hook(hook.state.as_deref()) else { continue };
+            let new_state = reclassify(mapped, hook.title.as_deref(), hook.command.as_deref());
+            if hook.agent.as_deref() == Some(SELF_TEST_AGENT) {
+                continue;
+            }
+            let key: Key = (conn.to_owned(), hook.pane.clone());
+            let command = hook.agent.clone().unwrap_or_else(|| hook.place.command.clone());
+            // A stamp with no `since` (herdr reports no transition time) is
+            // dated the first time it is seen — and a reconnect or a
+            // relaunch, which forget the panes, used to date a question
+            // still standing anew and announce it again, once per
+            // reconnect. One the record has, on a pane not seen to leave
+            // attention since, is the episode it names. Seen to leave, the
+            // record lets go, so the next question is a new one.
+            let since = match hook.since {
+                Some(since) => since,
+                None if new_state == AgentState::Attention => self.announced.get(&key).copied().unwrap_or(now),
+                None => {
+                    if self.announced.remove(&key).is_some() {
+                        self.save_announced();
+                    }
+                    now
+                }
+            };
+            if new_state != AgentState::Attention
+                && let Some(stamped) = hook.since
+            {
+                answered.insert(hook.pane.clone(), stamped);
+            }
+            let previous = self
+                .panes
+                .get(&key)
+                .map(|p| (p.since, p.last_hook_state, p.last_hook_seen, p.hold));
+            match self.panes.get_mut(&key) {
+                Some(p) => {
+                    // Taking a pane over is a new episode when the stamp
+                    // dates it; ownership regained by a stamp that doesn't
+                    // (herdr's), in the state the pane is in, is the same
+                    // episode: its time doesn't restart (B346).
+                    let state_changed = p.state != new_state || (!p.hook_owned && hook.since.is_some());
+                    p.command = command.clone();
+                    p.place = hook.place.clone();
+                    p.detail = hook.title.clone();
+                    p.state = new_state;
+                    if state_changed {
+                        p.since = since;
+                    }
+                    p.visible = true;
+                    p.hook_owned = true;
+                    p.last_hook_seen = now;
+                    p.last_hook_state = Some(mapped);
+                    p.last_output = now;
+                    p.hold = hold;
+                }
+                None => {
+                    self.panes.insert(
+                        key.clone(),
+                        Pane {
+                            command: command.clone(),
+                            place: hook.place.clone(),
+                            detail: hook.title.clone(),
+                            state: new_state,
+                            since,
+                            last_output: now,
+                            first_active: now,
+                            visible: true,
+                            hook_owned: true,
+                            last_hook_seen: now,
+                            last_hook_state: Some(mapped),
+                            hold,
+                        },
+                    );
+                }
+            }
+            changed = true;
+
+            let episode = self.panes[&key].since;
+            // A prompt this app announced, still standing after a
+            // disconnect or a relaunch: its card is ours to withdraw again.
+            if new_state == AgentState::Attention && self.announced.get(&key) == Some(&episode) {
+                self.posted_attention.insert(key.clone());
+            }
+            if should_announce(new_state, episode, self.announced.get(&key).copied()) {
+                self.schedule_announce(key.clone(), episode, now);
+            }
+            let (previous_since, previous_hook, previous_seen, previous_hold) = match previous {
+                Some((since, hook, seen, hold)) => (Some(since), hook, Some(seen), hold),
+                None => (None, None, None, hold),
+            };
+            // Judged by what the previous stamp promised: push coming up
+            // or going away changes the interval between two stamps.
+            if is_turn_ending(mapped, new_state, previous_hook, previous_seen, now, previous_hold) {
+                let duration = previous_since.map_or(0.0, |previous| since - previous);
+                let detail = if self.settings.show_detail { hook.title.clone() } else { None };
+                self.post_done(&key, &command, detail, duration, since, now);
+            }
+        }
+        self.clear_answered(conn, &answered, now);
+        changed |= self.forget_gone(conn, &named, now);
+        if changed {
+            self.sync(now);
+        }
+    }
+
+    /// The panes of `conn` that are gone: neither this poll — which lists
+    /// every pane of the host's server, stamped or not — nor the tree holds
+    /// them any more (their window was killed, their session ended). No
+    /// signal will ever come from them, and a question they asked can't be
+    /// answered: they leave the island, their grace is called off, and a
+    /// question of theirs leaves the waiting set, its card redrawn or
+    /// withdrawn — also one this app announced before a relaunch or a
+    /// disconnect (the record names it), and one the notification service
+    /// recorded for a pane this machine was showing. One used to stand as
+    /// "needs you" for as long as the connection was watched — `attention`
+    /// sticks until something from the pane moves it — announced if it
+    /// closed inside the grace, its card up for good, and its entry counted
+    /// as waiting, so the next question elsewhere came in silent. Without a
+    /// tree nothing is told gone. Whether the island changed.
+    fn forget_gone(&mut self, conn: &str, named: &BTreeSet<String>, now: f64) -> bool {
+        let Some(tree) = self.trees.get(conn) else { return false };
+        let is_gone = |key: &Key| key.0 == conn && !named.contains(&key.1) && !tree.contains_key(&key.1);
+        let gone: Vec<Key> = self.panes.keys().filter(|key| is_gone(key)).cloned().collect();
+        let recorded: Vec<Key> = self
+            .announced
+            .keys()
+            .filter(|key| is_gone(key) && !self.panes.contains_key(*key))
+            .cloned()
+            .collect();
+        if gone.is_empty() && recorded.is_empty() {
+            return false;
+        }
+        let at = Date::from_unix(now);
+        let standing: BTreeSet<String> = self
+            .standing
+            .as_ref()
+            .map(|file| file.standing(conn, at).into_iter().map(|entry| entry.pane).collect())
+            .unwrap_or_default();
+        let mut cleared = false;
+        for key in &gone {
+            self.effects.push(Effect::Note(format!("gone: pane {} closed — forgotten", key.1)));
+            let was_waiting = self.panes.remove(key).is_some_and(|p| p.state == AgentState::Attention);
+            self.pending.remove(key);
+            if was_waiting && (standing.contains(&key.1) || self.posted_attention.contains(key)) {
+                cleared |= self.clear_gone(key, at);
+            }
+        }
+        for key in &recorded {
+            if standing.contains(&key.1) || self.posted_attention.contains(key) {
+                self.effects.push(Effect::Note(format!("gone: pane {} closed — standing cleared", key.1)));
+                cleared |= self.clear_gone(key, at);
+            }
+        }
+        for key in gone.iter().chain(&recorded) {
+            self.announced.remove(key);
+        }
+        self.save_announced();
+        if cleared {
+            let empty = self.standing.as_ref().is_none_or(|file| file.standing(conn, at).is_empty());
+            if self.settings.notifications || empty {
+                self.render_digest(conn, false, now);
+            }
+        }
+        !gone.is_empty()
+    }
+
+    /// A gone pane's question leaves the waiting set, whoever recorded it.
+    fn clear_gone(&mut self, key: &Key, at: Date) -> bool {
+        if let Some(standing) = &self.standing {
+            standing.clear(&key.0, &key.1, at);
+        }
+        self.posted_attention.remove(key);
+        true
+    }
+
+    // MARK: - The sweep
+
+    /// Every two seconds while anything is tracked: announcements whose
+    /// grace ran out, a card for the pane on screen acknowledged, and the
+    /// heuristic's ageing.
+    pub fn sweep(&mut self, visible: Option<&Visible>, now: f64) {
+        self.fire_due_announcements(now);
+        if let Some(visible) = visible {
+            let seen: Vec<Key> = self
+                .posted_attention
+                .iter()
+                .filter(|key| {
+                    key.0 == visible.conn && visible.pane.as_deref().is_none_or(|pane| pane == key.1)
+                })
+                .cloned()
+                .collect();
+            for key in seen {
+                self.effects.push(Effect::Note(format!(
+                    "acknowledged: pane {} viewed — standing cleared",
+                    key.1
+                )));
+                if let Some(standing) = &self.standing {
+                    standing.clear(&key.0, &key.1, Date::from_unix(now));
+                }
+                self.posted_attention.remove(&key);
+                self.render_digest(&key.0, false, now);
+            }
+        }
+        let tunables = self.tunables;
+        let mut changed = false;
+        let mut forget: Vec<Key> = Vec::new();
+        for (key, p) in &mut self.panes {
+            if p.hook_owned && now - p.last_hook_seen > p.hold {
+                p.hook_owned = false;
+                p.last_output = now;
+                p.first_active = now;
+                changed = true;
+                continue;
+            }
+            if hook_governs(p, now) {
+                continue;
+            }
+            if p.visible {
+                match p.state {
+                    AgentState::Working => {
+                        if now - p.last_output > tunables.idle_after {
+                            p.state = AgentState::Done;
+                            p.since = now;
+                            changed = true;
+                        }
+                    }
+                    AgentState::Done => {
+                        if now - p.since > tunables.done_linger {
+                            forget.push(key.clone());
+                        }
+                    }
+                    AgentState::Idle => forget.push(key.clone()),
+                    AgentState::Attention => {}
+                }
+            } else if now - p.last_output > tunables.promotion_delay + tunables.idle_after {
+                forget.push(key.clone());
+            }
+        }
+        if !forget.is_empty() {
+            for key in &forget {
+                self.panes.remove(key);
+                self.announced.remove(key);
+            }
+            self.save_announced();
+            changed = true;
+        }
+        if changed {
+            self.sync(now);
+        }
+    }
+
+    // MARK: - Announcing
+
+    fn schedule_announce(&mut self, key: Key, episode: f64, now: f64) {
+        if self.pending.get(&key).is_some_and(|(pending, _)| *pending == episode) {
+            return;
+        }
+        self.effects.push(Effect::Note(format!(
+            "announce scheduled: pane {} grace {}s",
+            key.1, self.tunables.announce_grace
+        )));
+        self.pending.insert(key, (episode, now + self.tunables.announce_grace));
+    }
+
+    /// Every grace that has run out, in the order they ran out: the order
+    /// their timers fire in, which decides whose prompt is the edge.
+    fn fire_due_announcements(&mut self, now: f64) {
+        // A grace that ends more than a grace from now was scheduled before
+        // the clock was set back: it ends a grace from now instead, not as
+        // much later as the clock went back.
+        let latest = now + self.tunables.announce_grace;
+        for (_, at) in self.pending.values_mut() {
+            if *at > latest {
+                *at = latest;
+            }
+        }
+        let mut due: Vec<(f64, Key, f64)> = self
+            .pending
+            .iter()
+            .filter(|(_, (_, at))| *at <= now)
+            .map(|(key, (episode, at))| (*at, key.clone(), *episode))
+            .collect();
+        due.sort_by(|a, b| a.0.total_cmp(&b.0).then_with(|| a.1.cmp(&b.1)));
+        for (_, key, episode) in due {
+            self.pending.remove(&key);
+            // The window did its job if the question is gone or superseded.
+            let Some(p) = self.panes.get(&key).filter(|p| p.state == AgentState::Attention && p.since == episode)
+            else {
+                self.effects.push(Effect::Note(format!(
+                    "announce cancelled: pane {} left the episode within the grace",
+                    key.1
+                )));
+                continue;
+            };
+            let (command, detail) = (p.command.clone(), p.detail.clone());
+            self.announced.insert(key.clone(), episode);
+            self.save_announced();
+            let detail = if self.settings.show_detail { detail } else { None };
+            self.post_attention(&key, &command, detail, episode, now);
+        }
+    }
+
+    fn post_attention(&mut self, key: &Key, command: &str, detail: Option<String>, episode: f64, now: f64) {
+        let location = self.panes.get(key).map(|p| self.location(key, &p.place)).unwrap_or_default();
+        self.effects.push(Effect::Note(format!("announcing attention: pane {} on {location}", key.1)));
+        if !self.settings.notifications {
+            return;
+        }
+        let edge = match &self.standing {
+            Some(standing) => standing.note_standing(
+                &key.0,
+                Entry {
+                    pane: key.1.clone(),
+                    agent: Some(display_command(command).to_owned()),
+                    title: detail,
+                    location: Some(self.place(key)),
+                    since: episode as i64,
+                    recorded_at: Date::from_unix(now),
+                },
+                Date::from_unix(now),
+            ),
+            None => true,
+        };
+        self.posted_attention.insert(key.clone());
+        self.render_digest(&key.0, edge, now);
+    }
+
+    /// Draw — or withdraw — the one card a connection's waiting prompts
+    /// share, from the newest standing entry.
+    fn render_digest(&mut self, conn: &str, edge: bool, now: f64) {
+        let id = format!("moshpit.attention.{conn}");
+        let standing = self
+            .standing
+            .as_ref()
+            .map(|file| file.standing(conn, Date::from_unix(now)))
+            .unwrap_or_default();
+        let Some(newest) = standing.first() else {
+            self.effects.push(Effect::Withdraw(id));
+            return;
+        };
+        let fallback = self.place(&(conn.to_owned(), newest.pane.clone()));
+        let text = digest(newest, standing.len(), self.settings, edge, &fallback);
+        self.effects.push(Effect::Post(Card {
+            id,
+            text,
+            connection_id: conn.to_owned(),
+            pane_id: newest.pane.clone(),
+        }));
+    }
+
+    /// The finish card: a long turn rings once between this card and the
+    /// pushed copy the host sent when the turn stopped.
+    fn post_done(&mut self, key: &Key, command: &str, detail: Option<String>, duration: f64, ended_at: f64, now: f64) {
+        if !self.settings.notifications {
+            return;
+        }
+        let threshold = self.tunables.done_threshold;
+        let duration = duration as i64;
+        let rings = !copy::done_rings(duration, self.settings.sound, threshold)
+            || self.finishes.as_ref().is_none_or(|finishes| {
+                finishes.note_ring(&key.0, &key.1, ended_at as i64, Date::from_unix(now))
+            });
+        let text = copy::done(
+            display_command(command),
+            detail.as_deref(),
+            &self.place(key),
+            duration,
+            self.settings.sound,
+            threshold,
+            rings,
+            self.settings.language,
+        );
+        self.effects.push(Effect::Post(Card {
+            id: format!("moshpit.done.{}.{}", key.0, key.1),
+            text,
+            connection_id: key.0.clone(),
+            pane_id: key.1.clone(),
+        }));
+    }
+
+    /// The prompts a poll shows answered leave the waiting set, whoever put
+    /// them there — only entries older than the state the pane is in now
+    /// (host clock on both sides), so a stale reply answers nothing.
+    fn clear_answered(&mut self, conn: &str, answered: &BTreeMap<String, f64>, now: f64) {
+        if answered.is_empty() {
+            return;
+        }
+        let Some(standing) = &self.standing else { return };
+        let at = Date::from_unix(now);
+        let gone: Vec<String> = standing
+            .standing(conn, at)
+            .into_iter()
+            .filter(|entry| answered.get(&entry.pane).is_some_and(|since| (entry.since as f64) < *since))
+            .map(|entry| entry.pane)
+            .collect();
+        if gone.is_empty() {
+            return;
+        }
+        for pane in &gone {
+            self.effects.push(Effect::Note(format!(
+                "answered: pane {pane} left attention — standing cleared"
+            )));
+            standing.clear(conn, pane, at);
+            self.posted_attention.remove(&(conn.to_owned(), pane.clone()));
+        }
+        let empty = standing.standing(conn, at).is_empty();
+        if self.settings.notifications || empty {
+            self.render_digest(conn, false, now);
+        }
+    }
+
+    // MARK: - What shows
+
+    fn sync(&mut self, now: f64) {
+        // Panes that left `attention` leave the set; their card follows.
+        let attention_now: BTreeSet<Key> = self
+            .panes
+            .iter()
+            .filter(|(_, p)| p.state == AgentState::Attention)
+            .map(|(key, _)| key.clone())
+            .collect();
+        let stale: Vec<Key> = self.posted_attention.difference(&attention_now).cloned().collect();
+        if !stale.is_empty() {
+            if let Some(standing) = &self.standing {
+                for key in &stale {
+                    standing.clear(&key.0, &key.1, Date::from_unix(now));
+                }
+            }
+            self.posted_attention = self.posted_attention.intersection(&attention_now).cloned().collect();
+            let conns: BTreeSet<String> = stale.into_iter().map(|key| key.0).collect();
+            for conn in conns {
+                self.render_digest(&conn, false, now);
+            }
+        }
+
+        let state = self.build_state();
+        if needs_sending(&state, self.widget_sent.as_ref(), now, self.tunables.resend_unchanged_after) {
+            self.effects.push(Effect::Widget(state.clone()));
+            self.widget_sent = Some((state.clone(), now));
+        }
+        if state.agents.is_empty() {
+            if !self.island_ended {
+                self.effects.push(Effect::EndIsland);
+                self.island_ended = true;
+            }
+            self.island_sent = None;
+            return;
+        }
+        self.island_ended = false;
+        if !self.settings.live_activity {
+            return;
+        }
+        if needs_sending(&state, self.island_sent.as_ref(), now, self.tunables.resend_unchanged_after) {
+            self.effects.push(Effect::Island(state.clone()));
+            self.island_sent = Some((state, now));
+        }
+    }
+
+    fn build_state(&self) -> IslandState {
+        let mut visible: Vec<(&Key, &Pane)> = self.panes.iter().filter(|(_, p)| p.visible).collect();
+        visible.sort_by(|a, b| {
+            a.1.state
+                .rank()
+                .cmp(&b.1.state.rank())
+                .then(b.1.since.partial_cmp(&a.1.since).unwrap_or(std::cmp::Ordering::Equal))
+        });
+        let agents: Vec<Agent> = visible
+            .iter()
+            .take(self.tunables.max_agents)
+            .map(|(key, p)| Agent {
+                id: format!("{}:{}", key.0, key.1),
+                connection_id: key.0.clone(),
+                pane_id: key.1.clone(),
+                command: display_command(&p.command).to_owned(),
+                location: self.location(key, &p.place),
+                detail: if self.settings.show_detail { p.detail.clone() } else { None },
+                state: p.state,
+                started_at: p.since,
+            })
+            .collect();
+        let headline_id = if agents.is_empty() {
+            None
+        } else {
+            Some(agents[self.headline_offset % agents.len()].id.clone())
+        };
+        IslandState {
+            working_count: visible.iter().filter(|(_, p)| p.state == AgentState::Working).count(),
+            attention_count: visible.iter().filter(|(_, p)| p.state == AgentState::Attention).count(),
+            agents,
+            headline_id,
+        }
+    }
+
+    /// "host · session · window", the island's line.
+    fn location(&self, key: &Key, place: &PaneWhere) -> String {
+        let host = self.conns.get(&key.0).cloned().unwrap_or_default();
+        let parts: Vec<&str> = [place.session.as_deref(), place.window.as_deref()]
+            .into_iter()
+            .flatten()
+            .filter(|part| !part.is_empty())
+            .collect();
+        if parts.is_empty() {
+            host
+        } else {
+            format!("{host} · {}", parts.join(" · "))
+        }
+    }
+
+    /// "label · session", a card's line: the session from the tree, or
+    /// from what the pane's own signals said.
+    fn place(&self, key: &Key) -> String {
+        let label = self.conns.get(&key.0).cloned().unwrap_or_default();
+        let session = self
+            .trees
+            .get(&key.0)
+            .and_then(|tree| tree.get(&key.1))
+            .map(|place| place.session.as_deref())
+            .unwrap_or_else(|| self.panes.get(key).and_then(|p| p.place.session.as_deref()));
+        match session {
+            Some(session) => copy::place(&label, Some(session)),
+            None => label,
+        }
+    }
+
+    fn save_announced(&mut self) {
+        let flat = self
+            .announced
+            .iter()
+            .map(|(key, at)| (format!("{}|{}", key.0, key.1), *at))
+            .collect();
+        self.effects.push(Effect::SaveAnnounced(flat));
+    }
+}
+
+fn hook_governs(p: &Pane, now: f64) -> bool {
+    p.hook_owned && now - p.last_hook_seen <= p.hold
+}
+
+/// How long a stamp holds when its connection's stamps arrive every
+/// `interval` seconds: the interval, and a margin for a late poll that
+/// grows with it — `margin`, or half the interval once that is more
+/// (B346). tmux's 2 s: 5 s; herdr's 8 s: 12 s; herdr's 45 s with push:
+/// 67.5 s, room for a safety-net poll that is late on a slow link.
+pub fn stamp_hold(interval: f64, margin: f64) -> f64 {
+    let interval = interval.max(0.0);
+    interval + margin.max(interval / 2.0)
+}
+
+/// A login shell's leading "-" off.
+pub fn display_command(command: &str) -> &str {
+    command.strip_prefix('-').unwrap_or(command)
+}
+
+/// Whether a pane in `state`, its episode begun at `episode`, should be
+/// announced given what was last announced for it.
+pub fn should_announce(state: AgentState, episode: f64, last_announced: Option<f64>) -> bool {
+    state == AgentState::Attention && last_announced != Some(episode)
+}
+
+/// A stamp the host got wrong, or that time made wrong: a shell in the
+/// foreground means the agent is gone (done); Claude's idle reminder is a
+/// parked agent, not a question.
+pub fn reclassify(state: AgentState, title: Option<&str>, foreground: Option<&str>) -> AgentState {
+    if foreground.is_some_and(is_shell) {
+        return AgentState::Done;
+    }
+    if state == AgentState::Attention
+        && title.is_some_and(|title| title.to_lowercase().contains("waiting for your input"))
+    {
+        return AgentState::Done;
+    }
+    state
+}
+
+/// Whether a poll is a turn ending: the host says done now and it shows as
+/// done; it said working or attention last poll; and that was recent.
+pub fn is_turn_ending(
+    hook: AgentState,
+    shown: AgentState,
+    previous_hook: Option<AgentState>,
+    previous_hook_seen: Option<f64>,
+    now: f64,
+    grace: f64,
+) -> bool {
+    hook == AgentState::Done
+        && shown == AgentState::Done
+        && matches!(previous_hook, Some(AgentState::Working | AgentState::Attention))
+        && previous_hook_seen.is_some_and(|seen| now - seen <= grace)
+}
+
+/// Whether `state` goes out, given what was last sent there and when — and
+/// again when the clock was set back past that send, rather than not until
+/// it is a minute past it again.
+pub fn needs_sending(state: &IslandState, last: Option<&(IslandState, f64)>, now: f64, resend_after: f64) -> bool {
+    match last {
+        None => true,
+        Some((sent, at)) => sent != state || now - at >= resend_after || now < *at,
+    }
+}
+
+/// The announced-episode record as stored, without what is older than
+/// `ttl` or more than a minute in the future.
+pub fn decode_announced(raw: &BTreeMap<String, f64>, now: f64, ttl: f64) -> BTreeMap<String, f64> {
+    raw.iter()
+        .filter(|(_, at)| **at <= now + 60.0 && now - **at <= ttl)
+        .map(|(key, at)| (key.clone(), *at))
+        .collect()
+}
+
+/// The waiting card, drawn from the newest standing entry. The entry may
+/// be the notification service's, which records what the push said: the
+/// detail is held to the switch here, and `fallback` stands in for a place
+/// the entry doesn't carry.
+pub fn digest(newest: &Entry, count: usize, settings: Settings, edge: bool, fallback: &str) -> CardText {
+    let who = newest.agent.as_deref().filter(|agent| !agent.is_empty()).unwrap_or("agent");
+    let stored = newest.location.as_deref().map(str::trim).unwrap_or("");
+    copy::attention(
+        who,
+        count as i64,
+        if settings.show_detail { newest.title.as_deref() } else { None },
+        if stored.is_empty() { fallback } else { stored },
+        edge,
+        settings.sound,
+        settings.language,
+    )
+}
+
+#[doc(hidden)]
+pub mod harness;
+
+#[cfg(test)]
+mod tests;

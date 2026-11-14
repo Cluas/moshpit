@@ -1,4 +1,5 @@
 import Foundation
+import UIKit
 @preconcurrency import Citadel
 import Crypto
 import NIOCore
@@ -19,7 +20,42 @@ enum SSHError: Error, CustomStringConvertible, LocalizedError {
     case channelOpenFailed
     case connectionFailed
     case handshakeFailed
+    /// The saved password or key isn't there, or can't be read, with the
+    /// device unlocked: lost to a re-install or a re-sign, damaged. Waits
+    /// for the person (``credentialRead(failedWith:protectedDataAvailable:)``).
     case credentialUnavailable
+    /// Face ID (or the passcode) for the saved password or key was
+    /// cancelled — by the person, or by the system when the app left the
+    /// screen or a call came in — or failed too many times (B392). The
+    /// credential is fine: it used to read as ``credentialUnavailable``,
+    /// which told people to re-enter it after a re-install. Not tried again
+    /// on its own (Face ID asked in a loop is worse); connecting again asks
+    /// once more.
+    case credentialCancelled
+    /// The saved password or key can't be read YET: the device is locked
+    /// (B211). The keychain refused (`errSecInteractionNotAllowed`), or
+    /// answered while protected data was unavailable — before the first
+    /// unlock it refuses or reads empty, and neither says anything about the
+    /// item. Retried when the device unlocks and on the foreground return,
+    /// as crates/session's `CredentialsLocked` is; never "re-enter the
+    /// password".
+    case credentialLocked
+    /// The trusted host keys can't be read while the device is locked, so
+    /// this server's key could not be checked — see `HostKeyDecision.unverifiable`.
+    case hostKeysLocked
+    /// The user said no to the server's key: the new-host card's Cancel,
+    /// the changed-key card's Disconnect (``HostKeyRejected``). Their own
+    /// decision, so the terminal ends the connect quietly (B151).
+    case hostKeyRejected
+    /// The SOCKS proxy ("host:port") couldn't be reached.
+    case proxyUnreachable(String)
+    /// The SOCKS proxy took the connection but didn't open one to the server.
+    case proxyFailed
+    /// The saved key is behind a passphrase, and none was given.
+    case keyNeedsPassphrase
+    /// The saved key can't sign in in any form: the kind of key, or a
+    /// damaged file (`StoredKey`).
+    case keyUnusable(SSHKeyImportError)
     case underlying(Error)
 
     /// Translate a raw Citadel / NIO error into the friendliest case. The
@@ -28,6 +64,14 @@ enum SSHError: Error, CustomStringConvertible, LocalizedError {
     /// — which users must see as "authentication failed", not "error 4".
     static func map(_ error: Error) -> SSHError {
         if let e = error as? SSHError { return e }
+        if error is HostKeyRejected { return .hostKeyRejected }
+        if let unreadable = error as? KnownHostsUnreadable, unreadable.locked { return .hostKeysLocked }
+        if let proxy = error as? SOCKSProxyDialer.DialError {
+            switch proxy {
+            case .proxyUnreachable(let host, let port, _): return .proxyUnreachable("\(host):\(port)")
+            case .proxyFailed: return .proxyFailed
+            }
+        }
         if let c = error as? SSHClientError {
             switch c {
             case .allAuthenticationOptionsFailed:
@@ -101,6 +145,31 @@ enum SSHError: Error, CustomStringConvertible, LocalizedError {
             return String(localized: "The server closed the connection while setting up SSH. Check that the port really is an SSH server, and that a firewall or proxy isn't cutting the connection.")
         case .credentialUnavailable:
             return String(localized: "Couldn't read the saved credential. After re-installing or re-signing the app (e.g. via SideStore), open Edit and re-enter your password / re-select your key.")
+        case .credentialCancelled:
+            // The Rust session's words for its `Cancelled` too (RustCopy):
+            // Face ID's cancel and the passphrase card's.
+            return String(localized: "Signing in was cancelled, so Moshpit didn't connect. Connect again to try once more.")
+        case .credentialLocked:
+            // The Rust session's words for its `CredentialsLocked` too
+            // (RustCopy): one catalog entry for one situation.
+            return String(localized: "This device is locked, so Moshpit can't read the saved password or key yet. It connects again once you unlock it.")
+        case .hostKeysLocked:
+            return String(localized: "While this device is locked, Moshpit can't read the server keys you've trusted, so it can't check this server. Unlock it and connect again.")
+        case .hostKeyRejected:
+            return String(localized: "You didn't trust the server's key, so Moshpit didn't connect.")
+        case .proxyUnreachable(let proxy):
+            return String(localized: "Couldn't reach the SOCKS proxy at \(proxy). Check that it's running, and its host and port.")
+        case .proxyFailed:
+            return String(localized: "The SOCKS proxy didn't connect you to the server. Check that it's a SOCKS5 proxy that needs no password, and that it can reach the server.")
+        case .keyNeedsPassphrase:
+            return String(localized: "This key is locked with a passphrase. Connect again and enter it — Moshpit asks for it only once.")
+        case .keyUnusable(let reason):
+            switch reason {
+            case .unsupportedType, .securityKey, .unsupportedEncryption:
+                return reason.errorDescription ?? ""
+            default:
+                return String(localized: "The private key saved for this connection is damaged, or isn't one Moshpit can read. Import or paste the key again.")
+            }
         case .underlying:
             // Deliberately says nothing about the wrapped error. For a library
             // type that does not implement LocalizedError — which Citadel's
@@ -113,6 +182,52 @@ enum SSHError: Error, CustomStringConvertible, LocalizedError {
             // closes the default. `diagnostic` keeps the detail for logs.
             return String(localized: "The connection failed for a reason Moshpit didn't recognise. Check the host, port and that the server is reachable, then try again.")
         }
+    }
+
+    /// What a failed keychain read of a connection's saved credential means
+    /// (B211). It used to be ``credentialUnavailable`` whatever the keychain
+    /// said, and B163 rightly never retries that: a reconnect made while the
+    /// phone was locked — in the background, from a notification on the
+    /// lock screen, a launch before the first unlock — gave up for good, and
+    /// told the person to re-enter a password that was there all along.
+    ///
+    /// The device being locked is ``credentialLocked``: the keychain
+    /// refusing (`errSecInteractionNotAllowed` — an item kept `WhenUnlocked`,
+    /// or one behind Face ID asked for where no prompt can show), or any
+    /// failure while protected data is unavailable, when the keychain
+    /// refuses or reads empty and an untrusted read is never taken for the
+    /// truth (the sealed-launch rule, ``DefaultsReadiness``). With the
+    /// device unlocked, Face ID cancelled or failed is ``credentialCancelled``
+    /// (B392); anything else is the item's own — gone, unreadable — and
+    /// ``credentialUnavailable``.
+    static func credentialRead(failedWith error: Error, protectedDataAvailable: Bool) -> SSHError {
+        if case .interactionNotAllowed? = error as? KeychainError { return .credentialLocked }
+        guard protectedDataAvailable else { return .credentialLocked }
+        switch error as? KeychainError {
+        case .userCanceled?, .authenticationFailed?: return .credentialCancelled
+        default: return .credentialUnavailable
+        }
+    }
+
+    /// What a Secure Enclave key's failed sign-in means (B249), when the
+    /// chip is what failed: the offer's signature refused before NIOSSH
+    /// signed (``SecureEnclaveRefused``), or the signature NIOSSH makes in
+    /// the handshake (a CryptoKit or keychain error). While protected data
+    /// is unavailable that is the lock — ``credentialLocked``, retried on the
+    /// unlock as B227 has it for the key's other operations — where it read
+    /// as a failed sign-in, never retried; with the device unlocked it is
+    /// the key's own failure. nil: not the chip's (a refused key, a host
+    /// that went away), mapped as any sign-in's.
+    static func secureEnclaveSignIn(failedWith error: Error, protectedDataAvailable: Bool) -> SSHError? {
+        let chip: Error
+        if let refused = error as? SecureEnclaveRefused {
+            chip = refused.error
+        } else if error is CryptoKitError || [NSOSStatusErrorDomain, "CryptoTokenKit"].contains((error as NSError).domain) {
+            chip = error
+        } else {
+            return nil
+        }
+        return protectedDataAvailable ? .underlying(chip) : .credentialLocked
     }
 }
 
@@ -127,16 +242,26 @@ protocol SSHClientProvider: Sendable {
         port: Int,
         authenticationMethod: SSHAuthenticationMethod,
         hostKeyValidator: SSHHostKeyValidator
-    ) async throws -> SSHClient
+    ) async throws -> SignedInClient
 
     /// Runs the SSH handshake over an already-connected channel instead of
     /// dialing `host:port` itself — the SOCKS-proxy path hands in a channel
-    /// that's already past the proxy's CONNECT handshake.
+    /// that's already past the proxy's CONNECT handshake. Returns once the
+    /// server accepted the sign-in, as the direct `connect` does, and throws
+    /// what it didn't accept.
     func connect(
         on channel: Channel,
         authenticationMethod: SSHAuthenticationMethod,
         hostKeyValidator: SSHHostKeyValidator
-    ) async throws -> SSHClient
+    ) async throws -> SignedInClient
+}
+
+/// A signed-in Citadel client and the TCP channel it runs over — whose
+/// pipeline holds the NIOSSHHandler a command's own exec channel is opened
+/// on (`SSHExec`).
+struct SignedInClient {
+    let client: SSHClient
+    let channel: Channel
 }
 
 struct CitadelSSHClientProvider: SSHClientProvider {
@@ -145,32 +270,37 @@ struct CitadelSSHClientProvider: SSHClientProvider {
         port: Int,
         authenticationMethod: SSHAuthenticationMethod,
         hostKeyValidator: SSHHostKeyValidator
-    ) async throws -> SSHClient {
-        try await SSHClient.connect(
-            host: host,
-            port: port,
-            authenticationMethod: authenticationMethod,
-            hostKeyValidator: hostKeyValidator,
-            reconnect: .never,
+    ) async throws -> SignedInClient {
+        // Dialled here, not by Citadel, so that a connect that fails closes
+        // its connection: Citadel's own dial leaves the channel of a refused
+        // sign-in or a stopped handshake open (NIOSSH doesn't close on an
+        // error) until the server tires of it.
+        let channel = try await SSHDial.directChannel(
+            host: host, port: port,
             // The TCP connect only; the handshake has its own clock. Citadel's
             // default is 30s. A SYN that gets no answer in 15s is a black hole
             // — most often a VPN address with the tunnel down — and the sooner
             // it fails, the sooner the retry lands on the path the user has
             // meanwhile fixed. Real paths connect in one round trip.
-            connectTimeout: .seconds(15)
-        )
+            timeout: .seconds(15))
+        let client = try await SSHDial.signIn(on: channel,
+                                              authenticationMethod: authenticationMethod,
+                                              hostKeyValidator: hostKeyValidator)
+        return SignedInClient(client: client, channel: channel)
     }
 
     func connect(
         on channel: Channel,
         authenticationMethod: SSHAuthenticationMethod,
         hostKeyValidator: SSHHostKeyValidator
-    ) async throws -> SSHClient {
-        try await SSHClient.connect(
-            on: channel,
-            authenticationMethod: authenticationMethod,
-            hostKeyValidator: hostKeyValidator
-        )
+    ) async throws -> SignedInClient {
+        // Waits for the sign-in, as the direct connect does, on the channel's
+        // event loop; Citadel's `connect(on:authenticationMethod:…)` did
+        // neither (`SSHDial`).
+        let client = try await SSHDial.signIn(on: channel,
+                                              authenticationMethod: authenticationMethod,
+                                              hostKeyValidator: hostKeyValidator)
+        return SignedInClient(client: client, channel: channel)
     }
 }
 
@@ -213,16 +343,21 @@ actor SSHSession {
     private nonisolated let continuation: AsyncStream<Data>.Continuation
     private var writer: (any SSHPTYWriter)?
     private var ptyOpened = false
-    private(set) var rows: Int = 24
-    private(set) var cols: Int = 80
     private var closed = false
-    /// Fired when the transport dies on its own (read loop hit EOF/error) —
-    /// NOT on an intentional `close()`. Drives auto-reconnect. Cleared after.
-    private var onUnexpectedClose: (@Sendable () -> Void)?
+    /// `close()` has shut the connection down (once is enough).
+    private var transportShut = false
+    /// Fired when the PTY channel ends on its own — the remote shell exited,
+    /// or the connection under it dropped — NOT on an intentional `close()`.
+    /// Told which of the two it was (see ``SSHChannelEnd``): a drop is
+    /// redialled, an exit ends the session. Cleared after.
+    private var onUnexpectedClose: (@Sendable (SSHChannelEnd) -> Void)?
+    /// How the PTY channel ended on its own, once it has — kept for a handler
+    /// registered only after the end (a login shell that exits at once).
+    private var channelEnd: SSHChannelEnd?
 
-    init(connection: ServerConnection, client: SSHClient) {
+    init(connection: ServerConnection, client: SSHClient, channel: Channel) {
         self.init(connection: connection,
-                  transport: CitadelClientTransport(client: client),
+                  transport: CitadelClientTransport(client: client, channel: channel),
                   sftpClient: client)
     }
 
@@ -246,31 +381,55 @@ actor SSHSession {
     /// True until `close()` has run or the upstream stream finishes.
     var isConnected: Bool { !closed }
 
+    /// The address this connection reached when it went straight to the
+    /// host; nil through a SOCKS proxy (the channel's peer is the proxy) and
+    /// when unknown. Where a mosh session started over it sends its UDP: the
+    /// address `mosh-server -s` bound to. Resolving the host name again can
+    /// land elsewhere when it has several addresses — `localhost` gives
+    /// `::1` first, and a server bound to 127.0.0.1 never answers there:
+    /// connected, and black (B171).
+    nonisolated var peerAddress: String? {
+        let proxied = connection.useSOCKSProxy == true && !(connection.socksProxyHost ?? "").isEmpty
+        return proxied ? nil : transport.peerAddress
+    }
+
     /// Register a death handler. `close()` sets `closed` first, so the handler
-    /// only fires on an *unexpected* drop, never on intentional teardown.
-    func setOnUnexpectedClose(_ handler: @escaping @Sendable () -> Void) {
+    /// only fires when the channel ends on its own, never on intentional
+    /// teardown. A channel that already ended so — the PTY is up before the
+    /// caller gets to register, and a login shell can exit straight away —
+    /// is reported at once.
+    func setOnUnexpectedClose(_ handler: @escaping @Sendable (SSHChannelEnd) -> Void) {
+        if let channelEnd {
+            handler(channelEnd)
+            return
+        }
         onUnexpectedClose = handler
     }
 
     // MARK: - PTY
 
-    func requestPTY(rows: Int, cols: Int) async throws {
+    /// Open the session's terminal channel: the account's login shell, or
+    /// `command` (a POSIX sh script, run as `sh -c`) as the channel's own
+    /// program. A program of the app's — tmux's control client, herdr's frame
+    /// loop, the push pump — is the channel's command, never a line typed
+    /// into a login shell that may still be starting: a startup that flushes
+    /// pending input (Powerlevel10k's instant prompt) or a line editor busy
+    /// with plugins swallowed it, and nothing came up (B267).
+    func requestPTY(rows: Int, cols: Int, command: String? = nil) async throws {
         guard !closed else { throw SSHError.sessionClosed }
         guard !ptyOpened else { throw SSHError.ptyAlreadyOpen }
         ptyOpened = true
-        self.rows = rows
-        self.cols = cols
 
         let w = try await transport.openPTY(
-            rows: rows, cols: cols,
+            rows: rows, cols: cols, command: command,
             onOutput: { [weak self] data in
                 // Synchronous, in-order: the read loop is the only caller and
                 // it is sequential. See `continuation`'s doc for the
                 // reordering bug the old per-chunk Task caused.
                 self?.continuation.yield(data)
             },
-            onEnd: { [weak self] in
-                Task { await self?.markClosed() }
+            onEnd: { [weak self] end in
+                Task { await self?.markClosed(end) }
             })
         installWriter(w)
     }
@@ -477,6 +636,7 @@ actor SSHSession {
         } catch is CancellationError {
             throw CancellationError()
         } catch {
+            try Self.throwIfSFTPSaidWhy(error)
             let output = try await executeCommand(RemoteFileCommands.stat(path))
             guard let entry = RemoteFileCommands.parseStat(String(decoding: output, as: UTF8.self),
                                                            path: path) else {
@@ -491,7 +651,13 @@ actor SSHSession {
     /// so on a host without SFTP this throws and the caller downloads.
     func openRemoteFile(_ path: String) async throws -> RemoteFileHandle {
         guard !closed else { throw SSHError.sessionClosed }
-        let file = try await previewReader().openFile(filePath: path, flags: .read)
+        let file: SFTPFile
+        do {
+            file = try await previewReader().openFile(filePath: path, flags: .read)
+        } catch {
+            try Self.throwIfSFTPSaidWhy(error)
+            throw error
+        }
         do {
             let size = try await file.readAttributes().size ?? 0
             guard size > 0 else { throw SSHError.underlying(RemoteReadError.notFound) }
@@ -531,6 +697,7 @@ actor SSHSession {
         } catch is CancellationError {
             throw CancellationError()
         } catch {
+            try Self.throwIfSFTPSaidWhy(error)
             let output = try await executeCommand(RemoteFileCommands.list(path))
             return RemoteFileCommands.parseList(String(decoding: output, as: UTF8.self), in: path)
         }
@@ -550,6 +717,7 @@ actor SSHSession {
         } catch is CancellationError {
             throw CancellationError()
         } catch {
+            try Self.throwIfSFTPSaidWhy(error)
             try await execDownload(path, to: destination, progress: progress)
         }
     }
@@ -603,7 +771,34 @@ actor SSHSession {
 
     enum RemoteReadError: Error {
         case notFound
+        /// The host won't let this account read it.
+        case denied
         case tooLargeWithoutSFTP
+    }
+
+    /// What the SFTP server said about the path, when it said something the
+    /// exec form can't change: it isn't there, or isn't this account's to
+    /// read. Anything else — no SFTP subsystem, a channel that dropped, a
+    /// call it doesn't support — leaves the exec form to try (B241: every
+    /// SFTP failure went to exec, whose answer showed as a generic error).
+    nonisolated static func sftpRefusal(_ code: SFTPStatusCode?) -> RemoteReadError? {
+        switch code {
+        case .noSuchFile?: return .notFound
+        case .permissionDenied?: return .denied
+        default: return nil
+        }
+    }
+
+    /// The status code an SFTP call failed with (Citadel throws the
+    /// server's status as it came, or wrapped).
+    nonisolated static func sftpStatusCode(_ error: Error) -> SFTPStatusCode? {
+        if let status = error as? SFTPMessage.Status { return status.errorCode }
+        if case SFTPError.errorStatus(let status)? = error as? SFTPError { return status.errorCode }
+        return nil
+    }
+
+    private static func throwIfSFTPSaidWhy(_ error: Error) throws {
+        if let refusal = sftpRefusal(sftpStatusCode(error)) { throw SSHError.underlying(refusal) }
     }
 
     // MARK: - Changing files from the folder sheet
@@ -628,7 +823,20 @@ actor SSHSession {
             throw CancellationError()
         } catch {}
         guard let command else { throw SSHError.underlying(RemoteEditError.failed) }
-        try Self.checkEditReply(try await executeCommand(command))
+        try Self.checkEditReply(try await editReply(command))
+    }
+
+    /// The exec form's reply, whatever its exit status: "taken" comes with
+    /// status 1, and since B136 a non-zero status throws — the marker went
+    /// unread and the person heard "couldn't reach the host" (B240). A
+    /// channel that ended any other way still fails as it did.
+    private func editReply(_ command: String) async throws -> Data {
+        do {
+            return try await executeCommand(command)
+        } catch SSHError.underlying(let inner) {
+            guard case .exited(_, let output)? = inner as? SSHExec.Failure else { throw SSHError.underlying(inner) }
+            return output
+        }
     }
 
     private static func checkEditReply(_ reply: Data) throws {
@@ -661,7 +869,7 @@ actor SSHSession {
         }
         if entry.isDirectory {
             guard !closed else { throw SSHError.sessionClosed }
-            try Self.checkEditReply(try await executeCommand(command))
+            try Self.checkEditReply(try await editReply(command))
         } else {
             try await edit(sftp: { try await $0.remove(at: entry.path) }, exec: command)
         }
@@ -703,7 +911,7 @@ actor SSHSession {
         }
         let data = try Data(contentsOf: local)
         let plan = RemoteFileEdits.upload(to: remotePath)
-        try Self.checkEditReply(try await executeCommand(plan.begin))
+        try Self.checkEditReply(try await editReply(plan.begin))
         var offset = 0
         while offset < data.count {
             try Task.checkCancellation()
@@ -712,7 +920,7 @@ actor SSHSession {
             offset = end
             progress?(0.95 * Double(offset) / Double(max(data.count, 1)))
         }
-        try Self.checkEditReply(try await executeCommand(plan.finish))
+        try Self.checkEditReply(try await editReply(plan.finish))
         progress?(1)
     }
 
@@ -726,8 +934,6 @@ actor SSHSession {
 
     func resize(rows: Int, cols: Int) async throws {
         guard !closed else { throw SSHError.sessionClosed }
-        self.rows = rows
-        self.cols = cols
         guard let writer else { throw SSHError.ptyNotReady }
         do {
             try await writer.resize(cols: cols, rows: rows)
@@ -737,8 +943,19 @@ actor SSHSession {
     }
 
     func close() async {
-        guard !closed else { return }
+        // The PTY channel may have ended on its own first (`markClosed`: the
+        // remote shell exited, or the connection dropped). That ended the
+        // channel, not the SSH connection under it — sshd keeps a connection
+        // open after its shell exits, the client is the one to close it — so
+        // the connection is still ours to shut. `close()` used to return here
+        // when the channel had ended, and every session whose shell exited
+        // left its connection ESTABLISHED for as long as the app ran.
+        guard !transportShut else { return }
+        transportShut = true
         closed = true
+        // Ours to end: nobody is told (and a handler that holds on to its
+        // listener lets go of it here).
+        onUnexpectedClose = nil
         writer = nil
         continuation.finish()
         try? await previewSFTP?.close()
@@ -754,17 +971,35 @@ actor SSHSession {
         self.writer = w
     }
 
-    private func markClosed() {
+    private func markClosed(_ end: SSHChannelEnd) {
         guard !closed else { return }
         closed = true
+        channelEnd = end
         writer = nil
         continuation.finish()
-        // Reached only on an unexpected drop — `close()` flips `closed` first,
-        // so the read loop's markClosed is a no-op there.
+        // Reached only when the channel ended on its own — `close()` flips
+        // `closed` first, so the read loop's markClosed is a no-op there.
         let handler = onUnexpectedClose
         onUnexpectedClose = nil
-        handler?()
+        handler?(end)
     }
+}
+
+/// How a PTY channel's read loop ended: the one thing that tells a remote
+/// shell that EXITED — `exit`, Ctrl-D, its last process gone — from a
+/// connection that DROPPED. Both used to look the same (the read loop ends),
+/// and both were redialled: `exit` in a plain SSH shell came straight back
+/// as a fresh login.
+enum SSHChannelEnd: Equatable, Sendable {
+    /// The server closed the channel in order: the command it ran (the login
+    /// shell) ended, and sshd sent its exit status, EOF and close. `status`
+    /// is the exit status when it was not 0; nil for 0, and for an orderly
+    /// close that carried none (a shell killed by a signal: Citadel does not
+    /// report `exit-signal`).
+    case exited(status: Int?)
+    /// The channel went down with the connection under it — TCP reset or EOF,
+    /// an I/O error, a server that vanished mid-session — or never opened.
+    case dropped
 }
 
 // MARK: - Client transport seam
@@ -781,14 +1016,37 @@ protocol SSHClientTransport: AnyObject, Sendable {
     func run(_ command: String) async throws -> Data
     /// Open the interactive PTY. Returns once the server accepted it,
     /// handing back the stdin writer; `onOutput` then streams host bytes for
-    /// the channel's lifetime, and `onEnd` fires when the read loop finishes
-    /// — cleanly or not; the session turns that into `markClosed`.
+    /// the channel's lifetime, and `onEnd` fires once when the read loop
+    /// finishes, saying how (``SSHChannelEnd``); the session turns that into
+    /// `markClosed`.
     func openPTY(rows: Int, cols: Int,
                  onOutput: @escaping @Sendable (Data) -> Void,
-                 onEnd: @escaping @Sendable () -> Void) async throws -> any SSHPTYWriter
+                 onEnd: @escaping @Sendable (SSHChannelEnd) -> Void) async throws -> any SSHPTYWriter
+    /// The same, the channel's program `command` (run as `sh -c`, see
+    /// ``Shell/portable(_:)``) instead of the login shell; nil: the login
+    /// shell, as above.
+    func openPTY(rows: Int, cols: Int, command: String?,
+                 onOutput: @escaping @Sendable (Data) -> Void,
+                 onEnd: @escaping @Sendable (SSHChannelEnd) -> Void) async throws -> any SSHPTYWriter
     /// Tear the connection down; must also end an open PTY's read loop
     /// (which makes the session's `close()` race-free against `markClosed`).
     func shutdown() async
+    /// The address the TCP connection reached (a numeric host, an IPv6
+    /// link-local one with its `%interface`), nil when unknown — see
+    /// ``SSHSession/peerAddress``.
+    var peerAddress: String? { get }
+}
+
+extension SSHClientTransport {
+    var peerAddress: String? { nil }
+
+    /// A fake host that models no programs: the channel is its shell either
+    /// way. Hosts that tell a program from a shell implement it.
+    func openPTY(rows: Int, cols: Int, command: String?,
+                 onOutput: @escaping @Sendable (Data) -> Void,
+                 onEnd: @escaping @Sendable (SSHChannelEnd) -> Void) async throws -> any SSHPTYWriter {
+        try await openPTY(rows: rows, cols: cols, onOutput: onOutput, onEnd: onEnd)
+    }
 }
 
 /// The PTY stdin surface the session writes through.
@@ -800,19 +1058,40 @@ protocol SSHPTYWriter: Sendable {
 /// Production ``SSHClientTransport`` over a Citadel `SSHClient`.
 final class CitadelClientTransport: SSHClientTransport {
     private let client: SSHClient
+    /// The connection's TCP channel, for exec channels of our own.
+    private let channel: Channel
+    let peerAddress: String?
 
-    init(client: SSHClient) {
+    init(client: SSHClient, channel: Channel) {
         self.client = client
+        self.channel = channel
+        self.peerAddress = Self.numericHost(channel.remoteAddress)
     }
 
+    /// `address` as a host a socket can be pointed at: the numeric address,
+    /// and for an IPv6 link-local one its interface too (`fe80::1%en0`) —
+    /// without it the address leads nowhere.
+    static func numericHost(_ address: SocketAddress?) -> String? {
+        guard let address, let ip = address.ipAddress else { return nil }
+        if case .v6(let v6) = address, v6.address.sin6_scope_id != 0 {
+            var name = [CChar](repeating: 0, count: Int(IF_NAMESIZE) + 1)
+            if if_indextoname(v6.address.sin6_scope_id, &name) != nil {
+                return ip + "%" + String(cString: name)
+            }
+        }
+        return ip
+    }
+
+    /// Not Citadel's `executeCommand`: it can't tell an exit status of 0 from
+    /// none, and handed back what a command cut short had printed as its
+    /// answer (`SSHExec`).
     func run(_ command: String) async throws -> Data {
-        let buffer = try await client.executeCommand(command, mergeStreams: true)
-        return Data(buffer.readableBytesView)
+        try await SSHExec.run(command, on: channel)
     }
 
     func openPTY(rows: Int, cols: Int,
                  onOutput: @escaping @Sendable (Data) -> Void,
-                 onEnd: @escaping @Sendable () -> Void) async throws -> any SSHPTYWriter {
+                 onEnd: @escaping @Sendable (SSHChannelEnd) -> Void) async throws -> any SSHPTYWriter {
         let request = SSHChannelRequestEvent.PseudoTerminalRequest(
             wantReply: true,
             term: "xterm-256color",
@@ -841,6 +1120,10 @@ final class CitadelClientTransport: SSHClientTransport {
         return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<any SSHPTYWriter, Error>) in
             Task { [client] in
                 var resumed = false
+                // Decided by how the read loop itself ends, not by whether
+                // `withPTY` throws: it closes the channel after the loop, and
+                // closing one the server already closed throws too.
+                var end = SSHChannelEnd.dropped
                 do {
                     try await client.withPTY(request, environment: environment) { output, writer in
                         if !resumed {
@@ -859,8 +1142,9 @@ final class CitadelClientTransport: SSHClientTransport {
                                     onOutput(Data(bytes))
                                 }
                             }
+                            end = Self.channelEnd(after: nil)
                         } catch {
-                            // Read loop ended in error — fall through to onEnd.
+                            end = Self.channelEnd(after: error)
                         }
                     }
                 } catch {
@@ -869,9 +1153,40 @@ final class CitadelClientTransport: SSHClientTransport {
                         continuation.resume(throwing: error)
                     }
                 }
-                onEnd()
+                onEnd(end)
             }
         }
+    }
+
+    func openPTY(rows: Int, cols: Int, command: String?,
+                 onOutput: @escaping @Sendable (Data) -> Void,
+                 onEnd: @escaping @Sendable (SSHChannelEnd) -> Void) async throws -> any SSHPTYWriter {
+        guard let command else {
+            return try await openPTY(rows: rows, cols: cols, onOutput: onOutput, onEnd: onEnd)
+        }
+        // Citadel opens a PTY only with a shell request, and keeps its
+        // writer's initializer to itself: the channel is opened here, as
+        // `SSHExec` opens its own.
+        return try await SSHCommandPTY.open(
+            command, rows: rows, cols: cols, on: channel,
+            environment: [("LANG", "en_US.UTF-8")],
+            onOutput: onOutput, onEnd: onEnd)
+    }
+
+    /// What a PTY read loop that ended with `error` (nil: it finished without
+    /// one) says about the channel. Citadel finishes the output stream once
+    /// the channel is gone: without an error when it was closed in order —
+    /// sshd's close after an exit status of 0 or none — throwing
+    /// `CommandFailed` for a non-zero exit status, and throwing whatever took
+    /// it down otherwise: `NIOSSHError.tcpShutdown` when the connection under
+    /// it closed, an I/O error, a channel failure. Only the first two mean
+    /// the server ended the shell; the rest is a connection worth redialling.
+    static func channelEnd(after error: Error?) -> SSHChannelEnd {
+        guard let error else { return .exited(status: nil) }
+        if let failed = error as? SSHClient.CommandFailed {
+            return .exited(status: failed.exitCode)
+        }
+        return .dropped
     }
 
     func shutdown() async {
@@ -902,10 +1217,24 @@ private struct CitadelPTYWriter: SSHPTYWriter {
 actor SSHService {
     typealias TrustNewHostHandler = TOFUHostKeyDelegate.TrustNewHost
     typealias AcceptChangedHostHandler = TOFUHostKeyDelegate.AcceptChangedHost
+    /// Asks the user for the passphrase of the key `connection` signs in
+    /// with; `wrong` when the last one given didn't unlock it. nil = cancel.
+    typealias KeyPassphraseHandler = @Sendable (_ connection: ServerConnection, _ wrong: Bool) async -> String?
 
     private let keychain: KeychainService
     private let validator: HostKeyValidator
     private let clientProvider: SSHClientProvider
+    /// Whether the device's protected data is available — asked after a
+    /// keychain read failed, to tell the lock from the item
+    /// (``SSHError/credentialRead(failedWith:protectedDataAvailable:)``).
+    private let protectedDataAvailable: @Sendable () async -> Bool
+
+    /// `UIApplication.isProtectedDataAvailable`, asked on the main actor
+    /// where UIKit answers it: awaited, never waited on, so a main thread
+    /// that is itself waiting on this service can't hold the answer up.
+    static let systemProtectedData: @Sendable () async -> Bool = {
+        await MainActor.run { UIApplication.shared.isProtectedDataAvailable }
+    }
 
     /// In-memory credential cache, keyed by connection id. Populated after the
     /// first successful (biometry-gated) keychain read so the now-frequent
@@ -914,6 +1243,14 @@ actor SSHService {
     /// for the app session; cleared on intentional disconnect AND whenever the
     /// app backgrounds (see ``clearAllCachedSecrets()``).
     private var secretCache: [UUID: String] = [:]
+
+    #if DEBUG
+    /// DEBUG seeds' keys (``seedSecretForThisLaunch(connectionId:secret:)``),
+    /// read before ``secretCache`` and never in the keychain. Unlike the
+    /// cache they outlive a background: nothing guards them, and a seeded
+    /// session that reconnected after one had no key left (B200).
+    private var launchSecrets: [UUID: String] = [:]
+    #endif
     private var seBlobCache: [UUID: Data] = [:]
 
     /// Keychain reads currently in flight, keyed by connection id, so
@@ -959,10 +1296,23 @@ actor SSHService {
 
     init(keychain: KeychainService,
          hostKeyValidator: HostKeyValidator,
-         clientProvider: SSHClientProvider = CitadelSSHClientProvider()) {
+         clientProvider: SSHClientProvider = CitadelSSHClientProvider(),
+         protectedDataAvailable: @escaping @Sendable () async -> Bool = SSHService.systemProtectedData) {
         self.keychain = keychain
         self.validator = hostKeyValidator
         self.clientProvider = clientProvider
+        self.protectedDataAvailable = protectedDataAvailable
+    }
+
+    /// ``SSHError/credentialRead(failedWith:protectedDataAvailable:)`` for a
+    /// read that just failed with `error`.
+    private func credentialReadFailure(_ error: Error) async -> SSHError {
+        let failure = SSHError.credentialRead(failedWith: error,
+                                              protectedDataAvailable: await protectedDataAvailable())
+        if case .credentialLocked = failure {
+            Log.ssh.notice("keychain: the saved credential can't be read while the device is locked (\(String(describing: error), privacy: .public)) — retried on the unlock")
+        }
+        return failure
     }
 
     // MARK: - Connect
@@ -987,11 +1337,16 @@ actor SSHService {
     /// impossible: each `connect()` call is self-contained. Both default to
     /// "deny" so a caller that forgets to wire real UI never silently
     /// auto-trusts an unknown or changed host key.
+    ///
+    /// `onKeyPassphrase` is asked when the connection's key was stored behind
+    /// its passphrase (``StoredKey``); left out, such a key fails with
+    /// ``SSHError/keyNeedsPassphrase``.
     func connect(_ connection: ServerConnection,
                  overrideSecret: String? = nil,
                  onUnknownHost: @escaping TrustNewHostHandler = { _, _, _ in false },
-                 onChangedHost: @escaping AcceptChangedHostHandler = { _, _, _, _ in false }) async throws -> SSHSession {
-        let authMethod: SSHAuthenticationMethod
+                 onChangedHost: @escaping AcceptChangedHostHandler = { _, _, _, _ in false },
+                 onKeyPassphrase: @escaping KeyPassphraseHandler = { _, _ in nil }) async throws -> SSHSession {
+        let attempts: [SignInAttempt]
         if connection.authMethod == .key, connection.sshKeyAlgorithm == .seP256 {
             // Secure Enclave key: the keychain blob is the key's
             // dataRepresentation (an enclave handle), not PEM. Signing runs
@@ -1006,69 +1361,221 @@ actor SSHService {
                         forRef: ref,
                         reason: "Authenticate to use the Secure Enclave key for \(connection.host)")
                 } catch {
-                    throw SSHError.credentialUnavailable
+                    throw await credentialReadFailure(error)
                 }
                 seBlobCache[connection.id] = blob
             }
+            let seKey: SecureEnclave.P256.Signing.PrivateKey
             do {
-                let seKey = try SecureEnclave.P256.Signing.PrivateKey(dataRepresentation: blob)
-                authMethod = .custom(SecureEnclaveP256AuthDelegate(
-                    username: connection.username, key: seKey))
+                seKey = try SecureEnclave.P256.Signing.PrivateKey(dataRepresentation: blob)
             } catch {
-                throw SSHError.underlying(error)
+                throw await secureEnclaveFailure(error)
             }
+            attempts = [SignInAttempt(secureEnclave: true) { [username = connection.username] in
+                // NIOSSH signs the offer inside the handshake, where a chip
+                // that refuses (the device locked) read as a failed sign-in:
+                // the chip is asked first, and its refusal is the lock's
+                // (B249).
+                .custom(PublicKeyOfferDelegate(
+                    username: username, key: NIOSSHPrivateKey(secureEnclaveP256Key: seKey),
+                    canSign: { _ = try seKey.signature(for: Data("moshpit".utf8)) }))
+            }]
         } else {
-            let secret = try await resolveSecret(for: connection, override: overrideSecret)
-            authMethod = try makeAuthMethod(connection: connection, secret: secret)
+            var secret = try await resolveSecret(for: connection, override: overrideSecret)
+            if connection.authMethod == .key {
+                secret = try await signableKey(secret, for: connection, keep: overrideSecret == nil,
+                                               onPassphrase: onKeyPassphrase)
+            }
+            attempts = try signInAttempts(connection: connection, secret: secret)
         }
 
-        let delegate = TOFUHostKeyDelegate(
-            validator: validator,
+        let hostKeyValidator = SSHHostKeyValidator.custom(TOFUHostKeyDelegate(
+            validator: validator, host: connection.host, port: connection.port))
+
+        // One connection per attempt: Citadel gives a sign-in method a single
+        // offer. Only a refused sign-in moves on to the next attempt — the
+        // next signature an RSA key can make; anything else (no route, a
+        // server that takes no keys) is the answer. A key the user has to
+        // judge ends its connection first (`HostKeyNeedsDecision`): the
+        // question is put with nothing open and no clock running — Citadel's
+        // 10-second sign-in, the server's login grace — and a trusted key is
+        // dialled again.
+        var index = 0
+        var questions = 0
+        while true {
+            let attempt = attempts[index]
+            do {
+                let method: SSHAuthenticationMethod
+                do {
+                    method = try attempt.method()
+                } catch {
+                    throw SSHError.underlying(error)
+                }
+                let signedIn = try await dial(connection, authenticationMethod: method,
+                                              hostKeyValidator: hostKeyValidator)
+                if let signature = attempt.rsaSignature {
+                    rsaSignatureThatWorked[Self.hostKey(connection)] = signature
+                }
+                return SSHSession(connection: connection, client: signedIn.client, channel: signedIn.channel)
+            } catch let decision as HostKeyNeedsDecision {
+                // A server whose key keeps changing under the question gets
+                // asked about it a few times, not forever.
+                questions += 1
+                let trusted: Bool
+                if questions > 3 {
+                    trusted = false
+                } else if let previous = decision.previous {
+                    trusted = await onChangedHost(decision.host, decision.port, decision.fingerprint, previous)
+                } else {
+                    trusted = await onUnknownHost(decision.host, decision.port, decision.fingerprint)
+                }
+                guard trusted else { throw SSHError.map(HostKeyRejected()) }
+                await validator.trust(host: decision.host, port: decision.port, fingerprint: decision.fingerprint)
+            } catch {
+                if attempt.secureEnclave,
+                   let chip = SSHError.secureEnclaveSignIn(failedWith: error,
+                                                           protectedDataAvailable: await protectedDataAvailable()) {
+                    if case .credentialLocked = chip {
+                        Log.ssh.notice("secure enclave: the sign-in's signature was refused while the device is locked (\(String(describing: error), privacy: .public)) — retried on the unlock")
+                    }
+                    throw chip
+                }
+                let mapped = SSHError.map(error)
+                if case .authenticationFailed = mapped, index < attempts.count - 1 {
+                    index += 1
+                    continue
+                }
+                throw mapped
+            }
+        }
+    }
+
+    /// One way of signing in, tried on a connection of its own.
+    struct SignInAttempt {
+        /// For an RSA key, the signature it signs with; nil for any other.
+        var rsaSignature: RSASignatureAlgorithm?
+        /// Signed by a Secure Enclave key, whose chip can refuse.
+        var secureEnclave = false
+        /// A fresh method each time: Citadel's are used up by one connection.
+        let method: () throws -> SSHAuthenticationMethod
+
+        init(rsaSignature: RSASignatureAlgorithm? = nil, secureEnclave: Bool = false,
+             method: @escaping () throws -> SSHAuthenticationMethod) {
+            self.rsaSignature = rsaSignature
+            self.secureEnclave = secureEnclave
+            self.method = method
+        }
+    }
+
+    /// The RSA signature that last signed in to a host ("host:port"), tried
+    /// first next time — what a host takes doesn't change between reconnects.
+    private var rsaSignatureThatWorked: [String: RSASignatureAlgorithm] = [:]
+
+    private static func hostKey(_ connection: ServerConnection) -> String {
+        "\(connection.host):\(connection.port)"
+    }
+
+    /// Dial `connection`'s host — through its SOCKS proxy when it has one —
+    /// and sign in with `authenticationMethod`.
+    private func dial(_ connection: ServerConnection,
+                      authenticationMethod: SSHAuthenticationMethod,
+                      hostKeyValidator: SSHHostKeyValidator) async throws -> SignedInClient {
+        // SOCKS proxies only speak TCP CONNECT — this affects the SSH
+        // dial only. If Mosh is also on, its UDP session still connects
+        // directly once SSH bootstraps it; the Add Connection form's
+        // PROXY footer says so up front rather than let that surface as
+        // a silent post-handshake failure.
+        if connection.useSOCKSProxy == true, let proxyHost = connection.socksProxyHost, !proxyHost.isEmpty {
+            let channel = try await SOCKSProxyDialer.connect(
+                proxyHost: proxyHost,
+                proxyPort: connection.socksProxyPort ?? 1080,
+                targetHost: connection.host,
+                targetPort: connection.port
+            )
+            return try await clientProvider.connect(
+                on: channel,
+                authenticationMethod: authenticationMethod,
+                hostKeyValidator: hostKeyValidator
+            )
+        }
+        return try await clientProvider.connect(
             host: connection.host,
             port: connection.port,
-            onNewHost: onUnknownHost,
-            onChangedHost: onChangedHost
+            authenticationMethod: authenticationMethod,
+            hostKeyValidator: hostKeyValidator
         )
-        let hostKeyValidator = SSHHostKeyValidator.custom(delegate)
-
-        do {
-            let client: SSHClient
-            // SOCKS proxies only speak TCP CONNECT — this affects the SSH
-            // dial only. If Mosh is also on, its UDP session still connects
-            // directly once SSH bootstraps it; the Add Connection form's
-            // PROXY footer says so up front rather than let that surface as
-            // a silent post-handshake failure.
-            if connection.useSOCKSProxy == true, let proxyHost = connection.socksProxyHost, !proxyHost.isEmpty {
-                let channel = try await SOCKSProxyDialer.connect(
-                    proxyHost: proxyHost,
-                    proxyPort: connection.socksProxyPort ?? 1080,
-                    targetHost: connection.host,
-                    targetPort: connection.port
-                )
-                client = try await clientProvider.connect(
-                    on: channel,
-                    authenticationMethod: authMethod,
-                    hostKeyValidator: hostKeyValidator
-                )
-            } else {
-                client = try await clientProvider.connect(
-                    host: connection.host,
-                    port: connection.port,
-                    authenticationMethod: authMethod,
-                    hostKeyValidator: hostKeyValidator
-                )
-            }
-            return SSHSession(connection: connection, client: client)
-        } catch {
-            throw SSHError.map(error)
-        }
     }
 
     // MARK: - Helpers
 
+    /// The key `stored` as the connect path signs with it (``StoredKey``).
+    ///
+    /// A key kept as it was pasted — PEM, behind a passphrase, Windows line
+    /// endings — is converted on its first use, asking for the passphrase
+    /// first when it has one, and once the converted key has read back to
+    /// the same public key it takes the original's place in the keychain
+    /// (`keep`; not for a secret handed in for this call only). Until that
+    /// replacement has succeeded the stored item is left as it was: no step
+    /// of this can lose the key. A replacement that fails costs nothing but
+    /// doing this again next time.
+    private func signableKey(_ stored: String, for connection: ServerConnection, keep: Bool,
+                             onPassphrase: KeyPassphraseHandler) async throws -> String {
+        var assessment: StoredKey.Assessment
+        do {
+            assessment = try StoredKey.assess(stored)
+        } catch let error as SSHKeyImportError {
+            throw SSHError.keyUnusable(error)
+        }
+        var wrong = false
+        while true {
+            switch assessment {
+            case .usable:
+                return stored
+            case .converted(let converted):
+                if keep {
+                    await keepConverted(converted, replacing: stored, for: connection)
+                }
+                return converted
+            case .needsPassphrase:
+                guard let passphrase = await onPassphrase(connection, wrong), !passphrase.isEmpty else {
+                    throw SSHError.keyNeedsPassphrase
+                }
+                do {
+                    assessment = try StoredKey.assess(stored, passphrase: passphrase)
+                } catch SSHKeyImportError.wrongPassphrase {
+                    wrong = true
+                } catch let error as SSHKeyImportError {
+                    throw SSHError.keyUnusable(error)
+                }
+            }
+        }
+    }
+
+    /// Store `converted` in place of `stored`, the key it was made from, and
+    /// cache it: a connect while this foreground lasts (the mosh sidecar's,
+    /// a reconnect) then neither converts again nor asks again.
+    private func keepConverted(_ converted: String, replacing stored: String,
+                               for connection: ServerConnection) async {
+        if secretCache[connection.id] == stored {
+            secretCache[connection.id] = converted
+        }
+        guard let ref = connection.keychainRef else { return }
+        do {
+            try await keychain.replacePrivateKey(
+                converted, forRef: ref,
+                reason: "Authenticate to keep the SSH key for \(connection.host) ready to use")
+            Log.ssh.info("stored key converted to openssh-key-v1 for \(connection.host, privacy: .private)")
+        } catch {
+            Log.ssh.error("stored key: converted for this connection, but the keychain kept the original (\(String(describing: error), privacy: .public))")
+        }
+    }
+
     private func resolveSecret(for connection: ServerConnection,
                                override: String?) async throws -> String {
         if let override { return override }
+        #if DEBUG
+        if let seeded = launchSecrets[connection.id] { return seeded }
+        #endif
         if let cached = secretCache[connection.id] { return cached }
         // Join a read already in flight instead of starting a second one —
         // this is what keeps one user action at one Face ID prompt when two
@@ -1090,9 +1597,11 @@ actor SSHService {
                     return try await keychain.loadPrivateKey(forRef: ref,
                                                              reason: "Authenticate to use SSH key for \(connection.host)")
                 }
-            } catch is KeychainError {
-                // Item missing / unreadable (often after a re-sign) → actionable.
-                throw SSHError.credentialUnavailable
+            } catch let error as KeychainError {
+                // The device locked (retried on the unlock), or the item
+                // missing / unreadable — often after a re-sign — which only
+                // the person can fix (B211).
+                throw await self.credentialReadFailure(error)
             }
         }
         secretResolutions[connection.id] = task
@@ -1116,213 +1625,63 @@ actor SSHService {
         }
     }
 
-    private func makeAuthMethod(connection: ServerConnection,
-                                secret: String) throws -> SSHAuthenticationMethod {
+    /// How `connection` signs in with `secret`, in the order to try: one way
+    /// for a password or most keys; for an RSA key, one per signature it can
+    /// make (``RSASignatureAlgorithm``), since a server refuses the ones it
+    /// doesn't take only by refusing the sign-in.
+    func signInAttempts(connection: ServerConnection, secret: String) throws -> [SignInAttempt] {
+        let username = connection.username
         switch connection.authMethod {
         case .password:
-            return .passwordBased(username: connection.username, password: secret)
+            return [SignInAttempt { .passwordBased(username: username, password: secret) }]
 
         case .key:
-            let keyType: SSHKeyType
+            // The key's numbers come from the key reader every path shares
+            // (`moshpit_ssh::keyfile`): `signableKey` has made sure it reads.
+            let parts: SigningParts
             do {
-                keyType = try SSHKeyDetection.detectPrivateKeyType(from: secret)
+                parts = try SSHKeyFactory.signingParts(of: secret)
             } catch {
                 throw SSHError.underlying(error)
             }
-
-            switch keyType {
-            case .rsa:
+            switch parts {
+            case .rsa(let n, let e, let d, let p, let q):
+                // Citadel signs RSA with SHA-1 only, which OpenSSH 8.8 and
+                // later refuse: the SHA-2 signatures come from the key's own
+                // numbers (RSASHA2Signing.swift), SHA-1 stays Citadel's.
+                let key = RSAKeySignIn(username: username, n: n, e: e, d: d, p: p, q: q, openSSHKey: secret)
+                let order = RSASignatureAlgorithm.order(worked: rsaSignatureThatWorked[Self.hostKey(connection)])
+                return order.map { algorithm in
+                    SignInAttempt(rsaSignature: algorithm) { try key.method(algorithm) }
+                }
+            case .ed25519(let seed):
                 do {
-                    let rsa = try Insecure.RSA.PrivateKey(sshRsa: secret)
-                    return .rsa(username: connection.username, privateKey: rsa)
+                    let key = try Curve25519.Signing.PrivateKey(rawRepresentation: seed)
+                    return [SignInAttempt { .ed25519(username: username, privateKey: key) }]
                 } catch {
                     throw SSHError.underlying(error)
                 }
-            case .ed25519:
+            case .ecdsa(let curve, let scalar):
+                // B126: P-384 and P-521 sign in too.
                 do {
-                    let key = try Curve25519.Signing.PrivateKey(sshEd25519: secret)
-                    return .ed25519(username: connection.username, privateKey: key)
+                    switch curve {
+                    case .p256:
+                        let key = try P256.Signing.PrivateKey(rawRepresentation: scalar)
+                        return [SignInAttempt { .p256(username: username, privateKey: key) }]
+                    case .p384:
+                        let key = try P384.Signing.PrivateKey(rawRepresentation: scalar)
+                        return [SignInAttempt { .p384(username: username, privateKey: key) }]
+                    case .p521:
+                        let key = try P521.Signing.PrivateKey(rawRepresentation: scalar)
+                        return [SignInAttempt { .p521(username: username, privateKey: key) }]
+                    }
                 } catch {
                     throw SSHError.underlying(error)
                 }
-            case .ecdsaP256:
-                do {
-                    let key = try OpenSSHECDSAKey.p256PrivateKey(fromPEM: secret)
-                    return .p256(username: connection.username, privateKey: key)
-                } catch {
-                    throw SSHError.underlying(error)
-                }
-            default:
-                // ECDSA P-384/P-521 PEM loading still TODO; ECDSA-sk lives on
-                // a hardware token and cannot be loaded at all.
-                throw SSHError.unsupportedKeyType(keyType.description)
             }
         }
     }
 }
-
-// MARK: - ECDSA-P256 OpenSSH parsing
-
-/// Parses a P-256 private key out of an openssh-key-v1 container — the
-/// counterpart Citadel doesn't provide (its own key-type enum only knows
-/// "ssh-rsa" and "ssh-ed25519"; there's no ECDSA reader to reuse). Only
-/// unencrypted (cipher "none") containers are supported, matching what
-/// `SSHKeyFactory` produces and what the ed25519/RSA paths above already
-/// assume. Format reference: https://dnaeon.github.io/openssh-private-key-binary-format/
-private enum OpenSSHECDSAKey {
-    enum ParseError: LocalizedError {
-        case malformed(String)
-
-        var errorDescription: String? {
-            switch self {
-            case .malformed(let why): return "Malformed OpenSSH private key: \(why)"
-            }
-        }
-    }
-
-    /// Sequential reader for the SSH wire format (uint32 length-prefixed
-    /// strings) — distinct from ASN.1 DER, which `SSHKeyFactory`'s reader
-    /// handles; this container is entirely SSH-native framing.
-    private struct WireReader {
-        private let data: Data
-        private var idx: Data.Index
-
-        init(_ data: Data) {
-            self.data = data
-            self.idx = data.startIndex
-        }
-
-        mutating func readUInt32() -> UInt32? {
-            guard let bytes = readBytes(4) else { return nil }
-            return bytes.reduce(0 as UInt32) { ($0 << 8) | UInt32($1) }
-        }
-
-        mutating func readBytes(_ count: Int) -> Data? {
-            guard count >= 0, data.distance(from: idx, to: data.endIndex) >= count else { return nil }
-            let slice = data[idx..<data.index(idx, offsetBy: count)]
-            idx = data.index(idx, offsetBy: count)
-            return Data(slice)
-        }
-
-        mutating func readSSHString() -> Data? {
-            guard let length = readUInt32() else { return nil }
-            return readBytes(Int(length))
-        }
-    }
-
-    static func p256PrivateKey(fromPEM pem: String) throws -> P256.Signing.PrivateKey {
-        var text = pem.trimmingCharacters(in: .whitespacesAndNewlines)
-        let begin = "-----BEGIN OPENSSH PRIVATE KEY-----"
-        let end = "-----END OPENSSH PRIVATE KEY-----"
-        guard text.hasPrefix(begin), text.hasSuffix(end) else {
-            throw ParseError.malformed("missing OpenSSH PEM boundary")
-        }
-        text.removeLast(end.count)
-        text.removeFirst(begin.count)
-        guard let raw = Data(base64Encoded: text.replacingOccurrences(of: "\n", with: "")) else {
-            throw ParseError.malformed("invalid base64 payload")
-        }
-
-        var reader = WireReader(raw)
-        guard reader.readBytes(15) == Data("openssh-key-v1\0".utf8) else {
-            throw ParseError.malformed("missing openssh-key-v1 magic")
-        }
-        guard reader.readSSHString() == Data("none".utf8) else {
-            throw ParseError.malformed("encrypted OpenSSH keys are not supported")
-        }
-        guard reader.readSSHString() == Data("none".utf8) else {
-            throw ParseError.malformed("encrypted OpenSSH keys are not supported")
-        }
-        guard let kdfOptions = reader.readSSHString(), kdfOptions.isEmpty else {
-            throw ParseError.malformed("unexpected KDF options")
-        }
-        guard reader.readUInt32() == 1 else {
-            throw ParseError.malformed("expected exactly one key in the container")
-        }
-        guard reader.readSSHString() != nil else {   // public key blob — re-derived below instead of trusted
-            throw ParseError.malformed("missing public key blob")
-        }
-        guard let privBlob = reader.readSSHString() else {
-            throw ParseError.malformed("missing private key blob")
-        }
-
-        var priv = WireReader(privBlob)
-        guard let check0 = priv.readUInt32(), priv.readUInt32() == check0 else {
-            throw ParseError.malformed("private key checksum mismatch")
-        }
-        guard priv.readSSHString() == Data("ecdsa-sha2-nistp256".utf8) else {
-            throw ParseError.malformed("not an ecdsa-sha2-nistp256 key")
-        }
-        guard priv.readSSHString() == Data("nistp256".utf8) else {
-            throw ParseError.malformed("unsupported curve — only nistp256 is handled here")
-        }
-        guard priv.readSSHString() != nil else {   // public point Q — re-derived below instead of trusted
-            throw ParseError.malformed("missing public key point")
-        }
-        guard let scalarMPInt = priv.readSSHString() else {
-            throw ParseError.malformed("missing private scalar")
-        }
-
-        return try P256.Signing.PrivateKey(rawRepresentation: fixedLength(fromMPInt: scalarMPInt, length: 32))
-    }
-
-    /// Inverse of the `sshMPInt` encoding `SSHKeyFactory` writes: mpint
-    /// encoding strips leading zero bytes from the big-endian integer (and
-    /// adds one back only as a sign guard when the high bit is set), so the
-    /// body isn't reliably exactly 32 bytes — this restores that fixed width.
-    private static func fixedLength(fromMPInt mpint: Data, length: Int) -> Data {
-        var bytes = mpint
-        if bytes.count > length, bytes.first == 0 {
-            bytes.removeFirst()
-        }
-        if bytes.count < length {
-            bytes = Data(repeating: 0, count: length - bytes.count) + bytes
-        }
-        return bytes
-    }
-}
-
-// MARK: - Secure Enclave auth delegate
-
-/// Offers a Secure Enclave P-256 key for publickey auth. NIOSSH signs via the
-/// enclave (`NIOSSHPrivateKey(secureEnclaveP256Key:)`); the private key never
-/// leaves the chip. One attempt — if the server rejects it, auth fails.
-private final class SecureEnclaveP256AuthDelegate: NIOSSHClientUserAuthenticationDelegate {
-    private let username: String
-    private let key: SecureEnclave.P256.Signing.PrivateKey
-    private var attempted = false
-
-    init(username: String, key: SecureEnclave.P256.Signing.PrivateKey) {
-        self.username = username
-        self.key = key
-    }
-
-    func nextAuthenticationType(
-        availableMethods: NIOSSHAvailableUserAuthenticationMethods,
-        nextChallengePromise: EventLoopPromise<NIOSSHUserAuthenticationOffer?>
-    ) {
-        guard !attempted, availableMethods.contains(.publicKey) else {
-            nextChallengePromise.succeed(nil)   // no further methods → clean failure
-            return
-        }
-        attempted = true
-        nextChallengePromise.succeed(NIOSSHUserAuthenticationOffer(
-            username: username,
-            serviceName: "",
-            offer: .privateKey(.init(privateKey: NIOSSHPrivateKey(secureEnclaveP256Key: key)))))
-    }
-}
-
-#if DEBUG
-extension SSHService {
-    /// Harness-only: commit a TOFU decision up front so a scripted run
-    /// (simulator without a tap tool) reaches the terminal without the
-    /// New Host card. Same store the card's Trust button writes.
-    func preTrustHostKey(host: String, port: Int, fingerprint: String) async {
-        await validator.trust(host: host, port: port, fingerprint: fingerprint)
-    }
-}
-#endif
 
 // MARK: - Shared instance
 
@@ -1383,32 +1742,146 @@ enum ExecUploadCommands {
     }
 
     /// POSIX single-quoting: close, escaped quote, reopen. The only
-    /// character that needs anything is the quote itself.
+    /// character that needs anything is the quote itself. The app's one
+    /// quoter, ``Shell/quote(_:)``: file names in a host's listing are the
+    /// host's to choose.
     static func quote(_ path: String) -> String {
-        "'" + path.replacingOccurrences(of: "'", with: "'\\''") + "'"
+        Shell.quote(path)
     }
 }
 
-/// A host file held open over SFTP (`SSHSession.openRemoteFile`). Reads may
-/// overlap — each is its own request on the wire. Closed by whoever opened
-/// it, or with the session.
-final class RemoteFileHandle: @unchecked Sendable {
-    let size: UInt64
-    private let file: SFTPFile
+extension RemoteFileHandle {
+    /// A file held open over this app's own SFTP (`SSHSession.openRemoteFile`).
+    fileprivate convenience init(file: SFTPFile, size: UInt64) {
+        let held = HeldSFTPFile(file)
+        self.init(size: size, read: { offset, length in
+            var buffer = try await held.file.read(from: offset, length: length)
+            return buffer.readBytes(length: buffer.readableBytes) ?? []
+        }, close: {
+            try? await held.file.close()
+        })
+    }
+}
 
-    fileprivate init(file: SFTPFile, size: UInt64) {
-        self.file = file
-        self.size = size
+/// Citadel's file, for the handle's closures (reads overlap on the wire;
+/// Citadel serialises nothing here that the old class didn't).
+private final class HeldSFTPFile: @unchecked Sendable {
+    let file: SFTPFile
+    init(_ file: SFTPFile) { self.file = file }
+}
+
+/// What the features beside a terminal reach the host through: this app's
+/// own connection is one kind (the Swift path's), the Rust session's lent
+/// connection the other (``BorrowedHost``).
+extension SSHSession: HostConnection {}
+
+// MARK: - The Rust core's sign-in (W14a)
+
+/// What a connection signs in with, for the Rust core's session layer
+/// (`RustCredentialHost`).
+enum RustCoreCredential: Equatable {
+    case password(String)
+    /// An unencrypted openssh-key-v1 private key, as text.
+    case key(String)
+    /// A Secure Enclave key: its public half as an `authorized_keys` line and
+    /// its keychain ref. It signs through ``SSHService/signForRustCore(_:data:)``.
+    case secureEnclave(publicKey: String, keyRef: String)
+}
+
+extension SSHService {
+    /// The credential the Rust core signs in to `connection` with: the same
+    /// keychain read the Swift connect makes — Face ID when the item asks for
+    /// it, then the in-memory cache (one prompt per foreground, shared by both
+    /// paths) — and the same conversion of a key kept as it was pasted, its
+    /// passphrase asked through `onKeyPassphrase`. A Secure Enclave key gives
+    /// its public half; its signatures come from the chip, never its key.
+    func rustCoreCredential(_ connection: ServerConnection,
+                            onKeyPassphrase: @escaping KeyPassphraseHandler) async throws -> RustCoreCredential {
+        if connection.authMethod == .key, connection.sshKeyAlgorithm == .seP256 {
+            guard let ref = connection.keychainRef else { throw SSHError.missingKeychainRef }
+            let key = try await secureEnclaveKey(for: connection, ref: ref)
+            return .secureEnclave(publicKey: Self.openSSHLine(of: key.publicKey), keyRef: ref)
+        }
+        let secret = try await resolveSecret(for: connection, override: nil)
+        switch connection.authMethod {
+        case .password:
+            return .password(secret)
+        case .key:
+            return .key(try await signableKey(secret, for: connection, keep: true,
+                                              onPassphrase: onKeyPassphrase))
+        }
     }
 
-    /// At most `length` bytes from `offset` (OpenSSH answers 255 KiB at the
-    /// most); empty at the end of the file.
-    func read(from offset: UInt64, length: UInt32) async throws -> [UInt8] {
-        var buffer = try await file.read(from: offset, length: length)
-        return buffer.readBytes(length: buffer.readableBytes) ?? []
+    /// `data` signed by `connection`'s Secure Enclave key (ECDSA P-256 over
+    /// SHA-256), DER — what the Rust core's signer callback hands back.
+    func signForRustCore(_ connection: ServerConnection, data: Data) async throws -> Data {
+        guard let ref = connection.keychainRef else { throw SSHError.missingKeychainRef }
+        let key = try await secureEnclaveKey(for: connection, ref: ref)
+        do {
+            return try key.signature(for: data).derRepresentation
+        } catch {
+            throw await secureEnclaveFailure(error)
+        }
     }
 
-    func close() async {
-        try? await file.close()
+    /// A Secure Enclave operation that failed (B227): while protected data
+    /// is unavailable — the device locked mid-handshake, a reconnect in the
+    /// background — the chip refuses a key made `WhenUnlocked`, and that is
+    /// the lock (``SSHError/credentialLocked``, retried on the unlock as a
+    /// keychain read refused for it is, B211), not a key that is gone.
+    private func secureEnclaveFailure(_ error: Error) async -> SSHError {
+        if !(await protectedDataAvailable()) {
+            Log.ssh.notice("secure enclave: refused while the device is locked (\(String(describing: error), privacy: .public)) — retried on the unlock")
+            return .credentialLocked
+        }
+        return .underlying(error)
     }
+
+    /// The host key the person trusted on the Rust core's card, trusted here
+    /// too: the core wrote it to the keychain item already, and this
+    /// process's Swift copy of the map must not write over it with a trust
+    /// of its own (``HostKeyValidator`` merges onto what it read once).
+    func noteTrustedByRustCore(host: String, port: Int, fingerprint: String) async {
+        await validator.trust(host: host, port: port, fingerprint: fingerprint)
+    }
+
+    /// The enclave key behind `ref`, from the per-connection cache or the
+    /// keychain (Face ID when the item asks).
+    private func secureEnclaveKey(for connection: ServerConnection, ref: String) async throws
+        -> SecureEnclave.P256.Signing.PrivateKey {
+        let blob: Data
+        if let cached = seBlobCache[connection.id] {
+            blob = cached
+        } else {
+            do {
+                blob = try await keychain.loadSecret(
+                    forRef: ref,
+                    reason: "Authenticate to use the Secure Enclave key for \(connection.host)")
+            } catch {
+                throw await credentialReadFailure(error)
+            }
+            seBlobCache[connection.id] = blob
+        }
+        do {
+            return try SecureEnclave.P256.Signing.PrivateKey(dataRepresentation: blob)
+        } catch {
+            throw await secureEnclaveFailure(error)
+        }
+    }
+
+    /// `ecdsa-sha2-nistp256 AAAA…`: the key's SSH wire blob, as an
+    /// `authorized_keys` line without a comment (the key reader's,
+    /// `moshpit_ssh::keyfile::hardware_public_key`). A point CryptoKit
+    /// made is always one it takes.
+    nonisolated static func openSSHLine(of key: P256.Signing.PublicKey) -> String {
+        (try? sshKeyHardwarePublicKey(publicKey: key.x963Representation, comment: ""))?.publicKeyLine ?? ""
+    }
+
+    #if DEBUG
+    /// A DEBUG seed's key, for this launch only: what a connect reads first,
+    /// never in the keychain (`RustSessionSeed`, `HomeSeed`, the smoke seed).
+    func seedSecretForThisLaunch(connectionId: UUID, secret: String) {
+        launchSecrets[connectionId] = secret
+    }
+    #endif
 }

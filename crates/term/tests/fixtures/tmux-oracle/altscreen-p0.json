@@ -1,0 +1,39 @@
+{
+ "tmux": "3.6a",
+ "capture": "altscreen",
+ "pane": 0,
+ "cols": 80,
+ "rows": 24,
+ "history": [],
+ "screen": [
+  "less /tmp/moshpit-g2-rec/alt.txt",
+  "sh-3.2$ vim -u NONE -i NONE -N -n /tmp/moshpit-g2-rec/alt.txt",
+  "sh-3.2$",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  ""
+ ],
+ "cursor": [
+  8,
+  2
+ ],
+ "alt_screen": false
+}

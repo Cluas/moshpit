@@ -1,0 +1,6 @@
+# The agent list, and B120: one that never answers.
+at 0 start
+at 300 agents
+at 1000 host-rule agent-manifests - hang
+at 1000 agents
+end 30000

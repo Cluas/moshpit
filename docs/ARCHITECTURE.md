@@ -65,8 +65,8 @@ push-relay/      Go APNs relay (the only server-side component; docs/PUSH.md);
                  push-relay/deploy/ holds its k8s manifest
 scripts/         host/ (the shell installed on dev hosts), gen/ (generators),
                  verify/ (end-to-end checks), capture/ (screenshot harnesses),
-                 spikes/ (experiments and the tmux -CC lab), release/ (archive
-                 and IPA tooling)
+                 spikes/ (the tmux -CC lab), release/ (archive and IPA
+                 tooling)
 ```
 
 **Dependency direction is one-way, top-down.** UI observes its view models and
@@ -80,8 +80,11 @@ Intent is an entry point of the bundle that declares it, so the widget's
 Button needs the type and the app is where `perform()` runs.
 
 Key third-party pieces: **Citadel / swift-nio-ssh** for the SSH transport,
-**SwiftTerm** for terminal emulation and rendering, and a bundled **mosh** C++
-static library the Swift `Mosh/` code links against.
+**SwiftTerm** (a fork, pinned in `project.yml`; patches in `docs/PATCHES.md`)
+for terminal emulation and rendering, **swift-nio-extras** for the optional
+SOCKS5 proxy, and **WhisperKit** for local dictation. Mosh itself is not a
+dependency: `Mosh/` is Moshpit's own Swift implementation of the protocol
+(§4b), with no mosh binary or library linked in.
 
 ---
 
@@ -122,8 +125,7 @@ reconnecting.
   `prepare(_:)` creates+registers a session *without* starting the transport
   (so the UI can bind to it before the host-key TOFU prompt fires mid-handshake
   — otherwise the prompt has no observer and the handshake deadlocks).
-  `start(_:...)` then opens the transport; `connect(...)` is a convenience that
-  does both.
+  `start(_:...)` then opens the transport.
 - **`ActiveSession`** (nested, also `@MainActor @Observable`) is one live
   connection. It owns the transport objects, a `TerminalViewModel`, the
   SwiftTerm coordinator(s), remembered appearance (theme/font/cursor for
@@ -269,7 +271,9 @@ dependency degrades gracefully instead of stalling on a failing command.
 - **User-facing.** A `DegradeNotice` drives a dismissible banner with an
   "Install …" action that opens Install Assist (which offers the right
   `installCommand` for the detected package manager, installing tmux+mosh
-  together). After the user installs, `recheckCapabilities()` re-probes over a
+  together). Install Assist never installs anything itself: "Run in terminal"
+  pastes the command into the live shell, so a sudo prompt and its output stay
+  in view, and "Copy command" hands it to the user. After the user installs, `recheckCapabilities()` re-probes over a
   live channel; if none is available (mosh closed its bootstrap SSH) it returns
   nil → "reconnect to apply" rather than falsely reading "everything installed".
 
@@ -294,14 +298,19 @@ Independently-spawned `Task {}`s have **no ordering guarantee relative to each
 other**. When several must reach a transport in the exact order they were
 issued, Moshpit chains them explicitly instead of firing bare tasks:
 
-- **`ActiveSession.moshWriteChain`** serializes mosh keystroke writes. Without
-  it, typing a word and immediately tapping an arrow key could deliver the arrow
-  bytes *before* the last character or two — the reported "history search stops
-  matching what I typed" bug. Each `send` awaits the previous chained task
-  before writing.
+- **`WriteLane`** (`ActiveSession.moshWriteLane`, `.herdrWriteLane`)
+  serializes writes into the mosh keystroke channel and the herdr frame
+  channel. Without it, typing a word and immediately tapping an arrow key could
+  deliver the arrow bytes *before* the last character or two — the reported
+  "history search stops matching what I typed" bug. Each step starts only after
+  the previous one finished. herdr's semantic arrow keys (a `pane send-keys`
+  exec, not bytes on the channel) queue on the same lane as the typing around
+  them, so a key waits for the text before it and the text after it waits for
+  the key; repeats of a held arrow join the run still waiting its turn instead
+  of fanning out into parallel execs.
 - **`TmuxSessionController.writeChain`** does the same for the `-CC` control
   path, so commands hit tmux in the same order their callback slots were queued.
-- **`TmuxControlClient.pendingCallbacks`** is the matching FIFO on the *response*
+- **`TmuxSessionController.pendingCallbacks`** is the matching FIFO on the *response*
   side: tmux answers **every** control command with a `%begin…%end` block —
   including fire-and-forget ones like `send-keys` — so each command must occupy
   a slot (`nil` = response ignored) or the queue desyncs and replies land in the
@@ -343,10 +352,11 @@ kinds are updated in fundamentally different ways:
    (`Activity.request` / `activity.update`) on its ~2s poll. Because that push
    stops the instant iOS suspends the app, updates carry a `staleDate` so the
    views can render an honest "paused" hint instead of a frozen "working"
-   forever. The Live Activity buttons (Allow / Deny / Reply / Interrupt via
-   `AppIntent`s) route a keystroke back to the live agent pane through
-   `SessionHub.deliverAgentInput(...)`, reconnecting first if iOS killed the
-   socket.
+   forever. Its one button, Switch agent (`AgentCycleIntent`), cycles which
+   agent the Dynamic Island headlines. Nothing on the island or in a
+   notification sends input: tapping one opens the agent's pane (the
+   `moshpit://connection/<uuid>?pane=` link, `AgentDeepLink`), and the user
+   answers there — docs/PUSH.md, "Why there are no buttons", says why.
 
 2. **WidgetKit timeline pulling a JSON snapshot → the home/lock widget.** A
    `StaticConfiguration` timeline widget (`MoshpitStatusWidget`) **cannot** read
@@ -376,10 +386,9 @@ Go service, which together lift it: the agent hook on the dev host seals its
 status with a key only the phone has, a relay signs the push with the app's APNs
 key (which cannot be handed out to users' machines), and the extension opens the
 envelope and rewrites the notification before iOS shows it. A pushed
-notification carries the same category and the same two `userInfo` keys a local
-one does, so `AgentNotificationHandler` → `AgentControlBridge` → the live pane
-works unchanged — the lock-screen Allow / Deny / Reply surface has no
-push-specific branch at all.
+notification carries the same two `userInfo` keys a local one does, so a tap
+routes through `AgentNotificationHandler` → `AgentControlBridge` to the pane
+exactly as a local one does — there is no push-specific branch.
 
 Shared across that boundary, in MoshpitKit's `Push/`: `PushSealedBox` (the
 envelope), `PushPairing` + `PushPairingStore` (per-connection secrets, in the App
@@ -392,13 +401,14 @@ primitive over the SSH exec channel image attachment uses), `HostCommands` (ever
 remote command as a pinned pure function), `AgentHookConfig` (config merges done
 in Swift, so the host needs no jq and no python3), `InstallManifest` (what is
 installed, content-addressed so a stale copy is detectable), and `HostScripts`
-(the two shell programs, generated from `scripts/host/moshpit-{stamp,push}.sh`). The
+(the two shell programs, `scripts/host/moshpit-{stamp,push}.sh`; since fba72107 the
+Rust installer in `crates/install` builds them in and no generated copy exists). The
 screen on top is `UI/Install/HostSetupView` + `UI/Install/HostSetupModel`.
 
 Read **docs/PUSH.md** before touching any of it: it holds the wire format, the
 exact privacy boundary, why APNs token authentication rather than certificates,
-and what is deliberately not built yet (Live Activity push, and a reverse
-control path that does not need the app to reconnect).
+what is not built yet (Live Activity push), and what was built and then removed
+on purpose (answering an agent from the lock screen).
 
 ---
 

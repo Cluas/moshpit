@@ -1,0 +1,10 @@
+t=0 exec api snapshot
+t=40 focus w1:p1
+t=300 exec workspace focus 'w9'
+t=340 exec api snapshot
+t=380 focus w1:p1
+t=2380 exec api snapshot
+t=2420 focus w1:p1
+t=4420 exec api snapshot
+t=4460 focus w1:p1
+state focus=w1:p1 server=w1:p1 sessions=2 notrunning=false mismatch=false

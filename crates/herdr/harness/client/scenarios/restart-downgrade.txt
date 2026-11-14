@@ -1,0 +1,5 @@
+# The herdr on PATH is older than the server: restarting would downgrade it.
+host client-version 0.8.0
+at 0 start
+at 500 restart
+end 10000

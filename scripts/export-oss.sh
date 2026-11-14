@@ -2,13 +2,18 @@
 # Produce the open-source tree of Moshpit from this (private) development repo.
 #
 # The public repository (github.com/Cluas/moshpit) is not a mirror of this one:
-# it carries the app, its extensions, the tests, the push relay and the
-# developer tooling, and nothing else. What stays here, and why:
+# it carries the app, its extensions, the tests, the Rust core and its NSH
+# UI (crates/, ui/, the vendored wezterm), the Android app, the push relay and
+# the developer tooling, and nothing else. What stays here, and why:
 #
-#   marketing/            app icon drafts (the website itself is its own repo, moshpit-site)
 #   scripts/oss-denylist.txt      the literal strings the leak scan below refuses
 #   scripts/publish-design-docs.sh, scripts/capture/capture-marketing-shots.sh
 #                         bound to the maintainer's local servers and site checkout
+#   docs/nsh/PROGRESS.md  the working ledger: field logs, devices, test machines
+#   spike/                experiments run on the maintainer's devices (their
+#                         scripts name them); only tmux-bench's project and
+#                         sources go out, which scripts/rust/test-build-ios.sh
+#                         (run by CI) reads
 #
 # The App Store pipeline (release-upload/promote/listing/screenshots), the store
 # listing and runbook, the TestFlight notes, the App Review demo host and the
@@ -68,10 +73,14 @@ PUBLIC=(
   project.yml Signing.xcconfig BUILD_NUMBER Brewfile .swiftlint.yml .swiftformat .gitignore
   .github
   LICENSE README.md README-zh.md CONTRIBUTING.md CODE_OF_CONDUCT.md SECURITY.md NOTICES.md CHANGELOG.md
-  
-  docs/ARCHITECTURE.md docs/PATCHES.md docs/PUSH.md docs/install-free-account.md docs/design docs/assets
+  Cargo.toml Cargo.lock rust-toolchain.toml .cargo crates ui vendor
+  android
+  docs/ARCHITECTURE.md docs/PATCHES.md docs/PUSH.md docs/WEZTERM-PATCHES.md docs/install-free-account.md
+  docs/design docs/assets
+  docs/nsh/DESIGN.md docs/nsh/NSH-GAPS.md docs/nsh/TERMINAL-CORE.md docs/nsh/TERMINAL-VIEW.md
+  spike/tmux-bench/project.yml spike/tmux-bench/Bench spike/tmux-bench/.gitignore
   push-relay
-  scripts/export-oss.sh scripts/host scripts/gen scripts/verify scripts/spikes
+  scripts/export-oss.sh scripts/host scripts/gen scripts/verify scripts/spikes scripts/rust scripts/wezterm
   scripts/release/build-ipa.sh scripts/release/release-archive.sh scripts/release/team-id.sh
   scripts/capture/capture-flow-shots.sh scripts/capture/capture-mosh-switch-bytes.sh
   scripts/capture/capture_mosh_switch_bytes.swift scripts/capture/stage
@@ -80,7 +89,7 @@ PUBLIC=(
 LIST=$(mktemp); SCOPE=$(mktemp)
 WT=""
 cleanup() {
-  rm -f "$LIST" "$LIST.dest" "$SCOPE"
+  rm -f "$LIST" "$LIST.dest" "$LIST.msg" "$SCOPE"
   [ -n "$WT" ] && git -C "$ROOT" worktree remove --force "$WT" 2>/dev/null
   true
 }
@@ -121,7 +130,17 @@ export_tree() {
   [ -n "$TEAM" ] && scan "team id" -F "$TEAM"
   scan "asc identifiers" -E 'ASC_(KEY|ISSUER)_ID=[A-Za-z0-9]|AuthKey_[A-Z0-9]*[A-WYZ0-9][A-Z0-9]*\.p8'
   scan "tokens" -E 'ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|AKID[A-Za-z0-9]{20,}|tskey-[a-z]+-[A-Za-z0-9]{10,}|xox[bap]-[A-Za-z0-9-]{10,}'
-  scan "key material" -E '^[A-Za-z0-9+/]{64}$'
+  # Key material: a bare 64-character base64 line, as a PEM body wraps.
+  # Not a line of lowercase hex (a SHA-256, as the store's goldens list),
+  # and not in the test-key fixtures: throwaway keys made for the key
+  # reader's tests (crates/ssh/harness/make_key_matrix.py, ssh-keygen and the
+  # Rust reader's own writes, "@fixture" comments; they authorize nothing
+  # anywhere). Every other rule still reads both.
+  local hits
+  hits=$(cd "$DEST" && grep -vE '^(crates/ssh/tests/fixtures/(keys|swift/keys)|Tests/MoshpitTests/Fixtures/keys-written-by-rust)/' "$SCOPE" \
+    | tr '\n' '\0' | xargs -0 grep -InE -- '^[A-Za-z0-9+/]{64}$' 2>/dev/null \
+    | grep -vE ':[0-9a-f]{64}$' | head -5 || true)
+  if [ -n "$hits" ]; then echo "LEAK (key material):"; echo "$hits" | cut -c1-160; fail=1; fi
   # Literal strings that must never appear (old credentials, personal mailboxes).
   # The list itself is private: it is not in PUBLIC above.
   if [ -f "$ROOT/scripts/oss-denylist.txt" ]; then
@@ -130,6 +149,23 @@ export_tree() {
     done < "$ROOT/scripts/oss-denylist.txt"
   fi
   if [ "$fail" -ne 0 ]; then return 2; fi
+}
+
+# A replayed commit's message goes out too, and a folded commit's subject in
+# its note: the rules the trees are held to, for the message text.
+scan_message() { # message file
+  local msg=$1 fail=0 TEAM word
+  TEAM=$(sed -nE 's/^DEVELOPMENT_TEAM = *([A-Z0-9]{10}).*/\1/p' "$ROOT/Signing.xcconfig" | head -1)
+  hit() { if grep -q $1 -- "$2" "$msg"; then echo "LEAK in message ($3)"; fail=1; fi; }
+  [ -n "$TEAM" ] && hit -F "$TEAM" "team id"
+  hit -E 'ASC_(KEY|ISSUER)_ID=[A-Za-z0-9]|AuthKey_[A-Z0-9]*[A-WYZ0-9][A-Z0-9]*\.p8' "asc identifiers"
+  hit -E 'ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|AKID[A-Za-z0-9]{20,}|tskey-[a-z]+-[A-Za-z0-9]{10,}|xox[bap]-[A-Za-z0-9-]{10,}' "tokens"
+  if [ -f "$ROOT/scripts/oss-denylist.txt" ]; then
+    while IFS= read -r word; do
+      [ -n "$word" ] && [ "${word#\#}" = "$word" ] && hit -F "$word" "denylist"
+    done < "$ROOT/scripts/oss-denylist.txt"
+  fi
+  [ "$fail" -eq 0 ]
 }
 
 # Comments and docs may still name private-only paths; say so, once, for the
@@ -237,8 +273,12 @@ for sha in $(git -C "$ROOT" rev-list --reverse --first-parent "$SINCE..HEAD"); d
     git -C "$ROOT" worktree remove --force "$WT"; WT=""
     continue
   fi
-  compose_message "$sha" ${folded[@]+"${folded[@]}"} \
-    | git -C "$DEST" commit -q -F - \
+  compose_message "$sha" ${folded[@]+"${folded[@]}"} > "$LIST.msg"
+  if ! scan_message "$LIST.msg"; then
+    echo "export-oss: ${sha:0:7}'s message (or a folded commit's subject) fails the leak scan; nothing more is published" >&2
+    exit 2
+  fi
+  git -C "$DEST" commit -q -F "$LIST.msg" \
         --author="$(git -C "$ROOT" log -1 --format='%an <%ae>' "$sha")" \
         --date="$(git -C "$ROOT" log -1 --format=%aD "$sha")"
   folded=()

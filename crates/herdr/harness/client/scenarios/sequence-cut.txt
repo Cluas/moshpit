@@ -1,0 +1,7 @@
+# B121: the first step of a sequence loses its trailer and prints nothing:
+# the next step must not run.
+host rule workspace_focus - empty
+host clean w9
+at 0 start
+at 300 new-window-in w9 logs
+end 5000

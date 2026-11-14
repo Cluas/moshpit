@@ -1,0 +1,5 @@
+# B120: the panes' resolve never answers.
+host rule for_d_in - hang
+at 0 start
+at 300 repos
+end 30000

@@ -56,9 +56,52 @@ protocol KeychainBackend: Sendable {
     func load(account: String, prompt: String) throws -> Data
     func delete(account: String) throws
     func exists(account: String) -> Bool
+    /// Change what an existing item holds and nothing else — its protection
+    /// stays as it was. Throws `.notFound` rather than create an item.
+    func replace(secret: Data, account: String, prompt: String) throws
+    /// The account of every item this backend holds, without reading one —
+    /// no prompt, nothing decrypted. Throws when it can't say (the device is
+    /// locked, a backend that can't list): never an empty list for "don't
+    /// know".
+    func accounts() throws -> [String]
+    /// The item's bytes if they can be had without asking anyone: an item
+    /// behind Face ID throws (`.interactionNotAllowed`) instead of prompting.
+    func loadSilently(account: String) throws -> Data
+}
+
+extension KeychainBackend {
+    /// A backend that can't change an item in place leaves it alone.
+    func replace(secret: Data, account: String, prompt: String) throws {
+        throw KeychainError.unhandled(errSecUnimplemented)
+    }
+
+    /// A backend that can't list its items says so; nothing is recovered.
+    func accounts() throws -> [String] {
+        throw KeychainError.unhandled(errSecUnimplemented)
+    }
+
+    /// A backend that can't read without asking says so.
+    func loadSilently(account: String) throws -> Data {
+        throw KeychainError.unhandled(errSecUnimplemented)
+    }
 }
 
 // MARK: - System keychain backend
+
+/// The `SecItem*` calls ``SystemKeychainBackend`` changes the keychain with.
+/// A value rather than direct calls only so a test can stand in for the
+/// keychain and make a write fail the way a real one does — the device
+/// locking halfway through a save.
+struct KeychainWrites: Sendable {
+    var add: @Sendable (_ attributes: CFDictionary) -> OSStatus
+    var update: @Sendable (_ query: CFDictionary, _ changes: CFDictionary) -> OSStatus
+    var delete: @Sendable (_ query: CFDictionary) -> OSStatus
+
+    static let system = KeychainWrites(
+        add: { SecItemAdd($0, nil) },
+        update: { SecItemUpdate($0, $1) },
+        delete: { SecItemDelete($0) })
+}
 
 /// Production backend that talks to Apple's Keychain Services.
 ///
@@ -70,11 +113,14 @@ protocol KeychainBackend: Sendable {
 final class SystemKeychainBackend: KeychainBackend {
     private let service: String
     private let accessGroup: String?
+    private let writes: KeychainWrites
 
     init(service: String = Bundle.main.bundleIdentifier ?? "com.cluas.moshpit",
-         accessGroup: String? = nil) {
+         accessGroup: String? = nil,
+         writes: KeychainWrites = .system) {
         self.service = service
         self.accessGroup = accessGroup
+        self.writes = writes
     }
 
     /// Common attributes for every keychain operation. `kSecUseDataProtectionKeychain`
@@ -96,35 +142,61 @@ final class SystemKeychainBackend: KeychainBackend {
         return q
     }
 
+    /// Store `secret` under `account`: added when there is no item yet, and
+    /// rewritten where it stands when there is one.
+    ///
+    /// Never delete-then-add. That was the overwrite, and between its two
+    /// calls the account held nothing: an add refused there — the device
+    /// locking mid-save (a `WhenUnlocked` item can't be written while
+    /// locked), any keychain error — left the item gone for good, whatever
+    /// it was. The known-hosts table is one item, so that was every
+    /// fingerprint the user ever trusted. Now a write that fails leaves the
+    /// item exactly as it was.
+    ///
+    /// Overwriting a biometry-gated item asks for the user's presence, as
+    /// the keychain requires for changing one; no caller does that today
+    /// (biometry-gated keys are saved under a fresh ref).
     func save(secret: Data, account: String, requireBiometry: Bool) throws {
-        // Always delete first so save is idempotent (overwrite semantics).
-        try? delete(account: account)
+        let protection = try Self.protection(requireBiometry: requireBiometry)
 
-        var query = baseQuery(account: account)
-        query[kSecValueData as String] = secret
+        var item = baseQuery(account: account)
+        item[kSecValueData as String] = secret
+        item.merge(protection) { _, new in new }
+        let added = writes.add(item as CFDictionary)
+        if added == errSecSuccess { return }
+        guard added == errSecDuplicateItem else {
+            throw KeychainError(osStatus: added)
+        }
 
-        if requireBiometry {
-            var accessError: Unmanaged<CFError>?
-            guard let access = SecAccessControlCreateWithFlags(
-                nil,
-                kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
-                .userPresence,
-                &accessError
-            ) else {
-                if let err = accessError?.takeRetainedValue() {
-                    throw err as Error
-                }
-                throw KeychainError.unhandled(errSecParam)
+        // There is one already: replace its contents in place.
+        var changes = protection
+        changes[kSecValueData as String] = secret
+        let updated = writes.update(baseQuery(account: account) as CFDictionary, changes as CFDictionary)
+        guard updated == errSecSuccess else {
+            throw KeychainError(osStatus: updated)
+        }
+    }
+
+    /// How an item is protected: gated by `.userPresence`, or plainly
+    /// `WhenUnlockedThisDeviceOnly`. Exactly one of the two attributes —
+    /// the keychain refuses an item that carries both.
+    private static func protection(requireBiometry: Bool) throws -> [String: Any] {
+        guard requireBiometry else {
+            return [kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly]
+        }
+        var accessError: Unmanaged<CFError>?
+        guard let access = SecAccessControlCreateWithFlags(
+            nil,
+            kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
+            .userPresence,
+            &accessError
+        ) else {
+            if let err = accessError?.takeRetainedValue() {
+                throw err as Error
             }
-            query[kSecAttrAccessControl as String] = access
-        } else {
-            query[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+            throw KeychainError.unhandled(errSecParam)
         }
-
-        let status = SecItemAdd(query as CFDictionary, nil)
-        guard status == errSecSuccess else {
-            throw KeychainError(osStatus: status)
-        }
+        return [kSecAttrAccessControl as String: access]
     }
 
     func load(account: String, prompt: String) throws -> Data {
@@ -147,9 +219,24 @@ final class SystemKeychainBackend: KeychainBackend {
         return data
     }
 
+    /// One `SecItemUpdate` of the data alone: the item keeps its protection
+    /// (a biometry-gated one asks for the user's presence, with `prompt`),
+    /// and either holds the new bytes afterwards or, on any failure, exactly
+    /// what it held before.
+    func replace(secret: Data, account: String, prompt: String) throws {
+        let context = LAContext()
+        context.localizedReason = prompt
+        var query = baseQuery(account: account)
+        query[kSecUseAuthenticationContext as String] = context
+        let status = writes.update(query as CFDictionary, [kSecValueData as String: secret] as CFDictionary)
+        guard status == errSecSuccess else {
+            throw KeychainError(osStatus: status)
+        }
+    }
+
     func delete(account: String) throws {
         let query = baseQuery(account: account)
-        let status = SecItemDelete(query as CFDictionary)
+        let status = writes.delete(query as CFDictionary)
         // Treat "not found" as success — delete is idempotent.
         guard status == errSecSuccess || status == errSecItemNotFound else {
             throw KeychainError(osStatus: status)
@@ -166,6 +253,51 @@ final class SystemKeychainBackend: KeychainBackend {
         query[kSecUseAuthenticationContext as String] = context
         let status = SecItemCopyMatching(query as CFDictionary, nil)
         return status == errSecSuccess || status == errSecInteractionNotAllowed
+    }
+
+    /// The item's bytes, never with a prompt: an authentication context
+    /// that may not interact makes a Face ID item answer
+    /// `errSecInteractionNotAllowed` instead of asking.
+    func loadSilently(account: String) throws -> Data {
+        let context = LAContext()
+        context.interactionNotAllowed = true
+        var query = baseQuery(account: account)
+        query[kSecReturnData as String] = true
+        query[kSecMatchLimit as String] = kSecMatchLimitOne
+        query[kSecUseAuthenticationContext as String] = context
+        var item: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &item)
+        guard status == errSecSuccess else { throw KeychainError(osStatus: status) }
+        guard let data = item as? Data else { throw KeychainError.invalidData }
+        return data
+    }
+
+    /// Every item of this service, by account: attributes only (what an
+    /// item is called, never what it holds), so nothing is decrypted and
+    /// nothing prompts — a Face ID item's attributes come back like any
+    /// other's. An authentication context that may not interact keeps it
+    /// that way whatever the system decides: a query that would need the
+    /// user fails, and the caller recovers nothing.
+    func accounts() throws -> [String] {
+        var query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecUseDataProtectionKeychain as String: true,
+            kSecMatchLimit as String: kSecMatchLimitAll,
+            kSecReturnAttributes as String: true,
+        ]
+        if let accessGroup {
+            query[kSecAttrAccessGroup as String] = accessGroup
+        }
+        let context = LAContext()
+        context.interactionNotAllowed = true
+        query[kSecUseAuthenticationContext as String] = context
+        var result: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        if status == errSecItemNotFound { return [] }
+        guard status == errSecSuccess else { throw KeychainError(osStatus: status) }
+        guard let items = result as? [[String: Any]] else { throw KeychainError.invalidData }
+        return items.compactMap { $0[kSecAttrAccount as String] as? String }
     }
 }
 
@@ -184,9 +316,16 @@ final class SystemKeychainBackend: KeychainBackend {
 ///
 /// On a real device, code-signed builds use the system keychain instead;
 /// this backend is selected at compile time via `#if targetEnvironment(simulator)`.
+///
+/// A vault file that is there but won't read is never written over. It used
+/// to read as an empty vault, and the next save — any secret, for any
+/// connection — wrote a one-entry vault over every stored key. Now every
+/// call that would write refuses instead, after keeping a copy of the file
+/// at ``backupURL``, and a load says the vault is unreadable rather than
+/// "not found" (which callers take as "nothing was ever stored").
 final class FileVaultKeychainBackend: KeychainBackend, @unchecked Sendable {
     private let lock = NSLock()
-    private let url: URL
+    let url: URL
 
     init(filename: String = "moshpit-vault.json") {
         let fm = FileManager.default
@@ -197,23 +336,38 @@ final class FileVaultKeychainBackend: KeychainBackend, @unchecked Sendable {
             create: true
         )) ?? URL(fileURLWithPath: NSTemporaryDirectory())
         self.url = supportDir.appendingPathComponent(filename)
-        // Simulators that saved credentials under the file's earlier name keep
-        // them: move the old vault over once, only when nothing newer exists.
-        if filename == "moshpit-vault.json" {
-            let legacy = supportDir.appendingPathComponent("mosaic-vault.json")
-            if !fm.fileExists(atPath: url.path), fm.fileExists(atPath: legacy.path) {
-                try? fm.moveItem(at: legacy, to: url)
-            }
+    }
+
+    /// Where an unreadable vault is copied, untouched.
+    var backupURL: URL { url.appendingPathExtension("backup") }
+
+    /// The vault as stored — empty when there is no file yet. Throws when
+    /// there is a file that can't be read or decoded; callers hold the lock.
+    private func readStore() throws -> [String: Data] {
+        let data: Data
+        do {
+            data = try Data(contentsOf: url)
+        } catch {
+            guard FileManager.default.fileExists(atPath: url.path) else { return [:] }
+            throw KeychainError.unhandled(errSecIO)
+        }
+        do {
+            return try JSONDecoder().decode([String: Data].self, from: data)
+        } catch {
+            keepCopy(of: data)
+            throw KeychainError.invalidData
         }
     }
 
-    private func loadStore() -> [String: Data] {
-        lock.lock(); defer { lock.unlock() }
-        guard
-            let data = try? Data(contentsOf: url),
-            let decoded = try? JSONDecoder().decode([String: Data].self, from: data)
-        else { return [:] }
-        return decoded
+    /// Copy an undecodable vault aside, once per distinct content, so that
+    /// whatever happens to the file next its bytes survive.
+    private func keepCopy(of data: Data) {
+        if (try? Data(contentsOf: backupURL)) == data { return }
+        var target = backupURL
+        if FileManager.default.fileExists(atPath: target.path) {
+            target = url.appendingPathExtension("backup-\(Int(Date().timeIntervalSince1970))")
+        }
+        try? data.write(to: target, options: [.atomic, .completeFileProtection])
     }
 
     private func saveStore(_ store: [String: Data]) throws {
@@ -222,27 +376,47 @@ final class FileVaultKeychainBackend: KeychainBackend, @unchecked Sendable {
     }
 
     func save(secret: Data, account: String, requireBiometry: Bool) throws {
-        var store = loadStore()
+        lock.lock(); defer { lock.unlock() }
+        var store = try readStore()
         store[account] = secret
         try saveStore(store)
     }
 
     func load(account: String, prompt: String) throws -> Data {
-        let store = loadStore()
-        guard let data = store[account] else {
+        lock.lock(); defer { lock.unlock() }
+        guard let data = try readStore()[account] else {
             throw KeychainError.notFound
         }
         return data
     }
 
+    func replace(secret: Data, account: String, prompt: String) throws {
+        lock.lock(); defer { lock.unlock() }
+        var store = try readStore()
+        guard store[account] != nil else { throw KeychainError.notFound }
+        store[account] = secret
+        try saveStore(store)
+    }
+
     func delete(account: String) throws {
-        var store = loadStore()
-        store.removeValue(forKey: account)
+        lock.lock(); defer { lock.unlock() }
+        var store = try readStore()
+        guard store.removeValue(forKey: account) != nil else { return }
         try saveStore(store)
     }
 
     func exists(account: String) -> Bool {
-        loadStore()[account] != nil
+        lock.lock(); defer { lock.unlock() }
+        return (try? readStore())?[account] != nil
+    }
+
+    func accounts() throws -> [String] {
+        lock.lock(); defer { lock.unlock() }
+        return Array(try readStore().keys)
+    }
+
+    func loadSilently(account: String) throws -> Data {
+        try load(account: account, prompt: "")
     }
 }
 
@@ -279,6 +453,21 @@ final class InMemoryKeychainBackend: KeychainBackend, @unchecked Sendable {
     func exists(account: String) -> Bool {
         lock.lock(); defer { lock.unlock() }
         return store[account] != nil
+    }
+
+    func replace(secret: Data, account: String, prompt: String) throws {
+        lock.lock(); defer { lock.unlock() }
+        guard store[account] != nil else { throw KeychainError.notFound }
+        store[account] = secret
+    }
+
+    func accounts() throws -> [String] {
+        lock.lock(); defer { lock.unlock() }
+        return Array(store.keys)
+    }
+
+    func loadSilently(account: String) throws -> Data {
+        try load(account: account, prompt: "")
     }
 }
 
@@ -322,10 +511,40 @@ actor KeychainService {
 
     // MARK: - References
 
+    /// What every ref ``generateRef()`` makes starts with — the only items
+    /// ``KeychainReferences`` ever looks at on its own.
+    static let refPrefix = "moshpit.secret."
+
     /// Returns a fresh opaque ref that callers should store in
     /// `ServerConnection.keychainRef`. UUID-based, lowercase.
+    ///
+    /// Remembered for the life of the process: an item is written under a
+    /// fresh ref BEFORE the record that names it is saved (a key's private
+    /// half, a connection's password), so for a moment nothing references
+    /// it. Nothing made in this launch is ever taken for an orphan here.
     nonisolated func generateRef() -> String {
-        "moshpit.secret." + UUID().uuidString.lowercased()
+        let ref = Self.refPrefix + UUID().uuidString.lowercased()
+        Self.minted.withLock { _ = $0.insert(ref) }
+        return ref
+    }
+
+    /// Whether `ref` was made by ``generateRef()`` in this process.
+    static func mintedThisLaunch(_ ref: String) -> Bool {
+        minted.withLock { $0.contains(ref) }
+    }
+
+    private static let minted = MintedRefs()
+
+    /// The refs this process made, behind a lock: refs are made on any
+    /// thread.
+    private final class MintedRefs: @unchecked Sendable {
+        private let lock = NSLock()
+        private var refs: Set<String> = []
+
+        func withLock<T>(_ body: (inout Set<String>) -> T) -> T {
+            lock.lock(); defer { lock.unlock() }
+            return body(&refs)
+        }
     }
 
     // MARK: - Password
@@ -365,6 +584,18 @@ actor KeychainService {
         return pem
     }
 
+    /// Put `pem` in place of the private key already stored at `ref`,
+    /// keeping the item's protection (Face ID or not) as it was. Throws, and
+    /// leaves the item untouched, when there is no item or it can't be
+    /// changed.
+    func replacePrivateKey(_ pem: String, forRef ref: String,
+                           reason: String = "Authenticate to update the SSH private key") throws {
+        guard let data = pem.data(using: .utf8) else {
+            throw KeychainError.invalidData
+        }
+        try backend.replace(secret: data, account: ref, prompt: reason)
+    }
+
     // MARK: - Raw
 
     func saveSecret(_ data: Data, forRef ref: String, requireBiometry: Bool = true) throws {
@@ -384,5 +615,17 @@ actor KeychainService {
 
     func contains(ref: String) -> Bool {
         backend.exists(account: ref)
+    }
+
+    /// Every item's account (``KeychainBackend/accounts()``): what orphan
+    /// recovery looks through. Throws when the backend can't say.
+    func accounts() throws -> [String] {
+        try backend.accounts()
+    }
+
+    /// An item's bytes without asking anyone
+    /// (``KeychainBackend/loadSilently(account:)``).
+    func loadSecretSilently(forRef ref: String) throws -> Data {
+        try backend.loadSilently(account: ref)
     }
 }

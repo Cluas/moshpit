@@ -1,0 +1,8 @@
+# A protocol mismatch whose `herdr status` never answers: the reads must
+# go on.
+host mismatch client protocol 22 is newer than server protocol 19; run herdr server stop
+host rule herdr_status - hang
+at 0 start
+at 15000 host-mismatch -
+at 15000 host-focus w1:p2
+end 40000

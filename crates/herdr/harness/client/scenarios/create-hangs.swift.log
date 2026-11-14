@@ -1,0 +1,32 @@
+t=0 exec api snapshot
+t=40 focus w1:p1
+t=300 exec worktree create --cwd '/home/dev/code/app' --branch 'fix-scroll' --label 'fix-scroll' --focus --json
+t=400 focus w1:p2
+t=2040 exec api snapshot
+t=4080 exec api snapshot
+t=5300 exec agent focus 'w1:p2' 2>/dev/null || { PATH="$PATH:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:$HOME/.local/bin" herdr pane zoom --pane 'w1:p2' --on >/dev/null 2>&1; PATH="$PATH:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:$HOME/.local/bin" herdr pane zoom --pane 'w1:p2' --off >/dev/null 2>&1; }
+t=5340 exec api snapshot
+t=5380 focus w1:p2
+t=6120 exec api snapshot
+t=6160 focus w1:p2
+t=8160 exec api snapshot
+t=8200 focus w1:p2
+t=10200 exec api snapshot
+t=10240 focus w1:p2
+t=18240 exec api snapshot
+t=18280 focus w1:p2
+t=26280 exec api snapshot
+t=26320 focus w1:p2
+t=34320 exec api snapshot
+t=34360 focus w1:p2
+t=42360 exec api snapshot
+t=42400 focus w1:p2
+t=50400 exec api snapshot
+t=50440 focus w1:p2
+t=58440 exec api snapshot
+t=58480 focus w1:p2
+t=60300 outcome task failed The host stopped answering while the worktree was being made, so no agent was started. Look for a “fix-scroll” workspace before trying again.
+t=66480 exec api snapshot
+t=66520 focus w1:p2
+landed focus w1:p2
+state focus=w1:p2 server=w1:p2 sessions=1 notrunning=false mismatch=false

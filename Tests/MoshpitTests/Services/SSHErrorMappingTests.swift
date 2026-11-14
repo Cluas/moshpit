@@ -47,6 +47,19 @@ struct SSHErrorMappingTests {
         #expect(SSHError.handshakeFailed.description.contains("closed the connection"))
     }
 
+    /// B151: the user's own Cancel on the new-host card reached the alert as
+    /// "The connection failed for a reason Moshpit didn't recognise…".
+    @Test("a declined host key is its own case, not an unrecognised failure")
+    func declinedHostKey() {
+        let mapped = SSHError.map(HostKeyRejected())
+        guard case .hostKeyRejected = mapped else {
+            Issue.record("mapped to \(mapped.diagnostic)")
+            return
+        }
+        #expect(mapped.description != SSHError.underlying(HostKeyRejected()).description)
+        #expect(mapped.description.contains("trust"))
+    }
+
     @Test("the detail survives for logs even when the alert stays plain")
     func diagnosticKeepsTheDetail() {
         let raw = OpaqueError(description: "Citadel.ClientHandshakeHandler $105f91dd4")
@@ -78,10 +91,6 @@ struct SSHErrorMappingTests {
 private extension SSHError {
     var isHandshakeFailed: Bool {
         if case .handshakeFailed = self { return true }
-        return false
-    }
-    var isConnectionFailed: Bool {
-        if case .connectionFailed = self { return true }
         return false
     }
 }

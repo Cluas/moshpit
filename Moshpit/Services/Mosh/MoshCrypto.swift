@@ -15,7 +15,7 @@ struct MoshCrypto {
         case toClient = 1
     }
 
-    enum CryptoError: Error { case packetTooShort, badDirection }
+    enum CryptoError: Error { case packetTooShort }
 
     private let ocb: OCB3
 

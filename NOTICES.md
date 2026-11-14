@@ -83,3 +83,58 @@ the project, and its provenance does not depend on mosh's license.
 
 "mosh" is a project of Keith Winstein and contributors; the name is used here
 only to identify the protocol being interoperated with.
+
+## Rust Core and Shared UI
+
+Both apps, iOS and Android, link one Rust library built from `crates/` and
+`ui/`.
+
+### wezterm terminal emulation
+
+- Source: https://github.com/wez/wezterm (commit
+  `ce8e6b140c2a52c8be1cc31c1274104b01422fdc`), its terminal crates vendored in
+  [`vendor/wezterm`](vendor/wezterm) with Moshpit's patches listed in
+  [`docs/WEZTERM-PATCHES.md`](docs/WEZTERM-PATCHES.md)
+- License: MIT (Copyright (c) 2018-Present Wez Furlong;
+  `vendor/wezterm/LICENSE.md` and each crate's own `LICENSE.md`)
+
+The terminal emulator under the new terminal view (`crates/term`).
+
+### NSH
+
+- Source: https://github.com/longbridge/nsh (the revision `Cargo.toml` pins)
+- License: Apache-2.0 (Copyright 2026 Longbridge; the repository's
+  `LICENSE-APACHE`)
+
+The cross-platform native UI framework the shared screens (`ui/`) are written
+in, on iOS and Android alike. On Android its Java runtime is compiled into the
+app from the same revision as its Rust half.
+
+## Android App
+
+### Termux terminal-emulator and terminal-view
+
+- Source: https://github.com/termux/termux-app (tag v0.118.3), vendored in
+  [`android/termux`](android/termux) with Moshpit's changes listed in its
+  `NOTICE`
+- License: GPL-3.0-only; the libraries contain code of Terminal Emulator for
+  Android (https://github.com/jackpal/Android-Terminal-Emulator) under the
+  Apache License 2.0 (`android/termux/LICENSE.md`, `COPYING.GPL-3.0`,
+  `LICENSE.Apache-2.0`)
+
+The Android app's terminal view and emulator. Both licenses are compatible
+with Moshpit's GPL-3.0-only.
+
+### Rust crates
+
+The Rust core (`crates/`, both apps) links crates from crates.io under the MIT and/or
+Apache-2.0 licenses (among them russh, tokio, ring, ssh-key, serde, jni);
+`cargo metadata` lists each with its license.
+
+### Google Play services
+
+This build of the Android app links no Google Play services. Push
+notifications on Android will come through Firebase Cloud Messaging, which is
+not free software: before a build that links it is distributed, `LICENSE`
+gains the GPL-3.0 section 7 additional permission to combine Moshpit with
+Google Play services and Firebase.

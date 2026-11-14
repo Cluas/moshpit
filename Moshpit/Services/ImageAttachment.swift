@@ -132,81 +132,29 @@ enum ImageAttachmentPipeline {
         String(format: "%04x", UInt16.random(in: .min ... .max))
     }
 
-    /// The text pasted at the prompt for uploaded paths.
-    ///
-    /// The default is a bare path padded with spaces: it reads the same to
-    /// every agent, Codex's pasted-image-path detector auto-attaches it
-    /// (quotes break that detector, so quoting happens ONLY when a path
-    /// actually carries a space or quote — our filenames never do), and `@`
-    /// typed blind would trigger Claude Code's completion menu. The other
-    /// styles exist because two agent families genuinely differ — see
-    /// ``ImageInsertStyle``.
+    /// The text pasted at the prompt for uploaded paths — the shared model's
+    /// rule (`crates/app/src/image_attachment.rs`): bare, padded with spaces,
+    /// quoted only when a path carries a space or a quote; `@path` for the
+    /// agents that read only that; aider's `/add`.
     static func insertText(forRemotePaths paths: [String],
                            style: ImageInsertStyle = .barePath) -> String {
-        guard !paths.isEmpty else { return "" }
-        switch style {
-        case .barePath:
-            return " " + paths.map(Self.quotedIfNeeded).joined(separator: " ") + " "
-        case .atMention:
-            // @-parsers read to whitespace and do NOT strip quotes, so a
-            // path that needs quoting can't be @-mentioned at all — those
-            // fall back to the shell-safe bare form (the model may still
-            // read it; a mis-parsed @-token helps nobody).
-            let rendered = paths.map { path in
-                needsQuoting(path) ? Self.quotedIfNeeded(path) : "@" + path
-            }
-            return " " + rendered.joined(separator: " ") + " "
-        case .aiderAdd:
-            // aider attaches only through its /add command, which must lead
-            // the message — no padding. Insert leaves it for review; Send's
-            // Return submits it, same trust split as everywhere else.
-            return "/add " + paths.map(Self.quotedIfNeeded).joined(separator: " ")
-        }
-    }
-
-    private static func needsQuoting(_ path: String) -> Bool {
-        path.contains(where: { $0 == " " || $0 == "'" || $0 == "\"" })
-    }
-
-    private static func quotedIfNeeded(_ path: String) -> String {
-        guard needsQuoting(path) else { return path }
-        return "'" + path.replacingOccurrences(of: "'", with: "'\\''") + "'"
+        imageInsertText(paths: paths, style: style)
     }
 }
 
 // MARK: - Agent-aware insert format
 
-/// How the active pane's agent best receives an image path — from the
-/// 2026-08 cross-agent survey (the design doc carries the full matrix):
-///
-/// - `barePath`: Claude Code reads it with its Read tool, Codex's TUI
-///   auto-attaches a pasted image path as native `[image N]`, Goose has
-///   `read_image`. The universal default, also for plain shells.
-/// - `atMention`: Gemini CLI and Qwen Code only read files
-///   deterministically through `@path` (a bare path is left to the model's
-///   discretion there).
-/// - `aiderAdd`: aider attaches images ONLY via its `/add` command — bare
-///   paths and @-mentions are ignored.
-enum ImageInsertStyle: Equatable {
-    case barePath
-    case atMention
-    case aiderAdd
+/// How the active pane's agent best receives an image path: the shared
+/// model's (`crates/app/src/image_attachment.rs`'s `InsertStyle`) — a bare
+/// path for Claude Code, Codex, Goose and shells; `@path` for Gemini CLI and
+/// Qwen Code; `/add` for aider.
+typealias ImageInsertStyle = ImagePasteStyle
 
-    /// Classify from the pane's agent signal: the hook-stamped
-    /// `@moshpit_agent` when Vibe Island hooks are installed, else the
-    /// pane's foreground command. nil / unrecognized → the universal
-    /// default.
+extension ImagePasteStyle {
+    /// From the pane's agent signal: the hook-stamped `@moshpit_agent`, else
+    /// the pane's foreground command. nil / unrecognized → the default.
     static func forAgent(_ agent: String?) -> ImageInsertStyle {
-        guard var name = agent?.lowercased(), !name.isEmpty else { return .barePath }
-        // Claude Code sets a process title that starts with its version —
-        // a bare semver comm is claude (same normalization as the Home
-        // screen's pane rows).
-        if name.range(of: #"^\d+\.\d+\.\d+$"#, options: .regularExpression) != nil {
-            name = "claude"
-        }
-        if name.contains("gemini") || name.contains("qwen") { return .atMention }
-        if name.contains("aider") { return .aiderAdd }
-        return .barePath
+        imageInsertStyleForAgent(agent: agent)
     }
 }
 
@@ -284,6 +232,12 @@ extension SSHSession: FileUploader {}
 /// upload them over the session's SSH channel, and hand back the paste text.
 /// Mirrors `VoiceDictationController`'s compose-then-commit shape — nothing
 /// reaches the PTY until the user says Insert or Send.
+///
+/// The flow's rules are the shared model's (`crates/app/src/image_attachment.rs`,
+/// ``ImageAttachmentsHandle``): one upload at a time, progress weighted by
+/// bytes and never going back, a retry uploading only what has not landed,
+/// no paste until every file landed. This class does the platform's part —
+/// ImageIO, the thumbnails, the uploads — and mirrors the phase.
 @MainActor
 @Observable
 final class ImageAttachmentController {
@@ -321,8 +275,9 @@ final class ImageAttachmentController {
     /// transport's own user-facing message.
     @ObservationIgnored private let uploaderProvider: () async throws -> any FileUploader
     @ObservationIgnored private var work: Task<Void, Never>?
+    @ObservationIgnored private let flow = ImageAttachmentsHandle()
     /// Processed images held for retry — a failed upload shouldn't re-run
-    /// the pipeline, and MUSTN'T re-upload the files that already landed.
+    /// the pipeline, and the model never re-uploads the files that landed.
     @ObservationIgnored private var processed: [ImageAttachmentPipeline.Processed] = []
 
     init(uploaderProvider: @escaping () async throws -> any FileUploader) {
@@ -340,8 +295,8 @@ final class ImageAttachmentController {
     /// Re-attempt after `.failed`: transport re-acquired (the failure may
     /// have BEEN the transport), pipeline skipped, already-landed files kept.
     func retry() {
-        guard case .failed = phase else { return }
-        phase = .uploading(0)
+        guard flow.retry() else { return }
+        sync()
         work = Task { [weak self] in
             await self?.upload()
         }
@@ -354,17 +309,31 @@ final class ImageAttachmentController {
     /// The paste payload — nil until every upload landed. `style` follows
     /// the active pane's agent (see `ImageInsertStyle`).
     func insertText(style: ImageInsertStyle = .barePath) -> String? {
-        guard phase == .ready else { return nil }
-        let paths = attachments.compactMap(\.remotePath)
-        guard !paths.isEmpty else { return nil }
-        return ImageAttachmentPipeline.insertText(forRemotePaths: paths, style: style)
+        flow.insertText(style: style)
+    }
+
+    /// The model's phase and where each file landed, mirrored.
+    private func sync() {
+        let now: Phase = switch flow.phase() {
+        case .processing: .processing
+        case .uploading(let fraction): .uploading(fraction)
+        case .ready: .ready
+        case .failed(let why): .failed(why)
+        }
+        if now != phase { phase = now }
+        let paths = flow.remotePaths()
+        let numbers = flow.numbers()
+        for index in attachments.indices where index < paths.count {
+            if attachments[index].remotePath != paths[index] { attachments[index].remotePath = paths[index] }
+            let number = index < numbers.count ? numbers[index].map { Int($0) } : nil
+            if attachments[index].sessionNumber != number { attachments[index].sessionNumber = number }
+        }
     }
 
     private func run(pickedData: [Data]) async {
         do {
             // Process off the main actor — ImageIO decode of a 48MP photo is
-            // real work — then upload sequentially so progress reads honestly
-            // and a failure names one file, not a pile.
+            // real work — then upload one at a time (the model's rule).
             var items: [ImageAttachmentPipeline.Processed] = []
             for raw in pickedData {
                 try Task.checkCancellation()
@@ -379,60 +348,52 @@ final class ImageAttachmentController {
                                .preparingThumbnail(of: CGSize(width: 88, height: 88)),
                            byteCount: item.data.count)
             }
+            flow.processed(sizes: items.map { UInt64($0.data.count) })
+            sync()
         } catch is CancellationError {
             return  // the overlay is already gone; nothing to show
         } catch {
-            phase = .failed(error.localizedDescription)
+            flow.failed(why: error.localizedDescription)
+            sync()
             return
         }
         await upload()
     }
 
-    /// The upload leg, shared by the first run and every retry. Skips
-    /// attachments that already carry a remote path.
+    /// The upload leg, shared by the first run and every retry: the model
+    /// names the next file that has not landed.
     private func upload() async {
         do {
             let uploader = try await uploaderProvider()
-            let totalBytes = max(1, processed.reduce(0) { $0 + $1.data.count })
-            var doneBytes = 0
-            phase = .uploading(0)
-            for (index, item) in processed.enumerated() {
+            while let next = flow.next() {
+                sync()
                 try Task.checkCancellation()
-                if attachments[index].remotePath != nil {
-                    doneBytes += item.data.count
-                    phase = .uploading(Double(doneBytes) / Double(totalBytes))
-                    continue
-                }
-                let base = doneBytes
+                let index = Int(next)
+                guard index < processed.count else { break }
+                let item = processed[index]
                 let path = try await uploader.uploadToUploadsDirectory(
                     item.data, named: item.filename,
                     progress: { [weak self] fraction in
-                        let overall = (Double(base) + fraction * Double(item.data.count))
-                            / Double(totalBytes)
                         Task { @MainActor [weak self] in
-                            // Never regress past a later chunk's report — the
-                            // hops can land out of order.
-                            if case .uploading(let shown) = self?.phase ?? .processing,
-                               overall > shown {
-                                self?.phase = .uploading(overall)
-                            }
+                            // The model never goes back past a later report.
+                            _ = self?.flow.progress(index: next, fraction: fraction)
+                            self?.sync()
                         }
                     })
-                attachments[index].remotePath = path
-                doneBytes += item.data.count
-                phase = .uploading(Double(doneBytes) / Double(totalBytes))
-            }
-            phase = .ready
-            let paths = attachments.compactMap(\.remotePath)
-            if let numbers = onReady?(paths), numbers.count == attachments.count {
-                for (index, number) in numbers.enumerated() {
-                    attachments[index].sessionNumber = number
+                if flow.landed(index: next, path: path) {
+                    let paths = flow.remotePaths().compactMap { $0 }
+                    if let numbers = onReady?(paths) {
+                        flow.numbered(numbers: numbers.map { UInt64(max(0, $0)) })
+                    }
                 }
+                sync()
             }
+            sync()
         } catch is CancellationError {
             // The overlay is already gone; nothing to show.
         } catch {
-            phase = .failed(error.localizedDescription)
+            flow.failed(why: error.localizedDescription)
+            sync()
         }
     }
 }

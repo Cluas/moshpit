@@ -1,0 +1,932 @@
+import Foundation
+import Testing
+import Crypto
+@testable import Moshpit
+
+/// A registry that records what it was asked and answers from what the test
+/// set: the Rust session path's Swift side, without the core.
+final class FakeCoreSessions: CoreSessionsProtocol, @unchecked Sendable {
+    var connected: [SessionSpec] = []
+    var intents: [(UInt64, TmuxIntent)] = []
+    var answers: [(UInt64, UInt64, Bool)] = []
+    var disconnected: [UInt64] = []
+    var reconnected: [UInt64] = []
+    var foreground: [Bool] = []
+    var visible: [UInt64?] = []
+    var faults: [(UInt64, InjectedFault)] = []
+    var flushes: UInt64 = 0
+    var tmux: TmuxReadModel?
+    var herdr: HerdrReadModel?
+    var herdrIntents: [(UInt64, HerdrIntent)] = []
+    var delivered: [(UInt64, String, Data, Bool)] = []
+    var pasted: [(UInt64, String, String)] = []
+    var unlocked = 0
+    var nextId: UInt64 = 7
+    var nextToken: UInt64 = 100
+
+    func answerHostKey(session: UInt64, prompt: UInt64, trust: Bool) { answers.append((session, prompt, trust)) }
+    func connect(spec: SessionSpec) -> UInt64 { connected.append(spec); return nextId }
+    func disconnect(session: UInt64) { disconnected.append(session) }
+    func flush() -> UInt64 { flushes += 1; return flushes }
+    func injectFault(session: UInt64, fault: InjectedFault) { faults.append((session, fault)) }
+    func networkChanged() {}
+    func reconnect(session: UInt64) { reconnected.append(session) }
+    /// The specs a session was handed as its connection was saved (B329).
+    var respecs: [(UInt64, SessionSpec)] = []
+    func respec(session: UInt64, spec: SessionSpec) { respecs.append((session, spec)) }
+    func setForeground(foreground: Bool) { self.foreground.append(foreground) }
+    var resumeDecision = ResumeInPlaceDecision(on: false, source: .unset)
+    func resumeInPlace() -> ResumeInPlaceDecision { resumeDecision }
+    func setVisible(session: UInt64?) { visible.append(session) }
+    func switchToSsh(session: UInt64) {}
+    var repainted: [UInt64] = []
+    func repaint(session: UInt64) { repainted.append(session) }
+    /// What the core refuses of tmux, as the core would (crates/session
+    /// `TmuxAction::refusal`): nothing is recorded as sent then.
+    var refuseTmux: ((TmuxIntent) -> TmuxRefused?)?
+    func tmux(session: UInt64, intent: TmuxIntent) throws {
+        if let refused = refuseTmux?(intent) { throw refused }
+        intents.append((session, intent))
+    }
+    func tmuxView(session: UInt64) -> TmuxReadModel? { tmux }
+    func view(session: UInt64) -> SessionReadModel? { nil }
+    /// Home's record: what the page asked with, and what to answer.
+    var homeAsked: [(connections: [HomeConnection], agents: Bool, version: String, sidebar: Bool,
+                     locale: String)] = []
+    var home = #"{"op":"home","connections":[],"version":"v"}"#
+    func homeMessage(connections: [HomeConnection], agents: AgentMachine?, version: String,
+                     sidebar: Bool, locale: String) -> String {
+        homeAsked.append((connections, agents != nil, version, sidebar, locale))
+        return home
+    }
+    func herdr(session: UInt64, intent: HerdrIntent) -> UInt64 {
+        herdrIntents.append((session, intent)); nextToken += 1; return nextToken
+    }
+    func herdrCancelTask(session: UInt64, token: UInt64) {}
+    func herdrView(session: UInt64) -> HerdrReadModel? { herdr }
+    func paste(session: UInt64, pane: String, text: String) { pasted.append((session, pane, text)) }
+    func deliver(session: UInt64, pane: String, bytes: Data, paste: Bool) -> UInt64 {
+        delivered.append((session, pane, bytes, paste)); nextToken += 1; return nextToken
+    }
+    func deviceUnlocked() { unlocked += 1 }
+    /// What a borrow gets (W14b's tests lend a fake connection); refused
+    /// as not connected when unset.
+    var lend: (@Sendable (UInt64) async throws -> BorrowedSsh)?
+    func borrowSsh(session: UInt64) async throws -> BorrowedSsh {
+        guard let lend else { throw BorrowFailure.NotConnected }
+        return try await lend(session)
+    }
+}
+
+/// A listener that keeps what it heard.
+@MainActor
+final class Heard: RustSessionListener {
+    var events: [SessionEventKind] = []
+    func handle(_ event: SessionEventKind) { events.append(event) }
+}
+
+@MainActor
+@Suite("Rust sessions: the app's side")
+struct RustSessionTests {
+
+    // MARK: Hosts
+
+    @Test("property-list values cross to the store and back as they were")
+    func plistNodesRoundTrip() throws {
+        let date = Date(timeIntervalSinceReferenceDate: 784_000_000.5)
+        let object: [String: Any] = [
+            "data": Data([1, 2, 3]), "text": "héllo", "yes": true, "n": 42, "x": 1.5,
+            "when": date, "list": [1, "two", ["nested": false]],
+        ]
+        let value = try #require(PlistNodes.value(object))
+        let back = try #require(PlistNodes.object(value) as? NSDictionary)
+        #expect(back["data"] as? Data == Data([1, 2, 3]))
+        #expect(back["text"] as? String == "héllo")
+        #expect(back["yes"] as? Bool == true)
+        #expect((back["n"] as? NSNumber)?.int64Value == 42)
+        #expect((back["x"] as? NSNumber)?.doubleValue == 1.5)
+        #expect(back["when"] as? Date == date)
+        let list = try #require(back["list"] as? [Any])
+        #expect((list[0] as? NSNumber)?.intValue == 1)
+        #expect(list[1] as? String == "two")
+        #expect((list[2] as? NSDictionary)?["nested"] as? Bool == false)
+        // A Bool stays a Bool, an Int an Int: the store compares them as
+        // Foundation does.
+        guard case .bool(true)? = PlistNodes.value(true)?.nodes.first else {
+            Issue.record("a Bool crossed as something else"); return
+        }
+        guard case .int(7)? = PlistNodes.value(7)?.nodes.first else {
+            Issue.record("an Int crossed as something else"); return
+        }
+    }
+
+    @Test("the preferences host reads and writes UserDefaults")
+    func preferencesHost() throws {
+        let name = "w14.rust.prefs.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: name))
+        defer { defaults.removePersistentDomain(forName: name) }
+        let host = RustPreferencesHost(defaults: defaults, protectedData: ProtectedDataFlag(fixed: false))
+        #expect(host.get(key: "hostcaps.X") == nil)
+        host.set(key: "hostcaps.X", value: PlistNodes.value(Data("{}".utf8)))
+        #expect(defaults.data(forKey: "hostcaps.X") == Data("{}".utf8))
+        #expect(host.get(key: "hostcaps.X") == PlistNodes.value(Data("{}".utf8)))
+        host.set(key: "hostcaps.X", value: nil)
+        #expect(defaults.object(forKey: "hostcaps.X") == nil)
+        #expect(!host.protectedDataAvailable())
+    }
+
+    @Test("the keychain host speaks the store's failures")
+    func keychainHost() throws {
+        // Its own launch table: what a seed trusts for this process is no
+        // part of the item this test reads back.
+        let host = RustKeychainHost(backend: InMemoryKeychainBackend(seed: [:]), launchTrust: LaunchTrust.Table())
+        #expect(throws: KeychainFailure.NotFound) { try host.load(account: "nope", prompt: "") }
+        try host.save(account: "moshpit.knownHosts", secret: Data("{\"a:22\":\"SHA256:a\"}".utf8),
+                      requireBiometry: false)
+        #expect(host.exists(account: "moshpit.knownHosts"))
+        let read = try host.load(account: "moshpit.knownHosts", prompt: "")
+        let map = try JSONSerialization.jsonObject(with: read) as? [String: String]
+        #expect(map == ["a:22": "SHA256:a"])
+        try host.delete(account: "moshpit.knownHosts")
+        #expect(!host.exists(account: "moshpit.knownHosts"))
+    }
+
+    @Test("a host trusted for this launch is read but never written")
+    func launchTrustOverlay() throws {
+        let backend = InMemoryKeychainBackend(seed: [:])
+        // The test's own table: the process's (``LaunchTrust/shared``) never
+        // learns `rig.test:2299`, so no later reader sees it (T7).
+        let trusted = LaunchTrust.Table()
+        let host = RustKeychainHost(backend: backend, launchTrust: trusted)
+        trusted.trust(host: "rig.test", port: 2299, fingerprint: "SHA256:rig")
+        // Nothing stored yet: the overlay alone.
+        let first = try host.load(account: "moshpit.knownHosts", prompt: "")
+        #expect((try JSONSerialization.jsonObject(with: first) as? [String: String])?["rig.test:2299"] == "SHA256:rig")
+        // A write with the seed in it (the core trusting another host)
+        // stores only the other host.
+        let written = try JSONSerialization.data(withJSONObject: ["rig.test:2299": "SHA256:rig",
+                                                                  "b:22": "SHA256:b"])
+        try host.save(account: "moshpit.knownHosts", secret: written, requireBiometry: false)
+        let stored = try backend.load(account: "moshpit.knownHosts", prompt: "")
+        #expect(try JSONSerialization.jsonObject(with: stored) as? [String: String] == ["b:22": "SHA256:b"])
+        #expect(LaunchTrust.fingerprint(host: "rig.test", port: 2299) == nil, "the trust leaked to the process")
+    }
+
+    // MARK: The switch
+
+    @Test("nothing stays on the Swift path with the switch on")
+    func swiftPathReasons() {
+        var connection = ServerConnection(host: "h", username: "u")
+        #expect(RustSessionSwitch.swiftPathReason(for: connection, predictSetting: .adaptive) == nil)
+        connection.multiplexer = .tmux
+        #expect(RustSessionSwitch.swiftPathReason(for: connection, predictSetting: .adaptive) == nil)
+        // herdr over SSH runs on the core (W10b).
+        connection.multiplexer = .herdr
+        #expect(RustSessionSwitch.swiftPathReason(for: connection, predictSetting: .never) == nil)
+        // herdr over mosh too (W10c): the raw-attach loop on mosh, the
+        // control client beside it.
+        connection.connectionProtocol = .mosh
+        #expect(RustSessionSwitch.swiftPathReason(for: connection, predictSetting: .never) == nil)
+        #expect(RustSessionSwitch.swiftPathReason(for: connection, predictSetting: .always) == nil)
+        // mosh runs on the core whatever predictive echo says (the core
+        // carries its echo acks now).
+        connection.multiplexer = .none
+        #expect(RustSessionSwitch.swiftPathReason(for: connection, predictSetting: .adaptive) == nil)
+        #expect(RustSessionSwitch.swiftPathReason(for: connection, predictSetting: .always) == nil)
+        connection.multiplexer = .tmux
+        #expect(RustSessionSwitch.swiftPathReason(for: connection, predictSetting: .always) == nil)
+    }
+
+    @Test("a connection becomes the core's spec")
+    func spec() {
+        var connection = ServerConnection(host: "box.local", port: 2222, username: "me",
+                                          connectionProtocol: .mosh, moshServerPath: "/opt/mosh-server",
+                                          tmuxPath: "/opt/tmux")
+        connection.multiplexer = .tmux
+        connection.useSOCKSProxy = true
+        connection.socksProxyHost = "proxy"
+        let spec = RustSessionDriver.spec(for: connection, grid: (cols: 70, rows: 40))
+        #expect(spec.connectionId == connection.id.uuidString)
+        #expect(spec.user == "me" && spec.host == "box.local" && spec.port == 2222)
+        #expect(spec.mosh && spec.multiplexer == .tmux)
+        #expect(spec.proxyHost == "proxy" && spec.proxyPort == nil)
+        #expect(spec.tmuxPath == "/opt/tmux" && spec.moshServerPath == "/opt/mosh-server")
+        #expect(spec.moshPortLow == 60001 && spec.moshPortHigh == 60999)
+        #expect(spec.cols == 70 && spec.rows == 40)
+        connection.useSOCKSProxy = false
+        #expect(RustSessionDriver.spec(for: connection, grid: (80, 24)).proxyHost == nil)
+    }
+
+    @Test("a Secure Enclave key's public half is an authorized_keys line")
+    func openSSHLine() throws {
+        let key = P256.Signing.PrivateKey()
+        let line = SSHService.openSSHLine(of: key.publicKey)
+        #expect(line.hasPrefix("ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABB"))
+        let blob = try #require(Data(base64Encoded: String(line.dropFirst("ecdsa-sha2-nistp256 ".count))))
+        #expect(blob.count == 4 + 19 + 4 + 8 + 4 + 65)
+        #expect(blob.suffix(65) == key.publicKey.x963Representation)
+    }
+
+    // MARK: Routing
+
+    @Test("events reach their session in order; a flush answers its caller")
+    func routing() {
+        let fake = FakeCoreSessions()
+        let core = RustCore(sessions: fake, credentials: RustCredentialHost())
+        let one = Heard(), two = Heard()
+        core.listen(1, one)
+        core.listen(2, two)
+        var flushed = 0
+        core.flush { flushed += 1 }
+        core.deliver([
+            SessionEvent(session: 1, kind: .state(state: .connecting)),
+            SessionEvent(session: 2, kind: .treeChanged),
+            SessionEvent(session: 1, kind: .state(state: .connected)),
+            SessionEvent(session: 0, kind: .flushed(token: 1)),
+            SessionEvent(session: 3, kind: .attachStalled),
+        ])
+        #expect(one.events == [.state(state: .connecting), .state(state: .connected)])
+        #expect(two.events == [.treeChanged])
+        #expect(flushed == 1)
+        core.forget(1)
+        core.deliver([SessionEvent(session: 1, kind: .attachStalled)])
+        #expect(one.events.count == 2)
+    }
+
+    // MARK: The driver
+
+    private static let look = RustTmuxController.Appearance(
+        theme: .dracula, fontSize: 13, fontName: "system", cursorShape: .block,
+        cursorColorId: "teal", cursorBlink: true)
+
+    private func driver(_ connection: ServerConnection) -> (RustSessionDriver, SessionHub.ActiveSession, FakeCoreSessions) {
+        let fake = FakeCoreSessions()
+        let core = RustCore(sessions: fake, credentials: RustCredentialHost())
+        let session = SessionHub.ActiveSession(connection: connection)
+        let driver = RustSessionDriver(session: session, core: core, appearance: Self.look)
+        session.rust = driver
+        return (driver, session, fake)
+    }
+
+    /// Starts the driver the way the hub does, up to the core's connect.
+    private func started(_ driver: RustSessionDriver, _ fake: FakeCoreSessions,
+                         automatic: Bool = false) async -> Task<Void, Never> {
+        let calls = fake.connected.count + fake.reconnected.count
+        let task = Task { await driver.start(appearance: Self.look, automatic: automatic) }
+        for _ in 0..<100 where fake.connected.count + fake.reconnected.count == calls {
+            await Task.yield()
+        }
+        return task
+    }
+
+    /// B396: a plain shell's keys typed while the way back found the
+    /// connection dead weren't sent — said in the banner once the session is
+    /// live again, for a moment; other reasons for unsent input say nothing
+    /// on screen, and a notice herdr shows is never covered.
+    @Test("keys a return couldn't send are said once the session is back, briefly")
+    func inputLostNotice() async {
+        let wait = SessionHub.ActiveSession.inputLostWait
+        let shown = SessionHub.ActiveSession.inputLostShown
+        SessionHub.ActiveSession.inputLostShown = .milliseconds(300)
+        defer {
+            SessionHub.ActiveSession.inputLostWait = wait
+            SessionHub.ActiveSession.inputLostShown = shown
+        }
+        let lost = String(localized: "What you just typed wasn't sent: the connection dropped, and it's back now")
+        let (driver, session, fake) = driver(ServerConnection(host: "h", username: "u"))
+        let task = await started(driver, fake)
+        driver.handle(.state(state: .connected))
+        await task.value
+        for why: DiscardedValue in [.notLive, .paneGone, .sessionEnded, .notAttached] {
+            driver.handle(.inputDiscarded(stream: 1, bytes: 3, why: why))
+        }
+        try? await Task.sleep(for: .milliseconds(150))
+        let quiet = session.herdrNotice
+        #expect(quiet == nil, "only a return's lost keys are said")
+
+        driver.handle(.state(state: .reconnecting))
+        driver.handle(.inputDiscarded(stream: 1, bytes: 5, why: .reconnected))
+        try? await Task.sleep(for: .milliseconds(150))
+        let early = session.herdrNotice
+        #expect(early == nil, "not while it is still reconnecting")
+        driver.handle(.state(state: .connected))
+        let said = await eventually { session.herdrNotice == lost }
+        #expect(said)
+        let cleared = await eventually { session.herdrNotice == nil }
+        #expect(cleared, "it clears itself")
+
+        session.rustSetHerdrNotice("herdr says", action: nil)
+        driver.handle(.inputDiscarded(stream: 1, bytes: 5, why: .reconnected))
+        try? await Task.sleep(for: .milliseconds(200))
+        let kept = session.herdrNotice
+        #expect(kept == "herdr says", "herdr's notice is never covered")
+    }
+
+    /// Whether `predicate` holds within `seconds`.
+    private func eventually(seconds: Double = 3, _ predicate: () -> Bool) async -> Bool {
+        let deadline = Date().addingTimeInterval(seconds)
+        while Date() < deadline {
+            if predicate() { return true }
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+        return predicate()
+    }
+
+    @Test("the core's states drive the view model; a reconnect is never a poster")
+    func states() async {
+        let (driver, session, fake) = driver(ServerConnection(host: "h", username: "u"))
+        let first = await started(driver, fake)
+        #expect(fake.connected.count == 1)
+        #expect(session.viewModel.status == .connecting)
+        driver.handle(.state(state: .connected))
+        await first.value
+        #expect(session.viewModel.connState == .live)
+        driver.handle(.state(state: .reconnecting))
+        #expect(session.viewModel.connState == .reconnecting)
+        // An automatic attempt that fails: offline, and no modal.
+        driver.handle(.state(state: .failed(kind: .unreachable,
+                                            cause: .unreachable(host: "h", port: 22, why: .noRoute),
+                                            log: "no route", retryable: true)))
+        #expect(session.viewModel.connState == .offline)
+        #expect(session.viewModel.errorMessage == nil)
+        // The person's own try again fails: the card.
+        let retry = await started(driver, fake)
+        #expect(fake.reconnected == [7])
+        driver.handle(.state(state: .connecting))
+        driver.handle(.state(state: .failed(kind: .credentials,
+                                            cause: .credentials(why: .rejected(user: "u")),
+                                            log: "refused", retryable: false)))
+        await retry.value
+        // The app's own words, never the core's log.
+        #expect(session.viewModel.errorMessage == SSHError.authenticationFailed.description)
+    }
+
+    @Test("an automatic redial that ends in a failure nothing will retry says why (B163, B335)")
+    func failureNothingRetries() async {
+        let (driver, session, fake) = driver(ServerConnection(host: "h", username: "u"))
+        let task = await started(driver, fake)
+        driver.handle(.state(state: .connected))
+        await task.value
+        // The host's password changed while the phone was away: the redial
+        // is refused, and the core won't try again on its own.
+        driver.handle(.state(state: .reconnecting))
+        driver.handle(.state(state: .failed(kind: .credentials,
+                                            cause: .credentials(why: .rejected(user: "u")),
+                                            log: "refused", retryable: false)))
+        #expect(session.viewModel.connState == .offline)
+        #expect(session.viewModel.errorMessage == SSHError.authenticationFailed.description)
+        // One the core retries stays behind the redial, with no card.
+        let (quietDriver, quiet, quietFake) = self.driver(ServerConnection(host: "h", username: "u"))
+        let quietTask = await started(quietDriver, quietFake)
+        quietDriver.handle(.state(state: .connected))
+        await quietTask.value
+        quietDriver.handle(.state(state: .reconnecting))
+        quietDriver.handle(.state(state: .failed(kind: .unreachable,
+                                                 cause: .unreachable(host: "h", port: 22, why: .timedOut),
+                                                 log: "timed out", retryable: true)))
+        #expect(quiet.viewModel.errorMessage == nil)
+    }
+
+    @Test("what the core's probe found is the session's: Install Assist has its command (B336)")
+    func capabilitiesPublished() async throws {
+        var connection = ServerConnection(host: "h", username: "u")
+        connection.multiplexer = .tmux
+        let key = "hostcaps.\(connection.id.uuidString)"
+        defer { UserDefaults.standard.removeObject(forKey: key) }
+        // An older copy in the app's cache, then the core's own probe written
+        // behind it, as crates/store writes it: JSON in Data, the same key.
+        HostCapabilityCache.shared.store(
+            HostCapabilities(hasTmux: true, hasMoshServer: true, os: "", packageManager: nil),
+            for: connection.id)
+        let probed = HostCapabilities(hasTmux: false, hasMoshServer: true, os: "Linux",
+                                      packageManager: .aptGet)
+        UserDefaults.standard.set(try JSONEncoder().encode(probed), forKey: key)
+        let (driver, session, fake) = driver(connection)
+        let task = await started(driver, fake)
+        #expect(session.capabilities == nil)
+        driver.handle(.degraded(degrade: .tmuxMissing))
+        driver.handle(.state(state: .connected))
+        await task.value
+        #expect(session.capabilities == probed, "the core's, not the cache's older copy")
+        let plan = InstallAssistPlan(session: session, packages: ["tmux"])
+        #expect(plan.packageManager == .aptGet)
+        #expect(plan.command != nil, "the one-line install, as on the Swift path")
+    }
+
+    @Test("mosh + tmux on a server with no session: the terminal's empty state, not a black screen (B228, B337)")
+    func moshTmuxNoSession() async {
+        var connection = ServerConnection(host: "h", username: "u")
+        connection.connectionProtocol = .mosh
+        connection.multiplexer = .tmux
+        let (driver, session, fake) = driver(connection)
+        let task = await started(driver, fake)
+        driver.handle(.state(state: .connected))
+        await task.value
+        #expect(session.moshControl != nil, "the sidecar's surface")
+        #expect(session.tmuxController == nil, "mosh's renderer is on screen")
+        // The core asked the server: nothing on it.
+        fake.tmux = Self.emptyServer()
+        driver.handle(.treeChanged)
+        #expect(session.awaitingFirstSession)
+        let (content, empty) = TerminalScreen.paneContent(of: session, isReconnect: false, connState: .live)
+        #expect(content == .empty)
+        #expect(empty == TerminalNSHChrome.Empty(mux: .tmux, missing: false, quiet: true, settled: true))
+        // Mid-reconnect it stays behind the veil.
+        let (dropped, _) = TerminalScreen.paneContent(of: session, isReconnect: true, connState: .reconnecting)
+        #expect(dropped == .terminal)
+        // The person's first session attaches: the renderer's screen again.
+        fake.tmux = Self.model(active: "%0")
+        driver.handle(.treeChanged)
+        #expect(!session.awaitingFirstSession)
+        let (attached, none) = TerminalScreen.paneContent(of: session, isReconnect: false, connState: .live)
+        #expect(attached == .terminal)
+        #expect(none == nil)
+    }
+
+    @Test("the mosh diagnostics' Repaint reaches the core's mosh (B338)")
+    func repaint() async {
+        var connection = ServerConnection(host: "h", username: "u")
+        connection.connectionProtocol = .mosh
+        let (driver, session, fake) = driver(connection)
+        let task = await started(driver, fake)
+        driver.handle(.state(state: .connected))
+        await task.value
+        session.requestRepaint()
+        #expect(fake.repainted == [7])
+    }
+
+    @Test("the shell's end ends the session, as the Swift path does")
+    func ended() async {
+        let (driver, session, fake) = driver(ServerConnection(host: "h", username: "u"))
+        var ended = false
+        session.endedSink = { ended = true }
+        let task = await started(driver, fake)
+        driver.handle(.state(state: .connected))
+        await task.value
+        driver.handle(.state(state: .ended(reason: .shellExited(status: 0))))
+        #expect(session.viewModel.endedByServer)
+        #expect(ended)
+    }
+
+    @Test("a host-key card goes to the core with the person's answer; a no ends the connect quietly (B151, B334)")
+    func hostKeyCard() async {
+        let (driver, session, fake) = driver(ServerConnection(host: "h", username: "u"))
+        var retired = false
+        session.endedSink = { retired = true }
+        let task = await started(driver, fake)
+        driver.handle(.hostKeyPrompt(prompt: 3, host: "h", port: 22, fingerprint: "SHA256:x", previous: nil))
+        #expect(session.viewModel.hostKeyPrompt?.fingerprint == "SHA256:x")
+        session.viewModel.hostKeyPrompt?.decide(false)
+        #expect(session.viewModel.hostKeyPrompt == nil)
+        #expect(fake.answers.count == 1)
+        #expect(fake.answers.first.map { $0.0 == 7 && $0.1 == 3 && !$0.2 } == true)
+        // The refusal's failure is not news on a card: the connect ends as
+        // the Swift path ends it — disconnected, the terminal leaves
+        // (`declinedHostKey`), and the hub takes the session out, so Home
+        // shows no dead card for a connect the person chose not to make.
+        driver.handle(.state(state: .failed(kind: .hostKey,
+                                            cause: .hostKey(host: "h", port: 22, changed: false),
+                                            log: "not trusted", retryable: false)))
+        await task.value
+        #expect(session.viewModel.errorMessage == nil)
+        #expect(session.viewModel.connState == .offline)
+        #expect(session.viewModel.status == .disconnected)
+        #expect(session.viewModel.declinedHostKey)
+        #expect(retired, "the declined session is taken out")
+    }
+
+    @Test("a host-key failure the person didn't decline is still a failure, with its card")
+    func hostKeyFailureNotDeclined() async {
+        let (driver, session, fake) = driver(ServerConnection(host: "h", username: "u"))
+        var retired = false
+        session.endedSink = { retired = true }
+        let task = await started(driver, fake)
+        driver.handle(.state(state: .connecting))
+        driver.handle(.state(state: .failed(kind: .hostKey,
+                                            cause: .hostKey(host: "h", port: 22, changed: true),
+                                            log: "changed", retryable: false)))
+        await task.value
+        #expect(!session.viewModel.declinedHostKey)
+        #expect(!retired)
+        #expect(session.viewModel.errorMessage?.isEmpty == false)
+    }
+
+    @Test("tmux: a surface per attach, the old one frozen until the new one paints")
+    func tmuxAttaches() async throws {
+        var connection = ServerConnection(host: "h", username: "u")
+        connection.multiplexer = .tmux
+        let (driver, session, fake) = driver(connection)
+        fake.tmux = Self.model(active: "%1")
+        let task = await started(driver, fake)
+        #expect(session.awaitingFirstFrame)
+        driver.handle(.state(state: .connected))
+        await task.value
+        let first = try #require(session.tmuxController as? RustTmuxController)
+        #expect(!first.snapshot.isAttached, "nothing mirrored before the attach's own tree")
+        driver.handle(.treeChanged)
+        #expect(session.awaitingFirstFrame)
+        #expect(first.snapshot.activePaneId == "%1")
+        #expect(first.snapshot.panes["%1"]?.path == "/srv/work", "the pane's working directory")
+        #expect(first.snapshot.isAttached)
+        driver.handle(.panes(attach: 1, panes: [PaneValue(pane: "%1", stream: 0, active: true)]))
+        #expect(first.attach == 1)
+        driver.handle(.firstFrame(attach: 1))
+        #expect(!session.awaitingFirstFrame)
+        #expect(first.paintedSinceAttach)
+        #expect(first.hasPaintedSinceAttach)
+
+        // A drop: the painted surface stays, frozen; the new attach gets a
+        // new one, which takes over once it paints.
+        driver.handle(.state(state: .reconnecting))
+        #expect(session.retiredTmuxController === first)
+        driver.handle(.state(state: .connected))
+        let second = try #require(session.tmuxController as? RustTmuxController)
+        #expect(second !== first)
+        driver.handle(.panes(attach: 2, panes: [PaneValue(pane: "%1", stream: 0, active: true)]))
+        #expect(second.attach == 2)
+        #expect(session.retiredTmuxController === first)
+        driver.handle(.firstFrame(attach: 2))
+        #expect(session.retiredTmuxController == nil)
+    }
+
+    @Test("tmux degraded to a shell: no tmux surface, the plain pane paints")
+    func tmuxDegraded() async {
+        var connection = ServerConnection(host: "h", username: "u")
+        connection.multiplexer = .tmux
+        let (driver, session, fake) = driver(connection)
+        let task = await started(driver, fake)
+        driver.handle(.degraded(degrade: .tmuxMissing))
+        driver.handle(.state(state: .connected))
+        await task.value
+        #expect(session.tmuxController == nil)
+        #expect(session.degrade?.missing == .tmux)
+        driver.handle(.panes(attach: 1, panes: [PaneValue(pane: "shell", stream: 0, active: true)]))
+        #expect(session.tmuxController == nil)
+        #expect(!session.awaitingFirstFrame)
+    }
+
+    @Test("the tmux surface mirrors the core and asks it for everything")
+    func tmuxSurface() async throws {
+        var connection = ServerConnection(host: "h", username: "u")
+        connection.multiplexer = .tmux
+        let (driver, session, fake) = driver(connection)
+        var model = Self.model(active: "%1")
+        model.notice = "can't find window"
+        model.sizeFollowWindow = "@1"
+        model.sizeFollowOwner = "iPad"
+        model.agentHooks = [AgentHookValue(pane: "%1", state: "attention", agent: "claude",
+                                           since: 1_800_000_000, command: "claude", title: "t")]
+        model.agentHooksLoaded = true
+        fake.tmux = model
+        let task = await started(driver, fake)
+        driver.handle(.state(state: .connected))
+        await task.value
+        driver.handle(.treeChanged)
+        let tmux = try #require(session.tmuxController)
+        #expect(tmux.notice == "can't find window")
+        #expect(tmux.sizeFollow == TmuxSessionController.SizeFollow(windowId: "@1", ownerLabel: "iPad"))
+        #expect(tmux.agentHooks["%1"]?.state == "attention")
+        #expect(tmux.agentHooks["%1"]?.since == Date(timeIntervalSince1970: 1_800_000_000))
+        #expect(tmux.agentHooksLoaded)
+        #expect(tmux.snapshot.windows["@1"]?.name == "main")
+        #expect(tmux.snapshot.sortedSessions.map(\.name) == ["work"])
+
+        tmux.selectWindow("@1")
+        tmux.takeSizeOwnership()
+        tmux.newSession(named: "x")
+        tmux.killPane("%1")
+        tmux.pollAgentHooks()
+        session.sendPaste("hi")
+        session.createFirstTmuxSession()
+        #expect(fake.intents.map(\.1) == [
+            .selectWindow(id: "@1"), .takeSizeOwnership, .newSession(name: "x"),
+            .killPane(id: "%1"), .pollAgentHooks, .paste(pane: "%1", text: "hi"),
+            .newSession(name: nil),
+        ])
+        #expect(fake.intents.allSatisfy { $0.0 == 7 })
+        // The terminal for the pane on screen is minted on demand, once, as
+        // the view the switch names (T3: the core's when it is on).
+        let view = tmux.surface(for: "%1")
+        #expect(view === tmux.surface(for: "%1"))
+        #expect((view is CoreTerminalView) == CoreTermSwitch.isOn)
+        #expect(tmux.activeCoordinator === tmux.coordinator(for: "%1"))
+        // A disconnect asks the core to close the session.
+        let stopping = Task { await session.stop() }
+        await Task.yield()
+        driver.handle(.closed)
+        await stopping.value
+        #expect(fake.disconnected == [7])
+    }
+
+    /// B250: the core refuses a typed name with a control character in it
+    /// — it made the first session with tmux's own name instead, silently —
+    /// and the surface says why, in the app's words, as the Swift
+    /// controller does; tmux's own notice still wins while it shows.
+    @Test("a name the core refuses is said as the notice")
+    func tmuxRefusalIsSaid() async throws {
+        var connection = ServerConnection(host: "h", username: "u")
+        connection.multiplexer = .tmux
+        let (driver, session, fake) = driver(connection)
+        fake.refuseTmux = { intent in
+            if case .newSession(let name) = intent, name?.contains("\n") == true {
+                return .NameHasControlCharacters
+            }
+            if case .renameWindow(_, let name) = intent, name.contains("\t") {
+                return .NameHasControlCharacters
+            }
+            return nil
+        }
+        fake.tmux = Self.model(active: "%1")
+        let task = await started(driver, fake)
+        driver.handle(.state(state: .connected))
+        await task.value
+        driver.handle(.treeChanged)
+        let tmux = try #require(session.tmuxController)
+        #expect(tmux.notice == nil)
+
+        tmux.newSession(named: "two\nlines")
+        let words = String(localized: "Names can't contain line breaks or other control characters.")
+        #expect(tmux.notice == words)
+        #expect(fake.intents.isEmpty, "a refused intent was sent")
+        // A tree change in the meantime doesn't take the notice away.
+        driver.handle(.treeChanged)
+        #expect(tmux.notice == words)
+
+        tmux.renameWindow("@1", to: "a\tb")
+        #expect(tmux.notice == words)
+        tmux.newSession(named: "fine")
+        #expect(fake.intents.map(\.1) == [.newSession(name: "fine")])
+
+        var model = Self.model(active: "%1")
+        model.notice = "duplicate session: fine"
+        fake.tmux = model
+        driver.handle(.treeChanged)
+        #expect(tmux.notice == "duplicate session: fine", "tmux's own notice comes first")
+    }
+
+    @Test("foreground, background and the terminal on screen reach the core")
+    func appLifecycle() async {
+        let fake = FakeCoreSessions()
+        let core = RustCore(sessions: fake, credentials: RustCredentialHost())
+        core.setForeground(false)
+        #expect(fake.foreground == [false])
+        #expect(fake.flushes == 1, "the background is held until the release went out")
+        core.setForeground(false)
+        #expect(fake.foreground == [false], "told once")
+        core.setForeground(true)
+        #expect(fake.foreground == [false, true])
+        core.setVisible(7)
+        core.setVisible(nil)
+        #expect(fake.visible == [7, nil])
+        core.deliver([SessionEvent(session: 0, kind: .flushed(token: 1))])
+    }
+
+    // MARK: W10b
+
+    @Test("a failure is worded by the app, from the core's kind and cause (B202)")
+    func failureCopy() {
+        #expect(RustCopy.failure(kind: .credentialsLocked, cause: .credentials(why: .locked))
+                .contains("locked"))
+        #expect(RustCopy.failure(kind: .unreachable,
+                                 cause: .unreachable(host: "h", port: 22, why: .refused))
+                == SSHError.connectionFailed.description)
+        #expect(RustCopy.failure(kind: .proxy, cause: .proxy(proxy: "p:1080", why: .unreachable))
+                == SSHError.proxyUnreachable("p:1080").description)
+        #expect(RustCopy.failure(kind: .moshBootstrap, cause: .moshBootstrap(why: .timedOut(seconds: 15)))
+                .contains("15"))
+        // No English from the core reaches the card: the log is not the copy.
+        let copy = RustCopy.failure(kind: .handshake,
+                                    cause: .handshake(host: "h", port: 22, timedOut: true))
+        #expect(copy == SSHError.handshakeFailed.description)
+        // B393: a server whose questions only the person can answer — the
+        // rejected method's words, and why.
+        let rejected = SSHError.authMethodRejected.description
+        let prompts = RustCopy.failure(kind: .credentials, cause: .credentials(why: .interactivePrompts))
+        #expect(prompts.hasPrefix(rejected))
+        #expect(prompts != rejected)
+    }
+
+    /// B365: the log says which way back the sessions take, and why — the
+    /// person's switch told apart from the build's default.
+    @Test("the core's resume-in-place decision is said with what decided it")
+    func resumeInPlaceWords() throws {
+        let suite = "moshpit.tests.resume-in-place.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let unset = ResumeInPlaceSwitch.words(.preferences, defaults: defaults, bundle: suite)
+        #expect(unset == "build default")
+        defaults.set(false, forKey: ResumeInPlaceSwitch.switchKey)
+        let stored = ResumeInPlaceSwitch.words(.preferences, defaults: defaults, bundle: suite)
+        #expect(stored == "Core Switches")
+        let sealed = ResumeInPlaceSwitch.words(.unreadable, defaults: defaults, bundle: suite)
+        #expect(sealed.contains("unlock"))
+    }
+
+    @Test("a credential the keychain won't give while the device is locked is 'locked' (B201)")
+    func lockedCredentials() async {
+        // No keychain item behind this connection: unreadable either way —
+        // but only a locked device makes that worth retrying on the unlock.
+        let connection = ServerConnection(host: "h", username: "u")
+        for (available, locked) in [(false, true), (true, false)] {
+            let host = RustCredentialHost(protectedData: { available })
+            host.register(connection) { _ in nil }
+            do {
+                _ = try await host.credential(connectionId: connection.id.uuidString)
+                Issue.record("no credential without a keychain item")
+            } catch CredentialFailure.Locked {
+                #expect(locked)
+            } catch {
+                #expect(!locked, "\(error)")
+            }
+        }
+    }
+
+    @Test("a Secure Enclave signature the locked device refuses is 'locked', retried on the unlock (B227)")
+    func lockedSigner() {
+        // Every failure crossed as Unavailable — SignerFailed in the core,
+        // never retried.
+        #expect(RustCredentialHost.signFailure(SSHError.credentialLocked, protectedDataAvailable: true)
+                == .Locked)
+        #expect(RustCredentialHost.signFailure(SSHError.underlying(CocoaError(.featureUnsupported)),
+                                               protectedDataAvailable: false) == .Locked)
+        guard case .Unavailable = RustCredentialHost.signFailure(SSHError.credentialUnavailable,
+                                                                 protectedDataAvailable: true) else {
+            Issue.record("a key that is gone is no lock")
+            return
+        }
+    }
+
+    @Test("agent stamps are held for the pace they come at: tmux's sweep, herdr's poll, push or not (B346)")
+    func stampIntervals() async throws {
+        var connection = ServerConnection(host: "h", username: "u")
+        connection.multiplexer = .herdr
+        let (driver, session, fake) = driver(connection)
+        var model = Self.herdrModel()
+        model.pushActive = false
+        fake.herdr = model
+        let task = await started(driver, fake)
+        driver.handle(.state(state: .connected))
+        await task.value
+        let herdr = try #require(session.herdrControl as? RustHerdrController)
+        #expect(AgentActivityMonitor.stampInterval(of: herdr) == 8)
+        // Push comes up mid-session: the next stamps carry its pace.
+        model.pushActive = true
+        fake.herdr = model
+        driver.handle(.agentHooksUpdated)
+        #expect(AgentActivityMonitor.stampInterval(of: herdr) == 45)
+        model.pushActive = false
+        fake.herdr = model
+        driver.handle(.treeChanged)
+        #expect(AgentActivityMonitor.stampInterval(of: herdr) == 8)
+        // tmux's: the sweep that polls them.
+        let tmux = AgentStandingTests.FakeMux()
+        #expect(AgentActivityMonitor.stampInterval(of: tmux) == AgentActivityMonitor.sweepInterval)
+    }
+
+    @Test("herdr: the surface mirrors the core, asks it for everything, waits for its answers")
+    func herdrSurface() async throws {
+        var connection = ServerConnection(host: "h", username: "u")
+        connection.multiplexer = .herdr
+        let (driver, session, fake) = driver(connection)
+        fake.herdr = Self.herdrModel()
+        let task = await started(driver, fake)
+        #expect(session.awaitingFirstFrame)
+        driver.handle(.state(state: .connected))
+        await task.value
+        let herdr = try #require(session.herdrControl as? RustHerdrController)
+        #expect(herdr.snapshot.activePaneId == "w1:p1")
+        #expect(herdr.workingDirectory(ofPane: "w1:p1") == "/r")
+        // Each pane's working directory, on the pane (UI-DESIGN §10.5).
+        #expect(herdr.snapshot.panes["w1:p1"]?.path == "/r")
+        #expect(herdr.snapshot.panes["w1:p2"]?.path == nil)
+        #expect(herdr.agentHooks["w1:p1"]?.state == "working")
+        #expect(session.herdrNotice == String(localized: "This pane is open on another device"))
+        #expect(session.herdrNoticeAction == String(localized: "Open here"))
+        // The focused pane's channel paints the session's terminal.
+        driver.handle(.panes(attach: 1, panes: [PaneValue(pane: "w1:p1", stream: 0, active: true)]))
+        driver.handle(.firstFrame(attach: 1))
+        #expect(!session.awaitingFirstFrame)
+        herdr.selectPane("w1:p2")
+        herdr.newPane()
+        #expect(fake.herdrIntents.map(\.1) == [.selectPane(id: "w1:p2"), .newPane])
+        // A task waits for the core's answer to its token.
+        let start = Task {
+            await herdr.startAgentTask(AgentTaskRequest(repoPath: "/r", branch: "b", agent: "claude",
+                                                        prompt: "go"))
+        }
+        for _ in 0..<100 where fake.herdrIntents.count < 3 { await Task.yield() }
+        let token = fake.nextToken
+        driver.handle(.herdrAnswer(token: token, answer: .task(outcome: .incomplete(
+            incomplete: .agentNotReady(agent: "claude")))))
+        let outcome = await start.value
+        #expect(outcome == .incomplete(String(localized: "The task is running, but claude wasn't ready for the first message in time.")))
+        // A notification's reply goes to the core and waits for its answer.
+        let reply = Task { await session.deliverInput(Data("yes\r".utf8), toPane: "w1:p2") }
+        for _ in 0..<100 where fake.delivered.isEmpty { await Task.yield() }
+        #expect(fake.delivered.first?.1 == "w1:p2")
+        driver.handle(.delivered(token: fake.nextToken, delivered: true))
+        #expect(await reply.value)
+    }
+
+    @Test("mosh + tmux: the sidecar's tree as the mosh control plane, mosh's screen on the session's terminal")
+    func moshSidecar() async throws {
+        var connection = ServerConnection(host: "h", username: "u")
+        connection.connectionProtocol = .mosh
+        connection.multiplexer = .tmux
+        let (driver, session, fake) = driver(connection)
+        fake.tmux = Self.model(active: "%3")
+        let task = await started(driver, fake)
+        driver.handle(.state(state: .connected))
+        await task.value
+        #expect(session.tmuxController == nil, "no pane hosts over mosh")
+        let sidecar = try #require(session.moshControl as? RustTmuxController)
+        #expect(sidecar.sidecar)
+        driver.handle(.panes(attach: 1, panes: [PaneValue(pane: "shell", stream: 0, active: true)]))
+        driver.handle(.treeChanged)
+        #expect(sidecar.snapshot.activePaneId == "%3")
+        #expect(session.moshControl === sidecar, "a shell pane under mosh keeps the sidecar")
+        sidecar.selectSession("$0")
+        #expect(fake.intents.map(\.1) == [.selectSession(id: "$0")])
+        // A reconnect mirrors into the same surface.
+        driver.handle(.state(state: .reconnecting))
+        driver.handle(.state(state: .connected))
+        #expect(session.moshControl === sidecar)
+    }
+
+    static func herdrModel() -> HerdrReadModel {
+        HerdrReadModel(
+            sessions: [TmuxSessionValue(id: "w1", name: "live", isAttached: true)],
+            windows: [TmuxWindowValue(id: "w1:t1", sessionId: "w1", name: "1", index: 0, layout: "",
+                                      isActive: true, paneCount: 2, isZoomed: false)],
+            panes: [TmuxPaneValue(id: "w1:p1", windowId: "w1:t1", index: 0, command: "zsh", path: "/r",
+                                  width: 80, height: 24, isActive: true),
+                    TmuxPaneValue(id: "w1:p2", windowId: "w1:t1", index: 1, command: "zsh",
+                                  width: 80, height: 24, isActive: false)],
+            activeSessionId: "w1", activeWindowId: "w1:t1", activePaneId: "w1:p1",
+            isAttached: true, everAttached: true,
+            agentHooks: [AgentHookValue(pane: "w1:p1", state: "working", agent: "claude",
+                                        since: nil, command: nil, title: nil)],
+            agentHooksLoaded: true, notice: .onAnotherDevice, noticeAction: .openHere, refreshing: false,
+            restarting: false, serverNotRunning: false, protocolMismatch: nil, skewClient: nil,
+            skewServer: nil, serverVersion: "0.9.5", pushActive: true, paneSwitchInFlight: false,
+            paneCwds: ["w1:p1": "/r"], worktreeRepos: [:], openRepoGuesses: ["/r"],
+            frameTarget: "w1:p1", attachedPane: "w1:p1")
+    }
+
+    static func model(active: String) -> TmuxReadModel {
+        TmuxReadModel(
+            sessions: [TmuxSessionValue(id: "$0", name: "work", isAttached: true)],
+            windows: [TmuxWindowValue(id: "@1", sessionId: "$0", name: "main", index: 0, layout: "",
+                                      isActive: true, paneCount: 1, isZoomed: false)],
+            panes: [TmuxPaneValue(id: active, windowId: "@1", index: 0, command: "zsh", path: "/srv/work",
+                                  width: 80, height: 24, isActive: true)],
+            activeSessionId: "$0", activeWindowId: "@1", activePaneId: active,
+            isAttached: true, everAttached: true, lastSwitchForward: true,
+            hasSwipedSinceAttach: false, notice: nil, refreshing: false,
+            sizeFollowWindow: nil, sizeFollowOwner: nil, agentHooks: [],
+            agentHooksLoaded: false, wantsMouse: false, altScreen: false, scrollsItself: false,
+            holdsTicks: false, noSession: false)
+    }
+
+    /// A tmux server with nothing on it, as the core reads it once it asked.
+    static func emptyServer() -> TmuxReadModel {
+        TmuxReadModel(
+            sessions: [], windows: [], panes: [], activeSessionId: nil, activeWindowId: nil,
+            activePaneId: nil, isAttached: false, everAttached: false, lastSwitchForward: true,
+            hasSwipedSinceAttach: false, notice: nil, refreshing: false, sizeFollowWindow: nil,
+            sizeFollowOwner: nil, agentHooks: [], agentHooksLoaded: true, wantsMouse: false,
+            altScreen: false, scrollsItself: false, holdsTicks: false, noSession: true)
+    }
+}
+
+/// B329: a connection saved while its session runs reaches the session's
+/// next connect when the dial or the credential changed — not for a new
+/// name or a last-connected stamp.
+@Suite("A connection saved while its session runs")
+struct SavedWhileRunningTests {
+    @Test("a new address, user, proxy or credential dials differently; a new name does not")
+    @MainActor
+    func whatADialUses() {
+        var started = ServerConnection(name: "box", host: "box.example.com", username: "dev",
+                                       keychainRef: "moshpit.secret.own")
+        started.authMethod = .password
+        var renamed = started
+        renamed.name = "renamed"
+        #expect(RustSessionDriver.dialsTheSame(started, renamed))
+        var moved = started
+        moved.host = "other.example.com"
+        #expect(!RustSessionDriver.dialsTheSame(started, moved))
+        var user = started
+        user.username = "root"
+        #expect(!RustSessionDriver.dialsTheSame(started, user))
+        var key = started
+        key.authMethod = .key
+        key.keychainRef = "moshpit.secret.key-k"
+        key.sshKeyId = UUID()
+        #expect(!RustSessionDriver.dialsTheSame(started, key))
+        var proxied = started
+        proxied.useSOCKSProxy = true
+        proxied.socksProxyHost = "127.0.0.1"
+        #expect(!RustSessionDriver.dialsTheSame(started, proxied))
+    }
+}

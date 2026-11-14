@@ -1,0 +1,7 @@
+# A snapshot read that never answers (a half-open link): the reads must go
+# on, and a change after the link comes back must be seen.
+at 0 start
+at 1000 host-rule api_snapshot - hang
+at 20000 host-clear
+at 20000 host-focus w1:p2
+end 40000

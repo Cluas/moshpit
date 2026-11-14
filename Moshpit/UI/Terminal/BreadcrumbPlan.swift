@@ -43,10 +43,17 @@ struct BreadcrumbPlan: Equatable {
     /// False while the tree is still filling in after an attach (no active
     /// window or pane yet) or the agent stamps have not been read once.
     var isComplete = true
+    /// What the segments are named from, on the NSH screen
+    /// (`ui/src/terminal/bar.rs`): every session, the active window and
+    /// pane and the pane's stamp, so the screen names them by Home's rules
+    /// (the project, then the agent: UI-DESIGN §6.1, §6.3). Kept with the
+    /// plan, so a remembered plan keeps its names.
+    var tree: Tree?
 
     static func make(snapshot: TmuxSnapshot,
                      hooks: [String: AgentHook],
-                     hooksLoaded: Bool = true) -> BreadcrumbPlan? {
+                     hooksLoaded: Bool = true,
+                     mux: String = "tmux") -> BreadcrumbPlan? {
         guard snapshot.isAttached else { return nil }
 
         let sessionTitle = snapshot.activeSessionId
@@ -75,12 +82,68 @@ struct BreadcrumbPlan: Equatable {
                 ?? (pane.command.isEmpty ? String(localized: "pane \(pane.index)") : pane.displayCommand)
         }
 
+        // Only what names the segments: a change elsewhere in the tree
+        // (another window's panes, their stamps) is no change of the plan.
+        var trimmed = snapshot
+        trimmed.windows = window.map { [$0.id: $0] } ?? [:]
+        trimmed.panes = pane.map { [$0.id: $0] } ?? [:]
+        let tree = Tree(
+            mux: mux, attached: snapshot.isAttached, snapshot: trimmed,
+            hooks: snapshot.activePaneId.flatMap { id in hook.map { [id: $0] } } ?? [:])
+
         return BreadcrumbPlan(
             sessionTitle: sessionTitle,
             sessionSqueezable: agentName != nil || signal != nil,
             windowTitle: windowTitle,
             paneTitle: paneTitle,
             paneSignal: signal,
-            isComplete: window != nil && pane != nil && hooksLoaded)
+            isComplete: window != nil && pane != nil && hooksLoaded,
+            tree: tree)
+    }
+}
+
+extension BreadcrumbPlan {
+    /// The trimmed tree the NSH bar names its segments from, posted in the
+    /// shape of a Home card's `control` (the ui crate reads it with Home's
+    /// model). Its own type since W15b's cutover removed Swift's
+    /// HomeSnapshot, whose Control this used to borrow.
+    struct Tree: Equatable {
+        var mux: String
+        var attached: Bool
+        var snapshot: TmuxSnapshot
+        var hooks: [String: AgentHook]
+
+        var json: [String: Any] {
+            var control: [String: Any] = [
+                "mux": mux,
+                "attached": attached,
+                "refreshing": false,
+                "sessions": snapshot.sessions.values.sorted { $0.id < $1.id }
+                    .map { ["id": $0.id, "name": $0.name] },
+                "windows": snapshot.windows.values.sorted { $0.id < $1.id }.map {
+                    ["id": $0.id, "session": $0.sessionId, "index": $0.index, "name": $0.name,
+                     "paneCount": $0.paneCount] as [String: Any]
+                },
+                "panes": snapshot.panes.values.sorted { $0.id < $1.id }.map { pane -> [String: Any] in
+                    var entry: [String: Any] = ["id": pane.id, "window": pane.windowId,
+                                                "index": pane.index, "command": pane.command]
+                    if let path = pane.path { entry["path"] = path }
+                    return entry
+                },
+                "hooks": hooks.keys.sorted().map { pane -> [String: Any] in
+                    let hook = hooks[pane]!
+                    var entry: [String: Any] = ["pane": pane]
+                    if let state = hook.state { entry["state"] = state }
+                    if let agent = hook.agent { entry["agent"] = agent }
+                    if let at = hook.since { entry["since"] = at.timeIntervalSince1970 }
+                    return entry
+                },
+                "worktrees": [] as [Any],
+            ]
+            if let id = snapshot.activeSessionId { control["activeSession"] = id }
+            if let id = snapshot.activeWindowId { control["activeWindow"] = id }
+            if let id = snapshot.activePaneId { control["activePane"] = id }
+            return control
+        }
     }
 }

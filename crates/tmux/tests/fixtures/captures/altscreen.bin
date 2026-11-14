@@ -1,0 +1,273 @@
+P1000p%begin 1794337389 282 0
+%end 1794337389 282 0
+%session-changed $0 g2
+%begin 1794337389 287 1
+%end 1794337389 287 1
+%layout-change @0 b25d,80x24,0,0,0 b25d,80x24,0,0,0 *
+%begin 1794337389 290 1
+$0 1 g2
+%end 1794337389 290 1
+%begin 1794337389 291 1
+$0 @0 0 b25d,80x24,0,0,0 1 1 sh
+%end 1794337389 291 1
+%begin 1794337389 292 1
+%0 @0 0 80 24 1 0 0 bash
+%end 1794337389 292 1
+%begin 1794337389 293 1
+C-b
+%end 1794337389 293 1
+%begin 1794337389 294 1
+1|g2|/dev/ttys022
+%end 1794337389 294 1
+%begin 1794337389 295 1
+G2SYNC1
+%end 1794337389 295 1
+%begin 1794337389 296 1
+%end 1794337389 296 1
+%begin 1794337389 297 1
+%end 1794337389 297 1
+%begin 1794337389 298 1
+G2SYNC2
+%end 1794337389 298 1
+%output %0 le
+%output %0 s
+%output %0 s 
+%output %0 /
+%output %0 t
+%output %0 m
+%output %0 p/
+%output %0 m
+%output %0 o
+%output %0 s
+%output %0 h
+%output %0 p
+%output %0 i
+%output %0 t-
+%output %0 g2
+%output %0 -
+%output %0 re
+%output %0 c
+%output %0 /
+%output %0 a
+%output %0 l
+%output %0 t.
+%output %0 t
+%output %0 x
+%output %0 t
+%output %0 \015\012
+%output %0 \033[?1049h\033[24;1H\033[?1h\033=\015
+%output %0 line 0001 of the alternate-screen file\033[m\015\012line 0002 of the alternate-screen file\033[m\015\012line 0003 of the alternate-screen file\033[m\015\012line 0004 of the alternate-screen file\033[m\015\012line 0005 of the alternate-screen file\033[m\015\012line 0006 of the alternate-screen file\033[m\015\012line 0007 of the alternate-screen file\033[m\015\012line 0008 of the alternate-screen file\033[m\015\012line 0009 of the alternate-screen file\033[m\015\012line 0010 of the alternate-screen file\033[m\015\012line 0011 of the alternate-screen file\033[m\015\012line 0012 of the alternate-screen file\033[m\015\012line 0013 of the alternate-screen file\033[m\015\012line 0014 of the alternate-screen file\033[m\015\012line 0015 of the alternate-screen file\033[m\015\012line 0016 of the alternate-screen file\033[m\015\012line 0017 of the alternate-screen file\033[m\015\012line 0018 of the alternate-screen file\033[m\015\012line 0019 of the alternate-screen file\033[m\015\012line 0020 of the alternate-screen file\033[m\015\012line 0021 of the alternate-screen file\033[m\015\012line 0022 of the alternate-screen file\033[m\015\012line 0023 of the alternate-screen file\033[m\015\012\033[7m/tmp/moshpit-g2-rec/alt.txt\033[27m\033[K
+%window-renamed @0 less
+%begin 1794337389 300 1
+1 0 0
+%end 1794337389 300 1
+%begin 1794337389 301 1
+G2SYNC3
+%end 1794337389 301 1
+%begin 1794337389 302 1
+1 0
+%end 1794337389 302 1
+%begin 1794337389 303 1
+line 0001 of the alternate-screen file
+%end 1794337389 303 1
+%begin 1794337389 304 1
+line 0001 of the alternate-screen file
+line 0002 of the alternate-screen file
+line 0003 of the alternate-screen file
+line 0004 of the alternate-screen file
+line 0005 of the alternate-screen file
+line 0006 of the alternate-screen file
+line 0007 of the alternate-screen file
+line 0008 of the alternate-screen file
+line 0009 of the alternate-screen file
+line 0010 of the alternate-screen file
+line 0011 of the alternate-screen file
+line 0012 of the alternate-screen file
+line 0013 of the alternate-screen file
+line 0014 of the alternate-screen file
+line 0015 of the alternate-screen file
+line 0016 of the alternate-screen file
+line 0017 of the alternate-screen file
+line 0018 of the alternate-screen file
+line 0019 of the alternate-screen file
+line 0020 of the alternate-screen file
+line 0021 of the alternate-screen file
+line 0022 of the alternate-screen file
+line 0023 of the alternate-screen file
+[7m/tmp/moshpit-g2-rec/alt.txt[0m
+%end 1794337389 304 1
+%begin 1794337389 305 1
+27 23
+%end 1794337389 305 1
+%begin 1794337389 306 1
+G2SYNC4
+%end 1794337389 306 1
+%begin 1794337389 307 1
+%end 1794337389 307 1
+%begin 1794337389 308 1
+G2SYNC5
+%end 1794337389 308 1
+%output %0 \015\033[K
+%output %0 line 0024 of the alternate-screen file\033[m\015\012line 0025 of the alternate-screen file\033[m\015\012line 0026 of the alternate-screen file\033[m\015\012line 0027 of the alternate-screen file\033[m\015\012line 0028 of the alternate-screen file\033[m\015\012line 0029 of the alternate-screen file\033[m\015\012line 0030 of the alternate-screen file\033[m\015\012line 0031 of the alternate-screen file\033[m\015\012line 0032 of the alternate-screen file\033[m\015\012line 0033 of the alternate-screen file\033[m\015\012line 0034 of the alternate-screen file\033[m\015\012line 0035 of the alternate-screen file\033[m\015\012line 0036 of the alternate-screen file\033[m\015\012line 0037 of the alternate-screen file\033[m\015\012line 0038 of the alternate-screen file\033[m\015\012line 0039 of the alternate-screen file\033[m\015\012line 0040 of the alternate-screen file\033[m\015\012line 0041 of the alternate-screen file\033[m\015\012line 0042 of the alternate-screen file\033[m\015\012line 0043 of the alternate-screen file\033[m\015\012line 0044 of the alternate-screen file\033[m\015\012line 0045 of the alternate-screen file\033[m\015\012line 0046 of the alternate-screen file\033[m\015\012:\033[K
+%begin 1794337390 309 1
+%end 1794337390 309 1
+%begin 1794337390 310 1
+G2SYNC6
+%end 1794337390 310 1
+%output %0 \015\033[K\033[?1l\033>\033[?1049l
+%output %0 sh-3.2$ 
+%window-renamed @0 bash
+%begin 1794337390 312 1
+%end 1794337390 312 1
+%begin 1794337390 313 1
+%end 1794337390 313 1
+%begin 1794337390 314 1
+G2SYNC7
+%end 1794337390 314 1
+%output %0 v
+%output %0 i
+%output %0 m 
+%output %0 -
+%output %0 u 
+%output %0 NO
+%output %0 N
+%output %0 E 
+%output %0 -i
+%output %0  
+%output %0 N
+%output %0 ON
+%output %0 E
+%output %0  -
+%output %0 N
+%output %0  -
+%output %0 n
+%output %0  
+%output %0 /
+%output %0 tm
+%output %0 p
+%output %0 /
+%output %0 m
+%output %0 o
+%output %0 s
+%output %0 h
+%output %0 pi
+%output %0 t
+%output %0 -
+%output %0 g
+%output %0 2-
+%output %0 r
+%output %0 e
+%output %0 c/
+%output %0 a
+%output %0 l
+%output %0 t
+%output %0 .
+%output %0 t
+%output %0 x
+%output %0 t\015\012
+%output %0 \033[?1049h\033[?1h\033=
+%output %0 \033[1;24r\033[27m\033[24m\033[23m\033[0m\033[H\033[J\033[?25l\033[24;1H"/tmp/moshpit-g2-rec/alt.txt"
+%output %0  200L, 7800B
+%output %0 \033[1;1Hline 0001 of the alternate-screen file\015\012line 0002 of the alternate-screen file\015\012line 0003 of the alternate-screen file\015\012line 0004 of the alternate-screen file\015\012line 0005 of the alternate-screen file\015\012line 0006 of the alternate-screen file\015\012line 0007 of the alternate-screen file\015\012line 0008 of the alternate-screen file\015\012line 0009 of the alternate-screen file\015\012line 0010 of the alternate-screen file\015\012line 0011 of the alternate-screen file\015\012line 0012 of the alternate-screen file\015\012line 0013 of the alternate-screen file\015\012line 0014 of the alternate-screen file\015\012line 0015 of the alternate-screen file\015\012line 0016 of the alternate-screen file\015\012line 0017 of the alternate-screen file\015\012line 0018 of the alternate-screen file\015\012line 0019 of the alternate-screen file\015\012line 0020 of the alternate-screen file\015\012line 0021 of the alternate-screen file\015\012line 0022 of the alternate-screen file\015\012line 0023 of the alternate-screen file\033[1;1H\033[34h\033[?25h
+%window-renamed @0 vim
+%begin 1794337391 316 1
+%end 1794337391 316 1
+%begin 1794337391 317 1
+G2SYNC8
+%end 1794337391 317 1
+%output %0 \033[?25l\033[24;70HG\033[1;1H
+%output %0 \033[24;70H \033[23;1H\033[1;7H178\033[2;7H179\033[3;7H180\033[4;7H181\033[5;7H182\033[6;7H183\033[7;7H184\033[8;7H185\033[9;7H186\033[10;7H187\033[11;7H188\033[12;7H189\033[13;7H190\033[14;7H191\033[15;7H192\033[16;7H193\033[17;7H194\033[18;7H195\033[19;7H196\033[20;7H197\033[21;7H198\033[22;7H199\033[23;7H200\015\033[34h\033[?25h
+%begin 1794337391 318 1
+%end 1794337391 318 1
+%begin 1794337391 319 1
+G2SYNC9
+%end 1794337391 319 1
+%output %0 \033[?25l\033[24;70Hgg\033[23;1H
+%output %0 \033[24;70H  \033[1;1Hline 0001\033[2;7H002\033[3;7H003\033[4;7H004\033[5;7H005\033[6;7H006\033[7;7H007\033[8;7H008\033[9;7H009\033[10;7H010\033[11;7H011\033[12;7H012\033[13;7H013\033[14;7H014\033[15;7H015\033[16;7H016\033[17;7H017\033[18;7H018\033[19;7H019\033[20;7H020\033[21;7H021\033[22;7H022\033[23;7H023\033[1;1H\033[34h\033[?25h
+%begin 1794337392 320 1
+%end 1794337392 320 1
+%begin 1794337392 321 1
+G2SYNC10
+%end 1794337392 321 1
+%output %0 \033[?25l\033[24;1H\033[K\033[24;1H/0150\033[34h\033[?25h
+%begin 1794337392 322 1
+%end 1794337392 322 1
+%begin 1794337392 323 1
+G2SYNC11
+%end 1794337392 323 1
+%output %0 \015
+%output %0 \033[?25l
+%output %0 \033[1;7H139\033[2;7H140\033[3;7H141\033[4;7H142\033[5;7H143\033[6;7H144\033[7;7H145\033[8;7H146\033[9;7H147\033[10;7H148\033[11;7H149\033[12;7H150\033[13;7H151\033[14;7H152\033[15;7H153\033[16;7H154\033[17;7H155\033[18;7H156\033[19;7H157\033[20;7H158\033[21;7H159\033[22;7H160\033[23;7H161\033[12;6H\033[34h\033[?25h
+%begin 1794337393 324 1
+%end 1794337393 324 1
+%begin 1794337393 325 1
+G2SYNC12
+%end 1794337393 325 1
+%output %0 \033[?25l\033[24;70Ho\033[12;6H
+%output %0 \033[24;70H \033[13;1H\033[24;1H\033[1m-- INSERT --\033[13;23r\033[0m\033[13;1H\033[L\033[1;24r\033[13;1H\033[34h\033[?25h
+%begin 1794337393 326 1
+%end 1794337393 326 1
+%begin 1794337393 327 1
+G2SYNC13
+%end 1794337393 327 1
+%output %0 \033[?25ltyped in insert mode\033[34h\033[?25h
+%begin 1794337394 328 1
+%end 1794337394 328 1
+%begin 1794337394 329 1
+G2SYNC14
+%end 1794337394 329 1
+%output %0 \033[24;1H\033[K\033[13;20H\033[?25l\033[24;70H^[\033[13;20H\033[34h\033[?25h
+%begin 1794337394 330 1
+%end 1794337394 330 1
+%begin 1794337394 331 1
+%end 1794337394 331 1
+%begin 1794337394 332 1
+G2SYNC15
+%end 1794337394 332 1
+%output %0 \033[?25l\033[24;70H  \033[13;21H
+%output %0 \010\033[34h\033[?25h\033[?25l\033[24;1H:q!\015
+%output %0 \033[24;1H\033[K\033[24;1H\033[?1l\033>\033[?1049l\033[34h\033[?25h
+%output %0 sh-3.2$ 
+%window-renamed @0 bash
+%begin 1794337395 334 1
+0 0
+%end 1794337395 334 1
+%begin 1794337395 335 1
+sh-3.2$ less /tmp/moshpit-g2-rec/alt.txt
+%end 1794337395 335 1
+%begin 1794337395 336 1
+sh-3.2$ less /tmp/moshpit-g2-rec/alt.txt
+sh-3.2$ vim -u NONE -i NONE -N -n /tmp/moshpit-g2-rec/alt.txt
+sh-3.2$
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+%end 1794337395 336 1
+%begin 1794337395 337 1
+8 2
+%end 1794337395 337 1
+%begin 1794337395 338 1
+G2SYNC16
+%end 1794337395 338 1
+%begin 1794337395 339 1
+%end 1794337395 339 1
+%exit
+\

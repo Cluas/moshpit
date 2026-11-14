@@ -12,6 +12,10 @@ protocol WhisperTranscribing: Sendable {
     func warmUp(variant: String) async throws
     /// Transcribe 16 kHz mono samples. `language` nil = let Whisper detect.
     func transcribe(samples: [Float], language: String?, variant: String) async throws -> String
+    /// Hold the loaded model for one dictation: an unload asked for before
+    /// the matching `endSession` waits for it.
+    func beginSession() async -> UUID
+    func endSession(_ id: UUID) async
 }
 
 extension WhisperModelStore: WhisperTranscribing {}
@@ -81,6 +85,14 @@ final class WhisperDictationEngine: DictationEngine {
     private var previewTask: Task<Void, Never>?
     private var cancelled = false
 
+    /// This session's hold on the loaded model: taken in `prepare()` and
+    /// given back exactly once — after the final pass, on cancel, or when the
+    /// engine is let go without either. Locked because `cancel()` comes from
+    /// the main actor while `finishAudio()` may still be running elsewhere.
+    private let sessionLock = NSLock()
+    private var session: UUID?
+    private var sessionOver = false
+
     private var recordedSeconds: Double {
         lock.lock()
         defer { lock.unlock() }
@@ -95,6 +107,10 @@ final class WhisperDictationEngine: DictationEngine {
         (updates, updateContinuation) = AsyncThrowingStream.makeStream()
     }
 
+    deinit {
+        releaseModelDetached()
+    }
+
     // MARK: Lifecycle
 
     /// Loads the model. Never downloads: fetching several hundred megabytes is
@@ -103,15 +119,30 @@ final class WhisperDictationEngine: DictationEngine {
     /// cellular, mid-session, with a terminal open.
     func prepare(onProgress: @escaping @Sendable (DictationPreparation) -> Void) async throws {
         onProgress(.loading)
+        // Hold the model before loading it, so an unload that lands mid-load
+        // or mid-dictation (a memory warning, say) waits for this session
+        // instead of pulling the model out from under it.
+        let id = await store.beginSession()
+        let held = sessionLock.withLock { () -> Bool in
+            guard !sessionOver else { return false }
+            session = id
+            return true
+        }
+        guard held else {
+            await store.endSession(id)
+            throw CancellationError()
+        }
         do {
             try await store.warmUp(variant: variant)
         } catch let failure as WhisperModelFailure {
+            await releaseModel()
             // A missing model is a fixable setup problem with a specific
             // destination, not a generic engine fault — say so, so the overlay
             // can point at the screen that fixes it.
             if case .notInstalled = failure { throw DictationFailure.noWhisperModel }
             throw DictationFailure.engine(failure.localizedDescription)
         } catch {
+            await releaseModel()
             throw DictationFailure.engine(error.localizedDescription)
         }
     }
@@ -147,6 +178,13 @@ final class WhisperDictationEngine: DictationEngine {
     }
 
     func finishAudio() async {
+        await finalPass()
+        // After the pass that counts, so an unload waiting on this session
+        // cannot take the model away before it.
+        await releaseModel()
+    }
+
+    private func finalPass() async {
         previewTask?.cancel()
         previewTask = nil
         guard !cancelled else {
@@ -180,6 +218,31 @@ final class WhisperDictationEngine: DictationEngine {
         previewTask?.cancel()
         previewTask = nil
         updateContinuation.finish()
+        releaseModelDetached()
+    }
+
+    // MARK: Model hold
+
+    /// Take the session for releasing; nil once it has been released (or was
+    /// never taken). Also closes the door on a `prepare()` still taking it.
+    private func takeSession() -> UUID? {
+        sessionLock.withLock {
+            sessionOver = true
+            defer { session = nil }
+            return session
+        }
+    }
+
+    private func releaseModel() async {
+        guard let id = takeSession() else { return }
+        await store.endSession(id)
+    }
+
+    /// For the synchronous paths (`cancel()`, `deinit`), which cannot wait.
+    private func releaseModelDetached() {
+        guard let id = takeSession() else { return }
+        let store = self.store
+        Task { await store.endSession(id) }
     }
 
     // MARK: Live preview

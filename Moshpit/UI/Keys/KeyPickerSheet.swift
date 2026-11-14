@@ -1,10 +1,33 @@
 import SwiftUI
 
+/// Add Connection › Select Key: the SwiftUI page (``KeyPickerView``), or the
+/// NSH one while its switch is on (``NSHScreen/keyPicker``). With the switch
+/// off the SwiftUI page is all there is: no NSH code runs.
+struct KeyPickerSheet: View {
+    let keys: [SSHKeyRecord]
+    @Binding var selectedKeyId: UUID?
+
+    var body: some View {
+        if Self.showsNSH {
+            KeyPickerNSHPage(keys: keys, selectedKeyId: $selectedKeyId)
+        } else {
+            KeyPickerView(keys: keys, selectedKeyId: $selectedKeyId)
+        }
+    }
+
+    static var showsNSH: Bool {
+        #if DEBUG
+        if CaptureScreen.requested == .keyPickerNSH { return NSHSurface.available }
+        #endif
+        return NSHScreen.keyPicker.isOn
+    }
+}
+
 /// Modal key picker for Add Connection's SSH-Key auth row, replacing a plain
 /// system `Menu`. Also the fix for "no keys yet ⇒ paste-only": the empty
 /// state offers the same generate/import action as the toolbar "+", so
 /// there's always a way in besides pasting a raw PEM.
-struct KeyPickerSheet: View {
+struct KeyPickerView: View {
     let keys: [SSHKeyRecord]
     @Binding var selectedKeyId: UUID?
 
@@ -19,16 +42,25 @@ struct KeyPickerSheet: View {
                         emptyState
                     } else {
                         ForEach(keys) { key in
+                            // A key the connect path can't sign with (an
+                            // ECDSA P-384 key an older build imported, say)
+                            // stays listed, saying so, instead of failing
+                            // every connection it is picked for.
+                            let refused = StoredKey.refusedType(ofPublicKeyLine: key.publicKey)
                             pickerRow(
                                 icon: "key.fill",
                                 name: key.name,
-                                meta: key.badgeText,
+                                meta: refused.map { String(localized: "Can't sign in with \($0) keys yet") }
+                                    ?? key.badgeText,
                                 isActive: key.id == selectedKeyId
                             ) {
                                 Haptics.select()
                                 selectedKeyId = key.id
                                 dismiss()
                             }
+                            .disabled(refused != nil && key.id != selectedKeyId)
+                            .opacity(refused != nil ? 0.5 : 1)
+                            .accessibilityIdentifier(KeyPickerModel.rowID(key.id))
                         }
                     }
                 }
@@ -54,6 +86,7 @@ struct KeyPickerSheet: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
                         .foregroundStyle(Ink.accent)
+                        .accessibilityIdentifier("key-picker-cancel")
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button {
@@ -70,9 +103,9 @@ struct KeyPickerSheet: View {
                 }
             }
         }
-        .preferredColorScheme(.dark)
+        .darkOnlyPage()
         .appSheet(isPresented: $showAddKey) {
-            AddKeyView(onCreated: { record in
+            AddKeyPage(onCreated: { record in
                 selectedKeyId = record.id
                 showAddKey = false
                 dismiss()

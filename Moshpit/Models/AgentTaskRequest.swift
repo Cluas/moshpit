@@ -73,3 +73,18 @@ struct AgentTaskRequest: Equatable {
         return path
     }
 }
+
+/// How a New agent task went — three ways, because the form has to act on
+/// the difference.
+enum AgentTaskOutcome: Equatable {
+    /// The worktree, its agent, and the first message if there was one.
+    case started
+    /// Nothing was made. The form shows why and stays open for another try.
+    case failed(String)
+    /// The worktree exists, but what came after it didn't land: the agent
+    /// didn't start, or the first message never reached it. Start again
+    /// would only collide with the branch the worktree now has, so the form
+    /// says what happened and offers Done — with the message still there
+    /// to copy into the pane.
+    case incomplete(String)
+}

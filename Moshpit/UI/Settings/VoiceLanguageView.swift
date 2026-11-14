@@ -46,7 +46,7 @@ struct VoiceLanguageView: View {
         .moshpitForm()
         .navigationTitle("Voice Language")
         .navigationBarTitleDisplayMode(.inline)
-        .preferredColorScheme(.dark)
+        .darkOnlyPage()
         .task {
             guard !isWhisper, !loaded else { return }
             appleOptions = await VoiceLocaleCatalog.options()
@@ -64,6 +64,7 @@ struct VoiceLanguageView: View {
             footer: "Languages offered here are the ones this device can transcribe. A language's speech model downloads once on first use, then works offline. Apple's engines handle one language per session — for speech that switches between two, switch Recognition to Whisper."
         ) {
             languageRow(
+                id: "",
                 name: String(localized: "Automatic"),
                 detail: automaticDetail,
                 selected: settings.voiceInputLocaleId.isEmpty
@@ -72,6 +73,7 @@ struct VoiceLanguageView: View {
             if loaded {
                 ForEach(appleOptions) { option in
                     languageRow(
+                        id: option.id,
                         name: option.name,
                         detail: nil,
                         selected: settings.voiceInputLocaleId == option.id
@@ -94,6 +96,7 @@ struct VoiceLanguageView: View {
             footer: "One model covers around 100 languages. Naming yours transcribes it while keeping the foreign words inside a sentence intact — the English command names and library names you say mid-thought survive. Auto-detect reads the language off the audio instead, which can waver on short or heavily mixed phrases."
         ) {
             languageRow(
+                id: "",
                 name: String(localized: "Auto-detect"),
                 detail: String(localized: "Whisper decides from what it hears"),
                 selected: settings.whisperLanguage.isEmpty
@@ -101,6 +104,7 @@ struct VoiceLanguageView: View {
 
             ForEach(suggested) { option in
                 languageRow(
+                    id: option.id,
                     name: option.name,
                     detail: nil,
                     selected: settings.whisperLanguage == option.id
@@ -111,6 +115,7 @@ struct VoiceLanguageView: View {
         FormGroup(title: "ALL LANGUAGES") {
             ForEach(WhisperLanguageCatalog.options()) { option in
                 languageRow(
+                    id: option.id,
                     name: option.name,
                     detail: nil,
                     selected: settings.whisperLanguage == option.id
@@ -135,9 +140,12 @@ struct VoiceLanguageView: View {
                 .font(Face.text(13))
                 .foregroundStyle(Ink.meta)
         }
+        .accessibilityIdentifier("voice-language-loading")
     }
 
-    private func languageRow(name: String, detail: String?, selected: Bool,
+    /// `id` is the language's (`""` Automatic or auto-detect): its row is
+    /// `voice-language-<id>`, as on the NSH page (`ui/src/voice_language.rs`).
+    private func languageRow(id: String, name: String, detail: String?, selected: Bool,
                              onSelect: @escaping () -> Void) -> some View {
         Button {
             onSelect()
@@ -161,5 +169,6 @@ struct VoiceLanguageView: View {
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(selected ? .isSelected : [])
+        .accessibilityIdentifier(id.isEmpty ? "voice-language-automatic" : "voice-language-\(id)")
     }
 }

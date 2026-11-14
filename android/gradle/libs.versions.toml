@@ -1,0 +1,22 @@
+# The Android build's versions (android/settings.gradle, app/build.gradle,
+# termux/*/build.gradle). CI runs Gradle with JDK 17 on Linux; this Mac can't
+# (android/build.sh is its scripted stand-in), so a bump here is verified by CI.
+[versions]
+agp = "8.7.3"
+compileSdk = "35"
+targetSdk = "35"
+# NSH's Android runtime needs API 26 (docs/nsh/DESIGN.md §1).
+minSdk = "26"
+# The NDK the Rust library is built with (android/rust.sh finds it under
+# $ANDROID_HOME/ndk/<this>).
+ndk = "28.2.13676358"
+androidxAnnotation = "1.9.1"
+junit = "4.13.2"
+
+[libraries]
+androidx-annotation = { group = "androidx.annotation", name = "annotation", version.ref = "androidxAnnotation" }
+junit = { group = "junit", name = "junit", version.ref = "junit" }
+
+[plugins]
+android-application = { id = "com.android.application", version.ref = "agp" }
+android-library = { id = "com.android.library", version.ref = "agp" }

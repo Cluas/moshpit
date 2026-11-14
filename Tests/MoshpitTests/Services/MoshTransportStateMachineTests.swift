@@ -28,12 +28,15 @@ struct MoshTransportStateMachineTests {
         private var pendingReceive: (@Sendable (Data?, Error?) -> Void)?
 
         private(set) var startCalls = 0
+        private(set) var restartCalls = 0
         private(set) var cancelCalls = 0
+        private(set) var receiveCalls = 0
         func start() { startCalls += 1 }
-        func restart() {}
+        func restart() { restartCalls += 1 }
         func cancel() { cancelCalls += 1 }
         func send(_ datagram: Data) { sent.append(datagram) }
         func receive(_ completion: @escaping @Sendable (Data?, Error?) -> Void) {
+            receiveCalls += 1
             pendingReceive = completion
         }
 
@@ -43,6 +46,17 @@ struct MoshTransportStateMachineTests {
             pendingReceive = nil
             completion?(datagram, nil)
         }
+
+        /// Complete the armed receive the way NWConnection ends one: with
+        /// an error (the flow failed), or with neither data nor error (the
+        /// flow was cancelled — macOS 27).
+        func endReceive(_ error: Error?) {
+            let completion = pendingReceive
+            pendingReceive = nil
+            completion?(nil, error)
+        }
+
+        var hasReceiveArmed: Bool { pendingReceive != nil }
     }
 
     // MARK: Fixtures
@@ -69,18 +83,23 @@ struct MoshTransportStateMachineTests {
     }
 
     /// Variant with a short keystroke TTL so input expiry can be exercised
-    /// without a 10-second real-time wait.
-    func makeTransport(keystrokeTTLMs: UInt64) throws -> (MoshTransport, FakeDatagramChannel, MoshCrypto) {
+    /// without a 10-second real-time wait, optionally on a hand-stepped clock.
+    func makeTransport(keystrokeTTLMs: UInt64,
+                       clock: ManualMoshClock? = nil) throws -> (MoshTransport, FakeDatagramChannel, MoshCrypto) {
         let creds = MoshCredentials(host: "127.0.0.1", udpPort: 60001, key: key)
         let channel = FakeDatagramChannel()
         let transport = try MoshTransport(
-            credentials: creds, channel: channel, keystrokeTTLMs: keystrokeTTLMs)
+            credentials: creds, channel: channel, keystrokeTTLMs: keystrokeTTLMs,
+            clock: clock?.read ?? MoshTransport.monotonicMs)
         let crypto = try MoshCrypto(key: key)
         return (transport, channel, crypto)
     }
 
     /// A main-actor box for observing the `@MainActor onReturnPathDead` callback.
-    @MainActor final class FiredBox { var fired = false }
+    @MainActor final class FiredBox {
+        var fired = false
+        var heard: Bool?
+    }
 
     /// Decode the client→server instruction diff out of a sealed datagram the
     /// transport sent — the payload a real mosh-server would apply as input.
@@ -104,7 +123,7 @@ struct MoshTransportStateMachineTests {
         ackNum: UInt64 = 0,
         diff: Data = Data(),
         timestamp: UInt16 = 0,
-        timestampReply: UInt16 = 0
+        timestampReply: UInt16 = MoshTransport.noTimestamp
     ) throws -> Data {
         var instruction = TransportInstruction()
         instruction.oldNum = oldNum
@@ -182,7 +201,9 @@ struct MoshTransportStateMachineTests {
 
     @Test("requestFullRedraw nudges the width and never rewinds the applied state")
     func fullRedrawResync() async throws {
-        let (transport, channel, crypto) = try makeTransport()
+        let clock = ManualMoshClock()
+        let (transport, channel, crypto) = try makeTransport(
+            keystrokeTTLMs: MoshTransport.defaultKeystrokeTTLMs, clock: clock)
         await transport.start(cols: 80, rows: 24)
 
         // Screen at state 3.
@@ -194,8 +215,11 @@ struct MoshTransportStateMachineTests {
         let before = channel.sent.count
         await transport.requestFullRedraw()
 
-        // A resize-pair flush went out (the width nudge that makes mosh's
-        // Display reset `initialized` and repaint every cell)…
+        // The width nudge (what makes mosh's Display reset `initialized`
+        // and repaint every cell) went out a frame after the datagram that
+        // carried the size…
+        clock.now = 250
+        await transport.tick()
         #expect(channel.sent.count > before)
         let diff = try clientDiff(of: channel.sent[channel.sent.count - 1], crypto: crypto)
         #expect(!diff.isEmpty, "the nudge must carry the resize events")
@@ -277,7 +301,9 @@ struct MoshTransportStateMachineTests {
 
     @Test("a diff that fails to parse does NOT advance appliedHostNum")
     func parseFailureDoesNotAdvance() async throws {
-        let (transport, channel, crypto) = try makeTransport()
+        let clock = ManualMoshClock()
+        let (transport, channel, crypto) = try makeTransport(
+            keystrokeTTLMs: MoshTransport.defaultKeystrokeTTLMs, clock: clock)
 
         // A non-empty diff whose bytes are not valid host protobuf: field 1 /
         // wire-type 2 declaring a 5-byte length with only 1 byte to follow.
@@ -293,8 +319,12 @@ struct MoshTransportStateMachineTests {
                 "silently acking unparseable content is the blank-screen bug from e61a9b3")
         #expect(diag.parseFailures == 1)
         #expect(diag.gapEvents == 0)
-        // We still flush — acking our TRUE (unchanged) state so the server
-        // keeps re-sending the content rather than considering it delivered.
+        // We still ack — our TRUE (unchanged) state, within mosh's
+        // ACK_DELAY — so the server keeps re-sending the content rather than
+        // considering it delivered.
+        #expect(channel.sent.isEmpty)
+        clock.now = MoshTransport.ackDelayMs
+        await transport.tick()
         #expect(!channel.sent.isEmpty)
     }
 
@@ -342,7 +372,12 @@ struct MoshTransportStateMachineTests {
     func returnPathDeadFiresWhenSilent() async throws {
         let (transport, channel, _) = try makeTransport(deadlineNanos: 100_000_000)  // 100ms
         let box = await FiredBox()
-        await MainActor.run { transport.onReturnPathDead = { box.fired = true } }
+        await MainActor.run {
+            transport.onReturnPathDead = { heard in
+                box.fired = true
+                box.heard = heard
+            }
+        }
 
         await transport.start(cols: 80, rows: 24)
         // Socket becomes ready but the server's replies never arrive (dead
@@ -352,13 +387,15 @@ struct MoshTransportStateMachineTests {
         // Past the deadline with zero datagrams delivered.
         try await Task.sleep(nanoseconds: 400_000_000)
         #expect(await MainActor.run { box.fired } == true)
+        #expect(await MainActor.run { box.heard } == false,
+                "nothing ever came back: the server never heard from us")
     }
 
     @Test("the return-path watchdog does not fire once any datagram arrives")
     func returnPathDeadSilentWhenDataArrives() async throws {
         let (transport, channel, crypto) = try makeTransport(deadlineNanos: 300_000_000)  // 300ms
         let box = await FiredBox()
-        await MainActor.run { transport.onReturnPathDead = { box.fired = true } }
+        await MainActor.run { transport.onReturnPathDead = { _ in box.fired = true } }
 
         await transport.start(cols: 80, rows: 24)
         channel.onStateChange?(.ready)
@@ -375,20 +412,32 @@ struct MoshTransportStateMachineTests {
 
     // MARK: Keystroke delivery TTL
 
-    @Test("keystrokes past their TTL stop retransmitting; resizes survive the prune")
+    @Test("keystrokes past their TTL stop retransmitting; resizes survive the drop")
     func expiredKeystrokesDropOnFlush() async throws {
-        let (transport, channel, crypto) = try makeTransport(keystrokeTTLMs: 50)
+        let clock = ManualMoshClock()
+        let (transport, channel, crypto) = try makeTransport(keystrokeTTLMs: 50, clock: clock)
         await transport.start(cols: 80, rows: 24)          // resize queued as state 1
         await transport.send(Data("STALE-SECRET".utf8))    // keystroke state 2, flushes now
 
         // The link stays dead past the TTL — nothing acked, nothing received.
-        try await Task.sleep(nanoseconds: 200_000_000)
+        clock.now = 200
 
         let before = channel.sent.count
         await transport.resume()                           // the recovery-time flush
         #expect(channel.sent.count > before)
 
-        let diff = try clientDiff(of: channel.sent[channel.sent.count - 1], crypto: crypto)
+        var diff = try clientDiff(of: channel.sent[channel.sent.count - 1], crypto: crypto)
+        #expect(diff.range(of: Data("STALE-SECRET".utf8)) == nil,
+                "an expired keystroke replaying into the shell is the ghost-input bug")
+
+        // The server may hold the keystroke, so it is not stripped from the
+        // state it went out in until the server answers. An answer that still
+        // doesn't ack it, past the proof delay, says it never arrived: it is
+        // dropped, and the resize goes out without it.
+        clock.now = 200 + MoshTransport.defaultExpiryProofDelayMs
+        await transport.handleDatagram(try makeDatagram(
+            crypto: crypto, seq: 0, id: 1, oldNum: 0, newNum: 1))
+        diff = try clientDiff(of: channel.sent[channel.sent.count - 1], crypto: crypto)
         #expect(diff.range(of: Data("STALE-SECRET".utf8)) == nil,
                 "an expired keystroke replaying into the shell is the ghost-input bug")
         #expect(!diff.isEmpty, "the resize event is idempotent state and must survive")
@@ -468,6 +517,78 @@ struct MoshTransportStateMachineTests {
         #expect(fresh.cancelCalls == 0)
     }
 
+    // MARK: B93 — the receive loop across failures and new flows
+
+    /// Lets the actor hops the channel's callbacks start run.
+    func settle() async throws { try await Task.sleep(for: .milliseconds(100)) }
+
+    @Test("a receive the flow failed is armed again when the flow is ready again")
+    func aFailedReceiveIsArmedAgainWhenTheFlowIsReady() async throws {
+        let (transport, channel, crypto) = try makeTransport()
+        await transport.start(cols: 80, rows: 24)
+        channel.onStateChange?(.ready)
+        try await settle()
+        // NWConnection fails the pending receive when the flow fails under it.
+        channel.endReceive(NWError.posix(.ENETDOWN))
+        channel.state = .waiting(NWError.posix(.ENETDOWN))
+        channel.onStateChange?(.waiting(NWError.posix(.ENETDOWN)))
+        try await settle()
+        // It comes back: the foreground resume restarts it, and it is ready.
+        await transport.resume()
+        #expect(channel.restartCalls == 1)
+        channel.state = .ready
+        channel.onStateChange?(.ready)
+        try await settle()
+        #expect(channel.hasReceiveArmed, "the server's datagrams go unread until the liveness rebuild, 9-12 s on")
+        channel.deliver(try makeDatagram(crypto: crypto, seq: 0, id: 1, oldNum: 0, newNum: 1, diff: hostDiff("hi")))
+        try await settle()
+        #expect(await transport.currentDiagnostics.datagramsReceived == 1)
+    }
+
+    @Test("a failed flow is replaced a second later, not restarted, and the new one receives")
+    func aFailedFlowIsReplacedNotRestarted() async throws {
+        let creds = MoshCredentials(host: "127.0.0.1", udpPort: 60001, key: key)
+        let old = FakeDatagramChannel()
+        let fresh = FakeDatagramChannel()
+        let transport = try MoshTransport(credentials: creds, channel: old, makeChannel: { fresh })
+        let crypto = try MoshCrypto(key: key)
+        await transport.start(cols: 80, rows: 24)
+        old.onStateChange?(.ready)
+        try await settle()
+        // The flow fails: NWConnection fails its receive, and never comes back
+        // (restart() only retries a waiting connection).
+        old.state = .failed(NWError.posix(.ENETDOWN))
+        old.endReceive(NWError.posix(.ENETDOWN))
+        old.onStateChange?(.failed(NWError.posix(.ENETDOWN)))
+        try await Task.sleep(for: .milliseconds(1_300))
+        #expect(old.restartCalls == 0, "restart() is ignored for a failed NWConnection")
+        #expect(old.cancelCalls == 1)
+        #expect(fresh.startCalls == 1)
+        #expect(fresh.hasReceiveArmed)
+        fresh.deliver(try makeDatagram(crypto: crypto, seq: 0, id: 1, oldNum: 0, newNum: 1, diff: hostDiff("hi")))
+        try await settle()
+        #expect(await transport.currentDiagnostics.datagramsReceived == 1)
+    }
+
+    @Test("a replaced flow's last receive arms nothing on the new flow: one receive loop per flow")
+    func aReplacedFlowsLastReceiveArmsNothing() async throws {
+        let creds = MoshCredentials(host: "127.0.0.1", udpPort: 60001, key: key)
+        let old = FakeDatagramChannel()
+        let fresh = FakeDatagramChannel()
+        let transport = try MoshTransport(credentials: creds, channel: old, makeChannel: { fresh })
+        await transport.start(cols: 80, rows: 24)
+        await transport.resume(force: true)               // a new flow
+        #expect(fresh.receiveCalls == 1)
+        // Cancelled, the old NWConnection completes its pending receive with
+        // neither data nor error. That used to arm a second receive — on the
+        // new flow: two completions racing to the actor, datagrams handled
+        // in either order, one more loop per rebuild.
+        old.endReceive(nil)
+        try await settle()
+        #expect(fresh.receiveCalls == 1)
+        #expect(old.receiveCalls == 1)
+    }
+
     // MARK: Echo ack (predictive echo's clock)
 
     @Test("send reports the user state its keystrokes ride in")
@@ -499,5 +620,104 @@ struct MoshTransportStateMachineTests {
             crypto: crypto, seq: 2, id: 3, oldNum: 2, newNum: 3, diff: hostDiff("b")))
         #expect(await iterator.next() == MoshHostFrame(bytes: Data("b".utf8), echoAck: 3))
         #expect(await transport.currentDiagnostics.appliedHostNum == 3)
+    }
+
+    // MARK: Delivery (what a herdr arrow key waits on over mosh)
+
+    /// Raised by a waiter task, read by the test.
+    actor Flag {
+        private(set) var raised = false
+        func raise() { raised = true }
+    }
+
+    /// Ticks the transport until a datagram it sent carries `keys`, for up to
+    /// five seconds: new input goes out a frame (250 ms before an RTT
+    /// sample) after the input before it. Whether one did.
+    private func waitUntilSent(_ keys: String, by transport: MoshTransport,
+                               on channel: FakeDatagramChannel, crypto: MoshCrypto) async throws -> Bool {
+        let needle = Data(keys.utf8)
+        let deadline = ContinuousClock.now + .seconds(5)
+        while ContinuousClock.now < deadline {
+            let carried = try channel.sent.contains {
+                try clientDiff(of: $0, crypto: crypto).range(of: needle) != nil
+            }
+            if carried { return true }
+            try await Task.sleep(for: .milliseconds(20))
+            await transport.tick()
+        }
+        return false
+    }
+
+    @Test("waitUntilDelivered holds until the server acks the newest user state")
+    func deliveryWaitsForTheAck() async throws {
+        let (transport, channel, crypto) = try makeTransport()
+        let first = try #require(await transport.send(Data("g".utf8)))
+        let newest = try #require(await transport.send(Data("i".utf8)))
+        let delivered = Flag()
+        let waiter = Task {
+            await transport.waitUntilDelivered()
+            await delivered.raise()
+        }
+
+        // An ack that stops short of the newest state is not delivery: the
+        // "i" could still be in a lost datagram.
+        await transport.handleDatagram(try makeDatagram(
+            crypto: crypto, seq: 0, id: 1, oldNum: 0, newNum: 1, ackNum: first))
+        try await Task.sleep(for: .milliseconds(50))
+        #expect(await delivered.raised == false)
+
+        // A server acks only what it was sent (B105): the "i" goes out first.
+        #expect(try await waitUntilSent("i", by: transport, on: channel, crypto: crypto))
+        await transport.handleDatagram(try makeDatagram(
+            crypto: crypto, seq: 1, id: 2, oldNum: 1, newNum: 2, ackNum: newest))
+        await waiter.value
+        #expect(await delivered.raised)
+    }
+
+    /// B105: a server that acks a user state the client never sent (only a
+    /// bad one does) wedged the input for good. The ack became the acked
+    /// number, every state below it went, and each key typed after got a
+    /// number no greater than it: never sent, and delivered at once.
+    @Test("an ack for a state never sent doesn't wedge the input (B105)")
+    func ackForAStateNeverSent() async throws {
+        let (transport, channel, crypto) = try makeTransport()
+        let typed = try #require(await transport.send(Data("first-key".utf8)))
+        #expect(try await waitUntilSent("first-key", by: transport, on: channel, crypto: crypto))
+        await transport.handleDatagram(try makeDatagram(
+            crypto: crypto, seq: 0, id: 1, oldNum: 0, newNum: 1, ackNum: typed + 1000))
+
+        let next = try #require(await transport.send(Data("next-key".utf8)))
+        #expect(next > typed, "the next key reused a number at or below the bogus ack")
+        let delivered = Flag()
+        let waiter = Task {
+            await transport.waitUntilDelivered()
+            await delivered.raise()
+        }
+        #expect(try await waitUntilSent("next-key", by: transport, on: channel, crypto: crypto),
+                "the next key was never sent")
+        #expect(await delivered.raised == false, "a key the server never acked was reported delivered")
+
+        // The real ack still counts.
+        await transport.handleDatagram(try makeDatagram(
+            crypto: crypto, seq: 1, id: 2, oldNum: 1, newNum: 2, ackNum: next))
+        await waiter.value
+        #expect(await delivered.raised)
+    }
+
+    @Test("waitUntilDelivered never strands its caller: nothing outstanding, already acked, closed")
+    func deliveryNeverStrands() async throws {
+        let (transport, _, crypto) = try makeTransport()
+        await transport.waitUntilDelivered()            // nothing queued yet
+
+        let typed = try #require(await transport.send(Data("x".utf8)))
+        await transport.handleDatagram(try makeDatagram(
+            crypto: crypto, seq: 0, id: 1, oldNum: 0, newNum: 1, ackNum: typed))
+        await transport.waitUntilDelivered()            // already acked
+
+        await transport.send(Data("y".utf8))            // never acked
+        let waiter = Task { await transport.waitUntilDelivered() }
+        try await Task.sleep(for: .milliseconds(20))
+        await transport.close()
+        await waiter.value                              // closing releases it
     }
 }

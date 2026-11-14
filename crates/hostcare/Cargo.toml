@@ -1,0 +1,20 @@
+[package]
+name = "moshpit-hostcare"
+description = "What runs a host's setup from the phone: host care on connect, the Host Setup screen, Install Assist, and the phone's side of push pairing (minting at the relay, one pairing operation per host at a time), as a state machine with no I/O, and the async driver that carries its outputs out"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+moshpit-install = { path = "../install" }
+moshpit-seal = { path = "../seal" }
+log = "0.4"
+serde_json = "1"
+# The driver (src/driver.rs): the machine's outputs carried out on the
+# core's runtime, its deadlines kept with tokio's timer.
+tokio = { version = "1", features = ["rt", "sync", "time", "macros"] }
+async-trait = "0.1"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "sync", "time", "macros"] }

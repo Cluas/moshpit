@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="screen">#FF05090A</color>
+    <color name="accent">#FF53DCC9</color>
+    <color name="icon_background">#FF0B1014</color>
+</resources>

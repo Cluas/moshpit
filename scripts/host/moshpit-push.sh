@@ -78,7 +78,14 @@ else
 $F"
   done
 fi
-[ -n "$CONFS" ] || exit 0
+# What a test that found nothing to send with says (B353). Silence read as a
+# push lost on the way: the app's verdict blamed delivery (Moshpit not in the
+# foreground, notifications off) for a pairing that was not there.
+NOPAIRING="this host has no usable pairing to test: pair again from the app"
+if [ -z "$CONFS" ]; then
+  [ "${1:-}" = "--test" ] && echo "$NOPAIRING"
+  exit 0
+fi
 command -v openssl >/dev/null 2>&1 || exit 0
 command -v curl >/dev/null 2>&1 || exit 0
 
@@ -93,12 +100,15 @@ case "$DUR" in *[!0-9]*) DUR="" ;; esac
 
 TESTMODE=""
 TESTCONN=""
+# Whether a test reached the relay for any pairing at all.
+TRIED=""
 if [ "$STATE" = "--test" ]; then
   STATE="done"
   AGENT="moshpit-selftest"
   TITLE="${2:-pairing-selftest}"
   # Optional third argument: prove ONE pairing. The app passes its own
-  # connection id so a self-test doesn't ping every other phone in the house.
+  # connection id so a self-test doesn't ping every other phone in the house
+  # (it passed none before B353, and every other phone showed the test).
   TESTCONN="${3:-}"
   TESTMODE="yes"
 fi
@@ -141,11 +151,28 @@ DURFIELD=""
 [ -n "$DUR" ] && [ "$DUR" -gt 0 ] 2>/dev/null && DURFIELD=$(printf ',"dur":%s' "$DUR")
 TS=$(date +%s)
 
+# The phones this status has already reached, by APNs token. A phone with two
+# saved connections to this host holds two pairings here — the app pairs each
+# connection on its own, and the second one silently, once the first has
+# installed the hooks — and it got every push twice: two cards, two sounds,
+# because each connection's card is its own 0->1 edge. One push per phone; the
+# next conf only if the previous one did not get through.
+DELIVERED=""
+
 # One 0600 scratch file for the bearer token, reused per pairing — it never
 # reaches argv where any local user could read it out of /proc. trap BEFORE the
 # first write, so a crash between creating and writing still cleans up.
+#
+# A signal STOPS the script (B350). Trapping INT and TERM with only the `rm`
+# used to let it carry on to the next phone, writing that phone's token into a
+# file the redirect recreated with the default mode — readable by every local
+# user — and a HUP (the pane or session closing under a grace fork) killed it
+# with the file left in /tmp. Now each of them exits, which runs the EXIT trap;
+# and umask 077 keeps any file this script makes private regardless.
+umask 077
 AUTHFILE=$(mktemp 2>/dev/null) || exit 0
-trap 'rm -f "$AUTHFILE"' EXIT INT TERM
+trap 'rm -f "$AUTHFILE"' EXIT
+trap 'exit 0' HUP INT TERM
 
 # Seal and send this status to ONE paired device. Everything conn-specific
 # lives in here: the plaintext echoes the pairing's connection id (that is how
@@ -154,11 +181,28 @@ trap 'rm -f "$AUTHFILE"' EXIT INT TERM
 # device must never cost another its notification, so nothing in here exits the
 # script in hook mode.
 send_one() {
-  # shellcheck disable=SC1090
   RELAY_URL=""; SEND_TOKEN=""; SECRET=""; CONN=""; APNS_TOKEN=""; APNS_ENV=""; SEND_IAT=""
-  . "$1" 2>/dev/null || return 0
+  # A conf is READ, never run (B357). It used to be sourced, so whatever a
+  # value held ran as shell on this host at every push, and the send token
+  # is the relay's own answer: a relay returning `x;curl ... | sh`, or a
+  # token with a second line in it, would have run code on every host paired
+  # through it. Each known key is taken as text; any other line is ignored.
+  while IFS= read -r LINE || [ -n "$LINE" ]; do
+    case "$LINE" in
+      RELAY_URL=*) RELAY_URL=${LINE#RELAY_URL=} ;;
+      SEND_TOKEN=*) SEND_TOKEN=${LINE#SEND_TOKEN=} ;;
+      SECRET=*) SECRET=${LINE#SECRET=} ;;
+      CONN=*) CONN=${LINE#CONN=} ;;
+      APNS_TOKEN=*) APNS_TOKEN=${LINE#APNS_TOKEN=} ;;
+      APNS_ENV=*) APNS_ENV=${LINE#APNS_ENV=} ;;
+      SEND_IAT=*) SEND_IAT=${LINE#SEND_IAT=} ;;
+    esac
+  done < "$1" 2>/dev/null || return 0
   [ -n "${RELAY_URL:-}" ] || return 0
   [ -n "${SEND_TOKEN:-}" ] || return 0
+  # The token goes into curl's config file below, where a quote or anything
+  # but hex could add options of its own: the relay mints 64 hex digits.
+  case "$SEND_TOKEN" in *[!0-9a-fA-F]*) return 0 ;; esac
   [ -n "${SECRET:-}" ] || return 0
   # The stateless relay routes by what THIS request carries: the phone's APNs
   # token and the token's mint time ride in the conf. A conf without them is
@@ -168,6 +212,8 @@ send_one() {
   [ -n "${APNS_TOKEN:-}" ] || return 0
   case "$SEND_IAT" in *[!0-9]*|"") return 0 ;; esac
   if [ -n "$TESTCONN" ] && [ "$CONN" != "$TESTCONN" ]; then return 0; fi
+  PHONE=$(printf '%s' "$APNS_TOKEN" | tr 'ABCDEF' 'abcdef')
+  case " $DELIVERED " in *" $PHONE "*) return 0 ;; esac
 
   PLAIN=$(printf '{"conn":"%s","host":"%s","sess":"%s","pane":"%s","agent":"%s","state":"%s","title":"%s","ts":%s%s}' \
     "$(esc "${CONN:-}")" "$(esc "$HOST")" "$(esc "$SESSION")" "$(esc "$PANE")" \
@@ -225,13 +271,14 @@ send_one() {
   # unable to tell "the relay refused us" from "still in flight". A hook fire
   # stays silent either way: an agent must never see output from this.
   if [ -n "$TESTMODE" ]; then
+    TRIED="yes"
     CODE=$(curl -sS -m 6 -o /dev/null -w "%{http_code}" \
       --config "$AUTHFILE" \
       -X POST "$RELAY_URL/v1/notify" \
       -H "content-type: application/json" \
       --data-binary "$BODY" 2>/dev/null)
     case "$CODE" in
-      200) ;;
+      200) DELIVERED="$DELIVERED $PHONE" ;;
       401) echo "relay rejected this host's send token (401): this phone has not registered with $RELAY_URL" ;;
       410) echo "relay says the device is gone (410): pair again from the app" ;;
       429) echo "relay is rate limiting (429): wait a few seconds" ;;
@@ -247,16 +294,17 @@ send_one() {
     # first push after a quiet period, dropping it silently. Only NETWORK
     # failures retry (curl exits non-zero); an HTTP error is the relay's
     # answer and asking again would not change it.
+    CODE=""
     for _ in 1 2; do
-      if curl -sS -m 8 -o /dev/null \
+      CODE=$(curl -sS -m 8 -o /dev/null -w "%{http_code}" \
         --config "$AUTHFILE" \
         -X POST "$RELAY_URL/v1/notify" \
         -H "content-type: application/json" \
-        --data-binary "$BODY" >/dev/null 2>&1; then
-        break
-      fi
+        --data-binary "$BODY" 2>/dev/null) && break
+      CODE=""
       sleep 2
     done
+    [ "$CODE" = "200" ] && DELIVERED="$DELIVERED $PHONE"
   fi
 }
 
@@ -266,5 +314,9 @@ for CONF in $CONFS; do
   send_one "$CONF"
 done
 unset IFS
+
+if [ -n "$TESTMODE" ] && [ -z "$TRIED" ]; then
+  echo "$NOPAIRING"
+fi
 
 exit 0

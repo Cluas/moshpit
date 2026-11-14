@@ -1,0 +1,6 @@
+# B90: `pane run` loses its trailer and prints nothing: the agent is not
+# reported started.
+host rule pane_run - cut
+at 0 start
+at 300 task /home/dev/code/app fix-scroll claude go
+end 6000

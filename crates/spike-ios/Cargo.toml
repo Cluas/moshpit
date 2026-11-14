@@ -1,0 +1,30 @@
+[package]
+name = "moshpit-spike-ios"
+description = "Spike G1's iOS side: an NSH Rust root hosted by a Swift app behind a C ABI (include/moshpit_spike.h), the spike's core (a tokio runtime shared with NSH, an echo task) and the bench's burst producer."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+crate-type = ["staticlib", "rlib"]
+
+[dependencies]
+moshpit-stream = { path = "../stream" }
+# Spike T1: the shared terminal core, drawn by the app's CoreTermView.
+moshpit-term = { path = "../term" }
+libc = "0.2"
+log = "0.4"
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "sync", "time"] }
+
+# UIKit exists on iOS, the simulator and Mac Catalyst (all `target_os = "ios"`);
+# the host builds only the platform-free parts (the burst and its tests).
+[target.'cfg(target_os = "ios")'.dependencies]
+nsh-core.workspace = true
+nsh-base.workspace = true
+# No `js`: a Rust app links no QuickJS.
+nsh-platform-ios.workspace = true
+serde_json = "1"
+objc2 = "0.6.5"
+objc2-core-foundation = { version = "0.3.2", default-features = false, features = ["std", "CFCGTypes"] }
+objc2-ui-kit = { version = "0.3.2", default-features = false, features = ["std", "UIView", "UIResponder"] }

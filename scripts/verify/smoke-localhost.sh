@@ -5,7 +5,7 @@
 # args that:
 #   1. Write `~/.ssh/id_ed25519` into the app's keychain
 #   2. Register a `127.0.0.1:22` connection
-#   3. Auto-navigate straight to TerminalContainerView
+#   3. Auto-navigate straight to the terminal screen (TerminalScreen)
 #
 # Sleeps a few seconds to let the SSH session open, then screenshots the
 # terminal so a reviewer can confirm the shell prompt rendered. Exits 0

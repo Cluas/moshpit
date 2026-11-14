@@ -1,0 +1,28 @@
+[package]
+name = "moshpit-session"
+description = "The session registry and lifecycle of Moshpit's Rust core: dialing with generations, the connection state machine, redial and keepalive, end versus drop, mosh (bootstrap over SSH, the UDP driver) with its fall back to SSH, and the multiplexer attach (tmux's controller, plain shells, a seam for herdr) onto the byte channel."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+log = "0.4"
+# The shell quoting every command line shares (round nineteen).
+moshpit-herdr = { path = "../herdr" }
+moshpit-install = { path = "../install" }
+moshpit-mosh = { path = "../mosh" }
+moshpit-ssh = { path = "../ssh" }
+moshpit-stream = { path = "../stream" }
+moshpit-tmux = { path = "../tmux" }
+tokio = { version = "1", features = ["rt", "net", "time", "sync", "macros", "io-util"] }
+
+[dev-dependencies]
+# tests/live_w15b.rs: host care over a borrowed connection.
+moshpit-hostcare = { path = "../hostcare" }
+moshpit-seal = { path = "../seal" }
+# tests/live_scroll.rs: a pane's recorded bytes replayed into the terminal
+# core the app draws it with (B364).
+moshpit-term = { path = "../term" }
+async-trait = "0.1"
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "net", "time", "sync", "macros", "io-util", "process", "test-util"] }

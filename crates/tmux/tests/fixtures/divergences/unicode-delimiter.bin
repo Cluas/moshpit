@@ -1,0 +1,5 @@
+%begin 1700000000 100 0
+%end 1700000000 100 0
+%window-renamed @1 ́x
+%session-changed $1 ́s
+junk%́window-add @1 %window-add @2

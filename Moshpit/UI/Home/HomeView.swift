@@ -9,6 +9,9 @@ struct HomeView: View {
     @Environment(SessionMetricsRegistry.self) private var metrics
     @Environment(AgentActivityMonitor.self) private var monitor
     @Environment(DeepLinkRouter.self) private var router
+    /// The key records: a deleted connection's keychain item goes only once
+    /// no key names it either (``ConnectionDeletion``).
+    @Environment(SSHKeyStore.self) private var keyStore
 
     let store: ConnectionStore
     let hub: SessionHub
@@ -18,8 +21,9 @@ struct HomeView: View {
     // A capture run names the screen it wants (see CaptureScreen); deriving the
     // initial value means the sheet is up from the first render rather than
     // depending on when a .task happens to fire.
-    @State private var showSettings = CaptureScreen.requested.map { $0 != .addConnection } ?? false
+    @State private var showSettings = CaptureScreen.requested.map { !CaptureScreen.onHome.contains($0) } ?? false
     @State private var showAddConnection = CaptureScreen.requested == .addConnection
+        || CaptureScreen.requested == .addConnectionNSH
     #else
     @State private var showSettings = false
     @State private var showAddConnection = false
@@ -29,7 +33,9 @@ struct HomeView: View {
     /// Cards whose disconnect teardown is in flight — drives the per-card
     /// spinner and guards against double-taps during the ~2s channel flush.
     @State private var disconnectingIds: Set<UUID> = []
-    @State private var path: [UUID] = []
+    /// The pages pushed on Home: a connection's terminal, or a host's
+    /// sessions (§6.2) with the terminal its rows open on top of it.
+    @State private var path: [HomeRoute] = []
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
     @State private var splitIsPortrait = false
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
@@ -45,6 +51,11 @@ struct HomeView: View {
     /// the whole screen: a List row would clip it to the row.
     @State private var cardModal: ConnectionCard.Modal?
     @State private var cardModalText = ""
+    /// The NSH list's model (``HomeNSHPage``), kept here so a page made
+    /// again starts from it.
+    @State private var nshModel = HomeNSHModel()
+    /// The NSH list could not run: the SwiftUI one shows.
+    @State private var nshFailed = false
 
     private var theme: TerminalTheme {
         themes.theme(id: settings.themeId)
@@ -86,6 +97,10 @@ struct HomeView: View {
     private var promptingSession: SessionHub.ActiveSession? {
         connecting.first { $0.viewModel.hostKeyPrompt != nil }
     }
+    /// Oldest in-flight session waiting for its key's passphrase.
+    private var passphraseSession: SessionHub.ActiveSession? {
+        connecting.first { $0.viewModel.keyPassphrasePrompt != nil }
+    }
     private var erroredSession: SessionHub.ActiveSession? {
         connecting.first { $0.viewModel.errorMessage?.isEmpty == false }
     }
@@ -112,6 +127,8 @@ struct HomeView: View {
     /// otherwise the handshake deadlocks. The card reads `hub.session(for:)`
     /// to show its in-place spinner / sessions tree as state arrives.
     private func connect(_ connection: ServerConnection) {
+        // Being deleted: its card is still here for a few seconds (B327).
+        guard !ConnectionDeletion.isUnderWay(connection.id) else { return }
         let session = hub.prepare(connection)
         guard !connecting.contains(where: { $0.id == session.id }) else { return }
         connecting.append(session)
@@ -126,7 +143,7 @@ struct HomeView: View {
             // The buttons the Host Setup sheet used to require, run silently:
             // refresh drifted scripts, mint/repair this device's pairing. Asks
             // (once) before ever touching a host that has no hooks.
-            HostAutoCare.shared.tend(connection: connection, session: session)
+            HostCare.shared.tend(connection)
             // Keep failed sessions queued so the error alert (which reads
             // erroredSession) has its message; its OK button dequeues them.
             if session.viewModel.errorMessage == nil {
@@ -137,8 +154,14 @@ struct HomeView: View {
 
     var body: some View {
         layout
-        .preferredColorScheme(.dark)
-        .onChange(of: router.paneRequest) { _, request in
+        // The window's appearance (R18): the one chosen in Settings while
+        // the NSH Home shows, dark under the SwiftUI one.
+        .background(WindowAppearance(style: AppAppearance.windowStyle(
+            chosen: settings.appearance, nshHome: usesNSHList)))
+        // `initial: true`: a cold launch from a tapped notification can file
+        // the request before this view is on screen, and a plain `.onChange`
+        // never reports the value it starts with — the tap opened Home.
+        .onChange(of: router.paneRequest, initial: true) { _, request in
             guard let request, store.connections.contains(where: { $0.id == request.connectionId })
             else { return }
             // Only push if we're not already there — reassigning `path` to its
@@ -169,6 +192,13 @@ struct HomeView: View {
                 }
             }
         }
+        // A connection saved while its session runs: the session's next
+        // connect uses what was saved (B329).
+        .onChange(of: store.connections) { _, saved in
+            for connection in saved where hub.sessions[connection.id] != nil {
+                hub.adopt(connection)
+            }
+        }
         .onChange(of: erroredSession?.viewModel.errorMessage) { _, message in
             showConnectError = message?.isEmpty == false
         }
@@ -183,14 +213,22 @@ struct HomeView: View {
         ) { prompt in
             hostKeyPromptCard(prompt)
         }
+        .moshpitCard(
+            item: Binding(
+                get: { passphraseSession?.viewModel.keyPassphrasePrompt },
+                set: { if $0 == nil { /* dismissal handled via decide() */ } }
+            )
+        ) { prompt in
+            KeyPassphrasePromptCard(prompt: prompt)
+        }
         .appSheet(isPresented: $showSettings) {
             SettingsScreen(liveSession: liveSessionForHooks)
         }
         .appSheet(isPresented: $showAddConnection) {
-            AddConnectionView(store: store, keychain: keychain)
+            connectionForm(existing: nil)
         }
         .appSheet(item: $editingConnection) { connection in
-            AddConnectionView(store: store, keychain: keychain, existing: connection)
+            connectionForm(existing: connection)
         }
         .confirmationDialog(
             "Delete \(deletingConnection?.displayName ?? String(localized: "connection"))?",
@@ -206,20 +244,75 @@ struct HomeView: View {
         }
     }
 
-    /// Tear down any live session, drop the keychain secret, then forget the
-    /// connection. Keychain cleanup keeps deleted servers from leaving secrets
-    /// behind.
+    /// The add / edit form: drawn by NSH when its switch is on
+    /// (``ConnectionFormNSHPage``, which shows the SwiftUI form itself if
+    /// NSH can't run), else by SwiftUI.
+    @ViewBuilder
+    private func connectionForm(existing: ServerConnection?) -> some View {
+        if usesNSHForm {
+            ConnectionFormNSHPage(store: store, keychain: keychain, existing: existing,
+                                  onDelete: { delete($0) }, releaseSecret: releaseSecret)
+        } else {
+            AddConnectionView(store: store, keychain: keychain, existing: existing,
+                              releaseSecret: releaseSecret)
+        }
+    }
+
+    /// Whether the NSH form shows (a capture run's `add-connection-nsh`
+    /// turns it on).
+    private var usesNSHForm: Bool {
+        #if DEBUG
+        if CaptureScreen.requested == .addConnectionNSH { return NSHSurface.available }
+        #endif
+        return NSHScreen.connectionForm.isOn
+    }
+
+    /// A save left connection `id`'s own keychain item `ref` named by
+    /// nothing (it signs in with a managed key now, B325): drop it. While its
+    /// session runs, only once that session has connected again as the
+    /// connection was saved, or has ended (B329) — until then its
+    /// reconnects read the item it started with. A session on the Swift
+    /// path keeps it (the next launch's recovery has it then).
+    private func releaseSecret(_ id: UUID, _ ref: String) async {
+        let release = { [store, keyStore, keychain] in
+            await KeychainReferences.release(ref, connections: store, keys: keyStore, keychain: keychain)
+        }
+        if let active = hub.sessions[id] {
+            switch active.viewModel.status {
+            case .connecting, .connected, .reconnecting:
+                if !hub.releaseAfterReconnect(id, release) {
+                    Log.store.info("connection save: its old item stays while its session runs")
+                }
+                return
+            default:
+                break
+            }
+        }
+        await release()
+    }
+
+    /// Forget the connection's push pairing, tear down any live session, drop
+    /// the keychain secret, then forget the connection (``ConnectionDeletion``)
+    /// — so a deleted server leaves no secrets behind, and no send token the
+    /// relay keeps being asked to mint. A pairing the phone can't forget
+    /// stops the delete before anything is removed, and Home says so.
     private func delete(_ connection: ServerConnection) {
         Task {
-            monitor.untrack(connectionId: connection.id)
-            await hub.disconnect(connection.id)
-            // Only drop connection-owned secrets. When the ref points at a
-            // managed SSH key (sshKeyId set), the blob belongs to the key —
-            // deleting it here would break every other connection using it.
-            if let ref = connection.keychainRef, connection.sshKeyId == nil {
-                try? await keychain.delete(forRef: ref)
+            do {
+                try await ConnectionDeletion.delete(
+                    connection, from: store, keys: keyStore, care: HostCare.shared,
+                    tearDown: {
+                        monitor.untrack(connectionId: connection.id)
+                        await hub.disconnect(connection.id)
+                    },
+                    dropSecret: { ref in _ = try? await keychain.delete(forRef: ref) })
+            } catch {
+                Log.push.error("delete \(connection.displayName, privacy: .public) stopped: \(error.localizedDescription, privacy: .public)")
+                cardModal = ConnectionCard.Modal(kind: .notice(ConnectionCard.NoticeRequest(
+                    icon: "trash.slash.fill",
+                    title: "Couldn't delete the connection",
+                    message: String(localized: "Its push pairing couldn't be removed from this phone, so the connection was kept. The diagnostics log has the reason."))))
             }
-            store.delete(id: connection.id)
             deletingConnection = nil
         }
     }
@@ -239,6 +332,13 @@ struct HomeView: View {
                 confirmLabel: input.confirmLabel,
                 onCancel: { cardModal = nil },
                 onConfirm: {
+                    if let refusal = input.refuses?(cardModalText) {
+                        var again = input
+                        again.message = Text(refusal)
+                        again.initialText = cardModalText
+                        cardModal = ConnectionCard.Modal(kind: .input(again))
+                        return
+                    }
                     input.apply(cardModalText)
                     cardModal = nil
                 })
@@ -271,23 +371,55 @@ struct HomeView: View {
     private var stackLayout: some View {
         NavigationStack(path: $path) {
             homeList
-            .navigationDestination(for: UUID.self) { id in
-                if let connection = store.connections.first(where: { $0.id == id }) {
-                    // No pane target passed here — TerminalScreen reads the
-                    // deep-link pane straight from `router.paneRequest` itself
-                    // (see its own `.onChange`), which also lets it react to a
-                    // SECOND request naming a different pane on this same
-                    // connection while already on screen, when this push is a
-                    // no-op (`path` unchanged) and this closure never re-runs.
-                    // Plain push, not `.navigationTransition(.zoom)`: the zoom
-                    // transition installs its own drag-to-dismiss on the pushed
-                    // view, and a downward swipe in the terminal — a scroll —
-                    // popped the whole screen (iOS 26.2 simulator, 2026-09-11).
-                    // SwiftUI has no way to veto that gesture, so the terminal
-                    // keeps the standard push.
-                    TerminalScreen(connection: connection, hub: hub)
+            .navigationDestination(for: HomeRoute.self) { route in
+                switch route {
+                case .sessions(let id):
+                    sessionsPage(id)
+                case .terminal(let id):
+                    terminalPage(id)
                 }
             }
+        }
+    }
+
+    /// A host's sessions page (``SessionsNSHPage``), on the phone's stack
+    /// or in the iPad's detail column.
+    @ViewBuilder
+    private func sessionsPage(_ id: UUID) -> some View {
+        if store.connections.contains(where: { $0.id == id }) {
+            SessionsNSHPage(connectionId: id, store: store, hub: hub,
+                            model: nshModel, actions: nshActions)
+                .id(id)
+        }
+    }
+
+    /// A connection's terminal pushed on the phone's stack.
+    @ViewBuilder
+    private func terminalPage(_ id: UUID) -> some View {
+        if let connection = store.connections.first(where: { $0.id == id }) {
+            // No pane target passed here — TerminalScreen reads the
+            // deep-link pane straight from `router.paneRequest` itself
+            // (see its own `.onChange`), which also lets it react to a
+            // SECOND request naming a different pane on this same
+            // connection while already on screen, when this push is a
+            // no-op (`path` unchanged) and this closure never re-runs.
+            // Plain push, not `.navigationTransition(.zoom)`: the zoom
+            // transition installs its own drag-to-dismiss on the pushed
+            // view, and a downward swipe in the terminal — a scroll —
+            // popped the whole screen (iOS 26.2 simulator, 2026-09-11).
+            // SwiftUI has no way to veto that gesture, so the terminal
+            // keeps the standard push.
+            //
+            // `.id(id)` for the same reason the iPad detail below has
+            // one: replacing `[A]` with `[B]` — a notification for
+            // host B tapped while A's terminal is up — re-renders the
+            // destination in place, so without it the screen kept A's
+            // `@State` (its `active` session; `.task` never re-ran) under
+            // B's `connection`, claimed B's pane request and selected
+            // B's pane id on A's tmux. Pane ids like `%5` exist on
+            // every host, so that "worked" — on the wrong machine.
+            TerminalScreen(connection: connection, hub: hub)
+                .id(id)
         }
     }
 
@@ -302,7 +434,11 @@ struct HomeView: View {
                 // transport chip and a user@host, and at 320pt the host wraps.
                 .navigationSplitViewColumnWidth(min: 320, ideal: 380, max: 480)
         } detail: {
-            if let id = path.last,
+            // A host deleted from the sidebar takes its page with it, as a
+            // terminal's does: the placeholder shows.
+            if case .sessions(let id)? = path.last, store.connections.contains(where: { $0.id == id }) {
+                sessionsPage(id)
+            } else if case .terminal(let id)? = path.last,
                let connection = store.connections.first(where: { $0.id == id }) {
                 TerminalScreen(connection: connection, hub: hub,
                                onLeave: { leaveTerminal() },
@@ -325,8 +461,75 @@ struct HomeView: View {
     }
 
     /// The connection list with its title and toolbar — the root of the
-    /// stack on a phone, the sidebar on an iPad.
+    /// stack on a phone, the sidebar on an iPad: drawn by NSH when its
+    /// switch is on (``HomeNSHPage``), else by SwiftUI.
     private var homeList: some View {
+        Group {
+            if usesNSHList {
+                HomeNSHPage(store: store, hub: hub, disconnecting: disconnectingIds, sidebar: usesSplitLayout,
+                            model: nshModel, actions: nshActions, onFailure: { nshFailed = true })
+                    .background { HomeStage() }
+            } else {
+                swiftUIList
+            }
+        }
+        #if DEBUG
+        .task { await connectSeeded() }
+        #endif
+    }
+
+    #if DEBUG
+    /// `-MOSHPIT_SEED_HOME_FIXTURE`'s connections that ask to, connected as
+    /// a tap on their heads would, once a launch (``HomeSeed``).
+    private func connectSeeded() async {
+        guard !HomeView.seededConnected else { return }
+        HomeView.seededConnected = true
+        await HomeSeed.prepare()
+        for connection in HomeSeed.autoConnect where hub.session(for: connection) == nil {
+            connect(connection)
+        }
+    }
+
+    private static var seededConnected = false
+    #endif
+
+    /// Whether the NSH list shows: its switch is on (a capture run's
+    /// `home-nsh` turns it on), this build can host NSH, it ran, and
+    /// sessions run on the core, where its record is read
+    /// (``HomeNSHPage/shows(nsh:rustSessions:)``).
+    private var usesNSHList: Bool {
+        guard !nshFailed else { return false }
+        var nsh = NSHScreen.home.isOn
+        #if DEBUG
+        if CaptureScreen.requested == .homeNSH { nsh = NSHSurface.available }
+        #endif
+        return HomeNSHPage.shows(nsh: nsh,
+                                 rustSessions: RustSessionSwitch.available && RustSessionSwitch.isOn)
+    }
+
+    /// What the NSH list's connection-level asks do: what the SwiftUI card's
+    /// closures do.
+    private var nshActions: HomeNSHActions {
+        let find = { (id: UUID) in store.connections.first { $0.id == id } }
+        return HomeNSHActions(
+            settings: { showSettings = true },
+            add: { handleAdd() },
+            toggleSidebar: { toggleSidebar() },
+            connect: { id in if let connection = find(id) { connect(connection) } },
+            enter: { id in open(id) },
+            sessions: { id in openSessions(id) },
+            edit: { id in editingConnection = find(id) },
+            delete: { id in deletingConnection = find(id) },
+            disconnect: { id in if let connection = find(id) { disconnect(connection) } },
+            retryAttach: { id in if let connection = find(id) { retryAttach(connection) } },
+            present: { modal in
+                cardModalText = modal.initialText
+                cardModal = modal
+            })
+    }
+
+    /// The SwiftUI list.
+    private var swiftUIList: some View {
         List {
             if !store.connections.isEmpty {
                 // One status row instead of three decorative counters — it
@@ -396,8 +599,19 @@ struct HomeView: View {
     /// on the iPad. Reassigning `path` to its current value is a no-op for
     /// NavigationStack, so the check is only for clarity.
     private func open(_ id: UUID) {
-        if path != [id] { path = [id] }
+        if path.last == .sessions(id) {
+            path.append(.terminal(id))
+        } else if path != [.terminal(id)] {
+            path = [.terminal(id)]
+        }
         // In portrait the sidebar overlays the terminal; get out of its way.
+        if usesSplitLayout && splitIsPortrait { columnVisibility = .detailOnly }
+    }
+
+    /// A host's sessions page: pushed on the phone, the detail column on the
+    /// iPad (out of the sidebar's way in portrait, as a terminal is).
+    private func openSessions(_ id: UUID) {
+        path = [.sessions(id)]
         if usesSplitLayout && splitIsPortrait { columnVisibility = .detailOnly }
     }
 
@@ -406,7 +620,13 @@ struct HomeView: View {
     /// with no way to the hosts is not "home".
     private func leaveTerminal() {
         withAnimation {
-            path = []
+            // Back to the host's sessions page the terminal was opened from;
+            // else nothing is pushed.
+            if case .terminal? = path.last { path.removeLast() }
+            switch path.last {
+            case .sessions?: break
+            default: path = []
+            }
             columnVisibility = .all
         }
     }
@@ -530,7 +750,8 @@ struct HomeView: View {
         disconnectingIds.insert(connection.id)
         Haptics.tap()
         Task {
-            monitor.untrack(connectionId: connection.id)
+            // The agents there are still waiting: their cards stay up.
+            monitor.untrack(connectionId: connection.id, keepWaitingCards: true)
             await hub.disconnect(connection.id)
             disconnectingIds.remove(connection.id)
         }
@@ -544,7 +765,7 @@ struct HomeView: View {
         disconnectingIds.insert(connection.id)
         Haptics.tap()
         Task {
-            monitor.untrack(connectionId: connection.id)
+            monitor.untrack(connectionId: connection.id, keepWaitingCards: true)
             await hub.disconnect(connection.id)
             disconnectingIds.remove(connection.id)
             connect(connection)
@@ -580,8 +801,8 @@ struct HomeView: View {
 /// `MoshpitBuildStamp` written by scripts/release/build-ipa.sh (git SHA + time, "+"
 /// marking uncommitted changes) so a sideloaded build can say exactly what
 /// it is; store builds fall back to version (build).
-private struct HomeFooter: View {
-    private var line: String {
+struct HomeFooter: View {
+    static var line: String {
         let info = Bundle.main.infoDictionary
         let version = info?["CFBundleShortVersionString"] as? String ?? "?"
         if let stamp = info?["MoshpitBuildStamp"] as? String, !stamp.isEmpty {
@@ -592,9 +813,10 @@ private struct HomeFooter: View {
     }
 
     var body: some View {
-        Text(line)
+        Text(Self.line)
             .font(.system(.caption2, design: .monospaced))
             .foregroundStyle(Ink.meta)
+            .accessibilityIdentifier("home-version")
             .frame(maxWidth: .infinity)
             .padding(.top, 8)
     }
@@ -698,6 +920,10 @@ struct ConnectionCard: View {
         var placeholder: LocalizedStringKey
         var initialText = ""
         var confirmLabel: LocalizedStringKey
+        /// Why what was typed won't be applied, or nil (see
+        /// ``MultiplexerName/refusal(_:)``): the card stays up with the
+        /// reason as its message.
+        var refuses: ((String) -> String?)?
         let apply: (String) -> Void
     }
 
@@ -726,7 +952,7 @@ struct ConnectionCard: View {
         let id = UUID()
         let initialRepos: [String]
         let load: () async -> (repos: [String], agents: [String])
-        let start: (AgentTaskRequest) async -> String?
+        let start: (AgentTaskRequest) async -> AgentTaskOutcome
     }
 
     private var isLive: Bool { active != nil }
@@ -737,7 +963,7 @@ struct ConnectionCard: View {
     private var isDead: Bool {
         guard let active else { return false }
         switch active.viewModel.status {
-        case .failed, .disconnected: return true
+        case .failed, .disconnected, .ended: return true
         default: return false
         }
     }
@@ -755,8 +981,12 @@ struct ConnectionCard: View {
         // attached YET (first-time discovery). `everAttached` gates this so a
         // session that later ended (last session killed → server exits →
         // isAttached flips back to false) doesn't re-show "Attaching…" forever.
+        // Not while the server has no session (mosh, B228): that is no
+        // attach in progress but one waiting for the person's first session,
+        // and the card shows the empty SESSIONS list with its +.
         if connection.multiplexer == .tmux, let c = active.tmuxControl,
-           !c.snapshot.isAttached, !c.snapshot.everAttached, !active.attachStalled {
+           !c.snapshot.isAttached, !c.snapshot.everAttached, !active.attachStalled,
+           !active.awaitingFirstSession {
             if case .connected = active.viewModel.status { return true }
         }
         return false
@@ -899,12 +1129,19 @@ struct ConnectionCard: View {
                 }))
     }
 
+    /// A typed name the multiplexer would not get as typed — a line break or
+    /// another control character (B139) — and why.
+    nonisolated private static func nameRefusal(_ typed: String) -> String? {
+        MultiplexerName.refusal(typed.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
     /// Ask Home for the rename card, pre-filled with `currentName`, applying
     /// through `apply` on confirm.
     private func beginRename(title: String, currentName: String, apply: @escaping (String) -> Void) {
         present(Modal(kind: .input(InputRequest(
             icon: "pencil", title: "\(title)", placeholder: "Name",
-            initialText: currentName, confirmLabel: "Rename", apply: apply))))
+            initialText: currentName, confirmLabel: "Rename",
+            refuses: Self.nameRefusal, apply: apply))))
     }
 
     /// Ask Home for the name-before-create card: a session, or a window in
@@ -914,6 +1151,7 @@ struct ConnectionCard: View {
             icon: "plus", title: "New \(noun)",
             message: Text("Leave blank for an automatic name."),
             placeholder: "Name (optional)", confirmLabel: "Create",
+            refuses: Self.nameRefusal,
             apply: { typed in
                 let trimmed = typed.trimmingCharacters(in: .whitespacesAndNewlines)
                 apply(trimmed.isEmpty ? nil : trimmed)
@@ -1173,6 +1411,7 @@ struct ConnectionCard: View {
                     control.selectPane(entry.paneId)
                     onEnter()
                 }
+                .accessibilityIdentifier("home-agent-\(connection.id.uuidString)-\(entry.paneId)")
                 .listRowInsets(EdgeInsets(top: 0, leading: 14, bottom: 0, trailing: 14))
             }
         }
@@ -1513,7 +1752,7 @@ struct ConnectionCard: View {
     @ViewBuilder
     private func sessionsSection<C: MultiplexerControlling>(control: C) -> some View {
         let snapshot = control.snapshot
-        let sessions = snapshot.sessions.values.sorted { $0.id < $1.id }
+        let sessions = snapshot.sortedSessions
 
         sessionsHeaderRow(control: control, count: sessions.count)
         if let herdr = control as? HerdrControlClient,
@@ -1730,37 +1969,50 @@ struct ConnectionCard: View {
     /// herdr refused every command over client/server version skew — the row
     /// says so and carries the one-tap remedy (same consent story as the
     /// terminal banner: restarting exits pane processes, so it always asks).
+    /// When the skew runs the other way — the `herdr` on the host's PATH is
+    /// the OLDER side — the row names the versions and drops the button:
+    /// restarting with that client would downgrade the server and exit every
+    /// pane (restartServer() refuses it too; this just doesn't offer it).
     private func herdrMismatchRow(_ message: String, client: HerdrControlClient) -> some View {
-        HStack(spacing: 8) {
+        let skew = client.versionSkew
+        let restartFixes = !(skew?.clientIsOlder ?? HerdrSnapshot.clientIsOlder(message))
+        return HStack(spacing: 8) {
             Image(systemName: "exclamationmark.triangle.fill")
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(Ink.warn)
-            Text(message)
+            Text(skew?.notice ?? message)
                 .font(Face.mono(10))
                 .foregroundStyle(Ink.meta)
                 .lineLimit(3)
             Spacer(minLength: 8)
-            Button {
-                Task { await client.restartServer() }
-            } label: {
-                Group {
-                    if client.isRestartingServer {
-                        ProgressView().controlSize(.mini).tint(Ink.accent)
-                    } else {
-                        Text("Restart server")
-                            .font(Face.mono(10, .semibold))
-                            .foregroundStyle(Ink.accent)
-                    }
-                }
-                .padding(.horizontal, 10).padding(.vertical, 6)
-                .background(Ink.accent.opacity(0.12), in: Capsule())
-            }
-            .buttonStyle(.plain)
-            .disabled(client.isRestartingServer)
+            if restartFixes { restartServerButton(client) }
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
         .background(Color.white.opacity(0.035), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+    }
+
+    private func restartServerButton(_ client: HerdrControlClient) -> some View {
+        Button {
+            // A refused restart (.wouldDowngrade) needs no handling here: the
+            // refusal's diagnosis lands in client.versionSkew, which redraws
+            // this row without the button.
+            Task { await client.restartServer() }
+        } label: {
+            Group {
+                if client.isRestartingServer {
+                    ProgressView().controlSize(.mini).tint(Ink.accent)
+                } else {
+                    Text("Restart server")
+                        .font(Face.mono(10, .semibold))
+                        .foregroundStyle(Ink.accent)
+                }
+            }
+            .padding(.horizontal, 10).padding(.vertical, 6)
+            .background(Ink.accent.opacity(0.12), in: Capsule())
+        }
+        .buttonStyle(.plain)
+        .disabled(client.isRestartingServer)
     }
 
     private func sessionsEmptyRow(_ vocab: MultiplexerVocabulary) -> some View {
@@ -1888,6 +2140,8 @@ struct ConnectionCard: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        // The NSH tree's identifiers, so a UI test finds a row on either.
+        .accessibilityIdentifier("home-session-\(connection.id.uuidString)-\(session.id)")
 
         return SwipeTrayRow(id: "s:\(session.id)", openRow: $openSwipeRow, actions: [
             renameAction { renameSession(session, control: control) },
@@ -1944,6 +2198,7 @@ struct ConnectionCard: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .accessibilityIdentifier("home-window-disclosure-\(connection.id.uuidString)-\(window.id)")
             } else {
                 Color.clear.frame(width: 20, height: Self.treeRowMinHeight)
             }
@@ -1984,6 +2239,7 @@ struct ConnectionCard: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .accessibilityIdentifier("home-window-\(connection.id.uuidString)-\(window.id)")
         }
 
         return SwipeTrayRow(id: "w:\(window.id)", openRow: $openSwipeRow, actions: [
@@ -2053,6 +2309,7 @@ struct ConnectionCard: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .accessibilityIdentifier("home-pane-\(connection.id.uuidString)-\(pane.id)")
 
         return SwipeTrayRow(id: "p:\(pane.id)", openRow: $openSwipeRow, actions: [
             killAction(killPaneTarget(pane, control: control), systemImage: "rectangle.split.2x1"),
@@ -2230,6 +2487,7 @@ struct ConnectionCard: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .accessibilityIdentifier("card-dead-\(connection.displayName)")
         .listRowInsets(EdgeInsets())
     }
 }
@@ -2243,7 +2501,7 @@ struct ConnectionCard: View {
 /// this action destroys work that exists nowhere else. herdr refuses a dirty
 /// removal on its own and leaves every file in place, so the force flag is
 /// never set without the user seeing that sentence.
-private struct WorktreeRemovalDialogs: ViewModifier {
+struct WorktreeRemovalDialogs: ViewModifier {
     @Binding var target: ConnectionCard.WorktreeTarget?
     @Binding var forceTarget: ConnectionCard.WorktreeTarget?
     /// Why a removal didn't happen — herdr's own words, not ours — for the
@@ -2291,4 +2549,11 @@ private struct WorktreeRemovalDialogs: ViewModifier {
             }
         }
     }
+}
+
+/// A page Home pushes: a connection's terminal, or a host's sessions
+/// (§6.2), whose rows open the terminal on top of it.
+enum HomeRoute: Hashable {
+    case terminal(UUID)
+    case sessions(UUID)
 }

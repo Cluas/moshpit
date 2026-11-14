@@ -31,6 +31,20 @@ struct ScrollMotionTests {
         #expect(slowRows == fastRows)
     }
 
+    /// B149: `Int(_:)` trapped on rows past Int's range.
+    @Test("absurd travel saturates instead of trapping, and the carry keeps working after it")
+    func absurdTravel() {
+        var carry = ScrollRowCarry()
+        // 1e300 / 1e-300 is past Double: infinite rows, the most Int says.
+        #expect(carry.take(pixels: 1e300, cellHeight: 1e-300) == .max)
+        #expect(carry.remainder == 0, "a remainder past Double's range starts over")
+        #expect(carry.take(pixels: 25, cellHeight: 10) == 2, "and the next drag counts as ever")
+        var down = ScrollRowCarry()
+        #expect(down.take(pixels: -1e300, cellHeight: 1) == .min)
+        #expect(down.take(pixels: -1e300, cellHeight: .leastNonzeroMagnitude) == .min)
+        #expect(down.take(pixels: -15, cellHeight: 10) == -1)
+    }
+
     @Test("a zero cell height or a non-finite delta yields nothing")
     func degenerate() {
         var carry = ScrollRowCarry()

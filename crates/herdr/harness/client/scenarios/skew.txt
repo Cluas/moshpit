@@ -1,0 +1,6 @@
+# A server older than the client refuses its protocol: the versions are
+# asked once per episode.
+host mismatch client protocol 22 is newer than server protocol 19; run herdr server stop
+host version 0.8.0
+at 0 start
+end 20000

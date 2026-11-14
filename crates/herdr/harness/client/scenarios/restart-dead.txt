@@ -1,0 +1,5 @@
+# A restart on a link that stopped answering.
+at 0 start
+at 500 host-rule herdr - hang
+at 500 restart
+end 200000

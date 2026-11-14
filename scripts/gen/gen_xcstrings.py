@@ -19,7 +19,6 @@ S = {}
 
 def add(key, zh=SAME, ja=None):
     S[key] = SAME if zh is SAME else (zh, ja)
-
 def plural(key, en_one, zh, ja):
     S[key] = {"plural": True, "en_one": en_one, "zh": zh, "ja": ja}
 
@@ -51,7 +50,7 @@ add("Delete", "删除", "削除")
 add("Edit", "编辑", "編集")
 add("Open", "打开", "開く")
 add("Connect", "连接", "接続")
-add("Disconnect", "断开连接", "切断")
+add("Disconnect", "断开", "切断")
 add("Settings", "设置", "設定")
 add("Continue", "继续", "続ける")
 
@@ -68,12 +67,53 @@ add("Removes the saved server and its stored credentials from this device.",
     "这台服务器和它保存的登录凭据都会从本机删除。",
     "保存済みのサーバーと、このデバイスに保存された認証情報を削除します。")
 add("Delete Connection", "删除连接", "接続を削除")
+# The NSH Home's refresh button (SwiftUI's read the symbol's name).
+add("Refresh", "刷新", "更新")
+# The NSH Home's sidebar button on iPad (UIKit's own is the system's).
+add("Hide Sidebar", "隐藏边栏", "サイドバーを非表示")
+add("Couldn't delete the connection", "没能删除这个连接", "接続を削除できませんでした")
+add("Its push pairing couldn't be removed from this phone, so the connection was kept. The diagnostics log has the reason.",
+    "这台手机上它的推送配对信息没能删掉，所以连接也没删。原因在诊断日志里。",
+    "この iPhone からプッシュ通知のペアリング情報を削除できなかったため、接続も削除していません。理由は診断ログにあります。")
 add("SESSIONS", "会话", "セッション")
 add("%lldh roamed", "漫游 %lld 小时", "ローミング %lld 時間")
 add("%lldh up", "在线 %lld 小时", "稼働 %lld 時間")
 plural("%lld windows", "%lld window", "%lld 个窗口", "%lld個のウィンドウ")
 plural("%lld panes", "%lld pane", "%lld 个窗格", "%lld個のペイン")
 plural("%lld keys", "%lld key", "%lld 个密钥", "%lld個のキー")
+
+# ---------- Home (R6, UI-DESIGN §6.1) ----------
+add("Online", "在线", "オンライン")
+add("Offline", "离线", "オフライン")
+plural("%lld waiting", "%lld waiting", "%lld 个在等你", "%lld 件があなた待ち")
+add("Edit…", "编辑…", "編集…")
+add("Delete…", "删除…", "削除…")
+add("Lost just now", "刚刚断开", "たった今切断")
+plural("Lost %lld minutes ago", "Lost %lld minute ago", "%lld 分钟前断开", "%lld 分前に切断")
+plural("Lost %lld hours ago", "Lost %lld hour ago", "%lld 小时前断开", "%lld 時間前に切断")
+plural("Lost %lld days ago", "Lost %lld day ago", "%lld 天前断开", "%lld 日前に切断")
+add("Connecting to tmux…", "正在连接 tmux…", "tmux に接続中…")
+add("Connecting to herdr…", "正在连接 herdr…", "herdr に接続中…")
+add("Retry connecting tmux", "重试连接 tmux", "tmux への接続を再試行")
+add("tmux isn't answering", "tmux 没有回应", "tmux が応答しません")
+add("Needs you", "在等你", "あなた待ち")
+add("Nothing needs you", "没有在等你的", "あなた待ちはありません")
+add("%lld working", "%lld 个工作中", "%lld 件作業中")
+plural("%lld done", "%lld done", "%lld 个已完成", "%lld 件完了")
+plural("%lld idle", "%lld idle", "%lld 个空闲", "%lld 件待機中")
+plural("%lld connections online", "%lld connection online", "%lld 个连接在线", "%lld 件の接続がオンライン")
+add("Add a machine you can reach over SSH. Agents running there show up here.", "添加一台能 SSH 的机器，上面跑的智能体会出现在这里。", "SSH で接続できるマシンを追加すると、そこで動いているエージェントがここに表示されます。")
+plural("%lld minutes", "%lld minute", "%lld 分钟", "%lld 分")
+plural("%lld hours", "%lld hour", "%lld 小时", "%lld 時間")
+plural("%lld more working", "%lld more working", "另外 %lld 个工作中", "ほかに %lld 件作業中")
+add("All sessions", "全部会话", "すべてのセッション")
+add("All workspaces", "全部工作区", "すべてのワークスペース")
+
+add("Sign-in failed", "登录失败", "サインインできませんでした")
+add("Host key not confirmed", "主机密钥未确认", "ホストキーが未確認です")
+add("The host's key changed", "主机密钥变了", "ホストキーが変わりました")
+add("Timed out", "连接超时", "タイムアウトしました")
+add("The proxy didn't connect", "代理连不上", "プロキシに接続できません")
 
 # ---------- Add Connection ----------
 add("CONNECTION", "连接", "接続")
@@ -83,6 +123,54 @@ add("Port", "端口", "ポート")
 add("Username", "用户名", "ユーザー名")
 add("AUTHENTICATION", "登录方式", "認証")
 add("Password", "密码", "パスワード")
+# The ui layer's secret field (ui/src/ui/field.rs): a password or key the
+# connection keeps, never shown, and what screen readers say for it.
+add("Saved", "已保存", "保存済み")
+add("Type to replace", "输入即替换", "入力して置き換え")
+add("Replaces saved", "替换已保存的", "保存済みを置き換え")
+add("%@, saved, type to replace", "%@，已保存，输入可替换", "%@、保存済み、入力で置き換え")
+add("%@, replaces saved", "%@，替换已保存的", "%@、保存済みを置き換え")
+# A field's name, then its error, as screen readers say them.
+add("%@, %@", "%@，%@", "%@、%@")
+# The redesign's theme, accent and folder pages (R13/R14, ui/src/theme_gallery.rs,
+# accent.rs, accent_editor.rs, theme_editor.rs, terminal/folder.rs).
+add("Built-in", "内置", "内蔵")
+add("Yours", "自己做的", "自分で作成")
+add("Long-press a theme to duplicate, edit or delete it.", "长按主题可以复制、编辑或删除。", "テーマを長押しすると、複製・編集・削除できます。")
+add("New…", "新建…", "新規…")
+add("Import…", "导入…", "読み込む…")
+add("Long-press an accent to edit or delete it.", "长按强调色可以编辑或删除。", "アクセントを長押しすると、編集・削除できます。")
+add("ANSI colors", "ANSI 颜色", "ANSIカラー")
+add("Bright colors", "亮色", "明るい色")
+add("Bright colors follow the eight above. Many tools draw dim text in bright black, so keep it apart from black.", "亮色默认跟着上面八种走。很多工具用亮黑写暗淡的字，别把它调得和黑色一样。", "明るい色は上の8色に合わせて決まります。暗い文字に明るい黒を使うツールが多いので、黒とは区別しておきましょう。")
+add("As text in the light appearance this color is too pale, so the app darkens it there.", "这个颜色在浅色外观下做文字会偏淡，系统会自动调深。", "この色はライトモードの文字には淡すぎるため、アプリが自動で濃くします。")
+add("Dark", "深色", "ダーク")
+add("Light", "浅色", "ライト")
+add("Photos…", "照片…", "写真…")
+add("Files…", "文件…", "ファイル…")
+add("New folder…", "新建文件夹…", "新規フォルダ…")
+add("Couldn't open this folder", "打不开这个文件夹", "このフォルダを開けません")
+add("This folder is empty", "这个文件夹是空的", "このフォルダは空です")
+add("Upload…", "上传…", "アップロード…")
+# Connection form (R9, §6.5)
+add("Add connection", "添加连接", "接続を追加")
+add("Edit connection", "编辑连接", "接続を編集")
+add("User", "用户", "ユーザー")
+add("SIGN IN", "登录", "ログイン")
+add("Sign in with", "登录方式", "ログイン方法")
+add("SSH key", "SSH 密钥", "SSH キー")
+add("Use mosh", "使用 mosh", "mosh を使う")
+add("Survives network changes; needs UDP.", "换网络不断线；需要 UDP。", "ネットワークが変わっても切れません。UDP が必要です。")
+add("UDP ports are set in Settings, for every connection.", "UDP 端口在「设置」里统一设。", "UDP ポートは「設定」ですべての接続に共通で設定します。")
+add("SOCKS5")
+add("Proxies SSH only; mosh's UDP goes direct.", "只代理 SSH；mosh 的 UDP 直连。", "プロキシを通るのは SSH だけです。mosh の UDP は直接つながります。")
+add("tmux path", "tmux 路径", "tmux のパス")
+add("herdr path", "herdr 路径", "herdr のパス")
+add("If the host doesn't have the multiplexer you pick, Moshpit says so and opens a plain shell; it never switches to the other.", "主机上没有选中的终端复用器时，Moshpit 会说明并打开普通 shell，不会换用另一个。", "選んだマルチプレクサがホストにない場合、Moshpit はそう伝えて通常のシェルを開きます。もう一方に切り替えることはありません。")
+add("Port must be between 1 and 65535.", "端口要在 1 到 65535 之间。", "ポートは 1〜65535 の範囲で指定してください。")
+add("Delete connection…", "删除连接…", "接続を削除…")
+add("Couldn't save the password.", "没能保存密码。", "パスワードを保存できませんでした。")
+add("Couldn't save the key.", "没能保存密钥。", "キーを保存できませんでした。")
 add("SSH Key", "SSH 密钥", "SSH キー")
 add("Key", "密钥", "キー")
 add("Paste PEM", "粘贴 PEM", "PEM を貼り付け")
@@ -100,10 +188,14 @@ add("Roam on Cellular", "蜂窝网络漫游", "モバイル通信でローミン
 add("Reconnect over 5G/LTE when Wi-Fi drops", "Wi-Fi 断了就用 5G/LTE 接着连", "Wi-Fi が切れたら 5G/LTE で再接続")
 add("ADVANCED", "高级", "詳細設定")
 add("Custom tmux Path", "自定义 tmux 路径", "カスタム tmux パス")
-add("Compress Output", "压缩输出", "出力を圧縮")
 add("Add Connection", "添加连接", "接続を追加")
 add("Edit Connection", "编辑连接", "接続を編集")
 add("Could not save", "无法保存", "保存できませんでした")
+# Saving a connection whose sign-in method changed with no new secret: its
+# own item holds the old method's (ConnectionCredential.Refusal).
+add("To change how this connection signs in, enter the new password or key.",
+    "要换登录方式，得填上新的密码或密钥。",
+    "サインイン方法を変えるには、新しいパスワードまたは鍵を入力してください。")
 
 # ---------- Settings ----------
 add("DISPLAY", "显示", "表示")
@@ -140,6 +232,11 @@ add("Mosh by default", "默认使用 Mosh", "デフォルトで Mosh を使用")
 add("Wrap new SSH hosts with mosh-server on connect", "新添加的 SSH 主机默认通过 mosh-server 连接", "新しい SSH ホストを接続時に mosh-server でラップ")
 add("Predictive Echo", "预测回显", "予測エコー")
 add("Show typed characters locally before server confirms", "不等服务器确认，输入的字符先显示出来", "サーバー確認前に入力文字をローカルで表示")
+# mosh's predictive echo modes, the Predictive Echo menu's choices.
+add("Adaptive", "自适应", "自動調整")
+add("Always", "始终", "常に")
+add("Never", "从不", "しない")
+add("Experimental", "实验性", "実験的")
 add("Server binary", "服务器程序", "サーバーバイナリ")
 add("UDP port range", "UDP 端口范围", "UDP ポート範囲")
 add("KEYBOARD · KEYS", "键盘 · 密钥", "キーボード · キー")
@@ -296,21 +393,21 @@ add("Raise the keyboard as soon as a terminal opens, instead of after you tap it
 # Offline host-setup sheet
 add("Automatic — connect to inspect", "自动完成，连上主机后可查看", "自動——接続すると確認できます")
 add("Host setup is automatic. Connecting to a host installs and repairs everything it needs — scripts, hooks registration, push pairing — and asks before its first install. Connect to a host to inspect or remove its setup here.",
-    "主机这边不用手动配置。每次连接时，Moshpit 会自动装好并修复需要的东西：脚本、hooks 注册、推送配对。第一次安装前会先问你。连上主机后，可以在这里查看或移除这些设置。",
+    "主机这边不用手动配置。每次连接，Moshpit 都会把需要的东西自动装好、修好：脚本、状态脚本的注册、推送配对，第一次安装前会先问你。连上主机后，可以在这里查看或移除。",
     "ホスト設定は自動です。ホストに接続すると必要なもの——スクリプト、フック登録、プッシュペアリング——を自動でインストール・修復し、初回インストール前には確認します。接続するとここで確認・削除できます。")
 add("PAIRED HOSTS", "已配对主机", "ペアリング済みホスト")
 add("paired %@", "配对于 %@", "%@ にペアリング")
 # Notification info sheet
 add("Agents stamp their state", "智能体自报状态", "エージェントが状態を報告")
 add("Coding agents (Claude Code, Codex, …) report working / needs-you / done through hooks Moshpit installs on your host — precise states, not guesses. The terminal bell still works as a fallback for everything else.",
-    "Claude Code、Codex 这类编程智能体，通过 Moshpit 装在主机上的 hooks 自己上报状态：工作中、等你、已完成。状态是准的，不是猜的。其他程序还是靠终端响铃兜底。",
+    "Claude Code、Codex 这类编程智能体，靠 Moshpit 装在主机上的状态脚本自己报状态：工作中、在等你、已完成。状态是准的，不靠猜。其他程序还是靠终端响铃兜底。",
     "コーディングエージェント（Claude Code、Codex など）は Moshpit がホストにインストールするフックで「作業中 / あなた待ち / 完了」を報告します——推測ではなく正確な状態です。それ以外はターミナルベルがフォールバックとして機能します。")
 add("While a session is attached, the Dynamic Island shows whether the agent is working, idle, or waiting on you. Tapping it deep-links straight back to that pane.",
     "连着会话时，灵动岛会显示智能体是在工作、闲着，还是在等你。点一下直接回到那个窗格。",
     "セッションのアタッチ中、Dynamic Island はエージェントが作業中・アイドル・あなた待ちのいずれかを表示します。タップするとそのペインへ直接ジャンプします。")
 add("Push, sealed end-to-end", "端到端加密的推送", "プッシュ、エンドツーエンド暗号化")
 add("When the app isn’t running, your host sends the alert through Moshpit’s push relay. It is encrypted on your host with a key only this device holds — the relay and Apple carry ciphertext and can read none of it. Delivered even from a locked phone.",
-    "App 没在运行时，通知由你的主机经 Moshpit 的中转服务器发过来。内容在主机上就用只有这台手机才有的密钥加密，中转服务器和 Apple 都只能看到密文。锁屏状态下也能收到。",
+    "App 没在运行时，你的主机经 Moshpit 的推送服务把通知发过来。内容在主机上就用只有这台手机才有的密钥加密，推送服务和 Apple 经手的都是密文，一个字也读不到。锁屏时也能收到。",
     "アプリが起動していないとき、通知はホストから Moshpit のプッシュリレー経由で届きます。内容はこのデバイスだけが持つ鍵でホスト上で暗号化され、リレーも Apple も暗号文を運ぶだけで読めません。ロック中の iPhone にも届きます。")
 add("Quiet by design", "尽量不打扰", "静けさを前提に")
 add("A question must stand for 30 seconds before any phone hears about it — answered at your desk means never announced. All waiting agents share one summary card; only the first rings. A finished turn shows the prompt it answered and only chimes if it ran three minutes or more. Parked agents stay silent.",
@@ -339,14 +436,90 @@ add("THIS DEVICE · SECURE ENCLAVE", "本机 · SECURE ENCLAVE", "このデバ�
 add("Hardware-backed keys cannot be exported; every signature triggers Face ID.",
     "密钥存在安全芯片里，导不出来，每次签名都要过 Face ID。",
     "ハードウェア保護されたキーは書き出せません。署名のたびに Face ID が起動します。")
+# Android's words where the shared screens say iOS's (B258): the Android
+# Keystore for the Secure Enclave and the Keychain, this device for the
+# iPhone, an email app for Mail.
+add("THIS DEVICE · ANDROID KEYSTORE", "本机 · Android 密钥库", "このデバイス · ANDROID KEYSTORE")
+add("Keys in the Android Keystore cannot be exported; every signature is made inside it.",
+    "存在 Android 密钥库里的密钥导不出来，每次签名都在密钥库里完成。",
+    "Android Keystore のキーは書き出せません。署名はすべて Keystore の中で行われます。")
+add("Generates the key pair on device. The private key can optionally be held in the Android Keystore — used only for signing, never leaving it.",
+    "本地生成密钥对。私钥可选交给 Android 密钥库保管，只在签名时调用，不出密钥库。",
+    "デバイス上で鍵ペアを生成します。秘密鍵は Android Keystore に保管でき、署名時のみ使用され、Keystore の外には出ません。")
+add("Android Keystore keys are limited to ECDSA-P256; the algorithm adjusts automatically when the Keystore is on.",
+    "Android 密钥库只支持 ECDSA-P256，打开后算法会自动切换。",
+    "Android Keystore のキーは ECDSA-P256 に限定されます。Keystore を有効にするとアルゴリズムは自動調整されます。")
+add("Store in Android Keystore", "存入 Android 密钥库", "Android Keystore に保存")
+add("This key is protected by a passphrase. It's used once, to unlock the key here; from then on the Android Keystore protects it.",
+    "这把密钥设了口令。口令只在导入时用一次，解开后密钥由 Android 密钥库保护。",
+    "この鍵はパスフレーズで保護されています。パスフレーズは読み込み時に一度だけ使い、以降の鍵は Android Keystore が保護します。")
+add("The accent color tints the app's controls and highlights. It is separate from the terminal color scheme (Display → Theme, below).",
+    "强调色决定 App 里控件和高亮的颜色，不影响终端配色，终端配色在下面的「显示 → 主题」。",
+    "アクセントカラーはアプリのコントロールとハイライトに適用されます。ターミナルの配色（下の「表示 → テーマ」）とは無関係です。")
+add("1.1s cadence", "每 1.1 秒一闪", "1.1 秒周期")
+add("Mosh runs over UDP and survives IP changes. If your server is behind a strict firewall, open the port range above outbound from this device.",
+    "Mosh 走 UDP，IP 变了也不掉线。如果服务器的防火墙很严，要让上面这段端口能从这台设备连通。",
+    "Mosh は UDP 上で動作し、IP の変化にも耐えます。サーバーが厳格なファイアウォール内にある場合は、このデバイスからの送信方向で上記のポート範囲を開放してください。")
+add("Mail goes to support@cluas.eu.org through your own email app and leaves only when you tap Send there. Issues are public and sit next to the code; keep security reports to mail.",
+    "邮件通过你自己的邮件 App 发到 support@cluas.eu.org，在邮件里点发送之前什么都不会发出。Issue 是公开的，就在代码旁边；安全问题请走邮件。",
+    "メールはお使いのメールアプリから support@cluas.eu.org に送られ、そこで送信するまで何も送られません。Issue は公開され、コードのすぐ隣にあります。セキュリティの問題はメールでお知らせください。")
 add("No device key yet — generate one with ＋", "还没有设备密钥，点 ＋ 生成一个", "デバイスキーはまだありません — ＋で生成")
 add("IMPORTED", "已导入", "インポート済み")
 add("No imported keys", "没有已导入的密钥", "インポートされたキーはありません")
+# SSH Keys on the ui layer (R10): an empty group's button, a key's use, a copy's toast.
+add("No device key yet", "还没有设备密钥", "デバイスキーはまだありません")
+add("Generate key", "生成密钥", "キーを生成")
+add("Import key", "导入密钥", "キーをインポート")
+add("Used for %@", "用于 %@", "%@ で使用")
+add("Public key copied", "已复制公钥", "公開鍵をコピーしました")
+add("Fingerprint copied", "已复制指纹", "フィンガープリントをコピーしました")
+add("No keys yet", "还没有密钥", "キーはまだありません")
+# Add Key on the ui layer (R10): its fields' visible labels.
+add("Private key", "私钥", "秘密鍵")
+add("Public key", "公钥", "公開鍵")
+add("Import Public Key File…", "导入公钥文件…", "公開鍵ファイルを読み込む…")
+add("Fingerprint", "指纹", "フィンガープリント")
+# Shortcuts on the ui layer (R11): its groups' titles, a full bar, a delete's question.
+add("In the bar · %lld of %lld", "在栏上 · %lld/%lld", "バー上 · %lld/%lld")
+add("Available", "可以加的", "追加できるもの")
+add("The bar holds up to %lld.", "栏上最多 %lld 个。", "バーに置けるのは %lld 個までです。")
+add("It comes off the toolbar and out of your shortcuts.", "它会从快捷键栏和你的快捷键里删掉。", "ツールバーとあなたのショートカットから削除されます。")
+# Add Shortcut on the ui layer (R11): the modifiers' chips, the fields' labels, the colors' names.
+add("⌃ Control", "⌃ Control 键", "⌃ Control キー")
+add("⌥ Option", "⌥ Option 键", "⌥ Option キー")
+add("⇧ Shift", "⇧ Shift 键", "⇧ Shift キー")
+add("⌘ Command", "⌘ Command 键", "⌘ Command キー")
+add("Sends", "发送", "送信内容")
+add("Payload", "内容", "内容")
+add("At most 6 characters.", "最多 6 个字符。", "6 文字まで。")
+add("Gray", "灰色", "グレー")
+add("Amber", "琥珀色", "アンバー")
 add("Delete Key", "删除密钥", "キーを削除")
-add("It leaves this list for good: its public key can't be copied again or picked for a new connection. Connections already using it keep working.",
-    "删掉后它会从列表里彻底消失：公钥没法再复制，也不能再选给新连接。已经在用它的连接不受影响。",
-    "一覧から完全に消え、公開鍵のコピーや新しい接続での選択はできなくなります。すでに使っている接続はそのまま使えます。")
 add("unused since %@", "自 %@ 起未使用", "%@ 以降未使用")
+add("Its private key is erased from this device for good; Moshpit keeps no other copy. Servers that only trust this key will need another one.",
+    "它的私钥会从这台设备上彻底删除，Moshpit 不会另存副本。只认这把密钥的服务器，之后得换一把。",
+    "秘密鍵はこのデバイスから完全に削除され、Moshpit には控えも残りません。このキーしか登録していないサーバーには、別のキーが必要になります。")
+add("Key in use",
+    "密钥还在用",
+    "使用中のキー")
+add("Couldn't delete the key",
+    "没能删除这把密钥",
+    "キーを削除できませんでした")
+add("Recovered key %@",
+    "找回的密钥 %@",
+    "復元したキー %@")
+add("Not connected to tmux yet. Try again in a moment.",
+    "还没连上 tmux，稍后再试。",
+    "まだ tmux に接続していません。少し待ってからもう一度お試しください。")
+add("Connections using it: %@. Choose another key for them first, then delete this one.",
+    "还在用它的连接：%@。先给它们换一把密钥，再删这把。",
+    "このキーを使っている接続：%@。先にそれらの接続で別のキーを選んでから削除してください。")
+add("Moshpit can't tell yet which connections use this key, so it was kept. Try again in a moment.",
+    "Moshpit 暂时还看不出哪些连接在用这把密钥，所以先留着。稍后再试。",
+    "このキーを使っている接続をまだ確認できないため、キーは残しました。少し待ってからもう一度お試しください。")
+add("Its private key couldn't be removed from the keychain, so the key was kept. The diagnostics log has the reason.",
+    "它的私钥没能从钥匙串里删掉，所以这把密钥也留着。原因在诊断日志里。",
+    "秘密鍵をキーチェーンから削除できなかったため、キーは残しました。理由は診断ログにあります。")
 # Add Key
 add("Add Key", "添加密钥", "キーを追加")
 add("METHOD", "方式", "方式")
@@ -357,9 +530,6 @@ add("Generate", "生成", "生成")
 add("Import", "导入", "インポート")
 add("Hardware", "硬件", "ハードウェア")
 add("HARDWARE KEY", "硬件密钥", "ハードウェアキー")
-add("ECDSA-sk keys live on hardware tokens such as a YubiKey. iOS cannot enumerate them directly yet; paste the public key line (sk-ecdsa-sha2-nistp256@openssh.com …) under Import.",
-    "ECDSA-sk 密钥放在 YubiKey 这类硬件密钥上。iOS 目前读不到它们，请到「导入」里粘贴公钥那一行（sk-ecdsa-sha2-nistp256@openssh.com …）。",
-    "ECDSA-sk キーは YubiKey などのハードウェアトークンに保存されます。iOS はまだ直接列挙できません。Import で公開鍵行（sk-ecdsa-sha2-nistp256@openssh.com …）を貼り付けてください。")
 add("KEY DETAILS", "密钥详情", "キーの詳細")
 add("ED25519 recommended: 32-byte keys, fast signatures, no practical break to date.",
     "推荐 ED25519：32 字节密钥，签名快，目前未被实战攻破。",
@@ -375,10 +545,51 @@ add("Face ID confirmation before every signature", "每次签名前需 Face ID �
 add("Store in Secure Enclave", "存入 Secure Enclave", "Secure Enclave に保存")
 add("Hardware-backed · private key cannot be exported", "硬件托管 · 私钥不可导出", "ハードウェア保護 · 秘密鍵は書き出し不可")
 add("PRIVATE KEY", "私钥", "秘密鍵")
-add("Paste an OpenSSH / PEM private key; the public key line is used to compute the fingerprint (optional).",
-    "粘贴 OpenSSH 或 PEM 格式的私钥。公钥那一行只用来算指纹，可以不填。",
-    "OpenSSH / PEM の秘密鍵を貼り付けます。公開鍵行はフィンガープリントの計算に使われます（任意）。")
+add("Paste an OpenSSH or PEM private key; the public key and fingerprint come from it, so the public key line is optional.",
+    "粘贴 OpenSSH 或 PEM 格式的私钥。公钥和指纹都从私钥算出来，公钥那一行可以不填。",
+    "OpenSSH または PEM 形式の秘密鍵を貼り付けます。公開鍵とフィンガープリントは秘密鍵から求めるので、公開鍵行は省略できます。")
+add("This key is protected by a passphrase. It's used once, to unlock the key here; from then on the Keychain protects it, behind Face ID when required.",
+    "这把密钥设了口令。口令只在导入时用一次，解开后密钥存进钥匙串，开了「需要 Face ID」就得先过 Face ID。",
+    "この鍵はパスフレーズで保護されています。パスフレーズは読み込み時に一度だけ使い、以降の鍵はキーチェーンが保護します（Face ID を要求している場合は Face ID も）。")
+add("Passphrase", "口令", "パスフレーズ")
+# SSHKeyImportError (SSHPrivateKeyFile.swift)
+add("This isn't a private key Moshpit can read. Paste an OpenSSH or PEM private key, from its BEGIN line to its END line.",
+    "Moshpit 认不出这是私钥。请粘贴 OpenSSH 或 PEM 格式的私钥，从 BEGIN 那一行一直到 END 那一行。",
+    "Moshpit が読める秘密鍵ではありません。OpenSSH または PEM 形式の秘密鍵を、BEGIN の行から END の行まで貼り付けてください。")
+add("This private key is damaged or incomplete. Copy it again, from its BEGIN line to its END line.",
+    "这个私钥不完整或已损坏。从 BEGIN 那一行到 END 那一行重新复制一遍。",
+    "この秘密鍵は壊れているか、途中で切れています。BEGIN の行から END の行までもう一度コピーしてください。")
+add("This key is protected by a passphrase. Enter it to import the key.",
+    "这把密钥设了口令，输入口令才能导入。",
+    "この鍵はパスフレーズで保護されています。読み込むにはパスフレーズを入力してください。")
+add("That passphrase doesn't unlock this key.", "口令不对，解不开这把密钥。", "このパスフレーズでは鍵を開けません。")
+add("Security keys (sk keys), such as a YubiKey's, aren't supported yet.",
+    "暂不支持 YubiKey 这类安全密钥（sk 密钥）。",
+    "YubiKey などのセキュリティキー（sk キー）にはまだ対応していません。")
+add("Moshpit can't sign in with %@ keys. Ed25519, RSA and ECDSA keys work.",
+    "Moshpit 不能用 %@ 密钥登录。Ed25519、RSA 和 ECDSA 密钥都可以。",
+    "Moshpit は %@ 鍵ではサインインできません。Ed25519、RSA、ECDSA の鍵が使えます。")
+add("This key is encrypted with %@, which Moshpit can't unlock. Re-encrypt it with “ssh-keygen -p” and import it again.",
+    "这把密钥用 %@ 加密，Moshpit 解不开。用 ssh-keygen -p 重新加密后再导入。",
+    "この鍵は %@ で暗号化されていて、Moshpit では開けません。「ssh-keygen -p」で暗号化し直してから、もう一度読み込んでください。")
 add("Public key line (optional)", "公钥行（可选）", "公開鍵行（任意）")
+# A key stored as it was pasted, met at connect (StoredKey, SSHService)
+add("This key is locked with a passphrase. Connect again and enter it — Moshpit asks for it only once.",
+    "这把密钥设了口令。重新连接时输入一次就行，之后不会再问。",
+    "この鍵はパスフレーズで保護されています。もう一度接続して入力してください。尋ねるのはこの一度だけです。")
+# Face ID or the passphrase card cancelled (B392)
+add("Signing in was cancelled, so Moshpit didn't connect. Connect again to try once more.",
+    "登录已取消，没有连接。再连一次就能重试。",
+    "サインインがキャンセルされたため、接続しませんでした。もう一度接続すれば再試行できます。")
+add("The private key saved for this connection is damaged, or isn't one Moshpit can read. Import or paste the key again.",
+    "这个连接保存的私钥已损坏，或者不是 Moshpit 能读的格式。请重新导入或粘贴这把密钥。",
+    "この接続に保存された秘密鍵は壊れているか、Moshpit が読める形式ではありません。鍵をもう一度読み込むか、貼り付けてください。")
+add("Key Passphrase", "密钥口令", "鍵のパスフレーズ")
+add("The key for %@ is locked with a passphrase. Enter it once: from then on the Keychain on this device protects the key, as it does every key you import.",
+    "连接 %@ 用的密钥设了口令。输入一次就好，之后这把密钥由本机钥匙串保护，和你导入的其他密钥一样。",
+    "%@ に使う鍵はパスフレーズで保護されています。一度入力すれば、以降はほかの読み込んだ鍵と同じように、この端末のキーチェーンが鍵を保護します。")
+add("Unlock", "解锁", "ロック解除")
+add("Can't sign in with %@ keys yet", "暂时还不能用 %@ 密钥登录", "%@ 鍵ではまだサインインできません")
 add("BIND TO HOSTS", "绑定主机", "ホストにバインド")
 add("(optional)", "（可选）", "（任意）")
 add("When bound, this key is used only for the selected hosts by default; change it anytime in the SSH Keys detail page.",
@@ -400,6 +611,13 @@ add("Tap ＋ in the top right to create a custom shortcut — key combos, text s
     "右上の＋でカスタムショートカットを作成 — キーコンボ、テキストスニペット、コマンドチェーンに対応。")
 add("No custom shortcuts yet", "还没有自定义快捷键", "カスタムショートカットはまだありません")
 add("AVAILABLE", "可用", "利用可能")
+add("The toolbar is full: it holds %lld shortcuts. Take one off with − to add another.",
+    "快捷键栏满了，最多放 %lld 个快捷键。先用 − 拿掉一个，才能再加。",
+    "ツールバーがいっぱいです（最大 %lld 個）。別のショートカットを追加するには、− でどれかを外してください。")
+add("Saved under AVAILABLE", "已存到「可用」里", "「利用可能」に保存しました")
+add("The toolbar is full: it holds %lld shortcuts. Take one off with −, then add this one with ＋.",
+    "快捷键栏满了，最多放 %lld 个。先用 − 拿掉一个，再用 ＋ 把这个加上去。",
+    "ツールバーがいっぱいです（最大 %lld 個）。− でどれかを外してから、＋ でこれを追加してください。")
 add("Add Shortcut", "添加快捷键", "ショートカットを追加")
 add("Edit Shortcut", "编辑快捷键", "ショートカットを編集")
 add("Live preview of your input below. Saved shortcuts land in the Custom group of the Shortcuts toolbar.",
@@ -456,7 +674,7 @@ add("First connection to %@:%lld.\n\nKey fingerprint:\n%@\n\nVerify it matches t
     "第一次连接 %1$@:%2$lld。\n\n密钥指纹：\n%3$@\n\n请到服务器上核对一下是否一致（例如 `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub`）。",
     "%1$@:%2$lld への初回接続です。\n\nキーのフィンガープリント：\n%3$@\n\nサーバー側と一致するか確認してください（例: `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub`）。")
 add("Trust", "信任", "信頼")
-add("Connecting…", "连接中…", "接続中…")
+add("Connecting…", "正在连接…", "接続中…")
 add("roaming…", "漫游中…", "ローミング中…")
 add("Network changed", "网络已切换", "ネットワークが切り替わりました")
 add("No tmux sessions", "没有 tmux 会话", "tmux セッションがありません")
@@ -467,6 +685,12 @@ add("Creating…", "创建中…", "作成中…")
 add("Create Session", "创建会话", "セッションを作成")
 add("Attaching tmux…", "正在附加 tmux…", "tmux にアタッチ中…")
 add("Mosh: %@", "Mosh：%@", "Mosh: %@")
+add("The session ended: the remote shell exited or mosh-server was stopped.",
+    "会话已经结束：远程主机上的 shell 退出了，或者 mosh-server 被停掉了。",
+    "セッションは終了しました。リモートのシェルが終了したか、mosh-server が停止されました。")
+add("The session ended: the remote shell exited.",
+    "会话已经结束：远程主机上的 shell 退出了。",
+    "リモートのシェルが終了したため、セッションは終了しました。")
 # tmux sheets
 add("Windows", "窗口", "ウィンドウ")
 add("Sessions", "会话", "セッション")
@@ -498,7 +722,7 @@ add("no hosts yet", "还没有主机", "ホストがありません")
 add("No %@ yet", "还没有 %@", "%@ がありません")
 add("saved", "已保存", "保存済み")
 add("live", "在线", "接続中")
-add("linking", "连接中", "接続処理中")
+add("linking", "正在连接", "接続処理中")
 add("stalled", "卡住了", "停滞")
 add("now", "刚刚", "たった今")
 add("agent", "智能体", "エージェント")
@@ -507,8 +731,8 @@ add("%lld hosts saved · all quiet", "已保存 %lld 台主机 · 一切安静",
 add("1 live connection · agents quiet", "1 个在线连接 · 智能体都安静", "接続 1 件 · エージェントは静かです")
 add("%lld live connections · agents quiet",
     "%lld 个在线连接 · 智能体都安静", "接続 %lld 件 · エージェントは静かです")
-add("1 agent needs you", "1 个智能体需要你", "エージェント 1 体があなたを待っています")
-add("%lld agents need you", "%lld 个智能体需要你", "エージェント %lld 体があなたを待っています")
+add("1 agent needs you", "1 个智能体在等你", "エージェント 1 体があなたを待っています")
+add("%lld agents need you", "%lld 个智能体在等你", "エージェント %lld 体があなたを待っています")
 add("%lld NEED YOU", "%lld 个在等你", "%lld 件が要対応")
 add("Connection lost — tap to reconnect", "连接断了，点一下重连", "接続が切れました——タップで再接続")
 add("Disconnecting…", "正在断开…", "切断中…")
@@ -517,6 +741,13 @@ add("Attach didn't complete — tmux never confirmed.",
 add("Nothing running — start a task to isolate one",
     "没有在跑的任务。新建一个，会给它单独开一个工作树。", "実行中のものはありません——タスクを開始して分離してください")
 add("Leave blank for an automatic name.", "留空则自动命名。", "空欄にすると自動で名前が付きます。")
+add("Names can't contain line breaks or other control characters.", "名称里不能有换行或其他控制字符。",
+    "名前に改行やその他の制御文字は使えません。")
+# mosh + tmux: what the person asked of tmux while the control plane was down
+# didn't come through, and it is back (B401).
+add("Your last tmux action didn't go through: the control connection dropped, and it's back now.",
+    "刚才的 tmux 操作没有生效：控制连接断了，已重新连上。",
+    "直前の tmux 操作は反映されませんでした。制御用の接続が切れ、つなぎ直しました。")
 add("Remove Worktree", "删除工作树", "ワークツリーを削除")
 add("Remove the worktree for \"%@\"?", "删除 “%@” 的工作树？", "「%@」のワークツリーを削除しますか？")
 add("Deletes the branch checkout under ~/.herdr/worktrees. %@ itself is untouched.",
@@ -529,6 +760,8 @@ add("Those changes exist nowhere else. Removing the worktree throws them away.",
 add("Delete anyway", "仍然删除", "それでも削除")
 add("Keep it", "保留", "残す")
 add("Couldn't remove the worktree", "无法删除工作树", "ワークツリーを削除できませんでした")
+# A screen whose body failed (B366): the page says so and offers Retry.
+add("Couldn't show this page", "这一页没能显示出来", "このページを表示できませんでした")
 add("%@ %@ \"%@\"?", SAME)
 add("%@ pane %lld?", "%@ 窗格 %lld？", "%@ ペイン %lld？")
 
@@ -592,6 +825,16 @@ add("Bright slots are derived from the eight above by default. Override them onl
     "高亮档位默认由上面八色推导。只有你想精确控制时才需要自定义——很多工具用「亮黑」画灰字，所以它和纯黑必须能区分开。",
     "明るいカラーは既定で上記 8 色から算出されます。厳密に制御したい場合のみ上書きしてください——多くのツールは淡色テキストを明るい黒で描くため、黒と区別できることが重要です。")
 add("Copy as JSON", "复制为 JSON", "JSON としてコピー")
+# The editor's color rows (the SwiftUI page passed them as plain strings and
+# showed them in English everywhere; the NSH page looks them up).
+add("Background", "背景", "背景")
+add("Foreground", "前景", "前景")
+add("Cursor", "光标", "カーソル")
+for key, zh, ja in [("Black", "黑色", "黒"), ("Red", "红色", "赤"), ("Green", "绿色", "緑"),
+                    ("Yellow", "黄色", "黄"), ("Blue", "蓝色", "青"), ("Magenta", "品红色", "マゼンタ"),
+                    ("Cyan", "青色", "シアン"), ("White", "白色", "白")]:
+    add(key, zh, ja)
+    add("Bright " + key, "亮" + zh, "明るい" + ja)
 
 # Theme gallery
 add("BUILT-IN", "内置", "内蔵")
@@ -618,6 +861,7 @@ add("Paste a theme exported from Moshpit, or any JSON object with \"background\"
 # Accent gallery
 add("MY ACCENTS", "我的强调色", "マイアクセント")
 add("New accent", "新建强调色", "新規アクセント")
+add("New Accent", "新建强调色", "新規アクセント")
 add("Accent name", "强调色名称", "アクセント名")
 add("Accent preview", "强调色预览", "アクセントのプレビュー")
 add("NAME", "名称", "名前")
@@ -666,6 +910,8 @@ add("Accent", "强调色", "アクセント")
 add("App Icon", "应用图标", "アプリアイコン")
 add("Language", "语言", "言語")
 add("Copy", "复制", "コピー")
+# The terminal's edit menu: opens the find bar (the core's view, T3).
+add("Find", "查找", "検索")
 # Settings footer: the MIIT APP filing number (the %@), shown to satisfy the
 # regulator's in-app display rule. The label is the only translatable part.
 add("APP filing %@", "APP 备案号 %@", "APP 届出番号 %@")
@@ -675,15 +921,15 @@ add("The accent color tints the app's controls and highlights. The home-screen i
 add("Leaves a signal trail behind the cursor while mosh predicts ahead of the server",
     "mosh 预测领先于服务器时，光标后面留一道尾迹",
     "mosh がサーバーより先に予測している間、カーソルの後ろに軌跡を残します")
-add("Alert when an agent needs you", "智能体需要你时提醒", "エージェントがあなたを必要とするとき通知")
+add("Alert when an agent needs you", "有智能体在等你时提醒", "エージェントがあなたを必要とするとき通知")
 add("Alert sound", "提示音", "通知音")
-add("Play a sound when the agent needs you", "智能体需要你时播放提示音", "エージェントがあなたを必要とするとき音を鳴らします")
+add("Play a sound when the agent needs you", "智能体在等你时播放提示音", "エージェントがあなたを必要とするとき音を鳴らします")
 add("Show detail on lock screen", "在锁屏上显示详情", "ロック画面に詳細を表示")
 add("Display what the agent is running, asking, or was asked — off keeps it private",
     "显示智能体在跑什么、在问什么、刚做完哪条提示词。关掉就不显示这些内容",
     "エージェントが実行中の内容、問いかけ、完了したプロンプトを表示します——オフにすると非表示のままです")
 add("Moshpit watches the active session for agent activity and posts a local alert when your agent needs attention — natively on herdr, via the bell and hooks on tmux.",
-    "Moshpit 会盯着当前会话里的智能体，需要你处理时发本地通知。herdr 原生支持，tmux 靠响铃和 hooks。",
+    "Moshpit 会留意当前会话里的智能体，它在等你时发一条本地通知。herdr 原生支持，tmux 靠响铃和状态脚本。",
     "Moshpit はアクティブなセッションのエージェントの動きを監視し、対応が必要になるとローカル通知を送ります——herdr ではネイティブに、tmux ではベルとフックを介して行います。")
 
 # Add Connection
@@ -702,6 +948,10 @@ add("Route this connection through a local or corporate SOCKS5 proxy",
 add("Proxy Host", "代理主机", "プロキシのホスト")
 add("Proxy Port", "代理端口", "プロキシのポート")
 add("1080", SAME)
+# Under a port field whose text is not a port (B294).
+add("Must be a whole number from 1 to 65535", "要填 1 到 65535 之间的整数", "1〜65535 の整数を入力してください")
+# A labelled field Save needs filled, in its empty state (B319).
+add("Required", "必填", "必須")
 add("Only unauthenticated SOCKS5 proxies are supported. This proxies the SSH connection only — if Mosh is also enabled above, its UDP session connects directly once bootstrapped and is not proxied.",
     "仅支持免认证的 SOCKS5 代理。它只代理 SSH 连接——如果上面同时开了 Mosh，其 UDP 会话在建立后直连，不走代理。",
     "認証なしの SOCKS5 プロキシのみ対応しています。プロキシ経由になるのは SSH 接続のみです——上で Mosh も有効な場合、その UDP セッションは確立後は直接接続され、プロキシを経由しません。")
@@ -732,7 +982,7 @@ add("Enable", "启用", "有効にする")
 add("Not Now", "以后再说", "今はしない")
 add("Don't Ask Again", "不再询问", "今後確認しない")
 add("Moshpit installs its hook scripts in ~/.moshpit and registers them in Claude Code's settings, so agents can reach you when they need you. Everything can be removed from Host Setup.",
-    "Moshpit 会把 hooks 脚本装到 ~/.moshpit，并写进 Claude Code 的设置，智能体需要你时就能通知到你。这些都可以在「主机设置」里移除。",
+    "Moshpit 会把状态脚本装到 ~/.moshpit，并登记到 Claude Code 的设置里，智能体在等你时就能通知到你。这些都可以在「主机设置」里移除。",
     "Moshpit は ~/.moshpit にフックスクリプトをインストールし、Claude Code の設定に登録します。エージェントがあなたを必要とするとき届くようにするためです。すべてホスト設定から削除できます。")
 add("Prompt already gone", "这个提问已经过去了", "問いかけは既にありません")
 add("That request was already answered or has changed — nothing was sent. Open Moshpit to see the current state.",
@@ -746,19 +996,19 @@ add("Run an agent turn in any pane, then re-check.",
     "在任意窗格里跑一轮智能体，然后重新检查。", "任意のペインでエージェントを 1 ターン実行し、再確認してください。")
 add("Backs up your config", "会备份你的配置", "設定をバックアップします")
 add("Copies the agent's config to a timestamped backup before merging Moshpit's hook groups.",
-    "写入 Moshpit 的 hooks 之前，先把智能体的配置文件备份一份，文件名带时间戳。",
+    "写入 Moshpit 的状态脚本前，先把智能体的配置文件备份一份，文件名带时间戳。",
     "Moshpit のフックを統合する前に、エージェントの設定をタイムスタンプ付きでバックアップします。")
 add("Never blocks the agent", "绝不阻塞智能体", "エージェントを妨げません")
 add("The hooks only stamp the tmux pane and exit 0 — the agent is never slowed, prompted, or interrupted.",
-    "hooks 只给 tmux 窗格打个标记就 exit 0，不会拖慢智能体，也不会弹窗或打断它。",
+    "状态脚本只在 tmux 窗格上记一笔就 exit 0，不会拖慢智能体，也不会弹提示或打断它。",
     "フックは tmux ペインに印を付けて exit 0 するだけです——エージェントが遅くなったり、確認を求められたり、中断されることはありません。")
 add("Idempotent: re-running de-dupes Moshpit's hooks instead of stacking them.",
-    "可以反复运行。已经装过的 hooks 会被识别出来，不会重复叠加。",
+    "可以反复运行。装过的状态脚本会被认出来，不会重复叠加。",
     "冪等です。再実行すると Moshpit のフックは重複除去され、積み重なりません。")
 add("Edits %@ (a timestamped backup is written first).",
     "会修改 %@（先写一份带时间戳的备份）。", "%@ を編集します（先にタイムスタンプ付きのバックアップを書き出します）。")
 add("Install Moshpit's hooks so the Vibe Island shows exactly when your agent is working, what it's running, when it needs you, and when it's done — instead of guessing from output. Moshpit backs up your config first and never blocks the agent.",
-    "装上 Moshpit 的 hooks，Vibe Island 就能准确知道智能体什么时候在干活、在跑什么、什么时候等你、什么时候做完了，不用从输出里猜。安装前会先备份你的配置，hooks 也不会拖慢智能体。",
+    "装上 Moshpit 的状态脚本，Vibe Island 就能准确知道智能体什么时候在干活、在跑什么、什么时候在等你、什么时候做完，不用从输出里猜。安装前会先备份你的配置，也绝不会卡住智能体。",
     "Moshpit のフックをインストールすると、Vibe Island はエージェントがいつ作業中か、何を実行しているか、いつあなたを必要としているか、いつ完了したかを正確に表示します——出力から推測する必要はありません。Moshpit は先に設定をバックアップし、エージェントを妨げることはありません。")
 
 # Host key verification (Components)
@@ -796,6 +1046,22 @@ add("tab", "标签页", "タブ")
 add("tabs", "标签页", "タブ")
 add("Kill", "终止", "強制終了")
 add("Close", "关闭", "閉じる")
+add("Loading", "正在加载", "読み込み中")
+
+# ---------- A host's sessions (ui/src/sessions, R7) ----------
+add("Attached", "当前", "使用中")
+add("current", "当前", "使用中")
+add("Disconnected", "已断开", "切断されました")
+add("No tmux sessions on this host", "这台主机上没有 tmux 会话", "このホストには tmux セッションがありません")
+add("No herdr workspaces on this host", "这台主机上没有 herdr 工作区", "このホストには herdr ワークスペースがありません")
+add("New Session", "新建会话", "新規セッション")
+add("New Workspace", "新建工作区", "新規ワークスペース")
+# "Needs you" and "%lld waiting" are Home's (R6, above): the same words.
+add("Working", "工作中", "作業中")
+add("Finished", "已完成", "完了")
+add("Idle", "空闲", "待機中")
+plural("%lld more", "%lld more", "另外 %lld 个", "ほか %lld 件")
+add("shell", SAME)
 add("＋ splits a new pane", "＋ 新建一个窗格", "＋ で新しいペインを分割")
 
 # Branch-name validation (new agent task)
@@ -853,7 +1119,7 @@ add("None", "不使用", "使用しない")
 add("Single shell, no session persistence", "只有一个 shell，断开就没了", "シェル 1 つのみ、セッションは保持されません")
 add("Mature, already on nearly every host", "成熟，几乎每台主机上都有", "成熟しており、ほぼすべてのホストに導入済み")
 add("Built for coding agents — agent status needs no hooks",
-    "为编程智能体设计，状态不需要 hooks 就能拿到", "コーディングエージェント向け——エージェントの状態にフックは不要")
+    "专为编程智能体设计，不装状态脚本也能看到状态", "コーディングエージェント向け——エージェントの状態にフックは不要")
 
 # Host / install banners
 add("Install herdr", "安装 herdr", "herdr をインストール")
@@ -884,6 +1150,153 @@ add("Copy Fingerprint", "复制指纹", "フィンガープリントをコピー
 
 # Shortcut editor
 add("QUICK KEYS", "快捷键预设", "クイックキー")
+add("PREFIX",
+    "前缀键",
+    "プレフィックス")
+add("CONTROL",
+    "控制键",
+    "コントロール")
+add("SPECIAL",
+    "特殊键",
+    "特殊キー")
+add("NAVIGATION",
+    "移动",
+    "移動")
+add("F-KEYS",
+    "功能键",
+    "ファンクションキー")
+add("Interrupt",
+    "中断",
+    "割り込み")
+add("EOF",
+    "输入结束",
+    "入力終了")
+add("Suspend",
+    "挂起",
+    "一時停止")
+add("Quit",
+    "退出",
+    "終了")
+add("Clear",
+    "清屏",
+    "画面をクリア")
+add("Line start",
+    "行首",
+    "行頭")
+add("Line end",
+    "行尾",
+    "行末")
+add("Search",
+    "搜历史",
+    "履歴を検索")
+add("Del word",
+    "删前一个词",
+    "前の単語を削除")
+add("Del line",
+    "删到行首",
+    "行頭まで削除")
+add("Kill EOL",
+    "删到行尾",
+    "行末まで削除")
+add("Yank",
+    "贴回刚删的",
+    "削除した文字を貼り戻す")
+add("Prev",
+    "上一条",
+    "前へ")
+add("Next",
+    "下一条",
+    "次へ")
+add("Tab key",
+    "Tab 键",
+    "Tab キー")
+add("Back-tab",
+    "反向 Tab",
+    "逆 Tab")
+add("Escape",
+    "Esc 键",
+    "Esc キー")
+add("Forward delete",
+    "向后删除",
+    "右側を削除")
+add("Backspace",
+    "退格",
+    "バックスペース")
+add("Left",
+    "左",
+    "左")
+add("Down",
+    "下",
+    "下")
+add("Up",
+    "上",
+    "上")
+add("Right",
+    "右",
+    "右")
+add("Home",
+    "Home 键",
+    "Home キー")
+add("End",
+    "End 键",
+    "End キー")
+add("Page up",
+    "上翻一页",
+    "前のページ")
+add("Page down",
+    "下翻一页",
+    "次のページ")
+add("Interrupt (SIGINT)",
+    "中断（SIGINT）",
+    "割り込み（SIGINT）")
+add("Clear screen",
+    "清屏",
+    "画面をクリア")
+add("Paste clipboard",
+    "粘贴剪贴板内容",
+    "クリップボードから貼り付け")
+add("Tap arrows",
+    "点按方向键",
+    "タップ式の矢印キー")
+add("End of file",
+    "输入结束（EOF）",
+    "入力終了（EOF）")
+add("Reverse search",
+    "往回搜历史命令",
+    "履歴をさかのぼって検索")
+add("Jump to end",
+    "跳到最后",
+    "末尾へ移動")
+add("Back-tab / toggle mode",
+    "反向 Tab / 切换模式",
+    "逆 Tab / モード切り替え")
+add("History prev",
+    "上一条历史命令",
+    "前の履歴")
+add("History next",
+    "下一条历史命令",
+    "次の履歴")
+add("Cursor left",
+    "光标左移",
+    "カーソルを左へ")
+add("Cursor right",
+    "光标右移",
+    "カーソルを右へ")
+add("Clear line before cursor",
+    "删掉光标前的内容",
+    "カーソルより前を削除")
+add("Clear line after cursor",
+    "删掉光标后的内容",
+    "カーソルより後ろを削除")
+add("Beginning of line",
+    "移到行首",
+    "行頭へ移動")
+add("End of line",
+    "移到行尾",
+    "行末へ移動")
+add("Delete word",
+    "删前一个词",
+    "前の単語を削除")
 add("multiplexer prefix", "复用器前缀", "マルチプレクサのプレフィックス")
 add("Only in a multiplexer", "只在 tmux / herdr 里显示", "マルチプレクサ内のみ")
 add("Show only while the session runs tmux or herdr",
@@ -907,15 +1320,62 @@ add("The icon is separate from the accent color, because iOS only allows switchi
     "アイコンとアクセントカラーは別の設定です。iOS はアプリに同梱されたアイコン間の切り替えしか許可しないため、カスタムアクセントに合わせた画像を生成することはできません。")
 
 # Connection / session failures
-add("Another client is using this pane — retrying shortly",
-    "这个窗格正被另一个客户端占用，稍后会重试", "別のクライアントがこのペインを使用中です——しばらくして再試行します")
+add("Not attached to the pane yet — input wasn't sent",
+    "还没连上这个窗格，刚才的输入没发出去", "まだペインに接続していません。入力は送信されませんでした")
+add("Couldn't switch to that pane — nothing was sent",
+    "没能切到那个窗格，什么都没发出去", "そのペインに切り替えられませんでした。何も送信していません")
+# A plain shell's keys typed while the way back found the connection dead (B396)
+add("What you just typed wasn't sent: the connection dropped, and it's back now",
+    "刚才输入的内容没有发出去：连接已断开，现在已重新连上",
+    "さっき入力した内容は送信されませんでした。接続が切れていましたが、つなぎ直しました")
+add("This pane is open on another device",
+    "这个窗格已在另一台设备上打开", "このペインは別のデバイスで開かれています")
+add("Open here", "在本机打开", "このデバイスで開く")
 add("Couldn't reach the host", "无法连到主机", "ホストに到達できませんでした")
 add("Creating the worktree failed", "创建工作树失败", "ワークツリーの作成に失敗しました")
+add("herdr didn't confirm the worktree, so no agent was started. Look for a “%@” workspace before trying again.",
+    "herdr 没说工作树建没建成，智能体也就没启动。重试之前，先看看有没有叫“%@”的工作区。",
+    "herdr からワークツリー作成の確認が返ってこなかったため、エージェントは起動していません。やり直す前に「%@」というワークスペースができていないか確認してください。")
+add("The host stopped answering while the worktree was being made, so no agent was started. Look for a “%@” workspace before trying again.",
+    "建工作树的时候主机没了回应，智能体也就没启动。重试之前，先看看有没有叫“%@”的工作区。",
+    "ワークツリーの作成中にホストが応答しなくなったため、エージェントは起動していません。やり直す前に「%@」というワークスペースができていないか確認してください。")
+add("The worktree is ready, but the host stopped answering before %@ started.",
+    "工作树建好了，但 %@ 还没启动，主机就没了回应。",
+    "ワークツリーは用意できましたが、%@ が起動する前にホストが応答しなくなりました。")
+add("Cancelled. The worktree is ready, but no agent was started in it.",
+    "已取消。工作树已经建好，但里面没有启动智能体。",
+    "キャンセルしました。ワークツリーは作成済みですが、エージェントは起動していません。")
 add("Removing the worktree failed", "删除工作树失败", "ワークツリーの削除に失敗しました")
+add("The host stopped answering while the worktree was being removed.",
+    "删除工作树的时候主机没了回应。",
+    "ワークツリーの削除中にホストが応答しなくなりました。")
 add("The worktree was created but has no pane", "工作树已创建，但没有窗格", "ワークツリーは作成されましたが、ペインがありません")
+add("The worktree is ready, but %@ didn't start: %@",
+    "工作树建好了，但 %@ 没能启动：%@",
+    "ワークツリーは用意できましたが、%@ が起動しませんでした：%@")
+add("The task is running, but %@ didn't get the first message: %@",
+    "任务已经开始，但 %@ 没收到首条消息：%@",
+    "タスクは開始しましたが、%@ に最初のメッセージが届きませんでした：%@")
+add("The task is running, but %@ wasn't ready for the first message in time.",
+    "任务已经开始，但 %@ 迟迟没就绪，首条消息没发出去。",
+    "タスクは開始しましたが、%@ の準備が間に合わず、最初のメッセージを送れませんでした。")
+add("The task is running, but the host stopped answering before the first message was sent.",
+    "任务已经开始，但首条消息还没发出去，主机就没了回应。",
+    "タスクは開始しましたが、最初のメッセージを送る前にホストが応答しなくなりました。")
+add("herdr exited with status %lld", "herdr 退出了，状态码 %lld", "herdr が終了しました（ステータス %lld）")
+add("herdr's answer was cut off", "herdr 的回应半路断了", "herdr の応答が途中で切れました")
+add("The task is running, but the first message is still in %@'s input: pressing Return failed (%@). Press Return in the pane to send it.",
+    "任务已经开始，但首条消息还停在 %@ 的输入框里：回车没按下去（%@）。到窗格里按一下回车就能发出去。",
+    "タスクは開始しましたが、最初のメッセージは %@ の入力欄に残ったままです。Return を押せませんでした（%@）。ペインで Return を押すと送信されます。")
 add("Couldn't read the saved credential. After re-installing or re-signing the app (e.g. via SideStore), open Edit and re-enter your password / re-select your key.",
     "读不出已保存的凭据。重装或重签名 App（例如通过 SideStore）之后，请打开「编辑」重新输入密码 / 重新选择密钥。",
     "保存された認証情報を読み取れませんでした。アプリを再インストールまたは再署名した後（SideStore 経由など）は、「編集」を開いてパスワードを再入力するか、キーを選び直してください。")
+add("While this device is locked, Moshpit can't read the server keys you've trusted, so it can't check this server. Unlock it and connect again.",
+    "设备锁着的时候，Moshpit 读不到你信任过的服务器密钥，也就没法核对这台服务器。解锁之后再连一次。",
+    "デバイスがロックされている間は、信頼済みのサーバーキーを読み出せないため、このサーバーを確認できません。ロックを解除してから接続し直してください。")
+add("You didn't trust the server's key, so Moshpit didn't connect.",
+    "你没有信任这台服务器的主机密钥，所以 Moshpit 没有连接。",
+    "サーバーのホストキーを信頼しなかったため、接続しませんでした。")
 add("The connection failed for a reason Moshpit didn't recognise. Check the host, port and that the server is reachable, then try again.",
     "连接失败，Moshpit 也没认出是什么原因。检查一下主机、端口，确认服务器能连通，再试一次。",
     "Moshpit が識別できない理由で接続に失敗しました。ホスト・ポート・サーバーに到達できるかを確認して、もう一度お試しください。")
@@ -936,13 +1396,13 @@ add("Sent to %@.", "已发给 %@。", "%@ に送信しました。")
 add("Uploads images to the agent's server and hands it the file paths.", "把图片上传到智能体所在的服务器，再把文件路径交给它。", "画像をエージェントのサーバーにアップロードし、ファイルパスを渡します。")
 # Hook config / installer
 add("Codex won't run a newly added hook until you trust it. Run /hooks inside Codex on this host and trust the four Moshpit entries — until you do, nothing will be sent.",
-    "Codex 不会执行没经过你确认的新 hook。在这台主机上的 Codex 里运行 /hooks，把 Moshpit 的四条设为信任。确认之前不会有任何通知发出。",
+    "Codex 不会运行你还没信任的新脚本。在这台主机上打开 Codex，运行 /hooks，把 Moshpit 的四条状态脚本设为信任。在那之前，一条通知也发不出来。",
     "Codex は信頼されるまで新しく追加されたフックを実行しません。このホストの Codex で /hooks を実行し、Moshpit の 4 つのエントリを信頼してください。それまでは何も送信されません。")
 add("That config file isn't valid JSON (%@). Fix it on the host, or move it aside and Moshpit will write a fresh one.",
     "这个配置文件不是合法的 JSON（%@）。到主机上修好它，或者先挪走，Moshpit 会重新写一份。",
     "この設定ファイルは有効な JSON ではありません（%@）。ホスト上で修正するか、いったん退避させれば Moshpit が新しく書き出します。")
 add("That config file's top level isn't a JSON object, so Moshpit can't merge hooks into it.",
-    "这个配置文件的顶层不是 JSON 对象，Moshpit 没法把 hooks 合并进去。",
+    "这个配置文件的顶层不是 JSON 对象，Moshpit 没法把状态脚本写进去。",
     "この設定ファイルのトップレベルが JSON オブジェクトではないため、Moshpit はフックをマージできません。")
 add("The manifest on this host names a config path Moshpit won't run a command against: %@",
     "这台主机上的清单指向了一个 Moshpit 不会对它执行命令的配置路径：%@",
@@ -951,8 +1411,11 @@ add("The manifest on this host names a config path Moshpit won't run a command a
 add("Couldn't save the pairing on this phone, so nothing was installed on the host. The diagnostics log has the reason.",
     "配对信息没能保存到这台手机上，所以主机那边什么都没装。原因在诊断日志里。",
     "この iPhone にペアリングを保存できなかったため、ホストには何もインストールされていません。理由は診断ログにあります。")
-add("Relay refused to mint a send token (%lld): %@", "中转服务器拒绝签发发送令牌（%lld）：%@", "リレーが送信トークンの発行を拒否しました（%lld）：%@")
-add("That relay address isn't a valid URL.", "这个中转服务器地址不是合法的 URL。", "このリレーのアドレスは有効な URL ではありません。")
+add("Couldn't remove the pairing from this phone, so the host was left paired. The diagnostics log has the reason.",
+    "没能删掉这台手机上的配对信息，所以主机那边也没动，仍然保持配对。原因在诊断日志里。",
+    "この iPhone のペアリング情報を削除できなかったため、ホスト側も変更せず、ペアリングされたままです。理由は診断ログにあります。")
+add("Relay refused to mint a send token (%lld): %@", "推送服务拒绝签发发送令牌（%lld）：%@", "リレーが送信トークンの発行を拒否しました（%lld）：%@")
+add("That relay address isn't a valid URL.", "推送服务的地址不是有效的 URL。", "このリレーのアドレスは有効な URL ではありません。")
 add("iOS hasn't issued a push token to this phone yet — check that notifications are allowed, then try again.",
     "iOS 还没给这台手机发推送令牌。确认已允许通知，再试一次。",
     "iOS がまだこの iPhone にプッシュトークンを発行していません。通知が許可されているか確認して、もう一度お試しください。")
@@ -962,6 +1425,8 @@ add("Restart herdr server", "重启 herdr 服务", "herdr サーバーを再起�
 add("Restarting herdr server…", "正在重启 herdr 服务…", "herdr サーバーを再起動中…")
 add("Retry", "重试", "再試行")
 add("Restart server", "重启服务", "サーバーを再起動")
+add("herdr on the host's PATH is %@, its server %@ — update that copy", "主机 PATH 里的 herdr 是 %1$@，服务是 %2$@，升级 PATH 里那份就好", "ホストの PATH 上の herdr は %1$@、サーバーは %2$@ です。PATH 上の herdr を更新してください")
+add("The host's herdr server is %@, older than its herdr %@", "主机上运行的 herdr 服务是 %1$@，比 herdr 本身（%2$@）旧", "ホストの herdr サーバーは %1$@ で、herdr 本体（%2$@）より古いです")
 # Home
 add("New", "新建", "新規")
 add("Add a host to keep your agents within reach. Moshpit keeps sessions alive across Wi-Fi / 5G handoff.",
@@ -974,28 +1439,43 @@ add("No Terminal Open", "没有打开的终端", "ターミナルが開いてい
 add("Pick a host from the sidebar, or add one with ⌘N.", "从边栏选一台主机，或按 ⌘N 添加。", "サイドバーからホストを選ぶか、⌘N で追加してください。")
 add("The pit never closes", "机器不眠", "ピットは眠らない")
 # Host setup
-add("Enter the address of your push relay first.", "先填中转服务器的地址。", "まずプッシュリレーのアドレスを入力してください。")
+add("Enter the address of your push relay first.", "先填推送服务的地址。", "まずプッシュリレーのアドレスを入力してください。")
 add("Installing on %@…", "正在安装到 %@…", "%@ にインストール中…")
-add("Minting a send token at the relay…", "正在向中转服务器申请发送令牌…", "リレーで送信トークンを発行中…")
-add("Open a tmux pane on this host to test the hooks.", "在这台主机上打开一个 tmux 窗格，才能测试 hooks。", "フックをテストするには、このホストで tmux のペインを開いてください。")
+add("Minting a send token at the relay…", "正在向推送服务申请发送令牌…", "リレーで送信トークンを発行中…")
+add("Open a tmux pane on this host to test the hooks.", "先在这台主机上打开一个 tmux 窗格，才能测试状态脚本。", "フックをテストするには、このホストで tmux のペインを開いてください。")
 add("The host reported: %@", "主机返回：%@", "ホストからの報告：%@")
 add("The host sent one, but this screen never saw it arrive. Most likely Moshpit was not in the foreground — the test can only be confirmed while you are looking at this screen, so try again without leaving it. If it still fails, check that notifications are allowed and that the relay can reach Apple.",
-    "主机发了一条，但这个页面没收到。最可能是 Moshpit 当时不在前台。这个测试只有你停留在这个页面时才能确认，别切走再试一次。还是不行的话，检查通知是否已允许，以及中转服务器能不能连上 Apple。",
+    "主机发了一条，但这个页面没收到。多半是 Moshpit 当时不在前台：只有你停在这个页面时，测试才能确认收到，别切走，再试一次。还不行的话，看看通知有没有允许，推送服务能不能连上 Apple。",
     "ホストは 1 件送信しましたが、この画面には届きませんでした。おそらく Moshpit がフォアグラウンドにありませんでした。テストはこの画面を見ている間だけ確認できるので、離れずにもう一度お試しください。それでも失敗する場合は、通知が許可されているか、リレーが Apple に到達できるかを確認してください。")
 add("The pane came back as \"%@\" instead of the test stamp.", "窗格返回的是 \"%@\"，不是测试标记。", "ペインからテストスタンプではなく \"%@\" が返ってきました。")
 add("The stamp script ran but the pane came back empty.%@", "标记脚本跑了，但窗格返回为空。%@", "スタンプスクリプトは実行されましたが、ペインは空で返ってきました。%@")
 add("This host is missing %@ — install those and try again.", "这台主机缺少 %@。装好再试。", "このホストには %@ がありません。インストールしてからもう一度お試しください。")
 add("This host's tmux isn't on the default socket, so Moshpit can't run the test. The hooks themselves are unaffected.",
-    "这台主机的 tmux 没用默认 socket，Moshpit 跑不了这个测试。hooks 本身不受影响。",
+    "这台主机的 tmux 没用默认 socket，Moshpit 跑不了这个测试。状态脚本本身不受影响。",
     "このホストの tmux はデフォルトのソケットを使っていないため、Moshpit はテストを実行できません。フック自体には影響ありません。")
 add("AGENT STATUS", "智能体状态", "エージェントの状態")
 add("Current", "最新", "最新")
 add("Fires the stamp script and reads the pane back — no need to run an agent turn.", "直接触发标记脚本再读回窗格，不用真跑一轮智能体。", "スタンプスクリプトを実行してペインを読み戻します。エージェントのターンを実行する必要はありません。")
 add("HOST", "主机", "ホスト")
-add("Hooks for %@", "%@ 的 hooks", "%@ のフック")
+add("Hooks for %@", "%@ 的状态脚本", "%@ のフック")
 add("Install", "安装", "インストール")
 add("Looking at the host…", "正在查看主机…", "ホストを確認中…")
+add("Couldn't read this host", "读不了这台主机", "このホストを読み取れませんでした")
 add("Not installed", "未安装", "未インストール")
+add("Agent status", "智能体状态", "エージェントの状態")
+add("Push", "推送", "プッシュ")
+add("Installed", "已安装", "インストール済み")
+add("Paired", "已配对", "ペアリング済み")
+add("Not paired", "未配对", "未ペアリング")
+add("Status scripts", "状态脚本", "ステータススクリプト")
+add("Operating system", "操作系统", "OS")
+add("Passed", "通过", "成功")
+add("Failed", "失败", "失敗")
+add("Paired, but nothing will push. Install the status scripts below.", "已经配对，但不会有任何推送。先在下面装好状态脚本。", "ペアリングは済んでいますが、プッシュは届きません。下でステータススクリプトをインストールしてください。")
+add("Not found on this host", "这台主机上没有", "このホストにはありません")
+add("%@ isn't on this host", "这台主机上没有 %@", "このホストに %@ はありません")
+add("Moshpit found neither %@ nor a %@ command here. Its hooks will run once it's installed.", "Moshpit 在这里既没找到 %@，也没找到 %@ 命令。等它装好，状态脚本就会运行。", "Moshpit はここで %@ も %@ コマンドも見つけられませんでした。インストールすればフックが動きます。")
+add("Install Anyway", "仍然安装", "このままインストール")
 add("One more step, on the host", "还差一步，在主机上做", "あと一歩、ホスト側で")
 add("Out of date", "需要更新", "古くなっています")
 add("PUSH NOTIFICATIONS", "推送通知", "プッシュ通知")
@@ -1006,19 +1486,29 @@ add("Proven — it arrived on this phone.", "验证通过，这台手机收到�
 add("Pushes need %@ on this host.", "推送需要这台主机上有 %@。", "プッシュにはこのホストに %@ が必要です。")
 add("Re-pair", "重新配对", "再ペアリング")
 add("Reaches you when Moshpit isn't running. Your relay signs the push; it never sees what the agent said.",
-    "Moshpit 没在运行时也能找到你。中转服务器只负责签发推送，看不到智能体说了什么。",
+    "Moshpit 没在运行也能通知到你。你的推送服务只给通知签名，看不到智能体说了什么。",
     "Moshpit が起動していないときも届きます。リレーはプッシュに署名するだけで、エージェントの内容は見えません。")
 add("Reinstall", "重新安装", "再インストール")
 add("Send a test notification", "发一条测试通知", "テスト通知を送信")
 add("Set up this host", "设置这台主机", "このホストを設定")
-add("Test the hooks", "测试 hooks", "フックをテスト")
+add("Test the hooks", "测试状态脚本", "フックをテスト")
+add("Test the status script", "测试状态脚本", "ステータススクリプトをテスト")
+add("Runs the command %@'s config registers for its hooks, in this tmux pane, and reads the pane back. The agent itself isn't started.", "在这个 tmux 窗格里运行 %@ 配置里登记的状态脚本命令，再读回窗格。不会启动智能体本身。", "%@ の設定に登録されたフックのコマンドをこの tmux ペインで実行し、ペインを読み戻します。エージェント自体は起動しません。")
+add("Running it in this pane…", "正在这个窗格里运行…", "このペインで実行中…")
+add("Works — the pane shows the status it set.", "可以用：窗格显示了它设的状态。", "動作しています。ペインに設定した状態が表示されました。")
+add("Install the hooks for %@ to test them.", "先为 %@ 安装状态脚本，才能测试。", "テストするには、先に %@ のフックをインストールしてください。")
+add("Update the hooks for %@ first: the test runs what this version of Moshpit installs.", "先更新 %@ 的状态脚本：测试运行的是这个版本的 Moshpit 装的内容。", "先に %@ のフックを更新してください。テストはこのバージョンの Moshpit がインストールするものを実行します。")
+add("%@ doesn't register Moshpit for %@. Reinstall to put it back.", "%@ 里没有为 %@ 登记 Moshpit。重新安装就能补上。", "%@ に %@ 用の Moshpit が登録されていません。再インストールすると元に戻ります。")
 add("The host sends one for real. If it arrives here, the whole chain works.", "主机会真的发一条。这里收到了，整条链路就是通的。", "ホストが実際に 1 件送信します。ここに届けば、一連の仕組みは正常です。")
 add("This host has the pairing but its hook script is missing or out of date, so no notification will ever be sent. Install the hooks above.",
-    "这台主机有配对信息，但 hook 脚本缺失或过期，所以不会发出任何通知。先在上面安装 hooks。",
+    "这台主机有配对信息，但状态脚本缺失或过期，所以一条通知也发不出来。先在上面装好状态脚本。",
     "このホストはペアリング済みですが、フックスクリプトが見つからないか古いため、通知は一切送信されません。上でフックをインストールしてください。")
-add("This phone has no relay credential yet", "这台手机还没有中转服务器的凭据", "この iPhone にはまだリレーの認証情報がありません")
+add("This phone has no relay credential yet", "这台手机还没有推送服务的凭据", "この iPhone にはまだリレーの認証情報がありません")
 add("Try again", "再试一次", "もう一度")
 add("Unpair", "解除配对", "ペアリング解除")
+add("Remove Moshpit from this host", "从这台主机移除 Moshpit", "このホストから Moshpit を削除")
+add("Remove Moshpit from this host?", "要从这台主机移除 Moshpit 吗？", "このホストから Moshpit を削除しますか？")
+add("Moshpit's hooks come out of every agent's config, and this phone's pairing is removed. If no other phone is paired with this host, ~/.moshpit goes too. Everything else in the agents' configs stays.", "每个智能体配置里的 Moshpit 状态脚本都会拿掉，这台手机的配对也会删掉。要是没有别的手机和这台主机配对，~/.moshpit 也会一起删除。智能体配置里的其他内容不动。", "各エージェントの設定から Moshpit のフックを外し、この iPhone のペアリングも削除します。このホストとペアリングしているほかの端末がなければ、~/.moshpit も削除します。エージェントの設定のほかの内容はそのまま残ります。")
 add("Update", "更新", "更新")
 add("Waiting for it to arrive…", "等它送到…", "到着を待っています…")
 # Settings
@@ -1036,6 +1526,14 @@ add("Remote Clipboard Read", "远程读取剪贴板", "リモートからのク�
 add("THEME JSON", "主题 JSON", "テーマ JSON")
 # Shortcuts
 add("Add %@ to toolbar", "把 %@ 加到快捷键栏", "%@ をツールバーに追加")
+# The shortcut editor's edit controls on the NSH page (W11e): each is
+# labelled for screen readers, and the − of a shortcut in the bar says what it
+# does there (it takes it off the bar; the SwiftUI page's Delete said it was
+# deleted).
+add("Reorder %@", "调整 %@ 的顺序", "%@ を並べ替え")
+add("Delete %@", "删除 %@", "%@ を削除")
+add("Remove %@ from toolbar", "把 %@ 从快捷键栏拿掉", "%@ をツールバーから外す")
+add("Take Off", "拿掉", "外す")
 add("Drag ≡ to reorder. − takes a shortcut off the toolbar; it stays under AVAILABLE. 12 items max.",
     "拖 ≡ 调顺序。点 − 把快捷键从栏上拿掉，它会留在「可用」里。最多 12 个。",
     "≡ をドラッグして並べ替え。− でツールバーから外すと「利用可能」に残ります。最大 12 項目。")
@@ -1090,13 +1588,15 @@ add("Share", "分享", "共有")
 add("Attach image", "附带图片", "画像を添付")
 add("Back", "返回", "戻る")
 add("Line dropped", "链路中断", "接続が切れました")
+add("Session ended", "会话已结束", "セッション終了")
 add("Paste image from clipboard", "从剪贴板粘贴图片", "クリップボードから画像を貼り付け")
-add("Reconnecting", "重连中", "再接続中")
+add("Reconnecting", "正在重连", "再接続中")
 add("Repaint screen", "重绘屏幕", "画面を再描画")
 add("Sent this session", "本次会话已发送", "このセッションで送信済み")
 add("Take photo", "拍照", "写真を撮る")
 add("Toggle Sidebar", "显示/隐藏边栏", "サイドバーを切り替え")
 add("channel", "通道", "チャネル")
+add("input held until the server answers", "输入暂缓发送，等服务器应答", "サーバーの応答まで入力を保留中")
 add("%@  %@")
 add("#%lld")
 add("#%lld · %@")
@@ -1129,6 +1629,12 @@ add("Copy Address", "复制地址", "アドレスをコピー")
 add("Copy command", "复制命令", "コマンドをコピー")
 add("Couldn't detect a package manager.", "没找到包管理器。", "パッケージマネージャを検出できませんでした。")
 add("Couldn't reach the server. Check the host, port, and that it's online.", "连不上服务器。检查一下主机、端口，以及服务器是否在线。", "サーバーに接続できませんでした。ホスト、ポート、サーバーが稼働しているか確認してください。")
+add("Couldn't reach the SOCKS proxy at %@. Check that it's running, and its host and port.",
+    "连不上 %@ 上的 SOCKS 代理。看看代理有没有在运行，主机和端口有没有填错。",
+    "%@ の SOCKS プロキシに接続できませんでした。プロキシが動いているか、ホストとポートが正しいか確認してください。")
+add("The SOCKS proxy didn't connect you to the server. Check that it's a SOCKS5 proxy that needs no password, and that it can reach the server.",
+    "SOCKS 代理没能帮你连上服务器。确认它是不需要密码的 SOCKS5 代理，并且能连到这台服务器。",
+    "SOCKS プロキシ経由でサーバーに接続できませんでした。パスワード不要の SOCKS5 プロキシか、プロキシからサーバーに届くかを確認してください。")
 add("Create", "创建", "作成")
 add("DIAGNOSTICS", "诊断", "診断")
 add("Device and app info", "设备和 App 信息", "端末とアプリの情報")
@@ -1141,6 +1647,7 @@ add("Mail goes to support@cluas.eu.org through your own Mail app and leaves only
 add("Hide keyboard", "收起键盘", "キーボードを隠す")
 add("INCLUDE", "附带", "含める")
 add("Install mosh", "安装 mosh", "mosh をインストール")
+add("Install mosh with your platform's package manager (or build from source), then re-check.", "用你平台的包管理器装上 mosh（或者从源码编译），再重新检测。", "お使いのプラットフォームのパッケージマネージャで mosh をインストール（またはソースからビルド）してから、再チェックしてください。")
 add("Install on host", "在主机上安装", "ホストにインストール")
 add("Install tmux", "安装 tmux", "tmux をインストール")
 add("Install tmux and mosh with your platform's package manager (or build from source), then re-check.", "用你平台的包管理器装上 tmux 和 mosh（或者从源码编译），再重新检测。", "お使いのプラットフォームのパッケージマネージャで tmux と mosh をインストール（またはソースからビルド）してから、再チェックしてください。")
@@ -1160,6 +1667,8 @@ add("Move right", "右", "右へ")
 add("Move up", "上", "上へ")
 add("Name (optional)", "名称（可选）", "名前（任意）")
 add("Nothing logged in the last 30 minutes.", "最近 30 分钟没有日志。", "直近 30 分のログはありません。")
+# Recent Log, when the system's log store can't be read (DiagnosticsLog.readFailure).
+add("Couldn't read the log: %@", "没能读出日志：%@", "ログを読み込めませんでした：%@")
 add("On branch ")
 add("Open terminal", "打开终端", "ターミナルを開く")
 add("PTY has not been opened yet — call requestPTY first", "PTY 还没打开，先调用 requestPTY", "PTY がまだ開かれていません — 先に requestPTY を呼び出してください")
@@ -1171,8 +1680,53 @@ add("Re-checking…", "正在重新检测…", "再チェック中…")
 add("Reading…", "读取中…", "読み込み中…")
 add("Recent Log", "最近日志", "最近のログ")
 add("Recent log", "最近日志", "最近のログ")
+# R15/R16: the voice pages, Send feedback and Recent log on the redesign.
+plural("Copied %lld lines", "Copied %lld line", "已复制 %lld 行", "%lld 行をコピーしました")
+add("Couldn't read the log", "读不到日志", "ログを読み込めませんでした")
+add("Nothing logged in the last 30 minutes", "最近 30 分钟没有日志", "直近30分のログはありません")
+add("Showing the latest 500 of %lld. Copy takes them all.", "只显示最近 500 条，共 %lld 条；复制会带上全部。", "最新の500件を表示しています（全%lld件）。コピーではすべてを含めます。")
+add("Message", "内容", "内容")
+add("What broke, or what you want", "什么坏了，或者想要什么", "何が壊れたか、何がほしいか")
+add("Include device and version", "附上设备和版本", "端末とバージョンを添える")
+add("Include recent log", "附上最近日志", "最近のログを添える")
+add("The log is the last 30 minutes, the same lines as Recent log.", "日志是最近 30 分钟的，和「最近日志」里的一样。", "ログは直近30分のもので、「最近のログ」と同じ内容です。")
+add("Mail isn't set up on this device", "这台设备没设邮件", "この端末ではメールが設定されていません")
+add("Copy address", "复制地址", "アドレスをコピー")
+add("Open an issue on GitHub", "在 GitHub 上提 issue", "GitHub で Issue を作成")
+add("Issues are public; keep security reports to mail.", "issue 是公开的；安全问题请发邮件。", "Issue は公開されます。セキュリティの報告はメールでお願いします。")
+add("Built in and quick; one language at a time", "系统自带，快；一次听一种语言", "内蔵で高速。一度に1つの言語のみ")
+add("A model on this device; follows speech that mixes languages", "本地模型，中英混说也能听", "端末内のモデル。言語が混ざった話し方にも対応")
+add("Both run on this device. Your voice is never uploaded.", "两种都在这台设备上运行，声音不会上传。", "どちらもこの端末で動作し、音声がアップロードされることはありません。")
+add("Download a model first", "先下载一个模型", "先にモデルをダウンロードしてください")
+add("Search languages", "搜索语言", "言語を検索")
+add("Only languages this device can transcribe. Each downloads once, then works offline.", "只列出这台设备能听写的语言。每种第一次用时下载，之后离线也能用。", "この端末で書き起こせる言語だけを表示します。初回に一度ダウンロードすれば、以降はオフラインで使えます。")
+add("Picking your language keeps the foreign words you say mid-sentence intact.", "选定语言后，句子里夹的外语词也能原样保留。", "言語を指定すると、文の途中に入る外国語もそのまま残ります。")
+add("Common", "常用", "よく使う言語")
+add("All languages", "全部语言", "すべての言語")
+add("No language matches", "没有匹配的语言", "一致する言語はありません")
+add("Downloads once from Hugging Face, then runs on this device. Bigger models handle mixed speech better, but slower.", "从 Hugging Face 下载一次，之后都在这台设备上运行。模型越大，中英混说听得越准，但越慢。", "Hugging Face から一度ダウンロードすれば、あとはこの端末で動作します。大きいモデルほど言語が混ざった話し方に強いですが、遅くなります。")
+add("%@ of ≈%@", "已下载 %@，共约 %@", "%@ / 約 %@")
+add("In use", "使用中", "使用中")
+add("Discard download", "丢弃没下完的部分", "ダウンロードを破棄")
+add("More for %@", "%@ 的更多操作", "%@ のその他の操作")
 add("Reconnect", "重新连接", "再接続")
-add("Reconnecting…", "重连中…", "再接続中…")
+add("Reconnecting…", "正在重连…", "再接続中…")
+# The terminal's covers and banners on the redesign (UI-DESIGN §6.3, R12):
+# the reconnect capsule, the size follower's card, the multiplexer's empty
+# state, the one banner and the copied link's chip.
+add("Waiting for network…", "等待网络…", "ネットワークを待っています…")
+add("No UDP reply from mosh-server.", "收不到 mosh-server 的 UDP 回包。", "mosh-server から UDP の応答がありません。")
+add("Use SSH", "改用 SSH", "SSH を使う")
+add("Network changed. mosh is reconnecting.", "网络换了，mosh 正在接上。", "ネットワークが変わりました。mosh が再接続しています。")
+add("%@ isn't installed here, so this is a plain shell.", "这台主机没装 %@，现在是普通 shell。", "このホストには %@ がないため、通常のシェルです。")
+add("mosh-server isn't installed here, so this is SSH.", "这台主机没装 mosh-server，现在走 SSH。", "このホストには mosh-server がないため、SSH で接続しています。")
+add("Install…", "安装…", "インストール…")
+add("This window is sized for %@.", "这个窗口按 %@ 的尺寸显示。", "このウインドウは %@ のサイズで表示されています。")
+add("Use this %@'s size", "改用这台 %@ 的尺寸", "この %@ のサイズにする")
+add("Use this device's size", "改用这台设备的尺寸", "このデバイスのサイズにする")
+add("No %@ %@ on %@", "%3$@ 上没有 %1$@ %2$@", "%3$@ に %1$@ %2$@ がありません")
+add("%@ isn't installed on this host", "这台主机没装 %@", "このホストには %@ がありません")
+add("Open %@", "打开 %@", "%@ を開く")
 add("Rename", "重命名", "名前を変更")
 add("Run in terminal", "在终端运行", "ターミナルで実行")
 add("SRTT")
@@ -1185,6 +1739,10 @@ add("Small")
 add("Still not detected. Run the command, wait for it to finish, then re-check.", "还是没检测到。运行命令，等它跑完，再重新检测。", "まだ検出されません。コマンドを実行し、完了を待ってから再チェックしてください。")
 add("The log is the app’s own from the last 30 minutes — the same lines as Recent Log. Read it there first if anything in it should stay private.", "日志是 App 自己最近 30 分钟记下的，和「最近日志」里看到的一样。有不想发出去的内容，先去那里看一眼。", "ログはアプリ自身の直近 30 分の記録で、「最近のログ」と同じ内容です。送りたくない内容がないか、先にそちらで確認してください。")
 add("The server rejected this sign-in method. Try a different one (e.g. a key instead of a password).", "服务器不接受这种登录方式。换一种试试，比如用密钥代替密码。", "サーバーがこのサインイン方法を拒否しました。別の方法（例：パスワードの代わりに鍵）をお試しください。")
+# keyboard-interactive asking what only the person can answer (B393)
+add("The server rejected this sign-in method. Try a different one (e.g. a key instead of a password). It asks its own questions when you sign in, such as a one-time code, which Moshpit can't answer yet.",
+    "服务器不接受这种登录方式。换一种试试，比如用密钥代替密码。这台服务器登录时会另外提问（比如一次性验证码），Moshpit 暂时还答不了。",
+    "サーバーがこのサインイン方法を拒否しました。別の方法（例：パスワードの代わりに鍵）をお試しください。このサーバーはサインイン時にワンタイムコードなど独自の質問をしますが、Moshpit はまだ答えられません。")
 add("Tiny")
 add("Unsupported SSH key type: %@", "不支持的 SSH 密钥类型：%@", "サポートされていない SSH 鍵タイプ：%@")
 add("Version, system, device model, language", "版本、系统、机型、语言", "バージョン、システム、機種、言語")
@@ -1209,6 +1767,78 @@ add("█")
 add("❯")
 add("❯ ")
 add("➜")
+
+# ---------- Rust core sessions (W10b): failures worded by the app (B202) ----------
+add("mosh-server didn't start within %lld seconds. A startup file on the host may be waiting for input.",
+    "mosh-server 在 %lld 秒内没有启动。主机上的某个启动脚本可能在等输入。",
+    "mosh-server が %lld 秒以内に起動しませんでした。ホストの起動スクリプトが入力を待っている可能性があります。")
+add("mosh-server didn't start: it never said where to reach it.",
+    "mosh-server 没有启动：它一直没说该从哪里连它。",
+    "mosh-server が起動しませんでした。接続先を知らせてきませんでした。")
+add("The connection dropped while it was being set up. Try again.",
+    "连接还在建立时就断了。再试一次。",
+    "接続の確立中に切断されました。もう一度お試しください。")
+add("%@ keys can't be used to sign in. Pick another key for this connection.",
+    "%@ 密钥不能用来登录。给这个连接换一把密钥。",
+    "%@ キーではサインインできません。この接続には別のキーを選んでください。")
+add("This device is locked, so Moshpit can't read the saved password or key yet. It connects again once you unlock it.",
+    "设备还锁着，Moshpit 暂时读不到保存的密码或密钥。解锁后会自己重新连接。",
+    "デバイスがロックされているため、保存したパスワードやキーをまだ読み出せません。ロックを解除すると自動で接続し直します。")
+add("The host stopped answering while the worktree was being removed.",
+    "删除 worktree 的过程中主机不再回应了。",
+    "worktree の削除中にホストが応答しなくなりました。")
+
+# ---------- Side features on the Rust session's own connection (W14b) ----------
+# HostConnectionError: the preview card, the folder sheet and the image overlay.
+add("Moshpit is reconnecting to the host. Try again in a moment.",
+    "Moshpit 正在重新连接主机，稍后再试。",
+    "Moshpit がホストに再接続しています。少し待ってからもう一度お試しください。")
+add("This session isn't connected to the host. Reconnect, then try again.",
+    "这个会话没有连着主机。先重新连接，再试一次。",
+    "このセッションはホストに接続していません。再接続してからもう一度お試しください。")
+add("The host isn't answering on this session's connection. Try again in a moment.",
+    "主机在这个会话的连接上没有回应，稍后再试。",
+    "このセッションの接続でホストが応答していません。少し待ってからもう一度お試しください。")
+add("The host doesn't let this account read it.",
+    "主机不允许这个账户读取它。",
+    "ホストがこのアカウントでの読み取りを許可していません。")
+
+
+# ---------- Settings: the hub and its pages (UI-DESIGN §6.4, R8) ----------
+# The hub fits on one screen; each page's footnote is at most two lines.
+add("%lld pt", SAME)
+add("Appearance", "外观", "外観")
+# Settings › Appearance's choice (R18): the system's appearance.
+add("System", "跟随系统", "システム")
+add("On", "开", "オン")
+add("Off", "关", "オフ")
+add("SSH keys", "SSH 密钥", "SSH キー")
+add("Set up a host", "配置主机", "ホストを設定")
+add("Send feedback", "反馈问题", "フィードバックを送る")
+add("Version", "版本", "バージョン")
+add("The pit never closes.", "机器不眠。", "ピットは閉じない。")
+add("The accent colors buttons and highlights; the terminal's colors are under Terminal.", "强调色给按钮和高亮上色；终端配色在「终端」里。", "アクセントカラーはボタンとハイライトに使われます。ターミナルの配色は「ターミナル」にあります。")
+add("Size", "字号", "サイズ")
+add("Smaller", "缩小", "小さく")
+add("Larger", "放大", "大きく")
+add("Trail while predicting", "预测时显示轨迹", "予測中に軌跡を表示")
+add("mosh only", "仅 mosh", "mosh のみ")
+add("Cursor settings apply to every session.", "光标设置对所有会话生效。", "カーソルの設定はすべてのセッションに適用されます。")
+add("Keep connections alive", "保持连接", "接続を維持")
+add("Sends a keepalive so idle connections aren't dropped.", "定期发保活包，空闲时不被断开。", "キープアライブを送り、アイドル中の接続が切れないようにします。")
+add("Keyboard on open", "打开终端时弹出键盘", "開いたらキーボードを表示")
+add("Remote clipboard read", "允许远端读剪贴板", "リモートからのクリップボード読み取り")
+add("OSC 52; off answers with an empty clipboard", "OSC 52；关闭时回给远端空内容", "OSC 52。オフなら空のクリップボードを返します")
+add("Mosh for new connections", "新连接默认用 mosh", "新しい接続で mosh を使う")
+add("Predictive echo", "预测回显", "予測エコー")
+add("UDP ports", "UDP 端口", "UDP ポート")
+add("Open the server's UDP ports in this range.", "服务器要放开这段 UDP 端口。", "サーバーでこの範囲の UDP ポートを開けてください。")
+add("Forever", "一直", "ずっと")
+add("Images upload to the host's ~/.moshpit/uploads; each connect clears expired ones.", "图片上传到主机的 ~/.moshpit/uploads，每次连接时清掉过期的。", "画像はホストの ~/.moshpit/uploads にアップロードされ、接続のたびに期限切れのものを削除します。")
+add("Status in the Dynamic Island", "在灵动岛显示状态", "Dynamic Island に状況を表示")
+add("Off keeps it private", "关掉就不显示具体内容", "オフにすると内容を表示しません")
+add("Adds a mic key to the shortcut bar", "快捷键栏上多一个麦克风键", "ショートカットバーにマイクキーを追加")
+add("Speech is transcribed on this device and never leaves it.", "语音只在本机转写，不会离开这台设备。", "音声はこの端末で書き起こされ、外に出ることはありません。")
 
 # ---------- Vibe Island + widgets (the MoshpitIsland extension) ----------
 # Text keys and String(localized:) resolve against Bundle.main, which inside the
@@ -1336,6 +1966,20 @@ def specifiers(text):
     return sorted(re.sub(r"\d+\$", "", m) for m in SPEC.findall(text))
 
 
+def unique_keys(path):
+    """An object_pairs_hook that refuses a key given twice: json.load keeps
+    the last silently, so a second translation of a string would replace
+    the first without anyone choosing it."""
+    def hook(pairs):
+        table = {}
+        for key, value in pairs:
+            if key in table:
+                raise SystemExit(f"{path}: {key!r} is given twice; keep one")
+            table[key] = value
+        return table
+    return hook
+
+
 def load_locales():
     tables = {}
     for loc in LOCALES:
@@ -1345,7 +1989,7 @@ def load_locales():
             continue
         with open(path, encoding="utf-8") as f:
             try:
-                tables[loc] = json.load(f)
+                tables[loc] = json.load(f, object_pairs_hook=unique_keys(path))
             except json.JSONDecodeError as exc:
                 raise SystemExit(f"{path}: {exc}")
     return tables

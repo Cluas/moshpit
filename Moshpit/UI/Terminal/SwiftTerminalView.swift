@@ -1,6 +1,5 @@
 import SwiftUI
 import UIKit
-import SwiftTerm
 import MoshpitKit
 
 /// What a hosted terminal should do about first-responder status.
@@ -23,7 +22,8 @@ enum TerminalFocusPolicy {
     case resign
 }
 
-/// Hosts a ``TerminalView`` and owns the ONLY code allowed to set its frame.
+/// Hosts a terminal (a ``TerminalSurface``'s view) and owns the ONLY code
+/// allowed to set its frame.
 ///
 /// ### Why the terminal's frame is managed manually
 ///
@@ -44,9 +44,13 @@ enum TerminalFocusPolicy {
 /// terminal is resized ONCE to the final bounds. One resize, one reflow, one
 /// remote SIGWINCH (instead of a resize storm), no visible intermediate state.
 final class TerminalHostContainer: UIView {
-    /// The hosted terminal. Weak: SwiftTerm views are persistent objects owned
-    /// by the session (tmux panes outlive any single host container).
-    private(set) weak var terminalView: TerminalView?
+    /// The hosted terminal, whichever view draws it. Weak: terminals are
+    /// persistent objects owned by the session (tmux panes outlive any single
+    /// host container).
+    private(set) weak var surface: TerminalSurface?
+
+    /// The hosted terminal's view.
+    var hostedView: UIView? { surface?.view }
 
     /// While true, ``layoutSubviews`` leaves the terminal's frame alone.
     /// Toggled by the coordinator around keyboard transitions.
@@ -92,20 +96,27 @@ final class TerminalHostContainer: UIView {
 
     /// Apply the size change that ``shouldDeferResize`` held back. Call this
     /// immediately BEFORE feeding the repaint that goes with it, so the two
-    /// land in one turn and the lossy moment is never drawn.
-    func applyDeferredResize() {
-        guard let target = deferredResize, let terminalView else { return }
+    /// land in one turn and the lossy moment is never drawn. Returns whether
+    /// there was one to apply.
+    @discardableResult
+    func applyDeferredResize() -> Bool {
+        guard let target = deferredResize, let hostedView else { return false }
         deferredResize = nil
-        terminalView.frame = target
-        onTerminalLaidOut?(terminalView)
+        hostedView.frame = target
+        onTerminalLaidOut?(hostedView)
+        return true
     }
 
-    /// Whether a size change is being held back right now.
-    var hasDeferredResize: Bool { deferredResize != nil }
+    /// Whether the terminal has yet to take this container's size: a
+    /// keyboard move is still in flight (``frameLocked``), or a resize is
+    /// held for the repaint that goes with it (``shouldDeferResize``). The
+    /// keyboard cover stays up until it has.
+    var resizePending: Bool { frameLocked || deferredResize != nil }
 
-    func host(_ terminal: TerminalView) {
+    func host(_ surface: TerminalSurface) {
+        let terminal = surface.view
         guard terminal.superview !== self else { return }
-        terminalView = terminal
+        self.surface = surface
         addSubview(terminal)
         // Only adopt the container's bounds when the container HAS bounds. A
         // freshly created container is .zero until its first layout pass, and
@@ -132,18 +143,18 @@ final class TerminalHostContainer: UIView {
     /// the owner is left believing whatever it estimated before connecting.
     /// Installed by the ``SwiftTerminalView/Coordinator`` that owns this
     /// container.
-    var onTerminalLaidOut: ((TerminalView) -> Void)?
+    var onTerminalLaidOut: ((UIView) -> Void)?
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        guard let terminalView, !frameLocked, !geometryHeld else { return }
+        guard let terminalView = hostedView, !frameLocked, !geometryHeld else { return }
         // Same guard as host(): a transient zero-bounds pass (sheet
         // transitions, remounts) must not squeeze a live buffer through the
         // minimum grid — that reflow doesn't round-trip.
         guard bounds.width > 0, bounds.height > 0 else { return }
         if terminalView.frame != bounds {
             if terminalView.frame.size != bounds.size, let shouldDeferResize {
-                let cell = TerminalCellGeometry.cellSize(of: terminalView)
+                let cell = surface?.cellSize ?? .zero
                 let grid = TerminalCellGeometry.grid(for: bounds.size, cell: cell)
                 if grid.cols > 0, grid.rows > 0, shouldDeferResize(grid.cols, grid.rows) {
                     deferredResize = bounds
@@ -156,22 +167,19 @@ final class TerminalHostContainer: UIView {
     }
 }
 
-/// SwiftUI wrapper around SwiftTerm's ``TerminalView``.
+/// SwiftUI host of the session's terminal (a ``TerminalSurface``: SwiftTerm's
+/// view or the core's, as ``CoreTermSwitch`` decides when it is made).
 ///
 /// ### Persistence contract (DO NOT BREAK)
 ///
-/// The wrapped ``TerminalView`` is **persistent**: SwiftUI may invoke
+/// The terminal is **persistent**: SwiftUI may invoke
 /// ``UIViewRepresentable/updateUIView(_:context:)`` many times across re-renders,
-/// but the underlying ``TerminalView`` instance — including its scrollback
-/// buffer, cursor position, and the data we have already fed into it — must
-/// survive every re-render.
+/// but the terminal — including its scrollback, cursor position, and the data
+/// we have already fed into it — must survive every re-render.
 ///
 /// As a result, `updateUIView` is **only** allowed to mutate cosmetic state
-/// (theme, font, alpha, etc.). It MUST NOT:
-///
-///   - call ``TerminalView/feed(text:)`` / ``TerminalView/feed(byteArray:)``,
-///   - clear the buffer,
-///   - swap or replace ``TerminalView/terminalDelegate``.
+/// (theme, font, alpha, etc.). It MUST NOT feed the terminal, clear it, or
+/// swap its delegate.
 ///
 /// The single legitimate input path is via the ``Coordinator`` — a parent
 /// view holds the coordinator instance (e.g. as ``@State``) and calls
@@ -213,260 +221,142 @@ struct SwiftTerminalView: UIViewRepresentable {
         coordinator
     }
 
+    private var look: TerminalLook {
+        TerminalLook(theme: theme, cursorShape: cursorShape, cursorColorId: cursorColorId, cursorBlink: cursorBlink)
+    }
+
     func makeUIView(context: Context) -> TerminalHostContainer {
         // Reuse the coordinator's own terminal when it has one: this is a
         // REMOUNT of a live session (left the screen, came back), and the
-        // existing view's buffer is the only complete copy of the screen —
-        // mosh in particular never resends what it believes the client
-        // already has. See `Coordinator.ownedTerminal`.
-        if let existing = coordinator.ownedTerminal {
-            let container = TerminalHostContainer()
-            existing.removeFromSuperview()
-            container.host(existing)
-            existing.terminalDelegate = coordinator
-            coordinator.attach(to: existing)   // gesture attach is idempotent
-            coordinator.hostContainer = container
-            container.geometryHeld = geometryHeld
-            applyStyle(to: existing)
-            if focusPolicy == .take {
-                DispatchQueue.main.async { [weak existing] in
-                    _ = existing?.becomeFirstResponder()
-                }
-            }
-            return container
-        }
-        let font = TerminalFont.font(id: fontName, size: CGFloat(fontSize))
-        // Born at the estimated phone grid, not `.zero` — the mosh-path twin
-        // of TmuxSessionController.mintTerminal's birthFrame. A `.zero` frame
-        // derives a MINIMUM_COLS grid (two columns), and everything fed
-        // before the first layout pass — mosh's first screen diffs, herdr's
-        // raw-attach repaint, both beat `makeUIView` by design (see
-        // `pendingFeed`) — gets wrapped at two columns. Those shards sink
-        // into the enlarged scrollback, and SwiftTerm's reflow does not
-        // round-trip (see TerminalHostContainer.host), so scrolling up shows
-        // a column of 1–2 character fragments forever while the visible
-        // screen self-corrects (user screenshot, 2026-08-18).
-        //
-        // Specifically `estimateGrid`, because that is the grid the session
-        // seeds the transport with (`lastReportedSize ?? estimateGrid`, and
-        // lastReportedSize is nil this early): birth grid == seed grid means
-        // the pre-layout feed lands in the shape the server drew it for, and
-        // the first real layout — if it disagrees — fires `sizeChanged`,
-        // which corrects BOTH sides. A birth grid that guesses better than
-        // the seed would break that pact: whenever it happened to match the
-        // final layout, `sizeChanged` never fires and the server stays at
-        // the seed forever.
-        let seed = SessionHub.ActiveSession.estimateGrid(fontSize: fontSize)
-        let cell = TerminalCellGeometry.measuredCell(
-            font: font, scale: UITraitCollection.current.displayScale)
-        let birthFrame = CGRect(x: 0, y: 0,
-                                width: cell.width * CGFloat(max(1, seed.cols)),
-                                height: cell.height * CGFloat(max(1, seed.rows)))
-        let terminalView = TerminalView(frame: birthFrame, font: font)
-        coordinator.ownedTerminal = terminalView
-        TerminalMint.configureInput(terminalView)
-
-        // Wire delegate + back-reference so the coordinator can push data in
-        // and the terminal can route user input back out. attach(to:) also
-        // installs the one-finger scroll + pinch-zoom gesture.
-        terminalView.terminalDelegate = coordinator
-        coordinator.attach(to: terminalView)
-
-        applyStyle(to: terminalView)
+        // existing terminal is the only complete copy of the screen — mosh
+        // in particular never resends what it believes the client already
+        // has. See `Coordinator.surface`.
+        let surface = Self.mintOwnedSurface(coordinator: coordinator, fontName: fontName, fontSize: fontSize)
+        surface.view.removeFromSuperview()
+        let container = TerminalHostContainer()
+        container.host(surface)
+        coordinator.hostContainer = container
+        container.geometryHeld = geometryHeld
+        surface.apply(look: look)
         // Pop the system keyboard as soon as the terminal is on screen — the
         // app's shortcut bar rides above it via safeAreaInset.
         if focusPolicy == .take {
-            DispatchQueue.main.async { [weak terminalView] in
-                _ = terminalView?.becomeFirstResponder()
-            }
+            let view = surface.view
+            DispatchQueue.main.async { [weak view] in _ = view?.becomeFirstResponder() }
         }
-        let container = TerminalHostContainer()
-        container.host(terminalView)
-        coordinator.hostContainer = container
-        container.geometryHeld = geometryHeld
         return container
+    }
+
+    /// The plain path's terminal (mosh, plain SSH, herdr) for `coordinator`:
+    /// its own when it has one (re-wired: a remount), else a new one, owned
+    /// by it (``Coordinator/surface``). Whatever hosts the session's terminal
+    /// — this representable, or the NSH page's stage — gets it here.
+    ///
+    /// A new one is born at the estimated phone grid, not `.zero`. A `.zero`
+    /// frame derives a two-column grid, and everything fed before the first
+    /// layout pass — mosh's first screen diffs, herdr's raw-attach repaint,
+    /// both beat `makeUIView` by design (see `pendingFeed`) — gets wrapped at
+    /// two columns. Those shards sink into the scrollback, and a reflow does
+    /// not round-trip (see TerminalHostContainer.host), so scrolling up
+    /// shows a column of 1–2 character fragments forever while the visible
+    /// screen self-corrects (user screenshot, 2026-08-18).
+    ///
+    /// Specifically `estimateGrid`, because that is the grid the session
+    /// seeds the transport with (`lastReportedSize ?? estimateGrid`, and
+    /// lastReportedSize is nil this early): birth grid == seed grid means the
+    /// pre-layout feed lands in the shape the server drew it for, and the
+    /// first real layout — if it disagrees — fires `sizeChanged`, which
+    /// corrects BOTH sides. A birth grid that guesses better than the seed
+    /// would break that pact: whenever it happened to match the final
+    /// layout, `sizeChanged` never fires and the server stays at the seed
+    /// forever.
+    @MainActor
+    static func mintOwnedSurface(coordinator: Coordinator, fontName: String,
+                                 fontSize: Double) -> TerminalSurface {
+        if let existing = coordinator.surface {
+            coordinator.attach(existing)   // idempotent
+            return existing
+        }
+        let font = TerminalFont.font(id: fontName, size: CGFloat(fontSize))
+        let seed = SessionHub.ActiveSession.estimateGrid(fontSize: fontSize)
+        let surface = TerminalSurfaces.make(font: font, grid: TerminalGrid(cols: seed.cols, rows: seed.rows))
+        coordinator.attach(surface)
+        return surface
     }
 
     func updateUIView(_ uiView: TerminalHostContainer, context: Context) {
         // === COSMETIC ONLY ===
-        // No feed(), no buffer clear, no delegate swap. See type doc.
-        guard let terminal = uiView.terminalView else { return }
+        // No feed, no buffer clear, no delegate swap. See type doc.
+        guard let surface = uiView.surface else { return }
         if uiView.geometryHeld != geometryHeld { uiView.geometryHeld = geometryHeld }
-
-        let targetSize = CGFloat(fontSize)
-        let desired = TerminalFont.font(id: fontName, size: targetSize)
-        if terminal.font.pointSize != targetSize || terminal.font.fontName != desired.fontName {
-            terminal.font = desired
-        }
-
-        applyStyle(to: terminal)
-
-        // Honor the keyboard-dismiss toggle.
-        switch focusPolicy {
-        case .take:
-            if !terminal.isFirstResponder, terminal.window != nil {
-                DispatchQueue.main.async { [weak terminal] in _ = terminal?.becomeFirstResponder() }
-            }
-        case .allow:
-            break
-        case .resign:
-            if terminal.isFirstResponder {
-                DispatchQueue.main.async { [weak terminal] in _ = terminal?.resignFirstResponder() }
-            }
-        }
+        surface.apply(font: TerminalFont.font(id: fontName, size: CGFloat(fontSize)))
+        // Only what changed since the last push: SwiftTerm's colour setters
+        // drop its attribute cache and repaint the whole screen, and SwiftUI
+        // calls `updateUIView` on every re-render of the parent (each SRTT
+        // tick on a mosh session included).
+        surface.apply(look: look)
+        Self.applyFocus(focusPolicy, to: surface)
     }
 
-    /// Push the theme and cursor settings into `terminal` — only what changed
-    /// since the last push. Not idempotent in cost: SwiftTerm's colour setters
-    /// (`nativeBackgroundColor`, `installColors`) drop its attribute cache and
-    /// repaint the whole screen, and SwiftUI calls `updateUIView` on every
-    /// re-render of the parent (each SRTT tick on a mosh session included).
-    private func applyStyle(to terminal: TerminalView) {
-        let style = Coordinator.AppliedStyle(
-            terminal: ObjectIdentifier(terminal), theme: theme,
-            cursorShape: cursorShape, cursorColorId: cursorColorId, cursorBlink: cursorBlink)
-        let previous = coordinator.appliedStyle
-        guard previous != style else { return }
-        if previous?.terminal != style.terminal || previous?.theme != style.theme {
-            theme.apply(to: terminal)
+    /// ``TerminalFocusPolicy`` on any terminal: take the keyboard (now, and
+    /// back if something stole it — not from its own find bar), leave it,
+    /// or give it up.
+    @MainActor
+    static func applyFocus(_ policy: TerminalFocusPolicy, to surface: TerminalSurface) {
+        let view = surface.view
+        switch policy {
+        case .take:
+            if !view.isFirstResponder, view.window != nil, !surface.isFinding {
+                DispatchQueue.main.async { [weak view] in _ = view?.becomeFirstResponder() }
+            }
+        case .allow:
+            // Nobody has asked for the keyboard: leave first responder
+            // exactly as the user left it, so a tap on the pane can raise it.
+            break
+        case .resign:
+            if view.isFirstResponder {
+                // Keyboard put away (toggle) or a sheet is up — drop it.
+                DispatchQueue.main.async { [weak view] in _ = view?.resignFirstResponder() }
+            }
         }
-        // Re-assert cursor after theme (theme also sets caretColor), and
-        // refresh the coordinator's enforced copy for the post-feed guard.
-        coordinator.enforcedCursor = TerminalCursor.apply(
-            shape: cursorShape, colorId: cursorColorId, blink: cursorBlink, to: terminal)
-        coordinator.appliedStyle = style
     }
 
     // MARK: - Coordinator
 
-    /// Bridges between the SwiftUI side (theme/font bindings) and the
-    /// imperative SwiftTerm ``TerminalView``. Owns the data-input path
-    /// (``feed(data:)`` / ``feed(text:)``) and forwards user input + size
-    /// changes back to the caller via closures.
+    /// The session's terminal host: owns its terminal (a ``TerminalSurface``,
+    /// whichever view draws it), owns the data-input path (``feed(data:)``),
+    /// routes what the terminal and its gestures ask for (input upstream,
+    /// size changes, scrolling, clicks, pane switches) to the closures its
+    /// owner installs, and holds the transition covers (keyboard frame lock,
+    /// pane-switch veil). The same for the plain path (mosh, plain SSH,
+    /// herdr) and every tmux pane; nothing here knows which view draws.
     ///
     /// This is a plain reference type — no Combine, no Observation — so a
     /// parent view can hold it via `@State` (reference identity is stable
     /// across re-renders) without dragging in property-wrapper machinery
     /// that the representable doesn't need.
-    final class Coordinator: NSObject, TerminalViewDelegate {
-        /// Weak so the coordinator never extends the terminal view's
-        /// lifetime past the SwiftUI view tree — EXCEPT for the view the
-        /// representable itself minted, held strongly in `ownedTerminal`
-        /// below. tmux panes keep their persistent views in the controller;
-        /// this reference tracks whichever view is currently attached.
-        private(set) weak var terminalView: TerminalView?
+    final class Coordinator: NSObject {
+        /// The terminal, owned HERE so it survives the screen unmounting. It
+        /// has to: mosh's screen model lives server-side and only diffs
+        /// arrive, so a freshly minted empty terminal after re-entering the
+        /// same session stays empty — the server has no idea the client
+        /// discarded its framebuffer. Leaving the terminal screen and tapping
+        /// back into the SAME pane showed a bare cursor (user report,
+        /// 2026-08-17). Keeping it alive keeps its screen current (feeds
+        /// continue while unmounted), so a remount re-parents a fully
+        /// painted, up-to-date screen. A tmux pane's coordinator is owned by
+        /// its controller, and the pane's terminal with it.
+        private(set) var surface: TerminalSurface?
 
-        /// The plain-path terminal (mosh, plain SSH), owned HERE so it
-        /// survives the screen unmounting. It has to: mosh's screen model
-        /// lives server-side and only diffs arrive, so a freshly minted
-        /// empty view after re-entering the same session stays empty — the
-        /// server has no idea the client discarded its framebuffer. Leaving
-        /// the terminal screen and tapping back into the SAME pane showed a
-        /// bare cursor (user report, 2026-08-17). Keeping the view alive
-        /// keeps its buffer current (feeds continue while unmounted), so a
-        /// remount re-parents a fully painted, up-to-date screen — the same
-        /// persistence tmux panes have always had via mintTerminal.
-        var ownedTerminal: TerminalView?
-
-        /// Output that arrived before the terminal view attached (e.g. mosh's
+        /// Output that arrived before the terminal attached (e.g. mosh's
         /// first screen diffs land within ~50ms, before `makeUIView` runs).
-        /// Flushed in order once `attach(to:)` wires up the view.
+        /// Flushed in order once ``attach(_:)`` wires up the terminal.
         private var pendingFeed: [Data] = []
 
-        /// Output-hold for reading scrollback (see ``TerminalScrollGesture``).
-        /// While the user is scrolled up, new output would otherwise snap the
-        /// viewport to the bottom (SwiftTerm follows the tail on every line), so
-        /// we buffer it here and replay in order when they return to the bottom
-        /// or type. Capped so a long read can't grow memory without bound — past
-        /// the cap we give up the hold and resume live output.
-        private var scrollHeld = false
-        private var heldFeed: [Data] = []
-        private var heldBytes = 0
-        private let heldByteLimit = 1_000_000
-
-        /// The user's cursor style + colour (Settings), re-asserted after
-        /// every feed. Remote output carries DECSCUSR / OSC 12 (vim mode
-        /// switches, zsh plugins, coding agents) and SwiftTerm applies them
-        /// to the caret just like ours — without enforcement the user's
-        /// choice only survives until the next such sequence. Installed by
-        /// whoever calls ``TerminalCursor.apply``; nil skips enforcement.
-        var enforcedCursor: (style: CursorStyle, color: UIColor)?
-
-        /// What ``SwiftTerminalView/applyStyle(to:)`` last pushed, and into
-        /// which view — so a re-render that changes nothing visual costs a
-        /// comparison instead of a full repaint.
-        struct AppliedStyle: Equatable {
-            var terminal: ObjectIdentifier
-            var theme: TerminalTheme
-            var cursorShape: CursorShape
-            var cursorColorId: String
-            var cursorBlink: Bool
-        }
-        var appliedStyle: AppliedStyle?
-
-        /// Re-assert ``enforcedCursor`` if the fed bytes changed the caret.
-        /// Cheap when nothing changed (two comparisons), so it runs after
-        /// every feed.
-        private func enforceCursor(on terminalView: TerminalView) {
-            guard let enforcedCursor else { return }
-            let terminal = terminalView.getTerminal()
-            if terminal.options.cursorStyle != enforcedCursor.style {
-                terminal.setCursorStyle(enforcedCursor.style)
-            }
-            if terminalView.caretColor != enforcedCursor.color {
-                terminalView.caretColor = enforcedCursor.color
-            }
-        }
-
-        /// Everything that must re-run after any bytes land: re-assert the
-        /// cursor style, and re-scan visible text for bare http(s) URLs to
-        /// make tappable (``PlainLinkDetector``) — the remote often only
-        /// wraps a URL in a real OSC-8 hyperlink when it's alone on its own
-        /// line, not one mentioned inline or inside a summary box.
-        ///
-        /// The link scan is DEBOUNCED, not run per feed. It walks every
-        /// visible cell (`viewportLineText` per row — a fresh String each),
-        /// which was written off as "cheap to call after every feed" on a
-        /// phone grid of ~2k cells. An iPad grid is ~9k cells, and a pane
-        /// switch arrives as hundreds of separate `%output` events — paying
-        /// O(rows×cols) on each was a visible slice of the "repaints line by
-        /// line" stall. A link is tappable ~0.15s after output goes quiet,
-        /// which no finger beats; the cursor fix stays immediate because it
-        /// is O(1).
-        private func postFeedFixups(on terminalView: TerminalView) {
-            enforceCursor(on: terminalView)
-            scheduleLinkify(on: terminalView)
-        }
-
-        /// Touched only on the main queue — `feed` is documented safe from any
-        /// thread, so the hop below is what keeps this pointer un-raced.
-        private var linkifyWork: DispatchWorkItem?
-
-        private func scheduleLinkify(on terminalView: TerminalView,
-                                     after delay: TimeInterval = 0.15) {
-            let schedule = { [weak self, weak terminalView] in
-                guard let self else { return }
-                self.linkifyWork?.cancel()
-                let work = DispatchWorkItem { [weak self, weak terminalView] in
-                    guard let terminalView else { return }
-                    PlainLinkDetector.linkify(terminalView)
-                    // Path links cost the HOST a probe, so only a pane on
-                    // screen asks: a tmux session's other panes keep printing
-                    // while hidden, and nine agents' worth of re-asks every
-                    // few seconds is a `find` loop nobody is looking at.
-                    // Showing the pane lays it out, which runs a pass.
-                    if let links = self?.pathLinks, terminalView.window != nil,
-                       UIApplication.shared.applicationState != .background {
-                        MainActor.assumeIsolated {
-                            PathLinkDetector.linkify(terminal: terminalView.getTerminal(), resolver: links)
-                        }
-                    }
-                }
-                self.linkifyWork = work
-                DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
-            }
-            if Thread.isMainThread { schedule() } else { DispatchQueue.main.async(execute: schedule) }
-        }
+        /// Everything fed so far while no terminal is attached, in order —
+        /// what a terminal would be handed on attach. Unit tests run without
+        /// a terminal and read its input here.
+        var unattachedFeed: [Data] { pendingFeed }
 
         /// Called when the terminal wants to send bytes upstream (typed
         /// keystrokes, paste, control sequences). Hook this up to
@@ -503,14 +393,7 @@ struct SwiftTerminalView: UIViewRepresentable {
         /// pass can make them tappable (`PathLinkDetector`). nil = paths stay
         /// plain text. An answer from the host schedules another pass.
         var pathLinks: RemotePathLinks? {
-            didSet {
-                MainActor.assumeIsolated {
-                    pathLinks?.onResolved = { [weak self] in
-                        guard let self, let terminalView = self.terminalView else { return }
-                        self.scheduleLinkify(on: terminalView, after: 0)
-                    }
-                }
-            }
+            didSet { withSurface { $0.pathLinks = pathLinks } }
         }
 
         /// A tapped host-path link — one `pathLinks` confirmed, or Claude
@@ -521,10 +404,14 @@ struct SwiftTerminalView: UIViewRepresentable {
         /// Island agent monitor uses this as a "needs attention" signal.
         var onBell: (() -> Void)?
 
+        /// A mark fed with ``feed(mark:)`` is due: every byte fed before it
+        /// is on screen, none after it is (``TerminalSurface``).
+        var onMark: ((TerminalMark) -> Void)?
+
         /// Set for tmux panes: scroll requests (swipe / thumb) drive tmux
         /// copy-mode server-side instead of the local SwiftTerm scrollback (the
         /// only correct scrollback for a tmux pane). nil for a plain shell, where
-        /// ``scroll(lines:)`` pages the local buffer. Positive = older, negative
+        /// ``scroll(pixels:)`` pages the local buffer. Positive = older, negative
         /// = newer.
         var onScroll: ((Int) -> Void)?
 
@@ -540,18 +427,14 @@ struct SwiftTerminalView: UIViewRepresentable {
         var onScrollEnd: (() -> Void)?
 
         /// Fired when a scroll gesture/drag BEGINS (before the first
-        /// ``scroll(lines:)``). tmux panes use it to refresh whether the active
+        /// ``scroll(pixels:)``). tmux panes use it to refresh whether the active
         /// pane's app wants the mouse (`#{mouse_any_flag}`) — the signal that
         /// decides wheel-vs-copy-mode — so the decision is fresh for this burst.
         var onScrollBegin: (() -> Void)?
 
-        /// Sub-row finger travel not yet turned into a wheel tick / server-side
-        /// row. Reset when a drag starts.
-        private var rowCarry = ScrollRowCarry()
-
         /// One text row in points — the unit that turns finger travel into rows.
         var cellHeight: CGFloat {
-            let height = terminalView?.cellHeight ?? 0
+            let height = withSurface { $0.cellSize.height } ?? 0
             return height > 0 ? height : 16
         }
 
@@ -574,68 +457,99 @@ struct SwiftTerminalView: UIViewRepresentable {
         /// would mask the pane app's state, so tmux sessions consult the `-CC`
         /// controller's per-pane `#{mouse_any_flag}` instead.
         var localAppWantsMouse: Bool {
-            (terminalView?.getTerminal().mouseMode ?? .off) != .off
+            withSurface { $0.modes.mouseReporting } ?? false
+        }
+
+        /// The modes the terminal's program set; nil without a terminal.
+        var modes: TerminalModes? {
+            withSurface { $0.modes }
         }
 
         override init() {
             super.init()
         }
 
+        /// `body` with the terminal, on the main actor (every caller is on the
+        /// main thread; the coordinator itself predates the annotations).
+        @discardableResult
+        func withSurface<R>(_ body: @MainActor (TerminalSurface) -> R) -> R? {
+            guard let surface else { return nil }
+            return MainActor.assumeIsolated { body(surface) }
+        }
+
         // MARK: Input plumbing (parent → terminal)
 
-        /// Feed remote output bytes into the terminal. Safe to call from
-        /// any thread — SwiftTerm explicitly documents `feed` as
-        /// background-thread safe.
+        #if DEBUG
+        /// Every chunk fed, with its coordinator: the echo probe's view of
+        /// output on either session path (`RustSessionSeed`).
+        nonisolated(unsafe) static var debugFeedTap: ((Coordinator, Data) -> Void)?
+        #endif
+
+        /// Feed remote output bytes into the terminal, after everything fed
+        /// before (main thread).
         func feed(data: Data) {
-            lastFedAt = Date()
-            guard let terminalView else {
-                // Buffer until a view attaches so no early output is lost.
+            noteFed(data)
+            guard let surface else {
+                // Buffer until a terminal attaches so no early output is lost.
                 TmuxSessionController.ccTap("cc-pairing.log",
                     Data("FEED-PENDING bytes=\(data.count)\n".utf8))
                 pendingFeed.append(data)
                 return
             }
-            // While the user reads scrollback, hold new output instead of
-            // letting it yank the viewport to the bottom. Replay on release.
-            if scrollHeld {
-                TmuxSessionController.ccTap("cc-pairing.log",
-                    Data("FEED-HELD bytes=\(data.count)\n".utf8))
-                heldFeed.append(data)
-                heldBytes += data.count
-                if heldBytes > heldByteLimit { releaseScrollHold() }
+            MainActor.assumeIsolated { surface.feed(data) }
+            if prediction != nil { schedulePredictionTick() }
+        }
+
+        private func noteFed(_ data: Data) {
+            #if DEBUG
+            Self.debugFeedTap?(self, data)
+            #endif
+            lastFedAt = CACurrentMediaTime()
+        }
+
+        /// A mark after the bytes fed so far: ``onMark`` hears it once they
+        /// are on screen (a view that parses as it is fed: at once; the
+        /// core's: with the frame that has them). Without a terminal yet, at
+        /// once.
+        func feed(mark: TerminalMark) {
+            guard let surface else { reached(mark); return }
+            MainActor.assumeIsolated { surface.feed(mark: mark) }
+        }
+
+        /// Lifts the pane-switch veil once every byte fed so far is on
+        /// screen: at once on SwiftTerm's view, with the frame that has them
+        /// on the core's (a reveal right after a feed would lift the veil
+        /// over a repaint the core has not parsed yet).
+        func revealWhenShown() {
+            feed(mark: TerminalMark(code: TerminalMark.Code.revealWhenShown, arg: 0))
+        }
+
+        /// A mark is due: the coordinator's own, or its owner's.
+        fileprivate func reached(_ mark: TerminalMark) {
+            if mark.code == TerminalMark.Code.revealWhenShown {
+                reveal()
                 return
             }
-            liftingPredictions(on: terminalView) {
-                terminalView.feed(byteArray: ArraySlice([UInt8](data)))
-            }
-            postFeedFixups(on: terminalView)
+            onMark?(mark)
         }
 
         // MARK: Predictive echo (mosh)
 
         /// mosh's local echo for this terminal (see ``MoshPrediction``). Set
         /// by a mosh session for the life of its transport; nil everywhere
-        /// else, which leaves every path here a no-op.
+        /// else, which leaves every path here a no-op. The engine object
+        /// keeps the mode and the round trip; the terminal draws the guesses
+        /// (SwiftTerm into its cells, the core over its frames).
         private(set) var prediction: MoshPrediction?
         private var predictionTick: DispatchWorkItem?
 
         /// Install (or remove, with nil) the session's predictor, taking down
         /// whatever the previous one had drawn.
         func attachPrediction(_ engine: MoshPrediction?) {
-            if let terminalView, prediction?.withdraw(from: terminalView.getTerminal()) == true {
-                terminalView.feed(byteArray: [])
-            }
             predictionTick?.cancel()
             predictionTick = nil
             prediction = engine
-        }
-
-        /// The view predictions may draw into right now: output is live and
-        /// the viewport sits on the live screen (guesses address its rows).
-        private var predictionView: TerminalView? {
-            guard prediction != nil, !scrollHeld, let terminalView,
-                  terminalView.distanceToBottom < 1 else { return nil }
-            return terminalView
+            withSurface { $0.attachPrediction(engine) }
         }
 
         /// Keystrokes on their way to the mosh server: draw their likely echo
@@ -644,17 +558,12 @@ struct SwiftTerminalView: UIViewRepresentable {
         /// the bytes, or nil when nothing was predicted.
         func predict(_ data: Data) -> Int? {
             guard let prediction else { return nil }
-            guard let view = predictionView else {
-                // Can't see the live screen (reading scrollback): guessing
-                // blind would only be wrong — start over once it's back.
+            guard let surface else {
+                // Nothing to draw on: start over once there is.
                 prediction.reset()
                 return nil
             }
-            let terminal = view.getTerminal()
-            let lifted = prediction.withdraw(from: terminal)
-            let batch = prediction.userInput(data, on: terminal)
-            let drawn = prediction.apply(to: terminal)
-            if lifted || drawn { view.feed(byteArray: []) }   // queue the redraw + caret move
+            let batch = MainActor.assumeIsolated { surface.predict(data) }
             schedulePredictionTick()
             return batch
         }
@@ -663,44 +572,26 @@ struct SwiftTerminalView: UIViewRepresentable {
         /// every guess down; the next keystroke starts a new epoch.
         func dropPredictions() {
             guard let prediction else { return }
-            if let terminalView, prediction.withdraw(from: terminalView.getTerminal()) {
-                terminalView.feed(byteArray: [])
-            }
-            prediction.reset()
+            guard let surface else { prediction.reset(); return }
+            MainActor.assumeIsolated { surface.dropPredictions() }
         }
 
         func predictionSent(batch: Int, userState: UInt64?) {
-            prediction?.sent(batch: batch, as: userState)
+            guard let surface else { prediction?.sent(batch: batch, as: userState); return }
+            MainActor.assumeIsolated { surface.predictionSent(batch: batch, userState: userState) }
         }
 
-        /// One applied mosh diff. The bytes go through ``feed(data:)`` (which
-        /// lifts the overlay around them); a frame that only moved the echo
-        /// ack still settles the guesses it now covers.
+        /// One applied mosh diff: its bytes, then its echo ack, judged after
+        /// them (a frame that only moved the ack still settles the guesses it
+        /// now covers).
         func feed(moshFrame frame: MoshHostFrame) {
-            prediction?.noteEchoAck(frame.echoAck)
-            if !frame.bytes.isEmpty {
-                feed(data: frame.bytes)
-            } else if let prediction, let view = predictionView {
-                let terminal = view.getTerminal()
-                let lifted = prediction.withdraw(from: terminal)
-                prediction.settle(on: terminal)
-                let drawn = prediction.apply(to: terminal)
-                if lifted || drawn { view.feed(byteArray: []) }
-                schedulePredictionTick()
+            if !frame.bytes.isEmpty { noteFed(frame.bytes) }
+            guard let surface else {
+                prediction?.noteEchoAck(frame.echoAck)
+                if !frame.bytes.isEmpty { pendingFeed.append(frame.bytes) }
+                return
             }
-        }
-
-        /// Run `body` (which feeds host bytes) with the guesses taken off the
-        /// screen, then judge and redraw them. Never feed over them: the
-        /// server diffs against the screen it thinks we have.
-        private func liftingPredictions(on view: TerminalView, _ body: () -> Void) {
-            guard let prediction else { body(); return }
-            let terminal = view.getTerminal()
-            prediction.withdraw(from: terminal)
-            body()
-            guard predictionView != nil else { return }
-            prediction.settle(on: terminal)
-            prediction.apply(to: terminal)
+            MainActor.assumeIsolated { surface.feed(moshFrame: frame) }
             schedulePredictionTick()
         }
 
@@ -708,90 +599,54 @@ struct SwiftTerminalView: UIViewRepresentable {
         /// 250ms gets shown (and marked past 5s) without waiting for the next
         /// keystroke or frame. Clock-only, so it redraws only on a change.
         private func schedulePredictionTick() {
-            guard predictionTick == nil, prediction?.needsTick == true else { return }
+            guard predictionTick == nil, prediction != nil,
+                  withSurface({ $0.predictionNeedsTick }) == true else { return }
             let work = DispatchWorkItem { [weak self] in
                 guard let self else { return }
                 self.predictionTick = nil
-                guard let prediction = self.prediction, let view = self.predictionView else { return }
-                if prediction.tick() {
-                    let terminal = view.getTerminal()
-                    let lifted = prediction.withdraw(from: terminal)
-                    let drawn = prediction.apply(to: terminal)
-                    if lifted || drawn { view.feed(byteArray: []) }
+                guard self.prediction != nil else { return }
+                if self.withSurface({ $0.predictionTick() }) == true {
+                    self.schedulePredictionTick()
                 }
-                self.schedulePredictionTick()
             }
             predictionTick = work
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05, execute: work)
         }
 
-        // MARK: Output hold (scrollback reading)
-
-        /// Begin holding output — the user has scrolled up off the bottom.
-        func engageScrollHold() {
-            if !scrollHeld, let prediction, let terminalView {
-                // Guesses address the live screen's rows, which just scrolled
-                // out from under them.
-                if prediction.withdraw(from: terminalView.getTerminal()) { terminalView.feed(byteArray: []) }
-                prediction.reset()
-            }
-            scrollHeld = true
-        }
+        // MARK: Scrolling
 
         /// Notify the scroll owner that a gesture/drag is starting. Lets tmux
         /// panes refresh the active pane's mouse flag before the first tick.
         func scrollWillBegin() {
-            rowCarry.reset()
+            withSurface { $0.dragWillBegin() }
             onScrollBegin?()
         }
 
-        /// Scroll the attached terminal's scrollback (drag thumb / swipe share
-        /// this). Positive = toward older output, negative = newer.
+        /// Scroll the terminal's history from the pan gesture: finger travel
+        /// in points, positive = toward older output.
         ///
         /// Routing (see the gesture architecture):
-        ///  - tmux pane (`onScroll` set): hand off to the controller/session,
+        ///  - tmux pane (`onScrollPixels` set): hand off to the controller,
         ///    which decides wheel (mouse app) vs copy-mode (shell) from the
         ///    `-CC` controller's `#{mouse_any_flag}` and drives the right one.
-        ///  - plain shell with a mouse app on screen: synthesize wheel events to
-        ///    it (vim/less --mouse scroll themselves; copy-mode/local don't apply).
-        ///  - plain shell, no mouse: page the LOCAL SwiftTerm scrollback,
-        ///    holding live output while scrolled up so it doesn't snap back.
-        func scroll(lines: Int) {
-            guard lines != 0 else { return }
-            if let onScroll {
-                onScroll(lines)
-                return
-            }
-            if localAppWantsMouse {
-                sendWheel(lines: lines)
-            } else {
-                scrollLocal(lines: lines)
-            }
-        }
-
-        /// Pixel-precise sibling of ``scroll(lines:)`` for the pan gesture:
-        /// finger travel in points, positive = toward older output. Routes the
-        /// same way. Local scrollback moves by the exact distance (sub-row
-        /// offsets included, so the content tracks the finger); wheel and
-        /// server-side routes get whole rows with the remainder carried to the
-        /// next tick. Returns the distance consumed (0 = nothing moved).
+        ///  - otherwise the terminal routes it (TERMINAL-VIEW.md V20): rows
+        ///    for the host when `onScroll` is set (mosh, herdr: server-side
+        ///    rows are all there is); a wheel for a program on screen that
+        ///    wants the mouse; else the LOCAL history.
+        ///
+        /// Local history moves by the exact distance (sub-row offsets
+        /// included, so the content tracks the finger); wheel and server-side
+        /// routes get whole rows with the remainder carried to the next tick.
+        /// Returns the distance consumed (0 = nothing moved).
         @discardableResult
         func scroll(pixels dy: CGFloat) -> CGFloat {
             guard dy != 0, dy.isFinite else { return 0 }
             if let onScrollPixels {
                 return onScrollPixels(dy)
             }
-            if let onScroll {
-                let rows = rowCarry.take(pixels: dy, cellHeight: cellHeight)
-                if rows != 0 { onScroll(rows) }
-                return dy
-            }
-            if localAppWantsMouse {
-                let rows = rowCarry.take(pixels: dy, cellHeight: cellHeight)
-                if rows != 0 { sendWheel(lines: rows) }
-                return dy
-            }
-            return scrollLocal(pixels: dy)
+            guard let routed = withSurface({ $0.drag(dy, hostRows: onScroll != nil) }) else { return 0 }
+            if routed.rows != 0 { onScroll?(routed.rows) }
+            return routed.moved
         }
 
         /// The drag came to rest.
@@ -805,30 +660,24 @@ struct SwiftTerminalView: UIViewRepresentable {
             }
         }
 
-        /// Synthesize scroll-wheel events into the LOCAL terminal's app
-        /// (non-tmux mouse apps). SwiftTerm's encoder emits them per the app's
-        /// negotiated mouse protocol and routes them out through ``send`` →
-        /// ``onInput`` — the same path as a typed key, so no copy-mode is
-        /// involved and typing afterwards just works. Button 64 = wheel-up
-        /// (older), 65 = wheel-down (newer); clamped so a fast flick doesn't
-        /// fire dozens. No output-hold — the app repaints itself.
+        /// Wheel events into the LOCAL terminal's app (non-tmux mouse apps),
+        /// encoded per the app's negotiated mouse protocol and sent the same
+        /// way as a typed key, so no copy-mode is involved and typing
+        /// afterwards just works. Clamped so a fast flick doesn't fire
+        /// dozens. No output-hold — the app repaints itself.
         func sendWheel(lines: Int) {
-            guard lines != 0, let terminal = terminalView?.getTerminal() else { return }
-            let button = lines > 0 ? 64 : 65
-            let count = min(abs(lines), 6)
-            let x = max(1, terminal.cols / 2), y = max(1, terminal.rows / 2)
-            for _ in 0..<count {
-                terminal.sendEvent(buttonFlags: button, x: x, y: y, pixelX: x, pixelY: y)
-            }
+            guard lines != 0 else { return }
+            withSurface { $0.sendWheel(lines: lines) }
         }
 
         /// Report a left click at a 0-based, viewport-relative cell — "put the
         /// cursor here" to a program that grabbed the mouse.
         ///
-        /// Routing mirrors ``scroll(lines:)``: a tmux pane hands off to the
+        /// Routing mirrors ``scroll(pixels:)``: a tmux pane hands off to the
         /// controller (which consults the pane's `#{mouse_any_flag}`), and a
-        /// plain shell lets SwiftTerm encode the press/release in whatever mouse
-        /// protocol the local app negotiated — the same path a typed key takes.
+        /// plain shell lets the terminal encode the press/release in whatever
+        /// mouse protocol the local app negotiated — the same path a typed
+        /// key takes.
         ///
         /// Does nothing when nothing on screen asked for the mouse: a bare shell
         /// would print the report as text (`0;12;3M` into the command line).
@@ -840,7 +689,7 @@ struct SwiftTerminalView: UIViewRepresentable {
             clickLocal(col: col, row: row)
         }
 
-        /// The local half of ``click(col:row:)`` — SwiftTerm encodes the
+        /// The local half of ``click(col:row:)`` — the terminal encodes the
         /// press/release itself. Never consults `onClick`, so an onClick
         /// closure whose routing falls back here can't recurse. That is not
         /// hypothetical: the mosh onClick wiring routes to
@@ -850,25 +699,17 @@ struct SwiftTerminalView: UIViewRepresentable {
         /// (TestFlight 351 crash, 2026-08-17). `scrollLocal` learned this
         /// same lesson first; the click path just hadn't caught up.
         func clickLocal(col: Int, row: Int) {
-            guard localAppWantsMouse, let terminal = terminalView?.getTerminal() else { return }
-            // 0 = left button press, 3 = release (SwiftTerm's `encodeButton`
-            // convention, which its own tap handler uses).
-            terminal.sendEvent(buttonFlags: 0, x: col, y: row, pixelX: col, pixelY: row)
-            terminal.sendEvent(buttonFlags: 3, x: col, y: row, pixelX: col, pixelY: row)
+            guard localAppWantsMouse else { return }
+            withSurface { $0.clickLocal(col: col, row: row) }
         }
 
-        /// Page the LOCAL SwiftTerm scrollback (plain non-tmux shell, or a mosh
-        /// session degraded to a bare shell), holding live output while scrolled
-        /// up so it doesn't snap back. Never consults `onScroll`, so an onScroll
-        /// closure that falls back here for the no-tmux case can't recurse.
+        /// Page the LOCAL history (plain non-tmux shell, or a mosh session
+        /// degraded to a bare shell). Never consults `onScroll`, so an
+        /// onScroll closure that falls back here for the no-tmux case can't
+        /// recurse.
         func scrollLocal(lines: Int) {
-            guard let terminalView, lines != 0 else { return }
-            if lines > 0 {
-                terminalView.scrollUp(lines: lines)
-            } else {
-                terminalView.scrollDown(lines: -lines)
-            }
-            updateScrollHold(terminalView)
+            guard lines != 0 else { return }
+            withSurface { $0.scrollLocal(lines: lines) }
         }
 
         /// Pixel-precise ``scrollLocal(lines:)``: move the viewport `dy` points
@@ -877,10 +718,8 @@ struct SwiftTerminalView: UIViewRepresentable {
         /// distance actually travelled (0 at an edge).
         @discardableResult
         func scrollLocal(pixels dy: CGFloat) -> CGFloat {
-            guard let terminalView, dy != 0 else { return 0 }
-            let moved = terminalView.scrollViewport(by: dy)
-            updateScrollHold(terminalView)
-            return moved
+            guard dy != 0 else { return 0 }
+            return withSurface { $0.scrollLocal(pixels: dy) } ?? 0
         }
 
         /// A local drag came to rest. A viewport parked within half a
@@ -888,40 +727,15 @@ struct SwiftTerminalView: UIViewRepresentable {
         /// half-row of history left on screen would keep output held and make
         /// taps read as "scrolled up".
         func settleLocalScroll() {
-            guard let terminalView else { return }
-            let gap = terminalView.distanceToBottom
-            if gap > 0, gap < terminalView.cellHeight / 2 {
-                terminalView.scrollViewport(by: -gap)
-            }
-            updateScrollHold(terminalView)
+            withSurface { $0.settleLocalScroll() }
         }
 
-        /// Hold live output exactly while history is on screen. `canScroll`
-        /// first: `scrollPosition` is 0 both at the very top AND when there is
-        /// nothing to scroll, so on its own a swipe over an empty pane would
-        /// freeze its output until the next keystroke.
-        private func updateScrollHold(_ terminalView: TerminalView) {
-            if terminalView.canScroll, terminalView.scrollPosition < 0.999 {
-                engageScrollHold()
-            } else {
-                releaseScrollHold()
-            }
-        }
+        // MARK: Output hold (scrollback reading)
 
-        /// Stop holding and replay everything buffered since the hold began, in
-        /// order, so the viewport catches up to live output. Idempotent.
+        /// Back on the live screen: whatever output was held while history
+        /// was read goes on screen, in order. Idempotent.
         func releaseScrollHold() {
-            guard scrollHeld else { return }
-            scrollHeld = false
-            guard let terminalView else { heldFeed.removeAll(); heldBytes = 0; return }
-            liftingPredictions(on: terminalView) {
-                for chunk in heldFeed {
-                    terminalView.feed(byteArray: ArraySlice([UInt8](chunk)))
-                }
-            }
-            heldFeed.removeAll()
-            heldBytes = 0
-            postFeedFixups(on: terminalView)
+            withSurface { $0.releaseScrollHold() }
         }
 
         /// Drop the hold AND the buffer without replaying — for a reconnect on
@@ -929,26 +743,7 @@ struct SwiftTerminalView: UIViewRepresentable {
         /// connection belong to a dead screen, and replaying them would garble
         /// the fresh one (the remote repaints from scratch anyway).
         func discardScrollHold() {
-            scrollHeld = false
-            heldFeed.removeAll()
-            heldBytes = 0
-        }
-
-        /// Feed a string (for seeding banners, status text, etc.). Same
-        /// thread-safety note applies.
-        func feed(text: String) {
-            guard let terminalView else { return }
-            liftingPredictions(on: terminalView) {
-                terminalView.feed(text: text)
-            }
-            postFeedFixups(on: terminalView)
-        }
-
-        /// Programmatic resize — typically driven by the parent in response
-        /// to remote window-size requests rather than UI layout.
-        func resize(cols: Int, rows: Int) {
-            if let terminalView { prediction?.withdraw(from: terminalView.getTerminal()) }
-            terminalView?.resize(cols: cols, rows: rows)
+            withSurface { $0.discardScrollHold() }
         }
 
         /// Forget the dead connection's unfinished input. A weak-network
@@ -961,7 +756,7 @@ struct SwiftTerminalView: UIViewRepresentable {
         /// ("重连后满屏乱码"). Screen, scrollback and modes stay untouched.
         /// Call at every (re)connect boundary, before the new stream feeds.
         func resetInputParser() {
-            terminalView?.getTerminal().discardPendingInput()
+            withSurface { $0.discardPendingInput() }
         }
 
         // MARK: Internal attach hook
@@ -995,6 +790,13 @@ struct SwiftTerminalView: UIViewRepresentable {
         /// terminal's frame instead (see ``TerminalHostContainer``).
         private var transitionCover: UIView?
         private var coverTimeout: DispatchWorkItem?
+        /// When the veil that is up went up (B386: a veil still up long
+        /// after its safety cap is a stuck one).
+        private var veiledAt: CFTimeInterval = 0
+
+        /// What a pane-switch veil is called in the view tree: a veil left
+        /// in a terminal no coordinator lifts any more can still be found.
+        static let veilIdentifier = "terminal-switch-veil"
 
         /// Whether a pane-switch cover is currently up.
         /// Internal (not private) purely so `@testable import` can assert on
@@ -1009,12 +811,10 @@ struct SwiftTerminalView: UIViewRepresentable {
         /// ``onGridReport``.
         weak var hostContainer: TerminalHostContainer? {
             didSet {
-                hostContainer?.onTerminalLaidOut = { [weak self] terminal in
+                hostContainer?.onTerminalLaidOut = { [weak self] hosted in
                     guard let self else { return }
-                    self.reportGrid(of: terminal)
-                    // A pane that just came on screen: its path links were
-                    // held back while it was hidden.
-                    if self.pathLinks != nil { self.scheduleLinkify(on: terminal) }
+                    self.reportGrid(bounds: hosted.bounds.size)
+                    self.withSurface { $0.laidOut() }
                 }
                 // Container-level wiring belongs HERE, not at the assignment
                 // sites: a coordinator is configured when its pane is minted,
@@ -1043,19 +843,14 @@ struct SwiftTerminalView: UIViewRepresentable {
         var onGridReport: ((_ cols: Int, _ rows: Int) -> Void)?
 
         /// Compute the grid from the laid-out bounds and hand it to
-        /// ``onGridReport``. Measured the same way SwiftTerm measures (the cell
-        /// box from the font, then truncating division) so the two agree.
-        /// Must NOT write ``lastReportedSize`` — see its doc for the 368
-        /// junk-grid regression that taught us that.
-        private func reportGrid(of terminal: TerminalView) {
-            guard let onGridReport else { return }
-            let scale = terminal.window?.screen.scale ?? UITraitCollection.current.displayScale
-            let cell = TerminalCellGeometry.measuredCell(font: terminal.font, scale: scale)
-            guard cell.width > 0, cell.height > 0 else { return }
-            let cols = Int(terminal.bounds.width / cell.width)
-            let rows = Int(terminal.bounds.height / cell.height)
-            guard cols > 0, rows > 0 else { return }
-            onGridReport(cols, rows)
+        /// ``onGridReport``, measured as the terminal measures (its cell box,
+        /// then truncating division) so the two agree. Must NOT write
+        /// ``lastReportedSize`` — see its doc for the 368 junk-grid
+        /// regression that taught us that.
+        private func reportGrid(bounds: CGSize) {
+            guard let onGridReport, let grid = withSurface({ $0.grid(fitting: bounds) }),
+                  grid.cols > 0, grid.rows > 0 else { return }
+            onGridReport(grid.cols, grid.rows)
         }
         private var frameLockTimeout: DispatchWorkItem?
 
@@ -1075,18 +870,33 @@ struct SwiftTerminalView: UIViewRepresentable {
         /// itself the broken frame.
         ///
         /// So stop showing the transition. A snapshot costs one frame to
-        /// take, slides with the keyboard on the keyboard's own curve — which
-        /// is the motion the user asked for, and the one Messages has — and
-        /// comes off once the pane has stopped repainting underneath it. What
-        /// happens in between is nobody's business.
+        /// take, holds still (see ``coverForKeyboard(duration:options:)``),
+        /// and comes off once the terminal has been resized for the move and
+        /// the pane has stopped repainting underneath it. What happens in
+        /// between is nobody's business.
         private var keyboardCover: UIView?
         private var coverRelease: DispatchWorkItem?
-        private var lastFedAt = Date.distantPast
+        /// When output last landed (`CACurrentMediaTime`).
+        private var lastFedAt: CFTimeInterval = 0
+        /// When the terminal last took a new size from its container: at the
+        /// end of a keyboard move (``unlockFrame()``), or when a resize held
+        /// for its repaint is applied (``applyDeferredResize()``). The remote
+        /// repaints for the new size after it, so the cover's quiet beat
+        /// counts from here too.
+        private var resizedAt: CFTimeInterval = 0
+        /// When the cover that is up comes off whatever the pane does:
+        /// ``coverCap`` after it went up. Fixed then, not recomputed by each
+        /// later check — a deadline that moved with every check never came
+        /// while output kept the pane from going quiet, and an agent's spinner
+        /// repaints every ~100 ms: the frozen picture stayed up for as long as
+        /// the agent ran.
+        private var coverDeadline: CFTimeInterval = 0
 
         /// Quiet this long under the cover and the pane is done repainting.
         private static let coverQuiet: TimeInterval = 0.15
-        /// …but never hold the cover longer than this, whatever the pane does
-        /// (an agent that streams forever must not be hidden forever).
+        /// …but never hold the cover longer than this, counted from when it
+        /// went up, whatever the pane does (an agent that streams forever must
+        /// not be hidden forever).
         private static let coverCap: TimeInterval = 1.6
 
         /// Put the cover up (or keep the existing one) for a keyboard move.
@@ -1104,10 +914,12 @@ struct SwiftTerminalView: UIViewRepresentable {
         /// no flicker, and no motion that lies about what happened.
         func coverForKeyboard(duration: TimeInterval, options: UIView.AnimationOptions) {
             coverRequests += 1
-            guard let terminalView, let container = hostContainer else { return }
+            guard let terminalView = withSurface({ $0.view }), let container = hostContainer
+            else { return }
             if keyboardCover == nil {
-                guard let snapshot = terminalView.snapshotView(afterScreenUpdates: false)
-                else { return }
+                // The terminal's own picture (the core draws one: a Metal
+                // layer's snapshot is not to be trusted).
+                guard let snapshot = withSurface({ $0.snapshotView() }) ?? nil else { return }
                 // A backing plate under the snapshot, filling the container.
                 // When the keyboard LEAVES, the container grows past what the
                 // snapshot covers, and the strip below it would show the live
@@ -1121,34 +933,47 @@ struct SwiftTerminalView: UIViewRepresentable {
                 plate.addSubview(snapshot)
                 container.addSubview(plate)
                 keyboardCover = plate
+                coverDeadline = CACurrentMediaTime() + Self.coverCap
             }
-            _ = options
-            // Start checking when the keyboard lands; the quiet test below is
-            // what actually decides, so checking sooner only helps the case
-            // where nothing repaints at all.
-            scheduleCoverRelease(after: duration)
+            _ = (duration, options)
+            // Not when the keyboard's animation ends. The terminal takes its
+            // new size only when the move is over — `unlockFrame()`, at
+            // didChangeFrame or the lock's timeout, 0.4–0.52 s in on an iPad
+            // after a 0.25 s animation — and the remote repaints after that.
+            // A cover that came off at `duration` showed the reflow and the
+            // repaint it was there to hide (spike G5: 24 of 24 transitions
+            // jumped in the open; 0 of 24 with the cover waiting for the
+            // resize, off ~670 ms in). The checks wait for the resize; a
+            // further move keeps the deadline the cover went up with.
+            scheduleCoverRelease(after: Self.coverQuiet)
         }
 
-        /// Take the cover down once the pane has been quiet for a beat.
+        /// Take the cover down once the terminal has its size for the move
+        /// and the pane has been quiet for a beat since, or at
+        /// ``coverDeadline``, whichever comes first.
         private func scheduleCoverRelease(after delay: TimeInterval) {
             coverRelease?.cancel()
             guard keyboardCover != nil else { return }
-            let deadline = Date().addingTimeInterval(Self.coverCap)
             let work = DispatchWorkItem { [weak self] in
                 guard let self, self.keyboardCover != nil else { return }
-                let quietFor = Date().timeIntervalSince(self.lastFedAt)
-                if quietFor < Self.coverQuiet, Date() < deadline {
-                    self.scheduleCoverRelease(after: Self.coverQuiet - quietFor)
-                    return
+                let now = CACurrentMediaTime()
+                let left = self.coverDeadline - now
+                guard left > 0 else { return self.releaseKeyboardCover() }
+                // Not before the terminal has the size the move left it…
+                if self.hostContainer?.resizePending == true {
+                    return self.scheduleCoverRelease(after: min(Self.coverQuiet, left))
+                }
+                // …and not before a quiet beat after that resize and after the
+                // last output: the repaint the resize asks for is in hand.
+                let quietFor = now - max(self.lastFedAt, self.resizedAt)
+                if quietFor < Self.coverQuiet {
+                    return self.scheduleCoverRelease(after: min(Self.coverQuiet - quietFor, left))
                 }
                 self.releaseKeyboardCover()
             }
             coverRelease = work
-            DispatchQueue.main.asyncAfter(deadline: .now() + max(delay, 0.05), execute: work)
+            DispatchQueue.main.asyncAfter(deadline: .now() + max(delay, 0.01), execute: work)
         }
-
-        /// Whether a keyboard cover is up right now.
-        var hasKeyboardCover: Bool { keyboardCover != nil }
 
         /// How many keyboard moves have been judged worth covering. The
         /// DECISION is what matters and what the test pins; whether a
@@ -1195,9 +1020,11 @@ struct SwiftTerminalView: UIViewRepresentable {
         }
 
         /// Apply a held-back resize, immediately before feeding its repaint.
-        func applyDeferredResize() { hostContainer?.applyDeferredResize() }
-
-        var hasDeferredResize: Bool { hostContainer?.hasDeferredResize ?? false }
+        func applyDeferredResize() {
+            if hostContainer?.applyDeferredResize() == true {
+                resizedAt = CACurrentMediaTime()
+            }
+        }
 
         /// Let the terminal adopt the container's (now settled) bounds — one
         /// resize, one reflow, one remote size report. Idempotent.
@@ -1206,6 +1033,13 @@ struct SwiftTerminalView: UIViewRepresentable {
             frameLockTimeout = nil
             guard let hostContainer else { return }
             hostContainer.frameLocked = false
+            // The resize now rather than at the next layout pass, so the
+            // cover's quiet beat starts after it and the repaint it asks for.
+            hostContainer.layoutIfNeeded()
+            resizedAt = CACurrentMediaTime()
+            if keyboardCover != nil {
+                scheduleCoverRelease(after: Self.coverQuiet)
+            }
         }
 
         /// Cover the terminal with its background colour — used when switching
@@ -1213,17 +1047,47 @@ struct SwiftTerminalView: UIViewRepresentable {
         /// frame arrives. A deliberate clean veil reads as a transition; a beat
         /// of garbled stale text reads as a bug.
         func veilForSwitch() {
-            guard let tv = terminalView else { return }
+            #if DEBUG
+            // The director's positive control: a switch with nothing covering
+            // it, so its repaint shows (`-MOSHPIT_DEBUG_NO_VEIL 1`).
+            if UserDefaults.standard.bool(forKey: "MOSHPIT_DEBUG_NO_VEIL") { return }
+            #endif
+            guard let tv = withSurface({ $0.view }) else { return }
             if transitionCover == nil {
                 let veil = UIView()
                 veil.backgroundColor = tv.backgroundColor ?? .black
                 veil.frame = tv.bounds
                 veil.autoresizingMask = [.flexibleWidth, .flexibleHeight]
                 veil.isUserInteractionEnabled = false
+                veil.accessibilityIdentifier = Self.veilIdentifier
                 tv.addSubview(veil)
                 transitionCover = veil
+                veiledAt = CACurrentMediaTime()
             }
             scheduleCoverTimeout()
+        }
+
+        /// The app came back (B386): a veil up longer than `age` is stuck
+        /// (its safety cap is under a second, each resync pass extends it a
+        /// little), and so is one in this terminal that this coordinator
+        /// does not hold (another coordinator's, gone): both come off, and
+        /// the log says so. Whether one came off.
+        @discardableResult
+        func liftStaleVeil(olderThan age: TimeInterval, now: CFTimeInterval = CACurrentMediaTime()) -> Bool {
+            var lifted = false
+            if transitionCover != nil, now - veiledAt > age {
+                NSHDiagnostics.error("terminal: a pane-switch veil was still up \(Int(now - veiledAt)) s after it went up; lifted")
+                reveal()
+                lifted = true
+            }
+            guard let tv = withSurface({ $0.view }) else { return lifted }
+            for orphan in tv.subviews where orphan.accessibilityIdentifier == Self.veilIdentifier
+                && orphan !== transitionCover {
+                NSHDiagnostics.error("terminal: a pane-switch veil no coordinator holds covered the terminal; removed")
+                orphan.removeFromSuperview()
+                lifted = true
+            }
+            return lifted
         }
 
         /// Push the cover's auto-reveal deadline `seconds` further out, IF a
@@ -1270,22 +1134,41 @@ struct SwiftTerminalView: UIViewRepresentable {
         /// Called on every ``reveal()`` — see there.
         var onReveal: (() -> Void)?
 
-        /// Attach the coordinator to a live ``TerminalView``. Normally called
-        /// automatically by ``SwiftTerminalView/makeUIView(context:)``; the
-        /// tmux controller calls this explicitly when minting persistent
-        /// terminals outside of the SwiftUI representable lifecycle.
-        func attach(to terminalView: TerminalView) {
-            self.terminalView = terminalView
-            // Install scroll/zoom here (not in makeUIView) so it covers tmux
-            // panes too — those are minted by the controller and only ever go
-            // through this attach, never through the SwiftUI representable.
-            TerminalScrollGesture.attach(to: terminalView, coordinator: self)
+        /// Makes `surface` this coordinator's terminal: owned here, wired
+        /// both ways (its delegate, the keyboard's moves, the path links and
+        /// predictor it should have), and handed whatever output arrived
+        /// before it, in order. Idempotent: a remount re-wires the same one.
+        /// The representable and the NSH stage attach the plain path's; the
+        /// tmux controllers attach each pane's when they mint it.
+        func attach(_ surface: TerminalSurface) {
+            let isNew = self.surface !== surface
+            self.surface = surface
+            MainActor.assumeIsolated {
+                surface.surfaceDelegate = self
+                surface.pathLinks = pathLinks
+                if isNew, prediction != nil { surface.attachPrediction(prediction) }
+                observeKeyboard(of: surface.view)
+                if !pendingFeed.isEmpty {
+                    // One feed of everything, in order: the same bytes as
+                    // the chunks one by one, one pass of the fix-ups after.
+                    let held = pendingFeed.reduce(into: Data()) { $0.append($1) }
+                    pendingFeed.removeAll()
+                    surface.feed(held)
+                }
+            }
+        }
+
+        /// The input-method switch and the keyboard's moves, for whichever
+        /// view is this coordinator's terminal (SwiftTerm's or the core's).
+        func observeKeyboard(of terminalView: UIView) {
             // Switching the input method (globe key) is INVISIBLE to every
             // path we had: the CN/EN keyboards are the same height, so no
-            // sizeChanged fires, and neither SwiftTerm nor UIKit repaints the
-            // terminal — stale composing artifacts ("乱码") just sit there.
-            // Listen for the switch itself: repaint the full local screen, and
-            // let the owner resync from the authoritative model.
+            // sizeChanged fires. Listen for the switch itself and let the owner
+            // resync from the authoritative model (tmux re-captures the pane),
+            // which repaints whatever cells really diverged. No full repaint
+            // of our own: a composition is drawn in a subview of its own (fork
+            // patch 5), not into the terminal's rows, so redrawing the same
+            // rows from the same buffer changed nothing but the time it took.
             if let inputModeObserver {
                 NotificationCenter.default.removeObserver(inputModeObserver)
             }
@@ -1294,8 +1177,6 @@ struct SwiftTerminalView: UIViewRepresentable {
                 object: nil, queue: .main
             ) { [weak self, weak terminalView] _ in
                 guard let terminalView, terminalView.isFirstResponder else { return }
-                terminalView.getTerminal().updateFullScreen()
-                terminalView.setNeedsDisplay()
                 self?.onInputModeChange?()
             }
             // Keyboard show/hide/height changes: hold the terminal at its
@@ -1345,18 +1226,9 @@ struct SwiftTerminalView: UIViewRepresentable {
             ) { [weak self] _ in
                 self?.unlockFrame()
             }
-            if !pendingFeed.isEmpty {
-                liftingPredictions(on: terminalView) {
-                    for chunk in pendingFeed {
-                        terminalView.feed(byteArray: ArraySlice([UInt8](chunk)))
-                    }
-                }
-                pendingFeed.removeAll()
-                postFeedFixups(on: terminalView)
-            }
         }
 
-        // MARK: TerminalViewDelegate
+        // MARK: Upstream: keys, a paste, the terminal's replies
 
         /// Sticky-Ctrl: armed by the bar's ctrl chip; the NEXT typed key is
         /// sent as its control code (ctrl-b, ctrl-l, ctrl-r… — otherwise
@@ -1377,7 +1249,9 @@ struct SwiftTerminalView: UIViewRepresentable {
         /// sent is still sitting in the input bar".
         var onReturnSend: (() -> Void)?
 
-        func send(source: TerminalView, data: ArraySlice<UInt8>) {
+        /// What the terminal sends upstream (keys, a paste, its replies), from
+        /// either view.
+        func sendInput(_ data: ArraySlice<UInt8>) {
             // Typing means "I'm done reading" — resume live output and snap to
             // the bottom (the flush makes SwiftTerm follow the tail again).
             releaseScrollHold()
@@ -1390,25 +1264,43 @@ struct SwiftTerminalView: UIViewRepresentable {
                 onInput?(Data([byte & 0x1f]))
                 return
             }
-            // Committing IME input routes through here; force a FULL repaint so a
-            // stale composing overlay (the "？？？" ghost) or leftover marked-text
-            // cells can't linger until the next output. Skip it for a lone
-            // backspace/delete byte: that's deleteBackward()'s hold-to-repeat
-            // path, firing many times a second while the key is held, and a
-            // full-screen redraw on every single one is what breaks the "holds
-            // down = keeps deleting" feel (the OS's repeat cadence outruns the
-            // redraw, so it stutters instead of deleting continuously).
+            // No repaint of our own: what a key changes on screen arrives as its
+            // echo, and SwiftTerm repaints just the rows that changed (fork
+            // patch 27). This used to force a FULL repaint on every key so a
+            // stale composing overlay couldn't linger after an IME commit; the
+            // composition is a subview of its own now (fork patch 5), gone the
+            // moment it ends, and the forced repaint cost a whole-screen draw
+            // per keystroke (~5 ms on a 70×72 iPhone grid).
             let isLoneEraseByte = data.count == 1 && (data.first == 0x7f || data.first == 0x08)
             if isLoneEraseByte { noteEraseByte() }
-            if !isLoneEraseByte {
-                source.getTerminal().updateFullScreen()
-                source.setNeedsDisplay()
-            }
             if data.contains(0x0d) || data.contains(0x0a) {
                 onReturnSend?()
             }
             guard let onInput else { return }
             onInput(Data(data))
+        }
+
+        /// Where the terminal's own paste goes — the edit menu's Paste and
+        /// ⌘V on a hardware keyboard: the session's paste path
+        /// (`ActiveSession.sendPaste`), which decides bracketing per
+        /// transport. With none, the paste is bracketed by the local
+        /// emulator's flag, as SwiftTerm would — never set over SSH+tmux or
+        /// SSH+herdr, so a multi-line paste ran line by line.
+        var onPaste: ((String) -> Void)?
+
+        /// The terminal's own paste (its edit menu, ⌘V): pasting means "I'm
+        /// done reading", like typing does; then the session's paste path,
+        /// or bracketed by the terminal's own mode with any marker inside
+        /// taken out (``BracketedPaste``, V30) — never a view's own paste,
+        /// which wraps the text as it is, so a marker inside ends it early.
+        func paste(_ text: String) {
+            releaseScrollHold()
+            if let onPaste {
+                onPaste(text)
+                return
+            }
+            guard let payload = withSurface({ $0.pastePayload(text) }), !payload.isEmpty else { return }
+            sendInput(ArraySlice([UInt8](payload)))
         }
 
         /// Erase bytes seen in the current burst, and when the last one landed.
@@ -1447,26 +1339,14 @@ struct SwiftTerminalView: UIViewRepresentable {
             Log.input.info("erase byte #\(self.eraseBurstCount, privacy: .public) in this burst")
         }
 
-        func sizeChanged(source: TerminalView, newCols: Int, newRows: Int) {
-            lastReportedSize = (newCols, newRows)
-            onSizeChange?(newCols, newRows)
+        /// The terminal's grid changed.
+        func gridChanged(cols: Int, rows: Int) {
+            lastReportedSize = (cols, rows)
+            onSizeChange?(cols, rows)
         }
 
-        func setTerminalTitle(source: TerminalView, title: String) {
-            onTitleChange?(title)
-        }
-
-        func hostCurrentDirectoryUpdate(source: TerminalView, directory: String?) {
-            onHostDirectoryChange?(directory)
-        }
-
-        // MARK: TerminalViewDelegate — stubs (no-op for M1)
-
-        func scrolled(source: TerminalView, position: Double) {
-            // no-op: scroll position is owned by SwiftTerm internally.
-        }
-
-        func requestOpenLink(source: TerminalView, link: String, params: [String: String]) {
+        /// A tapped link (OSC 8, or a URL the terminal recognised).
+        func openLink(_ link: String) {
             // A tapped terminal hyperlink (OSC-8, or a plain URL when the build
             // surfaces one). Open only safe web/mail schemes — never arbitrary
             // custom schemes from remote output.
@@ -1491,46 +1371,90 @@ struct SwiftTerminalView: UIViewRepresentable {
             }
         }
 
-        func bell(source: TerminalView) {
-            onBell?()
-        }
-
-        func clipboardCopy(source: TerminalView, content: Data) {
-            // no-op for M1; OSC 52 paste-from-remote disabled by default.
-        }
-
-        func clipboardRequest(source: TerminalView) {
-            // OSC 52 read query — the remote is asking for the phone's
-            // clipboard. Gated on an off-by-default setting because this is
-            // an exfiltration channel: with it off we still ANSWER, with an
-            // empty clipboard (the conventional refusal), so a remote program
-            // waiting on the reply unblocks without learning anything.
-            //
-            // Text only for now; images wait on the ecosystem picking a
-            // protocol (kitty OSC 5522 — see Claude Code #42712). Pasteboard
-            // reads can block the main thread for over a second (see the
-            // paste chip), so the read happens off it.
+        /// OSC 52's read query — the remote is asking for the phone's
+        /// clipboard. Gated on an off-by-default setting because this is an
+        /// exfiltration channel: with it off we still ANSWER, with an empty
+        /// clipboard (the conventional refusal), so a remote program waiting
+        /// on the reply unblocks without learning anything.
+        ///
+        /// Text only for now; images wait on the ecosystem picking a
+        /// protocol (kitty OSC 5522 — see Claude Code #42712). Pasteboard
+        /// reads can block the main thread for over a second (see the paste
+        /// chip), so the read happens off it.
+        func answerClipboardRequest() {
             let allowed = AppSettings.shared.remoteClipboardReadEnabled
-            Task { [weak source] in
-                let content: Data?
-                if allowed {
-                    let text = await Task.detached { UIPasteboard.general.string }.value
-                    content = text?.data(using: .utf8)
-                } else {
-                    content = nil
-                }
-                await MainActor.run { [weak source] in
-                    source?.getTerminal().sendClipboardResponse(content: content)
-                }
+            Task { [weak self] in
+                let text: String? = allowed ? await Task.detached { UIPasteboard.general.string }.value : nil
+                await MainActor.run { _ = self?.withSurface { $0.answerClipboard(text) } }
             }
         }
+    }
+}
 
-        func iTermContent(source: TerminalView, content: ArraySlice<UInt8>) {
-            // no-op: iTerm2-specific OSC 1337 escapes are out of scope.
-        }
+/// The terminal's events, routed as the session wants them.
+@MainActor
+extension SwiftTerminalView.Coordinator: TerminalSurfaceDelegate {
+    func surface(_ surface: TerminalSurface, send data: Data) {
+        sendInput(ArraySlice([UInt8](data)))
+    }
 
-        func rangeChanged(source: TerminalView, startY: Int, endY: Int) {
-            // no-op: only fires when `notifyUpdateChanges` is enabled.
-        }
+    func surface(_ surface: TerminalSurface, sizeChanged cols: Int, rows: Int) {
+        gridChanged(cols: cols, rows: rows)
+    }
+
+    func surface(_ surface: TerminalSurface, titleChanged title: String) {
+        onTitleChange?(title)
+    }
+
+    func surface(_ surface: TerminalSurface, directoryChanged directory: String?) {
+        onHostDirectoryChange?(directory)
+    }
+
+    func surfaceBell(_ surface: TerminalSurface) {
+        onBell?()
+    }
+
+    func surface(_ surface: TerminalSurface, openLink link: String) {
+        openLink(link)
+    }
+
+    func surface(_ surface: TerminalSurface, paste text: String) {
+        paste(text)
+    }
+
+    func surfaceClipboardRequest(_ surface: TerminalSurface) {
+        answerClipboardRequest()
+    }
+
+    func surface(_ surface: TerminalSurface, reached mark: TerminalMark) {
+        reached(mark)
+    }
+
+    func surfaceScrollWillBegin(_ surface: TerminalSurface) {
+        scrollWillBegin()
+    }
+
+    func surface(_ surface: TerminalSurface, scrollPixels dy: CGFloat) -> CGFloat {
+        scroll(pixels: dy)
+    }
+
+    func surfaceScrollDidEnd(_ surface: TerminalSurface) {
+        scrollDidEnd()
+    }
+
+    func surface(_ surface: TerminalSurface, click col: Int, row: Int) {
+        click(col: col, row: row)
+    }
+
+    var surfaceScrollsElsewhere: Bool { onScroll != nil || onScrollPixels != nil }
+
+    var surfaceCanSwitch: Bool { onSwitch != nil }
+
+    func surface(_ surface: TerminalSurface, switchForward forward: Bool) {
+        onSwitch?(forward)
+    }
+
+    func surface(_ surface: TerminalSurface, fontSizeCommitted size: Double) {
+        onFontSizeCommit?(size)
     }
 }

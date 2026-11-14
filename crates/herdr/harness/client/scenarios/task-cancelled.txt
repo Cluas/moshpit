@@ -1,0 +1,6 @@
+# The form is cancelled while the worktree is made: no agent is started.
+host rule worktree_create 500 normal
+at 0 start
+at 300 task /home/dev/code/app fix-scroll claude go
+at 400 cancel-task
+end 6000

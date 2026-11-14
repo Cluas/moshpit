@@ -1,0 +1,4 @@
+{"ev":"protocol-error","message":"recovered %begin glued to truncated %output"}
+{"ev":"output","pane":"%0","hex":"78"}
+{"ev":"response","id":1700000000,"num":101,"error":false,"lines":["%begin 1700000000 101 1","real reply"]}
+{"ev":"end","plan":"whole","feeds":1,"resets":0,"bytes":147,"cuts":0,"in_utf8":0,"in_octal":0,"plan_hash":"34d2b45159a33676"}

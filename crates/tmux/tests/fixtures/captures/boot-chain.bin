@@ -1,0 +1,64 @@
+P1000p%begin 1794337412 282 0
+can't find session: nope
+%error 1794337412 282 0
+%exit
+\P1000p%begin 1794337412 284 0
+%end 1794337412 284 0
+%session-changed $0 g2
+%window-renamed @0 bash
+%begin 1794337413 290 1
+%end 1794337413 290 1
+%layout-change @0 b25d,80x24,0,0,0 b25d,80x24,0,0,0 *
+%begin 1794337413 293 1
+$0 1 g2
+%end 1794337413 293 1
+%begin 1794337413 294 1
+$0 @0 0 b25d,80x24,0,0,0 1 1 bash
+%end 1794337413 294 1
+%begin 1794337413 295 1
+%0 @0 0 80 24 1 0 0 bash
+%end 1794337413 295 1
+%begin 1794337413 296 1
+C-b
+%end 1794337413 296 1
+%begin 1794337413 297 1
+1|g2|/dev/ttys022
+%end 1794337413 297 1
+%begin 1794337413 298 1
+G2SYNC1
+%end 1794337413 298 1
+%begin 1794337413 299 1
+%end 1794337413 299 1
+%begin 1794337413 300 1
+%end 1794337413 300 1
+%begin 1794337413 301 1
+G2SYNC2
+%end 1794337413 301 1
+%output %0 e
+%output %0 c
+%output %0 ho
+%output %0  atta
+%output %0 ch
+%output %0 ed
+%output %0  t
+%output %0 h
+%output %0 r
+%output %0 ou
+%output %0 g
+%output %0 h 
+%output %0 th
+%output %0 e
+%output %0  
+%output %0 fa
+%output %0 l
+%output %0 l
+%output %0 ba
+%output %0 c
+%output %0 k
+%output %0 \015\012
+%output %0 attached through the fallback\015\012
+%output %0 sh-3.2$ 
+%begin 1794337413 302 1
+%end 1794337413 302 1
+%exit
+\

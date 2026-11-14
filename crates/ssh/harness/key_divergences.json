@@ -1,0 +1,37 @@
+[
+  {
+    "id": "b126-p384-p521",
+    "case": "^(keygen-ecdsa(384|521)|app-ecdsa-p384|matrix-keygen-ecdsa(384|521)-[^/]+|matrix-openssl-p(384|521)-[^/]+|made-p384-stand-in)/",
+    "swift": "error Unsupported ECDSA P-(384|521)|none|false",
+    "rust": ".*",
+    "why": "B126. The Swift reader refused P-384 and P-521 keys by the type their clear public half names, before reading anything else (the Swift connect path signed with P-256 only); the Rust reader reads them as it reads any key — imported, converted, asked for their passphrase, refused when cut short or garbled — and both connect paths sign in with them (Citadel's .p384/.p521, russh)."
+  },
+  {
+    "id": "chacha20-poly1305",
+    "case": "chacha",
+    "swift": "error UnsupportedEncryption chacha20-poly1305@openssh\\.com",
+    "rust": ".*",
+    "why": "ssh-keygen -Z chacha20-poly1305@openssh.com keys: the Swift reader refused the cipher by name (CommonCrypto has no ChaCha20); the Rust reader opens them as OpenSSH does (bcrypt key, zero nonce), and refuses a wrong passphrase, a cut or a garbled one by the Poly1305 tag."
+  },
+  {
+    "id": "putty",
+    "case": "^putty-",
+    "swift": "error Unrecognized|false|none",
+    "rust": ".*",
+    "why": "PuTTY keys (.ppk v2 and v3): the Swift reader never read them; the Rust reader has since W12 (Android's import), through ssh-key's PPK reader, and checks them as every other form (refusing DSA)."
+  },
+  {
+    "id": "endless-key-derivation",
+    "case": "/garbled\\d+/",
+    "swift": "not run: hangs",
+    "rust": "error UnsupportedEncryption (bcrypt with \\d+ rounds|PBKDF2 with \\d+ iterations)",
+    "why": "A byte garbled in a key's bcrypt round count (or PBKDF2 iteration count) asks for billions of rounds: the Swift reader spends hours on it (the first run of this check sat on one for over ten minutes), holding the import. The Rust reader refuses more than 4096 bcrypt rounds or 2^20 PBKDF2 iterations at once, saying how to re-encrypt the key. Not given to the Swift side."
+  },
+  {
+    "id": "garbled-private-half",
+    "case": "/garbled\\d+/",
+    "swift": "ok\t.*",
+    "rust": "error (Damaged|WrongPassphrase)",
+    "why": "A byte garbled in a key's private half. The Swift reader checked an openssh-key-v1 RSA key's public half only and a PKCS #1/#8 key not at all, and CommonCrypto's PKCS #7 unpadding let a damaged last block through: it imported keys whose private numbers were wrong (the right public key, so it is listed and offered, and every sign-in fails) or that weren't the file's key at all (another fingerprint). The Rust reader checks RSA's numbers as signing will (n = p·q, e·d ≡ 1) and the whole padding, and refuses: Damaged, or WrongPassphrase under encryption, where a decrypted text that doesn't add up is what a wrong passphrase looks like."
+  }
+]

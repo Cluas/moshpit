@@ -424,8 +424,13 @@ func TestThrottleFloorIsPerPane(t *testing.T) {
 	if _, ok := th.allow("dev", "pane-a", base); !ok {
 		t.Fatal("first push must pass")
 	}
+	for i := 1; i < floorBurst; i++ {
+		if _, ok := th.allow("dev", "pane-a", base.Add(time.Duration(i)*100*time.Millisecond)); !ok {
+			t.Fatalf("push %d of a burst was dropped", i+1)
+		}
+	}
 	if _, ok := th.allow("dev", "pane-a", base.Add(time.Second)); ok {
-		t.Error("a second push for the SAME pane one second later must be dropped")
+		t.Error("a push past the burst on the SAME thread inside the floor must be dropped")
 	}
 	// The case that used to lose the important half: a done, then the attention
 	// it provoked, on a different pane, inside the floor.
@@ -437,6 +442,32 @@ func TestThrottleFloorIsPerPane(t *testing.T) {
 	}
 	if _, ok := th.allow("other-dev", "pane-a", base.Add(time.Second)); !ok {
 		t.Error("throttle leaked across devices")
+	}
+}
+
+// TestThrottleAdmitsAgentsAskingTogether: every attention push of a
+// connection shares one thread (they collapse into one summary card), so a
+// floor of one push per thread per window dropped the second of two agents
+// asking at once — and the host does not retry an HTTP answer.
+func TestThrottleAdmitsAgentsAskingTogether(t *testing.T) {
+	base := time.Now()
+	th := newThrottle()
+	thread := "moshpit.attention.0F0E0D0C-0000-4000-8000-000000000002"
+	if _, ok := th.allow("dev", thread, base); !ok {
+		t.Fatal("first agent's question must pass")
+	}
+	if _, ok := th.allow("dev", thread, base.Add(1500*time.Millisecond)); !ok {
+		t.Error("a second agent asking on the same connection 1.5 s later was dropped")
+	}
+	// The window slides: what passed at `base` no longer counts at base+3s.
+	for i := 0; i < floorBurst-1; i++ {
+		th.allow("dev", thread, base.Add(minInterval+time.Duration(i)*time.Millisecond))
+	}
+	wait, ok := th.allow("dev", thread, base.Add(minInterval+time.Second))
+	if ok {
+		t.Error("a burst past floorBurst inside one window must be dropped")
+	} else if wait <= 0 || wait > minInterval {
+		t.Errorf("retry-after %v, want within (0, %v]", wait, minInterval)
 	}
 }
 

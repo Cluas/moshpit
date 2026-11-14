@@ -1,0 +1,358 @@
+frames [screen(1,60,20,false,b:6f6b)]
+frames [screen(1,60,20,false,b:6f6b)]
+frames [screen(1,60,20,false,b:6f6b)]
+frames [screen(1,60,20,false,b:6f6b)]
+frames [screen(1,60,20,true,b:1b5b324a6869)]
+frames [screen(1,60,20,false,b:61) screen(2,60,20,false,b:62)]
+frames [closed("pane gone")]
+frames [fault("server rejected handshake (version 16): client version 19 is newer than server version 16; please upgrade the herdr server")]
+frames [fault("client protocol 19 is newer than server protocol 16")]
+frames [screen(3,60,20,false,b:7a)]
+frames [screen(9,60,20,false,b:6261636b)]
+frames []
+frames [fault("lost connection to server: server closed connection")]
+frames [ready]
+frames [closed(nil) closed(nil)]
+drop true
+drop false
+drop false
+start "stty raw -echo; PATH=\"$PATH:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:$HOME/.local/bin\" herdr terminal session control 'w1:p2' --cols 52 --rows 30"
+start "stty raw -echo; /opt/herdr/bin/herdr terminal session control 'w1:p1' --cols 40 --rows 20"
+boot "stty raw -echo; /bin/sh -c 'f=\"$HOME/.moshpit/herdr-frame-6F9619FF-8B86-D011-B42D-00C04FC964FF.pid\"; mkdir -p \"$HOME/.moshpit\" 2>/dev/null; l=$(cat \"$f\" 2>/dev/null); case \"$l\" in '\\'''\\''|*[!0-9]*) ;; *) a=; [ -r \"/proc/$l/cmdline\" ] && a=$(tr \"'\\\\'000\" \" \" < \"/proc/$l/cmdline\" 2>/dev/null); [ -n \"$a\" ] || a=$(ps -o args= -p \"$l\" 2>/dev/null); case \"$a\" in *\"herdr-frame-6F9619FF-8B86-D011-B42D-00C04FC964FF.pid\"*) for c in $(pgrep -P \"$l\" 2>/dev/null || ps -A -o pid= -o ppid= 2>/dev/null | awk -v l=\"$l\" '\\''$2 == l { print $1 }'\\''); do a=; [ -r \"/proc/$c/cmdline\" ] && a=$(tr \"'\\\\'000\" \" \" < \"/proc/$c/cmdline\" 2>/dev/null); [ -n \"$a\" ] || a=$(ps -o args= -p \"$c\" 2>/dev/null); case \"$a\" in *\"terminal session control\"*) kill -9 \"$c\" 2>/dev/null ;; esac; done ;; esac ;; esac; { echo $$ > \"$f\"; } 2>/dev/null; printf '\\''%s'\\\\'n'\\'' '\\''{\"type\":\"moshpit.ready\"}'\\''; while :; do if [ -n \"$1\" ]; then stty raw -echo; PATH=\"$PATH:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:$HOME/.local/bin\" herdr terminal session control \"$1\" --cols \"${2:-80}\" --rows \"${3:-24}\" ${4:+--takeover}; fi; read -r t c r k || break; case \"$t\" in \"{\"*) set --; continue;; esac; set -- \"$t\" \"$c\" \"$r\" \"$k\"; done' moshpit-herdr 'term_abc' 52 30"
+boot "stty raw -echo; /bin/sh -c 'f=\"$HOME/.moshpit/herdr-frame-6F9619FF-8B86-D011-B42D-00C04FC964FF.pid\"; mkdir -p \"$HOME/.moshpit\" 2>/dev/null; l=$(cat \"$f\" 2>/dev/null); case \"$l\" in '\\'''\\''|*[!0-9]*) ;; *) a=; [ -r \"/proc/$l/cmdline\" ] && a=$(tr \"'\\\\'000\" \" \" < \"/proc/$l/cmdline\" 2>/dev/null); [ -n \"$a\" ] || a=$(ps -o args= -p \"$l\" 2>/dev/null); case \"$a\" in *\"herdr-frame-6F9619FF-8B86-D011-B42D-00C04FC964FF.pid\"*) for c in $(pgrep -P \"$l\" 2>/dev/null || ps -A -o pid= -o ppid= 2>/dev/null | awk -v l=\"$l\" '\\''$2 == l { print $1 }'\\''); do a=; [ -r \"/proc/$c/cmdline\" ] && a=$(tr \"'\\\\'000\" \" \" < \"/proc/$c/cmdline\" 2>/dev/null); [ -n \"$a\" ] || a=$(ps -o args= -p \"$c\" 2>/dev/null); case \"$a\" in *\"terminal session control\"*) kill -9 \"$c\" 2>/dev/null ;; esac; done ;; esac ;; esac; { echo $$ > \"$f\"; } 2>/dev/null; printf '\\''%s'\\\\'n'\\'' '\\''{\"type\":\"moshpit.ready\"}'\\''; while :; do if [ -n \"$1\" ]; then stty raw -echo; PATH=\"$PATH:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:$HOME/.local/bin\" herdr terminal session control \"$1\" --cols \"${2:-80}\" --rows \"${3:-24}\" ${4:+--takeover}; fi; read -r t c r k || break; case \"$t\" in \"{\"*) set --; continue;; esac; set -- \"$t\" \"$c\" \"$r\" \"$k\"; done' moshpit-herdr 't' 10 10"
+boot "stty raw -echo; /bin/sh -c 'f=\"$HOME/.moshpit/herdr-frame-6F9619FF-8B86-D011-B42D-00C04FC964FF.pid\"; mkdir -p \"$HOME/.moshpit\" 2>/dev/null; l=$(cat \"$f\" 2>/dev/null); case \"$l\" in '\\'''\\''|*[!0-9]*) ;; *) a=; [ -r \"/proc/$l/cmdline\" ] && a=$(tr \"'\\\\'000\" \" \" < \"/proc/$l/cmdline\" 2>/dev/null); [ -n \"$a\" ] || a=$(ps -o args= -p \"$l\" 2>/dev/null); case \"$a\" in *\"herdr-frame-6F9619FF-8B86-D011-B42D-00C04FC964FF.pid\"*) for c in $(pgrep -P \"$l\" 2>/dev/null || ps -A -o pid= -o ppid= 2>/dev/null | awk -v l=\"$l\" '\\''$2 == l { print $1 }'\\''); do a=; [ -r \"/proc/$c/cmdline\" ] && a=$(tr \"'\\\\'000\" \" \" < \"/proc/$c/cmdline\" 2>/dev/null); [ -n \"$a\" ] || a=$(ps -o args= -p \"$c\" 2>/dev/null); case \"$a\" in *\"terminal session control\"*) kill -9 \"$c\" 2>/dev/null ;; esac; done ;; esac ;; esac; { echo $$ > \"$f\"; } 2>/dev/null; printf '\\''%s'\\\\'n'\\'' '\\''{\"type\":\"moshpit.ready\"}'\\''; while :; do if [ -n \"$1\" ]; then stty raw -echo; /opt/o'\\''clock/herdr terminal session control \"$1\" --cols \"${2:-80}\" --rows \"${3:-24}\" ${4:+--takeover}; fi; read -r t c r k || break; case \"$t\" in \"{\"*) set --; continue;; esac; set -- \"$t\" \"$c\" \"$r\" \"$k\"; done' moshpit-herdr 't' 10 10"
+retarget "term_abc 52 30"
+retarget "t 1 1"
+start "stty raw -echo; PATH=\"$PATH:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:$HOME/.local/bin\" herdr terminal session control 'w1:p2' --cols 52 --rows 30 --takeover"
+start "stty raw -echo; /opt/herdr/bin/herdr terminal session control 'w1:p1' --cols 40 --rows 20 --takeover"
+boot "stty raw -echo; /bin/sh -c 'f=\"$HOME/.moshpit/herdr-frame-6F9619FF-8B86-D011-B42D-00C04FC964FF.pid\"; mkdir -p \"$HOME/.moshpit\" 2>/dev/null; l=$(cat \"$f\" 2>/dev/null); case \"$l\" in '\\'''\\''|*[!0-9]*) ;; *) a=; [ -r \"/proc/$l/cmdline\" ] && a=$(tr \"'\\\\'000\" \" \" < \"/proc/$l/cmdline\" 2>/dev/null); [ -n \"$a\" ] || a=$(ps -o args= -p \"$l\" 2>/dev/null); case \"$a\" in *\"herdr-frame-6F9619FF-8B86-D011-B42D-00C04FC964FF.pid\"*) for c in $(pgrep -P \"$l\" 2>/dev/null || ps -A -o pid= -o ppid= 2>/dev/null | awk -v l=\"$l\" '\\''$2 == l { print $1 }'\\''); do a=; [ -r \"/proc/$c/cmdline\" ] && a=$(tr \"'\\\\'000\" \" \" < \"/proc/$c/cmdline\" 2>/dev/null); [ -n \"$a\" ] || a=$(ps -o args= -p \"$c\" 2>/dev/null); case \"$a\" in *\"terminal session control\"*) kill -9 \"$c\" 2>/dev/null ;; esac; done ;; esac ;; esac; { echo $$ > \"$f\"; } 2>/dev/null; printf '\\''%s'\\\\'n'\\'' '\\''{\"type\":\"moshpit.ready\"}'\\''; while :; do if [ -n \"$1\" ]; then stty raw -echo; PATH=\"$PATH:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:$HOME/.local/bin\" herdr terminal session control \"$1\" --cols \"${2:-80}\" --rows \"${3:-24}\" ${4:+--takeover}; fi; read -r t c r k || break; case \"$t\" in \"{\"*) set --; continue;; esac; set -- \"$t\" \"$c\" \"$r\" \"$k\"; done' moshpit-herdr 'term_abc' 52 30 take"
+boot "stty raw -echo; /bin/sh -c 'f=\"$HOME/.moshpit/herdr-frame-6F9619FF-8B86-D011-B42D-00C04FC964FF.pid\"; mkdir -p \"$HOME/.moshpit\" 2>/dev/null; l=$(cat \"$f\" 2>/dev/null); case \"$l\" in '\\'''\\''|*[!0-9]*) ;; *) a=; [ -r \"/proc/$l/cmdline\" ] && a=$(tr \"'\\\\'000\" \" \" < \"/proc/$l/cmdline\" 2>/dev/null); [ -n \"$a\" ] || a=$(ps -o args= -p \"$l\" 2>/dev/null); case \"$a\" in *\"herdr-frame-6F9619FF-8B86-D011-B42D-00C04FC964FF.pid\"*) for c in $(pgrep -P \"$l\" 2>/dev/null || ps -A -o pid= -o ppid= 2>/dev/null | awk -v l=\"$l\" '\\''$2 == l { print $1 }'\\''); do a=; [ -r \"/proc/$c/cmdline\" ] && a=$(tr \"'\\\\'000\" \" \" < \"/proc/$c/cmdline\" 2>/dev/null); [ -n \"$a\" ] || a=$(ps -o args= -p \"$c\" 2>/dev/null); case \"$a\" in *\"terminal session control\"*) kill -9 \"$c\" 2>/dev/null ;; esac; done ;; esac ;; esac; { echo $$ > \"$f\"; } 2>/dev/null; printf '\\''%s'\\\\'n'\\'' '\\''{\"type\":\"moshpit.ready\"}'\\''; while :; do if [ -n \"$1\" ]; then stty raw -echo; PATH=\"$PATH:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:$HOME/.local/bin\" herdr terminal session control \"$1\" --cols \"${2:-80}\" --rows \"${3:-24}\" ${4:+--takeover}; fi; read -r t c r k || break; case \"$t\" in \"{\"*) set --; continue;; esac; set -- \"$t\" \"$c\" \"$r\" \"$k\"; done' moshpit-herdr 't' 10 10 take"
+boot "stty raw -echo; /bin/sh -c 'f=\"$HOME/.moshpit/herdr-frame-6F9619FF-8B86-D011-B42D-00C04FC964FF.pid\"; mkdir -p \"$HOME/.moshpit\" 2>/dev/null; l=$(cat \"$f\" 2>/dev/null); case \"$l\" in '\\'''\\''|*[!0-9]*) ;; *) a=; [ -r \"/proc/$l/cmdline\" ] && a=$(tr \"'\\\\'000\" \" \" < \"/proc/$l/cmdline\" 2>/dev/null); [ -n \"$a\" ] || a=$(ps -o args= -p \"$l\" 2>/dev/null); case \"$a\" in *\"herdr-frame-6F9619FF-8B86-D011-B42D-00C04FC964FF.pid\"*) for c in $(pgrep -P \"$l\" 2>/dev/null || ps -A -o pid= -o ppid= 2>/dev/null | awk -v l=\"$l\" '\\''$2 == l { print $1 }'\\''); do a=; [ -r \"/proc/$c/cmdline\" ] && a=$(tr \"'\\\\'000\" \" \" < \"/proc/$c/cmdline\" 2>/dev/null); [ -n \"$a\" ] || a=$(ps -o args= -p \"$c\" 2>/dev/null); case \"$a\" in *\"terminal session control\"*) kill -9 \"$c\" 2>/dev/null ;; esac; done ;; esac ;; esac; { echo $$ > \"$f\"; } 2>/dev/null; printf '\\''%s'\\\\'n'\\'' '\\''{\"type\":\"moshpit.ready\"}'\\''; while :; do if [ -n \"$1\" ]; then stty raw -echo; /opt/o'\\''clock/herdr terminal session control \"$1\" --cols \"${2:-80}\" --rows \"${3:-24}\" ${4:+--takeover}; fi; read -r t c r k || break; case \"$t\" in \"{\"*) set --; continue;; esac; set -- \"$t\" \"$c\" \"$r\" \"$k\"; done' moshpit-herdr 't' 10 10 take"
+retarget "term_abc 52 30 take"
+retarget "t 1 1 take"
+input "{\"type\":\"terminal.input\",\"bytes\":\"G1tBw6k=\"}"
+input "{\"type\":\"terminal.input\",\"bytes\":\"\"}"
+input "{\"type\":\"terminal.input\",\"bytes\":\"AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8gISIjJCUmJygpKissLS4vMDEyMzQ1Njc4OTo7PD0+P0BBQkNERUZHSElKS0xNTk9QUVJTVFVWV1hZWltcXV5fYGFiY2RlZmdoaWprbG1ub3BxcnN0dXZ3eHl6e3x9fn+AgYKDhIWGh4iJiouMjY6PkJGSk5SVlpeYmZqbnJ2en6ChoqOkpaanqKmqq6ytrq+wsbKztLW2t7i5uru8vb6/wMHCw8TFxsfIycrLzM3Oz9DR0tPU1dbX2Nna29zd3t/g4eLj5OXm5+jp6uvs7e7v8PHy8/T19vf4+fr7/P3+/w==\"}"
+resize "{\"type\":\"terminal.resize\",\"cols\":1,\"rows\":1}"
+resize "{\"type\":\"terminal.resize\",\"cols\":52,\"rows\":30}"
+scroll "{\"type\":\"terminal.scroll\",\"direction\":\"up\",\"lines\":3,\"source\":\"wheel\"}"
+scroll "{\"type\":\"terminal.scroll\",\"direction\":\"down\",\"lines\":1,\"source\":\"page_key\"}"
+consts "{\"type\":\"terminal.release\"}" "{\"type\":\"moshpit.ready\"}" "moshpit.ready"
+paste b:1b5b3230307e6f6e6574776f1b5b3230317e
+paste b:1b5b3230307e6669727374206c696e650a7365636f6e64206c696e651b5b3230317e
+paste b:1b5b3230307e2f746d702f6d6f73687069742d75706c6f6164732f73686f742e706e671b5b3230317e
+paste b:1b5b3230307e1b5b3230317e
+arrow "up"
+arrow "down"
+arrow "right"
+arrow "left"
+arrow nil
+arrow nil
+arrow nil
+arrow nil
+arrow nil
+snapshot sessions["w1"=("~",true) "w2"=("api",false)] windows["w1:t1"=("w1","1",1,"",true,2,false) "w1:t2"=("w1","logs",2,"",false,1,false) "w2:t1"=("w2","1",1,"",false,1,false)] panes["w1:p1"=("w1:t1",1,"",22,32,false) "w1:p2"=("w1:t2",2,"",44,32,false) "w1:p3"=("w1:t1",3,"",22,32,true) "w2:p1"=("w2:t1",1,"",44,32,false)] active("w1","w1:t1","w1:p3") attached(true,true) hooks[] cwds["w1:p1"="/Users/dev" "w1:p2"="/Users/dev" "w1:p3"="/Users/dev" "w2:p1"="/private/tmp"] tids["w1:p1"="term_6585d439b1e751" "w1:p2"="term_6585d447a54573" "w1:p3"="term_6585d447a7ed34" "w2:p1"="term_6585d447a16f42"] wt[]
+firstobj {"id":"cli:api:snapshot","result":{"snapshot":{"agents":[],"focused_pane_id":"w1:p3","focused_tab_id":"w1:t1","focused_workspace_id":"w1","layouts":[{"area":{"height":n(int,32,32,-),"width":n(int,44,44,-),"x":n(int,26,26,-),"y":n(int,1,1,true)},"focused_pane_id":"w1:p3","panes":[{"focused":n(bool,0,0,false),"pane_id":"w1:p1","rect":{"height":n(int,32,32,-),"width":n(int,22,22,-),"x":n(int,26,26,-),"y":n(int,1,1,true)}},{"focused":n(bool,1,1,true),"pane_id":"w1:p3","rect":{"height":n(int,32,32,-),"width":n(int,22,22,-),"x":n(int,48,48,-),"y":n(int,1,1,true)}}],"splits":[{"direction":"right","id":"split_0_root","ratio":n(dbl:3fe0000000000000,-,-,-),"rect":{"height":n(int,32,32,-),"width":n(int,44,44,-),"x":n(int,26,26,-),"y":n(int,1,1,true)}}],"tab_id":"w1:t1","workspace_id":"w1","zoomed":n(bool,0,0,false)},{"area":{"height":n(int,32,32,-),"width":n(int,44,44,-),"x":n(int,26,26,-),"y":n(int,1,1,true)},"focused_pane_id":"w1:p2","panes":[{"focused":n(bool,1,1,true),"pane_id":"w1:p2","rect":{"height":n(int,32,32,-),"width":n(int,44,44,-),"x":n(int,26,26,-),"y":n(int,1,1,true)}}],"splits":[],"tab_id":"w1:t2","workspace_id":"w1","zoomed":n(bool,0,0,false)},{"area":{"height":n(int,32,32,-),"width":n(int,44,44,-),"x":n(int,26,26,-),"y":n(int,1,1,true)},"focused_pane_id":"w2:p1","panes":[{"focused":n(bool,1,1,true),"pane_id":"w2:p1","rect":{"height":n(int,32,32,-),"width":n(int,44,44,-),"x":n(int,26,26,-),"y":n(int,1,1,true)}}],"splits":[],"tab_id":"w2:t1","workspace_id":"w2","zoomed":n(bool,0,0,false)}],"panes":[{"agent_status":"unknown","cwd":"/Users/dev","focused":n(bool,0,0,false),"foreground_cwd":"/Users/dev","pane_id":"w1:p1","revision":n(int,0,0,false),"scroll":{"max_offset_from_bottom":n(int,0,0,false),"offset_from_bottom":n(int,0,0,false),"viewport_rows":n(int,30,30,-)},"tab_id":"w1:t1","terminal_id":"term_6585d439b1e751","workspace_id":"w1"},{"agent_status":"unknown","cwd":"/Users/dev","focused":n(bool,1,1,true),"foreground_cwd":"/Users/dev","pane_id":"w1:p3","revision":n(int,0,0,false),"scroll":{"max_offset_from_bottom":n(int,0,0,false),"offset_from_bottom":n(int,0,0,false),"viewport_rows":n(int,30,30,-)},"tab_id":"w1:t1","terminal_id":"term_6585d447a7ed34","workspace_id":"w1"},{"agent_status":"unknown","cwd":"/Users/dev","focused":n(bool,0,0,false),"foreground_cwd":"/Users/dev","pane_id":"w1:p2","revision":n(int,0,0,false),"scroll":{"max_offset_from_bottom":n(int,0,0,false),"offset_from_bottom":n(int,0,0,false),"viewport_rows":n(int,32,32,-)},"tab_id":"w1:t2","terminal_id":"term_6585d447a54573","workspace_id":"w1"},{"agent_status":"unknown","cwd":"/private/tmp","focused":n(bool,0,0,false),"foreground_cwd":"/private/tmp","pane_id":"w2:p1","revision":n(int,0,0,false),"scroll":{"max_offset_from_bottom":n(int,0,0,false),"offset_from_bottom":n(int,0,0,false),"viewport_rows":n(int,32,32,-)},"tab_id":"w2:t1","terminal_id":"term_6585d447a16f42","workspace_id":"w2"}],"protocol":n(int,16,16,-),"tabs":[{"agent_status":"unknown","focused":n(bool,1,1,true),"label":"1","number":n(int,1,1,true),"pane_count":n(int,2,2,-),"tab_id":"w1:t1","workspace_id":"w1"},{"agent_status":"unknown","focused":n(bool,0,0,false),"label":"logs","number":n(int,2,2,-),"pane_count":n(int,1,1,true),"tab_id":"w1:t2","workspace_id":"w1"},{"agent_status":"unknown","focused":n(bool,0,0,false),"label":"1","number":n(int,1,1,true),"pane_count":n(int,1,1,true),"tab_id":"w2:t1","workspace_id":"w2"}],"version":"0.7.3","workspaces":[{"active_tab_id":"w1:t1","agent_status":"unknown","focused":n(bool,1,1,true),"label":"~","number":n(int,1,1,true),"pane_count":n(int,3,3,-),"tab_count":n(int,2,2,-),"workspace_id":"w1"},{"active_tab_id":"w2:t1","agent_status":"unknown","focused":n(bool,0,0,false),"label":"api","number":n(int,2,2,-),"pane_count":n(int,1,1,true),"tab_count":n(int,1,1,true),"workspace_id":"w2"}]},"type":"session_snapshot"}}
+snapshot sessions["w1"=("~",true)] windows["w1:t1"=("w1","1",1,"",true,1,false)] panes["w1:p1"=("w1:t1",1,"Claude Code",80,24,true)] active("w1","w1:t1","w1:p1") attached(true,true) hooks["w1:p1"=("working","Claude Code","claude \u{2014} moshpit")] cwds[] tids[] wt[]
+snapshot sessions["w1"=("solo",true)] windows[] panes[] active(nil,nil,nil) attached(true,true) hooks[] cwds[] tids[] wt[]
+snapshot sessions["w1"=("~",true)] windows["w1:t1"=("w1","1",1,"",true,1,false)] panes["w1:p1"=("w1:t1",1,"",80,24,false)] active(nil,nil,nil) attached(true,true) hooks["w1:p1"=("working",nil,nil)] cwds[] tids[] wt[]
+snapshot sessions["w1"=("~",true)] windows["w1:t1"=("w1","1",1,"",true,1,false)] panes["w1:p1"=("w1:t1",1,"",80,24,false)] active(nil,nil,nil) attached(true,true) hooks["w1:p1"=("attention",nil,nil)] cwds[] tids[] wt[]
+snapshot sessions["w1"=("~",true)] windows["w1:t1"=("w1","1",1,"",true,1,false)] panes["w1:p1"=("w1:t1",1,"",80,24,false)] active(nil,nil,nil) attached(true,true) hooks["w1:p1"=("done",nil,nil)] cwds[] tids[] wt[]
+snapshot sessions["w1"=("~",true)] windows["w1:t1"=("w1","1",1,"",true,1,false)] panes["w1:p1"=("w1:t1",1,"",80,24,false)] active(nil,nil,nil) attached(true,true) hooks[] cwds[] tids[] wt[]
+snapshot sessions["w1"=("~",true)] windows["w1:t1"=("w1","1",1,"",true,1,false)] panes["w1:p1"=("w1:t1",1,"",80,24,false)] active(nil,nil,nil) attached(true,true) hooks["w1:p1"=("idle",nil,nil)] cwds[] tids[] wt[]
+snapshot sessions["w1"=("~",false)] windows[] panes[] active(nil,nil,nil) attached(true,true) hooks[] cwds[] tids[] wt[]
+snapshot sessions["w1"=("weird{name}",false)] windows[] panes[] active(nil,nil,nil) attached(true,true) hooks[] cwds[] tids[] wt[]
+snapshot nil
+snapshot nil
+snapshot nil
+snapshot nil
+snapshot sessions["wP"=("sample-app",true)] windows["wP:t1"=("wP","claude",1,"",true,1,false)] panes["wP:p1"=("wP:t1",1,"claude --resume 7d04",80,24,true)] active("wP","wP:t1","wP:p1") attached(true,true) hooks["wP:p1"=("idle","claude","claude --resume 7d04")] cwds["wP:p1"="/Users/u/code/sample-app"] tids[] wt[]
+snapshot sessions["w1"=("x",false)] windows[] panes["w1:p1"=("w1:t1",1,"codex",80,24,false)] active(nil,nil,nil) attached(true,true) hooks["w1:p1"=("working","codex",nil)] cwds[] tids[] wt[]
+snapshot sessions["w1"=("~",true) "w4"=("fix-scroll",false)] windows[] panes[] active(nil,nil,nil) attached(true,true) hooks[] cwds[] tids[] wt["w4"="moshpit"]
+snapshot sessions["wQ"=("~",true)] windows["wQ:t1"=("wQ","1",1,"",true,1,false)] panes["wQ:p1"=("wQ:t1",1,"claude",54,23,true)] active("wQ","wQ:t1","wQ:p1") attached(true,true) hooks["wQ:p1"=("idle","claude","Claude Code")] cwds["wQ:p1"="/Users/dev"] tids["wQ:p1"="term_65936c711f67e2"] wt[]
+snapshot sessions["w1"=("~",true) "w2"=("api",false)] windows["w1:t1"=("w1","1",1,"",true,2,false)] panes["w1:p1"=("w1:t1",1,"",80,24,false) "w1:p2"=("w1:t1",2,"",80,24,true)] active("w1","w1:t1","w1:p2") attached(true,true) hooks[] cwds[] tids[] wt[]
+paneindex 1
+paneindex 3
+paneindex 47
+paneindex 0
+paneindex 5
+paneindex -5
+paneindex 0
+paneindex 0
+paneindex 0
+notrunning true
+notrunning false
+snapshot nil
+mismatch "client protocol 19 is older than server protocol 22"
+mismatch "herdr client/server protocol mismatch"
+skew false true
+skew true false
+skew true false
+status ("0.8.0","0.9.5",true,true,"herdr on the host's PATH is 0.8.0, its server 0.9.5 \u{2014} update that copy")
+status ("0.9.5","0.9.5",false,false,"The host's herdr server is 0.9.5, older than its herdr 0.9.5")
+status ("0.9.5","0.8.0",true,false,"The host's herdr server is 0.8.0, older than its herdr 0.9.5")
+status nil
+status nil
+status nil
+status ("0.8.0","0.9.5",true,true,"herdr on the host's PATH is 0.8.0, its server 0.9.5 \u{2014} update that copy")
+vcompare 1
+vcompare -1
+vcompare 0
+vcompare 0
+vcompare -1
+vcompare -1
+vcompare 0
+vcompare 0
+socket ready=false events["workspace_created" "workspace_focused" "tab_created" "tab_focused" "pane_created" "pane_updated" "pane_focused" "pane_agent_detected" "pane_updated" "pane_updated" "pane_updated" "tab_created" "pane_created" "pane_updated" "pane_updated"] replies[]
+socket ready=false events["workspace_created" "workspace_focused" "tab_created" "tab_focused" "pane_created" "pane_updated" "pane_focused" "pane_agent_detected" "pane_updated" "pane_updated" "pane_updated" "tab_created" "pane_created" "pane_updated" "pane_updated"] replies[]
+socket ready=false events["pane_focused" "pane_focused"] replies[]
+socket ready=false events[] replies[mp1=ok("{\"id\": \"mp1\", \"result\": {\"type\": \"session_snapshot\", \"snapshot\": {\"version\": \"0.8.0\", \"protocol\": 19, \"focused_workspace_id\": \"wQ\", \"focused_tab_id\": \"wQ:t1\", \"focused_pane_id\": \"wQ:p1\", \"workspaces\": [{\"workspace_id\": \"wQ\", \"number\": 1, \"label\": \"~\", \"focused\": true, \"pane_count\": 1, \"tab_count\": 1, \"active_tab_id\": \"wQ:t1\", \"agent_status\": \"idle\"}], \"tabs\": [{\"tab_id\": \"wQ:t1\", \"workspace_id\": \"wQ\", \"number\": 1, \"label\": \"1\", \"focused\": true, \"pane_count\": 1, \"agent_status\": \"idle\"}], \"panes\": [{\"pane_id\": \"wQ:p1\", \"terminal_id\": \"term_65936c711f67e2\", \"workspace_id\": \"wQ\", \"tab_id\": \"wQ:t1\", \"focused\": true, \"cwd\": \"/Users/dev\", \"foreground_cwd\": \"/Users/dev\", \"agent\": \"claude\", \"terminal_title\": \"\u{2733} Claude Code\", \"terminal_title_stripped\": \"Claude Code\", \"agent_status\": \"idle\", \"agent_session\": {\"source\": \"herdr:claude\", \"agent\": \"claude\", \"kind\": \"id\", \"value\": \"e7463a11-2235-4ac4-930f-dff3202cd64e\"}, \"scroll\": {\"offset_from_bottom\": 0, \"max_offset_from_bottom\": 0, \"viewport_rows\": 60}, \"revision\": 5}], \"layouts\": [{\"workspace_id\": \"wQ\", \"tab_id\": \"wQ:t1\", \"zoomed\": false, \"area\": {\"x\": 26, \"y\": 1, \"width\": 54, \"height\": 23}, \"focused_pane_id\": \"wQ:p1\", \"panes\": [{\"pane_id\": \"wQ:p1\", \"focused\": true, \"rect\": {\"x\": 26, \"y\": 1, \"width\": 54, \"height\": 23}}], \"splits\": []}], \"agents\": [{\"terminal_id\": \"term_65936c711f67e2\", \"agent\": \"claude\", \"terminal_title\": \"\u{2733} Claude Code\", \"terminal_title_stripped\": \"Claude Code\", \"agent_status\": \"idle\", \"agent_session\": {\"source\": \"herdr:claude\", \"agent\": \"claude\", \"kind\": \"id\", \"value\": \"e7463a11-2235-4ac4-930f-dff3202cd64e\"}, \"workspace_id\": \"wQ\", \"tab_id\": \"wQ:t1\", \"pane_id\": \"wQ:p1\", \"focused\": true, \"state_change_seq\": 3, \"cwd\": \"/Users/dev\", \"foreground_cwd\": \"/Users/dev\", \"revision\": 5}]}}}")]
+socket ready=false events[] replies[mp1=server("pane_not_found","no such pane")]
+socket ready=false events[] replies[mp1=server("invalid_request","missing field") mp2=server("invalid_request","missing field")]
+socket ready=false events[] replies[mp1=closed]
+socket ready=true events[] replies[mp1=closed mp2=ok("{\"id\":\"mp2\",\"result\":{}}")]
+request "{\"params\":{},\"id\":\"mp1\",\"method\":\"ping\"}"
+request "{\"params\":{},\"id\":\"mp1\",\"method\":\"session.snapshot\"}"
+subscribe "{\"params\":{\"subscriptions\":[{\"type\":\"tab.created\"},{\"pane_id\":\"w1:p1\",\"type\":\"pane.agent_status_changed\"}]},\"id\":\"mp1\",\"method\":\"events.subscribe\"}"
+subscribe "{\"params\":{\"subscriptions\":[{\"type\":\"workspace.created\"},{\"type\":\"pane.updated\"}]},\"id\":\"mp1\",\"method\":\"events.subscribe\"}"
+pumpboot "stty raw -echo; PATH=\"$PATH:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:$HOME/.local/bin\" exec python3 -c 'exec(\"import os,socket,threading'\\\\'ns=socket.socket(socket.AF_UNIX,socket.SOCK_STREAM)'\\\\'ns.connect(os.path.expanduser('\\\\'\"~/.config/herdr/herdr.sock'\\\\'\"))'\\\\'nos.write(1,b'\\\\'\"MOSHPIT_PUMP_READY'\\\\''\\\\'n'\\\\'\")'\\\\'ndef up():'\\\\'n while True:'\\\\'n  d=os.read(0,65536)'\\\\'n  if not d: break'\\\\'n  s.sendall(d)'\\\\'n s.shutdown(socket.SHUT_WR)'\\\\'nthreading.Thread(target=up,daemon=True).start()'\\\\'nwhile True:'\\\\'n d=s.recv(65536)'\\\\'n if not d: break'\\\\'n os.write(1,d)\")'"
+kinds workspace.created workspace.updated workspace.metadata_updated workspace.renamed workspace.moved workspace.reordered workspace.closed workspace.focused worktree.created worktree.opened worktree.removed tab.created tab.closed tab.renamed tab.moved tab.focused pane.created pane.closed pane.updated pane.focused pane.moved pane.exited pane.agent_detected layout.updated | pane.agent_status_changed pane.output_matched pane.scroll_changed
+launch.attach "PATH=\"$PATH:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:$HOME/.local/bin\" herdr"
+launch.attach "/opt/herdr"
+launch.attach "PATH=\"$PATH:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:$HOME/.local/bin\" herdr"
+launch.command "PATH=\"$PATH:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:$HOME/.local/bin\" herdr api snapshot"
+launch.daemon "PATH=\"$PATH:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:$HOME/.local/bin\" nohup herdr server >/dev/null 2>&1 </dev/null &"
+launch.daemon "nohup /opt/herdr server >/dev/null 2>&1 </dev/null &"
+launch.key "6F9619FF-8B86-D011-B42D-00C04FC964FF-abc12345"
+launch.paths "$HOME/.moshpit/mosh-6F9619FF-8B86-D011-B42D-00C04FC964FF-abc12345.target" "$HOME/.moshpit/mosh-6F9619FF-8B86-D011-B42D-00C04FC964FF-abc12345.pid"
+launch.loop "sh -c 'mkdir -p \"$HOME/.moshpit\"; exec 2>/dev/null; echo $$ > \"$HOME/.moshpit/mosh-6F9619FF-8B86-D011-B42D-00C04FC964FF-abc12345.loop\"; f=1; while :; do tid=$(cat \"$HOME/.moshpit/mosh-6F9619FF-8B86-D011-B42D-00C04FC964FF-abc12345.target\" 2>/dev/null); if [ -n \"$tid\" ]; then if [ -n \"$f\" ]; then f=; t=$(stty -g 2>/dev/null) && stty -icanon min 0 time 0 2>/dev/null && cat >/dev/null; [ -n \"$t\" ] && stty \"$t\" 2>/dev/null; fi; sh -c \"echo '\\\\'$'\\\\'$ > '\\\\'\"$HOME/.moshpit/mosh-6F9619FF-8B86-D011-B42D-00C04FC964FF-abc12345.pid'\\\\'\"; [ '\\\\'\"'\\\\'$(cat '\\\\'\"$HOME/.moshpit/mosh-6F9619FF-8B86-D011-B42D-00C04FC964FF-abc12345.target'\\\\'\" 2>/dev/null)'\\\\'\" = '\\\\'\"'\\\\'$0'\\\\'\" ] || exit 137; rm -f '\\\\'\"$HOME/.moshpit/mosh-6F9619FF-8B86-D011-B42D-00C04FC964FF-abc12345.go'\\\\'\"; export PATH='\\\\'\"$PATH:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:$HOME/.local/bin'\\\\'\"; k=; [ '\\\\'\"'\\\\'$(cat '\\\\'\"$HOME/.moshpit/mosh-6F9619FF-8B86-D011-B42D-00C04FC964FF-abc12345.take'\\\\'\" 2>/dev/null)'\\\\'\" = '\\\\'\"'\\\\'$0'\\\\'\" ] && k=--takeover; exec herdr terminal attach '\\\\'\"'\\\\'$0'\\\\'\" '\\\\'$k 2>'\\\\'\"$HOME/.moshpit/mosh-6F9619FF-8B86-D011-B42D-00C04FC964FF-abc12345.err'\\\\'\"\" \"$tid\"; s=$?; rm -f \"$HOME/.moshpit/mosh-6F9619FF-8B86-D011-B42D-00C04FC964FF-abc12345.pid\"; printf \"'\\\\'033[0m'\\\\'033[H'\\\\'033[2J\"; if [ $s -lt 128 ]; then echo \"$s $tid\" > \"$HOME/.moshpit/mosh-6F9619FF-8B86-D011-B42D-00C04FC964FF-abc12345.stop\"; while [ ! -e \"$HOME/.moshpit/mosh-6F9619FF-8B86-D011-B42D-00C04FC964FF-abc12345.go\" ]; do [ -e \"$HOME/.moshpit/mosh-6F9619FF-8B86-D011-B42D-00C04FC964FF-abc12345.target\" ] || exit 0; sleep 0.1; done; rm -f \"$HOME/.moshpit/mosh-6F9619FF-8B86-D011-B42D-00C04FC964FF-abc12345.stop\"; f=1; fi; else sleep 0.5; fi; sleep 0.05; done'"
+launch.loop "sh -c 'mkdir -p \"$HOME/.moshpit\"; exec 2>/dev/null; echo $$ > \"$HOME/.moshpit/mosh-6F9619FF-8B86-D011-B42D-00C04FC964FF-abc12345.loop\"; f=1; while :; do tid=$(cat \"$HOME/.moshpit/mosh-6F9619FF-8B86-D011-B42D-00C04FC964FF-abc12345.target\" 2>/dev/null); if [ -n \"$tid\" ]; then if [ -n \"$f\" ]; then f=; t=$(stty -g 2>/dev/null) && stty -icanon min 0 time 0 2>/dev/null && cat >/dev/null; [ -n \"$t\" ] && stty \"$t\" 2>/dev/null; fi; sh -c \"echo '\\\\'$'\\\\'$ > '\\\\'\"$HOME/.moshpit/mosh-6F9619FF-8B86-D011-B42D-00C04FC964FF-abc12345.pid'\\\\'\"; [ '\\\\'\"'\\\\'$(cat '\\\\'\"$HOME/.moshpit/mosh-6F9619FF-8B86-D011-B42D-00C04FC964FF-abc12345.target'\\\\'\" 2>/dev/null)'\\\\'\" = '\\\\'\"'\\\\'$0'\\\\'\" ] || exit 137; rm -f '\\\\'\"$HOME/.moshpit/mosh-6F9619FF-8B86-D011-B42D-00C04FC964FF-abc12345.go'\\\\'\"; k=; [ '\\\\'\"'\\\\'$(cat '\\\\'\"$HOME/.moshpit/mosh-6F9619FF-8B86-D011-B42D-00C04FC964FF-abc12345.take'\\\\'\" 2>/dev/null)'\\\\'\" = '\\\\'\"'\\\\'$0'\\\\'\" ] && k=--takeover; exec /opt/herdr terminal attach '\\\\'\"'\\\\'$0'\\\\'\" '\\\\'$k 2>'\\\\'\"$HOME/.moshpit/mosh-6F9619FF-8B86-D011-B42D-00C04FC964FF-abc12345.err'\\\\'\"\" \"$tid\"; s=$?; rm -f \"$HOME/.moshpit/mosh-6F9619FF-8B86-D011-B42D-00C04FC964FF-abc12345.pid\"; printf \"'\\\\'033[0m'\\\\'033[H'\\\\'033[2J\"; if [ $s -lt 128 ]; then echo \"$s $tid\" > \"$HOME/.moshpit/mosh-6F9619FF-8B86-D011-B42D-00C04FC964FF-abc12345.stop\"; while [ ! -e \"$HOME/.moshpit/mosh-6F9619FF-8B86-D011-B42D-00C04FC964FF-abc12345.go\" ]; do [ -e \"$HOME/.moshpit/mosh-6F9619FF-8B86-D011-B42D-00C04FC964FF-abc12345.target\" ] || exit 0; sleep 0.1; done; rm -f \"$HOME/.moshpit/mosh-6F9619FF-8B86-D011-B42D-00C04FC964FF-abc12345.stop\"; f=1; fi; else sleep 0.5; fi; sleep 0.05; done'"
+launch.cleanup "for f in \"$HOME/.moshpit/mosh-6F9619FF-8B86-D011-B42D-00C04FC964FF\".pid \"$HOME/.moshpit/mosh-6F9619FF-8B86-D011-B42D-00C04FC964FF-\"*.pid; do [ -f \"$f\" ] || continue; k=${f%.pid}; t=$(cat \"$k.target\" 2>/dev/null); rm -f \"$k.target\"; p=$(cat \"$f\" 2>/dev/null); case \"$p\" in ''|*[!0-9]*) continue ;; esac; [ -n \"$t\" ] || continue; a=; [ -r \"/proc/$p/cmdline\" ] && a=$(tr \"\\000\" \" \" < \"/proc/$p/cmdline\" 2>/dev/null); [ -n \"$a\" ] || a=$(ps -o args= -p \"$p\" 2>/dev/null); case \"$a\" in *\"terminal attach\"*\"$t\"*) kill -9 \"$p\" 2>/dev/null ;; esac; done; rm -f \"$HOME/.moshpit/mosh-6F9619FF-8B86-D011-B42D-00C04FC964FF\".target \"$HOME/.moshpit/mosh-6F9619FF-8B86-D011-B42D-00C04FC964FF-\"*.target \"$HOME/.moshpit/mosh-6F9619FF-8B86-D011-B42D-00C04FC964FF\".pid \"$HOME/.moshpit/mosh-6F9619FF-8B86-D011-B42D-00C04FC964FF-\"*.pid \"$HOME/.moshpit/mosh-6F9619FF-8B86-D011-B42D-00C04FC964FF-\"*.go \"$HOME/.moshpit/mosh-6F9619FF-8B86-D011-B42D-00C04FC964FF-\"*.stop \"$HOME/.moshpit/mosh-6F9619FF-8B86-D011-B42D-00C04FC964FF-\"*.err \"$HOME/.moshpit/mosh-6F9619FF-8B86-D011-B42D-00C04FC964FF-\"*.loop \"$HOME/.moshpit/mosh-6F9619FF-8B86-D011-B42D-00C04FC964FF-\"*.take; true"
+launch.missing true
+launch.missing false
+launch.missing false
+launch.check "[ \"$(cat \"$HOME/.moshpit/mosh-6F9619FF-8B86-D011-B42D-00C04FC964FF-abc12345.target\" 2>/dev/null)\" = 'term_abc123' ] && kill -0 \"$(cat \"$HOME/.moshpit/mosh-6F9619FF-8B86-D011-B42D-00C04FC964FF-abc12345.pid\" 2>/dev/null)\" 2>/dev/null && echo MOSHPIT_ATTACHED; if [ -s \"$HOME/.moshpit/mosh-6F9619FF-8B86-D011-B42D-00C04FC964FF-abc12345.stop\" ]; then echo MOSHPIT_RENDERER_STOPPED; cat \"$HOME/.moshpit/mosh-6F9619FF-8B86-D011-B42D-00C04FC964FF-abc12345.stop\" \"$HOME/.moshpit/mosh-6F9619FF-8B86-D011-B42D-00C04FC964FF-abc12345.err\" 2>/dev/null; else l=; read l < \"$HOME/.moshpit/mosh-6F9619FF-8B86-D011-B42D-00C04FC964FF-abc12345.loop\" 2>/dev/null; [ -n \"$l\" ] && ! kill -0 \"$l\" 2>/dev/null && echo MOSHPIT_RENDERER_GONE; fi; true"
+launch.check "[ \"$(cat \"$HOME/.moshpit/mosh-6F9619FF-8B86-D011-B42D-00C04FC964FF-abc12345.target\" 2>/dev/null)\" = 'a'\\''; rm -rf /' ] && kill -0 \"$(cat \"$HOME/.moshpit/mosh-6F9619FF-8B86-D011-B42D-00C04FC964FF-abc12345.pid\" 2>/dev/null)\" 2>/dev/null && echo MOSHPIT_ATTACHED; if [ -s \"$HOME/.moshpit/mosh-6F9619FF-8B86-D011-B42D-00C04FC964FF-abc12345.stop\" ]; then echo MOSHPIT_RENDERER_STOPPED; cat \"$HOME/.moshpit/mosh-6F9619FF-8B86-D011-B42D-00C04FC964FF-abc12345.stop\" \"$HOME/.moshpit/mosh-6F9619FF-8B86-D011-B42D-00C04FC964FF-abc12345.err\" 2>/dev/null; else l=; read l < \"$HOME/.moshpit/mosh-6F9619FF-8B86-D011-B42D-00C04FC964FF-abc12345.loop\" 2>/dev/null; [ -n \"$l\" ] && ! kill -0 \"$l\" 2>/dev/null && echo MOSHPIT_RENDERER_GONE; fi; true"
+launch.landed true
+launch.up false
+launch.landed false
+launch.up false
+launch.landed false
+launch.up false
+launch.landed true
+launch.up true
+launch.landed false
+launch.up false
+launch.up true
+launch.watch "w=; read w < \"$HOME/.moshpit/mosh-6F9619FF-8B86-D011-B42D-00C04FC964FF-abc12345.pid\" 2>/dev/null; i=0; while [ $i -lt 300 ]; do if [ -s \"$HOME/.moshpit/mosh-6F9619FF-8B86-D011-B42D-00C04FC964FF-abc12345.stop\" ]; then echo MOSHPIT_RENDERER_STOPPED; cat \"$HOME/.moshpit/mosh-6F9619FF-8B86-D011-B42D-00C04FC964FF-abc12345.stop\" \"$HOME/.moshpit/mosh-6F9619FF-8B86-D011-B42D-00C04FC964FF-abc12345.err\" 2>/dev/null; break; fi; l=; read l < \"$HOME/.moshpit/mosh-6F9619FF-8B86-D011-B42D-00C04FC964FF-abc12345.loop\" 2>/dev/null; [ -n \"$l\" ] && ! kill -0 \"$l\" 2>/dev/null && { echo MOSHPIT_RENDERER_GONE; break; }; p=; read p < \"$HOME/.moshpit/mosh-6F9619FF-8B86-D011-B42D-00C04FC964FF-abc12345.pid\" 2>/dev/null; [ -n \"$p\" ] && [ \"$p\" != \"$w\" ] && break; sleep 0.2; i=$((i+1)); done; true"
+launch.loopup "i=0; while [ $i -lt 30 ]; do l=; read l < \"$HOME/.moshpit/mosh-6F9619FF-8B86-D011-B42D-00C04FC964FF-abc12345.loop\" 2>/dev/null; [ -n \"$l\" ] && kill -0 \"$l\" 2>/dev/null && { echo MOSHPIT_LOOP_UP; break; }; sleep 0.05; i=$((i+1)); done; true"
+launch.isup true
+launch.isup false
+launch.isup false
+launch.isup true
+launch.stop parked(1,"term_65ffe2a36e7ee1","herdr: server shut down: terminal attach taken over")
+launch.stopkind takenOver
+launch.stopkind gone
+launch.stopkind takenOver
+launch.stopkind gone
+launch.stopkind refused
+launch.stopkind refused
+launch.stopkind refused
+launch.stopkind refused
+launch.stop parked(1,"term_65ffe2a36e7ee1","herdr: server shut down: terminal attach ended: terminal term_65ffe2c6b497f2 not found")
+launch.stopkind gone
+launch.stopkind gone
+launch.stopkind gone
+launch.stopkind gone
+launch.stopkind refused
+launch.stopkind refused
+launch.stopkind refused
+launch.stopkind refused
+launch.stop parked(1,"term_65ffe2a36e7ee1","herdr: server shut down: terminal attach failed: terminal term_00000000000000 not found")
+launch.stopkind gone
+launch.stopkind gone
+launch.stopkind gone
+launch.stopkind gone
+launch.stopkind refused
+launch.stopkind refused
+launch.stopkind refused
+launch.stopkind refused
+launch.stop parked(1,"term_65ffe2a36e7ee1","herdr: server shut down: server is shutting down")
+launch.stopkind gone
+launch.stopkind gone
+launch.stopkind gone
+launch.stopkind gone
+launch.stopkind refused
+launch.stopkind refused
+launch.stopkind refused
+launch.stopkind refused
+launch.stop parked(1,"term_65ffe2a36e7ee1","herdr: server shut down: terminal attach failed: terminal term_1 already has an attached client; retry with --takeover")
+launch.stopkind takenOver
+launch.stopkind gone
+launch.stopkind takenOver
+launch.stopkind gone
+launch.stopkind refused
+launch.stopkind refused
+launch.stopkind refused
+launch.stopkind refused
+launch.stop parked(1,"term_65ffe2a36e7ee1","sh: 1: exec: herdr: not found")
+launch.stopkind refused
+launch.stopkind gone
+launch.stopkind gone
+launch.stopkind gone
+launch.stopkind refused
+launch.stopkind refused
+launch.stopkind refused
+launch.stopkind refused
+launch.stop parked(1,"term_65ffe2a36e7ee1","")
+launch.stopkind refused
+launch.stopkind gone
+launch.stopkind gone
+launch.stopkind gone
+launch.stopkind refused
+launch.stopkind refused
+launch.stopkind refused
+launch.stopkind refused
+launch.stop loopGone
+launch.stop nil
+launch.stop parked(0,"","")
+launch.stop parked(0,"","")
+launch.probe "PATH=\"$PATH:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:$HOME/.local/bin\" herdr terminal attach --help >/dev/null 2>&1 && echo MOSHPIT_RAW_ATTACH_OK"
+quote "'it'\\''s'"
+quote "''"
+quote "'plain'"
+quote "''\\'''\\'''"
+quote "'a'\\''b'\\''c'"
+ctl.parse ("payload\u{A}",7)
+ctl.parse ("payload\u{A}",0)
+ctl.parse ("payload only",nil)
+ctl.parse ("a__moshpit_rc=1\u{A}b",2)
+ctl.parse ("x__moshpit_rc=",nil)
+ctl.parse ("x__moshpit_rc=007z",nil)
+ctl.refusal "pane w4:p1 not found"
+ctl.notup false
+ctl.refusal "agent w4:p1 is blocked and requires interactive input"
+ctl.notup false
+ctl.refusal "agent target w4:p1 not found"
+ctl.notup true
+ctl.refusal "agent w4:p1 is not an active named agent"
+ctl.notup true
+ctl.refusal nil
+ctl.notup false
+ctl.refusal "usage: herdr agent <list|get|read|send|rename|focus|wait|attach|start|explain>"
+ctl.notup false
+ctl.refusal "error: unrecognized subcommand 'send'"
+ctl.notup false
+ctl.refusal nil
+ctl.notup false
+ctl.refusal "herdr exited with status 1"
+ctl.notup false
+ctl.refusal "Couldn't reach the host"
+ctl.refusal "x"
+ctl.notup false
+ctl.refusal "first printed line"
+ctl.notup false
+ctl.refusal nil
+ctl.notup false
+ctl.errmsg nil
+ctl.errmsg "branch fix-scroll already exists"
+ctl.errmsg "only_code"
+ctl.first "agent send 'w4:p1' 'fix the scroll'" true
+ctl.first "agent send 'w4:p1' 'fix the scroll'" true
+ctl.first "agent prompt 'w4:p1' 'fix the scroll'" false
+ctl.first "agent prompt 'w4:p1' 'fix the scroll'" false
+ctl.first "agent prompt 'w4:p1' 'fix the scroll'" false
+ctl.first "agent prompt 'w4:p1' 'fix the scroll'" false
+ctl.submit "pane send-keys 'w4:p1' 'Enter'"
+ctl.homescan "find -L \"$HOME\" -maxdepth 4 \\( -type d \\( -name Library -o -name node_modules -o -name .Trash -o -name Applications -o -name Music -o -name Movies -o -name Pictures -o -name .build -o -name vendor \\) -prune \\) -o \\( -type d -name '.?*' ! -name .git -prune \\) -o \\( -type d -name .git -print \\) 2>/dev/null | while read -r g; do d=\"${g%/.git}\"; printf '%s\\t%s\\n' \"$(stat -f %m \"$d\" 2>/dev/null || stat -c %Y \"$d\" 2>/dev/null)\" \"$d\"; done | sort -rn | cut -f2 | head -40"
+ctl.validate nil
+ctl.validate "Pick a repository"
+ctl.validate "Pick an agent"
+ctl.validate "Name the branch"
+ctl.validate "Name the branch"
+ctl.validate "No spaces in a branch name"
+ctl.validate "Can't start with \u{201C}-\u{201D} or \u{201C}/\u{201D}, or end with \u{201C}/\u{201D}"
+ctl.validate "Can't start with \u{201C}-\u{201D} or \u{201C}/\u{201D}, or end with \u{201C}/\u{201D}"
+ctl.validate "Can't start with \u{201C}-\u{201D} or \u{201C}/\u{201D}, or end with \u{201C}/\u{201D}"
+ctl.validate "No \u{201C}..\u{201D} in a branch name"
+ctl.validate "Can't end with \u{201C}.lock\u{201D}"
+ctl.validate "No ~ ^ : ? * [ \\ in a branch name"
+ctl.validate "No ~ ^ : ? * [ \\ in a branch name"
+ctl.validate "No ~ ^ : ? * [ \\ in a branch name"
+ctl.validate "No ~ ^ : ? * [ \\ in a branch name"
+ctl.validate "No ~ ^ : ? * [ \\ in a branch name"
+ctl.validate "No ~ ^ : ? * [ \\ in a branch name"
+ctl.validate "No ~ ^ : ? * [ \\ in a branch name"
+ctl.validate nil
+ctl.validate nil
+ctl.validate nil
+ctl.validate nil
+ctl.validate nil
+ctl.validate nil
+ctl.validate "No control characters in a branch name"
+ctl.validate "No ~ ^ : ? * [ \\ in a branch name"
+ctl.validate "No control characters in a branch name"
+ctl.repolines ["/Users/dev/code/scanned" "/Users/dev/code/moshpit"]
+ctl.repolines ["/a"]
+ctl.cmd cmds["PATH=\"$PATH:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:$HOME/.local/bin\" herdr workspace focus 'w2'; echo \"__moshpit_rc=$?\""]
+ctl.cmd cmds["/opt/herdr/bin/herdr workspace focus 'w2'; echo \"__moshpit_rc=$?\""]
+ctl.cmd cmds["PATH=\"$PATH:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:$HOME/.local/bin\" herdr tab focus 'w1:t1'; echo \"__moshpit_rc=$?\""]
+ctl.cmd cmds["/opt/herdr/bin/herdr tab focus 'w1:t1'; echo \"__moshpit_rc=$?\""]
+ctl.cmd cmds["PATH=\"$PATH:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:$HOME/.local/bin\" herdr workspace close 'w2'; echo \"__moshpit_rc=$?\""]
+ctl.cmd cmds["/opt/herdr/bin/herdr workspace close 'w2'; echo \"__moshpit_rc=$?\""]
+ctl.cmd cmds["PATH=\"$PATH:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:$HOME/.local/bin\" herdr tab close 'w1:t1'; echo \"__moshpit_rc=$?\""]
+ctl.cmd cmds["/opt/herdr/bin/herdr tab close 'w1:t1'; echo \"__moshpit_rc=$?\""]
+ctl.cmd cmds["PATH=\"$PATH:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:$HOME/.local/bin\" herdr pane close 'w1:p1'; echo \"__moshpit_rc=$?\""]
+ctl.cmd cmds["/opt/herdr/bin/herdr pane close 'w1:p1'; echo \"__moshpit_rc=$?\""]
+ctl.cmd cmds["PATH=\"$PATH:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:$HOME/.local/bin\" herdr workspace rename 'w1' 'api'; echo \"__moshpit_rc=$?\""]
+ctl.cmd cmds["/opt/herdr/bin/herdr workspace rename 'w1' 'api'; echo \"__moshpit_rc=$?\""]
+ctl.cmd cmds["PATH=\"$PATH:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:$HOME/.local/bin\" herdr tab rename 'w1:t1' 'logs'; echo \"__moshpit_rc=$?\""]
+ctl.cmd cmds["/opt/herdr/bin/herdr tab rename 'w1:t1' 'logs'; echo \"__moshpit_rc=$?\""]
+ctl.cmd cmds["PATH=\"$PATH:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:$HOME/.local/bin\" herdr workspace create --focus --label 'build'; echo \"__moshpit_rc=$?\""]
+ctl.cmd cmds["/opt/herdr/bin/herdr workspace create --focus --label 'build'; echo \"__moshpit_rc=$?\""]
+ctl.cmd cmds["PATH=\"$PATH:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:$HOME/.local/bin\" herdr workspace create --focus; echo \"__moshpit_rc=$?\""]
+ctl.cmd cmds["/opt/herdr/bin/herdr workspace create --focus; echo \"__moshpit_rc=$?\""]
+ctl.cmd cmds["PATH=\"$PATH:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:$HOME/.local/bin\" herdr workspace create --focus; echo \"__moshpit_rc=$?\""]
+ctl.cmd cmds["/opt/herdr/bin/herdr workspace create --focus; echo \"__moshpit_rc=$?\""]
+ctl.cmd cmds["PATH=\"$PATH:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:$HOME/.local/bin\" herdr tab create --focus; echo \"__moshpit_rc=$?\""]
+ctl.cmd cmds["/opt/herdr/bin/herdr tab create --focus; echo \"__moshpit_rc=$?\""]
+ctl.cmd cmds["PATH=\"$PATH:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:$HOME/.local/bin\" herdr tab create --focus --label 'logs'; echo \"__moshpit_rc=$?\""]
+ctl.cmd cmds["/opt/herdr/bin/herdr tab create --focus --label 'logs'; echo \"__moshpit_rc=$?\""]
+ctl.cmd cmds["PATH=\"$PATH:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:$HOME/.local/bin\" herdr pane split 'w1:p2' --direction right --focus; echo \"__moshpit_rc=$?\""]
+ctl.cmd cmds["/opt/herdr/bin/herdr pane split 'w1:p2' --direction right --focus; echo \"__moshpit_rc=$?\""]
+ctl.cmd cmds["PATH=\"$PATH:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:$HOME/.local/bin\" herdr agent focus 'w1:p1' 2>/dev/null || { PATH=\"$PATH:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:$HOME/.local/bin\" herdr pane zoom --pane 'w1:p1' --on >/dev/null 2>&1; PATH=\"$PATH:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:$HOME/.local/bin\" herdr pane zoom --pane 'w1:p1' --off >/dev/null 2>&1; }; echo \"__moshpit_rc=$?\""]
+ctl.cmd cmds["/opt/herdr/bin/herdr agent focus 'w1:p1' 2>/dev/null || { /opt/herdr/bin/herdr pane zoom --pane 'w1:p1' --on >/dev/null 2>&1; /opt/herdr/bin/herdr pane zoom --pane 'w1:p1' --off >/dev/null 2>&1; }; echo \"__moshpit_rc=$?\""]
+ctl.cmd cmds["PATH=\"$PATH:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:$HOME/.local/bin\" herdr pane zoom --pane 'w1:p1' --on 2>/dev/null || true; echo \"__moshpit_rc=$?\""]
+ctl.cmd cmds["/opt/herdr/bin/herdr pane zoom --pane 'w1:p1' --on 2>/dev/null || true; echo \"__moshpit_rc=$?\""]
+ctl.cmd cmds["PATH=\"$PATH:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:$HOME/.local/bin\" herdr workspace rename 'w1' 'it'\\''s; rm -rf ~'; echo \"__moshpit_rc=$?\""]
+ctl.cmd cmds["/opt/herdr/bin/herdr workspace rename 'w1' 'it'\\''s; rm -rf ~'; echo \"__moshpit_rc=$?\""]
+ctl.cmd cmds["PATH=\"$PATH:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:$HOME/.local/bin\" herdr workspace focus 'w2'; echo \"__moshpit_rc=$?\"" "PATH=\"$PATH:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:$HOME/.local/bin\" herdr tab create --focus; echo \"__moshpit_rc=$?\""]
+ctl.cmd cmds["/opt/herdr/bin/herdr workspace focus 'w2'; echo \"__moshpit_rc=$?\"" "/opt/herdr/bin/herdr tab create --focus; echo \"__moshpit_rc=$?\""]
+ctl.cmd cmds["PATH=\"$PATH:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:$HOME/.local/bin\" herdr tab create --focus --label 'x'; echo \"__moshpit_rc=$?\""]
+ctl.cmd cmds["/opt/herdr/bin/herdr tab create --focus --label 'x'; echo \"__moshpit_rc=$?\""]
+ctl.cmd cmds["PATH=\"$PATH:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:$HOME/.local/bin\" herdr pane split 'w1:p2' --direction right --focus; echo \"__moshpit_rc=$?\""]
+ctl.cmd cmds["/opt/herdr/bin/herdr pane split 'w1:p2' --direction right --focus; echo \"__moshpit_rc=$?\""]
+ctl.cmd cmds[]
+ctl.cmd cmds[]
+ctl.cmd cmds["PATH=\"$PATH:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:$HOME/.local/bin\" herdr pane send-keys 'w1:p1' 'up'; echo \"__moshpit_rc=$?\""]
+ctl.cmd cmds["/opt/herdr/bin/herdr pane send-keys 'w1:p1' 'up'; echo \"__moshpit_rc=$?\""]
+ctl.cmd cmds["PATH=\"$PATH:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:$HOME/.local/bin\" herdr pane send-keys 'w1:p1' 'up' 'down' 'up'; echo \"__moshpit_rc=$?\""]
+ctl.cmd cmds["/opt/herdr/bin/herdr pane send-keys 'w1:p1' 'up' 'down' 'up'; echo \"__moshpit_rc=$?\""]
+ctl.cmd cmds[]
+ctl.cmd cmds[]
+ctl.cmd cmds["PATH=\"$PATH:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:$HOME/.local/bin\" herdr worktree remove --workspace 'w4'; echo \"__moshpit_rc=$?\""]
+ctl.cmd cmds["/opt/herdr/bin/herdr worktree remove --workspace 'w4'; echo \"__moshpit_rc=$?\""]
+ctl.cmd cmds["PATH=\"$PATH:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:$HOME/.local/bin\" herdr worktree remove --workspace 'w4' --force; echo \"__moshpit_rc=$?\""]
+ctl.cmd cmds["/opt/herdr/bin/herdr worktree remove --workspace 'w4' --force; echo \"__moshpit_rc=$?\""]
+ctl.cmd cmds["PATH=\"$PATH:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:$HOME/.local/bin\" herdr server agent-manifests --json"] names["claude" "codex" "pi"]
+ctl.cmd cmds["/opt/herdr/bin/herdr server agent-manifests --json"] names["claude" "codex" "pi"]
+ctl.cmd cmds["PATH=\"$PATH:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:$HOME/.local/bin\" herdr server agent-manifests --json"] names[]
+ctl.cmd cmds["/opt/herdr/bin/herdr server agent-manifests --json"] names[]
+ctl.cmd cmds["PATH=\"$PATH:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:$HOME/.local/bin\" herdr server agent-manifests --json"] names[]
+ctl.cmd cmds["/opt/herdr/bin/herdr server agent-manifests --json"] names[]
+ctl.cmd cmds[]
+ctl.cmd cmds["PATH=\"$PATH:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:$HOME/.local/bin\" herdr pane split 'w1:p1' --direction right --focus; echo \"__moshpit_rc=$?\""]
+ctl.poll [sessions["w1"=("~",true) "w2"=("api",false)] windows["w1:t1"=("w1","1",1,"",true,2,false)] panes["w1:p1"=("w1:t1",1,"",80,24,false) "w1:p2"=("w1:t1",2,"",80,24,true)] active("w1","w1:t1","w1:p2") attached(true,true) hooks[] loaded=true snr=false mm=nil skew=nil iv=2 focus["w1:p2"]] [sessions["w1"=("~",true) "w2"=("api",false)] windows["w1:t1"=("w1","1",1,"",true,2,false)] panes["w1:p1"=("w1:t1",1,"",80,24,false) "w1:p2"=("w1:t1",2,"",80,24,true)] active("w1","w1:t1","w1:p2") attached(true,true) hooks[] loaded=true snr=false mm=nil skew=nil iv=2 focus["w1:p2"]] [sessions["w1"=("~",true) "w2"=("api",false)] windows["w1:t1"=("w1","1",1,"",true,2,false)] panes["w1:p1"=("w1:t1",1,"",80,24,false) "w1:p2"=("w1:t1",2,"",80,24,true)] active("w1","w1:t1","w1:p2") attached(true,true) hooks[] loaded=true snr=false mm=nil skew=nil iv=2 focus["w1:p2"]] [sessions["w1"=("~",true) "w2"=("api",false)] windows["w1:t1"=("w1","1",1,"",true,2,false)] panes["w1:p1"=("w1:t1",1,"",80,24,false) "w1:p2"=("w1:t1",2,"",80,24,true)] active("w1","w1:t1","w1:p2") attached(true,true) hooks[] loaded=true snr=false mm=nil skew=nil iv=8 focus["w1:p2"]] [sessions["w1"=("~",true) "w2"=("api",false)] windows["w1:t1"=("w1","1",1,"",true,2,false)] panes["w1:p1"=("w1:t1",1,"",80,24,false) "w1:p2"=("w1:t1",2,"",80,24,true)] active("w1","w1:t1","w1:p2") attached(true,true) hooks[] loaded=true snr=false mm=nil skew=nil iv=8 focus["w1:p2"]] [sessions["w1"=("~",true) "w2"=("api",false)] windows["w1:t1"=("w1","1",1,"",true,2,false)] panes["w1:p1"=("w1:t1",1,"",80,24,false) "w1:p2"=("w1:t1",2,"",80,24,true)] active("w1","w1:t1","w1:p2") attached(true,true) hooks[] loaded=true snr=false mm=nil skew=nil iv=8 focus["w1:p2"]] [sessions["w1"=("~",true) "w2"=("api",false)] windows["w1:t1"=("w1","1",1,"",true,2,false)] panes["w1:p1"=("w1:t1",1,"",80,24,false) "w1:p2"=("w1:t1",2,"",80,24,true)] active("w1","w1:t1","w1:p1") attached(true,true) hooks[] loaded=true snr=false mm=nil skew=nil iv=2 focus["w1:p1"]]
+ctl.poll [sessions["w1"=("~",true) "w2"=("api",false)] windows["w1:t1"=("w1","1",1,"",true,2,false)] panes["w1:p1"=("w1:t1",1,"",80,24,false) "w1:p2"=("w1:t1",2,"",80,24,true)] active("w1","w1:t1","w1:p2") attached(true,true) hooks[] loaded=true snr=false mm=nil skew=nil iv=2 focus["w1:p2"]] [sessions["w1"=("~",true) "w2"=("api",false)] windows["w1:t1"=("w1","1",1,"",true,2,false)] panes["w1:p1"=("w1:t1",1,"",80,24,false) "w1:p2"=("w1:t1",2,"",80,24,true)] active("w1","w1:t1","w1:p2") attached(true,true) hooks[] loaded=true snr=false mm=nil skew=nil iv=2 focus[]] [sessions["w1"=("~",true) "w2"=("api",false)] windows["w1:t1"=("w1","1",1,"",true,2,false)] panes["w1:p1"=("w1:t1",1,"",80,24,false) "w1:p2"=("w1:t1",2,"",80,24,true)] active("w1","w1:t1","w1:p2") attached(true,true) hooks[] loaded=true snr=false mm=nil skew=nil iv=2 focus[]] [sessions[] windows[] panes[] active(nil,nil,nil) attached(false,true) hooks[] loaded=true snr=true mm=nil skew=nil iv=2 focus[]] [sessions[] windows[] panes[] active(nil,nil,nil) attached(false,true) hooks[] loaded=true snr=true mm=nil skew=nil iv=2 focus[]]
+ctl.poll [sessions[] windows[] panes[] active(nil,nil,nil) attached(false,false) hooks[] loaded=false snr=false mm="client protocol 19 is older than server protocol 22" skew=("0.8.0","0.9.5",true,true,"herdr on the host's PATH is 0.8.0, its server 0.9.5 \u{2014} update that copy") iv=8 focus[]] [sessions[] windows[] panes[] active(nil,nil,nil) attached(false,false) hooks[] loaded=false snr=false mm="client protocol 19 is older than server protocol 22" skew=("0.8.0","0.9.5",true,true,"herdr on the host's PATH is 0.8.0, its server 0.9.5 \u{2014} update that copy") iv=8 focus[]] [sessions["w1"=("~",true) "w2"=("api",false)] windows["w1:t1"=("w1","1",1,"",true,2,false)] panes["w1:p1"=("w1:t1",1,"",80,24,false) "w1:p2"=("w1:t1",2,"",80,24,true)] active("w1","w1:t1","w1:p2") attached(true,true) hooks[] loaded=true snr=false mm=nil skew=nil iv=2 focus["w1:p2"]]
+ctl.poll [sessions[] windows[] panes[] active(nil,nil,nil) attached(false,false) hooks[] loaded=false snr=false mm="client protocol 19 is older than server protocol 22" skew=nil iv=8 focus[]] [sessions["w1"=("~",true) "w2"=("api",false)] windows["w1:t1"=("w1","1",1,"",true,2,false)] panes["w1:p1"=("w1:t1",1,"",80,24,false) "w1:p2"=("w1:t1",2,"",80,24,true)] active("w1","w1:t1","w1:p2") attached(true,true) hooks[] loaded=true snr=false mm=nil skew=nil iv=2 focus["w1:p2"]]

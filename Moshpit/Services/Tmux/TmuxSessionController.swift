@@ -1,7 +1,6 @@
 import Foundation
 import MoshpitKit
 import Observation
-import SwiftTerm
 import SwiftUI
 import UIKit
 import os
@@ -39,19 +38,19 @@ struct AgentHook: Equatable, Sendable {
 ///     never observe `paneTerminals` or `paneCoordinators` directly; they are
 ///     intentionally `@ObservationIgnored` so window switches do not destroy
 ///     any terminal view.
-///   - ``terminalView(for:)`` returns the **same** ``TerminalView`` instance
+///   - ``surface(for:)`` returns the **same** terminal (``TerminalSurface``)
 ///     for the same `paneId` for the entire lifetime of that pane. New
 ///     terminals are minted lazily the first time a pane is encountered.
 ///   - `%output` bytes from the parser are routed *directly* to the
 ///     coordinator's `feed(data:)`. There is no per-pane output buffer.
 ///
 /// ### Threading
-/// Everything is `@MainActor`. SwiftTerm `TerminalView` instances and SwiftUI
-/// view-tree updates both require the main actor, and parser callbacks
+/// Everything is `@MainActor`. Terminal views and SwiftUI view-tree updates
+/// both require the main actor, and parser callbacks
 /// dispatch back to us via `Task { @MainActor in … }`.
 @Observable
 @MainActor
-final class TmuxSessionController: MultiplexerControlling {
+class TmuxSessionController: MultiplexerControlling {
 
     /// `MultiplexerControlling.multiplexer` — drives the vocabulary and key
     /// hints the sheets print.
@@ -73,12 +72,12 @@ final class TmuxSessionController: MultiplexerControlling {
 
     // MARK: - Non-observed terminal pool
 
-    /// Persistent `TerminalView` per pane. Created lazily the first time a
-    /// pane is seen, kept until tmux closes the pane / window.
+    /// Persistent terminal per pane. Created lazily the first time a pane is
+    /// seen, kept until tmux closes the pane / window.
     @ObservationIgnored
-    private var paneTerminals: [String: TerminalView] = [:]
+    private var paneTerminals: [String: TerminalSurface] = [:]
 
-    /// Coordinators paired with each `TerminalView`. The coordinator owns the
+    /// Coordinators paired with each terminal. The coordinator owns the
     /// data-feed path and forwards user input back through ``sendInput``.
     @ObservationIgnored
     private var paneCoordinators: [String: SwiftTerminalView.Coordinator] = [:]
@@ -198,7 +197,20 @@ final class TmuxSessionController: MultiplexerControlling {
     /// command must occupy a slot (`nil` = response intentionally ignored)
     /// or the FIFO desyncs and replies land in the wrong parser.
     @ObservationIgnored
-    private var pendingCallbacks: [(command: String, callback: ((TmuxCommandResponse) -> Void)?)] = []
+    private var pendingCallbacks: [PendingCommand] = []
+
+    /// One slot of ``pendingCallbacks``.
+    private struct PendingCommand {
+        let command: String
+        let callback: ((TmuxCommandResponse) -> Void)?
+        /// Someone is awaiting this reply (a client count, a pane's path, a
+        /// flush): if the channel closes first, the callback gets
+        /// ``TmuxCommandResponse/channelClosed`` rather than never running.
+        /// Every other callback updates state from a reply and is simply
+        /// dropped — an error in its place would read as "tmux listed
+        /// nothing" and empty the snapshot under the last frame on screen.
+        let waits: Bool
+    }
 
     // MARK: - Diagnostic tap
     //
@@ -263,15 +275,26 @@ final class TmuxSessionController: MultiplexerControlling {
     /// can drive the controller with a `MockTmuxTransport` without touching the
     /// real SSH stack. `SSHSession` conforms naturally; production callers
     /// pass an `SSHSession` instance unchanged.
-    init(sshSession: TmuxTransport, rendersOutput: Bool = true) {
+    /// The view this controller's pane terminals get: the core's when
+    /// ``CoreTermSwitch`` was on when the controller was made (one per
+    /// attach; a terminal keeps the view it was made with).
+    let surfaceKind: TerminalSurfaceKind
+
+    init(sshSession: TmuxTransport, rendersOutput: Bool = true,
+         surfaceKind: TerminalSurfaceKind = .current) {
         self.sshSession = sshSession
         self.rendersOutput = rendersOutput
+        self.surfaceKind = surfaceKind
     }
 
     // MARK: - Public API
 
     /// Apply (and remember) the theme + font size + cursor style used when
-    /// creating new pane terminals. Existing terminals are updated in-place.
+    /// creating new pane terminals. Existing terminals are updated in-place,
+    /// and only where something changed: this runs each time a terminal
+    /// screen appears and on every reconnect, and a font or colour set
+    /// again costs a pane a whole-screen repaint (and the font its
+    /// selection) for nothing.
     func configureAppearance(theme: TerminalTheme, fontSize: Double,
                              fontName: String = "system",
                              cursorShape: CursorShape = .block,
@@ -284,15 +307,14 @@ final class TmuxSessionController: MultiplexerControlling {
         self.cursorColorId = cursorColorId
         self.cursorBlink = cursorBlink
         let font = TerminalFont.font(id: fontName, size: CGFloat(fontSize))
-        for (paneId, terminal) in paneTerminals {
-            terminal.font = font
-            theme.apply(to: terminal)
-            // Install the applied pair as the coordinator's enforced cursor:
-            // pane output carries DECSCUSR/OSC-12 (vim, zsh plugins, coding
-            // agents) and would otherwise override the user's choice until
-            // the next Settings change — the "sometimes wrong" cursor.
-            paneCoordinators[paneId]?.enforcedCursor = TerminalCursor.apply(
-                shape: cursorShape, colorId: cursorColorId, blink: cursorBlink, to: terminal)
+        for terminal in paneTerminals.values {
+            terminal.apply(font: font)
+            // The theme and the user's cursor again: the cursor is re-asserted
+            // after every feed from here on — pane output carries
+            // DECSCUSR/OSC-12 (vim, zsh plugins, coding agents) and would
+            // otherwise override the user's choice until the next Settings
+            // change (the "sometimes wrong" cursor).
+            terminal.reassert(look: look)
         }
     }
 
@@ -301,6 +323,10 @@ final class TmuxSessionController: MultiplexerControlling {
     /// `tmux -CC new` line is written to the shell *after* this returns) —
     /// discovery fires automatically once `%session-changed` arrives.
     func beginControlMode() async {
+        // Which parser this connection runs: the Rust switch's effect shows
+        // in Settings' Recent Log.
+        let parser = await client.backend
+        Log.ssh.info("tmux: \(parser.rawValue, privacy: .public) control-mode parser")
         await installCallbacks()
         startPumping()
     }
@@ -324,6 +350,7 @@ final class TmuxSessionController: MultiplexerControlling {
         channelWatchdogTask = nil
         await client.reset()
         snapshot.isAttached = false
+        closePendingCommands(reason: "detach")
         // Replies for anything still queued will never arrive, so nothing
         // would ever release a parked resync — drop the holds rather than
         // leave the panes permanently unable to repaint.
@@ -343,6 +370,8 @@ final class TmuxSessionController: MultiplexerControlling {
         activeWindowAtForeignWidth = false
         foreignQuietRepinTask?.cancel()
         foreignQuietRepinTask = nil
+        // No reply is coming for a renderer listing still on its way.
+        rendererLocateInFlight = false
         // The lease cache names a client that is about to stop existing.
         sizeLeases.removeAll()
         pendingAttachLease = nil
@@ -362,19 +391,25 @@ final class TmuxSessionController: MultiplexerControlling {
         convergenceDeadlineTask = nil
     }
 
-    /// Returns the persistent ``TerminalView`` for `paneId`. If one does not
+    /// The user's look, as configured.
+    private var look: TerminalLook {
+        TerminalLook(theme: currentTheme, cursorShape: cursorShape, cursorColorId: cursorColorId,
+                     cursorBlink: cursorBlink)
+    }
+
+    /// Returns the persistent terminal for `paneId`. If one does not
     /// yet exist (pane discovered after attach), it is minted on demand
     /// using the currently configured theme/font.
     ///
     /// **The same instance is returned for the same paneId across calls.**
     /// SwiftUI's `UIViewRepresentable.makeUIView` relies on this so window
     /// switches don't destroy the terminal view.
-    func terminalView(for paneId: String) -> TerminalView {
+    func surface(for paneId: String) -> TerminalSurface {
         if let existing = paneTerminals[paneId] { return existing }
         return mintTerminal(for: paneId)
     }
 
-    /// The coordinator minted alongside ``terminalView(for:)`` — the pane
+    /// The coordinator minted alongside ``surface(for:)`` — the pane
     /// host wires it to its ``TerminalHostContainer`` so keyboard transitions
     /// can freeze the pane's frame (the keyboard/IME garble fix).
     func coordinator(for paneId: String) -> SwiftTerminalView.Coordinator? {
@@ -438,6 +473,12 @@ final class TmuxSessionController: MultiplexerControlling {
         // already arrives at our width. (A no-op width change is harmless.)
         // A switch is the person's doing: the target window becomes ours.
         requestPin(windowId, reason: .user)
+        if !rendersOutput {
+            // B270: the select moves the phone's renderer, which sizes the
+            // window to the phone at once — ahead of a pin that may wait on
+            // the lease: its layout is read before it.
+            capturePristineLayout(windowId)
+        }
         send(rawCommand: "select-window -t \(windowId)")
         // Landing on a split window: zoom its active pane so we show a single
         // full-screen pane.
@@ -502,11 +543,11 @@ final class TmuxSessionController: MultiplexerControlling {
         /// `nil` for anything that is not a lease (unset expands to "", and a
         /// test harness's generic reply is a bare `0 0`).
         init?(parsing raw: String, clients: Set<String>) {
-            let parts = raw.split(separator: "|", maxSplits: 2, omittingEmptySubsequences: false)
+            let parts = raw.tmuxFields(separator: "|", maxSplits: 2, omittingEmptySubsequences: false)
             guard parts.count == 3, !parts[0].isEmpty, !parts[1].isEmpty,
                   let stamp = TimeInterval(parts[2]) else { return nil }
-            self.clientName = String(parts[0])
-            self.label = String(parts[1])
+            self.clientName = parts[0]
+            self.label = parts[1]
             self.stamp = stamp
             // A reply with no clients at all is a failed listing, not an
             // empty server — we are a client ourselves. Err toward "live":
@@ -721,7 +762,11 @@ final class TmuxSessionController: MultiplexerControlling {
         guard rendersOutput, let name = ourClientName else { return }
         let lease = SizeLease(clientName: name, label: sizeOwnerLabel, stamp: stamp, live: true)
         sizeLeases[windowId] = .held(lease)
-        send(rawCommand: "set-option -w -t \(windowId) @moshpit_size_owner \"\(lease.encoded)\"")
+        // As a command-string literal: the client name is whatever the reply
+        // to `display-message -p '#{client_name}'` said, and a `"`, `$` or `;`
+        // in it ran on into the line (B139).
+        send(rawCommand: "set-option -w -t \(windowId) @moshpit_size_owner "
+            + Self.tmuxCommandStringLiteral(lease.encoded))
         lastLeaseStampWrite = stamp == 0 ? .distantPast : Date()
         if sizeFollow?.windowId == windowId { sizeFollow = nil }
     }
@@ -783,7 +828,17 @@ final class TmuxSessionController: MultiplexerControlling {
         let layout: String
         let zoomedPane: String?
         let paneCount: Int
+        /// The layouts our sizing left the window in (round thirty-four):
+        /// the one tmux reflowed the record into at the phone's grid, and
+        /// those the phone's later sizes reflowed that into. A window in none
+        /// of these has been rearranged by someone else since — a desktop —
+        /// and the hand-back leaves it alone. Empty: unknown, restored as
+        /// before. crates/tmux's `PristineLayout::ours`.
+        var ours: [String] = []
     }
+
+    /// How many of a window's own layouts are kept, the latest last.
+    private static let oursKept = 8
 
     /// What a controller still owes the server for the windows it shaped:
     /// the phone-grid pins (``resizedWindows``) and the layouts recorded
@@ -792,23 +847,44 @@ final class TmuxSessionController: MultiplexerControlling {
     /// so paying the debt there would only wait out a channel timeout; the
     /// replacement re-pins the same window on attach and the hub settles
     /// whatever is left on the real disconnect. See
-    /// `SessionHub.ActiveSession.stop(forReconnect:)`.
+    /// `SessionHub.ActiveSession.stop(forReconnect:)`. It also carries the
+    /// mosh sidecar's knowledge of which client is the phone's renderer.
     struct PinLedger {
         fileprivate var resizedWindows: Set<String>
         fileprivate var pristineLayouts: [String: PristineLayout]
+        /// Not a debt, but the same trip: which client is the phone's mosh
+        /// renderer (``rendererClient``). A sidecar rebuilt under a live mosh
+        /// connection is never told the renderer's pid again — the hub hands
+        /// it over once per mosh-server — so it inherits what it was told.
+        fileprivate var renderer: TmuxClientIdentity?
+        /// The status line turned off on a session Moshpit created
+        /// (``statusHiddenSessionId``), and which sessions those are: a
+        /// rebuilt sidecar gives it back when the phone leaves that session,
+        /// or the next real disconnect does, instead of nobody ever owing it.
+        fileprivate var hiddenStatus: String?
+        fileprivate var ownedSessions: Set<String>
 
-        fileprivate init(resizedWindows: Set<String>, pristineLayouts: [String: PristineLayout]) {
+        fileprivate init(resizedWindows: Set<String>, pristineLayouts: [String: PristineLayout],
+                         renderer: TmuxClientIdentity?, hiddenStatus: String?,
+                         ownedSessions: Set<String>) {
             self.resizedWindows = resizedWindows
             self.pristineLayouts = pristineLayouts
+            self.renderer = renderer
+            self.hiddenStatus = hiddenStatus
+            self.ownedSessions = ownedSessions
         }
 
         /// Bare pins with nothing recorded beneath them — what a test hands
         /// a controller to stand in for a retired one.
         init(resizedWindows: Set<String>) {
-            self.init(resizedWindows: resizedWindows, pristineLayouts: [:])
+            self.init(resizedWindows: resizedWindows, pristineLayouts: [:], renderer: nil,
+                      hiddenStatus: nil, ownedSessions: [])
         }
 
-        var isEmpty: Bool { resizedWindows.isEmpty && pristineLayouts.isEmpty }
+        var isEmpty: Bool {
+            resizedWindows.isEmpty && pristineLayouts.isEmpty && renderer == nil
+                && hiddenStatus == nil && ownedSessions.isEmpty
+        }
         /// The windows still pinned to a phone grid — what the tests check
         /// made it across a handoff.
         var pinnedWindows: Set<String> { resizedWindows }
@@ -821,8 +897,13 @@ final class TmuxSessionController: MultiplexerControlling {
         defer {
             resizedWindows.removeAll()
             pristineLayouts.removeAll()
+            rendererClient = nil
+            rendererSessionId = nil
+            statusHiddenSessionId = nil
         }
-        return PinLedger(resizedWindows: resizedWindows, pristineLayouts: pristineLayouts)
+        return PinLedger(resizedWindows: resizedWindows, pristineLayouts: pristineLayouts,
+                         renderer: rendererClient, hiddenStatus: statusHiddenSessionId,
+                         ownedSessions: ownedSessionIds)
     }
 
     /// Take on a retired controller's debt. Pins merge; a layout this
@@ -834,6 +915,13 @@ final class TmuxSessionController: MultiplexerControlling {
         for (windowId, layout) in ledger.pristineLayouts where pristineLayouts[windowId] == nil {
             pristineLayouts[windowId] = layout
         }
+        // Same rule as the layouts: what this controller learned itself is newer.
+        if rendererClient == nil { rendererClient = ledger.renderer }
+        // A status line still off is owed by whoever runs next: the first
+        // syncStatusLine here gives it back unless the phone is still on
+        // that session, and the disconnect restore covers it either way.
+        ownedSessionIds.formUnion(ledger.ownedSessions)
+        if statusHiddenSessionId == nil { statusHiddenSessionId = ledger.hiddenStatus }
     }
 
     /// The agent stamps as last read, for the replacement controller — nil
@@ -922,7 +1010,7 @@ final class TmuxSessionController: MultiplexerControlling {
             guard let self else { return }
             self.pristineCapturesInFlight.remove(windowId)
             guard !response.isError, let line = response.lines.first else { return }
-            self.notePristineLayout(windowId, fields: line.split(separator: " ").map(String.init))
+            self.notePristineLayout(windowId, fields: line.tmuxFields(separator: " "))
         }
     }
 
@@ -951,16 +1039,29 @@ final class TmuxSessionController: MultiplexerControlling {
                                                    paneCount: panes)
     }
 
+    /// `layout` is one our sizing left `windowId` in (round thirty-four).
+    private func noteOurs(_ windowId: String, _ layout: String) {
+        guard var record = pristineLayouts[windowId], layout != record.layout,
+              !record.ours.contains(layout), Self.isPlausibleLayout(layout) else { return }
+        record.ours.append(layout)
+        if record.ours.count > Self.oursKept { record.ours.removeFirst() }
+        pristineLayouts[windowId] = record
+    }
+
     /// A tmux layout string: four hex checksum digits, a comma, then nothing but
     /// digits and layout punctuation. Cheap sanity gate so a surprise reply (an
     /// error line, a truncated field) can't reach `select-layout`. nonisolated
     /// so it's unit-testable without a live tmux server.
+    ///
+    /// tmux prints layouts in ASCII, so the digits are ASCII digits: the
+    /// Character checks alone took any numeral ("２００", "٢٠٠") and a digit
+    /// carrying a combining mark for one.
     nonisolated static func isPlausibleLayout(_ layout: String) -> Bool {
         guard layout.count > 6, layout.count < 4096 else { return false }
-        let parts = layout.split(separator: ",", maxSplits: 1)
+        let parts = layout.tmuxFields(separator: ",", maxSplits: 1)
         guard parts.count == 2, parts[0].count == 4,
-              parts[0].allSatisfy(\.isHexDigit) else { return false }
-        return parts[1].allSatisfy { $0.isNumber || "x,[]{}".contains($0) }
+              parts[0].allSatisfy({ $0.isASCII && $0.isHexDigit }) else { return false }
+        return parts[1].allSatisfy { $0.isASCII && ($0.isNumber || "x,[]{}".contains($0)) }
     }
 
     /// True when the captured record still describes the window we'd replay it
@@ -984,13 +1085,276 @@ final class TmuxSessionController: MultiplexerControlling {
     /// zoom is re-applied afterwards only when the user had zoomed it
     /// themselves (`resize-pane -Z` on a pane target also re-selects it, which
     /// is exactly the state they left).
-    private func restorePristineLayout(_ windowId: String) {
-        guard let pristine = pristineLayouts.removeValue(forKey: windowId) else { return }
-        guard pristineStillApplies(windowId, pristine) else { return }
+    @discardableResult
+    ///
+    /// The mosh sidecar keeps the record (B270): the phone's renderer is
+    /// still attached and still sizes the session. A replay at another size
+    /// resizes the window to the layout's for a moment — so the check after
+    /// it read the record back and dropped it — and tmux's next sizing put
+    /// the window back at the phone's grid, squashed, with nothing left to
+    /// restore on the disconnect.
+    private func restorePristineLayout(_ windowId: String) -> PristineLayout? {
+        replayPristineLayout(windowId, kept: !rendersOutput)
+    }
+
+    /// ``restorePristineLayout(_:)``, with whether the record is `kept`
+    /// spelled out: not once the renderer has left the window's session.
+    @discardableResult
+    private func replayPristineLayout(_ windowId: String, kept: Bool) -> PristineLayout? {
+        guard let pristine = pristineLayouts.removeValue(forKey: windowId) else { return nil }
+        guard pristineStillApplies(windowId, pristine) else { return nil }
         send(rawCommand: "select-layout -t '\(windowId)' '\(pristine.layout)'")
         if let pane = pristine.zoomedPane {
             send(rawCommand: "resize-pane -Z -t '\(pane)'")
         }
+        zoomEpoch &+= 1
+        if kept {
+            pristineLayouts[windowId] = pristine
+            return nil
+        }
+        return pristine
+    }
+
+    /// Replay a window's record, then read the window back: a replay that
+    /// didn't take keeps the record.
+    private func checkReplay(_ windowId: String, kept: Bool) {
+        guard let pristine = replayPristineLayout(windowId, kept: kept) else { return }
+        sendCommand("display-message -p -t '\(windowId)' '#{window_layout}'") { [weak self] response in
+            guard let self, !response.isError, self.pristineLayouts[windowId] == nil,
+                  let line = response.lines.first else { return }
+            let read = line.trimmingCharacters(in: .whitespaces)
+            if read != pristine.layout {
+                self.pristineLayouts[windowId] = pristine
+                // Refitted to the phone's grid: a layout of ours.
+                self.noteOurs(windowId, read)
+            }
+        }
+    }
+
+    /// The mosh sidecar's renderer has left `sessionId` for another one: no
+    /// window of it is the phone's any more. The window it pinned (`window`)
+    /// goes back to automatic sizing, and every window of the session with a
+    /// record gets its layout back — the record consumed this time, the
+    /// check after it, as a `-CC` client's leave does: nothing of the phone
+    /// sizes that session now (with the phone alone tmux's only client, its
+    /// windows are nobody's, and a replay resizes them to their record for
+    /// good). crates/tmux's `hand_back_left_session`.
+    private func handBackLeftSession(_ sessionId: String, window: String?) {
+        if let window, resizedWindows.remove(window) != nil {
+            send(rawCommand: "set-option -u -w -t \(window) window-size")
+        }
+        let recorded = pristineLayouts.keys
+            .filter { snapshot.windows[$0]?.sessionId == sessionId }
+            .sorted(by: Self.idOrder)
+        for windowId in recorded {
+            checkReplay(windowId, kept: false)
+        }
+    }
+
+    /// A window's size, from its `#{window_layout}` (`<sum>,<W>x<H>,…`).
+    struct GridSize: Equatable {
+        let cols: Int
+        let rows: Int
+    }
+
+    /// The size in a `#{window_layout}`; nil unless both are positive.
+    nonisolated static func windowSize(_ layout: String) -> GridSize? {
+        let parts = layout.tmuxFields(separator: ",")
+        guard parts.count >= 2 else { return nil }
+        let size = parts[1].tmuxFields(separator: "x")
+        guard size.count == 2, let cols = Int(size[0]), let rows = Int(size[1]),
+              cols > 0, rows > 0 else { return nil }
+        return GridSize(cols: cols, rows: rows)
+    }
+
+    /// `@2` before `@10`: ids by their number.
+    nonisolated static func idOrder(_ a: String, _ b: String) -> Bool {
+        if a.first == b.first, let x = Int(a.dropFirst()), let y = Int(b.dropFirst()) { return x < y }
+        return a < b
+    }
+
+    /// The size to report as ours when handing the windows back (B150): the
+    /// recorded size of the active window, else the largest recorded one;
+    /// nil without a record that still applies.
+    private func handBackSize(_ layouts: [String: PristineLayout]) -> GridSize? {
+        func applying(_ windowId: String) -> GridSize? {
+            guard let pristine = layouts[windowId], pristineStillApplies(windowId, pristine) else { return nil }
+            return Self.windowSize(pristine.layout)
+        }
+        if let active = snapshot.activeWindowId, let size = applying(active) { return size }
+        var best: GridSize?
+        for windowId in layouts.keys.sorted(by: Self.idOrder) {
+            guard let size = applying(windowId) else { continue }
+            if best.map({ size.cols * size.rows > $0.cols * $0.rows }) ?? true { best = size }
+        }
+        return best
+    }
+
+    /// A client name that can go single-quoted into a teardown command
+    /// through a login shell: a tty path or tmux's `client-<pid>`.
+    nonisolated static func isPlainClientName(_ name: String) -> Bool {
+        !name.isEmpty && name.utf8.allSatisfy {
+            ($0 >= 0x30 && $0 <= 0x39) || ($0 >= 0x41 && $0 <= 0x5A) || ($0 >= 0x61 && $0 <= 0x7A)
+                || $0 == UInt8(ascii: "/") || $0 == UInt8(ascii: ".") || $0 == UInt8(ascii: "_")
+                || $0 == UInt8(ascii: "-")
+        }
+    }
+
+    // MARK: The layouts our size request squashes (B150)
+
+    /// The window id, then ``pristineProbeFormat``'s fields: a session's
+    /// layouts around our size request.
+    static let sizeProbeFormat =
+        "#{window_id} #{window_panes} #{window_zoomed_flag} #{pane_id} #{window_layout}"
+
+    /// The session's layouts just before our size request, by window (the
+    /// probe's fields after the window id); nil until that reply.
+    @ObservationIgnored private var presizeLayouts: [String: [String]]?
+    /// A before-probe went out and its after-probe has not.
+    @ObservationIgnored private var presizeAwaitsAfter = false
+
+    /// Our own size request squashes too: tmux sizes a session's windows by
+    /// its latest client, and a phone that just reported its size is that
+    /// client — the only one, or the latest of several — so every window of
+    /// the session is at the phone's grid before discovery, and the probe
+    /// ahead of the pin read the squashed layout. The session's layouts are
+    /// read just before the request, and again just after
+    /// (``probeLayoutsAfterSizing``).
+    private func probeLayoutsBeforeSizing(_ sessionId: String) {
+        guard rendersOutput, Self.isValidTmuxId(sessionId) else { return }
+        presizeLayouts = nil
+        presizeAwaitsAfter = true
+        sendCommand("list-windows -t '\(sessionId)' -F '\(Self.sizeProbeFormat)'") { [weak self] response in
+            self?.sizeProbeAnswered(before: true, response)
+        }
+    }
+
+    /// The layouts of `sessionId`'s windows around a switch to it — ours,
+    /// or the mosh sidecar's renderer's: the client that lands on a session
+    /// becomes its latest, and tmux sizes its windows by it. Sent just
+    /// before the switch; the second read goes out when the first one's
+    /// reply is in (B150, round thirty-four): tmux sizes a session for a
+    /// switch at the end of its loop, after the commands that came with the
+    /// switch have run, so a read sent right behind it still found every
+    /// window as it was, and nothing was recorded. A command that reaches
+    /// tmux after a reply it sent runs in a later loop. crates/tmux's
+    /// `probe_switch_layouts`.
+    private func probeSwitchLayouts(_ sessionId: String) {
+        guard Self.isValidTmuxId(sessionId) else { return }
+        sendCommand("list-windows -t '\(sessionId)' -F '\(Self.sizeProbeFormat)'") { [weak self] response in
+            guard let self, !response.isError else { return }
+            let earlier = Self.sizeRows(response.lines)
+            self.sendCommand("list-windows -t '\(sessionId)' -F '\(Self.sizeProbeFormat)'") { [weak self] response in
+                guard let self, !response.isError else { return }
+                let rows = Self.sizeRows(response.lines)
+                for windowId in rows.keys.sorted() {
+                    guard let then = earlier[windowId], let now = rows[windowId] else { continue }
+                    if Self.windowSize(then[3]) != Self.windowSize(now[3]) {
+                        self.notePristineLayout(windowId, fields: then)
+                        self.noteOurs(windowId, now[3])
+                    }
+                }
+            }
+        }
+    }
+
+    /// The second read, when a first one went out.
+    private func probeLayoutsAfterSizing() {
+        guard presizeAwaitsAfter else { return }
+        presizeAwaitsAfter = false
+        guard let sessionId = snapshot.activeSessionId else { return }
+        sendCommand("list-windows -t '\(sessionId)' -F '\(Self.sizeProbeFormat)'") { [weak self] response in
+            self?.sizeProbeAnswered(before: false, response)
+        }
+    }
+
+    /// The first read is kept; on the second, every window the size request
+    /// resized files its earlier layout as its record (if it qualifies, and
+    /// has none yet). A window it left alone isn't ours to restore.
+    private func sizeProbeAnswered(before: Bool, _ response: TmuxCommandResponse) {
+        let rows = response.isError ? [:] : Self.sizeRows(response.lines)
+        if before {
+            presizeLayouts = rows
+            return
+        }
+        guard let earlier = presizeLayouts else { return }
+        presizeLayouts = nil
+        for windowId in rows.keys.sorted() {
+            guard let then = earlier[windowId], let now = rows[windowId] else { continue }
+            if Self.windowSize(then[3]) != Self.windowSize(now[3]) {
+                notePristineLayout(windowId, fields: then)
+                noteOurs(windowId, now[3])
+            }
+        }
+    }
+
+    /// A size probe's rows (window id, then ``pristineProbeFormat``'s
+    /// fields), by window.
+    private static func sizeRows<S: StringProtocol>(_ lines: [S]) -> [String: [String]] {
+        var rows: [String: [String]] = [:]
+        for line in lines {
+            let fields = String(line).tmuxFields(separator: " ")
+            if fields.count >= 5, fields[0].hasPrefix("@"), isValidTmuxId(fields[0]) {
+                rows[fields[0]] = Array(fields[1...])
+            }
+        }
+        return rows
+    }
+
+    // MARK: The renderer's squash (B270)
+
+    /// The mosh sidecar: every window's layout before mosh-server started the
+    /// phone's renderer, by window; compared with a listing at this sidecar's
+    /// first attach.
+    @ObservationIgnored private var layoutsBeforeRenderer: [String: [String]]?
+
+    /// The mosh sidecar is told how every window was before mosh-server
+    /// started the phone's renderer: `listing`, the host's `list-windows -a`
+    /// in ``sizeProbeFormat``, read over the bootstrap's connection just
+    /// before. The renderer is tmux's client, sized to the phone and sizing
+    /// the session from the moment it attaches — with the phone the only
+    /// client, every window of the session is at the phone's grid before
+    /// this sidecar exists, and the probe ahead of its pin read the squashed
+    /// layout. At the sidecar's first attach the windows are listed again,
+    /// and every window the renderer resized files its earlier layout as its
+    /// record, as our own size request's do (B150). crates/tmux's
+    /// `note_layouts_before_renderer`.
+    func noteLayoutsBeforeRenderer(_ listing: String) {
+        guard !rendersOutput else { return }
+        layoutsBeforeRenderer = Self.sizeRows(listing.split(separator: "\n"))
+    }
+
+    /// The listing after the renderer, at the sidecar's attach, when one was
+    /// taken before it.
+    private func probeLayoutsAfterRenderer() {
+        guard let rows = layoutsBeforeRenderer else { return }
+        layoutsBeforeRenderer = nil
+        presizeLayouts = rows
+        sendCommand("list-windows -a -F '\(Self.sizeProbeFormat)'") { [weak self] response in
+            self?.sizeProbeAnswered(before: false, response)
+        }
+    }
+
+    /// The command that takes the phone's mosh renderer out of the session
+    /// before the windows are handed back (B270): `detach-client`, only while
+    /// tmux still lists that client by its pid AND name. With the phone the
+    /// only client, the renderer — tmux's client in the mosh session — sized
+    /// the session to the end: the hand-back's last step, back to automatic
+    /// sizing, sized every window straight back to the phone's grid, and the
+    /// renderer, stopped right after with its server, left them there.
+    /// Detached first, no client is left to size them, and they stay at
+    /// their record. nil but for the sidecar that knows its renderer. Only on
+    /// the session's real end: detached, the renderer ends the mosh session.
+    func rendererDetachCommand(tmux: String) -> String? {
+        guard !rendersOutput, let renderer = rendererClient else { return nil }
+        return Self.rendererDetachCommand(tmux: tmux, renderer: renderer)
+    }
+
+    /// crates/tmux's `boot::renderer_detach_command`, the same string.
+    nonisolated static func rendererDetachCommand(tmux: String, renderer: TmuxClientIdentity) -> String {
+        let row = Shell.quote("\(renderer.pid) \(renderer.name)")
+        return "\(tmux) list-clients -F '#{client_pid} #{client_name}' 2>/dev/null | grep -qxF \(row) "
+            + "&& \(tmux) detach-client -t \(Shell.quote(renderer.name)); true"
     }
 
     /// The same restore as ``restorePristineLayout``, handed out as commands for
@@ -1000,18 +1364,96 @@ final class TmuxSessionController: MultiplexerControlling {
     /// `%id`, which survive the login shell that channel goes through (a `$id`
     /// would not — see ``restoreSuppressedStatusAndFlush``), and the layout
     /// string is single-quoted so its `{}` reach tmux intact.
+    ///
+    /// B150: with our client still attached they first take it out of the
+    /// sizing math and report the recorded size as its own (see
+    /// ``releaseWindowPins``); a ledger's records, whose client is gone, size
+    /// each window to its record first and unset that again — with no client
+    /// attached tmux keeps a window's size, and a layout replayed at another
+    /// size is refitted.
     func pristineLayoutRestoreCommands() -> [String] {
-        defer { pristineLayouts.removeAll() }
+        let layouts = pristineLayouts
+        pristineLayouts.removeAll()
         var commands: [String] = []
-        for windowId in pristineLayouts.keys.sorted() {
-            guard let pristine = pristineLayouts[windowId],
+        let client = rendersOutput ? ourClientName.flatMap { Self.isPlainClientName($0) ? $0 : nil } : nil
+        if let name = client, let size = handBackSize(layouts) {
+            commands.append("refresh-client -t '\(name)' -f ignore-size")
+            commands.append("refresh-client -t '\(name)' -C \(size.cols)x\(size.rows)")
+        }
+        for windowId in layouts.keys.sorted() {
+            guard let pristine = layouts[windowId],
                   pristineStillApplies(windowId, pristine) else { continue }
-            commands.append("select-layout -t \(windowId) '\(pristine.layout)'")
-            if let pane = pristine.zoomedPane {
-                commands.append("resize-pane -Z -t \(pane)")
-            }
+            commands += Self.windowRestoreCommands(windowId, pristine, sized: client == nil)
         }
         return commands
+    }
+
+    /// One window's record as teardown commands (no tmux prefix): sized to
+    /// the record first when no client of ours is left to size it (`sized`),
+    /// the layout, back to automatic sizing, the user's own zoom.
+    private static func windowRestoreCommands(_ windowId: String, _ pristine: PristineLayout,
+                                              sized: Bool) -> [String] {
+        var commands: [String] = []
+        let size = sized ? windowSize(pristine.layout) : nil
+        if let size {
+            commands.append("resize-window -t \(windowId) -x \(size.cols) -y \(size.rows)")
+        }
+        commands.append("select-layout -t \(windowId) '\(pristine.layout)'")
+        if size != nil {
+            commands.append("set-option -u -w -t \(windowId) window-size")
+        }
+        if let pane = pristine.zoomedPane {
+            commands.append("resize-pane -Z -t \(pane)")
+        }
+        return commands
+    }
+
+    /// The whole hand-back a full teardown owes, as ONE command for a
+    /// channel outside `-CC` (round thirty-four): `first` (the phone's mosh
+    /// renderer out, B270), then the pins unset, then the layouts — each
+    /// only if the window is still in a layout of ours. Consumes the pins
+    /// and the records; nil when nothing is owed.
+    ///
+    /// With a desktop attached, the disconnect used to replay a record over
+    /// whatever the window had become: a desktop that rearranged the panes
+    /// since (the same count) had its arrangement replaced by the one from
+    /// before the phone came. Every window's layout is read first, before
+    /// anything here changes a size; a record is replayed only when that
+    /// layout is its own or one our sizing left the window in
+    /// (``PristineLayout/ours``), and a record that knows none is replayed as
+    /// before. Under `sh -c`, for any login shell. crates/tmux's
+    /// `pin_hand_back_script`, the same string.
+    func pinHandBackScript(tmux: String, first: [String]) -> String? {
+        let pinned = resizedWindows.filter(Self.isValidTmuxId).sorted(by: Self.idOrder)
+        resizedWindows.removeAll()
+        let layouts = pristineLayouts
+        pristineLayouts.removeAll()
+        let client = rendersOutput ? ourClientName.flatMap { Self.isPlainClientName($0) ? $0 : nil } : nil
+        var reads: [String] = []
+        var steps = first
+        steps += pinned.map { "\(tmux) set-option -u -w -t \($0) window-size" }
+        if let name = client, let size = handBackSize(layouts) {
+            steps.append("\(tmux) refresh-client -t '\(name)' -f ignore-size")
+            steps.append("\(tmux) refresh-client -t '\(name)' -C \(size.cols)x\(size.rows)")
+        }
+        var restores = 0
+        for (index, windowId) in layouts.keys.sorted().enumerated() {
+            guard let pristine = layouts[windowId], Self.isValidTmuxId(windowId),
+                  pristineStillApplies(windowId, pristine) else { continue }
+            restores += 1
+            let commands = Self.windowRestoreCommands(windowId, pristine, sized: client == nil)
+                .map { "\(tmux) \($0)" }
+            if pristine.ours.isEmpty {
+                steps += commands
+                continue
+            }
+            let read = "l\(index)"
+            reads.append("\(read)=$(\(tmux) display-message -p -t \(windowId) '#{window_layout}' 2>/dev/null)")
+            let patterns = ([pristine.layout] + pristine.ours).map { "\"\($0)\"" }
+            steps.append("case \"$\(read)\" in \(patterns.joined(separator: "|"))) \(commands.joined(separator: "; "));; esac")
+        }
+        if pinned.isEmpty, restores == 0, first.isEmpty { return nil }
+        return "sh -c " + Shell.quote((reads + steps + ["true"]).joined(separator: "; "))
     }
 
     /// Which window `recentReclaimTimestamps` is currently tracking — reset
@@ -1050,39 +1492,193 @@ final class TmuxSessionController: MultiplexerControlling {
         resizedWindows.insert(windowId)
     }
 
-    /// Count clients attached WITHOUT control mode — real renderers (the mosh
-    /// TUI client, desktop terminals), as opposed to `-CC` sidecars like us.
-    /// The hub uses the delta to verify the mosh renderer's `tmux attach`
-    /// actually landed. Calls back with -1 when not attached (the command
-    /// would be dropped and the callback would otherwise never run).
-    func countNonControlClients(_ completion: @escaping (Int) -> Void) {
-        guard snapshot.isAttached else { completion(-1); return }
-        sendCommand("list-clients -F '#{client_control_mode}'") { response in
-            completion(response.lines.filter {
-                $0.trimmingCharacters(in: .whitespaces) == "0"
-            }.count)
+    /// Take the client with process id `pid` for the phone's renderer
+    /// (``rendererClient``) and follow it to its session — the renderer that
+    /// attached by itself: mosh-server's own program, tmux's client on the
+    /// remembered session, the most recent, or the first there is (B212,
+    /// B267). Its pid names it: the program records its shell's before it
+    /// execs tmux's client, and the `exec` keeps it — so a desktop attaching
+    /// at the same moment is never taken for it (B84). False while no
+    /// non-control client has that pid (not attached yet), and when tmux has
+    /// no answer.
+    func adoptRenderer(pid: Int) async -> Bool {
+        guard !rendersOutput, snapshot.isAttached else { return false }
+        let switches = sessionSwitches
+        return await withCheckedContinuation { continuation in
+            sendCommand("list-clients -F '\(TmuxClientRow.format)'", waits: true) { [weak self] response in
+                guard let self, !response.isError else {
+                    continuation.resume(returning: false)
+                    return
+                }
+                let clients = response.lines.compactMap(TmuxClientRow.init).filter { !$0.isControl }
+                guard let renderer = clients.first(where: { $0.pid == pid })?.identity else {
+                    continuation.resume(returning: false)
+                    return
+                }
+                self.rendererClient = renderer
+                Log.island.info("land: sidecar renderer is \(renderer.name, privacy: .public) pid=\(renderer.pid, privacy: .public) (attached by itself)")
+                self.noteRendererRows(clients, switches: switches)
+                continuation.resume(returning: true)
+            }
         }
+    }
+
+    /// The phone's own mosh renderer: the one tmux client a sidecar session
+    /// switch moves (see ``selectSession(_:)``). nil while unknown — and
+    /// then the switch moves no client at all.
+    ///
+    /// Learned from the renderer's own pid (``adoptRenderer(pid:)``: the
+    /// renderer is mosh-server's program and records it), never guessed from
+    /// where clients sit or from which client appeared between two counts of
+    /// clients (B84: a desktop attaching beside a renderer whose attach
+    /// failed was taken for it). A sidecar rebuilt under a live mosh
+    /// connection inherits it with the ``PinLedger``: the renderer did not
+    /// change, only our SSH did.
+    @ObservationIgnored
+    private(set) var rendererClient: TmuxClientIdentity?
+
+    /// The session the phone's renderer (``rendererClient``) sits on — what
+    /// the person sees, so what the mosh sidecar follows: its active session,
+    /// and the only session whose window it sizes to the phone. nil while the
+    /// renderer is unknown or not attached.
+    ///
+    /// Learned from rows that name the renderer by pid and name — the listing
+    /// that identifies it, a re-listing (``locateRenderer()``), the switch
+    /// that moves it — never from `#{session_attached}`. That flag counts
+    /// every client, the desktop's and this sidecar's own included, and the
+    /// sidecar used to take the last session in name order with it set: with
+    /// the phone on `aaa` and the desktop on `zzz`, every re-list put the
+    /// sidecar on `zzz`, the breadcrumb named the desktop's session, and the
+    /// next rotation or keyboard pinned the DESKTOP's window to the phone
+    /// grid.
+    @ObservationIgnored
+    private(set) var rendererSessionId: String?
+
+    /// Bumped when ``selectSession(_:)`` starts a switch and again when it
+    /// sends the moves. A client listing sent in between, or before, shows
+    /// the renderer where the switch is taking it away from, and must not
+    /// drag the sidecar back there.
+    @ObservationIgnored
+    private var sessionSwitches = 0
+
+    /// A ``locateRenderer()`` listing is on its way. tmux answers in order,
+    /// with notifications in the same stream, so the reply to one already in
+    /// flight is at least as new as anything that asks for another.
+    @ObservationIgnored
+    private var rendererLocateInFlight = false
+
+    /// Ask tmux where the phone's renderer is now, and follow it there. The
+    /// renderer moves on its own too: `prefix s` in the mosh TUI, a tmux
+    /// session ending under it. Then syncs the status line, which a
+    /// ``handleSessionChanged`` with a known renderer leaves to this reply
+    /// (the session it should be decided for is the renderer's). Nothing
+    /// while the renderer is unknown — there is nothing to follow.
+    private func locateRenderer() {
+        guard !rendersOutput, snapshot.isAttached, rendererClient != nil else {
+            syncStatusLine()
+            return
+        }
+        guard !rendererLocateInFlight else { return }
+        rendererLocateInFlight = true
+        let switches = sessionSwitches
+        sendCommand("list-clients -F '\(TmuxClientRow.format)'") { [weak self] response in
+            guard let self else { return }
+            self.rendererLocateInFlight = false
+            if !response.isError {
+                self.noteRendererRows(response.lines.compactMap(TmuxClientRow.init), switches: switches)
+            }
+            self.syncStatusLine()
+        }
+    }
+
+    /// Where `rows` — one client listing, sent when ``sessionSwitches`` was
+    /// `switches` — put the renderer: follow it to its session, or forget
+    /// the session when it is not among them (detached, its mosh gone).
+    private func noteRendererRows(_ rows: [TmuxClientRow], switches: Int) {
+        guard !rendersOutput, let renderer = rendererClient else { return }
+        guard let row = rows.first(where: { !$0.isControl && $0.identity == renderer }) else {
+            if rendererSessionId != nil {
+                Log.island.info("land: sidecar renderer \(renderer.name, privacy: .public) pid=\(renderer.pid, privacy: .public) is not attached")
+            }
+            rendererSessionId = nil
+            return
+        }
+        // Listed before a switch we started: that switch is moving it, and
+        // its own listing says where to.
+        guard switches == sessionSwitches else { return }
+        followRenderer(to: row.sessionId)
+    }
+
+    /// The sidecar takes the renderer's session as its own: the snapshot
+    /// shows it (window and pane as discovery last knew them, corrected by
+    /// the re-listing below), and this control client moves there too —
+    /// tmux tells a control client about layout changes only for windows of
+    /// its own session, and a bare `new-window` lands on its own session.
+    private func followRenderer(to sessionId: String) {
+        guard !rendersOutput, Self.isValidTmuxId(sessionId) else { return }
+        rendererSessionId = sessionId
+        guard snapshot.activeSessionId != sessionId else { return }
+        Log.island.info("land: sidecar follows the renderer to \(sessionId, privacy: .public) (was \(self.snapshot.activeSessionId ?? "-", privacy: .public))")
+        snapshot.activeSessionId = sessionId
+        let window = snapshot.windows.values.first { $0.sessionId == sessionId && $0.isActive }
+        snapshot.activeWindowId = window?.id
+        snapshot.activePaneId = window.flatMap { window in
+            snapshot.panes.values.first { $0.windowId == window.id && $0.isActive }?.id
+        }
+        syncStatusLine()
+        send(rawCommand: "switch-client -t \(sessionId)")
+        refreshWindowsAndPanes()
+    }
+
+    /// The window the mosh sidecar may size to the phone: the active one,
+    /// when it is on the session the phone's renderer sits on. nil when the
+    /// renderer is unknown, not attached, or elsewhere — the window it would
+    /// size is then somebody else's.
+    private var rendererWindowId: String? {
+        guard let session = rendererSessionId, snapshot.activeSessionId == session,
+              let window = snapshot.activeWindowId,
+              snapshot.windows[window]?.sessionId == session else { return nil }
+        return window
+    }
+
+    /// Why ``rendererWindowId`` is nil, for the island log.
+    private var rendererWindowAbsence: String {
+        guard let renderer = rendererClient else { return "the renderer is not known" }
+        guard let session = rendererSessionId else {
+            return "renderer \(renderer.name) pid=\(renderer.pid) is not attached"
+        }
+        return "the active window is not on the renderer's session \(session)"
     }
 
     /// Mosh sidecar (`rendersOutput == false`) window sizing, driven by the hub.
     ///
     /// The mosh-rendered tmux TUI is raw mosh — it can't issue control commands,
     /// and `fitWindowToClient` no-ops for a sidecar — so nothing would pin the
-    /// window to the phone grid. Meanwhile this control client's own 80×24 PTY
-    /// drags tmux's window-size math down, stranding the TUI at 80×24 in the
-    /// corner. Fix both: match our control-client size to the mosh grid, then
-    /// pin the active window to it (full-screen TUIs redraw at phone width).
-    /// Pinned windows are reverted (`resize-window -A`) on disconnect in
+    /// window to the phone grid: pin the active window to it (full-screen TUIs
+    /// redraw at phone width). Pinned windows are handed back on disconnect in
     /// `SessionHub.stop()`.
+    ///
+    /// This client reports no size of its own (B270). It used to report the
+    /// mosh grid first, against its 80×24 PTY dragging tmux's sizing down —
+    /// but a control client that never reported a size is no part of tmux's
+    /// sizing (3.6a: a `-CC` client on an 80×24 PTY leaves a 200×60 window
+    /// alone), and one that did is: with the phone tmux's only client, the
+    /// windows handed back on the disconnect went straight back to the
+    /// phone's grid with it.
+    ///
+    /// Only the window the phone's renderer is looking at (``rendererWindowId``):
+    /// with the renderer unknown, detached or elsewhere, nothing is sized —
+    /// not even this client, whose size counts towards its session's windows.
     func syncMoshWindow(cols: Int, rows: Int) {
         guard !rendersOutput, snapshot.isAttached else { return }
         lastClientSize = (cols, rows)
-        send(rawCommand: "refresh-client -C \(cols)x\(rows)")
-        if let win = snapshot.activeWindowId {
-            capturePristineLayout(win)
-            send(rawCommand: "resize-window -t \(win) -x \(cols) -y \(rows)")
-            resizedWindows.insert(win)
+        guard let win = rendererWindowId else {
+            Log.island.info("land: sidecar sizes no window — \(self.rendererWindowAbsence, privacy: .public)")
+            return
         }
+        capturePristineLayout(win)
+        send(rawCommand: "resize-window -t \(win) -x \(cols) -y \(rows)")
+        resizedWindows.insert(win)
     }
 
     /// Switch the attached client to another session, then re-discover its
@@ -1091,33 +1687,71 @@ final class TmuxSessionController: MultiplexerControlling {
         // See the matching comment in selectPane: a manual switch must not
         // get silently overridden by a still-pending reconnect restore.
         pendingRestore = nil
-        // Leaving the session: its status bar must come back whatever the
-        // zoom state we left behind (the new session re-evaluates via its
-        // own layout events).
-        setStatusSuppressed(false)
-        let previousSessionName = snapshot.activeSessionId
-            .flatMap { snapshot.sessions[$0]?.name }
+        sessionSwitches &+= 1
+        // The sidecar's renderer leaves these (read before the snapshot
+        // moves on).
+        let left = rendererSessionId
+        let leftWindow = rendererWindowId
         if snapshot.activeSessionId != sessionId {
             snapshot.activeSessionId = sessionId
         }
+        // Leaving a session Moshpit created gives its status line back;
+        // arriving on one turns it off. Any other session: nothing.
+        syncStatusLine()
         if rendersOutput {
+            // B150: the switch sizes the session's windows by us (its latest
+            // client): what it squashes is read on both sides.
+            probeSwitchLayouts(sessionId)
             send(rawCommand: "switch-client -t \(sessionId)")
         } else {
             // Control-plane mode: `switch-client` alone would move only THIS
             // (invisible) control client. The screen the user sees is the
-            // mosh-rendered client attached to the same session — move every
-            // non-control client currently on OUR session along with us,
-            // without touching clients on other sessions (e.g. the user's
-            // desktop tmux).
-            sendCommand("list-clients -F '#{client_control_mode}|#{client_session}|#{client_name}'") { [weak self] response in
+            // phone's mosh renderer — it comes along, and NOTHING else does:
+            // every other client is a screen this phone does not own, the
+            // desktop's terminal first of all.
+            //
+            // It used to be every non-control client on the session being
+            // left. A desktop sits on that session more often than not, and
+            // its terminal jumped sessions with the phone; the session the
+            // sidecar follows is itself a guess from tmux's attached flags;
+            // and with no session known at all the filter let every client
+            // through, desktops on other sessions included. Now the renderer
+            // is one specific client (``rendererClient``), and when it is not
+            // known — or not attached any more — no client moves and the log
+            // says so.
+            sendCommand("list-clients -F '\(TmuxClientRow.format)'") { [weak self] response in
                 guard let self else { return }
-                for line in response.lines {
-                    let parts = line.split(separator: "|", maxSplits: 2)
-                    guard parts.count == 3, parts[0] == "0" else { continue }
-                    guard previousSessionName == nil || parts[1] == previousSessionName! else { continue }
-                    self.send(rawCommand: "switch-client -c \(parts[2]) -t \(sessionId)")
+                let rows = response.isError ? [] : response.lines.compactMap(TmuxClientRow.init)
+                let renderer = self.rendererClient
+                let moving = renderer.map { client in
+                    rows.filter { !$0.isControl && $0.identity == client }
+                } ?? []
+                if moving.isEmpty {
+                    let why = renderer.map { "renderer \($0.name) pid=\($0.pid) is not attached" }
+                        ?? "the renderer is not known"
+                    Log.island.info("land: sidecar switch to \(sessionId, privacy: .public) moves no client — \(why, privacy: .public)")
+                }
+                // The renderer sizes the session it lands on (its latest
+                // client, the only one when the phone is alone): what the
+                // move squashes is read on both sides of it, as our own
+                // switch's is (B150).
+                if !moving.isEmpty { self.probeSwitchLayouts(sessionId) }
+                for row in moving {
+                    self.send(rawCommand: "switch-client -c \(row.name) -t \(sessionId)")
+                }
+                // Where the renderer sits from here: the session it is being
+                // moved to, or — not attached — nowhere the sidecar may size.
+                if renderer != nil, !response.isError {
+                    self.rendererSessionId = moving.isEmpty ? nil : sessionId
                 }
                 self.send(rawCommand: "switch-client -t \(sessionId)")
+                // A listing sent before these moves (a re-list the switch
+                // itself set off) still shows the renderer where it was.
+                self.sessionSwitches &+= 1
+                // The session it left is handed back.
+                if !moving.isEmpty, let left, left != sessionId {
+                    self.handBackLeftSession(left, window: leftWindow)
+                }
             }
         }
         refreshWindowsAndPanes()
@@ -1445,7 +2079,7 @@ final class TmuxSessionController: MultiplexerControlling {
         sendCommand("display-message -p -t \(paneId) '#{mouse_any_flag} #{alternate_on}'") { [weak self] response in
             let flags = response.lines.first?
                 .trimmingCharacters(in: .whitespaces)
-                .split(separator: " ") ?? []
+                .tmuxFields(separator: " ") ?? []
             self?.activePaneWantsMouse = flags.first == "1"
             self?.activePaneOnAltScreen = flags.count > 1 && flags[1] == "1"
         }
@@ -1555,9 +2189,9 @@ final class TmuxSessionController: MultiplexerControlling {
 
     /// Synthesize SGR wheel bytes into the pane's program.
     private func sendWheel(lines: Int, paneId: String) {
-        let terminal = paneTerminals[paneId]?.getTerminal()
-        let col = max(1, (terminal?.cols ?? 80) / 2)
-        let row = max(1, (terminal?.rows ?? 24) / 2)
+        let grid = paneTerminals[paneId]?.grid
+        let col = max(1, (grid?.cols ?? 80) / 2)
+        let row = max(1, (grid?.rows ?? 24) / 2)
         let wheel = SessionHub.ActiveSession.wheelBytes(lines: lines, col: col, row: row)
         if !wheel.isEmpty { sendInput(wheel, paneId: paneId) }
     }
@@ -1590,7 +2224,8 @@ final class TmuxSessionController: MultiplexerControlling {
     /// to. nil when not attached, on a tmux error, or after 4s without a
     /// reply (a dying connection never answers).
     func panePath(_ paneId: String) async -> String? {
-        guard snapshot.isAttached else { return nil }
+        // Spliced into the command bare: a tmux id or nothing (B146, B139).
+        guard snapshot.isAttached, Self.isValidTmuxId(paneId) else { return nil }
         let answer: String?? = await withTimeoutValue(4) { [weak self] in
             await withCheckedContinuation { (continuation: CheckedContinuation<String?, Never>) in
                 Task { @MainActor [weak self] in
@@ -1598,9 +2233,23 @@ final class TmuxSessionController: MultiplexerControlling {
                         continuation.resume(returning: nil)
                         return
                     }
-                    self.sendCommand("display-message -p -t \(paneId) '#{pane_current_path}'") { response in
-                        let path = response.lines.first?.trimmingCharacters(in: .whitespaces) ?? ""
-                        continuation.resume(returning: !response.isError && path.hasPrefix("/") ? path : nil)
+                    self.sendCommand("display-message -p -t \(paneId) '#{pane_current_path}'",
+                                     waits: true) { response in
+                        // The line exactly as tmux printed it: the parser has
+                        // already cut it at `\n` and dropped the `\r` before
+                        // that. Any space or tab left belongs to the
+                        // directory's name — tmux 3.6a prints a pane in
+                        // `proj ` as `…/proj \r\n` — and trimming it sent the
+                        // agent's relative paths and the files key to `proj`,
+                        // which is another directory or none at all.
+                        let path = response.lines.first ?? ""
+                        // Absolute = the first BYTE is `/`. `hasPrefix("/")`
+                        // compares Characters, and a cwd whose first component
+                        // starts with a combining mark ("/\u{301}x") begins
+                        // with the Character "/\u{301}" — turned away as if
+                        // tmux had answered nothing.
+                        let isAbsolute = path.utf8.first == UInt8(ascii: "/")
+                        continuation.resume(returning: !response.isError && isAbsolute ? path : nil)
                     }
                 }
             }
@@ -1610,8 +2259,8 @@ final class TmuxSessionController: MultiplexerControlling {
 
     // A pane-targeted paste (e.g. the Home card's per-agent image entry)
     // used to decide bracketing HERE, by reading back
-    // `paneTerminals[paneId]?.getTerminal().bracketedPasteMode` — the local
-    // SwiftTerm's memory of having SEEN the pane's own `ESC[?2004h` go by.
+    // the pane terminal's bracketed-paste mode — the local terminal's
+    // memory of having SEEN the pane's own `ESC[?2004h` go by.
     // That memory is permanently wrong after a fresh SSH+tmux attach: tmux
     // does not replay mode-setting sequences on `-CC attach` (lab-verified,
     // `scripts/spikes/tmux-cc-lab`, 2026-08-19), so the flag starts (and stays)
@@ -1689,7 +2338,11 @@ final class TmuxSessionController: MultiplexerControlling {
 
     private func createWindow(inSession sessionId: String?, named name: String?) {
         let trimmed = name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let namePart = trimmed.isEmpty ? "" : " -n \(tmuxQuote(trimmed))"
+        if let refusal = MultiplexerName.refusal(trimmed) {
+            flashNotice(refusal)
+            return
+        }
+        let namePart = trimmed.isEmpty ? "" : " -n \(Self.tmuxNameArgument(trimmed))"
         let targetPart = sessionId.map { " -t \($0):" } ?? ""
         pendingWindowFocus = nil
         sendCommand("new-window\(targetPart) -P -F '#{window_id}'\(namePart)") { [weak self] response in
@@ -1724,6 +2377,10 @@ final class TmuxSessionController: MultiplexerControlling {
     /// The split layout and zoom state we found are restored too — see
     /// ``pristineLayouts`` for why the pin destroys the layout and
     /// ``restorePristineLayout`` for why the unpin has to come first.
+    ///
+    /// While we still size the session (its only client, or its latest) the
+    /// replay is refitted to our grid: the record is kept for the hand-back
+    /// that can restore it (B150).
     private func releaseWindowPin(_ windowId: String) {
         if resizedWindows.contains(windowId) {
             resizedWindows.remove(windowId)
@@ -1733,7 +2390,7 @@ final class TmuxSessionController: MultiplexerControlling {
             send(rawCommand: "set-option -u -w -t \(windowId) window-size")
         }
         releaseSizeOwnership(windowId)
-        restorePristineLayout(windowId)
+        checkReplay(windowId, kept: !rendersOutput)
     }
 
     /// True between `releaseWindowPins()` and the next `repinActiveWindow()` —
@@ -1782,6 +2439,13 @@ final class TmuxSessionController: MultiplexerControlling {
         //     manual). Unsetting the per-window `window-size` override is what
         //     actually returns a window to automatic sizing.
         send(rawCommand: "refresh-client -f ignore-size")
+        //  1b. B150: alone, tmux sizes the windows by us whatever the flag
+        //     (it honours `ignore-size` only while another client is
+        //     attached): at the recorded size they return to where they were,
+        //     and the layouts replayed below fit exactly.
+        if rendersOutput, let size = handBackSize(pristineLayouts) {
+            send(rawCommand: "refresh-client -C \(size.cols)x\(size.rows)")
+        }
         for win in resizedWindows {
             send(rawCommand: "set-option -u -w -t \(win) window-size")
         }
@@ -1820,8 +2484,25 @@ final class TmuxSessionController: MultiplexerControlling {
             pinsReleased = false
             return
         }
-        send(rawCommand: "refresh-client -f !ignore-size")
-        send(rawCommand: "refresh-client -C \(lastClientSize.cols)x\(lastClientSize.rows)")
+        // The mosh sidecar sizes only the window the phone's renderer is on
+        // (see syncMoshWindow) — and stays out of the sizing math otherwise.
+        if !rendersOutput, rendererWindowId == nil {
+            pinsReleased = false
+            Log.island.info("land: sidecar repins no window — \(self.rendererWindowAbsence, privacy: .public)")
+            return
+        }
+        // B150: what our size is about to squash, read on both sides of it.
+        if rendersOutput, let session = snapshot.activeSessionId { probeLayoutsBeforeSizing(session) }
+        // The mosh sidecar stays sizeless (B270): a size reported here made
+        // it a client tmux sizes the session by — the windows went back to
+        // the phone's grid with it, after the renderer was gone, whenever
+        // they were handed back to automatic sizing (and tmux streamed it
+        // every pane's output it never reads). Its pin is `resize-window`.
+        if rendersOutput {
+            send(rawCommand: "refresh-client -f !ignore-size")
+            send(rawCommand: "refresh-client -C \(lastClientSize.cols)x\(lastClientSize.rows)")
+        }
+        probeLayoutsAfterSizing()
         if rendersOutput {
             // Another device may have taken the window while we were away
             // (we released our lease on leaving). Ask before pinning — the
@@ -1887,6 +2568,7 @@ final class TmuxSessionController: MultiplexerControlling {
         // zoom it to full-screen so we keep the single-pane presentation.
         if let windowId = snapshot.activeWindowId {
             send(rawCommand: "resize-pane -Z -t \(windowId)")
+            zoomEpoch &+= 1
         }
         refreshWindowsAndPanes()
     }
@@ -1906,7 +2588,8 @@ final class TmuxSessionController: MultiplexerControlling {
         // Full re-discovery so the button visibly reflects sessions created or
         // killed elsewhere — not just windows/panes of the current session.
         sendCommand("list-sessions -F '#{session_id} #{session_attached} #{session_name}'") { [weak self] response in
-            self?.parseListSessions(response.lines)
+            guard let self, let rows = self.listing(response, of: "list-sessions") else { return }
+            self.parseListSessions(rows)
         }
         refreshWindowsAndPanes()
         // Also converge the visible pane's screen with tmux's model — the
@@ -1924,38 +2607,119 @@ final class TmuxSessionController: MultiplexerControlling {
     }
 
     /// Sessions created BY Moshpit through this controller (never the user's
-    /// own). In control-plane mode these get the native look (status bar
-    /// off); the hub restores them on disconnect.
+    /// own). In control-plane mode these get the native look: no status line
+    /// while the phone is on them (``syncStatusLine()``).
+    ///
+    /// By id: the restore used to target the NAME it was created with, and
+    /// after a rename from the desktop that name meant nothing — or, through
+    /// tmux's prefix match on `-t`, some other session of the user's, whose
+    /// own status option the restore then unset.
     @ObservationIgnored
-    private(set) var ownedSessionNames: Set<String> = []
+    private(set) var ownedSessionIds: Set<String> = []
 
-    /// Session whose status bar is TEMPORARILY hidden because the active
-    /// window is zoomed (immersive full-screen pane over mosh). Strictly
-    /// zoom-scoped: suppression follows the `*Z` flag from %layout-change,
-    /// so it tracks zooms/unzooms from ANY client (including Ctrl-b z in
-    /// the shell) and is restored on unzoom, window/session switch away,
-    /// and disconnect. Never persists.
+    /// The one session whose status line this controller turned off — a
+    /// session Moshpit created, while the phone is on it — or nil. It comes
+    /// back (`-u status`: the inherited default) when the phone leaves that
+    /// session and on disconnect; a reconnect hands it to the replacement
+    /// controller in the ``PinLedger``, so a rebuilt sidecar still owes it.
     @ObservationIgnored
-    private var statusSuppressedSessionId: String?
+    private var statusHiddenSessionId: String?
 
-    /// Hide/restore the active session's status bar in lockstep with the
-    /// zoom state. `-u` restores the inherited default, leaving the user's
-    /// configuration untouched. No-ops outside control-plane mode.
-    private func setStatusSuppressed(_ suppressed: Bool) {
-        guard !rendersOutput else { return }
-        if suppressed {
-            guard statusSuppressedSessionId == nil,
-                  let sessionId = snapshot.activeSessionId else { return }
-            statusSuppressedSessionId = sessionId
-            send(rawCommand: "set-option -t '\(sessionId)' status off")
-        } else if let sessionId = statusSuppressedSessionId {
-            statusSuppressedSessionId = nil
-            send(rawCommand: "set-option -t '\(sessionId)' -u status")
+    /// The status line over mosh: off on a session Moshpit created while the
+    /// phone is on it, and on every other session left exactly as it is — no
+    /// option set, none unset.
+    ///
+    /// Every `%session-changed` used to set `status off` on whatever session
+    /// the sidecar landed on, the user's own included. `status` is a session
+    /// option, so the desktop's status bar vanished along with the phone's,
+    /// and only a clean disconnect gave it back: an app killed in the
+    /// background left it off for good. tmux has no per-client status line,
+    /// so on the user's sessions the phone shows theirs. No-op outside
+    /// control-plane mode, and while the phone's session is not known yet —
+    /// a rebuilt sidecar must not give back a status line before it knows
+    /// the phone has left that session.
+    private func syncStatusLine() {
+        guard !rendersOutput, snapshot.isAttached, let current = snapshot.activeSessionId else { return }
+        let wanted = ownedSessionIds.contains(current) ? current : nil
+        guard wanted != statusHiddenSessionId else { return }
+        if let hidden = statusHiddenSessionId {
+            send(rawCommand: "set-option -t '\(hidden)' -u status")
+            send(rawCommand: "set-option -t '\(hidden)' -u \(Self.statusHiddenOption)")
+        }
+        if let wanted {
+            send(rawCommand: "set-option -t '\(wanted)' status off")
+            send(rawCommand: Self.hideStampCommand(wanted))
+        }
+        statusHiddenSessionId = wanted
+    }
+
+    // MARK: Sessions Moshpit made, known from the server (B86)
+
+    /// The session option that marks a session Moshpit made: the mark lives
+    /// on the server, so a sidecar that never saw the session made — the app
+    /// killed and opened again — still knows it. crates/tmux's `OWNED_OPTION`.
+    static let ownedOption = "@moshpit_owned"
+    /// The session option that says which control client turned that
+    /// session's status line off (its `#{client_name}`): one no longer
+    /// attached left it off when it died, and the next sidecar gives it back.
+    static let statusHiddenOption = "@moshpit_status_hidden"
+
+    /// Stamps `sessionId`'s hidden status line with this control client's own
+    /// name (`-F`: tmux expands it for the client that runs the command).
+    static func hideStampCommand(_ sessionId: String) -> String {
+        "set-option -t '\(sessionId)' -F \(statusHiddenOption) '#{client_name}'"
+    }
+
+    /// The sessions Moshpit made, and the status lines a dead sidecar left
+    /// off, read from the server at the sidecar's attach: who is attached,
+    /// then every session's marks.
+    ///
+    /// The sessions Moshpit created were known only in memory (and the
+    /// ledger, across a rebuilt sidecar): an app killed while the phone sat
+    /// on one left its status line off, and the next launch never knew the
+    /// session for Moshpit's — the status line stayed off for good, the
+    /// desktop's with it. crates/tmux's `read_owned_sessions`.
+    private func readOwnedSessions() {
+        var clients: Set<String>?
+        sendCommand("list-clients -F '#{client_name}'") { response in
+            guard !response.isError else { return }
+            clients = Set(response.lines.map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty })
+        }
+        sendCommand("list-sessions -F '#{session_id} owned=#{\(Self.ownedOption)} hidden=#{\(Self.statusHiddenOption)}'") { [weak self] response in
+            guard let self, !response.isError else { return }
+            self.ownedSessionsAnswered(response.lines, clients: clients)
         }
     }
 
+    /// Take the marked sessions as Moshpit's; give a status line back that a
+    /// client no longer attached turned off — unless the phone is on that
+    /// session, where it stays off, ours now. Nothing is judged dead without
+    /// the clients' listing.
+    private func ownedSessionsAnswered(_ lines: [String], clients: Set<String>?) {
+        let current = snapshot.activeSessionId
+        for line in lines {
+            let words = line.split(separator: " ", maxSplits: 2, omittingEmptySubsequences: false).map(String.init)
+            guard words.count == 3, words[0].hasPrefix("$"), Self.isValidTmuxId(words[0]),
+                  words[1].hasPrefix("owned="), words[2].hasPrefix("hidden=") else { continue }
+            let id = words[0]
+            let owned = words[1].dropFirst("owned=".count) == "1"
+            let stamp = words[2].dropFirst("hidden=".count).trimmingCharacters(in: .whitespaces)
+            if owned { ownedSessionIds.insert(id) }
+            guard let clients, !stamp.isEmpty, !clients.contains(stamp) else { continue }
+            if owned, current == id {
+                // The phone is on it: it stays off, stamped ours.
+                if statusHiddenSessionId == id { send(rawCommand: Self.hideStampCommand(id)) }
+                continue
+            }
+            if statusHiddenSessionId == id { statusHiddenSessionId = nil }
+            send(rawCommand: "set-option -t '\(id)' -u status")
+            send(rawCommand: "set-option -t '\(id)' -u \(Self.statusHiddenOption)")
+        }
+        syncStatusLine()
+    }
+
     /// Disconnect-time status restore — over the LIVE -CC control channel, the
-    /// same way suppression was applied.
+    /// same way the status line was turned off.
     ///
     /// We previously restored over a one-shot SSH exec channel, but that runs
     /// through the remote login shell, which mangles the `set-option -t '$id'`
@@ -1965,16 +2729,10 @@ final class TmuxSessionController: MultiplexerControlling {
     /// round-trip blocks until tmux has applied it, so it can't race the
     /// teardown that follows (the original reason exec was chosen).
     func restoreSuppressedStatusAndFlush() async {
-        guard snapshot.isAttached else { return }
-        var targets = Array(ownedSessionNames)
-        if let sessionId = statusSuppressedSessionId {
-            targets.append(sessionId)
-            statusSuppressedSessionId = nil
-        }
-        guard !targets.isEmpty else { return }
-        for target in targets {
-            send(rawCommand: "set-option -t '\(target)' -u status")
-        }
+        guard snapshot.isAttached, let hidden = statusHiddenSessionId else { return }
+        statusHiddenSessionId = nil
+        send(rawCommand: "set-option -t '\(hidden)' -u status")
+        send(rawCommand: "set-option -t '\(hidden)' -u \(Self.statusHiddenOption)")
         await flushControlChannel(timeout: 2)
     }
 
@@ -1985,16 +2743,13 @@ final class TmuxSessionController: MultiplexerControlling {
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
             var resumed = false
             func fire() { if !resumed { resumed = true; continuation.resume() } }
-            sendCommand("display-message -p ok") { _ in fire() }
+            sendCommand("display-message -p ok", waits: true) { _ in fire() }
             Task { @MainActor in
                 try? await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
                 fire()
             }
         }
     }
-
-    /// The session whose status bar is currently suppressed, if any.
-    var suppressedStatusSessionId: String? { statusSuppressedSessionId }
 
     /// Set when navigation lands somewhere new but the window list isn't in
     /// yet (initial attach, session switch) — consumed by the next
@@ -2009,9 +2764,10 @@ final class TmuxSessionController: MultiplexerControlling {
     /// the pin squashed — see ``pristineLayouts``.
     private func ensureImmersiveZoom() {
         guard let windowId = snapshot.activeWindowId else { return }
+        let epoch = zoomEpoch
         sendCommand("display-message -p -t '\(windowId)' '\(Self.pristineProbeFormat)'") { [weak self] response in
             guard let self, let line = response.lines.first else { return }
-            let fields = line.split(separator: " ").map(String.init)
+            let fields = line.tmuxFields(separator: " ")
             // Same reply, two jobs: the pane count and zoom flag this needs,
             // and the pristine record — but only on the paths where the zoom is
             // all we do (mosh sidecar, a window we never pinned). Behind a pin,
@@ -2021,21 +2777,54 @@ final class TmuxSessionController: MultiplexerControlling {
                 self.notePristineLayout(windowId, fields: fields)
             }
             guard fields.count >= 2, (Int(fields[0]) ?? 1) > 1, fields[1] == "0" else { return }
-            self.send(rawCommand: Self.zoomIfUnzoomedCommand(windowId))
+            // Newer than every zoom change we sent: toggle. Older: it may
+            // read "unzoomed" for a window our own toggle zoomed since — ask
+            // again.
+            if epoch == self.zoomEpoch {
+                self.send(rawCommand: Self.zoomCommand(windowId))
+                self.zoomEpoch &+= 1
+            } else {
+                self.ensureImmersiveZoom()
+            }
         }
     }
 
-    /// Zoom a window's active pane unless it is zoomed already, decided by tmux
-    /// when the command RUNS. `resize-pane -Z` alone is a toggle, and the
-    /// probe that leads here can be one of two in flight: a reconnect's attach
-    /// zoom and the restore's `selectPane` both asked before either zoom
-    /// landed, both read "unzoomed", and the second toggle undid the first —
-    /// the window stayed pinned to the phone grid with its split squashed
-    /// beneath (真机 2026-10-09: a notification into Claude Code's agent-team
-    /// window showed one teammate as a 67x9 strip, the lead crushed to a
-    /// column; reproduced on the sim with a 30s background).
-    static func zoomIfUnzoomedCommand(_ windowId: String) -> String {
-        "if-shell -F -t '\(windowId)' '#{?window_zoomed_flag,,1}' 'resize-pane -Z -t \(windowId)'"
+    /// Bumped by every zoom change we send (a toggle, a replayed layout); a
+    /// zoom probe remembers the value it was sent at.
+    @ObservationIgnored private var zoomEpoch = 0
+
+    /// Zoom a window's active pane: a toggle, sent only on a probe that saw
+    /// it unzoomed and is newer than every zoom change we sent
+    /// (``ensureImmersiveZoom()``). crates/tmux's `zoom_command`.
+    ///
+    /// `resize-pane -Z` alone is a toggle, and the probe that leads here can
+    /// be one of two in flight: a reconnect's attach zoom and the restore's
+    /// `selectPane` both asked before either zoom landed, both read
+    /// "unzoomed", and the second toggle undid the first — the window stayed
+    /// pinned to the phone grid with its split squashed beneath (真机
+    /// 2026-10-09). The epoch keeps the second from toggling.
+    ///
+    /// It used to be decided by tmux as it ran (`if-shell -F … 'resize-pane
+    /// -Z'`). tmux answers an `if-shell` that runs its command with two reply
+    /// blocks — its own, then the command's (3.6a, a private server) — and
+    /// replies are matched to callbacks in send order: the command sent right
+    /// after the zoom got the zoom's empty block, and its own reply went to
+    /// the next one (round thirty-four: over mosh, the sidecar's renderer
+    /// lookup at the attach, which then never found the renderer).
+    static func zoomCommand(_ windowId: String) -> String {
+        "resize-pane -Z -t \(windowId)"
+    }
+
+    /// Makes the person's first session while nothing is attached, with the
+    /// name they gave (nil: tmux's own) — set by the hub, which can reach
+    /// the server outside control mode (B228). Moshpit still makes no
+    /// session on its own: only ``newSession(named:)`` calls it.
+    @ObservationIgnored var createsFirstSession: ((String?) -> Void)?
+
+    /// A notice that a session the person asked for couldn't be made — the
+    /// hub's word on a first session (``createsFirstSession``).
+    func noteSessionNotCreated(_ detail: String) {
+        flashNotice(detail.isEmpty ? "new-session failed" : detail)
     }
 
     /// Create (and switch to) a new detached-name session.
@@ -2069,7 +2858,26 @@ final class TmuxSessionController: MultiplexerControlling {
         // Quote the name (spaces would split the command — "my project" used to
         // fail silently) and print the new id so we can land ON the session:
         // "Create" that leaves you where you were reads as "did nothing".
-        let namePart = trimmed.isEmpty ? "" : " -s \(tmuxQuote(trimmed))"
+        if let refusal = MultiplexerName.refusal(trimmed) {
+            flashNotice(refusal)
+            return
+        }
+        // Nothing attached — a server with no session yet, or none left:
+        // control mode isn't live, and a command written now would be typed
+        // into the shell (`enqueue` drops it). It used to be dropped right
+        // there, and the person's "New session" did nothing (B228). The one
+        // who can make a session outside control mode makes it — the hub:
+        // an exec on mosh's sidecar, `tmux -CC new` in the SSH shell — and
+        // the attach that follows lands on it. Still only when asked.
+        guard snapshot.isAttached else {
+            if let createsFirstSession {
+                createsFirstSession(trimmed.isEmpty ? nil : trimmed)
+            } else {
+                Log.ssh.info("tmux: no session can be made before the attach here")
+            }
+            return
+        }
+        let namePart = trimmed.isEmpty ? "" : " -s \(Self.tmuxNameArgument(trimmed))"
         sendCommand("new-session -d -P -F '#{session_id}'\(namePart)") { [weak self] response in
             guard let self else { return }
             if response.isError {
@@ -2077,40 +2885,83 @@ final class TmuxSessionController: MultiplexerControlling {
                 return
             }
             // `isValidTmuxId` (not just `hasPrefix("$")`) so a malformed reply
-            // can't slip a non-numeric tail into `set-option -t \(id)` below.
+            // can't slip a non-numeric tail into the `-t \(id)` targets below.
             guard let id = response.lines.first?.trimmingCharacters(in: .whitespaces),
                   Self.isValidTmuxId(id) else { return }
             if !self.rendersOutput, !trimmed.isEmpty {
                 // mosh renders tmux's full TUI; a session Moshpit just created
                 // adopts the native look (breadcrumb navigation, no status
-                // bar). User-created sessions are never styled.
-                self.send(rawCommand: "set-option -t \(id) status off")
-                self.ownedSessionNames.insert(trimmed)
+                // line while the phone is on it — the switch below turns it
+                // off, see syncStatusLine). User-created sessions are never
+                // styled.
+                self.ownedSessionIds.insert(id)
+                // B86: on the session itself, so a sidecar after this one —
+                // the app killed and opened again — still knows.
+                self.send(rawCommand: "set-option -t '\(id)' \(Self.ownedOption) 1")
             }
             self.selectSession(id)
         }
         sendCommand("list-sessions -F '#{session_id} #{session_attached} #{session_name}'") { [weak self] response in
-            self?.parseListSessions(response.lines)
+            guard let self, let rows = self.listing(response, of: "list-sessions") else { return }
+            self.parseListSessions(rows)
         }
     }
 
     // MARK: - Rename / kill (Home session-tree long-press)
 
-    /// Single-quote a tmux argument so names with spaces or shell-special
-    /// characters survive the control channel. Embedded single quotes are
-    /// closed, escaped, and reopened (`'…'\''…'`).
-    private func tmuxQuote(_ value: String) -> String {
-        "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
+    /// A session or window name as one word of a control-mode line, for the
+    /// commands that take one (`new-session -s`, `new-window -n`,
+    /// `rename-session`, `rename-window`) — exactly the name, as tmux 3.6a
+    /// stores it (B139, checked live on a private server):
+    ///
+    /// * a command-string literal (``tmuxCommandStringLiteral(_:)``): no line
+    ///   break can reach the line, and with it no second command — the
+    ///   single-quoted word this was let a name holding one end the command
+    ///   and run the rest (`run-shell` included) as a command of its own;
+    /// * every `#` doubled: tmux expands the name as a format before it keeps
+    ///   it, so `#{session_name}` was stored as the session's name and
+    ///   `##` comes back as `#`. By scalar, so a `#` that a following mark
+    ///   joins into one Character (a keycap) is doubled too.
+    ///
+    /// A positional name goes after `--`, or one starting with `-` is read as
+    /// a flag (`rename-window -t @1 '-x'`: "unknown flag -x").
+    nonisolated static func tmuxNameArgument(_ name: String) -> String {
+        var doubled = String.UnicodeScalarView()
+        for scalar in name.unicodeScalars {
+            doubled.append(scalar)
+            if scalar == "#" { doubled.append(scalar) }
+        }
+        return tmuxCommandStringLiteral(String(doubled))
+    }
+
+    /// A session name as one word of a SHELL command line, for the commands
+    /// that make a session outside control mode (`tmux -CC new -s`, `tmux
+    /// new-session -d -s` over an exec): single-quoted, every `#` doubled —
+    /// tmux expands the name as a format there too (tmux 3.6a, private
+    /// socket: `-s 'a#{session_id}b'` is stored as `ab`, `c##d` as `c#d`).
+    nonisolated static func tmuxNameShellWord(_ name: String) -> String {
+        var doubled = String.UnicodeScalarView()
+        for scalar in name.unicodeScalars {
+            doubled.append(scalar)
+            if scalar == "#" { doubled.append(scalar) }
+        }
+        return Shell.quote(String(doubled))
     }
 
     /// Rename a session, then re-list so the snapshot picks up the new name.
     /// No-op on an empty name (tmux would reject it anyway).
     func renameSession(_ sessionId: String, to name: String) {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-        sendSurfacingErrors("rename-session -t \(sessionId) \(tmuxQuote(trimmed))", verb: "rename")
+        // The target by its id, spliced bare: an id or nothing.
+        guard !trimmed.isEmpty, Self.isValidTmuxId(sessionId) else { return }
+        if let refusal = MultiplexerName.refusal(trimmed) {
+            flashNotice(refusal)
+            return
+        }
+        sendSurfacingErrors("rename-session -t \(sessionId) -- \(Self.tmuxNameArgument(trimmed))", verb: "rename")
         sendCommand("list-sessions -F '#{session_id} #{session_attached} #{session_name}'") { [weak self] response in
-            self?.parseListSessions(response.lines)
+            guard let self, let rows = self.listing(response, of: "list-sessions") else { return }
+            self.parseListSessions(rows)
         }
     }
 
@@ -2118,6 +2969,7 @@ final class TmuxSessionController: MultiplexerControlling {
     /// server exits, which surfaces as the control channel closing); we don't
     /// block it here so the user keeps full control of their own sessions.
     func killSession(_ sessionId: String) {
+        guard Self.isValidTmuxId(sessionId) else { return }
         sendSurfacingErrors("kill-session -t \(sessionId)", verb: "kill session")
         // Prune locally first: if this was the last session the server exits and
         // the follow-up list-sessions never returns, so the tree must update
@@ -2134,10 +2986,11 @@ final class TmuxSessionController: MultiplexerControlling {
             }
         }
         if snapshot.activeSessionId == sessionId {
-            snapshot.activeSessionId = snapshot.sessions.keys.sorted().first
+            snapshot.activeSessionId = snapshot.sessions.keys.min(by: TmuxSnapshot.idPrecedes)
         }
         sendCommand("list-sessions -F '#{session_id} #{session_attached} #{session_name}'") { [weak self] response in
-            self?.parseListSessions(response.lines)
+            guard let self, let rows = self.listing(response, of: "list-sessions") else { return }
+            self.parseListSessions(rows)
         }
         // Re-list windows/panes for every surviving session so the tree is
         // correct even when tmux switched our client to another session.
@@ -2149,14 +3002,19 @@ final class TmuxSessionController: MultiplexerControlling {
     /// SSH-exec sidecar path that has no live notifications.)
     func renameWindow(_ windowId: String, to name: String) {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-        sendSurfacingErrors("rename-window -t \(windowId) \(tmuxQuote(trimmed))", verb: "rename")
+        guard !trimmed.isEmpty, Self.isValidTmuxId(windowId) else { return }
+        if let refusal = MultiplexerName.refusal(trimmed) {
+            flashNotice(refusal)
+            return
+        }
+        sendSurfacingErrors("rename-window -t \(windowId) -- \(Self.tmuxNameArgument(trimmed))", verb: "rename")
         refreshWindowsAndPanes()
     }
 
     /// Kill a window and re-discover. Local snapshot is also pruned by
     /// `handleWindowClose` on the `%window-close` notification.
     func killWindow(_ windowId: String) {
+        guard Self.isValidTmuxId(windowId) else { return }
         sendSurfacingErrors("kill-window -t \(windowId)", verb: "kill window")
         refreshWindowsAndPanes()
     }
@@ -2164,6 +3022,7 @@ final class TmuxSessionController: MultiplexerControlling {
     /// Kill a single pane and re-discover. Panes have no user-facing name in
     /// tmux, so there is no rename counterpart.
     func killPane(_ paneId: String) {
+        guard Self.isValidTmuxId(paneId) else { return }
         sendSurfacingErrors("kill-pane -t \(paneId)", verb: "kill pane")
         refreshWindowsAndPanes()
     }
@@ -2177,7 +3036,8 @@ final class TmuxSessionController: MultiplexerControlling {
     private func refreshWindowsAndPanes(isFreshAttach: Bool = false,
                                         then completion: (() -> Void)? = nil) {
         sendCommand("list-windows -a -F '#{session_id} #{window_id} #{window_index} #{window_layout} #{window_active} #{window_panes} #{window_name}'") { [weak self] response in
-            self?.parseListWindows(response.lines)
+            guard let self, let rows = self.listing(response, of: "list-windows") else { return }
+            self.parseListWindows(rows)
         }
         // `alternate_on` and `pane_in_mode` ride along here, ahead of the
         // command (which is last because it can contain spaces). They used to be
@@ -2188,9 +3048,11 @@ final class TmuxSessionController: MultiplexerControlling {
         // two more format fields on it cost nothing.
         sendCommand("list-panes -a -F \(Self.paneDiscoveryFormat)") { [weak self] response in
             guard let self else { return }
-            self.parseListPanes(response.lines)
-            self.ensureTerminalsForAllPanes(isFreshAttach: isFreshAttach)
-            self.applyPendingRestoreIfReady()
+            if let rows = self.listing(response, of: "list-panes") {
+                self.parseListPanes(rows)
+                self.ensureTerminalsForAllPanes(isFreshAttach: isFreshAttach)
+                self.applyPendingRestoreIfReady()
+            }
             completion?()
         }
     }
@@ -2286,12 +3148,51 @@ final class TmuxSessionController: MultiplexerControlling {
     /// `await` between them, so on this controller's single write chain no
     /// other command can land in between and no other call can observe the
     /// buffer mid-use.
+    ///
+    /// tmux brackets the buffer as it is: a paste marker inside it reaches
+    /// the pane untouched, and an `ESC[201~` there ends the paste early — the
+    /// line after it ran in zsh (tmux 3.6a, private socket). So the markers
+    /// come out of the text first (``BracketedPaste/sanitized(_:)``).
     func sendPaste(_ text: String, paneId: String) {
+        let text = BracketedPaste.sanitized(text)
         guard !text.isEmpty, Self.isValidTmuxId(paneId) else { return }
         let literal = Self.tmuxCommandStringLiteral(text)
         send(rawCommand: "set-buffer -b moshpit-paste -- \(literal)")
         send(rawCommand: "paste-buffer -p -b moshpit-paste -d -t \(paneId)")
         if snapshot.panes[paneId]?.windowId == snapshot.activeWindowId { noteUserInteraction() }
+    }
+
+    /// ``sendPaste(_:paneId:)``, answered: true once tmux has pasted `text`
+    /// into `paneId`. False when nothing went — not attached yet (commands
+    /// before the attach are dropped, see `enqueue`), a pane tmux doesn't
+    /// know, an error, the channel closing first, or no answer within
+    /// `timeout`. For a sender that keeps the text until it is delivered: the
+    /// share queue deleted its entry on a paste dropped like that (B172).
+    func pasteConfirmed(_ text: String, paneId: String, timeout: TimeInterval = 8) async -> Bool {
+        let text = BracketedPaste.sanitized(text)
+        guard !text.isEmpty, Self.isValidTmuxId(paneId), snapshot.isAttached else { return false }
+        let literal = Self.tmuxCommandStringLiteral(text)
+        let answer: Bool? = await withTimeoutValue(timeout) { [weak self] in
+            await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
+                Task { @MainActor [weak self] in
+                    guard let self, self.snapshot.isAttached else {
+                        continuation.resume(returning: false)
+                        return
+                    }
+                    // The same two commands as sendPaste, back to back on the
+                    // one write chain; the paste's own reply is the answer (a
+                    // buffer that failed to set leaves nothing to paste).
+                    self.send(rawCommand: "set-buffer -b moshpit-paste -- \(literal)")
+                    self.sendCommand("paste-buffer -p -b moshpit-paste -d -t \(paneId)", waits: true) { response in
+                        continuation.resume(returning: !response.isError)
+                    }
+                    if self.snapshot.panes[paneId]?.windowId == self.snapshot.activeWindowId {
+                        self.noteUserInteraction()
+                    }
+                }
+            }
+        }
+        return answer ?? false
     }
 
     /// Tell tmux the client viewport changed size. Driven by the container
@@ -2531,7 +3432,7 @@ final class TmuxSessionController: MultiplexerControlling {
         } else {
             sendCommand("display-message -p -t \(paneId) '#{alternate_on} #{pane_in_mode}'") { [weak self] resp in
                 guard let self else { return }
-                let fields = resp.lines.first?.split(separator: " ").map(String.init) ?? []
+                let fields = resp.lines.first?.tmuxFields(separator: " ") ?? []
                 let state = ScreenState(isAlternate: fields.first == "1",
                                         isInCopyMode: fields.count >= 2 && fields[1] == "1")
                 self.paneScreenState[paneId] = state
@@ -2814,7 +3715,7 @@ final class TmuxSessionController: MultiplexerControlling {
             // between ever drawn.
             self.releaseDeferredResize(paneId)
             self.paneCoordinators[paneId]?.feed(data: Data(text.utf8))
-            // The frame is on screen — reveal the terminal if a keyboard-freeze
+            // Once the frame is on screen — reveal the terminal if a keyboard-freeze
             // or pane-switch veil is covering it, UNLESS this capture is known
             // to race the app's own redraw (reveal == false): the buffer is
             // corrected either way, but showing THIS particular frame would
@@ -2822,7 +3723,7 @@ final class TmuxSessionController: MultiplexerControlling {
             // duplicated or blank region) for the beat until the next capture
             // corrects it again — worse than staying covered a little longer.
             if reveal {
-                self.paneCoordinators[paneId]?.reveal()
+                self.paneCoordinators[paneId]?.revealWhenShown()
             }
         }
         sendCommand("display-message -p -t \(paneId) '#{cursor_x} #{cursor_y}'") { [weak self] resp in
@@ -2830,10 +3731,14 @@ final class TmuxSessionController: MultiplexerControlling {
             // The cursor is the SECOND half of the pair, so this is where the
             // resync is actually over.
             defer { self.finishResync(paneId) }
-            let parts = resp.lines.first?.split(separator: " ").compactMap { Int($0) } ?? []
+            let parts = resp.lines.first?.tmuxFields(separator: " ").compactMap { Int($0) } ?? []
             let (col, row) = parts.count == 2 ? (parts[0], parts[1]) : (0, 0)
-            // CUP is 1-based; cursor_x/y are 0-based.
-            self.paneCoordinators[paneId]?.feed(data: Data("\u{1b}[\(row + 1);\(col + 1)H".utf8))
+            // CUP is 1-based; cursor_x/y are 0-based. In 128 bits: a reply the
+            // FIFO paired with the wrong command can carry any number, and
+            // `row + 1` on Int.max trapped (B142) — as moshpit-tmux formats it
+            // (Fix (cursor-overflow)). SwiftTerm's parser bounds the digits.
+            self.paneCoordinators[paneId]?.feed(
+                data: Data("\u{1b}[\(Int128(row) + 1);\(Int128(col) + 1)H".utf8))
         }
     }
 
@@ -2874,7 +3779,10 @@ final class TmuxSessionController: MultiplexerControlling {
     func pollAgentHooks() {
         guard snapshot.isAttached else { return }
         sendCommand("list-panes -a -F \(Self.agentHookFormat)") { [weak self] response in
-            self?.parseAgentHooks(response.lines)
+            // Refused, it says nothing about the stamps: the monitor keeps
+            // the last ones rather than reading every pane as gone.
+            guard let self, let rows = self.listing(response, of: "list-panes (agent stamps)") else { return }
+            self.parseAgentHooks(rows)
         }
     }
 
@@ -2888,12 +3796,14 @@ final class TmuxSessionController: MultiplexerControlling {
         var parsed: [String: AgentHook] = [:]
         for line in lines {
             // omittingEmptySubsequences:false keeps empty fields in position;
-            // maxSplits:4 preserves any literal `|` inside a user-set title.
-            let parts = line.split(separator: "|", maxSplits: 5,
-                                   omittingEmptySubsequences: false)
+            // maxSplits:5 preserves any literal `|` inside a user-set title.
+            // Cut on bytes: an agent, command or title that starts with a
+            // combining mark must not swallow the `|` in front of it.
+            let parts = line.tmuxFields(separator: "|", maxSplits: 5,
+                                        omittingEmptySubsequences: false)
             guard parts.count == 6, !parts[0].isEmpty else { continue }
-            let paneId = String(parts[0])
-            let stateRaw = String(parts[1])
+            let paneId = parts[0]
+            let stateRaw = parts[1]
             // Only the three hook-emitted states are valid; anything else
             // (empty, or a garbage value) means "no precise hook data".
             let state: String?
@@ -2901,12 +3811,12 @@ final class TmuxSessionController: MultiplexerControlling {
             case "working", "attention", "done": state = stateRaw
             default: state = nil
             }
-            let agent = parts[2].isEmpty ? nil : String(parts[2])
+            let agent = parts[2].isEmpty ? nil : parts[2]
             // since may be empty even with a state if a stamp partially failed;
             // garbage parses to nil too. Callers substitute Date() for nil.
             let since = TimeInterval(parts[3]).map { Date(timeIntervalSince1970: $0) }
-            let command = parts[4].isEmpty ? nil : String(parts[4])
-            let title = parts[5].isEmpty ? nil : String(parts[5])
+            let command = parts[4].isEmpty ? nil : parts[4]
+            let title = parts[5].isEmpty ? nil : parts[5]
             parsed[paneId] = AgentHook(state: state, agent: agent, since: since,
                                        command: command, title: title)
         }
@@ -2934,12 +3844,20 @@ final class TmuxSessionController: MultiplexerControlling {
         case windowClose(String)
         case windowRenamed(windowId: String, name: String)
         case sessionChanged(sessionId: String, name: String)
+        case sessionRenamed(sessionId: String, name: String)
         case sessionWindowChanged(sessionId: String, windowId: String)
+        case sessionsChanged
+        case unlinkedWindowAdd(String)
+        case unlinkedWindowClose(String)
+        case unlinkedWindowRenamed(windowId: String, name: String)
+        case clientSessionChanged(client: String, sessionId: String, name: String)
         case activePaneChanged(windowId: String, paneId: String)
         case pause(String)
         case continued(String)
+        case clientDetached(String)
         case exit
         case commandResponse(TmuxCommandResponse)
+        case parserFailed(String)
     }
 
     /// Single consumer of ``ControlEvent``s; cancelled on detach/re-attach.
@@ -2958,7 +3876,13 @@ final class TmuxSessionController: MultiplexerControlling {
             onWindowClose: { emit.yield(.windowClose($0)) },
             onWindowRenamed: { emit.yield(.windowRenamed(windowId: $0, name: $1)) },
             onSessionChanged: { emit.yield(.sessionChanged(sessionId: $0, name: $1)) },
+            onSessionRenamed: { emit.yield(.sessionRenamed(sessionId: $0, name: $1)) },
             onSessionWindowChanged: { emit.yield(.sessionWindowChanged(sessionId: $0, windowId: $1)) },
+            onSessionsChanged: { emit.yield(.sessionsChanged) },
+            onUnlinkedWindowAdd: { emit.yield(.unlinkedWindowAdd($0)) },
+            onUnlinkedWindowClose: { emit.yield(.unlinkedWindowClose($0)) },
+            onUnlinkedWindowRenamed: { emit.yield(.unlinkedWindowRenamed(windowId: $0, name: $1)) },
+            onClientSessionChanged: { emit.yield(.clientSessionChanged(client: $0, sessionId: $1, name: $2)) },
             onActivePaneChanged: { emit.yield(.activePaneChanged(windowId: $0, paneId: $1)) },
             onPause: { emit.yield(.pause($0)) },
             onContinue: { emit.yield(.continued($0)) },
@@ -2967,11 +3891,13 @@ final class TmuxSessionController: MultiplexerControlling {
             // an unrelated one (e.g. a desktop client on another session).
             // Acting on it dropped us to the empty state mid-navigation when
             // any other client detached. OUR control session ending arrives
-            // as `%exit` (below) or the byte stream closing (detach()).
-            onClientDetached: { _ in },
+            // as `%exit` (below) or the byte stream closing (detach()). What
+            // it can say is that the phone's mosh renderer is gone.
+            onClientDetached: { emit.yield(.clientDetached($0)) },
             onExit: { _ in emit.yield(.exit) },
             onCommandResponse: { emit.yield(.commandResponse($0)) },
-            onProtocolError: nil
+            onProtocolError: nil,
+            onParserFailure: { emit.yield(.parserFailed($0)) }
         )
         eventPump = Task { @MainActor [weak self] in
             for await event in events {
@@ -3009,12 +3935,19 @@ final class TmuxSessionController: MultiplexerControlling {
         case .sessionChanged(let sessionId, let name):
             guard Self.isValidTmuxId(sessionId) else { return }
             handleSessionChanged(sessionId, name: name)
+        case .sessionRenamed(let sessionId, let name):
+            guard Self.isValidTmuxId(sessionId) else { return }
+            handleSessionRenamed(sessionId, name: name)
         case .sessionWindowChanged(let sessionId, let windowId):
             guard Self.isValidTmuxId(sessionId), Self.isValidTmuxId(windowId) else { return }
             // tmux broadcasts this for EVERY session on the server, including
             // ones other clients are attached to — only follow window changes
             // of OUR session.
             guard sessionId == snapshot.activeSessionId else { return }
+            // Remembered even when not followed below: killing the window on
+            // screen, tmux says where its current window went BEFORE it says
+            // the window closed, and that is where handleWindowClose lands.
+            serverCurrentWindow = (sessionId, windowId)
             // The phone's viewed window is LOCAL state. tmux's current window
             // is shared across every client of the session, so following this
             // event unconditionally let a desktop client (or any server-side
@@ -3026,7 +3959,13 @@ final class TmuxSessionController: MultiplexerControlling {
             let current = snapshot.activeWindowId
             let currentIsOurs =
                 current.flatMap { snapshot.windows[$0] }?.sessionId == snapshot.activeSessionId
-            if currentIsOurs, current != windowId { return }
+            // B80: over mosh the screen IS tmux's current window — the
+            // renderer is a regular client of the session, whose current
+            // window all its clients share — so the sidecar always follows
+            // it. Keeping the SSH rule left the breadcrumb (and the next pin
+            // and zoom) on the old window after `prefix n` in the mosh TUI
+            // or a desktop's select-window. (The Rust port's rule.)
+            if rendersOutput, currentIsOurs, current != windowId { return }
             if current != windowId {
                 Log.island.info("land: adopt server window \(windowId, privacy: .public) (was \(current ?? "-", privacy: .public))")
             }
@@ -3034,6 +3973,40 @@ final class TmuxSessionController: MultiplexerControlling {
             // Window changed: land immersive — zoom the new window's active
             // pane if it has splits.
             ensureImmersiveZoom()
+        case .sessionsChanged:
+            // A session created or destroyed anywhere on the server: the
+            // sheet and the Home tree list every session. Only a manual
+            // refresh used to show it.
+            relistSessions()
+        case .unlinkedWindowAdd(let windowId):
+            guard Self.isValidTmuxId(windowId) else { return }
+            // A window linked into a session that isn't ours — created
+            // there, or the first window of a new session. Its session is
+            // not known from the line, so no placeholder: the listing says.
+            relistWindows()
+        case .unlinkedWindowClose(let windowId):
+            guard Self.isValidTmuxId(windowId) else { return }
+            // tmux 3.6a sends this, not %window-close, for EVERY window
+            // closed — one killed in our own session included, since the
+            // window is already unlinked when the notification goes out
+            // (crates/tmux captures/layout.bin, `kill-window`). Same
+            // handling: the window and its panes go, and if it was on
+            // screen the phone moves on (see handleWindowClose).
+            handleWindowClose(windowId)
+        case .unlinkedWindowRenamed(let windowId, let name):
+            guard Self.isValidTmuxId(windowId) else { return }
+            handleWindowRenamed(windowId, name: name)
+        case .clientSessionChanged(let client, let sessionId, _):
+            guard Self.isValidTmuxId(sessionId) else { return }
+            // Another client attached or switched: the attached flags the
+            // session sheet shows changed.
+            relistSessions()
+            // The phone's renderer moving by itself (`prefix s` in the mosh
+            // TUI) takes the sidecar along — once its pid confirms it is the
+            // renderer, not a later client on the same tty.
+            if !rendersOutput, let renderer = rendererClient, client == renderer.name {
+                locateRenderer()
+            }
         case .activePaneChanged(let windowId, let paneId):
             guard Self.isValidTmuxId(windowId), Self.isValidTmuxId(paneId) else { return }
             // Same server-wide broadcast caveat: ignore pane focus changes in
@@ -3064,10 +4037,30 @@ final class TmuxSessionController: MultiplexerControlling {
             // paused; %continue only means "streaming again", not "caught
             // up". Repaint from tmux's model to close the gap.
             resyncPane(paneId)
+        case .clientDetached(let name):
+            // Some client left the server — the mosh sidecar cares only
+            // whether it was the phone's renderer: then there is no window
+            // left that it may size (see rendererSessionId).
+            if !rendersOutput, let renderer = rendererClient, name == renderer.name,
+               rendererSessionId != nil {
+                Log.island.info("land: sidecar renderer \(name, privacy: .public) detached")
+                rendererSessionId = nil
+            }
         case .exit:
             snapshot.isAttached = false
+            closePendingCommands(reason: "exit")
         case .commandResponse(let response):
             handleCommandResponse(response)
+        case .parserFailed(let reason):
+            // The Rust parser failed (TmuxRustParser.swift) and the client
+            // went on with the Swift one, but what the Rust parser dropped
+            // may include the end of a reply a queued command waits for: no
+            // later reply could be paired right. Start over, as for a dead
+            // channel; the new client gets the Swift parser.
+            Log.ssh.error("tmux: \(reason, privacy: .public)")
+            ccTapLine("PARSER-FAILED \(reason)")
+            closePendingCommands(reason: "parser-failed")
+            reportChannelDead(reason: "parser-failed")
         }
     }
 
@@ -3086,6 +4079,7 @@ final class TmuxSessionController: MultiplexerControlling {
             // without this the pump used to just return and the controller
             // kept queueing commands into the void forever.
             guard !Task.isCancelled, let self else { return }
+            await self.closePendingCommands(reason: "stream-ended")
             await self.reportChannelDead(reason: "stream-ended")
         }
         startChannelWatchdog()
@@ -3185,34 +4179,60 @@ final class TmuxSessionController: MultiplexerControlling {
         if attachedAt == nil { attachedAt = Date() }
 
         sendCommand("list-sessions -F '#{session_id} #{session_attached} #{session_name}'") { [weak self] response in
-            self?.parseListSessions(response.lines)
+            guard let self, let rows = self.listing(response, of: "list-sessions") else { return }
+            self.parseListSessions(rows)
         }
         sendCommand("list-windows -a -F '#{session_id} #{window_id} #{window_index} #{window_layout} #{window_active} #{window_panes} #{window_name}'") { [weak self] response in
-            self?.parseListWindows(response.lines)
+            guard let self, let rows = self.listing(response, of: "list-windows") else { return }
+            self.parseListWindows(rows)
         }
         sendCommand("list-panes -a -F \(Self.paneDiscoveryFormat)") { [weak self] response in
-            guard let self else { return }
-            self.parseListPanes(response.lines)
+            guard let self, let rows = self.listing(response, of: "list-panes") else { return }
+            self.parseListPanes(rows)
             self.ensureTerminalsForAllPanes(isFreshAttach: true)
             self.applyPendingRestoreIfReady()
         }
+        // B86: which sessions Moshpit made, from the server — after the
+        // discovery: an attach's first three commands are the discovery's,
+        // whoever answers them. crates/tmux's `send_initial_discovery`.
+        if !rendersOutput { readOwnedSessions() }
     }
 
-    func parseListSessions(_ lines: [String]) {
+    /// The rows of a listing's reply — or nil when tmux refused it.
+    ///
+    /// A `list-*` answered with `%error` carries tmux's complaint, not rows,
+    /// and every listing used to parse it as an answer all the same: the
+    /// complaint is no row, so the sessions, windows or panes it was asked
+    /// for were replaced by none — the tree, the breadcrumb and the panes'
+    /// terminals gone until the next listing came back whole. A refusal says
+    /// nothing about what the server holds; the snapshot keeps what it had.
+    private func listing(_ response: TmuxCommandResponse, of what: String) -> [String]? {
+        guard response.isError else { return response.lines }
+        Log.ssh.notice("tmux: \(what, privacy: .public) refused (\(response.lines.first ?? "", privacy: .public)) — keeping what was listed before")
+        return nil
+    }
+
+    /// `locatingRenderer`: false where the caller has just asked where the
+    /// mosh renderer is (``handleSessionChanged``), so one listing does.
+    func parseListSessions(_ lines: [String], locatingRenderer: Bool = true) {
         var newSessions: [String: SessionInfo] = [:]
         var lastAttached: String?
         for line in lines {
             // Format: "#{session_id} #{session_attached} #{session_name}" —
-            // the name comes LAST because it may contain spaces.
-            let parts = line.split(separator: " ", maxSplits: 2)
+            // the name comes LAST because it may contain spaces. Cut on bytes
+            // (see `tmuxFields`): a name starting with a combining mark used
+            // to fuse with the space before it and the session went missing.
+            // Unlike a window's, a session's name is never empty (tmux 3.6a
+            // refuses `-s ''` and `rename-session ''`: "invalid session").
+            let parts = line.tmuxFields(separator: " ", maxSplits: 2)
             guard parts.count >= 3 else { continue }
-            let id = String(parts[0])
+            let id = parts[0]
             // Every id in `snapshot` ultimately gets spliced unquoted into a
             // `-t <id>` control-mode argument elsewhere in this file — reject
             // a malformed reply here rather than let it in.
             guard Self.isValidTmuxId(id) else { continue }
             let isAttached = parts[1] != "0"
-            let name = String(parts[2])
+            let name = parts[2]
             newSessions[id] = SessionInfo(id: id, name: name, isAttached: isAttached)
             if isAttached { lastAttached = id }
         }
@@ -3229,12 +4249,16 @@ final class TmuxSessionController: MultiplexerControlling {
             // session we no longer have — killed, or none known yet — falls
             // back to a guess.
             if let current = snapshot.activeSessionId, newSessions[current] != nil { return }
-            snapshot.activeSessionId = lastAttached ?? newSessions.keys.sorted().first
-        } else if let lastAttached {
+            snapshot.activeSessionId = lastAttached ?? newSessions.keys.min(by: TmuxSnapshot.idPrecedes)
+        } else {
             // Control-plane sidecar: the session the person sees is the one
-            // the mosh-rendered client sits on, and this invisible client
-            // learns of its switches only through the attached flag.
-            snapshot.activeSessionId = lastAttached
+            // the phone's mosh renderer sits on, and only that client's own
+            // row says which (see rendererSessionId). The attached flag
+            // counts every client — the desktop's, this sidecar's own — and
+            // following the last one set put the sidecar on whichever session
+            // sorted last, the desktop's more often than not. Unknown
+            // renderer: follow nothing.
+            if locatingRenderer { locateRenderer() }
         }
     }
 
@@ -3245,18 +4269,27 @@ final class TmuxSessionController: MultiplexerControlling {
             // Format: "#{session_id} #{window_id} #{window_index}
             // #{window_layout} #{window_active} #{window_panes} #{window_name}"
             // — name LAST because programs rename windows to titles with spaces.
-            let parts = line.split(separator: " ", maxSplits: 6)
-            guard parts.count >= 7 else { continue }
-            let sessionId = String(parts[0])
-            let id = String(parts[1])
+            // Cut on bytes, like parseListSessions, and KEEP empty fields: a
+            // window's name can be empty (`rename-window ''`, or a program's
+            // empty `ESC k ESC \` title under allow-rename on and
+            // automatic-rename off), and tmux then ends the row on the
+            // separator — `$0 @11 4 5960,80x24,0,0,11 0 1 ` (3.6a).
+            // Dropped as empty, the name left the row a field short: the
+            // window was skipped, and every pane in it lost its terminal with
+            // it. No other field is ever empty, so a row with one empty is
+            // not tmux's and is still skipped.
+            let parts = line.tmuxFields(separator: " ", maxSplits: 6, omittingEmptySubsequences: false)
+            guard parts.count == 7, !parts.dropLast().contains(where: \.isEmpty) else { continue }
+            let sessionId = parts[0]
+            let id = parts[1]
             // See parseListSessions — reject ids that don't match tmux's
             // real shape before they can reach a spliced -t argument.
             guard Self.isValidTmuxId(sessionId), Self.isValidTmuxId(id) else { continue }
             let index = Int(parts[2]) ?? 0
-            let layout = String(parts[3])
+            let layout = parts[3]
             let isActive = parts[4] == "1"
             let paneCount = Int(parts[5]) ?? 1
-            let name = String(parts[6])
+            let name = parts[6]
             newWindows[id] = WindowInfo(
                 id: id,
                 sessionId: sessionId,
@@ -3279,7 +4312,9 @@ final class TmuxSessionController: MultiplexerControlling {
         let current = snapshot.activeWindowId
         let currentIsOurs =
             current.flatMap { newWindows[$0] }?.sessionId == snapshot.activeSessionId
-        if !currentIsOurs, let tmuxActiveWindowId {
+        // Over mosh the screen is tmux's current window: always (B80, see
+        // `.sessionWindowChanged`).
+        if !currentIsOurs || !rendersOutput, let tmuxActiveWindowId {
             Log.island.info("land: discovery adopts window \(tmuxActiveWindowId, privacy: .public) (was \(current ?? "-", privacy: .public))")
             snapshot.activeWindowId = tmuxActiveWindowId
         }
@@ -3298,11 +4333,14 @@ final class TmuxSessionController: MultiplexerControlling {
             // Format: "#{pane_id} #{window_id} #{pane_index} #{pane_width}
             // #{pane_height} #{pane_active} #{alternate_on} #{pane_in_mode}
             // #{pane_current_command}" — command LAST since it may contain
-            // spaces.
-            let parts = line.split(separator: " ", maxSplits: 8)
-            guard parts.count >= 9 else { continue }
-            let id = String(parts[0])
-            let windowId = String(parts[1])
+            // spaces. Cut on bytes and keep empty fields, like
+            // parseListWindows: the command reads empty for a program tmux
+            // cannot name — a binary called `--` lists as
+            // `%3 @1 1 80 11 0 0 0 ` (3.6a) — and that pane used to vanish.
+            let parts = line.tmuxFields(separator: " ", maxSplits: 8, omittingEmptySubsequences: false)
+            guard parts.count == 9, !parts.dropLast().contains(where: \.isEmpty) else { continue }
+            let id = parts[0]
+            let windowId = parts[1]
             // See parseListSessions — reject ids that don't match tmux's
             // real shape before they can reach a spliced -t argument.
             guard Self.isValidTmuxId(id), Self.isValidTmuxId(windowId) else { continue }
@@ -3312,7 +4350,7 @@ final class TmuxSessionController: MultiplexerControlling {
             let isActive = parts[5] == "1"
             paneScreenState[id] = ScreenState(isAlternate: parts[6] == "1",
                                               isInCopyMode: parts[7] == "1")
-            let command = String(parts[8])
+            let command = parts[8]
             newPanes[id] = PaneInfo(
                 id: id,
                 windowId: windowId,
@@ -3513,8 +4551,10 @@ final class TmuxSessionController: MultiplexerControlling {
     private func handleLayoutChange(windowId: String, layout: String, zoomed: Bool) {
         let panes = Self.paneCount(fromLayout: layout)
         var previousPanes: Int?
+        var previousLayout: String?
         if var window = snapshot.windows[windowId] {
             previousPanes = Self.paneCount(fromLayout: window.layout) ?? window.paneCount
+            previousLayout = window.layout
             window.layout = layout
             window.isZoomed = zoomed
             if let panes { window.paneCount = panes }
@@ -3524,6 +4564,16 @@ final class TmuxSessionController: MultiplexerControlling {
             snapshot.windows[windowId] = WindowInfo(
                 id: windowId, sessionId: snapshot.activeSessionId ?? "",
                 layout: layout, paneCount: panes ?? 1, isZoomed: zoomed)
+        }
+        // Our layouts, followed through a resize (round thirty-four): a
+        // window of ours (its record's layout, or one our sizing left it in)
+        // reflowed to another size is still ours — the phone's grid moved
+        // (the keyboard, a rotation) and tmux refitted it. The same size in
+        // another layout is a rearrangement, and not ours.
+        if let previous = previousLayout, let record = pristineLayouts[windowId],
+           Self.windowSize(previous) != Self.windowSize(layout),
+           previous == record.layout || record.ours.contains(previous) {
+            noteOurs(windowId, layout)
         }
         // tmux unzooms a window before it splits it, kills a pane in it or
         // reaps a pane whose process exited — and the phone is then looking
@@ -3775,9 +4825,9 @@ final class TmuxSessionController: MultiplexerControlling {
 
     /// Window width from a tmux layout string ("<checksum>,<W>x<H>,<x>,<y>{…}").
     nonisolated static func windowWidth(fromLayout layout: String) -> Int? {
-        let fields = layout.split(separator: ",")
+        let fields = layout.tmuxFields(separator: ",")
         guard fields.count >= 2 else { return nil }
-        return fields[1].split(separator: "x").first.flatMap { Int($0) }
+        return fields[1].tmuxFields(separator: "x").first.flatMap { Int($0) }
     }
 
     /// How many panes a `#{window_layout}` string describes: one per leaf
@@ -3795,11 +4845,12 @@ final class TmuxSessionController: MultiplexerControlling {
         }
         // Re-list so we pick up name, index, layout, and any new panes.
         sendCommand("list-windows -a -F '#{session_id} #{window_id} #{window_index} #{window_layout} #{window_active} #{window_panes} #{window_name}'") { [weak self] response in
-            self?.parseListWindows(response.lines)
+            guard let self, let rows = self.listing(response, of: "list-windows") else { return }
+            self.parseListWindows(rows)
         }
         sendCommand("list-panes -a -F \(Self.paneDiscoveryFormat)") { [weak self] response in
-            guard let self else { return }
-            self.parseListPanes(response.lines)
+            guard let self, let rows = self.listing(response, of: "list-panes") else { return }
+            self.parseListPanes(rows)
             self.ensureTerminalsForAllPanes()
         }
     }
@@ -3813,13 +4864,31 @@ final class TmuxSessionController: MultiplexerControlling {
             paneCoordinators.removeValue(forKey: paneId)
         }
         guard snapshot.activeWindowId == windowId else { return }
+        if !rendersOutput {
+            // Over mosh the screen is the renderer's: tmux's own current
+            // window, which tmux has already moved (its %session-window-
+            // changed comes BEFORE the close, tmux 3.6a, and was turned away
+            // because the dying window was still ours). Ask which one it is
+            // instead of guessing; the listing adopts it and zooms it.
+            snapshot.activeWindowId = nil
+            snapshot.activePaneId = nil
+            pendingImmersiveZoom = true
+            relistWindows()
+            return
+        }
         // The window we were showing died (killed here or by another client).
         // Land on a surviving window LOCALLY, and point activePaneId at one of
         // its panes right away — leaving it on a dead pane blanks the screen
         // until the next discovery. Deliberately NO select-window: tmux is
         // already moving its own current window, and pushing ours would yank
-        // desktop clients around the same way we refuse to be yanked.
-        let fallback = snapshot.sortedWindows.first?.id
+        // desktop clients around the same way we refuse to be yanked. Where
+        // tmux moved it (said just before the close) is the natural landing
+        // — the window used last — and the first by index otherwise.
+        let serverChoice = serverCurrentWindow.flatMap { remembered in
+            remembered.session == snapshot.activeSessionId && snapshot.windows[remembered.window] != nil
+                ? remembered.window : nil
+        }
+        let fallback = serverChoice ?? snapshot.sortedWindows.first?.id
         snapshot.activeWindowId = fallback
         if let fallback,
            let pane = snapshot.panes.values.first(where: { $0.windowId == fallback && $0.isActive })
@@ -3835,10 +4904,77 @@ final class TmuxSessionController: MultiplexerControlling {
         }
     }
 
+    /// The last `%session-window-changed` for our session — tmux's own
+    /// current window there, followed or not.
+    @ObservationIgnored private var serverCurrentWindow: (session: String, window: String)?
+
     private func handleWindowRenamed(_ windowId: String, name: String) {
         guard var window = snapshot.windows[windowId] else { return }
         window.name = name
         snapshot.windows[windowId] = window
+    }
+
+    /// A re-listing notifications ask for: at most one of a kind on its way.
+    /// One that arrives while it is out asks for exactly one more, sent
+    /// with the reply — it may describe something tmux did after it
+    /// listed. A burst (a session created elsewhere says `%unlinked-window-add`,
+    /// `%sessions-changed` and `%unlinked-window-renamed` together) costs
+    /// one listing, never one each.
+    private struct Relist {
+        var inFlight = false
+        var again = false
+    }
+    @ObservationIgnored private var sessionsRelist = Relist()
+    @ObservationIgnored private var windowsRelist = Relist()
+
+    /// Re-list the sessions for `%sessions-changed` and
+    /// `%client-session-changed`, coalesced (see ``Relist``).
+    private func relistSessions() {
+        guard snapshot.isAttached else { return }
+        guard !sessionsRelist.inFlight else {
+            sessionsRelist.again = true
+            return
+        }
+        sessionsRelist.inFlight = true
+        sendCommand("list-sessions -F '#{session_id} #{session_attached} #{session_name}'") { [weak self] response in
+            guard let self else { return }
+            self.sessionsRelist.inFlight = false
+            if let rows = self.listing(response, of: "list-sessions") { self.parseListSessions(rows) }
+            if self.sessionsRelist.again {
+                self.sessionsRelist.again = false
+                self.relistSessions()
+            }
+        }
+    }
+
+    /// Re-list windows and panes for `%unlinked-window-add`, coalesced.
+    private func relistWindows() {
+        guard snapshot.isAttached else { return }
+        guard !windowsRelist.inFlight else {
+            windowsRelist.again = true
+            return
+        }
+        windowsRelist.inFlight = true
+        refreshWindowsAndPanes { [weak self] in
+            guard let self else { return }
+            self.windowsRelist.inFlight = false
+            if self.windowsRelist.again {
+                self.windowsRelist.again = false
+                self.relistWindows()
+            }
+        }
+    }
+
+    /// Any client may rename any session — the desktop usually. tmux tells
+    /// every control client; without this the name stayed whatever the last
+    /// `list-sessions` said until something re-listed, and the breadcrumb,
+    /// the session sheet and the hub's attach-by-name kept the old one.
+    /// Nothing in this controller matches on a session name — ids do that —
+    /// so a rename is a plain field update.
+    private func handleSessionRenamed(_ sessionId: String, name: String) {
+        guard var session = snapshot.sessions[sessionId] else { return }
+        session.name = name
+        snapshot.sessions[sessionId] = session
     }
 
     private func handleSessionChanged(_ sessionId: String, name: String) {
@@ -3878,7 +5014,11 @@ final class TmuxSessionController: MultiplexerControlling {
         // staying sizeless keeps %output suppressed (mosh renders the
         // screen) and keeps this client out of tmux's window-size math.
         if rendersOutput {
+            // B150: what our size is about to squash, read on both sides of it
+            // (see ``probeLayoutsBeforeSizing``).
+            if isFreshAttach { probeLayoutsBeforeSizing(sessionId) }
             send(rawCommand: "refresh-client -C \(lastClientSize.cols)x\(lastClientSize.rows)")
+            probeLayoutsAfterSizing()
             // Who we are to tmux, and whose the current window already is —
             // both ahead of discovery, so the first pin (in the list-panes
             // callback, FIFO behind these) can defer to a device that is
@@ -3902,15 +5042,30 @@ final class TmuxSessionController: MultiplexerControlling {
                 }
             }
         } else {
-            // mosh renders tmux's full TUI, so hide the redundant status bar
-            // for the whole connection (restored on session switch/disconnect).
-            setStatusSuppressed(true)
+            // mosh renders tmux's full TUI, status line included. It goes only
+            // on a session Moshpit created: `status` is a session option, and
+            // turning it off on the user's own session took the desktop's
+            // status bar with it — for good, if the app never got to say
+            // goodbye. See syncStatusLine.
+            //
+            // That is this client's session; the phone shows the renderer's.
+            // With the renderer known, ask where it is before the re-listing
+            // below (FIFO: a rebuilt sidecar's first window list then already
+            // belongs to the renderer's session) and let that reply decide
+            // the status line. Unknown, this session is all there is.
+            //
+            // B270: what the renderer's attach squashed, read again first.
+            probeLayoutsAfterRenderer()
+            // B86: which sessions Moshpit made, from the server.
+            if isFreshAttach { readOwnedSessions() }
+            locateRenderer()
         }
         // Both modes show ONE full-screen pane: zoom the active pane once the
         // window list lands (initial attach / session switch).
         pendingImmersiveZoom = true
         sendCommand("list-sessions -F '#{session_id} #{session_attached} #{session_name}'") { [weak self] response in
-            self?.parseListSessions(response.lines)
+            guard let self, let rows = self.listing(response, of: "list-sessions") else { return }
+            self.parseListSessions(rows, locatingRenderer: false)
         }
         refreshWindowsAndPanes(isFreshAttach: isFreshAttach)
         // The agent stamps ride FIFO right behind the tree, so the first
@@ -3922,6 +5077,24 @@ final class TmuxSessionController: MultiplexerControlling {
     }
 
     private func handleCommandResponse(_ response: TmuxCommandResponse) {
+        // A block no command of ours asked for (flags 0: an `after-<command>`
+        // hook one of ours fired, the late half of an `if-shell -b`) answers
+        // none of them (B275). With `set-hook -g after-split-window
+        // 'select-layout tiled'` in a tmux.conf, the new-pane button's reply
+        // was followed by the hook's, and every reply after it landed one
+        // command off until the queue drained. Only once this server has
+        // flagged a reply of ours 1, though (the first discovery reply on any
+        // tmux that does): a server writing 0 on every block is read the old
+        // way, every block a reply, rather than never loading. The Rust
+        // controller's rule (crates/tmux, B273).
+        if response.fromClient {
+            serverFlagsReplies = true
+        } else if serverFlagsReplies {
+            ccTapLine("SKIP  num=\(response.commandNum) err=\(response.isError) "
+                + "lines=\(response.lines.count) flags 0: no command of ours "
+                + "first=\(response.lines.first?.prefix(60) ?? "")")
+            return
+        }
         // tmux responds in strict send order; pop the head of the queue.
         guard !pendingCallbacks.isEmpty else {
             ccTapLine("POP!  num=\(response.commandNum) err=\(response.isError) "
@@ -3936,11 +5109,43 @@ final class TmuxSessionController: MultiplexerControlling {
         entry.callback?(response)
     }
 
+    /// The control channel is gone — ``detach()``, `%exit`, the byte stream
+    /// ending — and nothing still queued will be answered.
+    ///
+    /// Whoever waits on a reply is told so (``TmuxCommandResponse/channelClosed``)
+    /// instead of waiting forever: the hub's attach check counted clients
+    /// over the mosh sidecar and hung for good when the sidecar died with the
+    /// count unanswered. The queue is emptied too: the sidecar's boot chain
+    /// can start another control session on the same stream after `%exit`,
+    /// and its replies must pair with its own commands, not with these.
+    private func closePendingCommands(reason: String) {
+        // Re-listings on their way are not coming back either.
+        sessionsRelist = Relist()
+        windowsRelist = Relist()
+        guard !pendingCallbacks.isEmpty else { return }
+        let waiting = pendingCallbacks.compactMap { $0.waits ? $0.callback : nil }
+        ccTapLine("CLOSE reason=\(reason) dropped=\(pendingCallbacks.count) waiting=\(waiting.count)")
+        pendingCallbacks.removeAll()
+        // No reply is coming for a renderer listing or a layout probe on its
+        // way either; left marked, they would block the next ones for good.
+        rendererLocateInFlight = false
+        pristineCapturesInFlight.removeAll()
+        presizeLayouts = nil
+        presizeAwaitsAfter = false
+        for callback in waiting { callback(.channelClosed) }
+    }
+
     /// Total replies popped — the watchdog's progress probe. A wedged parser
     /// (a reply block whose terminator was lost in transit) keeps INCOMING
     /// bytes flowing while pops stop dead, which the silence check alone
     /// can't see.
     @ObservationIgnored private var popCounter: UInt64 = 0
+
+    /// This server flagged a reply to one of our lines 1 (B275): from here on
+    /// a block flagged 0 answers nothing of ours. Kept for the controller's
+    /// life, as the Rust controller keeps it: one controller talks to one
+    /// host's tmux.
+    @ObservationIgnored private var serverFlagsReplies = false
 
     // MARK: - Sending commands
 
@@ -3963,23 +5168,38 @@ final class TmuxSessionController: MultiplexerControlling {
     }
 
     /// Send a command and register a callback for its response block.
-    private func sendCommand(_ command: String,
+    /// `waits`: the callback resumes someone awaiting the reply — see
+    /// ``PendingCommand/waits``.
+    private func sendCommand(_ command: String, waits: Bool = false,
                              callback: @escaping (TmuxCommandResponse) -> Void) {
-        enqueue(command, callback: callback)
+        enqueue(command, waits: waits, callback: callback)
     }
 
-    private func enqueue(_ command: String, callback: ((TmuxCommandResponse) -> Void)?) {
+    private func enqueue(_ command: String, waits: Bool = false,
+                         callback: ((TmuxCommandResponse) -> Void)?) {
         // Before tmux is attached, anything we write lands in the SHELL, not
         // tmux — it would type garbage at the prompt AND leave an orphan
         // callback slot that desyncs the response FIFO for the entire
         // session. Drop commands until control mode is live. (Layout-driven
-        // resizeClient calls are the usual pre-attach offender.)
+        // resizeClient calls are the usual pre-attach offender.) Whoever
+        // waits on the reply hears now that none is coming.
         guard snapshot.isAttached else {
             ccTapLine("DROP  (pre-attach) [\(command.prefix(50))]")
+            if waits { callback?(.channelClosed) }
+            return
+        }
+        // One line is one command in control mode: a line break inside one
+        // ends it there and runs the rest as a command of its own, and every
+        // reply after it lands on the wrong callback (B139). Nothing the
+        // controller builds holds one; anything that does is not sent.
+        guard !command.unicodeScalars.contains(where: { $0 == "\n" || $0 == "\r" }) else {
+            ccTapLine("DROP  (line break) [\(command.prefix(50))]")
+            Log.ssh.error("tmux: a command holding a line break was not sent")
+            if waits { callback?(.channelClosed) }
             return
         }
         guard let data = (command + "\n").data(using: .utf8) else { return }
-        pendingCallbacks.append((command: command, callback: callback))
+        pendingCallbacks.append(PendingCommand(command: command, callback: callback, waits: waits))
         ccTapLine("SEND  depth=\(pendingCallbacks.count) [\(command.prefix(50))]")
         let session = sshSession
         let previous = writeChain
@@ -3991,11 +5211,16 @@ final class TmuxSessionController: MultiplexerControlling {
 
     // MARK: - Terminal minting
 
-    /// Create the persistent ``TerminalView`` + ``Coordinator`` pair for
-    /// `paneId`, wire input/resize back through the controller, and stash
-    /// both in the non-observed pool.
+    /// Create the persistent terminal + ``Coordinator`` pair for `paneId`,
+    /// wire input/resize back through the controller, and stash both in the
+    /// non-observed pool. The view is ``surfaceKind``'s.
+    ///
+    /// Nothing here may count on the bytes being parsed when `feed` returns
+    /// (the core parses on a thread of its own): a capture's reveal is a
+    /// mark after its bytes (``SwiftTerminalView/Coordinator/
+    /// revealWhenShown()``), a held resize is applied before them.
     @discardableResult
-    private func mintTerminal(for paneId: String) -> TerminalView {
+    private func mintTerminal(for paneId: String) -> TerminalSurface {
         if let existing = paneTerminals[paneId] {
             return existing
         }
@@ -4003,7 +5228,7 @@ final class TmuxSessionController: MultiplexerControlling {
         // Born at the client's grid, not at `.zero`.
         //
         // A pane terminal is minted during discovery — before SwiftUI has laid
-        // it out even once — and `TerminalView(frame: .zero)` derives its grid
+        // it out even once — and a view born at `.zero` derives its grid
         // from that frame, so it starts one column wide. Everything tmux hands
         // us at attach (the authoritative screen from `resyncPane`, the
         // backfill, any `%output` that beats the first layout) was then parsed
@@ -4014,25 +5239,24 @@ final class TmuxSessionController: MultiplexerControlling {
         // by the time any pane is minted) means a pre-layout feed lands in the
         // shape tmux drew it for; the first real layout then agrees and costs
         // no reflow.
-        let cell = TerminalCellGeometry.measuredCell(
-            font: font, scale: UITraitCollection.current.displayScale)
-        let birthFrame = CGRect(x: 0, y: 0,
-                                width: cell.width * CGFloat(max(1, lastClientSize.cols)),
-                                height: cell.height * CGFloat(max(1, lastClientSize.rows)))
-        let terminal = TerminalView(frame: birthFrame, font: font)
-        TerminalMint.configureInput(terminal)
-        currentTheme.apply(to: terminal)
-        let desiredCursor = TerminalCursor.apply(
-            shape: cursorShape, colorId: cursorColorId, blink: cursorBlink, to: terminal)
+        let terminal = TerminalSurfaces.make(
+            surfaceKind, font: font, grid: TerminalGrid(cols: lastClientSize.cols, rows: lastClientSize.rows))
+        terminal.followTmuxClears()
+        // The user's cursor is enforced after every feed — pane output (vim,
+        // zsh plugins, coding agents) carries DECSCUSR/OSC-12 that would
+        // otherwise override the user's Settings choice.
+        terminal.reassert(look: look)
 
         let coordinator = SwiftTerminalView.Coordinator()
-        // Enforced after every feed — pane output (vim, zsh plugins, coding
-        // agents) carries DECSCUSR/OSC-12 that would otherwise override the
-        // user's Settings choice.
-        coordinator.enforcedCursor = desiredCursor
         coordinator.onReveal = { [weak self] in self?.notePaneRevealed() }
+        // Delivered synchronously, straight onto the write chain. The terminal
+        // calls this from the main thread — UIKit key input, and the replies
+        // the emulator generates while being fed, which happens on the main
+        // actor — so there is nothing to hop for, and a hop is what must not
+        // be here: a Task per keystroke is FIFO only in practice, and the
+        // byte path takes no unordered hop (the garbled-rendering saga).
         coordinator.onInput = { [weak self, paneId] data in
-            Task { @MainActor [weak self] in
+            MainActor.assumeIsolated {
                 guard let self else { return }
                 // See transportIsLive — drop keystrokes while not live so
                 // they can't queue up and replay into the pane after resume.
@@ -4122,9 +5346,11 @@ final class TmuxSessionController: MultiplexerControlling {
             self?.switchPaneOrWindow(forward: forward)
         }
         // Globe-key IME switch: same height keyboards → no resize event, so
-        // none of the resize-driven healing runs. The coordinator repaints the
-        // local screen; also converge with tmux's model in case composing
-        // teardown left real cell damage.
+        // none of the resize-driven healing runs. Nothing local is repainted
+        // (a composition draws in a subview of its own, fork patch 5, so a
+        // redraw of the same rows changed nothing); converge with tmux's
+        // model instead, which repaints whatever cells composing teardown
+        // really damaged.
         coordinator.onInputModeChange = { [weak self, paneId] in
             self?.resyncPane(paneId)
         }
@@ -4147,11 +5373,48 @@ final class TmuxSessionController: MultiplexerControlling {
         }
         coordinator.pathLinks = pathLinksFactory?(paneId)
         coordinator.onOpenRemotePath = { [weak self] path in self?.onOpenRemotePath?(path) }
-        terminal.terminalDelegate = coordinator
-        coordinator.attach(to: terminal)
+        coordinator.attach(terminal)
 
         paneTerminals[paneId] = terminal
         paneCoordinators[paneId] = coordinator
         return terminal
+    }
+}
+
+extension TmuxCommandResponse {
+    /// What a command still awaiting its reply gets when the control channel
+    /// closes first (see `TmuxSessionController.closePendingCommands`). Never
+    /// a reply tmux sends: its command ids and numbers are not negative.
+    static let channelClosed = TmuxCommandResponse(commandId: -1, commandNum: -1, isError: true, lines: [])
+}
+
+// MARK: - The Rust session's tmux (W14a)
+
+extension TmuxSessionController {
+    /// What the Rust core's tmux controller says, put where the chrome reads
+    /// a controller (``RustTmuxController``): the tree, the notice, the
+    /// refresh spinner, the follower's veil, the agents' stamps. Only what
+    /// changed is assigned; a new pane on screen slides in as a switch made
+    /// here does (``selectPane(_:)``).
+    func mirrorRust(snapshot new: Snapshot, notice: String?, isRefreshing: Bool,
+                    sizeFollow: SizeFollow?, agentHooks: [String: AgentHook],
+                    agentHooksLoaded: Bool) {
+        if snapshot != new {
+            if snapshot.activePaneId != nil, snapshot.activePaneId != new.activePaneId {
+                withAnimation(.easeInOut(duration: 0.22)) { snapshot = new }
+            } else {
+                snapshot = new
+            }
+        }
+        if self.notice != notice { self.notice = notice }
+        if self.isRefreshing != isRefreshing { self.isRefreshing = isRefreshing }
+        if self.sizeFollow != sizeFollow { self.sizeFollow = sizeFollow }
+        if self.agentHooks != agentHooks { self.agentHooks = agentHooks }
+        if self.agentHooksLoaded != agentHooksLoaded { self.agentHooksLoaded = agentHooksLoaded }
+    }
+
+    /// The core said this attach painted its first frame.
+    func mirrorRustFirstFrame() {
+        hasPaintedSinceAttach = true
     }
 }

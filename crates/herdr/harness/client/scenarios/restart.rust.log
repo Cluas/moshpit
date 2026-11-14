@@ -1,0 +1,21 @@
+t=0 exec api snapshot
+t=40 focus w1:p1
+t=500 exec status
+t=540 exec server stop
+t=1580 exec PATH="$PATH:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:$HOME/.local/bin" nohup herdr server >/dev/null 2>&1 </dev/null &
+t=2040 exec api snapshot
+t=2080 focus w1:p1
+t=2120 exec api snapshot
+t=2160 focus w1:p1
+t=2160 exec api snapshot
+t=2160 outcome restart restarted
+t=2200 focus w1:p1
+t=4200 exec api snapshot
+t=4240 focus w1:p1
+t=6240 exec api snapshot
+t=6280 focus w1:p1
+t=14280 exec api snapshot
+t=14320 focus w1:p1
+landed server stop
+landed server start
+state focus=w1:p1 server=w1:p1 sessions=1 notrunning=false mismatch=false

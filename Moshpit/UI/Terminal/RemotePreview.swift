@@ -9,11 +9,12 @@ import UIKit
 
 /// How a preview reaches the host: the session's file-transfer SSH (the one
 /// uploads ride — already authenticated, no Face ID), dialled on demand when
-/// the session has none.
+/// the session has none; on the Rust core, the session's own connection,
+/// lent (W14b).
 struct RemoteFileAccess {
     /// Keeps one connection's downloads apart from another's in the cache.
     let scope: String
-    let channel: () async throws -> SSHSession
+    let channel: () async throws -> any HostConnection
 }
 
 // MARK: - Local copies
@@ -97,6 +98,11 @@ enum RemotePreviewCache {
             if case .underlying(let inner) = error { return inner }
             return nil
         }
+        // The Rust session's lent connection says what happened in the
+        // app's words: reconnecting, not connected, not answering, denied.
+        if let lent = error as? HostConnectionError, let words = lent.errorDescription {
+            return words
+        }
         switch underlying as? SSHSession.RemoteEditError {
         case .nameTaken?:
             return String(localized: "Something with that name is already there.")
@@ -108,6 +114,9 @@ enum RemotePreviewCache {
         switch underlying as? SSHSession.RemoteReadError {
         case .notFound?:
             return String(localized: "This file is no longer on the host.")
+        case .denied?:
+            return HostConnectionError.readDenied.errorDescription
+                ?? String(localized: "The host doesn't let this account read it.")
         case .tooLargeWithoutSFTP?:
             return String(localized: "This host has SFTP turned off, and the file is too large to send without it.")
         case nil:
@@ -377,14 +386,29 @@ enum RemoteFileIcon {
 
 /// One folder on the host, as the folder sheet shows it: images and video
 /// as a thumbnail grid on top, subfolders and the other files as a list
-/// below, each newest first, thumbnails filled in as they arrive. Opening a file fetches it and hands it to QuickLook together with
-/// every file already fetched here, so swiping moves between them.
+/// below, each newest first, thumbnails filled in as they arrive. Opening a
+/// file fetches it and hands it to QuickLook together with every file
+/// already fetched here, so swiping moves between them.
+///
+/// The folder's rules are the shared model's (`crates/app/src/remote_folder.rs`,
+/// ``RemoteFolderHandle``, the one Android runs): what it shows, which
+/// thumbnails to fetch, names checked before the round trip, progress taken
+/// only while under way, each failure numbered (B286). This class does the
+/// I/O and the platform's part (the connection, thumbnails, QuickLook, the
+/// share sheet, the pickers), tells the model what happened, and mirrors its
+/// state for the views to observe.
 @Observable
 @MainActor
 final class RemoteFolderModel {
     let folder: RemoteFileEntry
     let files: RemoteFileAccess
+    @ObservationIgnored private let rules: RemoteFolderHandle
+    /// What the folder shows, newest first (the model's).
     private(set) var entries: [RemoteFileEntry] = []
+    /// The thumbnail grid: images and video, newest first.
+    private(set) var media: [RemoteFileEntry] = []
+    /// The list under the grid: subfolders, then every other file.
+    private(set) var rows: [RemoteFileEntry] = []
     private(set) var loading = true
     private(set) var failure: String?
     private(set) var thumbnails: [String: UIImage] = [:]
@@ -395,51 +419,80 @@ final class RemoteFolderModel {
     /// Copies fetched so far (thumbnails included), by path.
     private(set) var local: [String: URL] = [:]
     var previewURL: URL?
-    /// Why the file just tapped couldn't be opened (the grid stays up).
-    var openFailure: String?
     /// An upload under way, as a fraction — shown above the grid.
     private(set) var uploading: Double?
+    private var openFailureState: FolderFailureRecord?
+    private var editFailureState: FolderFailureRecord?
+
+    /// Why the file just tapped couldn't be opened (the grid stays up).
+    var openFailure: String? {
+        get { openFailureState?.message }
+        set {
+            rules.setOpenFailure(message: newValue)
+            sync()
+        }
+    }
+
+    /// The number of the failure in ``openFailure``: new for each one set
+    /// anew and never reused in this process, so the NSH sheet says the same
+    /// words failing again (B286); 0 when none stands.
+    var openFailureId: Int { Int(openFailureState?.id ?? 0) }
+
     /// A create / rename / delete / upload that didn't go through.
-    var editFailure: EditFailure?
-    /// Every name in the folder, hidden and unpreviewable ones included: what
-    /// a new name must not collide with.
-    @ObservationIgnored private var allNames: Set<String> = []
+    var editFailure: EditFailure? {
+        get { editFailureState.map { EditFailure(title: $0.title, message: $0.message) } }
+        set {
+            rules.setEditFailure(title: newValue?.title, message: newValue?.message)
+            sync()
+        }
+    }
+
+    /// ``editFailure``'s number, as ``openFailureId`` is ``openFailure``'s.
+    var editFailureId: Int { Int(editFailureState?.id ?? 0) }
 
     struct EditFailure {
         let title: String
         let message: String
     }
 
-    /// Thumbnails are fetched for images up to this size; bigger ones show
-    /// their icon until opened.
-    static let thumbnailLimit: UInt64 = 15 * 1024 * 1024
     static let thumbnailWorkers = 3
 
     init(folder: RemoteFileEntry, files: RemoteFileAccess) {
         self.folder = folder
         self.files = files
+        rules = RemoteFolderHandle(path: folder.path)
     }
 
-    /// The thumbnail grid: images and video, newest first.
-    var media: [RemoteFileEntry] { entries.filter(\.isMedia) }
-    /// The list under the grid: subfolders, then every other file.
-    var rows: [RemoteFileEntry] {
-        entries.filter(\.isDirectory) + entries.filter { !$0.isDirectory && !$0.isMedia }
+    /// The model's state, mirrored for the views.
+    private func sync() {
+        let state = rules.state()
+        let shown = state.entries.map(RemoteFileEntry.init)
+        if shown != entries { entries = shown }
+        let grid = state.media.map(RemoteFileEntry.init)
+        if grid != media { media = grid }
+        let list = state.rows.map(RemoteFileEntry.init)
+        if list != rows { rows = list }
+        if state.loading != loading { loading = state.loading }
+        if state.failure != failure { failure = state.failure }
+        if state.opening != opening { opening = state.opening }
+        if state.uploading != uploading { uploading = state.uploading }
+        if state.openFailure != openFailureState { openFailureState = state.openFailure }
+        if state.editFailure != editFailureState { editFailureState = state.editFailure }
     }
+
     /// The copies QuickLook can swipe between, in the order the sheet shows them.
     var previewItems: [URL] { (media + rows).compactMap { local[$0.path] } }
 
     func load() async {
-        loading = true
-        failure = nil
+        rules.loadStarted()
+        sync()
         do {
             let listing = try await files.channel().listRemoteDirectory(folder.path)
-            allNames = Set(listing.map(\.name))
-            entries = RemoteFileEntry.browsable(listing)
+            rules.listed(listing: listing.map(RemoteFileRecord.init))
         } catch {
-            failure = RemotePreviewCache.message(for: error)
+            rules.listFailed(why: RemotePreviewCache.message(for: error))
         }
-        loading = false
+        sync()
         await fillThumbnails()
     }
 
@@ -447,10 +500,7 @@ final class RemoteFolderModel {
     @ObservationIgnored private var thumbnailQueue: [RemoteFileEntry] = []
 
     private func fillThumbnails() async {
-        thumbnailQueue = entries.filter {
-            guard thumbnails[$0.path] == nil, durations[$0.path] == nil else { return false }
-            return $0.kind == .video || ($0.kind == .image && ($0.size ?? 0) <= Self.thumbnailLimit)
-        }
+        thumbnailQueue = rules.thumbnailQueue().map(RemoteFileEntry.init)
         await withTaskGroup(of: Void.self) { group in
             for _ in 0..<Self.thumbnailWorkers {
                 group.addTask { @MainActor [weak self] in
@@ -462,12 +512,18 @@ final class RemoteFolderModel {
                             guard let cover = await RemoteVideoCover.make(entry, files: self.files) else { continue }
                             self.thumbnails[entry.path] = cover.image
                             self.durations[entry.path] = cover.seconds
+                            if let seconds = cover.seconds {
+                                self.rules.coverArrived(path: entry.path, seconds: seconds)
+                            } else {
+                                self.rules.thumbnailArrived(path: entry.path)
+                            }
                             continue
                         }
                         guard let url = try? await RemotePreviewCache.fetch(entry, files: self.files,
                                                                             progress: { _ in }) else { continue }
                         self.local[entry.path] = url
                         self.thumbnails[entry.path] = RemotePreviewCache.thumbnail(at: url)
+                        self.rules.thumbnailArrived(path: entry.path)
                     }
                 }
             }
@@ -480,9 +536,11 @@ final class RemoteFolderModel {
             return
         }
         if entry.kind == .video {
-            opening[entry.path] = 0
+            rules.openStarted(path: entry.path)
+            sync()
             let source = try? await files.channel().openRemoteFile(entry.path)
-            opening[entry.path] = nil
+            rules.openFinished(path: entry.path)
+            sync()
             if let source {
                 // Streamed in the system player; a host without SFTP falls
                 // through to the download.
@@ -505,12 +563,18 @@ final class RemoteFolderModel {
     /// nil (and the failure shown) when it couldn't be.
     private func localCopy(of entry: RemoteFileEntry) async -> URL? {
         if let url = local[entry.path] { return url }
-        opening[entry.path] = 0
-        defer { opening[entry.path] = nil }
+        rules.openStarted(path: entry.path)
+        sync()
+        defer {
+            rules.openFinished(path: entry.path)
+            sync()
+        }
         do {
             let url = try await RemotePreviewCache.fetch(entry, files: files) { [weak self] fraction in
                 Task { @MainActor in
-                    if self?.opening[entry.path] != nil { self?.opening[entry.path] = fraction }
+                    // The model drops it once the fetch is over.
+                    self?.rules.openProgress(path: entry.path, fraction: fraction)
+                    self?.sync()
                 }
             }
             local[entry.path] = url
@@ -561,15 +625,19 @@ final class RemoteFolderModel {
     }
 
     private func upload(local: URL, named name: String) async {
-        let name = RemoteFileEdits.uniqueName(name, taken: allNames)
-        allNames.insert(name)
-        uploading = 0
-        defer { uploading = nil }
+        // Never over a name there, nor one just sent (the model keeps them).
+        let target = rules.uploadTarget(name: name)
+        rules.uploadStarted()
+        sync()
+        defer {
+            rules.uploadFinished()
+            sync()
+        }
         do {
-            try await files.channel().uploadRemoteFile(
-                from: local, to: RemoteFileEdits.child(name, of: folder.path)) { [weak self] fraction in
+            try await files.channel().uploadRemoteFile(from: local, to: target) { [weak self] fraction in
                 Task { @MainActor in
-                    if self?.uploading != nil { self?.uploading = fraction }
+                    self?.rules.uploadProgress(fraction: fraction)
+                    self?.sync()
                 }
             }
         } catch is CancellationError {
@@ -580,34 +648,41 @@ final class RemoteFolderModel {
     }
 
     func createFolder(named raw: String) async {
-        guard let name = RemoteFileEdits.validName(raw) else { return }
-        await change(title: String(localized: "Couldn't create the folder"), taken: name) {
-            try await $0.createRemoteDirectory(RemoteFileEdits.child(name, of: self.folder.path))
-        }
+        let title = String(localized: "Couldn't create the folder")
+        guard let path = target(rules.newFolderTarget(raw: raw), title: title) else { return }
+        await change(title: title) { try await $0.createRemoteDirectory(path) }
     }
 
     func rename(_ entry: RemoteFileEntry, to raw: String) async {
-        guard let name = RemoteFileEdits.validName(raw), name != entry.name else { return }
-        await change(title: String(localized: "Couldn't rename"), taken: name) {
-            try await $0.renameRemoteItem(entry.path, to: RemoteFileEdits.child(name, of: self.folder.path))
-        }
+        let title = String(localized: "Couldn't rename")
+        guard let path = target(rules.renameTarget(entry: RemoteFileRecord(entry), raw: raw), title: title)
+        else { return }
+        await change(title: title) { try await $0.renameRemoteItem(entry.path, to: path) }
     }
 
     func delete(_ entry: RemoteFileEntry) async {
-        await change(title: String(localized: "Couldn't delete"), taken: nil) {
+        await change(title: String(localized: "Couldn't delete")) {
             try await $0.deleteRemoteItem(entry)
         }
     }
 
-    /// Run one change against the host, then re-list. A name already in the
-    /// folder is refused here, before the round trip.
-    private func change(title: String, taken name: String?,
-                        _ work: @escaping (SSHSession) async throws -> Void) async {
-        if let name, allNames.contains(name) {
+    /// Where a typed name goes: nil when the model refused it — said when the
+    /// name is taken, before the round trip; nothing to do otherwise.
+    private func target(_ target: FolderNameTarget, title: String) -> String? {
+        switch target {
+        case .path(let path):
+            return path
+        case .refused(.taken):
             editFailure = EditFailure(title: title,
                                       message: String(localized: "Something with that name is already there."))
-            return
+            return nil
+        case .refused(.ignored):
+            return nil
         }
+    }
+
+    /// Run one change against the host, then re-list.
+    private func change(title: String, _ work: @escaping (any HostConnection) async throws -> Void) async {
         do {
             try await work(files.channel())
         } catch is CancellationError {
@@ -646,6 +721,8 @@ struct RemoteFolderSheet: View {
         .presentationDetents([.medium, .large], selection: $detent)
         .presentationDragIndicator(.visible)
         .sheetSurface()
+        // Pictures and films are seen on dark, whatever the app's appearance
+        // (R18: the media preview stays dark).
         .preferredColorScheme(.dark)
         .accessibilityIdentifier("remote-folder-sheet")
     }

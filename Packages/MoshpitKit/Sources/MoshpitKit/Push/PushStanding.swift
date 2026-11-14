@@ -52,44 +52,34 @@ public enum PushStanding {
 
     private static let filename = "standing-attention.json"
 
-    private static var url: URL? {
+    /// The store's file — nil with no App Group container (an unsigned
+    /// build), when nothing is stored and every read is empty.
+    private static var file: PushStandingFile? { appGroupFile }
+
+    /// The file the app and the notification service extension share, for
+    /// a caller that holds the file itself (a test hands it another one).
+    public static var appGroupFile: PushStandingFile? {
         FileManager.default
-            .containerURL(forSecurityApplicationGroupIdentifier: PushPairingStore.appGroup)?
-            .appendingPathComponent(filename)
+            .containerURL(forSecurityApplicationGroupIdentifier: PushPairingStore.appGroup)
+            .map { PushStandingFile(url: $0.appendingPathComponent(filename)) }
     }
 
     /// conn → entries. Pruned of expired entries on every read.
     public static func read(now: Date = Date()) -> [String: [Entry]] {
-        guard let url, let data = try? Data(contentsOf: url),
-              let raw = try? JSONDecoder().decode([String: [Entry]].self, from: data)
-        else { return [:] }
-        return prune(raw, now: now)
+        file?.read(now: now) ?? [:]
     }
 
     public static func prune(_ raw: [String: [Entry]], now: Date) -> [String: [Entry]] {
         raw.compactMapValues { entries in
-            let live = entries.filter {
-                now.timeIntervalSince($0.recordedAt) < lifetime
-                    && $0.recordedAt < now.addingTimeInterval(60)   // clock jumped? drop it
-            }
+            let live = entries.filter { isLive(recordedAt: $0.recordedAt, now: now) }
             return live.isEmpty ? nil : live
         }
     }
 
-    private static func write(_ value: [String: [Entry]]) {
-        guard let url, let data = try? JSONEncoder().encode(value) else { return }
-        // The container directory is normally created by containerURL(...) —
-        // but not on every path (an unsigned simulator test host reaches here
-        // with no directory at all), and an atomic write into a missing
-        // directory fails without a word. A store whose whole job is agreeing
-        // on the 0→1 edge must not "write and hope".
-        try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(),
-                                                 withIntermediateDirectories: true)
-        do {
-            try data.write(to: url, options: .atomic)
-        } catch {
-            Log.push.error("standing store write failed: \(error.localizedDescription, privacy: .public)")
-        }
+    /// Whether something recorded at `recordedAt` still counts.
+    static func isLive(recordedAt: Date, now: Date) -> Bool {
+        now.timeIntervalSince(recordedAt) < lifetime
+            && recordedAt < now.addingTimeInterval(60)   // clock jumped? drop it
     }
 
     /// Record a prompt as standing. Returns whether this was the 0→1 edge for
@@ -100,15 +90,8 @@ public enum PushStanding {
     /// prompt both land here, and exactly one of them may ring.
     @discardableResult
     public static func noteStanding(conn: String, entry: Entry, now: Date = Date()) -> Bool {
-        var all = read(now: now)
-        var entries = all[conn] ?? []
-        let wasEmpty = entries.isEmpty
-        let isRepeat = entries.contains { $0.pane == entry.pane && $0.since == entry.since }
-        entries.removeAll { $0.pane == entry.pane }
-        entries.append(entry)
-        all[conn] = entries
-        write(all)
-        return wasEmpty && !isRepeat
+        guard let file else { return true }   // nothing can be standing: an edge
+        return file.noteStanding(conn: conn, entry: entry, now: now)
     }
 
     /// A pane stopped waiting (answered, died, moved on). Returns the entries
@@ -116,22 +99,261 @@ public enum PushStanding {
     /// withdraw the summary.
     @discardableResult
     public static func clear(conn: String, pane: String, now: Date = Date()) -> [Entry] {
-        var all = read(now: now)
-        var entries = all[conn] ?? []
-        entries.removeAll { $0.pane == pane }
-        if entries.isEmpty { all[conn] = nil } else { all[conn] = entries }
-        write(all)
-        return entries
+        file?.clear(conn: conn, pane: pane, now: now) ?? []
     }
 
     /// Everything standing for a connection, newest first.
     public static func standing(conn: String, now: Date = Date()) -> [Entry] {
-        (read(now: now)[conn] ?? []).sorted { $0.recordedAt > $1.recordedAt }
+        file?.standing(conn: conn, now: now) ?? []
     }
 
     public static func clearAll(conn: String) {
-        var all = read()
-        all[conn] = nil
-        write(all)
+        file?.clearAll(conn: conn)
+    }
+}
+
+/// The standing set's file: a JSON object, connection id → array of
+/// ``PushStanding/Entry`` — the format every build and the notification
+/// service extension read. ``PushStanding`` is this file at the App Group
+/// path.
+///
+/// Read an entry at a time, and nothing it can't read is ever dropped — the
+/// rule ``PushPairingFile`` keeps for the pairings. The map used to decode in
+/// one piece, and anything that failed — one entry in a shape this build
+/// doesn't know (a rollback to an older TestFlight build), one damaged byte,
+/// a file that couldn't be opened — read as "nobody is waiting". The next
+/// prompt or answer wrote that over the file: every other standing prompt,
+/// on every connection, was gone, and the sound decisions after it were
+/// wrong until the entries would have expired anyway. Now:
+///  * entries this build decodes are the standing set;
+///  * entries it can't are written back exactly as stored on every save —
+///    unless the save replaces or clears that very pane, or they have
+///    plainly expired; they never count toward the edge, since nothing here
+///    can tell what they say;
+///  * a file that holds anything this build couldn't decode is copied to
+///    ``backupURL`` before the first write over it;
+///  * a file that is there but can't be read is never written over.
+/// Every read-modify-write holds the lock the finishes take
+/// (``AppGroupFileLock``, B347): the app and the notification service both
+/// write this file, and without it the later writer dropped the earlier
+/// one's change.
+public struct PushStandingFile {
+    public let url: URL
+
+    public init(url: URL) {
+        self.url = url
+    }
+
+    /// Where a file this build couldn't fully read is kept, untouched, before
+    /// anything is written over it.
+    public var backupURL: URL { url.appendingPathExtension("backup") }
+
+    /// What one read of the file found.
+    struct Contents {
+        /// The entries this build decoded, unpruned.
+        var entries: [String: [PushStanding.Entry]] = [:]
+        /// Per connection, the entries it couldn't decode, as stored.
+        var carried: [String: [Any]] = [:]
+        /// Connections whose value isn't a list at all, as stored.
+        var odd: [String: Any] = [:]
+        /// The file's bytes; nil when there is no file.
+        var raw: Data?
+        /// False when the bytes aren't a JSON object — then none of them can
+        /// be carried entry by entry.
+        var isMap = true
+        /// The file is there but couldn't be read. Nothing is known about
+        /// what it holds.
+        var unreadable = false
+
+        /// Everything stored was read.
+        var isComplete: Bool { carried.isEmpty && odd.isEmpty && isMap && !unreadable }
+    }
+
+    /// conn → the entries this build can read, pruned of expired ones.
+    public func read(now: Date = Date()) -> [String: [PushStanding.Entry]] {
+        PushStanding.prune(contents().entries, now: now)
+    }
+
+    /// ``PushStanding/standing(conn:now:)``, on this file.
+    public func standing(conn: String, now: Date = Date()) -> [PushStanding.Entry] {
+        (read(now: now)[conn] ?? []).sorted { $0.recordedAt > $1.recordedAt }
+    }
+
+    /// ``PushStanding/noteStanding(conn:entry:now:)``, on this file.
+    @discardableResult
+    public func noteStanding(conn: String, entry: PushStanding.Entry, now: Date = Date()) -> Bool {
+        AppGroupFileLock.around(url) {
+            let contents = contents()
+            var all = PushStanding.prune(contents.entries, now: now)
+            var entries = all[conn] ?? []
+            let wasEmpty = entries.isEmpty
+            let isRepeat = entries.contains { $0.pane == entry.pane && $0.since == entry.since }
+            entries.removeAll { $0.pane == entry.pane }
+            entries.append(entry)
+            all[conn] = entries
+            var carried = contents.carried
+            carried[conn]?.removeAll { Self.pane(of: $0) == entry.pane }
+            var odd = contents.odd
+            odd[conn] = nil
+            save(all, carrying: carried, odd: odd, over: contents, now: now)
+            return wasEmpty && !isRepeat
+        }
+    }
+
+    /// ``PushStanding/clear(conn:pane:now:)``, on this file.
+    @discardableResult
+    public func clear(conn: String, pane: String, now: Date = Date()) -> [PushStanding.Entry] {
+        AppGroupFileLock.around(url) {
+            let contents = contents()
+            var all = PushStanding.prune(contents.entries, now: now)
+            var entries = all[conn] ?? []
+            entries.removeAll { $0.pane == pane }
+            all[conn] = entries.isEmpty ? nil : entries
+            var carried = contents.carried
+            carried[conn]?.removeAll { Self.pane(of: $0) == pane }
+            save(all, carrying: carried, odd: contents.odd, over: contents, now: now)
+            return entries
+        }
+    }
+
+    /// ``PushStanding/clearAll(conn:)``, on this file.
+    public func clearAll(conn: String, now: Date = Date()) {
+        AppGroupFileLock.around(url) {
+            let contents = contents()
+            var all = PushStanding.prune(contents.entries, now: now)
+            all[conn] = nil
+            var carried = contents.carried
+            carried[conn] = nil
+            var odd = contents.odd
+            odd[conn] = nil
+            save(all, carrying: carried, odd: odd, over: contents, now: now)
+        }
+    }
+
+    func contents() -> Contents {
+        var contents = Contents()
+        let data: Data
+        do {
+            data = try Data(contentsOf: url)
+        } catch {
+            guard FileManager.default.fileExists(atPath: url.path) else { return contents }  // nobody waiting yet
+            contents.unreadable = true
+            Log.push.error("standing store present but unreadable: \(error.localizedDescription, privacy: .public)")
+            return contents
+        }
+        contents.raw = data
+        guard let map = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
+            contents.isMap = false
+            Log.push.error("standing store present but not a map (\(data.count, privacy: .public) bytes) — nothing read, file kept")
+            return contents
+        }
+        let decoder = JSONDecoder()
+        for (conn, value) in map {
+            guard let list = value as? [Any] else {
+                contents.odd[conn] = value
+                Log.push.error("standing entries for a connection aren't a list — kept as stored")
+                continue
+            }
+            for item in list {
+                // Wrapped in a one-entry array: JSONSerialization won't write
+                // a bare fragment.
+                if let single = try? JSONSerialization.data(withJSONObject: [item]),
+                   let entry = try? decoder.decode([PushStanding.Entry].self, from: single).first {
+                    contents.entries[conn, default: []].append(entry)
+                } else {
+                    contents.carried[conn, default: []].append(item)
+                    Log.push.error("standing entry undecodable — kept as stored")
+                }
+            }
+        }
+        return contents
+    }
+
+    /// The pane a carried entry names, if it names one in the shape this
+    /// build writes.
+    private static func pane(of item: Any) -> String? {
+        (item as? [String: Any])?["pane"] as? String
+    }
+
+    /// A carried entry whose `recordedAt` reads, in the shape this build
+    /// writes it, as past its lifetime — stale under any build's rule.
+    private static func hasExpired(_ item: Any, now: Date) -> Bool {
+        guard let seconds = (item as? [String: Any])?["recordedAt"] as? Double else { return false }
+        return !PushStanding.isLive(recordedAt: Date(timeIntervalSinceReferenceDate: seconds), now: now)
+    }
+
+    /// Write `all`, then `carried` and `odd` as read, over the file
+    /// `contents` was read from.
+    @discardableResult
+    private func save(_ all: [String: [PushStanding.Entry]],
+                      carrying carried: [String: [Any]], odd: [String: Any],
+                      over contents: Contents, now: Date) -> Bool {
+        guard !contents.unreadable else {
+            Log.push.error("not saving the standing set: the store couldn't be read, and a save now would replace what it holds")
+            return false
+        }
+        guard secure(contents) else { return false }
+        let carried = carried
+            .mapValues { $0.filter { !Self.hasExpired($0, now: now) } }
+            .filter { !$0.value.isEmpty }
+        let data: Data
+        do {
+            let encoded = try JSONEncoder().encode(all)
+            if carried.isEmpty && odd.isEmpty {
+                data = encoded
+            } else {
+                var map = (try JSONSerialization.jsonObject(with: encoded)) as? [String: Any] ?? [:]
+                for (conn, items) in carried {
+                    map[conn] = ((map[conn] as? [Any]) ?? []) + items
+                }
+                for (conn, value) in odd where map[conn] == nil {
+                    map[conn] = value
+                }
+                data = try JSONSerialization.data(withJSONObject: map)
+            }
+        } catch {
+            Log.push.error("could not encode the standing set: \(error.localizedDescription, privacy: .public)")
+            return false
+        }
+        return store(data, at: url, what: "the standing set")
+    }
+
+    /// Keep an untouched copy of a file this build couldn't fully read, and
+    /// say whether a write over it is now safe. A map with entries skipped
+    /// carries them through every save, so its first copy is all it needs; a
+    /// file that is no map at all is the only copy of whatever it holds, so
+    /// each distinct one is kept.
+    private func secure(_ contents: Contents) -> Bool {
+        guard !contents.isComplete, let raw = contents.raw else { return true }
+        if (try? Data(contentsOf: backupURL)) == raw { return true }
+        var target = backupURL
+        if FileManager.default.fileExists(atPath: target.path) {
+            if contents.isMap { return true }
+            target = url.appendingPathExtension("backup-\(Int(Date().timeIntervalSince1970))")
+        }
+        guard store(raw, at: target, what: "a copy of the standing set"),
+              (try? Data(contentsOf: target)) == raw else {
+            Log.push.error("could not keep a copy of the standing set; not writing over it")
+            return false
+        }
+        Log.push.notice("standing set as found copied to \(target.lastPathComponent, privacy: .public)")
+        return true
+    }
+
+    private func store(_ data: Data, at target: URL, what: String) -> Bool {
+        // The container directory is normally created by containerURL(...) —
+        // but not on every path (an unsigned simulator test host reaches here
+        // with no directory at all), and an atomic write into a missing
+        // directory fails without a word. A store whose whole job is agreeing
+        // on the 0→1 edge must not "write and hope".
+        try? FileManager.default.createDirectory(at: target.deletingLastPathComponent(),
+                                                 withIntermediateDirectories: true)
+        do {
+            try data.write(to: target, options: .atomic)
+            return true
+        } catch {
+            Log.push.error("could not save \(what, privacy: .public): \(error.localizedDescription, privacy: .public)")
+            return false
+        }
     }
 }

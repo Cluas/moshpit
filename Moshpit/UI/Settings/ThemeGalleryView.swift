@@ -27,56 +27,61 @@ struct ThemeGalleryView: View {
     private var selectedID: String { themes.theme(id: settings.themeId).id }
 
     var body: some View {
-        Form {
-            FormGroup(title: "BUILT-IN") {
-                ForEach(TerminalTheme.builtIns) { theme in
-                    ThemeRow(theme: theme,
-                             isSelected: theme.id == selectedID,
-                             onSelect: { select(theme) })
-                        .contextMenu {
-                            Button {
-                                editing = themes.duplicate(theme)
-                            } label: {
-                                Label("Duplicate & Edit", systemImage: "plus.square.on.square")
-                            }
-                        }
-                }
-            }
-
-            FormGroup(
-                title: "MY THEMES",
-                footer: "Duplicate a built-in theme to start from its palette, or import one as JSON. Long-press a theme for more."
-            ) {
-                if themes.customThemes.isEmpty {
-                    Text("No custom themes yet.")
-                        .font(Face.text(13))
-                        .foregroundStyle(Ink.meta)
-                } else {
-                    ForEach(themes.customThemes) { theme in
+        ScrollViewReader { proxy in
+            Form {
+                FormGroup(title: "BUILT-IN") {
+                    ForEach(TerminalTheme.builtIns) { theme in
                         ThemeRow(theme: theme,
                                  isSelected: theme.id == selectedID,
-                                 isEditable: true,
-                                 onSelect: { select(theme) },
-                                 onEdit: { editing = theme })
+                                 onSelect: { select(theme) })
                             .contextMenu {
-                                Button { editing = theme } label: {
-                                    Label("Edit", systemImage: "slider.horizontal.3")
-                                }
-                                Button { editing = themes.duplicate(theme) } label: {
-                                    Label("Duplicate", systemImage: "plus.square.on.square")
-                                }
-                                Button { copyJSON(theme) } label: {
-                                    Label("Copy JSON", systemImage: "doc.on.doc")
-                                }
-                                Button(role: .destructive) { deleting = theme } label: {
-                                    Label("Delete", systemImage: "trash")
+                                Button {
+                                    editing = themes.duplicate(theme)
+                                } label: {
+                                    Label("Duplicate & Edit", systemImage: "plus.square.on.square")
                                 }
                             }
                     }
                 }
+
+                FormGroup(
+                    title: "MY THEMES",
+                    footer: "Duplicate a built-in theme to start from its palette, or import one as JSON. Long-press a theme for more."
+                ) {
+                    if themes.customThemes.isEmpty {
+                        Text("No custom themes yet.")
+                            .font(Face.text(13))
+                            .foregroundStyle(Ink.meta)
+                    } else {
+                        ForEach(themes.customThemes) { theme in
+                            ThemeRow(theme: theme,
+                                     isSelected: theme.id == selectedID,
+                                     isEditable: true,
+                                     onSelect: { select(theme) },
+                                     onEdit: { editing = theme })
+                                .contextMenu {
+                                    Button { editing = theme } label: {
+                                        Label("Edit", systemImage: "slider.horizontal.3")
+                                    }
+                                    Button { editing = themes.duplicate(theme) } label: {
+                                        Label("Duplicate", systemImage: "plus.square.on.square")
+                                    }
+                                    Button { copyJSON(theme) } label: {
+                                        Label("Copy JSON", systemImage: "doc.on.doc")
+                                    }
+                                    Button(role: .destructive) { deleting = theme } label: {
+                                        Label("Delete", systemImage: "trash")
+                                    }
+                                }
+                        }
+                    }
+                }
             }
+            .moshpitForm()
+            #if DEBUG
+            .task { await ThemeGalleryAnchor.scroll(proxy, to: themes.customThemes.first?.id) }
+            #endif
         }
-        .moshpitForm()
         .navigationTitle("Theme")
         // Selection haptic follows the setting, so a pick made from the editor
         // or an import feels the same as a tap on a row.
@@ -109,7 +114,8 @@ struct ThemeGalleryView: View {
         // theme that was tapped — a shared bool + separate state can present
         // stale content when two rows are tapped in quick succession.
         .appSheet(item: $editing) { theme in
-            ThemeEditorView(theme: theme) { saved in
+            // The editor its own switch picks (the NSH one or ThemeEditorView).
+            ThemeEditorPage(theme: theme) { saved in
                 themes.save(saved)
                 settings.themeId = saved.id      // editing implies wanting it
             }
@@ -119,14 +125,26 @@ struct ThemeGalleryView: View {
                 runImport()
             }
         }
+        #if DEBUG
+        // A capture run's editor or delete card, over the first custom theme.
+        .task {
+            if let request = CaptureScreen.editorRequested, request.theme {
+                try? await Task.sleep(for: .milliseconds(500))
+                editing = themes.customThemes.first ?? themes.makeDraft()
+            }
+            if let request = CaptureScreen.deleteRequested, request.theme, !request.nsh {
+                deleting = themes.customThemes.first
+            }
+        }
+        #endif
         .moshpitCard(item: $deleting) { theme in
             MoshpitModalCard(
                 icon: "trash.fill", tone: .danger,
                 title: "Delete \(theme.name)?",
                 message: Text("This theme will be removed. Built-in themes are unaffected."),
                 buttons: [
-                    ModalButton("Cancel", kind: .secondary) { deleting = nil },
-                    ModalButton("Delete", kind: .danger) {
+                    ModalButton("Cancel", kind: .secondary, identifier: "theme-delete-cancel") { deleting = nil },
+                    ModalButton("Delete", kind: .danger, identifier: "theme-delete-confirm") {
                         remove(theme)
                         deleting = nil
                     },
@@ -214,6 +232,7 @@ private struct ThemeRow: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Edit \(theme.name)")
+                .accessibilityIdentifier("theme-edit-\(theme.id)")
             }
         }
         .frame(minHeight: 52)
@@ -285,7 +304,8 @@ struct ThemeSwatchStrip: View {
 
 // MARK: - Import sheet
 
-private struct ThemeImportView: View {
+/// Import JSON…'s sheet (the NSH Theme page presents it too).
+struct ThemeImportView: View {
     @Environment(\.dismiss) private var dismiss
     @Binding var text: String
     @Binding var error: String?
@@ -343,6 +363,31 @@ private struct ThemeImportView: View {
         }
     }
 }
+
+#if DEBUG
+/// Where a capture run has Settings › Theme scrolled to
+/// (`-MOSHPIT_SEED_SCROLL custom`), on the SwiftUI page and the NSH one
+/// alike, so both are pictured at the same rows: the user's own themes,
+/// their first row just under the bar.
+enum ThemeGalleryAnchor {
+    static var requested: Bool {
+        let args = ProcessInfo.processInfo.arguments
+        guard let i = args.firstIndex(of: "-MOSHPIT_SEED_SCROLL"), i + 1 < args.count else { return false }
+        return args[i + 1] == "custom"
+    }
+
+    /// The SwiftUI page's half: scrolls its list to row `id`, a moment after
+    /// it appears (the NSH page's is ``ThemeGalleryNSHPage``'s reveal).
+    @MainActor
+    static func scroll(_ proxy: ScrollViewProxy, to id: String?) async {
+        guard requested, let id else { return }
+        for delay in [900, 1100] {
+            try? await Task.sleep(for: .milliseconds(delay))
+            proxy.scrollTo(id, anchor: .top)
+        }
+    }
+}
+#endif
 
 // MARK: - Optional-item sheet helper
 

@@ -1,6 +1,6 @@
 import Foundation
 
-/// Builds the PTY boot line for the herdr socket pump.
+/// Builds the program of the herdr socket pump's terminal channel.
 enum HerdrPushBoot {
 
     /// The pump, PTY-shaped: kill the line discipline first (echo would feed
@@ -20,12 +20,21 @@ enum HerdrPushBoot {
     ///   - no single quotes in the python body — the whole `-c` argument
     ///     rides inside shell single quotes;
     ///   - `exec` replaces the shell, so channel teardown kills the pump
-    ///     rather than orphaning it behind a login shell.
+    ///     rather than orphaning it behind a login shell;
+    ///   - python3 found as the probe finds it, with
+    ///     ``HostCapabilities/extraPathDirs`` after the PATH the command gets.
+    ///
+    /// The push channel's own program (`requestPTY(command:)`, run as
+    /// `sh -c`), never a line typed into the login shell the channel would
+    /// open (B267): a shell still starting swallowed it — one that flushes
+    /// pending input (Powerlevel10k's instant prompt) — and push stayed off
+    /// for the session.
     /// Printed by the pump the moment it holds a socket.
     ///
     /// Load-bearing, not decoration. Writing to this channel before python
-    /// has replaced the shell means writing to the SHELL, which swallows the
-    /// bytes — and the subscribe that gets swallowed is never retried, so the
+    /// holds the socket means writing to nobody (a login shell, when the
+    /// pump was typed into one) — and the subscribe that gets lost is never
+    /// retried, so the
     /// request simply times out and push is written off as unavailable for
     /// the whole session. Measured locally: subscribing immediately after the
     /// boot line failed every time, at 3s it succeeded every time. That is
@@ -54,7 +63,11 @@ enum HerdrPushBoot {
             " d=s.recv(65536)\\n" +
             " if not d: break\\n" +
             " os.write(1,d)"
-        return "stty raw -echo; exec python3 -c 'exec(\"\(script)\")'"
+        // One word for any login shell (B138): hand-quoted, fish read the
+        // `\\n` the program holds inside single quotes as `\n`, and python
+        // then met a raw newline inside a bytes literal.
+        return "stty raw -echo; PATH=\"$PATH:\(HostCapabilities.extraPathDirs)\" exec python3 -c "
+            + Shell.quote("exec(\"\(script)\")")
     }
 }
 
@@ -122,10 +135,17 @@ final class HerdrPushDriver {
     private var eventLoop: Task<Void, Never>?
     private var pendingInvalidate: Task<Void, Never>?
 
-    /// True from a successful subscribe until shutdown/EOF. The owner treats
-    /// false-after-true as "push died, polling carries on" — no remedial
-    /// action needed beyond not claiming push freshness.
+    /// True from a successful subscribe until push ends (``onEnded``) or the
+    /// owner shuts it down.
     private(set) var isActive = false
+
+    /// Told once when push that was up ends on its own: its transport, or the
+    /// stream under it, finished — a herdr server restart closes the socket
+    /// under the pump, and the pump exits. Not for ``shutdown()``: the owner
+    /// knows that one. The owner must stop counting on push: its poll had
+    /// eased to the 45 s safety net, and with no events coming agent states
+    /// and the tree lagged by up to 45 s for the rest of the session (B188).
+    var onEnded: (@MainActor () -> Void)?
 
     /// `requestTimeout` bounds the subscribe handshake — the "no python3 on
     /// the host" failure shows up as silence (the boot line's error text is
@@ -171,10 +191,28 @@ final class HerdrPushDriver {
             for await _ in client.events {
                 self?.scheduleInvalidate()
             }
-            // Stream finished — transport gone. Polling is still running.
-            self?.isActive = false
+            // Stream finished: the transport is gone (`transportEnded`), or
+            // the owner shut push down — cancelled, and told nothing.
+            guard let self, !Task.isCancelled else { return }
+            self.ended()
         }
         return true
+    }
+
+    /// The transport under the pump ended — the owner's read of it finished.
+    /// Whatever waits on it fails and the event stream ends; push that was up
+    /// is over, and ``onEnded`` says so.
+    func transportEnded() async {
+        await client.finishInput()
+    }
+
+    private func ended() {
+        guard isActive else { return }
+        isActive = false
+        pendingInvalidate?.cancel()
+        pendingInvalidate = nil
+        burstStartedAt = nil
+        onEnded?()
     }
 
     /// Start of the burst the current debounce belongs to, for the cap above.

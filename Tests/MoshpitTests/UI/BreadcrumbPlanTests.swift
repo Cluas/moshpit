@@ -24,7 +24,12 @@ struct BreadcrumbPlanTests {
 
     @Test("No agent: three full segments, exactly what always shipped")
     func plainPane() {
-        let plan = BreadcrumbPlan.make(snapshot: snapshot(), hooks: [:])
+        var plan = BreadcrumbPlan.make(snapshot: snapshot(), hooks: [:])
+        // The tree it carries for the NSH screen's names: the active window
+        // and pane, nothing else of the tree (R12).
+        #expect(plan?.tree?.snapshot.windows.keys.sorted() == ["w1:t2"])
+        #expect(plan?.tree?.snapshot.panes.keys.sorted() == ["w1:p1"])
+        plan?.tree = nil
         #expect(plan == BreadcrumbPlan(
             sessionTitle: "moshpit", sessionSqueezable: false,
             windowTitle: "2:fix-scroll", paneTitle: "zsh", paneSignal: nil))

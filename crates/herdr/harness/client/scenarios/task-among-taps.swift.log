@@ -1,0 +1,28 @@
+t=0 exec api snapshot
+t=40 focus w1:p1
+t=300 focus w1:p2
+t=300 exec agent focus 'w1:p2' 2>/dev/null || { PATH="$PATH:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:$HOME/.local/bin" herdr pane zoom --pane 'w1:p2' --on >/dev/null 2>&1; PATH="$PATH:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:$HOME/.local/bin" herdr pane zoom --pane 'w1:p2' --off >/dev/null 2>&1; }
+t=300 focus w1:p1
+t=340 exec worktree create --cwd '/home/dev/code/app' --branch 'fix-scroll' --label 'fix-scroll' --focus --json
+t=1140 exec agent focus 'w1:p1' 2>/dev/null || { PATH="$PATH:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:$HOME/.local/bin" herdr pane zoom --pane 'w1:p1' --on >/dev/null 2>&1; PATH="$PATH:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:$HOME/.local/bin" herdr pane zoom --pane 'w1:p1' --off >/dev/null 2>&1; }
+t=1180 exec pane run 'w2:p3' 'claude'
+t=1220 exec api snapshot
+t=1220 exec api snapshot
+t=1260 focus w1:p1
+t=1260 outcome task started
+t=1260 focus w1:p1
+t=2040 exec api snapshot
+t=2080 focus w1:p1
+t=4080 exec api snapshot
+t=4120 focus w1:p1
+t=6120 exec api snapshot
+t=6160 focus w1:p1
+t=8160 exec api snapshot
+t=8200 focus w1:p1
+t=10200 exec api snapshot
+t=10240 focus w1:p1
+landed focus w1:p2
+landed worktree create fix-scroll
+landed focus w1:p1
+landed run w2:p3 claude
+state focus=w1:p1 server=w1:p1 sessions=2 notrunning=false mismatch=false

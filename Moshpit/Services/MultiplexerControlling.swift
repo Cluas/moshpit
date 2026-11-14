@@ -33,10 +33,26 @@ struct TmuxSnapshot: Equatable {
     /// frame — and has no edge to slide in from; it fades instead.
     var hasSwipedSinceAttach = false
 
-    /// Panes in the currently active window, sorted by pane id.
+    /// Panes in the currently active window, sorted by pane id — in the
+    /// order they were made (``idPrecedes(_:_:)``).
     var activePanes: [PaneInfo] {
         guard let windowId = activeWindowId else { return [] }
-        return panes.values.filter { $0.windowId == windowId }.sorted { $0.id < $1.id }
+        return panes.values.filter { $0.windowId == windowId }.sorted { Self.idPrecedes($0.id, $1.id) }
+    }
+
+    /// The sessions, in the order they were made (``idPrecedes(_:_:)``).
+    var sortedSessions: [SessionInfo] {
+        sessions.values.sorted { Self.idPrecedes($0.id, $1.id) }
+    }
+
+    /// Whether id `a` comes before id `b` by the numbers in them — the order
+    /// tmux mints its ids in (`$2` before `$10`, `%9` before `%11`), and
+    /// herdr's (`w1:p2` before `w1:p10`). A plain string comparison put `$10`
+    /// ahead of `$2`, so the fallback session after a kill or for a fresh
+    /// listing, the fallback pane input went to, and the order the sessions
+    /// were listed in all went wrong once there were ten of anything.
+    static func idPrecedes(_ a: String, _ b: String) -> Bool {
+        a.compare(b, options: .numeric) == .orderedAscending
     }
 
     /// The ACTIVE session's windows, sorted by tmux index. Discovery loads
@@ -124,12 +140,6 @@ protocol MultiplexerControlling: AnyObject, Observable {
     /// needs nothing installed at all.
     var agentHooks: [String: AgentHook] { get }
 
-    /// Whether ``agentHooks`` has been read at least once for this
-    /// controller. Before that an empty dictionary means "not asked yet",
-    /// not "no agents" — the breadcrumb waits for it so a pane never shows
-    /// up bare and grows its agent a reply later.
-    var agentHooksLoaded: Bool { get }
-
     /// Invoked on the main actor once ``agentHooks`` has been rebuilt, so the
     /// Vibe Island can re-sync immediately instead of waiting for its next
     /// sweep.
@@ -175,4 +185,21 @@ protocol MultiplexerControlling: AnyObject, Observable {
 
 extension MultiplexerControlling {
     func worktreeRepo(for sessionId: String) -> String? { nil }
+}
+
+/// Names a person types for a session or a window (tmux's, herdr's).
+enum MultiplexerName {
+    /// Why `name` won't be used as typed, or nil when it will: a line break,
+    /// a tab or any other control character (B139). Such a name is a paste
+    /// accident, not a name — and in tmux's control mode one line is one
+    /// command: a line break in a `rename-window` ended the command there and
+    /// ran the rest of the name as a tmux command of its own (`run-shell`
+    /// among them, tmux 3.6a), and every reply after it went to the wrong
+    /// callback.
+    static func refusal(_ name: String) -> String? {
+        guard name.unicodeScalars.contains(where: { $0.properties.generalCategory == .control }) else {
+            return nil
+        }
+        return String(localized: "Names can't contain line breaks or other control characters.")
+    }
 }

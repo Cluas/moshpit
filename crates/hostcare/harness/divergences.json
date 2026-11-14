@@ -1,0 +1,135 @@
+{
+  "prove-push-exec-fails": {
+    "id": "prove-push-exec-fails",
+    "swift": "HostSetupModel.provePush (HostSetupModel.swift:253-271 at 81c121a1)",
+    "symptom": "When the host can't run the self-test (the exec channel fails), the screen stays on 'Testing…' for the full 20 s before it shows why: the `async let arrival` wait is implicitly awaited when the function throws, and awaitSelfTest only ends by arrival or its own timeout.",
+    "rust": "setup::prove_push fails the proof the moment the command fails and forgets the nonce; the final state is the same (Failed with the channel's words), only the 20 s is gone.",
+    "trigger": "Prove push on a host whose exec fails (connection dropped, sender missing)."
+  },
+  "care-relay-trailing-slash": {
+    "id": "relay-setting-normalised",
+    "swift": "HostAutoCare.ensurePairingNow (HostAutoCare.swift:300-305 at 81c121a1)",
+    "symptom": "A pairing is compared with the relay setting as typed, and 'corrected' to it: a setting with a trailing slash (or spaces) replaces the stored, normalised address, empties the send token, re-mints at '<relay>//v1/mint' and rewrites the host's conf with the un-normalised address. Only a DEBUG build's relay override can carry one (Release's relay is a constant).",
+    "rust": "care compares against the setting normalised as PushPairing.make normalises it (spaces and one trailing slash trimmed): an equal address is left alone, and a corrected one is stored normalised.",
+    "trigger": "moshpit.settings.pushRelay = 'http://127.0.0.1:8080/' in a DEBUG build, with a pairing minted there."
+  },
+  "care-conf-deleted": {
+    "id": "host-files-looked-at",
+    "swift": "InstallState.status and HostAutoCare.ensurePairingNow (HostInstaller.swift:371, HostAutoCare.swift:319-323 at 81c121a1); B315",
+    "symptom": "What the host holds was taken from its manifest alone. A push conf (or the sender, or the stamp script) deleted or edited by hand on the host still read as installed and current, so care never wrote it again and pushes stopped without a word.",
+    "rust": "Every read of a host also runs one read-only command (moshpit_install::drift) that takes the digest of each of Moshpit's files the manifest records and checks each recorded agent config still calls the stamp script; the manifest is made to say what was found before anything is decided. A missing or edited conf is written again, a missing or edited script installed again. That command is left out of every scenario's comparison; with the host holding what its manifest records, every other scenario is the same.",
+    "trigger": "rm ~/.moshpit/push.d/<conn>.conf on a paired host, then connect."
+  },
+  "care-hooks-removed": {
+    "id": "hooks-removed-by-hand",
+    "swift": "HostAutoCare.tendNow (HostAutoCare.swift:229-257 at 81c121a1); B315",
+    "symptom": "With Moshpit's hooks taken out of the agent's config by hand, the manifest still recorded them: care went on minting a pairing and writing its conf to a host where nothing calls the sender, and Host Setup showed the hooks as installed.",
+    "rust": "The registration whose config no longer calls the stamp script is dropped from what care reads: the host is one without hooks — nothing is put back or paired (that would undo the person's edit), the consent question is asked as on any such host, and Host Setup shows the hooks as not installed.",
+    "trigger": "Remove Moshpit's entries from ~/.claude/settings.json on a hooked host, then connect."
+  },
+  "prove-push-sender-output": {
+    "id": "prove-push-says-at-once",
+    "swift": "HostSetupModel.provePush (HostSetupModel.swift:253-271 at 81c121a1)",
+    "symptom": "When the host's sender says why the push isn't coming (the relay refused it, no pairing to send with), the screen still waits out the whole 20 s before showing it: the arrival wait runs to its timeout whatever the command answered.",
+    "rust": "setup::prove_push takes anything the sender printed as the answer at once (B359): it prints only on failure and tests this connection's pairing alone (B353). A push that already arrived still counts; an empty answer keeps the wait. The final state is the same, only the 20 s is gone.",
+    "trigger": "Prove push on a host whose sender answers with a relay error or the no-pairing message."
+  },
+  "pair": {
+    "id": "self-test-scope",
+    "swift": "HostCommands.selfTestPush (the nonce alone)",
+    "symptom": "The push test sent after pairing names no connection, so the host's sender tests every pairing it holds: every other phone paired with the host gets the test push, and a phone with two connections there can pass on the other's pairing.",
+    "rust": "The test names the connection it proves (install's self-test-scope, B353): `--test '<nonce>' '<connection>'`. Every other command and the outcome are the same.",
+    "trigger": "Pair on any host; seen in the last command."
+  },
+  "prove-hooks-stamped": {
+    "id": "hooks-test-runs-the-registration",
+    "swift": "HostSetupModel.proveHooks (HostSetupModel.swift at 81c121a1); B380",
+    "symptom": "Test the hooks fired the stamp script by hand as moshpit-selftest, whatever the agent's config held: it passed for an agent with no hooks installed, a pass cleared Codex's trust step though Codex was never involved, and an empty pane was blamed on that trust step.",
+    "rust": "The test runs only on hooks this build installed (an agent with none, or an out-of-date install, reads unavailable and nothing is sent). It reads the agent's config, requires Moshpit's command for every event this build registers there, and fires the working one with MOSHPIT_SELFTEST=1 (stamped as the test, no mark left). Codex's trust step is read from the host's marks of hooks that ran, never cleared by the test. These scenarios run on a host without hooks, so the test isn't run.",
+    "trigger": "Test the hooks with no hooks installed for the selected agent."
+  },
+  "prove-hooks-codex-empty": {
+    "id": "hooks-test-runs-the-registration",
+    "swift": "HostSetupModel.proveHooks (HostSetupModel.swift at 81c121a1); B380",
+    "symptom": "Test the hooks fired the stamp script by hand as moshpit-selftest, whatever the agent's config held: it passed for an agent with no hooks installed, a pass cleared Codex's trust step though Codex was never involved, and an empty pane was blamed on that trust step.",
+    "rust": "The test runs only on hooks this build installed (an agent with none, or an out-of-date install, reads unavailable and nothing is sent). It reads the agent's config, requires Moshpit's command for every event this build registers there, and fires the working one with MOSHPIT_SELFTEST=1 (stamped as the test, no mark left). Codex's trust step is read from the host's marks of hooks that ran, never cleared by the test. These scenarios run on a host without hooks, so the test isn't run.",
+    "trigger": "Test the hooks with no hooks installed for the selected agent."
+  },
+  "install-claude": {
+    "id": "steps-look-first",
+    "swift": "HostSetupModel.run and pair (act on the state the page last read)",
+    "symptom": "A Host Setup step acts on the host as the page read it when it opened: whatever another phone (or care) changed since is decided on stale, and the step's manifest write then erases it (hs1's review, #5).",
+    "rust": "Every step reads the host first (B373: a preflight and the manifest, plus the drift check left out here), and every manifest write is re-read under the host's lock (install's manifest-lock). Two more commands at the start of the step; the same outcome on a host nobody else touched.",
+    "trigger": "Any Host Setup step."
+  },
+  "install-codex": {
+    "id": "steps-look-first",
+    "swift": "HostSetupModel.run and pair (act on the state the page last read)",
+    "symptom": "A Host Setup step acts on the host as the page read it when it opened: whatever another phone (or care) changed since is decided on stale, and the step's manifest write then erases it (hs1's review, #5).",
+    "rust": "Every step reads the host first (B373: a preflight and the manifest, plus the drift check left out here), and every manifest write is re-read under the host's lock (install's manifest-lock). Two more commands at the start of the step; the same outcome on a host nobody else touched.",
+    "trigger": "Any Host Setup step."
+  },
+  "install-broken-json": {
+    "id": "steps-look-first",
+    "swift": "HostSetupModel.run and pair (act on the state the page last read)",
+    "symptom": "A Host Setup step acts on the host as the page read it when it opened: whatever another phone (or care) changed since is decided on stale, and the step's manifest write then erases it (hs1's review, #5).",
+    "rust": "Every step reads the host first (B373: a preflight and the manifest, plus the drift check left out here), and every manifest write is re-read under the host's lock (install's manifest-lock). Two more commands at the start of the step; the same outcome on a host nobody else touched.",
+    "trigger": "Any Host Setup step."
+  },
+  "install-then-remove": {
+    "id": "steps-look-first",
+    "swift": "HostSetupModel.run and pair (act on the state the page last read)",
+    "symptom": "A Host Setup step acts on the host as the page read it when it opened: whatever another phone (or care) changed since is decided on stale, and the step's manifest write then erases it (hs1's review, #5).",
+    "rust": "Every step reads the host first (B373: a preflight and the manifest, plus the drift check left out here), and every manifest write is re-read under the host's lock (install's manifest-lock). Two more commands at the start of the step; the same outcome on a host nobody else touched. Removing the hooks from a config the install created leaves `{}` where Foundation wrote `{\n\n}` (install's json-layout, B375: a container that changed is rebuilt in the file's own style, and an empty one holds nothing).",
+    "trigger": "Any Host Setup step."
+  },
+  "pair-missing-tools": {
+    "id": "steps-look-first",
+    "swift": "HostSetupModel.run and pair (act on the state the page last read)",
+    "symptom": "A Host Setup step acts on the host as the page read it when it opened: whatever another phone (or care) changed since is decided on stale, and the step's manifest write then erases it (hs1's review, #5).",
+    "rust": "Every step reads the host first (B373: a preflight and the manifest, plus the drift check left out here), and every manifest write is re-read under the host's lock (install's manifest-lock). Two more commands at the start of the step; the same outcome on a host nobody else touched.",
+    "trigger": "Any Host Setup step."
+  },
+  "unpair": {
+    "id": "steps-look-first",
+    "swift": "HostSetupModel.run and pair (act on the state the page last read)",
+    "symptom": "A Host Setup step acts on the host as the page read it when it opened: whatever another phone (or care) changed since is decided on stale, and the step's manifest write then erases it (hs1's review, #5).",
+    "rust": "Every step reads the host first (B373: a preflight and the manifest, plus the drift check left out here), and every manifest write is re-read under the host's lock (install's manifest-lock). Two more commands at the start of the step; the same outcome on a host nobody else touched.",
+    "trigger": "Any Host Setup step."
+  },
+  "unpair-cannot-forget": {
+    "id": "pairing-status-digest",
+    "swift": "HostSetupModel (the pairing's status: present in the manifest is Current)",
+    "symptom": "A host conf the phone's pairing wouldn't write (a secret the phone no longer holds, a pairing it can't send with) reads Current.",
+    "rust": "The pairing is Current only when the host's conf is the one this phone's pairing would write (B372); otherwise Stale. In this scenario the fixture's conf isn't, so the page says Stale. Every command is the same.",
+    "trigger": "A paired host whose conf and the phone's pairing disagree."
+  },
+  "prove-hooks-no-pane": {
+    "id": "hooks-test-runs-the-registration",
+    "swift": "HostSetupModel.proveHooks (HostSetupModel.swift at 81c121a1); B380",
+    "symptom": "Test the hooks fired the stamp script by hand as moshpit-selftest, whatever the agent's config held: it passed for an agent with no hooks installed, a pass cleared Codex's trust step though Codex was never involved, and an empty pane was blamed on that trust step.",
+    "rust": "The test runs only on hooks this build installed (an agent with none, or an out-of-date install, reads unavailable and nothing is sent). It reads the agent's config, requires Moshpit's command for every event this build registers there, and fires the working one with MOSHPIT_SELFTEST=1 (stamped as the test, no mark left). Codex's trust step is read from the host's marks of hooks that ran, never cleared by the test. These scenarios run on a host without hooks, so the test isn't run.",
+    "trigger": "Test the hooks with no hooks installed for the selected agent."
+  },
+  "prove-hooks-elsewhere": {
+    "id": "hooks-test-runs-the-registration",
+    "swift": "HostSetupModel.proveHooks (HostSetupModel.swift at 81c121a1); B380",
+    "symptom": "Test the hooks fired the stamp script by hand as moshpit-selftest, whatever the agent's config held: it passed for an agent with no hooks installed, a pass cleared Codex's trust step though Codex was never involved, and an empty pane was blamed on that trust step.",
+    "rust": "The test runs only on hooks this build installed (an agent with none, or an out-of-date install, reads unavailable and nothing is sent). It reads the agent's config, requires Moshpit's command for every event this build registers there, and fires the working one with MOSHPIT_SELFTEST=1 (stamped as the test, no mark left). Codex's trust step is read from the host's marks of hooks that ran, never cleared by the test. These scenarios run on a host without hooks, so the test isn't run.",
+    "trigger": "Test the hooks with no hooks installed for the selected agent."
+  },
+  "inspect": {
+    "id": "hooks-test-runs-the-registration",
+    "swift": "HostSetupModel.proveHooks (HostSetupModel.swift at 81c121a1); B380",
+    "symptom": "Test the hooks fired the stamp script by hand as moshpit-selftest, whatever the agent's config held: it passed for an agent with no hooks installed, a pass cleared Codex's trust step though Codex was never involved, and an empty pane was blamed on that trust step.",
+    "rust": "The test runs only on hooks this build installed (an agent with none, or an out-of-date install, reads unavailable and nothing is sent). It reads the agent's config, requires Moshpit's command for every event this build registers there, and fires the working one with MOSHPIT_SELFTEST=1 (stamped as the test, no mark left). Codex's trust step is read from the host's marks of hooks that ran, never cleared by the test. This scenario reads a host without hooks: the page says the test needs them installed, where Swift offered a test that would have passed.",
+    "trigger": "Open Host Setup on a host without hooks for the selected agent."
+  },
+  "pair-empty-relay": {
+    "id": "hooks-test-runs-the-registration",
+    "swift": "HostSetupModel.proveHooks (HostSetupModel.swift at 81c121a1); B380",
+    "symptom": "Test the hooks fired the stamp script by hand as moshpit-selftest, whatever the agent's config held: it passed for an agent with no hooks installed, a pass cleared Codex's trust step though Codex was never involved, and an empty pane was blamed on that trust step.",
+    "rust": "The test runs only on hooks this build installed (an agent with none, or an out-of-date install, reads unavailable and nothing is sent). It reads the agent's config, requires Moshpit's command for every event this build registers there, and fires the working one with MOSHPIT_SELFTEST=1 (stamped as the test, no mark left). Codex's trust step is read from the host's marks of hooks that ran, never cleared by the test. This scenario reads a host without hooks: the page says the test needs them installed, where Swift offered a test that would have passed.",
+    "trigger": "Pair with a blank relay setting (refused before the host is touched), on a host without hooks for the selected agent; the page read after."
+  }
+}

@@ -1,12 +1,82 @@
-import Foundation
 import CryptoKit
-import Security
+import Foundation
 
-/// Generates and imports SSH key material (prototype screen 9).
+// MARK: - Errors
+
+/// Why a pasted private key can't be imported — each one something the user
+/// can act on. The reading is Rust's (`moshpit_ssh::keyfile`, through
+/// ``KeyImportFailure``); the words are the app's.
+enum SSHKeyImportError: Error, Equatable, LocalizedError {
+    /// Not a private key this can read at all.
+    case unrecognized
+    /// A private key, but what's inside doesn't add up: cut short, or garbled.
+    case damaged
+    case passphraseRequired
+    case wrongPassphrase
+    /// A FIDO security key (`sk-ecdsa…`, `sk-ssh-ed25519…`): the file holds a
+    /// handle, and the private half lives on the token.
+    case securityKey
+    /// A key type no connect path can sign with ("DSA", "Ed448", …).
+    case unsupportedType(String)
+    /// Encrypted with a scheme this can't undo.
+    case unsupportedEncryption(String)
+    /// Making or encoding the key failed.
+    case failed(String)
+
+    init(_ failure: KeyImportFailure) {
+        switch failure {
+        case .Unrecognized: self = .unrecognized
+        case .Damaged: self = .damaged
+        case .NeedsPassphrase: self = .passphraseRequired
+        case .WrongPassphrase: self = .wrongPassphrase
+        case .SecurityKey: self = .securityKey
+        case .Unsupported(let kind): self = .unsupportedType(kind)
+        case .UnsupportedEncryption(let scheme): self = .unsupportedEncryption(scheme)
+        case .Failed(let message): self = .failed(message)
+        }
+    }
+
+    var errorDescription: String? {
+        switch self {
+        case .unrecognized:
+            return String(localized: "This isn't a private key Moshpit can read. Paste an OpenSSH or PEM private key, from its BEGIN line to its END line.")
+        case .damaged:
+            return String(localized: "This private key is damaged or incomplete. Copy it again, from its BEGIN line to its END line.")
+        case .passphraseRequired:
+            return String(localized: "This key is protected by a passphrase. Enter it to import the key.")
+        case .wrongPassphrase:
+            return String(localized: "That passphrase doesn't unlock this key.")
+        case .securityKey:
+            return String(localized: "Security keys (sk keys), such as a YubiKey's, aren't supported yet.")
+        case .unsupportedType(let type):
+            return String(localized: "Moshpit can't sign in with \(type) keys. Ed25519, RSA and ECDSA keys work.")
+        case .unsupportedEncryption(let scheme):
+            return String(localized: "This key is encrypted with \(scheme), which Moshpit can't unlock. Re-encrypt it with “ssh-keygen -p” and import it again.")
+        case .failed(let why):
+            // Not something a person can act on, as SSHKeyFactory.KeyError.
+            return "Key generation failed: \(why)"
+        }
+    }
+}
+
+/// Runs a call into the key reader, its refusal as an ``SSHKeyImportError``.
+private func keyReader<T>(_ call: () throws -> T) throws -> T {
+    do {
+        return try call()
+    } catch let failure as KeyImportFailure {
+        throw SSHKeyImportError(failure)
+    }
+}
+
+// MARK: - Making and importing keys
+
+/// Generates and imports SSH keys (prototype screen 9) — the reading,
+/// writing and checking in Rust (`moshpit_ssh::keyfile`, the one key reader
+/// every platform shares), the Secure Enclave's keys here.
 ///
-/// Private keys are produced as OpenSSH-format PEM blobs (or Secure Enclave
-/// data representations) and handed to `KeychainService` by the caller —
-/// nothing here persists anything.
+/// Private keys are produced as OpenSSH-format text (or a Secure Enclave
+/// key's data representation) and handed to `KeychainService` by the
+/// caller — nothing here persists anything.
 enum SSHKeyFactory {
 
     struct Generated {
@@ -14,6 +84,27 @@ enum SSHKeyFactory {
         let privateBlob: Data      // OpenSSH PEM (utf8) or SE dataRepresentation
         let publicKeyLine: String  // authorized_keys line
         let fingerprint: String    // "SHA256:…"
+        /// An RSA key's modulus size; nil for the others.
+        var bits: Int?
+
+        init(algorithm: SSHKeyAlgorithm, privateBlob: Data, publicKeyLine: String, fingerprint: String,
+             bits: Int? = nil) {
+            self.algorithm = algorithm
+            self.privateBlob = privateBlob
+            self.publicKeyLine = publicKeyLine
+            self.fingerprint = fingerprint
+            self.bits = bits
+        }
+
+        /// What the key reader made or read, as a record names it.
+        fileprivate init(_ key: ImportedKey) throws {
+            guard let algorithm = SSHKeyAlgorithm(rawValue: key.algorithm) else {
+                throw SSHKeyImportError.unsupportedType(key.algorithm)
+            }
+            self.init(algorithm: algorithm, privateBlob: Data(key.openssh.utf8),
+                      publicKeyLine: key.publicKeyLine, fingerprint: key.fingerprint,
+                      bits: key.bits.map(Int.init))
+        }
     }
 
     enum KeyError: LocalizedError {
@@ -45,54 +136,20 @@ enum SSHKeyFactory {
     static func generate(algorithm: SSHKeyAlgorithm, comment: String) throws -> Generated {
         switch algorithm {
         case .ed25519:
-            return try generateEd25519(comment: comment)
+            return try Generated(keyReader { try sshKeyGenerate(kind: .ed25519, comment: comment) })
+        case .rsa4096:
+            return try Generated(keyReader { try sshKeyGenerate(kind: .rsa(bits: 4096), comment: comment) })
         case .seP256:
             return try generateSecureEnclaveP256(comment: comment)
-        case .rsa4096:
-            return try generateRSA4096(comment: comment)
         case .ecdsaSK:
-            throw KeyError.unsupported("ECDSA-sk keys live on a hardware token — import the public half instead.")
+            throw KeyError.unsupported("security keys (sk keys) aren't supported yet")
+        case .ecdsa:
+            throw KeyError.unsupported("ECDSA keys are imported, not generated here.")
         }
     }
 
-    // MARK: ED25519
-
-    private static func generateEd25519(comment: String) throws -> Generated {
-        let key = Curve25519.Signing.PrivateKey()
-        let pub = key.publicKey.rawRepresentation          // 32 bytes
-        let seed = key.rawRepresentation                   // 32 bytes
-
-        let publicBlob = sshString("ssh-ed25519") + sshString(pub)
-
-        // openssh-key-v1 container (cipher "none")
-        var payload = Data("openssh-key-v1\0".utf8)
-        payload += sshString("none")                       // cipher
-        payload += sshString("none")                       // kdf
-        payload += sshString(Data())                       // kdf options
-        payload += uint32(1)                               // n keys
-        payload += sshString(publicBlob)
-
-        var priv = Data()
-        let check = UInt32.random(in: .min ... .max)
-        priv += uint32(check) + uint32(check)
-        priv += sshString("ssh-ed25519")
-        priv += sshString(pub)
-        priv += sshString(seed + pub)                      // 64-byte private
-        priv += sshString(comment)
-        var pad: UInt8 = 1
-        while priv.count % 8 != 0 { priv.append(pad); pad += 1 }
-        payload += sshString(priv)
-
-        let pem = pemArmor(payload, label: "OPENSSH PRIVATE KEY")
-        return Generated(
-            algorithm: .ed25519,
-            privateBlob: Data(pem.utf8),
-            publicKeyLine: "ssh-ed25519 \(publicBlob.base64EncodedString()) \(comment)",
-            fingerprint: fingerprint(of: publicBlob))
-    }
-
-    // MARK: Secure Enclave P-256
-
+    /// A P-256 key in the Secure Enclave, whose private half never leaves
+    /// it; its public half becomes the record's line and fingerprint.
     private static func generateSecureEnclaveP256(comment: String) throws -> Generated {
         let publicKey: P256.Signing.PublicKey
         let privateBlob: Data
@@ -107,234 +164,78 @@ enum SSHKeyFactory {
             publicKey = key.publicKey
             privateBlob = key.rawRepresentation
         }
-        let point = publicKey.x963Representation             // 0x04 || X || Y
-        let blob = sshString("ecdsa-sha2-nistp256") + sshString("nistp256") + sshString(point)
-        return Generated(
-            algorithm: .seP256,
-            privateBlob: privateBlob,
-            publicKeyLine: "ecdsa-sha2-nistp256 \(blob.base64EncodedString()) \(comment)",
-            fingerprint: fingerprint(of: blob))
-    }
-
-    // MARK: RSA-4096
-
-    /// `SecKeyCopyExternalRepresentation` hands back a PKCS#1 `RSAPrivateKey`
-    /// DER — that's a real key, but not one anything downstream can
-    /// authenticate with: `SSHKeyDetection.detectPrivateKeyType` (Citadel)
-    /// hard-requires the openssh-key-v1 container, and PKCS#1 isn't it. Build
-    /// that container ourselves, mirroring `generateEd25519`'s framing below.
-    private static func generateRSA4096(comment: String) throws -> Generated {
-        let attributes: [String: Any] = [
-            kSecAttrKeyType as String: kSecAttrKeyTypeRSA,
-            kSecAttrKeySizeInBits as String: 4096,
-        ]
-        var error: Unmanaged<CFError>?
-        guard let secKey = SecKeyCreateRandomKey(attributes as CFDictionary, &error),
-              let privDER = SecKeyCopyExternalRepresentation(secKey, &error) as Data?
-        else {
-            let why = (error?.takeRetainedValue()).map(String.init(describing:)) ?? "SecKey failure"
-            throw KeyError.generationFailed(why)
+        let line = try keyReader {
+            try sshKeyHardwarePublicKey(publicKey: publicKey.x963Representation, comment: comment)
         }
-
-        guard let fields = parsePKCS1RSAPrivateKey(privDER) else {
-            throw KeyError.generationFailed("could not parse generated RSA private key")
-        }
-
-        // SSH's own (e, n) order for the public blob (RFC 4253) — already
-        // exercised by the authorized_keys line below.
-        let publicBlob = sshString("ssh-rsa") + sshMPInt(fields.e) + sshMPInt(fields.n)
-
-        var payload = Data("openssh-key-v1\0".utf8)
-        payload += sshString("none")                       // cipher
-        payload += sshString("none")                       // kdf
-        payload += sshString(Data())                       // kdf options
-        payload += uint32(1)                               // n keys
-        payload += sshString(publicBlob)
-
-        var priv = Data()
-        let check = UInt32.random(in: .min ... .max)
-        priv += uint32(check) + uint32(check)
-        priv += sshString("ssh-rsa")
-        // openssh-key-v1's own (n, e, d, iqmp, p, q) order for the private
-        // blob — NOT the same order as the public blob above, and not PKCS#1's
-        // order either. Confirmed against Citadel's own reader
-        // (`Insecure.RSA.PrivateKey.read(consuming:)`, Citadel/OpenSSHKey.swift)
-        // rather than assumed, since getting this wrong silently produces a
-        // key that just fails to authenticate.
-        priv += sshMPInt(fields.n)
-        priv += sshMPInt(fields.e)
-        priv += sshMPInt(fields.d)
-        priv += sshMPInt(fields.iqmp)
-        priv += sshMPInt(fields.p)
-        priv += sshMPInt(fields.q)
-        priv += sshString(comment)
-        var pad: UInt8 = 1
-        while priv.count % 8 != 0 { priv.append(pad); pad += 1 }
-        payload += sshString(priv)
-
-        let pem = pemArmor(payload, label: "OPENSSH PRIVATE KEY")
-        return Generated(
-            algorithm: .rsa4096,
-            privateBlob: Data(pem.utf8),
-            publicKeyLine: "ssh-rsa \(publicBlob.base64EncodedString()) \(comment)",
-            fingerprint: fingerprint(of: publicBlob))
+        return Generated(algorithm: .seP256, privateBlob: privateBlob,
+                         publicKeyLine: line.publicKeyLine, fingerprint: line.fingerprint)
     }
 
     // MARK: - Import
 
-    /// Best-effort import of a pasted private key. Detects the algorithm from
-    /// the PEM body; computes a fingerprint when a public key line is supplied.
-    static func importKey(privatePEM: String, publicKeyLine: String?, comment: String) throws -> Generated {
-        let trimmed = privatePEM.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard trimmed.contains("PRIVATE KEY") else {
-            throw KeyError.unsupported("not a PEM private key")
+    /// Import a pasted private key, stored the one way every connect path
+    /// loads a key: an unencrypted openssh-key-v1 file.
+    ///
+    /// The key is read whatever form it came in: what `ssh-keygen` writes by
+    /// default (any cipher), its `-m PEM` and `-m PKCS8` forms, OpenSSL's and
+    /// PuTTY's — decrypted with `passphrase` when it has one. A key no connect
+    /// path signs with (a security key, DSA) is refused here, saying why.
+    ///
+    /// `comment` ends the public key line, as it does for a generated key.
+    /// Left empty, a pasted `.pub` line's comment stays, else the key file's
+    /// own. The `.pub` line contributes nothing else.
+    static func importKey(privatePEM: String, passphrase: String? = nil,
+                          publicKeyLine: String?, comment: String) throws -> Generated {
+        try Generated(keyReader {
+            try sshKeyImport(text: privatePEM, passphrase: passphrase, publicKeyLine: publicKeyLine,
+                             comment: comment)
+        })
+    }
+
+    /// Whether `text` holds a private key that needs a passphrase to read.
+    /// False for anything unreadable — reading it says why — and for a key
+    /// refused whatever the passphrase.
+    static func isEncrypted(_ text: String) -> Bool {
+        sshKeyIsEncrypted(text: text)
+    }
+
+    /// What a stored private key is, read off the key alone — for a
+    /// keychain item no record names any more (``KeychainReferences``): its
+    /// type, public key line, fingerprint and size. The stored bytes are
+    /// never rewritten. A key file in any form the app reads (unencrypted),
+    /// or a Secure Enclave key's handle; nil for anything else — a
+    /// password, a key behind a passphrase, a key the app can't sign with.
+    static func describeStored(_ secret: Data) -> Generated? {
+        if let text = String(data: secret, encoding: .utf8), text.contains("-----BEGIN") {
+            return sshKeyDescribeStored(text: text).flatMap { try? Generated($0) }
         }
-        let algorithm: SSHKeyAlgorithm
-        if trimmed.contains("BEGIN RSA") || (publicKeyLine?.hasPrefix("ssh-rsa") ?? false) {
-            algorithm = .rsa4096
-        } else if publicKeyLine?.hasPrefix("ecdsa-sha2") ?? trimmed.contains("BEGIN EC") {
-            algorithm = .ecdsaSK
-        } else {
-            algorithm = .ed25519
-        }
-        var fp = ""
-        var pubLine = publicKeyLine ?? ""
-        if let line = publicKeyLine {
-            let parts = line.split(separator: " ")
-            if parts.count >= 2, let blob = Data(base64Encoded: String(parts[1])) {
-                fp = fingerprint(of: blob)
-            }
-        } else {
-            pubLine = ""
-        }
-        return Generated(
-            algorithm: algorithm,
-            privateBlob: Data(trimmed.utf8),
-            publicKeyLine: pubLine,
-            fingerprint: fp)
-    }
-
-    // MARK: - Wire helpers
-
-    private static func uint32(_ value: UInt32) -> Data {
-        var be = value.bigEndian
-        return Data(bytes: &be, count: 4)
-    }
-
-    private static func sshString(_ data: Data) -> Data {
-        uint32(UInt32(data.count)) + data
-    }
-
-    private static func sshString(_ s: String) -> Data {
-        sshString(Data(s.utf8))
-    }
-
-    /// SSH mpint: big-endian, leading 0x00 if the high bit is set.
-    private static func sshMPInt(_ raw: Data) -> Data {
-        var bytes = Data(raw.drop(while: { $0 == 0 }))
-        if let first = bytes.first, first & 0x80 != 0 {
-            bytes.insert(0, at: bytes.startIndex)
-        }
-        return sshString(bytes)
-    }
-
-    static func fingerprint(of publicBlob: Data) -> String {
-        let digest = SHA256.hash(data: publicBlob)
-        let b64 = Data(digest).base64EncodedString()
-            .trimmingCharacters(in: CharacterSet(charactersIn: "="))
-        return "SHA256:\(b64)"
-    }
-
-    private static func pemArmor(_ payload: Data, label: String) -> String {
-        let b64 = payload.base64EncodedString()
-        let wrapped = stride(from: 0, to: b64.count, by: 70).map { offset -> Substring in
-            let start = b64.index(b64.startIndex, offsetBy: offset)
-            let end = b64.index(start, offsetBy: 70, limitedBy: b64.endIndex) ?? b64.endIndex
-            return b64[start..<end]
-        }.joined(separator: "\n")
-        return "-----BEGIN \(label)-----\n\(wrapped)\n-----END \(label)-----\n"
-    }
-
-    /// Minimal sequential DER reader — only what's needed to walk a flat
-    /// SEQUENCE of INTEGERs, which is all a PKCS#1 RSA public or private key
-    /// body is. Shared so the private-key walk added for openssh-key-v1
-    /// export runs the same, already-exercised tag/length logic as the
-    /// public-key walk below rather than a second hand-rolled copy of it.
-    private struct DERReader {
-        private let data: Data
-        private var idx: Data.Index
-
-        init(_ data: Data) {
-            self.data = data
-            self.idx = data.startIndex
-        }
-
-        private mutating func readLength() -> Int? {
-            guard idx < data.endIndex else { return nil }
-            let first = data[idx]; idx = data.index(after: idx)
-            if first & 0x80 == 0 { return Int(first) }
-            let count = Int(first & 0x7F)
-            guard count <= 4, data.distance(from: idx, to: data.endIndex) >= count else { return nil }
-            var length = 0
-            for _ in 0..<count {
-                length = length << 8 | Int(data[idx])
-                idx = data.index(after: idx)
-            }
-            return length
-        }
-
-        /// Consumes a SEQUENCE's tag + length, leaving `idx` at its first child.
-        mutating func enterSequence() -> Bool {
-            guard idx < data.endIndex, data[idx] == 0x30 else { return false }
-            idx = data.index(after: idx)
-            return readLength() != nil
-        }
-
-        mutating func expect(tag: UInt8) -> Data? {
-            guard idx < data.endIndex, data[idx] == tag else { return nil }
-            idx = data.index(after: idx)
-            guard let length = readLength(),
-                  data.distance(from: idx, to: data.endIndex) >= length else { return nil }
-            let body = data[idx..<data.index(idx, offsetBy: length)]
-            idx = data.index(idx, offsetBy: length)
-            return Data(body)
-        }
-
-        mutating func integer() -> Data? { expect(tag: 0x02) }
-    }
-
-    /// PKCS#1 RSAPublicKey: SEQUENCE { INTEGER n, INTEGER e }.
-    private static func parsePKCS1RSAPublicKey(_ der: Data) -> (modulus: Data, exponent: Data)? {
-        var reader = DERReader(der)
-        guard reader.enterSequence(), let n = reader.integer(), let e = reader.integer() else { return nil }
-        return (n, e)
-    }
-
-    /// The integers of a PKCS#1 RSAPrivateKey that openssh-key-v1 carries.
-    private struct RSAPrivateKeyParts {
-        let n: Data, e: Data, d: Data, p: Data, q: Data, iqmp: Data
-    }
-
-    /// PKCS#1 RSAPrivateKey (RFC 8017 §A.1.2): SEQUENCE { version, n, e, d,
-    /// p, q, exponent1, exponent2, coefficient }. `SecKeyCopyExternalRepresentation`
-    /// emits exactly this for an RSA private key. `coefficient` here is the
-    /// same value openssh-key-v1 calls `iqmp` (q⁻¹ mod p) — Apple's SecKey
-    /// already computed it, so no modular inverse needs computing by hand.
-    private static func parsePKCS1RSAPrivateKey(
-        _ der: Data
-    ) -> RSAPrivateKeyParts? {
-        var reader = DERReader(der)
-        guard reader.enterSequence(),
-              reader.integer() != nil,                 // version (0)
-              let n = reader.integer(),
-              let e = reader.integer(),
-              let d = reader.integer(),
-              let p = reader.integer(),
-              let q = reader.integer(),
-              reader.integer() != nil,                 // exponent1 = d mod (p-1), unused
-              reader.integer() != nil,                 // exponent2 = d mod (q-1), unused
-              let iqmp = reader.integer()
+        guard SecureEnclave.isAvailable,
+              let key = try? SecureEnclave.P256.Signing.PrivateKey(dataRepresentation: secret),
+              let line = try? sshKeyHardwarePublicKey(publicKey: key.publicKey.x963Representation, comment: "")
         else { return nil }
-        return RSAPrivateKeyParts(n: n, e: e, d: d, p: p, q: q, iqmp: iqmp)
+        return Generated(algorithm: .seP256, privateBlob: secret, publicKeyLine: line.publicKeyLine,
+                         fingerprint: line.fingerprint)
+    }
+
+    /// The modulus size of the `ssh-rsa` key on an `authorized_keys` line;
+    /// nil for any other line.
+    static func rsaBits(ofPublicKeyLine line: String) -> Int? {
+        sshKeyRsaBits(publicKeyLine: line).map(Int.init)
+    }
+
+    /// `SHA256:…` of an SSH public key blob, as `ssh-keygen -l` prints it.
+    static func fingerprint(of publicBlob: Data) -> String {
+        sshKeyFingerprint(publicBlob: publicBlob)
+    }
+
+    /// The SSH public key blob of the unencrypted private key in `text`.
+    static func publicKeyBlob(of text: String) throws -> Data {
+        try keyReader { try sshKeyPublicBlob(text: text) }
+    }
+
+    /// The private numbers of the unencrypted key in `text`, for the
+    /// connect path's signers (CryptoKit, Security).
+    static func signingParts(of text: String) throws -> SigningParts {
+        try keyReader { try sshKeySigningParts(text: text) }
     }
 }

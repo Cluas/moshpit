@@ -1,0 +1,12 @@
+t=0 exec api snapshot
+t=40 focus w1:p1
+t=300 exec workspace focus 'w9'
+t=340 exec tab create --focus --label 'logs'
+t=380 exec api snapshot
+t=420 focus w1:p3
+t=2040 exec api snapshot
+t=2080 focus w1:p3
+t=4080 exec api snapshot
+t=4120 focus w1:p3
+landed tab create
+state focus=w1:p3 server=w1:p3 sessions=2 notrunning=false mismatch=false

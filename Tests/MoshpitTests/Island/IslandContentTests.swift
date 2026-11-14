@@ -11,25 +11,8 @@ struct IslandContentTests {
 
     typealias Agent = AgentActivityAttributes.Agent
 
-    // MARK: - The stamp script's title derivation
-    //
-    // The installer tests that used to live here went with the paste-a-command
-    // sheet they covered: the agent roster is now `AgentHookConfigTests.roster`,
-    // the config merges are `AgentHookConfigTests` (a real merge, not a jq
-    // program in a string), and the script itself is pinned by
-    // `HostScriptsTests`. What survives is the part that is still about content
-    // rather than delivery.
-
-    @Test("the stamp script derives a title from each hook event")
-    func stampTitleEvents() {
-        let script = HostScripts.stamp
-        // One jq branch per event Moshpit registers, plus Codex's own.
-        #expect(script.contains("PreToolUse|PermissionRequest"))
-        #expect(script.contains("Notification)"))
-        #expect(script.contains("UserPromptSubmit)"))
-        // A title is cleared on done, so a stale one never lingers.
-        #expect(script.contains("set -pu -t \"$TMUX_PANE\" @moshpit_title"))
-    }
+    // The stamp script's title derivation is pinned with the script, in the
+    // core: crates/install/tests/stamp.rs.
 
     // MARK: - Agent.detail schema (backward compatible)
 

@@ -1,0 +1,7 @@
+# B26: a task's worktree takes its turn among the taps.
+host rule worktree_create 800 normal
+at 0 start
+at 300 select-pane w1:p2
+at 300 task /home/dev/code/app fix-scroll claude -
+at 300 select-pane w1:p1
+end 12000

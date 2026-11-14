@@ -38,12 +38,13 @@ struct ThemeEditorView: View {
 
                 FormGroup(title: "NAME") {
                     FieldRow(placeholder: "Theme name", text: $draft.name)
+                        .accessibilityIdentifier("theme-editor-name")
                 }
 
                 FormGroup(title: "TERMINAL") {
-                    colorRow("Background", hex: $draft.backgroundHex)
-                    colorRow("Foreground", hex: $draft.foregroundHex)
-                    colorRow("Cursor", hex: $draft.cursorHex)
+                    colorRow("Background", id: "background", hex: $draft.backgroundHex)
+                    colorRow("Foreground", id: "foreground", hex: $draft.foregroundHex)
+                    colorRow("Cursor", id: "cursor", hex: $draft.cursorHex)
                 }
 
                 FormGroup(
@@ -51,7 +52,7 @@ struct ThemeEditorView: View {
                     footer: "These eight are what shells, diffs and TUIs paint with."
                 ) {
                     ForEach(TerminalTheme.ANSISlot.allCases) { slot in
-                        colorRow(slot.label, hex: ansiBinding(slot))
+                        colorRow(slot.label, id: slot.key, hex: ansiBinding(slot))
                     }
                 }
 
@@ -62,6 +63,7 @@ struct ThemeEditorView: View {
                     ToggleRow(
                         label: "Override bright colors",
                         subtitle: showBright ? nil : "Currently derived automatically",
+                        identifier: "theme-editor-bright",
                         isOn: Binding(
                             get: { showBright },
                             set: { on in
@@ -71,7 +73,7 @@ struct ThemeEditorView: View {
                     )
                     if showBright {
                         ForEach(TerminalTheme.ANSISlot.allCases) { slot in
-                            colorRow("Bright " + slot.label, hex: brightBinding(slot))
+                            colorRow("Bright " + slot.label, id: slot.brightKey, hex: brightBinding(slot))
                         }
                     }
                 }
@@ -82,6 +84,7 @@ struct ThemeEditorView: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
+                        .accessibilityIdentifier("theme-editor-cancel")
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Menu {
@@ -94,6 +97,7 @@ struct ThemeEditorView: View {
                     } label: {
                         Image(systemName: "ellipsis.circle").foregroundStyle(Ink.accent)
                     }
+                    .accessibilityIdentifier("theme-editor-more")
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
@@ -108,7 +112,10 @@ struct ThemeEditorView: View {
 
     // MARK: - Rows
 
-    private func colorRow(_ label: String, hex: Binding<String>) -> some View {
+    /// `id` is the slot's key in the theme's JSON (`background`, `red`,
+    /// `brightRed`): its color well's identifier is `theme-color-<id>`, as
+    /// on the NSH page.
+    private func colorRow(_ label: String, id: String, hex: Binding<String>) -> some View {
         HStack(spacing: 10) {
             Text(label).font(.body).foregroundStyle(Ink.primary)
             Spacer(minLength: 6)
@@ -119,6 +126,7 @@ struct ThemeEditorView: View {
             // and letting one through would render as an unexplained wash.
             ColorPicker("", selection: colorBinding(hex), supportsOpacity: false)
                 .labelsHidden()
+                .accessibilityIdentifier("theme-color-\(id)")
                 .frame(width: 34)
         }
     }

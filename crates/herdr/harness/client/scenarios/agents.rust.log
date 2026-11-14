@@ -1,0 +1,17 @@
+t=0 exec api snapshot
+t=40 focus w1:p1
+t=300 exec server agent-manifests --json
+t=340 outcome agents [claude codex pi]
+t=1000 exec server agent-manifests --json
+t=2040 exec api snapshot
+t=2080 focus w1:p1
+t=4080 exec api snapshot
+t=4120 focus w1:p1
+t=6120 exec api snapshot
+t=6160 focus w1:p1
+t=11000 outcome agents []
+t=14160 exec api snapshot
+t=14200 focus w1:p1
+t=22200 exec api snapshot
+t=22240 focus w1:p1
+state focus=w1:p1 server=w1:p1 sessions=1 notrunning=false mismatch=false

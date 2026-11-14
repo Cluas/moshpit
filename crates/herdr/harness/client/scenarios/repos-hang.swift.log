@@ -1,0 +1,15 @@
+t=0 exec api snapshot
+t=40 focus w1:p1
+t=300 exec for d in '/home/dev/code/app' '/home/dev/code/app/sub'; do git -C "$d" rev-parse --show-toplevel 2>/dev/null; done
+t=300 exec find -L "$HOME" -maxdepth 4 \( -type d \( -name Library -o -name node_modules -o -name .Trash -o -name Applications -o -name Music -o -name Movies -o -name Pictures -o -name .build -o -name vendor \) -prune \) -o \( -type d -name '.?*' ! -name .git -prune \) -o \( -type d -name .git -print \) 2>/dev/null | while read -r g; do d="${g%/.git}"; printf '%s\t%s\n' "$(stat -f %m "$d" 2>/dev/null || stat -c %Y "$d" 2>/dev/null)" "$d"; done | sort -rn | cut -f2 | head -40
+t=2040 exec api snapshot
+t=2080 focus w1:p1
+t=4080 exec api snapshot
+t=4120 focus w1:p1
+t=6120 exec api snapshot
+t=6160 focus w1:p1
+t=14160 exec api snapshot
+t=14200 focus w1:p1
+t=22200 exec api snapshot
+t=22240 focus w1:p1
+state focus=w1:p1 server=w1:p1 sessions=1 notrunning=false mismatch=false

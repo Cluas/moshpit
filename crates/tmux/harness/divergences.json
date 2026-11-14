@@ -1,0 +1,92 @@
+{
+  "about": "Bugs the Rust port (crates/tmux/src/control.rs) fixed relative to the Swift parser (Moshpit/Services/Tmux/TmuxControlClient.swift) as it was at fd87248f, and that the Swift parser has carried since (each fix's 'swift_fix' names its commit). Both parsers now print the same events for every input, so equivalence.py accepts no difference at all. Each fix has minimal captures in tests/fixtures/divergences/<fixture>.bin: <fixture>.rust.jsonl is what both parsers print for it under every plan, and <fixture>.swift-fd87248f.jsonl what the Swift parser printed before the port (none where it trapped), which proves the fixture tells a fixed parser from an unfixed one. 'swift' gives the lines at fd87248f. 'notes' are suspected bugs reported but not changed: both parsers keep that behaviour.",
+  "fixes": [
+    {
+      "id": "overflow-trap",
+      "swift": "TmuxControlClient.swift:411-412 (embeddedBeginOffset)",
+      "symptom": "The parser traps on Int overflow and the app crashes (SIGTRAP).",
+      "trigger": "An %output line whose payload ends in '%begin <cid> <num> <digit>' with num within 200 after the last real block and cid below Int.min + lastBlockCid, e.g. 'x%begin -9223372036854775808 <next num> 1'. Pane content can print it.",
+      "fix": "Both distances are computed without overflow (Rust in i128, Swift with subtractingReportingOverflow and the magnitude); the line stays pane output.",
+      "fixtures": ["overflow-trap"],
+      "swift_before": "trap",
+      "swift_fix": "fix(tmux): a %begin with extreme ids in pane output no longer crashes the parser"
+    },
+    {
+      "id": "block-cap-terminator",
+      "swift": "TmuxControlClient.swift:264 (runaway check) runs before 283-286 (terminator check)",
+      "symptom": "A reply block with exactly 5000 lines is delivered as an error response, and its real %end is then reported as a terminator without %begin.",
+      "trigger": "A %begin block holding exactly maxBlockLines (5000) lines followed by its own %end.",
+      "fix": "The open block's own terminator is checked before the line cap.",
+      "fixtures": ["block-cap-terminator"],
+      "swift_before": "events",
+      "swift_fix": "fix(tmux): a reply of exactly 5000 lines closes on its own %end"
+    },
+    {
+      "id": "terminator-number-boundary",
+      "swift": "TmuxControlClient.swift:385-390 (splitEmbeddedTerminator)",
+      "symptom": "A content line closes the open block early: the reply is cut at that line, the rest of it is dropped as stray lines, and the real %end becomes a protocol error.",
+      "trigger": "Inside block <cid> <num>, a content line containing '%end <cid> <num><more digits>' (or %error), e.g. '%end 1700000000 105 1' while block 10 of the same second is open.",
+      "fix": "The suffix must end where the needle's number ends: the tail after it is empty or starts with a space.",
+      "fixtures": ["terminator-number-boundary"],
+      "swift_before": "events",
+      "swift_fix": "fix(tmux): a quoted %end with a longer command number no longer closes the block"
+    },
+    {
+      "id": "unicode-syntax",
+      "swift": "TmuxControlClient.swift:313-346, 356-357, 573, 584, 601, 611 (Character prefix/delimiter search on non-ASCII lines) and 390, 410 (Character.isNumber)",
+      "symptom": "Protocol syntax is matched by grapheme cluster and Unicode numeric value: a space or % followed by a combining mark is not found (a rename becomes a protocol error, a session id swallows its name, junk-stripping skips a keyword), and digits like '五' or '٣' count as the flag or tail digits (a phantom block opens, or a content line closes the block).",
+      "trigger": "A combining character right after a protocol delimiter (e.g. a window name starting with U+0301), or a non-ASCII digit where tmux writes an ASCII one.",
+      "fix": "Delimiters and prefixes are matched on bytes, numbers and flags are ASCII digits, as tmux writes them.",
+      "fixtures": ["unicode-delimiter", "unicode-flag", "unicode-tail"],
+      "swift_before": "events",
+      "swift_fix": "fix(tmux): match control-protocol syntax on bytes, not Characters"
+    },
+    {
+      "id": "zoom-flags",
+      "swift": "TmuxControlClient.swift:546 (handleLayoutChange)",
+      "symptom": "A zoomed window is reported as not zoomed unless its flags field is exactly '*Z'.",
+      "trigger": "tmux 3.6a sends #{window_raw_flags}: '-Z' or 'Z' for a zoomed window that is not current, '*MZ' with a marked pane, '#*Z' / '!*Z' with activity or bell flags. Recorded in captures/layout.bin.",
+      "fix": "zoomed when a window-flags field (only the characters #!~*-MZ) contains Z.",
+      "fixtures": ["zoom-flags"],
+      "swift_before": "events",
+      "swift_fix": "fix(tmux): read a zoomed window from any flags field that carries Z"
+    },
+    {
+      "id": "quadratic-buffer",
+      "swift": "TmuxControlClient.swift:220-230 (drainLines)",
+      "symptom": "Every extracted line re-copies the rest of the buffer (buffer = Data(buffer[next...])), so one feed costs O(lines x bytes): 0.8 MB/s for a 3.8 MB feed, ~20-30 MB/s at 4-64 KB feeds.",
+      "trigger": "Any feed of many lines: target/g2/captures/burst.bin (seq 1 200000, 3.8 MB) in one feed.",
+      "fix": "Complete lines are dispatched in place, as slices of the fed data; only new bytes are searched for a newline, and only a trailing partial line is copied.",
+      "fixtures": [],
+      "swift_before": "slow",
+      "swift_fix": "perf(tmux): extract control-mode lines in linear time",
+      "bench": "equivalence.py bench, M2, one feed: 0.6-0.8 MB/s before, 32.6-35.2 MB/s after; 4 KB feeds: 27.6 -> 33.3 MB/s; 32 KB feeds: 26.9 -> 33.9 MB/s (Rust: 390-450 MB/s)."
+    }
+  ],
+  "notes": [
+    {
+      "id": "continue-inside-block",
+      "swift": "TmuxControlClient.swift:246-291 with TmuxSessionController.swift:3052-3066",
+      "symptom": "tmux 3.6a writes %continue inside the reply block of the 'refresh-client -A %N:continue' that caused it (captures/pause.bin). The parser keeps it as block content, so onContinue never fires and the controller's resync after a pause never runs.",
+      "rust": "Same as Swift. Latent: the app never sets pause-after, so %pause never arrives."
+    },
+    {
+      "id": "extended-output-dropped",
+      "swift": "TmuxControlClient.swift:344-346",
+      "symptom": "With the pause-after flag set, tmux sends all pane output as %extended-output (captures/pause.bin); the parser skips it as an unknown directive, so the panes would go blank.",
+      "rust": "Same as Swift. Latent for the same reason."
+    },
+    {
+      "id": "junk-prefixed-output",
+      "swift": "TmuxControlClient.swift:302-346",
+      "symptom": "decodeLine strips junk before '%output', but the dispatch chain has no %output case, so a junk-prefixed %output line is dropped. Unreachable with tmux, whose first line after the DCS is always the boot %begin.",
+      "rust": "Same as Swift."
+    },
+    {
+      "id": "dead-branches",
+      "swift": "TmuxControlClient.swift:446-451 (orphan %begin) and 466-471 (mismatched terminator id)",
+      "symptom": "Unreachable: handleBegin only runs with no block open, and both terminator paths have already matched the open block's ids.",
+      "rust": "Ported as is."
+    }
+  ]
+}

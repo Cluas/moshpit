@@ -1,0 +1,12 @@
+# Throwaway keys made with ssh-keygen (OpenSSH_10.3p1) for the tests, in keys/:
+# they authorize nothing anywhere. ed25519-encrypted's passphrase is `fixture`.
+# ssh-keygen -lf keys/<name>.pub: <name> <bits> <fingerprint> <type>
+ecdsa256-pkcs8 256 SHA256:+/NM1+yXgl+S2qVb51R2UzjQJkEgeXRLbKly4kx/51c (ECDSA)
+ecdsa256 256 SHA256:0Y13tT5ReKS2k3cGXtoz0wDe+P+tGDk0SEJ20ssdW/E (ECDSA)
+ecdsa384 384 SHA256:+7QR6sbJqJvPNYKTqSB/HrqeZQQXgWM3/j4hUYqk8NI (ECDSA)
+ecdsa521 521 SHA256:ZgLDoKdNPPGzDbS24B/5SldsnSXrDPbcB41c5/+xJy0 (ECDSA)
+ed25519-encrypted 256 SHA256:OQ4qnPYTDLVAL1abOn/ucjl4eTi+5x1OWO/h1Pb34u8 (ED25519)
+ed25519 256 SHA256:vUkJtFTGJFHkmC/nyQRfUJBNnAVbxp0w/5MKe0lMTK0 (ED25519)
+rsa2048-pem 2048 SHA256:YI308USvR1zZ2NtAEtFF7tm0SR2whhSScC1VPQYyh8w (RSA)
+rsa2048 2048 SHA256:N2LwkXVb8yni0Be3hZglQ7dx5gMpc8PwDBsVnb9psTw (RSA)
+rsa4096 4096 SHA256:DZb7qLVfbmdSV0PJJ2D59naU7v9//BevMCB4cNEjTZo (RSA)

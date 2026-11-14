@@ -3,6 +3,13 @@ import Observation
 import UIKit
 
 // MARK: - Shortcut model (prototype screens 6/7)
+//
+// The shortcut bar's rules are the Rust store's (`crates/store/src/shortcuts.rs`,
+// through crates/ffi): the built-ins and their reconcile step, the toolbar's
+// twelve, the stored form every build since 1.0.8 reads, the sealed-launch
+// rule, and the bytes a tap sends. What is here is the value the views
+// show (``TerminalShortcut``) and the observable store they watch
+// (``ShortcutStore``), which reads and writes through it.
 
 enum ShortcutKind: String, Codable, CaseIterable {
     case keyCombo
@@ -55,6 +62,22 @@ enum ShortcutKind: String, Codable, CaseIterable {
     /// caller, which asks the session for the directory) — not
     /// user-creatable.
     case files
+
+    /// What a stored shortcut says in `kind`: a kind every build since 1.0.8
+    /// decodes. A kind newer than that is stored there as an inert key combo
+    /// (no key, no payload: a tap in 1.0.8 sends nothing); the real kind goes
+    /// beside it in `shortcutKind` (the Rust store's stored form,
+    /// `crates/store/src/shortcuts.rs`).
+    ///
+    /// No `default:` — a kind added later must say here what 1.0.8 gets.
+    var olderBuildsName: ShortcutKind {
+        switch self {
+        case .keyCombo, .text, .command, .dpad, .arrows, .paste, .scroll, .ctrl, .mic, .image:
+            return self
+        case .files:
+            return .keyCombo
+        }
+    }
 }
 
 enum ShortcutModifier: String, Codable, CaseIterable, Comparable {
@@ -92,7 +115,7 @@ enum ShortcutModifier: String, Codable, CaseIterable, Comparable {
 }
 
 /// One entry in the keyboard shortcut toolbar / library.
-struct TerminalShortcut: Identifiable, Codable, Equatable, Hashable {
+struct TerminalShortcut: Identifiable, Equatable, Hashable {
     var id = UUID()
     var kind: ShortcutKind = .keyCombo
     var modifiers: Set<ShortcutModifier> = []
@@ -118,189 +141,60 @@ struct TerminalShortcut: Identifiable, Codable, Equatable, Hashable {
 
     var isCustomStyled: Bool { !isBuiltin || colorId != "gray" }
 
-    /// Bytes to write to the PTY when tapped. `nil` for paste-style actions
-    /// resolved by the caller.
-    func encodedBytes() -> Data? {
-        switch kind {
-        case .text:
-            var s = Self.unescape(payload)
-            if appendReturn { s += "\r" }
-            return s.data(using: .utf8)
-        case .command:
-            return (Self.unescape(payload) + "\r").data(using: .utf8)
-        case .keyCombo:
-            if !payload.isEmpty {
-                var s = Self.unescape(payload)
-                if appendReturn { s += "\r" }
-                return s.data(using: .utf8)
-            }
-            return comboBytes()
-        case .dpad, .scroll:
-            // The joystick / scroll thumb act through their own drag gesture
-            // (arrows to the PTY, scrollback locally), not a tap.
-            return nil
-        case .arrows:
-            // The cluster's four zones each send their own arrow through the
-            // bar's `onArrow` hook, which encodes for the remote's current
-            // cursor-key mode — a fixed CSI here would break history search
-            // in application-cursor-mode shells. See `TerminalScreen.sendArrow`.
-            return nil
-        case .ctrl:
-            // Resolved by the caller (arms sticky-Ctrl on the typing coordinator).
-            return nil
-        case .paste:
-            // Resolved by the caller from UIPasteboard.
-            return nil
-        case .mic:
-            // Resolved by the caller (opens/closes the dictation overlay).
-            // Dictation deliberately never writes to the PTY on its own —
-            // the transcript goes out on Insert, as one paste.
-            return nil
-        case .image:
-            // Resolved by the caller (opens the photo picker / attachment
-            // overlay). Like dictation, nothing reaches the PTY until the
-            // user commits with Insert or Send.
-            return nil
-        case .files:
-            // Resolved by the caller (opens the folder sheet).
-            return nil
-        }
-    }
-
-    /// xterm CSI modifier parameter: 1=plain, +1 shift, +2 alt, +4 ctrl.
-    private var csiModifier: Int {
-        var m = 1
-        if modifiers.contains(.shift) { m += 1 }
-        if modifiers.contains(.alt) { m += 2 }
-        if modifiers.contains(.ctrl) || modifiers.contains(.cmd) { m += 4 }
-        return m
-    }
-
-    /// CSI letter key (arrows, Home=H, End=F): plain `ESC[X`, modified
-    /// `ESC[1;<m>X` — the xterm encoding every TUI (Claude Code, vim, less)
-    /// understands, e.g. ⌃End = ESC[1;5F.
-    private func csiLetter(_ letter: String) -> Data {
-        let m = csiModifier
-        return Data((m == 1 ? "\u{1B}[\(letter)" : "\u{1B}[1;\(m)\(letter)").utf8)
-    }
-
-    /// CSI tilde key (PgUp=5, PgDn=6): plain `ESC[<n>~`, modified `ESC[<n>;<m>~`.
-    private func csiTilde(_ number: Int) -> Data {
-        let m = csiModifier
-        return Data((m == 1 ? "\u{1B}[\(number)~" : "\u{1B}[\(number);\(m)~").utf8)
-    }
-
-    private func comboBytes() -> Data? {
-        // Named CSI keys carry their modifiers IN the sequence — return before
-        // the legacy alt-prefix path below (it would double-encode alt).
-        switch key.lowercased() {
-        case "up":    return csiLetter("A")
-        case "down":  return csiLetter("B")
-        case "right": return csiLetter("C")
-        case "left":  return csiLetter("D")
-        case "home":  return csiLetter("H")
-        case "end":   return csiLetter("F")
-        case "pgup", "pageup":   return csiTilde(5)
-        case "pgdn", "pagedown": return csiTilde(6)
-        default: break
-        }
-
-        var data = Data()
-        if modifiers.contains(.alt) { data.append(0x1B) }
-        switch key.lowercased() {
-        case "esc", "escape": data.append(0x1B)
-        case "tab":
-            // ⇧Tab is its own sequence (back-tab) — Claude Code's mode toggle.
-            if modifiers.contains(.shift) { return Data("\u{1B}[Z".utf8) }
-            data.append(0x09)
-        case "return", "enter": data.append(0x0D)
-        case "space": data.append(0x20)
-        default:
-            guard let scalar = key.lowercased().unicodeScalars.first else { return nil }
-            if modifiers.contains(.ctrl) || modifiers.contains(.cmd) {
-                // ⌘ on a phone keyboard maps to ctrl semantics in the PTY.
-                let value = UInt8(scalar.value & 0x1F)
-                data.append(value)
-            } else if modifiers.contains(.shift) {
-                data.append(contentsOf: Array(key.uppercased().utf8))
-            } else {
-                data.append(contentsOf: Array(key.utf8))
-            }
-        }
-        return data.isEmpty ? nil : data
-    }
-
-    /// True when the payload is a run of discrete key PRESSES rather than text
-    /// to type.
-    ///
-    /// The rule is the payload's own bytes: C0 controls are keys (Tab, Return,
-    /// Esc), printable characters are text. So `\t\r` is two keystrokes while
-    /// `git status` stays one string — which is what each actually is to the
-    /// program on the other end.
-    var sendsDiscreteKeys: Bool {
-        guard kind == .text else { return false }
-        let bytes = Array(Self.unescape(payload).utf8)
-        return bytes.count > 1 && bytes.allSatisfy { $0 < 0x20 || $0 == 0x7F }
-    }
-
-    /// The write(s) this shortcut makes, in order.
-    ///
-    /// Normally one — a shortcut is one chunk of bytes. Key sequences are the
-    /// exception, and the reason is the receiver, not the wire: a TUI that gets
-    /// content and a carriage return in the SAME read commonly treats the whole
-    /// chunk as a PASTE, so the `\r` becomes a literal newline in the input box
-    /// instead of submitting. That is exactly the reported "⇥⏎ only did the
-    /// tab" — the completion was accepted, then the Return landed as a newline.
-    ///
-    /// Ordering was never the problem; atomicity was. Splitting the writes lets
-    /// the remote see two key presses, the same shape a human's two taps make.
+    /// The write(s) a tap makes, in order — the Rust store's rule: normally
+    /// one; a payload that is a run of keys (`\t\r`) one write per key, so a
+    /// TUI reads two key presses rather than a paste (the "⇥⏎ only did the
+    /// tab" report). None for the chips the caller resolves (paste, the
+    /// arrows, the mic…).
     func encodedStages() -> [Data] {
-        guard let data = encodedBytes(), !data.isEmpty else { return [] }
-        guard sendsDiscreteKeys else { return [data] }
-        return data.map { Data([$0]) }
-    }
-
-    /// Interpret `\r` `\n` `\t` `\e` escapes typed in the payload editor.
-    static func unescape(_ s: String) -> String {
-        s.replacingOccurrences(of: "\\r", with: "\r")
-            .replacingOccurrences(of: "\\n", with: "\n")
-            .replacingOccurrences(of: "\\t", with: "\t")
-            .replacingOccurrences(of: "\\e", with: "\u{1B}")
-    }
-
-    static func chipColor(forId id: String) -> (bg: String, custom: Bool) {
-        (id, id != "gray")
+        (try? storeShortcutStages(shortcut: ShortcutRecord(self))) ?? []
     }
 }
 
 // MARK: - Store
 
-/// Owns the shortcut toolbar configuration. Array order == toolbar order.
+/// The shortcut bar, as the views watch it: the Rust store
+/// (`crates/store/src/shortcuts.rs`, through ``ShortcutStoreBacking``) does
+/// every read and write — the built-ins and their reconcile step, the
+/// toolbar's twelve, the stored form 1.0.8 reads, the sealed-launch rule —
+/// and this object keeps what the views observe. Array order == toolbar
+/// order.
 @Observable
 final class ShortcutStore {
     static let toolbarLimit = 12
-    private static let storageKey = "moshpit.shortcuts.v1"
 
     private(set) var shortcuts: [TerminalShortcut] = []
 
-    @ObservationIgnored private let defaults: UserDefaults
-    @ObservationIgnored private let readiness: DefaultsReadiness
-    /// True once `shortcuts` came from defaults known to be readable
-    /// (``DefaultsReadiness``). Until then the set is a guess — and this store
-    /// in particular must not act on it: finding nothing, it seeds the
-    /// built-ins and WRITES them, which over a sealed file erased the user's
-    /// custom chips.
+    /// True once `shortcuts` came from preferences known to be readable
+    /// (the sealed-launch rule): until then the set is shown, never written.
     @ObservationIgnored private(set) var isAuthoritative = false
 
-    init(defaults: UserDefaults = .standard, readiness: DefaultsReadiness = .always) {
-        self.defaults = defaults
-        self.readiness = readiness
-        load()
+    @ObservationIgnored private let backing: ShortcutStoreBacking
+
+    /// The Rust store over `defaults`, readable as `readiness` says (tests
+    /// and scratch suites; the app's is ``RustStoreSwitch/shortcuts()``).
+    convenience init(defaults: UserDefaults = .standard, readiness: DefaultsReadiness = .always) {
+        let host = RustPreferencesHost(defaults: defaults, available: readiness.protectedDataAvailable)
+        self.init(backing: RustShortcutStore(preferences: host, mode: .system))
+    }
+
+    /// A store whose every read and write is `backing`'s.
+    init(backing: ShortcutStoreBacking) {
+        self.backing = backing
+        adopt()
+    }
+
+    /// Take what the backing holds now, changing only what changed.
+    private func adopt() {
+        let held = backing.shortcuts
+        if held != shortcuts { shortcuts = held }
+        isAuthoritative = backing.isAuthoritative
     }
 
     /// Read again if the last read could not be trusted; a no-op otherwise.
     func reloadIfNeeded() {
-        if !isAuthoritative { load() }
+        backing.reloadIfNeeded()
+        adopt()
     }
 
     /// Ordered toolbar entries (≤ 12).
@@ -310,379 +204,88 @@ final class ShortcutStore {
 
     var custom: [TerminalShortcut] { shortcuts.filter { !$0.isBuiltin } }
 
-    /// Built-ins not currently in the toolbar.
-    var available: [TerminalShortcut] { shortcuts.filter { $0.isBuiltin && !$0.inToolbar } }
+    /// Every shortcut not on the toolbar as shown, the user's own too (B233).
+    var available: [TerminalShortcut] {
+        let shown = Set(toolbar.map(\.id))
+        return shortcuts.filter { !shown.contains($0.id) }
+    }
 
     var toolbarCount: Int { toolbar.count }
 
-    /// Toolbar entries visible for a given connection (scope filter).
-    /// `inMultiplexer` covers tmux AND herdr. It was `inTmux`, fed from
-    /// `tmuxController != nil`, so a herdr session counted as "not in a
-    /// multiplexer" and silently dropped any chip the user had marked — on the
-    /// one connection they wanted it on. The stored flag keeps its name for
-    /// compatibility with saved shortcuts; only the meaning is corrected.
+    /// The toolbar holds ``toolbarLimit`` shortcuts: ＋ adds none until one
+    /// comes off (B233).
+    var toolbarIsFull: Bool { toolbarCount >= Self.toolbarLimit }
+
+    /// Toolbar entries visible for a given connection: the store's scope
+    /// rule (a chip limited to hosts shows only there; one marked "only in
+    /// tmux" only in a multiplexer, tmux and herdr alike).
     func toolbar(forHost hostName: String?, inMultiplexer: Bool) -> [TerminalShortcut] {
-        toolbar.filter { sc in
-            if sc.onlyInTmux && !inMultiplexer { return false }
-            if sc.scopeHosts.isEmpty { return true }
-            guard let hostName else { return true }
-            return sc.scopeHosts.contains(hostName)
-        }
+        backing.toolbar(forHost: hostName, inMultiplexer: inMultiplexer)
     }
 
-    func add(_ shortcut: TerminalShortcut) {
-        reloadIfNeeded()
-        var sc = shortcut
-        sc.inToolbar = toolbarCount < Self.toolbarLimit
-        shortcuts.append(sc)
-        persist()
+    /// Adds `shortcut`, on the toolbar while it has room; whether it went
+    /// on the toolbar (B252).
+    @discardableResult
+    func add(_ shortcut: TerminalShortcut) -> Bool {
+        let onBar = backing.add(shortcut)
+        adopt()
+        return onBar
     }
 
     func update(_ shortcut: TerminalShortcut) {
-        reloadIfNeeded()
-        guard let i = shortcuts.firstIndex(where: { $0.id == shortcut.id }) else { return }
-        shortcuts[i] = shortcut
-        persist()
+        backing.update(shortcut)
+        adopt()
     }
 
+    /// The user's own goes; a built-in only comes off the bar.
     func remove(id: UUID) {
-        reloadIfNeeded()
-        guard let i = shortcuts.firstIndex(where: { $0.id == id }) else { return }
-        if shortcuts[i].isBuiltin {
-            shortcuts[i].inToolbar = false
-        } else {
-            shortcuts.remove(at: i)
-        }
-        persist()
+        backing.remove(id: id)
+        adopt()
     }
 
-    func addToToolbar(id: UUID) {
-        reloadIfNeeded()
-        guard toolbarCount < Self.toolbarLimit,
-              let i = shortcuts.firstIndex(where: { $0.id == id }) else { return }
-        shortcuts[i].inToolbar = true
-        persist()
+    /// Put shortcut `id` on the toolbar; false when the bar is full or
+    /// there is no such shortcut.
+    @discardableResult
+    func addToToolbar(id: UUID) -> Bool {
+        let added = backing.addToToolbar(id: id)
+        adopt()
+        return added
     }
 
     func removeFromToolbar(id: UUID) {
-        reloadIfNeeded()
-        guard let i = shortcuts.firstIndex(where: { $0.id == id }) else { return }
-        shortcuts[i].inToolbar = false
-        persist()
+        backing.removeFromToolbar(id: id)
+        adopt()
     }
 
-    /// Back to the shipped set: every custom shortcut gone, the built-in bar
-    /// as on first launch. Only the DEBUG `-MOSHPIT_RESET` launch seam calls
-    /// it — the store lives in UserDefaults and outlives a reinstall, so a UI
-    /// test would otherwise inherit the previous run's custom shortcuts.
+    /// Back to the shipped set (the DEBUG `-MOSHPIT_RESET` launch seam).
     func restoreDefaults() {
-        reloadIfNeeded()
-        shortcuts = Self.builtins
-        persist()
+        backing.restoreDefaults()
+        adopt()
     }
 
     func moveInToolbar(fromOffsets: IndexSet, toOffset: Int) {
-        reloadIfNeeded()
-        // Map toolbar indices back into the master array by reordering the
-        // toolbar slice and rebuilding.
-        var bar = toolbar
-        bar.move(fromOffsets: fromOffsets, toOffset: toOffset)
-        let rest = shortcuts.filter { !$0.inToolbar }
-        shortcuts = bar + rest
-        persist()
+        backing.moveInToolbar(fromOffsets: fromOffsets, toOffset: toOffset)
+        adopt()
     }
 
-    /// Move `movingId` to just before `targetId`. Operates on the master array
-    /// directly (toolbar order == filtered order), which is far more reliable
-    /// for drag-and-drop than IndexSet math.
-    func moveInToolbar(_ movingId: UUID, before targetId: UUID) {
-        reloadIfNeeded()
-        guard movingId != targetId,
-              let from = shortcuts.firstIndex(where: { $0.id == movingId }) else { return }
-        let item = shortcuts.remove(at: from)
-        if let target = shortcuts.firstIndex(where: { $0.id == targetId }) {
-            shortcuts.insert(item, at: target)
-        } else {
-            shortcuts.append(item)
-        }
-        persist()
-    }
-
-    // MARK: Persistence
-
-    private func load() {
-        // Trust is decided first: `persist()` — below, and inside
-        // `reconcileBuiltins()` — refuses to write over a read it cannot trust.
-        isAuthoritative = readiness.isReadable(defaults)
-        if isAuthoritative { readiness.markReadable(defaults) }
-        if let data = defaults.data(forKey: Self.storageKey),
-           let decoded = try? JSONDecoder().decode([TerminalShortcut].self, from: data),
-           !decoded.isEmpty {
-            shortcuts = decoded
-            reconcileBuiltins()
-            return
-        }
-        // Nothing usable on disk: seed the shipped set. The write only happens
-        // when the read could be trusted — a sealed file is not an empty one,
-        // and this write is exactly how a locked launch erased custom chips.
-        shortcuts = Self.builtins
-        persist()
-    }
-
-    /// One-time migrations for built-in shortcuts whose defaults changed
-    /// after a user already has a persisted set.
-    private func reconcileBuiltins() {
-        var changed = false
-        // Arrow keys moved to a dedicated arrow control — drop the old ↑/↓
-        // chips, which duplicated it.
-        for i in shortcuts.indices where shortcuts[i].isBuiltin
-            && (shortcuts[i].key == "up" || shortcuts[i].key == "down")
-            && shortcuts[i].inToolbar {
-            shortcuts[i].inToolbar = false
-            changed = true
-        }
-        // The tap-first `.arrows` cluster needs no migration step of its own:
-        // it ships out of the bar under a summary ("Tap arrows") that no
-        // persisted set can contain, so the summary-keyed catch-all at the
-        // bottom injects it as an available builtin for everyone, and nobody's
-        // arranged toolbar moves. Giving the joystick the summary it always had
-        // is what keeps that true — rename it and the catch-all would read the
-        // joystick as new and inject a second copy.
-        //
-        // The D-pad is now a builtin shortcut; inject it for users whose set
-        // predates it, at the front of the toolbar.
-        if !shortcuts.contains(where: { $0.kind == .dpad }),
-           let dpad = Self.builtins.first(where: { $0.kind == .dpad }) {
-            shortcuts.insert(dpad, at: 0)
-            changed = true
-        }
-        // Sticky-Ctrl became a normal builtin chip; inject it at the very
-        // front (ahead of even the D-pad) for users whose set predates it —
-        // it was previously a fixed element always rendered ahead of the
-        // toolbar, not part of it. Runs AFTER the D-pad injection above so
-        // its insert-at-0 wins and lands ctrl ahead of the D-pad, matching
-        // ``builtins``' order for a fresh install.
-        if !shortcuts.contains(where: { $0.kind == .ctrl }),
-           let ctrl = Self.builtins.first(where: { $0.kind == .ctrl }) {
-            shortcuts.insert(ctrl, at: 0)
-            changed = true
-        }
-        // Paste became a normal reorderable chip; inject it for older sets.
-        if !shortcuts.contains(where: { $0.kind == .paste }),
-           let paste = Self.builtins.first(where: { $0.kind == .paste }) {
-            shortcuts.append(paste)
-            changed = true
-        }
-        // The mic moved out of its pinned slot beside the keyboard toggle and
-        // became a normal chip. Append rather than insert: it lands at the
-        // trailing end of the bar, which is where it already appeared, so an
-        // upgrade doesn't shuffle the keys under anyone's thumb.
-        if !shortcuts.contains(where: { $0.kind == .mic }),
-           let mic = Self.builtins.first(where: { $0.kind == .mic }) {
-            var injected = mic
-            if shortcuts.filter({ $0.inToolbar }).count >= Self.toolbarLimit {
-                injected.inToolbar = false
-            }
-            shortcuts.append(injected)
-            changed = true
-        }
-        // The mic makes the old six-chip default a seventh, which overflows a
-        // phone-width bar by about ten points — a half-cut chip rather than a
-        // row that reads as scrollable. ^L gives up its slot (it is the only
-        // one of those defaults you can also just type: `clear`).
-        //
-        // Deliberately its OWN step rather than a branch of the mic injection
-        // above: written there it would silently skip anyone whose toolbar
-        // already grew a mic, and a migration that only fires on one exact
-        // upgrade path is a migration that mostly doesn't fire. Guarded on the
-        // toolbar still being the untouched default — someone who arranged
-        // their own bar keeps every key they put in it, because quietly
-        // deleting a shortcut you chose is far worse than a row you can drag.
-        let staleDefault = ["Escape", "Tab", "Interrupt (SIGINT)",
-                            "Clear screen", "Paste clipboard", "Arrow keys", "Voice input"]
-        if toolbar.map(\.summary) == staleDefault,
-           let clear = shortcuts.firstIndex(where: { $0.summary == "Clear screen" }) {
-            shortcuts[clear].inToolbar = false
-            changed = true
-        }
-        // The scroll thumb is a builtin; inject it for users who predate it,
-        // just after the D-pad.
-        if !shortcuts.contains(where: { $0.kind == .scroll }),
-           let scroll = Self.builtins.first(where: { $0.kind == .scroll }) {
-            let at = (shortcuts.firstIndex(where: { $0.kind == .dpad }).map { $0 + 1 }) ?? 0
-            shortcuts.insert(scroll, at: min(at, shortcuts.count))
-            changed = true
-        }
-        // Any builtin added AFTER the user's set was persisted gets injected
-        // (identity = summary, stable per builtin). Respects the toolbar cap:
-        // when the bar is full the new chip lands in the editor's available
-        // list instead of silently vanishing.
-        let knownSummaries = Set(shortcuts.filter(\.isBuiltin).map(\.summary))
-        for builtin in Self.builtins where !knownSummaries.contains(builtin.summary) {
-            var injected = builtin
-            if injected.inToolbar,
-               shortcuts.filter({ $0.inToolbar }).count >= Self.toolbarLimit {
-                injected.inToolbar = false
-            }
-            shortcuts.append(injected)
-            changed = true
-        }
-        if changed { persist() }
-    }
-
-    private func persist() {
-        guard isAuthoritative else { return }
-        if let data = try? JSONEncoder().encode(shortcuts) {
-            defaults.set(data, forKey: Self.storageKey)
-        }
-    }
-
-    /// Default toolbar per prototype screens 3/6.
+    /// The shipped set, as the Rust store seeds it.
     static var builtins: [TerminalShortcut] {
-        func combo(_ chip: String, _ name: String, mods: Set<ShortcutModifier> = [], key: String,
-                   repeats: Bool = false, inBar: Bool = true) -> TerminalShortcut {
-            var sc = TerminalShortcut()
-            sc.kind = .keyCombo
-            sc.modifiers = mods
-            sc.key = key
-            sc.chipLabel = chip
-            sc.summary = name
-            sc.repeatOnHold = repeats
-            sc.isBuiltin = true
-            sc.inToolbar = inBar
-            return sc
-        }
-        func text(_ chip: String, _ name: String, payload: String,
-                  inBar: Bool = false) -> TerminalShortcut {
-            var sc = TerminalShortcut()
-            sc.kind = .text
-            sc.payload = payload
-            sc.chipLabel = chip
-            sc.summary = name
-            sc.isBuiltin = true
-            sc.inToolbar = inBar
-            return sc
-        }
-        func special(_ kind: ShortcutKind, _ chip: String, _ name: String, inBar: Bool) -> TerminalShortcut {
-            var sc = TerminalShortcut()
-            sc.kind = kind
-            sc.chipLabel = chip
-            sc.summary = name
-            sc.isBuiltin = true
-            sc.inToolbar = inBar
-            return sc
-        }
-        return [
-            // The lean default toolbar: the handful of keys actually reached
-            // for constantly (interrupt, clear, paste, arrows). Everything
-            // else below is a builtin too, just starting outside the bar —
-            // add it back from the editor's "available" list if you want it.
-            combo("esc", "Escape", key: "esc"),
-            combo("tab", "Tab", key: "tab"),
-            combo("^C", "Interrupt (SIGINT)", mods: [.ctrl], key: "c"),
-            // Out of the bar since the mic joined it: seven chips overflow a
-            // phone-width row by about ten points, which reads as a broken
-            // half-chip rather than a scrollable row. ^L is the default that
-            // gives up its slot most cheaply — it is the only one with a
-            // plain-text equivalent you can just type (`clear`), whereas esc,
-            // tab and ^C have none on a software keyboard. Still a builtin,
-            // one tap away in the shortcut editor.
-            combo("^L", "Clear screen", mods: [.ctrl], key: "l", inBar: false),
-            // Paste is a normal chip (reorderable / removable), not forced
-            // to the end of the bar.
-            special(.paste, "paste", "Paste clipboard", inBar: true),
-            // The arrow joystick is a first-class shortcut: reorder it, or move
-            // it out of the toolbar, like any other. One chip reaching four
-            // directions is why it holds the default slot — see `StickGesture`
-            // for the dwell it owes, and why it only owes it with the keyboard
-            // down.
-            special(.dpad, "✛", "Arrow keys", inBar: true),
-            // The tap-first alternative: four zones, tap sends one arrow, hold
-            // repeats. Out of the bar because it costs ~2.5 slots to the
-            // joystick's one, which overflows a phone-width row — but a tap on
-            // the joystick cannot carry a direction at all, so anyone who wants
-            // one-tap-one-arrow adds this instead.
-            special(.arrows, "←↑↓→", "Tap arrows", inBar: false),
-            // Sticky-Ctrl: reorder it, hide it, or move it out of the toolbar
-            // like any other chip — it used to be a fixed, non-configurable
-            // element pinned ahead of everything else.
-            special(.ctrl, "ctrl", "Control", inBar: false),
-            special(.scroll, "⇅", "Scroll history", inBar: false),
-            // Voice input: a normal chip like paste, so it can be reordered,
-            // moved out of the bar, or scrolled past. Starts in the bar
-            // because it was previously always visible — taking it away
-            // silently on upgrade would read as the feature disappearing.
-            special(.mic, "mic", "Voice input", inBar: true),
-            // Attach image: in the bar because the chip IS the feature's only
-            // entry point — outside it, sending a screenshot to an agent
-            // doesn't exist. Yes, a seventh chip overflows a phone-width row
-            // by a few points where the mic upgrade evicted ^L to avoid
-            // exactly that — but ^L had a typeable equivalent (`clear`) and
-            // this has none, so it rides the row's drag-scroll + edge fade
-            // instead of costing anyone a key. Trailing end like the mic, so
-            // nothing shuffles under an upgrading user's thumb.
-            special(.image, "img", "Attach image", inBar: true),
-            // Browse the host: the folder sheet at the focused pane's working
-            // directory. In the bar for the same reason as the image chip —
-            // it is the only way into the files an agent wrote without a
-            // path on screen to tap. Upgrading sets get it from the
-            // summary-keyed catch-all in `reconcileBuiltins`, at the trailing
-            // end, so nothing already in the bar moves.
-            special(.files, "files", "Browse files", inBar: true),
-            // Return, and the Claude Code two-step. Tab accepts whatever
-            // Claude Code is suggesting and Return sends it, which is two taps
-            // in the one place you least want them — so `⇥⏎` sends 0x09 0x0D
-            // from one chip. A `.text` payload rather than a new kind:
-            // `unescape` already turns these into exactly those two bytes.
-            //
-            // They go out as two SEPARATE writes — see `encodedStages()`. This
-            // shipped as a single write, which is what made the Return land as
-            // a newline instead of submitting.
-            //
-            // Both start outside the bar. Return is reachable on the software
-            // keyboard, and ⇥⏎ only means anything to an agent that suggests
-            // prompts — neither earns a default slot on a row that already has
-            // to fit on a phone.
-            combo("⏎", "Return", key: "return", inBar: false),
-            text("⇥⏎", "Accept suggestion and send", payload: #"\t\r"#),
-            combo("^D", "End of file", mods: [.ctrl], key: "d", inBar: false),
-            combo("^R", "Reverse search", mods: [.ctrl], key: "r", inBar: false),
-            // Claude Code daily drivers: jump the transcript to the live end,
-            // and toggle the input mode — neither is typeable on the software
-            // keyboard (there is no End key, and ⇧Tab needs a hardware Tab).
-            combo("⌃End", "Jump to end", mods: [.ctrl], key: "end", inBar: false),
-            combo("⇧Tab", "Back-tab / toggle mode", mods: [.shift], key: "tab", inBar: false),
-            // The four arrows as individual chips. The joystick reaches all four
-            // in one slot, so these stay out of the bar by default — they're
-            // here for a bar arranged around one or two directions (↑ on its
-            // own, for history recall, is the common one), and for anyone who
-            // wants a plain tap-to-send arrow without spending 2.5 slots on the
-            // whole cluster. ← and → had no chip at all before: the joystick was
-            // the only way to move a cursor sideways.
-            combo("↑", "History prev", key: "up", repeats: true, inBar: false),
-            combo("↓", "History next", key: "down", repeats: true, inBar: false),
-            combo("←", "Cursor left", key: "left", repeats: true, inBar: false),
-            combo("→", "Cursor right", key: "right", repeats: true, inBar: false),
-            // Bulk clear. Holding backspace is the only other way to empty a
-            // long line, and that depends on the OS repeat cadence outrunning a
-            // control-mode round trip PER KEYSTROKE (TmuxSessionController
-            // .sendInput sends one `send-keys` command per byte, serialized
-            // through writeChain) — which it does not on a slow link, and least
-            // of all just after a reconnect. ^U is one command whatever the
-            // length. Verified against Claude Code 2.1.227: its input handler
-            // maps ctrl-u to deleteToLineStart and ctrl-k to deleteToLineEnd,
-            // the readline meaning. (Its ctrl+u → scroll:halfPageUp binding is
-            // the transcript/settings context, not the prompt.)
-            combo("^U", "Clear line before cursor", mods: [.ctrl], key: "u", inBar: false),
-            combo("^K", "Clear line after cursor", mods: [.ctrl], key: "k", inBar: false),
-            combo("^A", "Beginning of line", mods: [.ctrl], key: "a", inBar: false),
-            combo("^E", "End of line", mods: [.ctrl], key: "e", inBar: false),
-            combo("^W", "Delete word", mods: [.ctrl], key: "w", inBar: false),
-            combo("^Z", "Suspend", mods: [.ctrl], key: "z", inBar: false),
-            combo("End", "End", key: "end", inBar: false),
-            combo("Home", "Home", key: "home", inBar: false),
-            combo("PgUp", "Page up", key: "pgup", repeats: true, inBar: false),
-            combo("PgDn", "Page down", key: "pgdn", repeats: true, inBar: false),
-        ]
+        shortcutBuiltins().compactMap(TerminalShortcut.init)
     }
+}
+
+/// What a ``ShortcutStore`` reads and writes through: the Rust store
+/// (``RustShortcutStore``).
+protocol ShortcutStoreBacking: AnyObject {
+    var shortcuts: [TerminalShortcut] { get }
+    var isAuthoritative: Bool { get }
+    func toolbar(forHost hostName: String?, inMultiplexer: Bool) -> [TerminalShortcut]
+    func add(_ shortcut: TerminalShortcut) -> Bool
+    func update(_ shortcut: TerminalShortcut)
+    func remove(id: UUID)
+    func addToToolbar(id: UUID) -> Bool
+    func removeFromToolbar(id: UUID)
+    func restoreDefaults()
+    func moveInToolbar(fromOffsets: IndexSet, toOffset: Int)
+    func reloadIfNeeded()
 }

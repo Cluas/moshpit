@@ -17,6 +17,10 @@ import MoshpitKit
 /// is collected, uploaded or persisted beyond what the system already keeps —
 /// it is the same log `log stream` would show, shown in the place where the
 /// problem was seen.
+///
+/// Its accessibility identifiers (`recent-log-…`) are the NSH page's too
+/// (`ui/src/recent_log.rs`, behind a switch: ``RecentLogPage``), so a UI test
+/// finds either page the same way.
 struct DiagnosticsLogView: View {
     @State private var entries: [Entry] = []
     @State private var loadError: String?
@@ -36,17 +40,20 @@ struct DiagnosticsLogView: View {
                         .tint(Ink.meta)
                     Text("Reading…")
                         .font(Face.mono(12)).foregroundStyle(Ink.meta)
+                        .accessibilityIdentifier("recent-log-loading")
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if let loadError {
                 Text(loadError)
                     .font(Face.mono(12)).foregroundStyle(Ink.warn)
                     .multilineTextAlignment(.center)
+                    .accessibilityIdentifier("recent-log-error")
                     .padding(24)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if entries.isEmpty {
                 Text("Nothing logged in the last 30 minutes.")
                     .font(Face.mono(12)).foregroundStyle(Ink.meta)
+                    .accessibilityIdentifier("recent-log-empty")
                     .padding(24)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
@@ -60,6 +67,7 @@ struct DiagnosticsLogView: View {
             ToolbarItem(placement: .topBarTrailing) {
                 Button("Copy") { UIPasteboard.general.string = plainText }
                     .disabled(entries.isEmpty)
+                    .accessibilityIdentifier("recent-log-copy")
             }
         }
         .task { await load() }
@@ -75,6 +83,7 @@ struct DiagnosticsLogView: View {
                         Text(entry.message)
                             .font(Face.mono(11)).foregroundStyle(Ink.primary)
                             .textSelection(.enabled)
+                            .accessibilityIdentifier("recent-log-entry")
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 14).padding(.vertical, 6)
@@ -82,6 +91,7 @@ struct DiagnosticsLogView: View {
                 }
             }
         }
+        .accessibilityIdentifier("recent-log-list")
     }
 
     private var plainText: String {
@@ -93,7 +103,7 @@ struct DiagnosticsLogView: View {
     private func load() async {
         switch await DiagnosticsLog.recent() {
         case .success(let rows): entries = rows
-        case .failure(let error): loadError = "Couldn't read the log: \(error.localizedDescription)"
+        case .failure(let error): loadError = DiagnosticsLog.readFailure(error)
         }
         isLoading = false
     }

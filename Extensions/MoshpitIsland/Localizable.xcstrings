@@ -440,7 +440,7 @@
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "Agent 狀態"
+            "value": "智能體狀態"
           }
         }
       }
@@ -492,7 +492,7 @@
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "即時查看 Moshpit 裡每個 agent 在做什麼。"
+            "value": "即時查看 Moshpit 裡每個智能體在做什麼。"
           }
         }
       }
@@ -596,7 +596,7 @@
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "Moshpit · 沒有 agent"
+            "value": "Moshpit · 沒有智能體"
           }
         }
       }
@@ -700,7 +700,7 @@
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "agent"
+            "value": "智能體"
           }
         }
       }
@@ -908,7 +908,7 @@
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "沒有 agent 在執行"
+            "value": "沒有智能體在執行"
           }
         }
       }

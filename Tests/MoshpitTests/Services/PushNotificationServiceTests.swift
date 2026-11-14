@@ -42,6 +42,7 @@ struct PushNotificationServiceTests {
     /// attention category, and the sealed envelope under `mp`.
     private func request(state: String = "attention",
                          title: String? = "Bash: rm -rf build",
+                         dur: Int? = nil, ts: Int = Int(Date().timeIntervalSince1970),
                          sealedWith key: String = secret) throws -> UNNotificationRequest {
         let status = PushSealedBox.Status(conn: Self.conn, host: "m1-pro", sess: "work",
                                          pane: "%3", agent: "claude", state: state,
@@ -49,7 +50,7 @@ struct PushNotificationServiceTests {
                                          // See PushRemoteNotificationTests: a
                                          // frozen ts would silently exercise the
                                          // stale-attention path.
-                                         ts: Int(Date().timeIntervalSince1970))
+                                         ts: ts, dur: dur)
         let sealed = try PushSealedBox.seal(try JSONEncoder().encode(status), secretHex: key)
         let content = UNMutableNotificationContent()
         content.title = "An agent needs you"
@@ -94,6 +95,60 @@ struct PushNotificationServiceTests {
         let content = try #require(delivered)
         #expect(content.title == "✓ claude finished")
         #expect(content.categoryIdentifier.isEmpty)
+    }
+
+    /// The extension wrote its cards in its own process's languages — the
+    /// system's — while the app writes in the language picked for Moshpit
+    /// (Settings → Moshpit → Language). With the two apart, a pushed card and
+    /// the app's own copy of the same event read in different languages, and
+    /// the lock screen showed whichever landed last. The app records its
+    /// language in the App Group (AppLanguage); the extension writes in it.
+    /// Run on a device in English: Moshpit set to Chinese must give Chinese.
+    @Test("a pushed card is written in the language Moshpit shows, not the system's")
+    func pushedCardFollowsTheAppsLanguage() throws {
+        let saved = AppLanguage.stored()
+        defer {
+            if let saved { AppLanguage.record(saved) }
+            else { UserDefaults(suiteName: PushPrefs.suite)?.removeObject(forKey: AppLanguage.key) }
+        }
+        AppLanguage.record("zh-Hans")
+
+        let done = try #require(try withPairing { deliver(try request(state: "done", title: nil)) })
+        #expect(done.title == "✓ claude 已完成", "the system's language, not Moshpit's: \(done.title)")
+        let asking = try #require(try withPairing { deliver(try request()) })
+        #expect(asking.title == "claude 在等你", "the system's language, not Moshpit's: \(asking.title)")
+    }
+
+    /// A long turn's finish reaches the phone twice when the app is awake:
+    /// this push, and the app's own card from its poll. Whichever is first
+    /// rings; the other only updates the card (PushFinishes).
+    @Test("a long finish the app already rang arrives silent; one it didn't, rings")
+    func longFinishRingsOnce() throws {
+        let finishes = try #require(PushFinishes.appGroupFile)
+        let saved = try? Data(contentsOf: finishes.url)
+        defer {
+            if let saved { try? saved.write(to: finishes.url) }
+            else { try? FileManager.default.removeItem(at: finishes.url) }
+        }
+        let ended = Int(Date().timeIntervalSince1970)
+        // The sound switch on, as it ships; put back as it was after.
+        let prefs = PushPrefs.read()
+        PushPrefs.write(showDetail: prefs.showDetail, sound: true)
+        defer { PushPrefs.write(showDetail: prefs.showDetail, sound: prefs.sound) }
+
+        // Nobody rang this turn yet: the push does.
+        let first = try withPairing { deliver(try request(state: "done", title: nil, dur: 600, ts: ended)) }
+        #expect(try #require(first).sound != nil)
+
+        // The app rang the next turn's finish before its push arrived.
+        #expect(PushFinishes.noteRing(conn: Self.conn, pane: "%3", endedAt: ended + 900))
+        let second = try withPairing {
+            deliver(try request(state: "done", title: nil, dur: 600, ts: ended + 901))
+        }
+        let content = try #require(second)
+        #expect(content.sound == nil, "one turn's finish rang twice")
+        #expect(content.interruptionLevel == .passive)
+        #expect(content.title.hasPrefix("✓ claude finished"))
     }
 
     @Test("the extension names the connection what the phone calls it")
@@ -166,20 +221,6 @@ struct PushNotificationServiceTests {
             ts: Int(Date().timeIntervalSince1970) - 3 * 60 * 60)
         PushRemoteNotification.apply(old, to: content)
         #expect(content.title == "✓ claude finished")
-        #expect(content.categoryIdentifier.isEmpty)
-    }
-
-    @Test("done is allowed to be older than an attention")
-    func doneLivesLonger() {
-        // An overnight finish is still worth replying to; an approval prompt
-        // from twenty minutes ago is not worth answering blind.
-        #expect(PushRemoteNotification.lifetime(forState: "done") >
-                PushRemoteNotification.lifetime(forState: "attention"))
-        let content = UNMutableNotificationContent()
-        let hourOld = PushSealedBox.Status(
-            conn: Self.conn, host: "m1-pro", sess: nil, pane: "%3", agent: "claude",
-            state: "done", title: nil, ts: Int(Date().timeIntervalSince1970) - 3600)
-        PushRemoteNotification.apply(hourOld, to: content)
         #expect(content.categoryIdentifier.isEmpty)
     }
 

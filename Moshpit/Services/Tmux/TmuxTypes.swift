@@ -34,6 +34,10 @@ struct PaneInfo: Codable, Sendable, Equatable, Identifiable, Hashable {
     var height: Int
     /// Whether this pane is the active pane within its window.
     var isActive: Bool
+    /// The working directory of what runs in the pane (tmux's
+    /// `#{pane_current_path}`, herdr's pane cwd); nil when unknown. Only the
+    /// Rust core's controllers fill it.
+    var path: String? = nil
 
     /// What to call the foreground process. tmux reports the comm name, and
     /// Claude Code's native install runs a binary named after its version
@@ -59,7 +63,8 @@ struct PaneInfo: Codable, Sendable, Equatable, Identifiable, Hashable {
         command: String = "",
         width: Int = 80,
         height: Int = 24,
-        isActive: Bool = false
+        isActive: Bool = false,
+        path: String? = nil
     ) {
         self.id = id
         self.windowId = windowId
@@ -68,6 +73,7 @@ struct PaneInfo: Codable, Sendable, Equatable, Identifiable, Hashable {
         self.width = width
         self.height = height
         self.isActive = isActive
+        self.path = path
     }
 }
 

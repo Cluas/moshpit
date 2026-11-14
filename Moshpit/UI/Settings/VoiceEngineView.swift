@@ -28,7 +28,7 @@ struct VoiceEngineView: View {
             if settings.voiceEngine == .whisper, installedCount == 0 {
                 FormGroup(title: "SETUP") {
                     NavigationLink {
-                        WhisperModelView()
+                        WhisperModelPage()
                     } label: {
                         HStack(spacing: 10) {
                             Image(systemName: "arrow.down.circle")
@@ -43,13 +43,15 @@ struct VoiceEngineView: View {
                             Spacer()
                         }
                     }
+                    // The NSH page's identifiers too (`ui/src/voice_engine.rs`).
+                    .accessibilityIdentifier("voice-engine-models")
                 }
             }
         }
         .moshpitForm()
         .navigationTitle("Recognition")
         .navigationBarTitleDisplayMode(.inline)
-        .preferredColorScheme(.dark)
+        .darkOnlyPage()
         .onAppear { installedCount = WhisperModelStore.catalog().filter(\.isInstalled).count }
     }
 
@@ -88,5 +90,6 @@ struct VoiceEngineView: View {
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(settings.voiceEngine == kind ? .isSelected : [])
+        .accessibilityIdentifier("voice-engine-\(kind.rawValue)")
     }
 }

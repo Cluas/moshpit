@@ -1,0 +1,78 @@
+{"ev":"session-changed","session":"$0","name":"g2"}
+{"ev":"response","id":1794337406,"num":287,"error":false,"lines":[]}
+{"ev":"layout-change","window":"@0","layout":"b25d,80x24,0,0,0","zoomed":false}
+{"ev":"response","id":1794337406,"num":290,"error":false,"lines":["$0 1 g2"]}
+{"ev":"response","id":1794337406,"num":291,"error":false,"lines":["$0 @0 0 b25d,80x24,0,0,0 1 1 sh"]}
+{"ev":"response","id":1794337406,"num":292,"error":false,"lines":["%0 @0 0 80 24 1 0 0 bash"]}
+{"ev":"response","id":1794337406,"num":293,"error":false,"lines":["C-b"]}
+{"ev":"response","id":1794337406,"num":294,"error":false,"lines":["1|g2|/dev/ttys022"]}
+{"ev":"response","id":1794337406,"num":295,"error":false,"lines":["G2SYNC1"]}
+{"ev":"response","id":1794337406,"num":296,"error":false,"lines":[]}
+{"ev":"response","id":1794337406,"num":297,"error":false,"lines":["G2SYNC2"]}
+{"ev":"unlinked-window-add","window":"@1"}
+{"ev":"sessions-changed"}
+{"ev":"unlinked-window-renamed","window":"@1","name":"tmux"}
+{"ev":"response","id":1794337406,"num":301,"error":false,"lines":[]}
+{"ev":"session-changed","session":"$1","name":"other"}
+{"ev":"response","id":1794337406,"num":305,"error":false,"lines":["G2SYNC3"]}
+{"ev":"unlinked-window-renamed","window":"@0","name":"bash"}
+{"ev":"response","id":1794337407,"num":307,"error":false,"lines":[]}
+{"ev":"response","id":1794337407,"num":308,"error":false,"lines":["$0 0 g2","$1 1 other"]}
+{"ev":"response","id":1794337407,"num":309,"error":false,"lines":["$0 @0 0 b25d,80x24,0,0,0 1 1 bash","$1 @1 0 b25e,80x24,0,0,1 1 1 tmux"]}
+{"ev":"layout-change","window":"@1","layout":"b25e,80x24,0,0,1","zoomed":false}
+{"ev":"response","id":1794337407,"num":312,"error":false,"lines":["%0 @0 0 80 24 1 0 0 bash","%1 @1 0 80 24 1 0 0 bash"]}
+{"ev":"response","id":1794337407,"num":313,"error":false,"lines":["C-b"]}
+{"ev":"response","id":1794337407,"num":314,"error":false,"lines":["1|other|/dev/ttys022"]}
+{"ev":"response","id":1794337407,"num":315,"error":false,"lines":["G2SYNC4"]}
+{"ev":"response","id":1794337407,"num":316,"error":false,"lines":[]}
+{"ev":"response","id":1794337407,"num":317,"error":false,"lines":[]}
+{"ev":"response","id":1794337407,"num":318,"error":false,"lines":["G2SYNC5"]}
+{"ev":"output","pane":"%1","hex":"65"}
+{"ev":"output","pane":"%1","hex":"63"}
+{"ev":"output","pane":"%1","hex":"686f"}
+{"ev":"output","pane":"%1","hex":"20"}
+{"ev":"output","pane":"%1","hex":"69"}
+{"ev":"output","pane":"%1","hex":"6e20"}
+{"ev":"output","pane":"%1","hex":"7468"}
+{"ev":"output","pane":"%1","hex":"65"}
+{"ev":"output","pane":"%1","hex":"206f"}
+{"ev":"output","pane":"%1","hex":"74"}
+{"ev":"output","pane":"%1","hex":"68"}
+{"ev":"output","pane":"%1","hex":"6572"}
+{"ev":"output","pane":"%1","hex":"2073"}
+{"ev":"output","pane":"%1","hex":"6573"}
+{"ev":"output","pane":"%1","hex":"73"}
+{"ev":"output","pane":"%1","hex":"69"}
+{"ev":"output","pane":"%1","hex":"6f"}
+{"ev":"output","pane":"%1","hex":"6e0d0a"}
+{"ev":"output","pane":"%1","hex":"696e20746865206f746865722073657373696f6e0d0a"}
+{"ev":"output","pane":"%1","hex":"73682d332e322420"}
+{"ev":"window-renamed","window":"@1","name":"bash"}
+{"ev":"response","id":1794337407,"num":320,"error":false,"lines":[]}
+{"ev":"response","id":1794337407,"num":321,"error":false,"lines":["G2SYNC6"]}
+{"ev":"session-changed","session":"$0","name":"g2"}
+{"ev":"response","id":1794337407,"num":325,"error":false,"lines":[]}
+{"ev":"session-renamed","session":"$1","name":"renamed"}
+{"ev":"response","id":1794337407,"num":327,"error":false,"lines":["G2SYNC7"]}
+{"ev":"client-session-changed","client":"/dev/ttys024","session":"$0","name":"g2"}
+{"ev":"layout-change","window":"@0","layout":"ca7d,100x29,0,0,0","zoomed":false}
+{"ev":"output","pane":"%0","hex":"0d1b5b4b73682d332e322420"}
+{"ev":"client-session-changed","client":"/dev/ttys024","session":"$1","name":"renamed"}
+{"ev":"layout-change","window":"@0","layout":"b25d,80x24,0,0,0","zoomed":false}
+{"ev":"output","pane":"%0","hex":"0d1b5b4b73682d332e322420"}
+{"ev":"client-detached","payload":"/dev/ttys024"}
+{"ev":"response","id":1794337409,"num":350,"error":false,"lines":[]}
+{"ev":"response","id":1794337409,"num":351,"error":false,"lines":["G2SYNC8"]}
+{"ev":"sessions-changed"}
+{"ev":"unlinked-window-close","window":"@1"}
+{"ev":"response","id":1794337410,"num":354,"error":false,"lines":[]}
+{"ev":"layout-change","window":"@0","layout":"b25d,80x24,0,0,0","zoomed":false}
+{"ev":"response","id":1794337410,"num":357,"error":false,"lines":["$0 1 g2"]}
+{"ev":"response","id":1794337410,"num":358,"error":false,"lines":["$0 @0 0 b25d,80x24,0,0,0 1 1 bash"]}
+{"ev":"response","id":1794337410,"num":359,"error":false,"lines":["%0 @0 0 80 24 1 0 0 bash"]}
+{"ev":"response","id":1794337410,"num":360,"error":false,"lines":["C-b"]}
+{"ev":"response","id":1794337410,"num":361,"error":false,"lines":["1|g2|/dev/ttys022"]}
+{"ev":"response","id":1794337410,"num":362,"error":false,"lines":["G2SYNC9"]}
+{"ev":"response","id":1794337410,"num":363,"error":false,"lines":[]}
+{"ev":"exit","reason":null}
+{"ev":"end","plan":"whole","feeds":1,"resets":0,"bytes":3260,"cuts":0,"in_utf8":0,"in_octal":0,"plan_hash":"9d203a21d538854d"}

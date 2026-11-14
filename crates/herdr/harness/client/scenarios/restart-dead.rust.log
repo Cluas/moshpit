@@ -1,0 +1,25 @@
+t=0 exec api snapshot
+t=40 focus w1:p1
+t=500 exec status
+t=2040 exec api snapshot
+t=5500 exec server stop
+t=14040 exec api snapshot
+t=16500 exec PATH="$PATH:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:$HOME/.local/bin" nohup herdr server >/dev/null 2>&1 </dev/null &
+t=26040 exec api snapshot
+t=36040 exec api snapshot
+t=46540 exec api snapshot
+t=57040 exec api snapshot
+t=67540 exec api snapshot
+t=78040 exec api snapshot
+t=88540 exec api snapshot
+t=99040 exec api snapshot
+t=109540 exec api snapshot
+t=120040 exec api snapshot
+t=130540 exec api snapshot
+t=140540 outcome restart failed
+t=142540 exec api snapshot
+t=154540 exec api snapshot
+t=166540 exec api snapshot
+t=178540 exec api snapshot
+t=190540 exec api snapshot
+state focus=w1:p1 server=w1:p1 sessions=1 notrunning=false mismatch=false

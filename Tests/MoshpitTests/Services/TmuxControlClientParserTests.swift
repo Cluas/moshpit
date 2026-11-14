@@ -19,6 +19,11 @@ private final class CallbackRecorder: @unchecked Sendable {
         case windowRenamed(String, String)
         case sessionChanged(String, String)
         case sessionWindowChanged(String, String)
+        case sessionsChanged
+        case unlinkedWindowAdd(String)
+        case unlinkedWindowClose(String)
+        case unlinkedWindowRenamed(String, String)
+        case clientSessionChanged(String, String, String)
         case activePaneChanged(String, String)
         case pause(String)
         case `continue`(String)
@@ -54,6 +59,11 @@ private final class CallbackRecorder: @unchecked Sendable {
             onWindowRenamed: { [self] id, name in append(.windowRenamed(id, name)) },
             onSessionChanged: { [self] id, name in append(.sessionChanged(id, name)) },
             onSessionWindowChanged: { [self] s, w in append(.sessionWindowChanged(s, w)) },
+            onSessionsChanged: { [self] in append(.sessionsChanged) },
+            onUnlinkedWindowAdd: { [self] id in append(.unlinkedWindowAdd(id)) },
+            onUnlinkedWindowClose: { [self] id in append(.unlinkedWindowClose(id)) },
+            onUnlinkedWindowRenamed: { [self] id, name in append(.unlinkedWindowRenamed(id, name)) },
+            onClientSessionChanged: { [self] c, s, name in append(.clientSessionChanged(c, s, name)) },
             onActivePaneChanged: { [self] w, p in append(.activePaneChanged(w, p)) },
             onPause: { [self] id in append(.pause(id)) },
             onContinue: { [self] id in append(.continue(id)) },
@@ -80,8 +90,16 @@ private func bytes(_ string: String) -> Data {
 
 // MARK: - TmuxControlClientParserTests
 
-@Suite("TmuxControlClient parser")
+@Suite("TmuxControlClient parser", .tmuxParserUnderTest)
 struct TmuxControlClientParserTests {
+
+    @Test("every client in this suite runs the parser under test")
+    func runsTheParserUnderTest() async {
+        // Without it the Rust run of these suites (MoshpitTmuxRustTests)
+        // could pass on the Swift parser: a client asked for Rust falls back
+        // to Swift when the library is missing.
+        #expect(await TmuxControlClient().backend == TmuxParserUnderTest.backend)
+    }
 
     // MARK: - Output
 
@@ -409,6 +427,55 @@ struct TmuxControlClientParserTests {
         #expect(rec.events == [.exit(nil), .exit("detached")])
     }
 
+    // MARK: - The rest of the server
+
+    /// What tmux 3.6a tells a -CC client about sessions, windows and clients
+    /// that are not its own (private socket; crates/tmux captures
+    /// session-switch.bin and layout.bin). All of it used to be dropped as
+    /// unknown, so a session created or killed elsewhere, or a window added,
+    /// closed or renamed in another session, showed only after a refresh.
+    @Test("notifications about other sessions, windows and clients reach their callbacks")
+    func serverNotifications() async throws {
+        let client = TmuxControlClient()
+        let rec = CallbackRecorder()
+        await rec.install(on: client)
+        await client.feed(bytes("%begin 900 500 0\n%end 900 500 0\n"))
+
+        await client.feed(bytes("""
+        %unlinked-window-add @5
+        %sessions-changed
+        %unlinked-window-renamed @5 my window
+        %client-session-changed /dev/ttys024 $1 my project
+        %client-session-changed client-4242 $0 a|b
+        %unlinked-window-close @5
+
+        """))
+
+        #expect(rec.events == [
+            .unlinkedWindowAdd("@5"),
+            .sessionsChanged,
+            .unlinkedWindowRenamed("@5", "my window"),
+            .clientSessionChanged("/dev/ttys024", "$1", "my project"),
+            .clientSessionChanged("client-4242", "$0", "a|b"),
+            .unlinkedWindowClose("@5"),
+        ])
+    }
+
+    @Test("a notification about the rest of the server that is cut short is a protocol error",
+          arguments: ["%unlinked-window-add ", "%unlinked-window-close ", "%unlinked-window-renamed @5",
+                      "%client-session-changed /dev/ttys024 $1", "%client-session-changed  $1 x",
+                      "%client-session-changed /dev/ttys024  x"])
+    func malformedServerNotification(_ line: String) async throws {
+        let client = TmuxControlClient()
+        let rec = CallbackRecorder()
+        await rec.install(on: client)
+        await client.feed(bytes("%begin 900 500 0\n%end 900 500 0\n"))
+
+        await client.feed(bytes(line + "\n"))
+
+        #expect(rec.events == [.protocolError(.malformedLine(line))])
+    }
+
     // MARK: - Forward-compat + errors
 
     @Test("Unknown %foo directives are silently ignored")
@@ -592,5 +659,34 @@ struct TmuxControlClientParserTests {
             .commandResponse(commandId: 100, commandNum: 535, isError: false,
                              lines: ["real reply"])
         ])
+    }
+
+    @Test("a %begin's flags say whose command it was: bit 1 ours, missing or unreadable ours (B275)")
+    func beginFlagsSayWhoseCommand() async throws {
+        final class Box: @unchecked Sendable { var whose: [Int: Bool] = [:] }
+        let box = Box()
+        let client = TmuxControlClient()
+        await client.setCallbacks(onCommandResponse: { box.whose[$0.commandNum] = $0.fromClient })
+        await client.feed(bytes("""
+        %begin 1 1 0
+        %end 1 1 0
+        %begin 2 2 1
+        %end 2 2 1
+        %begin 3 3 0
+        %end 3 3 0
+        %begin 4 4 0
+        %error 4 4 0
+        %begin 5 5
+        %end 5 5
+        %begin 6 6 x
+        %end 6 6 x
+        %begin 7 7 3
+        %end 7 7 3
+        %begin 8 8 2
+        %end 8 8 2
+
+        """))
+        // Block 1 is the boot command's, swallowed.
+        #expect(box.whose == [2: true, 3: false, 4: false, 5: true, 6: true, 7: true, 8: false])
     }
 }

@@ -1,0 +1,28 @@
+# One minimal input per fix in harness/divergences.json, each after a
+# '# <fix id>' comment. Results: divergences.rust.txt (Rust), .swift.txt (the
+# Swift client now: the same, except for the open excerpt-unicode fix) and
+# .swift-b4b8e1b4.txt (the Swift client before the fixes: every line
+# differs). harness/equivalence.py and tests/equivalence.rs check all three.
+# zlib-strict: the Adler-32 trailer's last bit flipped
+zlib.decompress data=789ccb48cdc9c90700062c0214
+# zlib-strict: a header whose check bits fail (78 9d)
+zlib.decompress data=789dcb48cdc9c90700062c0215
+# int32-decode: a resize width of 2^32 + 80
+user.decode data=0a0a1a0828d0808080103018
+host.decode data=0a0f1a0d28d08080801030988080808020
+# unicode-syntax: a combining mark glued to the space after MOSH CONNECT
+boot.parse output=4d4f534820434f4e4e45435420cc812036303030312041414543417751464267634943516f4c4441304f44770a4d4f534820434f4e4e4543542036303030322041414543417751464267634943516f4c4441304f44770a host=68
+# pid-anchor: a shell startup line mentions pid = 5 before mosh-server's own
+boot.parse output=7261706964203d20350a4d4f534820434f4e4e4543542036303030312041414543417751464267634943516f4c4441304f44770a5b6d6f73682d7365727665722064657461636865642c20706964203d2037375d0a host=68
+# pid-anchor: pid 0 (kill 0 signals the process group)
+boot.parse output=4d4f534820434f4e4e4543542036303030312041414543417751464267634943516f4c4441304f44770a5b6d6f73682d7365727665722064657461636865642c20706964203d20305d0a host=68
+# pid-anchor: pid 1 (init; a forked server is never 1)
+boot.parse output=4d4f534820434f4e4e4543542036303030312041414543417751464267634943516f4c4441304f44770a5b6d6f73682d7365727665722064657461636865642c20706964203d20315d0a host=68
+# excerpt-unicode: an unassigned code point (U+0378) and a noncharacter of plane 4
+boot.excerpt output=6f6b20cdb820f18fbfbe20656e64
+# excerpt-unicode: a combining mark at the 100th character
+boot.excerpt output=61616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616165cc8162
+# zlib-strict: a stored block whose NLEN is not ~LEN (Apple's DEFLATE accepts it)
+zlib.decompress data=789c013000cfbfffefc612fec5929a8c0c3cfb3e28ff1d7e18a2919ea37be12928e1e85a8b5d908552fd5b2919877dc420bc53d54f0c9436692617bc
+# zlib-strict: an invalid code-length set (Apple's DEFLATE accepts it)
+zlib.decompress data=789c95c0810000000180207fc37066389e00e09d2881

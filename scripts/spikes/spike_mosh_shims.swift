@@ -2,8 +2,9 @@ import Foundation
 
 // Stand-ins for the two app types MoshTransport references whose real home
 // (MoshBootstrap.swift) drags in SSHSession/Citadel and HostCapabilities —
-// none of which this spike links. Field-compatible with the app's
-// definitions; the spike's driver script hands us an already-parsed
+// none of which a standalone MoshTransport CLI links. Field-compatible with
+// the app's definitions; the driver script
+// (scripts/capture/capture-mosh-switch-bytes.sh) hands us an already-parsed
 // port + key, so none of MoshBootstrap's parsing needs to exist here.
 
 struct MoshCredentials: Equatable {

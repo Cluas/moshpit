@@ -166,18 +166,75 @@ echo "$PLAIN2" | grep -q '"agent":"moshpit-selftest"' \
 echo "$PLAIN2" | grep -q '"title":"selftest-abc123"' \
   || fail "the nonce did not survive into the sealed status"
 
-say "the host scripts and their Swift copies have not drifted"
-python3 - "$ROOT" <<'PY'
-import pathlib, sys
-root = pathlib.Path(sys.argv[1])
-swift = (root / "Moshpit/Services/Install/HostScripts.swift").read_text()
-for name, rel in [("stamp", "scripts/host/moshpit-stamp.sh"), ("sender", "scripts/host/moshpit-push.sh")]:
-    marker = f'    static let {name} = #"""\n'
-    start = swift.index(marker) + len(marker)
-    end = swift.index('\n"""#', start)
-    if swift[start:end] != (root / rel).read_text().rstrip("\n"):
-        sys.exit(f"HostScripts.{name} has drifted - run scripts/gen/gen-host-scripts.py")
-print("   both identical")
-PY
+# A phone with two saved connections to one host holds two pairings there —
+# the app pairs each connection on its own — and got every push twice: two
+# cards, two sounds.
+mint() {
+  curl -fsS -X POST "http://127.0.0.1:$PORT/v1/mint" -H "content-type: application/json" \
+    -d "{\"apnsToken\":\"$1\",\"conn\":\"$2\"}" || fail "mint rejected"
+}
+conf() {  # conf <file> <conn> <apns token> <minted json | token override>
+  TOKEN=$(printf "%s" "$4" | sed -e 's/.*"sendToken":"//' -e 's/".*//')
+  IAT=$(printf "%s" "$4" | sed -e 's/.*"iat"://' -e 's/[,}].*//')
+  [ -n "${5:-}" ] && TOKEN=$5
+  cat > "$1" <<CONF
+RELAY_URL=http://127.0.0.1:$PORT
+SEND_TOKEN=$TOKEN
+SECRET=$SECRET
+CONN=$2
+APNS_TOKEN=$3
+APNS_ENV=sandbox
+SEND_IAT=$IAT
+CONF
+}
+pushes() { grep -c "DRY RUN push" "$TMP/relay.log"; }
+CONN_B=3F2504E0-4F89-11D3-9A0C-0305E82C3302
+CONN_C=3F2504E0-4F89-11D3-9A0C-0305E82C3303
+OTHER_PHONE=$(printf 'cd%.0s' $(seq 1 32))
+HOSTHOME="$TMP/home"
+mkdir -p "$HOSTHOME/.moshpit/push.d"
+MINT_A=$(mint "$APNS_TOKEN" "$CONN")
+MINT_B=$(mint "$APNS_TOKEN" "$CONN_B")
+
+say "one phone, two pairings on this host: one push, not two"
+conf "$HOSTHOME/.moshpit/push.d/$CONN.conf" "$CONN" "$APNS_TOKEN" "$MINT_A"
+conf "$HOSTHOME/.moshpit/push.d/$CONN_B.conf" "$CONN_B" "$APNS_TOKEN" "$MINT_B"
+sleep 3
+BEFORE=$(pushes)
+HOME="$HOSTHOME" MOSHPIT_PUSH_HOST=m1-pro TMUX_PANE=%4 TMUX= \
+  sh "$ROOT/scripts/host/moshpit-push.sh" attention claude "two pairings" || fail "sender failed"
+GOT=$(( $(pushes) - BEFORE ))
+[ "$GOT" -eq 1 ] || fail "a phone paired twice to this host got $GOT pushes for one prompt"
+
+say "a pairing the relay refuses does not cost the phone its push"
+conf "$HOSTHOME/.moshpit/push.d/$CONN.conf" "$CONN" "$APNS_TOKEN" "$MINT_A" \
+  "$(printf '0%.0s' $(seq 1 64))"
+sleep 3
+BEFORE=$(pushes)
+HOME="$HOSTHOME" MOSHPIT_PUSH_HOST=m1-pro TMUX_PANE=%4 TMUX= \
+  sh "$ROOT/scripts/host/moshpit-push.sh" attention claude "first refused" || fail "sender failed"
+GOT=$(( $(pushes) - BEFORE ))
+[ "$GOT" -eq 1 ] || fail "with the first pairing refused, the phone got $GOT pushes"
+grep "DRY RUN push" "$TMP/relay.log" | tail -1 | grep -q "collapse=moshpit.attention.$CONN_B payload=" \
+  || fail "the push did not go through the pairing the relay accepts"
+
+say "two phones on one host each get theirs"
+conf "$HOSTHOME/.moshpit/push.d/$CONN.conf" "$CONN" "$APNS_TOKEN" "$MINT_A"
+conf "$HOSTHOME/.moshpit/push.d/$CONN_B.conf" "$CONN_C" "$OTHER_PHONE" "$(mint "$OTHER_PHONE" "$CONN_C")"
+sleep 3
+BEFORE=$(pushes)
+HOME="$HOSTHOME" MOSHPIT_PUSH_HOST=m1-pro TMUX_PANE=%4 TMUX= \
+  sh "$ROOT/scripts/host/moshpit-push.sh" attention claude "two phones" || fail "sender failed"
+GOT=$(( $(pushes) - BEFORE ))
+[ "$GOT" -eq 2 ] || fail "two phones on one host got $GOT pushes between them"
+
+# What a host is given is these files themselves: the Rust installer builds
+# them in (crates/install/src/scripts.rs, whose tests pin that the installed
+# script is the file minus its trailing newline), so there is no second copy
+# left to drift. What is left to check here is that both still parse.
+say "the host scripts parse as sh"
+for f in moshpit-stamp.sh moshpit-push.sh; do
+  sh -n "$ROOT/scripts/host/$f" || fail "$f does not parse"
+done
 
 printf "\nAll push e2e checks passed.\n"

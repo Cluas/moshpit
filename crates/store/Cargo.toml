@@ -1,0 +1,23 @@
+[package]
+name = "moshpit-store"
+description = "What Moshpit persists, and the rules for reading and writing it: connections, SSH key metadata, known hosts, shortcuts, settings and themes, in the formats every build since 1.0.8 reads, behind a host's key-value store and keychain"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+# Foundation's JSON, Date, UUID and string rules, measured on macOS 27, and
+# the push pairing model and file (round five's B23 rule) — one copy of each.
+moshpit-seal = { path = "../seal" }
+log = "0.4"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# Swift's String equality and ordering are canonical (NFC); Character is an
+# extended grapheme cluster.
+unicode-normalization = "0.1.26"
+unicode-segmentation = "1.13"
+
+[dev-dependencies]
+# The committed Swift results are kept as SHA-256 hashes of their lines.
+sha2 = "0.10"

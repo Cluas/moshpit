@@ -5,9 +5,10 @@ import UniformTypeIdentifiers
 /// algorithm choice with REC badge, Face ID + Secure Enclave toggles,
 /// optional host binding with fingerprint preview.
 ///
-/// No passphrase field: the private half is only ever stored in the Keychain
+/// No passphrase to set: the private half is only ever stored in the Keychain
 /// (behind Face ID when asked) — that is the key's at-rest protection, and
-/// `SSHKeyFactory.generate` writes it with cipher `none`.
+/// `SSHKeyFactory.generate` writes it with cipher `none`. An imported key that
+/// has a passphrase asks for it once, to unlock the key for that same storage.
 struct AddKeyView: View {
     enum Method: String, CaseIterable { case generate, importKey, hardware }
     /// Which text field a picked file's contents should land in — one
@@ -25,7 +26,12 @@ struct AddKeyView: View {
     /// inline instead of leaving the picker on whatever it showed before.
     var onCreated: ((SSHKeyRecord) -> Void)?
 
-    @State private var method: Method = .generate
+    @State private var method: Method
+
+    init(onCreated: ((SSHKeyRecord) -> Void)? = nil, method: Method = .generate) {
+        self.onCreated = onCreated
+        _method = State(initialValue: method)
+    }
     @State private var name = ""
     @State private var algorithm: SSHKeyAlgorithm = .ed25519
     @State private var comment = ""
@@ -34,6 +40,9 @@ struct AddKeyView: View {
     @State private var boundHosts: Set<String> = []
     @State private var importPEM = ""
     @State private var importPublicLine = ""
+    /// Only asked for when the pasted key needs it, and used only to read it:
+    /// what's stored is the key, unencrypted, behind the Keychain.
+    @State private var importPassphrase = ""
     @State private var generatedFingerprint: String?
     @State private var working = false
     @State private var errorMessage: String?
@@ -53,13 +62,18 @@ struct AddKeyView: View {
         storeInSecureEnclave ? .seP256 : algorithm
     }
 
+    /// The pasted key is behind a passphrase, which has to be entered to read it.
+    private var importNeedsPassphrase: Bool {
+        SSHKeyFactory.isEncrypted(importPEM)
+    }
+
     private var canSubmit: Bool {
         guard !name.isEmpty, !working else { return false }
         switch method {
         case .generate:
             return true
         case .importKey:
-            return !importPEM.isEmpty
+            return !importPEM.isEmpty && (!importNeedsPassphrase || !importPassphrase.isEmpty)
         case .hardware:
             return false
         }
@@ -74,23 +88,29 @@ struct AddKeyView: View {
                 ) {
                     PillSegmentedControl(
                         items: [
-                            SegItem(value: Method.generate, label: "Generate", systemImage: "plus.circle"),
-                            SegItem(value: Method.importKey, label: "Import", systemImage: "doc"),
-                            SegItem(value: Method.hardware, label: "Hardware", systemImage: "lock"),
+                            SegItem(value: Method.generate, label: "Generate"),
+                            SegItem(value: Method.importKey, label: "Import"),
+                            SegItem(value: Method.hardware, label: "Hardware"),
                         ],
                         selection: $method)
+                    .accessibilityIdentifier("add-key-method")
                 }
 
                 switch method {
                 case .generate: generateGroups
                 case .importKey: importGroups
                 case .hardware:
+                    // This used to send people to paste a security key's
+                    // public line under Import — which needs a private key,
+                    // and refuses sk keys: nothing in the app can sign with
+                    // one. Saying so is the whole page until something can.
                     FormGroup(title: "HARDWARE KEY") {
-                        Text("ECDSA-sk keys live on hardware tokens such as a YubiKey. iOS cannot enumerate them directly yet; paste the public key line (sk-ecdsa-sha2-nistp256@openssh.com …) under Import.")
+                        Text("Security keys (sk keys), such as a YubiKey's, aren't supported yet.")
                             .font(Face.text(12))
                             .foregroundStyle(Ink.tertiary)
                             .lineSpacing(3)
                             .padding(.vertical, 12)
+                            .accessibilityIdentifier("add-key-hardware")
                     }
                 }
 
@@ -103,6 +123,7 @@ struct AddKeyView: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
                         .foregroundStyle(Ink.accent)
+                        .accessibilityIdentifier("add-key-cancel")
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button(method == .importKey ? "Import" : "Generate") {
@@ -110,6 +131,7 @@ struct AddKeyView: View {
                     }
                     .foregroundStyle(canSubmit ? Ink.accent : Ink.disabledNav)
                     .disabled(!canSubmit)
+                    .accessibilityIdentifier("add-key-submit")
                 }
             }
             .moshpitCard(isPresented: Binding(
@@ -127,7 +149,7 @@ struct AddKeyView: View {
                 handleImportedFile(result)
             }
         }
-        .preferredColorScheme(.dark)
+        .darkOnlyPage()
     }
 
     /// Reads a file picked via either "Import File…" button into the field
@@ -160,6 +182,7 @@ struct AddKeyView: View {
             footer: "ED25519 recommended: 32-byte keys, fast signatures, no practical break to date."
         ) {
             FieldRow(placeholder: "Name", text: $name)
+                .accessibilityIdentifier("add-key-name")
             VStack(alignment: .leading, spacing: 2) {
                 Text("Algorithm")
                     .font(.body)
@@ -168,22 +191,26 @@ struct AddKeyView: View {
                     items: [
                         // No ECDSA-sk: that key lives on a hardware token and
                         // can't be generated here (see the Hardware method).
-                        SegItem(value: SSHKeyAlgorithm.ed25519, label: "ED25519", trailingBadge: "REC"),
+                        SegItem(value: SSHKeyAlgorithm.ed25519, label: "ED25519"),
                         SegItem(value: SSHKeyAlgorithm.rsa4096, label: "RSA-4096"),
                     ],
                     selection: $algorithm)
+                    .accessibilityIdentifier("add-key-algorithm")
                     .padding(.top, 6)
             }
             .padding(.vertical, 4)
             FieldRow(placeholder: "Comment", text: $comment, mono: true)
+                .accessibilityIdentifier("add-key-comment")
         }
 
         FormGroup(
             title: "PROTECTION",
             footer: "Secure Enclave keys are limited to ECDSA-P256; the algorithm adjusts automatically when SE is enabled."
         ) {
-            ToggleRow(label: "Require Face ID", subtitle: "Face ID confirmation before every signature", isOn: $requireFaceID)
-            ToggleRow(label: "Store in Secure Enclave", subtitle: "Hardware-backed · private key cannot be exported", isOn: $storeInSecureEnclave)
+            ToggleRow(label: "Require Face ID", subtitle: "Face ID confirmation before every signature",
+                      identifier: "add-key-face-id", isOn: $requireFaceID)
+            ToggleRow(label: "Store in Secure Enclave", subtitle: "Hardware-backed · private key cannot be exported",
+                      identifier: "add-key-secure-enclave", isOn: $storeInSecureEnclave)
         }
     }
 
@@ -193,13 +220,13 @@ struct AddKeyView: View {
     private var importGroups: some View {
         FormGroup(title: "KEY DETAILS") {
             FieldRow(placeholder: "Name", text: $name)
+                .accessibilityIdentifier("add-key-name")
             FieldRow(placeholder: "Comment", text: $comment, mono: true)
+                .accessibilityIdentifier("add-key-comment")
         }
-        FormGroup(
-            title: "PRIVATE KEY",
-            footer: "Paste an OpenSSH / PEM private key; the public key line is used to compute the fingerprint (optional)."
-        ) {
+        FormGroup(title: "PRIVATE KEY", footer: privateKeyFooter) {
             TextEditor(text: $importPEM)
+                .accessibilityIdentifier("add-key-private-key")
                 .font(Face.mono(10.5))
                 .foregroundStyle(Ink.primary)
                 .scrollContentBackground(.hidden)
@@ -230,10 +257,17 @@ struct AddKeyView: View {
             }
             .buttonStyle(.plain)
             .foregroundStyle(Ink.accent)
+            .accessibilityIdentifier("add-key-import-file")
             .padding(.bottom, 6)
+
+            if importNeedsPassphrase {
+                FieldRow(placeholder: "Passphrase", text: $importPassphrase, secure: true)
+                    .accessibilityIdentifier("add-key-passphrase")
+            }
 
             HStack(spacing: 8) {
                 FieldRow(placeholder: "Public key line (optional)", text: $importPublicLine, mono: true)
+                    .accessibilityIdentifier("add-key-public-line")
                 Button {
                     importTarget = .publicKey
                     isImportingFile = true
@@ -243,9 +277,17 @@ struct AddKeyView: View {
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(Ink.accent)
+                .accessibilityIdentifier("add-key-import-public")
             }
-            ToggleRow(label: "Require Face ID", subtitle: "Face ID confirmation before every signature", isOn: $requireFaceID)
+            ToggleRow(label: "Require Face ID", subtitle: "Face ID confirmation before every signature",
+                      identifier: "add-key-face-id", isOn: $requireFaceID)
         }
+    }
+
+    private var privateKeyFooter: LocalizedStringKey {
+        importNeedsPassphrase
+            ? "This key is protected by a passphrase. It's used once, to unlock the key here; from then on the Keychain protects it, behind Face ID when required."
+            : "Paste an OpenSSH or PEM private key; the public key and fingerprint come from it, so the public key line is optional."
     }
 
     // MARK: Bind to hosts
@@ -258,7 +300,8 @@ struct AddKeyView: View {
         ) {
             HostChipsRow(
                 hosts: connections.store.connections.map(\.displayName),
-                selected: $boundHosts)
+                selected: $boundHosts,
+                identifierPrefix: "add-key-host-")
             VStack(alignment: .leading, spacing: 4) {
                 Text("PREVIEW · SHA256")
                     .font(Face.mono(9.5))
@@ -285,38 +328,14 @@ struct AddKeyView: View {
         working = true
         defer { working = false }
         do {
-            let generated: SSHKeyFactory.Generated
-            if method == .importKey {
-                generated = try SSHKeyFactory.importKey(
-                    privatePEM: importPEM,
-                    publicKeyLine: importPublicLine.isEmpty ? nil : importPublicLine,
-                    comment: comment)
-            } else {
-                generated = try SSHKeyFactory.generate(
-                    algorithm: effectiveAlgorithm,
-                    comment: comment.isEmpty ? name : comment)
+            let request = SSHKeyCreation.Request(
+                importing: method == .importKey, name: name, algorithm: effectiveAlgorithm,
+                comment: comment, requireFaceID: requireFaceID, secureEnclave: storeInSecureEnclave,
+                boundHosts: Array(boundHosts), privateKey: importPEM, passphrase: importPassphrase,
+                publicKeyLine: importPublicLine)
+            let record = try await SSHKeyCreation.create(request, keychain: keychainHolder.service) {
+                generatedFingerprint = $0
             }
-            generatedFingerprint = generated.fingerprint
-
-            let keychain = keychainHolder.service
-            let ref = keychain.generateRef()
-            try await keychain.saveSecret(
-                generated.privateBlob,
-                forRef: ref,
-                requireBiometry: requireFaceID)
-
-            let record = SSHKeyRecord(
-                name: name,
-                algorithm: generated.algorithm,
-                comment: comment,
-                fingerprint: generated.fingerprint,
-                publicKey: generated.publicKeyLine,
-                source: method == .importKey
-                    ? .imported
-                    : (storeInSecureEnclave ? .secureEnclave : .generated),
-                boundHosts: Array(boundHosts),
-                keychainRef: ref,
-                requireBiometry: requireFaceID)
             keyStore.add(record)
             onCreated?(record)
             dismiss()

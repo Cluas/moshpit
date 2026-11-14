@@ -1,0 +1,41 @@
+{"ev":"exit","reason":null}
+{"ev":"session-changed","session":"$0","name":"g2"}
+{"ev":"window-renamed","window":"@0","name":"bash"}
+{"ev":"response","id":1794337413,"num":290,"error":false,"lines":[]}
+{"ev":"layout-change","window":"@0","layout":"b25d,80x24,0,0,0","zoomed":false}
+{"ev":"response","id":1794337413,"num":293,"error":false,"lines":["$0 1 g2"]}
+{"ev":"response","id":1794337413,"num":294,"error":false,"lines":["$0 @0 0 b25d,80x24,0,0,0 1 1 bash"]}
+{"ev":"response","id":1794337413,"num":295,"error":false,"lines":["%0 @0 0 80 24 1 0 0 bash"]}
+{"ev":"response","id":1794337413,"num":296,"error":false,"lines":["C-b"]}
+{"ev":"response","id":1794337413,"num":297,"error":false,"lines":["1|g2|/dev/ttys022"]}
+{"ev":"response","id":1794337413,"num":298,"error":false,"lines":["G2SYNC1"]}
+{"ev":"response","id":1794337413,"num":299,"error":false,"lines":[]}
+{"ev":"response","id":1794337413,"num":300,"error":false,"lines":[]}
+{"ev":"response","id":1794337413,"num":301,"error":false,"lines":["G2SYNC2"]}
+{"ev":"output","pane":"%0","hex":"65"}
+{"ev":"output","pane":"%0","hex":"63"}
+{"ev":"output","pane":"%0","hex":"686f"}
+{"ev":"output","pane":"%0","hex":"2061747461"}
+{"ev":"output","pane":"%0","hex":"6368"}
+{"ev":"output","pane":"%0","hex":"6564"}
+{"ev":"output","pane":"%0","hex":"2074"}
+{"ev":"output","pane":"%0","hex":"68"}
+{"ev":"output","pane":"%0","hex":"72"}
+{"ev":"output","pane":"%0","hex":"6f75"}
+{"ev":"output","pane":"%0","hex":"67"}
+{"ev":"output","pane":"%0","hex":"6820"}
+{"ev":"output","pane":"%0","hex":"7468"}
+{"ev":"output","pane":"%0","hex":"65"}
+{"ev":"output","pane":"%0","hex":"20"}
+{"ev":"output","pane":"%0","hex":"6661"}
+{"ev":"output","pane":"%0","hex":"6c"}
+{"ev":"output","pane":"%0","hex":"6c"}
+{"ev":"output","pane":"%0","hex":"6261"}
+{"ev":"output","pane":"%0","hex":"63"}
+{"ev":"output","pane":"%0","hex":"6b"}
+{"ev":"output","pane":"%0","hex":"0d0a"}
+{"ev":"output","pane":"%0","hex":"6174746163686564207468726f756768207468652066616c6c6261636b0d0a"}
+{"ev":"output","pane":"%0","hex":"73682d332e322420"}
+{"ev":"response","id":1794337413,"num":302,"error":false,"lines":[]}
+{"ev":"exit","reason":null}
+{"ev":"end","plan":"whole","feeds":1,"resets":0,"bytes":1299,"cuts":0,"in_utf8":0,"in_octal":0,"plan_hash":"920b997f7b21443d"}

@@ -1,0 +1,122 @@
+# The Rust core (crates/) and the NSH UI (ui/) of Moshpit on iOS, Android
+# and macOS. Design: docs/nsh/DESIGN.md.
+[workspace]
+resolver = "2"
+members = ["crates/*", "ui"]
+# wezterm's crates, vendored with a workspace of their own (crates/term's
+# emulator; docs/WEZTERM-PATCHES.md).
+exclude = ["vendor/wezterm"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-only"
+publish = false
+
+[workspace.dependencies]
+# NSH from its repository, pinned to one main-branch commit. Upgrading: move
+# every nsh-* entry's rev together, then `cargo test --workspace` (the
+# headless ui tests among them) and the NSH device suites, and say in
+# docs/nsh/NSH-GAPS.md what upstream fixed. Not crates.io: the 0.4.0 package
+# of nsh-platform-ios does not build (it includes a file of
+# nsh-platform-macos by path that the package does not ship).
+nsh-core = { git = "https://github.com/longbridge/nsh", rev = "53b2cfa438dfe23bcd4436121f41db10b19695e6" }
+# Without its default features (the code editor, syntax highlighting with
+# syntect, charts, the rich editor, the VT terminal): what the app ships
+# links only what it uses, and a crate that wants one of them says so.
+nsh-base = { git = "https://github.com/longbridge/nsh", rev = "53b2cfa438dfe23bcd4436121f41db10b19695e6", default-features = false }
+nsh-engine = { git = "https://github.com/longbridge/nsh", rev = "53b2cfa438dfe23bcd4436121f41db10b19695e6", default-features = false }
+nsh-platform-ios = { git = "https://github.com/longbridge/nsh", rev = "53b2cfa438dfe23bcd4436121f41db10b19695e6", default-features = false }
+nsh-platform-macos = { git = "https://github.com/longbridge/nsh", rev = "53b2cfa438dfe23bcd4436121f41db10b19695e6", default-features = false }
+# Without its default features: a Rust app's libnsh.so (no QuickJS, no
+# shaders), as `nsh package` builds one; the crate is empty off Android.
+nsh-platform-android = { git = "https://github.com/longbridge/nsh", rev = "53b2cfa438dfe23bcd4436121f41db10b19695e6", default-features = false }
+# The headless driver the UI's tests run screens on (ui/tests): no QuickJS,
+# and without `live`, no network.
+nsh-testing = { git = "https://github.com/longbridge/nsh", rev = "53b2cfa438dfe23bcd4436121f41db10b19695e6", default-features = false }
+
+# The library the iOS app ships (crates/ffi), built by scripts/rust/build-ios.sh
+# for the app's Release builds (every build that leaves this Mac: Canary, the
+# App Store; Debug builds use `app-test` below): optimised for size, with
+# link-time optimisation over the whole crate graph and one codegen unit (a
+# smaller library, and the parser's calls into memchr inline), and with line
+# tables, so a Rust frame in a crash report symbolicates to a file and line
+# from the app's dSYM — they never reach the stripped binary. Panics unwind:
+# the C ABI catches them (crates/ffi/src/tmux.rs, ui/src/ios.rs) rather than
+# abort the app.
+#
+# For size because NSH is in the library: nearly all of it is reachable from
+# the screens' C ABI, so the linker strips little. Stripped, the library's
+# share of the app was 17.7 MB at opt-level 3, 14.3 MB at "s" and 10.3 MB at
+# "z" (W11a, 2026-11-11; the gate is 15 MB). The tmux parser, the one hot
+# path here so far, parses about a fifth slower at "z" (Mac bench: ~0.11 µs
+# instead of ~0.09 µs a keystroke-sized feed), still 3-5 times the Swift
+# parser's speed.
+[profile.app]
+inherits = "release"
+opt-level = "z"
+lto = true
+codegen-units = 1
+debug = "line-tables-only"
+
+# Size is NSH's problem, speed is the core's: NSH and the UI build for size
+# ("z" saves ~7 MB over 3), while the crates on the terminal's hot paths keep
+# full optimisation (they are small, and "z" cost the tmux parser ~20%).
+[profile.app.package.moshpit-tmux]
+opt-level = 3
+[profile.app.package.moshpit-stream]
+opt-level = 3
+[profile.app.package.moshpit-mosh]
+opt-level = 3
+[profile.app.package.moshpit-herdr]
+opt-level = 3
+[profile.app.package.moshpit-ffi]
+opt-level = 3
+# The terminal core parses every byte a pane shows (gate T1d: >= 10 MB/s on
+# the phone), so it and the wezterm crates it runs keep full optimisation.
+[profile.app.package.moshpit-term]
+opt-level = 3
+[profile.app.package.wezterm-term]
+opt-level = 3
+[profile.app.package.wezterm-escape-parser]
+opt-level = 3
+[profile.app.package.wezterm-surface]
+opt-level = 3
+[profile.app.package.wezterm-cell]
+opt-level = 3
+[profile.app.package.vtparse]
+opt-level = 3
+[profile.app.package.wezterm-char-props]
+opt-level = 3
+
+# Canary's library (the owner's daily build; scripts/rust/build-ios.sh with
+# MOSHPIT_RUST_PROFILE=app-canary from the Canary command line). The `app`
+# profile's code, optimisation levels and per-crate overrides (inherited),
+# with ThinLTO over the crate graph instead of fat LTO into one codegen unit:
+# the final step optimises and generates code in parallel instead of in one
+# ~7.9 GB, single-threaded rustc. Not for the App Store: the size gate is
+# `app`'s, and this library is larger.
+[profile.app-canary]
+inherits = "app"
+lto = "thin"
+codegen-units = 16
+
+# The same library for the app's Debug builds: every build-for-testing a
+# device run makes, and a Debug build from Xcode. The `app` profile's final
+# step — fat LTO over the whole crate graph into one codegen unit — needs
+# ~7.2 GB in one rustc, and two of them at once on the 16 GB build Mac sat in
+# uninterruptible waits for 35-41 minutes (2026-11-13). A test build needs
+# none of that: no cross-crate LTO (each crate's own thin-local LTO stays),
+# sixteen codegen units, the same line tables and panics. Optimised (2, not
+# 0 or 1) because device suites wait on timing ceilings (T9's) that slow
+# Rust could turn flaky; release semantics otherwise (no debug assertions,
+# no overflow checks), so a test exercises the code the app ships. The
+# library is larger (no LTO, nothing optimised for size); the size gate is
+# the `app` profile's.
+[profile.app-test]
+inherits = "release"
+opt-level = 2
+lto = false
+codegen-units = 16
+debug = "line-tables-only"
+

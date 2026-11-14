@@ -1,0 +1,239 @@
+{
+  "about": "Where the Rust port (crates/install) deliberately differs from the app's Swift install code (Moshpit/Services/Install/ and Moshpit/Services/HostCapabilities.swift as at 4449f119, the sources harness/build-swift.sh compiles). Each fix is marked 'Fix (<id>)' in the Rust source. Minimal cases are in tests/fixtures/swift/divergences.txt (their arguments hex-encoded): divergences.swift.txt is what the Swift code prints for them, divergences.rust.txt what Rust prints; tests/swift_equivalence.rs and harness/equivalence.py hold both. Two fixes could not be run through the Swift harness until they were ported — the Swift side died — and divergences.swift.txt records that death for the cases they now run (negative-overflow, conf-iat-overflow). Every one of the 40,000 inputs equivalence.py generates, and of the 400 committed in cases.txt, prints the same on both sides, byte for byte: the host scripts and their digests (what decides a reinstall), every push conf, every agent config merged and unmerged, every manifest, command and installer flow (manifest dates masked: Swift stamps them with Date()). A fix since ported to the app carries 'status': 'fixed' (what changed under 'fixed'): its cases must now print the same on both sides, and divergences.swift.txt keeps what the Swift code printed before the fix, which tests/swift_equivalence.rs still tells the fix apart from. 'notes' are differences that remain, with their reason.",
+  "fixes": [
+    {
+      "id": "quote-combining",
+      "swift": "HostChannel.swift:217-219 (HostCommands.quote: value.replacingOccurrences(of: \"'\", with: \"'\\\\''\"))",
+      "symptom": "String.replacingOccurrences compares grapheme clusters, so an apostrophe followed by a combining mark is one Character that is not \"'\" and is left unescaped: the quote closes early and the rest of the value is shell. quote(\"x'\\u{301}; touch /tmp/p; '\") is 'x'\\u{301}; touch /tmp/p; '', which runs touch.",
+      "trigger": "A quoted value (a self-test pane, the host's tmux socket path, a nonce) holding an apostrophe followed by a combining mark. All of these come from the app or from the same host the command runs on, so no privilege boundary is crossed.",
+      "minimal_input": "cmd quote \"it'\\u{301}s\"",
+      "swift_before": "'it'\\u{301}s'",
+      "fix": "Every apostrophe byte is escaped, whatever follows it.",
+      "rust_outcome": "'it'\\''\\u{301}s'",
+      "severity": "low: command injection into the user's own host, from values that host supplies",
+      "status": "fixed",
+      "fixed": "In the app since round 19 (B113): HostCommands.quote is Shell.quote (Moshpit/Services/Shell.swift), which escapes every apostrophe scalar."
+    },
+    {
+      "id": "clear-stamp-quoting",
+      "swift": "HostChannel.swift:170-175 (HostCommands.clearStamp)",
+      "symptom": "quote(pane) is placed inside the already single-quoted `sh -c '…'` script, so the pane ends up unquoted in both the outer and the inner shell: a pane string with a space, quote, semicolon or glob breaks the command, or runs part of it as another command.",
+      "trigger": "selfTestStamp with a pane that is not a plain tmux id. Since B355 (stamp-test-restores) the clear is part of one command whose pane, whatever it holds, reaches the inner shell as \"$1\"; the minimal cases run that command.",
+      "minimal_input": "cmd stamptest \"%3; touch x\" /tmp/s",
+      "swift_before": "… sh -c 'tmux set -pu -t '%3; touch x' @moshpit_state; …' (touch runs)",
+      "fix": "The pane reaches the inner shell as \"$1\" (for a pane that is not inert from B109; for every pane in B355's one command).",
+      "rust_outcome": "TMUX='/tmp/s,0,0' sh -c 'p=$1; … tmux set -pu -t \"$p\" \"@moshpit_$1\" …' sh '%3; touch x' 2>/dev/null || true",
+      "evidence": [
+        "src/commands.rs: an_odd_pane_reaches_tmux_as_one_word (runs the command against a fake tmux)"
+      ],
+      "severity": "low: pane ids are tmux's own",
+      "status": "fixed",
+      "fixed": "In the app since round 19 (B109): HostCommands.clearStamp builds this command, inert panes keeping the old one."
+    },
+    {
+      "id": "facts-crlf",
+      "swift": "InstallManifest.swift:184 (HostFacts.parse splits on the Character \"\\n\")",
+      "symptom": "A CR LF pair is one Character, not \"\\n\": preflight output with CR LF line ends reads as a single line. `home` swallows the whole output, no tool is found, and installPairing refuses a host that has openssl, curl and base64 as missing all three.",
+      "trigger": "Preflight output with CR LF line ends (a host whose exec channel translates newlines).",
+      "minimal_input": "facts with the healthy preflight, '\\n' replaced by '\\r\\n'; flow pairing over it",
+      "swift_before": "home = the whole output; tools empty; installPairing blocked: openssl, curl, base64",
+      "fix": "A CR LF ends a line too, as HostCapabilities.parse already treats it.",
+      "rust_outcome": "all facts read; the pairing installs",
+      "severity": "medium where it happens: a capable host can never be paired",
+      "status": "fixed",
+      "fixed": "In the app since round 21 (B107): HostFacts.parse splits on a Character that is \"\\n\" or \"\\r\\n\", as this crate does; the cases print the same on both sides."
+    },
+    {
+      "id": "hooks-array-elements",
+      "swift": "AgentHookConfig.swift:145 (mergedJSON) and :171 (withoutMoshpitJSON) read an event's groups as [[String: Any]]",
+      "symptom": "An event array holding anything that is not an object fails the cast. Merging reads it as empty and replaces it with ours, dropping the user's groups beside the odd element; removing skips the event, so our hooks stay installed after an uninstall.",
+      "trigger": "An agent config whose hooks event array holds a string, number, array or null among its groups.",
+      "minimal_input": "merge claude {\"hooks\":{\"Stop\":[\"note\",{\"hooks\":[{\"type\":\"command\",\"command\":\"mine.sh\"}]}]}}",
+      "swift_before": "Stop holds only Moshpit's group (\"note\" and mine.sh gone); removal leaves Moshpit's group in place",
+      "fix": "Only our groups are dropped; anything else in the array stays where it was, on merge and on removal.",
+      "rust_outcome": "Stop holds \"note\", mine.sh's group, then ours; removal leaves \"note\" and mine.sh",
+      "severity": "low: the user's config is already one Claude Code would question, but their hooks are lost",
+      "status": "fixed",
+      "fixed": "In the app since round 20 (B110): AgentHookConfig reads an event’s array as elements of any kind; only groups of ours are dropped, on merge and on removal, and everything else stays where it was."
+    },
+    {
+      "id": "toml-crlf",
+      "swift": "AgentHookConfig.swift:235 (withoutMoshpitTOML splits on the Character \"\\n\")",
+      "symptom": "Once our block's lines end in CR LF (an editor converted the file), its fences are never found: every install appends another block, and uninstall removes none of them.",
+      "trigger": "A Codex config.toml with CR LF line ends.",
+      "minimal_input": "merge codex / remove codex over a merged config with every \\n turned into \\r\\n",
+      "swift_before": "merge: a second block appended; remove: the file unchanged, our block kept",
+      "fix": "Lines end at LF and a fence is recognised with or without the CR. A file without a CR comes out byte for byte as Swift writes it; in a CR LF file the user's lines keep their CR LF, our block is written with LF as in every file, and one blank line fewer separates the two than Swift writes.",
+      "rust_outcome": "merge: one block; remove: model = \"gpt-5\"\\r\\n",
+      "severity": "low: hooks fire twice; uninstall leaves them running",
+      "status": "fixed",
+      "fixed": "In the app since round 21 (B111): withoutMoshpitTOML splits on the LF scalar and recognises a fence with or without its CR, mergedTOML asks for the trailing LF by scalar; the cases print the same on both sides."
+    },
+    {
+      "id": "negative-overflow",
+      "swift": "AgentHookConfig.swift:132 (JSONSerialization.jsonObject reads -1e400 as -infinity) and :188 (writing it raises NSInvalidArgumentException)",
+      "symptom": "The app crashes (SIGABRT, 'Invalid number value (infinite) in JSON write') installing or removing hooks on a host whose agent config holds a negative number beyond Double's range. JSONSerialization refuses the positive one, so 1e400 is reported as unreadable, -1e400 is a crash.",
+      "trigger": "An agent config holding a number like -1e400 or -1.8e308.",
+      "minimal_input": "merge claude {\"x\":-1e400}",
+      "swift_before": "the Swift harness dies: exit status 134, NSInvalidArgumentException",
+      "fix": "Both signs read as out of range, so the config is reported unreadable, as 1e400 is.",
+      "rust_outcome": "err: That config file isn't valid JSON (…)",
+      "evidence": [
+        "src/hooks.rs: a_config_with_a_negative_overflow_is_refused_not_a_crash",
+        "moshpit-seal src/foundation/json.rs: numbers_jsonserialization_refuses"
+      ],
+      "severity": "medium: remote content (the user's config file) crashes the app",
+      "status": "fixed",
+      "fixed": "In the app since round 20 (B106): AgentHookConfig takes a number out of Double’s range, of either sign, for unreadable JSON — the message JSONSerialization gives for 1e400 — on merge and on removal; its two cases now run on both sides."
+    },
+    {
+      "id": "atomic-write",
+      "swift": "HostChannel.swift (HostCommands.writeFile)",
+      "symptom": "The payload is decoded straight into the target (`base64 -d > \"path\"`), so a write that fails part way (a full disk, a quota) has already truncated it: an installed script left half written, which every agent hook then fails on, or the person's own agent config cut short, with every edit since Moshpit first backed it up gone.",
+      "trigger": "Any write that fails after its first byte: ENOSPC, EDQUOT, the connection dropping mid-command.",
+      "minimal_input": "cmd write \"$HOME/.claude/settings.json\" 644 eyJhIjoxfQo=",
+      "swift_before": "… printf %s '…' | base64 -d > \"$HOME/.claude/settings.json\"; chmod 644 \"$HOME/.claude/settings.json\"",
+      "fix": "The bytes land in \"<file>.moshpit-new.$$\" (a file per writer: two phones tending one host never share one), which replaces the file only once whole (`mv -f`); an EXIT trap removes it on any failure. A target that is a link (a config kept in dotfiles) stays one: since B379 the links are followed first (plain readlink, relative links from their own directory, at most 40) and the write lands beside the file they name and replaces it; B351 had copied the bytes into it, truncating it first.",
+      "rust_outcome": "… p=\"$HOME/.claude/settings.json\"; i=0; while [ -L \"$p\" ] … done; t=\"$p.moshpit-new.$$\"; trap 'rm -f \"$t\"' EXIT; printf %s '…' | base64 -d > \"$t\"; chmod 644 \"$t\"; mv -f \"$t\" \"$p\"",
+      "severity": "high: the person's own agent config, or every agent hook, broken by a full disk",
+      "committed_cases": "Made after the Swift side was removed (fba72107), so the committed results were regenerated from Rust: of the 400 committed cases, the 2 `cmd write` cases print the new command and 107 flows differ only in the fingerprints of the commands they send; steps, digests, manifests and reports are unchanged. divergences.swift.txt keeps the Swift form for the minimal case. B379 (links followed, the copy into a link's file gone) regenerated them again: 109 committed lines and 3 divergence results change, each changed command a write whose B351 form, rebuilt from its path, mode and payload, has exactly the old fingerprint; no result changes."
+    },
+    {
+      "id": "config-mode",
+      "swift": "HostInstaller.swift (installHooks and uninstallHooks write the agent config with writeFile(path, \"644\", …))",
+      "symptom": "The person's agent config (~/.claude/settings.json, ~/.codex/config.toml, …) is set to 644 whatever mode it had, on every install and every removal of the hooks. These files hold secrets (an `env` block with an API key, an MCP server's token): one kept 600 becomes readable by every local user on a shared host. A config kept in dotfiles has what its link points at opened up the same way.",
+      "trigger": "Installing or removing the hooks on a host whose agent config is not 644.",
+      "minimal_input": "cmd writekeep \"$HOME/.claude/settings.json\" 644 eyJhIjoxfQo=",
+      "swift_before": "… printf %s '…' | base64 -d > \"$HOME/.claude/settings.json\"; chmod 644 \"$HOME/.claude/settings.json\"",
+      "fix": "The new bytes start from a copy of the file (`cp -p` carries its mode), so it keeps the mode it had; 644, the agents' own, only for a config the install creates. Written whole beside the target and moved into place as in atomic-write.",
+      "rust_outcome": "… p=… (links followed, B379) … n=; if [ -f \"$p\" ]; then cp -p \"$p\" \"$t\"; else n=1; fi; printf %s '…' | base64 -d > \"$t\"; [ -z \"$n\" ] || chmod 644 \"$t\"; mv -f \"$t\" \"$p\"",
+      "severity": "high on a shared host: a secret-holding file opened to every local user",
+      "committed_cases": "As atomic-write, regenerated from Rust: 40 committed flows that install or remove hooks differ only in the fingerprint of the config's write; steps, digests, manifests and reports are unchanged."
+    },
+    {
+      "id": "self-test-scope",
+      "swift": "HostCommands.swift (selfTestPush passes the nonce alone: sh moshpit-push.sh --test <nonce>)",
+      "symptom": "The push self-test goes out on every pairing the host holds. Every other phone paired with the host gets it, and unless Moshpit is in the foreground there it shows on the lock screen as a finished `moshpit-selftest` turn. A phone with two connections to the host has it go out on whichever pairing sorts first, so proving one connection can pass on the other's pairing. A host with no pairing for the connection sends nothing and says nothing, so after its 20 s the phone blames delivery (Moshpit not in the foreground, notifications off) instead of the missing pairing.",
+      "trigger": "Testing push on a host paired with more than one connection, or with none for this one.",
+      "minimal_input": "cmd pushtest selftest-ab12 3F2504E0-4F89-11D3-9A0C-0305E82C3301",
+      "swift_before": "sh \"$HOME/.moshpit/moshpit-push.sh\" --test 'selftest-ab12' 2>&1",
+      "fix": "The command names the connection the test proves (the sender has long taken it as its third argument, and sends on that pairing alone); a test the sender finds nothing to send with says so.",
+      "rust_outcome": "sh \"$HOME/.moshpit/moshpit-push.sh\" --test 'selftest-ab12' '3F2504E0-4F89-11D3-9A0C-0305E82C3301' 2>&1",
+      "severity": "medium: a stray notification on every other paired phone per test, and a test that can pass on the wrong pairing",
+      "committed_cases": "Regenerated from Rust as atomic-write: the sender script changed, so the `scripts` case prints its new text and digest, 76 flows that install it differ in its digest and the fingerprints of its write and the manifest's, and the 4 `flow push` cases differ in the fingerprint of the test command."
+    },
+    {
+      "id": "hooks-shared-group",
+      "swift": "AgentHookConfig.mergedJSON and withoutMoshpitJSON (AgentHookConfig.isMoshpit drops a whole group)",
+      "symptom": "A hook group with one entry that runs the stamp script is dropped whole, on every merge (each install and each refresh care makes when the scripts change) and on removal. A hook the person added beside ours in the same group went with it, silently. That is where an agent's own editor puts one: Claude Code's /hooks adds a hook to the group that already has its matcher, and UserPromptSubmit and Stop take no matcher, so ours is the group there is.",
+      "trigger": "A config whose Moshpit group also holds a hook of the person's, then any install, refresh or removal of the hooks.",
+      "minimal_input": "merge claude {\"hooks\":{\"Stop\":[{\"hooks\":[{… moshpit-stamp.sh done claude},{\"type\":\"command\",\"command\":\"say done\"}]}]}}",
+      "swift_before": "merge: Stop is our group alone (say done gone); remove: {} (say done gone)",
+      "fix": "Only our entries are taken out of a group; a group goes only once nothing else is left in it, and keeps its matcher and other keys while something is.",
+      "rust_outcome": "merge: Stop is [{say done}, {ours}]; remove: {\"hooks\":{\"Stop\":[{\"hooks\":[{say done}]}]}}",
+      "evidence": [
+        "src/hooks.rs: a_hook_added_beside_ours_in_our_group_survives_refresh_and_removal",
+        "tests/real_host.rs: a_hook_the_person_added_to_our_group_survives_a_refresh_and_removal (the real installer and sh)"
+      ],
+      "severity": "high: the person's own hooks deleted from their agent config without a word",
+      "committed_cases": "Regenerated from Rust: 11 committed merge/remove cases whose config mixes ours with something else in one group, checked against independent models of the old and new rules, and 2 hooks flows over such a config whose only change is the config's digest (the new merge's) and the fingerprints of the writes that carry it (the config, the manifest)."
+    },
+    {
+      "id": "stamp-test-restores",
+      "swift": "HostInstaller.selfTestStamp (HostInstaller.swift: selfTest, readStamp, clearStamp — three commands)",
+      "symptom": "The hooks' self-test fires the stamp script into the session's active pane, reads it back, then clears the pane's @moshpit_state, @moshpit_agent, @moshpit_prompt and @moshpit_title and leaves a @moshpit_since of its own. That pane is where the person's agent usually runs: the test wiped the live agent's stamps, so the island lost it until its next hook, its next finish card had no prompt to name, and a question it was waiting on never reached the phone (the grace push re-reads the state and found it gone).",
+      "trigger": "Test the hooks in Host Setup while an agent runs in the active pane, above all one waiting on a question or idle at its prompt.",
+      "minimal_input": "cmd stamptest %3 /tmp/s",
+      "swift_before": "TMUX='/tmp/s,0,0' TMUX_PANE='%3' sh \"$HOME/.moshpit/moshpit-stamp.sh\" 'working' 'moshpit-selftest' < /dev/null, then tmux display-message …, then sh -c 'tmux set -pu -t '%3' @moshpit_state; … @moshpit_title'",
+      "fix": "One command: the pane's five stamps are read first, the stamp script fires, the pane is read back, and each stamp is put back (unset if it wasn't set). Only an agent hook landing in those few milliseconds could be lost, where three round trips gave it most of a second. Since B376 the stamps are kept in ~/.moshpit/run/selftest-<nonce> until they are back, so the same command sent again after a dropped connection puts back what the pane said, not the test's own stamps.",
+      "rust_outcome": "TMUX='/tmp/s,0,0' sh -c 'p=$1; g() { tmux show-options -pv … }; r() { … }; s=$(g state); …; MOSHPIT_SELFTEST=1 TMUX_PANE=$p sh \"$HOME/.moshpit/moshpit-stamp.sh\" working moshpit-selftest < /dev/null; tmux display-message -p -t \"$p\" …; r state \"$s\"; …' sh '%3' 2>/dev/null || true",
+      "evidence": [
+        "tests/real_host.rs: the_hooks_test_leaves_a_live_agents_pane_as_it_found_it and the_hooks_test_leaves_an_unstamped_pane_unstamped (a tmux server of the test's own; red on the three commands)"
+      ],
+      "severity": "medium: a diagnostic button that silently cost a waiting question its push",
+      "committed_cases": "The three Swift commands are gone from the Rust side: their 15 committed `cmd selftest/readstamp/clearstamp` cases were dropped (385 remain), and the 2 `flow stamp` cases that fire the test print the same result with the three commands' fingerprints replaced by the one's. divergences.swift.txt keeps the three Swift commands, one per line, for the minimal case; quote-combining's and clear-stamp-quoting's cases now run the one command against the Swift records they had."
+    },
+    {
+      "id": "agent-probe",
+      "swift": "HostCommands.preflight (asks after tools only)",
+      "symptom": "Nothing tells the app which coding agents a host has: Host Setup offers all seven alike, and consent installs Claude Code's hooks whether or not Claude Code is there.",
+      "trigger": "Any host.",
+      "minimal_input": "cmd preflight",
+      "swift_before": "printf 'home=%s\\n' … for t in openssl curl jq tmux python3 base64; do … done",
+      "fix": "The preflight goes on to print `agent.<id>=yes|no` for each of HookAgent::ALL: yes when its config directory is under $HOME or one of its CLI's names is on PATH. HostFacts reads them into `agents`, apart from `tools` (B374).",
+      "rust_outcome": "… done; for a in 'claude .claude claude' … 'codebuddy .codebuddy codebuddy cbc'; do set -- $a; … printf 'agent.%s=%s\\n' \"$i\" \"$f\"; done",
+      "severity": "feature: what B374's consent and hs1's agent menu are built on",
+      "committed_cases": "Regenerated from Rust: the `cmd preflight` case prints the new command and 126 flows differ only in the fingerprint of the preflight they send; no result changes (no committed preflight answer has an agent line)."
+    },
+    {
+      "id": "manifest-lock",
+      "swift": "HostInstaller (installPairing, installHooks, uninstallHooks, uninstall write back the manifest read when the step began)",
+      "symptom": "Each step writes back the whole manifest as it read it when it began. A change another phone (or another screen) made in between is erased: its pairing recorded nowhere though its conf stays, an agent's hooks read as not installed though its config still runs them (hs1's Host Setup review, #5).",
+      "trigger": "Two phones tending one host at once, or a Host Setup page left open while care or another phone changes the host.",
+      "minimal_input": "any flow that writes the manifest (no minimal case: Swift has no lock command to compare)",
+      "swift_before": "… the step's write of the manifest it read at the start",
+      "fix": "HostInstaller::update_manifest: under the host's lock (commands::LOCK: mkdir ~/.moshpit/.lock, a token in it, a lock older than 60 s broken, about 5 s of waiting before it gives up and says so), the manifest is read again, changed by the step's own change only, written, and the lock let go by its owner (commands::unlock). Host Setup's steps read the host before acting, not the page's copy (B373). Since B376 the token is the phone's (commands::lock(token)): the same command sent again after a dropped connection finds the lock already its own instead of waiting on itself.",
+      "rust_outcome": "… LOCK; cat manifest; write; unlock — around every manifest write",
+      "evidence": [
+        "crates/hostcare/tests/setup.rs: a_step_keeps_what_another_phone_recorded_meanwhile, a_pair_keeps_the_hooks_another_phone_installed_meanwhile (hs1's P2a, P2b; red on the old code)",
+        "tests/real_host.rs: a_manifest_change_takes_the_lock_and_lets_it_go, a_held_lock_is_waited_for_and_a_dead_one_broken, two_changes_at_once_both_land"
+      ],
+      "severity": "medium: records lost between phones, the page then wrong about the host",
+      "committed_cases": "Regenerated from Rust: 77 committed flows and 1 divergence result change, each only by the lock, a fresh read of the manifest and the release around its manifest write (checked by a script); the write itself and every result are unchanged."
+    },
+    {
+      "id": "nothing-will-push",
+      "swift": "InstallState.pairedButNothingWillPush (the stamp script alone)",
+      "symptom": "A paired host whose last agent's hooks were removed pushes nothing, with the stamp script still in place, and the 'nothing will push' card stays hidden (hs1's Host Setup review, #6; probe P6).",
+      "trigger": "Remove the only agent's hooks on a paired host.",
+      "minimal_input": "flow status … (a paired manifest: the stamp current, no agent's hooks)",
+      "swift_before": "paired=0",
+      "fix": "Paired, and either the stamp script isn't current or no agent's hooks are (B374).",
+      "rust_outcome": "paired=1",
+      "severity": "low: a page that says less than it knows",
+      "committed_cases": "Regenerated from Rust: the one committed status flow with a paired manifest, the stamp current and no agent's hooks now prints paired=1 (checked: nothing else in it moved); it is also the minimal case."
+    },
+    {
+      "id": "json-layout",
+      "swift": "AgentHookConfig.mergedJSON and withoutMoshpitJSON (JSONSerialization with .prettyPrinted and .sortedKeys)",
+      "symptom": "Installing or removing the hooks wrote the person's whole agent config back as Foundation formats it: every key sorted, every line re-indented, numbers rewritten (196.623905 as 196.62390500000001), for one hook entry's sake (hs1's Host Setup review, #7).",
+      "trigger": "Any hook install or removal on a JSON config the person wrote themselves.",
+      "minimal_input": "merge claude {\"model\":\"opus\"} (and every merge/remove case on a non-empty config)",
+      "swift_before": "{\n  \"hooks\" : { … },\n  \"model\" : \"opus\"\n}\n",
+      "fix": "jsonedit::splice: what is equal to what was there keeps its exact bytes, a container that changed is rebuilt from its kept pieces with the file's own separators, indentation and `:` spacing, and what is new is written in that style; the result is parsed again and must equal the merged value, else the whole file is written as before. A config that isn't there yet is written as before (B375).",
+      "rust_outcome": "{\"model\":\"opus\",\"hooks\":{…}}",
+      "severity": "medium: the person's own file rewritten beyond recognition, and a diff in their dotfiles on every refresh",
+      "committed_cases": "Regenerated from Rust and checked by a script: 43 committed merge/remove outputs and 3 divergence results hold the same JSON value as before (numbers equal exactly or as doubles); in 19 hook flows the only commands that change are writes of the same config with the same mode carrying the same JSON (or, for Codex's TOML, the same text but for the person's blank lines at its ends, read untrimmed now), and the manifest's write by the config's digest alone (from full-command runs of the old and new code). Checked again at the int124 merge, against int124's goldens with B380, B381 and B385's cases in: 44 merge/remove outputs and 3 divergence results the same JSON value, and every flow command that moved either such a write or B376's lock, release or hooks test."
+    },
+    {
+      "id": "conf-iat-overflow",
+      "swift": "HostInstaller.swift:159 (pushConf writes Int(sendTokenIssuedAt.timeIntervalSince1970))",
+      "symptom": "Int(_:) traps on a Double beyond Int's range: a pairing whose mint date is absurd (a damaged pairings file) crashes the app when its conf is written or its digest compared.",
+      "trigger": "A pairing with sendTokenIssuedAt beyond ±9.2e18 seconds.",
+      "minimal_input": "conf with \"sendTokenIssuedAt\":1e300",
+      "swift_before": "the Swift harness dies: exit status 133 (SIGTRAP)",
+      "fix": "The value saturates.",
+      "rust_outcome": "SEND_IAT=9223372036854775807",
+      "severity": "low: the file is the app's own",
+      "status": "fixed",
+      "fixed": "In the app since round 21 (B112): HostInstaller.sendIssuedAtSeconds saturates at Int's ends, as this crate does; the case now runs on the Swift side (divergences.swift.txt keeps the trap it died of before) and prints the same on both."
+    }
+  ],
+  "notes": [
+    {
+      "id": "key-collation",
+      "what": "Merged JSON configs come back with keys in JSONSerialization's sorted order: CoreFoundation's comparison, ported step for step (moshpit-seal foundation/collation.rs), over ICU's root collation, reproduced for ASCII, the characters it ignores, the other spaces and the line breaks (no difference in the 40,000 equivalence cases here, nor in the 40,000 of moshpit-seal and 180,000 twenty-key objects put through its harness). Keys holding letters beyond ASCII, CJK or emoji can come out in another order, as can a comparison that reaches the collator with more than 64 UTF-16 code units left.",
+      "why_kept": "Only the ORDER of such keys differs, never the content; the hooks registration's digest is recorded but never compared for staleness, so nothing is reinstalled. ICU's collation beyond ASCII needs its tables."
+    },
+    {
+      "id": "decimal-numbers",
+      "what": "Numbers JSONSerialization keeps as NSDecimalNumber (more than 17 significant digits) are written back as NSDecimalNumber prints them for up to 38–39 digits; beyond that, and for decimal exponents beyond NSDecimal's range, the port's output is not proven against Foundation's.",
+      "why_kept": "Agent configs do not hold such numbers."
+    },
+    {
+      "id": "not-ported",
+      "what": "HostAutoCare's orchestration and HostSetupModel are not in this crate; their pure decisions are (installed_hook_agents, agents_to_refresh, pairing_needs_rewrite). HerdrLaunch.attachCommand, which HostCapabilitiesTests also covers, belongs to herdr (W2).",
+      "why_kept": "W15b moved the orchestration to crates/hostcare, with its own cross-check against the app's Swift (crates/hostcare/harness/crosscheck.py)."
+    }
+  ]
+}

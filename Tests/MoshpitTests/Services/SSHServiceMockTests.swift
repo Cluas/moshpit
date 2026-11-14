@@ -29,7 +29,7 @@ private struct ThrowingClientProvider: SSHClientProvider {
         port: Int,
         authenticationMethod: SSHAuthenticationMethod,
         hostKeyValidator: SSHHostKeyValidator
-    ) async throws -> SSHClient {
+    ) async throws -> SignedInClient {
         capture(authenticationMethod)
         throw MockProviderError(host: host, port: port)
     }
@@ -38,7 +38,7 @@ private struct ThrowingClientProvider: SSHClientProvider {
         on channel: Channel,
         authenticationMethod: SSHAuthenticationMethod,
         hostKeyValidator: SSHHostKeyValidator
-    ) async throws -> SSHClient {
+    ) async throws -> SignedInClient {
         capture(authenticationMethod)
         throw MockProviderError(host: "(proxied channel)", port: 0)
     }

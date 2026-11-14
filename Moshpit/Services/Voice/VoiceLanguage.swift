@@ -78,32 +78,6 @@ enum VoiceLanguageResolver {
         return ordered
     }
 
-    /// The locale an Apple dictation session should use.
-    ///
-    /// `stored` is `AppSettings.voiceInputLocaleId` — empty means Automatic,
-    /// which walks the candidates above and takes the first one some engine on
-    /// this device can actually transcribe. `isSupported` is the engine
-    /// catalog's answer; when nothing matches we hand back the top candidate
-    /// anyway so the failure the user sees names a real language rather than
-    /// silently substituting another one.
-    ///
-    /// `candidates` defaults to the device's spoken languages; tests pass an
-    /// explicit list because the default reads the host's language settings —
-    /// an assertion built on it means "passes on machines configured like the
-    /// author's" (it did: green locally, red on the en-only CI runner).
-    @MainActor
-    static func appleLocale(stored: String,
-                            candidates: [String]? = nil,
-                            isSupported: (Locale) -> Bool) -> Locale {
-        if !stored.isEmpty { return Locale(identifier: stored) }
-        let candidates = candidates ?? spokenLanguageCandidates()
-        for identifier in candidates {
-            let locale = Locale(identifier: identifier)
-            if isSupported(locale) { return locale }
-        }
-        return candidates.first.map(Locale.init(identifier:)) ?? Locale.current
-    }
-
     /// The Whisper language code for a session.
     ///
     /// Returns nil for Automatic, and nil is meaningful: it puts Whisper into

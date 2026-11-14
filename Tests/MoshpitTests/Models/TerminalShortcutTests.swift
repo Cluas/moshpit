@@ -2,6 +2,38 @@ import Foundation
 import Testing
 @testable import Moshpit
 
+// The bar's rules are the Rust store's (`crates/store/src/shortcuts.rs`,
+// whose own tests hold them); these run them through the app's Swift store
+// and value type, on the device, as the views do.
+
+extension TerminalShortcut {
+    /// Every byte a tap writes, in one piece (nil: none of its own) — the
+    /// Rust store's stages, joined.
+    func encodedBytes() -> Data? {
+        let stages = encodedStages()
+        return stages.isEmpty ? nil : stages.reduce(Data(), +)
+    }
+
+    /// A tap makes more than one write.
+    var sendsDiscreteKeys: Bool { encodedStages().count > 1 }
+}
+
+/// `shortcuts` in the stored form (a kind 1.0.8 reads, the real one in
+/// `shortcutKind`), as the store writes it — for seeding a set the store
+/// has not seen.
+func storedShortcutSet(_ shortcuts: [TerminalShortcut]) -> Data {
+    let objects: [[String: Any]] = shortcuts.map { s in
+        [
+            "id": s.id.uuidString, "kind": s.kind.olderBuildsName.rawValue, "shortcutKind": s.kind.rawValue,
+            "modifiers": s.modifiers.sorted().map(\.rawValue), "key": s.key, "payload": s.payload,
+            "appendReturn": s.appendReturn, "repeatOnHold": s.repeatOnHold, "chipLabel": s.chipLabel,
+            "summary": s.summary, "colorId": s.colorId, "scopeHosts": s.scopeHosts.sorted(),
+            "onlyInTmux": s.onlyInTmux, "isBuiltin": s.isBuiltin, "inToolbar": s.inToolbar,
+        ]
+    }
+    return try! JSONSerialization.data(withJSONObject: objects)
+}
+
 @Suite("TerminalShortcut encoding")
 struct TerminalShortcutEncodingTests {
 
@@ -153,36 +185,6 @@ struct TerminalShortcutEncodingTests {
 @Suite("ShortcutStore")
 struct ShortcutStoreTests {
 
-    /// A persisted set as it looked before the mic became a chip: today's
-    /// builtins minus the mic, with ^L put back in the bar where it was.
-    ///
-    /// Reconstructed rather than taken from `builtins` as-is — ^L now ships
-    /// out of the bar, so a plain filter would seed a toolbar that already
-    /// lacks it and every assertion about the migration would pass without
-    /// the migration doing anything.
-    ///
-    /// Note the `.arrows` filter: the cluster postdates this era entirely. It
-    /// ships out of the bar, so leaving it in wouldn't disturb the toolbar
-    /// order — but the `staleDefault` check this fixture exists to trip compares
-    /// toolbar summaries **in order**, and seeding a set with an entry that era
-    /// never had is how a fixture stops describing the thing it's named after.
-    private static func preMicDefaults() -> [TerminalShortcut] {
-        // A persisted set from BEFORE the mic joined the bar. Built by
-        // filtering today's builtins, which means every builtin added since
-        // must be filtered out here too — when the image chip joined the
-        // defaults it silently appeared in this "old" fixture, the toolbar
-        // stopped matching the migration's stale-default guard, and both
-        // migration tests failed against migration code that was fine. The
-        // files chip tripped the same wire.
-        ShortcutStore.builtins
-            .filter { $0.kind != .mic && $0.kind != .arrows && $0.kind != .image && $0.kind != .files }
-            .map { shortcut in
-                var restored = shortcut
-                if restored.summary == "Clear screen" { restored.inToolbar = true }
-                return restored
-            }
-    }
-
     private func freshStore() -> ShortcutStore {
         let suite = "test.shortcuts.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
@@ -272,98 +274,20 @@ struct ShortcutStoreTests {
         }
     }
 
-    @Test("migration injects ctrl + the D-pad for a persisted set that predates them")
-    func migratesDpad() throws {
+    @Test("a builtin the user put in the bar is still there on the next launch")
+    func userPlacedBuiltinSurvivesRelaunch() throws {
         let suite = "test.shortcuts.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
-        defaults.removePersistentDomain(forName: suite)
-        // Seed an old persisted set with one builtin and NO D-pad/ctrl.
-        var esc = TerminalShortcut()
-        esc.kind = .keyCombo; esc.key = "esc"; esc.chipLabel = "esc"
-        esc.isBuiltin = true; esc.inToolbar = true
-        let data = try JSONEncoder().encode([esc])
-        defaults.set(data, forKey: "moshpit.shortcuts.v1")
+        defer { defaults.removePersistentDomain(forName: suite) }
+        // ↑ on its own is the chip the builtins' comment expects people to
+        // add. A pre-1.0 upgrade step used to take it back out of the bar on
+        // every load.
+        let first = ShortcutStore(defaults: defaults)
+        let up = try #require(first.available.first { $0.kind == .keyCombo && $0.key == "up" })
+        first.addToToolbar(id: up.id)
 
-        let store = ShortcutStore(defaults: defaults)
-        // dpad joins the toolbar (its own current default); ctrl is injected
-        // too but — like its own current default — starts outside the bar.
-        #expect(store.toolbar.first?.kind == .dpad)
-        #expect(store.shortcuts.contains { $0.kind == .ctrl })
-        #expect(store.available.contains { $0.kind == .ctrl })
-        #expect(store.toolbar.contains { $0.chipLabel == "esc" })
-        // And the tap-first cluster arrives as an available alternative, without
-        // touching the bar — no migration step of its own, just the catch-all.
-        #expect(store.available.contains { $0.kind == .arrows })
-    }
-
-    @Test("migration moves the mic into the bar for a set that predates the chip")
-    func migratesMic() throws {
-        let suite = "test.shortcuts.\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suite)!
-        defaults.removePersistentDomain(forName: suite)
-        defaults.set(try JSONEncoder().encode(Self.preMicDefaults()),
-                     forKey: "moshpit.shortcuts.v1")
-
-        let store = ShortcutStore(defaults: defaults)
-        // It has to arrive IN the bar: the key was always visible before, and
-        // an upgrade that quietly hides it reads as the feature being removed.
-        #expect(store.toolbar.contains { $0.kind == .mic })
-        // At the trailing edge, which is where the pinned key already sat — so
-        // no existing chip shifts under the user's thumb. The image and files
-        // chips (later builtins, injected by the summary-keyed catch-all AFTER
-        // this migration) land behind it, so the tail reads [mic, img, files].
-        #expect(store.toolbar.suffix(3).map(\.kind) == [.mic, .image, .files])
-        // And it makes room for itself rather than overflowing the row.
-        #expect(!store.toolbar.contains { $0.chipLabel == "^L" })
-        #expect(store.available.contains { $0.chipLabel == "^L" })
-    }
-
-    @Test("a bar that already grew a mic still gets its slot freed")
-    func clearScreenLeavesEvenWhenMicAlreadyPresent() throws {
-        let suite = "test.shortcuts.\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suite)!
-        defaults.removePersistentDomain(forName: suite)
-        // The intermediate state: mic already injected, ^L still in the bar,
-        // seven chips wide. Reachable by anyone who ran a build between the
-        // two changes, and the reason the ^L step can't hang off the mic
-        // injection — that branch never runs again once a mic exists.
-        var previous = Self.preMicDefaults()
-        var mic = try #require(ShortcutStore.builtins.first { $0.kind == .mic })
-        mic.inToolbar = true
-        previous.append(mic)
-        defaults.set(try JSONEncoder().encode(previous), forKey: "moshpit.shortcuts.v1")
-
-        let store = ShortcutStore(defaults: defaults)
-        // Six after ^L leaves, plus the image and files chips the catch-all
-        // injects behind the mic (they postdate this whole migration era).
-        #expect(store.toolbarCount == 8)
-        #expect(!store.toolbar.contains { $0.chipLabel == "^L" })
-        #expect(store.toolbar.suffix(3).map(\.kind) == [.mic, .image, .files])
-    }
-
-    @Test("a customized toolbar keeps every key the user put in it")
-    func micMigrationSparesCustomizedBars() throws {
-        let suite = "test.shortcuts.\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suite)!
-        defaults.removePersistentDomain(forName: suite)
-        // Same era as the migration above, but the user rearranged it: ^L
-        // moved to the front and a custom chip added. Freeing a slot by
-        // deleting a shortcut someone deliberately placed is worse than a row
-        // they have to drag, so the ^L removal must not fire here.
-        var previous = Self.preMicDefaults()
-        if let clear = previous.firstIndex(where: { $0.summary == "Clear screen" }) {
-            previous.insert(previous.remove(at: clear), at: 0)
-        }
-        var custom = TerminalShortcut()
-        custom.kind = .command; custom.payload = "claude"; custom.chipLabel = "clm"
-        custom.isBuiltin = false; custom.inToolbar = true
-        previous.append(custom)
-        defaults.set(try JSONEncoder().encode(previous), forKey: "moshpit.shortcuts.v1")
-
-        let store = ShortcutStore(defaults: defaults)
-        #expect(store.toolbar.contains { $0.chipLabel == "^L" })
-        #expect(store.toolbar.contains { $0.chipLabel == "clm" })
-        #expect(store.toolbar.contains { $0.kind == .mic })
+        let relaunched = ShortcutStore(defaults: defaults)
+        #expect(relaunched.toolbar.contains { $0.id == up.id })
     }
 
     @Test("a full toolbar keeps the mic out of the bar rather than over-filling it")
@@ -378,7 +302,7 @@ struct ShortcutStoreTests {
             sc.isBuiltin = false; sc.inToolbar = true
             return sc
         }
-        defaults.set(try JSONEncoder().encode(full), forKey: "moshpit.shortcuts.v1")
+        defaults.set(storedShortcutSet(full), forKey: "moshpit.shortcuts.v1")
 
         let store = ShortcutStore(defaults: defaults)
         #expect(store.toolbarCount == ShortcutStore.toolbarLimit)
@@ -402,6 +326,53 @@ struct ShortcutStoreTests {
         let overflow = store.custom.filter { !$0.inToolbar }
         #expect(store.toolbarCount == ShortcutStore.toolbarLimit)
         #expect(overflow.isEmpty == false, "shortcuts beyond 12 stay out of the toolbar")
+    }
+
+    /// B233: AVAILABLE listed the built-ins alone, so a custom shortcut taken
+    /// off the bar — or saved while the bar was full — could never come back,
+    /// while the editor's footnote said it stays there.
+    @Test("a custom shortcut taken off the bar stays available and can go back on")
+    func customShortcutComesBack() throws {
+        let store = freshStore()
+        var mine = TerminalShortcut()
+        mine.chipLabel = "gs"
+        mine.kind = .text
+        mine.payload = "git status"
+        store.add(mine)
+        let id = try #require(store.toolbar.first { $0.chipLabel == "gs" }?.id)
+        store.removeFromToolbar(id: id)
+        #expect(!store.toolbar.contains { $0.id == id })
+        #expect(store.available.contains { $0.id == id }, "a custom shortcut off the bar has no way back")
+        #expect(store.addToToolbar(id: id))
+        #expect(store.toolbar.contains { $0.id == id })
+        #expect(!store.available.contains { $0.id == id })
+    }
+
+    @Test("with twelve on the bar, ＋ adds nothing and says it can't; one saved then waits under AVAILABLE")
+    func fullBarSaysSo() throws {
+        let store = freshStore()
+        while !store.toolbarIsFull {
+            var filler = TerminalShortcut()
+            filler.chipLabel = "f\(store.toolbarCount)"
+            filler.kind = .text
+            filler.payload = "x"
+            store.add(filler)
+        }
+        #expect(store.toolbarCount == ShortcutStore.toolbarLimit)
+        var late = TerminalShortcut()
+        late.chipLabel = "late"
+        late.kind = .text
+        late.payload = "y"
+        // B252: the store says it didn't go on the bar, for the editor to say.
+        #expect(!store.add(late), "saved off a full bar, and said it went on")
+        let saved = try #require(store.shortcuts.first { $0.chipLabel == "late" })
+        #expect(!saved.inToolbar)
+        #expect(store.available.contains { $0.id == saved.id }, "saved while the bar was full: nowhere to be found")
+        #expect(!store.addToToolbar(id: saved.id), "a ＋ on a full bar did nothing and said nothing")
+        #expect(store.toolbarCount == ShortcutStore.toolbarLimit)
+        // A slot frees: it goes on.
+        store.removeFromToolbar(id: store.toolbar[0].id)
+        #expect(store.addToToolbar(id: saved.id))
     }
 
     @Test("remove takes a builtin out of the toolbar but keeps it available")
@@ -479,7 +450,7 @@ struct ShortcutStoreTests {
             !["Jump to end", "Back-tab / toggle mode", "End", "Home",
               "Page up", "Page down"].contains($0.summary)
         }
-        defaults.set(try! JSONEncoder().encode(pruned), forKey: "moshpit.shortcuts.v1")
+        defaults.set(storedShortcutSet(pruned), forKey: "moshpit.shortcuts.v1")
 
         // A fresh store over the same defaults must inject the new builtins.
         // "Jump to end" isn't one of the current 6 default-bar items, so the
@@ -499,7 +470,7 @@ struct ShortcutStoreTests {
         // A realistic pre-existing set: every current builtin except ctrl
         // (ctrl postdates it), bypassing the store so no migration runs yet.
         let pruned = ShortcutStore.builtins.filter { $0.kind != .ctrl }
-        defaults.set(try! JSONEncoder().encode(pruned), forKey: "moshpit.shortcuts.v1")
+        defaults.set(storedShortcutSet(pruned), forKey: "moshpit.shortcuts.v1")
 
         // ctrl is a builtin now, like any other — it's added for a set that
         // predates it, but (like its own current default) starts outside the
@@ -572,5 +543,147 @@ struct ShortcutStoreSealedLaunchTests {
         store.reloadIfNeeded()
         #expect(store.custom.map(\.summary) == ["Deploy"])
         #expect(store.isAuthoritative)
+    }
+}
+
+/// `TerminalShortcut` as 1.0.8 declares it (8c10490a), field for field, with
+/// the kinds it knows — no `files`. 1.0.8 reads the stored set the way
+/// `decodeAsOlderBuild` does, the whole array in one decode, and took a set
+/// that failed it as nothing: it seeded its built-ins and saved them over
+/// the set.
+private struct OlderBuildShortcut: Codable, Equatable {
+    enum Kind: String, Codable {
+        case keyCombo, text, command, dpad, arrows, paste, scroll, ctrl, mic, image
+    }
+
+    var id = UUID()
+    var kind: Kind = .keyCombo
+    var modifiers: Set<ShortcutModifier> = []
+    var key: String = ""
+    var payload: String = ""
+    var appendReturn: Bool = false
+    var repeatOnHold: Bool = false
+    var chipLabel: String = ""
+    var summary: String = ""
+    var colorId: String = "gray"
+    var scopeHosts: Set<String> = []
+    var onlyInTmux: Bool = false
+    var isBuiltin: Bool = false
+    var inToolbar: Bool = true
+}
+
+/// B153: since the files chip, every set the app saves holds it, and it was
+/// stored as `"kind":"files"` — a kind 1.0.8 can't decode, so a downgrade
+/// (TestFlight keeps 1.0.8 a tap away) erased every custom chip. `kind` now
+/// holds a kind 1.0.8 knows and the real one rides in `shortcutKind`, as
+/// moshpit-store writes it (Fix (files-downgrade)).
+@Suite("Shortcut sets across builds")
+struct ShortcutDowngradeTests {
+    private static let storageKey = "moshpit.shortcuts.v1"
+
+    private static func makeDefaults() -> (UserDefaults, String) {
+        let name = "test.shortcuts.downgrade.\(UUID().uuidString)"
+        return (UserDefaults(suiteName: name)!, name)
+    }
+
+    private static func decodeAsOlderBuild(_ data: Data) throws -> [OlderBuildShortcut] {
+        try JSONDecoder().decode([OlderBuildShortcut].self, from: data)
+    }
+
+    private static func objects(_ data: Data) throws -> [[String: Any]] {
+        try #require(try JSONSerialization.jsonObject(with: data) as? [[String: Any]])
+    }
+
+    @Test("a set the app saves decodes in 1.0.8, custom chips and all")
+    func olderBuildReadsTheSet() throws {
+        let (defaults, suite) = Self.makeDefaults()
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = ShortcutStore(defaults: defaults)
+        var mine = TerminalShortcut()
+        mine.kind = .command
+        mine.chipLabel = "GP"
+        mine.payload = "git push"
+        store.add(mine)
+        let data = try #require(defaults.data(forKey: Self.storageKey))
+
+        // The old encoding failed right here: "files" is no kind 1.0.8 has.
+        let older = try Self.decodeAsOlderBuild(data)
+
+        #expect(older.count == store.shortcuts.count)
+        #expect(older.contains { $0.chipLabel == "GP" && $0.kind == .command && $0.payload == "git push" })
+        // The files chip is an inert key combo there: no key, no payload.
+        let files = try #require(older.first { $0.summary == "Browse files" })
+        #expect(files.kind == .keyCombo && files.key.isEmpty && files.payload.isEmpty && files.isBuiltin)
+    }
+
+    /// What a fresh store writes over `defaults`.
+    private static func written(_ defaults: UserDefaults) throws -> Data {
+        _ = ShortcutStore(defaults: defaults)
+        return try #require(defaults.data(forKey: storageKey))
+    }
+
+    @Test("every chip carries its real kind beside one every build reads")
+    func storedShape() throws {
+        let (defaults, suite) = Self.makeDefaults()
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let builtins = ShortcutStore.builtins
+        let objects = try Self.objects(try Self.written(defaults))
+        #expect(objects.count == builtins.count)
+        for (object, shortcut) in zip(objects, builtins) {
+            #expect(object["shortcutKind"] as? String == shortcut.kind.rawValue)
+            let expected = shortcut.kind == .files ? "keyCombo" : shortcut.kind.rawValue
+            #expect(object["kind"] as? String == expected, "\(shortcut.summary)")
+        }
+    }
+
+    @Test("this build reads its own set back with the files chip intact")
+    func roundTrip() throws {
+        let (defaults, suite) = Self.makeDefaults()
+        defer { defaults.removePersistentDomain(forName: suite) }
+        _ = try Self.written(defaults)
+        let back = ShortcutStore(defaults: defaults).shortcuts
+        #expect(back.map(\.summary) == ShortcutStore.builtins.map(\.summary))
+        #expect(back.contains { $0.kind == .files })
+    }
+
+    @Test("a set 1.0.8 saved back finds the files chip again by its summary")
+    func olderBuildsSaveIsRecovered() throws {
+        let (defaults, suite) = Self.makeDefaults()
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let older = try Self.decodeAsOlderBuild(try Self.written(defaults))
+        defaults.set(try JSONEncoder().encode(older), forKey: Self.storageKey)
+
+        let store = ShortcutStore(defaults: defaults)
+
+        let files = store.shortcuts.filter { $0.summary == "Browse files" }
+        #expect(files.count == 1, "the chip was injected a second time")
+        #expect(files.first?.kind == .files)
+        // An inert key combo of the user's own is not taken for it.
+        let (mine, mineSuite) = Self.makeDefaults()
+        defer { mine.removePersistentDomain(forName: mineSuite) }
+        var custom = OlderBuildShortcut()
+        custom.summary = "Browse files"
+        mine.set(try JSONEncoder().encode([custom]), forKey: Self.storageKey)
+        #expect(ShortcutStore(defaults: mine).shortcuts.first { $0.id == custom.id }?.kind == .keyCombo)
+    }
+
+    @Test("the files chip as earlier builds stored it still reads; an unknown real kind falls back")
+    func earlierShapes() throws {
+        var files = ShortcutStore.builtins.first { $0.kind == .files }!
+        files.id = UUID()
+        var object = try #require(try Self.objects(storedShortcutSet([files])).first)
+        func read(_ object: [String: Any]) throws -> ShortcutKind? {
+            let (defaults, suite) = Self.makeDefaults()
+            defer { defaults.removePersistentDomain(forName: suite) }
+            defaults.set(try JSONSerialization.data(withJSONObject: [object]), forKey: Self.storageKey)
+            return ShortcutStore(defaults: defaults).shortcuts.first { $0.id == files.id }?.kind
+        }
+        object["kind"] = "files"
+        object.removeValue(forKey: "shortcutKind")
+        #expect(try read(object) == .files)
+
+        object["kind"] = "text"
+        object["shortcutKind"] = "a kind from a newer build"
+        #expect(try read(object) == .text)
     }
 }

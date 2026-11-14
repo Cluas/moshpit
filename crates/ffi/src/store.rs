@@ -1,0 +1,2229 @@
+//! The store's API for the hosts (Swift, Kotlin), through UniFFI: what
+//! `moshpit-store` reads and writes, behind the two traits a platform
+//! implements — its preferences ([`PreferencesHost`]: on iOS
+//! `UserDefaults.standard`) and its keychain ([`KeychainHost`]).
+//!
+//! Not a hot path: a store is read when the app starts and comes forward,
+//! written when the user changes something. The byte channel and the tmux
+//! parser keep their hand-written C ABI.
+//!
+//! Dates cross as seconds since 2001-01-01 (Swift's
+//! `timeIntervalSinceReferenceDate`, so a `Date` round-trips bit for bit),
+//! UUIDs as their upper-case strings. A preferences value crosses as a flat
+//! list of nodes (UniFFI's Swift bindings have no recursive enums): node 0
+//! is the value, an array or dictionary names its members by index, always
+//! greater than its own.
+
+use std::collections::{BTreeSet, HashMap};
+use std::sync::{Arc, Mutex, MutexGuard};
+
+use moshpit_seal::foundation::date::Date;
+use moshpit_seal::foundation::uuid::Uuid;
+use moshpit_store::app_themes::{self, AppTheme, AppThemeStore};
+use moshpit_store::connections::{self, ConnectionStore, ServerConnection};
+use moshpit_store::known_hosts::{self, KeychainKnownHosts, KnownHostsStore};
+use moshpit_store::push::{PushPairing, PushPairingFile};
+use moshpit_store::secrets;
+use moshpit_store::settings::{self, Settings};
+use moshpit_store::shortcuts::{self, ShortcutStore, TerminalShortcut};
+use moshpit_store::ssh_keys::{self, SshKeyRecord, SshKeyStore};
+use moshpit_store::themes::{self, AnsiSlot, TerminalTheme, ThemeStore};
+use moshpit_store::{Defaults, Keychain, KeychainError, Plist, Readiness};
+
+// MARK: - Errors
+
+/// A value from the host the store can't take.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Error)]
+pub enum StoreError {
+    /// Not a UUID string (`UUID(uuidString:)` would say nil).
+    InvalidId { id: String },
+    /// No setting of that name, or a value of another type than the
+    /// setting's.
+    InvalidSetting { name: String },
+}
+
+impl std::fmt::Display for StoreError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::InvalidId { id } => write!(f, "not a UUID: {id:?}"),
+            Self::InvalidSetting { name } => write!(f, "no such setting, or not its type: {name}"),
+        }
+    }
+}
+
+impl std::error::Error for StoreError {}
+
+fn uuid(id: &str) -> Result<Uuid, StoreError> {
+    Uuid::parse(id).ok_or_else(|| StoreError::InvalidId { id: id.to_owned() })
+}
+
+fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    mutex.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+// MARK: - Preferences values
+
+/// One node of a preferences value.
+#[derive(Debug, Clone, PartialEq, uniffi::Enum)]
+pub enum PlistNode {
+    Bool {
+        value: bool,
+    },
+    Int {
+        value: i64,
+    },
+    Double {
+        value: f64,
+    },
+    String {
+        value: String,
+    },
+    Data {
+        value: Vec<u8>,
+    },
+    /// Seconds since 2001-01-01T00:00:00Z.
+    Date {
+        seconds: f64,
+    },
+    /// Members by node index.
+    Array {
+        members: Vec<u32>,
+    },
+    /// Keys, and their values by node index, in the same order.
+    Dictionary {
+        keys: Vec<String>,
+        members: Vec<u32>,
+    },
+}
+
+/// A preferences value: `nodes[0]`, its members after it.
+#[derive(Debug, Clone, PartialEq, uniffi::Record)]
+pub struct PlistValue {
+    pub nodes: Vec<PlistNode>,
+}
+
+fn to_value(value: &Plist) -> PlistValue {
+    fn push(value: &Plist, nodes: &mut Vec<PlistNode>) -> u32 {
+        let index = nodes.len();
+        nodes.push(PlistNode::Bool { value: false });
+        let node = match value {
+            Plist::Bool(v) => PlistNode::Bool { value: *v },
+            Plist::Int(v) => PlistNode::Int { value: *v },
+            Plist::Double(v) => PlistNode::Double { value: *v },
+            Plist::String(v) => PlistNode::String { value: v.clone() },
+            Plist::Data(v) => PlistNode::Data { value: v.clone() },
+            Plist::Date(v) => PlistNode::Date { seconds: *v },
+            Plist::Array(items) => PlistNode::Array {
+                members: items.iter().map(|item| push(item, nodes)).collect(),
+            },
+            Plist::Dictionary(entries) => PlistNode::Dictionary {
+                keys: entries.iter().map(|(k, _)| k.clone()).collect(),
+                members: entries.iter().map(|(_, v)| push(v, nodes)).collect(),
+            },
+        };
+        nodes[index] = node;
+        u32::try_from(index).expect("a value of fewer than 2^32 nodes")
+    }
+    let mut nodes = Vec::new();
+    push(value, &mut nodes);
+    PlistValue { nodes }
+}
+
+/// The value a host gave back; `None` for a malformed node list (a member
+/// index out of range or not after its parent).
+fn from_value(value: &PlistValue) -> Option<Plist> {
+    fn node(nodes: &[PlistNode], index: usize) -> Option<Plist> {
+        let member = |m: u32| -> Option<Plist> {
+            let m = m as usize;
+            (m > index).then(|| node(nodes, m)).flatten()
+        };
+        Some(match nodes.get(index)? {
+            PlistNode::Bool { value } => Plist::Bool(*value),
+            PlistNode::Int { value } => Plist::Int(*value),
+            PlistNode::Double { value } => Plist::Double(*value),
+            PlistNode::String { value } => Plist::String(value.clone()),
+            PlistNode::Data { value } => Plist::Data(value.clone()),
+            PlistNode::Date { seconds } => Plist::Date(*seconds),
+            PlistNode::Array { members } => {
+                Plist::Array(members.iter().map(|&m| member(m)).collect::<Option<_>>()?)
+            }
+            PlistNode::Dictionary { keys, members } => {
+                if keys.len() != members.len() {
+                    return None;
+                }
+                Plist::Dictionary(
+                    keys.iter()
+                        .zip(members)
+                        .map(|(k, &m)| member(m).map(|v| (k.clone(), v)))
+                        .collect::<Option<_>>()?,
+                )
+            }
+        })
+    }
+    node(&value.nodes, 0)
+}
+
+// MARK: - Host traits
+
+/// The app's preferences (iOS: `UserDefaults.standard`; Android: its
+/// `SharedPreferences`). A value set comes back as set — or as the value
+/// stored before when that one is equal to it, as `UserDefaults` does.
+#[uniffi::export(with_foreign)]
+pub trait PreferencesHost: Send + Sync {
+    /// `object(forKey:)`.
+    fn get(&self, key: String) -> Option<PlistValue>;
+    /// `set(_:forKey:)`; `None` removes.
+    fn set(&self, key: String, value: Option<PlistValue>);
+    /// Whether protected data is readable now (iOS
+    /// `isProtectedDataAvailable`; Android: the user unlocked since boot).
+    fn protected_data_available(&self) -> bool;
+}
+
+/// Why the keychain did not do what was asked.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Error)]
+pub enum KeychainFailure {
+    NotFound,
+    Duplicate,
+    AuthenticationFailed,
+    UserCanceled,
+    /// The device is locked (`errSecInteractionNotAllowed`).
+    InteractionNotAllowed,
+    InvalidData,
+    Other {
+        message: String,
+    },
+}
+
+impl std::fmt::Display for KeychainFailure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", KeychainError::from(self.clone()))
+    }
+}
+
+impl std::error::Error for KeychainFailure {}
+
+impl From<uniffi::UnexpectedUniFFICallbackError> for KeychainFailure {
+    fn from(error: uniffi::UnexpectedUniFFICallbackError) -> Self {
+        Self::Other {
+            message: error.reason,
+        }
+    }
+}
+
+impl From<KeychainFailure> for KeychainError {
+    fn from(failure: KeychainFailure) -> Self {
+        match failure {
+            KeychainFailure::NotFound => Self::NotFound,
+            KeychainFailure::Duplicate => Self::Duplicate,
+            KeychainFailure::AuthenticationFailed => Self::AuthenticationFailed,
+            KeychainFailure::UserCanceled => Self::UserCanceled,
+            KeychainFailure::InteractionNotAllowed => Self::InteractionNotAllowed,
+            KeychainFailure::InvalidData => Self::InvalidData,
+            KeychainFailure::Other { message } => Self::Other(message),
+        }
+    }
+}
+
+/// The keychain (iOS: the app's generic passwords; Android: the Keystore).
+/// Secrets stay there: the stores hold account names.
+#[uniffi::export(with_foreign)]
+pub trait KeychainHost: Send + Sync {
+    /// Store `secret` under `account` in place (a failed write leaves the
+    /// item as it was); `require_biometry` gates every later read.
+    fn save(
+        &self,
+        account: String,
+        secret: Vec<u8>,
+        require_biometry: bool,
+    ) -> Result<(), KeychainFailure>;
+    fn load(&self, account: String, prompt: String) -> Result<Vec<u8>, KeychainFailure>;
+    fn delete(&self, account: String) -> Result<(), KeychainFailure>;
+    fn exists(&self, account: String) -> bool;
+    /// Every item's account, read without reading an item (no prompt):
+    /// what orphan recovery looks through. A failure when it can't say —
+    /// never an empty list for "don't know".
+    fn accounts(&self) -> Result<Vec<String>, KeychainFailure>;
+    /// The item's bytes if they can be had without asking anyone: an item
+    /// behind Face ID fails `InteractionNotAllowed` instead of prompting.
+    fn load_silently(&self, account: String) -> Result<Vec<u8>, KeychainFailure>;
+}
+
+pub(crate) struct HostDefaults(pub(crate) Arc<dyn PreferencesHost>);
+
+impl Defaults for HostDefaults {
+    fn get(&self, key: &str) -> Option<Plist> {
+        self.0.get(key.to_owned()).as_ref().and_then(from_value)
+    }
+
+    fn set(&self, key: &str, value: Option<Plist>) {
+        self.0.set(key.to_owned(), value.as_ref().map(to_value));
+    }
+
+    fn protected_data_available(&self) -> bool {
+        self.0.protected_data_available()
+    }
+}
+
+pub(crate) struct HostKeychain(pub(crate) Arc<dyn KeychainHost>);
+
+impl Keychain for HostKeychain {
+    fn save(
+        &self,
+        account: &str,
+        secret: &[u8],
+        require_biometry: bool,
+    ) -> Result<(), KeychainError> {
+        self.0
+            .save(account.to_owned(), secret.to_vec(), require_biometry)
+            .map_err(Into::into)
+    }
+
+    fn load(&self, account: &str, prompt: &str) -> Result<Vec<u8>, KeychainError> {
+        self.0
+            .load(account.to_owned(), prompt.to_owned())
+            .map_err(Into::into)
+    }
+
+    fn delete(&self, account: &str) -> Result<(), KeychainError> {
+        self.0.delete(account.to_owned()).map_err(Into::into)
+    }
+
+    fn exists(&self, account: &str) -> bool {
+        self.0.exists(account.to_owned())
+    }
+
+    fn accounts(&self) -> Result<Vec<String>, KeychainError> {
+        self.0.accounts().map_err(Into::into)
+    }
+
+    fn load_silently(&self, account: &str) -> Result<Vec<u8>, KeychainError> {
+        self.0.load_silently(account.to_owned()).map_err(Into::into)
+    }
+}
+
+fn defaults(host: Arc<dyn PreferencesHost>) -> Arc<dyn Defaults> {
+    Arc::new(HostDefaults(host))
+}
+
+/// Where a store hears whether the preferences can be believed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum ReadinessMode {
+    /// The sentinel, or the host's `protected_data_available` (the app).
+    System,
+    /// Always readable (tests, scratch domains).
+    Always,
+}
+
+fn readiness(mode: ReadinessMode) -> Readiness {
+    match mode {
+        ReadinessMode::System => Readiness::System,
+        ReadinessMode::Always => Readiness::Always,
+    }
+}
+
+/// `DefaultsReadiness.isReadable`.
+#[uniffi::export]
+pub fn store_defaults_readable(host: Arc<dyn PreferencesHost>, mode: ReadinessMode) -> bool {
+    readiness(mode).is_readable(&HostDefaults(host))
+}
+
+/// `DefaultsReadiness.markReadable`.
+#[uniffi::export]
+pub fn store_mark_defaults_readable(host: Arc<dyn PreferencesHost>) {
+    Readiness::Always.mark_readable(&HostDefaults(host));
+}
+
+/// A fresh keychain account for a connection's password or key:
+/// `moshpit.secret.<lower-case UUID>`.
+#[uniffi::export]
+pub fn store_new_keychain_ref() -> String {
+    moshpit_store::host::new_keychain_ref()
+}
+
+// MARK: - Connections
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, uniffi::Enum)]
+// Named for the bindings so it can live beside the app's own `AuthMethod` in
+// one Swift module (the app compiles the generated file into itself).
+#[uniffi(name = "StoreAuthMethod")]
+pub enum AuthMethod {
+    Password,
+    Key,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+// Named for the bindings so it can live beside the app's own `ConnectionProtocol` in
+// one Swift module (the app compiles the generated file into itself).
+#[uniffi(name = "StoreConnectionProtocol")]
+pub enum ConnectionProtocol {
+    Ssh,
+    Mosh,
+}
+
+/// A saved connection, field for field (`ServerConnection`).
+#[derive(Debug, Clone, PartialEq, uniffi::Record)]
+pub struct ConnectionRecord {
+    pub id: String,
+    pub name: String,
+    pub host: String,
+    pub port: i64,
+    pub username: String,
+    pub auth_method: AuthMethod,
+    pub connection_protocol: ConnectionProtocol,
+    pub ssh_port: i64,
+    pub mosh_port_range_start: i64,
+    pub mosh_port_range_end: i64,
+    pub mosh_server_path: Option<String>,
+    /// The keychain account of the password or key.
+    pub keychain_ref: Option<String>,
+    pub created_at: f64,
+    pub last_connected_at: Option<f64>,
+    pub use_tmux: bool,
+    pub predict_mode_raw: Option<String>,
+    pub roam_on_cellular: Option<bool>,
+    pub tmux_path: Option<String>,
+    pub herdr_path: Option<String>,
+    pub multiplexer_raw: Option<String>,
+    pub ssh_key_id: Option<String>,
+    pub ssh_key_algorithm_raw: Option<String>,
+    pub use_socks_proxy: Option<bool>,
+    pub socks_proxy_host: Option<String>,
+    pub socks_proxy_port: Option<i64>,
+}
+
+impl From<&ServerConnection> for ConnectionRecord {
+    fn from(c: &ServerConnection) -> Self {
+        Self {
+            id: c.id.to_string(),
+            name: c.name.clone(),
+            host: c.host.clone(),
+            port: c.port,
+            username: c.username.clone(),
+            auth_method: match c.auth_method {
+                connections::AuthMethod::Password => AuthMethod::Password,
+                connections::AuthMethod::Key => AuthMethod::Key,
+            },
+            connection_protocol: match c.connection_protocol {
+                connections::ConnectionProtocol::Ssh => ConnectionProtocol::Ssh,
+                connections::ConnectionProtocol::Mosh => ConnectionProtocol::Mosh,
+            },
+            ssh_port: c.ssh_port,
+            mosh_port_range_start: c.mosh_port_range_start,
+            mosh_port_range_end: c.mosh_port_range_end,
+            mosh_server_path: c.mosh_server_path.clone(),
+            keychain_ref: c.keychain_ref.clone(),
+            created_at: c.created_at.since_reference(),
+            last_connected_at: c.last_connected_at.map(Date::since_reference),
+            use_tmux: c.use_tmux,
+            predict_mode_raw: c.predict_mode_raw.clone(),
+            roam_on_cellular: c.roam_on_cellular,
+            tmux_path: c.tmux_path.clone(),
+            herdr_path: c.herdr_path.clone(),
+            multiplexer_raw: c.multiplexer_raw.clone(),
+            ssh_key_id: c.ssh_key_id.map(|id| id.to_string()),
+            ssh_key_algorithm_raw: c.ssh_key_algorithm_raw.clone(),
+            use_socks_proxy: c.use_socks_proxy,
+            socks_proxy_host: c.socks_proxy_host.clone(),
+            socks_proxy_port: c.socks_proxy_port,
+        }
+    }
+}
+
+impl TryFrom<ConnectionRecord> for ServerConnection {
+    type Error = StoreError;
+
+    fn try_from(c: ConnectionRecord) -> Result<Self, StoreError> {
+        let mut connection = ServerConnection::new(uuid(&c.id)?, Date(c.created_at));
+        connection.name = c.name;
+        connection.host = c.host;
+        connection.port = c.port;
+        connection.username = c.username;
+        connection.auth_method = match c.auth_method {
+            AuthMethod::Password => connections::AuthMethod::Password,
+            AuthMethod::Key => connections::AuthMethod::Key,
+        };
+        connection.connection_protocol = match c.connection_protocol {
+            ConnectionProtocol::Ssh => connections::ConnectionProtocol::Ssh,
+            ConnectionProtocol::Mosh => connections::ConnectionProtocol::Mosh,
+        };
+        connection.ssh_port = c.ssh_port;
+        connection.mosh_port_range_start = c.mosh_port_range_start;
+        connection.mosh_port_range_end = c.mosh_port_range_end;
+        connection.mosh_server_path = c.mosh_server_path;
+        connection.keychain_ref = c.keychain_ref;
+        connection.last_connected_at = c.last_connected_at.map(Date);
+        connection.use_tmux = c.use_tmux;
+        connection.predict_mode_raw = c.predict_mode_raw;
+        connection.roam_on_cellular = c.roam_on_cellular;
+        connection.tmux_path = c.tmux_path;
+        connection.herdr_path = c.herdr_path;
+        connection.multiplexer_raw = c.multiplexer_raw;
+        connection.ssh_key_id = c.ssh_key_id.as_deref().map(uuid).transpose()?;
+        connection.ssh_key_algorithm_raw = c.ssh_key_algorithm_raw;
+        connection.use_socks_proxy = c.use_socks_proxy;
+        connection.socks_proxy_host = c.socks_proxy_host;
+        connection.socks_proxy_port = c.socks_proxy_port;
+        Ok(connection)
+    }
+}
+
+/// The saved connections (`ConnectionStore`), read when made.
+#[derive(uniffi::Object)]
+pub struct ConnectionStoreHandle(Mutex<ConnectionStore>);
+
+#[uniffi::export]
+impl ConnectionStoreHandle {
+    #[uniffi::constructor]
+    pub fn new(host: Arc<dyn PreferencesHost>, mode: ReadinessMode) -> Arc<Self> {
+        Arc::new(Self(Mutex::new(ConnectionStore::new(
+            defaults(host),
+            readiness(mode),
+        ))))
+    }
+
+    pub fn connections(&self) -> Vec<ConnectionRecord> {
+        lock(&self.0).connections().iter().map(Into::into).collect()
+    }
+
+    pub fn is_authoritative(&self) -> bool {
+        lock(&self.0).is_authoritative()
+    }
+
+    pub fn add(&self, connection: ConnectionRecord) -> Result<(), StoreError> {
+        lock(&self.0).add(connection.try_into()?);
+        Ok(())
+    }
+
+    pub fn update(&self, connection: ConnectionRecord) -> Result<(), StoreError> {
+        lock(&self.0).update(connection.try_into()?);
+        Ok(())
+    }
+
+    pub fn delete(&self, id: String) -> Result<(), StoreError> {
+        lock(&self.0).delete(uuid(&id)?);
+        Ok(())
+    }
+
+    pub fn reload_if_needed(&self) {
+        lock(&self.0).reload_if_needed();
+    }
+
+    /// Read the list again, trusted or not (`ConnectionStore.load()`).
+    pub fn load(&self) {
+        lock(&self.0).load();
+    }
+
+    /// Remove what sessions remember about connections no longer saved,
+    /// among `keys` (the preferences' keys): what deletes left behind before
+    /// they took it along (B199). Nothing unless every saved connection can
+    /// be told and the preferences believed
+    /// (`ConnectionStore::sweep_session_memory`). The keys removed.
+    pub fn sweep_session_memory(&self, keys: Vec<String>) -> Vec<String> {
+        lock(&self.0).sweep_session_memory(keys.iter().map(String::as_str))
+    }
+
+    /// Every id saved on this device, shown or carried; `None` when that
+    /// can't be known (see `ConnectionStore::saved_ids`).
+    pub fn saved_ids(&self) -> Option<Vec<String>> {
+        lock(&self.0)
+            .saved_ids()
+            .map(|ids| ids.iter().map(ToString::to_string).collect())
+    }
+
+    /// Every keychain ref a saved connection holds, the carried ones' too;
+    /// `None` when that can't be known (`ConnectionStore::keychain_refs`,
+    /// B232). `excluding` leaves one connection out.
+    pub fn keychain_refs(
+        &self,
+        excluding: Option<String>,
+    ) -> Result<Option<Vec<String>>, StoreError> {
+        let excluding = excluding.as_deref().map(uuid).transpose()?;
+        Ok(lock(&self.0)
+            .keychain_refs(excluding)
+            .map(|refs| refs.into_iter().collect()))
+    }
+
+    /// The names of the saved connections that sign in with key `key` (or
+    /// name its keychain item `keychain_ref`), carried ones included; `None`
+    /// when that can't be known (`ConnectionStore::names_using_key`).
+    pub fn names_using_key(
+        &self,
+        key: String,
+        keychain_ref: Option<String>,
+    ) -> Result<Option<Vec<String>>, StoreError> {
+        let key = uuid(&key)?;
+        Ok(lock(&self.0).names_using_key(key, keychain_ref.as_deref()))
+    }
+
+    /// Delete connection `id`, and its keychain item once no other
+    /// connection and no key record names it (`secrets::delete_connection`,
+    /// B232). The record goes whatever becomes of the item.
+    pub fn delete_releasing_secret(
+        &self,
+        id: String,
+        keys: Arc<KeyStoreHandle>,
+        keychain: Arc<dyn KeychainHost>,
+    ) -> Result<StoreSecretFate, StoreError> {
+        let id = uuid(&id)?;
+        // Connections, then keys: the order every two-store call locks in.
+        let mut connections = lock(&self.0);
+        let mut keys = lock(&keys.0);
+        Ok(
+            match secrets::delete_connection(
+                id,
+                &mut connections,
+                &mut keys,
+                &HostKeychain(keychain),
+            ) {
+                secrets::ItemFate::Deleted => StoreSecretFate::Deleted,
+                secrets::ItemFate::Kept => StoreSecretFate::Kept,
+                secrets::ItemFate::Unknown => StoreSecretFate::Unknown,
+                secrets::ItemFate::Failed(error) => StoreSecretFate::Failed {
+                    message: error.to_string(),
+                },
+            },
+        )
+    }
+}
+
+/// What became of a deleted connection's keychain item.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Enum)]
+pub enum StoreSecretFate {
+    /// Deleted: nothing else named it.
+    Deleted,
+    /// Kept: something else names it (or there was none).
+    Kept,
+    /// Kept: what else names it can't be told now.
+    Unknown,
+    /// The keychain wouldn't delete it.
+    Failed { message: String },
+}
+
+// MARK: - SSH keys
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum KeySource {
+    SecureEnclave,
+    Generated,
+    Imported,
+    Hardware,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum KeyAlgorithm {
+    Ed25519,
+    EcdsaSk,
+    Rsa,
+    SeP256,
+    Ecdsa,
+}
+
+/// One key's metadata (`SSHKeyRecord`); the private half is only ever its
+/// keychain account.
+#[derive(Debug, Clone, PartialEq, uniffi::Record)]
+pub struct KeyRecord {
+    pub id: String,
+    pub name: String,
+    pub algorithm: KeyAlgorithm,
+    pub bits: Option<i64>,
+    pub comment: String,
+    pub fingerprint: String,
+    pub public_key: String,
+    pub source: KeySource,
+    pub bound_hosts: Vec<String>,
+    pub keychain_ref: Option<String>,
+    pub require_biometry: bool,
+    pub created_at: f64,
+    pub last_used_at: Option<f64>,
+    /// `SE · P256`, `RSA-2048`, `ED25519`… (read only).
+    pub badge_text: String,
+}
+
+fn key_algorithm(a: ssh_keys::SshKeyAlgorithm) -> KeyAlgorithm {
+    match a {
+        ssh_keys::SshKeyAlgorithm::Ed25519 => KeyAlgorithm::Ed25519,
+        ssh_keys::SshKeyAlgorithm::EcdsaSk => KeyAlgorithm::EcdsaSk,
+        ssh_keys::SshKeyAlgorithm::Rsa4096 => KeyAlgorithm::Rsa,
+        ssh_keys::SshKeyAlgorithm::SeP256 => KeyAlgorithm::SeP256,
+        ssh_keys::SshKeyAlgorithm::Ecdsa => KeyAlgorithm::Ecdsa,
+    }
+}
+
+impl From<&SshKeyRecord> for KeyRecord {
+    fn from(k: &SshKeyRecord) -> Self {
+        Self {
+            id: k.id.to_string(),
+            name: k.name.clone(),
+            algorithm: key_algorithm(k.algorithm),
+            bits: k.bits,
+            comment: k.comment.clone(),
+            fingerprint: k.fingerprint.clone(),
+            public_key: k.public_key.clone(),
+            source: match k.source {
+                ssh_keys::SshKeySource::SecureEnclave => KeySource::SecureEnclave,
+                ssh_keys::SshKeySource::Generated => KeySource::Generated,
+                ssh_keys::SshKeySource::Imported => KeySource::Imported,
+                ssh_keys::SshKeySource::Hardware => KeySource::Hardware,
+            },
+            bound_hosts: k.bound_hosts.clone(),
+            keychain_ref: k.keychain_ref.clone(),
+            require_biometry: k.require_biometry,
+            created_at: k.created_at.since_reference(),
+            last_used_at: k.last_used_at.map(Date::since_reference),
+            badge_text: k.badge_text(),
+        }
+    }
+}
+
+impl TryFrom<KeyRecord> for SshKeyRecord {
+    type Error = StoreError;
+
+    fn try_from(k: KeyRecord) -> Result<Self, StoreError> {
+        let algorithm = match k.algorithm {
+            KeyAlgorithm::Ed25519 => ssh_keys::SshKeyAlgorithm::Ed25519,
+            KeyAlgorithm::EcdsaSk => ssh_keys::SshKeyAlgorithm::EcdsaSk,
+            KeyAlgorithm::Rsa => ssh_keys::SshKeyAlgorithm::Rsa4096,
+            KeyAlgorithm::SeP256 => ssh_keys::SshKeyAlgorithm::SeP256,
+            KeyAlgorithm::Ecdsa => ssh_keys::SshKeyAlgorithm::Ecdsa,
+        };
+        let source = match k.source {
+            KeySource::SecureEnclave => ssh_keys::SshKeySource::SecureEnclave,
+            KeySource::Generated => ssh_keys::SshKeySource::Generated,
+            KeySource::Imported => ssh_keys::SshKeySource::Imported,
+            KeySource::Hardware => ssh_keys::SshKeySource::Hardware,
+        };
+        let mut record =
+            SshKeyRecord::new(uuid(&k.id)?, &k.name, algorithm, source, Date(k.created_at));
+        record.bits = k.bits;
+        record.comment = k.comment;
+        record.fingerprint = k.fingerprint;
+        record.public_key = k.public_key;
+        record.bound_hosts = k.bound_hosts;
+        record.keychain_ref = k.keychain_ref;
+        record.require_biometry = k.require_biometry;
+        record.last_used_at = k.last_used_at.map(Date);
+        Ok(record)
+    }
+}
+
+/// The key records (`SSHKeyStore`).
+#[derive(uniffi::Object)]
+pub struct KeyStoreHandle(Mutex<SshKeyStore>);
+
+#[uniffi::export]
+impl KeyStoreHandle {
+    #[uniffi::constructor]
+    pub fn new(host: Arc<dyn PreferencesHost>, mode: ReadinessMode) -> Arc<Self> {
+        Arc::new(Self(Mutex::new(SshKeyStore::new(
+            defaults(host),
+            readiness(mode),
+        ))))
+    }
+
+    pub fn keys(&self) -> Vec<KeyRecord> {
+        lock(&self.0).keys().iter().map(Into::into).collect()
+    }
+
+    pub fn is_authoritative(&self) -> bool {
+        lock(&self.0).is_authoritative()
+    }
+
+    pub fn add(&self, record: KeyRecord) -> Result<(), StoreError> {
+        lock(&self.0).add(record.try_into()?);
+        Ok(())
+    }
+
+    /// The record alone; deleting a key is [`Self::delete_key`].
+    pub fn remove(&self, id: String) -> Result<(), StoreError> {
+        lock(&self.0).remove(uuid(&id)?);
+        Ok(())
+    }
+
+    /// Every keychain ref a key record holds, the carried ones' too; `None`
+    /// when that can't be known (`SshKeyStore::keychain_refs`, B232).
+    /// `excluding` leaves one record out.
+    pub fn keychain_refs(
+        &self,
+        excluding: Option<String>,
+    ) -> Result<Option<Vec<String>>, StoreError> {
+        let excluding = excluding.as_deref().map(uuid).transpose()?;
+        Ok(lock(&self.0)
+            .keychain_refs(excluding)
+            .map(|refs| refs.into_iter().collect()))
+    }
+
+    pub fn reload_if_needed(&self) {
+        lock(&self.0).reload_if_needed();
+    }
+
+    /// What deleting key `id` would do now: whether a saved connection
+    /// still signs in with it (B232).
+    pub fn check_delete(
+        &self,
+        id: String,
+        connections: Arc<ConnectionStoreHandle>,
+    ) -> Result<StoreKeyCheck, StoreError> {
+        let id = uuid(&id)?;
+        let mut connections = lock(&connections.0);
+        let mut keys = lock(&self.0);
+        Ok(match secrets::check_key(id, &mut keys, &mut connections) {
+            None => StoreKeyCheck::NotFound,
+            Some(secrets::KeyCheck::Free) => StoreKeyCheck::Free,
+            Some(secrets::KeyCheck::InUse(names)) => StoreKeyCheck::InUse { connections: names },
+            Some(secrets::KeyCheck::Unknown) => StoreKeyCheck::Unknown,
+        })
+    }
+
+    /// Delete key `id`: its private key from `keychain`, then its record —
+    /// unless a saved connection still signs in with it, its users can't be
+    /// told, or the keychain keeps the item (B232).
+    pub fn delete_key(
+        &self,
+        id: String,
+        connections: Arc<ConnectionStoreHandle>,
+        keychain: Arc<dyn KeychainHost>,
+    ) -> Result<StoreKeyDeletion, StoreError> {
+        let id = uuid(&id)?;
+        let mut connections = lock(&connections.0);
+        let mut keys = lock(&self.0);
+        Ok(
+            match secrets::delete_key(id, &mut keys, &mut connections, &HostKeychain(keychain)) {
+                secrets::KeyDeletion::Deleted => StoreKeyDeletion::Deleted,
+                secrets::KeyDeletion::InUse(names) => {
+                    StoreKeyDeletion::InUse { connections: names }
+                }
+                secrets::KeyDeletion::Unknown => StoreKeyDeletion::Unknown,
+                secrets::KeyDeletion::NotFound => StoreKeyDeletion::NotFound,
+                secrets::KeyDeletion::Keychain(error) => StoreKeyDeletion::KeychainFailed {
+                    message: error.to_string(),
+                },
+            },
+        )
+    }
+}
+
+/// What deleting a key would do now.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Enum)]
+pub enum StoreKeyCheck {
+    /// Nothing uses it.
+    Free,
+    /// These saved connections still sign in with it.
+    InUse {
+        connections: Vec<String>,
+    },
+    /// Which connections use it can't be told now.
+    Unknown,
+    NotFound,
+}
+
+/// What deleting a key did.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Enum)]
+pub enum StoreKeyDeletion {
+    /// The record is gone, and its private key with it.
+    Deleted,
+    /// These saved connections still sign in with it: nothing was deleted.
+    InUse {
+        connections: Vec<String>,
+    },
+    /// Which connections use it can't be told now: nothing was deleted.
+    Unknown,
+    NotFound,
+    /// The keychain kept the private key; the record stays.
+    KeychainFailed {
+        message: String,
+    },
+}
+
+/// What looking for orphaned private keys did.
+#[derive(Debug, Clone, PartialEq, uniffi::Enum)]
+pub enum StoreRecovery {
+    /// These records were added (none, often); nothing was deleted.
+    Recovered { keys: Vec<KeyRecord> },
+    /// Which items are named can't be told yet: nothing was looked at.
+    Unknown,
+    /// The keychain couldn't list its items.
+    KeychainFailed { message: String },
+}
+
+/// Give the private keys earlier builds orphaned key records again:
+/// `moshpit.secret.` items no saved connection and no key record names, not
+/// made in this process, read without asking, that read as an unencrypted
+/// OpenSSH private key (`secrets::recover_orphans`, B232). Nothing is
+/// deleted: an orphan may be the only copy of a key whose record a lost list
+/// took with it. `name_template` is the record's name with `%@` for the
+/// start of its fingerprint (the app's "Recovered key %@", in its language).
+/// The app runs it once a launch, the first time both stores can be
+/// trusted.
+#[uniffi::export]
+pub fn store_recover_orphaned_keys(
+    connections: Arc<ConnectionStoreHandle>,
+    keys: Arc<KeyStoreHandle>,
+    keychain: Arc<dyn KeychainHost>,
+    name_template: String,
+    now: f64,
+) -> StoreRecovery {
+    let connections = lock(&connections.0);
+    let mut keys = lock(&keys.0);
+    let name = |facts: &secrets::KeyFacts| {
+        name_template.replace("%@", &secrets::short_fingerprint(&facts.fingerprint))
+    };
+    match secrets::recover_orphans(
+        &connections,
+        &mut keys,
+        &HostKeychain(keychain),
+        &describe_private_key,
+        &name,
+        Date(now),
+    ) {
+        Ok(records) => StoreRecovery::Recovered {
+            keys: records.iter().map(Into::into).collect(),
+        },
+        Err(secrets::RecoveryError::Unknown) => StoreRecovery::Unknown,
+        Err(secrets::RecoveryError::Keychain(error)) => StoreRecovery::KeychainFailed {
+            message: error.to_string(),
+        },
+    }
+}
+
+/// What a stored secret is, if it is an unencrypted private key of a kind
+/// that signs in, in any form the app reads (the facts a key record shows;
+/// `moshpit_ssh::keyfile::describe_stored`, as the app's Swift recovery
+/// asks it). A Secure Enclave key's handle can't be read here (the app's
+/// Swift recovery reads those); a password or a key behind a passphrase is
+/// `None`.
+fn describe_private_key(secret: &[u8]) -> Option<secrets::KeyFacts> {
+    let key = moshpit_ssh::keyfile::describe_stored(std::str::from_utf8(secret).ok()?)?;
+    Some(secrets::KeyFacts {
+        algorithm: key.record_algorithm(),
+        source: ssh_keys::SshKeySource::Imported,
+        bits: key.bits,
+        public_key: key.info.public_key,
+        fingerprint: key.info.fingerprint,
+    })
+}
+
+/// The modulus size of the `ssh-rsa` key on an `authorized_keys` line.
+#[uniffi::export]
+pub fn store_rsa_bits(public_key_line: String) -> Option<i64> {
+    ssh_keys::rsa_bits_of_public_key_line(&public_key_line)
+}
+
+// MARK: - Shortcuts
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+// Named for the bindings so it can live beside the app's own `ShortcutKind` in
+// one Swift module (the app compiles the generated file into itself).
+#[uniffi(name = "StoreShortcutKind")]
+pub enum ShortcutKind {
+    KeyCombo,
+    Text,
+    Command,
+    Dpad,
+    Arrows,
+    Paste,
+    Scroll,
+    Ctrl,
+    Mic,
+    Image,
+    Files,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+// Named for the bindings so it can live beside the app's own `ShortcutModifier` in
+// one Swift module (the app compiles the generated file into itself).
+#[uniffi(name = "StoreShortcutModifier")]
+pub enum ShortcutModifier {
+    Ctrl,
+    Alt,
+    Shift,
+    Cmd,
+}
+
+/// One chip (`TerminalShortcut`).
+#[derive(Debug, Clone, PartialEq, uniffi::Record)]
+pub struct ShortcutRecord {
+    pub id: String,
+    pub kind: ShortcutKind,
+    /// A set, ⌃⌥⇧⌘ order.
+    pub modifiers: Vec<ShortcutModifier>,
+    pub key: String,
+    pub payload: String,
+    pub append_return: bool,
+    pub repeat_on_hold: bool,
+    pub chip_label: String,
+    pub summary: String,
+    pub color_id: String,
+    /// A set: empty is every host.
+    pub scope_hosts: Vec<String>,
+    pub only_in_tmux: bool,
+    pub is_builtin: bool,
+    pub in_toolbar: bool,
+}
+
+const KINDS: [(shortcuts::ShortcutKind, ShortcutKind); 11] = [
+    (shortcuts::ShortcutKind::KeyCombo, ShortcutKind::KeyCombo),
+    (shortcuts::ShortcutKind::Text, ShortcutKind::Text),
+    (shortcuts::ShortcutKind::Command, ShortcutKind::Command),
+    (shortcuts::ShortcutKind::Dpad, ShortcutKind::Dpad),
+    (shortcuts::ShortcutKind::Arrows, ShortcutKind::Arrows),
+    (shortcuts::ShortcutKind::Paste, ShortcutKind::Paste),
+    (shortcuts::ShortcutKind::Scroll, ShortcutKind::Scroll),
+    (shortcuts::ShortcutKind::Ctrl, ShortcutKind::Ctrl),
+    (shortcuts::ShortcutKind::Mic, ShortcutKind::Mic),
+    (shortcuts::ShortcutKind::Image, ShortcutKind::Image),
+    (shortcuts::ShortcutKind::Files, ShortcutKind::Files),
+];
+
+const MODIFIERS: [(shortcuts::ShortcutModifier, ShortcutModifier); 4] = [
+    (shortcuts::ShortcutModifier::Ctrl, ShortcutModifier::Ctrl),
+    (shortcuts::ShortcutModifier::Alt, ShortcutModifier::Alt),
+    (shortcuts::ShortcutModifier::Shift, ShortcutModifier::Shift),
+    (shortcuts::ShortcutModifier::Cmd, ShortcutModifier::Cmd),
+];
+
+impl From<&TerminalShortcut> for ShortcutRecord {
+    fn from(s: &TerminalShortcut) -> Self {
+        Self {
+            id: s.id.to_string(),
+            kind: KINDS
+                .iter()
+                .find(|(k, _)| *k == s.kind)
+                .expect("every kind")
+                .1,
+            modifiers: s
+                .modifiers
+                .iter()
+                .map(|m| {
+                    MODIFIERS
+                        .iter()
+                        .find(|(r, _)| r == m)
+                        .expect("every modifier")
+                        .1
+                })
+                .collect(),
+            key: s.key.clone(),
+            payload: s.payload.clone(),
+            append_return: s.append_return,
+            repeat_on_hold: s.repeat_on_hold,
+            chip_label: s.chip_label.clone(),
+            summary: s.summary.clone(),
+            color_id: s.color_id.clone(),
+            scope_hosts: s.scope_hosts.clone(),
+            only_in_tmux: s.only_in_tmux,
+            is_builtin: s.is_builtin,
+            in_toolbar: s.in_toolbar,
+        }
+    }
+}
+
+impl TryFrom<ShortcutRecord> for TerminalShortcut {
+    type Error = StoreError;
+
+    fn try_from(s: ShortcutRecord) -> Result<Self, StoreError> {
+        let mut shortcut = TerminalShortcut::new(uuid(&s.id)?);
+        shortcut.kind = KINDS
+            .iter()
+            .find(|(_, k)| *k == s.kind)
+            .expect("every kind")
+            .0;
+        shortcut.modifiers = s
+            .modifiers
+            .iter()
+            .map(|m| {
+                MODIFIERS
+                    .iter()
+                    .find(|(_, f)| f == m)
+                    .expect("every modifier")
+                    .0
+            })
+            .collect::<BTreeSet<_>>();
+        shortcut.key = s.key;
+        shortcut.payload = s.payload;
+        shortcut.append_return = s.append_return;
+        shortcut.repeat_on_hold = s.repeat_on_hold;
+        shortcut.chip_label = s.chip_label;
+        shortcut.summary = s.summary;
+        shortcut.color_id = s.color_id;
+        shortcut.set_scope_hosts(s.scope_hosts);
+        shortcut.only_in_tmux = s.only_in_tmux;
+        shortcut.is_builtin = s.is_builtin;
+        shortcut.in_toolbar = s.in_toolbar;
+        Ok(shortcut)
+    }
+}
+
+/// The shortcut bar (`ShortcutStore`); order is toolbar order.
+#[derive(uniffi::Object)]
+pub struct ShortcutStoreHandle(Mutex<ShortcutStore>);
+
+#[uniffi::export]
+impl ShortcutStoreHandle {
+    #[uniffi::constructor]
+    pub fn new(host: Arc<dyn PreferencesHost>, mode: ReadinessMode) -> Arc<Self> {
+        Arc::new(Self(Mutex::new(ShortcutStore::new(
+            defaults(host),
+            readiness(mode),
+        ))))
+    }
+
+    pub fn shortcuts(&self) -> Vec<ShortcutRecord> {
+        lock(&self.0).shortcuts().iter().map(Into::into).collect()
+    }
+
+    pub fn toolbar(&self) -> Vec<ShortcutRecord> {
+        lock(&self.0)
+            .toolbar()
+            .into_iter()
+            .map(Into::into)
+            .collect()
+    }
+
+    /// The toolbar for one connection (its name, if known).
+    pub fn toolbar_for(
+        &self,
+        host_name: Option<String>,
+        in_multiplexer: bool,
+    ) -> Vec<ShortcutRecord> {
+        lock(&self.0)
+            .toolbar_for(host_name.as_deref(), in_multiplexer)
+            .into_iter()
+            .map(Into::into)
+            .collect()
+    }
+
+    pub fn is_authoritative(&self) -> bool {
+        lock(&self.0).is_authoritative()
+    }
+
+    /// Adds `shortcut`; whether it went on the toolbar (false: the bar was
+    /// full, it is under AVAILABLE, and the editor says so, B252).
+    pub fn add(&self, shortcut: ShortcutRecord) -> Result<bool, StoreError> {
+        Ok(lock(&self.0).add(shortcut.try_into()?))
+    }
+
+    pub fn update(&self, shortcut: ShortcutRecord) -> Result<(), StoreError> {
+        lock(&self.0).update(shortcut.try_into()?);
+        Ok(())
+    }
+
+    pub fn remove(&self, id: String) -> Result<(), StoreError> {
+        lock(&self.0).remove(uuid(&id)?);
+        Ok(())
+    }
+
+    /// false when it can't go on: the bar is full (B233), or no such
+    /// shortcut.
+    pub fn add_to_toolbar(&self, id: String) -> Result<bool, StoreError> {
+        Ok(lock(&self.0).add_to_toolbar(uuid(&id)?))
+    }
+
+    /// The bar holds its twelve: ＋ adds nothing until one comes off.
+    pub fn toolbar_is_full(&self) -> bool {
+        lock(&self.0).toolbar_is_full()
+    }
+
+    pub fn remove_from_toolbar(&self, id: String) -> Result<(), StoreError> {
+        lock(&self.0).remove_from_toolbar(uuid(&id)?);
+        Ok(())
+    }
+
+    /// Move toolbar positions `from` to before toolbar position `to`.
+    pub fn move_in_toolbar(&self, from: Vec<u32>, to: u32) {
+        let from: BTreeSet<usize> = from.into_iter().map(|i| i as usize).collect();
+        lock(&self.0).move_in_toolbar(&from, to as usize);
+    }
+
+    pub fn restore_defaults(&self) {
+        lock(&self.0).restore_defaults();
+    }
+
+    pub fn reload_if_needed(&self) {
+        lock(&self.0).reload_if_needed();
+    }
+}
+
+/// The writes a tap on `shortcut` makes, in order (none for the chips the
+/// caller resolves).
+#[uniffi::export]
+pub fn store_shortcut_stages(shortcut: ShortcutRecord) -> Result<Vec<Vec<u8>>, StoreError> {
+    Ok(TerminalShortcut::try_from(shortcut)?.encoded_stages())
+}
+
+// MARK: - Terminal themes
+
+/// A terminal colour scheme (`TerminalTheme`), colours as bare hex.
+#[derive(Debug, Clone, PartialEq, uniffi::Record)]
+pub struct ThemeRecord {
+    pub id: String,
+    pub name: String,
+    pub background_hex: String,
+    pub foreground_hex: String,
+    pub cursor_hex: String,
+    pub ansi_hex: Vec<String>,
+    pub bright_hex: Option<Vec<String>>,
+    pub is_built_in: bool,
+}
+
+impl From<&TerminalTheme> for ThemeRecord {
+    fn from(t: &TerminalTheme) -> Self {
+        Self {
+            id: t.id.clone(),
+            name: t.name.clone(),
+            background_hex: t.background_hex.clone(),
+            foreground_hex: t.foreground_hex.clone(),
+            cursor_hex: t.cursor_hex.clone(),
+            ansi_hex: t.ansi_hex.clone(),
+            bright_hex: t.bright_hex.clone(),
+            is_built_in: t.is_built_in,
+        }
+    }
+}
+
+impl From<ThemeRecord> for TerminalTheme {
+    fn from(t: ThemeRecord) -> Self {
+        Self {
+            id: t.id,
+            name: t.name,
+            background_hex: t.background_hex,
+            foreground_hex: t.foreground_hex,
+            cursor_hex: t.cursor_hex,
+            ansi_hex: t.ansi_hex,
+            bright_hex: t.bright_hex,
+            is_built_in: t.is_built_in,
+        }
+    }
+}
+
+/// Why an import failed.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Error)]
+pub enum ThemeImportError {
+    NotJson,
+    NoThemes,
+}
+
+impl std::fmt::Display for ThemeImportError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::NotJson => "not theme JSON",
+            Self::NoThemes => "no themes in that JSON",
+        })
+    }
+}
+
+impl std::error::Error for ThemeImportError {}
+
+/// The terminal themes (`ThemeStore`): built-ins and the user's own.
+#[derive(uniffi::Object)]
+pub struct ThemeStoreHandle(Mutex<ThemeStore>);
+
+#[uniffi::export]
+impl ThemeStoreHandle {
+    #[uniffi::constructor]
+    pub fn new(host: Arc<dyn PreferencesHost>, mode: ReadinessMode) -> Arc<Self> {
+        Arc::new(Self(Mutex::new(ThemeStore::new(
+            defaults(host),
+            readiness(mode),
+        ))))
+    }
+
+    /// The name a theme saved without one gets, localized.
+    pub fn set_untitled_name(&self, untitled: String) {
+        lock(&self.0).set_untitled_name(&untitled);
+    }
+
+    pub fn custom_themes(&self) -> Vec<ThemeRecord> {
+        lock(&self.0)
+            .custom_themes()
+            .iter()
+            .map(Into::into)
+            .collect()
+    }
+
+    pub fn all_themes(&self) -> Vec<ThemeRecord> {
+        lock(&self.0).all_themes().iter().map(Into::into).collect()
+    }
+
+    /// The theme with this id, or the default.
+    pub fn theme(&self, id: String) -> ThemeRecord {
+        (&lock(&self.0).theme(&id)).into()
+    }
+
+    pub fn is_custom(&self, id: String) -> bool {
+        lock(&self.0).is_custom(&id)
+    }
+
+    pub fn is_authoritative(&self) -> bool {
+        lock(&self.0).is_authoritative()
+    }
+
+    pub fn save(&self, theme: ThemeRecord) {
+        lock(&self.0).save(theme.into());
+    }
+
+    pub fn delete(&self, id: String) {
+        lock(&self.0).delete(&id);
+    }
+
+    pub fn remove_all_custom(&self) {
+        lock(&self.0).remove_all_custom();
+    }
+
+    pub fn duplicate(&self, theme: ThemeRecord) -> ThemeRecord {
+        (&lock(&self.0).duplicate(&theme.into())).into()
+    }
+
+    pub fn make_draft(&self) -> ThemeRecord {
+        (&lock(&self.0).make_draft()).into()
+    }
+
+    pub fn import_themes(&self, json: String) -> Result<Vec<ThemeRecord>, ThemeImportError> {
+        lock(&self.0)
+            .import_themes(&json)
+            .map(|themes| themes.iter().map(Into::into).collect())
+            .map_err(|error| match error {
+                themes::ImportError::NotJson => ThemeImportError::NotJson,
+                themes::ImportError::NoThemes => ThemeImportError::NoThemes,
+            })
+    }
+
+    pub fn reload_if_needed(&self) {
+        lock(&self.0).reload_if_needed();
+    }
+}
+
+/// One theme as pretty JSON with sorted keys (the export).
+#[uniffi::export]
+pub fn store_theme_export_json(theme: ThemeRecord) -> String {
+    ThemeStore::export_json(&theme.into())
+}
+
+/// The sixteen colours a theme paints with: ANSI 0–7, then 8–15 (each
+/// override, or derived).
+#[uniffi::export]
+pub fn store_theme_palette(theme: ThemeRecord) -> Vec<String> {
+    let theme: TerminalTheme = theme.into();
+    let base = AnsiSlot::ALL.iter().map(|&slot| theme.ansi(slot));
+    let bright = AnsiSlot::ALL.iter().map(|&slot| theme.bright(slot));
+    base.chain(bright).collect()
+}
+
+/// `Color.normalizedHex`.
+#[uniffi::export]
+pub fn store_normalized_hex(hex: String) -> String {
+    themes::normalized_hex(&hex)
+}
+
+/// `Color.blend(_:toward:by:)`.
+#[uniffi::export]
+pub fn store_blend_hex(hex: String, toward: String, by: f64) -> String {
+    themes::blend(&hex, &toward, by)
+}
+
+// MARK: - Accent themes and icons
+
+/// An accent theme (`AppTheme`), colours as bare hex.
+#[derive(Debug, Clone, PartialEq, uniffi::Record)]
+pub struct AccentThemeRecord {
+    pub id: String,
+    pub name: String,
+    pub accent_hex: String,
+    pub accent_pressed_hex: String,
+    pub screen_bg_hex: String,
+    pub terminal_bg_hex: String,
+    pub is_built_in: bool,
+}
+
+impl From<&AppTheme> for AccentThemeRecord {
+    fn from(t: &AppTheme) -> Self {
+        Self {
+            id: t.id.clone(),
+            name: t.name.clone(),
+            accent_hex: t.accent_hex.clone(),
+            accent_pressed_hex: t.accent_pressed_hex.clone(),
+            screen_bg_hex: t.screen_bg_hex.clone(),
+            terminal_bg_hex: t.terminal_bg_hex.clone(),
+            is_built_in: t.is_built_in,
+        }
+    }
+}
+
+/// A custom accent theme from one accent, the rest derived.
+#[uniffi::export]
+pub fn store_accent_theme(id: String, name: String, accent_hex: String) -> AccentThemeRecord {
+    (&AppTheme::custom(&id, &name, &accent_hex)).into()
+}
+
+/// The user's accent themes (`AppThemeStore`).
+#[derive(uniffi::Object)]
+pub struct AccentThemeStoreHandle(Mutex<AppThemeStore>);
+
+#[uniffi::export]
+impl AccentThemeStoreHandle {
+    #[uniffi::constructor]
+    pub fn new(host: Arc<dyn PreferencesHost>, mode: ReadinessMode) -> Arc<Self> {
+        Arc::new(Self(Mutex::new(AppThemeStore::new(
+            defaults(host),
+            readiness(mode),
+        ))))
+    }
+
+    pub fn set_untitled_name(&self, untitled: String) {
+        lock(&self.0).set_untitled_name(&untitled);
+    }
+
+    pub fn custom_themes(&self) -> Vec<AccentThemeRecord> {
+        lock(&self.0)
+            .custom_themes()
+            .iter()
+            .map(Into::into)
+            .collect()
+    }
+
+    /// Built-ins, then the user's own.
+    pub fn all(&self) -> Vec<AccentThemeRecord> {
+        lock(&self.0).all().iter().map(Into::into).collect()
+    }
+
+    /// The theme with this id, or Signal Room.
+    pub fn theme(&self, id: String) -> AccentThemeRecord {
+        (&lock(&self.0).theme(&id)).into()
+    }
+
+    pub fn is_authoritative(&self) -> bool {
+        lock(&self.0).is_authoritative()
+    }
+
+    /// Save a custom theme (its derived colours are rebuilt from the accent;
+    /// a built-in is refused).
+    pub fn save(&self, theme: AccentThemeRecord) {
+        let mut rebuilt = AppTheme::custom(&theme.id, &theme.name, &theme.accent_hex);
+        rebuilt.is_built_in = theme.is_built_in;
+        lock(&self.0).save(&rebuilt);
+    }
+
+    pub fn delete(&self, id: String) {
+        lock(&self.0).delete(&id);
+    }
+
+    pub fn remove_all_custom(&self) {
+        lock(&self.0).remove_all_custom();
+    }
+
+    pub fn make_draft(&self, based_on: AccentThemeRecord) -> AccentThemeRecord {
+        let base = AppTheme::custom(&based_on.id, &based_on.name, &based_on.accent_hex);
+        (&lock(&self.0).make_draft(&base)).into()
+    }
+
+    pub fn reload_if_needed(&self) {
+        lock(&self.0).reload_if_needed();
+    }
+}
+
+/// One bundled app icon.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct IconOption {
+    pub id: String,
+    pub name: String,
+    /// iOS's alternate icon name; `None` for the primary.
+    pub alternate_name: Option<String>,
+    pub preview_asset: String,
+}
+
+impl From<app_themes::AppIconOption> for IconOption {
+    fn from(o: app_themes::AppIconOption) -> Self {
+        Self {
+            id: o.id.to_owned(),
+            name: o.name.to_owned(),
+            alternate_name: o.alternate_name.map(str::to_owned),
+            preview_asset: o.preview_asset.to_owned(),
+        }
+    }
+}
+
+#[uniffi::export]
+pub fn store_app_icons() -> Vec<IconOption> {
+    app_themes::icons::ALL.into_iter().map(Into::into).collect()
+}
+
+/// The icon with this id, or the primary (B13).
+#[uniffi::export]
+pub fn store_app_icon(id: String) -> IconOption {
+    app_themes::icons::option(&id).into()
+}
+
+// MARK: - Settings
+
+/// A setting's value.
+#[derive(Debug, Clone, PartialEq, uniffi::Enum)]
+pub enum SettingValue {
+    Bool { value: bool },
+    Int { value: i64 },
+    Double { value: f64 },
+    String { value: String },
+    StringSet { values: Vec<String> },
+}
+
+impl From<settings::SettingValue> for SettingValue {
+    fn from(v: settings::SettingValue) -> Self {
+        match v {
+            settings::SettingValue::Bool(value) => Self::Bool { value },
+            settings::SettingValue::Int(value) => Self::Int { value },
+            settings::SettingValue::Double(value) => Self::Double { value },
+            settings::SettingValue::String(value) => Self::String { value },
+            settings::SettingValue::StringSet(values) => Self::StringSet { values },
+        }
+    }
+}
+
+impl From<SettingValue> for settings::SettingValue {
+    fn from(v: SettingValue) -> Self {
+        match v {
+            SettingValue::Bool { value } => Self::Bool(value),
+            SettingValue::Int { value } => Self::Int(value),
+            SettingValue::Double { value } => Self::Double(value),
+            SettingValue::String { value } => Self::String(value),
+            SettingValue::StringSet { values } => Self::StringSet(values),
+        }
+    }
+}
+
+/// The two switches the notification service reads.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Record)]
+pub struct PushPrefsRecord {
+    pub show_detail: bool,
+    pub sound: bool,
+}
+
+/// The names of every setting (`AppSettings`' properties), in order.
+#[uniffi::export]
+pub fn store_setting_names() -> Vec<String> {
+    settings::ALL.iter().map(|s| s.name.to_owned()).collect()
+}
+
+/// The settings (`AppSettings`), read live.
+#[derive(uniffi::Object)]
+pub struct SettingsHandle(Mutex<Settings>);
+
+#[uniffi::export]
+impl SettingsHandle {
+    /// `mirror` is where the notification service reads its two switches
+    /// (iOS: the App Group's preferences).
+    #[uniffi::constructor]
+    pub fn new(
+        host: Arc<dyn PreferencesHost>,
+        mirror: Option<Arc<dyn PreferencesHost>>,
+        mode: ReadinessMode,
+        debug_build: bool,
+    ) -> Arc<Self> {
+        let mut settings = Settings::new(defaults(host), mirror.map(defaults), readiness(mode));
+        settings.set_debug_build(debug_build);
+        Arc::new(Self(Mutex::new(settings)))
+    }
+
+    /// One setting as the app reads it (an enum-backed one checked: an
+    /// unknown stored value reads as the default).
+    pub fn get(&self, name: String) -> Result<SettingValue, StoreError> {
+        let settings = lock(&self.0);
+        let spec =
+            settings::spec_named(&name).ok_or(StoreError::InvalidSetting { name: name.clone() })?;
+        let value = match spec.name {
+            "cursorShape" => {
+                settings::SettingValue::String(settings.cursor_shape().raw_value().to_owned())
+            }
+            "predictMode" => {
+                settings::SettingValue::String(settings.predict_mode().raw_value().to_owned())
+            }
+            "voiceEngine" => {
+                settings::SettingValue::String(settings.voice_engine().raw_value().to_owned())
+            }
+            "pushRelayURL" => settings::SettingValue::String(settings.push_relay_url()),
+            _ => settings.get(spec),
+        };
+        Ok(value.into())
+    }
+
+    /// Write one setting as its setter does.
+    pub fn set(&self, name: String, value: SettingValue) -> Result<(), StoreError> {
+        let settings = lock(&self.0);
+        let spec =
+            settings::spec_named(&name).ok_or(StoreError::InvalidSetting { name: name.clone() })?;
+        if settings.set(spec, value.into()) {
+            Ok(())
+        } else {
+            Err(StoreError::InvalidSetting { name })
+        }
+    }
+
+    /// The setting stored under preferences key `key`, as `AppSettings`'
+    /// getter reads it before its own checks: what is stored, if it is of
+    /// the setting's type, else the default — an enum-backed one's raw
+    /// string unchecked. `None` when no setting has that key.
+    pub fn value(&self, key: String) -> Option<SettingValue> {
+        let spec = settings::ALL.iter().find(|s| s.key == key)?;
+        Some(lock(&self.0).get(spec).into())
+    }
+
+    /// Write the setting stored under `key` as its setter does (and the
+    /// notification service's mirror, for its two switches). False when no
+    /// setting has that key, or `value` is of another type than its own.
+    pub fn set_value(&self, key: String, value: SettingValue) -> bool {
+        let Some(spec) = settings::ALL.iter().find(|s| s.key == key) else {
+            return false;
+        };
+        lock(&self.0).set(spec, value.into())
+    }
+
+    pub fn push_prefs(&self) -> PushPrefsRecord {
+        let prefs = lock(&self.0).push_prefs();
+        PushPrefsRecord {
+            show_detail: prefs.show_detail,
+            sound: prefs.sound,
+        }
+    }
+
+    pub fn reload_if_needed(&self) {
+        lock(&self.0).reload_if_needed();
+    }
+}
+
+// MARK: - Known hosts
+
+/// The trusted map can't be read (or written) now.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Error)]
+pub enum KnownHostsFailure {
+    /// The device is locked: decide nothing yet.
+    Locked,
+    Unavailable {
+        reason: String,
+    },
+}
+
+impl std::fmt::Display for KnownHostsFailure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Locked => f.write_str("known hosts: the device is locked"),
+            Self::Unavailable { reason } => write!(f, "known hosts unreadable: {reason}"),
+        }
+    }
+}
+
+impl std::error::Error for KnownHostsFailure {}
+
+fn known_hosts_failure(error: known_hosts::StoreError) -> KnownHostsFailure {
+    match error {
+        known_hosts::StoreError::Locked => KnownHostsFailure::Locked,
+        known_hosts::StoreError::Unavailable(reason) => KnownHostsFailure::Unavailable { reason },
+    }
+}
+
+/// The trusted host keys in the keychain item `moshpit.knownHosts`.
+#[derive(uniffi::Object)]
+pub struct KnownHostsHandle(KeychainKnownHosts);
+
+#[uniffi::export]
+impl KnownHostsHandle {
+    /// `preferences` answers whether protected data is readable now: "no
+    /// item" read while it isn't — a launch before the first unlock after a
+    /// reboot — is [`KnownHostsFailure::Locked`], not an empty map (B226's
+    /// rule, as the sessions' known hosts apply it). Without it the handle
+    /// read every trusted host as new before the unlock, and the first
+    /// write after it put one entry over all of them (B251).
+    #[uniffi::constructor]
+    pub fn new(
+        keychain: Arc<dyn KeychainHost>,
+        preferences: Arc<dyn PreferencesHost>,
+    ) -> Arc<Self> {
+        let unlocked = HostDefaults(preferences);
+        Arc::new(Self(
+            KeychainKnownHosts::new(Arc::new(HostKeychain(keychain)))
+                .with_unlock_probe(Arc::new(move || unlocked.protected_data_available())),
+        ))
+    }
+
+    /// `host:port` → `SHA256:…`.
+    pub fn read(&self) -> Result<HashMap<String, String>, KnownHostsFailure> {
+        self.0
+            .read()
+            .map(|table| table.into_iter().collect())
+            .map_err(known_hosts_failure)
+    }
+
+    pub fn write(&self, entries: HashMap<String, String>) -> Result<(), KnownHostsFailure> {
+        self.0
+            .write(&entries.into_iter().collect())
+            .map_err(known_hosts_failure)
+    }
+}
+
+/// The map's key for a host: `host:port`.
+#[uniffi::export]
+pub fn store_known_hosts_entry(host: String, port: u16) -> String {
+    known_hosts::entry(&host, port)
+}
+
+// MARK: - Push pairings
+
+/// One paired host (`PushPairing`): dates as seconds since 2001, the
+/// connection id as its upper-case UUID string.
+#[derive(Debug, Clone, PartialEq, uniffi::Record)]
+pub struct PairingRecord {
+    pub connection_id: String,
+    pub host_label: String,
+    pub secret_hex: String,
+    pub send_token: String,
+    pub relay_url: String,
+    pub created_at: f64,
+    pub apns_token: Option<String>,
+    pub apns_env: Option<String>,
+    pub send_token_issued_at: Option<f64>,
+}
+
+impl From<&PushPairing> for PairingRecord {
+    fn from(p: &PushPairing) -> Self {
+        Self {
+            connection_id: p.connection_id.to_string(),
+            host_label: p.host_label.clone(),
+            secret_hex: p.secret_hex.clone(),
+            send_token: p.send_token.clone(),
+            relay_url: p.relay_url.clone(),
+            created_at: p.created_at.since_reference(),
+            apns_token: p.apns_token.clone(),
+            apns_env: p.apns_env.clone(),
+            send_token_issued_at: p.send_token_issued_at.map(Date::since_reference),
+        }
+    }
+}
+
+impl TryFrom<PairingRecord> for PushPairing {
+    type Error = StoreError;
+
+    fn try_from(p: PairingRecord) -> Result<Self, StoreError> {
+        Ok(Self {
+            connection_id: uuid(&p.connection_id)?,
+            host_label: p.host_label,
+            secret_hex: p.secret_hex,
+            send_token: p.send_token,
+            relay_url: p.relay_url,
+            created_at: Date(p.created_at),
+            apns_token: p.apns_token,
+            apns_env: p.apns_env,
+            send_token_issued_at: p.send_token_issued_at.map(Date),
+        })
+    }
+}
+
+/// The pairings file (`PushPairingFile`, round five's B23 rule: read an
+/// entry at a time, carry what can't be read, copy a file that isn't fully
+/// readable aside before writing over it, never write over one that can't
+/// be read) at a path of the host's choosing — on iOS the App Group's
+/// `push-pairings.json`, which the notification service reads. The file's
+/// protection class and backup exclusion are the host's to set.
+#[derive(uniffi::Object)]
+pub struct PushPairingFileHandle(PushPairingFile);
+
+#[uniffi::export]
+impl PushPairingFileHandle {
+    #[uniffi::constructor]
+    pub fn new(path: String) -> Arc<Self> {
+        Arc::new(Self(PushPairingFile::new(path)))
+    }
+
+    /// Where a copy of a file this build couldn't fully read is kept.
+    pub fn backup_path(&self) -> String {
+        self.0.backup_path().to_string_lossy().into_owned()
+    }
+
+    /// The pairings this build can read, in stored order.
+    pub fn read(&self) -> Vec<PairingRecord> {
+        self.0.read().iter().map(Into::into).collect()
+    }
+
+    /// Replace every pairing; true once it reads back.
+    pub fn write(&self, pairings: Vec<PairingRecord>) -> Result<bool, StoreError> {
+        let pairings = pairings
+            .into_iter()
+            .map(PushPairing::try_from)
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(self.0.write(&pairings))
+    }
+
+    /// Replace (or add) one connection's pairing; true once it reads back.
+    pub fn upsert(&self, pairing: PairingRecord) -> Result<bool, StoreError> {
+        Ok(self.0.upsert(&pairing.try_into()?))
+    }
+
+    /// Forget one connection's pairing; true once nothing for it is left.
+    pub fn remove(&self, connection_id: String) -> Result<bool, StoreError> {
+        Ok(self.0.remove(uuid(&connection_id)?))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[derive(Default)]
+    struct Prefs(Mutex<HashMap<String, PlistValue>>);
+
+    impl PreferencesHost for Prefs {
+        fn get(&self, key: String) -> Option<PlistValue> {
+            lock(&self.0).get(&key).cloned()
+        }
+        fn set(&self, key: String, value: Option<PlistValue>) {
+            match value {
+                Some(value) => lock(&self.0).insert(key, value),
+                None => lock(&self.0).remove(&key),
+            };
+        }
+        fn protected_data_available(&self) -> bool {
+            true
+        }
+    }
+
+    #[test]
+    fn a_nested_value_crosses_as_nodes_and_back() {
+        let value = Plist::Array(vec![
+            Plist::Data(vec![1, 2]),
+            Plist::Dictionary(vec![("a".into(), Plist::Array(vec![Plist::Bool(true)]))]),
+            Plist::Double(0.5),
+        ]);
+        let nodes = to_value(&value);
+        assert_eq!(nodes.nodes.len(), 6);
+        assert_eq!(from_value(&nodes), Some(value));
+        // A member that points back up is refused, not followed.
+        let cycle = PlistValue {
+            nodes: vec![PlistNode::Array { members: vec![0] }],
+        };
+        assert_eq!(from_value(&cycle), None);
+    }
+
+    #[test]
+    fn the_stores_work_through_the_host_traits() {
+        let host: Arc<dyn PreferencesHost> = Arc::new(Prefs::default());
+        let store = ConnectionStoreHandle::new(host.clone(), ReadinessMode::System);
+        let mut record: ConnectionRecord =
+            (&ServerConnection::new(Uuid::new_v4(), Date(784_000_000.5))).into();
+        record.name = "box".into();
+        store.add(record.clone()).unwrap();
+        let reread = ConnectionStoreHandle::new(host.clone(), ReadinessMode::System);
+        assert_eq!(reread.connections()[0].name, "box");
+        assert_eq!(reread.connections()[0].created_at, 784_000_000.0);
+        assert!(store.delete("nope".into()).is_err());
+        assert!(store_defaults_readable(host.clone(), ReadinessMode::System));
+
+        let shortcuts = ShortcutStoreHandle::new(host.clone(), ReadinessMode::Always);
+        assert_eq!(shortcuts.toolbar().len(), 8);
+        let two_step = shortcuts
+            .shortcuts()
+            .into_iter()
+            .find(|s| s.chip_label == "⇥⏎")
+            .unwrap();
+        assert_eq!(
+            store_shortcut_stages(two_step).unwrap(),
+            [vec![0x09], vec![0x0D]]
+        );
+
+        let settings = SettingsHandle::new(host.clone(), None, ReadinessMode::Always, false);
+        assert_eq!(
+            settings.get("fontSize".into()).unwrap(),
+            SettingValue::Double { value: 9.0 }
+        );
+        settings
+            .set("fontSize".into(), SettingValue::Double { value: 12.0 })
+            .unwrap();
+        assert_eq!(
+            settings.get("fontSize".into()).unwrap(),
+            SettingValue::Double { value: 12.0 }
+        );
+        assert!(
+            settings
+                .set("fontSize".into(), SettingValue::Int { value: 1 })
+                .is_err()
+        );
+        assert_eq!(store_setting_names().len(), 30);
+        assert_eq!(store_app_icon("nope".into()).id, "default");
+        assert_eq!(
+            store_theme_palette((&TerminalTheme::nord()).into()).len(),
+            16
+        );
+    }
+
+    /// What the app's adapters ask besides the stores' own lists: the refs
+    /// and users B232's services count, a setting by its preferences key,
+    /// and the pairings file.
+    #[test]
+    fn refs_settings_by_key_and_the_pairings_file() {
+        let host: Arc<dyn PreferencesHost> = Arc::new(Prefs::default());
+        let connections = ConnectionStoreHandle::new(host.clone(), ReadinessMode::Always);
+        let keys = KeyStoreHandle::new(host.clone(), ReadinessMode::Always);
+        let key = SshKeyRecord::new(
+            Uuid::new_v4(),
+            "laptop",
+            ssh_keys::SshKeyAlgorithm::Ed25519,
+            ssh_keys::SshKeySource::Generated,
+            Date(784_000_000.0),
+        );
+        let mut record: KeyRecord = (&key).into();
+        record.keychain_ref = Some("moshpit.secret.k".into());
+        keys.add(record).unwrap();
+        let mut pi = ServerConnection::new(Uuid::new_v4(), Date(784_000_000.0));
+        pi.username = "me".into();
+        pi.host = "pi".into();
+        pi.keychain_ref = Some("moshpit.secret.c".into());
+        pi.ssh_key_id = Some(key.id);
+        connections.add((&pi).into()).unwrap();
+        assert_eq!(
+            connections.keychain_refs(None).unwrap(),
+            Some(vec!["moshpit.secret.c".to_owned()])
+        );
+        assert_eq!(
+            connections.keychain_refs(Some(pi.id.to_string())).unwrap(),
+            Some(vec![])
+        );
+        assert_eq!(
+            connections
+                .names_using_key(key.id.to_string(), None)
+                .unwrap(),
+            Some(vec!["me@pi".to_owned()])
+        );
+        assert!(connections.names_using_key("nope".into(), None).is_err());
+        assert_eq!(
+            keys.keychain_refs(None).unwrap(),
+            Some(vec!["moshpit.secret.k".to_owned()])
+        );
+        assert_eq!(
+            keys.keychain_refs(Some(key.id.to_string())).unwrap(),
+            Some(vec![])
+        );
+        // Sealed: nothing can be counted.
+        let sealed = ConnectionStoreHandle::new(
+            Arc::new(SealedPrefs(Arc::new(Sealed {
+                vault: Vault::default(),
+                unlocked: std::sync::atomic::AtomicBool::new(false),
+            }))),
+            ReadinessMode::System,
+        );
+        assert_eq!(sealed.keychain_refs(None).unwrap(), None);
+
+        let settings = SettingsHandle::new(host.clone(), None, ReadinessMode::Always, false);
+        assert_eq!(
+            settings.value("moshpit.settings.moshByDefault".into()),
+            Some(SettingValue::Bool { value: true })
+        );
+        assert_eq!(
+            settings.value("moshByDefault".into()),
+            None,
+            "a key, not a name"
+        );
+        assert!(settings.set_value(
+            "moshpit.settings.moshByDefault".into(),
+            SettingValue::Bool { value: false }
+        ));
+        assert_eq!(
+            settings.get("moshByDefault".into()).unwrap(),
+            SettingValue::Bool { value: false }
+        );
+        assert!(!settings.set_value(
+            "moshpit.settings.moshByDefault".into(),
+            SettingValue::Int { value: 0 }
+        ));
+        assert!(!settings.set_value("nope".into(), SettingValue::Bool { value: true }));
+        // An enum-backed setting reads raw: the app's getter checks it.
+        settings
+            .set(
+                "cursorShape".into(),
+                SettingValue::String { value: "x".into() },
+            )
+            .unwrap();
+        assert_eq!(
+            settings.value("moshpit.settings.cursorShape".into()),
+            Some(SettingValue::String { value: "x".into() })
+        );
+
+        let dir = std::env::temp_dir().join(format!("w5b-pairings-{}", Uuid::new_v4()));
+        let path = dir.join("push-pairings.json");
+        let file = PushPairingFileHandle::new(path.to_string_lossy().into_owned());
+        assert!(file.read().is_empty());
+        let pairing = PairingRecord {
+            connection_id: pi.id.to_string(),
+            host_label: "pi".into(),
+            secret_hex: "ab".repeat(32),
+            send_token: String::new(),
+            relay_url: "https://relay.example.com".into(),
+            created_at: 784_000_000.25,
+            apns_token: None,
+            apns_env: None,
+            send_token_issued_at: None,
+        };
+        assert!(file.upsert(pairing.clone()).unwrap());
+        assert_eq!(file.read(), std::slice::from_ref(&pairing));
+        let mut minted = pairing.clone();
+        minted.send_token = "t".into();
+        minted.apns_token = Some("aa".into());
+        minted.send_token_issued_at = Some(784_000_100.0);
+        assert!(file.write(vec![minted.clone()]).unwrap());
+        assert_eq!(file.read(), [minted]);
+        assert!(
+            file.remove(Uuid::new_v4().to_string()).unwrap(),
+            "nothing to forget"
+        );
+        assert!(file.remove(pi.id.to_string()).unwrap());
+        assert!(file.read().is_empty());
+        assert!(file.remove("nope".into()).is_err());
+        assert!(file.backup_path().ends_with("push-pairings.json.backup"));
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// The host's keychain, in memory.
+    #[derive(Default)]
+    struct Vault(Mutex<HashMap<String, Vec<u8>>>);
+
+    impl KeychainHost for Vault {
+        fn save(&self, account: String, secret: Vec<u8>, _: bool) -> Result<(), KeychainFailure> {
+            lock(&self.0).insert(account, secret);
+            Ok(())
+        }
+        fn load(&self, account: String, _: String) -> Result<Vec<u8>, KeychainFailure> {
+            lock(&self.0)
+                .get(&account)
+                .cloned()
+                .ok_or(KeychainFailure::NotFound)
+        }
+        fn delete(&self, account: String) -> Result<(), KeychainFailure> {
+            lock(&self.0).remove(&account);
+            Ok(())
+        }
+        fn exists(&self, account: String) -> bool {
+            lock(&self.0).contains_key(&account)
+        }
+        fn accounts(&self) -> Result<Vec<String>, KeychainFailure> {
+            Ok(lock(&self.0).keys().cloned().collect())
+        }
+        fn load_silently(&self, account: String) -> Result<Vec<u8>, KeychainFailure> {
+            self.load(account, String::new())
+        }
+    }
+
+    /// An unencrypted ed25519 OpenSSH private key (crates/ssh's fixture).
+    const ED25519: &str = include_str!("../../ssh/tests/fixtures/keys/ed25519");
+
+    /// A device before its first unlock since boot: the keychain answers
+    /// "no item" for the known-hosts map (as iOS can then), and protected
+    /// data is unavailable until `unlock`.
+    struct Sealed {
+        vault: Vault,
+        unlocked: std::sync::atomic::AtomicBool,
+    }
+
+    impl Sealed {
+        fn sealed(&self) -> bool {
+            !self.unlocked.load(std::sync::atomic::Ordering::SeqCst)
+        }
+    }
+
+    struct SealedKeychain(Arc<Sealed>);
+
+    impl KeychainHost for SealedKeychain {
+        fn save(&self, account: String, secret: Vec<u8>, b: bool) -> Result<(), KeychainFailure> {
+            self.0.vault.save(account, secret, b)
+        }
+        fn load(&self, account: String, prompt: String) -> Result<Vec<u8>, KeychainFailure> {
+            if self.0.sealed() {
+                return Err(KeychainFailure::NotFound);
+            }
+            self.0.vault.load(account, prompt)
+        }
+        fn delete(&self, account: String) -> Result<(), KeychainFailure> {
+            self.0.vault.delete(account)
+        }
+        fn exists(&self, account: String) -> bool {
+            !self.0.sealed() && self.0.vault.exists(account)
+        }
+        fn accounts(&self) -> Result<Vec<String>, KeychainFailure> {
+            self.0.vault.accounts()
+        }
+        fn load_silently(&self, account: String) -> Result<Vec<u8>, KeychainFailure> {
+            self.load(account, String::new())
+        }
+    }
+
+    struct SealedPrefs(Arc<Sealed>);
+
+    impl PreferencesHost for SealedPrefs {
+        fn get(&self, _: String) -> Option<PlistValue> {
+            None
+        }
+        fn set(&self, _: String, _: Option<PlistValue>) {}
+        fn protected_data_available(&self) -> bool {
+            !self.0.sealed()
+        }
+    }
+
+    /// B251 (B226's rule on the store's own handle): before the first
+    /// unlock "no item" is the lock's answer, not an empty map — the
+    /// handle read every trusted host as new, and a write then (the
+    /// first trust) put one entry over all of them. After the unlock the
+    /// map reads as it is, and an item that truly isn't there is empty.
+    #[test]
+    fn known_hosts_read_before_the_first_unlock_are_locked_not_empty() {
+        let device = Arc::new(Sealed {
+            vault: Vault::default(),
+            unlocked: std::sync::atomic::AtomicBool::new(false),
+        });
+        device
+            .vault
+            .save(
+                "moshpit.knownHosts".into(),
+                br#"{"box:22":"SHA256:abc","pi:22":"SHA256:def"}"#.to_vec(),
+                false,
+            )
+            .unwrap();
+        let hosts = KnownHostsHandle::new(
+            Arc::new(SealedKeychain(device.clone())),
+            Arc::new(SealedPrefs(device.clone())),
+        );
+        assert_eq!(hosts.read(), Err(KnownHostsFailure::Locked));
+        // The handle as it was, with no probe: the same read was a map with
+        // nothing in it.
+        let unprobed = KnownHostsHandle(KeychainKnownHosts::new(Arc::new(HostKeychain(Arc::new(
+            SealedKeychain(device.clone()),
+        )))));
+        assert_eq!(unprobed.read(), Ok(HashMap::new()));
+
+        device
+            .unlocked
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        let table = hosts.read().unwrap();
+        assert_eq!(table.len(), 2, "{table:?}");
+        assert_eq!(table.get("box:22").map(String::as_str), Some("SHA256:abc"));
+
+        let empty = KnownHostsHandle::new(
+            Arc::new(Vault::default()),
+            Arc::new(SealedPrefs(device.clone())),
+        );
+        assert_eq!(empty.read(), Ok(HashMap::new()));
+    }
+
+    /// B232 through the handles: a key a connection uses stays and says
+    /// who; deleted, its private key goes too; a deleted connection takes
+    /// an item nothing else names; an orphaned private key is listed again
+    /// — once, and nothing is deleted.
+    #[test]
+    fn deleting_a_key_takes_its_private_key_and_orphaned_keys_are_recovered() {
+        let host: Arc<dyn PreferencesHost> = Arc::new(Prefs::default());
+        let vault = Arc::new(Vault::default());
+        let keychain: Arc<dyn KeychainHost> = vault.clone();
+        let connections = ConnectionStoreHandle::new(host.clone(), ReadinessMode::Always);
+        let keys = KeyStoreHandle::new(host.clone(), ReadinessMode::Always);
+        let private = "moshpit.secret.0f0e0d0c-0000-4000-8000-000000000001".to_owned();
+        let password = "moshpit.secret.0f0e0d0c-0000-4000-8000-000000000002".to_owned();
+        let orphan = "moshpit.secret.0f0e0d0c-0000-4000-8000-000000000003".to_owned();
+        for account in [&private, &password] {
+            keychain
+                .save(account.clone(), b"secret".to_vec(), false)
+                .unwrap();
+        }
+        keychain
+            .save(orphan.clone(), ED25519.as_bytes().to_vec(), false)
+            .unwrap();
+        keychain
+            .save("moshpit.knownHosts".into(), b"{}".to_vec(), false)
+            .unwrap();
+        let mut key = SshKeyRecord::new(
+            Uuid::new_v4(),
+            "laptop",
+            ssh_keys::SshKeyAlgorithm::Ed25519,
+            ssh_keys::SshKeySource::Generated,
+            Date(784_000_000.0),
+        );
+        key.keychain_ref = Some(private.clone());
+        keys.add((&key).into()).unwrap();
+        let mut pi = ServerConnection::new(Uuid::new_v4(), Date(784_000_000.0));
+        pi.name = "pi".into();
+        pi.keychain_ref = Some(private.clone());
+        pi.ssh_key_id = Some(key.id);
+        connections.add((&pi).into()).unwrap();
+        let mut nas = ServerConnection::new(Uuid::new_v4(), Date(784_000_000.0));
+        nas.name = "nas".into();
+        nas.keychain_ref = Some(password.clone());
+        connections.add((&nas).into()).unwrap();
+
+        let id = key.id.to_string();
+        assert_eq!(
+            keys.check_delete(id.clone(), connections.clone()).unwrap(),
+            StoreKeyCheck::InUse {
+                connections: vec!["pi".into()]
+            }
+        );
+        assert_eq!(
+            keys.delete_key(id.clone(), connections.clone(), keychain.clone())
+                .unwrap(),
+            StoreKeyDeletion::InUse {
+                connections: vec!["pi".into()]
+            }
+        );
+        assert!(keychain.exists(private.clone()));
+        let recover = || {
+            store_recover_orphaned_keys(
+                connections.clone(),
+                keys.clone(),
+                keychain.clone(),
+                "Recovered key %@".into(),
+                784_000_100.0,
+            )
+        };
+        let StoreRecovery::Recovered { keys: recovered } = recover() else {
+            panic!("nothing looked at")
+        };
+        assert_eq!(recovered.len(), 1, "{recovered:?}");
+        let found = &recovered[0];
+        assert_eq!(found.keychain_ref.as_deref(), Some(orphan.as_str()));
+        assert_eq!(found.algorithm, KeyAlgorithm::Ed25519);
+        assert!(found.fingerprint.starts_with("SHA256:"));
+        assert!(found.public_key.starts_with("ssh-ed25519 "));
+        assert_eq!(
+            found.name,
+            format!(
+                "Recovered key {}",
+                &found.fingerprint["SHA256:".len().."SHA256:".len() + 8]
+            )
+        );
+        assert!(keychain.exists(orphan.clone()), "recovery deleted it");
+        assert!(keychain.exists(password.clone()), "a password isn't a key");
+        assert_eq!(
+            recover(),
+            StoreRecovery::Recovered { keys: vec![] },
+            "a second look added it again"
+        );
+        let found_id = found.id.clone();
+        assert_eq!(
+            keys.delete_key(found_id, connections.clone(), keychain.clone())
+                .unwrap(),
+            StoreKeyDeletion::Deleted
+        );
+        assert!(!keychain.exists(orphan.clone()));
+        assert_eq!(
+            connections
+                .delete_releasing_secret(pi.id.to_string(), keys.clone(), keychain.clone())
+                .unwrap(),
+            StoreSecretFate::Kept,
+            "the key still names its item"
+        );
+        assert_eq!(
+            keys.delete_key(id.clone(), connections.clone(), keychain.clone())
+                .unwrap(),
+            StoreKeyDeletion::Deleted
+        );
+        assert!(!keychain.exists(private));
+        assert!(keys.keys().is_empty());
+        assert_eq!(
+            connections
+                .delete_releasing_secret(nas.id.to_string(), keys.clone(), keychain.clone())
+                .unwrap(),
+            StoreSecretFate::Deleted
+        );
+        let mut left = keychain.accounts().unwrap();
+        left.sort();
+        assert_eq!(left, ["moshpit.knownHosts"]);
+    }
+}

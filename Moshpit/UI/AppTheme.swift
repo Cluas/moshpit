@@ -112,6 +112,22 @@ enum AppThemeCatalog {
     }
 }
 
+extension View {
+    /// The app's root in the accent: system controls (toggles, pickers,
+    /// alerts) in it instead of iOS's defaults.
+    ///
+    /// The root is never made again for an accent (B293). It used to carry
+    /// `.id(appThemeId + accentHex)`, so saving the accent in use popped
+    /// every stack and closed every sheet — Settings, where the accent is
+    /// edited, among them. A view in SwiftUI follows the accent by itself:
+    /// `Ink.accent` reads `AppSettings.shared.appThemeId` and
+    /// `AppThemeStore.shared`, both observed. An NSH page is told its colors
+    /// when it runs, and runs again on its own (``NSHPage``).
+    func appThemeRoot() -> some View {
+        tint(Ink.accent)
+    }
+}
+
 // MARK: - App icons
 
 /// One bundled app icon. Icons are independent of the accent color (see
@@ -170,17 +186,5 @@ enum AppIconCatalog {
 
     static func option(for id: String) -> AppIconOption {
         all.first { $0.id == id } ?? primary
-    }
-
-    /// The icon a pre-split install should land on. Before icons became their
-    /// own setting they were implied by the app theme, so migrate to the
-    /// equivalent artwork instead of resetting everyone to the primary icon.
-    static func migratedID(fromAppThemeID themeID: String) -> String {
-        switch themeID {
-        case "moshpit-classic": return "teal"
-        case "terminal-green": return "green"
-        case "amber-console": return "amber"
-        default: return primary.id
-        }
     }
 }

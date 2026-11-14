@@ -1,0 +1,4 @@
+# NSH comes from its repository; the system git handles the SSH rewrite and
+# keys that libgit2 cannot.
+[net]
+git-fetch-with-cli = true

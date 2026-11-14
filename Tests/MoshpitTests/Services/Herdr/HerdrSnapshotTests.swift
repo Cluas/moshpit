@@ -8,16 +8,10 @@ import Testing
 @Suite("herdr snapshot decoding")
 struct HerdrSnapshotTests {
 
-    /// Read the capture from the source tree rather than the test bundle:
-    /// whether a `.json` gets copied as a bundle resource depends on how the
-    /// target was generated, and this file is checked in next to the tests.
+    /// The capture, from the test bundle — see ``TestFixtures`` for why not
+    /// from the checkout.
     private func fixture() throws -> String {
-        let path = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()   // …/MoshpitTests/Services/Herdr
-            .deletingLastPathComponent()   // …/MoshpitTests/Services
-            .deletingLastPathComponent()   // …/MoshpitTests
-            .appendingPathComponent("Fixtures/herdr-snapshot.json")
-        return try String(contentsOf: path, encoding: .utf8)
+        try TestFixtures.string("herdr-snapshot.json")
     }
 
     // MARK: - The real payload
@@ -215,5 +209,100 @@ struct HerdrSnapshotTests {
         #expect(HerdrSnapshot.isServerNotRunning(raw))
         // A different error must NOT read as "no server".
         #expect(!HerdrSnapshot.isServerNotRunning("{\"error\":{\"code\":\"not_found\"}}"))
+    }
+
+    // MARK: - Version skew direction
+
+    @Test("A mismatch message says which side is older")
+    func mismatchDirection() {
+        #expect(HerdrSnapshot.clientIsOlder(
+            "client protocol 19 is older than server protocol 22"))
+        #expect(!HerdrSnapshot.clientIsOlder(
+            "client protocol 19 is newer than server protocol 16"))
+        // The attach CLI's refusal names no direction — not "older".
+        #expect(!HerdrSnapshot.clientIsOlder("server rejected handshake (version 16): …"))
+    }
+}
+
+@Suite("herdr status → version report")
+struct HerdrVersionReportTests {
+
+    /// Captured on the host: the stale 0.8.0 binary against a 0.9.5 server.
+    static let oldClient = """
+    client:
+      version: 0.8.0
+      channel: stable
+      protocol: 19
+
+    server:
+      status: running
+      version: 0.9.5
+      protocol: 22
+      compatible: no
+      socket: /Users/u/.config/herdr/herdr.sock
+    """
+
+    /// Captured on the host: 0.9.5 against itself — a different field set.
+    static let matched = """
+    client:
+      version: 0.9.5
+      channel: stable
+      protocol: 22
+      endpoint_protocol_generation: 1
+
+    server:
+      status: running
+      version: 0.9.5
+      endpoint_compatible: yes
+    """
+
+    @Test("0.8.0's shape: client older than the server")
+    func parsesOldClient() throws {
+        let report = try #require(HerdrVersionReport.parse(Self.oldClient))
+        #expect(report == HerdrVersionReport(client: "0.8.0", server: "0.9.5"))
+        #expect(report.mismatched)
+        #expect(report.clientIsOlder)
+    }
+
+    @Test("0.9.5's shape: same version both ends is no skew")
+    func parsesMatched() throws {
+        let report = try #require(HerdrVersionReport.parse(Self.matched))
+        #expect(!report.mismatched)
+        #expect(!report.clientIsOlder)
+    }
+
+    @Test("The server being the older side is a skew the restart fixes")
+    func olderServer() {
+        let report = HerdrVersionReport(client: "0.9.5", server: "0.8.0")
+        #expect(report.mismatched)
+        #expect(!report.clientIsOlder)
+    }
+
+    @Test("No server version, no report — a stopped server, or no `status` at all")
+    func needsBothVersions() {
+        #expect(HerdrVersionReport.parse("""
+        client:
+          version: 0.9.5
+
+        server:
+          status: not running
+        """) == nil)
+        #expect(HerdrVersionReport.parse("error: unknown command 'status'") == nil)
+        #expect(HerdrVersionReport.parse("") == nil)
+    }
+
+    @Test("Login noise above the report doesn't confuse the sections")
+    func toleratesBanner() throws {
+        let report = try #require(HerdrVersionReport.parse("Last login: Tue on ttys001\n" + Self.oldClient))
+        #expect(report.client == "0.8.0")
+        #expect(report.server == "0.9.5")
+    }
+
+    @Test("Versions compare by number, not by string")
+    func numericOrder() {
+        #expect(HerdrVersionReport.compare("0.10.0", "0.9.5") == .orderedDescending)
+        #expect(HerdrVersionReport.compare("0.8.0", "0.9.5") == .orderedAscending)
+        #expect(HerdrVersionReport.compare("1.0", "1.0.0") == .orderedSame)
+        #expect(HerdrVersionReport.compare("0.9.5-preview", "0.9.5") == .orderedSame)
     }
 }

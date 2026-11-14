@@ -1,0 +1,58 @@
+[
+  {
+    "id": "rsa-host-key-lines",
+    "command": "fingerprint",
+    "case": "^fp-(gen-|this-machine-)?rsa",
+    "swift": "error",
+    "rust": "ssh-rsa SHA256:[A-Za-z0-9+/]{43}",
+    "why": "NIOSSH reads an ssh-rsa key only once Citadel registers its RSA type, which the app never does: the app offers no RSA host-key algorithm, never meets an RSA host key and never stores the fingerprint of one. The Rust transport offers rsa-sha2-512/256 last and fingerprints an RSA key as ssh-keygen does (checked against ssh-keygen for every RSA case)."
+  },
+  {
+    "id": "rsa-only-host",
+    "command": "live",
+    "case": "^live-rsa2048$",
+    "swift": "kex-failed",
+    "rust": "ssh-rsa SHA256:[A-Za-z0-9+/]{43}",
+    "why": "Fix: a host whose only host key is RSA. The app's NIOSSH client offers no RSA host-key algorithm, so the key exchange fails and the app can't connect at all; the Rust transport connects with rsa-sha2-512."
+  },
+  {
+    "id": "pem-import",
+    "command": "import",
+    "case": "^import-(rsa2048-pem|ecdsa256-pkcs8)$",
+    "swift": "(RSA-4096|ECDSA)\tSHA256:[A-Za-z0-9+/]{43}\t(ssh-rsa|ecdsa-sha2-nistp256) AAAA[A-Za-z0-9+/=]+",
+    "rust": "error",
+    "why": "A PKCS#1 PEM or PKCS#8 key pasted without its .pub: SSHKeyFactory reads it (B29) and names its type, fingerprint and public line, then stores it as openssh-key-v1. This command asks the Rust side what inspect_private_key (the stored form's reader) says, and that reads openssh-key-v1 only, which is what every stored key is. Rust's import of these forms is moshpit_ssh::keyfile, cross-checked against the Swift import case by case in harness/keys_crosscheck.py (harness/key_divergences.json)."
+  },
+  {
+    "id": "whitespace-in-keys",
+    "command": "keytype",
+    "case": "^keytype-ed25519-(crlf|indented)$",
+    "swift": "error invalidPrivateKeyFormat",
+    "rust": "type ssh-ed25519",
+    "why": "Fix: Citadel's detection, which SSHService.makeAuthMethod runs before every key sign-in, removes only \"\\n\" before decoding the base64. A key with CRLF line endings (pasted or picked from Windows) or with indented lines fails it, though SSHKeyFactory.importKey (which drops all whitespace) imported it: the key is listed and can't sign in. The Rust side reads past any whitespace."
+  },
+  {
+    "id": "truncated-key-keytype",
+    "command": "keytype",
+    "case": "^keytype-ed25519-truncated$",
+    "swift": "type ssh-ed25519",
+    "rust": "error invalidPrivateKeyFormat",
+    "why": "A key whose base64 was cut short. Citadel's detection reads only the public half at the front and calls it Ed25519; the Rust side reads the whole container and says it is broken. Moot in the app since d0f76d68: SSHKeyFactory.importKey refuses the same key (import-ed25519-truncated answers error on both sides), so it never reaches the detection before a sign-in."
+  },
+  {
+    "id": "ecdsa-384-521-import",
+    "command": "import",
+    "case": "^import-ecdsa(384|521)$",
+    "swift": "error",
+    "rust": "ECDSA\tSHA256:[A-Za-z0-9+/]{43}\tecdsa-sha2-nistp(384|521) AAAA[A-Za-z0-9+/=]+( \\S+)?",
+    "why": "The app refuses P-384 and P-521 keys at import (B29: Citadel signs with neither, so they could never sign in) and says so; inspect_private_key reads them, and the Rust transport signs with both."
+  },
+  {
+    "id": "encrypted-import",
+    "command": "import",
+    "case": "^import-ed25519-encrypted$",
+    "swift": "error",
+    "rust": "ED25519\tSHA256:[A-Za-z0-9+/]{43}\tssh-ed25519 AAAA[A-Za-z0-9+/=]+( \\S+)?",
+    "why": "A passphrase-protected key, asked without its passphrase: SSHKeyFactory.importKey needs it to read the key and refuses (the app asks for it and imports again, B29); inspect_private_key reads the public half, which openssh-key-v1 leaves in the clear, and reports the key encrypted."
+  }
+]

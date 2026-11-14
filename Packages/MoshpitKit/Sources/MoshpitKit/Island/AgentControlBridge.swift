@@ -32,6 +32,9 @@ public final class AgentControlBridge {
     /// foreground notification presentation can skip the banner + sound when
     /// the user is already looking at the prompt.
     public var isPaneVisible: ((UUID, String) -> Bool)?
+    /// The pane on screen: its connection, and its pane — nil for a session
+    /// with no multiplexer, whose one pane is every pane.
+    public var visiblePane: (() -> (UUID, String?)?)?
     public var cycler: (() -> Void)?
 
     /// Set by the app at launch. Called when a pairing self-test push arrives,

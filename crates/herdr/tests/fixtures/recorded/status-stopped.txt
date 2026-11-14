@@ -1,0 +1,13 @@
+client:
+  version: 0.9.5
+  channel: stable
+  protocol: 22
+  endpoint_protocol_generation: 1
+
+server:
+  status: not running
+  socket: /tmp/mpw28fkb_sv4/.config/herdr/sessions/moshpit-w2/herdr.sock
+
+update:
+  restart_needed: no
+  server_binary_stale: no

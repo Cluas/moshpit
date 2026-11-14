@@ -1,0 +1,14 @@
+t=0 exec api snapshot
+t=40 focus w1:p1
+t=300 exec worktree create --cwd '/home/dev/code/app' --branch 'fix-scroll' --label 'fix-scroll' --focus --json
+t=340 exec pane run 'w2:p3' 'claude'
+t=380 outcome task incomplete The worktree is ready, but claude didn't start: herdr's answer was cut off
+t=380 exec api snapshot
+t=420 focus w2:p3
+t=2420 exec api snapshot
+t=2460 focus w2:p3
+t=4460 exec api snapshot
+t=4500 focus w2:p3
+landed worktree create fix-scroll
+landed run w2:p3 claude
+state focus=w2:p3 server=w2:p3 sessions=2 notrunning=false mismatch=false

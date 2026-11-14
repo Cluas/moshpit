@@ -78,6 +78,199 @@ struct PushStandingTests {
         let future = [Self.conn: [entry("%9", at: Date().addingTimeInterval(3600))]]
         #expect(PushStanding.prune(future, now: Date()).isEmpty)
     }
+
+    /// Run `body` against the App Group's real standing file, put back byte
+    /// for byte afterwards (it is the installed app's too), along with any
+    /// copies the store made of it.
+    private func withRawStore(_ body: (URL) throws -> Void) throws {
+        let container = try #require(FileManager.default
+            .containerURL(forSecurityApplicationGroupIdentifier: PushPairingStore.appGroup))
+        let url = container.appendingPathComponent("standing-attention.json")
+        let manager = FileManager.default
+        let siblings = Set((try? manager.contentsOfDirectory(atPath: container.path)) ?? [])
+        let saved = try? Data(contentsOf: url)
+        defer {
+            if let saved { try? saved.write(to: url, options: .atomic) } else { try? manager.removeItem(at: url) }
+            for name in (try? manager.contentsOfDirectory(atPath: container.path)) ?? []
+            where !siblings.contains(name) && name.hasPrefix("standing-attention.json.") {
+                try? manager.removeItem(at: container.appendingPathComponent(name))
+            }
+        }
+        try body(url)
+    }
+
+    /// The set used to decode in one piece: one entry this build couldn't
+    /// read made it "nobody is waiting", and the next prompt wrote that over
+    /// every connection's standing prompts.
+    @Test("an entry this build can't decode neither wipes the set nor fakes an edge")
+    func undecodableEntryKeepsTheSet() throws {
+        try withRawStore { url in
+            let other = "66666666-7777-8888-9999-000000000000"
+            let waiting = try PushStandingFileTests.stored(entry("%2"))
+            let foreign = PushStandingFileTests.foreign(pane: "%3", at: Date())
+            try JSONSerialization.data(withJSONObject: [Self.conn: [waiting, foreign], other: [waiting]])
+                .write(to: url)
+
+            #expect(!PushStanding.noteStanding(conn: Self.conn, entry: entry("%1")),
+                    "%2 was already waiting: the next prompt is not the moment for a sound")
+
+            #expect(PushStanding.standing(conn: other).map(\.pane) == ["%2"],
+                    "recording a prompt on one connection wiped another's")
+            #expect(Set(PushStanding.standing(conn: Self.conn).map(\.pane)) == ["%1", "%2"])
+            #expect(try PushStandingFileTests.storedPanes(at: url, conn: Self.conn).contains("%3"),
+                    "the entry this build can't read was dropped")
+        }
+    }
+}
+
+/// The standing file read an entry at a time — the B23 rule for the
+/// pairings, applied to the set that decides which notification may ring.
+@Suite("Standing file — what this build can't read, it keeps")
+struct PushStandingFileTests {
+
+    static let conn = "11111111-2222-3333-4444-555555555555"
+    static let other = "66666666-7777-8888-9999-000000000000"
+
+    private func makeFile() throws -> PushStandingFile {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("standing-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return PushStandingFile(url: dir.appendingPathComponent("standing-attention.json"))
+    }
+
+    private func cleanUp(_ file: PushStandingFile) {
+        try? FileManager.default.removeItem(at: file.url.deletingLastPathComponent())
+    }
+
+    private func entry(_ pane: String, since: Int = 1_756_000_000, at: Date = Date()) -> PushStanding.Entry {
+        .init(pane: pane, agent: "claude", title: "may I", location: "m1 · work", since: since, recordedAt: at)
+    }
+
+    /// B347: the app and the notification service write the file at the same
+    /// time. One writer notes and at once clears its prompts, the other notes
+    /// its own, each through its own open: nothing either wrote is lost, and
+    /// nothing cleared comes back. Without the lock the later writer wrote
+    /// back what it had read (measured on a Mac: 56–91 of 150 notes lost, 3–5
+    /// cleared prompts back).
+    @Test("two writers at once lose nothing")
+    func twoWritersAtOnce() throws {
+        let file = try makeFile()
+        defer { cleanUp(file) }
+        let url = file.url, conn = Self.conn, other = Self.other
+        let rounds = 150
+        let entry = { (pane: String) in
+            PushStanding.Entry(pane: pane, agent: "claude", title: "may I", location: "m1 · work",
+                               since: 1_756_000_000, recordedAt: Date())
+        }
+        let group = DispatchGroup()
+        DispatchQueue.global().async(group: group) {
+            let answering = PushStandingFile(url: url)
+            for i in 0..<rounds {
+                answering.noteStanding(conn: conn, entry: entry("%a\(i)"))
+                answering.clear(conn: conn, pane: "%a\(i)")
+            }
+        }
+        DispatchQueue.global().async(group: group) {
+            let asking = PushStandingFile(url: url)
+            for i in 0..<rounds {
+                asking.noteStanding(conn: other, entry: entry("%b\(i)"))
+            }
+        }
+        group.wait()
+        let kept = file.standing(conn: other).count
+        let back = file.standing(conn: conn).map(\.pane)
+        #expect(kept == rounds, "a prompt noted at the same time as another write was lost")
+        #expect(back.isEmpty, "cleared prompts came back: \(back)")
+    }
+
+    /// An entry as the store writes it.
+    static func stored(_ entry: PushStanding.Entry) throws -> Any {
+        try JSONSerialization.jsonObject(with: JSONEncoder().encode(entry))
+    }
+
+    /// An entry in a shape this build can't decode — `since` as a string, as
+    /// a build with another idea of it would write — with the `pane` and
+    /// `recordedAt` this one writes.
+    static func foreign(pane: String, at date: Date) -> [String: Any] {
+        ["pane": pane, "since": "1756000000-2", "recordedAt": date.timeIntervalSinceReferenceDate]
+    }
+
+    /// The panes stored for `conn`, read as raw JSON — entries no build
+    /// decodes are counted too.
+    static func storedPanes(at url: URL, conn: String) throws -> [String] {
+        let map = try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any] ?? [:]
+        return (map[conn] as? [[String: Any]] ?? []).compactMap { $0["pane"] as? String }
+    }
+
+    @Test("Recording a prompt keeps an entry this build can't decode, and every other connection's")
+    func noteKeepsWhatItCantRead() throws {
+        let file = try makeFile()
+        defer { cleanUp(file) }
+        try JSONSerialization.data(withJSONObject: [
+            Self.conn: [try Self.stored(entry("%2")), Self.foreign(pane: "%3", at: Date())],
+            Self.other: [try Self.stored(entry("%5"))],
+        ]).write(to: file.url)
+        #expect(file.read()[Self.conn]?.map(\.pane) == ["%2"], "one bad entry hid the whole set")
+
+        #expect(!file.noteStanding(conn: Self.conn, entry: entry("%1")),
+                "%2 was already waiting: not an edge")
+
+        #expect(Set(try Self.storedPanes(at: file.url, conn: Self.conn)) == ["%1", "%2", "%3"])
+        #expect(try Self.storedPanes(at: file.url, conn: Self.other) == ["%5"])
+        #expect(file.read()[Self.other]?.map(\.pane) == ["%5"])
+    }
+
+    @Test("Clearing a pane removes its entry even in a shape this build can't decode")
+    func clearRemovesTheCarriedPane() throws {
+        let file = try makeFile()
+        defer { cleanUp(file) }
+        try JSONSerialization.data(withJSONObject: [
+            Self.conn: [try Self.stored(entry("%2")), Self.foreign(pane: "%3", at: Date())],
+        ]).write(to: file.url)
+
+        #expect(file.clear(conn: Self.conn, pane: "%3").map(\.pane) == ["%2"])
+        #expect(try Self.storedPanes(at: file.url, conn: Self.conn) == ["%2"])
+
+        // And an entry nobody can read that has plainly expired goes too.
+        try JSONSerialization.data(withJSONObject: [
+            Self.conn: [Self.foreign(pane: "%4", at: Date().addingTimeInterval(-PushStanding.lifetime - 60))],
+        ]).write(to: file.url)
+        _ = file.noteStanding(conn: Self.conn, entry: entry("%1"))
+        #expect(try Self.storedPanes(at: file.url, conn: Self.conn) == ["%1"])
+    }
+
+    @Test("A file that isn't a map at all is copied untouched before the first prompt is written")
+    func garbageIsBackedUpFirst() throws {
+        let file = try makeFile()
+        defer { cleanUp(file) }
+        let garbage = Data(#"["standing", "in a shape nobody here knows"]"#.utf8)
+        try garbage.write(to: file.url)
+        #expect(file.read().isEmpty)
+
+        _ = file.noteStanding(conn: Self.conn, entry: entry("%1"))
+
+        #expect(try Data(contentsOf: file.backupURL) == garbage, "the only copy of the old set was written over")
+        #expect(file.read()[Self.conn]?.map(\.pane) == ["%1"])
+    }
+
+    @Test("A file that is there but can't be read is never written over")
+    func unreadableFileIsNotWritten() throws {
+        let file = try makeFile()
+        defer { cleanUp(file) }
+        _ = file.noteStanding(conn: Self.conn, entry: entry("%1"))
+        let before = try Data(contentsOf: file.url)
+        // Stands in for a read before the first unlock, or an I/O error.
+        try FileManager.default.setAttributes([.posixPermissions: 0], ofItemAtPath: file.url.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: file.url.path) }
+        try #require((try? Data(contentsOf: file.url)) == nil, "this filesystem still lets the owner read a 000 file")
+
+        _ = file.noteStanding(conn: Self.other, entry: entry("%2"))
+        _ = file.clear(conn: Self.conn, pane: "%1")
+        file.clearAll(conn: Self.conn)
+
+        try FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: file.url.path)
+        #expect(try Data(contentsOf: file.url) == before)
+    }
 }
 
 /// The rendering half: what edge and duration turn into on the lock screen.

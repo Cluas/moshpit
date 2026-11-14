@@ -1,0 +1,19 @@
+[package]
+name = "moshpit-tmux"
+description = "tmux control-mode (-CC) protocol and controller for Moshpit's Rust core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+# Unlicense OR MIT. Newline, backslash and "%begin " searches on the hot path.
+memchr = "2.8"
+# The app's one paste sanitizer (`BracketedPaste`), shell quoting and
+# Foundation's whitespace rules live there already (round nineteen, W2).
+moshpit-herdr = { path = "../herdr" }
+
+[dev-dependencies]
+# tests/local_history.rs: what a pane's bytes leave in the terminal core's
+# history (B364).
+moshpit-term = { path = "../term" }

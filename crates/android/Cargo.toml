@@ -1,0 +1,45 @@
+[package]
+name = "moshpit-android"
+description = "Moshpit's Android app, its Rust half: the one library the APK carries (libnsh.so) — NSH and the shared screens (moshpit-ui), the core (store, session), the app's controller that hosts the screens, and the JNI the Java host calls (the byte channel's hot path among it)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+# Installed in the APK as lib/<abi>/libnsh.so (android/build.sh, the Gradle
+# build): NSH's Java runtime loads "nsh". Named after the crate so it never
+# takes the place of nsh-platform-android's own cdylib, which Cargo also
+# names libnsh.so. Off Android it is the controller and the pure parts, for
+# `cargo test` (unit tests: a cdylib alone, so the `app` profile's link-time
+# optimisation covers the whole library).
+crate-type = ["cdylib"]
+
+[dependencies]
+log = "0.4"
+# The screens' host models, shared with iOS.
+moshpit-app = { path = "../app" }
+moshpit-herdr = { path = "../herdr" }
+moshpit-hostcare = { path = "../hostcare" }
+moshpit-install = { path = "../install" }
+moshpit-runtime = { path = "../runtime" }
+moshpit-seal = { path = "../seal" }
+moshpit-session = { path = "../session" }
+moshpit-ssh = { path = "../ssh" }
+moshpit-store = { path = "../store" }
+moshpit-stream = { path = "../stream" }
+moshpit-tmux = { path = "../tmux" }
+moshpit-ui = { path = "../../ui" }
+nsh-core.workspace = true
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+async-trait = "0.1"
+tokio = { version = "1", features = ["rt", "sync", "time"] }
+
+# NSH's Android runtime (its Java half is compiled from the same checkout,
+# android/build.sh and android/app/build.gradle) and JNI, on Android only.
+[target.'cfg(target_os = "android")'.dependencies]
+nsh-platform-android.workspace = true
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "sync", "time", "macros"] }
