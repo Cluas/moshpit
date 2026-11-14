@@ -20,6 +20,9 @@ moshpit-store = { path = "../crates/store" }
 # turn into the pages' messages here (src/host_care.rs).
 moshpit-hostcare = { path = "../crates/hostcare" }
 moshpit-install = { path = "../crates/install" }
+# The companion pet: its sprites, drawn here from what the host posts
+# (`{"op": "pet"}`), and its easter eggs' taps.
+moshpit-pet = { path = "../crates/pet" }
 nsh-core.workspace = true
 nsh-base.workspace = true
 log = "0.4"

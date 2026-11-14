@@ -2582,6 +2582,12 @@ public protocol CoreSessionsProtocol: AnyObject, Sendable {
     func setForeground(foreground: Bool) 
     
     /**
+     * The companion pet to tell of connections made and mosh roams lived
+     * through.
+     */
+    func setPet(pet: PetMachine?) 
+    
+    /**
      * The session whose terminal is on screen (`None` on Home).
      */
     func setVisible(session: UInt64?) 
@@ -2910,6 +2916,18 @@ open func setForeground(foreground: Bool)  {try! rustCall() {
     uniffi_moshpit_ffi_fn_method_coresessions_set_foreground(
             self.uniffiCloneHandle(),
         FfiConverterBool.lower(foreground),$0
+    )
+}
+}
+    
+    /**
+     * The companion pet to tell of connections made and mosh roams lived
+     * through.
+     */
+open func setPet(pet: PetMachine?)  {try! rustCall() {
+    uniffi_moshpit_ffi_fn_method_coresessions_set_pet(
+            self.uniffiCloneHandle(),
+        FfiConverterOptionTypePetMachine.lower(pet),$0
     )
 }
 }
@@ -5765,6 +5783,814 @@ public func FfiConverterTypePairingsFile_lift(_ handle: UInt64) throws -> Pairin
 #endif
 public func FfiConverterTypePairingsFile_lower(_ value: PairingsFile) -> UInt64 {
     return FfiConverterTypePairingsFile.lower(value)
+}
+
+
+
+
+
+
+/**
+ * iCloud key-value storage (`NSUbiquitousKeyValueStore`), under
+ * `moshpit.pet.v1`: the pet on the person's other devices.
+ */
+public protocol PetCloudHost: AnyObject, Sendable {
+    
+    /**
+     * The record there, if any.
+     */
+    func get()  -> Data?
+    
+    /**
+     * Puts the record there.
+     */
+    func put(record: Data) 
+    
+}
+/**
+ * iCloud key-value storage (`NSUbiquitousKeyValueStore`), under
+ * `moshpit.pet.v1`: the pet on the person's other devices.
+ */
+open class PetCloudHostImpl: PetCloudHost, @unchecked Sendable {
+    fileprivate let handle: UInt64
+
+    /// Used to instantiate a [FFIObject] without an actual handle, for fakes in tests, mostly.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public struct NoHandle {
+        public init() {}
+    }
+
+    // TODO: We'd like this to be `private` but for Swifty reasons,
+    // we can't implement `FfiConverter` without making this `required` and we can't
+    // make it `required` without making it `public`.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    required public init(unsafeFromHandle handle: UInt64) {
+        self.handle = handle
+    }
+
+    // This constructor can be used to instantiate a fake object.
+    // - Parameter noHandle: Placeholder value so we can have a constructor separate from the default empty one that may be implemented for classes extending [FFIObject].
+    //
+    // - Warning:
+    //     Any object instantiated with this constructor cannot be passed to an actual Rust-backed object. Since there isn't a backing handle the FFI lower functions will crash.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public init(noHandle: NoHandle) {
+        self.handle = 0
+    }
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public func uniffiCloneHandle() -> UInt64 {
+        return try! rustCall { uniffi_moshpit_ffi_fn_clone_petcloudhost(self.handle, $0) }
+    }
+    // No primary constructor declared for this class.
+
+    deinit {
+        if handle == 0 {
+            // Mock objects have handle=0 don't try to free them
+            return
+        }
+
+        try! rustCall { uniffi_moshpit_ffi_fn_free_petcloudhost(handle, $0) }
+    }
+
+    
+
+    
+    /**
+     * The record there, if any.
+     */
+open func get() -> Data?  {
+    return try!  FfiConverterOptionData.lift(try! rustCall() {
+    uniffi_moshpit_ffi_fn_method_petcloudhost_get(
+            self.uniffiCloneHandle(),$0
+    )
+})
+}
+    
+    /**
+     * Puts the record there.
+     */
+open func put(record: Data)  {try! rustCall() {
+    uniffi_moshpit_ffi_fn_method_petcloudhost_put(
+            self.uniffiCloneHandle(),
+        FfiConverterData.lower(record),$0
+    )
+}
+}
+    
+
+    
+}
+
+
+
+// Put the implementation in a struct so we don't pollute the top-level namespace
+fileprivate struct UniffiCallbackInterfacePetCloudHost {
+
+    // Create the VTable using a series of closures.
+    // Swift automatically converts these into C callback functions.
+    //
+    // Store the vtable directly.
+    static let vtable: UniffiVTableCallbackInterfacePetCloudHost = UniffiVTableCallbackInterfacePetCloudHost(
+        uniffiFree: { (uniffiHandle: UInt64) -> () in
+            do {
+                try FfiConverterTypePetCloudHost.handleMap.remove(handle: uniffiHandle)
+            } catch {
+                print("Uniffi callback interface PetCloudHost: handle missing in uniffiFree")
+            }
+        },
+        uniffiClone: { (uniffiHandle: UInt64) -> UInt64 in
+            do {
+                return try FfiConverterTypePetCloudHost.handleMap.clone(handle: uniffiHandle)
+            } catch {
+                fatalError("Uniffi callback interface PetCloudHost: handle missing in uniffiClone")
+            }
+        },
+        get: { (
+            uniffiHandle: UInt64,
+            uniffiOutReturn: UnsafeMutablePointer<RustBuffer>,
+            uniffiCallStatus: UnsafeMutablePointer<RustCallStatus>
+        ) in
+            let makeCall = {
+                () throws -> Data? in
+                guard let uniffiObj = try? FfiConverterTypePetCloudHost.handleMap.get(handle: uniffiHandle) else {
+                    throw UniffiInternalError.unexpectedStaleHandle
+                }
+                return uniffiObj.get(
+                )
+            }
+
+            
+            let writeReturn = { uniffiOutReturn.pointee = FfiConverterOptionData.lower($0) }
+            uniffiTraitInterfaceCall(
+                callStatus: uniffiCallStatus,
+                makeCall: makeCall,
+                writeReturn: writeReturn
+            )
+        },
+        put: { (
+            uniffiHandle: UInt64,
+            record: RustBuffer,
+            uniffiOutReturn: UnsafeMutableRawPointer,
+            uniffiCallStatus: UnsafeMutablePointer<RustCallStatus>
+        ) in
+            let makeCall = {
+                () throws -> () in
+                guard let uniffiObj = try? FfiConverterTypePetCloudHost.handleMap.get(handle: uniffiHandle) else {
+                    throw UniffiInternalError.unexpectedStaleHandle
+                }
+                return uniffiObj.put(
+                     record: try FfiConverterData.lift(record)
+                )
+            }
+
+            
+            let writeReturn = { () }
+            uniffiTraitInterfaceCall(
+                callStatus: uniffiCallStatus,
+                makeCall: makeCall,
+                writeReturn: writeReturn
+            )
+        }
+    )
+
+    // Rust stores this pointer for future callback invocations, so it must live
+    // for the process lifetime (not just for the init function call).
+    //
+    // `nonisolated(unsafe)` is needed under Swift 6 strict concurrency.
+    // This is safe because the pointee is initialized once during static init
+    // and never mutated by either side of the FFI.  Its fields are C function pointers.
+    nonisolated(unsafe) static let vtablePtr: UnsafePointer<UniffiVTableCallbackInterfacePetCloudHost> = {
+        let ptr = UnsafeMutablePointer<UniffiVTableCallbackInterfacePetCloudHost>.allocate(capacity: 1)
+        ptr.initialize(to: vtable)
+        return UnsafePointer(ptr)
+    }()
+}
+
+private func uniffiCallbackInitPetCloudHost() {
+    uniffi_moshpit_ffi_fn_init_callback_vtable_petcloudhost(UniffiCallbackInterfacePetCloudHost.vtablePtr)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypePetCloudHost: FfiConverter {
+    fileprivate static let handleMap = UniffiHandleMap<PetCloudHost>()
+
+    typealias FfiType = UInt64
+    typealias SwiftType = PetCloudHost
+
+    public static func lift(_ handle: UInt64) throws -> PetCloudHost {
+        if ((handle & 1) == 0) {
+            // Rust-generated handle, construct a new class that uses the handle to implement the
+            // interface
+            return PetCloudHostImpl(unsafeFromHandle: handle)
+        } else {
+            // Swift-generated handle, get the object from the handle map
+            return try handleMap.remove(handle: handle)
+        }
+    }
+
+    public static func lower(_ value: PetCloudHost) -> UInt64 {
+         if let rustImpl = value as? PetCloudHostImpl {
+             // Rust-implemented object.  Clone the handle and return it
+            return rustImpl.uniffiCloneHandle()
+         } else {
+            // Swift object, generate a new vtable handle and return that.
+            return handleMap.insert(obj: value)
+         }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> PetCloudHost {
+        let handle: UInt64 = try readInt(&buf)
+        return try lift(handle)
+    }
+
+    public static func write(_ value: PetCloudHost, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePetCloudHost_lift(_ handle: UInt64) throws -> PetCloudHost {
+    return try FfiConverterTypePetCloudHost.lift(handle)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePetCloudHost_lower(_ value: PetCloudHost) -> UInt64 {
+    return FfiConverterTypePetCloudHost.lower(value)
+}
+
+
+
+
+
+
+/**
+ * Told when what the screens or the island show changed.
+ */
+public protocol PetListener: AnyObject, Sendable {
+    
+    func changed() 
+    
+}
+/**
+ * Told when what the screens or the island show changed.
+ */
+open class PetListenerImpl: PetListener, @unchecked Sendable {
+    fileprivate let handle: UInt64
+
+    /// Used to instantiate a [FFIObject] without an actual handle, for fakes in tests, mostly.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public struct NoHandle {
+        public init() {}
+    }
+
+    // TODO: We'd like this to be `private` but for Swifty reasons,
+    // we can't implement `FfiConverter` without making this `required` and we can't
+    // make it `required` without making it `public`.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    required public init(unsafeFromHandle handle: UInt64) {
+        self.handle = handle
+    }
+
+    // This constructor can be used to instantiate a fake object.
+    // - Parameter noHandle: Placeholder value so we can have a constructor separate from the default empty one that may be implemented for classes extending [FFIObject].
+    //
+    // - Warning:
+    //     Any object instantiated with this constructor cannot be passed to an actual Rust-backed object. Since there isn't a backing handle the FFI lower functions will crash.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public init(noHandle: NoHandle) {
+        self.handle = 0
+    }
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public func uniffiCloneHandle() -> UInt64 {
+        return try! rustCall { uniffi_moshpit_ffi_fn_clone_petlistener(self.handle, $0) }
+    }
+    // No primary constructor declared for this class.
+
+    deinit {
+        if handle == 0 {
+            // Mock objects have handle=0 don't try to free them
+            return
+        }
+
+        try! rustCall { uniffi_moshpit_ffi_fn_free_petlistener(handle, $0) }
+    }
+
+    
+
+    
+open func changed()  {try! rustCall() {
+    uniffi_moshpit_ffi_fn_method_petlistener_changed(
+            self.uniffiCloneHandle(),$0
+    )
+}
+}
+    
+
+    
+}
+
+
+
+// Put the implementation in a struct so we don't pollute the top-level namespace
+fileprivate struct UniffiCallbackInterfacePetListener {
+
+    // Create the VTable using a series of closures.
+    // Swift automatically converts these into C callback functions.
+    //
+    // Store the vtable directly.
+    static let vtable: UniffiVTableCallbackInterfacePetListener = UniffiVTableCallbackInterfacePetListener(
+        uniffiFree: { (uniffiHandle: UInt64) -> () in
+            do {
+                try FfiConverterTypePetListener.handleMap.remove(handle: uniffiHandle)
+            } catch {
+                print("Uniffi callback interface PetListener: handle missing in uniffiFree")
+            }
+        },
+        uniffiClone: { (uniffiHandle: UInt64) -> UInt64 in
+            do {
+                return try FfiConverterTypePetListener.handleMap.clone(handle: uniffiHandle)
+            } catch {
+                fatalError("Uniffi callback interface PetListener: handle missing in uniffiClone")
+            }
+        },
+        changed: { (
+            uniffiHandle: UInt64,
+            uniffiOutReturn: UnsafeMutableRawPointer,
+            uniffiCallStatus: UnsafeMutablePointer<RustCallStatus>
+        ) in
+            let makeCall = {
+                () throws -> () in
+                guard let uniffiObj = try? FfiConverterTypePetListener.handleMap.get(handle: uniffiHandle) else {
+                    throw UniffiInternalError.unexpectedStaleHandle
+                }
+                return uniffiObj.changed(
+                )
+            }
+
+            
+            let writeReturn = { () }
+            uniffiTraitInterfaceCall(
+                callStatus: uniffiCallStatus,
+                makeCall: makeCall,
+                writeReturn: writeReturn
+            )
+        }
+    )
+
+    // Rust stores this pointer for future callback invocations, so it must live
+    // for the process lifetime (not just for the init function call).
+    //
+    // `nonisolated(unsafe)` is needed under Swift 6 strict concurrency.
+    // This is safe because the pointee is initialized once during static init
+    // and never mutated by either side of the FFI.  Its fields are C function pointers.
+    nonisolated(unsafe) static let vtablePtr: UnsafePointer<UniffiVTableCallbackInterfacePetListener> = {
+        let ptr = UnsafeMutablePointer<UniffiVTableCallbackInterfacePetListener>.allocate(capacity: 1)
+        ptr.initialize(to: vtable)
+        return UnsafePointer(ptr)
+    }()
+}
+
+private func uniffiCallbackInitPetListener() {
+    uniffi_moshpit_ffi_fn_init_callback_vtable_petlistener(UniffiCallbackInterfacePetListener.vtablePtr)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypePetListener: FfiConverter {
+    fileprivate static let handleMap = UniffiHandleMap<PetListener>()
+
+    typealias FfiType = UInt64
+    typealias SwiftType = PetListener
+
+    public static func lift(_ handle: UInt64) throws -> PetListener {
+        if ((handle & 1) == 0) {
+            // Rust-generated handle, construct a new class that uses the handle to implement the
+            // interface
+            return PetListenerImpl(unsafeFromHandle: handle)
+        } else {
+            // Swift-generated handle, get the object from the handle map
+            return try handleMap.remove(handle: handle)
+        }
+    }
+
+    public static func lower(_ value: PetListener) -> UInt64 {
+         if let rustImpl = value as? PetListenerImpl {
+             // Rust-implemented object.  Clone the handle and return it
+            return rustImpl.uniffiCloneHandle()
+         } else {
+            // Swift object, generate a new vtable handle and return that.
+            return handleMap.insert(obj: value)
+         }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> PetListener {
+        let handle: UInt64 = try readInt(&buf)
+        return try lift(handle)
+    }
+
+    public static func write(_ value: PetListener, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePetListener_lift(_ handle: UInt64) throws -> PetListener {
+    return try FfiConverterTypePetListener.lift(handle)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePetListener_lower(_ value: PetListener) -> UInt64 {
+    return FfiConverterTypePetListener.lower(value)
+}
+
+
+
+
+
+
+/**
+ * The pet, its egg and the person's choices.
+ */
+public protocol PetMachineProtocol: AnyObject, Sendable {
+    
+    /**
+     * An agent finished a turn: the egg cracks, or the pet counts it.
+     */
+    func agentFinished() 
+    
+    /**
+     * iCloud has (re)synced: merge what's there with what's here, keep the
+     * result on both sides. The first call settles it, and the egg may
+     * hatch from then on (never a second pet).
+     */
+    func cloudChanged() 
+    
+    /**
+     * No iCloud (off, or not signed in): settled without it.
+     */
+    func cloudUnavailable() 
+    
+    /**
+     * A session connected (the egg's third one readies it).
+     */
+    func connected() 
+    
+    /**
+     * The hatch, from 16 secure random bytes, at `now` (unix seconds) and
+     * local hour `local_hour`. Only when it may: the egg is ready, iCloud
+     * has settled, the companion is on. Whether it hatched.
+     */
+    func hatch(seed: Data, now: Int64, localHour: UInt8)  -> Bool
+    
+    /**
+     * The Live Activity's stills for the agents' headline state (`working`,
+     * `attention`, `done`, `idle`), or none while the companion is off.
+     */
+    func island(state: String)  -> PetIsland?
+    
+    /**
+     * The screens' message: `{"op": "pet", …}` ([`PetView`]), with `seq`
+     * counting the moments so a page plays each once.
+     */
+    func message()  -> String
+    
+    /**
+     * Renames it at `now`; an empty name gives back the species' name.
+     */
+    func rename(name: String, now: Int64) 
+    
+    /**
+     * A mosh session roamed and kept going.
+     */
+    func roamed() 
+    
+    /**
+     * Home shows the pet now: it grows if it's due. The stage it grew to.
+     */
+    func seen(now: Int64)  -> UInt8?
+    
+    /**
+     * The style (`minimal`, `pixel`; `drawn` isn't offered yet) and the
+     * companion's switch.
+     */
+    func setChoice(style: String, shown: Bool) 
+    
+    /**
+     * iCloud, when the person has it on.
+     */
+    func setCloud(cloud: PetCloudHost?) 
+    
+    func setListener(listener: PetListener?) 
+    
+    /**
+     * How fast it grows: `faster`, `medium` (the default) or `slower`.
+     */
+    func setPace(pace: String) 
+    
+}
+/**
+ * The pet, its egg and the person's choices.
+ */
+open class PetMachine: PetMachineProtocol, @unchecked Sendable {
+    fileprivate let handle: UInt64
+
+    /// Used to instantiate a [FFIObject] without an actual handle, for fakes in tests, mostly.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public struct NoHandle {
+        public init() {}
+    }
+
+    // TODO: We'd like this to be `private` but for Swifty reasons,
+    // we can't implement `FfiConverter` without making this `required` and we can't
+    // make it `required` without making it `public`.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    required public init(unsafeFromHandle handle: UInt64) {
+        self.handle = handle
+    }
+
+    // This constructor can be used to instantiate a fake object.
+    // - Parameter noHandle: Placeholder value so we can have a constructor separate from the default empty one that may be implemented for classes extending [FFIObject].
+    //
+    // - Warning:
+    //     Any object instantiated with this constructor cannot be passed to an actual Rust-backed object. Since there isn't a backing handle the FFI lower functions will crash.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public init(noHandle: NoHandle) {
+        self.handle = 0
+    }
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public func uniffiCloneHandle() -> UInt64 {
+        return try! rustCall { uniffi_moshpit_ffi_fn_clone_petmachine(self.handle, $0) }
+    }
+    /**
+     * The pet as this device keeps it. `device_id`: a stable id of this
+     * device (its tasks count under it).
+     */
+public convenience init(preferences: PreferencesHost, deviceId: String) {
+    let handle =
+        try! rustCall() {
+    uniffi_moshpit_ffi_fn_constructor_petmachine_new(
+        FfiConverterTypePreferencesHost_lower(preferences),
+        FfiConverterString.lower(deviceId),$0
+    )
+}
+    self.init(unsafeFromHandle: handle)
+}
+
+    deinit {
+        if handle == 0 {
+            // Mock objects have handle=0 don't try to free them
+            return
+        }
+
+        try! rustCall { uniffi_moshpit_ffi_fn_free_petmachine(handle, $0) }
+    }
+
+    
+
+    
+    /**
+     * An agent finished a turn: the egg cracks, or the pet counts it.
+     */
+open func agentFinished()  {try! rustCall() {
+    uniffi_moshpit_ffi_fn_method_petmachine_agent_finished(
+            self.uniffiCloneHandle(),$0
+    )
+}
+}
+    
+    /**
+     * iCloud has (re)synced: merge what's there with what's here, keep the
+     * result on both sides. The first call settles it, and the egg may
+     * hatch from then on (never a second pet).
+     */
+open func cloudChanged()  {try! rustCall() {
+    uniffi_moshpit_ffi_fn_method_petmachine_cloud_changed(
+            self.uniffiCloneHandle(),$0
+    )
+}
+}
+    
+    /**
+     * No iCloud (off, or not signed in): settled without it.
+     */
+open func cloudUnavailable()  {try! rustCall() {
+    uniffi_moshpit_ffi_fn_method_petmachine_cloud_unavailable(
+            self.uniffiCloneHandle(),$0
+    )
+}
+}
+    
+    /**
+     * A session connected (the egg's third one readies it).
+     */
+open func connected()  {try! rustCall() {
+    uniffi_moshpit_ffi_fn_method_petmachine_connected(
+            self.uniffiCloneHandle(),$0
+    )
+}
+}
+    
+    /**
+     * The hatch, from 16 secure random bytes, at `now` (unix seconds) and
+     * local hour `local_hour`. Only when it may: the egg is ready, iCloud
+     * has settled, the companion is on. Whether it hatched.
+     */
+open func hatch(seed: Data, now: Int64, localHour: UInt8) -> Bool  {
+    return try!  FfiConverterBool.lift(try! rustCall() {
+    uniffi_moshpit_ffi_fn_method_petmachine_hatch(
+            self.uniffiCloneHandle(),
+        FfiConverterData.lower(seed),
+        FfiConverterInt64.lower(now),
+        FfiConverterUInt8.lower(localHour),$0
+    )
+})
+}
+    
+    /**
+     * The Live Activity's stills for the agents' headline state (`working`,
+     * `attention`, `done`, `idle`), or none while the companion is off.
+     */
+open func island(state: String) -> PetIsland?  {
+    return try!  FfiConverterOptionTypePetIsland.lift(try! rustCall() {
+    uniffi_moshpit_ffi_fn_method_petmachine_island(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(state),$0
+    )
+})
+}
+    
+    /**
+     * The screens' message: `{"op": "pet", …}` ([`PetView`]), with `seq`
+     * counting the moments so a page plays each once.
+     */
+open func message() -> String  {
+    return try!  FfiConverterString.lift(try! rustCall() {
+    uniffi_moshpit_ffi_fn_method_petmachine_message(
+            self.uniffiCloneHandle(),$0
+    )
+})
+}
+    
+    /**
+     * Renames it at `now`; an empty name gives back the species' name.
+     */
+open func rename(name: String, now: Int64)  {try! rustCall() {
+    uniffi_moshpit_ffi_fn_method_petmachine_rename(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(name),
+        FfiConverterInt64.lower(now),$0
+    )
+}
+}
+    
+    /**
+     * A mosh session roamed and kept going.
+     */
+open func roamed()  {try! rustCall() {
+    uniffi_moshpit_ffi_fn_method_petmachine_roamed(
+            self.uniffiCloneHandle(),$0
+    )
+}
+}
+    
+    /**
+     * Home shows the pet now: it grows if it's due. The stage it grew to.
+     */
+open func seen(now: Int64) -> UInt8?  {
+    return try!  FfiConverterOptionUInt8.lift(try! rustCall() {
+    uniffi_moshpit_ffi_fn_method_petmachine_seen(
+            self.uniffiCloneHandle(),
+        FfiConverterInt64.lower(now),$0
+    )
+})
+}
+    
+    /**
+     * The style (`minimal`, `pixel`; `drawn` isn't offered yet) and the
+     * companion's switch.
+     */
+open func setChoice(style: String, shown: Bool)  {try! rustCall() {
+    uniffi_moshpit_ffi_fn_method_petmachine_set_choice(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(style),
+        FfiConverterBool.lower(shown),$0
+    )
+}
+}
+    
+    /**
+     * iCloud, when the person has it on.
+     */
+open func setCloud(cloud: PetCloudHost?)  {try! rustCall() {
+    uniffi_moshpit_ffi_fn_method_petmachine_set_cloud(
+            self.uniffiCloneHandle(),
+        FfiConverterOptionTypePetCloudHost.lower(cloud),$0
+    )
+}
+}
+    
+open func setListener(listener: PetListener?)  {try! rustCall() {
+    uniffi_moshpit_ffi_fn_method_petmachine_set_listener(
+            self.uniffiCloneHandle(),
+        FfiConverterOptionTypePetListener.lower(listener),$0
+    )
+}
+}
+    
+    /**
+     * How fast it grows: `faster`, `medium` (the default) or `slower`.
+     */
+open func setPace(pace: String)  {try! rustCall() {
+    uniffi_moshpit_ffi_fn_method_petmachine_set_pace(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(pace),$0
+    )
+}
+}
+    
+
+    
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypePetMachine: FfiConverter {
+    typealias FfiType = UInt64
+    typealias SwiftType = PetMachine
+
+    public static func lift(_ handle: UInt64) throws -> PetMachine {
+        return PetMachine(unsafeFromHandle: handle)
+    }
+
+    public static func lower(_ value: PetMachine) -> UInt64 {
+        return value.uniffiCloneHandle()
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> PetMachine {
+        let handle: UInt64 = try readInt(&buf)
+        return try lift(handle)
+    }
+
+    public static func write(_ value: PetMachine, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePetMachine_lift(_ handle: UInt64) throws -> PetMachine {
+    return try FfiConverterTypePetMachine.lift(handle)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePetMachine_lower(_ value: PetMachine) -> UInt64 {
+    return FfiConverterTypePetMachine.lower(value)
 }
 
 
@@ -10800,6 +11626,64 @@ public func FfiConverterTypePathHitRecord_lower(_ value: PathHitRecord) -> RustB
 
 
 /**
+ * The Live Activity's stills: the pose for the agents' state, and the
+ * sleeping one for when the activity goes stale. Each a `px1:` sprite.
+ */
+public struct PetIsland: Equatable, Hashable {
+    public var pose: String
+    public var stale: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(pose: String, stale: String) {
+        self.pose = pose
+        self.stale = stale
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension PetIsland: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypePetIsland: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> PetIsland {
+        return
+            try PetIsland(
+                pose: FfiConverterString.read(from: &buf), 
+                stale: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: PetIsland, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.pose, into: &buf)
+        FfiConverterString.write(value.stale, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePetIsland_lift(_ buf: RustBuffer) throws -> PetIsland {
+    return try FfiConverterTypePetIsland.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePetIsland_lower(_ value: PetIsland) -> RustBuffer {
+    return FfiConverterTypePetIsland.lower(value)
+}
+
+
+/**
  * A preferences value: `nodes[0]`, its members after it.
  */
 public struct PlistValue: Equatable, Hashable {
@@ -12264,6 +13148,11 @@ public enum AgentEffectValue: Equatable, Hashable {
      */
     case note(text: String
     )
+    /**
+     * An agent finished a turn (the companion pet counts it).
+     */
+    case finished(connectionId: String, paneId: String
+    )
 
 
 
@@ -12305,6 +13194,9 @@ public struct FfiConverterTypeAgentEffectValue: FfiConverterRustBuffer {
         case 7: return .requestAuthorization
         
         case 8: return .note(text: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 9: return .finished(connectionId: try FfiConverterString.read(from: &buf), paneId: try FfiConverterString.read(from: &buf)
         )
         
         default: throw UniffiInternalError.unexpectedEnumCase
@@ -12351,6 +13243,12 @@ public struct FfiConverterTypeAgentEffectValue: FfiConverterRustBuffer {
         case let .note(text):
             writeInt(&buf, Int32(8))
             FfiConverterString.write(text, into: &buf)
+            
+        
+        case let .finished(connectionId,paneId):
+            writeInt(&buf, Int32(9))
+            FfiConverterString.write(connectionId, into: &buf)
+            FfiConverterString.write(paneId, into: &buf)
             
         }
     }
@@ -20032,6 +20930,30 @@ public func FfiConverterTypeUnreachableValue_lower(_ value: UnreachableValue) ->
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterOptionUInt8: FfiConverterRustBuffer {
+    typealias SwiftType = UInt8?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterUInt8.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterUInt8.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterOptionUInt16: FfiConverterRustBuffer {
     typealias SwiftType = UInt16?
 
@@ -20200,6 +21122,30 @@ fileprivate struct FfiConverterOptionString: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterOptionData: FfiConverterRustBuffer {
+    typealias SwiftType = Data?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterData.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterData.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterOptionTypeAgentMachine: FfiConverterRustBuffer {
     typealias SwiftType = AgentMachine?
 
@@ -20216,6 +21162,78 @@ fileprivate struct FfiConverterOptionTypeAgentMachine: FfiConverterRustBuffer {
         switch try readInt(&buf) as Int8 {
         case 0: return nil
         case 1: return try FfiConverterTypeAgentMachine.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionTypePetCloudHost: FfiConverterRustBuffer {
+    typealias SwiftType = PetCloudHost?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypePetCloudHost.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypePetCloudHost.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionTypePetListener: FfiConverterRustBuffer {
+    typealias SwiftType = PetListener?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypePetListener.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypePetListener.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionTypePetMachine: FfiConverterRustBuffer {
+    typealias SwiftType = PetMachine?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypePetMachine.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypePetMachine.read(from: &buf)
         default: throw UniffiInternalError.unexpectedOptionalTag
         }
     }
@@ -20408,6 +21426,30 @@ fileprivate struct FfiConverterOptionTypeImportedKey: FfiConverterRustBuffer {
         switch try readInt(&buf) as Int8 {
         case 0: return nil
         case 1: return try FfiConverterTypeImportedKey.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionTypePetIsland: FfiConverterRustBuffer {
+    typealias SwiftType = PetIsland?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypePetIsland.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypePetIsland.read(from: &buf)
         default: throw UniffiInternalError.unexpectedOptionalTag
         }
     }
@@ -23313,6 +24355,57 @@ private let initializationResult: InitializationResult = {
     if (uniffi_moshpit_ffi_checksum_method_pairingsfile_remove() != 32380) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_moshpit_ffi_checksum_method_petcloudhost_get() != 16117) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_moshpit_ffi_checksum_method_petcloudhost_put() != 31286) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_moshpit_ffi_checksum_method_petlistener_changed() != 39045) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_moshpit_ffi_checksum_method_petmachine_agent_finished() != 5872) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_moshpit_ffi_checksum_method_petmachine_cloud_changed() != 34267) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_moshpit_ffi_checksum_method_petmachine_cloud_unavailable() != 60559) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_moshpit_ffi_checksum_method_petmachine_connected() != 13108) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_moshpit_ffi_checksum_method_petmachine_hatch() != 54190) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_moshpit_ffi_checksum_method_petmachine_island() != 1817) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_moshpit_ffi_checksum_method_petmachine_message() != 35061) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_moshpit_ffi_checksum_method_petmachine_rename() != 16141) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_moshpit_ffi_checksum_method_petmachine_roamed() != 12503) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_moshpit_ffi_checksum_method_petmachine_seen() != 30191) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_moshpit_ffi_checksum_method_petmachine_set_choice() != 3602) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_moshpit_ffi_checksum_method_petmachine_set_cloud() != 56353) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_moshpit_ffi_checksum_method_petmachine_set_listener() != 2437) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_moshpit_ffi_checksum_method_petmachine_set_pace() != 29199) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_moshpit_ffi_checksum_method_coresessions_home_message() != 16804) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -23365,6 +24458,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_moshpit_ffi_checksum_method_coresessions_set_foreground() != 23018) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_moshpit_ffi_checksum_method_coresessions_set_pet() != 58174) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_moshpit_ffi_checksum_method_coresessions_set_visible() != 47125) {
@@ -23649,6 +24745,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_moshpit_ffi_checksum_constructor_hostcarecore_new() != 62958) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_moshpit_ffi_checksum_constructor_petmachine_new() != 7221) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_moshpit_ffi_checksum_constructor_coresessions_new() != 8258) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -23681,6 +24780,8 @@ private let initializationResult: InitializationResult = {
     uniffiCallbackInitHostCarePlatform()
     uniffiCallbackInitKeychainHost()
     uniffiCallbackInitPairingsFile()
+    uniffiCallbackInitPetCloudHost()
+    uniffiCallbackInitPetListener()
     uniffiCallbackInitPreferencesHost()
     uniffiCallbackInitSessionEventSink()
     uniffiCallbackInitTransferProgress()

@@ -40,6 +40,7 @@
 
 pub mod alert;
 pub mod button;
+pub mod companion;
 pub mod control;
 pub mod empty;
 pub mod feedback;

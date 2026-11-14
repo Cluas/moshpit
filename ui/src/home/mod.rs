@@ -35,6 +35,7 @@
 pub mod bar;
 mod card;
 pub mod model;
+pub mod pet;
 mod rows;
 mod swipe;
 pub mod words;
@@ -70,6 +71,9 @@ pub enum Message {
     /// `{"op": "trees", "trees": […]}`: what the page last said of each
     /// host's lists, for a page made again.
     Trees(Vec<TreeState>),
+    /// `{"op": "pet", …}`: the companion, and the count of its moments
+    /// ([`pet`]).
+    Pet(Box<moshpit_pet::PetView>, u64),
 }
 
 /// What the page says of one host's lists: its idle group open or not;
@@ -106,6 +110,7 @@ impl Message {
             "trees" => serde_json::from_value::<TreesFields>(fields)
                 .map(|f| Message::Trees(f.trees))
                 .map_err(|e| format!("home: trees: {e}")),
+            "pet" => pet::parse(fields).map(|(view, seq)| Message::Pet(Box::new(view), seq)),
             other => Err(format!("home: no op {other:?}")),
         }
     }
@@ -119,6 +124,12 @@ impl Message {
                 value.to_string()
             }
             Message::Trees(trees) => json!({"op": "trees", "trees": trees}).to_string(),
+            Message::Pet(view, seq) => {
+                let mut value = serde_json::to_value(view).expect("a pet serializes");
+                value["op"] = json!("pet");
+                value["seq"] = json!(seq);
+                value.to_string()
+            }
         }
     }
 }
@@ -274,6 +285,10 @@ pub(crate) struct Ctx {
     pub(crate) now: Signal<f64>,
     /// The row whose swipe tray is open (one at a time on the page).
     pub(crate) open: Signal<Option<String>>,
+    /// The companion ([`pet`]).
+    pub(crate) pet: pet::PetCtx,
+    /// Where it perches and how, from what Home shows.
+    pub(crate) perch: Memo<Option<(pet::Perch, moshpit_pet::Pose)>>,
 }
 
 impl Ctx {
@@ -352,6 +367,8 @@ pub fn HomeScreen(props: ScreenProps) -> impl IntoElement {
     let bar = BarMetrics::standard(idiom());
     let state = signal(None::<HomeState>);
     let trees = signal(HashMap::<String, TreeState>::new());
+    let pet_ctx = pet::PetCtx::new();
+    let (pet_view, pet_seq) = (pet_ctx.view, pet_ctx.seq);
     channel::hear(
         channel.as_ref(),
         Screen::Home,
@@ -363,18 +380,31 @@ pub fn HomeScreen(props: ScreenProps) -> impl IntoElement {
                     .map(|t| (t.connection.clone(), t))
                     .collect(),
             ),
+            Message::Pet(view, seq) => {
+                pet_view.set(Some(*view));
+                pet_seq.set(seq);
+            }
         },
     );
     // One breath for every working dot on the page (§4.12).
     share_breath();
     let now = signal(unix_now());
     let _ticker = set_interval(Duration::from_secs(30), move || now.set(unix_now()));
+    let perch = computed(move || {
+        state.with(|s| {
+            s.as_ref()
+                .and_then(|s| pet::perch(&s.connections, &agent_word()))
+        })
+    });
     let ctx = Ctx {
         tell: tell_host(channel),
         trees,
         now,
         open: signal(None),
+        pet: pet_ctx,
+        perch,
     };
+    let _seen = pet::seen(ctx.tell.clone());
     let offset = animated_value(0.0);
     let pull = animated_value(0.0);
     let ready = computed(move || state.with(Option::is_some));
@@ -646,12 +676,13 @@ fn needs_you(waiting: Memo<Vec<(model::WaitingRow, String)>>, ctx: Ctx) -> AnyEl
             let rows = waiting.get_untracked();
             let ctx = ctx.clone();
             untracked(move || {
-                section()
+                let card = section()
                     .rows(
                         rows.into_iter()
                             .map(|(w, user)| rows::waiting_row(w, user, &ctx)),
                     )
-                    .into_element()
+                    .into_element();
+                pet::on(ctx.clone(), pet::Perch::NeedsYou, card)
             })
         }))
         .into_element()
@@ -755,7 +786,10 @@ fn connections_group(hosts: Memo<Vec<model::Connection>>, ctx: Ctx) -> AnyElemen
         .child(view().w_full().gap(px(GROUP_GAP)).child(each(
             hosts,
             |c: &model::Connection| c.id.clone(),
-            move |connection, _| card::card(connection, ctx.clone()),
+            move |connection, _| {
+                let id = connection.with_untracked(|c| c.id.clone());
+                pet::on(ctx.clone(), pet::Perch::Host(id), card::card(connection, ctx.clone()))
+            },
         )))
         .into_element()
 }
@@ -790,7 +824,7 @@ fn saved_group(saved: Memo<Vec<model::Connection>>, ctx: Ctx) -> AnyElement {
             shown.with(|_| ());
             let hosts = saved.get_untracked();
             let ctx = ctx.clone();
-            untracked(move || rows::saved_card(hosts, &ctx))
+            untracked(move || pet::on(ctx.clone(), pet::Perch::Saved, rows::saved_card(hosts, &ctx)))
         }))
         .into_element()
 }

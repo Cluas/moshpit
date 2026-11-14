@@ -63,6 +63,9 @@ final class RustCore {
             deviceLabel: label)
         self.init(sessions: sessions, credentials: credentials)
         receive = { [weak self] events in self?.deliver(events) }
+        // The companion hears of connections made and mosh roams lived
+        // through (PET-DESIGN §15.2, §15.7).
+        sessions.setPet(pet: CompanionPet.shared.machine)
         isForeground = UIApplication.shared.applicationState != .background
         if !isForeground { sessions.setForeground(foreground: false) }
         startPathWatch()

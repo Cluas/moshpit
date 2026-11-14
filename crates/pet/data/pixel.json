@@ -1,0 +1,4513 @@
+{
+  "about": "Moshpit companion, pixel theme. Source of truth for every pixel sprite: a palette per appearance, parts as rows of palette keys ('.' is transparent), and frames as layers of parts at [x, y] (an optional 'flip' mirrors a part). tools/build.py renders it. Grid 24 x 24; draw at whole device pixels per cell (24 pt at 1 pt per cell, 40 pt = 5 px per cell at 3x).",
+  "version": 1,
+  "grid": 24,
+  "props_palette": {
+    "light": {
+      "k": "#4B5160",
+      "K": "#D7DBE3",
+      "a": "#2FB67A",
+      "A": "#FFB35C",
+      "g": "#8FB8FF",
+      "G": "#5E8EE6",
+      "y": "#FFD36E",
+      "x": "#FFE07A",
+      "m": "#E5484D",
+      "M": "#B8343A",
+      "C": "#7A4A2A",
+      "S": "#7DBBFF",
+      "z": "#7E7C76",
+      "H": "#F2557A",
+      "l": "#5E5C56",
+      "E": "#F7F3EA",
+      "B": "#5E8EE6",
+      "Y": "#FFE9A8",
+      "J": "#FFFFFF",
+      "F": "#B9A6F0",
+      "X": "#E6DAC6",
+      "Z": "#F27BA6",
+      "V": "#7CC97F",
+      "D": "#3E8E4A",
+      "T": "#E8B53C",
+      "U": "#9AD8F5",
+      "N": "#E5484D"
+    },
+    "dark": {
+      "k": "#3A3F4A",
+      "K": "#AEB4C0",
+      "a": "#4CC38A",
+      "A": "#FFB35C",
+      "g": "#8FB8FF",
+      "G": "#5E8EE6",
+      "y": "#FFD36E",
+      "x": "#FFE07A",
+      "m": "#E5484D",
+      "M": "#B8343A",
+      "C": "#A8703F",
+      "S": "#8EC5FF",
+      "z": "#A7A398",
+      "H": "#FF7B97",
+      "l": "#C9C3B6",
+      "E": "#F2EFE8",
+      "B": "#7AA7FF",
+      "Y": "#FFE9A8",
+      "J": "#FFFFFF",
+      "F": "#B9A6F0",
+      "X": "#D9CDB8",
+      "Z": "#F27BA6",
+      "V": "#86D58A",
+      "D": "#4FA35C",
+      "T": "#F2C94C",
+      "U": "#A8E2FA",
+      "N": "#FF6B70"
+    }
+  },
+  "props": {
+    "keyboard": [
+      "oooooooooooooooooooo",
+      "okkkkkkkkkkkkkkkkkko",
+      "okKkKkKkKkKkKkKkKkko",
+      "okkKKKKKKKKKKKKKKkko",
+      "oooooooooooooooooooo"
+    ],
+    "key_lit": [
+      "a"
+    ],
+    "bubble_bang": [
+      ".ooooo.",
+      "oAAeAAo",
+      "oAAeAAo",
+      "oAAeAAo",
+      "oAAAAAo",
+      "oAAeAAo",
+      ".ooooo.",
+      "....o.."
+    ],
+    "tap": [
+      "l...",
+      ".l.l",
+      "....",
+      "..ll"
+    ],
+    "gift": [
+      ".yy..yy.",
+      "..yyyy..",
+      "oooyyooo",
+      "oggyyggo",
+      "oyyyyyyo",
+      "oGGyyGGo",
+      "oooooooo"
+    ],
+    "letter": [
+      "oooooo",
+      "oEEEEo",
+      "oEBBEo",
+      "oooooo"
+    ],
+    "gem": [
+      ".ooo.",
+      "oxggo",
+      "ogggo",
+      ".oGo.",
+      "..o.."
+    ],
+    "sparkle": [
+      ".x.",
+      "xxx",
+      ".x."
+    ],
+    "sparkle_small": [
+      "x"
+    ],
+    "mug_up": [
+      "oooo..",
+      "ommoo.",
+      "ommo.o",
+      "oMMoo.",
+      "oooo.."
+    ],
+    "mug_side": [
+      "ooooo",
+      "CmmMo",
+      "CmmMo",
+      "ooooo"
+    ],
+    "drops": [
+      "..C",
+      ".C.",
+      "C.."
+    ],
+    "puddle": [
+      ".CCCCC.",
+      "CCCCCCC"
+    ],
+    "sweat": [
+      ".S",
+      "SS",
+      "SS"
+    ],
+    "z_small": [
+      "zzz",
+      "..z",
+      ".z.",
+      "zzz"
+    ],
+    "z_big": [
+      "zzzz",
+      "...z",
+      "..z.",
+      ".z..",
+      "zzzz"
+    ],
+    "heart": [
+      "HH.HH",
+      "HHHHH",
+      ".HHH.",
+      "..H.."
+    ],
+    "heart_small": [
+      "H.H",
+      "HHH",
+      ".H."
+    ],
+    "glow": [
+      "Y..YY..Y",
+      ".Y.YY.Y.",
+      "........"
+    ],
+    "egg": {
+      "rows": [
+        "..........oooo..........",
+        "........ooJJEEoo........",
+        ".......oJJEEEFEEo.......",
+        "......oJEEFEEEEEEo......",
+        "......oJEEEEEEEFEo......",
+        ".....oEEEEEEEEEEEEo.....",
+        ".....oEFEEEEEEEEEXo.....",
+        ".....oZEEEZEEEZEEXo.....",
+        ".....oEZEZEZEZEZEZo.....",
+        ".....oEEZEEEZEEEZXo.....",
+        ".....oEEEEEEEEFEEXo.....",
+        ".....oEEEFEEEEEEEXo.....",
+        ".....oXEEEEEEEEEEXo.....",
+        "......oXEEEEEEEEXo......",
+        "......oXXEEEEEEXXo......",
+        ".......oXXXXXXXXo.......",
+        "........oooooooo........"
+      ],
+      "dy": 5
+    },
+    "egg_top": {
+      "rows": [
+        "..........oooo..........",
+        "........ooJJEEoo........",
+        ".......oJJEEEFEEo.......",
+        "......oJEEFEEEEEEo......",
+        "......oJEEEEEEEFEo......",
+        ".....oEEEEEEEEEEEEo.....",
+        ".....oEFEEEEEEEEEXo.....",
+        ".....oZEEEZEEEZEEXo.....",
+        ".....oo.oo.oo.oo.oo....."
+      ],
+      "dy": 5
+    },
+    "egg_bottom": {
+      "rows": [
+        "......oo.oo.oo.oo.o.....",
+        ".....oEEZEEEZEEEZXo.....",
+        ".....oEEEEEEEEFEEXo.....",
+        ".....oEEEFEEEEEEEXo.....",
+        ".....oXEEEEEEEEEEXo.....",
+        "......oXEEEEEEEEXo......",
+        "......oXXEEEEEEXXo......",
+        ".......oXXXXXXXXo.......",
+        "........oooooooo........"
+      ],
+      "dy": 13
+    },
+    "crack1": [
+      "..o",
+      ".o.",
+      "..o",
+      ".o."
+    ],
+    "crack2": [
+      "o...o...",
+      ".o.o.o.o",
+      "..o...o."
+    ],
+    "rays": [
+      "Y..Y....Y..Y",
+      ".Y..Y..Y..Y.",
+      "..Y......Y.."
+    ],
+    "shell_piece": [
+      ".oooo.",
+      "oJEEEo",
+      "oEFEEo",
+      "o.oo.o"
+    ]
+  },
+  "characters": {
+    "tun": {
+      "name": {
+        "zh": "墩墩",
+        "en": "Tun"
+      },
+      "palette": {
+        "light": {
+          "o": "#3B2A30",
+          "b": "#F4DCC4",
+          "s": "#E0BB9E",
+          "h": "#FFF5EA",
+          "e": "#2B1F26",
+          "w": "#FFFFFF",
+          "r": "#EE9A9A",
+          "d": "#8E4A58",
+          "c": "#F4A49C"
+        },
+        "dark": {
+          "o": "#6B5458",
+          "b": "#F0D6BD",
+          "s": "#D3AE91",
+          "h": "#FFF5EA",
+          "e": "#2B1F26",
+          "w": "#FFFFFF",
+          "r": "#EE9A9A",
+          "d": "#8E4A58",
+          "c": "#F4A49C"
+        }
+      },
+      "parts": {
+        "body": {
+          "rows": [
+            ".........oooooo.........",
+            ".......oohhhbbboo.......",
+            "......ohhbbbbbbbbo......",
+            ".....ohbbbbbbbbbbbo.....",
+            ".....obbbbbbbbbbbbo.....",
+            "....obbbbbbbbbbbbbbo....",
+            "....obbbbbbbbbbbbbso....",
+            "....obbbbbbbbbbbbbso....",
+            "....obbbbbbbbbbbbbso....",
+            "....obbbbbbbbbbbbbso....",
+            "....obbbbbbbbbbbbbso....",
+            "....obbbbbbbbbbbbbso....",
+            "....osssbbbbbbbbssso....",
+            "....obbbssssssssbbso....",
+            "....obbbbbbbbbbbbbso....",
+            ".....osssbbbbbbssso.....",
+            ".....obbbssssssssso.....",
+            "......oooooooooooo......"
+          ],
+          "anchors": {
+            "head": [
+              12,
+              0
+            ],
+            "face": [
+              12,
+              8
+            ],
+            "brow": [
+              12,
+              2
+            ],
+            "belly": [
+              15,
+              13
+            ]
+          }
+        },
+        "body_curl": {
+          "rows": [
+            "........oooooooo........",
+            "......oohhhbbbbboo......",
+            ".....ohhbbbbbbbbbbo.....",
+            "....ohbbbbbbbbbbbbbo....",
+            "...obbbbbbbbbbbbbbbbo...",
+            "...obbbbbbbbbbbbbbbso...",
+            "...osssbbbbbbbbbbssso...",
+            "...obbbssssssssssbbbo...",
+            "...obbbbbbbbbbbbbbbso...",
+            "...osssbbbbbbbbbbssso...",
+            "....obbbssssssssbbbo....",
+            ".....osssssssssssso.....",
+            "......oooooooooooo......"
+          ],
+          "anchors": {
+            "head": [
+              12,
+              0
+            ],
+            "face": [
+              12,
+              6
+            ],
+            "brow": [
+              12,
+              2
+            ],
+            "belly": [
+              15,
+              8
+            ]
+          }
+        },
+        "eyes_open": [
+          "we....we",
+          "ee....ee"
+        ],
+        "eyes_blink": [
+          "........",
+          "ee....ee"
+        ],
+        "eyes_closed": [
+          "ee....ee"
+        ],
+        "eyes_happy": [
+          ".e......e.",
+          "e.e....e.e"
+        ],
+        "eyes_shock": [
+          "eee....eee",
+          "ewe....ewe",
+          "eee....eee"
+        ],
+        "snout": [
+          ".rr.",
+          "rddr",
+          ".rr."
+        ],
+        "snout_open": [
+          ".rr.",
+          "rddr",
+          "rddr",
+          ".rr."
+        ],
+        "snout_small": [
+          "rr"
+        ],
+        "cheeks": [
+          "cc........cc"
+        ],
+        "limb": [
+          ".oo",
+          "obb",
+          ".oo"
+        ],
+        "foot": [
+          "obbo",
+          "obbo",
+          "oooo"
+        ],
+        "paw": [
+          "obo",
+          "obo"
+        ],
+        "arm_up": [
+          ".ooo.",
+          "obbbo",
+          "obbbo",
+          ".obo.",
+          ".obo.",
+          ".obo.",
+          ".bbo.",
+          ".bbo."
+        ],
+        "eyes_oops": [
+          ".e......e.",
+          "..e....e..",
+          ".e......e."
+        ],
+        "body@0": {
+          "rows": [
+            ".........oooooo.........",
+            ".......oohhhbbboo.......",
+            "......ohhbbbbbbbbo......",
+            ".....ohbbbbbbbbbbbo.....",
+            "....obbbbbbbbbbbbbbo....",
+            "....obbbbbbbbbbbbbso....",
+            "....obbbbbbbbbbbbbso....",
+            "....obbbbbbbbbbbbbso....",
+            "....obbbbbbbbbbbbbso....",
+            "....osssbbbbbbbbssso....",
+            "....obbbssssssssbbso....",
+            "....obbbbbbbbbbbbbso....",
+            ".....osssbbbbbbssso.....",
+            ".....obbbssssssssso.....",
+            "......oooooooooooo......"
+          ],
+          "dy": 3,
+          "anchors": {
+            "head": [
+              12,
+              0
+            ],
+            "face": [
+              12,
+              5
+            ],
+            "brow": [
+              12,
+              1
+            ],
+            "belly": [
+              15,
+              10
+            ]
+          }
+        }
+      },
+      "states": {
+        "idle": [
+          {
+            "ms": 1800,
+            "layers": [
+              [
+                "deco_back",
+                0,
+                0
+              ],
+              [
+                "body",
+                0,
+                4
+              ],
+              [
+                "deco",
+                0,
+                0
+              ],
+              [
+                "limb",
+                2,
+                12
+              ],
+              [
+                "limb",
+                19,
+                12,
+                "flip"
+              ],
+              [
+                "leg",
+                2,
+                17
+              ],
+              [
+                "leg",
+                19,
+                17,
+                "flip"
+              ],
+              [
+                "foot",
+                6,
+                21
+              ],
+              [
+                "foot",
+                14,
+                21
+              ],
+              [
+                "eyes_open",
+                8,
+                10
+              ],
+              [
+                "snout",
+                10,
+                13
+              ],
+              [
+                "cheeks",
+                6,
+                13
+              ]
+            ]
+          },
+          {
+            "ms": 140,
+            "layers": [
+              [
+                "deco_back",
+                0,
+                0
+              ],
+              [
+                "body",
+                0,
+                4
+              ],
+              [
+                "deco",
+                0,
+                0
+              ],
+              [
+                "limb",
+                2,
+                12
+              ],
+              [
+                "limb",
+                19,
+                12,
+                "flip"
+              ],
+              [
+                "leg",
+                2,
+                17
+              ],
+              [
+                "leg",
+                19,
+                17,
+                "flip"
+              ],
+              [
+                "foot",
+                6,
+                21
+              ],
+              [
+                "foot",
+                14,
+                21
+              ],
+              [
+                "eyes_blink",
+                8,
+                10
+              ],
+              [
+                "snout",
+                10,
+                13
+              ],
+              [
+                "cheeks",
+                6,
+                13
+              ]
+            ]
+          },
+          {
+            "ms": 1300,
+            "layers": [
+              [
+                "deco_back",
+                0,
+                0
+              ],
+              [
+                "body",
+                0,
+                4
+              ],
+              [
+                "deco",
+                0,
+                0
+              ],
+              [
+                "limb",
+                2,
+                12
+              ],
+              [
+                "limb",
+                19,
+                12,
+                "flip"
+              ],
+              [
+                "leg",
+                2,
+                17
+              ],
+              [
+                "leg",
+                19,
+                17,
+                "flip"
+              ],
+              [
+                "foot",
+                6,
+                21
+              ],
+              [
+                "foot",
+                14,
+                21
+              ],
+              [
+                "eyes_open",
+                9,
+                10
+              ],
+              [
+                "snout",
+                10,
+                13
+              ],
+              [
+                "cheeks",
+                6,
+                13
+              ]
+            ]
+          }
+        ],
+        "working": [
+          {
+            "ms": 120,
+            "layers": [
+              [
+                "deco_back",
+                0,
+                0
+              ],
+              [
+                "body",
+                0,
+                4
+              ],
+              [
+                "deco",
+                0,
+                0
+              ],
+              [
+                "eyes_open",
+                8,
+                11
+              ],
+              [
+                "snout",
+                10,
+                14
+              ],
+              [
+                "keyboard",
+                2,
+                18
+              ],
+              [
+                "paw",
+                4,
+                18
+              ],
+              [
+                "paw",
+                7,
+                17
+              ],
+              [
+                "paw",
+                13,
+                18
+              ],
+              [
+                "paw",
+                16,
+                17
+              ],
+              [
+                "key_lit",
+                5,
+                20
+              ],
+              [
+                "key_lit",
+                14,
+                20
+              ]
+            ]
+          },
+          {
+            "ms": 120,
+            "layers": [
+              [
+                "deco_back",
+                0,
+                0
+              ],
+              [
+                "body",
+                0,
+                4
+              ],
+              [
+                "deco",
+                0,
+                0
+              ],
+              [
+                "eyes_open",
+                8,
+                11
+              ],
+              [
+                "snout",
+                10,
+                14
+              ],
+              [
+                "keyboard",
+                2,
+                18
+              ],
+              [
+                "paw",
+                4,
+                17
+              ],
+              [
+                "paw",
+                7,
+                17
+              ],
+              [
+                "paw",
+                13,
+                17
+              ],
+              [
+                "paw",
+                16,
+                17
+              ]
+            ]
+          },
+          {
+            "ms": 120,
+            "layers": [
+              [
+                "deco_back",
+                0,
+                0
+              ],
+              [
+                "body",
+                0,
+                4
+              ],
+              [
+                "deco",
+                0,
+                0
+              ],
+              [
+                "eyes_open",
+                8,
+                11
+              ],
+              [
+                "snout",
+                10,
+                14
+              ],
+              [
+                "keyboard",
+                2,
+                18
+              ],
+              [
+                "paw",
+                4,
+                17
+              ],
+              [
+                "paw",
+                7,
+                18
+              ],
+              [
+                "paw",
+                13,
+                17
+              ],
+              [
+                "paw",
+                16,
+                18
+              ],
+              [
+                "key_lit",
+                8,
+                20
+              ],
+              [
+                "key_lit",
+                17,
+                20
+              ]
+            ]
+          },
+          {
+            "ms": 120,
+            "layers": [
+              [
+                "deco_back",
+                0,
+                0
+              ],
+              [
+                "body",
+                0,
+                4
+              ],
+              [
+                "deco",
+                0,
+                0
+              ],
+              [
+                "eyes_blink",
+                8,
+                11
+              ],
+              [
+                "snout",
+                10,
+                14
+              ],
+              [
+                "keyboard",
+                2,
+                18
+              ],
+              [
+                "paw",
+                4,
+                17
+              ],
+              [
+                "paw",
+                7,
+                17
+              ],
+              [
+                "paw",
+                13,
+                17
+              ],
+              [
+                "paw",
+                16,
+                17
+              ]
+            ]
+          }
+        ],
+        "waiting": [
+          {
+            "ms": 420,
+            "layers": [
+              [
+                "deco_back",
+                0,
+                0
+              ],
+              [
+                "body",
+                0,
+                4
+              ],
+              [
+                "deco",
+                0,
+                0
+              ],
+              [
+                "limb",
+                2,
+                12
+              ],
+              [
+                "leg",
+                2,
+                17
+              ],
+              [
+                "leg",
+                19,
+                17,
+                "flip"
+              ],
+              [
+                "foot",
+                6,
+                21
+              ],
+              [
+                "foot",
+                14,
+                21
+              ],
+              [
+                "arm_up",
+                17,
+                3
+              ],
+              [
+                "eyes_open",
+                8,
+                10
+              ],
+              [
+                "snout_open",
+                10,
+                13
+              ],
+              [
+                "cheeks",
+                6,
+                14
+              ],
+              [
+                "tap",
+                20,
+                0
+              ],
+              [
+                "bubble_bang",
+                0,
+                0
+              ]
+            ]
+          },
+          {
+            "ms": 420,
+            "layers": [
+              [
+                "deco_back",
+                0,
+                0
+              ],
+              [
+                "body",
+                0,
+                4
+              ],
+              [
+                "deco",
+                0,
+                0
+              ],
+              [
+                "limb",
+                2,
+                12
+              ],
+              [
+                "leg",
+                2,
+                17
+              ],
+              [
+                "leg",
+                19,
+                17,
+                "flip"
+              ],
+              [
+                "foot",
+                6,
+                21
+              ],
+              [
+                "foot",
+                14,
+                21
+              ],
+              [
+                "arm_up",
+                17,
+                4
+              ],
+              [
+                "eyes_open",
+                8,
+                10
+              ],
+              [
+                "snout",
+                10,
+                13
+              ],
+              [
+                "cheeks",
+                6,
+                14
+              ],
+              [
+                "bubble_bang",
+                0,
+                0
+              ]
+            ]
+          }
+        ],
+        "done": [
+          {
+            "ms": 600,
+            "layers": [
+              [
+                "deco_back",
+                0,
+                0
+              ],
+              [
+                "body",
+                0,
+                4
+              ],
+              [
+                "deco",
+                0,
+                0
+              ],
+              [
+                "leg",
+                2,
+                17
+              ],
+              [
+                "leg",
+                19,
+                17,
+                "flip"
+              ],
+              [
+                "foot",
+                6,
+                21
+              ],
+              [
+                "foot",
+                14,
+                21
+              ],
+              [
+                "eyes_happy",
+                7,
+                10
+              ],
+              [
+                "snout",
+                10,
+                12
+              ],
+              [
+                "cheeks",
+                6,
+                12
+              ],
+              [
+                "gift",
+                8,
+                15
+              ],
+              [
+                "paw",
+                6,
+                17
+              ],
+              [
+                "paw",
+                15,
+                17
+              ],
+              [
+                "sparkle",
+                19,
+                8
+              ]
+            ]
+          },
+          {
+            "ms": 600,
+            "layers": [
+              [
+                "deco_back",
+                0,
+                0
+              ],
+              [
+                "body",
+                0,
+                4
+              ],
+              [
+                "deco",
+                0,
+                0
+              ],
+              [
+                "leg",
+                2,
+                17
+              ],
+              [
+                "leg",
+                19,
+                17,
+                "flip"
+              ],
+              [
+                "foot",
+                6,
+                21
+              ],
+              [
+                "foot",
+                14,
+                21
+              ],
+              [
+                "eyes_happy",
+                7,
+                10
+              ],
+              [
+                "snout",
+                10,
+                12
+              ],
+              [
+                "cheeks",
+                6,
+                12
+              ],
+              [
+                "gift",
+                8,
+                14
+              ],
+              [
+                "paw",
+                6,
+                16
+              ],
+              [
+                "paw",
+                15,
+                16
+              ],
+              [
+                "sparkle",
+                2,
+                7
+              ],
+              [
+                "sparkle_small",
+                20,
+                12
+              ]
+            ]
+          },
+          {
+            "ms": 600,
+            "layers": [
+              [
+                "deco_back",
+                0,
+                0
+              ],
+              [
+                "body",
+                0,
+                4
+              ],
+              [
+                "deco",
+                0,
+                0
+              ],
+              [
+                "leg",
+                2,
+                17
+              ],
+              [
+                "leg",
+                19,
+                17,
+                "flip"
+              ],
+              [
+                "foot",
+                6,
+                21
+              ],
+              [
+                "foot",
+                14,
+                21
+              ],
+              [
+                "eyes_happy",
+                7,
+                10
+              ],
+              [
+                "snout",
+                10,
+                12
+              ],
+              [
+                "cheeks",
+                6,
+                12
+              ],
+              [
+                "gift",
+                8,
+                15
+              ],
+              [
+                "paw",
+                6,
+                17
+              ],
+              [
+                "paw",
+                15,
+                17
+              ],
+              [
+                "sparkle",
+                20,
+                3
+              ],
+              [
+                "sparkle_small",
+                3,
+                10
+              ]
+            ]
+          }
+        ],
+        "error": [
+          {
+            "ms": 500,
+            "layers": [
+              [
+                "deco_back",
+                0,
+                0
+              ],
+              [
+                "body",
+                0,
+                4
+              ],
+              [
+                "deco",
+                0,
+                0
+              ],
+              [
+                "limb",
+                2,
+                12
+              ],
+              [
+                "limb",
+                19,
+                15,
+                "flip"
+              ],
+              [
+                "leg",
+                2,
+                17
+              ],
+              [
+                "foot",
+                6,
+                21
+              ],
+              [
+                "foot",
+                14,
+                21
+              ],
+              [
+                "eyes_open",
+                9,
+                10
+              ],
+              [
+                "snout",
+                10,
+                13
+              ],
+              [
+                "mug_up",
+                18,
+                17
+              ]
+            ]
+          },
+          {
+            "ms": 350,
+            "layers": [
+              [
+                "deco_back",
+                0,
+                0
+              ],
+              [
+                "body",
+                0,
+                4
+              ],
+              [
+                "deco",
+                0,
+                0
+              ],
+              [
+                "limb",
+                2,
+                9
+              ],
+              [
+                "limb",
+                19,
+                9,
+                "flip"
+              ],
+              [
+                "leg",
+                2,
+                17
+              ],
+              [
+                "foot",
+                6,
+                21
+              ],
+              [
+                "foot",
+                14,
+                21
+              ],
+              [
+                "eyes_oops",
+                7,
+                9
+              ],
+              [
+                "snout_open",
+                10,
+                13
+              ],
+              [
+                "mug_side",
+                18,
+                19
+              ],
+              [
+                "drops",
+                15,
+                16
+              ]
+            ]
+          },
+          {
+            "ms": 1100,
+            "layers": [
+              [
+                "deco_back",
+                0,
+                0
+              ],
+              [
+                "body",
+                0,
+                4
+              ],
+              [
+                "deco",
+                0,
+                0
+              ],
+              [
+                "limb",
+                2,
+                12
+              ],
+              [
+                "limb",
+                19,
+                12,
+                "flip"
+              ],
+              [
+                "leg",
+                2,
+                17
+              ],
+              [
+                "foot",
+                6,
+                21
+              ],
+              [
+                "foot",
+                14,
+                21
+              ],
+              [
+                "eyes_oops",
+                7,
+                9
+              ],
+              [
+                "snout_open",
+                10,
+                13
+              ],
+              [
+                "mug_side",
+                18,
+                19
+              ],
+              [
+                "puddle",
+                12,
+                22
+              ],
+              [
+                "sweat",
+                18,
+                4
+              ]
+            ]
+          }
+        ],
+        "sleeping": [
+          {
+            "ms": 1000,
+            "layers": [
+              [
+                "body_curl",
+                0,
+                9
+              ],
+              [
+                "deco_curl",
+                0,
+                0
+              ],
+              [
+                "eyes_closed",
+                8,
+                14
+              ],
+              [
+                "snout_small",
+                11,
+                16
+              ],
+              [
+                "z_small",
+                18,
+                5
+              ]
+            ]
+          },
+          {
+            "ms": 1000,
+            "layers": [
+              [
+                "body_curl",
+                0,
+                9
+              ],
+              [
+                "deco_curl",
+                0,
+                0
+              ],
+              [
+                "eyes_closed",
+                8,
+                14
+              ],
+              [
+                "snout_small",
+                11,
+                16
+              ],
+              [
+                "z_small",
+                17,
+                6
+              ],
+              [
+                "z_big",
+                19,
+                0
+              ]
+            ]
+          }
+        ],
+        "petted": [
+          {
+            "ms": 330,
+            "layers": [
+              [
+                "deco_back",
+                0,
+                0
+              ],
+              [
+                "body",
+                0,
+                4
+              ],
+              [
+                "deco",
+                0,
+                0
+              ],
+              [
+                "limb",
+                2,
+                12
+              ],
+              [
+                "limb",
+                19,
+                12,
+                "flip"
+              ],
+              [
+                "leg",
+                2,
+                17
+              ],
+              [
+                "leg",
+                19,
+                17,
+                "flip"
+              ],
+              [
+                "foot",
+                6,
+                21
+              ],
+              [
+                "foot",
+                14,
+                21
+              ],
+              [
+                "eyes_happy",
+                7,
+                10
+              ],
+              [
+                "snout",
+                10,
+                13
+              ],
+              [
+                "cheeks",
+                6,
+                12
+              ],
+              [
+                "heart_small",
+                18,
+                2
+              ]
+            ]
+          },
+          {
+            "ms": 330,
+            "layers": [
+              [
+                "deco_back",
+                0,
+                0
+              ],
+              [
+                "body",
+                0,
+                4
+              ],
+              [
+                "deco",
+                0,
+                0
+              ],
+              [
+                "limb",
+                2,
+                9
+              ],
+              [
+                "limb",
+                19,
+                9,
+                "flip"
+              ],
+              [
+                "leg",
+                2,
+                17
+              ],
+              [
+                "leg",
+                19,
+                17,
+                "flip"
+              ],
+              [
+                "foot",
+                6,
+                21
+              ],
+              [
+                "foot",
+                14,
+                21
+              ],
+              [
+                "eyes_happy",
+                7,
+                10
+              ],
+              [
+                "snout",
+                10,
+                13
+              ],
+              [
+                "cheeks",
+                6,
+                12
+              ],
+              [
+                "heart",
+                17,
+                0
+              ],
+              [
+                "heart_small",
+                3,
+                3
+              ]
+            ]
+          },
+          {
+            "ms": 330,
+            "layers": [
+              [
+                "deco_back",
+                0,
+                0
+              ],
+              [
+                "body",
+                0,
+                4
+              ],
+              [
+                "deco",
+                0,
+                0
+              ],
+              [
+                "limb",
+                2,
+                12
+              ],
+              [
+                "limb",
+                19,
+                12,
+                "flip"
+              ],
+              [
+                "leg",
+                2,
+                17
+              ],
+              [
+                "leg",
+                19,
+                17,
+                "flip"
+              ],
+              [
+                "foot",
+                6,
+                21
+              ],
+              [
+                "foot",
+                14,
+                21
+              ],
+              [
+                "eyes_happy",
+                7,
+                10
+              ],
+              [
+                "snout",
+                10,
+                13
+              ],
+              [
+                "cheeks",
+                6,
+                12
+              ],
+              [
+                "heart_small",
+                19,
+                0
+              ]
+            ]
+          }
+        ],
+        "pogo": [
+          {
+            "ms": 220,
+            "layers": [
+              [
+                "deco_back",
+                0,
+                0
+              ],
+              [
+                "body",
+                0,
+                4
+              ],
+              [
+                "deco",
+                0,
+                0
+              ],
+              [
+                "limb",
+                2,
+                9
+              ],
+              [
+                "limb",
+                19,
+                9,
+                "flip"
+              ],
+              [
+                "leg",
+                2,
+                17
+              ],
+              [
+                "leg",
+                19,
+                17,
+                "flip"
+              ],
+              [
+                "foot",
+                6,
+                21
+              ],
+              [
+                "foot",
+                14,
+                21
+              ],
+              [
+                "eyes_happy",
+                7,
+                10
+              ],
+              [
+                "snout_open",
+                10,
+                13
+              ],
+              [
+                "cheeks",
+                6,
+                13
+              ]
+            ]
+          },
+          {
+            "ms": 220,
+            "shift": [
+              0,
+              -2
+            ],
+            "layers": [
+              [
+                "deco_back",
+                0,
+                0
+              ],
+              [
+                "body",
+                0,
+                4
+              ],
+              [
+                "deco",
+                0,
+                0
+              ],
+              [
+                "limb",
+                2,
+                8
+              ],
+              [
+                "limb",
+                19,
+                8,
+                "flip"
+              ],
+              [
+                "leg",
+                2,
+                17
+              ],
+              [
+                "leg",
+                19,
+                17,
+                "flip"
+              ],
+              [
+                "foot",
+                6,
+                21
+              ],
+              [
+                "foot",
+                14,
+                21
+              ],
+              [
+                "eyes_oops",
+                7,
+                9
+              ],
+              [
+                "snout_open",
+                10,
+                13
+              ],
+              [
+                "cheeks",
+                6,
+                13
+              ],
+              [
+                "sparkle_small",
+                2,
+                2
+              ],
+              [
+                "sparkle_small",
+                21,
+                3
+              ]
+            ]
+          },
+          {
+            "ms": 220,
+            "layers": [
+              [
+                "deco_back",
+                0,
+                0
+              ],
+              [
+                "body",
+                0,
+                4
+              ],
+              [
+                "deco",
+                0,
+                0
+              ],
+              [
+                "limb",
+                2,
+                12
+              ],
+              [
+                "limb",
+                19,
+                12,
+                "flip"
+              ],
+              [
+                "leg",
+                2,
+                17
+              ],
+              [
+                "leg",
+                19,
+                17,
+                "flip"
+              ],
+              [
+                "foot",
+                6,
+                21
+              ],
+              [
+                "foot",
+                14,
+                21
+              ],
+              [
+                "eyes_blink",
+                8,
+                10
+              ],
+              [
+                "snout",
+                10,
+                13
+              ],
+              [
+                "cheeks",
+                6,
+                13
+              ]
+            ]
+          }
+        ],
+        "hatch": [
+          {
+            "ms": 700,
+            "accessories": false,
+            "layers": [
+              [
+                "egg",
+                0,
+                0
+              ],
+              [
+                "crack1",
+                13,
+                7
+              ]
+            ]
+          },
+          {
+            "ms": 260,
+            "accessories": false,
+            "layers": [
+              [
+                "egg",
+                -1,
+                0
+              ],
+              [
+                "crack1",
+                12,
+                7
+              ],
+              [
+                "crack2",
+                5,
+                11
+              ]
+            ]
+          },
+          {
+            "ms": 260,
+            "accessories": false,
+            "layers": [
+              [
+                "egg",
+                1,
+                0
+              ],
+              [
+                "crack1",
+                14,
+                7
+              ],
+              [
+                "crack2",
+                7,
+                11
+              ]
+            ]
+          },
+          {
+            "ms": 520,
+            "accessories": false,
+            "layers": [
+              [
+                "egg_bottom",
+                0,
+                0
+              ],
+              [
+                "egg_top",
+                0,
+                -4
+              ],
+              [
+                "rays",
+                6,
+                10
+              ]
+            ]
+          },
+          {
+            "ms": 700,
+            "accessories": false,
+            "layers": [
+              [
+                "deco_back",
+                0,
+                0
+              ],
+              [
+                "body",
+                0,
+                4
+              ],
+              [
+                "deco",
+                0,
+                0
+              ],
+              [
+                "eyes_closed",
+                8,
+                11
+              ],
+              [
+                "snout_small",
+                11,
+                13
+              ],
+              [
+                "egg_bottom",
+                0,
+                0
+              ],
+              [
+                "shell_piece",
+                17,
+                0
+              ],
+              [
+                "sparkle",
+                2,
+                4
+              ]
+            ]
+          },
+          {
+            "ms": 1200,
+            "layers": [
+              [
+                "deco_back",
+                0,
+                0
+              ],
+              [
+                "body",
+                0,
+                4
+              ],
+              [
+                "deco",
+                0,
+                0
+              ],
+              [
+                "limb",
+                2,
+                9
+              ],
+              [
+                "limb",
+                19,
+                9,
+                "flip"
+              ],
+              [
+                "eyes_happy",
+                7,
+                10
+              ],
+              [
+                "snout",
+                10,
+                12
+              ],
+              [
+                "cheeks",
+                6,
+                12
+              ],
+              [
+                "egg_bottom",
+                0,
+                0
+              ],
+              [
+                "sparkle",
+                1,
+                5
+              ],
+              [
+                "sparkle_small",
+                21,
+                9
+              ],
+              [
+                "heart_small",
+                19,
+                1
+              ]
+            ]
+          }
+        ]
+      },
+      "weight": 300,
+      "rarity": "common",
+      "kind": {
+        "zh": "水熊虫",
+        "en": "tardigrade"
+      },
+      "stretch": [
+        12,
+        16
+      ],
+      "stage_marks": {
+        "0": [
+          "shell_cap"
+        ],
+        "2": [
+          "moss_crown"
+        ]
+      }
+    },
+    "coo": {
+      "name": {
+        "zh": "咕咕",
+        "en": "Coo"
+      },
+      "palette": {
+        "light": {
+          "o": "#2B2D3A",
+          "b": "#B9C3D6",
+          "s": "#8F9AB2",
+          "h": "#E3E9F3",
+          "w": "#A3AEC6",
+          "W": "#5E6880",
+          "n": "#4FB894",
+          "v": "#8C7BD6",
+          "R": "#F07A3E",
+          "e": "#1C1C26",
+          "q": "#F4F1EA",
+          "f": "#E7838A",
+          "p": "#FF5FA2",
+          "c": "#F7A3B8"
+        },
+        "dark": {
+          "o": "#5C6074",
+          "b": "#B9C3D6",
+          "s": "#8F9AB2",
+          "h": "#E3E9F3",
+          "w": "#A3AEC6",
+          "W": "#5E6880",
+          "n": "#4FB894",
+          "v": "#8C7BD6",
+          "R": "#F07A3E",
+          "e": "#1C1C26",
+          "q": "#F4F1EA",
+          "f": "#E7838A",
+          "p": "#FF5FA2",
+          "c": "#F7A3B8"
+        }
+      },
+      "parts": {
+        "body": {
+          "rows": [
+            "..............p.p.......",
+            ".............ppppp......",
+            ".............ooooo......",
+            "............obbbbbo.....",
+            "...........obbbbbbbo....",
+            "...........obbbbbRebo...",
+            "...........obbbbbbbbqkk.",
+            "...........obbbbbbbbbk..",
+            ".......oooonnnvvbbbbo...",
+            ".....oobbbbnnnvvvbbbo...",
+            "....obbbbbbbnnvvbbbo....",
+            "...obbbbbbbbbbbbbbbo....",
+            "...obbwwwwwwwwbbbbbo....",
+            "..obbwwwwwwwwwwbbbbo....",
+            ".oobwwWWWWWWWWwwbbbo....",
+            "ossbwwwwwwwwwwwwbbbo....",
+            "ossssbwWWWWWWwwwbbo.....",
+            ".ossssbwwwwwwwbbbso.....",
+            "..oooosbbbbbbbbbso......",
+            "......osbbbbbbbsso......",
+            ".......ooooooooo........",
+            ".........ff..ff.........",
+            "........fff.fff.........",
+            "........................"
+          ],
+          "anchors": {
+            "head": [
+              16,
+              2
+            ],
+            "face": [
+              16,
+              7
+            ],
+            "brow": [
+              16,
+              3
+            ],
+            "belly": [
+              9,
+              15
+            ]
+          }
+        },
+        "eye_open": [
+          "Re"
+        ],
+        "eye_closed": [
+          "oo"
+        ],
+        "eye_happy": [
+          "ee"
+        ],
+        "blush": [
+          "cc"
+        ],
+        "beak_open": [
+          "qkk",
+          "...",
+          "kk."
+        ],
+        "body@0": {
+          "rows": [
+            "........................",
+            "..............hh........",
+            ".............ooooo......",
+            "............obbbbbo.....",
+            "...........obbbbbbbo....",
+            "...........obbbbbRebo...",
+            "...........obbbbbbbbqkk.",
+            "...........obbbbbbbbbk..",
+            ".......oooonnnvvbbbbo...",
+            ".....oobbbbnnnvvvbbbo...",
+            "....obbbbbbbnnvvbbbo....",
+            "...obbbbbbbbbbbbbbbo....",
+            "...obbwwwwwwwwbbbbbo....",
+            "..obbwwwwwwwwwwbbbbo....",
+            ".oobwwWWWWWWWWwwbbbo....",
+            "ossbwwwwwwwwwwwwbbbo....",
+            "ossssbwWWWWWWwwwbbo.....",
+            ".ossssbwwwwwwwbbbso.....",
+            "..oooosbbbbbbbbbso......",
+            "......osbbbbbbbsso......",
+            ".......ooooooooo........",
+            ".........ff..ff.........",
+            "........fff.fff........."
+          ],
+          "dy": 1,
+          "anchors": {
+            "head": [
+              16,
+              2
+            ],
+            "face": [
+              16,
+              7
+            ],
+            "brow": [
+              16,
+              3
+            ],
+            "belly": [
+              9,
+              15
+            ]
+          }
+        }
+      },
+      "states": {
+        "idle": [
+          {
+            "ms": 1600,
+            "layers": [
+              [
+                "body",
+                0,
+                0
+              ]
+            ]
+          },
+          {
+            "ms": 140,
+            "layers": [
+              [
+                "body",
+                0,
+                0
+              ],
+              [
+                "eye_closed",
+                17,
+                5
+              ]
+            ]
+          },
+          {
+            "ms": 900,
+            "layers": [
+              [
+                "body",
+                0,
+                1
+              ]
+            ]
+          }
+        ],
+        "working": [
+          {
+            "ms": 160,
+            "layers": [
+              [
+                "body",
+                0,
+                1
+              ],
+              [
+                "keyboard",
+                2,
+                19
+              ],
+              [
+                "key_lit",
+                9,
+                21
+              ],
+              [
+                "key_lit",
+                13,
+                21
+              ]
+            ]
+          },
+          {
+            "ms": 160,
+            "layers": [
+              [
+                "body",
+                0,
+                0
+              ],
+              [
+                "keyboard",
+                2,
+                19
+              ]
+            ]
+          },
+          {
+            "ms": 160,
+            "layers": [
+              [
+                "body",
+                0,
+                1
+              ],
+              [
+                "keyboard",
+                2,
+                19
+              ],
+              [
+                "key_lit",
+                11,
+                21
+              ],
+              [
+                "key_lit",
+                15,
+                21
+              ]
+            ]
+          }
+        ],
+        "waiting": [
+          {
+            "ms": 380,
+            "layers": [
+              [
+                "body",
+                1,
+                1
+              ],
+              [
+                "tap",
+                20,
+                8
+              ],
+              [
+                "bubble_bang",
+                0,
+                0
+              ]
+            ]
+          },
+          {
+            "ms": 380,
+            "layers": [
+              [
+                "body",
+                0,
+                1
+              ],
+              [
+                "bubble_bang",
+                0,
+                0
+              ]
+            ]
+          }
+        ],
+        "done": [
+          {
+            "ms": 600,
+            "layers": [
+              [
+                "body",
+                0,
+                1
+              ],
+              [
+                "letter",
+                18,
+                8
+              ],
+              [
+                "eye_happy",
+                17,
+                6
+              ],
+              [
+                "sparkle",
+                2,
+                3
+              ]
+            ]
+          },
+          {
+            "ms": 600,
+            "layers": [
+              [
+                "body",
+                0,
+                0
+              ],
+              [
+                "letter",
+                18,
+                7
+              ],
+              [
+                "eye_happy",
+                17,
+                5
+              ],
+              [
+                "sparkle_small",
+                4,
+                5
+              ],
+              [
+                "sparkle",
+                21,
+                2
+              ]
+            ]
+          }
+        ],
+        "error": [
+          {
+            "ms": 500,
+            "layers": [
+              [
+                "body",
+                -1,
+                0
+              ],
+              [
+                "mug_up",
+                18,
+                17
+              ]
+            ]
+          },
+          {
+            "ms": 350,
+            "layers": [
+              [
+                "body",
+                -1,
+                0
+              ],
+              [
+                "mug_side",
+                18,
+                19
+              ],
+              [
+                "drops",
+                15,
+                16
+              ],
+              [
+                "sweat",
+                9,
+                2
+              ]
+            ]
+          },
+          {
+            "ms": 1100,
+            "layers": [
+              [
+                "body",
+                -1,
+                0
+              ],
+              [
+                "mug_side",
+                18,
+                19
+              ],
+              [
+                "puddle",
+                13,
+                22
+              ],
+              [
+                "sweat",
+                9,
+                3
+              ]
+            ]
+          }
+        ],
+        "sleeping": [
+          {
+            "ms": 1000,
+            "layers": [
+              [
+                "body",
+                0,
+                2
+              ],
+              [
+                "eye_closed",
+                17,
+                7
+              ],
+              [
+                "z_small",
+                20,
+                0
+              ]
+            ]
+          },
+          {
+            "ms": 1000,
+            "layers": [
+              [
+                "body",
+                0,
+                2
+              ],
+              [
+                "eye_closed",
+                17,
+                7
+              ],
+              [
+                "z_small",
+                19,
+                1
+              ],
+              [
+                "z_big",
+                4,
+                0
+              ]
+            ]
+          }
+        ],
+        "petted": [
+          {
+            "ms": 330,
+            "layers": [
+              [
+                "body",
+                0,
+                0
+              ],
+              [
+                "eye_happy",
+                17,
+                5
+              ],
+              [
+                "blush",
+                16,
+                7
+              ],
+              [
+                "heart_small",
+                19,
+                0
+              ]
+            ]
+          },
+          {
+            "ms": 330,
+            "layers": [
+              [
+                "body",
+                0,
+                1
+              ],
+              [
+                "eye_happy",
+                17,
+                6
+              ],
+              [
+                "blush",
+                16,
+                8
+              ],
+              [
+                "heart",
+                3,
+                1
+              ],
+              [
+                "heart_small",
+                20,
+                0
+              ]
+            ]
+          },
+          {
+            "ms": 330,
+            "layers": [
+              [
+                "body",
+                0,
+                0
+              ],
+              [
+                "eye_happy",
+                17,
+                5
+              ],
+              [
+                "blush",
+                16,
+                7
+              ],
+              [
+                "heart_small",
+                4,
+                0
+              ]
+            ]
+          }
+        ]
+      },
+      "weight": 250,
+      "rarity": "common",
+      "kind": {
+        "zh": "信鸽",
+        "en": "pigeon"
+      },
+      "stretch": [
+        8,
+        15
+      ],
+      "stage_marks": {
+        "0": [
+          "shell_cap"
+        ],
+        "2": [
+          "crest_big"
+        ]
+      }
+    },
+    "dig": {
+      "name": {
+        "zh": "挖挖",
+        "en": "Dig"
+      },
+      "palette": {
+        "light": {
+          "o": "#241A26",
+          "b": "#6E5F72",
+          "s": "#56495A",
+          "h": "#8E8092",
+          "u": "#9C8EA0",
+          "n": "#2F2733",
+          "L": "#FFD36E",
+          "l": "#8C8A83",
+          "e": "#120C14",
+          "w": "#FFFFFF",
+          "P": "#FF9EB5",
+          "Q": "#E07C97",
+          "c": "#FF9EB5"
+        },
+        "dark": {
+          "o": "#A091A6",
+          "b": "#76677A",
+          "s": "#5E5162",
+          "h": "#96889A",
+          "u": "#A497A8",
+          "n": "#2F2733",
+          "L": "#FFD36E",
+          "l": "#8C8A83",
+          "e": "#120C14",
+          "w": "#FFFFFF",
+          "P": "#FF9EB5",
+          "Q": "#E07C97",
+          "c": "#FF9EB5"
+        }
+      },
+      "parts": {
+        "body": {
+          "rows": [
+            ".........oooooo.........",
+            ".......oohhbbbboo.......",
+            "......ohbbbbbbbbbo......",
+            ".....obbbbbbbbbbbbo.....",
+            "....obbbbbbbbbbbbbbo....",
+            "....obbbbbbbbbbbbbso....",
+            "...obbbbbbbbbbbbbbbso...",
+            "...obbbbbbbbbbbbbbbso...",
+            "...obbbbuuuuuuuubbbso...",
+            "...obbbuuuuuuuuuubbso...",
+            "...obbbuuuuuuuuuubbso...",
+            "...obbbuuuuuuuuuubbso...",
+            "...obbbbuuuuuuuubbbso...",
+            "....obbbbuuuuuubbbso....",
+            "....osbbbbbbbbbbbsso....",
+            ".....osssssssssssso.....",
+            "......oooooooooooo......"
+          ],
+          "anchors": {
+            "head": [
+              12,
+              0
+            ],
+            "face": [
+              12,
+              9
+            ],
+            "brow": [
+              12,
+              3
+            ],
+            "belly": [
+              15,
+              12
+            ]
+          }
+        },
+        "band": [
+          "nnnnnnnnnnnnnn"
+        ],
+        "lamp_on": [
+          ".oooo.",
+          "oLwLLo",
+          "oLLLLo",
+          ".oooo."
+        ],
+        "lamp_off": [
+          ".oooo.",
+          "olllll",
+          "ollllo",
+          ".oooo."
+        ],
+        "eyes_open": [
+          "e......e",
+          "e......e"
+        ],
+        "eyes_blink": [
+          "e......e"
+        ],
+        "eyes_happy": [
+          ".e......e.",
+          "e.e....e.e"
+        ],
+        "nose": [
+          ".PP.",
+          "PPPP",
+          ".PP."
+        ],
+        "cheeks": [
+          "cc........cc"
+        ],
+        "paw": [
+          ".ooo",
+          "wPPP",
+          "wQPP",
+          ".ooo"
+        ],
+        "paw_down": [
+          "oPPo",
+          "wPPw"
+        ],
+        "foot": [
+          "oPPo",
+          "oooo"
+        ],
+        "arm_up": [
+          "w.w.",
+          "oPPo",
+          "oPPo",
+          ".bo.",
+          ".bo.",
+          ".bbo"
+        ],
+        "band@0": [],
+        "lamp_on@0": [],
+        "lamp_off@0": []
+      },
+      "states": {
+        "idle": [
+          {
+            "ms": 1700,
+            "layers": [
+              [
+                "body",
+                0,
+                5
+              ],
+              [
+                "band",
+                5,
+                9
+              ],
+              [
+                "lamp_on",
+                9,
+                5
+              ],
+              [
+                "eyes_open",
+                8,
+                11
+              ],
+              [
+                "nose",
+                10,
+                13
+              ],
+              [
+                "paw",
+                0,
+                14
+              ],
+              [
+                "paw",
+                20,
+                14,
+                "flip"
+              ],
+              [
+                "foot",
+                7,
+                21
+              ],
+              [
+                "foot",
+                13,
+                21
+              ]
+            ]
+          },
+          {
+            "ms": 140,
+            "layers": [
+              [
+                "body",
+                0,
+                5
+              ],
+              [
+                "band",
+                5,
+                9
+              ],
+              [
+                "lamp_on",
+                9,
+                5
+              ],
+              [
+                "eyes_blink",
+                8,
+                12
+              ],
+              [
+                "nose",
+                10,
+                13
+              ],
+              [
+                "paw",
+                0,
+                14
+              ],
+              [
+                "paw",
+                20,
+                14,
+                "flip"
+              ],
+              [
+                "foot",
+                7,
+                21
+              ],
+              [
+                "foot",
+                13,
+                21
+              ]
+            ]
+          },
+          {
+            "ms": 900,
+            "layers": [
+              [
+                "body",
+                0,
+                5
+              ],
+              [
+                "band",
+                5,
+                9
+              ],
+              [
+                "lamp_on",
+                9,
+                5
+              ],
+              [
+                "glow",
+                8,
+                1
+              ],
+              [
+                "eyes_open",
+                8,
+                11
+              ],
+              [
+                "nose",
+                10,
+                13
+              ],
+              [
+                "paw",
+                0,
+                14
+              ],
+              [
+                "paw",
+                20,
+                14,
+                "flip"
+              ],
+              [
+                "foot",
+                7,
+                21
+              ],
+              [
+                "foot",
+                13,
+                21
+              ]
+            ]
+          }
+        ],
+        "working": [
+          {
+            "ms": 140,
+            "layers": [
+              [
+                "body",
+                0,
+                5
+              ],
+              [
+                "band",
+                5,
+                9
+              ],
+              [
+                "lamp_on",
+                9,
+                5
+              ],
+              [
+                "eyes_open",
+                8,
+                12
+              ],
+              [
+                "nose",
+                10,
+                14
+              ],
+              [
+                "keyboard",
+                2,
+                18
+              ],
+              [
+                "paw_down",
+                5,
+                18
+              ],
+              [
+                "paw_down",
+                14,
+                17
+              ],
+              [
+                "key_lit",
+                6,
+                20
+              ]
+            ]
+          },
+          {
+            "ms": 140,
+            "layers": [
+              [
+                "body",
+                0,
+                5
+              ],
+              [
+                "band",
+                5,
+                9
+              ],
+              [
+                "lamp_on",
+                9,
+                5
+              ],
+              [
+                "eyes_open",
+                8,
+                12
+              ],
+              [
+                "nose",
+                10,
+                14
+              ],
+              [
+                "keyboard",
+                2,
+                18
+              ],
+              [
+                "paw_down",
+                5,
+                17
+              ],
+              [
+                "paw_down",
+                14,
+                18
+              ],
+              [
+                "key_lit",
+                15,
+                20
+              ]
+            ]
+          }
+        ],
+        "waiting": [
+          {
+            "ms": 420,
+            "layers": [
+              [
+                "body",
+                0,
+                5
+              ],
+              [
+                "band",
+                5,
+                9
+              ],
+              [
+                "lamp_on",
+                9,
+                5
+              ],
+              [
+                "glow",
+                8,
+                1
+              ],
+              [
+                "eyes_open",
+                8,
+                11
+              ],
+              [
+                "nose",
+                10,
+                13
+              ],
+              [
+                "paw",
+                0,
+                14
+              ],
+              [
+                "arm_up",
+                18,
+                3
+              ],
+              [
+                "foot",
+                7,
+                21
+              ],
+              [
+                "foot",
+                13,
+                21
+              ],
+              [
+                "tap",
+                20,
+                0
+              ],
+              [
+                "bubble_bang",
+                0,
+                0
+              ]
+            ]
+          },
+          {
+            "ms": 420,
+            "layers": [
+              [
+                "body",
+                0,
+                5
+              ],
+              [
+                "band",
+                5,
+                9
+              ],
+              [
+                "lamp_off",
+                9,
+                5
+              ],
+              [
+                "eyes_open",
+                8,
+                11
+              ],
+              [
+                "nose",
+                10,
+                13
+              ],
+              [
+                "paw",
+                0,
+                14
+              ],
+              [
+                "arm_up",
+                18,
+                4
+              ],
+              [
+                "foot",
+                7,
+                21
+              ],
+              [
+                "foot",
+                13,
+                21
+              ],
+              [
+                "bubble_bang",
+                0,
+                0
+              ]
+            ]
+          }
+        ],
+        "done": [
+          {
+            "ms": 600,
+            "layers": [
+              [
+                "body",
+                0,
+                5
+              ],
+              [
+                "band",
+                5,
+                9
+              ],
+              [
+                "lamp_on",
+                9,
+                5
+              ],
+              [
+                "eyes_happy",
+                7,
+                11
+              ],
+              [
+                "nose",
+                10,
+                13
+              ],
+              [
+                "cheeks",
+                6,
+                14
+              ],
+              [
+                "paw",
+                0,
+                14
+              ],
+              [
+                "paw",
+                20,
+                14,
+                "flip"
+              ],
+              [
+                "foot",
+                7,
+                21
+              ],
+              [
+                "foot",
+                13,
+                21
+              ],
+              [
+                "gem",
+                10,
+                16
+              ],
+              [
+                "sparkle",
+                19,
+                7
+              ]
+            ]
+          },
+          {
+            "ms": 600,
+            "layers": [
+              [
+                "body",
+                0,
+                5
+              ],
+              [
+                "band",
+                5,
+                9
+              ],
+              [
+                "lamp_on",
+                9,
+                5
+              ],
+              [
+                "eyes_happy",
+                7,
+                11
+              ],
+              [
+                "nose",
+                10,
+                13
+              ],
+              [
+                "cheeks",
+                6,
+                14
+              ],
+              [
+                "paw",
+                0,
+                14
+              ],
+              [
+                "paw",
+                20,
+                14,
+                "flip"
+              ],
+              [
+                "foot",
+                7,
+                21
+              ],
+              [
+                "foot",
+                13,
+                21
+              ],
+              [
+                "gem",
+                10,
+                15
+              ],
+              [
+                "sparkle",
+                2,
+                6
+              ],
+              [
+                "sparkle_small",
+                20,
+                13
+              ]
+            ]
+          }
+        ],
+        "error": [
+          {
+            "ms": 500,
+            "layers": [
+              [
+                "body",
+                0,
+                5
+              ],
+              [
+                "band",
+                5,
+                9
+              ],
+              [
+                "lamp_on",
+                9,
+                5
+              ],
+              [
+                "eyes_open",
+                8,
+                11
+              ],
+              [
+                "nose",
+                10,
+                13
+              ],
+              [
+                "paw",
+                0,
+                14
+              ],
+              [
+                "paw",
+                19,
+                15,
+                "flip"
+              ],
+              [
+                "foot",
+                7,
+                21
+              ],
+              [
+                "foot",
+                13,
+                21
+              ],
+              [
+                "mug_up",
+                18,
+                17
+              ]
+            ]
+          },
+          {
+            "ms": 350,
+            "layers": [
+              [
+                "body",
+                0,
+                5
+              ],
+              [
+                "band",
+                5,
+                9
+              ],
+              [
+                "lamp_off",
+                9,
+                5
+              ],
+              [
+                "eyes_open",
+                8,
+                11
+              ],
+              [
+                "nose",
+                10,
+                13
+              ],
+              [
+                "paw",
+                0,
+                11
+              ],
+              [
+                "paw",
+                20,
+                11,
+                "flip"
+              ],
+              [
+                "foot",
+                7,
+                21
+              ],
+              [
+                "foot",
+                13,
+                21
+              ],
+              [
+                "mug_side",
+                18,
+                19
+              ],
+              [
+                "drops",
+                15,
+                16
+              ]
+            ]
+          },
+          {
+            "ms": 1100,
+            "layers": [
+              [
+                "body",
+                0,
+                5
+              ],
+              [
+                "band",
+                5,
+                9
+              ],
+              [
+                "lamp_off",
+                9,
+                5
+              ],
+              [
+                "eyes_open",
+                8,
+                11
+              ],
+              [
+                "nose",
+                10,
+                13
+              ],
+              [
+                "paw",
+                0,
+                14
+              ],
+              [
+                "paw",
+                20,
+                14,
+                "flip"
+              ],
+              [
+                "foot",
+                7,
+                21
+              ],
+              [
+                "foot",
+                13,
+                21
+              ],
+              [
+                "mug_side",
+                18,
+                19
+              ],
+              [
+                "puddle",
+                12,
+                22
+              ],
+              [
+                "sweat",
+                17,
+                4
+              ]
+            ]
+          }
+        ],
+        "sleeping": [
+          {
+            "ms": 1000,
+            "layers": [
+              [
+                "body",
+                0,
+                6
+              ],
+              [
+                "band",
+                5,
+                10
+              ],
+              [
+                "lamp_off",
+                9,
+                6
+              ],
+              [
+                "eyes_blink",
+                8,
+                13
+              ],
+              [
+                "nose",
+                10,
+                14
+              ],
+              [
+                "paw",
+                0,
+                15
+              ],
+              [
+                "paw",
+                20,
+                15,
+                "flip"
+              ],
+              [
+                "z_small",
+                19,
+                1
+              ]
+            ]
+          },
+          {
+            "ms": 1000,
+            "layers": [
+              [
+                "body",
+                0,
+                6
+              ],
+              [
+                "band",
+                5,
+                10
+              ],
+              [
+                "lamp_off",
+                9,
+                6
+              ],
+              [
+                "eyes_blink",
+                8,
+                13
+              ],
+              [
+                "nose",
+                10,
+                14
+              ],
+              [
+                "paw",
+                0,
+                15
+              ],
+              [
+                "paw",
+                20,
+                15,
+                "flip"
+              ],
+              [
+                "z_small",
+                18,
+                2
+              ],
+              [
+                "z_big",
+                20,
+                0
+              ]
+            ]
+          }
+        ],
+        "petted": [
+          {
+            "ms": 330,
+            "layers": [
+              [
+                "body",
+                0,
+                5
+              ],
+              [
+                "band",
+                5,
+                9
+              ],
+              [
+                "lamp_on",
+                9,
+                5
+              ],
+              [
+                "eyes_happy",
+                7,
+                11
+              ],
+              [
+                "nose",
+                10,
+                13
+              ],
+              [
+                "cheeks",
+                6,
+                13
+              ],
+              [
+                "paw",
+                0,
+                14
+              ],
+              [
+                "paw",
+                20,
+                14,
+                "flip"
+              ],
+              [
+                "foot",
+                7,
+                21
+              ],
+              [
+                "foot",
+                13,
+                21
+              ],
+              [
+                "heart_small",
+                18,
+                1
+              ]
+            ]
+          },
+          {
+            "ms": 330,
+            "layers": [
+              [
+                "body",
+                0,
+                5
+              ],
+              [
+                "band",
+                5,
+                9
+              ],
+              [
+                "lamp_on",
+                9,
+                5
+              ],
+              [
+                "eyes_happy",
+                7,
+                11
+              ],
+              [
+                "nose",
+                10,
+                13
+              ],
+              [
+                "cheeks",
+                6,
+                13
+              ],
+              [
+                "paw",
+                0,
+                11
+              ],
+              [
+                "paw",
+                20,
+                11,
+                "flip"
+              ],
+              [
+                "foot",
+                7,
+                21
+              ],
+              [
+                "foot",
+                13,
+                21
+              ],
+              [
+                "heart",
+                17,
+                0
+              ],
+              [
+                "heart_small",
+                3,
+                2
+              ]
+            ]
+          }
+        ]
+      },
+      "weight": 250,
+      "rarity": "common",
+      "kind": {
+        "zh": "戴矿灯的鼹鼠",
+        "en": "mole"
+      },
+      "stretch": [
+        12,
+        15
+      ],
+      "stage_marks": {
+        "0": [
+          "shell_cap"
+        ]
+      }
+    },
+    "hex": {
+      "name": {
+        "zh": "六六",
+        "en": "Hex"
+      },
+      "kind": {
+        "zh": "六角恐龙",
+        "en": "axolotl"
+      },
+      "template": "tun",
+      "weight": 150,
+      "rarity": "uncommon",
+      "stretch": [
+        12,
+        16
+      ],
+      "stage_marks": {
+        "0": [
+          "shell_cap"
+        ]
+      },
+      "palette": {
+        "light": {
+          "o": "#5A2B3B",
+          "b": "#F7B9CB",
+          "s": "#E395AE",
+          "h": "#FFE6EE",
+          "e": "#2B1F26",
+          "w": "#FFFFFF",
+          "r": "#C9506E",
+          "d": "#7A2A40",
+          "c": "#F28FA8",
+          "j": "#E5587A"
+        },
+        "dark": {
+          "o": "#8A5A6A",
+          "b": "#F7B9CB",
+          "s": "#E395AE",
+          "h": "#FFE6EE",
+          "e": "#2B1F26",
+          "w": "#FFFFFF",
+          "r": "#C9506E",
+          "d": "#7A2A40",
+          "c": "#F28FA8",
+          "j": "#F07A95"
+        }
+      },
+      "parts": {
+        "deco": {
+          "rows": [
+            ".j....................j.",
+            "..jj................jj..",
+            "....j..............j....",
+            ".jj..................jj.",
+            "...jj..............jj...",
+            "........................",
+            ".jjj................jjj."
+          ],
+          "dy": 5
+        },
+        "deco_curl": {
+          "rows": [
+            ".j....................j.",
+            "..j..................j..",
+            ".j....................j."
+          ],
+          "dy": 12
+        },
+        "eyes_open": {
+          "rows": [
+            "we......we",
+            "ee......ee"
+          ],
+          "dx": -1
+        },
+        "eyes_blink": {
+          "rows": [
+            "..........",
+            "ee......ee"
+          ],
+          "dx": -1
+        },
+        "eyes_closed": {
+          "rows": [
+            "ee......ee"
+          ],
+          "dx": -1
+        },
+        "snout": {
+          "rows": [
+            "e....e",
+            ".eeee."
+          ],
+          "dx": -1
+        },
+        "snout_open": [
+          ".ee.",
+          "e..e",
+          ".ee."
+        ],
+        "snout_small": [
+          "ee"
+        ]
+      }
+    },
+    "ether": {
+      "name": {
+        "zh": "漂漂",
+        "en": "Ether"
+      },
+      "kind": {
+        "zh": "水母",
+        "en": "jellyfish"
+      },
+      "template": "tun",
+      "weight": 50,
+      "rarity": "rare",
+      "stretch": [
+        12,
+        14
+      ],
+      "stage_marks": {
+        "0": [
+          "shell_cap"
+        ]
+      },
+      "palette": {
+        "light": {
+          "o": "#3A2F5E",
+          "b": "#D3C7F8",
+          "s": "#AC9CE8",
+          "h": "#F3EFFF",
+          "e": "#2B1F3A",
+          "w": "#FFFFFF",
+          "r": "#E38DB8",
+          "d": "#7A3A60",
+          "c": "#F7B3D6",
+          "u": "#8F7DDB"
+        },
+        "dark": {
+          "o": "#6A5E95",
+          "b": "#D3C7F8",
+          "s": "#AC9CE8",
+          "h": "#F3EFFF",
+          "e": "#2B1F3A",
+          "w": "#FFFFFF",
+          "r": "#E38DB8",
+          "d": "#7A3A60",
+          "c": "#F7B3D6",
+          "u": "#B3A6EE"
+        }
+      },
+      "parts": {
+        "body": {
+          "rows": [
+            ".........oooooo.........",
+            ".......oohhhbbboo.......",
+            "......ohhbbbbbbbbo......",
+            ".....ohbbbbbbbbbbbo.....",
+            ".....obbbbbbbbbbbbo.....",
+            "....obbbbbbbbbbbbbbo....",
+            "....obbbbbbbbbbbbbso....",
+            "....obbbbbbbbbbbbbso....",
+            "....obbbbbbbbbbbbbso....",
+            "....obbbbbbbbbbbbbso....",
+            "....osbbsbbsbbsbbsso....",
+            ".....oo.oo.oo.oo.oo.....",
+            "......u..u..u..u..u.....",
+            ".......u..u..u..u..u....",
+            "......u..u..u..u..u.....",
+            ".......u..u..u..u..u....",
+            "......u.....u.....u.....",
+            ".......u...........u...."
+          ],
+          "anchors": {
+            "head": [
+              12,
+              0
+            ],
+            "face": [
+              12,
+              8
+            ],
+            "brow": [
+              12,
+              2
+            ],
+            "belly": [
+              15,
+              8
+            ]
+          }
+        },
+        "deco": {
+          "rows": [
+            "......x..........x......"
+          ],
+          "dy": 9
+        },
+        "leg": [],
+        "foot": [],
+        "snout": [
+          "e..e",
+          ".ee."
+        ],
+        "snout_open": [
+          ".ee.",
+          "e..e",
+          ".ee."
+        ],
+        "snout_small": [
+          "ee"
+        ]
+      }
+    },
+    "moth": {
+      "name": {
+        "zh": "扑扑",
+        "en": "Lumen"
+      },
+      "kind": {
+        "zh": "夜蛾",
+        "en": "moth"
+      },
+      "template": "tun",
+      "weight": 0,
+      "rarity": "hidden",
+      "stretch": [
+        12,
+        16
+      ],
+      "stage_marks": {
+        "0": [
+          "shell_cap"
+        ]
+      },
+      "palette": {
+        "light": {
+          "o": "#3A3352",
+          "b": "#DCD3F0",
+          "s": "#B8ABDB",
+          "h": "#F5F1FF",
+          "e": "#221C33",
+          "w": "#FFFFFF",
+          "r": "#C98AB0",
+          "d": "#6A3A5A",
+          "c": "#F2B6D2",
+          "i": "#9A8CCF",
+          "t": "#6E62A3",
+          "v": "#FFD36E",
+          "n": "#3A3352"
+        },
+        "dark": {
+          "o": "#6E6690",
+          "b": "#DCD3F0",
+          "s": "#B8ABDB",
+          "h": "#F5F1FF",
+          "e": "#221C33",
+          "w": "#FFFFFF",
+          "r": "#C98AB0",
+          "d": "#6A3A5A",
+          "c": "#F2B6D2",
+          "i": "#A598DA",
+          "t": "#7A6EB0",
+          "v": "#FFD36E",
+          "n": "#B9B0DA"
+        }
+      },
+      "parts": {
+        "deco_back": {
+          "rows": [
+            ".ooo................ooo.",
+            "oiiio..............oiiio",
+            "oivvio............oivvio",
+            "oivvio............oivvio",
+            "oiiiio............oiiiio",
+            ".otiio............oiito.",
+            "..otio............oito..",
+            "...oo..............oo..."
+          ],
+          "dy": 6
+        },
+        "deco": {
+          "rows": [
+            ".......nn......nn.......",
+            "......n..n....n..n......",
+            ".........n....n.........",
+            "..........n..n.........."
+          ],
+          "dy": 0
+        },
+        "deco_curl": {
+          "rows": [
+            ".......n........n.......",
+            "........n......n........",
+            ".........n....n........."
+          ],
+          "dy": 6
+        },
+        "snout": [
+          ".ee."
+        ],
+        "snout_open": [
+          ".ee.",
+          "e..e",
+          ".ee."
+        ],
+        "snout_small": [
+          "ee"
+        ]
+      }
+    }
+  },
+  "accessories": {
+    "shell_cap": {
+      "rows": [
+        "..oooo..",
+        ".oJEEEo.",
+        "oEEFEEEo",
+        "oo.oo.oo"
+      ],
+      "pivot": [
+        4,
+        3
+      ],
+      "slot": "head"
+    },
+    "moss_crown": {
+      "rows": [
+        "..V...V.",
+        ".VDV.VDV",
+        "VDDVVDDV"
+      ],
+      "pivot": [
+        4,
+        2
+      ],
+      "slot": "head"
+    },
+    "crest_big": {
+      "rows": [
+        "Z.Z.Z.",
+        "ZZZZZZ",
+        "......"
+      ],
+      "pivot": [
+        3,
+        2
+      ],
+      "slot": "head"
+    },
+    "sprout": {
+      "rows": [
+        "VV..VV",
+        ".VVVV.",
+        "..DD..",
+        "..DD.."
+      ],
+      "pivot": [
+        3,
+        3
+      ],
+      "slot": "head"
+    },
+    "moss_tuft": {
+      "rows": [
+        "V.VV.V",
+        "VDVVDV"
+      ],
+      "pivot": [
+        3,
+        1
+      ],
+      "slot": "head"
+    },
+    "crystal": {
+      "rows": [
+        ".oo.",
+        "oUUo",
+        "oUJo",
+        ".oo."
+      ],
+      "pivot": [
+        2,
+        3
+      ],
+      "slot": "head"
+    },
+    "crown": {
+      "rows": [
+        "T.TT.T",
+        "TTTTTT",
+        "TNTTNT"
+      ],
+      "pivot": [
+        3,
+        2
+      ],
+      "slot": "head"
+    },
+    "freckles": {
+      "rows": [
+        "s.s......s.s"
+      ],
+      "pivot": [
+        6,
+        0
+      ],
+      "slot": "face"
+    },
+    "star_mark": {
+      "rows": [
+        ".x.",
+        "xxx",
+        ".x."
+      ],
+      "pivot": [
+        1,
+        1
+      ],
+      "slot": "brow"
+    },
+    "badge": {
+      "rows": [
+        ".oo.",
+        "oNJo",
+        "oJNo",
+        ".oo."
+      ],
+      "pivot": [
+        2,
+        2
+      ],
+      "slot": "belly"
+    }
+  },
+  "genome": {
+    "about": "Fur palettes recolour a species' b/s/h keys. Index 0 is the species' own colours. Shiny replaces them with a two-band body.",
+    "palettes": [
+      {
+        "id": "natural",
+        "zh": "原色"
+      },
+      {
+        "id": "peach",
+        "zh": "蜜桃",
+        "b": "#F8C4A8",
+        "s": "#E6A283",
+        "h": "#FFE7DA"
+      },
+      {
+        "id": "mint",
+        "zh": "薄荷",
+        "b": "#BFE8D2",
+        "s": "#93CDB0",
+        "h": "#E9FBF2"
+      },
+      {
+        "id": "sky",
+        "zh": "天蓝",
+        "b": "#BFD8FA",
+        "s": "#93B5E8",
+        "h": "#E8F2FF"
+      },
+      {
+        "id": "lilac",
+        "zh": "丁香",
+        "b": "#D6C8F5",
+        "s": "#B3A1E6",
+        "h": "#F1ECFF"
+      },
+      {
+        "id": "sand",
+        "zh": "沙色",
+        "b": "#E9D7A6",
+        "s": "#CFB57A",
+        "h": "#FAF1D8"
+      },
+      {
+        "id": "slate",
+        "zh": "石板",
+        "b": "#A9B4C6",
+        "s": "#8590A6",
+        "h": "#D6DDE8"
+      },
+      {
+        "id": "rose",
+        "zh": "玫瑰",
+        "b": "#F4B8C8",
+        "s": "#DE90A6",
+        "h": "#FFE3EB"
+      },
+      {
+        "id": "moss",
+        "zh": "苔绿",
+        "b": "#B7CF8F",
+        "s": "#94B068",
+        "h": "#E1EDC8"
+      },
+      {
+        "id": "charcoal",
+        "zh": "炭灰",
+        "b": "#77727F",
+        "s": "#5E5A66",
+        "h": "#99949F"
+      }
+    ],
+    "shiny": {
+      "id": "aurora",
+      "zh": "极光",
+      "top": "#D9C8FF",
+      "bottom": "#BDF2DE",
+      "s": "#A99BE0",
+      "h": "#FFFFFF",
+      "band_y": 13
+    },
+    "patterns": [
+      "plain",
+      "spots",
+      "stripes",
+      "patch"
+    ],
+    "eyes": [
+      "round",
+      "lidded",
+      "starry",
+      "button"
+    ],
+    "sizes": [
+      "short",
+      "standard",
+      "tall"
+    ],
+    "slots": [
+      "head",
+      "face"
+    ],
+    "grown": {
+      "head": [
+        "sprout",
+        "moss_tuft",
+        "crystal"
+      ],
+      "face": [
+        "freckles",
+        "star_mark"
+      ]
+    }
+  },
+  "egg_states": {
+    "egg": [
+      {
+        "ms": 1500,
+        "layers": [
+          [
+            "egg",
+            0,
+            0
+          ]
+        ]
+      },
+      {
+        "ms": 150,
+        "layers": [
+          [
+            "egg",
+            -1,
+            0
+          ]
+        ]
+      },
+      {
+        "ms": 150,
+        "layers": [
+          [
+            "egg",
+            1,
+            0
+          ]
+        ]
+      },
+      {
+        "ms": 900,
+        "layers": [
+          [
+            "egg",
+            0,
+            0
+          ]
+        ]
+      }
+    ],
+    "egg_ready": [
+      {
+        "ms": 700,
+        "layers": [
+          [
+            "egg",
+            0,
+            0
+          ],
+          [
+            "crack1",
+            13,
+            7
+          ]
+        ]
+      },
+      {
+        "ms": 140,
+        "layers": [
+          [
+            "egg",
+            -1,
+            0
+          ],
+          [
+            "crack1",
+            12,
+            7
+          ]
+        ]
+      },
+      {
+        "ms": 140,
+        "layers": [
+          [
+            "egg",
+            1,
+            0
+          ],
+          [
+            "crack1",
+            14,
+            7
+          ]
+        ]
+      }
+    ]
+  }
+}

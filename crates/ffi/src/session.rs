@@ -34,8 +34,8 @@
 //! (`moshpit_session::view_marks`).
 
 use std::net::SocketAddr;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 
 use moshpit_install::{HostCapabilities, Multiplexer};
 use moshpit_session::{
@@ -728,6 +728,9 @@ pub struct CoreSessions {
     /// The trusted host keys the sessions decide by: Home's marks are made
     /// from them (a host's key's face).
     known_hosts: Arc<KnownHosts>,
+    /// The companion pet, told of connections made and mosh roams lived
+    /// through ([`CoreSessions::set_pet`]).
+    pet: Arc<Mutex<Option<Arc<crate::pet::PetMachine>>>>,
 }
 
 impl CoreSessions {
@@ -780,8 +783,22 @@ impl CoreSessions {
         let (sessions, mut core_events) = Sessions::new(runtime.clone(), services, timing);
         let (out, mut pending) = mpsc::unbounded_channel::<SessionEvent>();
         let forward = out.clone();
+        let pet: Arc<Mutex<Option<Arc<crate::pet::PetMachine>>>> = Arc::default();
+        let pet_slot = pet.clone();
         runtime.spawn(async move {
+            let mut watch = moshpit_pet::watch::SessionWatch::default();
             while let Some(event) = core_events.recv().await {
+                let heard = match &event.kind {
+                    EventKind::State(state) => watch.state(event.session, pet_link(state)),
+                    EventKind::MoshMetrics { roaming, .. } => watch.roaming(event.session, *roaming),
+                    _ => None,
+                };
+                let machine = heard.and_then(|_| pet_slot.lock().unwrap_or_else(|e| e.into_inner()).clone());
+                match (heard, machine) {
+                    (Some(moshpit_pet::watch::Heard::Connected), Some(m)) => m.connected(),
+                    (Some(moshpit_pet::watch::Heard::Roamed), Some(m)) => m.roamed(),
+                    _ => {}
+                }
                 if let Some(event) = event_value(event)
                     && forward.send(event).is_err()
                 {
@@ -807,7 +824,14 @@ impl CoreSessions {
             tokens: AtomicU64::new(0),
             blackhole,
             known_hosts,
+            pet,
         })
+    }
+
+    /// The companion pet to tell of connections made and mosh roams lived
+    /// through.
+    pub fn set_pet(&self, pet: Option<Arc<crate::pet::PetMachine>>) {
+        *self.pet.lock().unwrap_or_else(|e| e.into_inner()) = pet;
     }
 
     /// Opens a session to `spec` and connects it; its id.
@@ -1184,6 +1208,16 @@ impl TmuxIntent {
                 TmuxAction::DeferResize { pane, cols, rows }
             }
         }
+    }
+}
+
+/// A session's state, as the pet hears it.
+fn pet_link(state: &core::SessionState) -> moshpit_pet::watch::Link {
+    use moshpit_pet::watch::Link;
+    match state {
+        core::SessionState::Connecting => Link::Connecting,
+        core::SessionState::Connected => Link::Connected,
+        _ => Link::Down,
     }
 }
 

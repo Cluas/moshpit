@@ -1,0 +1,20 @@
+[package]
+name = "moshpit-pet"
+description = "The companion pet (docs/nsh/PET-DESIGN.md §15–16 in moshpit-design): its record, the roll from a seed, growing up and its mutations, the easter eggs, the sync merge, and the pixel sprites it is drawn from — no platform in it"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+# The Live Activity's sprite travels as standard base64 (Swift's
+# `Data(base64Encoded:)` reads it as is).
+base64 = "0.22"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+# A name is at most eight user-perceived characters.
+unicode-segmentation = "1.13"
+
+[lints.rust]
+unsafe_code = "forbid"

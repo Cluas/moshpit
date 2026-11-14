@@ -37,6 +37,9 @@
 //!   ([`hostcare`]): the core's machine, with Swift as its platform (a
 //!   command on a session's host, the relay's HTTPS, the device token, the
 //!   App Group's pairings file).
+//! - [`moshpit_pet`]: the companion pet, through UniFFI ([`pet`]): its
+//!   record and rules, the screens' `{"op": "pet"}` message and the Live
+//!   Activity's sprites; the seed, the clock and iCloud are the app's.
 //! - [`moshpit_ui`]: the NSH screens, with NSH itself, and on iOS their
 //!   host's C ABI (`mp_ui_*`, `ui/include/moshpit_ui.h`, in the
 //!   `MoshpitFFI` module too): the app runs a screen in an NSH view behind
@@ -57,6 +60,7 @@ pub mod home;
 pub mod hostcare;
 pub mod keys;
 pub mod look;
+pub mod pet;
 pub mod session;
 pub mod store;
 

@@ -226,6 +226,9 @@ pub enum Effect {
     SaveAnnounced(BTreeMap<String, f64>),
     /// Ask for permission to post (a connection is being watched).
     RequestAuthorization,
+    /// An agent finished a turn: the hook's done edge, every one, whatever
+    /// the sound and the cards make of it (the companion pet counts them).
+    Finished { conn: String, pane: String },
     /// A decision worth a log line: the app's diagnostics, and what the
     /// device harnesses read (`announcing attention: pane %3 …`).
     Note(String),
@@ -779,6 +782,9 @@ impl Monitor {
             // Judged by what the previous stamp promised: push coming up
             // or going away changes the interval between two stamps.
             if is_turn_ending(mapped, new_state, previous_hook, previous_seen, now, previous_hold) {
+                // Before the card: `post_done` stops early when cards are off
+                // or the pane was on screen, and every finish counts here.
+                self.effects.push(Effect::Finished { conn: key.0.clone(), pane: key.1.clone() });
                 let duration = previous_since.map_or(0.0, |previous| since - previous);
                 let detail = if self.settings.show_detail { hook.title.clone() } else { None };
                 self.post_done(&key, &command, detail, duration, since, now);

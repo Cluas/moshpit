@@ -12,6 +12,7 @@
 //! - [`known_hosts`]: the trusted host keys, the model `moshpit-ssh` decides
 //!   from;
 //! - [`push`]: push pairings (`moshpit-seal`'s file and model);
+//! - [`pet`]: the companion pet's record and its egg's progress;
 //! - [`shortcuts`]: the shortcut bar, its built-ins and their reconcile step;
 //! - [`settings`]: every `AppSettings` key, type and default;
 //! - [`themes`], [`app_themes`]: terminal themes and accent themes, the
@@ -33,6 +34,7 @@ pub mod connections;
 pub mod harness;
 pub mod host;
 pub mod known_hosts;
+pub mod pet;
 pub mod plist;
 pub mod push;
 pub mod readiness;

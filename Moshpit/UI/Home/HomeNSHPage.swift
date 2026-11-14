@@ -33,6 +33,9 @@ struct HomeNSHPage: View {
     var onFailure: () -> Void
 
     @Environment(AgentActivityMonitor.self) private var monitor
+    /// The companion (moshpit-design PET-DESIGN §7.3): its message is posted
+    /// beside Home's record whenever it changes.
+    private let pet = CompanionPet.shared
     @State private var killTarget: HomeKillTarget?
     @State private var worktreeTarget: ConnectionCard.WorktreeTarget?
     @State private var worktreeForceTarget: ConnectionCard.WorktreeTarget?
@@ -70,7 +73,15 @@ struct HomeNSHPage: View {
             .onAppear {
                 model.update(record)
                 show(cards)
+                model.visible = true
+                model.updatePet(pet.message)
+                pet.seen()
+                // A ready egg hatches when Home shows (the core refuses
+                // unless it's ready and iCloud has settled).
+                pet.hatch()
             }
+            .onDisappear { model.visible = false }
+            .onChange(of: pet.revision) { _, _ in model.updatePet(pet.message) }
             .onChange(of: record) { _, new in model.update(new) }
             .onChange(of: cards) { _, new in show(new) }
             .modifier(HomeTreeDialogs(
@@ -273,6 +284,11 @@ final class HomeNSHModel {
     /// told them.
     private(set) var trees: [String: (collapsed: [String], expanded: [String], idle: Bool)] = [:]
     private weak var surface: NSHSurface?
+    /// The companion's last message (`{"op": "pet"}`).
+    private var pet: String?
+    /// Home is on screen (not under a pushed page): the egg hatches only
+    /// then, so the person sees it.
+    var visible = false
 
     /// `surface` shows Home from now on: the trees as they were, then the
     /// current state.
@@ -280,6 +296,14 @@ final class HomeNSHModel {
         self.surface = surface
         if !trees.isEmpty { surface.post(treesMessage) }
         if let record { surface.post(json: record.message) }
+        if let pet { surface.post(json: pet) }
+    }
+
+    /// The companion as it is now.
+    func updatePet(_ message: String) {
+        guard message != pet else { return }
+        pet = message
+        surface?.post(json: message)
     }
 
     /// ``attach(_:)``, the model filled from `current` (the page's record as
@@ -306,6 +330,16 @@ final class HomeNSHModel {
     /// (Home its idle group, the sessions page its sessions and windows),
     /// so a field a message leaves out keeps its value.
     func handle(_ message: [String: Any]) -> HomeIntent? {
+        switch message["ev"] as? String {
+        case "hatch":
+            if visible { CompanionPet.shared.hatch() }
+            return nil
+        case "pet-seen":
+            if visible { CompanionPet.shared.seen() }
+            return nil
+        default:
+            break
+        }
         if message["ev"] as? String == "tree", let connection = message["connection"] as? String {
             var tree = trees[connection] ?? (collapsed: [], expanded: [], idle: false)
             if let collapsed = message["collapsed"] as? [String] { tree.collapsed = collapsed }

@@ -338,6 +338,27 @@ fn a_long_finish_the_push_already_rang_is_a_silent_card_here() {
     assert_eq!(done.text.title, "✓ claude finished · 10 min");
 }
 
+/// The companion pet counts every finished turn: one `Finished` per turn,
+/// for its connection and pane, with the cards off too (`post_done` stops
+/// early then), none while it works, and none for the same done again.
+#[test]
+fn every_finished_turn_is_one_finished_effect_with_the_cards_off_too() {
+    let finished = |effects: &[Effect]| {
+        effects
+            .iter()
+            .filter(|e| matches!(e, Effect::Finished { conn, pane } if conn == CONN && pane == "%1"))
+            .count()
+    };
+    for mut bench in [Bench::new(Settings::default(), &[]), Bench::quiet()] {
+        // Polled while it works, as the hooks are, then done.
+        assert_eq!(finished(&bench.poll("%1", "working", T0, T0 + 599.0)), 0);
+        assert_eq!(finished(&bench.poll("%1", "done", T0 + 600.0, T0 + 601.0)), 1);
+        assert_eq!(finished(&bench.poll("%1", "done", T0 + 600.0, T0 + 606.0)), 0, "the same done again");
+        assert_eq!(finished(&bench.poll("%1", "working", T0 + 700.0, T0 + 799.0)), 0);
+        assert_eq!(finished(&bench.poll("%1", "done", T0 + 800.0, T0 + 801.0)), 1, "the next turn");
+    }
+}
+
 /// B442: with the sound off the record wasn't consulted, so a long finish
 /// the push had already put on screen came here `Active` again — one turn,
 /// the screen woken twice. The record decides whatever the sound switch.

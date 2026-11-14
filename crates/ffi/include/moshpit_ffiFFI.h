@@ -311,6 +311,27 @@ typedef void (*UniffiCallbackInterfacePairingsFileMethod2)(uint64_t, RustBuffer,
     );
 
 #endif
+#ifndef UNIFFI_FFIDEF_CALLBACK_INTERFACE_PET_CLOUD_HOST_METHOD0
+#define UNIFFI_FFIDEF_CALLBACK_INTERFACE_PET_CLOUD_HOST_METHOD0
+typedef void (*UniffiCallbackInterfacePetCloudHostMethod0)(uint64_t, RustBuffer* _Nonnull, 
+        RustCallStatus *_Nonnull uniffiCallStatus
+    );
+
+#endif
+#ifndef UNIFFI_FFIDEF_CALLBACK_INTERFACE_PET_CLOUD_HOST_METHOD1
+#define UNIFFI_FFIDEF_CALLBACK_INTERFACE_PET_CLOUD_HOST_METHOD1
+typedef void (*UniffiCallbackInterfacePetCloudHostMethod1)(uint64_t, RustBuffer, void* _Nonnull, 
+        RustCallStatus *_Nonnull uniffiCallStatus
+    );
+
+#endif
+#ifndef UNIFFI_FFIDEF_CALLBACK_INTERFACE_PET_LISTENER_METHOD0
+#define UNIFFI_FFIDEF_CALLBACK_INTERFACE_PET_LISTENER_METHOD0
+typedef void (*UniffiCallbackInterfacePetListenerMethod0)(uint64_t, void* _Nonnull, 
+        RustCallStatus *_Nonnull uniffiCallStatus
+    );
+
+#endif
 #ifndef UNIFFI_FFIDEF_CALLBACK_INTERFACE_CREDENTIAL_HOST_METHOD0
 #define UNIFFI_FFIDEF_CALLBACK_INTERFACE_CREDENTIAL_HOST_METHOD0
 typedef void (*UniffiCallbackInterfaceCredentialHostMethod0)(uint64_t, RustBuffer, UniffiForeignFutureCompleteRustBuffer _Nonnull, uint64_t, UniffiForeignFutureDroppedCallbackStruct* _Nonnull
@@ -425,6 +446,25 @@ typedef struct UniffiVTableCallbackInterfacePairingsFile {
     UniffiCallbackInterfacePairingsFileMethod1 _Nonnull upsert;
     UniffiCallbackInterfacePairingsFileMethod2 _Nonnull remove;
 } UniffiVTableCallbackInterfacePairingsFile;
+
+#endif
+#ifndef UNIFFI_FFIDEF_V_TABLE_CALLBACK_INTERFACE_PET_CLOUD_HOST
+#define UNIFFI_FFIDEF_V_TABLE_CALLBACK_INTERFACE_PET_CLOUD_HOST
+typedef struct UniffiVTableCallbackInterfacePetCloudHost {
+    UniffiCallbackInterfaceFree _Nonnull uniffiFree;
+    UniffiCallbackInterfaceClone _Nonnull uniffiClone;
+    UniffiCallbackInterfacePetCloudHostMethod0 _Nonnull get;
+    UniffiCallbackInterfacePetCloudHostMethod1 _Nonnull put;
+} UniffiVTableCallbackInterfacePetCloudHost;
+
+#endif
+#ifndef UNIFFI_FFIDEF_V_TABLE_CALLBACK_INTERFACE_PET_LISTENER
+#define UNIFFI_FFIDEF_V_TABLE_CALLBACK_INTERFACE_PET_LISTENER
+typedef struct UniffiVTableCallbackInterfacePetListener {
+    UniffiCallbackInterfaceFree _Nonnull uniffiFree;
+    UniffiCallbackInterfaceClone _Nonnull uniffiClone;
+    UniffiCallbackInterfacePetListenerMethod0 _Nonnull changed;
+} UniffiVTableCallbackInterfacePetListener;
 
 #endif
 #ifndef UNIFFI_FFIDEF_V_TABLE_CALLBACK_INTERFACE_CREDENTIAL_HOST
@@ -1218,6 +1258,136 @@ int8_t uniffi_moshpit_ffi_fn_method_pairingsfile_upsert(uint64_t ptr, RustBuffer
 int8_t uniffi_moshpit_ffi_fn_method_pairingsfile_remove(uint64_t ptr, RustBuffer connection_id, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_CLONE_PETCLOUDHOST
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_CLONE_PETCLOUDHOST
+uint64_t uniffi_moshpit_ffi_fn_clone_petcloudhost(uint64_t handle, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FREE_PETCLOUDHOST
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FREE_PETCLOUDHOST
+void uniffi_moshpit_ffi_fn_free_petcloudhost(uint64_t handle, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_INIT_CALLBACK_VTABLE_PETCLOUDHOST
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_INIT_CALLBACK_VTABLE_PETCLOUDHOST
+void uniffi_moshpit_ffi_fn_init_callback_vtable_petcloudhost(const UniffiVTableCallbackInterfacePetCloudHost* _Nonnull vtable
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_PETCLOUDHOST_GET
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_PETCLOUDHOST_GET
+RustBuffer uniffi_moshpit_ffi_fn_method_petcloudhost_get(uint64_t ptr, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_PETCLOUDHOST_PUT
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_PETCLOUDHOST_PUT
+void uniffi_moshpit_ffi_fn_method_petcloudhost_put(uint64_t ptr, RustBuffer record, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_CLONE_PETLISTENER
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_CLONE_PETLISTENER
+uint64_t uniffi_moshpit_ffi_fn_clone_petlistener(uint64_t handle, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FREE_PETLISTENER
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FREE_PETLISTENER
+void uniffi_moshpit_ffi_fn_free_petlistener(uint64_t handle, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_INIT_CALLBACK_VTABLE_PETLISTENER
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_INIT_CALLBACK_VTABLE_PETLISTENER
+void uniffi_moshpit_ffi_fn_init_callback_vtable_petlistener(const UniffiVTableCallbackInterfacePetListener* _Nonnull vtable
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_PETLISTENER_CHANGED
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_PETLISTENER_CHANGED
+void uniffi_moshpit_ffi_fn_method_petlistener_changed(uint64_t ptr, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_CLONE_PETMACHINE
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_CLONE_PETMACHINE
+uint64_t uniffi_moshpit_ffi_fn_clone_petmachine(uint64_t handle, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FREE_PETMACHINE
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FREE_PETMACHINE
+void uniffi_moshpit_ffi_fn_free_petmachine(uint64_t handle, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_CONSTRUCTOR_PETMACHINE_NEW
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_CONSTRUCTOR_PETMACHINE_NEW
+uint64_t uniffi_moshpit_ffi_fn_constructor_petmachine_new(uint64_t preferences, RustBuffer device_id, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_PETMACHINE_AGENT_FINISHED
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_PETMACHINE_AGENT_FINISHED
+void uniffi_moshpit_ffi_fn_method_petmachine_agent_finished(uint64_t ptr, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_PETMACHINE_CLOUD_CHANGED
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_PETMACHINE_CLOUD_CHANGED
+void uniffi_moshpit_ffi_fn_method_petmachine_cloud_changed(uint64_t ptr, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_PETMACHINE_CLOUD_UNAVAILABLE
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_PETMACHINE_CLOUD_UNAVAILABLE
+void uniffi_moshpit_ffi_fn_method_petmachine_cloud_unavailable(uint64_t ptr, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_PETMACHINE_CONNECTED
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_PETMACHINE_CONNECTED
+void uniffi_moshpit_ffi_fn_method_petmachine_connected(uint64_t ptr, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_PETMACHINE_HATCH
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_PETMACHINE_HATCH
+int8_t uniffi_moshpit_ffi_fn_method_petmachine_hatch(uint64_t ptr, RustBuffer seed, int64_t now, uint8_t local_hour, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_PETMACHINE_ISLAND
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_PETMACHINE_ISLAND
+RustBuffer uniffi_moshpit_ffi_fn_method_petmachine_island(uint64_t ptr, RustBuffer state, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_PETMACHINE_MESSAGE
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_PETMACHINE_MESSAGE
+RustBuffer uniffi_moshpit_ffi_fn_method_petmachine_message(uint64_t ptr, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_PETMACHINE_RENAME
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_PETMACHINE_RENAME
+void uniffi_moshpit_ffi_fn_method_petmachine_rename(uint64_t ptr, RustBuffer name, int64_t now, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_PETMACHINE_ROAMED
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_PETMACHINE_ROAMED
+void uniffi_moshpit_ffi_fn_method_petmachine_roamed(uint64_t ptr, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_PETMACHINE_SEEN
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_PETMACHINE_SEEN
+RustBuffer uniffi_moshpit_ffi_fn_method_petmachine_seen(uint64_t ptr, int64_t now, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_PETMACHINE_SET_CHOICE
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_PETMACHINE_SET_CHOICE
+void uniffi_moshpit_ffi_fn_method_petmachine_set_choice(uint64_t ptr, RustBuffer style, int8_t shown, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_PETMACHINE_SET_CLOUD
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_PETMACHINE_SET_CLOUD
+void uniffi_moshpit_ffi_fn_method_petmachine_set_cloud(uint64_t ptr, RustBuffer cloud, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_PETMACHINE_SET_LISTENER
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_PETMACHINE_SET_LISTENER
+void uniffi_moshpit_ffi_fn_method_petmachine_set_listener(uint64_t ptr, RustBuffer listener, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_PETMACHINE_SET_PACE
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_PETMACHINE_SET_PACE
+void uniffi_moshpit_ffi_fn_method_petmachine_set_pace(uint64_t ptr, RustBuffer pace, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_CLONE_CORESESSIONS
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_CLONE_CORESESSIONS
 uint64_t uniffi_moshpit_ffi_fn_clone_coresessions(uint64_t handle, RustCallStatus *_Nonnull out_status
@@ -1321,6 +1491,11 @@ void uniffi_moshpit_ffi_fn_method_coresessions_respec(uint64_t ptr, uint64_t ses
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_CORESESSIONS_SET_FOREGROUND
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_CORESESSIONS_SET_FOREGROUND
 void uniffi_moshpit_ffi_fn_method_coresessions_set_foreground(uint64_t ptr, int8_t foreground, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_CORESESSIONS_SET_PET
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_CORESESSIONS_SET_PET
+void uniffi_moshpit_ffi_fn_method_coresessions_set_pet(uint64_t ptr, RustBuffer pet, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_CORESESSIONS_SET_VISIBLE
@@ -3819,6 +3994,108 @@ uint16_t uniffi_moshpit_ffi_checksum_method_pairingsfile_remove(void
     
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_PETCLOUDHOST_GET
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_PETCLOUDHOST_GET
+uint16_t uniffi_moshpit_ffi_checksum_method_petcloudhost_get(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_PETCLOUDHOST_PUT
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_PETCLOUDHOST_PUT
+uint16_t uniffi_moshpit_ffi_checksum_method_petcloudhost_put(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_PETLISTENER_CHANGED
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_PETLISTENER_CHANGED
+uint16_t uniffi_moshpit_ffi_checksum_method_petlistener_changed(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_PETMACHINE_AGENT_FINISHED
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_PETMACHINE_AGENT_FINISHED
+uint16_t uniffi_moshpit_ffi_checksum_method_petmachine_agent_finished(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_PETMACHINE_CLOUD_CHANGED
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_PETMACHINE_CLOUD_CHANGED
+uint16_t uniffi_moshpit_ffi_checksum_method_petmachine_cloud_changed(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_PETMACHINE_CLOUD_UNAVAILABLE
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_PETMACHINE_CLOUD_UNAVAILABLE
+uint16_t uniffi_moshpit_ffi_checksum_method_petmachine_cloud_unavailable(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_PETMACHINE_CONNECTED
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_PETMACHINE_CONNECTED
+uint16_t uniffi_moshpit_ffi_checksum_method_petmachine_connected(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_PETMACHINE_HATCH
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_PETMACHINE_HATCH
+uint16_t uniffi_moshpit_ffi_checksum_method_petmachine_hatch(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_PETMACHINE_ISLAND
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_PETMACHINE_ISLAND
+uint16_t uniffi_moshpit_ffi_checksum_method_petmachine_island(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_PETMACHINE_MESSAGE
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_PETMACHINE_MESSAGE
+uint16_t uniffi_moshpit_ffi_checksum_method_petmachine_message(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_PETMACHINE_RENAME
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_PETMACHINE_RENAME
+uint16_t uniffi_moshpit_ffi_checksum_method_petmachine_rename(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_PETMACHINE_ROAMED
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_PETMACHINE_ROAMED
+uint16_t uniffi_moshpit_ffi_checksum_method_petmachine_roamed(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_PETMACHINE_SEEN
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_PETMACHINE_SEEN
+uint16_t uniffi_moshpit_ffi_checksum_method_petmachine_seen(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_PETMACHINE_SET_CHOICE
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_PETMACHINE_SET_CHOICE
+uint16_t uniffi_moshpit_ffi_checksum_method_petmachine_set_choice(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_PETMACHINE_SET_CLOUD
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_PETMACHINE_SET_CLOUD
+uint16_t uniffi_moshpit_ffi_checksum_method_petmachine_set_cloud(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_PETMACHINE_SET_LISTENER
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_PETMACHINE_SET_LISTENER
+uint16_t uniffi_moshpit_ffi_checksum_method_petmachine_set_listener(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_PETMACHINE_SET_PACE
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_PETMACHINE_SET_PACE
+uint16_t uniffi_moshpit_ffi_checksum_method_petmachine_set_pace(void
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_CORESESSIONS_HOME_MESSAGE
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_CORESESSIONS_HOME_MESSAGE
 uint16_t uniffi_moshpit_ffi_checksum_method_coresessions_home_message(void
@@ -3924,6 +4201,12 @@ uint16_t uniffi_moshpit_ffi_checksum_method_coresessions_respec(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_CORESESSIONS_SET_FOREGROUND
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_CORESESSIONS_SET_FOREGROUND
 uint16_t uniffi_moshpit_ffi_checksum_method_coresessions_set_foreground(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_CORESESSIONS_SET_PET
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_CORESESSIONS_SET_PET
+uint16_t uniffi_moshpit_ffi_checksum_method_coresessions_set_pet(void
     
 );
 #endif
@@ -4488,6 +4771,12 @@ uint16_t uniffi_moshpit_ffi_checksum_constructor_borrowcancel_new(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_CONSTRUCTOR_HOSTCARECORE_NEW
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_CONSTRUCTOR_HOSTCARECORE_NEW
 uint16_t uniffi_moshpit_ffi_checksum_constructor_hostcarecore_new(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_CONSTRUCTOR_PETMACHINE_NEW
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_CONSTRUCTOR_PETMACHINE_NEW
+uint16_t uniffi_moshpit_ffi_checksum_constructor_petmachine_new(void
     
 );
 #endif

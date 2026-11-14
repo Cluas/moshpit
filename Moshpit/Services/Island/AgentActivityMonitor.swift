@@ -325,7 +325,13 @@ final class AgentActivityMonitor {
     private func apply(_ effect: AgentEffectValue) {
         switch effect {
         case .island(let state):
-            let content = Self.content(state)
+            var content = Self.content(state)
+            // The companion's stills (PET-DESIGN §7.1): the headline's pose,
+            // and the sleeping one for a stale island.
+            if let pet = CompanionPet.shared.island(state: content.headline?.state.rawValue ?? "idle") {
+                content.companion = pet.pose
+                content.companionStale = pet.stale
+            }
             if island.live() != nil {
                 island.update(content)
             } else {
@@ -347,6 +353,10 @@ final class AgentActivityMonitor {
             notifier.requestAuthorization()
         case .note(let text):
             Log.island.info("\(text, privacy: .public)")
+        case .finished:
+            // Every finished turn, for the companion pet (PET-DESIGN §15.4):
+            // the egg cracks, the pet counts it.
+            CompanionPet.shared.machine.agentFinished()
         }
     }
 

@@ -283,7 +283,8 @@ pub fn line(effect: &Effect) -> Option<String> {
         ),
         Effect::Withdraw(id) => format!("withdraw {}", id.replace(CONN, "C")),
         Effect::RequestAuthorization => "auth".into(),
-        Effect::SaveAnnounced(_) | Effect::Note(_) => return None,
+        // The pet's count: no Swift monitor had it, so no transcript line.
+        Effect::SaveAnnounced(_) | Effect::Note(_) | Effect::Finished { .. } => return None,
     })
 }
 

@@ -56,10 +56,13 @@ struct MoshpitIslandLiveActivity: Widget {
             LockScreenCard(state: context.state, isStale: context.isStale)
         } dynamicIsland: { context in
             let headline = context.state.headline
+            // The companion's still (PET-DESIGN §7.1), in place of the dot:
+            // the island is always dark; asleep once the activity is stale.
+            let still = context.state.companionStill(stale: context.isStale)
             return DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
                     HStack(spacing: 6) {
-                        StateDot(state: headline?.state ?? .idle)
+                        CompanionMark(still: still, state: headline?.state ?? .idle, size: 40, alwaysDark: true)
                         Text(headline.map { displayCommand($0) } ?? "Moshpit")
                             .font(.system(size: 14, weight: .semibold))
                             .foregroundStyle(Color.primary)
@@ -118,7 +121,7 @@ struct MoshpitIslandLiveActivity: Widget {
                     .environment(\.colorScheme, .dark)
                 }
             } compactLeading: {
-                StateDot(state: headline?.state ?? .idle)
+                CompanionMark(still: still, state: headline?.state ?? .idle, size: 24, alwaysDark: true)
                     .environment(\.colorScheme, .dark)
             } compactTrailing: {
                 CompactTrailing(state: context.state)
@@ -128,7 +131,9 @@ struct MoshpitIslandLiveActivity: Widget {
                 // the strongest signal we have, not just a dot: attention count
                 // in amber, else the working dot.
                 Group {
-                    if context.state.attentionCount > 0 {
+                    if still != nil {
+                        CompanionMark(still: still, state: headline?.state ?? .idle, size: 24, alwaysDark: true)
+                    } else if context.state.attentionCount > 0 {
                         Text("\(context.state.attentionCount)")
                             .font(.system(size: 12, weight: .heavy))
                             .monospacedDigit()
@@ -206,7 +211,11 @@ struct LockScreenView: View {
             // the header summary already says as a count.
             ForEach(Array(state.agents.prefix(1 + Self.maxTrailingRows).enumerated()),
                     id: \.element.id) { index, agent in
-                AgentRow(agent: agent, compact: index > 0)
+                // The headline's dot is the companion's still, at 32 pt: no
+                // taller than the two lines beside it, so the card keeps its
+                // height (LockScreenHeightTests).
+                AgentRow(agent: agent, compact: index > 0,
+                         companion: index == 0 ? state.companionStill(stale: isStale) : nil)
             }
             if isStale {
                 StaleHint()
@@ -246,11 +255,13 @@ private struct AgentRow: View {
     let agent: AgentActivityAttributes.Agent
     /// Header line only — no detail, no control buttons (height budget).
     var compact: Bool = false
+    /// The companion's still, for the headline's row.
+    var companion: String? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 10) {
-                StateDot(state: agent.state)
+                CompanionMark(still: companion, state: agent.state, size: 32)
                 if compact {
                     // Name and location share ONE line for the trailing agents.
                     // Stacking them cost ~16pt each, and this activity is
@@ -327,6 +338,23 @@ private struct SwitchAgentButton: View {
 }
 
 // MARK: - Shared bits
+
+/// The companion's still where there is one (a ``PixelSprite``), else the
+/// state's dot, as before the companion.
+private struct CompanionMark: View {
+    let still: String?
+    let state: AgentActivityAttributes.AgentState
+    let size: CGFloat
+    var alwaysDark = false
+
+    var body: some View {
+        if let still, PixelSprite(encoded: still) != nil {
+            SpriteView(encoded: still, size: size, alwaysDark: alwaysDark)
+        } else {
+            StateDot(state: state)
+        }
+    }
+}
 
 /// The name row's trailing signal. For the two live states this is a
 /// labelled, live-updating timer — a small uppercase caption ABOVE the

@@ -112,6 +112,8 @@ pub enum AgentEffectValue {
     RequestAuthorization,
     /// A line for the log.
     Note { text: String },
+    /// An agent finished a turn (the companion pet counts it).
+    Finished { connection_id: String, pane_id: String },
 }
 
 fn island(state: agents::IslandState) -> AgentIslandValue {
@@ -160,6 +162,7 @@ fn effect(effect: Effect) -> AgentEffectValue {
         Effect::SaveAnnounced(record) => AgentEffectValue::SaveAnnounced { record: record.into_iter().collect() },
         Effect::RequestAuthorization => AgentEffectValue::RequestAuthorization,
         Effect::Note(text) => AgentEffectValue::Note { text },
+        Effect::Finished { conn, pane } => AgentEffectValue::Finished { connection_id: conn, pane_id: pane },
     }
 }
 

@@ -80,6 +80,12 @@ public struct AgentActivityAttributes: ActivityAttributes {
         /// past the most-urgent one (the "switch agent" control). nil = default
         /// (most urgent). Decodes to nil for activities from older builds.
         public var headlineId: String?
+        /// The companion's still for the headline's state (a ``PixelSprite``,
+        /// `px1:`), and its sleeping one for when the activity goes stale; nil
+        /// while the companion is off (today's dot shows) and for activities
+        /// from older builds.
+        public var companion: String?
+        public var companionStale: String?
 
         /// The agent the Dynamic Island pill represents — the cycled-to one if
         /// set and still present, otherwise the most-urgent (first).
@@ -89,16 +95,24 @@ public struct AgentActivityAttributes: ActivityAttributes {
         }
 
         public init(agents: [Agent], workingCount: Int, attentionCount: Int,
-                    headlineDeepLink: String? = nil, headlineId: String? = nil) {
+                    headlineDeepLink: String? = nil, headlineId: String? = nil,
+                    companion: String? = nil, companionStale: String? = nil) {
             self.agents = agents; self.workingCount = workingCount; self.attentionCount = attentionCount
             self.headlineDeepLink = headlineDeepLink; self.headlineId = headlineId
+            self.companion = companion; self.companionStale = companionStale
+        }
+
+        /// The companion's still to show: the sleeping one once stale.
+        public func companionStill(stale: Bool) -> String? {
+            stale ? (companionStale ?? companion) : companion
         }
     }
 
-    /// Bumped if the schema changes so stale activities can be ended.
-    public var schemaVersion: Int = 1
+    /// Bumped if the schema changes so stale activities can be ended. 2: the
+    /// companion's stills.
+    public var schemaVersion: Int = 2
 
-    public init(schemaVersion: Int = 1) {
+    public init(schemaVersion: Int = 2) {
         self.schemaVersion = schemaVersion
     }
 }

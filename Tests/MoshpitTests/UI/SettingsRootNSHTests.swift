@@ -140,8 +140,8 @@ struct SettingsRootNSHTests {
         #expect(SettingsPage(rawValue: "voice-engine") == .voiceEngine)
         #expect(SettingsPage(rawValue: "shortcuts") == nil, "a sheet, not a page")
         #expect(SettingsPart.allCases.map(\.rawValue)
-            == ["appearance", "terminal", "connections", "notifications", "voice", "hosts",
-                "udp-range", "notification-info"])
+            == ["appearance", "terminal", "connections", "notifications", "voice", "companion",
+                "hosts", "udp-range", "notification-info"])
         #expect(SettingsPart(rawValue: "terminal") != nil && SettingsPage(rawValue: "terminal") == nil)
     }
 

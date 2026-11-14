@@ -1,0 +1,329 @@
+//! The companion on Home (moshpit-design `docs/nsh/PET-DESIGN.md` §7.3,
+//! §15.2): the egg, or the person's pet, perched on the top edge of the
+//! card that holds the agent most in need — NEEDS YOU while anyone waits,
+//! else the host whose agent is busiest, else the first host up, else the
+//! saved hosts' card — in the pose of that agent's state.
+//!
+//! The host posts the pet (`{"op": "pet", …}`, [`PetView`]); this page
+//! draws it. It asks the host to hatch the egg (`{"ev": "hatch"}`) once
+//! the egg is ready and the host says it may (iCloud has settled), and
+//! says the pet was seen (`{"ev": "pet-seen"}`, which lets it grow). A tap
+//! pets it, with a light tap of the haptics; seven quick taps, a pogo.
+
+use std::{cell::RefCell, rc::Rc, time::Duration};
+
+use moshpit_pet::{Look, Moment, PetView, Pose, Style, easter::Taps};
+use nsh_core::prelude::*;
+use serde_json::json;
+
+use super::{
+    Ctx,
+    model::{self, AgentState, Connection, Link},
+};
+use crate::ui::companion::{Figure, companion};
+
+/// Where the companion sits.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Perch {
+    /// On NEEDS YOU's card.
+    NeedsYou,
+    /// On this host's card.
+    Host(String),
+    /// On the saved hosts' card.
+    Saved,
+}
+
+/// Where the companion sits and how, from what Home shows.
+pub fn perch(connections: &[Connection], fallback: &str) -> Option<(Perch, Pose)> {
+    if !model::needs_you(connections, fallback).is_empty() {
+        return Some((Perch::NeedsYou, Pose::Waiting));
+    }
+    let rank = |s: AgentState| match s {
+        AgentState::NeedsYou => 0,
+        AgentState::Working => 1,
+        AgentState::Done => 2,
+        AgentState::Idle => 3,
+    };
+    let busiest = connections
+        .iter()
+        .filter(|c| c.link == Link::Live)
+        .filter_map(|c| {
+            model::agent_rows(c, fallback)
+                .iter()
+                .map(|a| a.state)
+                .min_by_key(|s| rank(*s))
+                .map(|s| (rank(s), c, s))
+        })
+        .min_by_key(|(r, ..)| *r);
+    if let Some((_, c, state)) = busiest {
+        let pose = match state {
+            AgentState::NeedsYou => Pose::Waiting,
+            AgentState::Working => Pose::Working,
+            AgentState::Done => Pose::Done,
+            AgentState::Idle => Pose::Idle,
+        };
+        return Some((Perch::Host(c.id.clone()), pose));
+    }
+    if let Some(c) = connections.iter().find(|c| c.link.has_session()) {
+        let pose = match c.link {
+            Link::Dead if c.failure.is_some() => Pose::Error,
+            Link::Dead => Pose::Sleeping,
+            Link::Stalled => Pose::Error,
+            _ => Pose::Idle,
+        };
+        return Some((Perch::Host(c.id.clone()), pose));
+    }
+    connections.iter().any(|c| c.link == Link::Saved).then_some((Perch::Saved, Pose::Sleeping))
+}
+
+/// The art: 40 pt, in a 44 pt target.
+const ART: f32 = 40.0;
+const TARGET: f32 = 44.0;
+/// The target's top above the card's edge: the art's feet 3 pt inside it.
+const ABOVE: f32 = 39.0;
+/// Clear of the head's ⋯ (its 44 pt target) and a little more.
+const FROM_END: f32 = 56.0;
+
+/// The page's pet state: what the host posted, and the moment last played.
+#[derive(Clone)]
+pub(crate) struct PetCtx {
+    pub(crate) view: Signal<Option<PetView>>,
+    pub(crate) seq: Signal<u64>,
+    played: Rc<RefCell<u64>>,
+    /// A figure played once (a pet, a moment), then back to the pose.
+    showing: Signal<Option<Figure>>,
+    taps: Rc<RefCell<Taps>>,
+}
+
+impl PetCtx {
+    pub(crate) fn new() -> PetCtx {
+        PetCtx {
+            view: signal(None),
+            seq: signal(0),
+            played: Rc::new(RefCell::new(0)),
+            showing: signal(None),
+            taps: Rc::new(RefCell::new(Taps::default())),
+        }
+    }
+}
+
+/// The host's `{"op": "pet"}`.
+pub(crate) fn parse(fields: serde_json::Value) -> Result<(PetView, u64), String> {
+    let seq = fields.get("seq").and_then(serde_json::Value::as_u64).unwrap_or(0);
+    let mut fields = fields;
+    if let Some(map) = fields.as_object_mut() {
+        map.remove("seq");
+    }
+    serde_json::from_value(fields).map(|v| (v, seq)).map_err(|e| format!("home: pet: {e}"))
+}
+
+fn look(view: &PetView) -> Option<Look> {
+    view.pet.as_ref().and_then(|p| p.look())
+}
+
+/// What the perch shows for `view` in `pose`; none while the companion is
+/// off or minimal.
+fn figure(view: &PetView, pose: Pose) -> Option<Figure> {
+    if !view.shown || view.style == Style::Minimal {
+        return None;
+    }
+    if let Some(egg) = view.egg {
+        return Some(Figure::Egg { ready: egg.ready });
+    }
+    look(view).map(|look| Figure::Pet { look, pose })
+}
+
+/// The companion over `child` (a card), when it perches there.
+pub(crate) fn on(ctx: Ctx, at: Perch, child: AnyElement) -> AnyElement {
+    let here = {
+        let ctx = ctx.clone();
+        let at = at.clone();
+        computed(move || ctx.perch.with(|p| p.as_ref().is_some_and(|(p, _)| *p == at)))
+    };
+    view()
+        .w_full()
+        .relative()
+        .child(child)
+        .child(when(move || here.get(), move || perched(ctx.clone())))
+        .into_element()
+}
+
+fn perched(ctx: Ctx) -> AnyElement {
+    let pet = ctx.pet.clone();
+    let pose = {
+        let ctx = ctx.clone();
+        computed(move || ctx.perch.with(|p| p.as_ref().map_or(Pose::Idle, |(_, pose)| *pose)))
+    };
+    let base = {
+        let view = pet.view;
+        computed(move || view.with(|v| v.as_ref().and_then(|v| figure(v, pose.get()))))
+    };
+    // A moment the host announced plays once: the hatch, or a stage grown.
+    {
+        let pet = pet.clone();
+        effect(move || {
+            let seq = pet.seq.get();
+            let Some(view) = pet.view.get() else { return };
+            if seq <= *pet.played.borrow() {
+                return;
+            }
+            *pet.played.borrow_mut() = seq;
+            let Some(look) = look(&view) else { return };
+            let once = match view.moment {
+                Some(Moment::Hatched) => Figure::Pet { look, pose: Pose::Hatch },
+                Some(Moment::Grew) => Figure::Pet { look, pose: Pose::Petted },
+                None => return,
+            };
+            play(&pet, once);
+        });
+    }
+    // The egg asks to hatch whenever the host says it may (each message:
+    // the host hatches only while Home is on screen, and only once).
+    {
+        let tell = ctx.tell.clone();
+        effect(move || {
+            if pet_may_hatch(&ctx.pet) {
+                tell(json!({"ev": "hatch"}));
+            }
+        });
+    }
+    let showing = pet.showing;
+    let shown = computed(move || showing.get().or_else(|| base.get()));
+    let label = {
+        let view = pet.view;
+        move || view.with(|v| v.as_ref().map(label_of).unwrap_or_default())
+    };
+    let press = {
+        let pet = pet.clone();
+        move || {
+            let Some(view) = pet.view.get_untracked() else { return };
+            haptic(Haptic::Impact(HapticImpact::Light));
+            let Some(look) = look(&view) else {
+                // The egg wobbles.
+                if let Some(egg) = view.egg {
+                    play(&pet, Figure::Egg { ready: egg.ready });
+                }
+                return;
+            };
+            let pogo = pet.taps.borrow_mut().tap(nsh_core::time::unix_ms() / 1000.0);
+            let pose = if pogo { Pose::Pogo } else { Pose::Petted };
+            play(&pet, Figure::Pet { look, pose });
+        }
+    };
+    view()
+        .absolute()
+        .top(px(-ABOVE))
+        .right(px(FROM_END))
+        .w(px(TARGET))
+        .h(px(TARGET))
+        .items_center()
+        .justify_center()
+        .z_index(1)
+        .role(AccessibilityRole::Button)
+        .label(label)
+        .hint(t!("Tap to pet"))
+        .test_id("home-pet")
+        .on_press(press)
+        .child(dynamic(move || match shown.get() {
+            Some(f) => untracked(move || companion(move || f, ART)),
+            None => untracked(|| view().into_element()),
+        }))
+        .into_element()
+}
+
+fn pet_may_hatch(pet: &PetCtx) -> bool {
+    pet.view.with(|v| {
+        v.as_ref()
+            .is_some_and(|v| v.may_hatch && v.egg.is_some_and(|e| e.ready) && v.shown && v.style != Style::Minimal)
+    })
+}
+
+/// Plays `figure` once, then goes back to the loop.
+fn play(pet: &PetCtx, figure: Figure) {
+    let length = if reduce_motion() { Duration::from_millis(900) } else { figure.length() };
+    pet.showing.set(Some(figure));
+    let showing = pet.showing;
+    let _ = set_timeout(length, move || {
+        if showing.get_untracked() == Some(figure) {
+            showing.set(None);
+        }
+    });
+}
+
+/// What a screen reader hears: its name, and what it is.
+fn label_of(view: &PetView) -> String {
+    match &view.pet {
+        None => t!("An egg. It hatches when an agent first finishes a task."),
+        Some(p) => {
+            let name = if p.name.is_empty() { species_name(&p.species) } else { p.name.clone() };
+            format!("{name}, {}", species_kind(&p.species))
+        }
+    }
+}
+
+/// A species' name in the app's language.
+pub(crate) fn species_name(id: &str) -> String {
+    match id {
+        "tun" => t!("Tun"),
+        "coo" => t!("Coo"),
+        "dig" => t!("Dig"),
+        "hex" => t!("Hex"),
+        "ether" => t!("Ether"),
+        "moth" => t!("Lumen"),
+        other => other.to_owned(),
+    }
+}
+
+/// What a species is, in the app's language.
+pub(crate) fn species_kind(id: &str) -> String {
+    match id {
+        "tun" => t!("Tardigrade"),
+        "coo" => t!("Pigeon"),
+        "dig" => t!("Mole"),
+        "hex" => t!("Axolotl"),
+        "ether" => t!("Jellyfish"),
+        "moth" => t!("Moth"),
+        other => other.to_owned(),
+    }
+}
+
+/// Tells the host the pet was seen (it may grow), now and every ten
+/// minutes while Home shows.
+pub(crate) fn seen(tell: super::Tell) -> Spawned<()> {
+    tell(json!({"ev": "pet-seen"}));
+    set_interval(Duration::from_secs(600), move || tell(json!({"ev": "pet-seen"})))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::home::model::HomeState;
+
+    fn state(json: &str) -> Vec<Connection> {
+        serde_json::from_str::<HomeState>(json).unwrap().connections
+    }
+
+    #[test]
+    fn it_perches_on_the_saved_card_when_nothing_is_up_and_nowhere_without_hosts() {
+        assert_eq!(perch(&[], "agent"), None);
+        let saved = state(r#"{"connections":[{"id":"a","name":"a","initial":"A","user":"u","host":"h","mosh":false,"udpPort":60000,"link":"saved"}],"version":""}"#);
+        assert_eq!(perch(&saved, "agent"), Some((Perch::Saved, Pose::Sleeping)));
+    }
+
+    #[test]
+    fn a_live_host_without_agents_has_it_idle_and_a_failed_one_upset() {
+        let live = state(r#"{"connections":[{"id":"a","name":"a","initial":"A","user":"u","host":"h","mosh":false,"udpPort":60000,"link":"live"}],"version":""}"#);
+        assert_eq!(perch(&live, "agent"), Some((Perch::Host("a".into()), Pose::Idle)));
+        let dead = state(r#"{"connections":[{"id":"b","name":"b","initial":"B","user":"u","host":"h","mosh":false,"udpPort":60000,"link":"dead"}],"version":""}"#);
+        assert_eq!(perch(&dead, "agent"), Some((Perch::Host("b".into()), Pose::Sleeping)));
+    }
+
+    #[test]
+    fn the_hosts_message_parses_with_its_seq() {
+        let (view, seq) = parse(json!({"style": "pixel", "shown": true, "egg": {"ready": false}, "may_hatch": false, "seq": 2})).unwrap();
+        assert_eq!(seq, 2);
+        assert_eq!(figure(&view, Pose::Idle), Some(Figure::Egg { ready: false }));
+        let (off, _) = parse(json!({"style": "minimal", "shown": true, "may_hatch": false})).unwrap();
+        assert_eq!(figure(&off, Pose::Idle), None);
+    }
+}

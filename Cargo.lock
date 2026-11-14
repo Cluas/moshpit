@@ -2359,6 +2359,7 @@ dependencies = [
  "moshpit-herdr",
  "moshpit-hostcare",
  "moshpit-install",
+ "moshpit-pet",
  "moshpit-runtime",
  "moshpit-seal",
  "moshpit-session",
@@ -2409,6 +2410,17 @@ dependencies = [
  "aes",
  "miniz_oxide 0.8.9",
  "ocb3",
+]
+
+[[package]]
+name = "moshpit-pet"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "unicode-segmentation",
 ]
 
 [[package]]
@@ -2520,6 +2532,7 @@ name = "moshpit-store"
 version = "0.1.0"
 dependencies = [
  "log",
+ "moshpit-pet",
  "moshpit-seal",
  "serde",
  "serde_json",
@@ -2570,6 +2583,7 @@ dependencies = [
  "log",
  "moshpit-hostcare",
  "moshpit-install",
+ "moshpit-pet",
  "moshpit-runtime",
  "moshpit-store",
  "nsh-base",

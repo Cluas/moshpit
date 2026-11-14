@@ -36,6 +36,7 @@ final class FakeCoreSessions: CoreSessionsProtocol, @unchecked Sendable {
     func respec(session: UInt64, spec: SessionSpec) { respecs.append((session, spec)) }
     func setForeground(foreground: Bool) { self.foreground.append(foreground) }
     func setVisible(session: UInt64?) { visible.append(session) }
+    func setPet(pet: PetMachine?) {}
     func switchToSsh(session: UInt64) {}
     var repainted: [UInt64] = []
     func repaint(session: UInt64) { repainted.append(session) }

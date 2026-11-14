@@ -45,7 +45,7 @@ use crate::{
         button::{IconButtonSize, IconVariant, icon_button},
         control::{option, segmented, select, switch},
         empty::{EmptyVariant, empty},
-        field::{field, number_input},
+        field::{field, number_input, text_input},
         icon::{IconSize, Tone, icon},
         page,
         row::{GAP, LEADING, PADDING_X, Row, row},
@@ -300,6 +300,9 @@ pub enum Message {
     /// `{"op": "hosts", "hosts": […]}`: the saved connections, for Set up a
     /// host's list ([`Part::Hosts`]).
     Hosts(Vec<HostEntry>),
+    /// `{"op": "pet", …}`: the companion (Appearance's group and its card,
+    /// [`Part::Companion`]).
+    Pet(Box<moshpit_pet::PetView>),
 }
 
 /// A saved connection on Set up a host's list.
@@ -346,6 +349,7 @@ impl Message {
             "hosts" => serde_json::from_value::<Hosts>(fields)
                 .map(|hosts| Message::Hosts(hosts.hosts))
                 .map_err(|e| format!("settings: hosts: {e}")),
+            "pet" => crate::home::pet::parse(fields).map(|(view, _)| Message::Pet(Box::new(view))),
             other => Err(format!("settings: no op {other:?}")),
         }
     }
@@ -360,6 +364,11 @@ impl Message {
             }
             Message::Reveal(anchor) => json!({"op": "reveal", "anchor": anchor}).to_string(),
             Message::Hosts(hosts) => json!({"op": "hosts", "hosts": hosts}).to_string(),
+            Message::Pet(view) => {
+                let mut value = serde_json::to_value(view).expect("a pet serializes");
+                value["op"] = json!("pet");
+                value.to_string()
+            }
         }
     }
 }
@@ -460,6 +469,10 @@ pub enum Setting {
     Appearance(AppearanceChoice),
     /// The UDP ports mosh binds in, from and to ([`udp_ports`]).
     UdpRange([i64; 2]),
+    /// The companion's style (`minimal`, `pixel`), and whether it shows.
+    Companion(moshpit_pet::Style, bool),
+    /// The pet's name (its card).
+    PetName(String),
 }
 
 impl Setting {
@@ -484,6 +497,10 @@ impl Setting {
             Setting::VoiceInput(on) => ("voiceInput", json!(on)),
             Setting::Appearance(choice) => ("appearance", json!(choice.id())),
             Setting::UdpRange(range) => ("udpRange", json!(range)),
+            Setting::Companion(style, shown) => {
+                ("companion", json!({"style": style.id(), "shown": shown}))
+            }
+            Setting::PetName(name) => ("petName", json!(name)),
         };
         json!({"ev": "set", "key": key, "value": value})
     }
@@ -524,6 +541,8 @@ pub enum Part {
     UdpRange,
     /// Notifications › How notifications work.
     NotificationInfo,
+    /// Appearance › the companion's card (moshpit-design PET-DESIGN §15.6).
+    Companion,
 }
 
 impl Part {
@@ -539,7 +558,7 @@ impl Part {
     /// The pages the host pushes beside [`Self::PAGES`], the screen again on
     /// that page: for a row of the hub's (Set up a host's list) and for the
     /// pages those pages open on the stack (R18).
-    pub const PUSHED: [Part; 3] = [Part::Hosts, Part::UdpRange, Part::NotificationInfo];
+    pub const PUSHED: [Part; 4] = [Part::Hosts, Part::UdpRange, Part::NotificationInfo, Part::Companion];
 
     /// What the host calls it (the hub: nothing).
     pub fn id(self) -> &'static str {
@@ -553,6 +572,7 @@ impl Part {
             Part::Hosts => "hosts",
             Part::UdpRange => "udp-range",
             Part::NotificationInfo => "notification-info",
+            Part::Companion => "companion",
         }
     }
 
@@ -589,6 +609,7 @@ impl Part {
             Part::Hosts => t!("Set up a host"),
             Part::UdpRange => t!("UDP Port Range"),
             Part::NotificationInfo => t!("How notifications work"),
+            Part::Companion => t!("Companion"),
         }
     }
 
@@ -629,6 +650,7 @@ pub fn SettingsScreen(props: ScreenProps) -> impl IntoElement {
     let part = Part::of(params.page.as_deref());
     let state = State(signal(None::<SettingsState>));
     let hosts = signal(Vec::<HostEntry>::new());
+    let pet = signal(None::<moshpit_pet::PetView>);
     let anchors = Anchors {
         cursor: element_ref(),
         behavior: element_ref(),
@@ -652,6 +674,7 @@ pub fn SettingsScreen(props: ScreenProps) -> impl IntoElement {
             }
             Message::Reveal(anchor) => anchors.reveal(anchor),
             Message::Hosts(next) => hosts.set(next),
+            Message::Pet(next) => pet.set(Some(*next)),
         },
     );
     let tell = tell_host(channel);
@@ -665,7 +688,7 @@ pub fn SettingsScreen(props: ScreenProps) -> impl IntoElement {
         Part::Hub => hub(root, state, tell, anchors, ready),
         part => {
             let back = params.back.clone().unwrap_or_else(|| t!("Settings"));
-            subpage(root, part, back, state, hosts, tell, anchors)
+            subpage(root, part, back, state, hosts, pet, tell, anchors)
         }
     }
 }
@@ -1002,6 +1025,7 @@ fn subpage(
     back: String,
     state: State,
     hosts: Signal<Vec<HostEntry>>,
+    pet: Signal<Option<moshpit_pet::PetView>>,
     tell: Tell,
     anchors: Anchors,
 ) -> AnyElement {
@@ -1016,7 +1040,8 @@ fn subpage(
         let ports = ports.clone();
         move || {
             let groups = match part {
-                Part::Appearance => appearance(state, &tell),
+                Part::Appearance => appearance(state, &tell, pet),
+                Part::Companion => companion_card(pet, &tell),
                 Part::Terminal => terminal(state, &tell, anchors),
                 Part::Connections => connections(state, &tell, anchors),
                 Part::Notifications => notifications(state, &tell, anchors),
@@ -1483,7 +1508,7 @@ fn appearance_choice(state: State, tell: &Tell) -> AnyElement {
 const ACCENT_DOT: f32 = 20.0;
 const ICON_THUMB: f32 = 24.0;
 
-fn appearance(state: State, tell: &Tell) -> Vec<AnyElement> {
+fn appearance(state: State, tell: &Tell, pet: Signal<Option<moshpit_pet::PetView>>) -> Vec<AnyElement> {
     let mut group = section().row(
         row(t!("Accent"))
             .leading(accent_dot(state))
@@ -1520,7 +1545,309 @@ fn appearance(state: State, tell: &Tell) -> Vec<AnyElement> {
             ))
             .test_id("settings-appearance-group")
             .into_element(),
+        companion_group(pet, tell),
     ]
+}
+
+// --- The companion (moshpit-design PET-DESIGN §7.5, §15.6) -------------------
+
+type PetSignal = Signal<Option<moshpit_pet::PetView>>;
+
+/// The companion's figure on its row and card: the egg, or the pet idle.
+fn pet_figure(pet: PetSignal) -> impl Fn() -> crate::ui::companion::Figure + 'static {
+    use crate::ui::companion::Figure;
+    move || {
+        pet.with(|p| {
+            let p = p.as_ref();
+            match p.and_then(|p| p.pet.as_ref()).and_then(|i| i.look()) {
+                Some(look) => Figure::Pet { look, pose: moshpit_pet::Pose::Idle },
+                None => Figure::Egg { ready: p.and_then(|p| p.egg).is_some_and(|e| e.ready) },
+            }
+        })
+    }
+}
+
+/// A stage's name.
+fn stage_name(stage: u8) -> String {
+    match stage {
+        0 => t!("Hatchling"),
+        1 => t!("Grown"),
+        _ => t!("Seasoned"),
+    }
+}
+
+/// The pet's name: the one it was given, or its species'.
+fn pet_name(info: &moshpit_pet::PetInfo) -> String {
+    if info.name.is_empty() {
+        crate::home::pet::species_name(&info.species)
+    } else {
+        info.name.clone()
+    }
+}
+
+/// Appearance's COMPANION group: one switch, Pixel Companion (on: the
+/// pixel style with the companion shown; off: today's look, no companion),
+/// and the row that opens the pet's card. Only the pixel style is made for
+/// now (the owner's call, 2026-11-15); the record keeps room for others.
+fn companion_group(pet: PetSignal, tell: &Tell) -> AnyElement {
+    use moshpit_pet::Style;
+    let on = move || pet.with(|p| p.as_ref().is_none_or(|p| p.shown && p.style == Style::Pixel));
+    let toggle = {
+        let tell = tell.clone();
+        move |on: bool| {
+            let style = if on { Style::Pixel } else { Style::Minimal };
+            tell(Setting::Companion(style, on).event())
+        }
+    };
+    let title = move || {
+        pet.with(|p| match p.as_ref().and_then(|p| p.pet.as_ref()) {
+            Some(info) => pet_name(info),
+            None => t!("Egg"),
+        })
+        .into()
+    };
+    let subtitle = move || {
+        pet.with(|p| match p.as_ref().and_then(|p| p.pet.as_ref()) {
+            Some(info) => format!(
+                "{} · {}",
+                crate::home::pet::species_kind(&info.species),
+                stage_name(info.stage)
+            ),
+            None => t!("It hatches when an agent first finishes a task."),
+        })
+        .into()
+    };
+    let figure = view()
+        .w(px(32.0))
+        .h(px(32.0))
+        .items_center()
+        .justify_center()
+        .child(crate::ui::companion::companion(pet_figure(pet), 32.0));
+    section()
+        .header(t!("COMPANION"))
+        .row(
+            row(t!("Pixel Companion"))
+                .subtitle(t!("On the Dynamic Island, the lock screen and Home"))
+                .trailing(
+                    switch(on, toggle)
+                        .label(t!("Pixel Companion"))
+                        .test_id("settings-companion-shown"),
+                ),
+        )
+        .row(
+            row(String::new())
+                .title_with(title)
+                .subtitle_with(subtitle)
+                .leading(figure)
+                .chevron()
+                .disabled(move || !on())
+                .on_press(go(tell, Part::Companion))
+                .test_id("settings-companion-card"),
+        )
+        .footer(t!("Tap it on Home and it reacts. On the Dynamic Island and the lock screen it changes pose but doesn't move."))
+        .test_id("settings-companion")
+        .into_element()
+}
+
+/// Days from `from` to `to`, whole.
+fn days_between(from: i64, to: i64) -> i64 {
+    ((to - from).max(0)) / 86_400
+}
+
+/// A trait's id in words.
+fn trait_word(id: &str) -> String {
+    match id {
+        "natural" => t!("Natural"),
+        "peach" => t!("Peach"),
+        "mint" => t!("Mint"),
+        "sky" => t!("Sky"),
+        "lilac" => t!("Lilac"),
+        "sand" => t!("Sand"),
+        "slate" => t!("Slate"),
+        "rose" => t!("Rose"),
+        "moss" => t!("Moss"),
+        "charcoal" => t!("Charcoal"),
+        "aurora" => t!("Aurora"),
+        "plain" => t!("Plain"),
+        "spots" => t!("Spots"),
+        "stripes" => t!("Stripes"),
+        "patch" => t!("Belly Patch"),
+        "round" => t!("Round"),
+        "lidded" => t!("Sleepy"),
+        "starry" => t!("Starry"),
+        "button" => t!("Button"),
+        "short" => t!("Short"),
+        "standard" => t!("Standard"),
+        "tall" => t!("Tall"),
+        "sprout" => t!("a sprout"),
+        "moss_tuft" => t!("a tuft of moss"),
+        "crystal" => t!("a crystal"),
+        "freckles" => t!("freckles"),
+        "star_mark" => t!("a star"),
+        other => other.to_owned(),
+    }
+}
+
+/// A stage's change in words.
+fn change_words(change: &moshpit_pet::view::ChangeView) -> String {
+    let what = trait_word(&change.what);
+    match change.kind.as_str() {
+        "fur" => t!("New fur: %@", arg1 = what),
+        "pattern" => t!("New pattern: %@", arg1 = what),
+        "grew" => t!("Grew %@", arg1 = what),
+        _ => t!("New eyes: %@", arg1 = what),
+    }
+}
+
+/// An easter egg found, in words.
+fn found_words(id: &str) -> Option<String> {
+    match id {
+        "night" => Some(t!("Hatched at three in the morning")),
+        "roam" => Some(t!("Made it through a network change")),
+        "gold" => Some(t!("A thousand tasks together")),
+        "sudo" => Some(t!("Named sudo")),
+        _ => None,
+    }
+}
+
+/// The pet's card (Appearance › the companion): who it is, how it grows,
+/// what it's made of and what changed. Its own: nothing here is shared.
+fn companion_card(pet: PetSignal, tell: &Tell) -> Vec<AnyElement> {
+    let info = move || pet.with(|p| p.as_ref().and_then(|p| p.pet.clone()));
+    let hero = view()
+        .w_full()
+        .items_center()
+        .gap(px(4.0))
+        .py(px(16.0))
+        .child(
+            view()
+                .w(px(120.0))
+                .h(px(120.0))
+                .rounded(px(number("radius")))
+                .bg(move || token("muted"))
+                .items_center()
+                .justify_center()
+                .child(crate::ui::companion::companion(pet_figure(pet), 96.0)),
+        )
+        .child(
+            TextToken::Title
+                .apply(text(move || info().map_or_else(|| t!("Egg"), |i| pet_name(&i))))
+                .text_color(move || token("foreground"))
+                .mt(px(8.0)),
+        )
+        .child(
+            TextToken::Subhead
+                .apply(text(move || match info() {
+                    Some(i) => {
+                        let kind = crate::home::pet::species_kind(&i.species);
+                        let shiny = if i.traits.shiny { format!(" · {}", t!("Shiny")) } else { String::new() };
+                        format!("{kind} · {}{shiny}", stage_name(i.stage))
+                    }
+                    None => t!("It hatches when an agent first finishes a task."),
+                }))
+                .text_color(move || token("muted-foreground")),
+        );
+    let mut out = vec![section().item(hero, Inset::Content).test_id("settings-pet-hero").into_element()];
+    let has_pet = computed(move || pet.with(|p| p.as_ref().is_some_and(|p| p.pet.is_some())));
+    let tell = tell.clone();
+    out.push(
+        when(move || has_pet.get(), move || {
+            let draft = Rc::new(std::cell::RefCell::new(None::<String>));
+            let keep = {
+                let tell = tell.clone();
+                let draft = draft.clone();
+                move || {
+                    if let Some(name) = draft.borrow_mut().take() {
+                        tell(Setting::PetName(name).event());
+                    }
+                }
+            };
+            let name = field(
+                t!("Nickname"),
+                text_input()
+                    .default_value(move || info().map(|i| i.name).unwrap_or_default())
+                    .placeholder(info().map(|i| crate::home::pet::species_name(&i.species)).unwrap_or_default())
+                    .max_length(24)
+                    .on_change({
+                        let draft = draft.clone();
+                        move |text| *draft.borrow_mut() = Some(text)
+                    })
+                    .on_blur(keep.clone())
+                    .on_submit(keep),
+            )
+            .test_id("settings-pet-name");
+            let now = (nsh_core::time::unix_ms() / 1000.0) as i64;
+            let growing = section()
+                .header(t!("GROWING"))
+                .row(row(t!("Tasks together")).value_with(move || info().map(|i| i.tasks.to_string()).unwrap_or_default().into()))
+                .row(row(t!("Days together")).value_with(move || info().map(|i| days_between(i.hatched_at, now).to_string()).unwrap_or_default().into()))
+                .row(
+                    row(String::new())
+                        .title_with(move || match info().and_then(|i| i.next) {
+                            Some(n) => t!("Next: %@", arg1 = stage_name(n.stage)).into(),
+                            None => t!("Fully grown").into(),
+                        })
+                        .subtitle_with(move || match info().and_then(|i| i.next) {
+                            Some(n) => {
+                                let days = (n.not_before - now).max(0).div_euclid(86_400)
+                                    + i64::from((n.not_before - now).rem_euclid(86_400) > 0 && n.not_before > now);
+                                let mut parts = Vec::new();
+                                if n.tasks_left > 0 {
+                                    parts.push(crate::plural!("%lld more tasks", n.tasks_left as i64));
+                                }
+                                if days > 0 {
+                                    parts.push(crate::plural!("%lld more days", days));
+                                }
+                                if parts.is_empty() {
+                                    t!("It grows next time you see it").into()
+                                } else {
+                                    parts.join(" · ").into()
+                                }
+                            }
+                            None => SharedString::default(),
+                        }),
+                );
+            let traits = section()
+                .header(t!("TRAITS"))
+                .row(row(t!("Fur")).value_with(move || info().map(|i| trait_word(&i.traits.fur)).unwrap_or_default().into()))
+                .row(row(t!("Pattern")).value_with(move || info().map(|i| trait_word(&i.traits.pattern)).unwrap_or_default().into()))
+                .row(row(t!("Eyes")).value_with(move || info().map(|i| trait_word(&i.traits.eyes)).unwrap_or_default().into()))
+                .row(row(t!("Build")).value_with(move || info().map(|i| trait_word(&i.traits.size)).unwrap_or_default().into()));
+            let changes: Vec<Row> = info()
+                .map(|i| {
+                    let mut rows: Vec<Row> = i
+                        .history
+                        .iter()
+                        .rev()
+                        .map(|c| row(t!("Grew up: %@", arg1 = stage_name(c.stage))).subtitle(change_words(c)))
+                        .collect();
+                    rows.extend(i.found.iter().filter_map(|f| found_words(f)).map(row));
+                    let ago = match days_between(i.hatched_at, now) {
+                        0 => t!("Today"),
+                        days => crate::plural!("%lld days ago", days),
+                    };
+                    rows.push(row(t!("Hatched")).subtitle(ago));
+                    rows
+                })
+                .unwrap_or_default();
+            view()
+                .w_full()
+                .gap(px(24.0))
+                .child(section().item(name, Inset::Content).test_id("settings-pet-name-group"))
+                .child(growing)
+                .child(traits)
+                .child(
+                    section()
+                        .header(t!("CHANGES"))
+                        .rows(changes)
+                        .footer(t!("It's yours alone. iCloud keeps it the same on your iPhone and iPad."))
+                        .test_id("settings-pet-changes"),
+                )
+                .into_element()
+        })
+        .into_element(),
+    );
+    out
 }
 
 /// The accent in a circle, edged.

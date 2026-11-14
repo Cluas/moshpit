@@ -34,6 +34,8 @@ enum SettingsPage: String, Hashable, Identifiable {
 /// same screen again, told which page in its params.
 enum SettingsPart: String, Hashable, Identifiable, CaseIterable {
     case appearance, terminal, connections, notifications, voice
+    /// Appearance › the companion's card (moshpit-design PET-DESIGN §15.6).
+    case companion
     /// Set up a host's list of saved connections, pushed for the hub's row
     /// when there is not exactly one (``HostSetupRoute``).
     case hosts
@@ -129,8 +131,12 @@ struct SettingsNSHPage: View {
             },
             onFailure: onFailure)
             .nshPage()
-            .onAppear { model.update(snapshot) }
+            .onAppear {
+                model.update(snapshot)
+                model.updatePet(CompanionPet.shared.message)
+            }
             .onChange(of: snapshot) { _, new in model.update(new) }
+            .onChange(of: CompanionPet.shared.revision) { _, _ in model.updatePet(CompanionPet.shared.message) }
             .onChange(of: hosts) { _, new in hostsFeed.update(new) }
             .navigationDestination(item: $pushed) { page in page.page }
             .navigationDestination(item: $pushedPart) { part in
@@ -270,12 +276,16 @@ final class SettingsModel {
 
     private(set) var snapshot: SettingsSnapshot?
     private weak var surface: NSHSurface?
+    /// The companion's last message (`{"op": "pet"}`): Appearance's group
+    /// and the pet's card.
+    private var pet: String?
 
     /// `surface` shows the settings from now on, starting with the current
     /// ones.
     func attach(_ surface: NSHSurface) {
         self.surface = surface
         if let snapshot { surface.post(Self.message(snapshot)) }
+        if let pet { surface.post(json: pet) }
         #if DEBUG
         // As the SwiftUI page scrolls (``SettingsAnchor/scroll(_:)``), and
         // again once the native controls have reported their sizes and the
@@ -310,6 +320,13 @@ final class SettingsModel {
         surface?.post(Self.message(snapshot))
     }
 
+    /// The companion as it is now.
+    func updatePet(_ message: String) {
+        guard message != pet else { return }
+        pet = message
+        surface?.post(json: message)
+    }
+
     /// What the screen told the host.
     func handle(_ message: [String: Any], settings: AppSettings,
                 onOpen: (String) -> Void, onDone: () -> Void, onBack: () -> Void = {}) {
@@ -338,6 +355,13 @@ final class SettingsModel {
     static func apply(_ key: String, _ value: Any?, to settings: AppSettings) -> Bool {
         let flag = value as? Bool
         switch key {
+        case "companion":
+            guard let choice = value as? [String: Any], let style = choice["style"] as? String,
+                  let shown = choice["shown"] as? Bool else { return false }
+            CompanionPet.shared.choose(style: style, shown: shown)
+        case "petName":
+            guard let name = value as? String else { return false }
+            CompanionPet.shared.rename(name)
         case "font":
             guard let id = value as? String, TerminalFont.families.contains(where: { $0.id == id }) else { return false }
             settings.fontName = id
