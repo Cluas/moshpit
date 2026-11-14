@@ -200,7 +200,7 @@ enum RustCopy {
         }
     }
 
-    static func removal(_ outcome: HerdrRemovalValue) -> HerdrControlClient.WorktreeRemoval {
+    static func removal(_ outcome: HerdrRemovalValue) -> RustHerdrController.WorktreeRemoval {
         switch outcome {
         case .removed: return .removed
         case .needsForce: return .needsForce
@@ -216,7 +216,7 @@ enum RustCopy {
         }
     }
 
-    static func restart(_ outcome: HerdrRestartValue) -> HerdrControlClient.RestartOutcome {
+    static func restart(_ outcome: HerdrRestartValue) -> RustHerdrController.RestartOutcome {
         switch outcome {
         case .restarted: return .restarted
         case .failed: return .failed

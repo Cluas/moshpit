@@ -12,7 +12,7 @@ import MoshpitKit
 /// The state strings themselves come from two very different sources and mean
 /// the same thing by the time they arrive here: tmux reads `@moshpit_*`
 /// options that host-side hooks write, herdr reports `agent_status` natively
-/// (see `HerdrSnapshot`).
+/// (crates/herdr's snapshot decoding).
 enum AgentSignal: Equatable, CaseIterable {
     /// Waiting on a human — an approval, a question, a permission prompt.
     case attention

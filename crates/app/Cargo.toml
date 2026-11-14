@@ -24,6 +24,8 @@ serde_json = "1"
 unicode-segmentation = "1.13"
 # A host's face (src/home.rs): the SHA-256 of its trusted key's fingerprint.
 sha2 = "0.10"
+# A host's pixel creature (src/home.rs), with the pixel companion on.
+moshpit-pet = { path = "../pet" }
 # Home's record (src/home.rs) is built from the session layer's views, and
 # the tmux and herdr trees in them.
 moshpit-session = { path = "../session" }

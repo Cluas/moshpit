@@ -191,14 +191,6 @@
       }
     },
     {
-      "identity" : "swiftterm",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/Cluas/SwiftTerm.git",
-      "state" : {
-        "revision" : "7e5b936245849edb0f7aea3e205111816c05f2dd"
-      }
-    },
-    {
       "identity" : "whisperkit",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/argmaxinc/WhisperKit.git",

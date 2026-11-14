@@ -799,6 +799,8 @@ fn a_hosts_mark_is_its_emoji_its_keys_face_or_its_initial() {
         side: 3,
         cells: vec![true, false, true, false, true, false, true, false, true],
         hue: 5,
+        kinds: Vec::new(),
+        asleep: Vec::new(),
     });
     let mut whale = host("c-whale", "whale", "W", Link::Live);
     whale.face = face.clone();
@@ -868,6 +870,8 @@ fn an_edit_or_a_key_trusted_since_shows_at_once() {
         side: 3,
         cells: vec![true, false, true, false, true, false, true, false, true],
         hue: 2,
+        kinds: Vec::new(),
+        asleep: Vec::new(),
     });
     show(&mut app, &channel, vec![live, saved]);
     find(&mut app, "id:connection-card-gamma");
@@ -913,4 +917,78 @@ fn mosh_that_fell_back_says_ssh() {
     find(&mut app, "text:mosh");
     assert!(!app.screen().shows("SSH"));
     channel.close();
+}
+
+/// The egg on Home (PET-DESIGN §15.2): on the top edge of the card it
+/// perches on (NEEDS YOU's, a host's, SAVED's), in a 44 pt target that a
+/// tap reaches, not the card under it or the list: each tap tells the
+/// host. Once the host says it may hatch (tapped three times, or ready by
+/// itself, and iCloud settled), the page asks for the hatch.
+#[test]
+fn a_tap_reaches_the_egg_on_each_cards_edge_and_the_page_asks_to_hatch() {
+    let pet = |taps: u8, ready: bool, may_hatch: bool| {
+        json!({
+            "op": "pet",
+            "style": "pixel",
+            "shown": true,
+            "egg": {"ready": ready, "taps": taps},
+            "may_hatch": may_hatch,
+            "seq": 0,
+        })
+        .to_string()
+    };
+    // What the page told the host, until `want` (else none of it).
+    let told = |heard: &std::sync::mpsc::Receiver<String>, want: &serde_json::Value| {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while let Some(left) = deadline.checked_duration_since(std::time::Instant::now()) {
+            match heard.recv_timeout(left) {
+                Ok(json) if serde_json::from_str::<serde_json::Value>(&json).ok().as_ref() == Some(want) => {
+                    return true;
+                }
+                Ok(_) => {}
+                Err(_) => break,
+            }
+        }
+        false
+    };
+    let host = |id: &str, name: &str, link: Link| Connection {
+        id: id.into(),
+        name: name.into(),
+        initial: "H".into(),
+        user: "me".into(),
+        host: format!("{name}.example.com"),
+        link,
+        ..Connection::default()
+    };
+    for (perch, connections) in [
+        ("needs you", hosts()),
+        ("a host", vec![host("c-up", "up", Link::Live)]),
+        ("saved", vec![host("c-kept", "kept", Link::Saved)]),
+    ] {
+        let (mut app, channel, _) = phone(Params::default());
+        let heard = hear(&channel);
+        show(&mut app, &channel, connections);
+        post(&mut app, &channel, &pet(0, false, false));
+        find(&mut app, "id:home-pet");
+        let target = node(&app.screen().layout_nodes(), "home-pet").bounds;
+        assert!(
+            target.size.width.0 >= 44.0 && target.size.height.0 >= 44.0,
+            "{perch}: the egg's target is {:?}",
+            target.size
+        );
+        for taps in 0..3u8 {
+            app.press("id:home-pet")
+                .unwrap_or_else(|e| panic!("{perch}: tap {}: {e}", taps + 1));
+            assert!(
+                told(&heard, &json!({"ev": "egg-tap"})),
+                "{perch}: tap {} didn't reach the egg",
+                taps + 1
+            );
+            post(&mut app, &channel, &pet(taps + 1, taps + 1 >= 2, false));
+        }
+        // iCloud settled: the host says it may, and the page asks.
+        post(&mut app, &channel, &pet(3, true, true));
+        assert!(told(&heard, &json!({"ev": "hatch"})), "{perch}: no hatch asked");
+        channel.close();
+    }
 }

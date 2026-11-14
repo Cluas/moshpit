@@ -15,7 +15,7 @@ struct CoreFindTests {
     private static let font = UIFont.monospacedSystemFont(ofSize: 12, weight: .regular)
 
     private func makeCore() -> (CoreTerminalView, UIWindow) {
-        let core = TerminalSurfaces.make(.core, font: Self.font, grid: TerminalGrid(cols: 30, rows: 6)) as! CoreTerminalView
+        let core = TerminalSurfaces.make(font: Self.font, grid: TerminalGrid(cols: 30, rows: 6)) as! CoreTerminalView
         let scene = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first
         let window = scene.map { UIWindow(windowScene: $0) } ?? UIWindow()
         window.frame = CGRect(x: 0, y: 0, width: 600, height: 800)

@@ -97,6 +97,13 @@ TITLE="${3:-}"
 # anything else reads as absent.
 DUR="${4:-}"
 case "$DUR" in *[!0-9]*) DUR="" ;; esac
+# Optional: when the question an `attention` is about was asked, on this
+# host's clock — the pane's `@moshpit_since` (B450). It is the question's
+# identity on the phone: the pushed copy and the app's own copy of one
+# question name the same moment, and a second question on the pane is
+# another. Digits only; absent, the send time stands in, as it always did.
+EPISODE="${5:-}"
+case "$EPISODE" in *[!0-9]*) EPISODE="" ;; esac
 
 TESTMODE=""
 TESTCONN=""
@@ -165,6 +172,7 @@ fi
 DURFIELD=""
 [ -n "$DUR" ] && [ "$DUR" -gt 0 ] 2>/dev/null && DURFIELD=$(printf ',"dur":%s' "$DUR")
 TS=$(date +%s)
+[ "$STATE" = "attention" ] && [ -n "$EPISODE" ] && TS=$EPISODE
 
 # The phones this status has already reached, by APNs token. A phone with two
 # saved connections to this host holds two pairings here — the app pairs each

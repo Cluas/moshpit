@@ -6,18 +6,6 @@ incorporates the following third-party components, each under its own license.
 
 ## Swift Package Dependencies
 
-### SwiftTerm (Cluas fork)
-
-- Source: https://github.com/Cluas/SwiftTerm
-- Upstream: https://github.com/migueldeicaza/SwiftTerm
-- License: MIT
-
-Moshpit depends on a fork of SwiftTerm maintained at
-`github.com/Cluas/SwiftTerm`, forked from `migueldeicaza/SwiftTerm`. The fork
-carries a small set of terminal-rendering and hyperlink/IME fixes (see the
-fork's commit history and the annotated `SwiftTerm` entry in `project.yml`).
-Both the upstream project and the fork are distributed under the MIT License.
-
 ### Citadel
 
 - Source: https://github.com/orlandos-nl/Citadel

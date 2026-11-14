@@ -604,3 +604,23 @@ fn a_herdr_panes_push_names_it_by_herdrs_own_id() {
     let odd = run_script_in(&["done", "claude"], &[("HERDR_PANE_ID", "w1 p2")]);
     assert_eq!(opened(&odd[0].0).pane, "%0");
 }
+
+/// B450: an attention push carries when its question was asked (the
+/// stamp's episode, the pane's `@moshpit_since`) as `ts`, the question's
+/// identity on the phone; without one, and for a finish, the send time.
+#[test]
+fn an_attention_push_is_dated_by_its_question() {
+    if skip() {
+        return;
+    }
+    let opened = |body: &Value| -> moshpit_seal::Status {
+        let envelope: Envelope = json::decode_value(field(body, "env")).expect("an envelope");
+        envelope::open(&envelope, SECRET).expect("Rust opens what the host sealed")
+    };
+    let asked = run_script(&["attention", "claude", "Bash: make", "", "1790000000"], Some("%3"));
+    assert_eq!(opened(&asked[0].0).ts, 1_790_000_000);
+    let undated = run_script(&["attention", "claude", "Bash: make"], Some("%3"));
+    assert!(opened(&undated[0].0).ts > 1_790_000_000, "the send time");
+    let done = run_script(&["done", "claude", "fix", "600", "1790000000"], Some("%3"));
+    assert!(opened(&done[0].0).ts > 1_790_000_000, "a finish keeps its send time");
+}

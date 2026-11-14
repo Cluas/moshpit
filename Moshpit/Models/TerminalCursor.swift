@@ -2,17 +2,14 @@ import SwiftUI
 import UIKit
 
 /// The user's CURSOR settings (Settings screen): the swatches' colours here;
-/// applying them to SwiftTerm's view is the adapter's
-/// (`TerminalCursor+SwiftTerm.swift`), the core's view takes them as its
-/// style (``TerminalLook``).
+/// the core's view takes them as its style (``TerminalLook``).
 ///
 /// The user's choice is AUTHORITATIVE. Remote output carries the same
 /// controls — DECSCUSR (`CSI Ps SP q`) for shape/blink, OSC 12 for colour —
 /// and vim, zsh plugins, and coding agents emit them freely, so a one-shot
 /// apply only survives until the next such sequence ("the cursor style is
-/// sometimes right, sometimes wrong"). So SwiftTerm's surface re-asserts it
-/// after every feed (``SwiftTermSurface``), and the core draws the user's
-/// cursor whatever the remote asks for.
+/// sometimes right, sometimes wrong"). So the core draws the user's cursor
+/// whatever the remote asks for.
 enum TerminalCursor {
 
     /// The colour the cursor is drawn in for the stored id `id` under the

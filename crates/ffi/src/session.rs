@@ -790,10 +790,13 @@ impl CoreSessions {
             while let Some(event) = core_events.recv().await {
                 let heard = match &event.kind {
                     EventKind::State(state) => watch.state(event.session, pet_link(state)),
-                    EventKind::MoshMetrics { roaming, .. } => watch.roaming(event.session, *roaming),
+                    EventKind::MoshMetrics { roaming, .. } => {
+                        watch.roaming(event.session, *roaming)
+                    }
                     _ => None,
                 };
-                let machine = heard.and_then(|_| pet_slot.lock().unwrap_or_else(|e| e.into_inner()).clone());
+                let machine =
+                    heard.and_then(|_| pet_slot.lock().unwrap_or_else(|e| e.into_inner()).clone());
                 match (heard, machine) {
                     (Some(moshpit_pet::watch::Heard::Connected), Some(m)) => m.connected(),
                     (Some(moshpit_pet::watch::Heard::Roamed), Some(m)) => m.roamed(),

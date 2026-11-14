@@ -18,9 +18,9 @@ struct HostCapabilities: Codable, Equatable, Sendable {
     var packageManager: PackageManager?
     /// herdr on PATH — the alternative multiplexer (see ``Multiplexer``).
     var hasHerdr: Bool
-    /// python3 on PATH — gates the herdr push pump (`HerdrPushBoot`), which
-    /// bridges to herdr's socket through a python one-liner. Missing just
-    /// means the control plane stays on polling; nothing degrades visibly.
+    /// python3 on PATH. It gated the Swift herdr client's push pump (gone,
+    /// E1); the Rust core probes for its own. Kept in the probe and the
+    /// cache's stored shape.
     var hasPython3: Bool
 
     init(hasTmux: Bool, hasMoshServer: Bool, os: String,

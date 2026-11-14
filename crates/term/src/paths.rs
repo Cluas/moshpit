@@ -69,9 +69,58 @@ const HEAD_LIMIT: usize = 16;
 
 /// The candidates among `cells` (each cell's text, in order, a wide
 /// character once), in the order the app's scanner offers them: left to
-/// right, and for one run the longest start first (the first the host
+/// right, and for one start the longest first (the first the host
 /// confirms is the link; the shorter ones start inside it).
 pub fn scan(cells: &[&str], rules: &Rules) -> Vec<Candidate> {
+    let mut found = runs(cells, rules);
+    found.extend(quoted(cells, rules));
+    // Stable: a run's own order (farthest start first) is kept.
+    found.sort_by(|a, b| {
+        a.cells
+            .start
+            .cmp(&b.cells.start)
+            .then(b.cells.end.cmp(&a.cells.end))
+    });
+    found
+}
+
+/// The paths between one line's backticks or straight double quotes that
+/// hold a space (`docs/My Report.pdf`, "out/final cut.mp4"), with the same
+/// rules as any other candidate; the host confirms them as any other.
+///
+/// Fix (B464): a run stops at a space, so a path with one never became a
+/// link. Only a quoted one can: in prose a space ends the path.
+fn quoted(cells: &[&str], rules: &Rules) -> Vec<Candidate> {
+    let mut found = Vec::new();
+    for quote in ["`", "\""] {
+        let mut open: Option<usize> = None;
+        for (at, cell) in cells.iter().enumerate() {
+            if *cell != quote {
+                continue;
+            }
+            let Some(start) = open.take() else {
+                open = Some(at);
+                continue;
+            };
+            let inner = &cells[start + 1..at];
+            let text: String = inner.concat();
+            if !text.contains(' ')
+                || text.starts_with(' ')
+                || text.ends_with(' ')
+                || inner.iter().any(|c| matches!(*c, "\t" | "`" | "\""))
+            {
+                continue;
+            }
+            if let Some(candidate) = classify(&text, start + 1, at, rules) {
+                found.push(candidate);
+            }
+        }
+    }
+    found
+}
+
+/// The candidates of the runs of path characters, left to right.
+fn runs(cells: &[&str], rules: &Rules) -> Vec<Candidate> {
     let mut found = Vec::new();
     let mut i = 0;
     while i < cells.len() {
@@ -95,7 +144,7 @@ pub fn scan(cells: &[&str], rules: &Rules) -> Vec<Candidate> {
         };
         let end = tail.as_ref().map_or(i, |t| t.1);
         let mut variants = Vec::new();
-        for head in wide_head_starts(cells, start, &run) {
+        for head in wide_head_starts(cells, start) {
             let raw = format!("{}{body}", cells[head..start].concat());
             if let Some(c) = classify(&raw, head, end, rules) {
                 variants.push(c);
@@ -157,16 +206,17 @@ fn is_wide_name(cell: &str) -> bool {
             .is_some_and(|c| c.is_alphabetic() || c.is_numeric())
 }
 
-/// Where a path may start before its ASCII run, when the run opens on a
-/// separator glued to a CJK name: `成品` + `/西游.mp4`, `粗剪` + `.mp4`.
-/// Chinese prose runs into the name with no space ("已经输出到成品/a.mp4"),
-/// so the start can't be read off the text: every ideograph back to the
-/// nearest break is offered, farthest first, and the host settles which
-/// exists. A run that opens on a letter ("保存到out/a.png") gets none.
-fn wide_head_starts(cells: &[&str], start: usize, run: &str) -> Vec<usize> {
-    if !run.starts_with(['/', '.', '-', '_']) {
-        return Vec::new();
-    }
+/// Where a path may start before its run, when a CJK name is glued to it:
+/// `成品` + `/西游.mp4`, `粗剪` + `.mp4`, `截图` + `2026.png`. Chinese prose
+/// runs into the name with no space ("已经输出到成品/a.mp4"), so the start
+/// can't be read off the text: every ideograph back to the nearest break is
+/// offered, farthest first, and the host settles which exists.
+///
+/// B465: a run that opened on a letter or a digit got none, so a CJK name
+/// with ASCII in it ("截图2026.png") was offered only from the digits on.
+/// Every run gets them now; the run itself is still offered last
+/// ("保存到out/a.png" offers `out/a.png` too).
+fn wide_head_starts(cells: &[&str], start: usize) -> Vec<usize> {
     let mut starts = Vec::new();
     let mut i = start;
     while i > 0 && starts.len() < HEAD_LIMIT {
@@ -183,9 +233,14 @@ fn wide_head_starts(cells: &[&str], start: usize, run: &str) -> Vec<usize> {
 }
 
 /// The CJK-named rest of a path whose ASCII run stopped at an ideograph
-/// (`out/` + `羽毛球/a.png`), taken only when it ends the way a path does —
+/// (`out/` + `羽毛球/a.png`), taken only where it ends the way a path does —
 /// a previewable file or a `/` — so prose that merely follows a path
 /// ("保存到out/a.png了") stays prose. Its text and the cell after it.
+///
+/// B465: the whole rest had to end that way, so prose right after the name
+/// ("/tmp/首页.png里面") lost the name with it. It ends at the first
+/// previewable file that prose follows, else at the last folder's `/` that
+/// prose follows ("out/设计稿/里面"), else where the rest ends.
 fn wide_name_tail(cells: &[&str], from: usize, rules: &Rules) -> Option<(String, usize)> {
     if from >= cells.len() || !is_wide_name(cells[from]) {
         return None;
@@ -194,12 +249,31 @@ fn wide_name_tail(cells: &[&str], from: usize, rules: &Rules) -> Option<(String,
     while end < cells.len() && (is_path(cells[end]) || is_wide_name(cells[end])) {
         end += 1;
     }
+    let mut name = String::new();
+    let mut folder_cut = None;
+    for k in from..end {
+        name.push_str(cells[k]);
+        let prose_next = k + 1 < end && is_wide_name(cells[k + 1]) && !is_path(cells[k + 1]);
+        if !prose_next {
+            continue;
+        }
+        let last = name.split('/').next_back().unwrap_or("");
+        if cells[k] != "/" && rules.previewable(last) && !last.starts_with('.') {
+            return Some((name, k + 1));
+        }
+        if cells[k] == "/" {
+            folder_cut = Some((name.clone(), k + 1));
+        }
+    }
     while end > from && matches!(cells[end - 1], "." | "-") {
         end -= 1;
     }
     let name: String = cells[from..end].concat();
     let last = name.split('/').rfind(|s| !s.is_empty()).unwrap_or("");
-    (name.ends_with('/') || rules.previewable(last)).then_some((name, end))
+    if name.ends_with('/') || rules.previewable(last) {
+        return Some((name, end));
+    }
+    folder_cut
 }
 
 /// `raw` (cells `start..end`) as a candidate, or not one.
@@ -311,7 +385,12 @@ mod tests {
             tokens("**out/plot.png** and (charts/b.jpg), `c.gif`"),
             ["out/plot.png", "charts/b.jpg", "c.gif"]
         );
-        assert_eq!(tokens("保存到out/a.png了"), ["out/a.png"]);
+        // B465: prose glued in front is offered as a start too, the path
+        // itself last; the host settles which exists.
+        assert_eq!(
+            tokens("保存到out/a.png了").last().map(String::as_str),
+            Some("out/a.png")
+        );
         assert_eq!(
             tokens("see src/main.swift:12 and out/a.png:3"),
             ["out/a.png"]
@@ -356,8 +435,11 @@ mod tests {
         );
         assert_eq!(tokens("在 out/里面有图"), ["out/"]);
         let found = scan_line("看x/图表.png。");
-        assert_eq!(found[0].token, "x/图表.png");
-        assert_eq!(found[0].cells, 1..9, "every cell of it, not the full stop");
+        // The glued prose is offered as a start first (B465); the path's
+        // own candidate takes every cell of it, not the full stop.
+        assert_eq!(found[0].token, "看x/图表.png");
+        let own = found.iter().find(|c| c.token == "x/图表.png").unwrap();
+        assert_eq!(own.cells, 1..9, "every cell of it, not the full stop");
     }
 
     #[test]
@@ -391,7 +473,15 @@ mod tests {
             tokens("输出到成品/a.png")[..2],
             ["输出到成品/a.png", "出到成品/a.png"]
         );
-        assert_eq!(tokens("规则见CLAUDE.md"), ["CLAUDE.md"]);
+        assert_eq!(
+            tokens("规则见CLAUDE.md"),
+            [
+                "规则见CLAUDE.md",
+                "则见CLAUDE.md",
+                "见CLAUDE.md",
+                "CLAUDE.md"
+            ]
+        );
     }
 
     #[test]
@@ -439,8 +529,73 @@ mod tests {
         let found = scan(&cells, &rules());
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].token, "cafe\u{301}/a.png");
-        // Scripts written without spaces still end the run.
-        assert_eq!(tokens("保存到out/a.png了"), ["out/a.png"]);
+        // Scripts written without spaces still end the run (their names
+        // are offered from each start, B465).
+        assert_eq!(
+            tokens("保存到out/a.png了").last().map(String::as_str),
+            Some("out/a.png")
+        );
+    }
+
+    /// B465: a CJK name ran on only where path punctuation glued it to a
+    /// path, and a name with prose after its extension was never cut there:
+    /// 「已保存到 /tmp/首页.png里面」 offered nothing at all. CJK is part of a
+    /// name; prose right after a file's extension (or a folder's slash)
+    /// ends it there; full-width punctuation always ends it; the host's
+    /// check of what exists stays the last word.
+    #[test]
+    fn cjk_names_are_names() {
+        assert_eq!(tokens("截图.png")[0], "截图.png");
+        assert_eq!(tokens("设计稿/首页.png")[0], "设计稿/首页.png");
+        assert_eq!(tokens("已保存到 /tmp/首页.png里面"), ["/tmp/首页.png"]);
+        assert_eq!(tokens("图都在 out/设计稿/里面"), ["out/设计稿/"]);
+        assert!(tokens("（截图2026.png）").contains(&"截图2026.png".to_owned()));
+        let mixed = tokens("已保存到 /tmp/首页.png里面，另外设计稿/首页.png也改了，见 out/a.png。");
+        assert_eq!(mixed[0], "/tmp/首页.png");
+        assert!(mixed.contains(&"设计稿/首页.png".to_owned()), "{mixed:?}");
+        assert_eq!(mixed.last().map(String::as_str), Some("out/a.png"));
+        // Full-width punctuation ends a name, whatever follows.
+        assert!(tokens("文件：截图.png、首页.png").contains(&"截图.png".to_owned()));
+        assert!(
+            !tokens("截图.png、首页.png")
+                .iter()
+                .any(|t| t.contains('、'))
+        );
+        // Prose glued in front: every start is offered, the shortest last.
+        assert_eq!(
+            tokens("保存到out/a.png了").last().map(String::as_str),
+            Some("out/a.png")
+        );
+    }
+
+    /// B464: a path with a space never became a link: the scanner stops at
+    /// a space. Inside one line's backticks or straight double quotes, a
+    /// run with spaces that looks like a path is a candidate, its cells
+    /// all of the quoted text.
+    #[test]
+    fn a_quoted_path_may_hold_spaces() {
+        let found = scan_line("看 `docs/My Report.pdf` 和 \"out/final cut.mp4\" 和 \"final cut\"");
+        let tokens: Vec<&str> = found.iter().map(|c| c.token.as_str()).collect();
+        assert!(tokens.contains(&"docs/My Report.pdf"), "{tokens:?}");
+        assert!(tokens.contains(&"out/final cut.mp4"), "{tokens:?}");
+        assert!(!tokens.contains(&"final cut"));
+        let report = found
+            .iter()
+            .find(|c| c.token == "docs/My Report.pdf")
+            .unwrap();
+        assert_eq!(report.cells, 3..21);
+        assert!(!report.directory_only);
+        // The quoted path comes before the pieces scanned inside it.
+        let at = |t: &str| tokens.iter().position(|x| *x == t);
+        assert!(at("docs/My Report.pdf") < at("Report.pdf"));
+        assert_eq!(tokens_of("`My Notes/`")[0], "My Notes/");
+        // No pair, no space: as before.
+        assert_eq!(tokens_of("`out/a.png`"), ["out/a.png"]);
+        assert_eq!(tokens_of("a \"stray quote out/a b.png"), ["out/a", "b.png"]);
+    }
+
+    fn tokens_of(line: &str) -> Vec<String> {
+        tokens(line)
     }
 
     #[test]

@@ -21,6 +21,13 @@ final class CompanionPet {
     /// Bumped whenever what the screens or the island show changed.
     private(set) var revision: UInt64 = 0
 
+    /// Home is on screen (not under a pushed page): where the egg is tapped
+    /// and hatches.
+    @ObservationIgnored var onHome = false {
+        didSet { if onHome != oldValue { logStatus() } }
+    }
+    @ObservationIgnored private var lastStatus = ""
+
     @ObservationIgnored let machine: PetMachine
     @ObservationIgnored private let cloud = UbiquitousPetCloud()
     @ObservationIgnored private var cloudWatch: NSObjectProtocol?
@@ -32,7 +39,10 @@ final class CompanionPet {
         // Rust calls it on any thread (a session's events, iCloud): it
         // only hops to the main actor.
         machine.setListener(listener: PetChangeListener {
-            Task { @MainActor in CompanionPet.shared.revision &+= 1 }
+            Task { @MainActor in
+                CompanionPet.shared.revision &+= 1
+                CompanionPet.shared.logStatus()
+            }
         })
         machine.setCloud(cloud: cloud)
         cloudWatch = NotificationCenter.default.addObserver(
@@ -67,8 +77,21 @@ final class CompanionPet {
         _ = machine.hatch(seed: seed, now: Self.now, localHour: hour)
     }
 
+    /// A tap on the egg on Home: the first wobbles it, the second cracks
+    /// it, the third hatches it (once iCloud has settled).
+    func tapEgg() { _ = machine.tapEgg() }
+
     /// Home shows the pet: it may grow.
     func seen() { _ = machine.seen(now: Self.now) }
+
+    /// The egg's and the hatch's state, logged when it changes, so a device
+    /// report can be read from the syslog (`pet: egg connections=… taps=…`).
+    func logStatus() {
+        let line = "\(machine.status()) on_home=\(onHome)"
+        guard line != lastStatus else { return }
+        lastStatus = line
+        Log.ui.notice("pet: \(line, privacy: .public)")
+    }
 
     func rename(_ name: String) { machine.rename(name: name, now: Self.now) }
 

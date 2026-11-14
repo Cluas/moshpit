@@ -5,9 +5,8 @@ import UIKit
 @testable import Moshpit
 
 /// T3: host paths as links and OSC 7 on the core's view (TERMINAL-VIEW.md
-/// V43, V44) — what the SwiftTerm path's PathLinkDetector and its
-/// `hostCurrentDirectoryUpdate` do, so the switch can default on without
-/// them regressing.
+/// V43, V44), which the SwiftTerm path's PathLinkDetector and its
+/// `hostCurrentDirectoryUpdate` did before it went (batch B).
 @Suite("Core view: host paths as links, OSC 7", .serialized)
 @MainActor
 struct CorePathLinkTests {
@@ -16,7 +15,7 @@ struct CorePathLinkTests {
     /// The core's view in a window (the pass runs only for one on screen),
     /// attached to a coordinator as the session's is.
     private func makeCore(cols: Int = 40, rows: Int = 6) -> (CoreTerminalView, SwiftTerminalView.Coordinator, UIWindow) {
-        let surface = TerminalSurfaces.make(.core, font: Self.font, grid: TerminalGrid(cols: cols, rows: rows))
+        let surface = TerminalSurfaces.make(font: Self.font, grid: TerminalGrid(cols: cols, rows: rows))
         let core = surface as! CoreTerminalView
         let coordinator = SwiftTerminalView.Coordinator()
         coordinator.attach(surface)
@@ -128,42 +127,4 @@ struct CorePathLinkTests {
                 "the session's reading of it")
     }
 
-    /// The core's scanner (crates/term/src/paths.rs) against the app's
-    /// (`TerminalPathScanner`, the SwiftTerm path's) on the same lines: the
-    /// two views offer the host the same candidates.
-    @Test("the core offers the host what the app's scanner finds", arguments: [
-        "  3. 对比图：qchar/out/GripLab.png（准备、放网、平抽）。规则见 CLAUDE.md 第 3 步和 qchar/README.md「体型怎么挑」。",
-        "saved to out/a.png.",
-        "**out/plot.png** and (charts/b.jpg), `c.gif`",
-        "保存到out/a.png了",
-        "see src/main.swift:12 and out/a.png:3",
-        "/Users/me/Desktop/shot.PNG ~/Downloads/clip.mov ./a.pdf ../b.md",
-        "README Makefile notes.txt",
-        "outputs in out/plots and ~/Desktop/charts/ v1.2/ src/main.swift 10/18 1/2 /config",
-        "改稿：episodes/nolift/改稿建议.md。",
-        "见 out/羽毛球/a.png 和 out/图/，",
-        "在 out/里面有图",
-        "for you: 成品/西游-写实版-粗剪.mp4. It's",
-        "见 写实版-粗剪.mp4。",
-        "输出到成品/a.png",
-        "规则见CLAUDE.md",
-        "a~b/c.png me@example.com",
-        "已经输出到成品/粗剪.mp4。",
-    ])
-    func scannerParity(line: String) {
-        let t = mp_term_new(120, 2, 0)
-        defer { mp_term_close(t) }
-        guard let t else { Issue.record("no core"); return }
-        let kinds = PreviewableFile.extensions.sorted().joined(separator: ",")
-        kinds.withCString { mp_term_set_path_extensions(t, $0) }
-        let bytes = Array((line + "\r\n").utf8)
-        bytes.withUnsafeBufferPointer { mp_term_feed(t, $0.baseAddress!, $0.count) }
-        let core = CoreTerminalView.pathCandidates(mp_term_path_candidates(t)).map { "\($0.directoryOnly ? "D" : "F")\($0.token)" }
-        var app: [String] = []
-        for c in TerminalPathScanner.scan(line) {
-            let key = "\(c.directoryOnly ? "D" : "F")\(c.token)"
-            if !app.contains(key) { app.append(key) }
-        }
-        #expect(core == app)
-    }
 }

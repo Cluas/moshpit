@@ -438,7 +438,7 @@ struct SessionLifecycleTests {
         #expect(session.tmuxController == nil)
 
         let painted = TmuxSessionController(sshSession: MockTmuxTransport())
-        _ = painted.terminalView(for: "%0")
+        _ = painted.surface(for: "%0")
         painted.coordinator(for: "%0")?.reveal()
         #expect(painted.hasPaintedSinceAttach)
         session.installForTesting(moshTransport: nil, tmuxController: painted)
@@ -448,7 +448,7 @@ struct SessionLifecycleTests {
 
         // A second drop before the replacement painted keeps the OLDER ghost.
         let replacement = TmuxSessionController(sshSession: MockTmuxTransport())
-        _ = replacement.terminalView(for: "%0")
+        _ = replacement.surface(for: "%0")
         replacement.coordinator(for: "%0")?.reveal()
         session.installForTesting(moshTransport: nil, tmuxController: replacement)
         #expect(await bounded(1) { await session.stop(forReconnect: true) })
@@ -474,7 +474,7 @@ struct SessionLifecycleTests {
     private func ghostedSession(fallback: Double, attachBound: Double) -> GhostedRig {
         let session = makeSession(ScriptedTransport(.reply("")))
         let painted = TmuxSessionController(sshSession: MockTmuxTransport())
-        _ = painted.terminalView(for: "%0")
+        _ = painted.surface(for: "%0")
         painted.coordinator(for: "%0")?.reveal()
         session.installForTesting(moshTransport: nil, tmuxController: painted)
         let transport = MockTmuxTransport()
@@ -523,7 +523,7 @@ struct SessionLifecycleTests {
         #expect(session.retiredTmuxController === painted)
 
         // …and goes the moment the replacement reveals a frame.
-        _ = replacement.terminalView(for: "%1")
+        _ = replacement.surface(for: "%1")
         replacement.coordinator(for: "%1")?.reveal()
         #expect(session.retiredTmuxController == nil)
         #expect(session.awaitingFirstFrame == false)

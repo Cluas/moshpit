@@ -682,6 +682,34 @@ fn different_keys_make_different_faces() {
     assert_ne!(face("SHA256:a"), face("SHA256:b"));
 }
 
+/// A key's pixel creature (PET-DESIGN §6.3) is the pet crate's for it, in
+/// the key face's hue, awake and asleep; its filled cells are its kinds'.
+#[test]
+fn a_fingerprint_makes_its_creature_in_its_faces_hue() {
+    let made = creature(KEY);
+    assert!(made.is_creature());
+    assert_eq!(made.hue, face(KEY).hue, "the host keeps its colour");
+    let pet = moshpit_pet::creature::creature(KEY);
+    assert_eq!(made.side, 10);
+    assert_eq!(made.kinds.len(), 100);
+    assert_eq!(made.asleep.len(), 100);
+    assert_eq!(
+        made.kinds,
+        pet.awake.iter().map(|k| *k as u8).collect::<Vec<_>>()
+    );
+    assert!(
+        (0..16).any(|n| {
+            let other = creature(&format!("SHA256:key-{n}"));
+            other.kinds != other.asleep
+        }),
+        "its eyes close (this key's are sleepy already)"
+    );
+    for (filled, kind) in made.cells.iter().zip(&made.kinds) {
+        assert_eq!(*filled, *kind != 0);
+    }
+    assert_ne!(creature("SHA256:a"), creature("SHA256:b"));
+}
+
 /// A card's mark: the emoji picked, else the trusted key's face, else (no
 /// key trusted yet, a host never connected) only the initial.
 #[test]
@@ -705,7 +733,9 @@ fn a_card_has_its_keys_face_its_emoji_or_neither() {
         "the face is kept under the emoji"
     );
     assert_eq!(fresh.face, None, "no key trusted: no face");
+    assert_eq!(fresh.creature, None, "nor a creature");
     assert_eq!(fresh.initial, "F");
+    assert_eq!(keyed.creature.as_ref(), Some(&creature(KEY)));
     // The screen takes them.
     let json = message(&HomeInput {
         connections: &[saved(STUDIO, "studio")],

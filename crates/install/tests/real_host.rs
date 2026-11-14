@@ -1494,3 +1494,23 @@ fn a_herdr_pane_with_an_inherited_tmux_keeps_its_stamps_out_of_that_tmux() {
     let run = home.0.join(".moshpit/run/s-w1_p2");
     assert_eq!(std::fs::read_to_string(run.join("state")).unwrap(), "done");
 }
+
+/// B450: the question's push is handed the episode it is about — the
+/// pane's stamped `since` — as its fifth argument, so the phone can tell
+/// the pushed copy and its own copy of one question from a second question.
+#[test]
+fn the_question_s_push_is_handed_its_episode() {
+    let home = home();
+    let pushed = untmuxed_host(&home.0);
+    std::fs::write(
+        home.0.join(".moshpit/moshpit-push.sh"),
+        format!("#!/bin/sh\necho \"$1 $5\" >> '{}'\n", pushed.display()),
+    )
+    .unwrap();
+    stamp_untmuxed(&home.0, "working", "0", None);
+    stamp_untmuxed(&home.0, "attention", "0", None);
+    let line = appears(&pushed).expect("the question pushed");
+    let run = std::fs::read_dir(home.0.join(".moshpit/run")).unwrap().next().unwrap().unwrap().path();
+    let since = std::fs::read_to_string(run.join("since")).unwrap();
+    assert_eq!(line.trim(), format!("attention {since}"));
+}

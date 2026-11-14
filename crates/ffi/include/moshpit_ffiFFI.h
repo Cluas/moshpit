@@ -1388,6 +1388,16 @@ void uniffi_moshpit_ffi_fn_method_petmachine_set_listener(uint64_t ptr, RustBuff
 void uniffi_moshpit_ffi_fn_method_petmachine_set_pace(uint64_t ptr, RustBuffer pace, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_PETMACHINE_STATUS
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_PETMACHINE_STATUS
+RustBuffer uniffi_moshpit_ffi_fn_method_petmachine_status(uint64_t ptr, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_PETMACHINE_TAP_EGG
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_PETMACHINE_TAP_EGG
+uint8_t uniffi_moshpit_ffi_fn_method_petmachine_tap_egg(uint64_t ptr, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_CLONE_CORESESSIONS
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_CLONE_CORESESSIONS
 uint64_t uniffi_moshpit_ffi_fn_clone_coresessions(uint64_t handle, RustCallStatus *_Nonnull out_status
@@ -4093,6 +4103,18 @@ uint16_t uniffi_moshpit_ffi_checksum_method_petmachine_set_listener(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_PETMACHINE_SET_PACE
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_PETMACHINE_SET_PACE
 uint16_t uniffi_moshpit_ffi_checksum_method_petmachine_set_pace(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_PETMACHINE_STATUS
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_PETMACHINE_STATUS
+uint16_t uniffi_moshpit_ffi_checksum_method_petmachine_status(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_PETMACHINE_TAP_EGG
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_PETMACHINE_TAP_EGG
+uint16_t uniffi_moshpit_ffi_checksum_method_petmachine_tap_egg(void
     
 );
 #endif

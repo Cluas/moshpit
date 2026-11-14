@@ -112,6 +112,11 @@ pub struct Connection {
     /// of the initial; none before a key is trusted.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub face: Option<Face>,
+    /// The same key's pixel creature (moshpit-design `PET-DESIGN.md`
+    /// §6.3), which the mark shows in the face's place while the pixel
+    /// companion is on; none before a key is trusted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub creature: Option<Face>,
     /// The emoji picked for it in its form, which the mark shows in place
     /// of the face.
     #[serde(default, skip_serializing_if = "Option::is_none")]

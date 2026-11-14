@@ -15,19 +15,27 @@ use nsh_core::{element::ImageSrc, prelude::*};
 /// What a companion shows.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Figure {
-    /// The egg; cracked when it's ready to hatch.
-    Egg { ready: bool },
-    Pet { look: Look, pose: Pose },
+    /// The egg; cracked when it's ready to hatch. `wobble`: its wobble
+    /// alone, at once (a tap), not its loop's still first.
+    Egg {
+        ready: bool,
+        wobble: bool,
+    },
+    Pet {
+        look: Look,
+        pose: Pose,
+    },
 }
 
 impl Figure {
     fn frames(self) -> Vec<(Sprite, u32)> {
         match self {
-            Figure::Egg { ready } => {
-                let pose = if ready { EggPose::Ready } else { EggPose::Still };
+            Figure::Egg { ready, wobble } => {
+                let pose = egg_pose(ready);
                 egg_durations(pose)
                     .into_iter()
                     .enumerate()
+                    .skip(usize::from(wobble))
                     .filter_map(|(i, ms)| egg(pose, i).map(|s| (s, ms)))
                     .collect()
             }
@@ -43,10 +51,21 @@ impl Figure {
     /// How long one pass of its frames takes.
     pub fn length(self) -> Duration {
         let ms: u32 = match self {
-            Figure::Egg { ready } => egg_durations(if ready { EggPose::Ready } else { EggPose::Still }).iter().sum(),
+            Figure::Egg { ready, wobble } => egg_durations(egg_pose(ready))
+                .iter()
+                .skip(usize::from(wobble))
+                .sum(),
             Figure::Pet { look, pose } => look.durations(pose).iter().sum(),
         };
         Duration::from_millis(u64::from(ms))
+    }
+}
+
+fn egg_pose(ready: bool) -> EggPose {
+    if ready {
+        EggPose::Ready
+    } else {
+        EggPose::Still
     }
 }
 
@@ -85,7 +104,11 @@ fn frames(figure: Figure, dark: bool, size: f32) -> Rc<Frames> {
     if let Some(f) = FRAMES.with(|c| c.borrow().get(&key).cloned()) {
         return f;
     }
-    let appearance = if dark { Appearance::Dark } else { Appearance::Light };
+    let appearance = if dark {
+        Appearance::Dark
+    } else {
+        Appearance::Light
+    };
     let (uris, ms) = figure
         .frames()
         .into_iter()
@@ -119,7 +142,9 @@ pub fn companion(figure: impl Fn() -> Figure + 'static, size: f32) -> AnyElement
         elapsed.set(0);
     });
     let _ticker = (!reduce_motion()).then(|| {
-        set_interval(TICK, move || elapsed.update(|t| *t += TICK.as_millis() as u64))
+        set_interval(TICK, move || {
+            elapsed.update(|t| *t += TICK.as_millis() as u64)
+        })
     });
     let src = move || {
         let frames = frames(figure.get(), dark(), size);

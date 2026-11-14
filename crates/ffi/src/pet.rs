@@ -94,7 +94,8 @@ impl PetMachine {
             _ => None,
         };
         let egg = matches!(s.stored, Stored::NoPet).then(|| EggView {
-            ready: s.egg.ready(),
+            ready: s.egg.cracked(),
+            taps: s.egg.taps,
         });
         PetView {
             style: s.style,
@@ -190,6 +191,43 @@ impl PetMachine {
         self.notify();
     }
 
+    /// A tap on the egg on Home: the first wobbles it, the second cracks
+    /// it, the third hatches it (the screen then asks for the hatch, which
+    /// waits for iCloud to settle). Counted in memory only. The taps so far.
+    pub fn tap_egg(&self) -> u8 {
+        let mut s = lock(&self.state);
+        if !matches!(s.stored, Stored::NoPet) {
+            return 0;
+        }
+        let before = s.egg.taps;
+        let taps = s.egg.tap();
+        drop(s);
+        if taps != before {
+            self.notify();
+        }
+        taps
+    }
+
+    /// The egg's and the hatch's state in a log line: what a device report
+    /// is read from (the host adds whether Home shows).
+    pub fn status(&self) -> String {
+        let s = lock(&self.state);
+        let pet = match &s.stored {
+            Stored::Pet(_) => "pet",
+            Stored::NoPet => "egg",
+            Stored::Unreadable(_) => "unreadable",
+        };
+        let shown = s.shown && s.style != Style::Minimal;
+        format!(
+            "{pet} connections={} agent_finished={} taps={} cloud_settled={} shown={shown} may_hatch={}",
+            s.egg.connections,
+            s.egg.agent_finished,
+            s.egg.taps,
+            s.cloud_settled,
+            matches!(s.stored, Stored::NoPet) && may_hatch(&s.egg, true, shown, s.cloud_settled),
+        )
+    }
+
     /// A session connected (the egg's third one readies it).
     pub fn connected(&self) {
         let mut s = lock(&self.state);
@@ -198,11 +236,10 @@ impl PetMachine {
         }
         s.egg.connected();
         stored::write_egg(&self.defaults, &Readiness::System, &s.egg);
-        let ready = s.egg.ready();
         drop(s);
-        if ready {
-            self.notify();
-        }
+        // Told every time, for the log line (the screens see no change
+        // until it's ready).
+        self.notify();
     }
 
     /// An agent finished a turn: the egg cracks, or the pet counts it.
@@ -244,8 +281,9 @@ impl PetMachine {
     }
 
     /// The hatch, from 16 secure random bytes, at `now` (unix seconds) and
-    /// local hour `local_hour`. Only when it may: the egg is ready, iCloud
-    /// has settled, the companion is on. Whether it hatched.
+    /// local hour `local_hour`. Only when it may: the egg is tapped three
+    /// times or ready by itself, iCloud has settled, the companion is on.
+    /// Whether it hatched.
     pub fn hatch(&self, seed: Vec<u8>, now: i64, local_hour: u8) -> bool {
         let Ok(seed) = Seed::try_from(seed.as_slice()) else {
             return false;
@@ -350,7 +388,7 @@ impl PetMachine {
         }
         match &s.stored {
             Stored::NoPet => {
-                let pose = if s.egg.ready() {
+                let pose = if s.egg.cracked() {
                     EggPose::Ready
                 } else {
                     EggPose::Still
@@ -471,6 +509,70 @@ mod tests {
             1,
             "the iPad's task reached the phone"
         );
+    }
+
+    #[test]
+    fn three_taps_hatch_the_egg_the_second_cracks_it_and_the_hatch_waits_for_icloud() {
+        let m = PetMachine::new(Arc::new(Prefs::default()), "phone".into());
+        let listener = Arc::new(Count::default());
+        m.set_listener(Some(listener.clone()));
+        let egg = |m: &PetMachine| message(m)["egg"].clone();
+        assert_eq!(m.tap_egg(), 1);
+        assert_eq!(
+            (egg(&m)["ready"].as_bool(), egg(&m)["taps"].as_u64()),
+            (Some(false), Some(1))
+        );
+        assert_eq!(m.tap_egg(), 2);
+        assert_eq!(egg(&m)["ready"], true, "the second tap cracks it");
+        assert!(m.island("idle".into()).unwrap().pose.starts_with("px1:"));
+        assert_eq!(m.tap_egg(), 3);
+        // iCloud hasn't settled: no hatch yet, however often it's asked.
+        assert_eq!(message(&m)["may_hatch"], false);
+        assert!(!m.hatch(vec![4; 16], 1_800_000_000, 9));
+        assert!(
+            m.status().contains("taps=3 cloud_settled=false"),
+            "{}",
+            m.status()
+        );
+        // Once it settles, the screen sees it may, and asks.
+        m.cloud_unavailable();
+        assert_eq!(message(&m)["may_hatch"], true);
+        assert!(m.hatch(vec![4; 16], 1_800_000_000, 9));
+        assert_eq!(message(&m)["moment"], "hatched");
+        assert!(message(&m)["egg"].is_null());
+        assert_eq!(m.tap_egg(), 0, "a pet isn't an egg");
+        assert!(*lock(&listener.0) >= 5, "each tap told");
+        // A relaunch starts the taps over; nothing else was kept for them.
+        let fresh = PetMachine::new(Arc::new(Prefs::default()), "phone".into());
+        fresh.cloud_unavailable();
+        fresh.tap_egg();
+        fresh.tap_egg();
+        assert_eq!(
+            message(&fresh)["may_hatch"],
+            false,
+            "two taps don't hatch it"
+        );
+    }
+
+    #[test]
+    fn an_egg_ready_by_itself_still_hatches_with_no_tap() {
+        let prefs = Arc::new(Prefs::default());
+        let m = PetMachine::new(prefs.clone(), "phone".into());
+        m.cloud_unavailable();
+        for _ in 0..2 {
+            m.connected();
+        }
+        assert_eq!(message(&m)["may_hatch"], false);
+        m.connected();
+        assert_eq!(message(&m)["egg"]["ready"], true, "the third connection");
+        assert_eq!(message(&m)["egg"]["taps"], 0);
+        assert_eq!(message(&m)["may_hatch"], true);
+        assert!(
+            m.status()
+                .starts_with("egg connections=3 agent_finished=false taps=0")
+        );
+        assert!(m.hatch(vec![5; 16], 1_800_000_000, 9));
+        assert!(m.status().starts_with("pet "));
     }
 
     #[test]

@@ -167,8 +167,8 @@ final class TerminalHostContainer: UIView {
     }
 }
 
-/// SwiftUI host of the session's terminal (a ``TerminalSurface``: SwiftTerm's
-/// view or the core's, as ``CoreTermSwitch`` decides when it is made).
+/// SwiftUI host of the session's terminal (a ``TerminalSurface``: the
+/// core's view, ``CoreTerminalView``).
 ///
 /// ### Persistence contract (DO NOT BREAK)
 ///
@@ -390,7 +390,7 @@ struct SwiftTerminalView: UIViewRepresentable {
         var onHostDirectoryChange: ((String?) -> Void)?
 
         /// Which paths on this terminal the host has confirmed, so the link
-        /// pass can make them tappable (`PathLinkDetector`). nil = paths stay
+        /// pass can make them tappable (CoreTerminalView+Paths). nil = paths stay
         /// plain text. An answer from the host schedules another pass.
         var pathLinks: RemotePathLinks? {
             didSet { withSurface { $0.pathLinks = pathLinks } }
@@ -520,9 +520,8 @@ struct SwiftTerminalView: UIViewRepresentable {
         }
 
         /// Lifts the pane-switch veil once every byte fed so far is on
-        /// screen: at once on SwiftTerm's view, with the frame that has them
-        /// on the core's (a reveal right after a feed would lift the veil
-        /// over a repaint the core has not parsed yet).
+        /// screen: with the frame that has them (a reveal right after a feed
+        /// would lift the veil over a repaint the core has not parsed yet).
         func revealWhenShown() {
             feed(mark: TerminalMark(code: TerminalMark.Code.revealWhenShown, arg: 0))
         }
@@ -540,9 +539,9 @@ struct SwiftTerminalView: UIViewRepresentable {
 
         /// mosh's local echo for this terminal (see ``MoshPrediction``). Set
         /// by a mosh session for the life of its transport; nil everywhere
-        /// else, which leaves every path here a no-op. The engine object
-        /// keeps the mode and the round trip; the terminal draws the guesses
-        /// (SwiftTerm into its cells, the core over its frames).
+        /// else, which leaves every path here a no-op. The object keeps the
+        /// mode and the round trip; the core guesses and draws over its
+        /// frames.
         private(set) var prediction: MoshPrediction?
         private var predictionTick: DispatchWorkItem?
 
@@ -560,12 +559,9 @@ struct SwiftTerminalView: UIViewRepresentable {
         /// ``predictionSent(batch:userState:)`` once the transport has queued
         /// the bytes, or nil when nothing was predicted.
         func predict(_ data: Data) -> Int? {
-            guard let prediction else { return nil }
-            guard let surface else {
-                // Nothing to draw on: start over once there is.
-                prediction.reset()
-                return nil
-            }
+            // Nothing to draw on: nothing guessed (the terminal starts over
+            // when it comes).
+            guard prediction != nil, let surface else { return nil }
             let batch = MainActor.assumeIsolated { surface.predict(data) }
             schedulePredictionTick()
             return batch
@@ -574,13 +570,12 @@ struct SwiftTerminalView: UIViewRepresentable {
         /// Bytes the engine can't model are about to move the screen: take
         /// every guess down; the next keystroke starts a new epoch.
         func dropPredictions() {
-            guard let prediction else { return }
-            guard let surface else { prediction.reset(); return }
+            guard prediction != nil, let surface else { return }
             MainActor.assumeIsolated { surface.dropPredictions() }
         }
 
         func predictionSent(batch: Int, userState: UInt64?) {
-            guard let surface else { prediction?.sent(batch: batch, as: userState); return }
+            guard let surface else { return }
             MainActor.assumeIsolated { surface.predictionSent(batch: batch, userState: userState) }
         }
 
@@ -590,7 +585,6 @@ struct SwiftTerminalView: UIViewRepresentable {
         func feed(moshFrame frame: MoshHostFrame) {
             if !frame.bytes.isEmpty { noteFed(frame.bytes) }
             guard let surface else {
-                prediction?.noteEchoAck(frame.echoAck)
                 if !frame.bytes.isEmpty { pendingFeed.append(frame.bytes) }
                 return
             }
@@ -1174,7 +1168,7 @@ struct SwiftTerminalView: UIViewRepresentable {
         }
 
         /// The input-method switch and the keyboard's moves, for whichever
-        /// view is this coordinator's terminal (SwiftTerm's or the core's).
+        /// view is this coordinator's terminal.
         func observeKeyboard(of terminalView: UIView) {
             // Switching the input method (globe key) is INVISIBLE to every
             // path we had: the CN/EN keyboards are the same height, so no
@@ -1340,7 +1334,8 @@ struct SwiftTerminalView: UIViewRepresentable {
         /// one byte, and over 10 characters typed on the same line sent exactly
         /// ten and then stopped — UIKit measures the shadow document between
         /// ticks and quits when nothing sits in front of the caret. Fixed in the
-        /// SwiftTerm fork (patch 12, `docs/PATCHES.md`); the same hold now sends
+        /// SwiftTerm fork (its patch 12; the fork went with batch B, and the
+        /// core's view keeps the fix: CoreTerminalView+TextInput); the same hold now sends
         /// 25. Keep the counter: it is the cheapest way to tell a regression
         /// here from a tmux stall, which look the same to a tester.
         ///

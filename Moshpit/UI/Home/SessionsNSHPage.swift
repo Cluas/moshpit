@@ -65,7 +65,7 @@ struct SessionsNSHPage: View {
             .modifier(HomeTreeDialogs(
                 killTarget: $killTarget, worktreeTarget: $worktreeTarget,
                 worktreeForceTarget: $worktreeForceTarget, agentTask: $agentTask,
-                actions: actions))
+                menus: menus, actions: actions))
     }
 
     /// The host's rows' menus to the surface.

@@ -15,7 +15,7 @@ enum Shell {
     /// in `\` never closed fish's quote and the next word ran on, and `\\`
     /// came out as `\`. Outside quotes `\\` is one backslash in all five.
     ///
-    /// The app's one shell quoter. `HerdrLaunch.quote`, `HostCommands.quote`,
+    /// The app's one shell quoter. `HostCommands.quote`,
     /// `ExecUploadCommands.quote`, `ActiveSession.shellQuote` and the image
     /// paths pasted at a prompt are all this function; none of them may grow
     /// its own escaping again. (A name in a tmux control-mode line is not a

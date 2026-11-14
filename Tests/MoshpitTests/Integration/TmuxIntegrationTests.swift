@@ -108,9 +108,9 @@ struct TmuxIntegrationTests {
         // Verify each known pane has a persistent TerminalView and that the
         // SAME instance is returned across calls (architectural invariant).
         for paneId in controller.snapshot.panes.keys {
-            let tv1 = controller.terminalView(for: paneId)
-            let tv2 = controller.terminalView(for: paneId)
-            #expect(tv1 === tv2, "terminalView(for:) must return the same instance for paneId \(paneId)")
+            let tv1 = controller.surface(for: paneId)
+            let tv2 = controller.surface(for: paneId)
+            #expect(tv1 === tv2, "surface(for:) must return the same instance for paneId \(paneId)")
         }
 
         // Create a second window via tmux command. The control-mode session

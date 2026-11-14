@@ -189,7 +189,7 @@ case "$ST" in
         sleep "$GRACE"
         CUR=$(prev)
         [ "$CUR" = "attention|$EPISODE" ] || exit 0
-        exec sh "$HOME/.moshpit/moshpit-push.sh" attention "$AG" "$TITLE"
+        exec sh "$HOME/.moshpit/moshpit-push.sh" attention "$AG" "$TITLE" "" "$EPISODE"
       ) >/dev/null 2>&1 &
     fi
     ;;

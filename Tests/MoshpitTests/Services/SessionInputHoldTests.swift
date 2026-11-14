@@ -72,7 +72,7 @@ struct SessionInputHoldTests {
         #expect(await eventually { controller.snapshot.panes["%0"] != nil })
 
         // The first frame: what was typed goes to the pane, in order.
-        _ = controller.terminalView(for: "%0")
+        _ = controller.surface(for: "%0")
         controller.coordinator(for: "%0")?.reveal()
         #expect(await eventually { host.typed.contains("send-keys -t %0 -H 0d") })
         let typed = host.typed
@@ -183,7 +183,7 @@ struct SessionInputHoldTests {
         #expect(await eventually { controller.snapshot.panes["%0"] != nil }, "tmux attached")
 
         // The first frame: what was typed goes to the pane, in order.
-        _ = controller.terminalView(for: "%0")
+        _ = controller.surface(for: "%0")
         controller.coordinator(for: "%0")?.reveal()
         #expect(await eventually { host.typed.contains("send-keys -t %0 -H 0d") },
                 "dropped without a word: \(host.written)")
@@ -208,38 +208,6 @@ struct SessionInputHoldTests {
         let held = try #require(typed.range(of: "send-keys -t %0 -H 61"), "the held key was lost: \(typed)")
         let later = try #require(typed.range(of: "send-keys -t %0 -H 62"), "\(typed)")
         #expect(held.lowerBound < later.lowerBound)
-        await session.stop()
-    }
-
-    /// Push connections dialled.
-    private final class Dials: @unchecked Sendable {
-        private let lock = NSLock()
-        private var dials = 0
-        func dial() { lock.withLock { dials += 1 } }
-        var count: Int { lock.withLock { dials } }
-    }
-
-    @Test("mosh fallen back to SSH with herdr starts push updates, as SSH does")
-    func fallbackHerdrStartsPush() async throws {
-        let host = FakeSSHHost { command in
-            command.contains("command -v tmux mosh-server")
-                ? .output("/usr/local/bin/herdr\n/usr/bin/python3\n::Linux::/usr/bin/apt-get\n") : .output("")
-        }
-        var connection = connection(.herdr)
-        connection.connectionProtocol = .mosh
-        let script = DialScript { connection in SSHSession(connection: connection, transport: host) }
-        let session = SessionHub.ActiveSession(connection: connection, dial: script.dialer)
-        session.probeTimeout = 0.2
-        let pushes = Dials()
-        let push = FakeSSHHost()
-        session.sidecarConnect = { connection in
-            pushes.dial()
-            return SSHSession(connection: connection, transport: push)
-        }
-        await session.start(theme: .githubDark, fontSize: 14)
-        #expect(session.degrade?.missing == .moshServer, "no mosh-server: SSH on the same connection")
-        #expect(await eventually { pushes.count == 1 },
-                "the fallback's herdr never started push: polled every 2–8 s for as long as it lasted")
         await session.stop()
     }
 

@@ -271,7 +271,7 @@ final class AgentActivityMonitor {
     /// holds one (B346): tmux's are polled by this sweep; herdr's by its own
     /// client, at its pace (slower while its push channel is up).
     static func stampInterval(of controller: any MultiplexerControlling) -> TimeInterval {
-        if let herdr = controller as? HerdrControlClient { return herdr.stampInterval }
+        if let herdr = controller as? RustHerdrController { return herdr.stampInterval }
         return sweepInterval
     }
 

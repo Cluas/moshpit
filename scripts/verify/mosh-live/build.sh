@@ -11,6 +11,10 @@
 #   Moshpit/Services/Herdr/HerdrLaunch.swift,
 #   Moshpit/Services/Shell.swift                 herdr's raw-attach loop and its retarget
 #
+# herdr's Swift side left the app with E1: with no commit given,
+# HerdrLaunch.swift comes from cf25626b, the last commit that had it
+# (MOSHPIT_SWIFT_HERDR_REV names another).
+#
 # plus HostCapabilities.extraPathDirs cut verbatim out of
 # Moshpit/Services/HostCapabilities.swift, shim.swift (the app's SSHSession as
 # the system's ssh), rules.swift and main.swift. Swift 5 language mode, -O.
@@ -61,7 +65,12 @@ for file in MoshTransport MoshWire MoshCrypto OCB3 MoshCompression MoshBootstrap
 done
 # herdr-retarget: the raw-attach loop and the retarget, as the app builds them,
 # and whether the app takes a retarget as landed only on the host's word (B208).
-take Moshpit/Services/Herdr/HerdrLaunch.swift
+if [ -n "$commit" ]; then
+    take Moshpit/Services/Herdr/HerdrLaunch.swift
+else
+    git -C "$repo" show "${MOSHPIT_SWIFT_HERDR_REV:-cf25626b}:Moshpit/Services/Herdr/HerdrLaunch.swift" \
+        > "$src/HerdrLaunch.swift"
+fi
 take Moshpit/Services/Shell.swift
 flags=()
 grep -q "func retargetLanded" "$src/HerdrLaunch.swift" && flags+=(-D MOSHPIT_RETARGET_LANDED)

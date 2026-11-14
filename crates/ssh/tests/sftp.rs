@@ -510,7 +510,7 @@ async fn without_sftp_uploads_go_over_exec() {
     let commands = host.seen().commands.clone();
     assert_eq!(
         commands.first().map(String::as_str),
-        Some("printf %s \"$HOME\"")
+        Some("printf 'MOSHPIT_OUTPUT\\n%s' \"$HOME\"")
     );
     assert_eq!(commands[1], plan.begin);
     assert_eq!(commands.len(), 2 + 3 + 1);
@@ -521,7 +521,34 @@ async fn without_sftp_uploads_go_over_exec() {
     ssh.upload_to_uploads_directory(b"again", "IMG-3.jpg", &mut |_| true)
         .await
         .unwrap();
-    assert_eq!(host.seen().commands[6], "printf %s \"$HOME\"");
+    assert_eq!(
+        host.seen().commands[6],
+        "printf 'MOSHPIT_OUTPUT\\n%s' \"$HOME\""
+    );
+}
+
+/// B463, the exec side: bash reads `~/.bashrc` for sshd's `-c`, so an rc
+/// file's `echo` comes ahead of every exec command's output. The exec
+/// upload read the noise as part of `$HOME`, refused it as no absolute
+/// path, and the picture never went up. The home is read past a mark.
+#[tokio::test]
+async fn a_shell_that_prints_first_doesnt_break_the_exec_upload() {
+    let host = Host::start(Bench {
+        sftp: false,
+        shell_commands: true,
+        exec_noise: b"Welcome to the build box!\n".to_vec(),
+        ..Default::default()
+    })
+    .await;
+    let ssh = connect(&host).await;
+    let image = noise(5000, 3);
+    let path = ssh
+        .upload_to_uploads_directory(&image, "IMG-4.jpg", &mut |_| true)
+        .await
+        .expect("an upload past the noise");
+    let home = host.home.path().to_string_lossy().into_owned();
+    assert_eq!(path, format!("{home}/.moshpit/uploads/IMG-4.jpg"));
+    assert!(std::fs::read(&path).unwrap() == image);
 }
 
 /// Waits up to 3 s for `path` to be gone (the clean-up after a stop does

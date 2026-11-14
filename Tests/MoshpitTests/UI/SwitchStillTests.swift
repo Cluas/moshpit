@@ -87,15 +87,13 @@ struct SwitchStillTests {
         #expect(container.superview === slot)
     }
 
-    /// Panes on the core's terminal whatever this host's switch says: the
-    /// picture is drawn from the terminal's own rows (the phone's path).
-    /// SwiftTerm's comes from a snapshot of the screen, which a view never
-    /// drawn yet (a test's) doesn't give.
+    /// Panes on the core's terminal, each made once: the picture is drawn
+    /// from the terminal's own rows (the phone's path).
     final class CoreController: TmuxSessionController {
         private var made: [String: TerminalSurface] = [:]
         override func surface(for paneId: String) -> TerminalSurface {
             if let surface = made[paneId] { return surface }
-            let surface = TerminalSurfaces.make(.core, font: UIFont.monospacedSystemFont(ofSize: 12, weight: .regular),
+            let surface = TerminalSurfaces.make(font: UIFont.monospacedSystemFont(ofSize: 12, weight: .regular),
                                                 grid: TerminalGrid(cols: 80, rows: 24))
             made[paneId] = surface
             return surface
@@ -176,18 +174,6 @@ struct SwitchStillTests {
         #expect(TerminalScreen.retrySecondsLeft(until: now.addingTimeInterval(0.4), now: now) == 1)
         #expect(TerminalScreen.retrySecondsLeft(until: now, now: now) == nil, "over")
         #expect(TerminalScreen.retrySecondsLeft(until: now.addingTimeInterval(-3), now: now) == nil)
-    }
-
-    @Test("B497: SwiftTerm's terminal gives a picture for the switch even before it was drawn")
-    func swiftTermGivesAPicture() throws {
-        let controller = TmuxSessionController(sshSession: MockTmuxTransport(), surfaceKind: .swiftTerm)
-        let stage = TerminalNSHStage()
-        let (_, window) = TerminalNSHTests.slot(for: stage)
-        defer { window.isHidden = true }
-        stage.show(.init(source: .pane(controller, "%1"), inset: 4))
-        stage.holdStill()
-        #expect(stage.still != nil, "the switch keeps a picture on SwiftTerm's path too")
-        stage.releaseStill()
     }
 
     @Test("B496: the chrome carries the grid's ground, and the page takes it")

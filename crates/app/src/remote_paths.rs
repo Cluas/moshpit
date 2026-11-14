@@ -444,15 +444,34 @@ pub fn rows(entries: &[Entry]) -> Vec<Entry> {
 /// isn't worth holding in memory twice.
 pub const EXEC_DOWNLOAD_LIMIT: u64 = 32 * 1024 * 1024;
 
+/// The line an exec reader prints before its answer: what came before it
+/// is the account's shell's (B463, the exec side).
+pub const OUTPUT_MARK: &str = "MOSHPIT_OUTPUT";
+
+/// The reader's own output: what follows its mark. sshd runs every exec
+/// command as `$SHELL -c`, and bash reads `~/.bashrc` for that, so an rc
+/// file's `echo` came ahead of the answer: the stat read it as the answer
+/// (the file "no longer on the host") and the listing took it into its
+/// first entry. Output without the mark (an older command) is taken whole.
+fn past_mark(output: &str) -> &str {
+    let mark = format!("{OUTPUT_MARK}\n");
+    match output.find(&mark) {
+        Some(at) => &output[at + mark.len()..],
+        None => output,
+    }
+}
+
 /// Whether `path` is a folder (`d`) or a file and its size (`f <bytes>`).
 pub fn stat_command(path: &str) -> String {
     let q = quote(path);
-    format!("if [ -d {q} ]; then echo d; elif [ -f {q} ]; then printf 'f '; wc -c < {q}; fi")
+    format!(
+        "printf '%s\\n' {OUTPUT_MARK}; if [ -d {q} ]; then echo d; elif [ -f {q} ]; then printf 'f '; wc -c < {q}; fi"
+    )
 }
 
 /// What [`stat_command`] printed, for `path`.
 pub fn parse_stat(output: &str, path: &str) -> Option<Entry> {
-    let line = output.trim();
+    let line = past_mark(output).trim();
     if line == "d" {
         return Some(Entry {
             path: path.to_owned(),
@@ -481,6 +500,7 @@ pub fn parse_stat(output: &str, path: &str) -> Option<Entry> {
 pub fn list_command(path: &str) -> String {
     sh(
         concat!(
+            "printf '%s\\n' MOSHPIT_OUTPUT; ",
             "cd \"$1\" || exit 1; ",
             "if find . -maxdepth 0 -printf '' >/dev/null 2>&1; then ",
             "find . -mindepth 1 -maxdepth 1 -printf '%Y %T@ %P\\0' 2>/dev/null; exit 0; fi; ",
@@ -501,7 +521,7 @@ pub fn list_command(path: &str) -> String {
 /// came.
 pub fn parse_list(output: &str, folder: &str) -> Vec<Entry> {
     let base = folder.strip_suffix('/').unwrap_or(folder);
-    let mut entries: Vec<Entry> = output
+    let mut entries: Vec<Entry> = past_mark(output)
         .split('\0')
         .filter_map(|record| {
             let (kind, rest) = record.split_once(' ')?;

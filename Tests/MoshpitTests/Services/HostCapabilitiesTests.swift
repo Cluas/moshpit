@@ -207,25 +207,4 @@ struct HostCapabilitiesTests {
         #expect(Multiplexer.tmux.installCommand(using: nil) == nil)
         #expect(Multiplexer.none.installCommand(using: .brew) == nil)
     }
-
-    // MARK: - Launch line
-
-    @Test("herdr boots with the same PATH prefix the probe searched")
-    func herdrLaunchUsesProbePath() {
-        let command = HerdrLaunch.attachCommand(customPath: nil)
-        // Otherwise the very binary the probe just found is "command not
-        // found" in a login shell — herdr's installer touches no rc file.
-        #expect(command.contains("$HOME/.local/bin"))
-        #expect(command.hasSuffix(" herdr"))
-    }
-
-    @Test("A custom herdr path is trusted verbatim, empty is treated as unset")
-    func herdrLaunchCustomPath() {
-        #expect(HerdrLaunch.attachCommand(customPath: "/opt/herdr/bin/herdr")
-                == "/opt/herdr/bin/herdr")
-        // The form stores "" for an untouched field; that must not become the
-        // command.
-        #expect(HerdrLaunch.attachCommand(customPath: "").contains("herdr"))
-        #expect(!HerdrLaunch.attachCommand(customPath: "").isEmpty)
-    }
 }

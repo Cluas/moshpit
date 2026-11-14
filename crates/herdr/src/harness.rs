@@ -1,8 +1,9 @@
 //! The equivalence harness's Rust side: one case per line in, one result line
-//! out, in the format `harness/swift/main.swift` prints for the app's Swift
-//! code. `harness/equivalence.py` feeds both the same cases and compares;
+//! out, in the format `harness/swift/main.swift` printed for the app's Swift
+//! code (both it and `harness/equivalence.py`, which fed the two the same
+//! cases, left with the Swift herdr code, E1; at cf25626b).
 //! `tests/equivalence.rs` checks the committed corpus against the recorded
-//! Swift output without swiftc.
+//! Swift output.
 //!
 //! A case is a kind and its arguments, separated by spaces: `x:<hex>` is a
 //! string (its UTF-8 bytes, or raw bytes for byte payloads), `-` is nil,

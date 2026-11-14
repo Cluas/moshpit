@@ -10,7 +10,7 @@
 //! document and the call, testable without a platform.
 //!
 //! The rules are what the SwiftTerm fork's patches learned on devices
-//! (docs/PATCHES.md, docs/nsh/TERMINAL-VIEW.md V6–V10):
+//! (docs/PATCHES.md at cf25626b, docs/nsh/TERMINAL-VIEW.md V6–V10):
 //!
 //! - **Composition** (marked text: Pinyin, kana, Zhuyin) is never sent; a
 //!   delete while composing shrinks it and sends nothing (patch 7); the

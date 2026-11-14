@@ -187,7 +187,7 @@ struct BorrowedHostTests {
         ssh.sftpAvailable = false
         let big = RemoteFileCommands.execDownloadLimit + 1
         ssh.commands = { command in
-            command.hasPrefix("if [ -d") ? .init(stdout: Data("f \(big)\n".utf8)) : .init(status: 1)
+            command.contains("if [ -d") ? .init(stdout: Data("f \(big)\n".utf8)) : .init(status: 1)
         }
         let local = try scratch().appendingPathComponent("big")
         await #expect(throws: HostConnectionError.tooLargeWithoutSFTP) {

@@ -1,8 +1,8 @@
 //! Foundation's rules as the Swift herdr code relies on them: what
 //! `JSONSerialization` accepts, what Swift's `as?` casts make of its numbers,
 //! what `Data(base64Encoded:)` accepts, and the text helpers. Each case was
-//! measured on macOS 27 (`harness/swift/probe-foundation.swift` prints the same
-//! table from Foundation itself).
+//! measured on macOS 27 (`harness/swift/probe-foundation.swift` printed the same
+//! table from Foundation itself; at cf25626b, the Swift side left with E1).
 
 use moshpit_herdr::json::{self, Number, Value};
 use moshpit_herdr::{base64, text};

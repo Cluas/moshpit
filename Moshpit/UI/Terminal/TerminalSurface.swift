@@ -1,13 +1,11 @@
 import MoshpitKit
 import UIKit
 
-// The seam between the app and whichever view draws a terminal: SwiftTerm's
-// (``SwiftTermSurface``, the adapter under UI/Terminal/SwiftTerm/, the only
-// code that imports SwiftTerm) or the shared Rust core's
-// (``CoreTerminalView``, behind ``CoreTermSwitch``). App code — the session's
-// coordinator, the tmux controllers, the hub, the hosts, the debug probes —
-// asks a ``TerminalSurface`` and hears from it through a
-// ``TerminalSurfaceDelegate``; it never names either view's own types
+// The seam between the app and the view that draws a terminal: the shared
+// Rust core's (``CoreTerminalView``; SwiftTerm's adapter went with batch B).
+// App code — the session's coordinator, the tmux controllers, the hub, the
+// hosts, the debug probes — asks a ``TerminalSurface`` and hears from it
+// through a ``TerminalSurfaceDelegate``; it never names the view's own types
 // (docs/nsh/TERMINAL-VIEW.md §1).
 
 /// A viewport cell, 0-based, row 0 at the top of what shows.
@@ -80,9 +78,8 @@ struct TerminalMark: Equatable, Sendable {
 /// **Bytes** go in through ``feed(_:)`` in the order they came, never
 /// dropped; ``feed(mark:)`` puts a mark among them, and the surface hands it
 /// back (``TerminalSurfaceDelegate/surface(_:reached:)``) once every byte
-/// fed before it is on screen and before any byte fed after it is: at once
-/// on a view that parses as it is fed (SwiftTerm), with the frame that has
-/// those bytes on one that parses on a thread of its own (the core).
+/// fed before it is on screen and before any byte fed after it is: with the
+/// frame that has those bytes (the core parses on a thread of its own).
 @MainActor
 protocol TerminalSurface: AnyObject {
     /// The view to host.
@@ -152,7 +149,7 @@ protocol TerminalSurface: AnyObject {
     /// or the local history. Returns the points used and the host's rows.
     func drag(_ dy: CGFloat, hostRows: Bool) -> (moved: CGFloat, rows: Int)
     /// Back on the live screen: output held while history was read goes on
-    /// screen (SwiftTerm holds it; the core never needs to).
+    /// screen (the core never holds any).
     func releaseScrollHold()
     /// Drops what was held without showing it (a reconnect on a reused
     /// terminal: those bytes belong to a dead screen).
@@ -177,8 +174,7 @@ protocol TerminalSurface: AnyObject {
 
     /// The text of viewport row `row`, trailing blanks trimmed.
     func rowText(_ row: Int) -> String
-    /// Paths the host confirmed, tagged as links (SwiftTerm; the core's
-    /// path links are not wired yet).
+    /// Paths the host confirmed, tagged as links (CoreTerminalView+Paths).
     var pathLinks: RemotePathLinks? { get set }
 
     // MARK: Pictures
@@ -292,17 +288,6 @@ extension TerminalSurfaceDelegate {
     func surface(_ surface: TerminalSurface, fontSizeCommitted size: Double) {}
 }
 
-/// Which view a new terminal gets.
-enum TerminalSurfaceKind {
-    /// The shared Rust core's (``CoreTerminalView``).
-    case core
-    /// SwiftTerm's (``SwiftTermSurface``).
-    case swiftTerm
-
-    /// ``CoreTermSwitch``'s verdict for a terminal made now.
-    static var current: TerminalSurfaceKind { CoreTermSwitch.isOn ? .core : .swiftTerm }
-}
-
 /// Makes terminals: born at a grid (what the remote is told before the
 /// first layout, so bytes that land before it are parsed in the shape they
 /// were drawn for), configured as every terminal of the app is.
@@ -315,21 +300,13 @@ enum TerminalSurfaces {
     /// next entered.
     static let minted = Notification.Name("moshpit.terminal-surface-minted")
 
-    static func make(_ kind: TerminalSurfaceKind = .current, font: UIFont,
-                     grid: TerminalGrid) -> TerminalSurface {
+    static func make(font: UIFont, grid: TerminalGrid) -> TerminalSurface {
         let cell = TerminalCellGeometry.measuredCell(font: font, scale: UITraitCollection.current.displayScale)
         let birth = CGRect(x: 0, y: 0, width: cell.width * CGFloat(max(1, grid.cols)),
                            height: cell.height * CGFloat(max(1, grid.rows)))
-        let surface: TerminalSurface
-        switch kind {
-        case .core:
-            let view = CoreTerminalView(frame: birth, font: font)
-            Log.ui.info("core term: minted \(view.grid.cols, privacy: .public)×\(view.grid.rows, privacy: .public) on \(view.canvasKind, privacy: .public)")
-            surface = view
-        case .swiftTerm:
-            surface = SwiftTermSurface(frame: birth, font: font)
-        }
-        NotificationCenter.default.post(name: minted, object: surface)
-        return surface
+        let view = CoreTerminalView(frame: birth, font: font)
+        Log.ui.info("core term: minted \(view.grid.cols, privacy: .public)×\(view.grid.rows, privacy: .public) on \(view.canvasKind, privacy: .public)")
+        NotificationCenter.default.post(name: minted, object: view)
+        return view
     }
 }

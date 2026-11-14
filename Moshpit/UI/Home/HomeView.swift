@@ -966,7 +966,7 @@ struct ConnectionCard: View {
         let id = UUID()
         let sessionName: String
         let repo: String
-        let remove: (Bool) async -> HerdrControlClient.WorktreeRemoval
+        let remove: (Bool) async -> RustHerdrController.WorktreeRemoval
     }
 
     private struct AgentTaskTarget: Identifiable {
@@ -1579,7 +1579,7 @@ struct ConnectionCard: View {
     private func newAgentTaskButton<C: MultiplexerControlling>(control: C) -> some View {
         Button {
             Haptics.tap()
-            guard let herdr = control as? HerdrControlClient else { return }
+            guard let herdr = control as? RustHerdrController else { return }
             // Present immediately with the directories the panes are already
             // in; the sheet scans for the rest itself. Waiting ~1s on a dead
             // button before anything appears is worse than a list that fills in.
@@ -1777,7 +1777,7 @@ struct ConnectionCard: View {
         let sessions = snapshot.sortedSessions
 
         sessionsHeaderRow(control: control, count: sessions.count)
-        if let herdr = control as? HerdrControlClient,
+        if let herdr = control as? RustHerdrController,
            let mismatch = herdr.protocolMismatch {
             // Version skew: every command is being refused, so "No
             // workspaces yet" would be a lie and the + button a trap
@@ -1995,9 +1995,9 @@ struct ConnectionCard: View {
     /// the OLDER side — the row names the versions and drops the button:
     /// restarting with that client would downgrade the server and exit every
     /// pane (restartServer() refuses it too; this just doesn't offer it).
-    private func herdrMismatchRow(_ message: String, client: HerdrControlClient) -> some View {
+    private func herdrMismatchRow(_ message: String, client: RustHerdrController) -> some View {
         let skew = client.versionSkew
-        let restartFixes = !(skew?.clientIsOlder ?? HerdrSnapshot.clientIsOlder(message))
+        let restartFixes = !(skew?.clientIsOlder ?? HerdrVersionReport.clientIsOlder(message))
         return HStack(spacing: 8) {
             Image(systemName: "exclamationmark.triangle.fill")
                 .font(.system(size: 12, weight: .semibold))
@@ -2014,7 +2014,7 @@ struct ConnectionCard: View {
         .background(Color.white.opacity(0.035), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
     }
 
-    private func restartServerButton(_ client: HerdrControlClient) -> some View {
+    private func restartServerButton(_ client: RustHerdrController) -> some View {
         Button {
             // A refused restart (.wouldDowngrade) needs no handling here: the
             // refusal's diagnosis lands in client.versionSkew, which redraws
@@ -2179,7 +2179,7 @@ struct ConnectionCard: View {
                 }
             } label: { Label("New \(control.multiplexer.vocabulary.window)", systemImage: "plus.rectangle") }
             if let repo = control.worktreeRepo(for: session.id),
-               let herdr = control as? HerdrControlClient {
+               let herdr = control as? RustHerdrController {
                 // Only a session that IS a checkout can be removed as a task;
                 // an ordinary workspace has no directory to delete.
                 Button(role: .destructive) {

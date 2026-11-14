@@ -1,5 +1,4 @@
 import Foundation
-import SwiftTerm
 import Testing
 #if canImport(UIKit)
 import UIKit
@@ -8,91 +7,26 @@ import AppKit
 #endif
 @testable import Moshpit
 
-/// Path links: the scanner that finds candidates in agent prose, the probe
-/// that asks the host which exist, the cache that batches those asks, and
-/// the pass that tags confirmed paths on the terminal. The lines come from a
+/// Path links: the probe that asks the host which candidates exist and the
+/// cache that batches those asks (the scanner that finds them in agent prose,
+/// and the pass that tags confirmed paths, are the core's: crates/term and
+/// CorePathLinkTests). The lines come from a
 /// real transcript (2026-10-18): Claude Code reporting a comparison image as
 /// a relative path after a full-width colon, and a codex prompt naming bare
 /// file names it was told to write into the current directory.
 @Suite("Remote path links")
 struct RemotePathsTests {
 
-    private func tokens(_ line: String) -> [String] {
-        TerminalPathScanner.scan(line).map(\.token)
-    }
-
-    // MARK: Scanner
-
-    @Test("the transcript's own line yields its image, its README and its CLAUDE.md")
-    func transcriptLine() {
-        let line = "  3. 对比图：qchar/out/GripLab.png（准备、放网、平抽）。规则见 CLAUDE.md 第 3 步和 qchar/README.md「体型怎么挑」。"
-        let found = TerminalPathScanner.scan(line)
-        #expect(found.map(\.token) == ["qchar/out/GripLab.png", "CLAUDE.md", "qchar/README.md"])
-        #expect(found.allSatisfy { !$0.directoryOnly })
-        let image = found[0]
-        let start = line.index(line.startIndex, offsetBy: image.offset)
-        #expect(String(line[start...].prefix(image.length)) == "qchar/out/GripLab.png")
-    }
-
-    @Test("sentence punctuation, emphasis and brackets end the path; they're not part of it")
-    func punctuation() {
-        #expect(tokens("saved to out/a.png.") == ["out/a.png"])
-        #expect(tokens("**out/plot.png** and (charts/b.jpg), `c.gif`") == ["out/plot.png", "charts/b.jpg", "c.gif"])
-        #expect(tokens("保存到out/a.png了") == ["out/a.png"])
-        #expect(tokens("see src/main.swift:12 and out/a.png:3") == ["out/a.png"])
-    }
-
-    @Test("rooted, home and dot-relative paths are candidates; a bare word needs a previewable extension")
-    func shapes() {
-        #expect(tokens("/Users/me/Desktop/shot.PNG ~/Downloads/clip.mov ./a.pdf ../b.md")
-                == ["/Users/me/Desktop/shot.PNG", "~/Downloads/clip.mov", "./a.pdf", "../b.md"])
-        #expect(tokens("README Makefile notes.txt") == ["notes.txt"])
-    }
-
-    @Test("folders: no extension or a trailing slash, never a date, a fraction or a slash command")
-    func folders() {
-        let found = TerminalPathScanner.scan("outputs in out/plots and ~/Desktop/charts/ v1.2/ src/main.swift 10/18 1/2 /config")
-        #expect(found.map(\.token) == ["out/plots", "~/Desktop/charts/", "v1.2/"])
-        #expect(found.allSatisfy { $0.directoryOnly })
-    }
-
-    @Test("a CJK name inside a path is part of it; CJK prose after a path is not")
-    func wideNames() {
-        #expect(tokens("改稿：episodes/nolift/改稿建议.md。") == ["episodes/nolift/改稿建议.md"])
-        #expect(tokens("见 out/羽毛球/a.png 和 out/图/，") == ["out/羽毛球/a.png", "out/图/"])
-        #expect(tokens("在 out/里面有图") == ["out/"])
-        #expect(tokens("保存到out/a.png了") == ["out/a.png"])
-        // A row as the terminal hands it over: each wide character's second
-        // column is a "\0" cell.
-        let found = TerminalPathScanner.scan("看x/图\0表\0.png。\0")
-        #expect(found.map(\.token) == ["x/图表.png"])
-        #expect(found.first?.offset == 1)
-        #expect(found.first?.length == 10)
-    }
-
-    @Test("a path that starts with a CJK name is offered from every possible start, longest first")
-    func wideHeads() {
-        // The 1.0.8 (1.8) miss: the run was only "/", so the path came out
-        // rooted — "/西游…mp4" — and the host never confirmed it.
-        let row = "for you: 成\0品\0/西\0游\0-写\0实\0版\0-粗\0剪\0.mp4. It's"
-        let found = TerminalPathScanner.scan(row)
-        #expect(found.map(\.token) == ["成品/西游-写实版-粗剪.mp4", "品/西游-写实版-粗剪.mp4", "/西游-写实版-粗剪.mp4"])
-        #expect(found.first?.offset == 9)
-        #expect(found.first?.length == 2 * 2 + 1 + 2 * 2 + 1 + 3 * 2 + 1 + 2 * 2 + 4, "every wide column, not the period")
-        // A bare CJK file name, hyphens and all, back to the space.
-        #expect(tokens("见 写实版-粗剪.mp4。") == ["写实版-粗剪.mp4", "实版-粗剪.mp4", "版-粗剪.mp4",
-                                               "粗剪.mp4", "剪.mp4"], "a bare \".mp4\" is no file")
-        // Prose run into the name: the host decides where the path starts.
-        #expect(tokens("输出到成品/a.png").prefix(2) == ["输出到成品/a.png", "出到成品/a.png"])
-        // A run opening on a letter is prose meeting a path, not a CJK name.
-        #expect(tokens("保存到out/a.png了") == ["out/a.png"])
-        #expect(tokens("规则见CLAUDE.md") == ["CLAUDE.md"])
-    }
-
-    @Test("URLs and other non-paths are left alone")
-    func nonPaths() {
-        #expect(tokens("https://example.com/a.png and file:///tmp/x.png") == [])
-        #expect(tokens("a~b/c.png me@example.com") == [])
+    /// A probe batch, as a terminal's path pass hands it over: the token,
+    /// and whether it can only be worth a link as a folder (the scanner that
+    /// finds them is the core's, crates/term/src/paths.rs).
+    static func candidates(_ tokens: String...) -> [TerminalPathScanner.Candidate] {
+        tokens.map { token in
+            let name = token.split(separator: "/").last ?? ""
+            let folder = token.hasSuffix("/") || !name.contains(".")
+            return TerminalPathScanner.Candidate(token: token, offset: 0, length: token.count,
+                                                 directoryOnly: folder)
+        }
     }
 
     // MARK: Probe
@@ -107,7 +41,7 @@ struct RemotePathsTests {
 
     @Test("every candidate is passed as one quoted argument, flagged file or folder")
     func command() {
-        let batch = TerminalPathScanner.scan("out/a.png out/plots")
+        let batch = Self.candidates("out/a.png", "out/plots")
         let cmd = PathProbe.command(cwd: "/Users/me/it's here", candidates: batch)
         #expect(cmd.hasPrefix("sh -c '"))
         #expect(cmd.hasSuffix(" 'Fout/a.png' 'Dout/plots'"))
@@ -120,7 +54,7 @@ struct RemotePathsTests {
     /// the probe now reads the same in fish as in sh.
     @Test("a value ending in a backslash stays one word in fish too")
     func probeWordsReadAlikeInFish() {
-        let batch = TerminalPathScanner.scan(#"out\ out/a.png"#)
+        let batch = Self.candidates(#"out\"#, "out/a.png")
         let cmd = PathProbe.command(cwd: #"/Users/me/odd\"#, candidates: batch)
         let words = PosixShell.rawWords(cmd)
         #expect(words.count >= 6, "\(words)")
@@ -154,9 +88,9 @@ struct RemotePathsTests {
         let past = Date(timeIntervalSinceNow: -3600)
         try fm.setAttributes([.modificationDate: past], ofItemAtPath: root + "/repo/old/b.png")
         let cwd = root + "/repo"
-        let batch = TerminalPathScanner.scan(
-            "qchar/out/GripLab.png 01_sheet.png plots/ src/ missing.png y.png ~/repo/plots/ \(cwd)/qchar/out/GripLab.png "
-            + "build/concept/v2/ 02_poses.png b.png")
+        let batch = Self.candidates(
+            "qchar/out/GripLab.png", "01_sheet.png", "plots/", "src/", "missing.png", "y.png", "~/repo/plots/",
+            "\(cwd)/qchar/out/GripLab.png", "build/concept/v2/", "02_poses.png", "b.png")
         #expect(batch.count == 11)
 
         func probe(cwd: String) throws -> [Int: PathProbe.Hit] {
@@ -206,7 +140,11 @@ struct RemotePathsTests {
             fm.createFile(atPath: path, contents: Data([0x00]))
         }
         let cwd = root + "/repo"
-        let batch = TerminalPathScanner.scan("输出到成品/西游-粗剪.mp4，已经成品/粗剪.mp4")
+        // The core offers a CJK-headed path from every start, longest
+        // first (crates/term/src/paths.rs: wide heads).
+        let batch = Self.candidates("输出到成品/西游-粗剪.mp4", "到成品/西游-粗剪.mp4", "成品/西游-粗剪.mp4",
+                                    "品/西游-粗剪.mp4", "已经成品/粗剪.mp4", "经成品/粗剪.mp4", "成品/粗剪.mp4",
+                                    "品/粗剪.mp4")
         let process = Process()
         process.executableURL = URL(fileURLWithPath: shell)
         process.arguments = ["-c", PathProbe.command(cwd: cwd, candidates: batch)]
@@ -492,7 +430,7 @@ struct RemotePathLinksTests {
     }
 
     private func candidate(_ token: String) -> TerminalPathScanner.Candidate {
-        TerminalPathScanner.scan(token)[0]
+        RemotePathsTests.candidates(token)[0]
     }
 
     private func settle(_ links: RemotePathLinks) async {
@@ -530,78 +468,5 @@ struct RemotePathLinksTests {
         #expect(links.resolvedPath(for: candidate("out/a.png")) == nil)
         await settle(links)
         #expect(links.resolvedPath(for: candidate("out/a.png")) == "/r/out/a.png")
-    }
-
-    private func makeTerminal() -> Terminal {
-        TerminalView(frame: CGRect(x: 0, y: 0, width: 390, height: 700)).getTerminal()
-    }
-
-    private func link(_ t: Terminal, row: Int, col: Int) -> String? {
-        t.link(at: .screen(Position(col: col, row: row)), mode: .explicitOnly)
-    }
-
-    @Test("a confirmed path behind CJK prose is tagged on exactly its own columns")
-    func tagsTerminal() async {
-        let t = makeTerminal()
-        let prefix = "  3. 对比图："
-        let probeTerminal = makeTerminal()
-        probeTerminal.feed(text: prefix)
-        let prefixCols = probeTerminal.buffer.x
-        t.feed(text: prefix + "qchar/out/GripLab.png（准备）\r\nsee https://example.com/x.png\r\n")
-
-        let fake = FakeProbe()
-        fake.table = ["qchar/out/GripLab.png": .init(path: "/r/qchar/out/GripLab.png", isDirectory: false)]
-        let links = RemotePathLinks(workingDirectory: { "/r" }, probe: { fake.run($0, $1) })
-        PlainLinkDetector.linkify(terminal: t)
-        PathLinkDetector.linkify(terminal: t, resolver: links)
-        #expect(link(t, row: 0, col: prefixCols) == nil, "nothing is tagged before the host answers")
-        await settle(links)
-        PathLinkDetector.linkify(terminal: t, resolver: links)
-
-        let expected = RemotePathLink.url(for: "/r/qchar/out/GripLab.png")
-        #expect(link(t, row: 0, col: prefixCols) == expected)
-        #expect(link(t, row: 0, col: prefixCols + "qchar/out/GripLab.png".count - 1) == expected)
-        #expect(link(t, row: 0, col: prefixCols - 1) == nil)
-        #expect(link(t, row: 0, col: prefixCols + "qchar/out/GripLab.png".count) == nil)
-        #expect(link(t, row: 1, col: 4) == "https://example.com/x.png", "the URL keeps its own link")
-        #expect(fake.calls.flatMap { $0 }.contains("example.com/x.png") == false)
-    }
-
-    @Test("a path with a CJK name is tagged across its wide columns")
-    func tagsWideName() async {
-        let t = makeTerminal()
-        t.feed(text: "改稿：episodes/nolift/改稿建议.md。\r\n")
-        let fake = FakeProbe()
-        fake.table = ["episodes/nolift/改稿建议.md": .init(path: "/r/episodes/nolift/改稿建议.md", isDirectory: false)]
-        let links = RemotePathLinks(workingDirectory: { "/r" }, probe: { fake.run($0, $1) })
-        PathLinkDetector.linkify(terminal: t, resolver: links)
-        await settle(links)
-        PathLinkDetector.linkify(terminal: t, resolver: links)
-
-        let expected = RemotePathLink.url(for: "/r/episodes/nolift/改稿建议.md")
-        let first = 6, last = 6 + "episodes/nolift/".count + 4 * 2 + ".md".count - 1
-        #expect(link(t, row: 0, col: first - 1) == nil)
-        #expect(link(t, row: 0, col: first) == expected)
-        #expect(link(t, row: 0, col: last) == expected)
-        #expect(link(t, row: 0, col: last + 1) == nil, "the full-width period is not part of it")
-    }
-
-    @Test("a CJK-named path is tagged from the start the host confirmed")
-    func tagsWideHead() async {
-        let t = makeTerminal()
-        t.feed(text: "已经输出到成品/粗剪.mp4。\r\n")
-        let fake = FakeProbe()
-        fake.table = ["成品/粗剪.mp4": .init(path: "/r/成品/粗剪.mp4", isDirectory: false)]
-        let links = RemotePathLinks(workingDirectory: { "/r" }, probe: { fake.run($0, $1) })
-        PathLinkDetector.linkify(terminal: t, resolver: links)
-        await settle(links)
-        PathLinkDetector.linkify(terminal: t, resolver: links)
-
-        let expected = RemotePathLink.url(for: "/r/成品/粗剪.mp4")
-        let first = 5 * 2, last = first + 2 * 2 + 1 + 2 * 2 + ".mp4".count - 1
-        #expect(link(t, row: 0, col: first - 1) == nil, "the prose before it stays prose")
-        #expect(link(t, row: 0, col: first) == expected)
-        #expect(link(t, row: 0, col: last) == expected)
-        #expect(link(t, row: 0, col: last + 1) == nil)
     }
 }

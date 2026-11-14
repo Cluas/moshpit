@@ -74,20 +74,24 @@ struct HomeNSHPage: View {
                 model.update(record)
                 show(cards)
                 model.visible = true
+                pet.onHome = true
                 model.updatePet(pet.message)
                 pet.seen()
                 // A ready egg hatches when Home shows (the core refuses
                 // unless it's ready and iCloud has settled).
                 pet.hatch()
             }
-            .onDisappear { model.visible = false }
+            .onDisappear {
+                model.visible = false
+                pet.onHome = false
+            }
             .onChange(of: pet.revision) { _, _ in model.updatePet(pet.message) }
             .onChange(of: record) { _, new in model.update(new) }
             .onChange(of: cards) { _, new in show(new) }
             .modifier(HomeTreeDialogs(
                 killTarget: $killTarget, worktreeTarget: $worktreeTarget,
                 worktreeForceTarget: $worktreeForceTarget, agentTask: $agentTask,
-                actions: actions))
+                menus: menus, actions: actions))
     }
 
     /// ⌘, and ⌘N, which the SwiftUI list's toolbar buttons carry: the bar is
@@ -333,6 +337,9 @@ final class HomeNSHModel {
         switch message["ev"] as? String {
         case "hatch":
             if visible { CompanionPet.shared.hatch() }
+            return nil
+        case "egg-tap":
+            if visible { CompanionPet.shared.tapEgg() }
             return nil
         case "pet-seen":
             if visible { CompanionPet.shared.seen() }

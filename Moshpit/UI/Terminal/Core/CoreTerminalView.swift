@@ -6,7 +6,7 @@ import UIKit
 
 /// A terminal view on the shared Rust terminal core (crates/term, our
 /// wezterm-term fork; docs/nsh/TERMINAL-CORE.md): the T2 replacement for
-/// the SwiftTerm fork's `TerminalView`, behind ``CoreTermSwitch``. App code
+/// the SwiftTerm fork's `TerminalView` (gone with batch B). App code
 /// reaches it as a ``TerminalSurface`` (CoreTerminalView+Surface) and hears
 /// from it as the surface's delegate.
 ///

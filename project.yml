@@ -44,89 +44,6 @@ packages:
   # the app/extension boundary is a module boundary the compiler checks.
   MoshpitKit:
     path: Packages/MoshpitKit
-  SwiftTerm:
-    # Forked from migueldeicaza/SwiftTerm at v1.13.0, branch
-    # moshi-hyperlink-underline-fix. One line per patch; docs/PATCHES.md has
-    # the why in full and the commits. [engine] = platform-neutral emulator
-    # code (Terminal/Buffer/SelectionService): every other front end on the
-    # same byte streams, the Android port included, has to re-create it.
-    # [iOS] = UIKit view and text-input code. [Catalyst] = UIKit view code built only for a Mac (Mac Catalyst).
-    #  1 [engine] OSC-8 close ends at the link's last cell: the underline overshot by a column.
-    #  2 [engine] OSC-8 close stops at the link text: the range could run on into scrollback.
-    #  3 [engine] viewportLineText/tagPlainTextLink: we linkify URLs ourselves; the built-in regex matches bare paths.
-    #  4 [iOS] an unfocused tap hit-tests links first: the first tap on a link was eaten.
-    #  5 [iOS] IME marked text is drawn at the cursor: it was tracked but never shown.
-    #  6 [iOS] the real caret sits at the end of the composition: trusting the IME's offset made it jitter.
-    #  7 [iOS] delete while composing edits the marked text: it sent backspaces and wiped the composition.
-    #  8 [engine] public isRowWrapped(_:): wrapped URLs were joined by guessing from width, which CJK broke.
-    #  9 [iOS] ending a composition keeps the caret: the buffer cursor has not moved before the echo.
-    # 10 [iOS] hasText is always true: UIKit gates hold-to-repeat delete on it.
-    # 11 [iOS] repaints leave the caret to a live composition: they yanked it to the front mid-word.
-    # 12 [iOS] one phantom newline before the caret: UIKit stops repeating delete on an empty document.
-    # 13 [iOS] a link tap opens without becoming first responder: the keyboard popped over the output.
-    # 14 [engine] OSC 52 reads reach a clipboardRequest delegate: they were parsed as base64 and dropped.
-    # 15 [iOS] focusOnTap (we set false): on iOS focus is the keyboard; a tap while reading stays a tap.
-    # 16 [iOS] finger-sized selection handles, edit menu while unfocused: UIMenuController needs focus.
-    # 17 [iOS] long-press selects the word under the finger: it summoned the keyboard instead.
-    # 18 [engine] overwriting half a wide char erases the other half: orphans were white blocks mosh never repaints.
-    # 19 [engine] discardPendingInput(): a reconnect parsed the new stream as the dead one's half-read UTF-8/OSC.
-    # 20 [iOS] public closeSelection(): with focusOnTap off nothing could dismiss a selection.
-    # 21 [iOS] the scroll offset follows yDisp, plus a pixel scroll API: programmatic scrolls never moved the picture.
-    # 22 [engine] a link printed over several rows selects and copies as one: the copy broke the URL across rows.
-    # 23 [iOS] a keyboard's own edits aren't reported to it: voice input stopped mid-sentence; a delete pressed Return.
-    # 24 [iOS] a font change repaints the view's bounds, not its frame: a same-grid font change did not redraw.
-    # 25 [engine] ECH and REP record the rows they change: partial repaints left their old text on screen.
-    # 26 [iOS] a draw pass lays out only the rows it repaints: iOS 27 passes the whole bounds to draw(_:).
-    # 27 [iOS] updateDisplay invalidates only changed rows: one echoed key redrew the whole screen (~5 ms).
-    # 28 [iOS Metal] the Metal renderer rebuilds only changed rows: a cursor-only move drew no new frame.
-    # 29 [engine] ED 3 (erase saved lines) tells the view where the viewport went: `clear` with history drew blank.
-    # 30 [iOS] a useBrightColors change drops the attribute cache and repaints: set at run time it changed nothing.
-    # 31 [iOS] pasteRequested lets the host take over Paste and ⌘V: over tmux -CC and herdr the paste flag is never set.
-    # 32 [engine] a full reset (ESC c, DECCOLM) tells the view where the viewport went: `reset` with history drew blank.
-    # 33 [engine] a resize makes no lines for unused history: a 50k scrollback made all 50k lines (~96 MB) on the first resize.
-    # 34 [engine] a full reset frees the terminal: the fresh buffer's scroll callback held it (upstream 1da8e02, v1.14.0).
-    # 35 [engine] a full reset puts the cursor at home: after a full-screen program, `reset` left the prompt mid-screen.
-    # 36 [engine] ED 1 unwraps the screen row under the cursor: it unwrapped a history line, which copied with a break in it.
-    # 37 [engine] ED 3 moves the selection with its text (linesDropped): after `clear` highlight and copy hit other rows.
-    # 38 [engine] a full reset the remote sends drops the selection (terminalReset): it pointed into the old buffer.
-    # 39 [engine] Select All ends on the last line with content: each Select All + Copy made the whole 10k history (~55 MB).
-    # 40 [engine] autowrap above the bottom row marks the row it runs on to: with history it marked a line of history.
-    # 41 [engine] a line scrolling into a full history moves the selection with its text: it slid down a line per line.
-    # 42 [engine] switching between the normal and alternate screens drops the selection: Copy took the other screen's text.
-    # 43 [engine] DECCOLM clears the screen and changes the columns, as xterm: it was a full reset (history, modes, alt screen).
-    # 44 [engine] a triple-click selects the whole row: the copy lost the row's last cell.
-    # 45 [engine] a synchronized update copies the screen, not the history: 10k lines cost ~4 ms and 21 MB per agent frame.
-    # 46 [iOS] the display link holds the view weakly: every closed pane kept its view, terminal and history (~19 MB).
-    # 47 [iOS] the text input names its own content type: AutoFill took the terminal for a place to put one-time codes.
-    # 48 [iOS] the pointer over the text is an I-beam: it stayed the default on a trackpad and on a Mac.
-    # 49 [Catalyst] the pointer's drag selects, no selection handles: a click-drag dragged the history instead.
-    # 50 [iOS] no keyboard-focus stop; Tab and Shift-Tab come to the view first on a Mac: Tab took the focus, Shift-Tab was lost.
-    # 51 [Catalyst] Escape reaches the terminal: the text system took it as "stop editing" and the keyboard went with it.
-    # 52 [iOS] key repeat at the Mac's timing, held letters repeat on a Mac, a cancelled press stops repeating.
-    # 53 [engine] the alternate screen is as tall as the screen: under 25 rows it kept up to 25 - rows lines of history.
-    # 54 [engine] a line scrolling into a full history is blank and unwrapped: it kept the old line's wrap mark (copies joined lines).
-    # 55 [engine] a selection ending in a row's last column takes it: setSelection, a search match and an iOS drag lost it.
-    # 56 [iOS] a long press slides from its own word: with a selection showing it slid from where that one began.
-    # 57 [engine] a shorter history tells the selection, the sync snapshot and the view what went: they kept the old rows.
-    # 58 [engine] DECCOLM needs mode 40, off as in xterm: any remote could make the grid 132 or 80 columns wide.
-    # 59 [engine] autowrap and IND below the scrolling region move the cursor down: they scrolled the region.
-    # 60 [iOS] no inline predictions, math results or Writing Tools on the text input: taken, they typed into the remote.
-    # 61 [iOS] a cancelled Command press is not held: links opened on a plain click until ⌘ went down and up again.
-    # 62 [iOS] a cancelled press is released for the kitty keyboard protocol: a key held across ⌘-Tab stayed down for the program.
-    # 63 [engine] ED 3 keeps the scroll-invariant line numbers: `clear` reset them to 0, so they went backwards.
-    # 64 [engine] TerminalOptions.hostOwnsColumns (we set true, TerminalMint): DECCOLM can't resize the phone's grid, mode 40 or not.
-    # 65 [engine] trimmed lines no longer count their images: after `clear` every scroll did the kitty pass, every iOS repaint the whole view.
-    # 66 [engine] screen's title sequence (ESC k ... ST) is consumed: a shell in tmux sends it per command and every title was printed into the pane.
-    # 24-28 live on branch fix/ios-dirty-rect (on top of moshi-hyperlink-underline-fix), 29-31 on
-    # fix/terminal-round14 (on top of fix/ios-dirty-rect), 32-33 on fix/terminal-round17 (on top of
-    # fix/terminal-round14), 34-39 on fix/terminal-round21 (on top of fix/terminal-round17), 40-52 on
-    # fix/terminal-round24 (on top of fix/terminal-round21), 53-61 on fix/terminal-round29 (on top of
-    # fix/terminal-round24), 62-65 on fix/terminal-round31 (on top of fix/terminal-round29), 66 on
-    # fix/terminal-round32 (on top of fix/terminal-round31); see docs/PATCHES.md.
-    # Revert to the upstream URL if/when these land there and a release
-    # picks them up.
-    url: https://github.com/Cluas/SwiftTerm.git
-    revision: 7e5b936245849edb0f7aea3e205111816c05f2dd
   Citadel:
     url: https://github.com/orlandos-nl/Citadel.git
     from: "0.7.0"
@@ -327,7 +244,6 @@ targets:
           SWIFT_COMPILATION_MODE: $(MOSHPIT_SWIFT_COMPILATION_MODE)
     dependencies:
       - package: MoshpitKit
-      - package: SwiftTerm
       - package: Citadel
       - package: SwiftCrypto
         product: _CryptoExtras
@@ -610,7 +526,7 @@ schemes:
   # Iterating on test code only? Build once with `build-for-testing`, then
   # `test-without-building` — that saves a further ~60 s per cycle. And do NOT
   # run `xcodegen generate` unless project.yml changed: rewriting the pbxproj
-  # invalidates DerivedData and forces a full rebuild of WhisperKit, SwiftTerm,
+  # invalidates DerivedData and forces a full rebuild of WhisperKit,
   # Citadel and swift-nio.
   MoshpitUnitTests:
     build:

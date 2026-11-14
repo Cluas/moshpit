@@ -92,7 +92,7 @@ const LIGHT_TERMINAL: Rgba = rgb(0xF7F6F2);
 
 /// The fixed tokens: name, light, dark.
 fn fixed() -> Vec<(&'static str, Rgba, Rgba)> {
-    vec![
+    let mut tokens = vec![
         // Surfaces (those that follow the theme are in [`colors`]).
         ("accent", alpha(INK, 0.05), alpha(WHITE, 0.07)),
         ("chrome", alpha(0xF9F8F5, 0.80), alpha(0x101218, 0.74)),
@@ -183,7 +183,162 @@ fn fixed() -> Vec<(&'static str, Rgba, Rgba)> {
         // Shadows (their geometry: [`SHADOW_LG`], [`SHADOW_SM`]).
         ("shadow-lg", alpha(BLACK, 0.12), alpha(BLACK, 0.50)),
         ("shadow-sm", alpha(BLACK, 0.16), alpha(BLACK, 0.35)),
+    ];
+    tokens.extend(creatures());
+    tokens
+}
+
+/// A host's pixel creature (the pixel companion's host mark,
+/// moshpit-design `PET-DESIGN.md` §6.3), its colours by its cells' kinds
+/// ([`creature_ink`]). Per face hue, from the hue's two `face-*` values:
+/// in light, the body is the strong value 28 % toward white, the shade the
+/// strong value, the light 72 % toward white, the line 55 % toward ink; in
+/// dark, the body is the dark value, the shade 22 % toward black, the light
+/// 50 % toward white, the line 60 % toward `#06070A`. The rest are the
+/// same for every hue, and a muted creature (a host offline or failed)
+/// takes a grey set (`creature-down-*`).
+fn creatures() -> Vec<(&'static str, Rgba, Rgba)> {
+    vec![
+        ("creature-red-body", rgb(0xD36E69), rgb(0xF27A72)),
+        ("creature-red-shade", rgb(0xC2362F), rgb(0xBD5F59)),
+        ("creature-red-light", rgb(0xEEC7C5), rgb(0xF8BCB8)),
+        ("creature-red-line", rgb(0x632524), rgb(0x643534)),
+        ("creature-orange-body", rgb(0xD38650), rgb(0xF79A55)),
+        ("creature-orange-shade", rgb(0xC2570C), rgb(0xC17842)),
+        ("creature-orange-light", rgb(0xEED0BB), rgb(0xFBCCAA)),
+        ("creature-orange-line", rgb(0x633414), rgb(0x664228)),
+        ("creature-amber-body", rgb(0xB69447), rgb(0xE8B53C)),
+        ("creature-amber-shade", rgb(0x9A6A00), rgb(0xB58D2F)),
+        ("creature-amber-light", rgb(0xE3D5B8), rgb(0xF4DA9E)),
+        ("creature-amber-line", rgb(0x513C0F), rgb(0x604D1E)),
+        ("creature-green-body", rgb(0x5DAB7B), rgb(0x5CC98A)),
+        ("creature-green-shade", rgb(0x1E8A47), rgb(0x489D6C)),
+        ("creature-green-light", rgb(0xC0DECB), rgb(0xAEE4C4)),
+        ("creature-green-line", rgb(0x1A4B2F), rgb(0x28553D)),
+        ("creature-teal-body", rgb(0x4FA3A6), rgb(0x4CC9C9)),
+        ("creature-teal-shade", rgb(0x0B7F84), rgb(0x3B9D9D)),
+        ("creature-teal-light", rgb(0xBBDBDD), rgb(0xA6E4E4)),
+        ("creature-teal-line", rgb(0x11464A), rgb(0x225556)),
+        ("creature-blue-body", rgb(0x698EE4), rgb(0x7AA7FF)),
+        ("creature-blue-shade", rgb(0x2E62D9), rgb(0x5F82C7)),
+        ("creature-blue-light", rgb(0xC4D3F4), rgb(0xBCD3FF)),
+        ("creature-blue-line", rgb(0x213970), rgb(0x34476C)),
+        ("creature-violet-body", rgb(0x987AE1), rgb(0xB49AFB)),
+        ("creature-violet-shade", rgb(0x7046D6), rgb(0x8C78C4)),
+        ("creature-violet-light", rgb(0xD7CBF4), rgb(0xDACCFD)),
+        ("creature-violet-line", rgb(0x3E2C6F), rgb(0x4C426A)),
+        ("creature-pink-body", rgb(0xD0699E), rgb(0xF283B8)),
+        ("creature-pink-shade", rgb(0xBE2F78), rgb(0xBD6690)),
+        ("creature-pink-light", rgb(0xEDC5D9), rgb(0xF8C1DC)),
+        ("creature-pink-line", rgb(0x622245), rgb(0x643950)),
+        // The same for every hue.
+        ("creature-horn", rgb(0xFBF5EA), rgb(0xFBF5EA)),
+        ("creature-eye", rgb(INK), rgb(INK)),
+        ("creature-white", rgb(WHITE), rgb(WHITE)),
+        ("creature-mouth", rgb(0x7A2E3A), rgb(0x7A2E3A)),
+        ("creature-blush", rgb(0xF7A3B8), rgb(0xFFB3C6)),
+        ("creature-yellow", rgb(0xF5B700), rgb(0xFFD36E)),
+        ("creature-green", rgb(0x2FA866), rgb(0x5CC98A)),
+        ("creature-pink", rgb(0xE83E8C), rgb(0xFF5FA2)),
+        // Muted: grey, its eyes still ink and white.
+        ("creature-down-body", rgb(0xB9B6AE), rgb(0x5A5D66)),
+        ("creature-down-shade", rgb(0x98958F), rgb(0x4A4C54)),
+        ("creature-down-light", rgb(0xD8D7D2), rgb(0xA4A6AB)),
+        ("creature-down-horn", rgb(0xE3E2DF), rgb(0xBDBEC2)),
+        ("creature-down-line", rgb(0x5F5F5D), rgb(0x42444C)),
+        ("creature-down-mouth", rgb(0x6B3A44), rgb(0x6B3A44)),
+        ("creature-down-blush", rgb(0xD0A2B2), rgb(0x976C87)),
+        ("creature-down-yellow", rgb(0xC9C3B6), rgb(0xC9C3B6)),
+        ("creature-down-green", rgb(0x9FA3A0), rgb(0x9FA3A0)),
+        ("creature-down-pink", rgb(0xB3AFB8), rgb(0xB3AFB8)),
     ]
+}
+
+/// A creature's hue tokens, in [`FACES`]' order: its body, shade, light
+/// and line.
+const CREATURE_HUES: [[&str; 4]; 8] = [
+    [
+        "creature-red-body",
+        "creature-red-shade",
+        "creature-red-light",
+        "creature-red-line",
+    ],
+    [
+        "creature-orange-body",
+        "creature-orange-shade",
+        "creature-orange-light",
+        "creature-orange-line",
+    ],
+    [
+        "creature-amber-body",
+        "creature-amber-shade",
+        "creature-amber-light",
+        "creature-amber-line",
+    ],
+    [
+        "creature-green-body",
+        "creature-green-shade",
+        "creature-green-light",
+        "creature-green-line",
+    ],
+    [
+        "creature-teal-body",
+        "creature-teal-shade",
+        "creature-teal-light",
+        "creature-teal-line",
+    ],
+    [
+        "creature-blue-body",
+        "creature-blue-shade",
+        "creature-blue-light",
+        "creature-blue-line",
+    ],
+    [
+        "creature-violet-body",
+        "creature-violet-shade",
+        "creature-violet-light",
+        "creature-violet-line",
+    ],
+    [
+        "creature-pink-body",
+        "creature-pink-shade",
+        "creature-pink-light",
+        "creature-pink-line",
+    ],
+];
+
+/// The colour token of a creature's cell: its kind (`moshpit_pet`'s
+/// `creature::Kind`, by number: 1 body, 2 shade, 3 light, 4 horn, 5
+/// outline, 6 eye, 7 white, 8 mouth, 9 blush, 10–12 a top's yellow, green
+/// and pink) in face hue `hue`, or muted. None for an empty cell (0) or a
+/// kind it doesn't know.
+pub fn creature_ink(kind: u8, hue: u8, muted: bool) -> Option<&'static str> {
+    let [body, shade, light, line] = if muted {
+        [
+            "creature-down-body",
+            "creature-down-shade",
+            "creature-down-light",
+            "creature-down-line",
+        ]
+    } else {
+        CREATURE_HUES[usize::from(hue) % CREATURE_HUES.len()]
+    };
+    let either = |awake: &'static str, down: &'static str| if muted { down } else { awake };
+    Some(match kind {
+        1 => body,
+        2 => shade,
+        3 => light,
+        4 => either("creature-horn", "creature-down-horn"),
+        5 => line,
+        6 => "creature-eye",
+        7 => "creature-white",
+        8 => either("creature-mouth", "creature-down-mouth"),
+        9 => either("creature-blush", "creature-down-blush"),
+        10 => either("creature-yellow", "creature-down-yellow"),
+        11 => either("creature-green", "creature-down-green"),
+        12 => either("creature-pink", "creature-down-pink"),
+        _ => return None,
+    })
 }
 
 /// A shadow's geometry, in points; its color is a token of the same name.
@@ -653,6 +808,9 @@ mod tests {
         ];
         // A host key's face's hues (§4.13), each a pattern and a wash.
         expected.extend(FACES.iter().flat_map(|(strong, soft)| [*strong, *soft]));
+        // A host's pixel creature's (PET-DESIGN §6.3): every kind's, in
+        // every hue and muted.
+        expected.extend(creatures().iter().map(|(name, _, _)| *name));
         expected.sort_unstable();
         assert_eq!(names, expected);
         // The light appearance is designed, not a copy of the dark: every
@@ -732,6 +890,54 @@ mod tests {
         let names: std::collections::BTreeSet<_> =
             FACES.iter().map(|(strong, _)| *strong).collect();
         assert_eq!(names.len(), FACES.len());
+    }
+
+    /// A creature's colours are its face hue's, by PET-DESIGN §6.3's rule
+    /// (the design's `build.py`), and every kind has one in every hue,
+    /// awake and muted.
+    #[test]
+    fn a_creatures_colours_come_from_its_face_hue() {
+        let colors = colors(&AppTheme::SIGNAL_ROOM);
+        let mix = |a: Rgba, b: Rgba, t: f32| Rgba {
+            r: a.r + (b.r - a.r) * t,
+            g: a.g + (b.g - a.g) * t,
+            b: a.b + (b.b - a.b) * t,
+            a: 1.0,
+        };
+        let close = |a: Rgba, b: Rgba| {
+            [(a.r, b.r), (a.g, b.g), (a.b, b.b)]
+                .iter()
+                .all(|(x, y)| (x - y).abs() <= 1.0 / 255.0 + 1e-4)
+        };
+        let (white, black) = (rgb(WHITE), rgb(BLACK));
+        for (hue, (strong, _)) in FACES.iter().enumerate() {
+            let (light, dark) = token(&colors, strong);
+            let [body, shade, lit, line] = CREATURE_HUES[hue];
+            for (name, want) in [
+                (body, (mix(light, white, 0.28), dark)),
+                (shade, (light, mix(dark, black, 0.22))),
+                (lit, (mix(light, white, 0.72), mix(dark, white, 0.5))),
+                (
+                    line,
+                    (
+                        mix(light, rgb(INK), 0.55),
+                        mix(dark, SIGNAL_ROOM_SCREEN, 0.6),
+                    ),
+                ),
+            ] {
+                let (l, d) = token(&colors, name);
+                assert!(close(l, want.0), "{name} light: {}", hex_string(l));
+                assert!(close(d, want.1), "{name} dark: {}", hex_string(d));
+            }
+            for muted in [false, true] {
+                for kind in 1..=12 {
+                    let ink = creature_ink(kind, hue as u8, muted).unwrap();
+                    token(&colors, ink);
+                }
+                assert_eq!(creature_ink(0, hue as u8, muted), None, "empty");
+                assert_eq!(creature_ink(13, hue as u8, muted), None);
+            }
+        }
     }
 
     #[test]

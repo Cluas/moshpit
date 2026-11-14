@@ -4,11 +4,11 @@
     corpus.py smoke <out>              a quick mixed sample
     corpus.py base <out>               the committed corpus: every Swift test's
                                        inputs, the real captures, edge cases
-    corpus.py fuzz <out> <seed> <n>    seeded random cases (n per family)
 
 A case is one line: a kind and its arguments, `x:<hex>` for strings and
-bytes, `-` for nil (see src/harness.rs). Fuzz cases are generated from a
-seed with Python's `random.Random`, so a seed reproduces its corpus.
+bytes, `-` for nil (see src/harness.rs). The Swift side that printed each
+case's recorded output, and the fuzzer that ran beside it, left with the
+Swift herdr code (E1; at cf25626b).
 """
 import base64
 import json
@@ -379,9 +379,6 @@ def main():
     mode = sys.argv[1]
     if mode in ("smoke", "base"):
         cases = base_cases()
-    elif mode == "fuzz":
-        import fuzz
-        cases = fuzz.cases(int(sys.argv[3]), int(sys.argv[4]))
     else:
         sys.exit(__doc__)
     with open(sys.argv[2], "w", encoding="utf-8") as f:

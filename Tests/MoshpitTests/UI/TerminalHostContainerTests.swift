@@ -1,59 +1,52 @@
 import Foundation
 import Testing
 import UIKit
-import SwiftTerm
 @testable import Moshpit
 
 /// The birth-grid / zero-bounds contract around `TerminalHostContainer` and
-/// the plain-path terminal in `SwiftTerminalView.makeUIView`.
+/// the terminals it hosts.
 ///
 /// The incident these pin down (user screenshot, 2026-08-18): over herdr+mosh,
 /// output that beat the first layout pass was parsed into a terminal whose
-/// `.zero` birth frame derived SwiftTerm's two-column minimum grid. The
-/// two-column line fragments sank into the 50k scrollback, and SwiftTerm's
-/// narrow→wide reflow does not round-trip — so scrolling up showed a column of
-/// 1–2 character shards forever while the visible screen self-corrected.
+/// `.zero` birth frame derived a two-column grid, and the narrow→wide reflow
+/// did not round-trip — so scrolling up showed a column of 1–2 character
+/// shards forever. A terminal is born at a grid now
+/// (``TerminalSurfaces/make(font:grid:)``), and a zero-bounds pass never
+/// reaches it.
 @Suite("TerminalHostContainer birth grid")
 struct TerminalHostContainerTests {
 
     @MainActor
-    private func makeTerminalView(frame: CGRect = .zero) -> TerminalView {
-        TerminalView(frame: frame,
-                     font: UIFont.monospacedSystemFont(ofSize: 12, weight: .regular))
+    private func makeTerminal(_ grid: TerminalGrid = TerminalGrid(cols: 40, rows: 12)) -> TerminalSurface {
+        TerminalSurfaces.make(font: UIFont.monospacedSystemFont(ofSize: 12, weight: .regular), grid: grid)
     }
 
-    /// Documents the hazard that motivates the screen-sized birth frame: a
-    /// `.zero` frame doesn't mean "no grid yet", it means the MINIMUM grid —
-    /// two columns — and everything fed before layout wraps at that width.
-    @Test("a terminal born at .zero derives the two-column minimum grid; born at screen size it's phone-shaped")
+    @Test("a terminal is born at the grid it was made for, before any layout")
     @MainActor
-    func birthFrameDerivesGrid() {
-        let zeroBorn = makeTerminalView()
-        #expect(zeroBorn.getTerminal().cols <= 2)
-
-        let screenBorn = makeTerminalView(
-            frame: CGRect(origin: .zero, size: UIScreen.main.bounds.size))
-        #expect(screenBorn.getTerminal().cols >= 20)
+    func birthGridHolds() {
+        let terminal = makeTerminal(TerminalGrid(cols: 52, rows: 20))
+        #expect(terminal.grid == TerminalGrid(cols: 52, rows: 20))
     }
 
     @Test("a transient zero-bounds layout pass leaves the hosted terminal's frame alone")
     @MainActor
     func zeroBoundsLayoutDoesNotSqueeze() {
         let container = TerminalHostContainer()
-        let terminal = makeTerminalView()
+        let terminal = makeTerminal()
         container.host(terminal)
 
         let real = CGRect(x: 0, y: 0, width: 390, height: 600)
         container.frame = real
         container.layoutSubviews()
-        #expect(terminal.frame == real)
+        #expect(terminal.view.frame.size == real.size)
+        let settled = terminal.view.frame
 
         // A sheet transition / remount can run a layout pass at .zero. The
         // terminal must keep its last real frame — adopting .zero reflows the
         // whole buffer to the minimum grid, and that reflow doesn't round-trip.
         container.frame = .zero
         container.layoutSubviews()
-        #expect(terminal.frame == real)
+        #expect(terminal.view.frame == settled)
     }
 
     /// `lastReportedSize` is fed ONLY by `sizeChanged` — a layout pass with
@@ -66,7 +59,7 @@ struct TerminalHostContainerTests {
     func layoutAloneDoesNotWriteLastReportedSize() {
         let coordinator = SwiftTerminalView.Coordinator()
         let container = TerminalHostContainer()
-        let terminal = makeTerminalView()
+        let terminal = makeTerminal()
         container.host(terminal)
         coordinator.hostContainer = container
 

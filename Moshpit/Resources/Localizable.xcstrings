@@ -7633,54 +7633,54 @@
         }
       }
     },
-    "An egg. It hatches when an agent first finishes a task.": {
+    "An egg. Tap it three times to hatch it; it also hatches by itself when an agent finishes a task.": {
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Ein Ei. Es schlüpft, sobald ein Agent seine erste Aufgabe erledigt."
+            "value": "Ein Ei. Dreimal tippen, und es schlüpft; es schlüpft auch von selbst, wenn ein Agent eine Aufgabe erledigt."
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Un huevo. Eclosiona cuando un agente termina su primera tarea."
+            "value": "Un huevo. Tócalo tres veces para que eclosione; también eclosiona solo cuando un agente termina una tarea."
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Un œuf. Il éclot quand un agent termine sa première tâche."
+            "value": "Un œuf. Touchez-le trois fois pour qu’il éclose ; il éclot aussi tout seul quand un agent termine une tâche."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "たまご。エージェントが初めてタスクを終えるとかえります。"
+            "value": "たまご。3回タップするとかえります。エージェントがタスクを終えたときにも、ひとりでにかえります。"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "알이에요. 에이전트가 처음 작업을 끝내면 부화해요."
+            "value": "알이에요. 세 번 탭하면 부화하고, 에이전트가 작업을 끝낼 때도 스스로 부화해요."
           }
         },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
-            "value": "Um ovo. Ele choca quando um agente termina a primeira tarefa."
+            "value": "Um ovo. Toque nele três vezes para chocar; ele também choca sozinho quando um agente termina uma tarefa."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "一枚蛋，智能体第一次完成任务时孵出来。"
+            "value": "一枚蛋。点三下就能孵化，智能体完成任务时它也会自己破壳。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "一顆蛋，智能體第一次完成任務時孵出來。"
+            "value": "一顆蛋。點三下就能孵化，智能體完成任務時它也會自己破殼。"
           }
         }
       }
@@ -23195,58 +23195,6 @@
         }
       }
     },
-    "Hand-drawn": {
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Handgezeichnet"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Dibujado a mano"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Dessiné à la main"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "手描き"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "손그림"
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Desenhado à mão"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "手绘"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "手繪"
-          }
-        }
-      }
-    },
     "Hardware": {
       "localizations": {
         "de": {
@@ -26571,58 +26519,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "下次見到它時就會長大"
-          }
-        }
-      }
-    },
-    "It hatches when an agent first finishes a task.": {
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Es schlüpft, sobald ein Agent seine erste Aufgabe erledigt."
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Eclosiona cuando un agente termina su primera tarea."
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Il éclot quand un agent termine sa première tâche."
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "エージェントが初めてタスクを終えるとかえります。"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "에이전트가 처음 작업을 끝내면 부화해요."
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Ele choca quando um agente termina a primeira tarefa."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "智能体第一次完成任务时孵出来。"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "智能體第一次完成任務時孵出來。"
           }
         }
       }
@@ -30825,58 +30721,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "麥克風權限已關閉。請在「設定 → 隱私權 → 麥克風」開啟。"
-          }
-        }
-      }
-    },
-    "Minimal": {
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Minimal"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Minimalista"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Minimal"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "ミニマル"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "미니멀"
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Minimalista"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "极简"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "極簡"
           }
         }
       }
@@ -41073,58 +40917,6 @@
         }
       }
     },
-    "Pixel": {
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Pixel"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Píxel"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Pixel"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "ピクセル"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "픽셀"
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Pixel"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "像素"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "像素"
-          }
-        }
-      }
-    },
     "Pixel Companion": {
       "localizations": {
         "de": {
@@ -49445,58 +49237,6 @@
         }
       }
     },
-    "Show Companion": {
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Begleiter zeigen"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Mostrar compañero"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Afficher le compagnon"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "コンパニオンを表示"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "컴패니언 표시"
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Mostrar companheiro"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "显示伙伴"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "顯示夥伴"
-          }
-        }
-      }
-    },
     "Show agent session status in the Dynamic Island": {
       "localizations": {
         "de": {
@@ -52877,54 +52617,106 @@
         }
       }
     },
-    "Tap it on Home and it reacts. On the Dynamic Island and the lock screen it changes pose but doesn't move.": {
+    "Tap it on Home and it reacts. On the Dynamic Island and the lock screen it changes pose but doesn't move. Each server's mark becomes a pixel creature too.": {
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Tippe ihn in der Übersicht an, und er reagiert. In der Dynamic Island und auf dem Sperrbildschirm wechselt er nur die Pose."
+            "value": "Tippe ihn in der Übersicht an, und er reagiert. In der Dynamic Island und auf dem Sperrbildschirm wechselt er nur die Pose. Auch jeder Server bekommt ein Pixel-Wesen als Symbol."
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Tócalo en el inicio y reacciona. En la Dynamic Island y la pantalla bloqueada cambia de postura, pero no se mueve."
+            "value": "Tócalo en el inicio y reacciona. En la Dynamic Island y la pantalla bloqueada cambia de postura, pero no se mueve. Cada servidor también se muestra como una criatura de píxeles."
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Touchez-le sur l’accueil et il réagit. Dans la Dynamic Island et sur l’écran verrouillé, il change de pose sans bouger."
+            "value": "Touchez-le sur l’accueil et il réagit. Dans la Dynamic Island et sur l’écran verrouillé, il change de pose sans bouger. Chaque serveur devient aussi une petite créature en pixels."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "ホームでタップすると反応します。Dynamic Island とロック画面ではポーズが変わるだけで、動きません。"
+            "value": "ホームでタップすると反応します。Dynamic Island とロック画面ではポーズが変わるだけで、動きません。サーバーのアイコンも、それぞれピクセルの生き物になります。"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "홈에서 탭하면 반응해요. Dynamic Island와 잠금 화면에서는 자세만 바뀌고 움직이지 않아요."
+            "value": "홈에서 탭하면 반응해요. Dynamic Island와 잠금 화면에서는 자세만 바뀌고 움직이지 않아요. 서버마다 아이콘도 픽셀 크리처로 바뀌어요."
           }
         },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
-            "value": "Toque nele no Início e ele reage. Na Dynamic Island e na Tela Bloqueada, ele muda de pose, mas não se mexe."
+            "value": "Toque nele no Início e ele reage. Na Dynamic Island e na Tela Bloqueada, ele muda de pose, mas não se mexe. Cada servidor também ganha uma criatura em pixels."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "在首页轻点它会有回应。灵动岛和锁屏上只换姿势，不放动画。"
+            "value": "在首页轻点它会有回应。灵动岛和锁屏上只换姿势，不放动画。每台服务器的头像也会变成像素小怪。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "在首頁輕點它會有回應。動態島和鎖定畫面上只換姿勢，不播動畫。"
+            "value": "在首頁輕點它會有回應。動態島和鎖定畫面上只換姿勢，不播動畫。每台伺服器的頭像也會變成像素小怪。"
+          }
+        }
+      }
+    },
+    "Tap it three times on Home to hatch it. It also hatches by itself when an agent finishes a task.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tippe es in der Übersicht dreimal an, und es schlüpft. Es schlüpft auch von selbst, wenn ein Agent eine Aufgabe erledigt."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tócalo tres veces en el inicio para que eclosione. También eclosiona solo cuando un agente termina una tarea."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Touchez-le trois fois sur l’accueil pour qu’il éclose. Il éclot aussi tout seul quand un agent termine une tâche."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ホームで3回タップするとかえります。エージェントがタスクを終えたときにも、ひとりでにかえります。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "홈에서 세 번 탭하면 부화해요. 에이전트가 작업을 끝낼 때도 스스로 부화해요."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Toque nele três vezes no Início para chocar. Ele também choca sozinho quando um agente termina uma tarefa."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在首页点它三下就能孵化，智能体完成任务时它也会自己破壳。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在首頁點它三下就能孵化，智能體完成任務時它也會自己破殼。"
           }
         }
       }
@@ -52977,6 +52769,58 @@
           "stringUnit": {
             "state": "translated",
             "value": "點修飾鍵切換開關，主鍵填一個字元。手機鍵盤會自動送出對應的原始掃描碼。"
+          }
+        }
+      }
+    },
+    "Tap three times to hatch": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zum Schlüpfen dreimal tippen"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Toca tres veces para que eclosione"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Touchez trois fois pour le faire éclore"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "3回タップでかえる"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "세 번 탭하면 부화"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Toque três vezes para chocar"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "点三下孵化"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "點三下孵化"
           }
         }
       }

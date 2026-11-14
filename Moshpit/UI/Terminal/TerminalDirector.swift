@@ -110,8 +110,7 @@ enum TerminalDirector {
 
     private static var session: SessionHub.ActiveSession? { RustCore.visibleSession }
 
-    /// The terminal on screen and its coordinator, whichever view draws it
-    /// (``CoreTermSwitch``).
+    /// The terminal on screen and its coordinator.
     fileprivate static var shown: (TerminalSurface, SwiftTerminalView.Coordinator)? {
         guard let session else { return nil }
         let coordinator = session.tmuxController?.activeCoordinator ?? session.coordinator
@@ -204,7 +203,7 @@ enum TerminalDirector {
         var shownMs: [Double] = []
         var revealedMs: [Double] = []
         var repaints: [Int] = []
-        let view = shown.map { $0.0 is CoreTerminalView ? "core" : "swiftterm" } ?? "-"
+        let view = shown.map { $0.0 is CoreTerminalView ? "core" : "other" } ?? "-"
         for cycle in 0..<(cycles * 2) {
             let target = windows[cycle % 2]
             let before = shown?.0
@@ -405,7 +404,7 @@ enum TerminalDirector {
                 + costs + String(format: "; the probe's look %.1f ms", look))
             await sleep(1.5)
         }
-        let view = surface is CoreTerminalView ? "core" : "swiftterm"
+        let view = surface is CoreTerminalView ? "core" : "other"
         if let core { say(core.atlasSummary) }
         say("RESULT burst view=\(view) backlog=\(backlog)s: n=\(gaps.count) longest gap max \(fmt(gaps.max())) median \(fmt(percentile(gaps, 0.5))) ms;"
             + " duration median \(fmt(percentile(durations, 0.5))) ms;"

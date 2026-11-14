@@ -194,12 +194,10 @@ final class SessionHub {
         /// never closes its transport).
         @ObservationIgnored private var sidecarSSH: SSHSession?
 
-        /// herdr's control plane. Unlike tmux's, one client covers BOTH
-        /// transports: it only ever runs `herdr api snapshot` over an exec
-        /// channel, so over SSH it rides the session we already have, and over
-        /// mosh it rides the same lightweight sidecar connection `moshControl`
-        /// would have used. Nothing about it needs a PTY or control mode.
-        private(set) var herdrControl: HerdrControlClient?
+        /// herdr's surface on the Rust core (``RustHerdrController``): its
+        /// tree, agents and skew where the chrome reads herdr, its actions
+        /// intents to the core. Set by the core's session (``rustSetHerdr(_:)``).
+        private(set) var herdrControl: RustHerdrController?
 
         /// The active tmux control surface, whichever transport is in use.
         var tmuxControl: TmuxSessionController? { tmuxController ?? moshControl }
@@ -223,13 +221,13 @@ final class SessionHub {
         /// The multiplexer control plane, whenever it materializes — for
         /// callers that need "the control plane, once it exists" rather than
         /// "the control plane right now". Over SSH the controller is assigned
-        /// inside `start()` and the first check resolves; over mosh both
-        /// control planes are wired by DETACHED tasks (`attachMoshTmux` /
-        /// `startHerdrSidecar`) that can spend ~15s on a second SSH handshake
+        /// inside `start()` and the first check resolves; over mosh the tmux
+        /// control plane is wired by a DETACHED task (`attachMoshTmux`)
+        /// that can spend ~15s on a second SSH handshake
         /// and attach retries after `start()` has returned — exactly the
         /// window a one-shot read samples nil in, which is how mosh+tmux
-        /// shipped with the island never tracking (and mosh+herdr raced the
-        /// same gap). Returns nil once the session stops/fails or after
+        /// shipped with the island never tracking (herdr's, on the Rust core,
+        /// raced the same gap). Returns nil once the session stops/fails or after
         /// `timeout` — a degraded session with no multiplexer on the host has
         /// nothing to wait for.
         func awaitMultiplexerControl(timeout: TimeInterval = 60) async -> (any MultiplexerControlling)? {
@@ -452,34 +450,9 @@ final class SessionHub {
         /// it didn't complete (``attachStalled``). Tests shorten it.
         @ObservationIgnored var attachTimeoutSeconds: Double = tmuxAttachTimeoutSeconds
 
-        /// The mosh+herdr control-plane bootstrap. Stored for the same reason
-        /// `moshTmuxAttachTask` is: it opens its own SSH connection, so a
-        /// teardown mid-handshake must be able to cancel it instead of letting
-        /// it wire a fresh connection onto a dead session.
-        @ObservationIgnored private var herdrSidecarTask: Task<Void, Never>?
-
-        // MARK: herdr push upgrade (Phase 0 of docs/design/roaming-transport.md)
-
-        /// Push-mode upgrade for the herdr control plane: a dedicated SSH
-        /// connection whose PTY hosts the socket pump (`HerdrPushBoot`), with
-        /// the driver turning `events.subscribe` pushes into `quicken()`
-        /// calls. nil = polling only (no python3 on the host, pipe never came
-        /// up, or the upgrade hasn't run yet) — polling is never interrupted
-        /// either way, push only narrows its latency.
-        @ObservationIgnored private var herdrPush: HerdrPushDriver?
-        @ObservationIgnored private var herdrPushSSH: SSHSession?
-        @ObservationIgnored private var herdrPushPump: Task<Void, Never>?
-        @ObservationIgnored private var herdrPushTask: Task<Void, Never>?
-        /// One more try at push after a channel that was up ended
-        /// (`herdrPushEnded`).
-        @ObservationIgnored private var herdrPushRetryTask: Task<Void, Never>?
-        /// How long after push ends it is tried again: time for a restarted
-        /// herdr server to come back up. Per instance so tests can shorten it.
-        @ObservationIgnored var herdrPushRetryDelay: Duration = .seconds(10)
-
         // MARK: Lifecycle-test seams
 
-        /// How side connections (mosh sidecars, the herdr push pump, the
+        /// How side connections (mosh sidecars, the
         /// on-demand transfer connection) are dialed. Production goes through
         /// the shared service; lifecycle tests inject a factory yielding
         /// sessions built over a scripted `SSHClientTransport` — which is
@@ -508,129 +481,21 @@ final class SessionHub {
         /// stays inert unless a test deliberately opts in.
         func installForTesting(moshTransport transport: MoshTransport?,
                                sidecarSSH ssh: SSHSession? = nil,
-                               herdrControl control: HerdrControlClient? = nil,
                                moshControl: TmuxSessionController? = nil,
                                tmuxController: TmuxSessionController? = nil,
                                moshServerPid pid: Int? = nil,
                                moshHadFirstContact hadContact: Bool = false,
-                               armFirstFrame: Bool = false,
-                               herdrRawAttachRenderer rendererKey: String? = nil,
-                               herdrRendererBooted: Bool = true) {
+                               armFirstFrame: Bool = false) {
             self.moshTransport = transport
             self.sidecarSSH = ssh
-            self.herdrControl = control
-            if let rendererKey {
-                // A mosh+herdr session whose bootstrap found `terminal attach`
-                // and booted the raw-attach loop under this key.
-                herdrRawAttach = true
-                moshRendererKey = rendererKey
-                // A session whose loop booted earlier — unless the test is
-                // about that boot.
-                if herdrRendererBooted { moshRendererBootedKey = rendererKey }
-            }
             if let moshControl { self.moshControl = moshControl }
             if let tmuxController {
                 self.tmuxController = tmuxController
                 if armFirstFrame { armFirstFrameWait(for: tmuxController) }
             }
-            if let control { controlPlaneWired(control) }
             self.moshServerPid = pid
             self.moshHadFirstContact = hadContact
             if transport != nil { viewModel.markConnected() }
-        }
-
-        // MARK: mosh+herdr raw-attach renderer
-
-        /// Host's herdr supports `terminal attach` (probed at mosh bootstrap).
-        /// Decides the mosh renderer: raw single-pane loop vs full TUI + zoom.
-        @ObservationIgnored private var herdrRawAttach = false
-        /// The terminal id the raw-attach loop was last asked to show — the
-        /// idempotence guard for `retargetMoshRawAttach` (apply() re-reports
-        /// focus every poll; only a real change should bounce the attach).
-        @ObservationIgnored private var moshRawAttachTarget: String?
-        /// The person chose `moshRawAttachTarget` (a tap, a reply for it,
-        /// "Open here"): its attach takes the pane from whichever client
-        /// holds it (`--takeover`). A switch that follows the shared focus
-        /// attaches plainly, which herdr refuses while another client holds
-        /// the terminal — following the focus never takes a pane from the
-        /// device that has it (`HerdrLaunch.retargetCommand`).
-        @ObservationIgnored private var moshRawAttachTakeover = false
-        /// The terminal id the last retarget exec pointed the loop at, by the
-        /// host's word that the loop came round to it
-        /// (`HerdrLaunch.retargetLanded`) — what is on screen, as far as
-        /// anything here knows. nil before the first, and after one failed,
-        /// came back without that word, or ran out its budget.
-        @ObservationIgnored private var moshRawAttachApplied: String?
-        /// Orders the retarget execs: one at a time, the newest target wins.
-        /// Replaced, not reused, on teardown — a new renderer must not wait
-        /// behind an exec meant for the old one.
-        @ObservationIgnored private var moshRetargetLane = WriteLane()
-        /// How long one retarget exec may hold up the ones behind it. A
-        /// healthy one is a single exec; past this the channel is in trouble
-        /// and the next switch must not wait on it (Citadel's own timeout on
-        /// a half-open socket is 15 s).
-        private static let moshRetargetBudget: Duration = .seconds(5)
-        /// The switch veil the mosh renderer puts up while it re-attaches, and
-        /// when it comes down — see `beginMoshSwitchCover`, `MoshSwitchCover`.
-        @ObservationIgnored private var moshSwitchCoverTask: Task<Void, Never>?
-        @ObservationIgnored private var moshSwitchCover: MoshSwitchCover?
-        /// This boot's renderer generation (connection id + per-boot nonce).
-        /// Retargets only ever write THIS generation's state files, which is
-        /// what keeps orphaned loops from previous mosh sessions out of the
-        /// takeover fight — see `HerdrLaunch.moshRendererKey`.
-        @ObservationIgnored private var moshRendererKey: String?
-        /// Why the raw-attach loop shows no pane — its attach ended on its own
-        /// and it parked (`HerdrLaunch.rawAttachLoopCommand`), or it is gone —
-        /// until the next landing. nil while it shows one, or is on its way.
-        @ObservationIgnored private var moshRendererStop: MoshRendererStop?
-        /// The watch on the loop (`HerdrLaunch.rawAttachWatchCommand`), armed
-        /// after every landing.
-        @ObservationIgnored private var moshRendererWatchTask: Task<Void, Never>?
-        /// Counts landings: a watch armed for an earlier one has nothing to
-        /// say about the pane on screen now.
-        @ObservationIgnored private var moshRendererEpoch = 0
-        /// The last terminal a switch found the server no longer lists: the
-        /// poll's report of it predates its closing, and isn't followed.
-        @ObservationIgnored private var moshRendererMissingTerminal: String?
-        /// What the notice's button does, when it has one.
-        @ObservationIgnored private var herdrNoticeRemedy: HerdrNoticeRemedy?
-        /// The renderer generation whose loop the sidecar has seen running:
-        /// its start line wasn't swallowed (``confirmMoshRendererBoot(key:over:)``).
-        @ObservationIgnored private var moshRendererBootedKey: String?
-        /// How many copies of the start line a generation gets, the first
-        /// one (typed at connect, or by a reboot) included — as many as the
-        /// mosh+tmux attach line.
-        private static let moshRendererBootLines = 4
-        /// How long a retyped start line's acknowledgement by mosh-server is
-        /// waited for before the loop is asked about again.
-        @ObservationIgnored var moshRendererRetypeAckWait: TimeInterval = 2
-
-        /// Why the mosh renderer shows no pane, and so who brings it back.
-        enum MoshRendererStop: Equatable {
-            /// Another device took the pane over: said, and taken back only
-            /// with the person's tap — never by a poll, never for a reply.
-            case takenOver(String)
-            /// The pane closed or herdr stopped or restarted: the renderer goes
-            /// to the focused pane by itself (not to this terminal again — a
-            /// stale report of it is not followed).
-            case gone(String)
-            /// herdr refused the attach for another reason: its words are
-            /// the notice, and the person retries.
-            case refused(String)
-            /// The loop itself ended (its shell is the tty's again): booted
-            /// again on the person's tap.
-            case loopGone
-        }
-
-        /// What a herdr notice's button does.
-        enum HerdrNoticeRemedy: Equatable {
-            /// Restart the host's herdr server (version skew).
-            case restartServer
-            /// Bring the mosh renderer back on the pane it stopped on.
-            case takeBack
-            /// The SSH frame channel's loop never said it reads: a fresh
-            /// connection and loop (B267).
-            case redial
         }
 
         /// True while the user is intentionally tearing this session down, so a
@@ -879,160 +744,20 @@ final class SessionHub {
         /// immediately tap an arrow key) can't reorder at the transport — see
         /// the matching `writeChain` in TmuxSessionController.enqueue for the
         /// same bug on the -CC control path (independently-spawned `Task`s
-        /// have no FIFO guarantee relative to each other). mosh+herdr's
-        /// semantic arrow keys queue here too, between the typing around them.
+        /// have no FIFO guarantee relative to each other).
         @ObservationIgnored private let moshWriteLane = WriteLane()
 
-        // MARK: herdr frame channel (SSH only)
+        // MARK: herdr's banner (the Rust core's notice, worded)
 
-        /// The pane the frame channel is currently rendering, or nil when the
-        /// channel isn't running. Also the "am I in frame mode?" flag that
-        /// `sendInput` and the scroll routing branch on.
-        private var herdrFrameTarget: String? { herdrAttach.target }
-        /// Which pane the channel is pointed at, which attach reads it, which
-        /// is being released and which close is our own release coming back
-        /// (`HerdrAttachLedger`).
-        @ObservationIgnored private var herdrAttach = HerdrAttachLedger()
-        /// The channel carrying frames — the session's own PTY, so retargeting
-        /// costs a command, not a connection.
-        @ObservationIgnored private var herdrFrameSSH: SSHSession?
-        /// Serializes stdin writes to the frame channel. Same hazard the mosh
-        /// path has: independently-spawned writes can reorder, and a resize
-        /// landing before the keystroke it was meant to follow repaints wrong.
-        /// Semantic arrow keys queue here too (see `sendHerdrKey`). Replaced,
-        /// not reused, when the channel goes: a new channel must not wait on
-        /// writes meant for the old one.
-        @ObservationIgnored private var herdrWriteLane = WriteLane()
-        /// The wait for a release's close: past it the switch names its pane
-        /// anyway (a channel that stopped answering must not park it).
-        @ObservationIgnored private var herdrReleaseAckTask: Task<Void, Never>?
-        /// Set when another client keeps stealing this pane's attach, so the
-        /// UI can say so instead of flickering silently. Cleared once we hold
-        /// the channel again.
+        /// What herdr's side says about the pane on screen — another device
+        /// has it, the server refused it, input that couldn't be sent — and
+        /// the input-lost notice (``rustNoteInputLost()``).
         private(set) var herdrNotice: String?
         /// Label for the notice's one-tap remedy, when the notice has one
-        /// (herdr version skew → restart the server). nil = plain notice.
+        /// (restart the server, "Open here", retry). nil = plain notice.
         private(set) var herdrNoticeAction: String?
         /// The input-lost notice waits for the session (``rustNoteInputLost()``).
         @ObservationIgnored private var inputLostWaiting = false
-        /// When attaching may be tried again after herdr refused an attach
-        /// and said why (version skew, a refused handshake): a refusal
-        /// doesn't heal by asking again on every poll.
-        @ObservationIgnored private var herdrRetryAfter: Date?
-        private static let herdrRefusalBackoff: TimeInterval = 30
-        /// The pane another device has — it took ours over (`--takeover`), or
-        /// held the one the focus went to and refused our plain attach —
-        /// until the person's word ("Open here", a pick) or its closing.
-        /// herdr's direct attach is exclusive per terminal, and two Moshpits
-        /// used to fight over a pane: each one's poll asked for it again with
-        /// `--takeover`, three times in 30 s before a backoff and a "retrying
-        /// shortly", then again. Following the focus never takes over now,
-        /// and a pane another device has is said, with "Open here", and left
-        /// to it — the rule mosh+herdr's renderer keeps (round twenty-seven).
-        @ObservationIgnored private var herdrHeldElsewhere: String?
-
-        /// How long a switch waits for its release's `terminal.closed` before
-        /// naming the next pane anyway.
-        private static let herdrReleaseAckTimeout: Duration = .milliseconds(1500)
-
-        /// The bound on input held for a pane (`HerdrAttachLedger`): typing
-        /// still held then is dropped and said, a delivery answered not sent.
-        @ObservationIgnored private var herdrHoldTask: Task<Void, Never>?
-        /// Deliveries waiting for their pane's attach (`deliverHerdrFrameInput`).
-        @ObservationIgnored private var herdrDeliveries: [Int: CheckedContinuation<Bool, Never>] = [:]
-        @ObservationIgnored private var herdrDeliveryCount = 0
-        /// The grid the last attach line carried: a size that moved before
-        /// that attach was up follows its first frame.
-        @ObservationIgnored private var herdrLineGrid: (cols: Int, rows: Int)?
-        /// How long typing at the pane just picked waits for its attach.
-        private static let herdrHeldInputBudget: Duration = .seconds(5)
-        /// How long a delivery to one pane — a notification's reply, a share —
-        /// waits for that pane's attach.
-        private static let herdrDeliveryBudget: Duration = .seconds(5)
-
-        /// The same window over mosh: a pane switch has been asked for and
-        /// hasn't landed, so typing would still reach the pane being LEFT.
-        ///
-        /// mosh carries keystrokes to the host's own herdr client — under the
-        /// raw-attach renderer the `terminal attach` the loop is running, which
-        /// types into the one terminal it is attached to until the retarget
-        /// exec has bounced it; under the full TUI herdr's client, which types
-        /// into the server's focused pane until the switch's zoom has moved
-        /// the focus. Either way, keys typed right after a switch went to the
-        /// old pane for a round trip or more. They are dropped instead, with
-        /// the same notice: the new pane isn't on screen yet, and the switch
-        /// may not be the user's (see `sendHerdrFrameInput`).
-        /// Bounded the way those steps are — a retarget exec that fails or
-        /// runs out its budget ends the switch, and so does a zoom the
-        /// command lane stops waiting for.
-        private var moshHerdrSwitching: Bool {
-            guard moshTransport != nil else { return false }
-            if herdrRawAttach {
-                guard let target = moshRawAttachTarget else { return false }
-                return target != moshRawAttachApplied
-            }
-            return herdrControl?.paneSwitchInFlight == true
-        }
-
-        /// mosh+herdr: the raw-attach loop shows no pane — its attach ended on
-        /// its own (another device took the pane, the pane closed, herdr
-        /// stopped) and it parked, or it is gone (`moshRendererStop`). What
-        /// is typed now has no pane to reach: dropped and said, never sent
-        /// into the tty, where the login shell used to take it as a command
-        /// line. The parked loop discards what reaches the tty anyway before
-        /// its next attach.
-        private var moshRendererDown: Bool {
-            herdrRawAttach && moshTransport != nil && moshRendererStop != nil
-        }
-
-        /// mosh+herdr: no pane is on screen by the host's word — before the
-        /// first switch has landed, or after one that failed. What is typed
-        /// then reached whichever pane the loop attached next (it reads what
-        /// waited in the tty), or a loop that wasn't there; dropped and said
-        /// instead (B185's rule: only the person's pick and a delivery wait
-        /// for their pane, and a delivery waits for its own landing).
-        private var moshRendererBlank: Bool {
-            herdrRawAttach && moshTransport != nil && moshRawAttachApplied == nil
-        }
-
-        /// Set while a retarget's veil is up, waiting for the new pane's first
-        /// FULL frame to reveal on. Incremental frames are absolutely-positioned
-        /// cell updates, so painting one over the pane we just left would show
-        /// the old agent's screen with a few new cells stamped into it — worse
-        /// than the veil it replaced. A full frame carries its own clear+home,
-        /// which is the first moment the screen is honestly the new pane's.
-        @ObservationIgnored private var herdrAwaitingFullFrame = false
-
-        /// Whether the channel's reader loop is running: it is the channel's
-        /// own program (``HerdrFrameCommand/loopProgram(customPath:connectionId:)``),
-        /// so from the moment the channel opens (B267).
-        @ObservationIgnored private var herdrChannelBooted = false
-        /// Whether the reader loop announced itself. Until it does, nothing
-        /// is written: a target line would reach it before its `read`, or
-        /// nothing at all.
-        @ObservationIgnored private var herdrLoopReady = false
-        /// An attach line is due, held until the loop says it reads.
-        @ObservationIgnored private var herdrAttachWaitsForLoop = false
-        /// Just past the attach timeout after an attach line, a read: an
-        /// attach that never painted is asked for again then, not on the
-        /// poll's cadence (up to 45 s with push). The poller's repeated focus
-        /// report is that RECOVERY: a target that never painted gets asked
-        /// for again instead of being assumed live (`HerdrAttachLedger`).
-        @ObservationIgnored private var herdrAttachWatchTask: Task<Void, Never>?
-        /// Measured switch cost: the retarget's first byte out to the new
-        /// pane's first full frame in. The veil's safety cap scales off it.
-        @ObservationIgnored private var herdrLastSwitch: TimeInterval = 0
-        /// Watches for a loop that never says it reads, and says so (with a
-        /// Retry that redials) instead of a blank terminal.
-        @ObservationIgnored private var herdrBootFallbackTask: Task<Void, Never>?
-        /// How long the reader loop may take to announce itself.
-        static let herdrLoopProbe: Duration = .milliseconds(2500)
-        /// Home, erase display, erase scrollback. Fed to the emulator the
-        /// moment a switch starts, so the buffer stops holding the pane we
-        /// are leaving. The veil hides the swap either way — this is about
-        /// what is underneath it if the swap goes wrong: an empty screen is
-        /// honest, the previous agent's screen is a lie the user acts on.
-        private static let herdrClearScreen = Data("\u{1b}[H\u{1b}[2J\u{1b}[3J".utf8)
 
         /// The terminal backing whichever pane is on screen right now — tmux
         /// resolves the zoomed active pane's; mosh/plain SSH have just the one
@@ -1058,7 +783,7 @@ final class SessionHub {
         ///
         /// Only plain SSH and mosh actually go by it. tmux and herdr re-encode
         /// a lone arrow server-side against the pane's real mode (see
-        /// `TmuxSessionController.sendInput`, `HerdrControlClient.sendKey`),
+        /// `TmuxSessionController.sendInput`; herdr on the Rust core),
         /// because there this local flag goes stale.
         var applicationCursorKeys: Bool {
             activeTerminal?.modes.applicationCursorKeys ?? false
@@ -1080,8 +805,7 @@ final class SessionHub {
         /// image path landed as literal text instead of `[Image #N]`. Mosh
         /// does not have this problem (its renderer is a regular tmux
         /// client, not a fresh `-CC` attach each time), so that path is
-        /// untouched. SSH+herdr has the same problem, worse, and its own way
-        /// out — see `pastePayload`. Gated on `connState == .live` for the
+        /// untouched. Gated on `connState == .live` for the
         /// same reason `sendInput` is — a paste triggered while the cover
         /// overlay is up (e.g. a queued Home-card action firing
         /// mid-reconnect) must not become durable input on a transport that
@@ -1103,43 +827,14 @@ final class SessionHub {
             sendInput(pastePayload(text))
         }
 
-        /// The bytes a paste goes out as when no tmux controller encodes it.
-        ///
-        /// SSH+herdr: always ONE complete bracketed paste, whatever the local
-        /// emulator says. That emulator is fed herdr's repaint frames, which
-        /// carry no mode changes at all (herdr's frame encoder emits cursor
-        /// visibility and synchronized-output marks, nothing else), so its
-        /// bracketed-paste flag was never set: every paste — a multi-line
-        /// prompt, a shared image path — went out bare, a shell ran it line
-        /// by line, and Claude Code took a pasted path for typing instead of
-        /// an image. The pane's real mode lives on the server, and the server
-        /// (herdr 0.9+, `apply_terminal_attach_input`) re-encodes an input
-        /// that is exactly one bracketed paste against it: markers kept when
-        /// the program asked for them, dropped when it didn't. An older
-        /// server passes the markers through as they are — still what the
-        /// programs a phone pastes into ask for (agents, zsh, bash, fish, vim
-        /// all turn bracketed paste on); and nothing in herdr's API reports a
-        /// pane's mode, so there is nothing better to ask. mosh and plain SSH
-        /// still go by the local emulator, as before — with any marker in the
-        /// text taken out (``BracketedPaste/payload(_:bracketed:)``): wrapped
-        /// as it was, a pasted `ESC[201~` ended the paste and the line after
-        /// it ran.
+        /// The bytes a paste goes out as when no tmux controller encodes it:
+        /// mosh and plain SSH go by the local emulator, with any marker in
+        /// the text taken out (``BracketedPaste/payload(_:bracketed:)``):
+        /// wrapped as it was, a pasted `ESC[201~` ended the paste and the
+        /// line after it ran.
         private func pastePayload(_ text: String) -> Data {
-            if herdrFrameSSH != nil { return Self.herdrPaste(text) }
             let bracketed = activeTerminal?.modes.bracketedPaste == true
             return BracketedPaste.payload(text, bracketed: bracketed)
-        }
-
-        /// `text` as one complete bracketed paste. A marker inside the text
-        /// is dropped: herdr only re-encodes an input whose FIRST end marker
-        /// is its last bytes, and a pasted one would otherwise close the
-        /// paste early for the pane and send the rest as typed keys — Return
-        /// included. Dropped byte for byte and until none is left
-        /// (``BracketedPaste/body(_:)``): searched as `Character`s, a marker
-        /// carrying a combining mark stayed in, and one removal pass could
-        /// assemble a new marker from the bytes around the one it removed.
-        nonisolated static func herdrPaste(_ text: String) -> Data {
-            BracketedPaste.wrapped(text)
         }
 
         /// Single entry point for user input (keyboard, shortcut bar, paste).
@@ -1160,7 +855,7 @@ final class SessionHub {
 
         /// ``sendInput(_:)``'s routing, saying what became of the bytes: true
         /// when they were handed to a transport, false when they were
-        /// dropped (nothing live, herdr between panes, no pane to take them).
+        /// dropped (nothing live, no pane to take them).
         /// The callers that keep what they deliver until it is delivered
         /// (``deliverInput(_:toPane:)``) need to know which (B172).
         @discardableResult
@@ -1183,34 +878,6 @@ final class SessionHub {
             // the order typed (B169).
             guard inputDecided() else {
                 heldInput?.append(data)
-                return true
-            }
-            // SSH+herdr: typing reaches a pane only once that pane's attach
-            // is up — see `sendHerdrFrameInput`. Arrows too.
-            if herdrFrameSSH != nil {
-                return sendHerdrFrameInput(data)
-            }
-            // mosh+herdr between panes: nothing typed now has a pane it can
-            // rightly reach — see `moshHerdrSwitching`. Arrows too: the next
-            // branch would send one by exec straight to the new pane, ahead
-            // of the text around it, which is dropped.
-            if moshHerdrSwitching || moshRendererDown || moshRendererBlank {
-                noteHerdrInputDropped()
-                return false
-            }
-            // herdr (either transport): a lone arrow sequence reroutes as a
-            // SEMANTIC key, encoded server-side against the pane's REAL
-            // terminal modes. The client-side variant choice (ESC[A vs
-            // ESC OA) reads the local emulator's DECCKM — but over herdr
-            // that emulator is fed repaint frames that never carry mode
-            // changes, so the flag never flips and the normal-mode variant
-            // goes out forever; zsh widgets bound via terminfo (kcuu1 IS the
-            // application-mode sequence) then never fire — the "no up/down
-            // history under herdr" report. One choke point catches both the
-            // D-pad and a hardware keyboard's arrows.
-            if let herdr = herdrControl, let key = Self.arrowKeyName(data),
-               let paneId = herdr.snapshot.activePaneId {
-                sendHerdrKey(key, paneId: paneId, via: herdr)
                 return true
             }
             // (SSH+tmux scrollback is LOCAL now — copy-mode is invisible to a
@@ -1245,171 +912,8 @@ final class SessionHub {
             }
         }
 
-        /// Say that input went nowhere, and hurry the re-attach. A notice
-        /// already up (another client holds the pane, the server refused the
-        /// attach) says more, and stays. Cleared by the next painted frame —
-        /// over mosh, where no frame is ever parsed, after a few seconds.
-        private func noteHerdrInputDropped() {
-            Log.input.info("herdr: input dropped — not on the pane yet")
-            guard herdrNotice == nil else { return }
-            let notice = String(localized: "Not attached to the pane yet — input wasn't sent")
-            if moshTransport != nil {
-                flashHerdrNotice(notice)
-            } else {
-                herdrNotice = notice
-            }
-            herdrControl?.quicken()
-        }
-
-        /// Typing at the frame channel's pane (SSH): out once that pane's
-        /// attach is up, held if the person just picked the pane, dropped
-        /// and said otherwise (`HerdrAttachLedger`).
-        ///
-        /// Written right behind an attach line, typing was lost: herdr 0.9.5
-        /// drops what reaches an attach before its first frame (B185). Written
-        /// during a switch, before the release, it reached the pane being
-        /// LEFT; after the release but before the target line, the loop's
-        /// `read` took it for a command of ours and dropped it without a
-        /// trace. So nothing goes until the pane's attach paints. What was
-        /// typed at a pane the person just picked waits for that and follows
-        /// it, in order — they are looking at that pane. A switch that isn't
-        /// theirs (the desktop moved the focus, the poll followed it) holds
-        /// nothing: "y⏎" typed at one agent must never answer another's
-        /// prompt. Dropped, it says so: never the old pane, never silently.
-        /// Before the first attach, backing off another client, after a
-        /// refusal or a close, nothing is attached, and typing is dropped the
-        /// same way — never raw into the PTY, whose reader is the loop's
-        /// `read` or the login shell.
-        /// Whether the bytes went out or are held for their pane (true), or
-        /// were dropped (false, said) — ``routeInput(_:)``'s answer (B172).
-        @discardableResult
-        private func sendHerdrFrameInput(_ data: Data) -> Bool {
-            switch herdrAttach.route(.typed(data), to: herdrFrameTarget) {
-            case .send:
-                guard let paneId = herdrAttach.inputPane else { return false }
-                writeHerdrInput(data, to: paneId)
-                return true
-            case .held:
-                return true
-            case .dropped:
-                noteHerdrInputDropped()
-                return false
-            }
-        }
-
-        /// Bytes for the pane whose attach is up: a lone arrow as a SEMANTIC
-        /// key (see `sendHerdrKey`), anything else as one input line — base64,
-        /// so escape sequences and partial UTF-8 survive the JSON round trip.
-        private func writeHerdrInput(_ data: Data, to paneId: String) {
-            if let herdr = herdrControl, let key = Self.arrowKeyName(data) {
-                sendHerdrKey(key, paneId: paneId, via: herdr)
-            } else {
-                writeFrameCommand(HerdrFrameCommand.input(data))
-            }
-        }
-
-        /// Hold input for `paneId` until its attach is up, for at most
-        /// `budget`. A hold for another pane ends, its typing dropped (said).
-        private func holdHerdrInput(for paneId: String, budget: Duration) {
-            guard herdrAttach.heldPane != paneId else { return }
-            settleDroppedHerdrInput(herdrAttach.hold(for: paneId), tell: true)
-            armHerdrHoldExpiry(budget)
-        }
-
-        private func armHerdrHoldExpiry(_ budget: Duration) {
-            herdrHoldTask?.cancel()
-            herdrHoldTask = Task { [weak self] in
-                try? await Task.sleep(for: budget)
-                guard let self, !Task.isCancelled else { return }
-                herdrHoldTask = nil
-                settleDroppedHerdrInput(herdrAttach.dropHeld(), tell: true)
-            }
-        }
-
-        /// Input a hold gave up: typing said dropped (`tell`), deliveries
-        /// answered not sent.
-        private func settleDroppedHerdrInput(_ dropped: [HerdrAttachLedger.Held], tell: Bool) {
-            if herdrAttach.heldPane == nil {
-                herdrHoldTask?.cancel()
-                herdrHoldTask = nil
-            }
-            var typed = false
-            for input in dropped {
-                switch input {
-                case .typed:
-                    typed = true
-                case .delivery(let id, _):
-                    herdrDeliveries.removeValue(forKey: id)?.resume(returning: false)
-                }
-            }
-            if typed, tell { noteHerdrInputDropped() }
-        }
-
-        /// `paneId`'s attach is up: what was held for it goes out, in order,
-        /// and each delivery among it is answered sent.
-        private func flushHeldHerdrInput(to paneId: String) {
-            guard herdrAttach.heldPane == paneId else { return }
-            let held = herdrAttach.takeHeld(for: paneId)
-            herdrHoldTask?.cancel()
-            herdrHoldTask = nil
-            for input in held {
-                switch input {
-                case .typed(let data):
-                    writeHerdrInput(data, to: paneId)
-                case .delivery(let id, let data):
-                    writeHerdrInput(data, to: paneId)
-                    herdrDeliveries.removeValue(forKey: id)?.resume(returning: true)
-                }
-            }
-        }
-
-        /// One pane's input over the frame channel (SSH) — a notification's
-        /// reply, a share: switch there if the channel isn't, and send once
-        /// that pane's attach is up. Never right behind its attach line:
-        /// herdr 0.9.5 drops what reaches an attach before its first frame,
-        /// and the reply was lost while this said sent (B185). True only once
-        /// the bytes went out; false when no switch could happen (another
-        /// client holds the pane) or the attach didn't come up within the
-        /// delivery's wait, so the caller can say so.
-        private func deliverHerdrFrameInput(_ data: Data, toPane paneId: String,
-                                            via herdr: HerdrControlClient) async -> Bool {
-            // Another device has the pane: nothing reaches it, and a reply is
-            // no reason to take it from that device ("Open here" is the
-            // person's). A reply for another pane is the person's pick of it.
-            guard paneId != herdrHeldElsewhere else {
-                Log.input.info("herdr: \(paneId, privacy: .public) is open on another device — input not sent")
-                return false
-            }
-            if herdrAttach.inputPane != paneId {
-                if herdrFrameTarget != paneId {
-                    // The person's pick, made for them: the server's focus
-                    // moves too, and the switch holds input for this pane.
-                    herdr.selectPane(paneId)
-                } else {
-                    holdHerdrInput(for: paneId, budget: Self.herdrDeliveryBudget)
-                }
-                // Backing off another client: no switch, nothing to wait for.
-                guard herdrAttach.heldPane == paneId else { return false }
-                // The delivery's own wait.
-                armHerdrHoldExpiry(Self.herdrDeliveryBudget)
-            }
-            herdrDeliveryCount &+= 1
-            let id = herdrDeliveryCount
-            return await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
-                switch herdrAttach.route(.delivery(id: id, data), to: paneId) {
-                case .send:
-                    writeHerdrInput(data, to: paneId)
-                    continuation.resume(returning: true)
-                case .held:
-                    herdrDeliveries[id] = continuation
-                case .dropped:
-                    continuation.resume(returning: false)
-                }
-            }
-        }
-
-        /// A payload that is exactly one arrow-key sequence, as its herdr
-        /// key name — either DECCKM variant, since the sender's guess is
+        /// A payload that is exactly one arrow-key sequence, as its key name
+        /// (tmux's `send-keys`) — either DECCKM variant, since the sender's guess is
         /// exactly what can't be trusted here. Anything else (batched keys,
         /// other sequences, plain text) returns nil and flows unmodified.
         static func arrowKeyName(_ data: Data) -> String? {
@@ -1425,55 +929,6 @@ final class SessionHub {
             }
         }
 
-        /// A semantic key, queued on the SAME lane as this session's typing so
-        /// the two reach the pane in the order they were pressed. The key is
-        /// an exec on the control connection while the text rides the
-        /// terminal channel; sharing the lane makes the key wait for the text
-        /// before it and the text after it wait for the key.
-        private func sendHerdrKey(_ key: String, paneId: String, via herdr: HerdrControlClient) {
-            if herdrFrameSSH != nil {
-                // SSH: frame channel and exec share one connection, and the
-                // exec has a channel-open round trip to make before herdr even
-                // starts — so text whose write has completed is already ahead.
-                herdr.sendKey(key, paneId: paneId, on: herdrWriteLane)
-            } else if let transport = moshTransport {
-                // mosh: the typing went out as UDP and the key goes as an SSH
-                // exec — two networks. A finished send only means the
-                // datagram LEFT; a lost one is retransmitted a timeout later
-                // and could arrive after the key, landing the prefix the user
-                // typed after the ↑ meant to search for it. So the key first
-                // waits for mosh-server's ack (it acks a state only after
-                // writing it into the PTY), within a budget a dead return
-                // path can't hold up.
-                herdr.sendKey(key, paneId: paneId, on: moshWriteLane) {
-                    await WriteLane.wait(atMost: Self.moshLandingBudget) {
-                        await transport.waitUntilDelivered()
-                    }
-                }
-            } else {
-                herdr.sendKey(key, paneId: paneId)
-            }
-        }
-
-        /// How long a mosh+herdr key waits for the typing ahead of it to be
-        /// acknowledged before going anyway — a few round trips on the worst
-        /// link this app is tested against (500 ms RTT, double-digit loss).
-        private static let moshLandingBudget: Duration = .milliseconds(1500)
-
-        /// Deliver bytes to one SPECIFIC pane — the lock-screen Allow / Deny /
-        /// Reply path, where "whatever pane happens to be focused" is wrong.
-        ///
-        /// tmux can address a pane directly (`send-keys -t`). herdr cannot:
-        /// its frame channel types into whichever pane it is attached to, so
-        /// the pane must be FOCUSED first (`agent focus`), the channel given
-        /// time to retarget, and only then the keystroke written. Skipping
-        /// that — as the first version did by falling back to `sendInput` —
-        /// sent the lock-screen "Allow" into whatever pane the app was last
-        /// showing, which with two concurrent agents is someone else's Enter.
-        ///
-        /// Returns false when the pane could not be focused in time (eviction
-        /// backoff, dead poller), so the caller can say "open the app" rather
-        /// than pretend the tap worked.
         /// Paste text into one SPECIFIC pane — bracketed like `sendPaste`,
         /// but judged by the TARGET pane's mode rather than the active one's.
         /// The Home card's per-agent image entry delivers here without ever
@@ -1500,8 +955,6 @@ final class SessionHub {
             if let control = tmuxControl {
                 return await control.pasteConfirmed(text, paneId: paneId)
             }
-            // SSH+herdr: bracketed for the server to judge against the TARGET
-            // pane's real mode — see `pastePayload`.
             return await deliverInput(pastePayload(text), toPane: paneId)
         }
 
@@ -1536,53 +989,13 @@ final class SessionHub {
                 control.sendInput(data, paneId: paneId)
                 return true
             }
-            if connection.multiplexer == .herdr, herdrControl == nil, moshTransport != nil {
-                // mosh+herdr: herdr's control plane comes up over its own
-                // SSH connection a moment after mosh — the first second or
-                // two of every connect, and while it is rebuilt. A reply for
-                // a herdr pane before it (a notification's Allow sent as the
-                // phone reconnects) was answered not sent at once (B248); it
-                // waits for the control plane now, as a tmux pane's waits for
-                // the sidecar, and goes once that knows the pane. A host with
-                // no herdr has no control plane coming.
-                guard degrade?.missing != .herdr,
-                      await moshHerdrControl(knowing: paneId) != nil else { return false }
-            }
-            if let herdr = herdrControl {
-                if herdrFrameSSH != nil {
-                    // Native frame mode (SSH): focus first unless already
-                    // there, and go once that pane's attach is up.
-                    return await deliverHerdrFrameInput(data, toPane: paneId, via: herdr)
-                }
-                // mosh+herdr: keystrokes go down the mosh channel to herdr's
-                // own client, which types into the server's focused pane — or,
-                // under the raw-attach renderer, into the one terminal the loop
-                // is attached to. Either way they may leave only once that is
-                // really the pane asked for.
-                guard await focusForMoshHerdrInput(paneId, via: herdr) else {
-                    flashHerdrNotice(String(localized: "Couldn't switch to that pane — nothing was sent"))
-                    return false
-                }
-                // `sendInput` drops input on a session that isn't live, and
-                // on one already off to another pane since the focus was
-                // confirmed; say so rather than report it sent.
-                guard viewModel.connState == .live, !moshHerdrSwitching, !moshRendererDown,
-                      !moshRendererBlank else { return false }
-                return routeInput(data)
-            }
-            // A herdr connection with no herdr control plane — herdr missing
-            // on the host (a plain shell), or mosh's control plane not up
-            // within the wait above: nothing here can place one pane's
-            // input. It used to go down the one shell
-            // there is, the login shell or the loop's tty, where a reply ran
-            // as a command line or reached whichever pane attached first —
-            // said sent either way (B208's shape; crates/session refuses the
-            // same). Not sent: its sender says so.
+            // herdr runs on the Rust core only (E1): nothing here can place
+            // one of its panes' input. Not sent: its sender says so.
             if connection.multiplexer == .herdr { return false }
             // Plain SSH / mosh: one shell, one place the bytes can go — while
             // it is live. A plain SSH shell says whether the write went out.
             guard viewModel.connState == .live else { return false }
-            if moshTransport == nil, herdrFrameSSH == nil, tmuxController == nil,
+            if moshTransport == nil, tmuxController == nil,
                viewModel.session != nil {
                 return await viewModel.deliver(data)
             }
@@ -1590,8 +1003,7 @@ final class SessionHub {
         }
 
         /// How long a tmux pane's input over mosh waits for the `-CC` sidecar
-        /// to be up and list its pane (``moshSidecar(knowing:)``), and a
-        /// herdr pane's for herdr's control plane (``moshHerdrControl(knowing:)``).
+        /// to be up and list its pane (``moshSidecar(knowing:)``).
         @ObservationIgnored var moshSidecarDeliveryWait: TimeInterval = 10
 
         /// The mosh+tmux sidecar once it is attached and lists `paneId`; nil
@@ -1609,147 +1021,6 @@ final class SessionHub {
                 return !control.snapshot.panes.isEmpty
             }
             return found
-        }
-
-        /// mosh+herdr's control plane once it is up and its tree lists
-        /// `paneId`; nil when its tree is read without this pane (a pane
-        /// that is gone, a server that isn't running), or when it isn't up
-        /// within ``moshSidecarDeliveryWait``.
-        private func moshHerdrControl(knowing paneId: String) async -> HerdrControlClient? {
-            var found: HerdrControlClient?
-            _ = await waitUntil(timeout: moshSidecarDeliveryWait) { [weak self] in
-                guard let self, !isStopping, moshTransport != nil,
-                      degrade?.missing != .herdr else { return true }
-                guard let control = herdrControl else { return false }
-                if control.snapshot.panes[paneId] != nil {
-                    found = control
-                    return true
-                }
-                // A tree read (a running server's, or none running) without it.
-                return control.snapshot.isAttached || control.serverNotRunning
-            }
-            return found
-        }
-
-        /// Focus `paneId` for mosh+herdr input, and wait until the server has
-        /// REALLY switched.
-        ///
-        /// `selectPane` writes the new pane into the client's snapshot the
-        /// moment it is called — that is what makes a tap feel instant — so
-        /// waiting for the snapshot to say `paneId`, the old check, passed
-        /// before the focus command had even left, and the bytes were typed
-        /// into the pane being left: a reply meant for one agent answering
-        /// another. The server is asked instead, behind the focus command on
-        /// the same lane.
-        private func focusForMoshHerdrInput(_ paneId: String, via herdr: HerdrControlClient) async -> Bool {
-            let alreadyThere = herdr.snapshot.activePaneId == paneId
-            if !alreadyThere { herdr.selectPane(paneId) }
-            var focused = await herdr.confirmedFocus(within: Self.herdrFocusBudget)
-            if focused != paneId, alreadyThere {
-                // The snapshot was older than the server — the desktop moved
-                // the focus since the last poll. Ask for the pane now. (Not
-                // up front: on a pane `agent focus` refuses, the fallback's
-                // zoom bounce would unzoom a pane the desktop has zoomed.)
-                herdr.selectPane(paneId)
-                focused = await herdr.confirmedFocus(within: Self.herdrFocusBudget)
-            }
-            guard focused == paneId else {
-                Log.input.info("herdr: \(paneId, privacy: .public) never came into focus — input not sent")
-                return false
-            }
-            guard herdrRawAttach else { return true }
-            // Raw attach: typing reaches the terminal the loop is attached
-            // to, whatever the focus. Point the loop there (a no-op when it
-            // already is) and wait for that retarget to land.
-            guard let terminalId = herdr.terminalIds[paneId] else { return false }
-            // The loop stopped on this pane — another device has it, herdr
-            // refused it, it closed — or is gone: nothing reaches it now, and
-            // a reply is no reason to take a pane back from another device
-            // (that is the person's tap on the notice).
-            switch moshRendererStop {
-            case .takenOver(terminalId), .refused(terminalId), .gone(terminalId), .loopGone:
-                Log.input.info("herdr: the renderer is down on \(paneId, privacy: .public) — input not sent")
-                return false
-            default:
-                break
-            }
-            let alreadyOnScreen = moshRawAttachApplied == terminalId && moshRawAttachTarget == terminalId
-            // The person's reply, for this pane: a pick, as a tap would be.
-            retargetMoshRawAttach(to: paneId, user: true)
-            // Until the loop has come round to it — or the switch has ended
-            // without that (the retarget came back unconfirmed, failed, or a
-            // newer pane was picked): then nothing reaches this pane now.
-            _ = await waitUntil(timeout: Self.herdrRetargetWait, condition: { [weak self] in
-                guard let self else { return true }
-                return moshRawAttachApplied == terminalId || moshRawAttachTarget != terminalId
-            })
-            guard moshRawAttachApplied == terminalId else {
-                Log.input.info("herdr: the renderer never reached \(paneId, privacy: .public) — input not sent")
-                return false
-            }
-            // The pane was on screen already, so no retarget vouched for it
-            // just now — and the loop may have ended under it since (B208):
-            // another client took the pane over, the server restarted. Then
-            // mosh shows the login shell, and the reply ran there as a
-            // command line. Asked, not re-attached: a retarget would take
-            // the pane back from whoever holds it now.
-            if alreadyOnScreen {
-                let check = await moshRawAttachStillUp(terminalId)
-                guard check.up else {
-                    Log.input.info("herdr: the renderer has left \(paneId, privacy: .public) — input not sent")
-                    if let stop = check.stop {
-                        // Parked under it before the watch said so: taken
-                        // for what it is — never by resetting the target,
-                        // which had the next poll take the pane back.
-                        moshRendererStopped(stop)
-                    } else {
-                        // As a retarget that never landed: the next report
-                        // asks again.
-                        if moshRawAttachApplied == terminalId { moshRawAttachApplied = nil }
-                        if moshRawAttachTarget == terminalId { moshRawAttachTarget = nil }
-                    }
-                    return false
-                }
-            }
-            return true
-        }
-
-        /// Whether the raw-attach loop is still on `terminalId`
-        /// (`HerdrLaunch.rawAttachCheckCommand`), asked on the retarget lane
-        /// so no switch runs between the answer and what it is for.
-        /// And, when it isn't, whether the loop parked (the check reads the
-        /// stop record as the watch does).
-        private func moshRawAttachStillUp(_ terminalId: String) async -> (up: Bool, stop: HerdrLaunch.RendererStop?) {
-            guard let ssh = sidecarSSH, let rendererKey = moshRendererKey else { return (false, nil) }
-            let command = HerdrLaunch.rawAttachCheckCommand(terminalId: terminalId, rendererKey: rendererKey)
-            return await withCheckedContinuation { (continuation: CheckedContinuation<(up: Bool, stop: HerdrLaunch.RendererStop?), Never>) in
-                moshRetargetLane.enqueue {
-                    var output: Data?
-                    let finished = await WriteLane.wait(atMost: Self.moshRetargetBudget) {
-                        output = try? await ssh.executeCommand(command)
-                    }
-                    guard finished, let output else { return continuation.resume(returning: (false, nil)) }
-                    continuation.resume(returning: (HerdrLaunch.rawAttachUp(output), HerdrLaunch.rendererStop(output)))
-                }
-            }
-        }
-
-        /// How long input bound for one pane waits for the server to confirm
-        /// the focus, and then for the mosh renderer to follow it.
-        private static let herdrFocusBudget: Duration = .seconds(5)
-        private static let herdrRetargetWait: TimeInterval = 5
-
-        /// A notice for a one-off failure, cleared after a few seconds — the
-        /// mosh renderer paints nothing this session parses, so no frame would
-        /// ever take it down. Never covers a notice that is already up.
-        private func flashHerdrNotice(_ message: String) {
-            guard herdrNotice == nil else { return }
-            herdrNotice = message
-            Task { [weak self] in
-                try? await Task.sleep(for: .seconds(4))
-                guard let self, self.herdrNotice == message else { return }
-                self.herdrNotice = nil
-            }
         }
 
         /// Poll `condition` on the main actor until it holds or `timeout`
@@ -1805,21 +1076,12 @@ final class SessionHub {
             // buffer is read-only and stays useful — an offline plain shell's
             // scrollback is still readable under the red pill.
             guard viewModel.connState == .live else {
-                if herdrFrameTarget == nil, moshTransport == nil, tmuxController == nil {
+                if moshTransport == nil, tmuxController == nil {
                     coordinator.scrollLocal(lines: lines)
                 }
                 return
             }
-            if herdrFrameTarget != nil {
-                // The one place herdr strictly beats tmux here: the SERVER
-                // decides whether a wheel becomes a mouse report (an app that
-                // grabbed the mouse — Claude Code, vim) or scrollback movement.
-                // No `#{mouse_any_flag}` lookup, no copy-mode dance, no
-                // first-swipe race to self-heal. Only into an attach that is
-                // up: before, it scrolled the pane being left, or was lost.
-                guard herdrAttach.inputPane != nil else { return }
-                writeFrameCommand(HerdrFrameCommand.scroll(up: lines > 0, lines: Int(clamping: lines.magnitude)))
-            } else if let transport = moshTransport, let control = moshControl {
+            if let transport = moshTransport, let control = moshControl {
                 // mosh+tmux: a mouse app (Claude Code etc.) gets a wheel forwarded
                 // over the mosh transport — tmux routes it to the app, which
                 // scrolls itself with no copy-mode (so typing keeps working). A
@@ -1865,14 +1127,10 @@ final class SessionHub {
         ///
         /// Same routing tree as ``scrollActiveTerminal(lines:)``, and the same
         /// `#{mouse_any_flag}` gate: a pane running a plain shell gets nothing,
-        /// because the report would land in its command line as text. herdr is
-        /// the one path with nothing to send — its frame protocol has no click
-        /// command, so a tap there still just focuses.
+        /// because the report would land in its command line as text.
         func clickActiveTerminal(col: Int, row: Int) {
             if let rust { rust.click(col: col, row: row); return }
-            if herdrFrameTarget != nil {
-                return
-            } else if let transport = moshTransport, let control = moshControl {
+            if let transport = moshTransport, let control = moshControl {
                 guard control.activePaneWantsMouse else { return }
                 // Leave copy-mode first if a scroll put us there, on the SAME
                 // channel so it's strictly ordered before the click (see
@@ -1888,8 +1146,8 @@ final class SessionHub {
                 // the app's negotiated protocol. clickLocal, NOT click — the
                 // mosh path wires coordinator.onClick to THIS method, and
                 // click() consults onClick first, so calling it from here is
-                // unbounded mutual recursion. Hit for real when a herdr frame
-                // channel failed to attach (herdrFrameTarget nil, no mosh
+                // unbounded mutual recursion. Hit for real when a channel
+                // failed to attach (no mosh
                 // sidecar, no tmux): one tap, 9000 frames, SIGSEGV.
                 coordinator.clickLocal(col: col, row: row)
             }
@@ -2098,7 +1356,7 @@ final class SessionHub {
             // (B169).
             heldInput = []
             // What the terminal runs is decided before it opens, and is its
-            // own program — tmux's control client, herdr's frame loop — never
+            // own program — tmux's control client — never
             // a line typed into the login shell (B267): a shell still
             // starting swallowed it (a startup that flushes pending input,
             // Powerlevel10k's instant prompt), and nothing attached.
@@ -2152,10 +1410,6 @@ final class SessionHub {
             if multiplexer != connection.multiplexer {
                 degrade = DegradeNotice.forMissing(connection.multiplexer)
             }
-            // herdr's frame loop takes this PTY over; nothing typed waits for
-            // a pane there (the pane that attaches may not be the one it was
-            // typed at — see sendInput's herdr branch).
-            if multiplexer == .herdr { discardHeldInput() }
             // No controller is coming: the plain pane paints on its own — and
             // a frame kept from a tmux attach before this reconnect has
             // nothing to wait for (left up, it froze the screen, B166). What
@@ -2214,21 +1468,6 @@ final class SessionHub {
                 armFirstFrameWait(for: controller)
                 controlPlaneWired(controller)
                 beginAttachTimeout(controller: controller)
-            } else if multiplexer == .herdr {
-                // Native single-pane rendering: this PTY carries herdr's frame
-                // protocol rather than herdr's own TUI, so the phone shows one
-                // full-width pane with Moshpit's chrome instead of a desktop
-                // sidebar eating a third of the screen.
-                //
-                // Control plane first — it supplies the pane id the frame
-                // channel targets, and its `onFocusedPaneChanged` is what
-                // starts the very first one.
-                startHerdrFrames(over: session)
-                startHerdrControlPlane(over: session)
-                // The frame channel owns this connection's PTY, so push rides
-                // a dedicated connection — same cost mosh mode already pays
-                // for its sidecar, and Phase 1's bridge collapses them all.
-                startHerdrPushUpgrade()
             } else {
                 let coordinator = self.coordinator
                 pumpTask = Task { [weak self] in
@@ -2243,1252 +1482,10 @@ final class SessionHub {
             }
         }
 
-        /// Start (or restart) herdr's snapshot poller over `ssh`. Safe to call
-        /// again — a live client is left alone rather than doubled up.
-        func startHerdrControlPlane(over ssh: SSHSession) {
-            guard herdrControl == nil else { return }
-            let client = HerdrControlClient(runner: ssh, customPath: connection.herdrPath)
-            // Follow the server's focus. The frame channel renders exactly one
-            // pane, so "which pane" is whatever herdr says is focused —
-            // whether that came from our own sheet, a keystroke inside the
-            // pane, or the user's laptop client.
-            client.onFocusedPaneChanged = { [weak self] paneId in
-                // SSH renders per-pane frames; mosh steers the raw-attach
-                // loop. Each is a no-op on the other transport.
-                self?.retargetHerdrFrames(to: paneId)
-                self?.retargetMoshRawAttach(to: paneId)
-            }
-            // The person picked the pane (ahead of the report above): what
-            // they type at it waits for its attach instead of being dropped.
-            client.onPanePicked = { [weak self] paneId in
-                self?.retargetHerdrFrames(to: paneId, user: true)
-                // mosh: a pick brings a stopped renderer back (on another
-                // device's pane, the person taking it back).
-                self?.retargetMoshRawAttach(to: paneId, user: true)
-            }
-            // Version skew (protocol_mismatch) reads as a banner, not as the
-            // "no server running" empty state — the server IS running, and
-            // the remedy (restart/upgrade herdr on the host) is the user's,
-            // offered as the banner's one-tap action.
-            client.onProtocolMismatch = { [weak self] message in
-                self?.offerHerdrServerRestart(message: message)
-            }
-            // The server answers again: a skew or failed-restart banner is
-            // stale, and its Restart would stop a healthy server (B408). Over
-            // SSH the next painted frame clears it; over mosh nothing would.
-            client.onServerAnswersAgain = { [weak self] in
-                guard let self, self.moshTransport != nil,
-                      self.herdrNoticeRemedy == .restartServer else { return }
-                self.herdrNotice = nil
-                self.herdrNoticeAction = nil
-                self.herdrNoticeRemedy = nil
-            }
-            client.start()
-            herdrControl = client
-            controlPlaneWired(client)
-        }
-
-        /// Put the skew notice up with its remedy attached. Never runs the
-        /// remedy itself — `server stop` exits pane processes, and only the
-        /// user knows whether what's in them survives a restart.
-        func offerHerdrServerRestart(message: String) {
-            // Already diagnosed: say it with versions, and offer the restart
-            // only when it would be an upgrade.
-            if let report = herdrControl?.versionSkew {
-                showHerdrSkew(report)
-                return
-            }
-            herdrNotice = message
-            // An OLDER client says so in the message itself — restarting with
-            // it would downgrade the server, so no button for that one.
-            herdrNoticeAction = HerdrSnapshot.clientIsOlder(message)
-                ? nil : String(localized: "Restart herdr server")
-            herdrNoticeRemedy = herdrNoticeAction == nil ? nil : .restartServer
-        }
-
-        /// Ask `herdr status` which side is behind, then replace `message`
-        /// with the answer — unless something else has taken the banner in
-        /// the meantime (a frame painted, a newer notice). If the versions
-        /// can't be read or agree, `message` stays up as it is.
-        func explainHerdrSkew(after message: String) {
-            guard let client = herdrControl else { return }
-            Task { [weak self] in
-                guard let report = await client.diagnoseVersionSkew(),
-                      let self, self.herdrNotice == message else { return }
-                self.showHerdrSkew(report)
-            }
-        }
-
-        /// The skew, in versions. Which side is older decides the remedy: a
-        /// stale client on PATH needs upgrading on the host (a restart would
-        /// downgrade the server), a stale server is what the restart fixes.
-        private func showHerdrSkew(_ report: HerdrVersionReport) {
-            herdrNotice = report.notice
-            herdrNoticeAction = report.clientIsOlder ? nil : String(localized: "Restart herdr server")
-            herdrNoticeRemedy = herdrNoticeAction == nil ? nil : .restartServer
-        }
-
-        /// The banner button's tap — restart the host's herdr server with the
-        /// binary our own commands resolve to (guaranteeing the protocol we
-        /// speak afterwards), then let the poller re-attach everything.
+        /// The herdr banner button's tap: the Rust core runs its remedy
+        /// (restart the server, "Open here", retry).
         func runHerdrNoticeAction() {
-            if let rust { rust.runHerdrNoticeAction(); return }
-            if herdrNoticeRemedy == .takeBack {
-                // "Open here" (the mosh renderer's take back, or the frame
-                // channel's): the notice goes once the pane is back.
-                herdrNoticeAction = nil
-                if herdrFrameSSH != nil {
-                    openHerdrFrameHere()
-                } else {
-                    takeBackMoshRenderer()
-                }
-                return
-            }
-            if herdrNoticeRemedy == .redial {
-                // The frame loop never said it reads: a fresh connection, and
-                // the channel's program with it (B267).
-                herdrNotice = nil
-                herdrNoticeAction = nil
-                herdrNoticeRemedy = nil
-                Task { [weak self] in await self?.connectionDropped(reason: "herdr-frame-loop-silent") }
-                return
-            }
-            guard herdrNoticeAction != nil, let client = herdrControl else { return }
-            herdrNoticeAction = nil
-            herdrNoticeRemedy = nil
-            herdrNotice = String(localized: "Restarting herdr server…")
-            Task { [weak self] in
-                let outcome = await client.restartServer()
-                guard let self else { return }
-                switch outcome {
-                case .restarted, .unneeded:
-                    self.herdrNotice = nil
-                    self.herdrRetryAfter = nil
-                    // Frame target was cleared by the fault; the next focus
-                    // poll re-asserts it against the fresh server.
-                    client.quicken()
-                case .wouldDowngrade(let report):
-                    self.showHerdrSkew(report)
-                case .failed:
-                    self.herdrNotice = String(
-                        localized: "Restart didn't take — on the host, run: herdr server stop && herdr")
-                    self.herdrNoticeAction = String(localized: "Retry")
-                    self.herdrNoticeRemedy = .restartServer
-                }
-            }
-        }
-
-        // MARK: - herdr frame channel
-
-        /// Render herdr natively, one pane at a time, instead of letting it
-        /// draw its own TUI.
-        ///
-        /// The channel is the session's PTY running
-        /// `herdr terminal session control`, which speaks newline-delimited
-        /// JSON: screen updates out, keystrokes / resizes / scrolls in. Only
-        /// the DECODED frame bytes reach the terminal view — the shell prompt
-        /// that appears between two targets, and any banner the login shell
-        /// prints, are parsed away and never painted.
-        ///
-        /// SSH only. mosh transmits rendered screen diffs, which destroy the
-        /// line framing this needs (the same reason tmux `-CC` can't ride it),
-        /// so mosh+herdr keeps running herdr's own TUI.
-        private func startHerdrFrames(over session: SSHSession) {
-            herdrFrameSSH = session
-            // A fresh PTY whose program is a fresh reader loop: whatever the
-            // previous channel ran died with it. It says it reads, or the
-            // watch below says it never did.
-            herdrChannelBooted = true
-            herdrLoopReady = false
-            herdrAttachWaitsForLoop = false
-            herdrAttach.reset()
-            armHerdrLoopWatch()
-            let coordinator = self.coordinator
-
-            // Keystrokes, size and scroll all become protocol messages now.
-            coordinator.onInput = { [weak self] data in self?.sendInput(data) }
-            coordinator.onSizeChange = { [weak self] cols, rows in
-                self?.resizeHerdrFrame(cols: cols, rows: rows)
-            }
-            coordinator.onScroll = { [weak self] lines in
-                self?.scrollActiveTerminal(lines: lines)
-            }
-
-            // One reader per PTY. Anything still pumping this session's
-            // stream would split it with the parser below — chunk by chunk,
-            // whoever asks first — so it stops here.
-            pumpTask?.cancel()
-            pumpTask = Task { [weak self] in
-                var parser = HerdrFrameParser()
-                for await chunk in session.dataStream {
-                    if Task.isCancelled { break }
-                    for frame in parser.consume(chunk) {
-                        switch frame {
-                        case .screen(_, _, _, let full, let bytes):
-                            await MainActor.run {
-                                self?.herdrFrame(bytes, full: full)
-                            }
-                        case .loopReady:
-                            await MainActor.run {
-                                guard let self else { return }
-                                self.herdrLoopReady = true
-                                self.herdrBootFallbackTask?.cancel()
-                                self.herdrBootFallbackTask = nil
-                                if self.herdrNoticeRemedy == .redial {
-                                    self.herdrNotice = nil
-                                    self.herdrNoticeAction = nil
-                                    self.herdrNoticeRemedy = nil
-                                }
-                                // The target asked for meanwhile: one word
-                                // to the loop now.
-                                if self.herdrAttachWaitsForLoop {
-                                    self.writeHerdrAttachLine()
-                                }
-                            }
-                        case .closed(let reason):
-                            await MainActor.run {
-                                guard let self else { return }
-                                // What the attach the close ends was asked
-                                // for with, before the ledger forgets it.
-                                let wanted = self.herdrAttach.takeover
-                                let asked = self.herdrAttach.lineTookOver
-                                switch self.herdrAttach.closed(now: .now) {
-                                case .ownRelease:
-                                    // Our own release during a retarget — the
-                                    // new target is already set, leave it be.
-                                    // This is the moment the switch was
-                                    // waiting for: the old attach has let go
-                                    // of stdin, so the next target can be
-                                    // written without being swallowed by it.
-                                    self.herdrChannelFree()
-                                case .stray:
-                                    // Nothing of ours was attached.
-                                    break
-                                case .evicted(let pane):
-                                    // Somebody else took the pane, or it went
-                                    // away. Either way stop claiming to render
-                                    // it (the ledger has). Nothing held for it
-                                    // can reach it now.
-                                    self.settleDroppedHerdrInput(self.herdrAttach.dropHeld(), tell: true)
-                                    if HerdrFrame.isHeldElsewhere(reason) {
-                                        self.herdrPaneHeldElsewhere(pane, wanted: wanted, asked: asked)
-                                    } else {
-                                        // The pane closed (or a stale focus):
-                                        // the focused one, by itself — which
-                                        // rides the control poll, so don't let
-                                        // it wait out an idle interval.
-                                        self.herdrControl?.quicken()
-                                    }
-                                    // The full frame this retarget was veiling
-                                    // for is never coming — the attach is gone.
-                                    // Same principle as the cover's own safety
-                                    // timeout: an empty terminal (the switch
-                                    // wiped the buffer) beats a black rectangle
-                                    // sitting over a session that is now
-                                    // backing off for 30 seconds.
-                                    if self.herdrAwaitingFullFrame {
-                                        self.herdrAwaitingFullFrame = false
-                                        self.coordinator.reveal()
-                                    }
-                                }
-                            }
-                        case .fault(let message):
-                            await MainActor.run {
-                                guard let self else { return }
-                                // One line turned away, the attach alive and
-                                // still painting (B117): taken for a refusal,
-                                // the pane was dropped and every attach held
-                                // off for 30 s, typing dropped meanwhile.
-                                if HerdrFrame.isInputIgnored(message) {
-                                    Log.ssh.info("herdr: a line was turned away, the attach goes on: \(message, privacy: .public)")
-                                    return
-                                }
-                                // herdr refused the attach and said why —
-                                // version skew is the live example. Show the
-                                // words, stop claiming the pane, and back off:
-                                // this doesn't heal until a human restarts the
-                                // server, so re-attaching every poll would
-                                // just harvest the same refusal forever.
-                                if HerdrSnapshot.looksLikeVersionSkew(message) {
-                                    self.offerHerdrServerRestart(message: message)
-                                } else {
-                                    self.herdrNotice = message
-                                    // A hang-up mid-handshake names no
-                                    // versions; ask which side is behind.
-                                    if HerdrFrame.isHandshakeDrop(message) {
-                                        self.explainHerdrSkew(after: message)
-                                    }
-                                }
-                                // A refusal ends the swap too — no pane is
-                                // named after it, whatever was waiting, and
-                                // nothing held reaches one.
-                                self.herdrAttach.refused()
-                                self.settleDroppedHerdrInput(self.herdrAttach.dropHeld(), tell: true)
-                                self.herdrReleaseAckTask?.cancel()
-                                self.herdrReleaseAckTask = nil
-                                self.herdrRetryAfter = Date()
-                                    .addingTimeInterval(Self.herdrRefusalBackoff)
-                                if self.herdrAwaitingFullFrame {
-                                    self.herdrAwaitingFullFrame = false
-                                    self.coordinator.reveal()
-                                }
-                            }
-                        }
-                    }
-                }
-                _ = self
-            }
-        }
-
-        /// Another device has `pane`: it took our attach over, or held the
-        /// pane when a follow's plain attach went for it. Said, with "Open
-        /// here", and never taken back without the person — not by the poll's
-        /// next report of the focus, not by a reply. It used to be asked for
-        /// again with `--takeover` on the next poll, three times in 30 s before
-        /// a backoff and "retrying shortly", then again: two devices fought
-        /// over the pane. `wanted`/`asked`: the person picked the pane while
-        /// a follow's plain attach for it was on its way, and that attach was
-        /// refused — theirs, asked again with `--takeover`.
-        private func herdrPaneHeldElsewhere(_ pane: String, wanted: Bool, asked: Bool) {
-            if wanted, !asked {
-                retargetHerdrFrames(to: pane, user: true)
-                return
-            }
-            Log.ssh.notice("herdr: \(pane, privacy: .public) is open on another device — left to it")
-            herdrHeldElsewhere = pane
-            herdrNotice = String(localized: "This pane is open on another device")
-            herdrNoticeAction = String(localized: "Open here")
-            herdrNoticeRemedy = .takeBack
-        }
-
-        /// "Open here" on the frame channel: the pane another device has,
-        /// taken from it (`--takeover`) — or, gone meanwhile, the focused one.
-        private func openHerdrFrameHere() {
-            guard let pane = herdrHeldElsewhere else { return }
-            if herdrFramePaneClosed(pane) {
-                herdrHeldElsewhere = nil
-                herdrNotice = nil
-                herdrNoticeRemedy = nil
-                herdrControl?.quicken()
-                return
-            }
-            retargetHerdrFrames(to: pane, user: true)
-        }
-
-        /// Whether the server, running and read since, no longer has `pane`.
-        private func herdrFramePaneClosed(_ pane: String) -> Bool {
-            guard let control = herdrControl, !control.serverNotRunning,
-                  !control.snapshot.panes.isEmpty else { return false }
-            return control.snapshot.panes[pane] == nil
-        }
-
-        /// Point the frame channel at a different pane.
-        ///
-        /// herdr's direct attach is exclusive per terminal and the channel is
-        /// one PTY, so a switch is necessarily: release the current attach,
-        /// wait for it to let go of stdin, ask for the new one. What used to
-        /// make that expensive was *how* the asking happened — a command line
-        /// typed at the remote login shell's prompt, which meant waiting out
-        /// a fixed 400ms settle and then the user's own prompt machinery.
-        /// Measured against a real herdr 0.8.0 over a local PTY: 545ms per
-        /// switch, of which ~500ms was ceremony.
-        ///
-        /// Both halves are gone. The settle is now the `terminal.closed` the
-        /// release itself produces (the actual event, not a guess at it), and
-        /// the asking is one word into the boot line's reader loop
-        /// (`HerdrFrameCommand.boot`) instead of a command at a prompt. Same
-        /// measurement: 40ms. What's left is the two round trips the protocol
-        /// genuinely costs.
-        ///
-        /// Called on every poll, not just on a focus change — see
-        /// `HerdrControlClient.onFocusedPaneChanged`. The equality guard makes
-        /// the repeat free, and the repeat is what recovers a channel that was
-        /// evicted by another client's `--takeover` (herdr's direct attach is
-        /// exclusive per terminal, so that can happen with the focus unchanged).
-        ///
-        /// One release at a time (B186): herdr answers releases written back
-        /// to back with ONE close, so a switch made while an earlier one's
-        /// release is still out writes none of its own and waits for that
-        /// same close (`HerdrAttachLedger`). A release per switch left the
-        /// count of closes we were owed one too high, and the next close
-        /// nobody asked for — a takeover, the pane closed — was taken for
-        /// it: the pane stayed "attached" with nothing reading but the loop's
-        /// `read`, the screen froze and typing went nowhere.
-        ///
-        /// `user`: the person picked the pane (`HerdrControlClient.onPanePicked`)
-        /// — what they type at it is held for its attach (`sendHerdrFrameInput`).
-        private func retargetHerdrFrames(to paneId: String, user: Bool = false) {
-            if let retryAfter = herdrRetryAfter {
-                guard Date() >= retryAfter else { return }
-                herdrRetryAfter = nil
-            }
-            guard herdrFrameSSH != nil else { return }
-            if let held = herdrHeldElsewhere {
-                // Another device has the pane: a poll never takes it back,
-                // nor moves on while the notice says so — the person settles
-                // it (a pick, "Open here"). Unless its pane is gone: then the
-                // focused one, by itself.
-                if !user, !herdrFramePaneClosed(held) { return }
-                herdrHeldElsewhere = nil
-                if herdrNoticeRemedy == .takeBack {
-                    herdrNotice = nil
-                    herdrNoticeAction = nil
-                    herdrNoticeRemedy = nil
-                }
-            }
-            // Normally free for the pane already on screen. It stops being
-            // free when the attach we asked for never painted anything — a
-            // target line the shell ate, a boot the host couldn't run —
-            // because then nothing else will ever ask again. Past the
-            // timeout, the poller's repeat IS the recovery.
-            guard herdrAttach.wantsAttach(paneId, now: .now) else {
-                // Picked while its attach is still coming up: typing at it
-                // waits for it, and the pane is theirs — taken over should a
-                // follow's plain attach for it be refused.
-                if user {
-                    herdrAttach.pick(paneId)
-                    if herdrAttach.heldPane == nil, herdrAttach.inputPane != paneId {
-                        holdHerdrInput(for: paneId, budget: Self.herdrHeldInputBudget)
-                    }
-                }
-                return
-            }
-            let hadTarget = herdrFrameTarget != nil
-            // Input held for another pane can't reach it now.
-            if herdrAttach.heldPane != paneId {
-                settleDroppedHerdrInput(herdrAttach.dropHeld(), tell: true)
-            }
-            if user { holdHerdrInput(for: paneId, budget: Self.herdrHeldInputBudget) }
-            // Cover the pane we're leaving for the length of the swap. The
-            // release, the reattach and herdr's repaint are all round trips,
-            // and until the last one lands the emulator still holds the
-            // PREVIOUS agent's screen — fully painted, indistinguishable from
-            // live. Same treatment tmux's selectPane gives the identical
-            // hazard: a clean veil reads as a transition, stale content reads
-            // as a bug.
-            //
-            // Only when there was a target to leave. The first attach of a
-            // session has nothing stale to hide, and veiling it would just
-            // delay the first paint.
-            if hadTarget {
-                coordinator.veilForSwitch()
-                // Wipe the buffer under the veil, don't just hide it. The
-                // cover is a promise about timing that the network can break —
-                // it has a safety timeout, the attach can be refused, another
-                // client can evict us mid-swap — and every one of those paths
-                // ends with the cover coming off. What it comes off ONTO is
-                // the whole question: the previous agent's screen, sitting
-                // under the new agent's breadcrumb, is the "上一个 agent 的画面"
-                // report. An empty screen for a beat is the honest version.
-                coordinator.discardScrollHold()
-                coordinator.feed(data: Self.herdrClearScreen)
-                coordinator.extendCoverTimeout(by: herdrCoverGrace())
-                herdrAwaitingFullFrame = true
-            }
-            // Typing waits for the pane's attach to be up (see
-            // `sendHerdrFrameInput`) — a re-ask of the same pane included.
-            // `--takeover` only on the person's word (`user`): following the
-            // focus attaches plainly, and herdr refuses that while another
-            // client holds the terminal.
-            switch herdrAttach.retarget(to: paneId, takeover: user, now: .now) {
-            case .release:
-                // Whoever reads stdin next — the reader loop or the login
-                // shell — only gets to read it once the attach that owns it
-                // has exited. Anything written before that is consumed by the
-                // dying client and lost (verified: pipelining the next target
-                // with the release drops it every time). The close IS that
-                // moment (`herdrChannelFree`); the timeout is only for a
-                // channel that has stopped answering at all.
-                writeFrameCommand(HerdrFrameCommand.release)
-                // The ack window opens once the release is actually out, not
-                // merely queued: the lane may still be busy with an arrow
-                // key's exec, and a window that expires before the release
-                // even leaves would pipeline the target right behind it — the
-                // shape that loses the target.
-                let lane = herdrWriteLane
-                lane.enqueue { [weak self, weak lane] in
-                    guard let lane else { return }
-                    self?.armHerdrReleaseAck(on: lane)
-                }
-            case .awaitClose:
-                // A release is out already, for a switch this one overtook:
-                // its close frees the channel for this pane too.
-                break
-            case .attach:
-                writeHerdrAttachLine()
-            }
-        }
-
-        /// Start the release's wait, now that it has left the lane — unless
-        /// its close is back already, or the channel it was written to is
-        /// gone (`lane` is replaced with the channel).
-        private func armHerdrReleaseAck(on lane: WriteLane) {
-            guard lane === herdrWriteLane, herdrAttach.releasing != nil else { return }
-            herdrReleaseAckTask?.cancel()
-            herdrReleaseAckTask = Task { [weak self] in
-                try? await Task.sleep(for: Self.herdrReleaseAckTimeout)
-                guard let self, !Task.isCancelled, lane === herdrWriteLane else { return }
-                herdrReleaseAckTask = nil
-                herdrAttach.releaseAckTimedOut()
-                herdrChannelFree()
-            }
-        }
-
-        /// The attach being released has let go (its close came back), or
-        /// stopped being waited for: name the pane the switch is for.
-        private func herdrChannelFree() {
-            herdrReleaseAckTask?.cancel()
-            herdrReleaseAckTask = nil
-            guard herdrAttach.pending != nil else { return }
-            writeHerdrAttachLine()
-        }
-
-        /// Name the switch's pane: one word to the reader loop, the channel's
-        /// own program. Its attach reads whatever is written from here on.
-        /// Before the loop says it reads, the line waits for it: written
-        /// earlier it would reach the loop before its `read`, or nothing.
-        ///
-        /// Nothing here is ever typed into a login shell (B267). The loop was
-        /// a boot line typed into the channel's interactive login shell, and
-        /// where it didn't answer a one-shot `terminal session control` line
-        /// was typed after it: a shell still starting swallowed them (a
-        /// startup that flushes pending input, Powerlevel10k's instant
-        /// prompt), or chewed on them (oh-my-zsh with autosuggestions and
-        /// syntax highlighting, B266 on the core) — a blank terminal for good.
-        private func writeHerdrAttachLine() {
-            guard herdrLoopReady else {
-                herdrAttachWaitsForLoop = herdrAttach.pending != nil
-                return
-            }
-            herdrAttachWaitsForLoop = false
-            guard let paneId = herdrAttach.attachLineWritten() else { return }
-            // No parser reset needed: a truncated line from the old target
-            // fails to parse and is dropped, and the new target opens with
-            // a full repaint — so at worst one dead line is skipped.
-            let grid = coordinator.lastReportedSize ?? Self.estimateGrid(fontSize: lastFontSize)
-            herdrLineGrid = grid
-            let takeover = herdrAttach.lineTookOver
-            writeFrameCommand(HerdrFrameCommand.retarget(
-                target: paneId, cols: grid.cols, rows: grid.rows, takeover: takeover))
-            armHerdrAttachWatch()
-        }
-
-        /// Ask the server's focus again just past the attach timeout, so an
-        /// attach that never paints is asked for again then (B187).
-        private func armHerdrAttachWatch() {
-            herdrAttachWatchTask?.cancel()
-            herdrAttachWatchTask = Task { [weak self] in
-                try? await Task.sleep(for: HerdrAttachLedger.attachTimeout + .milliseconds(100))
-                guard let self, !Task.isCancelled else { return }
-                herdrAttachWatchTask = nil
-                guard herdrFrameTarget != nil, !herdrAttach.painted else { return }
-                herdrControl?.quicken()
-            }
-        }
-
-        /// A frame off the channel, given to the attach that printed it.
-        ///
-        /// Until its close comes back, the attach being released still
-        /// prints, and its frames are the pane being LEFT's: fed, they
-        /// painted that pane back into the buffer wiped for the new one, and
-        /// counted as the new pane's paint — so when its attach line was then
-        /// lost, the poll's repeated focus report never asked for it again
-        /// (it re-asks only an attach that never painted) and the pane stayed
-        /// blank until the next switch (B187). They are dropped; the pane
-        /// gets a full repaint whenever it is attached again.
-        private func herdrFrame(_ bytes: Data, full: Bool) {
-            let first: Bool
-            switch herdrAttach.frame() {
-            case .releasing:
-                return
-            case .stray:
-                // Nothing of ours asked for: painted as it comes, counted as
-                // nobody's paint.
-                coordinator.feed(data: bytes)
-                return
-            case .target(let isFirst):
-                first = isFirst
-            }
-            // Frames are ready-to-write escape sequences, and a `full` one
-            // already starts with its own clear + home — so both kinds just
-            // get fed.
-            coordinator.feed(data: bytes)
-            // Painting again means we hold the channel, so any contention
-            // warning is stale.
-            if herdrNotice != nil { herdrNotice = nil }
-            if herdrNoticeAction != nil { herdrNoticeAction = nil }
-            herdrNoticeRemedy = nil
-            if first {
-                herdrAttachWatchTask?.cancel()
-                herdrAttachWatchTask = nil
-                // The attach is up and reading: input can go — its size first,
-                // if it moved since its line, then what was held for it.
-                if let paneId = herdrAttach.inputPane {
-                    if let size = coordinator.lastReportedSize, let line = herdrLineGrid,
-                       size.cols != line.cols || size.rows != line.rows {
-                        herdrLineGrid = size
-                        writeFrameCommand(HerdrFrameCommand.resize(cols: size.cols, rows: size.rows))
-                    }
-                    flushHeldHerdrInput(to: paneId)
-                }
-            }
-            // A retarget's veil lifts on the first full repaint — the frame
-            // we just fed IS the new pane's screen, so there is nothing stale
-            // left to hide once it is drawn (the core's view draws it a hop
-            // later: the reveal follows the frame's bytes).
-            if full, herdrAwaitingFullFrame {
-                herdrAwaitingFullFrame = false
-                if let asked = herdrAttach.askedAt {
-                    let cost = (ContinuousClock.now - asked).components
-                    herdrLastSwitch = Double(cost.seconds) + Double(cost.attoseconds) / 1e18
-                }
-                coordinator.revealWhenShown()
-            }
-        }
-
-        /// How long the switch veil may stay up before its safety timeout
-        /// lifts it, scaled off the last switch we actually measured rather
-        /// than a fixed guess. A fixed 1.6s was both too long (a fast link
-        /// stares at a black rectangle long after the pane is ready) and, on
-        /// a bad one, too short — and the cover lifting early was itself the
-        /// stale-screen report. Floored so the first switch has room,
-        /// ceilinged so a dead channel can't pin the veil up.
-        private func herdrCoverGrace() -> TimeInterval {
-            min(max(0.8, herdrLastSwitch * 2 + 0.4), 6.0)
-        }
-
-        /// The channel's program is the reader loop; if it never says it
-        /// reads, nothing on the channel will ever paint. Said — "Not
-        /// attached to the pane yet", with a Retry that redials for a fresh
-        /// connection and loop — never a silent blank terminal, and never a
-        /// line typed anywhere (the one-shot fallback this replaced typed
-        /// into a login shell that may still have been starting, B267).
-        private func armHerdrLoopWatch() {
-            herdrBootFallbackTask?.cancel()
-            herdrBootFallbackTask = Task { [weak self] in
-                try? await Task.sleep(for: Self.herdrLoopProbe)
-                guard let self, !Task.isCancelled, herdrFrameSSH != nil,
-                      !herdrLoopReady, !herdrAttach.painted else { return }
-                herdrBootFallbackTask = nil
-                Log.ssh.error("herdr: the frame loop never said it reads")
-                herdrNotice = String(localized: "Not attached to the pane yet — input wasn't sent")
-                herdrNoticeAction = String(localized: "Retry")
-                herdrNoticeRemedy = .redial
-            }
-        }
-
-        /// The terminal's grid moved: tell the attach that is up. Before it is
-        /// up, a resize reaches the pane being left, the loop's `read`, or an
-        /// attach that drops it; the attach line carries the grid of its
-        /// moment, and a grid that moved after it follows its first frame.
-        private func resizeHerdrFrame(cols: Int, rows: Int) {
-            guard herdrAttach.inputPane != nil else { return }
-            herdrLineGrid = (cols, rows)
-            writeFrameCommand(HerdrFrameCommand.resize(cols: cols, rows: rows))
-        }
-
-        /// Write one protocol line into the frame channel, queued so writes
-        /// can't reorder (see `herdrWriteLane`).
-        private func writeFrameCommand(_ line: String) {
-            guard let ssh = herdrFrameSSH else { return }
-            herdrWriteLane.enqueue {
-                try? await ssh.write(Data((line + "\n").utf8))
-            }
-        }
-
-        /// mosh+herdr: open a lightweight SSH connection just for the control
-        /// plane. Cheaper than tmux's equivalent — no PTY, no control mode,
-        /// just an exec channel per poll.
-        ///
-        /// Host keys: same reasoning as `startMoshControlPlane` — this dials
-        /// the host the mosh bootstrap already authenticated, so the trust
-        /// decision is cached and neither TOFU handler fires. Left at
-        /// `connect()`'s deny-by-default so that if that ever stops being true
-        /// we lose the breadcrumb rather than silently trusting a new key.
-        private func startHerdrSidecar() async {
-            guard herdrControl == nil else { return }
-            guard let ssh = try? await sidecarConnect(connection) else { return }
-            guard !isStopping else { await ssh.close(); return }
-            sidecarSSH = ssh
-            startHerdrControlPlane(over: ssh)
-            if herdrRawAttach {
-                // The renderer is a raw-attach loop showing exactly one pane;
-                // focus changes steer it through `retargetMoshRawAttach`
-                // (wired via onFocusedPaneChanged, which apply() repeats on
-                // every poll — the last-target guard makes repeats free).
-                // Nothing server-shared changes: no zoom, no TUI chrome.
-            } else {
-                // Old herdr (no `terminal attach`): mosh renders the full
-                // TUI, one shared screen — so "one pane, full-screen" is
-                // produced server-side, mirroring mosh+tmux's immersive
-                // zoom. Shared-state tradeoff documented on `immersiveZoom`.
-                herdrControl?.immersiveZoom = true
-                herdrControl?.requestImmersiveZoom()
-            }
-            startHerdrPushUpgrade()
-        }
-
-        /// Steer the mosh raw-attach loop at a pane's terminal. Idempotent by
-        /// design: apply() re-reports the focused pane on every poll (the
-        /// takeover-recovery pattern), so this compares against the last
-        /// target it wrote and only pays the exec — and the reattach flicker —
-        /// on a real change.
-        ///
-        /// `user`: the person picked the pane (a tap, a reply for it). While
-        /// the loop is down only that brings it back: a focus report never
-        /// takes a pane back from the device that took it over, nor retries
-        /// what herdr refused — and the one the poll repeats for a pane that
-        /// just closed is old news. A pick of the very pane another device
-        /// took is the person taking it back.
-        ///
-        /// `takeover` (the person's pick unless said otherwise): the attach
-        /// takes the pane from whichever client holds it. Following the focus
-        /// — the poll's report, the focused pane after a close or a restart,
-        /// the loop booted again — never does: it used to (the loop always
-        /// ran `--takeover`), and a second device lost its pane whenever this
-        /// one followed the focus onto it. A follow that finds the pane held
-        /// is said as a takeover is ("This pane is open on another device",
-        /// "Open here").
-        func retargetMoshRawAttach(to paneId: String, user: Bool = false, takeover: Bool? = nil) {
-            guard herdrRawAttach, moshTransport != nil, moshRendererKey != nil else { return }
-            guard let terminalId = herdrControl?.terminalIds[paneId] else { return }
-            let takeover = takeover ?? user
-            var again = false
-            switch moshRendererStop {
-            case .takenOver(let stopped), .refused(let stopped):
-                // Not a `where` on the case: with two patterns it guards the
-                // last one only, and every report of a pane another device
-                // had taken went down this branch — the stop read as gone,
-                // its notice cleared, the next report of another pane
-                // attached there, and the person's take back did nothing.
-                if !user, moshRendererPaneClosed(stopped) {
-                    // Its pane closed since another device took it (or
-                    // herdr refused it): gone, and the focused pane next,
-                    // by itself.
-                    moshRendererStop = .gone(stopped)
-                    if moshRawAttachTarget == stopped { moshRawAttachTarget = nil }
-                    if herdrNoticeRemedy == .takeBack {
-                        herdrNotice = nil
-                        herdrNoticeAction = nil
-                        herdrNoticeRemedy = nil
-                    }
-                    if terminalId == stopped { return }
-                } else {
-                    guard user else { return }
-                    again = stopped == terminalId
-                }
-            case .loopGone:
-                // Nothing to point: the loop comes back on the person's tap.
-                return
-            case .gone(let closed):
-                if !user, closed == terminalId { return }
-            case nil:
-                break
-            }
-            if !user, terminalId == moshRendererMissingTerminal { return }
-            if again {
-                // The same pane, wanted again: not "already showing it".
-                moshRawAttachTarget = nil
-                moshRawAttachApplied = nil
-            }
-            if terminalId == moshRawAttachTarget {
-                // The person chose the pane a follow is on its way to: theirs
-                // now — asked again with `--takeover` unless the follow has it
-                // on screen already (that step finds nothing to do then).
-                if takeover, !moshRawAttachTakeover {
-                    moshRawAttachTakeover = true
-                    if moshRawAttachApplied != terminalId, sidecarSSH != nil {
-                        moshRetargetLane.enqueue { [weak self] in await self?.applyMoshRawAttachTarget() }
-                    }
-                }
-                return
-            }
-            // Nothing can point the loop anywhere without the sidecar, so
-            // nothing is recorded: a target with no exec behind it would read
-            // as a switch under way (`moshHerdrSwitching`) for good — typing
-            // dropped — and as already asked for by the poll's next report.
-            guard sidecarSSH != nil else { return }
-            let hadTarget = moshRawAttachTarget != nil
-            // From here until the exec below has landed, typing is dropped
-            // rather than sent into the pane being left (`moshHerdrSwitching`).
-            moshRawAttachTarget = terminalId
-            moshRawAttachTakeover = takeover
-            // Cover the pane we're leaving, same reason the SSH frame channel
-            // does — the exec channel, the kill, the re-attach and the repaint
-            // are all round trips, and until the last one lands the screen is
-            // still the PREVIOUS agent's, fully painted.
-            //
-            // The veil is ALL we may do here. The SSH path also wipes the
-            // emulator's buffer underneath, which over mosh would be
-            // corruption: mosh diffs against its own model of this screen and
-            // never resends a cell it believes unchanged, so cells we clear
-            // behind its back stay clear forever. A UIView on top touches no
-            // cells and is invisible to that model.
-            if hadTarget {
-                coordinator.veilForSwitch()
-                beginMoshSwitchCover()
-            }
-            // One exec at a time, and the one that runs points the loop at
-            // whatever is wanted WHEN ITS TURN COMES. These used to be a Task
-            // each: two quick switches were two execs racing, and when the
-            // first landed second the loop stayed on the older pane while the
-            // guard above believed the newer one was up — so the poll's
-            // repeat of the focus could never correct it.
-            moshRetargetLane.enqueue { [weak self] in await self?.applyMoshRawAttachTarget() }
-        }
-
-        /// Point the loop at `moshRawAttachTarget` — the newest target asked
-        /// for, not the one current when this step was queued — unless an
-        /// exec already did.
-        private func applyMoshRawAttachTarget() async {
-            guard let terminalId = moshRawAttachTarget, terminalId != moshRawAttachApplied else { return }
-            if let ssh = sidecarSSH, let rendererKey = moshRendererKey, moshRendererBootedKey != rendererKey {
-                // The loop is confirmed before it is first given a target —
-                // a target published for a loop that hasn't started would be
-                // taken up the moment it does, before a copy of its line
-                // typed since has reached the tty for its first read to take
-                // away.
-                guard await confirmMoshRendererBoot(key: rendererKey, over: ssh) else {
-                    guard moshRendererKey == rendererKey else { return }
-                    // Never started: the switch waiting on it is over, and the
-                    // loop is said gone — booted again on the person's word.
-                    moshRawAttachTarget = nil
-                    moshRawAttachApplied = nil
-                    endMoshSwitchCover()
-                    moshRendererStopped(.loopGone)
-                    return
-                }
-                // Asked for meanwhile: the newest target, as ever.
-                await applyMoshRawAttachTarget()
-                return
-            }
-            guard let ssh = sidecarSSH, let rendererKey = moshRendererKey else {
-                // The sidecar went (a rebuild under way) after this was
-                // queued. Forget the target, as a failed exec does, so the
-                // poll's next report asks again — and the switch ends here
-                // rather than holding typing for an exec that never runs.
-                moshRawAttachTarget = nil
-                return
-            }
-            let command = HerdrLaunch.retargetCommand(terminalId: terminalId, rendererKey: rendererKey,
-                                                      customPath: connection.herdrPath,
-                                                      takeover: moshRawAttachTakeover)
-            let deadline = ContinuousClock.now + Self.moshRetargetBudget
-            var landed = false
-            var output: Data?
-            let finished = await WriteLane.wait(atMost: Self.moshRetargetBudget) { [weak self] in
-                // Landed on the host's word that the loop came round to the
-                // target, never on the exec merely coming back (B208): the
-                // write and the kill succeed just the same when the loop is
-                // gone — evicted by another client's takeover, its pane
-                // closed — and mosh then shows a bare login shell, where a
-                // reply "sent to the pane" ran as a command line.
-                output = try? await ssh.executeCommand(command)
-                landed = output.map(HerdrLaunch.retargetLanded) ?? false
-                // Landed after the lane gave up on it: a newer switch may have
-                // run in the meantime, and this one just wrote over it. Point
-                // the loop at whatever is wanted now, once more.
-                guard landed, ContinuousClock.now >= deadline, let self else { return }
-                moshRawAttachApplied = nil
-                moshRetargetLane.enqueue { [weak self] in await self?.applyMoshRawAttachTarget() }
-            }
-            if finished, landed {
-                moshRawAttachApplied = terminalId
-                // The veil's switch landed — unless a newer one is queued,
-                // whose landing is the one that counts.
-                if moshRawAttachTarget == terminalId { moshSwitchCover?.landed(at: Date()) }
-                moshRendererLanded()
-                return
-            }
-            if finished, let output, HerdrLaunch.retargetMissing(output) {
-                moshRendererMissing(terminalId)
-                return
-            }
-            if finished, let output, let stop = HerdrLaunch.rendererStop(output), case .parked = stop {
-                // A follow's plain attach that herdr refused — another
-                // client holds the pane — and the loop parked on it: said as
-                // the watch says a takeover, taken by nobody but the person.
-                // (Unless the person picked it meanwhile: their step is
-                // queued behind this one, with `--takeover`.)
-                moshRendererStopped(stop)
-                return
-            }
-            // Failed, or still out: what the loop shows is unknown. Unless a
-            // newer target is already queued, forget this one too, so the
-            // poll's next report of the same focus asks again rather than
-            // being taken for the screen that is up.
-            moshRawAttachApplied = nil
-            if moshRawAttachTarget == terminalId {
-                moshRawAttachTarget = nil
-                // The switch is over without a pane to show: no repaint is
-                // coming to lift the veil.
-                endMoshSwitchCover()
-            }
-            // No loop came round because there is none: said, and brought
-            // back on the person's tap.
-            if finished, let output, HerdrLaunch.rendererStop(output) == .loopGone {
-                moshRendererStopped(.loopGone)
-            }
-        }
-
-        /// Whether the loop of generation `key` runs, asked over the sidecar;
-        /// its start line typed again while it doesn't — ^U first, as the
-        /// mosh+tmux attach line is (kill-line clears a half-swallowed line) —
-        /// at most ``moshRendererBootLines`` copies in all. A login shell still
-        /// starting can swallow a line typed into it (Powerlevel10k's instant
-        /// prompt flushes pending input; a startup file reads stdin), and the
-        /// loop never started: the first switch said the loop was gone after
-        /// 2 s and only the person's Retry typed the line again. Each copy is
-        /// acknowledged by mosh-server before the loop is asked about again,
-        /// and no target is published before the loop is seen running: a copy
-        /// that came behind a loop that did start is then in the tty when the
-        /// loop's first attach reads the tty away (B170's hazard for the tmux
-        /// attach line).
-        private func confirmMoshRendererBoot(key: String, over ssh: SSHSession) async -> Bool {
-            let check = HerdrLaunch.rawAttachLoopUpCommand(rendererKey: key)
-            for copy in 1...Self.moshRendererBootLines {
-                if copy > 1 {
-                    guard let transport = moshTransport, moshRendererKey == key else { return false }
-                    Log.ssh.notice("herdr: the mosh renderer's start line went unanswered — typed again (\(copy, privacy: .public))")
-                    let line = "\u{15}" + HerdrLaunch.rawAttachLoopCommand(rendererKey: key,
-                                                                          customPath: connection.herdrPath) + "\r"
-                    moshWriteLane.enqueue { _ = await transport.send(Data(line.utf8)) }
-                    await moshWriteLane.drain()
-                    _ = await withTimeoutValue(moshRendererRetypeAckWait) { await transport.waitUntilDelivered() }
-                }
-                let output = await withTimeoutValue(5) { try await ssh.executeCommand(check) }
-                guard moshRendererKey == key, !isStopping else { return false }
-                if let output, HerdrLaunch.loopUp(output) {
-                    moshRendererBootedKey = key
-                    return true
-                }
-            }
-            Log.ssh.notice("herdr: the mosh renderer's start line never started its loop")
-            return false
-        }
-
-        /// The server no longer lists `terminalId` — its pane closed since the
-        /// app's last read, a reply's agent is gone. The retarget refused it
-        /// before touching the loop, so what was on screen still is: the
-        /// switch is over, its veil comes down, the tree is read again, and
-        /// the poll's stale report of the closed pane isn't followed. (It used
-        /// to count as landed the moment the next attach had its pid, ~350 ms
-        /// before herdr refused that attach: typing for the pane went to an
-        /// attach on its way out, and the renderer was down.)
-        private func moshRendererMissing(_ terminalId: String) {
-            Log.ssh.notice("herdr: \(terminalId, privacy: .public) is gone — the mosh renderer stays where it was")
-            moshRendererMissingTerminal = terminalId
-            if moshRawAttachTarget == terminalId { moshRawAttachTarget = moshRawAttachApplied }
-            endMoshSwitchCover()
-            herdrControl?.quicken()
-        }
-
-        /// Takes the switch veil down now: no switch is coming to paint under it.
-        private func endMoshSwitchCover() {
-            guard moshSwitchCoverTask != nil else { return }
-            moshSwitchCoverTask?.cancel()
-            moshSwitchCoverTask = nil
-            moshSwitchCover = nil
-            coordinator.reveal()
-        }
-
-        /// The loop came round to the pane asked for: whatever stopped it is
-        /// over, and the watch goes on the attach it is on now.
-        private func moshRendererLanded() {
-            moshRendererEpoch &+= 1
-            moshRendererStop = nil
-            if herdrNoticeRemedy == .takeBack {
-                herdrNotice = nil
-                herdrNoticeAction = nil
-                herdrNoticeRemedy = nil
-            }
-            armMoshRendererWatch()
-        }
-
-        /// Watch the loop on the attach of the latest landing
-        /// (`HerdrLaunch.rawAttachWatchCommand`) until it stops showing it:
-        /// another device took the pane, the pane closed, herdr stopped. One
-        /// exec at a time, each a minute at most; whatever the sidecar is
-        /// now (a rebuild replaces it). A watch armed for an earlier landing
-        /// says nothing.
-        private func armMoshRendererWatch() {
-            moshRendererWatchTask?.cancel()
-            guard herdrRawAttach, let rendererKey = moshRendererKey else { return }
-            let epoch = moshRendererEpoch
-            let command = HerdrLaunch.rawAttachWatchCommand(rendererKey: rendererKey)
-            moshRendererWatchTask = Task { [weak self] in
-                var failures = 0
-                while !Task.isCancelled {
-                    guard let self, moshRendererEpoch == epoch else { return }
-                    guard let ssh = sidecarSSH else {
-                        try? await Task.sleep(for: .seconds(1))
-                        continue
-                    }
-                    let output = try? await ssh.executeCommand(command)
-                    guard !Task.isCancelled, moshRendererEpoch == epoch else { return }
-                    guard let output else {
-                        // The sidecar is in trouble; its rebuild comes with
-                        // the keepalive. Look again in a while.
-                        failures += 1
-                        try? await Task.sleep(for: .seconds(min(2 * failures, 10)))
-                        continue
-                    }
-                    failures = 0
-                    if let stop = HerdrLaunch.rendererStop(output) {
-                        moshRendererStopped(stop)
-                        return
-                    }
-                    // A minute with nothing to say, or a switch moved the
-                    // loop on (its landing arms the next watch): again.
-                }
-            }
-        }
-
-        /// The loop stopped showing its pane. Typing is dropped from now on
-        /// (`moshRendererDown`), and who brings it back depends on why:
-        /// another device took the pane → said, with a take back for the
-        /// person; the pane closed or herdr stopped or restarted → the focused
-        /// pane, by itself; anything else herdr refused, or the loop gone →
-        /// said, retried on the person's tap.
-        private func moshRendererStopped(_ stop: HerdrLaunch.RendererStop) {
-            guard herdrRawAttach, moshTransport != nil else { return }
-            moshRendererWatchTask?.cancel()
-            moshRendererWatchTask = nil
-            // Nothing is coming to paint under a veil that is up.
-            endMoshSwitchCover()
-            switch stop {
-            case .loopGone:
-                Log.ssh.notice("herdr: the mosh renderer's loop is gone")
-                moshRawAttachApplied = nil
-                moshRendererStop = .loopGone
-                sayMoshRendererDown(String(localized: "Not attached to the pane yet — input wasn't sent"),
-                                    action: String(localized: "Retry"))
-            case .parked(let status, let terminal, let said):
-                let listed = herdrControl?.terminalIds.values.contains(terminal) ?? false
-                let serverUp = herdrControl.map { !$0.serverNotRunning } ?? false
-                let kind = HerdrLaunch.rendererStopKind(status: status, said: said,
-                                                        terminalListed: listed, serverUp: serverUp)
-                Log.ssh.notice("herdr: the mosh renderer stopped (\(status, privacy: .public)): \(said, privacy: .public)")
-                if moshRawAttachApplied == terminal { moshRawAttachApplied = nil }
-                switch kind {
-                case .takenOver:
-                    moshRendererStop = .takenOver(terminal)
-                    sayMoshRendererDown(String(localized: "This pane is open on another device"),
-                                        action: String(localized: "Open here"))
-                case .refused:
-                    moshRendererStop = .refused(terminal)
-                    sayMoshRendererDown(said.isEmpty
-                                        ? String(localized: "Not attached to the pane yet — input wasn't sent")
-                                        : said,
-                                        action: String(localized: "Retry"))
-                case .gone:
-                    moshRendererStop = .gone(terminal)
-                    if moshRawAttachTarget == terminal { moshRawAttachTarget = nil }
-                    // Whatever said the other two is stale now.
-                    if herdrNoticeRemedy == .takeBack {
-                        herdrNotice = nil
-                        herdrNoticeAction = nil
-                        herdrNoticeRemedy = nil
-                    }
-                    // The focused pane, by itself — not this one again: a
-                    // poll's report of it predates its closing.
-                    if let pane = herdrControl?.snapshot.activePaneId {
-                        retargetMoshRawAttach(to: pane)
-                    }
-                    herdrControl?.quicken()
-                }
-            }
-        }
-
-        private func sayMoshRendererDown(_ notice: String, action: String) {
-            herdrNotice = notice
-            herdrNoticeAction = action
-            herdrNoticeRemedy = .takeBack
-        }
-
-        /// Whether the server, up and read since, no longer lists `terminal`.
-        private func moshRendererPaneClosed(_ terminal: String) -> Bool {
-            guard let control = herdrControl, !control.serverNotRunning,
-                  !control.terminalIds.isEmpty else { return false }
-            return !control.terminalIds.values.contains(terminal)
-        }
-
-        /// The notice's take back: the pane the loop stopped on, taken over
-        /// from whoever has it (`--takeover`), or the loop booted again.
-        private func takeBackMoshRenderer() {
-            switch moshRendererStop {
-            case .takenOver(let terminal), .refused(let terminal):
-                guard let pane = herdrControl?.terminalIds.first(where: { $0.value == terminal })?.key else {
-                    // Its pane is gone meanwhile: the focused one.
-                    moshRendererStop = .gone(terminal)
-                    if let pane = herdrControl?.snapshot.activePaneId { retargetMoshRawAttach(to: pane) }
-                    herdrControl?.quicken()
-                    return
-                }
-                retargetMoshRawAttach(to: pane, user: true)
-            case .loopGone:
-                rebootMoshRenderer()
-            case .gone, nil:
-                break
-            }
-        }
-
-        /// The loop is gone and the login shell has the tty: boot a new one
-        /// (a new generation, as at connect), then point it at the focused
-        /// pane. A leading ^U clears whatever half a line the shell holds.
-        private func rebootMoshRenderer() {
-            guard herdrRawAttach, let transport = moshTransport else { return }
-            // A loop that never started keeps its generation: a copy of its
-            // line still waiting in a slow shell runs the same one, never a
-            // loop nobody steers in front of the new one.
-            var key = moshRendererKey ?? ""
-            if key.isEmpty || moshRendererBootedKey == key {
-                key = HerdrLaunch.moshRendererKey(connectionId: connection.id,
-                                                  nonce: String(UUID().uuidString.prefix(8)))
-            }
-            moshRendererKey = key
-            moshRendererStop = nil
-            moshRawAttachTarget = nil
-            moshRawAttachApplied = nil
-            moshRetargetLane = WriteLane()
-            let boot = "\u{15}" + HerdrLaunch.rawAttachLoopCommand(rendererKey: key, customPath: connection.herdrPath) + "\r"
-            moshWriteLane.enqueue { _ = await transport.send(Data(boot.utf8)) }
-            // The focused pane, on the person's word but not their pick of
-            // it: a plain attach — held by another device, it says so.
-            if let pane = herdrControl?.snapshot.activePaneId {
-                retargetMoshRawAttach(to: pane, user: true, takeover: false)
-            }
-        }
-
-        /// Hold the switch veil until the new pane has finished painting.
-        ///
-        /// There is no frame protocol here to say "this is the new screen" —
-        /// mosh ships screen diffs, not messages — so the signal is the
-        /// repaint itself: the re-attach redraws the whole pane, and the veil
-        /// lifts once those bytes stop arriving. Capped, because a pane that
-        /// paints nothing at all (a dead shell, a lost attach) must not leave
-        /// a rectangle sitting over the session.
-        ///
-        /// Only bytes from the switch's landing on count (`MoshSwitchCover`):
-        /// the first to come after the kill used to be the loop's own "Killed:
-        /// 9" or the pane being left, and the veil lifted on the previous
-        /// pane before herdr had repainted.
-        private func beginMoshSwitchCover() {
-            moshSwitchCover = MoshSwitchCover(since: Date())
-            moshSwitchCoverTask?.cancel()
-            coordinator.extendCoverTimeout(by: MoshSwitchCover.cap)
-            moshSwitchCoverTask = Task { [weak self] in
-                while !Task.isCancelled {
-                    try? await Task.sleep(for: .milliseconds(60))
-                    guard let self, !Task.isCancelled else { return }
-                    if moshSwitchCover?.lifts(at: Date()) ?? true { break }
-                }
-                guard let self, !Task.isCancelled else { return }
-                moshSwitchCoverTask = nil
-                moshSwitchCover = nil
-                coordinator.reveal()
-            }
-        }
-
-        /// Called from the mosh pump for every chunk while a switch veil is
-        /// up — the "still painting" heartbeat `beginMoshSwitchCover` waits on.
-        private func noteMoshPaint() {
-            guard moshSwitchCoverTask != nil else { return }
-            moshSwitchCover?.painted(at: Date())
-        }
-
-        /// Try to upgrade the herdr control plane from polling to push.
-        ///
-        /// Fire-and-forget and strictly additive: on any failure the poller
-        /// keeps its 2–8s cadence and nothing is surfaced — push is an
-        /// upgrade, not a dependency. Gated on the python3 probe only when
-        /// the probe has actually said no; the optimistic-unknown case costs
-        /// one subscribe timeout and then settles on polling.
-        private func startHerdrPushUpgrade() {
-            guard herdrPushTask == nil, herdrPush == nil else { return }
-            guard capabilities?.hasPython3 != false else { return }
-            herdrPushTask = Task { [weak self] in await self?.connectHerdrPush() }
-        }
-
-        private func connectHerdrPush() async {
-            guard let ssh = try? await sidecarConnect(connection) else { return }
-            guard !isStopping, herdrControl != nil else { await ssh.close(); return }
-            // The pump needs a PTY: Citadel's exec channels have no writable
-            // stdin (re-verified on 0.12.1 — `ExecCommandStream` is
-            // stdout/stderr only), and the PTY + `stty raw -echo` shape is
-            // the one the frame channel already proved out. The pump is the
-            // PTY's program, never a line typed into its login shell (B267).
-            do {
-                try await ssh.requestPTY(rows: 24, cols: 80, command: HerdrPushBoot.bootLine())
-            } catch {
-                Log.ssh.notice("push: the pump's channel didn't open — staying on the poll")
-                await ssh.close()
-                return
-            }
-            let driver = HerdrPushDriver(
-                write: { data in try await ssh.write(data) },
-                onInvalidate: { [weak self] in self?.herdrControl?.quicken() })
-            driver.onEnded = { [weak self, weak driver] in
-                guard let self, let driver else { return }
-                herdrPushEnded(driver)
-            }
-            herdrPushSSH = ssh
-            herdrPushPump = Task { [weak driver] in
-                for await chunk in ssh.dataStream {
-                    if Task.isCancelled { break }
-                    await driver?.feed(chunk)
-                }
-                // Teardown cancels this and shuts the driver down itself.
-                // Otherwise the transport is gone — a drop, or the pump
-                // exiting when the herdr server restarts — and the driver
-                // says whether push was up (`herdrPushEnded`). The poller
-                // underneath never stopped.
-                guard !Task.isCancelled else { return }
-                await driver?.transportEnded()
-            }
-            if await driver.activate() {
-                Log.ssh.notice("push: active — herdr events over a persistent channel")
-                herdrPush = driver
-                // The poll steps back to being a safety net now.
-                herdrControl?.pushActive = true
-                // Fold the subscribe's bootstrap replay into one fresh read.
-                herdrControl?.quicken()
-            } else {
-                Log.ssh.notice("push: unavailable — staying on the poll")
-                herdrPushPump?.cancel()
-                herdrPushPump = nil
-                herdrPushSSH = nil
-                await ssh.close()
-            }
-        }
-
-        /// Push that was up ended on its own (B188) — a herdr server restart
-        /// closes the socket under the pump, and the pump exits. The poll had
-        /// eased to its 45 s safety net with no events coming, and push was
-        /// never tried again: agent states and the tree lagged by up to 45 s
-        /// for the rest of the session. The poll takes over at its fast
-        /// cadence and reads now; push gets one more try a little later (a
-        /// try that doesn't come up stays on the poll, as at connect).
-        private func herdrPushEnded(_ driver: HerdrPushDriver) {
-            guard herdrPush === driver else { return }
-            Log.ssh.notice("push: ended — back on the poll")
-            herdrPush = nil
-            herdrPushPump = nil
-            herdrPushTask = nil
-            if let ssh = herdrPushSSH {
-                herdrPushSSH = nil
-                Task { await ssh.close() }
-            }
-            herdrControl?.pushActive = false
-            herdrControl?.quicken()
-            herdrPushRetryTask?.cancel()
-            let delay = herdrPushRetryDelay
-            herdrPushRetryTask = Task { [weak self] in
-                try? await Task.sleep(for: delay)
-                guard let self, !Task.isCancelled, !isStopping else { return }
-                herdrPushRetryTask = nil
-                startHerdrPushUpgrade()
-            }
+            rust?.runHerdrNoticeAction()
         }
 
         /// Probe (or read cached) host capabilities and publish them on the
@@ -3547,17 +1544,14 @@ final class SessionHub {
         }
 
         /// The SSH terminal's own program for `multiplexer` (nil: the login
-        /// shell): tmux's control client, or herdr's frame loop. Never a line
-        /// typed into a shell (B267).
+        /// shell): tmux's control client; herdr runs on the Rust core only
+        /// (E1). Never a line typed into a shell (B267).
         private func terminalProgram(for multiplexer: Multiplexer) -> String? {
             switch multiplexer {
-            case .none:
+            case .none, .herdr:
                 return nil
             case .tmux:
                 return Self.tmuxControlAttachProgram(tmux: connection.tmuxPath ?? "tmux")
-            case .herdr:
-                return HerdrFrameCommand.loopProgram(customPath: connection.herdrPath,
-                                                     connectionId: connection.id.uuidString)
             }
         }
 
@@ -3855,13 +1849,10 @@ final class SessionHub {
                     self?.moshControl?.switchPaneOrWindow(forward: forward)
                 }
                 let coordinator = self.coordinator
-                pumpTask = Task { [weak self] in
+                pumpTask = Task {
                     for await frame in transport.hostStream {
                         if Task.isCancelled { break }
                         coordinator.feed(moshFrame: frame)
-                        // Bytes arriving IS the switch veil's only progress
-                        // signal on this transport — see noteMoshPaint().
-                        if !frame.bytes.isEmpty { self?.noteMoshPaint() }
                     }
                 }
                 // The view usually finishes layout during the SSH bootstrap,
@@ -3895,17 +1886,7 @@ final class SessionHub {
                     // comment.
                     let nonce = moshTmuxRendererNonce
                     moshTmuxAttachTask = Task { [weak self] in await self?.attachMoshTmux(transport, rendererNonce: nonce) }
-                case .herdr:
-                    // The renderer is mosh-server's program (the raw-attach
-                    // loop, or herdr's full TUI on a herdr without `terminal
-                    // attach`); bring up the control plane on its own SSH
-                    // connection — mosh closed the bootstrap one, and mosh
-                    // can't carry the exec channel `herdr api snapshot` needs.
-                    // herdr has one server and one focus, so the poller
-                    // simply reports whatever the renderer shows, whenever it
-                    // comes up.
-                    herdrSidecarTask = Task { [weak self] in await self?.startHerdrSidecar() }
-                case .none:
+                case .herdr, .none:
                     break
                 }
                 // The mosh terminal paints itself: a frame kept from an SSH
@@ -3950,14 +1931,14 @@ final class SessionHub {
         /// came straight back as a fresh login. When that channel carries the
         /// user's own shell, its end is the session's end
         /// (``remoteShellExited(on:)``). When it carries a control plane
-        /// Moshpit runs in it — tmux `-CC`, herdr's frame loop — the sessions
+        /// Moshpit runs in it — tmux `-CC` — the sessions
         /// the user works in live on the server, beyond the shell carrying
         /// them, and a redial brings them back as before.
         func ptyChannelEnded(_ end: SSHChannelEnd, on session: SSHSession) async {
             // A channel of a connection already replaced (or being torn down)
             // is not this session's news.
             guard !isStopping, viewModel.session === session else { return }
-            if case .exited(let status) = end, tmuxController == nil, herdrFrameSSH == nil {
+            if case .exited(let status) = end, tmuxController == nil {
                 Log.ssh.notice("health: the remote shell exited (status \(status ?? 0, privacy: .public)) — ending the session")
                 await remoteShellExited(on: session)
                 return
@@ -4106,23 +2087,6 @@ final class SessionHub {
                 armFirstFrameWait(for: controller)
                 controlPlaneWired(controller)
                 beginAttachTimeout(controller: controller)
-            } else if multiplexer == .herdr {
-                // No tmux controller is coming to paint over a kept frame.
-                endFirstFrameWait()
-                // Same native frame rendering as the direct-SSH path — this
-                // fallback IS an SSH session, it just arrived here because
-                // mosh-server was missing. The frame pump is this PTY's only
-                // reader: a plain pump used to be started first and kept
-                // running beside it, the two splitting one `dataStream` —
-                // frame JSON painted into the terminal as text, and the
-                // frames it took never reaching the parser.
-                startHerdrFrames(over: session)
-                startHerdrControlPlane(over: session)
-                // As on SSH: push rides a connection of its own (the frame
-                // channel owns this PTY). Never started here, the fallback
-                // polled every 2–8 s for as long as it lasted: agent states
-                // and the tree seconds late, every exec a channel more.
-                startHerdrPushUpgrade()
             } else {
                 // The plain pane paints on its own; a kept tmux frame over it
                 // would never come down.
@@ -4178,37 +2142,9 @@ final class SessionHub {
                                                 remembered: lastSelection?.session,
                                                 connectionId: connection.id, nonce: nonce)
             case .herdr:
-                // Does this herdr know `terminal attach`? That raw single-pane
-                // stream — no sidebar, no header, pane PTY sized to this client
-                // alone — is the renderer the phone wants; an older herdr keeps
-                // the full-TUI + immersive-zoom fallback.
-                let probe = (try? await ssh.executeCommand(
-                    HerdrLaunch.rawAttachProbeCommand(customPath: connection.herdrPath)))
-                    .map { String(decoding: $0, as: UTF8.self) } ?? ""
-                herdrRawAttach = probe.contains("MOSHPIT_RAW_ATTACH_OK")
-                guard herdrRawAttach else {
-                    return Self.moshHerdrProgram(HerdrLaunch.attachCommand(customPath: connection.herdrPath))
-                }
-                _ = try? await ssh.executeCommand(
-                    HerdrLaunch.staleRendererCleanupCommand(connectionId: connection.id))
-                let key = HerdrLaunch.moshRendererKey(connectionId: connection.id,
-                                                      nonce: String(UUID().uuidString.prefix(8)))
-                moshRendererKey = key
-                return Self.moshHerdrProgram(HerdrLaunch.rawAttachLoopCommand(
-                    rendererKey: key, customPath: connection.herdrPath))
+                // herdr runs on the Rust core only (E1): the login shell.
+                return nil
             }
-        }
-
-        /// mosh-server's program with herdr: the renderer, then the login
-        /// shell after it, under `sh -c` (B138) — crates/session's
-        /// `mosh_herdr_program`. Interrupt, quit and suspend are ignored while
-        /// the renderer runs: a `^C` between two attaches (the tty is the
-        /// loop's, in cooked mode, then) ended the loop. Should it end all the
-        /// same, the login shell takes the tty with those signals back, and
-        /// the loop is said gone and typed again on the person's word.
-        nonisolated static func moshHerdrProgram(_ renderer: String) -> String {
-            "/bin/sh -c " + Shell.quote(
-                "trap '' INT QUIT TSTP; \(renderer); trap - INT QUIT TSTP; \(loginShellAfter)")
         }
 
         /// Attach tmux over mosh. The renderer is mosh-server's program
@@ -4485,9 +2421,7 @@ final class SessionHub {
             return chain
         }
 
-        /// Kill any previous connect's renderer stack for this connection —
-        /// the boot-time hygiene HerdrLaunch.staleRendererCleanupCommand
-        /// already gives the herdr renderer loop.
+        /// Kill any previous connect's renderer stack for this connection.
         static func tmuxRendererCleanupCommand(connectionId: UUID) -> String {
             let base = "$HOME/.moshpit/tmuxr-\(connectionId.uuidString)"
             return "for f in \"\(base)-\"*.pid; do "
@@ -4707,76 +2641,6 @@ final class SessionHub {
             attachTimeoutTask = nil
             moshTmuxAttachTask?.cancel()
             moshTmuxAttachTask = nil
-            herdrSidecarTask?.cancel()
-            herdrSidecarTask = nil
-            herdrReleaseAckTask?.cancel()
-            herdrReleaseAckTask = nil
-            herdrBootFallbackTask?.cancel()
-            herdrBootFallbackTask = nil
-            herdrAttachWatchTask?.cancel()
-            herdrAttachWatchTask = nil
-            // Nothing held reaches a pane now: deliveries answered not sent.
-            settleDroppedHerdrInput(herdrAttach.dropHeld(), tell: false)
-            herdrHoldTask?.cancel()
-            herdrHoldTask = nil
-            herdrLineGrid = nil
-            if herdrFrameTarget != nil {
-                // Hand the attach back: herdr's direct attach is exclusive per
-                // terminal, so leaving it claimed would make the next connect
-                // rely on `--takeover` to evict a client that no longer exists.
-                // Awaited through the write lane so it actually reaches the
-                // wire before the channel closes.
-                writeFrameCommand(HerdrFrameCommand.release)
-                await herdrWriteLane.drain()
-            }
-            herdrAttach.reset()
-            herdrFrameSSH = nil
-            herdrWriteLane = WriteLane()
-            herdrHeldElsewhere = nil
-            // The reader loop is the PTY we're about to drop, so a reconnect
-            // starts a fresh one rather than inheriting this state.
-            herdrChannelBooted = false
-            herdrLoopReady = false
-            herdrAttachWaitsForLoop = false
-            if herdrNoticeRemedy == .redial {
-                herdrNotice = nil
-                herdrNoticeAction = nil
-                herdrNoticeRemedy = nil
-            }
-            moshSwitchCoverTask?.cancel()
-            moshSwitchCoverTask = nil
-            moshSwitchCover = nil
-            // The raw-attach loop dies with the mosh shell; only the local
-            // steering state needs resetting so a reconnect re-targets.
-            moshRawAttachTarget = nil
-            moshRawAttachApplied = nil
-            moshRetargetLane = WriteLane()
-            moshRendererKey = nil
-            herdrRawAttach = false
-            moshRendererWatchTask?.cancel()
-            moshRendererWatchTask = nil
-            moshRendererStop = nil
-            moshRendererMissingTerminal = nil
-            moshRendererBootedKey = nil
-            if herdrNoticeRemedy == .takeBack {
-                herdrNotice = nil
-                herdrNoticeAction = nil
-                herdrNoticeRemedy = nil
-            }
-            herdrPushTask?.cancel()
-            herdrPushTask = nil
-            herdrPushRetryTask?.cancel()
-            herdrPushRetryTask = nil
-            herdrPushPump?.cancel()
-            herdrPushPump = nil
-            if let push = herdrPush { await push.shutdown() }
-            herdrPush = nil
-            if let ssh = herdrPushSSH { await ssh.close() }
-            herdrPushSSH = nil
-            // Just a poll timer — nothing to hand back to the server the way
-            // tmux's pinned window sizes have to be.
-            herdrControl?.stop()
-            herdrControl = nil
             if let controller = tmuxController {
                 if forReconnect {
                     // Not one byte more on this transport — see the doc
@@ -5090,7 +2954,7 @@ final class SessionHub {
         }
 
         /// Drop what is held: the attempt is torn down, or what it is
-        /// becoming takes no input on the way (herdr's frame loop).
+        /// becoming takes no input on the way.
         private func discardHeldInput() {
             if let held = heldInput, !held.isEmpty {
                 Log.input.info("input typed before the attach dropped: \(held.count, privacy: .public) writes")
@@ -5240,22 +3104,8 @@ final class SessionHub {
             defer { isResuming = false }
             if let transport = moshTransport {
                 await transport.resume()
-                // Both control planes ride SSH, which iOS kills during
-                // suspension — rebuild whichever this connection uses.
-                if connection.multiplexer == .herdr {
-                    // Cheaper than the tmux rebuild below: nothing to re-target
-                    // (herdr's focus lives on the server) and no window to
-                    // re-pin, so just replace the dead connection under the
-                    // poller. Retried every keepalive tick while it's down.
-                    let alive = await isSidecarAlive(timeout: probeTimeout)
-                    if !alive || herdrControl == nil {
-                        herdrControl?.stop()
-                        herdrControl = nil
-                        if let ssh = sidecarSSH { await ssh.close() }
-                        sidecarSSH = nil
-                        await startHerdrSidecar()
-                    }
-                }
+                // The tmux control plane rides SSH, which iOS kills during
+                // suspension — rebuild it.
                 if connection.multiplexer == .tmux {
                     // Rebuild the -CC sidecar when its SSH is dead OR it never
                     // came back from a previous attempt (moshControl == nil):
@@ -5304,7 +3154,7 @@ final class SessionHub {
         /// its pumps. A connection that is demonstrably carrying data does not
         /// need to be asked whether it is alive — and asking costs a whole
         /// fresh exec channel every 12s on top of whatever the control plane
-        /// is already doing (herdr polls one per 2-8s), which is real load on
+        /// is already doing, which is real load on
         /// exactly the flaky links where it hurts most.
         @ObservationIgnored private var lastInboundAt: Date?
 
@@ -5319,12 +3169,6 @@ final class SessionHub {
             var newest = lastInboundAt ?? .distantPast
             if let controlStream = tmuxController?.lastInboundAt, controlStream > newest {
                 newest = controlStream
-            }
-            // herdr's control plane answers on its OWN exec channels, which
-            // never touch the PTY stream the pumps above watch — an idle pane
-            // would look silent while the poller is happily round-tripping.
-            if let poll = herdrControl?.lastSuccessfulPoll, poll > newest {
-                newest = poll
             }
             return Date().timeIntervalSince(newest)
         }
@@ -5891,7 +3735,7 @@ extension SessionHub.ActiveSession {
     }
 
     /// herdr on the core: its surface, where the chrome reads herdr.
-    func rustSetHerdr(_ client: HerdrControlClient?) {
+    func rustSetHerdr(_ client: RustHerdrController?) {
         herdrControl = client
     }
 

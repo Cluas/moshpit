@@ -114,18 +114,6 @@ find "$OUT/pkg/Sources/Controller" -name '*.swift' -print0 |
         pins: &[],
     },
     Harness {
-        name: "herdr (crates/herdr/harness)",
-        build: r#"crates/herdr/harness/build-swift.sh "$OUT/herdr-swift""#,
-        how: How::Swiftc,
-        pins: &[],
-    },
-    Harness {
-        name: "herdr client (crates/herdr/harness/client)",
-        build: r#"crates/herdr/harness/client/build-swift.sh "$OUT/client-swift""#,
-        how: How::Swiftc,
-        pins: &[],
-    },
-    Harness {
         name: "install (crates/install/harness)",
         build: r#"crates/install/harness/build-swift.sh "$OUT/install-swift""#,
         how: How::Swiftc,
@@ -147,7 +135,7 @@ find "$OUT/pkg/Sources/Controller" -name '*.swift' -print0 |
         name: "mosh-live (scripts/verify/mosh-live)",
         build: r#"MOSHPIT_MOSH_LIVE_WORK="$OUT" scripts/verify/mosh-live/build.sh"#,
         how: How::Swiftc,
-        pins: &[],
+        pins: &["cf25626b"],
     },
     Harness {
         name: "Home (crates/app/harness/home)",

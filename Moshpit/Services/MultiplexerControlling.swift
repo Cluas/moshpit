@@ -111,11 +111,11 @@ enum TmuxSelectionStore {
 
 /// The multiplexer control surface the UI drives, whichever multiplexer is
 /// behind it — `TmuxSessionController` (tmux over SSH `-CC`, live push) and
-/// `HerdrControlClient` (herdr over an SSH side-channel that polls
+/// `RustHerdrController` (herdr on the Rust core, which reads
 /// `herdr api snapshot`) both implement it.
 ///
 /// The vocabulary stays Moshpit's own — session / window / pane. herdr's
-/// workspace / tab / pane maps onto it one-for-one (see `HerdrSnapshot`), so
+/// workspace / tab / pane maps onto it one-for-one (crates/herdr's snapshot), so
 /// every sheet and the home tree work against either without knowing which.
 ///
 /// `AnyObject` + `Observable` so generic SwiftUI views over a concrete

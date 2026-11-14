@@ -240,12 +240,17 @@ fn other_pane(other: OtherPane, connection: &str, user: &str, ctx: &Ctx) -> Row 
 /// and the host's long press (`home-head-<connection>`).
 pub(crate) fn saved_card(hosts: Vec<Connection>, ctx: &Ctx) -> AnyElement {
     let mut card = section();
+    let creatures = ctx.creatures.get_untracked();
     for host in hosts {
         let id = host.id.clone();
+        let face = match &host.creature {
+            Some(creature) if creatures => Some(creature.clone()),
+            _ => host.face.clone(),
+        };
         let saved = row(host.name.clone())
             .leading(
                 host_mark(host.initial.clone())
-                    .face(host.face.clone())
+                    .face(face)
                     .emoji(host.emoji.clone())
                     .size(MarkSize::Sm),
             )

@@ -1010,5 +1010,7 @@ fn demo_face(side: usize, bits: u32, hue: u8) -> Face {
         side: side as u8,
         cells,
         hue,
+        kinds: Vec::new(),
+        asleep: Vec::new(),
     }
 }

@@ -224,9 +224,9 @@ jobs:
 
       # Cache the resolved SwiftPM checkouts keyed on Package.resolved. On a hit
       # the resolve step below is essentially a no-op; on a miss it repopulates
-      # the cache. The key uses the committed Package.resolved (SwiftTerm is a
-      # pinned fork by revision, Citadel by version) so it only busts when a
-      # dependency actually changes.
+      # the cache. The key uses the committed Package.resolved (Citadel and
+      # the others by version) so it only busts when a dependency actually
+      # changes.
       - name: Cache SwiftPM packages
         uses: actions/cache@v4
         with:
@@ -255,10 +255,6 @@ jobs:
       # project.yml (out of scope for this workflow); as configured today the
       # simulator build+test works with no Signing.xcconfig secret present.
       - name: Build & test
-        env:
-          # Reaches the test process as MOSHPIT_CI; FeedCostTests widens its
-          # wall-clock budget for the shared two-core runner.
-          TEST_RUNNER_MOSHPIT_CI: "1"
         run: |
           # The Swift session path's suites. Since F0 every session runs on
           # the Rust core, and these drive the Swift transports (SSH, mosh,

@@ -66,7 +66,7 @@ struct ReconnectFirstFrameTests {
     private func painted(_ session: SessionHub.ActiveSession) async throws -> TmuxSessionController {
         let controller = try #require(session.tmuxController)
         #expect(await eventually { controller.snapshot.panes["%0"] != nil }, "tmux attached")
-        _ = controller.terminalView(for: "%0")
+        _ = controller.surface(for: "%0")
         controller.coordinator(for: "%0")?.reveal()
         #expect(controller.hasPaintedSinceAttach)
         return controller
@@ -86,7 +86,7 @@ struct ReconnectFirstFrameTests {
         #expect(second !== first)
         #expect(session.awaitingFirstFrame, "the fallback's attach waits for its first frame")
         #expect(await eventually { second.snapshot.panes["%0"] != nil })
-        _ = second.terminalView(for: "%0")
+        _ = second.surface(for: "%0")
         second.coordinator(for: "%0")?.reveal()   // the replacement paints
         #expect(session.retiredTmuxController == nil,
                 "the old frame never came down: frozen, and deaf to touches")

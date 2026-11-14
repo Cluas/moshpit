@@ -1,7 +1,7 @@
 //! Foundation's text rules, as the Swift herdr code uses them.
 //!
 //! The character sets are Apple's, dumped on macOS 27
-//! (`harness/swift/probe-foundation.swift` prints them): `CharacterSet.whitespaces`
+//! (`harness/swift/probe-foundation.swift` printed them, at cf25626b): `CharacterSet.whitespaces`
 //! still counts U+200B ZERO WIDTH SPACE, which Unicode moved out of the
 //! space separators long ago, so it is trimmed here too. `newlines` is
 //! U+000A–U+000D, U+0085, U+2028 and U+2029.

@@ -67,7 +67,7 @@ open Moshpit.xcodeproj
 ```
 
 Pick the **Moshpit** scheme and a simulator, then press ⌘R. The Swift packages
-(the SwiftTerm fork, Citadel, WhisperKit) resolve on the first build. A device
+(Citadel, WhisperKit) resolve on the first build. A device
 build needs your Team ID in `Signing.xcconfig`; the comment in that file and
 [docs/install-free-account.md](docs/install-free-account.md) walk through it,
 including the free Apple ID path.
@@ -91,7 +91,7 @@ off the iPad simulator (hardware-keyboard shortcuts); the log names each one.
 | `Packages/MoshpitKit/` | Local Swift package the app and all three extensions link: logging, the Live Activity payload, the sealed-push envelope and pairing store |
 | `Tests/` | `MoshpitTests/` unit tests, `MoshpitUITests/` UI tests |
 | `push-relay/` | The stateless Go relay between your host and APNs, with its deployment manifest under `deploy/` |
-| `docs/` | [ARCHITECTURE.md](docs/ARCHITECTURE.md), [PUSH.md](docs/PUSH.md) (the push protocol end to end), [PATCHES.md](docs/PATCHES.md) (what the SwiftTerm fork changes), design notes |
+| `docs/` | [ARCHITECTURE.md](docs/ARCHITECTURE.md), [PUSH.md](docs/PUSH.md) (the push protocol end to end), [WEZTERM-PATCHES.md](docs/WEZTERM-PATCHES.md) (what the terminal core's wezterm fork changes), design notes |
 | `scripts/` | `host/` the shell installed on your dev host, `gen/` generators, `verify/` end-to-end checks, `capture/` screenshot harnesses, `spikes/` experiments, `release/` archive tooling |
 
 The app talks to the maintainer's relay by default; [docs/PUSH.md](docs/PUSH.md)

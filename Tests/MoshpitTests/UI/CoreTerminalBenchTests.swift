@@ -1,14 +1,13 @@
 import Foundation
 import MoshpitFFI
 import QuartzCore
-import SwiftTerm
 import Testing
 import UIKit
 @testable import Moshpit
 
 /// Gate T1's device measurements that need no live session
-/// (docs/nsh/TERMINAL-CORE.md §8), the core view against the SwiftTerm
-/// fork's view, on the same bytes, on the device the tests run on. Results
+/// (docs/nsh/TERMINAL-CORE.md §8), the core view on the device the tests
+/// run on (the SwiftTerm baseline went with SwiftTerm, batch B). Results
 /// print as `[t2-bench] …` lines; the asserts only guard what the gate
 /// calls correctness (nothing lost, nothing reordered).
 @Suite("core terminal bench", .serialized)
@@ -109,7 +108,7 @@ struct CoreTerminalBenchTests {
     @Test func parseThroughput() {
         let loads: [(String, Data)] = [("seq 200000", Self.seq(200_000)), ("colours", Self.colours(4_000)),
                                        ("cjk+emoji", Self.cjk(20_000)), ("agent frames", Self.agentFrames(6_000))]
-        var total = 0, coreTime = 0.0, stTime = 0.0
+        var total = 0, coreTime = 0.0
         for (name, data) in loads {
             // The core, as its pane thread feeds it (4 KB reads), best of 3.
             var best = Double.infinity
@@ -128,25 +127,13 @@ struct CoreTerminalBenchTests {
                 best = min(best, CACurrentMediaTime() - start)
                 mp_term_close(t)
             }
-            // SwiftTerm's emulator on the same bytes (one round: it is slow).
-            let st = Terminal(delegate: NullTerminalDelegate(), options: TerminalOptions(cols: 80, rows: 24, scrollback: 10_000))
-            let bytes = [UInt8](data)
-            let start = CACurrentMediaTime()
-            var at = 0
-            while at < bytes.count {
-                let n = min(4096, bytes.count - at)
-                st.feed(byteArray: Array(bytes[at..<at + n]))
-                at += n
-            }
-            let stElapsed = CACurrentMediaTime() - start
             total += data.count
             coreTime += best
-            stTime += stElapsed
-            Self.say(String(format: "parse %@ %.1f MB: core %.1f MB/s, SwiftTerm %.1f MB/s", name,
-                            Double(data.count) / 1e6, Double(data.count) / 1e6 / best, Double(data.count) / 1e6 / stElapsed))
+            Self.say(String(format: "parse %@ %.1f MB: core %.1f MB/s", name,
+                            Double(data.count) / 1e6, Double(data.count) / 1e6 / best))
         }
-        Self.say(String(format: "parse all: core %.1f MB/s, SwiftTerm %.1f MB/s (gate T1d >= 10)",
-                        Double(total) / 1e6 / coreTime, Double(total) / 1e6 / stTime))
+        Self.say(String(format: "parse all: core %.1f MB/s (gate T1d >= 10)",
+                        Double(total) / 1e6 / coreTime))
     }
 
     // MARK: T1g: memory per pane
@@ -163,17 +150,7 @@ struct CoreTerminalBenchTests {
         }
         let core = Double(Self.footprint() - before) / 4 / 1e6
         views.removeAll()
-        let mid = Self.footprint()
-        var terms: [TerminalView] = []
-        for _ in 0..<4 {
-            let t = TerminalView(frame: CGRect(x: 0, y: 0, width: 480, height: 300), font: Self.font)
-            TerminalScrollback.enlarge(t)
-            t.feed(byteArray: ArraySlice([UInt8](lines)))
-            terms.append(t)
-        }
-        let st = Double(Self.footprint() - mid) / 4 / 1e6
-        Self.say(String(format: "memory per pane, 10 000 lines × 80: core %.1f MB, SwiftTerm %.1f MB (gate T1g <= 8)", core, st))
-        _ = terms.count
+        Self.say(String(format: "memory per pane, 10 000 lines × 80: core %.1f MB (gate T1g <= 8)", core))
     }
 
     // MARK: T1c: a 50 MB burst through the view
@@ -295,8 +272,7 @@ struct CoreTerminalBenchTests {
 
     /// A keystroke's echo, with the network taken out: the bytes a key sends
     /// come straight back as output; timed from the key to the frame that
-    /// shows it drawn (core), and from the key to SwiftTerm's draw. Main
-    /// thread per echo: what the view itself costs.
+    /// shows it drawn. Main thread per echo: what the view itself costs.
     @Test func loopbackEcho() async {
         let w = window()
         defer { w.isHidden = true }
@@ -339,25 +315,6 @@ struct CoreTerminalBenchTests {
         Self.say(String(format: "loopback echo core n=%d: key→frame p50 %.3f ms p95 %.3f ms max %.3f; longest frame %.3f ms",
                         samples.count, q(samples, 0.5), q(samples, 0.95), samples.last ?? .nan, v.longestFrameMs))
 
-        // SwiftTerm: the echo fed and drawn on the main thread at once (its
-        // draw happens at the end of the same turn; forced here to time it).
-        let st = TerminalView(frame: v.frame, font: Self.font)
-        w.rootViewController?.view.addSubview(st)
-        st.feed(text: "$ ")
-        st.layer.displayIfNeeded()
-        try? await Task.sleep(for: .milliseconds(100))
-        var stSamples: [Double] = []
-        for i in 0..<200 {
-            let start = CACurrentMediaTime()
-            st.feed(text: String(letters[i % letters.count]))
-            st.layoutIfNeeded()
-            st.layer.displayIfNeeded()
-            stSamples.append((CACurrentMediaTime() - start) * 1000)
-            try? await Task.sleep(for: .milliseconds(20))
-        }
-        stSamples.sort()
-        Self.say(String(format: "loopback echo SwiftTerm n=%d: feed+draw on main p50 %.3f ms p95 %.3f ms",
-                        stSamples.count, q(stSamples, 0.5), q(stSamples, 0.95)))
         #expect(samples.count >= 190, "echoes lost")
     }
 
@@ -419,9 +376,4 @@ final class TickProbe: NSObject {
         link?.invalidate()
         link = nil
     }
-}
-
-/// A delegate for SwiftTerm's emulator that ignores everything.
-final class NullTerminalDelegate: TerminalDelegate {
-    func send(source: Terminal, data: ArraySlice<UInt8>) {}
 }

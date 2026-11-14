@@ -6268,8 +6268,9 @@ public protocol PetMachineProtocol: AnyObject, Sendable {
     
     /**
      * The hatch, from 16 secure random bytes, at `now` (unix seconds) and
-     * local hour `local_hour`. Only when it may: the egg is ready, iCloud
-     * has settled, the companion is on. Whether it hatched.
+     * local hour `local_hour`. Only when it may: the egg is tapped three
+     * times or ready by itself, iCloud has settled, the companion is on.
+     * Whether it hatched.
      */
     func hatch(seed: Data, now: Int64, localHour: UInt8)  -> Bool
     
@@ -6317,6 +6318,19 @@ public protocol PetMachineProtocol: AnyObject, Sendable {
      * How fast it grows: `faster`, `medium` (the default) or `slower`.
      */
     func setPace(pace: String) 
+    
+    /**
+     * The egg's and the hatch's state in a log line: what a device report
+     * is read from (the host adds whether Home shows).
+     */
+    func status()  -> String
+    
+    /**
+     * A tap on the egg on Home: the first wobbles it, the second cracks
+     * it, the third hatches it (the screen then asks for the hatch, which
+     * waits for iCloud to settle). Counted in memory only. The taps so far.
+     */
+    func tapEgg()  -> UInt8
     
 }
 /**
@@ -6432,8 +6446,9 @@ open func connected()  {try! rustCall() {
     
     /**
      * The hatch, from 16 secure random bytes, at `now` (unix seconds) and
-     * local hour `local_hour`. Only when it may: the egg is ready, iCloud
-     * has settled, the companion is on. Whether it hatched.
+     * local hour `local_hour`. Only when it may: the egg is tapped three
+     * times or ready by itself, iCloud has settled, the companion is on.
+     * Whether it hatched.
      */
 open func hatch(seed: Data, now: Int64, localHour: UInt8) -> Bool  {
     return try!  FfiConverterBool.lift(try! rustCall() {
@@ -6546,6 +6561,31 @@ open func setPace(pace: String)  {try! rustCall() {
         FfiConverterString.lower(pace),$0
     )
 }
+}
+    
+    /**
+     * The egg's and the hatch's state in a log line: what a device report
+     * is read from (the host adds whether Home shows).
+     */
+open func status() -> String  {
+    return try!  FfiConverterString.lift(try! rustCall() {
+    uniffi_moshpit_ffi_fn_method_petmachine_status(
+            self.uniffiCloneHandle(),$0
+    )
+})
+}
+    
+    /**
+     * A tap on the egg on Home: the first wobbles it, the second cracks
+     * it, the third hatches it (the screen then asks for the hatch, which
+     * waits for iCloud to settle). Counted in memory only. The taps so far.
+     */
+open func tapEgg() -> UInt8  {
+    return try!  FfiConverterUInt8.lift(try! rustCall() {
+    uniffi_moshpit_ffi_fn_method_petmachine_tap_egg(
+            self.uniffiCloneHandle(),$0
+    )
+})
 }
     
 
@@ -24376,7 +24416,7 @@ private let initializationResult: InitializationResult = {
     if (uniffi_moshpit_ffi_checksum_method_petmachine_connected() != 13108) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_moshpit_ffi_checksum_method_petmachine_hatch() != 54190) {
+    if (uniffi_moshpit_ffi_checksum_method_petmachine_hatch() != 32922) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_moshpit_ffi_checksum_method_petmachine_island() != 1817) {
@@ -24404,6 +24444,12 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_moshpit_ffi_checksum_method_petmachine_set_pace() != 29199) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_moshpit_ffi_checksum_method_petmachine_status() != 42323) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_moshpit_ffi_checksum_method_petmachine_tap_egg() != 21555) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_moshpit_ffi_checksum_method_coresessions_home_message() != 16804) {

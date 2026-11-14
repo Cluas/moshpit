@@ -2328,6 +2328,7 @@ dependencies = [
  "log",
  "moshpit-herdr",
  "moshpit-install",
+ "moshpit-pet",
  "moshpit-seal",
  "moshpit-session",
  "moshpit-store",

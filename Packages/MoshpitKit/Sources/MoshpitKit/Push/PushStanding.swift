@@ -186,7 +186,11 @@ public struct PushStandingFile {
             let contents = contents()
             var all = PushStanding.prune(contents.entries, now: now)
             var entries = all[conn] ?? []
-            let wasEmpty = entries.isEmpty
+            // Nobody else waiting (B450): the pane's own earlier entry is the
+            // question this one replaces, not another wait. The same
+            // question — the pushed and the local copy name one `since` (the
+            // host's `@moshpit_since`) — is a repeat.
+            let wasEmpty = entries.allSatisfy { $0.pane == entry.pane }
             let isRepeat = entries.contains { $0.pane == entry.pane && $0.since == entry.since }
             entries.removeAll { $0.pane == entry.pane }
             entries.append(entry)

@@ -28,12 +28,11 @@ import UIKit
 /// resize is applied as it is read (the terminal must take the new size
 /// before the capture's bytes); every other mark goes into the pane's
 /// terminal among its bytes and is acted on once the bytes before it are on
-/// screen (``TerminalSurface/feed(mark:)``) — at once on SwiftTerm's view,
-/// with the frame that has them on the core's, which parses on a thread of
-/// its own: a reveal never lifts the veil off a repaint not yet drawn.
+/// screen (``TerminalSurface/feed(mark:)``) — with the frame that has them,
+/// the core parsing on a thread of its own: a reveal never lifts the veil
+/// off a repaint not yet drawn.
 ///
-/// A pane's terminal is the core's view when ``CoreTermSwitch`` is on
-/// (docs/nsh/TERMINAL-VIEW.md), else SwiftTerm's.
+/// A pane's terminal is the core's view (docs/nsh/TERMINAL-VIEW.md).
 @MainActor
 final class RustTmuxController: TmuxSessionController {
     /// The look new pane terminals take (and existing ones are moved to).
@@ -86,12 +85,12 @@ final class RustTmuxController: TmuxSessionController {
     /// The mosh sidecar's surface: no pane terminals.
     let sidecar: Bool
     init(driver: RustSessionDriver, appearance: Appearance, grid: (cols: Int, rows: Int),
-         sidecar: Bool = false, surfaceKind: TerminalSurfaceKind = .current) {
+         sidecar: Bool = false) {
         self.driver = driver
         look = appearance
         birthGrid = grid
         self.sidecar = sidecar
-        super.init(sshSession: RustNullTransport(), rendersOutput: !sidecar, surfaceKind: surfaceKind)
+        super.init(sshSession: RustNullTransport(), rendersOutput: !sidecar)
     }
 
     // MARK: Mirroring the core
@@ -289,7 +288,7 @@ final class RustTmuxController: TmuxSessionController {
         // Born at the client's grid, not at `.zero` (see the Swift
         // controller's mintTerminal): bytes that land before the first layout
         // are parsed in the shape tmux drew them for.
-        let terminal = TerminalSurfaces.make(surfaceKind, font: font,
+        let terminal = TerminalSurfaces.make(font: font,
                                              grid: TerminalGrid(cols: birthGrid.cols, rows: birthGrid.rows))
         terminal.followTmuxClears()
         terminal.apply(look: look.terminalLook)

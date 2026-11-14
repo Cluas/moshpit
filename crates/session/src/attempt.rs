@@ -391,7 +391,7 @@ impl Attempt {
             reaper
         });
         let server = match ssh.peer_addr() {
-            Some(peer) => SocketAddr::new(peer.ip(), credentials.udp_port),
+            Some(peer) => udp_server(peer, credentials.udp_port),
             None => resolve(host, credentials.udp_port, self.timing.dial_timeout).await?,
         };
         let control = if matches!(route.multiplexer, Multiplexer::Tmux | Multiplexer::Herdr) {
@@ -635,6 +635,17 @@ fn contains(haystack: &[u8], needle: &[u8]) -> bool {
     haystack
         .windows(needle.len())
         .any(|window| window == needle)
+}
+
+/// Where mosh's UDP goes when the SSH connection went straight to the host:
+/// the address it reached (B171) — the one `mosh-server -s` bound to, where
+/// a fresh lookup of a name with several addresses (`localhost`: `::1`
+/// first) can find one nothing listens on — at the port the server named.
+/// Only the port changes: a link-local peer's interface (its scope) goes
+/// with it.
+fn udp_server(mut peer: SocketAddr, udp_port: u16) -> SocketAddr {
+    peer.set_port(udp_port);
+    peer
 }
 
 /// The address mosh's UDP flow goes to, when the SSH connection doesn't
@@ -910,6 +921,35 @@ mod tests {
         let address: SocketAddr = "192.0.2.7:60001".parse().unwrap();
         let found = std::future::ready(Ok(vec![address].into_iter()));
         assert_eq!(lookup_within(found, bound).await, Some(address));
+    }
+
+    /// B171: mosh's datagrams go to the address SSH reached, at the
+    /// server's port — and a link-local peer keeps its interface, without
+    /// which `fe80::…` has no route (the Swift transport kept it as
+    /// `fe80::1%lo0`).
+    #[test]
+    fn mosh_goes_where_ssh_went_and_a_link_local_peer_keeps_its_interface() {
+        let v4: SocketAddr = "198.51.100.7:22".parse().unwrap();
+        assert_eq!(udp_server(v4, 60001), "198.51.100.7:60001".parse().unwrap());
+        let scoped = SocketAddr::V6(std::net::SocketAddrV6::new(
+            "fe80::1".parse().unwrap(),
+            22,
+            0,
+            7,
+        ));
+        let SocketAddr::V6(server) = udp_server(scoped, 60001) else {
+            panic!("a v6 peer became v4");
+        };
+        assert_eq!(
+            server.ip(),
+            &"fe80::1".parse::<std::net::Ipv6Addr>().unwrap()
+        );
+        assert_eq!(server.port(), 60001);
+        assert_eq!(
+            server.scope_id(),
+            7,
+            "the interface was dropped: no route to fe80::1"
+        );
     }
 
     fn caps(tmux: bool, mosh: bool, herdr: bool) -> HostCapabilities {

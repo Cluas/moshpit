@@ -38,7 +38,7 @@ public enum Log {
     /// not be answered by reading code: when hold-to-repeat backspace "stops
     /// working", did UIKit stop delivering the repeats, or did we send them and
     /// the screen not follow? Those have opposite fixes. The answer was the
-    /// former (see SwiftTerm fork patch 12 in `docs/PATCHES.md`), and the
+    /// former (SwiftTerm fork patch 12, in `docs/PATCHES.md` at cf25626b), and the
     /// counter stays because it is how that answer is re-checked: a hold should
     /// tick steadily for as long as the key is down, whatever put the text on
     /// the line.

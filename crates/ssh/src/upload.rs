@@ -135,8 +135,7 @@ async fn over_exec(
     cancel: Option<&CancellationToken>,
 ) -> Result<String, SftpError> {
     let run_ok = |command: String| run_ok(ssh, command, cancel);
-    let home =
-        String::from_utf8_lossy(&run_ok("printf %s \"$HOME\"".to_owned()).await?).into_owned();
+    let home = past_mark(&run_ok(HOME_COMMAND.to_owned()).await?);
     if !home.starts_with('/') {
         return Err(SftpError::Failure {
             message: "the host's $HOME is not an absolute path".to_owned(),
@@ -181,6 +180,21 @@ async fn over_exec(
     }
     progress(1.0);
     Ok(plan.final_path)
+}
+
+/// The home, after a mark line: sshd runs every exec command as
+/// `$SHELL -c`, and bash reads `~/.bashrc` for that, so an rc file's `echo`
+/// came ahead of `$HOME` and the exec upload refused it as no absolute path
+/// (B463, the exec side).
+const HOME_COMMAND: &str = "printf 'MOSHPIT_OUTPUT\\n%s' \"$HOME\"";
+
+/// What follows the mark line; output without one, whole.
+fn past_mark(output: &[u8]) -> String {
+    let text = String::from_utf8_lossy(output);
+    match text.find("MOSHPIT_OUTPUT\n") {
+        Some(at) => text[at + "MOSHPIT_OUTPUT\n".len()..].to_owned(),
+        None => text.into_owned(),
+    }
 }
 
 /// A command's merged output, if it exited 0 (what `executeCommand` gave);

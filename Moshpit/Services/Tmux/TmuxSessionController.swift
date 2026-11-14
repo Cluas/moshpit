@@ -275,16 +275,9 @@ class TmuxSessionController: MultiplexerControlling {
     /// can drive the controller with a `MockTmuxTransport` without touching the
     /// real SSH stack. `SSHSession` conforms naturally; production callers
     /// pass an `SSHSession` instance unchanged.
-    /// The view this controller's pane terminals get: the core's when
-    /// ``CoreTermSwitch`` was on when the controller was made (one per
-    /// attach; a terminal keeps the view it was made with).
-    let surfaceKind: TerminalSurfaceKind
-
-    init(sshSession: TmuxTransport, rendersOutput: Bool = true,
-         surfaceKind: TerminalSurfaceKind = .current) {
+    init(sshSession: TmuxTransport, rendersOutput: Bool = true) {
         self.sshSession = sshSession
         self.rendersOutput = rendersOutput
-        self.surfaceKind = surfaceKind
     }
 
     // MARK: - Public API
@@ -5197,7 +5190,7 @@ class TmuxSessionController: MultiplexerControlling {
 
     /// Create the persistent terminal + ``Coordinator`` pair for `paneId`,
     /// wire input/resize back through the controller, and stash both in the
-    /// non-observed pool. The view is ``surfaceKind``'s.
+    /// non-observed pool. The view is the core's.
     ///
     /// Nothing here may count on the bytes being parsed when `feed` returns
     /// (the core parses on a thread of its own): a capture's reveal is a
@@ -5224,7 +5217,7 @@ class TmuxSessionController: MultiplexerControlling {
         // shape tmux drew it for; the first real layout then agrees and costs
         // no reflow.
         let terminal = TerminalSurfaces.make(
-            surfaceKind, font: font, grid: TerminalGrid(cols: lastClientSize.cols, rows: lastClientSize.rows))
+            font: font, grid: TerminalGrid(cols: lastClientSize.cols, rows: lastClientSize.rows))
         terminal.followTmuxClears()
         // The user's cursor is enforced after every feed — pane output (vim,
         // zsh plugins, coding agents) carries DECSCUSR/OSC-12 that would

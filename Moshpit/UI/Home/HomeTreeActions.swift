@@ -66,13 +66,13 @@ struct HomeTreeActions {
             })
         case .newAgentTask(let id):
             Haptics.tap()
-            guard let herdr = control(id) as? HerdrControlClient else { return true }
+            guard let herdr = control(id) as? RustHerdrController else { return true }
             startAgentTask(HomeAgentTaskTarget(
                 initialRepos: herdr.openRepoGuesses,
                 load: { await (repos: herdr.gitRepos(), agents: herdr.agentNames()) },
                 start: { request in await herdr.startAgentTask(request) }))
         case .restartServer(let id):
-            guard let herdr = control(id) as? HerdrControlClient else { return true }
+            guard let herdr = control(id) as? RustHerdrController else { return true }
             Task { await herdr.restartServer() }
         case .renameSession(let id, let session):
             guard let control = control(id),
@@ -94,7 +94,7 @@ struct HomeTreeActions {
                 control.newWindow(inSession: session, named: $0)
             })
         case .removeWorktree(let id, let session):
-            guard let herdr = control(id) as? HerdrControlClient,
+            guard let herdr = control(id) as? RustHerdrController,
                   let info = herdr.snapshot.sessions[session],
                   let repo = herdr.worktreeRepo(for: session) else { return true }
             removeWorktree(ConnectionCard.WorktreeTarget(
@@ -132,38 +132,94 @@ struct HomeTreeActions {
 
 /// The tree's confirmations and sheets, on whichever page asked: a kill's
 /// dialog, a worktree's removal, a new agent task (the SwiftUI card's).
+///
+/// The confirmations hang from the row whose menu asked (B498,
+/// ``NSHConfirmation``): a SwiftUI `confirmationDialog` on the page hung
+/// from the page, which from iOS 26 put an iPhone's popover near the top of
+/// the screen, over the toolbar, pointing at nothing.
 struct HomeTreeDialogs: ViewModifier {
     @Binding var killTarget: HomeKillTarget?
     @Binding var worktreeTarget: ConnectionCard.WorktreeTarget?
     @Binding var worktreeForceTarget: ConnectionCard.WorktreeTarget?
     @Binding var agentTask: HomeAgentTaskTarget?
+    /// The page's long-press menus: the row the last one opened on, and the
+    /// surface.
+    let menus: NSHContextMenus
     let actions: HomeNSHActions
 
     func body(content: Content) -> some View {
         content
-            .confirmationDialog(
-                killTarget?.confirmTitle ?? "",
-                isPresented: Binding(get: { killTarget != nil }, set: { if !$0 { killTarget = nil } }),
-                titleVisibility: .visible,
-                presenting: killTarget
-            ) { target in
-                Button(target.label, role: .destructive) {
-                    target.perform()
-                    killTarget = nil
-                }
-                Button("Cancel", role: .cancel) { killTarget = nil }
+            .onChange(of: killTarget?.id) { _, id in
+                guard id != nil, let target = killTarget else { return }
+                confirmKill(target)
             }
-            .modifier(WorktreeRemovalDialogs(
-                target: $worktreeTarget, forceTarget: $worktreeForceTarget,
-                onError: { message in
-                    actions.present(ConnectionCard.Modal(kind: .notice(ConnectionCard.NoticeRequest(
-                        icon: "trash.slash.fill",
-                        title: "Couldn't remove the worktree",
-                        message: message))))
-                }))
+            .onChange(of: worktreeTarget?.id) { _, id in
+                guard id != nil, let target = worktreeTarget else { return }
+                confirmRemoval(target)
+            }
+            .onChange(of: worktreeForceTarget?.id) { _, id in
+                guard id != nil, let target = worktreeForceTarget else { return }
+                confirmForce(target)
+            }
             .appSheet(item: $agentTask) { target in
                 NewAgentTaskSheet(initialRepos: target.initialRepos,
                                   load: target.load, start: target.start)
             }
+    }
+
+    private func confirmKill(_ target: HomeKillTarget) {
+        let shown = NSHConfirmation.present(
+            title: target.confirmTitle,
+            actions: [.init(title: target.label, destructive: true) {
+                target.perform()
+                if killTarget?.id == target.id { killTarget = nil }
+            }],
+            from: menus.openedView, over: menus.surfaceView,
+            cancel: { if killTarget?.id == target.id { killTarget = nil } })
+        if !shown { killTarget = nil }
+    }
+
+    // A worktree's removal: two stages on purpose (``WorktreeRemovalDialogs``,
+    // the SwiftUI card's): the second appears ONLY when herdr reports the
+    // checkout is dirty, the one case where this destroys work that exists
+    // nowhere else.
+
+    private func confirmRemoval(_ target: ConnectionCard.WorktreeTarget) {
+        let shown = NSHConfirmation.present(
+            title: String(localized: "Remove the worktree for \"\(target.sessionName)\"?"),
+            message: String(localized: "Deletes the branch checkout under ~/.herdr/worktrees. \(target.repo) itself is untouched."),
+            actions: [.init(title: String(localized: "Remove"), destructive: true) { remove(target, force: false) }],
+            from: menus.openedView, over: menus.surfaceView,
+            cancel: { if worktreeTarget?.id == target.id { worktreeTarget = nil } })
+        if !shown { worktreeTarget = nil }
+    }
+
+    private func confirmForce(_ target: ConnectionCard.WorktreeTarget) {
+        let shown = NSHConfirmation.present(
+            title: String(localized: "\"\(target.sessionName)\" has uncommitted changes"),
+            message: String(localized: "Those changes exist nowhere else. Removing the worktree throws them away."),
+            actions: [.init(title: String(localized: "Delete anyway"), destructive: true) { remove(target, force: true) }],
+            cancelTitle: String(localized: "Keep it"),
+            from: menus.openedView, over: menus.surfaceView,
+            cancel: { if worktreeForceTarget?.id == target.id { worktreeForceTarget = nil } })
+        if !shown { worktreeForceTarget = nil }
+    }
+
+    private func remove(_ item: ConnectionCard.WorktreeTarget, force: Bool) {
+        worktreeTarget = nil
+        worktreeForceTarget = nil
+        Task {
+            switch await item.remove(force) {
+            case .removed:
+                break
+            case .needsForce:
+                worktreeForceTarget = item
+            case .failed(let message):
+                actions.present(ConnectionCard.Modal(kind: .notice(ConnectionCard.NoticeRequest(
+                    icon: "trash.slash.fill",
+                    title: "Couldn't remove the worktree",
+                    message: message))))
+            }
+        }
     }
 }

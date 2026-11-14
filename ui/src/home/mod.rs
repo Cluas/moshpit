@@ -289,6 +289,8 @@ pub(crate) struct Ctx {
     pub(crate) pet: pet::PetCtx,
     /// Where it perches and how, from what Home shows.
     pub(crate) perch: Memo<Option<(pet::Perch, moshpit_pet::Pose)>>,
+    /// Hosts' marks are their pixel creatures ([`pet::creatures`]).
+    pub(crate) creatures: Memo<bool>,
 }
 
 impl Ctx {
@@ -396,6 +398,7 @@ pub fn HomeScreen(props: ScreenProps) -> impl IntoElement {
                 .and_then(|s| pet::perch(&s.connections, &agent_word()))
         })
     });
+    let creatures = computed(move || pet_view.with(|v| pet::creatures(v.as_ref())));
     let ctx = Ctx {
         tell: tell_host(channel),
         trees,
@@ -403,6 +406,7 @@ pub fn HomeScreen(props: ScreenProps) -> impl IntoElement {
         open: signal(None),
         pet: pet_ctx,
         perch,
+        creatures,
     };
     let _seen = pet::seen(ctx.tell.clone());
     let offset = animated_value(0.0);
@@ -788,7 +792,11 @@ fn connections_group(hosts: Memo<Vec<model::Connection>>, ctx: Ctx) -> AnyElemen
             |c: &model::Connection| c.id.clone(),
             move |connection, _| {
                 let id = connection.with_untracked(|c| c.id.clone());
-                pet::on(ctx.clone(), pet::Perch::Host(id), card::card(connection, ctx.clone()))
+                pet::on(
+                    ctx.clone(),
+                    pet::Perch::Host(id),
+                    card::card(connection, ctx.clone()),
+                )
             },
         )))
         .into_element()
@@ -807,6 +815,7 @@ fn saved_group(saved: Memo<Vec<model::Connection>>, ctx: Ctx) -> AnyElement {
                         c.name.clone(),
                         c.initial.clone(),
                         c.face.clone(),
+                        c.creature.clone(),
                         c.emoji.clone(),
                         c.user.clone(),
                         c.host.clone(),
@@ -822,9 +831,17 @@ fn saved_group(saved: Memo<Vec<model::Connection>>, ctx: Ctx) -> AnyElement {
         .child(group_header(t!("Saved"), None))
         .child(dynamic(move || {
             shown.with(|_| ());
+            // The marks: key faces or creatures.
+            let _ = ctx.creatures.get();
             let hosts = saved.get_untracked();
             let ctx = ctx.clone();
-            untracked(move || pet::on(ctx.clone(), pet::Perch::Saved, rows::saved_card(hosts, &ctx)))
+            untracked(move || {
+                pet::on(
+                    ctx.clone(),
+                    pet::Perch::Saved,
+                    rows::saved_card(hosts, &ctx),
+                )
+            })
         }))
         .into_element()
 }

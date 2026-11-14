@@ -378,7 +378,10 @@ pub fn reconcile(local: Option<&PetRecord>, cloud: Option<&PetRecord>) -> Reconc
     }
 }
 
-/// The egg before it hatches: whether it's ready (PET-DESIGN §15.2).
+/// The egg before it hatches (PET-DESIGN §15.2): the person hatches it,
+/// three taps on Home (the first wobbles it, the second cracks it, the
+/// third hatches it); or it gets ready by itself, at an agent's first
+/// finished turn or the third connection, and hatches when Home shows.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EggProgress {
     /// Successful connections seen.
@@ -387,15 +390,39 @@ pub struct EggProgress {
     /// Whether an agent has finished a turn.
     #[serde(default)]
     pub agent_finished: bool,
+    /// The taps so far, kept in memory only: a relaunch starts over.
+    #[serde(skip)]
+    pub taps: u8,
 }
 
 /// Connections that ready the egg for someone who runs no agents.
 pub const EGG_CONNECTIONS: u32 = 3;
 
+/// The taps that hatch the egg; one fewer cracks it.
+pub const EGG_TAPS: u8 = 3;
+
 impl EggProgress {
-    /// Cracked: the first finished agent turn, or the third connection.
+    /// Ready by itself: the first finished agent turn, or the third
+    /// connection.
     pub fn ready(&self) -> bool {
         self.agent_finished || self.connections >= EGG_CONNECTIONS
+    }
+
+    /// Cracked, as it's drawn: ready by itself, or tapped twice.
+    pub fn cracked(&self) -> bool {
+        self.ready() || self.taps >= EGG_TAPS - 1
+    }
+
+    /// Ready to hatch: by itself, or tapped three times.
+    pub fn hatchable(&self) -> bool {
+        self.ready() || self.taps >= EGG_TAPS
+    }
+
+    /// A tap on the egg; the taps so far (they stop counting at the
+    /// hatch's).
+    pub fn tap(&mut self) -> u8 {
+        self.taps = (self.taps + 1).min(EGG_TAPS);
+        self.taps
     }
 
     pub fn connected(&mut self) {
@@ -407,17 +434,18 @@ impl EggProgress {
     }
 }
 
-/// When the hatch plays: the egg is ready, the person is on Home, the
-/// companion is shown, and the first iCloud sync has settled (or there's
-/// no iCloud), so a pet on their other device is adopted rather than a
-/// second one hatched.
+/// When the hatch plays: the egg is ready to (tapped three times, or ready
+/// by itself), the person is on Home, the companion is shown, and the first
+/// iCloud sync has settled (or there's no iCloud), so a pet on their other
+/// device is adopted rather than a second one hatched. Tapped before it
+/// settles, it hatches once it has.
 pub fn may_hatch(
     egg: &EggProgress,
     on_home: bool,
     companion_shown: bool,
     cloud_settled: bool,
 ) -> bool {
-    egg.ready() && on_home && companion_shown && cloud_settled
+    egg.hatchable() && on_home && companion_shown && cloud_settled
 }
 
 #[cfg(test)]

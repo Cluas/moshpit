@@ -1,10 +1,12 @@
-//! Command-line front end for the Rust port, the twin of
-//! `harness/swift/main.swift`: one result line per case, in the same format.
+//! Command-line front end for the Rust port, the twin of the app's
+//! `harness/swift/main.swift` (gone with the Swift herdr code, E1; at
+//! cf25626b): one result line per case, in the same format.
 //!
 //!   herdr_harness cases <corpus>
 //!   herdr_harness bench <stream> <chunk-size|whole> <iterations>
 //!
-//! `harness/equivalence.py` runs both over the same corpora and compares.
+//! `harness/equivalence.py` ran both over the same corpora and compared;
+//! `tests/equivalence.rs` checks the recorded Swift output.
 
 use std::process::ExitCode;
 

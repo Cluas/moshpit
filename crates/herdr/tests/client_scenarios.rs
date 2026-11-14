@@ -2,7 +2,8 @@
 //! swiftc: the Rust client prints its recorded log, and every scenario
 //! `harness/client/divergences.json` names still differs from what the app's
 //! Swift client printed for it (`<name>.swift.log`, recorded by
-//! `harness/client/equivalence.py update-goldens`).
+//! `harness/client/equivalence.py update-goldens`; the Swift client and that
+//! driver left the app with E1, so the recordings are final: at cf25626b).
 
 use std::fs;
 use std::path::Path;

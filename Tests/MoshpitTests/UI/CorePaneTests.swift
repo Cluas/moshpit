@@ -4,11 +4,10 @@ import Testing
 import UIKit
 @testable import Moshpit
 
-/// T3: the app's seam (``TerminalSurface``) on both views, and tmux panes on
-/// the core's view — a Rust tmux pane's terminal is the core's when its
-/// attach is made with the switch on; the pane-switch marks (veil, reveal)
-/// act when the bytes before them are on screen, not when they are pushed;
-/// a held resize takes effect before the capture after it.
+/// T3: the app's seam (``TerminalSurface``) on the core's view, and tmux
+/// panes on it — the pane-switch marks (veil, reveal) act when the bytes
+/// before them are on screen, not when they are pushed; a held resize takes
+/// effect before the capture after it.
 @Suite("Core view: the seam and tmux panes", .serialized)
 @MainActor
 struct CorePaneTests {
@@ -19,21 +18,19 @@ struct CorePaneTests {
         cursorColorId: "teal", cursorBlink: false)
 
     /// A Rust session's tmux surface on a fake core (nothing connects).
-    private func tmux(_ kind: TerminalSurfaceKind) -> (RustTmuxController, RustSessionDriver, FakeCoreSessions) {
+    private func tmux() -> (RustTmuxController, RustSessionDriver, FakeCoreSessions) {
         let fake = FakeCoreSessions()
         let core = RustCore(sessions: fake, credentials: RustCredentialHost())
         var connection = ServerConnection(host: "h", username: "u")
         connection.multiplexer = .tmux
         let session = SessionHub.ActiveSession(connection: connection)
         let driver = RustSessionDriver(session: session, core: core, appearance: Self.look)
-        let controller = RustTmuxController(driver: driver, appearance: Self.look, grid: (40, 12),
-                                            surfaceKind: kind)
+        let controller = RustTmuxController(driver: driver, appearance: Self.look, grid: (40, 12))
         controller.mirror(RustSessionTests.model(active: "%1"))
         return (controller, driver, fake)
     }
 
-    /// Waits until `done` holds, taking the core's frames meanwhile (a
-    /// SwiftTerm surface parses as it is fed: at once).
+    /// Waits until `done` holds, taking the core's frames meanwhile.
     @discardableResult
     private func settle(_ surface: TerminalSurface, timeout: TimeInterval = 5,
                         until done: @escaping () -> Bool) -> Bool {
@@ -50,12 +47,11 @@ struct CorePaneTests {
 
     // MARK: tmux panes
 
-    @Test("a Rust tmux pane's terminal is the view its attach was made for", arguments: [true, false])
-    func paneViewFollowsTheSwitch(core: Bool) {
-        let (tmux, driver, _) = tmux(core ? .core : .swiftTerm)
+    @Test("a Rust tmux pane's terminal is the core's view, one per pane")
+    func paneViewIsTheCores() {
+        let (tmux, driver, _) = tmux()
         let surface = tmux.surface(for: "%1")
-        #expect((surface is CoreTerminalView) == core)
-        #expect((surface is SwiftTermSurface) == !core)
+        #expect(surface is CoreTerminalView)
         #expect(surface === tmux.surface(for: "%1"), "one terminal per pane, for its life")
         let coordinator = tmux.coordinator(for: "%1")
         #expect(surface.surfaceDelegate === coordinator, "the pane's coordinator hears its terminal")
@@ -65,7 +61,7 @@ struct CorePaneTests {
 
     @Test("a pane switch's reveal waits for the frame with the repaint before it")
     func revealWaitsForTheRepaint() throws {
-        let (tmux, driver, _) = tmux(.core)
+        let (tmux, driver, _) = tmux()
         let surface = try #require(tmux.surface(for: "%1") as? CoreTerminalView)
         let coordinator = try #require(tmux.coordinator(for: "%1"))
         coordinator.feed(data: Data("stale".utf8))
@@ -89,7 +85,7 @@ struct CorePaneTests {
 
     @Test("a held resize takes effect before the capture that follows it")
     func heldResizeLandsBeforeTheCapture() throws {
-        let (tmux, driver, _) = tmux(.core)
+        let (tmux, driver, _) = tmux()
         let surface = try #require(tmux.surface(for: "%1") as? CoreTerminalView)
         let coordinator = try #require(tmux.coordinator(for: "%1"))
         let container = TerminalHostContainer(frame: surface.frame)
@@ -117,27 +113,21 @@ struct CorePaneTests {
         _ = driver
     }
 
-    @Test("a terminal made now is the core's: no switch (F0)")
+    @Test("a terminal made now is the core's: no switch (F0, batch B)")
     func kindIsTheCore() {
-        #expect(CoreTermSwitch.available, "this build links the terminal core")
-        #expect(TerminalSurfaceKind.current == .core)
-        let surface = TmuxSessionController(sshSession: MockTmuxTransport()).surface(for: "%0")
+        #expect(mp_term_abi_version() == UInt32(MP_TERM_ABI_VERSION), "this build links the terminal core")
+        let surface = TerminalSurfaces.make(font: Self.font, grid: TerminalGrid(cols: 20, rows: 3))
         #expect(surface is CoreTerminalView)
+        let controller = TmuxSessionController(sshSession: MockTmuxTransport())
+        let pane = controller.surface(for: "%0")
+        #expect(pane is CoreTerminalView)
+        #expect(pane === controller.surface(for: "%0"))
+        #expect(pane.surfaceDelegate === controller.coordinator(for: "%0"))
     }
 
-    @Test("the Swift session's tmux panes take the view their controller was made for", arguments: [true, false])
-    func swiftControllerPanesFollowTheSwitch(core: Bool) {
-        let controller = TmuxSessionController(sshSession: MockTmuxTransport(), surfaceKind: core ? .core : .swiftTerm)
-        let surface = controller.surface(for: "%0")
-        #expect((surface is CoreTerminalView) == core)
-        #expect(surface === controller.surface(for: "%0"))
-        #expect(surface.surfaceDelegate === controller.coordinator(for: "%0"))
-    }
-
-    @Test("a capture's reveal comes once its bytes are drawn", arguments: [true, false])
-    func revealWhenShownFollowsTheBytes(core: Bool) {
-        let surface = TerminalSurfaces.make(core ? .core : .swiftTerm, font: Self.font,
-                                            grid: TerminalGrid(cols: 30, rows: 6))
+    @Test("a capture's reveal comes once its bytes are drawn")
+    func revealWhenShownFollowsTheBytes() {
+        let surface = TerminalSurfaces.make(font: Self.font, grid: TerminalGrid(cols: 30, rows: 6))
         let coordinator = SwiftTerminalView.Coordinator()
         coordinator.attach(surface)
         var forwarded: [TerminalMark] = []
@@ -159,7 +149,7 @@ struct CorePaneTests {
 
     @Test("marks come back in order, each with the frame that has the bytes before it")
     func marksRideTheirFrames() throws {
-        let surface = TerminalSurfaces.make(.core, font: Self.font, grid: TerminalGrid(cols: 20, rows: 3))
+        let surface = TerminalSurfaces.make(font: Self.font, grid: TerminalGrid(cols: 20, rows: 3))
         let core = try #require(surface as? CoreTerminalView)
         final class Sink: TerminalSurfaceDelegate {
             var seen: [(arg: Int64, row: String)] = []
@@ -184,53 +174,34 @@ struct CorePaneTests {
         }
     }
 
-    @Test("a SwiftTerm surface hands a mark back at once: it parses as it is fed")
-    func swiftTermMarksAreImmediate() {
-        let surface = TerminalSurfaces.make(.swiftTerm, font: Self.font, grid: TerminalGrid(cols: 20, rows: 3))
-        let coordinator = SwiftTerminalView.Coordinator()
-        coordinator.attach(surface)
-        var reached: [TerminalMark] = []
-        coordinator.onMark = { reached.append($0) }
-        coordinator.feed(data: Data("a".utf8))
-        coordinator.feed(mark: TerminalMark(code: 1, arg: 7))
-        #expect(reached == [TerminalMark(code: 1, arg: 7)])
-        #expect(surface.rowText(0) == "a")
-    }
+    // MARK: The coordinator
 
-    // MARK: The coordinator on either view
-
-    @Test("output that came before the terminal reaches it, in order", arguments: [true, false])
-    func earlyOutputIsNotLost(core: Bool) {
+    @Test("output that came before the terminal reaches it, in order")
+    func earlyOutputIsNotLost() {
         let coordinator = SwiftTerminalView.Coordinator()
         coordinator.feed(data: Data("ear".utf8))
         coordinator.feed(data: Data("ly".utf8))
         #expect(coordinator.unattachedFeed.count == 2)
-        let surface = TerminalSurfaces.make(core ? .core : .swiftTerm, font: Self.font,
-                                            grid: TerminalGrid(cols: 20, rows: 3))
+        let surface = TerminalSurfaces.make(font: Self.font, grid: TerminalGrid(cols: 20, rows: 3))
         coordinator.attach(surface)
         #expect(coordinator.unattachedFeed.isEmpty)
         #expect(settle(surface) { surface.rowText(0) == "early" }, "got \(surface.rowText(0))")
     }
 
-    @Test("a predictor set before the terminal is made is the terminal's", arguments: [true, false])
-    func predictorReachesALateTerminal(core: Bool) {
+    @Test("a predictor set before the terminal is made is the terminal's")
+    func predictorReachesALateTerminal() throws {
         let coordinator = SwiftTerminalView.Coordinator()
         let engine = MoshPrediction(mode: .always, trail: false)
         coordinator.attachPrediction(engine)
-        let surface = TerminalSurfaces.make(core ? .core : .swiftTerm, font: Self.font,
-                                            grid: TerminalGrid(cols: 20, rows: 3))
+        let surface = TerminalSurfaces.make(font: Self.font, grid: TerminalGrid(cols: 20, rows: 3))
         coordinator.attach(surface)
-        if let core = surface as? CoreTerminalView {
-            #expect(core.prediction === engine)
-        } else {
-            #expect((surface as? SwiftTermSurface)?.prediction === engine)
-        }
+        let core = try #require(surface as? CoreTerminalView)
+        #expect(core.prediction === engine)
     }
 
-    @Test("modes, the grid, the cursor and a paste read the same on either view", arguments: [true, false])
-    func seamParity(core: Bool) {
-        let surface = TerminalSurfaces.make(core ? .core : .swiftTerm, font: Self.font,
-                                            grid: TerminalGrid(cols: 30, rows: 5))
+    @Test("modes, the grid, the cursor and a paste read through the seam")
+    func seamReads() {
+        let surface = TerminalSurfaces.make(font: Self.font, grid: TerminalGrid(cols: 30, rows: 5))
         let coordinator = SwiftTerminalView.Coordinator()
         coordinator.attach(surface)
         var sent: [Data] = []

@@ -1,7 +1,6 @@
 import Foundation
 import Testing
 import UIKit
-import SwiftTerm
 @testable import Moshpit
 
 /// The keyboard cover's two decisions: is this move worth hiding, and when
@@ -19,12 +18,22 @@ import SwiftTerm
 @MainActor
 struct KeyboardCoverTests {
 
+    private static let font = UIFont.monospacedSystemFont(ofSize: 12, weight: .regular)
+
+    /// A terminal filling 320×480 (the core's view).
+    private func makeTerminal() -> TerminalSurface {
+        let cell = TerminalCellGeometry.measuredCell(font: Self.font, scale: UITraitCollection.current.displayScale)
+        return TerminalSurfaces.make(font: Self.font, grid: TerminalGrid(cols: Int(320 / cell.width),
+                                                                          rows: Int(480 / cell.height)))
+    }
+
     private func makeCoordinator() -> SwiftTerminalView.Coordinator {
         let coordinator = SwiftTerminalView.Coordinator()
-        let terminal = TerminalView(frame: CGRect(x: 0, y: 0, width: 320, height: 480))
-        let container = TerminalHostContainer(frame: terminal.frame)
+        let terminal = makeTerminal()
+        let container = TerminalHostContainer(frame: CGRect(x: 0, y: 0, width: 320, height: 480))
         container.host(terminal)
-        coordinator.attach(to: terminal)
+        container.layoutSubviews()
+        coordinator.attach(terminal)
         coordinator.hostContainer = container
         // The notification handler ignores a terminal with no window that is
         // not first responder; a hosted one in a window passes.
@@ -63,31 +72,25 @@ struct KeyboardCoverTests {
 
     // MARK: - When the cover comes off
 
-    /// The cover is a snapshot of the pane; a test host renders nothing to
-    /// take one of.
-    final class SnapshottingTerminalView: TerminalView {
-        override func snapshotView(afterScreenUpdates afterUpdates: Bool) -> UIView? {
-            UIView(frame: bounds)
-        }
-    }
-
     /// A pane in its container, driven the way the keyboard notifications
     /// drive it (`lockFrame`, `coverForKeyboard`, `unlockFrame`). Out of any
     /// window, so the app-wide keyboard notifications other suites post or
     /// raise pass it by.
-    private func makeHostedPane() -> (SwiftTerminalView.Coordinator, TerminalHostContainer, TerminalView) {
+    /// The cover is a picture of the pane, which the core's view draws from
+    /// its own rows (a view never drawn, as a test host's, has one too).
+    private func makeHostedPane() -> (SwiftTerminalView.Coordinator, TerminalHostContainer, UIView) {
         let coordinator = SwiftTerminalView.Coordinator()
-        let terminal = SnapshottingTerminalView(frame: CGRect(x: 0, y: 0, width: 320, height: 480),
-                                                font: UIFont.monospacedSystemFont(ofSize: 12, weight: .regular))
-        let container = TerminalHostContainer(frame: terminal.frame)
+        let terminal = makeTerminal()
+        let container = TerminalHostContainer(frame: CGRect(x: 0, y: 0, width: 320, height: 480))
         container.host(terminal)
-        coordinator.attach(to: terminal)
+        container.layoutSubviews()
+        coordinator.attach(terminal)
         coordinator.hostContainer = container
-        return (coordinator, container, terminal)
+        return (coordinator, container, terminal.view)
     }
 
     /// The cover is a plate over the pane, faded to nothing when it comes off.
-    private func covered(_ container: TerminalHostContainer, _ terminal: TerminalView) -> Bool {
+    private func covered(_ container: TerminalHostContainer, _ terminal: UIView) -> Bool {
         container.subviews.contains { $0 !== terminal && $0.alpha > 0 }
     }
 
@@ -117,7 +120,7 @@ struct KeyboardCoverTests {
     }
 
     /// Waits until the cover is off, up to `limit` after `start`.
-    private func waitUncovered(_ container: TerminalHostContainer, _ terminal: TerminalView,
+    private func waitUncovered(_ container: TerminalHostContainer, _ terminal: UIView,
                                from start: ContinuousClock.Instant,
                                limit: Duration = .seconds(3)) async -> ContinuousClock.Instant {
         while covered(container, terminal), start.duration(to: .now) < limit {

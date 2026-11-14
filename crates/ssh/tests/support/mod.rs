@@ -141,6 +141,9 @@ pub struct Bench {
     /// What the account's shell prints before the SFTP server starts (an
     /// rc file's `echo`, which sshd's `$SHELL -c sftp-server` runs first).
     pub sftp_noise: Vec<u8>,
+    /// What the account's shell prints ahead of every exec command's own
+    /// output (an rc file's `echo`, for sshd's `$SHELL -c`).
+    pub exec_noise: Vec<u8>,
     /// Unknown commands run in `sh -c` with `$HOME` the scratch home.
     pub shell_commands: bool,
     /// The server's host-key preference (it presents the first that the
@@ -166,6 +169,7 @@ impl Default for Bench {
             methods: vec![MethodKind::PublicKey, MethodKind::Password],
             sftp: true,
             sftp_noise: Vec::new(),
+            exec_noise: Vec::new(),
             shell_commands: false,
             preferred_keys: None,
             rsa_signatures: None,
@@ -182,6 +186,7 @@ struct Shared {
     methods: Vec<MethodKind>,
     sftp: bool,
     sftp_noise: Vec<u8>,
+    exec_noise: Vec<u8>,
     shell_commands: bool,
     home: PathBuf,
     seen: Arc<Mutex<Seen>>,
@@ -227,6 +232,7 @@ impl Host {
                 methods: bench.methods.clone(),
                 sftp: bench.sftp,
                 sftp_noise: bench.sftp_noise.clone(),
+                exec_noise: bench.exec_noise.clone(),
                 shell_commands: bench.shell_commands,
                 home: home.path().to_owned(),
                 seen: seen.clone(),
@@ -613,8 +619,9 @@ impl server::Handler for Connection {
                     .output()
                     .await
                     .unwrap();
-                if !output.stdout.is_empty() {
-                    session.data(channel, output.stdout)?;
+                let stdout = [self.shared.exec_noise.clone(), output.stdout].concat();
+                if !stdout.is_empty() {
+                    session.data(channel, stdout)?;
                 }
                 if !output.stderr.is_empty() {
                     session.extended_data(channel, 1, output.stderr)?;

@@ -558,7 +558,12 @@ impl Part {
     /// The pages the host pushes beside [`Self::PAGES`], the screen again on
     /// that page: for a row of the hub's (Set up a host's list) and for the
     /// pages those pages open on the stack (R18).
-    pub const PUSHED: [Part; 4] = [Part::Hosts, Part::UdpRange, Part::NotificationInfo, Part::Companion];
+    pub const PUSHED: [Part; 4] = [
+        Part::Hosts,
+        Part::UdpRange,
+        Part::NotificationInfo,
+        Part::Companion,
+    ];
 
     /// What the host calls it (the hub: nothing).
     pub fn id(self) -> &'static str {
@@ -1508,7 +1513,11 @@ fn appearance_choice(state: State, tell: &Tell) -> AnyElement {
 const ACCENT_DOT: f32 = 20.0;
 const ICON_THUMB: f32 = 24.0;
 
-fn appearance(state: State, tell: &Tell, pet: Signal<Option<moshpit_pet::PetView>>) -> Vec<AnyElement> {
+fn appearance(
+    state: State,
+    tell: &Tell,
+    pet: Signal<Option<moshpit_pet::PetView>>,
+) -> Vec<AnyElement> {
     let mut group = section().row(
         row(t!("Accent"))
             .leading(accent_dot(state))
@@ -1560,8 +1569,14 @@ fn pet_figure(pet: PetSignal) -> impl Fn() -> crate::ui::companion::Figure + 'st
         pet.with(|p| {
             let p = p.as_ref();
             match p.and_then(|p| p.pet.as_ref()).and_then(|i| i.look()) {
-                Some(look) => Figure::Pet { look, pose: moshpit_pet::Pose::Idle },
-                None => Figure::Egg { ready: p.and_then(|p| p.egg).is_some_and(|e| e.ready) },
+                Some(look) => Figure::Pet {
+                    look,
+                    pose: moshpit_pet::Pose::Idle,
+                },
+                None => Figure::Egg {
+                    ready: p.and_then(|p| p.egg).is_some_and(|e| e.ready),
+                    wobble: false,
+                },
             }
         })
     }
@@ -1591,7 +1606,12 @@ fn pet_name(info: &moshpit_pet::PetInfo) -> String {
 /// now (the owner's call, 2026-11-15); the record keeps room for others.
 fn companion_group(pet: PetSignal, tell: &Tell) -> AnyElement {
     use moshpit_pet::Style;
-    let on = move || pet.with(|p| p.as_ref().is_none_or(|p| p.shown && p.style == Style::Pixel));
+    let on = move || {
+        pet.with(|p| {
+            p.as_ref()
+                .is_none_or(|p| p.shown && p.style == Style::Pixel)
+        })
+    };
     let toggle = {
         let tell = tell.clone();
         move |on: bool| {
@@ -1613,7 +1633,7 @@ fn companion_group(pet: PetSignal, tell: &Tell) -> AnyElement {
                 crate::home::pet::species_kind(&info.species),
                 stage_name(info.stage)
             ),
-            None => t!("It hatches when an agent first finishes a task."),
+            None => t!("Tap it three times on Home to hatch it. It also hatches by itself when an agent finishes a task."),
         })
         .into()
     };
@@ -1644,7 +1664,7 @@ fn companion_group(pet: PetSignal, tell: &Tell) -> AnyElement {
                 .on_press(go(tell, Part::Companion))
                 .test_id("settings-companion-card"),
         )
-        .footer(t!("Tap it on Home and it reacts. On the Dynamic Island and the lock screen it changes pose but doesn't move."))
+        .footer(t!("Tap it on Home and it reacts. On the Dynamic Island and the lock screen it changes pose but doesn't move. Each server's mark becomes a pixel creature too."))
         .test_id("settings-companion")
         .into_element()
 }
@@ -1731,7 +1751,9 @@ fn companion_card(pet: PetSignal, tell: &Tell) -> Vec<AnyElement> {
         )
         .child(
             TextToken::Title
-                .apply(text(move || info().map_or_else(|| t!("Egg"), |i| pet_name(&i))))
+                .apply(text(move || {
+                    info().map_or_else(|| t!("Egg"), |i| pet_name(&i))
+                }))
                 .text_color(move || token("foreground"))
                 .mt(px(8.0)),
         )
@@ -1740,14 +1762,23 @@ fn companion_card(pet: PetSignal, tell: &Tell) -> Vec<AnyElement> {
                 .apply(text(move || match info() {
                     Some(i) => {
                         let kind = crate::home::pet::species_kind(&i.species);
-                        let shiny = if i.traits.shiny { format!(" · {}", t!("Shiny")) } else { String::new() };
+                        let shiny = if i.traits.shiny {
+                            format!(" · {}", t!("Shiny"))
+                        } else {
+                            String::new()
+                        };
                         format!("{kind} · {}{shiny}", stage_name(i.stage))
                     }
-                    None => t!("It hatches when an agent first finishes a task."),
+                    None => t!("Tap it three times on Home to hatch it. It also hatches by itself when an agent finishes a task."),
                 }))
                 .text_color(move || token("muted-foreground")),
         );
-    let mut out = vec![section().item(hero, Inset::Content).test_id("settings-pet-hero").into_element()];
+    let mut out = vec![
+        section()
+            .item(hero, Inset::Content)
+            .test_id("settings-pet-hero")
+            .into_element(),
+    ];
     let has_pet = computed(move || pet.with(|p| p.as_ref().is_some_and(|p| p.pet.is_some())));
     let tell = tell.clone();
     out.push(

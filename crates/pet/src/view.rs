@@ -71,8 +71,12 @@ pub struct PetView {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EggView {
-    /// Cracked: the first finished task, or the third connection.
+    /// Cracked: tapped twice, or ready by itself (the first finished task,
+    /// or the third connection).
     pub ready: bool,
+    /// The taps so far (the third hatches it).
+    #[serde(default)]
+    pub taps: u8,
 }
 
 /// Everything the page draws and the pet card lists.

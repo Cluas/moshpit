@@ -16,6 +16,16 @@ final class NSHContextMenus: NSObject, UIContextMenuInteractionDelegate {
     var cornerRadius: [String: CGFloat] = [:]
     private weak var surface: UIView?
     private var interaction: UIContextMenuInteraction?
+    /// The part whose menu opened last (B498): what a confirmation one of
+    /// its actions asks hangs from (``NSHConfirmation``).
+    private weak var openedPart: UIView?
+
+    /// The part whose menu opened last, while it is on screen: the row a
+    /// confirmation its action asks points at.
+    var openedView: UIView? { openedPart?.window != nil ? openedPart : nil }
+    /// The surface the menus are on (a confirmation with no part to point
+    /// at shows over it).
+    var surfaceView: UIView? { surface }
 
     /// Puts the menus on `surface` (again: a new surface replaces the old).
     func install(on surface: UIView) {
@@ -41,7 +51,8 @@ final class NSHContextMenus: NSObject, UIContextMenuInteractionDelegate {
 
     func contextMenuInteraction(_ interaction: UIContextMenuInteraction,
                                 configurationForMenuAtLocation location: CGPoint) -> UIContextMenuConfiguration? {
-        guard let (id, _) = part(at: location), let actions = menus[id]?() else { return nil }
+        guard let (id, view) = part(at: location), let actions = menus[id]?() else { return nil }
+        openedPart = view
         return UIContextMenuConfiguration(identifier: id as NSString, previewProvider: nil) { _ in
             UIMenu(children: actions)
         }

@@ -80,7 +80,7 @@ final class TerminalNSHStage {
     private final class Hosted {
         let key: String
         let container = TerminalHostContainer()
-        /// The terminal, whichever view draws it (``CoreTermSwitch``).
+        /// The terminal (the core's view).
         let surface: TerminalSurface
         /// Its view.
         let terminal: UIView

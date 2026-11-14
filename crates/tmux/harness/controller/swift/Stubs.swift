@@ -50,15 +50,8 @@ final class TerminalSurface {
     func followTmuxClears() {}
 }
 
-/// Which view a new terminal gets: irrelevant here.
-enum TerminalSurfaceKind {
-    case core, swiftTerm
-    static var current: TerminalSurfaceKind { .swiftTerm }
-}
-
 enum TerminalSurfaces {
-    static func make(_ kind: TerminalSurfaceKind = .current, font: HarnessFont,
-                     grid: TerminalGrid) -> TerminalSurface {
+    static func make(font: HarnessFont, grid: TerminalGrid) -> TerminalSurface {
         TerminalSurface(grid: grid)
     }
 }

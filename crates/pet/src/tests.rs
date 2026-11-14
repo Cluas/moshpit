@@ -650,6 +650,34 @@ fn the_egg_hatches_at_the_first_finish_or_the_third_connection_while_watched() {
     }
 }
 
+#[test]
+fn three_taps_wobble_crack_and_hatch_the_egg_and_a_relaunch_starts_over() {
+    let mut e = EggProgress::default();
+    assert_eq!(e.tap(), 1, "a wobble");
+    assert!(!e.cracked() && !e.hatchable());
+    assert_eq!(e.tap(), 2);
+    assert!(e.cracked() && !e.hatchable(), "cracked, not yet hatched");
+    assert!(!may_hatch(&e, true, true, true));
+    assert_eq!(e.tap(), 3);
+    assert!(
+        e.hatchable() && !e.ready(),
+        "hatched by hand, not by itself"
+    );
+    assert!(may_hatch(&e, true, true, true));
+    assert!(
+        !may_hatch(&e, true, true, false),
+        "not before iCloud settles: then, once it has"
+    );
+    assert_eq!(e.tap(), 3, "it stops counting");
+    // The taps are kept in memory only.
+    let kept: EggProgress = serde_json::from_str(&serde_json::to_string(&e).unwrap()).unwrap();
+    assert_eq!(kept.taps, 0);
+    // Ready by itself, it's cracked and hatches with no tap, as before.
+    let mut f = EggProgress::default();
+    f.agent_finished();
+    assert!(f.cracked() && f.hatchable() && f.taps == 0);
+}
+
 // ---- drawing and the Live Activity ----------------------------------------
 
 #[test]
@@ -713,7 +741,14 @@ fn a_broken_string_is_not_a_sprite() {
 #[test]
 fn the_live_activitys_format_is_pinned() {
     // Tests/MoshpitTests/Island/PixelSpriteTests.swift decodes this string.
-    let s = Sprite { side: 2, cells: vec![0, 1, 1, 0], palette: vec![crate::sprite::Ink { light: 0x123456, dark: 0xABCDEF }] };
+    let s = Sprite {
+        side: 2,
+        cells: vec![0, 1, 1, 0],
+        palette: vec![crate::sprite::Ink {
+            light: 0x123456,
+            dark: 0xABCDEF,
+        }],
+    };
     assert_eq!(s.encode(), "px1:AQIBARI0VqvN7wAJAA==");
 }
 

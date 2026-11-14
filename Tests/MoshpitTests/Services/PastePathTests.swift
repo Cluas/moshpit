@@ -1,12 +1,11 @@
 import Foundation
 import Testing
 import UIKit
-import SwiftTerm
 @testable import Moshpit
 
-/// The paste roads besides herdr's frame channel — tmux's paste buffer, a
-/// plain SSH (or mosh) shell, the terminal view's own Paste and ⌘V — arrive
-/// with no paste marker inside the paste. None of them removed any.
+/// The paste roads — tmux's paste buffer, the terminal view's own Paste and
+/// ⌘V — arrive with no paste marker inside the paste. None of them removed
+/// any. (A plain shell's, on the Rust core, is crates/session's.)
 ///
 /// A program ends a bracketed paste at the first `ESC[201~` it reads; one
 /// inside the text ended the paste early, and the next line ran (live, into
@@ -21,7 +20,7 @@ struct PastePathTests {
     static let end = "\u{1B}[201~"
 
     /// Crafted clipboard texts, the ones herdr's paste had to learn to
-    /// handle (`HerdrPasteTests`): `combining`, a marker whose `~` carries
+    /// handle: `combining`, a marker whose `~` carries
     /// U+0301; `assembled`, `ESC[20` + a marker + `1~`; `bare`, a plain one.
     /// These paths removed none of them.
     static let combining = "ls\u{1B}[201~\u{301}\ntouch INJECTED\n"
@@ -95,16 +94,22 @@ struct PastePathTests {
 
     // MARK: - The terminal view's own Paste and ⌘V
 
-    private func terminal() -> (TerminalView, SwiftTerminalView.Coordinator) {
-        let view = TerminalView(frame: CGRect(x: 0, y: 0, width: 400, height: 300),
-                                font: UIFont.monospacedSystemFont(ofSize: 12, weight: .regular))
+    /// The core's view and its coordinator; `paste` is what the view's Paste
+    /// and ⌘V do with the clipboard's text.
+    private func terminal() -> (CoreTerminalView, SwiftTerminalView.Coordinator) {
+        let surface = TerminalSurfaces.make(font: UIFont.monospacedSystemFont(ofSize: 12, weight: .regular),
+                                            grid: TerminalGrid(cols: 40, rows: 10))
         let coordinator = SwiftTerminalView.Coordinator()
-        coordinator.attach(to: view)
-        return (view, coordinator)
+        coordinator.attach(surface)
+        return (surface as! CoreTerminalView, coordinator)
     }
 
-    /// No session paste path installed: the view's paste used to be
-    /// SwiftTerm's own, which wraps the text as it is.
+    private func paste(_ text: String, on view: CoreTerminalView) {
+        view.surfaceDelegate?.surface(view, paste: text)
+    }
+
+    /// No session paste path installed: the coordinator brackets it by the
+    /// program's mode, with the markers in the text taken out.
     @Test("Terminal view: Paste with no session path sends one paste, markers gone",
           arguments: [combining, assembled, bare])
     func terminalViewPaste(_ pasted: String) {
@@ -112,9 +117,9 @@ struct PastePathTests {
         var sent = Data()
         coordinator.onInput = { sent.append($0) }
         coordinator.feed(data: Data("\u{1B}[?2004h".utf8))
-        #expect(view.getTerminal().bracketedPasteMode)
+        #expect(view.settle { _ in coordinator.modes.bracketedPaste })
 
-        view.paste(text: pasted)
+        paste(pasted, on: view)
 
         #expect(sent == Data((Self.start + Self.cleaned[pasted]! + Self.end).utf8))
     }
@@ -124,9 +129,9 @@ struct PastePathTests {
         let (view, coordinator) = terminal()
         var sent = Data()
         coordinator.onInput = { sent.append($0) }
-        #expect(!view.getTerminal().bracketedPasteMode)
+        #expect(!coordinator.modes.bracketedPaste)
 
-        view.paste(text: Self.bare)
+        paste(Self.bare, on: view)
 
         #expect(sent == Data(Self.cleaned[Self.bare]!.utf8))
     }
@@ -139,46 +144,10 @@ struct PastePathTests {
         coordinator.onInput = { sent.append($0) }
         coordinator.onPaste = { handed.append($0) }
 
-        view.paste(text: Self.bare)
+        paste(Self.bare, on: view)
 
         #expect(handed == [Self.bare])
         #expect(sent.isEmpty)
     }
 
-    // MARK: - Plain SSH (the mosh path builds the same payload)
-
-    /// A plain shell over SSH whose program turned bracketed paste on: the
-    /// session wraps by the local emulator's flag, and wrapped the text with
-    /// its marker inside.
-    @Test("Plain SSH: a paste reaches the PTY as one paste, markers gone",
-          arguments: [true, false])
-    func plainSSH(bracketed: Bool) async throws {
-        var connection = ServerConnection(name: "paste-plain", host: "192.0.2.1", port: 22,
-                                          username: "tester", authMethod: .password)
-        connection.connectionProtocol = .ssh
-        connection.multiplexer = .none
-        defer { UserDefaults.standard.removeObject(forKey: "hostcaps." + connection.id.uuidString) }
-        let host = HerdrFrameHost()
-        let script = DialScript { connection in SSHSession(connection: connection, transport: host) }
-        let session = SessionHub.ActiveSession(connection: connection, dial: script.dialer)
-        let view = TerminalView(frame: CGRect(x: 0, y: 0, width: 400, height: 300),
-                                font: UIFont.monospacedSystemFont(ofSize: 12, weight: .regular))
-        session.coordinator.attach(to: view)
-
-        await session.start(theme: .githubDark, fontSize: 14)
-        #expect(session.viewModel.connState == .live)
-        if bracketed {
-            host.emit(Data("\u{1B}[?2004h".utf8))
-            #expect(await waitUntil { view.getTerminal().bracketedPasteMode })
-        }
-
-        session.sendPaste(Self.bare)
-
-        #expect(await waitUntil { host.writtenText.contains("touch INJECTED") })
-        let written = Data(host.written.joined())
-        let clean = Self.cleaned[Self.bare]!
-        #expect(written == Data((bracketed ? Self.start + clean + Self.end : clean).utf8))
-        #expect(occurrences(of: Self.end, in: written) == (bracketed ? 1 : 0))
-        await session.stop()
-    }
 }

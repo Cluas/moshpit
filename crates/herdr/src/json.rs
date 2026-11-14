@@ -4,7 +4,8 @@
 //! `JSONSerialization.jsonObject(with:)` and Swift's `as?` casts, so what
 //! counts as JSON, and what a number turns into, is Foundation's rule, not
 //! RFC 8259's. This module writes those rules out, as measured on macOS 27
-//! (the probes behind every rule are `harness/swift/probe-foundation.swift`), so
+//! (the probes behind every rule are `harness/swift/probe-foundation.swift`,
+//! at cf25626b), so
 //! that the Rust port reads every herdr line exactly as the app does:
 //!
 //! - Only an object or an array at the top, JSON whitespace (space, tab,

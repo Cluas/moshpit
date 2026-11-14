@@ -4,8 +4,10 @@
 //! A host's mark is a disc with a status dot on its corner. On the disc, by
 //! what the host has: the emoji the person picked for it; else its trusted
 //! host key's face ([`Face`]: a pattern made from the key's fingerprint, in
-//! one of eight hues, that changes when the key does); else, before any key
-//! is trusted, its name's initial.
+//! one of eight hues, that changes when the key does; with the pixel
+//! companion on, a pixel creature made the same way, moshpit-design
+//! `PET-DESIGN.md` §6.3); else, before any key is trusted, its name's
+//! initial.
 //!
 //! A host mark is decoration beside the host's name: screen readers hear
 //! the name and its state from the row or head it sits in, not from the
@@ -18,15 +20,20 @@ use serde::{Deserialize, Serialize};
 use crate::ui::{
     icon::{IconSize, Tone, icon},
     status::{DotSize, Status, status_dot},
-    tokens::{FACES, token},
+    tokens::{FACES, creature_ink, token},
     typography::TextToken,
 };
 
 /// A trusted host key's face: a square grid of cells, some filled, in one
 /// of the hues of [`FACES`]. What fills the grid, and how big it is, is the
 /// generator's (the host's model makes a face from the key's fingerprint:
-/// the same key, the same face); the mark draws any grid in the same space,
+/// the same key, the same face); the mark draws any grid in its box,
 /// whatever its side.
+///
+/// A pixel creature (PET-DESIGN §6.3) is a face too, from another
+/// generator: its cells each a kind ([`Face::kinds`]) the mark colours from
+/// its hue, its eyes closed when the mark mutes it ([`Face::asleep`]), and
+/// a bigger box ([`Face::space`]).
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Face {
     /// The grid's side, in cells.
@@ -35,6 +42,15 @@ pub struct Face {
     pub cells: Vec<bool>,
     /// Its hue: an index into [`FACES`].
     pub hue: u8,
+    /// A creature's cells, row by row, each a kind (`moshpit_pet`'s
+    /// `creature::Kind` by number, coloured by [`creature_ink`]); none on
+    /// a key face, whose filled cells take its hue's one colour.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub kinds: Vec<u8>,
+    /// The creature asleep, the same way: what the mark shows when it
+    /// mutes it (the host offline or failed).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub asleep: Vec<u8>,
 }
 
 impl Face {
@@ -52,6 +68,22 @@ impl Face {
     /// Its pattern's colour token and its disc's.
     pub fn tokens(&self) -> (&'static str, &'static str) {
         FACES[usize::from(self.hue) % FACES.len()]
+    }
+
+    /// Whether it is a creature (its cells have kinds).
+    pub fn is_creature(&self) -> bool {
+        !self.kinds.is_empty()
+    }
+
+    /// The box its grid fills on a mark of `size`: a key face's 25 / 20 pt,
+    /// a creature's 30 / 20 pt (whole points per cell: a 10-cell grid
+    /// can't fill 25).
+    pub fn space(&self, size: MarkSize) -> f32 {
+        if self.is_creature() {
+            size.creature()
+        } else {
+            size.pattern()
+        }
     }
 }
 
@@ -87,6 +119,15 @@ impl MarkSize {
     pub fn pattern(self) -> f32 {
         match self {
             MarkSize::Md => 25.0,
+            MarkSize::Sm => 20.0,
+        }
+    }
+
+    /// The space a creature's grid takes: 30 pt on the head's mark (3 pt a
+    /// cell), 20 pt in a row's lane (2 pt).
+    pub fn creature(self) -> f32 {
+        match self {
+            MarkSize::Md => 30.0,
             MarkSize::Sm => 20.0,
         }
     }
@@ -194,7 +235,8 @@ impl IntoElement for HostMark {
                         .number_of_lines(1u32),
                 )
                 .into_element(),
-            (None, Some(face)) => pattern(&face, size.pattern(), ink),
+            (None, Some(face)) if face.is_creature() => creature(&face, face.space(size), down),
+            (None, Some(face)) => pattern(&face, face.space(size), ink),
             (None, None) => size
                 .text()
                 .apply(text(initial))
@@ -270,6 +312,46 @@ fn pattern(face: &Face, space: f32, ink: &'static str) -> AnyElement {
         .into_element()
 }
 
+/// A creature's grid in a square `space` points wide, whole points a cell:
+/// each row's runs of one kind as one block in that kind's colour; asleep
+/// and in grey when `muted`.
+fn creature(face: &Face, space: f32, muted: bool) -> AnyElement {
+    let side = usize::from(face.side.max(1));
+    let cell = (space / side as f32).floor().max(1.0);
+    let cells = if muted && face.asleep.len() == face.kinds.len() {
+        &face.asleep
+    } else {
+        &face.kinds
+    };
+    let hue = face.hue;
+    view()
+        .flex_col()
+        .children(cells.chunks(side).map(|row| {
+            view()
+                .flex_row()
+                .children(runs(row).map(|(kind, count)| {
+                    let mut block = view().w(px(cell * count as f32)).h(px(cell));
+                    if let Some(ink) = creature_ink(kind, hue, muted) {
+                        block = block.bg(move || token(ink));
+                    }
+                    block.into_element()
+                }))
+                .into_element()
+        }))
+        .into_element()
+}
+
+/// `row`'s runs: each kind and how many cells of it in a row.
+fn runs(row: &[u8]) -> impl Iterator<Item = (u8, usize)> + '_ {
+    let mut at = 0;
+    std::iter::from_fn(move || {
+        let kind = *row.get(at)?;
+        let count = row[at..].iter().take_while(|k| **k == kind).count();
+        at += count;
+        Some((kind, count))
+    })
+}
+
 /// An agent's mark for `status` (an agent's: attention, working, done,
 /// idle), in a row's 28 pt leading lane: the waiting hand solid amber, the
 /// done check blue, the sparkle muted (dimmer while idle).
@@ -281,4 +363,60 @@ pub fn agent_mark(status: Status) -> AnyElement {
         _ => ("sparkle", Tone::Muted),
     };
     icon(name).size(IconSize::Md).tone(tone).into_element()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn creature_face() -> Face {
+        Face {
+            side: 10,
+            cells: vec![true; 100],
+            hue: 3,
+            kinds: vec![1; 100],
+            asleep: vec![1; 100],
+        }
+    }
+
+    #[test]
+    fn a_creature_fills_a_bigger_box_in_whole_points() {
+        let key = Face {
+            side: 5,
+            cells: vec![true; 25],
+            hue: 3,
+            kinds: Vec::new(),
+            asleep: Vec::new(),
+        };
+        assert_eq!(
+            (key.space(MarkSize::Md), key.space(MarkSize::Sm)),
+            (25.0, 20.0)
+        );
+        let creature = creature_face();
+        assert!(creature.is_creature() && !key.is_creature());
+        for (size, cell) in [(MarkSize::Md, 3.0), (MarkSize::Sm, 2.0)] {
+            assert_eq!(creature.space(size) / 10.0, cell);
+            assert!(creature.space(size) < size.points());
+        }
+    }
+
+    #[test]
+    fn a_rows_runs_cover_it() {
+        let row = [0, 0, 5, 1, 1, 1, 6, 5, 0, 0];
+        let runs: Vec<_> = runs(&row).collect();
+        assert_eq!(runs, [(0, 2), (5, 1), (1, 3), (6, 1), (5, 1), (0, 2)]);
+        assert_eq!(runs.iter().map(|(_, n)| n).sum::<usize>(), row.len());
+        assert_eq!(super::runs(&[]).count(), 0);
+    }
+
+    #[test]
+    fn a_key_face_reads_as_before_and_a_creature_round_trips() {
+        let old = r#"{"side":5,"cells":[true,false],"hue":2}"#;
+        let face: Face = serde_json::from_str(old).unwrap();
+        assert!(!face.is_creature());
+        assert_eq!(serde_json::to_string(&face).unwrap(), old);
+        let creature = creature_face();
+        let text = serde_json::to_string(&creature).unwrap();
+        assert_eq!(serde_json::from_str::<Face>(&text).unwrap(), creature);
+    }
 }

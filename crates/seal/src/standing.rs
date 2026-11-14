@@ -139,7 +139,12 @@ impl PushStandingFile {
         let contents = self.contents();
         let mut all = prune(&contents.entries, now);
         let mut entries = all.remove(conn).unwrap_or_default();
-        let was_empty = entries.is_empty();
+        // Nobody else waiting (B450): the pane's own earlier entry is the
+        // question this one replaces, not another wait. It counted, and a
+        // second question on a pane rang nothing while the first one's
+        // entry stood (no app running to clear it). The same question —
+        // the pushed and the local copy name one `since` — is a repeat.
+        let was_empty = entries.iter().all(|e| e.pane == entry.pane);
         let is_repeat = entries
             .iter()
             .any(|e| e.pane == entry.pane && e.since == entry.since);
@@ -396,6 +401,25 @@ mod tests {
             !file.note_standing(CONN, entry("%1", 100, now()), now()),
             "the second arrival of the SAME question must see 'already standing'"
         );
+    }
+
+    /// B450: a second question on a pane whose first one's entry still
+    /// stands (no app running to clear it) is a new wait: it rings. It
+    /// used to count the first as someone waiting, and came in silent.
+    /// The same question again (the pushed and the local copy, one
+    /// `since`) is still a repeat, and another pane waiting still holds
+    /// the edge.
+    #[test]
+    fn a_second_question_on_the_same_pane_rings() {
+        let dir = TempDir::new("standing-second");
+        let s = PushStandingFile::new(dir.path(PushStandingFile::FILE_NAME));
+        let now = Date::from_unix(1_790_000_000.0);
+        assert!(s.note_standing("C", entry("%1", 100, now), now));
+        assert!(!s.note_standing("C", entry("%1", 100, now), now), "the same question again");
+        assert!(s.note_standing("C", entry("%1", 400, now), now), "a second question on the pane");
+        assert_eq!(s.standing("C", now).len(), 1);
+        assert!(!s.note_standing("C", entry("%2", 500, now), now), "another pane waits");
+        assert!(!s.note_standing("C", entry("%1", 600, now), now), "%2 still waits");
     }
 
     #[test]

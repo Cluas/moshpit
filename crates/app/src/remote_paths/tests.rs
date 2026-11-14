@@ -366,6 +366,45 @@ fn the_fallback_commands_run_against_a_real_folder() {
     std::fs::remove_dir_all(&base).ok();
 }
 
+/// B463, the exec side: bash reads `~/.bashrc` for sshd's `-c`, so an rc
+/// file's `echo` comes ahead of every exec command's output. A host with
+/// SFTP off read the noise as the stat's answer (the file "no longer on the
+/// host") and took it into the listing's first entry. The readers print a
+/// mark first, and what came before it is not theirs.
+#[test]
+fn the_fallback_reads_past_what_the_login_shell_prints() {
+    let base = scratch("noisy");
+    let root = base.join("out");
+    std::fs::create_dir_all(root.join("sub")).unwrap();
+    std::fs::write(root.join("a.png"), [1, 2, 3, 4, 5]).unwrap();
+    let root_s = root.to_str().unwrap();
+    let file = format!("{root_s}/a.png");
+    for sh in shells() {
+        let noisy = |command: &str| {
+            shell(
+                sh,
+                &format!("echo 'Welcome to the build box! d'; {command}"),
+                &base,
+            )
+        };
+        let stat = parse_stat(&noisy(&stat_command(&file)), &file);
+        assert_eq!(stat.and_then(|e| e.size), Some(5), "{sh}");
+        let stat = parse_stat(&noisy(&stat_command(root_s)), root_s);
+        assert!(stat.is_some_and(|e| e.is_directory), "{sh}");
+        let listed = parse_list(&noisy(&list_command(root_s)), root_s);
+        let names: BTreeSet<(String, bool)> = listed
+            .iter()
+            .map(|e| (e.name().to_owned(), e.is_directory))
+            .collect();
+        assert_eq!(
+            names,
+            BTreeSet::from([("a.png".to_owned(), false), ("sub".to_owned(), true)]),
+            "{sh}"
+        );
+    }
+    std::fs::remove_dir_all(&base).ok();
+}
+
 #[test]
 fn names_are_trimmed_and_checked_uploads_never_overwrite_deletes_need_depth() {
     assert_eq!(valid_name("  plots ").as_deref(), Some("plots"));

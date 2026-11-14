@@ -56,7 +56,7 @@ xcodegen generate        # project.yml 是唯一真源，.xcodeproj 由它生成
 open Moshpit.xcodeproj
 ```
 
-选 **Moshpit** scheme 和一台模拟器，按 ⌘R。Swift 包（SwiftTerm 的 fork、Citadel、WhisperKit）
+选 **Moshpit** scheme 和一台模拟器，按 ⌘R。Swift 包（Citadel、WhisperKit）
 首次构建时自动解析。真机构建要在 `Signing.xcconfig` 里填你的 Team ID，文件里的注释和
 [docs/install-free-account.md](docs/install-free-account.md) 都有步骤，包括免费 Apple ID 的走法。
 
@@ -79,7 +79,7 @@ xcodebuild test -project Moshpit.xcodeproj -scheme Moshpit \
 | `Packages/MoshpitKit/` | App 和三个扩展共用的本地 Swift package：日志、实时活动载荷、推送信封与配对存储 |
 | `Tests/` | `MoshpitTests/` 单元测试，`MoshpitUITests/` UI 测试 |
 | `push-relay/` | 主机与 APNs 之间的无状态 Go 中转服务器，部署清单在它的 `deploy/` 下 |
-| `docs/` | [ARCHITECTURE.md](docs/ARCHITECTURE.md)、[PUSH.md](docs/PUSH.md)（推送协议全流程）、[PATCHES.md](docs/PATCHES.md)（SwiftTerm fork 改了什么）、设计笔记 |
+| `docs/` | [ARCHITECTURE.md](docs/ARCHITECTURE.md)、[PUSH.md](docs/PUSH.md)（推送协议全流程）、[WEZTERM-PATCHES.md](docs/WEZTERM-PATCHES.md)（终端内核的 wezterm fork 改了什么）、设计笔记 |
 | `scripts/` | `host/` 装到开发机上的 shell 脚本，`gen/` 生成器，`verify/` 端到端验证，`capture/` 截图流程，`spikes/` 实验，`release/` 归档打包 |
 
 App 默认连维护者的中转服务器；[docs/PUSH.md](docs/PUSH.md) 写明了中转服务器能看到什么、看不到什么，以及怎么自己搭一台。

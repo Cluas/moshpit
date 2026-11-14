@@ -166,26 +166,20 @@ struct AgentsScriptTests {
         return connection
     }
 
-    /// A session on `connection` running herdr, two panes, `focused` the
-    /// one its client reads as focused (the Rust path's mirror; the Swift
-    /// client's read sets the same snapshot).
+    /// A session on `connection` running herdr on the core, two panes,
+    /// `focused` the one its surface reads as focused (the core's mirror).
     static func herdrSession(_ connection: ServerConnection, focused: String) -> SessionHub.ActiveSession {
         let session = SessionHub.ActiveSession(connection: connection)
-        let herdr = HerdrControlClient(runner: HerdrControlClientTests.FakeRunner())
-        var tree = TmuxSnapshot()
-        tree.sessions["w1"] = SessionInfo(id: "w1", name: "~", isAttached: true)
-        tree.windows["w1:t1"] = WindowInfo(id: "w1:t1", sessionId: "w1", name: "1", index: 1)
-        for pane in ["w1:p1", "w1:p2"] {
-            tree.panes[pane] = PaneInfo(id: pane, windowId: "w1:t1", command: "claude")
+        let herdr = RustHerdrController(driver: nil)
+        var model = RustSessionTests.herdrModel()
+        model.panes = model.panes.map { pane in
+            var pane = pane
+            pane.command = "claude"
+            pane.isActive = pane.id == focused
+            return pane
         }
-        tree.activeSessionId = "w1"
-        tree.activeWindowId = "w1:t1"
-        tree.activePaneId = focused
-        tree.isAttached = true
-        herdr.mirrorRust(snapshot: tree, agentHooks: [:], agentHooksLoaded: true, isRefreshing: false,
-                         serverNotRunning: false, protocolMismatch: nil, versionSkew: nil,
-                         isRestartingServer: false, pushActive: false, paneSwitchInFlight: false,
-                         paneCwds: [:], worktreeRepos: [:])
+        model.activePaneId = focused
+        herdr.mirror(model)
         session.rustSetHerdr(herdr)
         return session
     }

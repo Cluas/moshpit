@@ -6,11 +6,11 @@ import Foundation
 // about the paths a terminal shows, the link a confirmed path carries, a
 // folder's listing, and the exec forms of reading and changing files. The
 // enums below are this app's names for it, so the services and views that
-// call them read as before. What stays Swift: the candidates the SwiftTerm
-// view's lines yield (``TerminalPathScanner``; the new terminal view's are
-// the terminal core's, `crates/term/src/paths.rs`), and the windowed SFTP
-// reads (``WindowedRead``, ``InOrderBytes``), which are this app's SFTP
-// client's async loops.
+// call them read as before. What stays Swift: the candidate a terminal's
+// path pass hands the probe (``TerminalPathScanner/Candidate``; the
+// scanner is the terminal core's, `crates/term/src/paths.rs`), and the
+// windowed SFTP reads (``WindowedRead``, ``InOrderBytes``), which are this
+// app's SFTP client's async loops.
 
 // MARK: - What a tap can open
 
@@ -32,180 +32,24 @@ enum PreviewableFile {
 
 // MARK: - Finding paths in terminal text
 
-/// Picks out the runs of a terminal line that could name a file or folder
-/// on the host — candidates only. Nothing here knows whether a path EXISTS;
-/// `PathProbe` asks the host, and only what it confirms ever becomes a
-/// link, which is what keeps prose like "s45/s55" or "and/or" from turning
-/// blue.
-///
-/// Splits on anything that can't be part of a path, rather than matching a
-/// path regex: a sentence-ending period, a full-width colon (Claude Code's
-/// "对比图："), Markdown emphasis, quotes and parentheses all just end the
-/// run. ASCII runs — a path glued to CJK prose ("保存到out/a.png") then
-/// starts where the ASCII does. A CJK NAME inside a path
-/// ("episodes/nolift/改稿建议.md") is picked back up by `wideNameTail`.
+/// The runs of a terminal line that could name a file or folder on the
+/// host — candidates only, found by the terminal core
+/// (`crates/term/src/paths.rs`; the Swift scanner went with SwiftTerm,
+/// batch B). Nothing here knows whether a path EXISTS; `PathProbe` asks the
+/// host, and only what it confirms ever becomes a link, which is what keeps
+/// prose like "s45/s55" or "and/or" from turning blue.
 enum TerminalPathScanner {
     struct Candidate: Equatable, Sendable {
         /// The path as printed (`~/…`, `/…`, `./…`, relative, or a bare
         /// file name).
         let token: String
-        /// Character offset of the first character within the scanned line.
-        /// `Terminal.viewportLineText` yields one Character per column, so
-        /// this is also the column offset.
+        /// Column offset of the first character within the scanned line.
         let offset: Int
         let length: Int
         /// True when the token can only be worth a link as a FOLDER: its
         /// last component names no previewable file. The probe then accepts
         /// it only if it is a directory holding something previewable.
         let directoryOnly: Bool
-    }
-
-    static func scan(_ line: String) -> [Candidate] {
-        let characters = Array(line)
-        var found: [Candidate] = []
-        var index = 0
-        while index < characters.count {
-            guard isPathCharacter(characters[index]) else {
-                index += 1
-                continue
-            }
-            let start = index
-            while index < characters.count, isPathCharacter(characters[index]) { index += 1 }
-            let run = String(characters[start..<index])
-            let tail = run.contains("/") ? wideNameTail(characters, from: index) : nil
-            let body = run + (tail?.name ?? "")
-            let end = index + (tail?.columns ?? 0)
-            // Longest first: the link pass tags the first one the host
-            // confirms, and the shorter ones then start inside its link.
-            var variants: [Candidate] = []
-            for headStart in wideHeadStarts(characters, before: start, run: run) {
-                let head = String(characters[headStart..<start].filter { $0 != "\0" })
-                if let candidate = classify(head + body, at: headStart, columns: end - headStart) {
-                    variants.append(candidate)
-                }
-            }
-            if tail != nil, let candidate = classify(body, at: start, columns: end - start) {
-                variants.append(candidate)
-            }
-            if tail != nil, !variants.isEmpty {
-                found += variants
-                index = end
-                continue
-            }
-            if let candidate = classify(run, at: start) { variants.append(candidate) }
-            found += variants
-        }
-        return found
-    }
-
-    /// How far back a CJK name glued to a path is followed.
-    static let headLimit = 16
-
-    /// Where a path may start before its ASCII run, when the run opens on a
-    /// separator glued to a CJK name: `成品` + `/西游.mp4`, `粗剪` + `.mp4`,
-    /// `写实版-粗剪` + `.mp4`. Chinese prose runs into the name with no space
-    /// ("已经输出到成品/a.mp4"), so the start can't be read off the text:
-    /// every ideograph back to the nearest break is offered, farthest
-    /// (longest path) first, and the host settles which exists. A run that
-    /// opens on a letter ("保存到out/a.png") gets none — that is prose
-    /// meeting a path, not a CJK name.
-    private static func wideHeadStarts(_ characters: [Character], before start: Int, run: String) -> [Int] {
-        guard let first = run.first, "/.-_".contains(first) else { return [] }
-        var starts: [Int] = []
-        var index = start
-        while index > 0, starts.count < headLimit {
-            let c = characters[index - 1]
-            if c == "\0" {
-                // A wide character's second column.
-                guard index >= 2, !characters[index - 2].isASCII else { break }
-            } else if isWideNameCharacter(c) {
-                starts.append(index - 1)
-            } else if !"-_.".contains(c) {
-                break
-            }
-            index -= 1
-        }
-        return starts.reversed()
-    }
-
-    /// The CJK-named rest of a path whose ASCII run stopped at an ideograph:
-    /// `episodes/nolift/` + `改稿建议.md`, `out/` + `羽毛球/a.png`. Taken only
-    /// when it ends the way a path does — a previewable file or a `/` — so
-    /// prose that merely follows a path ("保存到out/a.png了", "在 out/里面")
-    /// stays prose. A wide character's second column reads as "\0" in the
-    /// row text: dropped from the name, still counted in the columns.
-    private static func wideNameTail(_ characters: [Character], from start: Int) -> (name: String, columns: Int)? {
-        guard start < characters.count, isWideNameCharacter(characters[start]) else { return nil }
-        var end = start
-        while end < characters.count {
-            let c = characters[end]
-            if c == "\0" {
-                guard end > start, !characters[end - 1].isASCII else { break }
-            } else if !isPathCharacter(c) && !isWideNameCharacter(c) {
-                break
-            }
-            end += 1
-        }
-        while end > start, characters[end - 1] == "." || characters[end - 1] == "-" { end -= 1 }
-        let name = String(characters[start..<end].filter { $0 != "\0" })
-        let last = name.split(separator: "/").last.map(String.init) ?? ""
-        guard name.hasSuffix("/") || PreviewableFile.kind(of: last) != nil else { return nil }
-        return (name, end - start)
-    }
-
-    private static func isWideNameCharacter(_ c: Character) -> Bool {
-        !c.isASCII && (c.isLetter || c.isNumber)
-    }
-
-    private static func isPathCharacter(_ c: Character) -> Bool {
-        guard c.isASCII else { return false }
-        if c.isLetter || c.isNumber { return true }
-        return "._@+-/~".contains(c)
-    }
-
-    /// `columns`: how many row columns `raw` spans, when that isn't its
-    /// character count (a wide name's "\0" columns are not in `raw`).
-    private static func classify(_ raw: String, at start: Int, columns: Int? = nil) -> Candidate? {
-        // A sentence or list that ends on the path ("saved to out/a.png.")
-        // leaves its punctuation on the run.
-        var token = Substring(raw)
-        while let last = token.last, last == "." || last == "-" { token = token.dropLast() }
-        guard !token.isEmpty, token.count <= 1024 else { return nil }
-        // `//` is a URL's remains (`https:` already split off) or a typo;
-        // `~` anywhere but a leading `~/` is not a path at all.
-        guard !token.contains("//") else { return nil }
-        if let tilde = token.firstIndex(of: "~") {
-            guard tilde == token.startIndex, token.hasPrefix("~/"),
-                  token.dropFirst().firstIndex(of: "~") == nil else { return nil }
-        }
-
-        let path = String(token)
-        let endsWithSlash = path.hasSuffix("/")
-        let lastComponent = path.split(separator: "/").last.map(String.init) ?? ""
-        guard !lastComponent.isEmpty, lastComponent != ".", lastComponent != ".." else { return nil }
-
-        let previewable = !endsWithSlash && PreviewableFile.kind(of: lastComponent) != nil
-        // An extension with no name in front (".mp4"): what is left of a
-        // CJK file name once the ideographs are cut off, never a file.
-        if previewable, lastComponent.hasPrefix("."), !lastComponent.dropFirst().contains(".") { return nil }
-        if !path.contains("/") {
-            // A bare word is only a candidate when it names a previewable
-            // file ("01_character_sheet.png").
-            guard previewable else { return nil }
-        } else if !previewable {
-            // Folder candidates: no extension, or a trailing slash. Anything
-            // else with an extension (`src/main.swift`) is a file we don't
-            // preview — not a folder.
-            guard endsWithSlash || !lastComponent.contains(".") else { return nil }
-            // Dates and fractions ("10/18", "1/2").
-            let segments = path.split(separator: "/")
-            guard !segments.allSatisfy({ $0.allSatisfy(\.isNumber) }) else { return nil }
-            // A single rooted word is a slash command far more often than a
-            // folder of outputs ("/config", "/help").
-            if path.hasPrefix("/"), segments.count < 2 { return nil }
-        }
-        return Candidate(token: path, offset: start, length: (columns ?? raw.count) - (raw.count - token.count),
-                         directoryOnly: !previewable)
     }
 }
 

@@ -80,8 +80,10 @@ Intent is an entry point of the bundle that declares it, so the widget's
 Button needs the type and the app is where `perform()` runs.
 
 Key third-party pieces: **Citadel / swift-nio-ssh** for the SSH transport,
-**SwiftTerm** (a fork, pinned in `project.yml`; patches in `docs/PATCHES.md`)
-for terminal emulation and rendering, **swift-nio-extras** for the optional
+the **terminal core** (crates/term, our wezterm-term fork behind a C ABI;
+patches in `docs/WEZTERM-PATCHES.md`; the SwiftTerm fork it replaced went
+with batch B) for terminal emulation, drawn by `CoreTerminalView` with
+Metal, **swift-nio-extras** for the optional
 SOCKS5 proxy, and **WhisperKit** for local dictation. Mosh itself is not a
 dependency: `Mosh/` is Moshpit's own Swift implementation of the protocol
 (§4b), with no mosh binary or library linked in.

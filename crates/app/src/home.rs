@@ -116,6 +116,7 @@ fn connection(saved: &SavedConnection, input: &HomeInput) -> Connection {
         name: saved.name.clone(),
         initial: initial(&saved.name),
         face: saved.fingerprint.as_deref().map(face),
+        creature: saved.fingerprint.as_deref().map(creature),
         emoji: saved.emoji.clone(),
         user: saved.user.clone(),
         host: saved.host.clone(),
@@ -183,6 +184,25 @@ pub fn face(fingerprint: &str) -> Face {
         side: SIDE as u8,
         cells,
         hue: digest[31] % FACES.len() as u8,
+        kinds: Vec::new(),
+        asleep: Vec::new(),
+    }
+}
+
+/// The same key's pixel creature (moshpit-design `PET-DESIGN.md` §6.3),
+/// through the same seam: `moshpit_pet`'s generator makes its cells, and
+/// it takes the key face's hue, so a host keeps its colour when the pixel
+/// companion turns on or off.
+pub fn creature(fingerprint: &str) -> Face {
+    use moshpit_pet::creature::{self, Kind};
+    let made = creature::creature(fingerprint);
+    let numbers = |kinds: &[Kind]| kinds.iter().map(|k| *k as u8).collect();
+    Face {
+        side: made.side,
+        cells: made.awake.iter().map(|k| *k != Kind::Empty).collect(),
+        hue: face(fingerprint).hue,
+        kinds: numbers(&made.awake),
+        asleep: numbers(&made.asleep),
     }
 }
 

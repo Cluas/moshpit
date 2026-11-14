@@ -73,7 +73,7 @@ PUBLIC=(
   LICENSE README.md README-zh.md CONTRIBUTING.md CODE_OF_CONDUCT.md SECURITY.md NOTICES.md CHANGELOG.md
   Cargo.toml Cargo.lock rust-toolchain.toml .cargo crates ui vendor
   android
-  docs/ARCHITECTURE.md docs/PATCHES.md docs/PUSH.md docs/WEZTERM-PATCHES.md docs/install-free-account.md
+  docs/ARCHITECTURE.md docs/PUSH.md docs/WEZTERM-PATCHES.md docs/install-free-account.md
   docs/design docs/assets
   docs/nsh/DESIGN.md docs/nsh/NSH-GAPS.md docs/nsh/TERMINAL-CORE.md docs/nsh/TERMINAL-VIEW.md
   push-relay

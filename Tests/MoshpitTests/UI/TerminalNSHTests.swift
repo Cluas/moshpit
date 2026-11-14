@@ -1,4 +1,3 @@
-import SwiftTerm
 import Testing
 import UIKit
 @testable import Moshpit

@@ -140,8 +140,18 @@ fn head(connection: ReadSignal<Connection>, ctx: Ctx) -> AnyElement {
     let name = computed(move || connection.with(|c| c.name.clone()));
     // The identifiers keep the name the card was made with.
     let named = name.get_untracked();
-    let looks =
-        computed(move || connection.with(|c| (c.initial.clone(), c.face.clone(), c.emoji.clone())));
+    let looks = computed(move || {
+        connection.with(|c| {
+            (
+                c.initial.clone(),
+                c.face.clone(),
+                c.creature.clone(),
+                c.emoji.clone(),
+            )
+        })
+    });
+    // With the pixel companion on, the mark is the key's creature.
+    let creatures = ctx.creatures;
     let now = ctx.now;
     let link = computed(move || connection.with(|c| c.link));
     let waiting = computed(move || connection.with(Connection::waiting));
@@ -157,7 +167,12 @@ fn head(connection: ReadSignal<Connection>, ctx: Ctx) -> AnyElement {
     });
     let mark = dynamic(move || {
         let status = status.get();
-        let (initial, face, emoji) = looks.get();
+        let (initial, face, creature, emoji) = looks.get();
+        // With Pixel Companion on, the key's creature stands for its face.
+        let face = match creature {
+            Some(creature) if creatures.get() => Some(creature),
+            _ => face,
+        };
         untracked(move || {
             let mark = host_mark(initial).face(face).emoji(emoji);
             match status {
