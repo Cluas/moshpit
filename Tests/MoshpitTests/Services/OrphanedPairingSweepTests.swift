@@ -118,7 +118,10 @@ struct OrphanedPairingSweepTests {
         let core = core(file)
 
         #expect(sweep(core, store) == 1)
-        #expect(file.read().map(\.connectionId) == [Self.alpha, Self.newer, Self.bravo],
+        // In whatever order the store keeps them: the Rust pairing store
+        // writes them back newest first, the Swift one kept them as paired.
+        let left = file.read().map(\.connectionId)
+        #expect(left.count == 3 && Set(left) == [Self.alpha, Self.newer, Self.bravo],
                 "the pairing of a connection this build merely can't decode was forgotten")
     }
 

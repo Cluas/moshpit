@@ -113,7 +113,8 @@ struct Smoke {
             moshPortRangeEnd: 60999, moshServerPath: nil, keychainRef: storeNewKeychainRef(),
             createdAt: 784_000_000.5, lastConnectedAt: nil, useTmux: true, predictModeRaw: "always",
             roamOnCellular: false, tmuxPath: nil, herdrPath: nil, multiplexerRaw: "tmux", sshKeyId: nil,
-            sshKeyAlgorithmRaw: nil, useSocksProxy: nil, socksProxyHost: nil, socksProxyPort: nil))
+            sshKeyAlgorithmRaw: nil, useSocksProxy: nil, socksProxyHost: nil, socksProxyPort: nil,
+            emoji: nil))
         let reread = ConnectionStoreHandle(host: host, mode: .system).connections()
         check(reread.map(\.id) == [id] && reread[0].createdAt == 784_000_000, "a connection round-trips through UserDefaults")
         let stored = defaults.data(forKey: "moshpit.connections")!

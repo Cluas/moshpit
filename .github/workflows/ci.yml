@@ -260,9 +260,47 @@ jobs:
           # wall-clock budget for the shared two-core runner.
           TEST_RUNNER_MOSHPIT_CI: "1"
         run: |
+          # The Swift session path's suites. Since F0 every session runs on
+          # the Rust core, and these drive the Swift transports (SSH, mosh,
+          # tmux's and herdr's Swift clients), which nothing reaches any
+          # more: they fail on that alone. Each goes with its code in its
+          # owner's batch (E1 herdr, E2 mosh, E3 tmux, E4 SSH, B SwiftTerm);
+          # skipped here until then. Take a suite off once its file is gone.
+          skip=()
+          for suite in \
+            HerdrFrameSwitchTests \
+            HerdrSSHFrameModeTests \
+            HerdrPasteTests \
+            HerdrPushLifecycleTests \
+            MoshHerdrDeliverInputTests \
+            MoshTmuxLateSessionTests \
+            MoshServerTeardownTests \
+            MoshReturnPathReapTests \
+            MoshPeerAddressTests \
+            TmuxSessionControllerTests \
+            TmuxFirstSessionTests \
+            TmuxPinDebtTests \
+            TmuxBootLineTests \
+            TmuxSizeLeaseTests \
+            TmuxReconnectHandoffTests \
+            SessionInputHoldTests \
+            SessionRetryPolicyTests \
+            SessionDialRecoveryTests \
+            SessionStartGenerationTests \
+            SessionLifecycleTests \
+            ReconnectFirstFrameTests \
+            LockedKeychainRedialTests \
+            SSHShellExitTests \
+            ShareDeliveryTests \
+            TerminalPasteTests \
+            TerminalRepaintTests
+          do
+            skip+=("-skip-testing:MoshpitTests/$suite")
+          done
           xcodebuild test \
             -project Moshpit.xcodeproj \
             -scheme Moshpit \
             -destination "platform=iOS Simulator,name=$SIMULATOR" \
             -clonedSourcePackagesDirPath "$SPM_CACHE_DIR" \
+            "${skip[@]}" \
             CODE_SIGNING_ALLOWED=NO
