@@ -156,8 +156,9 @@ jobs:
       # still compile under), else the image's default Xcode.app if GitHub
       # rotates the versioned paths.
       #
-      # The simulator is the iPhone 17 Pro when the chosen Xcode has one, else
-      # its last iPhone: a newer Xcode's runtimes may not carry that name.
+      # The simulator is the iPhone 18 Pro when the chosen Xcode has one (the
+      # Xcode 27 image's runtimes do; it had no 17 Pro), else its last
+      # iPhone: another Xcode's runtimes may not carry that name.
       - name: Select Xcode
         run: |
           echo "Xcodes on the image:"
@@ -170,7 +171,7 @@ jobs:
           iphones=$(xcrun simctl list devices available |
             sed -nE 's/^ +(iPhone.*[^ ]) \([0-9A-F-]{36}\).*/\1/p')
           echo "$iphones"
-          SIMULATOR="iPhone 17 Pro"
+          SIMULATOR="iPhone 18 Pro"
           grep -qxF "$SIMULATOR" <<< "$iphones" || SIMULATOR=$(tail -1 <<< "$iphones")
           echo "Testing on: $SIMULATOR"
           echo "SIMULATOR=$SIMULATOR" >> "$GITHUB_ENV"
