@@ -169,7 +169,7 @@ private func bytes(_ string: String) -> Data { Data(string.utf8) }
 
 // MARK: - Regression tests
 
-@Suite("TmuxControlClient parser — regression captures", .tmuxParserUnderTest)
+@Suite("TmuxControlClient parser — regression captures")
 struct TmuxControlClientRegressionTests {
 
     @Test("pane output ending in a %begin with id Int.min stays pane output instead of crashing")
@@ -419,11 +419,7 @@ struct TmuxControlClientRegressionTests {
                                                  isError: false,
                                                  lines: Array(repeating: line, count: 16))])
         #expect(outputEvents.count == 16)
-        // The Rust parser (this suite runs on both) has its own count of the
-        // work per block line (crates/tmux/tests/block_cost.rs); behind the
-        // FFI its two paths cost about the same, which is all asked of it.
-        let swift = await TmuxControlClient().backend == .swift
-        #expect(replyTime < outputTime * (swift ? 1 : 3),
+        #expect(replyTime < outputTime,
                 "the reply's 16 lines of 16 KB took \(replyTime), the same lines as output \(outputTime)")
     }
 

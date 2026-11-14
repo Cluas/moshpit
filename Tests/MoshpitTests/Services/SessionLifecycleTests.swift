@@ -228,8 +228,9 @@ struct SessionLifecycleTests {
         try #require(connects.count == 1)
         let first = try #require(session.moshControl)
 
-        // The channel dies under a connection that still answers.
-        await first.client.rustParserFailed(reason: "injected", latch: TmuxParserBackend.Latch())
+        // The channel dies under a connection that still answers: the
+        // controller's watchdog says so.
+        first.onChannelSilent?()
 
         let deadline = ContinuousClock.now + .seconds(10)
         while connects.count < 2, ContinuousClock.now < deadline {

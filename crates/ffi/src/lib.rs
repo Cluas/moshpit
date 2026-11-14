@@ -5,10 +5,9 @@
 //! every core crate the app uses is linked through here, re-exported, and
 //! whatever C ABI the app calls is defined or re-exported here too:
 //!
-//! - [`moshpit_tmux`]: the tmux control-mode parser, called by
-//!   `TmuxControlClient` when the Rust parser switch is on, through
-//!   [`tmux`]'s `mp_tmux_parser_*` (`include/moshpit_ffi.h`, imported into
-//!   Swift as the `MoshpitFFI` module).
+//! - [`abi`]: the version of the library's hand-written C ABI
+//!   (`mp_ffi_abi_version`, `include/moshpit_ffi.h`, imported into Swift as
+//!   the `MoshpitFFI` module with the other C headers below).
 //! - [`moshpit_stream`]: the byte channel (`mp_stream_*`,
 //!   `crates/stream/include/moshpit_stream.h`): a pane's bytes, both ways,
 //!   and the marks its view acts on, when a session runs on the Rust core.
@@ -48,39 +47,8 @@
 //! phase (`project.yml`), with the `app` profile of the workspace manifest
 //! for a Release build and `app-test` (no whole-graph LTO) for a Debug one.
 //!
-//! # Why a hand-written C ABI and not UniFFI
-//!
-//! The parser is fed every chunk of the `-CC` stream, so its call is on the
-//! hot path of every keystroke's echo. UniFFI lowers a `Vec<u8>` argument
-//! and a `Vec<Event>` result through serialised `RustBuffer`s: the chunk is
-//! copied into a buffer and out again, every event is written field by
-//! field and read back, and the buffers are allocated and freed through
-//! their own calls. Here a feed is one call with the chunk borrowed, and
-//! each event one callback with its fields borrowed; Swift copies each field
-//! once, into the `String`s and `Data` its callbacks already take.
-//!
-//! Measured on an M2 (2026-11-11; this crate's `app` profile against the
-//! same parser behind UniFFI 0.31 with LTO, Swift `-O -wmo`, every event
-//! turned into the `String`s and `Data` the app's callbacks take), CPU per
-//! feed, median of 7–21 rounds:
-//!
-//! | input | C ABI | UniFFI |
-//! | --- | --- | --- |
-//! | one keystroke's echo, `%output %0 a` (14 B, 1 event) | 0.074 µs | 1.9 µs |
-//! | `seq 1 200000` burst, 4 KB feeds (~88 events each) | 14 µs | 125 µs |
-//! | the same, 32 KB feeds | 112–133 µs | 962–1014 µs |
-//! | the committed tmux captures, 512 B feeds | 25–28 µs | 55–59 µs |
-//!
-//! Through UniFFI the burst parses at 32–34 MB/s — the Swift parser's own
-//! speed — against 245–292 MB/s here: the serialisation would cost what the
-//! port gained. UniFFI stays the plan for the core's API (`Core`, `Session`,
-//! …), which is called per user action, not per chunk.
-//!
-//! (Measured at opt-level 3. Since NSH joined the library the `app` profile
-//! optimises for size, `"z"`, which keeps the app within the size gate; the
-//! parser gives up about a fifth of its speed for it: the workspace
-//! manifest has the numbers.)
 
+pub mod abi;
 pub mod agents;
 pub mod app;
 pub mod borrow;
@@ -91,9 +59,6 @@ pub mod keys;
 pub mod look;
 pub mod session;
 pub mod store;
-pub mod tmux;
-#[cfg(test)]
-mod tmux_tests;
 
 uniffi::setup_scaffolding!();
 
@@ -102,6 +67,7 @@ pub use moshpit_store;
 pub use moshpit_stream;
 // Named, so it is linked (its C ABI with it).
 pub use moshpit_term;
+// The session core's tmux, named for the hosts that read its types.
 pub use moshpit_tmux;
 // Named, so it is linked: an unused dependency would not be, and with it
 // the screens' C ABI.

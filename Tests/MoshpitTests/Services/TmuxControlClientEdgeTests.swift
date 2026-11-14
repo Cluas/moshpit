@@ -61,7 +61,7 @@ private func bytes(_ s: String) -> Data { Data(s.utf8) }
 
 // MARK: - Edge tests
 
-@Suite("TmuxControlClient parser — edge cases", .tmuxParserUnderTest)
+@Suite("TmuxControlClient parser — edge cases")
 struct TmuxControlClientEdgeTests {
 
     // MARK: - Octal escapes inside %output
