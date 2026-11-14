@@ -918,6 +918,56 @@ fn a_shell_that_cant_run_the_loop_falls_back_to_the_one_shot_line() {
     }));
 }
 
+/// B485: a Return right behind a paste (the image panel's Send) reaches the
+/// pane 150 ms behind it, not with it: Claude Code drops a Return that
+/// comes with the paste of an image's path.
+#[test]
+fn a_return_right_behind_a_paste_waits_for_it() {
+    let mut rig = attached();
+    rig.client.paste("w1:p1", " /tmp/a.jpg ", rig.now);
+    rig.pump();
+    rig.type_bytes("w1:p1", b"\r");
+    rig.run(100);
+    assert_eq!(
+        rig.typed("w1:p1"),
+        "\u{1b}[200~ /tmp/a.jpg \u{1b}[201~",
+        "the Return waits"
+    );
+    rig.run(100);
+    assert_eq!(rig.typed("w1:p1"), "\u{1b}[200~ /tmp/a.jpg \u{1b}[201~\r");
+}
+
+/// B485: the same given while the pane is being switched to (Send pressed
+/// during a pick): both are held, and once the switch lands the paste goes
+/// and the Return 150 ms behind it. They were let go together.
+#[test]
+fn a_return_held_behind_a_paste_goes_apart_from_it() {
+    let mut rig = attached();
+    rig.act(Action::SelectPane("w1:p2".to_owned()));
+    rig.client.paste("w1:p2", " /tmp/a.jpg ", rig.now);
+    rig.pump();
+    rig.type_bytes("w1:p2", b"\r");
+    let mut waited = 0;
+    while !rig.typed("w1:p2").contains("\u{1b}[201~") {
+        assert!(
+            waited < 5_000,
+            "the switch never landed: {:?}",
+            rig.frame_writes()
+        );
+        rig.run(10);
+        waited += 10;
+    }
+    assert!(
+        !rig.typed("w1:p2").ends_with('\r'),
+        "the Return waits behind the paste"
+    );
+    rig.run(100);
+    assert!(!rig.typed("w1:p2").ends_with('\r'), "still");
+    rig.run(100);
+    assert_eq!(rig.typed("w1:p2"), "\u{1b}[200~ /tmp/a.jpg \u{1b}[201~\r");
+    assert_eq!(rig.typed("w1:p1"), "");
+}
+
 #[test]
 fn an_unanswered_release_still_switches_but_typing_waits_for_the_paint() {
     let mut rig = attached();

@@ -33,6 +33,8 @@ pub(crate) enum Slot {
     ExpectedClose(u64),
     /// Input held for the pane being switched to.
     HeldInput,
+    /// What follows a paste goes once the paste has had its time (B485).
+    PasteSettle,
     /// A task's own waits (the settle, a retry, the submit delay).
     Task(u64),
     /// The restart's waits.

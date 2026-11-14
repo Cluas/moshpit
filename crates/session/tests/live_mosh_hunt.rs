@@ -528,6 +528,12 @@ async fn paste_then_return(term: &Term, log: &std::path::Path) -> f64 {
     panic!("the paste and the Return never came: {:?}", reads(log));
 }
 
+/// How far apart, at least, the program reads the paste and the Return:
+/// sent 150 ms apart, a loaded host can write the paste late and the Return
+/// on time (84 ms seen with builds running); Claude Code needs about 5 ms,
+/// and the old code had them together or 0.2 ms apart.
+const APART: f64 = 0.05;
+
 /// Waits for [`READ_LOGGER`] to say it runs.
 async fn logger_ready(log: &std::path::Path) {
     for _ in 0..100 {
@@ -572,7 +578,7 @@ async fn a_return_given_with_a_paste_reaches_the_program_apart() {
     settle(&mut bench, 1500).await;
     let apart = paste_then_return(&term, &log).await;
     eprintln!("tmux: the Return came {apart:.3} s after the paste");
-    assert!(apart >= 0.1, "tmux: {apart:.3} s");
+    assert!(apart >= APART, "tmux: {apart:.3} s");
     drop(term);
     let _ = bench.sessions.disconnect(id).await;
 
@@ -588,7 +594,7 @@ async fn a_return_given_with_a_paste_reaches_the_program_apart() {
     logger_ready(&log).await;
     let apart = paste_then_return(&term, &log).await;
     eprintln!("shell: the Return came {apart:.3} s after the paste");
-    assert!(apart >= 0.1, "shell: {apart:.3} s");
+    assert!(apart >= APART, "shell: {apart:.3} s");
     drop(term);
     let _ = bench.sessions.disconnect(id).await;
 }
@@ -645,7 +651,7 @@ async fn a_return_given_with_a_paste_reaches_a_herdr_pane_apart() {
             && (apart == 0.0 || paste.ends_with(r"\x1b[201~'")),
         "one bracketed paste, nothing after it: {paste}"
     );
-    assert!(apart >= 0.1, "herdr: {apart:.3} s");
+    assert!(apart >= APART, "herdr: {apart:.3} s");
     drop(term);
     let _ = bench.sessions.disconnect(id).await;
 }

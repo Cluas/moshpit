@@ -119,6 +119,9 @@ pub(super) struct Attach {
     pub parser: FrameParser,
     pub lane: WriteLane,
     pub held: Held,
+    /// What came for a pane right behind a paste to it, until the paste
+    /// has had its time (B485).
+    pub settling: Option<Settling>,
 }
 
 impl Attach {
@@ -175,9 +178,25 @@ pub(super) struct Held {
     steps: Vec<HeldStep>,
 }
 
+/// Input for `pane` behind the paste just sent to it (B485).
+#[derive(Debug)]
+pub(super) struct Settling {
+    pane: String,
+    steps: Vec<HeldStep>,
+}
+
+/// How long what follows a paste waits behind it (B485): a program taking
+/// a paste in may drop a key that comes with it (Claude Code, making an
+/// image's path an attachment, drops the Return behind it: the image
+/// panel's Send only pasted). The session waits as long before it sends;
+/// this keeps the two apart where the client held them together.
+const PASTE_SETTLE_MS: u64 = 150;
+
 #[derive(Debug)]
 enum HeldStep {
     Input(Vec<u8>),
+    /// A bracketed paste: what follows it waits behind it (B485).
+    Paste(Vec<u8>),
     /// Bytes a request is waiting on ([`super::Action::DeliverInput`]).
     Delivery {
         request: u64,
@@ -983,7 +1002,7 @@ impl Client {
     pub fn input(&mut self, pane: &str, bytes: &[u8], now: u64) {
         self.begin(now);
         if !bytes.is_empty() && self.attach.open && !self.closed {
-            self.route_input(pane, bytes.to_vec(), None);
+            self.route_input(pane, HeldStep::Input(bytes.to_vec()));
         }
         self.end();
     }
@@ -994,7 +1013,7 @@ impl Client {
     pub fn paste(&mut self, pane: &str, text: &str, now: u64) {
         self.begin(now);
         if !text.is_empty() && self.attach.open && !self.closed {
-            self.route_input(pane, frame::bracketed_paste(text), None);
+            self.route_input(pane, HeldStep::Paste(frame::bracketed_paste(text)));
         }
         self.end();
     }
@@ -1013,21 +1032,15 @@ impl Client {
 
     /// Input for `pane`: out now if its attach is reading, held if it is
     /// the pane being switched to on the person's pick, else dropped.
-    fn route_input(&mut self, pane: &str, bytes: Vec<u8>, delivery: Option<u64>) {
+    fn route_input(&mut self, pane: &str, step: HeldStep) {
         if self.attach.input_pane() == Some(pane) {
-            self.send_input(pane, &bytes);
-            if let Some(request) = delivery {
-                self.event(Event::Delivered {
-                    request: super::RequestId(request),
-                    delivered: true,
-                });
+            match self.attach.settling.as_mut() {
+                Some(settling) if settling.pane == pane => settling.steps.push(step),
+                _ => self.send_step(pane, step),
             }
         } else if self.attach.held.pane.as_deref() == Some(pane) {
-            self.attach.held.steps.push(match delivery {
-                Some(request) => HeldStep::Delivery { request, bytes },
-                None => HeldStep::Input(bytes),
-            });
-        } else if delivery.is_none()
+            self.attach.held.steps.push(step);
+        } else if !matches!(step, HeldStep::Delivery { .. })
             && self.attach.held.pane.is_none()
             && self.attach.target.as_deref() == Some(pane)
         {
@@ -1037,14 +1050,74 @@ impl Client {
             // paints. It was dropped and said.
             self.attach.held.pane = Some(pane.to_owned());
             self.arm(Slot::HeldInput, FOLLOW_HOLD);
-            self.attach.held.steps.push(HeldStep::Input(bytes));
+            self.attach.held.steps.push(step);
         } else {
-            match delivery {
-                Some(request) => self.event(Event::Delivered {
+            self.not_sent(pane, step);
+        }
+    }
+
+    /// One step out to `pane`, whose attach reads: a paste starts the wait
+    /// of what follows it (B485).
+    fn send_step(&mut self, pane: &str, step: HeldStep) {
+        match step {
+            HeldStep::Input(bytes) => self.send_input(pane, &bytes),
+            HeldStep::Paste(bytes) => {
+                self.send_input(pane, &bytes);
+                self.attach.settling = Some(Settling {
+                    pane: pane.to_owned(),
+                    steps: Vec::new(),
+                });
+                self.arm(Slot::PasteSettle, PASTE_SETTLE_MS);
+            }
+            HeldStep::Delivery { request, bytes } => {
+                self.send_input(pane, &bytes);
+                self.event(Event::Delivered {
                     request: super::RequestId(request),
-                    delivered: false,
-                }),
-                None => self.input_dropped(pane),
+                    delivered: true,
+                });
+            }
+        }
+    }
+
+    /// A step that can't reach `pane`: typing is said, a delivery answered.
+    fn not_sent(&mut self, pane: &str, step: HeldStep) {
+        match step {
+            HeldStep::Delivery { request, .. } => self.event(Event::Delivered {
+                request: super::RequestId(request),
+                delivered: false,
+            }),
+            HeldStep::Input(_) | HeldStep::Paste(_) => self.input_dropped(pane),
+        }
+    }
+
+    /// `steps` out to `pane` in order, up to a paste, which the rest then
+    /// waits behind (B485).
+    fn release_steps(&mut self, pane: &str, steps: Vec<HeldStep>) {
+        let mut steps = steps.into_iter();
+        while let Some(step) = steps.next() {
+            let paste = matches!(step, HeldStep::Paste(_));
+            self.send_step(pane, step);
+            if paste {
+                if let Some(settling) = self.attach.settling.as_mut() {
+                    settling.steps.extend(steps);
+                }
+                return;
+            }
+        }
+    }
+
+    /// A paste has had its time: what followed it goes, if its pane is
+    /// still the one typed into (herdr's input line goes to whatever
+    /// terminal is attached: never into another pane).
+    pub(super) fn paste_settled(&mut self) {
+        let Some(Settling { pane, steps }) = self.attach.settling.take() else {
+            return;
+        };
+        if self.attach.input_pane() == Some(pane.as_str()) {
+            self.release_steps(&pane, steps);
+        } else {
+            for step in steps {
+                self.not_sent(&pane, step);
             }
         }
     }
@@ -1089,30 +1162,37 @@ impl Client {
         }
         self.timers.cancel(&Slot::HeldInput);
         self.attach.held.pane = None;
-        for step in std::mem::take(&mut self.attach.held.steps) {
-            match step {
-                HeldStep::Input(bytes) => self.send_input(pane, &bytes),
-                HeldStep::Delivery { request, bytes } => {
-                    self.send_input(pane, &bytes);
-                    self.event(Event::Delivered {
-                        request: super::RequestId(request),
-                        delivered: true,
-                    });
-                }
-            }
-        }
+        let steps = std::mem::take(&mut self.attach.held.steps);
+        self.release_steps(pane, steps);
     }
 
     /// Drop what is held: said for typing (`tell`), answered for deliveries.
     pub(super) fn drop_all_held(&mut self, tell: bool) {
         self.timers.cancel(&Slot::HeldInput);
+        // What waited behind a paste goes with the hold (B485).
+        self.timers.cancel(&Slot::PasteSettle);
+        if let Some(Settling { pane, steps }) = self.attach.settling.take() {
+            let mut typed = false;
+            for step in steps {
+                match step {
+                    HeldStep::Input(_) | HeldStep::Paste(_) => typed = true,
+                    HeldStep::Delivery { request, .. } => self.event(Event::Delivered {
+                        request: super::RequestId(request),
+                        delivered: false,
+                    }),
+                }
+            }
+            if typed && tell {
+                self.input_dropped(&pane);
+            }
+        }
         let Some(pane) = self.attach.held.pane.take() else {
             return;
         };
         let mut typed = false;
         for step in std::mem::take(&mut self.attach.held.steps) {
             match step {
-                HeldStep::Input(_) => typed = true,
+                HeldStep::Input(_) | HeldStep::Paste(_) => typed = true,
                 HeldStep::Delivery { request, .. } => self.event(Event::Delivered {
                     request: super::RequestId(request),
                     delivered: false,
@@ -1156,7 +1236,13 @@ impl Client {
                 self.arm(Slot::HeldInput, self.config.budgets.delivery);
             }
         }
-        self.route_input(pane, bytes, Some(request.0));
+        self.route_input(
+            pane,
+            HeldStep::Delivery {
+                request: request.0,
+                bytes,
+            },
+        );
         request
     }
 

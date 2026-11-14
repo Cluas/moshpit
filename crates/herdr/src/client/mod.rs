@@ -978,6 +978,7 @@ impl Client {
             Slot::AttachWatch => self.attach_watch_fired(),
             Slot::ExpectedClose(id) => self.expected_close_forgotten(id),
             Slot::HeldInput => self.held_input_expired(),
+            Slot::PasteSettle => self.paste_settled(),
             Slot::Task(id) => self.task_timer(id),
             Slot::Restart => self.restart_timer(),
             Slot::PumpReady => self.pump_ready_timed_out(),
