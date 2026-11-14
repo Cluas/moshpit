@@ -48,7 +48,7 @@ struct TerminalPasteTests {
         var typed: [Data] = []
         coordinator.onInput = { typed.append($0) }
         coordinator.feed(data: Data("\u{1b}[?2004h".utf8))
-        #expect(view.settle { _ in coordinator.modes.bracketedPaste }, "the mode never reached the core")
+        #expect(view.settle { _ in coordinator.modes?.bracketedPaste == true }, "the mode never reached the core")
 
         paste("a\nb", on: view)
         #expect(typed == [Data("\u{1b}[200~a\nb\u{1b}[201~".utf8)],

@@ -117,7 +117,7 @@ struct PastePathTests {
         var sent = Data()
         coordinator.onInput = { sent.append($0) }
         coordinator.feed(data: Data("\u{1B}[?2004h".utf8))
-        #expect(view.settle { _ in coordinator.modes.bracketedPaste })
+        #expect(view.settle { _ in coordinator.modes?.bracketedPaste == true })
 
         paste(pasted, on: view)
 
@@ -129,7 +129,7 @@ struct PastePathTests {
         let (view, coordinator) = terminal()
         var sent = Data()
         coordinator.onInput = { sent.append($0) }
-        #expect(!coordinator.modes.bracketedPaste)
+        #expect(coordinator.modes?.bracketedPaste != true)
 
         paste(Self.bare, on: view)
 
