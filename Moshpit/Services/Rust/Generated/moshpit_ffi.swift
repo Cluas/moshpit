@@ -2577,16 +2577,7 @@ public protocol CoreSessionsProtocol: AnyObject, Sendable {
     func respec(session: UInt64, spec: SessionSpec) 
     
     /**
-     * What resume in place was last decided, and from what: for the app's
-     * log, so a device's report says which way back its sessions take.
-     */
-    func resumeInPlace()  -> ResumeInPlaceDecision
-    
-    /**
-     * The app came to the foreground (`true`) or left it. Resume in place's
-     * switch is read again first (B365): a change the person made while
-     * the app ran is followed from this move on, and a decision made while
-     * the preferences couldn't be read is made again once they can.
+     * The app came to the foreground (`true`) or left it.
      */
     func setForeground(foreground: Bool) 
     
@@ -2913,22 +2904,7 @@ open func respec(session: UInt64, spec: SessionSpec)  {try! rustCall() {
 }
     
     /**
-     * What resume in place was last decided, and from what: for the app's
-     * log, so a device's report says which way back its sessions take.
-     */
-open func resumeInPlace() -> ResumeInPlaceDecision  {
-    return try!  FfiConverterTypeResumeInPlaceDecision_lift(try! rustCall() {
-    uniffi_moshpit_ffi_fn_method_coresessions_resume_in_place(
-            self.uniffiCloneHandle(),$0
-    )
-})
-}
-    
-    /**
-     * The app came to the foreground (`true`) or left it. Resume in place's
-     * switch is read again first (B365): a change the person made while
-     * the app ran is followed from this move on, and a decision made while
-     * the preferences couldn't be read is made again once they can.
+     * The app came to the foreground (`true`) or left it.
      */
 open func setForeground(foreground: Bool)  {try! rustCall() {
     uniffi_moshpit_ffi_fn_method_coresessions_set_foreground(
@@ -11185,63 +11161,6 @@ public func FfiConverterTypeRemoteFolderState_lower(_ value: RemoteFolderState) 
 
 
 /**
- * Whether the sessions resume in place, and what said so (B365).
- */
-public struct ResumeInPlaceDecision: Equatable, Hashable {
-    public var on: Bool
-    public var source: ResumeInPlaceSource
-
-    // Default memberwise initializers are never public by default, so we
-    // declare one manually.
-    public init(on: Bool, source: ResumeInPlaceSource) {
-        self.on = on
-        self.source = source
-    }
-
-    
-
-    
-}
-
-#if compiler(>=6)
-extension ResumeInPlaceDecision: Sendable {}
-#endif
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public struct FfiConverterTypeResumeInPlaceDecision: FfiConverterRustBuffer {
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ResumeInPlaceDecision {
-        return
-            try ResumeInPlaceDecision(
-                on: FfiConverterBool.read(from: &buf), 
-                source: FfiConverterTypeResumeInPlaceSource.read(from: &buf)
-        )
-    }
-
-    public static func write(_ value: ResumeInPlaceDecision, into buf: inout [UInt8]) {
-        FfiConverterBool.write(value.on, into: &buf)
-        FfiConverterTypeResumeInPlaceSource.write(value.source, into: &buf)
-    }
-}
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeResumeInPlaceDecision_lift(_ buf: RustBuffer) throws -> ResumeInPlaceDecision {
-    return try FfiConverterTypeResumeInPlaceDecision.lift(buf)
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeResumeInPlaceDecision_lower(_ value: ResumeInPlaceDecision) -> RustBuffer {
-    return FfiConverterTypeResumeInPlaceDecision.lower(value)
-}
-
-
-/**
  * Which secrets the host's own fields hold: a password that is not empty,
  * a pasted key that is more than white space.
  */
@@ -17460,105 +17379,6 @@ public func FfiConverterTypeRemoteFileKind_lower(_ value: RemoteFileKind) -> Rus
 // Note that we don't yet support `indirect` for enums.
 // See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
 /**
- * What decided resume in place.
- */
-
-public enum ResumeInPlaceSource: Equatable, Hashable {
-    
-    /**
-     * The launch environment's variable (a device run's).
-     */
-    case environment
-    /**
-     * The app's preferences: the person's switch, a launch argument, or
-     * the build's registered default when the person never set it.
-     */
-    case preferences
-    /**
-     * The preferences can't be read yet (a launch before the first
-     * unlock): off until they can, never the build's registered default
-     * standing in for the person's switch.
-     */
-    case unreadable
-    /**
-     * Nothing says: off, the app without it.
-     */
-    case unset
-
-
-
-
-
-}
-
-#if compiler(>=6)
-extension ResumeInPlaceSource: Sendable {}
-#endif
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public struct FfiConverterTypeResumeInPlaceSource: FfiConverterRustBuffer {
-    typealias SwiftType = ResumeInPlaceSource
-
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ResumeInPlaceSource {
-        let variant: Int32 = try readInt(&buf)
-        switch variant {
-        
-        case 1: return .environment
-        
-        case 2: return .preferences
-        
-        case 3: return .unreadable
-        
-        case 4: return .unset
-        
-        default: throw UniffiInternalError.unexpectedEnumCase
-        }
-    }
-
-    public static func write(_ value: ResumeInPlaceSource, into buf: inout [UInt8]) {
-        switch value {
-        
-        
-        case .environment:
-            writeInt(&buf, Int32(1))
-        
-        
-        case .preferences:
-            writeInt(&buf, Int32(2))
-        
-        
-        case .unreadable:
-            writeInt(&buf, Int32(3))
-        
-        
-        case .unset:
-            writeInt(&buf, Int32(4))
-        
-        }
-    }
-}
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeResumeInPlaceSource_lift(_ buf: RustBuffer) throws -> ResumeInPlaceSource {
-    return try FfiConverterTypeResumeInPlaceSource.lift(buf)
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeResumeInPlaceSource_lower(_ value: ResumeInPlaceSource) -> RustBuffer {
-    return FfiConverterTypeResumeInPlaceSource.lower(value)
-}
-
-
-// Note that we don't yet support `indirect` for enums.
-// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
-/**
  * What the way back from the background found.
  */
 
@@ -23544,10 +23364,7 @@ private let initializationResult: InitializationResult = {
     if (uniffi_moshpit_ffi_checksum_method_coresessions_respec() != 5616) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_moshpit_ffi_checksum_method_coresessions_resume_in_place() != 17636) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_moshpit_ffi_checksum_method_coresessions_set_foreground() != 64436) {
+    if (uniffi_moshpit_ffi_checksum_method_coresessions_set_foreground() != 23018) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_moshpit_ffi_checksum_method_coresessions_set_visible() != 47125) {

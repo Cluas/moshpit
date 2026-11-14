@@ -34,8 +34,8 @@
 //! (`moshpit_session::view_marks`).
 
 use std::net::SocketAddr;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
 
 use moshpit_install::{HostCapabilities, Multiplexer};
 use moshpit_session::{
@@ -725,11 +725,6 @@ pub struct CoreSessions {
     out: mpsc::UnboundedSender<SessionEvent>,
     tokens: AtomicU64,
     blackhole: Arc<AtomicBool>,
-    /// The app's preferences, where resume in place's switch is read again
-    /// around every move to the background and back (B365).
-    defaults: HostDefaults,
-    /// What resume in place was last decided, and from what.
-    resume: Mutex<ResumeInPlaceDecision>,
     /// The trusted host keys the sessions decide by: Home's marks are made
     /// from them (a host's key's face).
     known_hosts: Arc<KnownHosts>,
@@ -771,12 +766,7 @@ impl CoreSessions {
         )));
         let mut services =
             core::Services::new(Arc::new(HostCredentials(credentials)), known_hosts.clone());
-        let defaults = HostDefaults(preferences.clone());
-        let resume = resume_in_place(|name| std::env::var(name).ok(), &defaults);
-        let timing = Timing {
-            resume_in_place: resume.on,
-            ..Timing::default()
-        };
+        let timing = app_timing();
         services.memory = Arc::new(StoreMemory {
             defaults: Arc::new(HostDefaults(preferences)),
             readiness: Readiness::System,
@@ -816,8 +806,6 @@ impl CoreSessions {
             out,
             tokens: AtomicU64::new(0),
             blackhole,
-            defaults,
-            resume: Mutex::new(resume),
             known_hosts,
         })
     }
@@ -935,21 +923,9 @@ impl CoreSessions {
         crate::borrow::borrow(self.sessions.clone(), session).await
     }
 
-    /// The app came to the foreground (`true`) or left it. Resume in place's
-    /// switch is read again first (B365): a change the person made while
-    /// the app ran is followed from this move on, and a decision made while
-    /// the preferences couldn't be read is made again once they can.
+    /// The app came to the foreground (`true`) or left it.
     pub fn set_foreground(&self, foreground: bool) {
-        let decision = resume_in_place(|name| std::env::var(name).ok(), &self.defaults);
-        *self.resume.lock().unwrap_or_else(|e| e.into_inner()) = decision;
-        self.sessions.set_resume_in_place(decision.on);
         self.sessions.set_foreground(foreground);
-    }
-
-    /// What resume in place was last decided, and from what: for the app's
-    /// log, so a device's report says which way back its sessions take.
-    pub fn resume_in_place(&self) -> ResumeInPlaceDecision {
-        *self.resume.lock().unwrap_or_else(|e| e.into_inner())
     }
 
     /// Asks every session to say when what it was asked to send its server
@@ -1524,80 +1500,15 @@ fn tmux_value(view: &TmuxView) -> TmuxReadModel {
     }
 }
 
-/// The preference that switches resume in place on (`Timing::resume_in_place`):
-/// a Canary build registers it on (`CanaryDefaults`), the hidden Core
-/// Switches page turns it off, a launch argument (`-MOSHPIT_RESUME_IN_PLACE 1`)
-/// overrides it for one launch. The launch environment's variable of the
-/// same name ("1" or "0", a device run's `--environment-variables`) wins
-/// over all of them.
-pub const RESUME_IN_PLACE_KEY: &str = "MOSHPIT_RESUME_IN_PLACE";
-
-/// Whether the sessions resume in place, and what said so (B365).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Record)]
-pub struct ResumeInPlaceDecision {
-    pub on: bool,
-    pub source: ResumeInPlaceSource,
-}
-
-/// What decided resume in place.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
-pub enum ResumeInPlaceSource {
-    /// The launch environment's variable (a device run's).
-    Environment,
-    /// The app's preferences: the person's switch, a launch argument, or
-    /// the build's registered default when the person never set it.
-    Preferences,
-    /// The preferences can't be read yet (a launch before the first
-    /// unlock): off until they can, never the build's registered default
-    /// standing in for the person's switch.
-    Unreadable,
-    /// Nothing says: off, the app without it.
-    Unset,
-}
-
-/// Resume in place as the launch environment, else the app's preferences,
-/// say (`Timing::resume_in_place`). Read when the registry is made and again
-/// around every move to the background and back
-/// ([`CoreSessions::set_foreground`]). Unset it is off: the app without it.
-/// While the preferences can't be read (a launch before the first unlock)
-/// it is off too: what they answer then is the build's registered default
-/// alone (a Canary build's: on), which would stand in for a switch the
-/// person turned off.
-fn resume_in_place(
-    env: impl Fn(&str) -> Option<String>,
-    defaults: &dyn Defaults,
-) -> ResumeInPlaceDecision {
-    let word = |text: &str| -> Option<bool> {
-        match text.trim().to_ascii_lowercase().as_str() {
-            "1" | "yes" | "true" => Some(true),
-            "0" | "no" | "false" => Some(false),
-            _ => None,
-        }
-    };
-    let decided = |on, source| ResumeInPlaceDecision { on, source };
-    if let Some(on) = env(RESUME_IN_PLACE_KEY).as_deref().and_then(word) {
-        return decided(on, ResumeInPlaceSource::Environment);
-    }
-    if !defaults.protected_data_available() {
-        return decided(false, ResumeInPlaceSource::Unreadable);
-    }
-    let preference = match defaults.get(RESUME_IN_PLACE_KEY) {
-        Some(moshpit_store::Plist::String(text)) => word(&text),
-        Some(value) => value.as_bool(),
-        None => None,
-    };
-    match preference {
-        Some(on) => decided(on, ResumeInPlaceSource::Preferences),
-        None => decided(false, ResumeInPlaceSource::Unset),
-    }
-}
-
-/// The sessions' clock: the app's (`Timing::default()`), with resume in
-/// place as [`resume_in_place`] decides.
-#[cfg(test)]
-fn app_timing(env: impl Fn(&str) -> Option<String>, defaults: &dyn Defaults) -> Timing {
+/// The sessions' clock: the core's (`Timing::default()`), resuming in
+/// place on the way back from the background (`Timing::resume_in_place`): a
+/// connection that survived the suspension is asked one round trip and kept
+/// when it answers, instead of being redialled. Every Canary build ran it
+/// behind a switch in the app's preferences; the switch went with the app's
+/// Swift paths (F0), so the core decides it alone.
+fn app_timing() -> Timing {
     Timing {
-        resume_in_place: resume_in_place(env, defaults).on,
+        resume_in_place: true,
         ..Timing::default()
     }
 }
@@ -1629,227 +1540,17 @@ mod tests {
     }
 
     #[test]
-    fn resuming_in_place_is_what_the_preferences_say_and_off_unset() {
-        use moshpit_store::{MemoryDefaults, Plist};
-        let no_env = |_: &str| None;
-        let defaults = MemoryDefaults::new();
-        let unset = app_timing(no_env, &defaults);
-        assert_eq!(unset, Timing::default());
-        assert!(!unset.resume_in_place);
-        for (value, on) in [
-            (Plist::Bool(true), true),
-            (Plist::Bool(false), false),
-            (Plist::Int(1), true),
-            (Plist::Int(0), false),
-            // A launch argument's value is a string.
-            (Plist::String("1".into()), true),
-            (Plist::String("YES".into()), true),
-            (Plist::String("0".into()), false),
-            (Plist::String("NO".into()), false),
-            (Plist::String("maybe".into()), false),
-        ] {
-            defaults.set(RESUME_IN_PLACE_KEY, Some(value.clone()));
-            let timing = app_timing(no_env, &defaults);
-            assert_eq!(timing.resume_in_place, on, "{value:?}");
-            assert_eq!(
-                Timing {
-                    resume_in_place: false,
-                    ..timing
-                },
-                Timing::default(),
-                "nothing else changes"
-            );
-        }
-    }
-
-    /// The launch environment wins: a test run turns it on or off whatever
-    /// the build registered.
-    #[test]
-    fn the_launch_environment_overrides_the_preference() {
-        use moshpit_store::{MemoryDefaults, Plist};
-        let defaults = MemoryDefaults::new();
-        let env = |value: &'static str| {
-            move |name: &str| (name == RESUME_IN_PLACE_KEY).then(|| value.to_owned())
-        };
-        assert!(app_timing(env("1"), &defaults).resume_in_place);
-        defaults.set(RESUME_IN_PLACE_KEY, Some(Plist::Bool(true)));
-        assert!(!app_timing(env("0"), &defaults).resume_in_place);
-        // Unreadable: the preference decides.
-        assert!(app_timing(env("?"), &defaults).resume_in_place);
-    }
-
-    /// B365: before the first unlock the preferences answer with the
-    /// build's registered default alone — a Canary build's "on" — which
-    /// stood in for a switch the person turned off. Off until they can be
-    /// read; the launch environment still wins.
-    #[test]
-    fn a_sealed_launch_never_takes_the_builds_default_for_the_switch() {
-        use moshpit_store::{MemoryDefaults, Plist};
-        let defaults = MemoryDefaults::new();
-        defaults.set(RESUME_IN_PLACE_KEY, Some(Plist::Bool(true)));
-        defaults.set_protected_data_available(false);
-        let no_env = |_: &str| None;
-        assert!(!app_timing(no_env, &defaults).resume_in_place);
+    fn the_sessions_resume_in_place() {
+        let timing = app_timing();
+        assert!(timing.resume_in_place);
         assert_eq!(
-            resume_in_place(no_env, &defaults),
-            ResumeInPlaceDecision {
-                on: false,
-                source: ResumeInPlaceSource::Unreadable
-            }
+            Timing {
+                resume_in_place: false,
+                ..timing
+            },
+            Timing::default(),
+            "nothing else changes"
         );
-        let env_on = |name: &str| (name == RESUME_IN_PLACE_KEY).then(|| "1".to_owned());
-        assert_eq!(
-            resume_in_place(env_on, &defaults),
-            ResumeInPlaceDecision {
-                on: true,
-                source: ResumeInPlaceSource::Environment
-            }
-        );
-        defaults.set_protected_data_available(true);
-        assert_eq!(
-            resume_in_place(no_env, &defaults),
-            ResumeInPlaceDecision {
-                on: true,
-                source: ResumeInPlaceSource::Preferences
-            }
-        );
-    }
-
-    /// The app's preferences for a registry: resume in place's switch as
-    /// stored, and whether they can be read.
-    struct Switch {
-        on: std::sync::Mutex<Option<bool>>,
-        readable: AtomicBool,
-    }
-
-    impl Switch {
-        fn new(on: Option<bool>, readable: bool) -> Arc<Self> {
-            Arc::new(Self {
-                on: std::sync::Mutex::new(on),
-                readable: AtomicBool::new(readable),
-            })
-        }
-        fn set(&self, on: Option<bool>) {
-            *self.on.lock().unwrap() = on;
-        }
-    }
-
-    impl PreferencesHost for Switch {
-        fn get(&self, key: String) -> Option<crate::store::PlistValue> {
-            let on = (*self.on.lock().unwrap())?;
-            (key == RESUME_IN_PLACE_KEY).then(|| crate::store::PlistValue {
-                nodes: vec![crate::store::PlistNode::Bool { value: on }],
-            })
-        }
-        fn set(&self, _: String, _: Option<crate::store::PlistValue>) {}
-        fn protected_data_available(&self) -> bool {
-            self.readable.load(Ordering::SeqCst)
-        }
-    }
-
-    struct Nobody;
-
-    #[async_trait::async_trait]
-    impl CredentialHost for Nobody {
-        async fn credential(&self, _: String) -> Result<Credential, CredentialFailure> {
-            Err(CredentialFailure::Canceled)
-        }
-        async fn sign(
-            &self,
-            _: String,
-            _: Vec<u8>,
-        ) -> Result<PlatformSignature, CredentialFailure> {
-            Err(CredentialFailure::Canceled)
-        }
-    }
-
-    impl KeychainHost for Nobody {
-        fn save(
-            &self,
-            _: String,
-            _: Vec<u8>,
-            _: bool,
-        ) -> Result<(), crate::store::KeychainFailure> {
-            Err(crate::store::KeychainFailure::NotFound)
-        }
-        fn load(&self, _: String, _: String) -> Result<Vec<u8>, crate::store::KeychainFailure> {
-            Err(crate::store::KeychainFailure::NotFound)
-        }
-        fn delete(&self, _: String) -> Result<(), crate::store::KeychainFailure> {
-            Err(crate::store::KeychainFailure::NotFound)
-        }
-        fn exists(&self, _: String) -> bool {
-            false
-        }
-        fn accounts(&self) -> Result<Vec<String>, crate::store::KeychainFailure> {
-            Ok(Vec::new())
-        }
-        fn load_silently(&self, _: String) -> Result<Vec<u8>, crate::store::KeychainFailure> {
-            Err(crate::store::KeychainFailure::NotFound)
-        }
-    }
-
-    impl SessionEventSink for Nobody {
-        fn deliver(&self, _: Vec<SessionEvent>) {}
-    }
-
-    fn registry(switch: Arc<Switch>) -> Arc<CoreSessions> {
-        let nobody = Arc::new(Nobody);
-        CoreSessions::new(
-            nobody.clone(),
-            nobody.clone(),
-            switch,
-            nobody,
-            "test".into(),
-        )
-    }
-
-    /// B365: the switch was read once, when the registry was made, and iOS
-    /// keeps a process for hours across returns: turned off while the app
-    /// ran, the sessions kept resuming in place ("kept") until a launch the
-    /// person never saw. It is read again around every move to the
-    /// background and back.
-    #[test]
-    fn a_switch_turned_off_while_the_app_runs_is_followed_at_the_next_return() {
-        let switch = Switch::new(Some(true), true);
-        let core = registry(switch.clone());
-        assert!(core.registry().resume_in_place());
-        switch.set(Some(false));
-        core.set_foreground(false);
-        assert!(
-            !core.registry().resume_in_place(),
-            "followed from this move on"
-        );
-        assert_eq!(
-            core.resume_in_place(),
-            ResumeInPlaceDecision {
-                on: false,
-                source: ResumeInPlaceSource::Preferences
-            }
-        );
-        switch.set(Some(true));
-        core.set_foreground(true);
-        assert!(core.registry().resume_in_place());
-    }
-
-    /// A registry made while the preferences couldn't be read decides again
-    /// once they can: the first return after the unlock follows the
-    /// person's switch.
-    #[test]
-    fn a_registry_made_before_the_unlock_follows_the_switch_once_it_can_be_read() {
-        let switch = Switch::new(Some(false), false);
-        let core = registry(switch.clone());
-        assert_eq!(
-            core.resume_in_place(),
-            ResumeInPlaceDecision {
-                on: false,
-                source: ResumeInPlaceSource::Unreadable
-            }
-        );
-        switch.set(Some(true));
-        switch.readable.store(true, Ordering::SeqCst);
-        core.set_foreground(true);
-        assert!(core.registry().resume_in_place());
     }
 
     #[test]

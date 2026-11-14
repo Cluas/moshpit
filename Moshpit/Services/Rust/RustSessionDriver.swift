@@ -329,7 +329,7 @@ final class RustSessionDriver: RustSessionListener {
             Log.input.info("rust: \(bytes, privacy: .public) bytes for stream \(stream, privacy: .public) not sent (\(String(describing: why), privacy: .public))")
             if why == .reconnected { session.rustNoteInputLost() }
         case .resumeChecked(let awayMs, let waitedMs, let outcome, let throughTmux, let held):
-            // Resume in place's trial data (ResumeInPlaceSwitch): how often
+            // Resume in place's data (the core always resumes in place): how often
             // iOS keeps a suspended socket, and what asking it costs. Notice,
             // so it stays in the device's log for a sysdiagnose.
             Log.ssh.notice("rust session \(self.id ?? 0, privacy: .public): back after \(awayMs / 1000, privacy: .public) s away: \(Self.resumeWords(outcome), privacy: .public) after \(waitedMs, privacy: .public) ms on \(throughTmux ? "tmux" : "ssh", privacy: .public), \(held, privacy: .public) held writes")

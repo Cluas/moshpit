@@ -3754,9 +3754,6 @@ final class SessionHub {
                         mode: Self.effectivePredictMode(connection: self.connection.predictMode,
                                                         app: AppSettings.shared.predictMode),
                         trail: AppSettings.shared.trailOnPredict))
-                    #if DEBUG
-                    MoshPredictionProbe.startIfRequested(self)
-                    #endif
                     transport.onMetrics = { [weak self] srtt, roaming in
                         self?.metricsSink?(srtt, roaming)
                         self?.coordinator.prediction?.srttMs = srtt

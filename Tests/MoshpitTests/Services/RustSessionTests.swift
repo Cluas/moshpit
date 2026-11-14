@@ -35,8 +35,6 @@ final class FakeCoreSessions: CoreSessionsProtocol, @unchecked Sendable {
     var respecs: [(UInt64, SessionSpec)] = []
     func respec(session: UInt64, spec: SessionSpec) { respecs.append((session, spec)) }
     func setForeground(foreground: Bool) { self.foreground.append(foreground) }
-    var resumeDecision = ResumeInPlaceDecision(on: false, source: .unset)
-    func resumeInPlace() -> ResumeInPlaceDecision { resumeDecision }
     func setVisible(session: UInt64?) { visible.append(session) }
     func switchToSsh(session: UInt64) {}
     var repainted: [UInt64] = []
@@ -694,22 +692,6 @@ struct RustSessionTests {
         let prompts = RustCopy.failure(kind: .credentials, cause: .credentials(why: .interactivePrompts))
         #expect(prompts.hasPrefix(rejected))
         #expect(prompts != rejected)
-    }
-
-    /// B365: the log says which way back the sessions take, and why — the
-    /// person's switch told apart from the build's default.
-    @Test("the core's resume-in-place decision is said with what decided it")
-    func resumeInPlaceWords() throws {
-        let suite = "moshpit.tests.resume-in-place.\(UUID().uuidString)"
-        let defaults = try #require(UserDefaults(suiteName: suite))
-        defer { defaults.removePersistentDomain(forName: suite) }
-        let unset = ResumeInPlaceSwitch.words(.preferences, defaults: defaults, bundle: suite)
-        #expect(unset == "build default")
-        defaults.set(false, forKey: ResumeInPlaceSwitch.switchKey)
-        let stored = ResumeInPlaceSwitch.words(.preferences, defaults: defaults, bundle: suite)
-        #expect(stored.hasPrefix("stored"))
-        let sealed = ResumeInPlaceSwitch.words(.unreadable, defaults: defaults, bundle: suite)
-        #expect(sealed.contains("unlock"))
     }
 
     @Test("a credential the keychain won't give while the device is locked is 'locked' (B201)")

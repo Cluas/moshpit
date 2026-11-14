@@ -65,7 +65,6 @@ final class RustCore {
         receive = { [weak self] events in self?.deliver(events) }
         isForeground = UIApplication.shared.applicationState != .background
         if !isForeground { sessions.setForeground(foreground: false) }
-        noteResumeInPlace()
         startPathWatch()
         watchUnlocks(on: .default)
         Log.ssh.info("rust core: session registry up (\(label, privacy: .public))")
@@ -127,24 +126,9 @@ final class RustCore {
         guard foreground != isForeground else { return }
         isForeground = foreground
         sessions.setForeground(foreground: foreground)
-        noteResumeInPlace()
         guard !foreground else { return }
         let assertion = BackgroundAssertion(name: "moshpit.rust-background-teardown")
         flush { assertion.end() }
-    }
-
-    /// What the core last decided of resume in place.
-    private var resumeInPlace: ResumeInPlaceDecision?
-
-    /// The core's decision on resume in place, logged when it changes (B365):
-    /// it reads ``ResumeInPlaceSwitch`` again around every move to the
-    /// background and back, and a device's log then says which way back its
-    /// sessions take, and why.
-    private func noteResumeInPlace() {
-        let decision = sessions.resumeInPlace()
-        guard decision != resumeInPlace else { return }
-        resumeInPlace = decision
-        Log.ssh.notice("rust core: resume in place \(decision.on ? "on" : "off", privacy: .public) (\(ResumeInPlaceSwitch.words(decision.source), privacy: .public))")
     }
 
     /// Calls `done` once every session has written what it was asked to

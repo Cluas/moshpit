@@ -1318,11 +1318,6 @@ void uniffi_moshpit_ffi_fn_method_coresessions_repaint(uint64_t ptr, uint64_t se
 void uniffi_moshpit_ffi_fn_method_coresessions_respec(uint64_t ptr, uint64_t session, RustBuffer spec, RustCallStatus *_Nonnull out_status
 );
 #endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_CORESESSIONS_RESUME_IN_PLACE
-#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_CORESESSIONS_RESUME_IN_PLACE
-RustBuffer uniffi_moshpit_ffi_fn_method_coresessions_resume_in_place(uint64_t ptr, RustCallStatus *_Nonnull out_status
-);
-#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_CORESESSIONS_SET_FOREGROUND
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_CORESESSIONS_SET_FOREGROUND
 void uniffi_moshpit_ffi_fn_method_coresessions_set_foreground(uint64_t ptr, int8_t foreground, RustCallStatus *_Nonnull out_status
@@ -3923,12 +3918,6 @@ uint16_t uniffi_moshpit_ffi_checksum_method_coresessions_repaint(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_CORESESSIONS_RESPEC
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_CORESESSIONS_RESPEC
 uint16_t uniffi_moshpit_ffi_checksum_method_coresessions_respec(void
-    
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_CORESESSIONS_RESUME_IN_PLACE
-#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_CORESESSIONS_RESUME_IN_PLACE
-uint16_t uniffi_moshpit_ffi_checksum_method_coresessions_resume_in_place(void
     
 );
 #endif

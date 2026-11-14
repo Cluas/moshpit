@@ -20,14 +20,15 @@ extension XCTestCase {
 }
 
 extension XCTestCase {
-    /// Skips a flow written for a SwiftUI screen the NSH redesign replaced
-    /// (Settings, its App Icon and Theme pages, the connection form, the key
-    /// form): it looks for navigation bars, switches and rows that are no
-    /// longer there, so it fails for that alone (the first public CI run on
-    /// Xcode 27.2). Each stays skipped until it is written again against the
-    /// NSH page, whose rows `NSHSurface` reaches by accessibility id.
+    /// Skips a flow written in September for a SwiftUI screen (Settings,
+    /// its App Icon and Theme pages, the connection form, the key form): the
+    /// page changed since, so the navigation bars, switches and rows it looks
+    /// for are no longer there (the first public CI runs, on Xcode 27.2). An
+    /// NSH page replaces each now (F0), and the flow stays skipped until it
+    /// is written again against it, whose rows `NSHSurface` reaches by
+    /// accessibility id.
     func skipUntilRewrittenForNSH(_ page: String) throws {
-        throw XCTSkip("written for the SwiftUI \(page), which an NSH page replaced: to be written again against it")
+        throw XCTSkip("written for the SwiftUI \(page) as it was in September; NSH draws it now: to be written again against the NSH page")
     }
 }
 
