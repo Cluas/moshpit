@@ -33,9 +33,10 @@
 # plus SSHKeyAlgorithm and PredictMode, cut verbatim out of
 # Moshpit/Models/SSHKeyStore.swift and AppSettings.swift (the files around
 # them are UI state), FileUploader out of ImageAttachment.swift,
-# ProtectedDataFlag and LaunchTrust out of Rust/RustCoreHosts.swift
-# (HostKeyValidator's known-hosts store asks the one, its decisions in a Debug
-# build the other), a stand-in for the UIKit names they and
+# ProtectedDataFlag, RustKeychainHost and LaunchTrust out of
+# Rust/RustCoreHosts.swift (HostKeyValidator's known-hosts store asks the
+# first, KeychainService hands the store the second since B428, a Debug
+# build's decisions are the third), a stand-in for the UIKit names they and
 # SSHService use, one for AppStores.knownHosts() (HostKeyValidator's default
 # store; Rust/RustStoreSwitch.swift reaches every Rust store) as the app has
 # it with the store switch off, the unit
@@ -219,6 +220,8 @@ cut_out() {
     echo "import Foundation"
     echo "import UIKit"
     cut_out "$repo/Moshpit/Services/Rust/RustCoreHosts.swift" "final class ProtectedDataFlag: @unchecked Sendable {" "}"
+    echo
+    cut_out "$repo/Moshpit/Services/Rust/RustCoreHosts.swift" "final class RustKeychainHost: KeychainHost, @unchecked Sendable {" "}"
     echo
     cut_out "$repo/Moshpit/Services/Rust/RustCoreHosts.swift" "enum LaunchTrust {" "}"
 } > "$sources/RustCoreHosts.swift"
