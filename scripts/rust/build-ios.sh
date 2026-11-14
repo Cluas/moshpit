@@ -46,9 +46,22 @@ fi
 deployment="${IPHONEOS_DEPLOYMENT_TARGET:-18.0}"
 
 cargo_home="${CARGO_HOME:-$HOME/.cargo}"
+# rustup's proxies (cargo, rustc, rustup): in $CARGO_HOME/bin, where
+# rustup.rs puts them, or else wherever the caller's PATH has them: a package
+# manager's rustup (Homebrew's, the one the macOS CI image has) keeps them
+# out of ~/.cargo. Looked up here, before the fixed environment below, whose
+# PATH is that directory and the system's.
+if [ -x "$cargo_home/bin/cargo" ]; then
+    cargo_bin="$cargo_home/bin"
+elif cargo_on_path="$(command -v cargo 2>/dev/null)" && [ -n "$cargo_on_path" ]; then
+    cargo_bin="$(cd "$(dirname "$cargo_on_path")" && pwd)"
+else
+    echo "error: no cargo in $cargo_home/bin, nor on PATH ($PATH). The app links a Rust library (crates/ffi): install rustup from https://rustup.rs and build again." >&2
+    exit 1
+fi
 env_args=(
     HOME="$HOME"
-    PATH="$cargo_home/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+    PATH="$cargo_bin:/usr/bin:/bin:/usr/sbin:/sbin"
     TERM=dumb
     IPHONEOS_DEPLOYMENT_TARGET="$deployment"
     # Two jobs by default: the build machine is shared. Not part of cargo's
@@ -74,11 +87,6 @@ env_args=(
 niceness="${MOSHPIT_RUST_NICE:-10}"
 [ -n "${CARGO_HOME:-}" ] && env_args+=(CARGO_HOME="$CARGO_HOME")
 [ -n "${RUSTUP_HOME:-}" ] && env_args+=(RUSTUP_HOME="$RUSTUP_HOME")
-
-if ! [ -x "$cargo_home/bin/cargo" ]; then
-    echo "error: no cargo in $cargo_home/bin. The app links a Rust library (crates/ffi): install rustup from https://rustup.rs and build again." >&2
-    exit 1
-fi
 
 if [ -n "${MOSHPIT_RUST_PROFILE:-}" ]; then
     profile="$MOSHPIT_RUST_PROFILE"

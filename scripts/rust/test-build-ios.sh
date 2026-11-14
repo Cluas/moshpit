@@ -106,6 +106,29 @@ expect_build "by hand, simulator" \
 run MOSHPIT_RUST_PROFILE=app-test --
 expect_build "by hand, app-test" "$device_test"
 
+# rustup's proxies on PATH and not in $CARGO_HOME/bin (a package manager's
+# rustup: Homebrew's, the macOS CI image's): found there. That directory is
+# the fixed environment's PATH, so `rustup target add` for a target its
+# toolchain lacks resolves there too.
+mkdir -p "$work/no-cargo-home" "$work/path-bin" "$work/bare-sysroot/lib/rustlib"
+cp "$fake/bin/cargo" "$fake/bin/rustup" "$work/path-bin/"
+cat > "$work/path-bin/rustc" <<EOF
+#!/bin/bash
+[ "\$*" = "--print sysroot" ] && echo "$work/bare-sysroot"
+EOF
+chmod +x "$work/path-bin/"*
+run CARGO_HOME="$work/no-cargo-home" PATH="$work/path-bin:/usr/bin:/bin" \
+    CONFIGURATION=Debug MOSHPIT_RUST_PROFILE=app-test PLATFORM_NAME=iphonesimulator ARCHS=arm64 --
+expect_build "cargo on PATH, not in CARGO_HOME" "rustup target add aarch64-apple-ios-sim
+build --locked -p moshpit-ffi --profile app-test --target aarch64-apple-ios-sim | $target_dir"
+
+# Neither: refused before anything runs, naming both places looked.
+run CARGO_HOME="$work/no-cargo-home" --
+if [ "$status" -eq 0 ] || [ -n "$calls" ] || [[ "$output" != *"$work/no-cargo-home/bin"* ]] \
+    || [[ "$output" != *"nor on PATH (/usr/bin:/bin)"* ]]; then
+    fail "no cargo anywhere: exit $status, cargo asked [$calls]: $output"
+fi
+
 # Canary's command line asks for app-canary.
 run CONFIGURATION=Release MOSHPIT_RUST_PROFILE=app-canary PLATFORM_NAME=iphoneos ARCHS=arm64 --
 expect_build "Release, app-canary" \

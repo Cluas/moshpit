@@ -167,7 +167,10 @@ jobs:
         run: scripts/rust/test-build-ios.sh
 
       # The app's "Build Rust" phase (scripts/rust/build-ios.sh) runs cargo
-      # through rustup from ~/.cargo/bin, which the macOS image has. Install
+      # through rustup: from ~/.cargo/bin where rustup.rs puts it, else the
+      # rustup on PATH (the macOS image's comes from its package manager and
+      # keeps nothing in ~/.cargo/bin; the step's PATH reaches the phase
+      # through xcodebuild). Install
       # the pinned toolchain and the simulator's Rust target up front, so
       # the Xcode build log is not where a download shows up.
       - name: Install the Rust toolchain
