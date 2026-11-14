@@ -365,6 +365,13 @@ impl HostCareCore {
 
     // MARK: The phone's push side
 
+    /// This install's id (B443), read from where no backup carries it: what
+    /// its pairing's conf on a host is named by. Anything but 8 to 32
+    /// lowercase hex digits is ignored.
+    pub fn install_id(&self, id: String) {
+        self.driver.with(|m, k| m.install_id(id, k));
+    }
+
     /// The device token remembered from an earlier launch.
     pub fn restore_device_token(&self, token: Option<String>) {
         self.driver.with(|m, k| m.restore_device_token(token, k));
@@ -670,6 +677,7 @@ fn demo_manifest(scenario: &str, relay: String) -> Option<moshpit_install::Insta
         manifest.set(
             &InstallComponent::Pairing {
                 conn: DEMO_CONNECTION.into(),
+                install: None,
             },
             Some(Component {
                 digest: Some(scripts::content_digest(&conf)),
@@ -796,6 +804,7 @@ mod tests {
         };
         let pairing = InstallComponent::Pairing {
             conn: DEMO_CONNECTION.into(),
+            install: None,
         };
         assert_eq!(read("installed").status(&pairing), ComponentStatus::Current);
         assert_eq!(

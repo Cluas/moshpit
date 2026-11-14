@@ -251,3 +251,46 @@ fn the_bar_pieces_take_a_44_pt_touch() {
     }
     channel.close();
 }
+
+/// B488: the terminal page's ground (the `terminal-bg` token: around the
+/// slot, under the bar, the panels' strip) was the app theme's terminal
+/// colour, near black, beside a terminal drawn on the user's terminal
+/// theme. On the terminal it is that theme's background now, in both
+/// appearances; other screens keep the app theme's.
+#[test]
+fn the_terminal_pages_ground_is_its_terminal_themes_background() {
+    use moshpit_ui::screen::{Params, Screen};
+    use nsh_core::{color::rgb, element::AdaptiveColor};
+    let grey = Params {
+        terminal: Some("#282A36".to_owned()),
+        ..Params::default()
+    };
+    let ground = AdaptiveColor::new(rgb(0x282A36), rgb(0x282A36));
+    assert_eq!(
+        Screen::Terminal.tokens(&grey).color("terminal-bg"),
+        Some(ground)
+    );
+    assert_ne!(
+        Screen::Settings.tokens(&grey).color("terminal-bg"),
+        Some(ground),
+        "only the terminal's"
+    );
+    let light = Params {
+        terminal: Some("#FDF6E3".to_owned()),
+        ..Params::default()
+    };
+    assert_eq!(
+        Screen::Terminal.tokens(&light).color("terminal-bg"),
+        Some(AdaptiveColor::new(rgb(0xFDF6E3), rgb(0xFDF6E3))),
+        "a light terminal theme's too, not the fixed light ground"
+    );
+    // No terminal theme said: the app theme's, as before.
+    assert_eq!(
+        Screen::Terminal
+            .tokens(&Params::default())
+            .color("terminal-bg"),
+        Screen::Settings
+            .tokens(&Params::default())
+            .color("terminal-bg")
+    );
+}

@@ -80,8 +80,17 @@ fn component(key: &str) -> InstallComponent {
             agent: agent.to_owned(),
         }
     } else {
-        InstallComponent::Pairing {
-            conn: key.get(8..).unwrap_or("").to_owned(),
+        // `pairing.<conn>` or `pairing.<conn>.<install>` (B443).
+        let rest = key.get(8..).unwrap_or("");
+        match rest.split_once('.') {
+            Some((conn, install)) if crate::manifest::is_install_id(install) => InstallComponent::Pairing {
+                conn: conn.to_owned(),
+                install: Some(install.to_owned()),
+            },
+            _ => InstallComponent::Pairing {
+                conn: rest.to_owned(),
+                install: None,
+            },
         }
     }
 }
@@ -283,6 +292,10 @@ impl HostChannel for FakeHost {
 /// The nonce a `cmd stamptest` case's hooks test names (B376).
 const HARNESS_NONCE: &str = "0123456789abcdef";
 
+/// The install a flow's pairing is written as (B443): every shipped build
+/// has one, so the committed flows are written as one does.
+const HARNESS_INSTALL: &str = "a0a0a0a0b1b1b1b1";
+
 /// `command` with what a run draws at random (B376: the manifest lock's
 /// token, the hooks test's nonce) written as fixed text, so a flow's
 /// fingerprints don't move from run to run.
@@ -329,7 +342,11 @@ fn flow(f: &[&str]) -> String {
         let state = installer.inspect().await?;
         Ok::<String, ChannelError>(match f[1] {
             "pairing" => match json::decode::<PushPairing>(&hex::decode(f[7]).expect("hex")) {
-                Ok(pairing) => report_out(&installer.install_pairing(&pairing, &state, now).await?),
+                Ok(pairing) => report_out(
+                    &installer
+                        .install_pairing_as(&pairing, Some(HARNESS_INSTALL), &state, now)
+                        .await?,
+                ),
                 Err(_) => "threw".to_owned(),
             },
             "hooks" => report_out(
@@ -568,7 +585,7 @@ pub fn run(line: &str) -> Option<String> {
             }
             .to_owned(),
             "path" => {
-                let pairing = InstallComponent::Pairing { conn: arg(f[2]) };
+                let pairing = InstallComponent::Pairing { conn: arg(f[2]), install: None };
                 let other = component(&arg(f[3]));
                 format!(
                     "{} {} {} {}",
@@ -1372,6 +1389,7 @@ fn flow_case(rng: &mut SplitMix64) -> String {
                 manifest.set(
                     &InstallComponent::Pairing {
                         conn: "OTHER".into(),
+                        install: None,
                     },
                     Some(Component {
                         connection_id: Some("OTHER".into()),

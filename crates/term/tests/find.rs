@@ -92,3 +92,72 @@ fn find_takes_the_text_as_written() {
     );
     assert!(found(&mut t, "nothing here", FindStep::Newest).is_none());
 }
+
+/// The cells drawn marked as the match, row by row, as the view shows them
+/// after `f` (rows a frame doesn't repaint keep what they showed).
+fn paint(shown: &mut [String], f: &moshpit_term::Frame) {
+    for r in &f.changed {
+        let marked: String = r
+            .cells
+            .iter()
+            .filter(|c| c.flags & cell_flags::MATCH != 0)
+            .filter_map(|c| char::from_u32(c.ch))
+            .collect();
+        shown[r.row as usize] = marked;
+    }
+}
+
+/// B485: the match drawn marked stays on its text. A full-screen program
+/// redrawing, or a `clear`, put other text where it was: the mark went, and
+/// a repaint of the same text keeps it (tmux's repair frame, B480). It
+/// stayed on the cells, over whatever was there now.
+#[test]
+fn the_match_mark_goes_when_its_text_does() {
+    let mut t = term(20, 4, 100);
+    t.feed(b"one needle\r\ntwo\r\n$ ");
+    let mut shown = vec![String::new(); 4];
+    assert_eq!(
+        found(&mut t, "needle", FindStep::Newest).map(|f| f.2),
+        Some((0, 4))
+    );
+    paint(&mut shown, &t.frame());
+    assert_eq!(shown[0], "needle");
+    // The same text written again: still marked.
+    t.feed(b"\x1b[1;1H\x1b[2Kone needle\x1b[3;3H");
+    paint(&mut shown, &t.frame());
+    assert_eq!(shown[0], "needle", "a repaint of the same text");
+    // Other text there now: no mark, on it or anywhere.
+    t.feed(b"\x1b[1;1H\x1b[2Kone thread\x1b[3;3H");
+    paint(&mut shown, &t.frame());
+    assert_eq!(shown, vec![String::new(); 4], "the mark went with its text");
+    // The next step finds again from the newest.
+    t.feed(b"\r\nneedle\r\n");
+    assert_eq!(
+        found(&mut t, "needle", FindStep::Next).map(|f| (f.0, f.1)),
+        Some((0, 1))
+    );
+}
+
+/// B485: the width changes (the phone turned, the split view resized) and
+/// the lines flow again: the match shown is the same one, marked on its
+/// text where it now is. The mark stayed on the rows it had been on.
+#[test]
+fn the_match_mark_follows_its_text_through_a_reflow() {
+    let mut t = term(20, 4, 100);
+    t.feed(b"a needle\r\n0123456789012345 b needle c\r\n$ ");
+    // The second line wraps after 20 columns.
+    let (index, count, _) = found(&mut t, "needle", FindStep::Newest).unwrap();
+    assert_eq!((index, count), (1, 2));
+    let mut shown = vec![String::new(); 4];
+    paint(&mut shown, &t.frame());
+    assert_eq!(shown.concat(), "needle");
+    t.resize(12, 4);
+    let mut shown = vec![String::new(); 4];
+    paint(&mut shown, &t.frame());
+    assert_eq!(shown.concat(), "needle", "marked on its text: {shown:?}");
+    assert_eq!(
+        found(&mut t, "needle", FindStep::Previous).map(|f| (f.0, f.1)),
+        Some((0, 2)),
+        "the same match: the one before it is the first"
+    );
+}

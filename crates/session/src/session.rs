@@ -194,6 +194,11 @@ pub(crate) enum Msg {
     ControlHoldExpired {
         hold: u64,
     },
+    /// The tmux commands held for the next attach since hold `hold` began
+    /// waited long enough (B483).
+    TmuxHoldExpired {
+        hold: u64,
+    },
     /// What a dropped sidecar of `epoch` owed the server, for the next.
     SidecarHandoff {
         epoch: u64,
@@ -462,7 +467,7 @@ struct HerdrMoshControl {
 /// What a view sent a pane, in the order sent: typed bytes, or a paste
 /// (B361), which rides the same stream so it keeps its place among the
 /// keys and is held, dropped and routed with them.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 enum Typed {
     Bytes(Vec<u8>),
     Paste(String),
@@ -580,7 +585,7 @@ pub(crate) struct Actor {
     /// Input typed (or pasted) while the in-place return waits for the
     /// live transport's answer ([`Lifecycle::resume_pending`]), in order:
     /// sent once it answered, dropped as typed while not live if it didn't.
-    held: Vec<(StreamId, Typed)>,
+    held: Vec<(StreamId, Typed, bool)>,
     /// mosh with tmux: the prefix a scroll's copy-mode keys start with
     /// (`C-b` until the sidecar has read the server's), and whether it was
     /// asked (B362).
@@ -595,6 +600,15 @@ pub(crate) struct Actor {
     /// connection being redialled): the next attach lands there instead of
     /// where the last one was (B405).
     tmux_pick: Option<Selection>,
+    /// tmux commands the person gave while no attach could carry them (the
+    /// connection being redialled, or a return still asking whether its
+    /// socket lived), for the next attach, in order (B483).
+    tmux_held: Vec<TmuxAction>,
+    /// Bumped for every hold that starts: an older one's bound is moot.
+    tmux_hold: u64,
+    /// Commands held past their bound were dropped: said once an attach
+    /// carries commands again.
+    tmux_dropped: bool,
     /// The in-place return's question, until it is settled.
     resume_question: Option<ResumeQuestion>,
     deliveries: Vec<Delivery>,
@@ -672,6 +686,9 @@ impl Actor {
             mosh_prefix_asked: false,
             herdr_pick: None,
             tmux_pick: None,
+            tmux_held: Vec::new(),
+            tmux_hold: 0,
+            tmux_dropped: false,
             resume_question: None,
             deliveries: Vec::new(),
             grids: BTreeMap::new(),
@@ -717,6 +734,9 @@ impl Actor {
             }
             if !self.held.is_empty() && !self.life.resume_pending() {
                 self.release_held();
+            }
+            if (!self.tmux_held.is_empty() || self.tmux_dropped) && !self.life.resume_pending() {
+                self.release_tmux_held();
             }
             self.act().await;
             if stopping {
@@ -808,7 +828,7 @@ impl Actor {
             let _ = reply.send(false);
         }
         self.discard_pending(Discarded::SessionEnded);
-        for (stream, typed) in std::mem::take(&mut self.held) {
+        for (stream, typed, _) in std::mem::take(&mut self.held) {
             self.emit(EventKind::InputDiscarded {
                 stream,
                 bytes: typed.len(),
@@ -893,19 +913,7 @@ impl Actor {
             Msg::Tmux(TmuxAction::ScrollLines(lines)) if self.mosh_renders_tmux() => {
                 self.mosh_scroll(lines);
             }
-            Msg::Tmux(action) => match &self.leg {
-                Some(Leg::Tmux { tmux, .. }) => {
-                    let _ = tmux.commands.send(TmuxCommand::Action(action));
-                }
-                Some(Leg::Mosh { .. }) => self.control_action(action),
-                // No leg while the connection is redialled: a notification
-                // tapped then picks here. The next attach lands on it (B405).
-                _ => {
-                    if let Some(pick) = crate::tmux_leg::pick_selection(&action, None) {
-                        self.tmux_pick = Some(pick);
-                    }
-                }
-            },
+            Msg::Tmux(action) => self.tmux_action(action),
             Msg::Herdr { action, token } => match (&self.leg, &self.herdr_mosh) {
                 (Some(Leg::Herdr { herdr, .. }), _) if self.life.state().is_live() => {
                     let pick = herdr_pick_of(&action);
@@ -1052,6 +1060,7 @@ impl Actor {
             }
             Msg::ControlChecked { epoch, alive } => self.control_checked(epoch, alive),
             Msg::ControlHoldExpired { hold } => self.control_hold_expired(hold),
+            Msg::TmuxHoldExpired { hold } => self.tmux_hold_expired(hold),
             Msg::SidecarHandoff { epoch, handoff } => match self.control.as_mut() {
                 // The dropped sidecar's debt goes to the next one; with the
                 // control plane gone, to the end of the session.
@@ -1705,9 +1714,18 @@ impl Actor {
     fn release_held(&mut self) {
         let held = std::mem::take(&mut self.held);
         let live = self.life.state().is_live();
-        for (stream, typed) in held {
+        for (stream, typed, bar) in held {
             if live {
                 self.route(stream, typed);
+            } else if bar {
+                // The shortcut bar's tap isn't kept for later (B476, B482):
+                // a stray one must not land in an agent's prompt after the
+                // reconnect.
+                self.emit(EventKind::InputDiscarded {
+                    stream,
+                    bytes: typed.len(),
+                    why: Discarded::NotLive,
+                });
             } else if let Some(pane) = self.panes.get(&stream).map(|c| c.pane.clone()) {
                 // The connection turned out dead, and the screen had looked
                 // live: a multiplexer pane comes back with the redial, and its
@@ -2510,10 +2528,96 @@ impl Actor {
         let Some(sidecar) = control.sidecar.as_ref() else {
             return;
         };
-        for action in std::mem::take(&mut control.held) {
+        // What waited for a leg while the connection was dialled again
+        // came first (B483).
+        let held = std::mem::take(&mut self.tmux_held)
+            .into_iter()
+            .chain(std::mem::take(&mut control.held));
+        for action in held {
             let _ = sidecar.commands.send(TmuxCommand::Action(action));
         }
-        if std::mem::take(&mut control.dropped) {
+        let dropped = std::mem::take(&mut control.dropped) | std::mem::take(&mut self.tmux_dropped);
+        if dropped {
+            self.emit(EventKind::TmuxActionsDropped);
+        }
+    }
+
+    /// A tmux command from the person. One no attach can carry now (the
+    /// connection is being dialled again, or a return still asks whether
+    /// its socket lived) waits for the next, in order, at most
+    /// [`CONTROL_HOLD`] (B483): it went into the dead socket or nowhere,
+    /// and the window, the rename or the close never happened, unsaid. A
+    /// pick made then is where the next attach lands instead (B405); what
+    /// only matters now isn't kept.
+    fn tmux_action(&mut self, action: TmuxAction) {
+        let waits = match &self.leg {
+            Some(Leg::Tmux { .. }) => self.life.resume_pending() || !self.tmux_held.is_empty(),
+            Some(_) => false,
+            None => self.spec.multiplexer == Multiplexer::Tmux,
+        };
+        let pick = crate::tmux_leg::pick_selection(&action, None);
+        if waits && pick.is_none() && kept_for_an_attach(&action) {
+            self.hold_tmux(action);
+            return;
+        }
+        match &self.leg {
+            Some(Leg::Tmux { tmux, .. }) => {
+                let _ = tmux.commands.send(TmuxCommand::Action(action));
+            }
+            Some(Leg::Mosh { .. }) => self.control_action(action),
+            // No leg while the connection is redialled: a notification
+            // tapped then picks here. The next attach lands on it (B405).
+            _ => {
+                if let Some(pick) = pick {
+                    self.tmux_pick = Some(pick);
+                }
+            }
+        }
+    }
+
+    fn hold_tmux(&mut self, action: TmuxAction) {
+        if self.tmux_held.is_empty() {
+            self.tmux_hold += 1;
+            let hold = self.tmux_hold;
+            let me = self.me.clone();
+            tokio::spawn(async move {
+                tokio::time::sleep(CONTROL_HOLD).await;
+                let _ = me.send(Msg::TmuxHoldExpired { hold });
+            });
+        }
+        self.tmux_held.push(action);
+    }
+
+    /// The commands held since `hold` waited long enough: dropped rather
+    /// than run late, and said once an attach is back (B483).
+    fn tmux_hold_expired(&mut self, hold: u64) {
+        if self.tmux_hold != hold || self.tmux_held.is_empty() {
+            return;
+        }
+        log::info!(
+            "session {}: {} tmux command(s) dropped: no attach carried them in time",
+            self.id,
+            self.tmux_held.len()
+        );
+        self.tmux_held.clear();
+        self.tmux_dropped = true;
+    }
+
+    /// An SSH tmux attach is up on a live session: what waited for one
+    /// goes out, in order, and what waited too long is said (B483). mosh's
+    /// control plane takes its share when it is ready
+    /// ([`Self::release_control_held`]).
+    fn release_tmux_held(&mut self) {
+        let Some(Leg::Tmux { tmux, .. }) = &self.leg else {
+            return;
+        };
+        if !self.life.state().is_live() || self.current.is_empty() {
+            return;
+        }
+        for action in std::mem::take(&mut self.tmux_held) {
+            let _ = tmux.commands.send(TmuxCommand::Action(action));
+        }
+        if std::mem::take(&mut self.tmux_dropped) {
             self.emit(EventKind::TmuxActionsDropped);
         }
     }
@@ -3126,7 +3230,7 @@ impl Actor {
         // during the suspension — a paste as well, behind the keys typed
         // before it (B361).
         if self.life.resume_pending() {
-            self.held.push((stream, typed));
+            self.held.push((stream, typed, bar));
             return;
         }
         self.route(stream, typed);
@@ -3735,8 +3839,12 @@ impl HostKeyPrompt for Prompt {
     }
 }
 
-/// The byte a tmux `prefix` option names (`C-b`, `C-a`, …): Ctrl and a
-/// letter or one of `@[\]^_`; `C-b` (0x02) for anything else.
+/// What waits for the next tmux attach when none can carry it (B483): not
+/// what only matters now, and not a refresh (an attach is one).
+fn kept_for_an_attach(action: &TmuxAction) -> bool {
+    !is_momentary(action) && !matches!(action, TmuxAction::Refresh)
+}
+
 /// A tmux action that only matters the moment it is given (B401): a
 /// scroll, a tap, a view's report. Not held for a control plane in doubt:
 /// late, it would act on what the screen no longer shows.
@@ -3754,6 +3862,8 @@ fn is_momentary(action: &TmuxAction) -> bool {
     )
 }
 
+/// The byte a tmux `prefix` option names (`C-b`, `C-a`, …): Ctrl and a
+/// letter or one of `@[\]^_`; `C-b` (0x02) for anything else.
 fn prefix_bytes(option: &str) -> Vec<u8> {
     let option = option.trim();
     if let Some(rest) = option.strip_prefix("C-")
@@ -4280,7 +4390,12 @@ mod tests {
         assert!(moshpit_stream::view::write(id, b"cd"));
         take_input(&mut actor, 3).await;
         let made = vec![(id, keys(b"ab")), (id, paste("x\ny")), (id, keys(b"cd"))];
-        assert_eq!(actor.held, made, "all of it waits for the answer");
+        let held: Vec<(StreamId, Typed)> = actor
+            .held
+            .iter()
+            .map(|(stream, typed, _)| (*stream, typed.clone()))
+            .collect();
+        assert_eq!(held, made, "all of it waits for the answer");
         assert!(actor.pending.is_empty(), "nothing went ahead");
         actor
             .life
@@ -4428,6 +4543,47 @@ mod tests {
         );
     }
 
+    /// B483: with no leg, a tmux command (a new window, a close) waits for
+    /// the next attach instead of going nowhere, in order; a pick still goes
+    /// where that attach lands (B405), and what only matters now, or a
+    /// refresh, isn't kept. Held past the bound, they are dropped, to be
+    /// said once an attach is back. Without tmux nothing waits.
+    #[tokio::test]
+    async fn tmux_commands_given_while_redialling_wait_for_the_next_attach() {
+        let (mut actor, _events) = dialing_actor(false);
+        assert!(actor.leg.is_none());
+        actor
+            .handle(Msg::Tmux(TmuxAction::NewWindow { name: None }))
+            .await;
+        assert!(actor.tmux_held.is_empty(), "a plain shell has no attach");
+        actor.spec.multiplexer = Multiplexer::Tmux;
+        for action in [
+            TmuxAction::NewWindow { name: None },
+            TmuxAction::SelectPane("%5".into()),
+            TmuxAction::ScrollLines(3),
+            TmuxAction::Refresh,
+            TmuxAction::KillPane("%2".into()),
+        ] {
+            actor.handle(Msg::Tmux(action)).await;
+        }
+        assert_eq!(
+            actor.tmux_held,
+            vec![
+                TmuxAction::NewWindow { name: None },
+                TmuxAction::KillPane("%2".into()),
+            ]
+        );
+        let picked = actor.tmux_pick.as_ref().and_then(|pick| pick.pane.clone());
+        assert_eq!(picked.as_deref(), Some("%5"));
+        let hold = actor.tmux_hold;
+        actor.handle(Msg::TmuxHoldExpired { hold: hold - 1 }).await;
+        assert_eq!(actor.tmux_held.len(), 2, "an older hold's bound is moot");
+        assert!(!actor.tmux_dropped);
+        actor.handle(Msg::TmuxHoldExpired { hold }).await;
+        assert!(actor.tmux_held.is_empty(), "dropped, not run late");
+        assert!(actor.tmux_dropped, "and said at the next attach");
+    }
+
     /// B405: a dead tmux leg's pick carries its window and session from the
     /// tree it last had.
     #[test]
@@ -4489,6 +4645,44 @@ mod tests {
             actor.herdr_pick.as_deref(),
             Some("w1:p2"),
             "a refresh is no pick"
+        );
+    }
+
+    /// B482: in the return's confirmation window (the screen looks live)
+    /// the shortcut bar's taps wait with the keys; if the connection proves
+    /// dead they are not kept for the pane as the keys are (B476's rule: a
+    /// stray tap must not land in an agent's prompt after the reconnect).
+    /// If it answers, they go, in order.
+    #[tokio::test]
+    async fn bar_taps_held_through_a_dead_return_are_not_kept_for_the_pane() {
+        let (mut actor, mut events) = live_actor(true);
+        let generation = actor.life.generation();
+        let now = actor.now();
+        actor.life.background(now);
+        actor.life.foreground(now + 30_000);
+        let question = asked(&mut actor);
+        let id = tmux_pane(&mut actor, "%6");
+        assert!(moshpit_stream::view::write(id, b"ls"));
+        assert!(moshpit_stream::view::bar(id, b"\r"));
+        take_input(&mut actor, 2).await;
+        assert_eq!(actor.held.len(), 2, "both wait for the answer");
+        while events.try_recv().is_ok() {}
+        actor
+            .life
+            .probe_answered(generation, question, Probe::TimedOut, now + 31_500);
+        actor.release_held();
+        assert_eq!(
+            actor.pending.remove("%6"),
+            Some(vec![(id, keys(b"ls"))]),
+            "the keys wait for the pane, the tap doesn't"
+        );
+        assert_eq!(
+            discarded(&mut events),
+            [EventKind::InputDiscarded {
+                stream: id,
+                bytes: 1,
+                why: Discarded::NotLive,
+            }]
         );
     }
 

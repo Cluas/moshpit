@@ -519,9 +519,10 @@ pub enum EventKind {
     /// after its boot line (a wedged tmux, a host that went to sleep). The
     /// session stays up; the UI offers to retry.
     AttachStalled,
-    /// mosh + tmux: tmux commands the person gave while the control plane
-    /// was down didn't come through — held for it, they waited past
-    /// their bound — and it is back now (B401). The UI says so.
+    /// tmux commands the person gave while nothing carried them (mosh's
+    /// control plane down, B401; the connection dialled again, B483) didn't
+    /// come through: held for it, they waited past their bound. It is back
+    /// now. The UI says so.
     TmuxActionsDropped,
     /// Asking the person about a host key; answer with
     /// [`crate::Sessions::answer_host_key`].

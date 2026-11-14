@@ -547,6 +547,17 @@ impl HostCare {
 
     // MARK: - The phone's push side
 
+    /// This install's id (B443), read by the platform from where no backup
+    /// carries it: what its pairing's conf on a host is named by. Anything
+    /// but 8 to 32 lowercase hex digits is ignored.
+    pub fn install_id(&mut self, id: String, clock: Clock) {
+        if !moshpit_install::manifest::is_install_id(&id) {
+            log::error!(target: "moshpit::push", "install id ignored: not 8 to 32 lowercase hex digits");
+            return;
+        }
+        self.input(clock, |m| m.with(|s| s.push.install_id = Some(id)));
+    }
+
     /// The device token iOS remembered from an earlier launch, without a
     /// mint round (`PushService.init`).
     pub fn restore_device_token(&mut self, token: Option<String>, clock: Clock) {

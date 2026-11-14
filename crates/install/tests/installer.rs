@@ -170,6 +170,7 @@ fn pairing() -> PushPairing {
 fn pairing_component() -> InstallComponent {
     InstallComponent::Pairing {
         conn: "3F2504E0-4F89-11D3-9A0C-0305E82C3301".into(),
+        install: None,
     }
 }
 
@@ -435,7 +436,7 @@ fn a_stale_script_is_detected_by_content() {
     );
     assert!(!unpaired.paired_but_nothing_will_push());
     manifest.set(
-        &InstallComponent::Pairing { conn: "x".into() },
+        &InstallComponent::Pairing { conn: "x".into(), install: None },
         Some(Component {
             connection_id: Some("x".into()),
             relay_url: Some("y".into()),
@@ -570,9 +571,10 @@ fn the_self_test_fires_the_real_sender_with_a_matchable_nonce() {
 #[test]
 fn uninstall_removes_only_what_the_manifest_says_we_put_there() {
     let mut manifest = InstallManifest::empty();
-    let mine = InstallComponent::Pairing { conn: "c".into() };
+    let mine = InstallComponent::Pairing { conn: "c".into(), install: None };
     let theirs = InstallComponent::Pairing {
         conn: "other-device".into(),
+        install: None,
     };
     for (component, conn) in [(&mine, "c"), (&theirs, "other-device")] {
         manifest.set(

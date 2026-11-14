@@ -105,4 +105,48 @@ struct SwitchStillTests {
         #expect(stage.still == nil)
         #expect(still.superview == nil, "gone at once")
     }
+
+    @Test("B486: the keyboard survives the switch's swap: the new terminal takes it before the old one goes")
+    func theKeyboardSurvivesTheSwap() throws {
+        let controller = TmuxSessionController(sshSession: MockTmuxTransport())
+        let stage = TerminalNSHStage()
+        let (_, window) = TerminalNSHTests.slot(for: stage)
+        defer { window.isHidden = true }
+        window.makeKeyAndVisible()
+        stage.show(.init(source: .pane(controller, "%1"), inset: 4))
+        let first = try #require(stage.terminal)
+        try #require(first.becomeFirstResponder(), "the test host lets a terminal take the keyboard")
+        stage.show(.init(source: .pane(controller, "%2"), inset: 4), instant: true)
+        let second = try #require(stage.terminal)
+        #expect(second !== first)
+        #expect(second.isFirstResponder, "handed over, never dropped")
+        #expect(!first.isFirstResponder)
+    }
+
+    @Test("B486: a keyboard asked away stays away through a swap")
+    func aResignedKeyboardStaysAway() throws {
+        let controller = TmuxSessionController(sshSession: MockTmuxTransport())
+        let stage = TerminalNSHStage()
+        let (_, window) = TerminalNSHTests.slot(for: stage)
+        defer { window.isHidden = true }
+        window.makeKeyAndVisible()
+        stage.show(.init(source: .pane(controller, "%1"), inset: 4))
+        let first = try #require(stage.terminal)
+        try #require(first.becomeFirstResponder())
+        stage.apply(focus: .resign, geometryHeld: false)
+        stage.show(.init(source: .pane(controller, "%2"), inset: 4), instant: true)
+        #expect(stage.terminal?.isFirstResponder == false)
+    }
+
+    @Test("B489: the NSH page's tmux pane fills its slot: no inset")
+    func thePaneFillsTheSlot() throws {
+        #expect(TerminalScreen.nshPaneInset == 0)
+        let controller = TmuxSessionController(sshSession: MockTmuxTransport())
+        let stage = TerminalNSHStage()
+        let (slot, window) = TerminalNSHTests.slot(for: stage)
+        defer { window.isHidden = true }
+        stage.show(.init(source: .pane(controller, "%1"), inset: TerminalScreen.nshPaneInset))
+        let container = try #require(stage.container)
+        #expect(container.frame == slot.bounds)
+    }
 }

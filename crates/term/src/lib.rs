@@ -572,6 +572,10 @@ pub struct Terminal {
     selection: Option<select::Selection>,
     search: Option<(String, regex::Regex)>,
     found: Option<(StableRowIndex, usize, StableRowIndex, usize)>,
+    /// The found match's rows as they read when it was shown, and when:
+    /// the mark stays only on its text (B485).
+    found_rows: Vec<(StableRowIndex, (String, bool))>,
+    found_seqno: SequenceNo,
     // What the last frame showed.
     frame_seqno: SequenceNo,
     frame_top: Option<StableRowIndex>,
@@ -676,6 +680,8 @@ impl Terminal {
             selection: None,
             search: None,
             found: None,
+            found_rows: Vec::new(),
+            found_seqno: 0,
             frame_seqno: 0,
             frame_top: None,
             frame_alt: false,
@@ -916,9 +922,13 @@ impl Terminal {
     /// back (narrower) or onto the live screen (wider).
     pub fn resize(&mut self, cols: u16, rows: u16) {
         let reading = self.reading_place();
+        let found = self.found_place();
         self.term.resize(term_size(cols, rows, &self.options));
         if let Some(place) = reading {
             self.go_to_reading_place(place);
+        }
+        if let Some(place) = found {
+            self.go_to_found_place(place);
         }
         self.full_damage = true;
     }
@@ -1229,6 +1239,10 @@ impl Terminal {
     /// the damage.
     pub fn frame(&mut self) -> Frame {
         self.sync_scroll();
+        // Whether the selection still stands, before the rows to draw are
+        // picked: one that goes takes every row it covered with it (B484).
+        let sel = self.selection_range();
+        self.check_found();
         let (cols, rows) = self.size();
         let top = self.view_top();
         let alt = self.term.is_alt_screen_active();
@@ -1312,7 +1326,6 @@ impl Terminal {
 
         let palette = self.term.palette();
         let reverse_video = self.term.get_reverse_video();
-        let sel = self.selection_range();
         let mut links = Vec::new();
         let mut images: Vec<DecodedImage> = Vec::new();
         let mut out = Vec::with_capacity(wanted.len());
@@ -1983,6 +1996,74 @@ impl Terminal {
         matches
     }
 
+    /// The match shown, as what a reflow keeps: its place among the
+    /// matches, and how many there are.
+    fn found_place(&self) -> Option<(usize, usize)> {
+        let f = self.found?;
+        let matches = self.matches();
+        let at = matches.iter().position(|(s, _)| *s == (f.0, f.1))?;
+        Some((at, matches.len()))
+    }
+
+    /// The match [`Terminal::found_place`] read, where the lines now flow
+    /// (the view stays where the reflow left it); none if the matches
+    /// aren't the same ones.
+    fn go_to_found_place(&mut self, (at, count): (usize, usize)) {
+        let matches = self.matches();
+        match matches.get(at) {
+            Some(&((sr, sc), (er, ec))) if matches.len() == count => {
+                self.found = Some((sr, sc, er, ec));
+                self.stamp_found();
+            }
+            _ => self.found = None,
+        }
+    }
+
+    /// Notes the found match's rows as they read now, and when.
+    fn stamp_found(&mut self) {
+        let Some((sr, _, er, _)) = self.found else {
+            self.found_rows.clear();
+            return;
+        };
+        self.found_rows = (sr..=er)
+            .filter_map(|row| self.with_line(row, Self::line_text).map(|t| (row, t)))
+            .collect();
+        self.found_seqno = self.term.current_seqno();
+    }
+
+    /// The match shown stays marked while its rows are kept and read as
+    /// they did (a repaint of the same text keeps it, B480); other text
+    /// there now (a full-screen program redrawing, a `clear`) takes the
+    /// mark with it, every row it covered drawn again (B485).
+    fn check_found(&mut self) {
+        if self.found.is_none() {
+            return;
+        }
+        let seqno = self.found_seqno;
+        let mut rewritten = false;
+        let stands = !self.found_rows.is_empty()
+            && self.found_rows.iter().all(|(row, text)| {
+                *row >= self.first_row()
+                    && self
+                        .with_line(*row, |l| {
+                            if !l.changed_since(seqno) {
+                                return true;
+                            }
+                            let same = Self::line_text(l) == *text;
+                            rewritten |= same;
+                            same
+                        })
+                        .unwrap_or(false)
+            });
+        if !stands {
+            self.found = None;
+            self.found_rows.clear();
+            self.full_damage = true;
+        } else if rewritten {
+            self.found_seqno = self.term.current_seqno();
+        }
+    }
+
     /// Makes `pick` the match shown, the view scrolled so it shows with
     /// `context` rows above it when it was off screen.
     fn show_found(
@@ -1992,6 +2073,7 @@ impl Terminal {
     ) -> Match {
         let ((sr, sc), (er, ec)) = pick;
         self.found = Some((sr, sc, er, ec));
+        self.stamp_found();
         let rows = self.size().1 as StableRowIndex;
         let top = self.view_top();
         if sr < top || er >= top + rows {

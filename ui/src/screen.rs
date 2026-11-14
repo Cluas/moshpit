@@ -225,6 +225,20 @@ impl Screen {
         }
     }
 
+    /// The tokens the screen draws from: the app theme's. On the terminal,
+    /// its ground (`terminal-bg`: around the slot, under the bar, the
+    /// panels' strip) is the terminal theme's background, in both
+    /// appearances (B488): the app theme's near black beside a grey
+    /// terminal read as a black frame.
+    pub fn tokens(self, params: &Params) -> nsh_core::element::Tokens {
+        let terminal = if self == Screen::Terminal {
+            params.terminal.as_deref().and_then(theme::parse_hex)
+        } else {
+            None
+        };
+        theme::tokens_on(&params.theme, terminal)
+    }
+
     /// What a host calls it.
     pub fn name(self) -> &'static str {
         match self {
@@ -417,7 +431,7 @@ impl Screen {
                 })
             }
         };
-        root.tokens(theme::tokens(&params.theme))
+        root.tokens(self.tokens(params))
             .appearance(self.appearance(params))
             .translations(strings::translations())
     }

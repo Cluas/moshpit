@@ -498,7 +498,7 @@ fn a_device_finds_its_own_pairing_and_no_other_devices() {
     let conn = "3F2504E0-4F89-11D3-9A0C-0305E82C3301";
     let mut manifest = InstallManifest::empty();
     manifest.set(
-        &InstallComponent::Pairing { conn: conn.into() },
+        &InstallComponent::Pairing { conn: conn.into(), install: None },
         Some(Component {
             digest: Some("x".into()),
             connection_id: Some(conn.into()),
@@ -520,7 +520,7 @@ fn removing_one_devices_pairing_leaves_every_other_devices_standing() {
     let mut manifest = InstallManifest::empty();
     for conn in ["a", "b"] {
         manifest.set(
-            &InstallComponent::Pairing { conn: conn.into() },
+            &InstallComponent::Pairing { conn: conn.into(), install: None },
             Some(Component {
                 connection_id: Some(conn.into()),
                 relay_url: Some("r".into()),
@@ -819,6 +819,7 @@ fn a_relay_setting_with_a_trailing_slash_is_the_same_relay() {
 fn conf_path(c: &moshpit_hostcare::Conn) -> String {
     InstallComponent::Pairing {
         conn: c.id.to_string(),
+        install: None,
     }
     .path()
     .unwrap()
@@ -1014,6 +1015,7 @@ fn conf_on_host(rig: &mut Rig, connection: Uuid, pairing: &PushPairing) {
     let host = rig.host(connection);
     let component = InstallComponent::Pairing {
         conn: pairing.connection_id.to_string(),
+        install: None,
     };
     let conf = moshpit_install::push_conf(pairing);
     let mut manifest = host.manifest();
@@ -1064,6 +1066,7 @@ fn one_of_two_deleted(rig: &mut Rig) -> (moshpit_hostcare::Conn, Uuid, Uuid) {
 fn conf_of(connection: Uuid) -> String {
     InstallComponent::Pairing {
         conn: connection.to_string(),
+        install: None,
     }
     .path()
     .unwrap()
@@ -1307,4 +1310,133 @@ fn a_connection_never_paired_sends_its_host_nothing_on_delete() {
     rig.act(|m, k| m.deletion_began(c.id, k).unwrap());
     assert!(rig.host(c.id).commands.is_empty());
     assert!(!rig.machine.is_forgetting(c.id));
+}
+
+// MARK: - One conf per install (B443)
+
+/// `pairing`'s conf on `connection`'s host as install `install` leaves it
+/// (`None`: the legacy `<conn>.conf`).
+fn conf_on_host_as(rig: &mut Rig, connection: Uuid, pairing: &PushPairing, install: Option<&str>) {
+    let host = rig.host(connection);
+    let component = InstallComponent::Pairing {
+        conn: pairing.connection_id.to_string(),
+        install: install.map(str::to_owned),
+    };
+    let conf = moshpit_install::push_conf(pairing);
+    let mut manifest = host.manifest();
+    manifest.set(
+        &component,
+        Some(Component {
+            digest: Some(scripts::content_digest(&conf)),
+            connection_id: Some(pairing.connection_id.to_string()),
+            relay_url: Some(RELAY.into()),
+            ..Component::new(Date::from_unix(1_762_800_000.0))
+        }),
+    );
+    host.files.insert(component.path().unwrap(), conf);
+    host.files
+        .insert(InstallManifest::PATH.into(), manifest.to_json());
+}
+
+fn install_conf_path(connection: Uuid, install: Option<&str>) -> String {
+    InstallComponent::Pairing {
+        conn: connection.to_string(),
+        install: install.map(str::to_owned),
+    }
+    .path()
+    .unwrap()
+}
+
+const MINE: &str = "aaaaaaaa0000aaaa";
+const THEIRS: &str = "bbbbbbbb0000bbbb";
+
+/// B443: a phone restored from another's backup has the same connection,
+/// id and all. Both wrote `<conn>.conf`, each pass wrote over the other's,
+/// and the host pushed to whichever phone connected last. Each install
+/// now keeps a conf of its own, and a pass of one never touches the
+/// other's.
+#[test]
+fn a_phone_restored_from_anothers_backup_keeps_a_conf_of_its_own() {
+    let mut rig = Rig::new().with_token();
+    rig.act(|m, k| m.install_id(MINE.into(), k));
+    let c = hooked(&mut rig, "m1-pro");
+    let theirs = other_phones(c.id);
+    conf_on_host_as(&mut rig, c.id, &theirs, Some(THEIRS));
+    rig.tend(&c);
+    let mine = rig.pairing(c.id).expect("paired");
+    let host = rig.host(c.id);
+    assert_eq!(
+        host.file(&install_conf_path(c.id, Some(MINE))),
+        Some(&moshpit_install::push_conf(&mine)),
+        "this phone's own conf"
+    );
+    assert_eq!(
+        host.file(&install_conf_path(c.id, Some(THEIRS))),
+        Some(&moshpit_install::push_conf(&theirs)),
+        "the other phone's was touched"
+    );
+    assert!(host.file(&install_conf_path(c.id, None)).is_none(), "a legacy conf was written");
+    let manifest = host.manifest();
+    assert!(manifest.pairing_entry_of(&c.id.to_string(), Some(MINE)).is_some());
+    assert!(manifest.pairing_entry_of(&c.id.to_string(), Some(THEIRS)).is_some());
+
+    // The next pass finds its own conf current, and writes nothing.
+    let writes = rig.host(c.id).written_paths().len();
+    rig.act(|m, k| m.forget(c.id, k));
+    rig.tend(&c);
+    assert_eq!(rig.host(c.id).written_paths().len(), writes, "rewrote a conf");
+}
+
+/// B443: the legacy conf this phone wrote before installs were told apart
+/// moves to its install's — only when its digest is this phone's conf. A
+/// legacy conf with another digest (the other phone's) is left as it is.
+#[test]
+fn this_phones_legacy_conf_moves_to_its_install_and_anothers_stays() {
+    let mut rig = Rig::new().with_token();
+    let c = hooked(&mut rig, "m1-pro");
+    let mine = ready_pairing(c.id);
+    rig.store.0.lock().unwrap().pairings.push(mine.clone());
+    conf_on_host_as(&mut rig, c.id, &mine, None);
+    rig.act(|m, k| m.install_id(MINE.into(), k));
+    rig.tend(&c);
+    let host = rig.host(c.id);
+    assert_eq!(host.file(&install_conf_path(c.id, Some(MINE))), Some(&moshpit_install::push_conf(&mine)));
+    assert!(host.file(&install_conf_path(c.id, None)).is_none(), "the legacy conf stayed");
+    assert!(host.manifest().pairing_entry(&c.id.to_string()).is_none(), "its key stayed");
+
+    // Another phone's legacy conf of the same connection.
+    let mut rig = Rig::new().with_token();
+    let c = hooked(&mut rig, "m1-pro");
+    let mine = ready_pairing(c.id);
+    rig.store.0.lock().unwrap().pairings.push(mine.clone());
+    let theirs = other_phones(c.id);
+    conf_on_host_as(&mut rig, c.id, &theirs, None);
+    rig.act(|m, k| m.install_id(MINE.into(), k));
+    rig.tend(&c);
+    let host = rig.host(c.id);
+    assert_eq!(host.file(&install_conf_path(c.id, Some(MINE))), Some(&moshpit_install::push_conf(&mine)));
+    assert_eq!(
+        host.file(&install_conf_path(c.id, None)),
+        Some(&moshpit_install::push_conf(&theirs)),
+        "another phone's legacy conf was touched"
+    );
+    assert!(host.manifest().pairing_entry(&c.id.to_string()).is_some());
+}
+
+/// B443 with B354: a conf of another install that pushes to this very
+/// phone is an earlier install of the app here (its secret went with it):
+/// it goes. Another phone's install stays.
+#[test]
+fn an_earlier_install_on_this_phone_leaves_its_conf_to_this_one() {
+    let mut rig = Rig::new().with_token();
+    rig.act(|m, k| m.install_id(MINE.into(), k));
+    let c = hooked(&mut rig, "m1-pro");
+    let earlier = ready_pairing(c.id);
+    conf_on_host_as(&mut rig, c.id, &earlier, Some("cccccccc0000cccc"));
+    conf_on_host_as(&mut rig, c.id, &other_phones(c.id), Some(THEIRS));
+    rig.tend(&c);
+    let host = rig.host(c.id);
+    assert!(host.file(&install_conf_path(c.id, Some("cccccccc0000cccc"))).is_none(), "the earlier install's conf stayed");
+    assert!(host.file(&install_conf_path(c.id, Some(THEIRS))).is_some(), "another phone's conf went");
+    assert!(host.file(&install_conf_path(c.id, Some(MINE))).is_some());
 }

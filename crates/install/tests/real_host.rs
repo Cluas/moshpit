@@ -371,13 +371,20 @@ fn the_pairings_that_push_to_a_phone_are_read_without_their_secrets() {
     }
 
     let installer = HostInstaller::new(&shell);
-    let mut reaching = block_on(installer.pairings_reaching(PHONE)).unwrap();
-    reaching.sort();
-    assert_eq!(reaching, [FIRST, PROVED]);
-    assert_eq!(
-        block_on(installer.pairings_reaching(OTHER_PHONE)).unwrap(),
-        [SECOND]
-    );
+    let conns = |phone: &str| {
+        let mut conns: Vec<String> = block_on(installer.pairings_reaching(phone))
+            .unwrap()
+            .into_iter()
+            .map(|component| match component {
+                InstallComponent::Pairing { conn, install: None } => conn,
+                other => panic!("not a legacy pairing: {other:?}"),
+            })
+            .collect();
+        conns.sort();
+        conns
+    };
+    assert_eq!(conns(PHONE), [FIRST, PROVED]);
+    assert_eq!(conns(OTHER_PHONE), [SECOND]);
     assert!(
         block_on(installer.pairings_reaching(""))
             .unwrap()
@@ -1044,7 +1051,7 @@ fn pairing_record(conn: &str) -> impl FnOnce(&mut moshpit_install::InstallManife
     let conn = conn.to_owned();
     move |manifest| {
         manifest.set(
-            &InstallComponent::Pairing { conn: conn.clone() },
+            &InstallComponent::Pairing { conn: conn.clone(), install: None },
             Some(moshpit_install::manifest::Component {
                 connection_id: Some(conn),
                 ..moshpit_install::manifest::Component::new(Date::from_unix(1_762_800_000.0))

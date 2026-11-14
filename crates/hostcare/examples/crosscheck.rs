@@ -68,7 +68,7 @@ fn manifest(
     }
     if paired {
         m.set(
-            &InstallComponent::Pairing { conn: CONN.into() },
+            &InstallComponent::Pairing { conn: CONN.into(), install: None },
             Some(Component {
                 connection_id: Some(CONN.into()),
                 relay_url: Some("r".into()),
@@ -422,7 +422,7 @@ fn run(name: &str) -> Value {
                 false,
             ));
             m.set(
-                &InstallComponent::Pairing { conn: CONN.into() },
+                &InstallComponent::Pairing { conn: CONN.into(), install: None },
                 Some(Component {
                     digest: Some(scripts::content_digest(&moshpit_install::push_conf(&phone))),
                     connection_id: Some(CONN.into()),
@@ -454,6 +454,9 @@ fn run(name: &str) -> Value {
         m.set_settings(settings.clone(), k);
         m.set_saved(&saved, Some(&saved), k);
         m.restore_device_token(Some(token()), k);
+        // Every shipped build has an install id (B443): its conf on a host
+        // is its own.
+        m.install_id("a0a0a0a0b1b1b1b1".into(), k);
     });
     if tend {
         r.act(|m, k| m.tend(conn.clone(), k));

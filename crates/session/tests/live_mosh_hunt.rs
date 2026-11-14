@@ -1,7 +1,8 @@
-//! The mosh path against real programs (rc1's hunt, B400–B402): a private
-//! sshd, mosh-server started through it, a private tmux server
-//! (`tmux -L`). What the person sees when the server dies, the return path
-//! heals or the control plane goes quiet.
+//! The mosh path, and a tmux session's redial, against real programs
+//! (rc1's hunts, B400–B402, B483): a private sshd, mosh-server started
+//! through it, a private tmux server (`tmux -L`). What the person sees when
+//! the server dies, the return path heals, the control plane goes quiet or
+//! the connection is dialled again.
 //!
 //! Ignored by default (they need sshd, mosh-server and tmux).
 //!
@@ -137,10 +138,31 @@ async fn settle(bench: &mut Bench, ms: u64) {
 /// mosh + tmux to `tmux`'s server, SSH through `relay`; once the sidecar
 /// is attached and has settled.
 async fn mosh_tmux_via(relay: &Relay, tmux: &Tmux, timing: Timing) -> (Bench, SessionId, Reaper) {
+    tmux_via(relay, tmux, timing, Protocol::Mosh).await
+}
+
+/// tmux on `tmux`'s server over `protocol`, SSH through `relay`; once the
+/// attach (mosh's sidecar) has settled.
+async fn tmux_via(
+    relay: &Relay,
+    tmux: &Tmux,
+    timing: Timing,
+    protocol: Protocol,
+) -> (Bench, SessionId, Reaper) {
     let addr = std::net::SocketAddr::from(([127, 0, 0, 1], relay.port));
-    let mut bench = Bench::with(addr, timing);
+    tmux_on(Bench::with(addr, timing), relay, tmux, protocol).await
+}
+
+/// tmux on `tmux`'s server over `protocol` from `bench`, SSH through
+/// `relay`; once the attach (mosh's sidecar) has settled.
+async fn tmux_on(
+    mut bench: Bench,
+    relay: &Relay,
+    tmux: &Tmux,
+    protocol: Protocol,
+) -> (Bench, SessionId, Reaper) {
     let mut wanted = spec(relay.port);
-    wanted.protocol = Protocol::Mosh;
+    wanted.protocol = protocol;
     wanted.multiplexer = Multiplexer::Tmux;
     wanted.tmux_path = Some(tmux.prefix());
     let id = bench.sessions.connect(wanted);
@@ -261,6 +283,179 @@ async fn a_command_held_past_the_bound_is_dropped_and_said_once_the_plane_is_bac
     settle(&mut bench, 1500).await;
     assert_eq!(windows(&tmux, "held"), before, "dropped, not run late");
     assert_eq!(dropped_notices(&bench, id), 1, "said once");
+    let _ = bench.sessions.disconnect(id).await;
+}
+
+/// Waits up to `seconds` for `tmux`'s `session` to have more than `before`
+/// windows; how long that took.
+async fn window_made(
+    bench: &mut Bench,
+    tmux: &Tmux,
+    session: &str,
+    before: usize,
+    seconds: u64,
+) -> Option<Duration> {
+    let start = Instant::now();
+    for _ in 0..seconds * 4 {
+        settle(bench, 250).await;
+        if windows(tmux, session) > before {
+            return Some(start.elapsed());
+        }
+    }
+    None
+}
+
+/// The connection under a tmux session is cut and every new one hangs
+/// until the line heals: the session is redialling, with no leg.
+async fn cut_and_stall(bench: &mut Bench, relay: &Relay, id: SessionId) {
+    relay.stall();
+    relay.cut();
+    bench
+        .state(id, 15, |s| *s == SessionState::Reconnecting)
+        .await;
+}
+
+/// The line heals and the redial, out for over a second by now, starts
+/// again on it (the path change a phone sees).
+async fn heal_and_redial(bench: &mut Bench, relay: &Relay) {
+    settle(bench, 1200).await;
+    relay.heal();
+    bench.sessions.network_changed();
+}
+
+/// B483: SSH + tmux, the connection drops and is being redialled; a tmux
+/// command given meanwhile (a new window from the chrome, which the
+/// reconnect veil leaves usable) waits for the next attach and lands
+/// there, once. With no leg to carry it, it was dropped without a word.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[ignore = "needs sshd and tmux"]
+async fn a_tmux_command_given_while_redialling_lands_on_the_next_attach() {
+    let sshd = Sshd::start().await;
+    let relay = Relay::start(sshd.addr()).await;
+    let tmux = Tmux::named("rc1-redial");
+    tmux.new_session("redial");
+    let (mut bench, id, _) = tmux_via(&relay, &tmux, Timing::default(), Protocol::Ssh).await;
+    let before = windows(&tmux, "redial");
+    cut_and_stall(&mut bench, &relay, id).await;
+    bench
+        .sessions
+        .tmux(id, TmuxAction::NewWindow { name: None })
+        .unwrap();
+    heal_and_redial(&mut bench, &relay).await;
+    let landed = window_made(&mut bench, &tmux, "redial", before, 10).await;
+    eprintln!("the new window landed {landed:?} after the line healed");
+    assert!(landed.is_some(), "the command given meanwhile landed");
+    settle(&mut bench, 1000).await;
+    assert_eq!(windows(&tmux, "redial"), before + 1, "once");
+    assert_eq!(dropped_notices(&bench, id), 0);
+    let _ = bench.sessions.disconnect(id).await;
+}
+
+/// B483: the same, the redial taking longer than the bound: the command
+/// is dropped rather than run late, and said once the attach is back.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[ignore = "needs sshd and tmux"]
+async fn a_tmux_command_held_past_the_bound_through_a_redial_is_dropped_and_said() {
+    let sshd = Sshd::start().await;
+    let relay = Relay::start(sshd.addr()).await;
+    let tmux = Tmux::named("rc1-redial-late");
+    tmux.new_session("late");
+    let (mut bench, id, _) = tmux_via(&relay, &tmux, Timing::default(), Protocol::Ssh).await;
+    let before = windows(&tmux, "late");
+    cut_and_stall(&mut bench, &relay, id).await;
+    bench
+        .sessions
+        .tmux(id, TmuxAction::NewWindow { name: None })
+        .unwrap();
+    settle(&mut bench, 6500).await;
+    assert_eq!(dropped_notices(&bench, id), 0, "not before the attach");
+    heal_and_redial(&mut bench, &relay).await;
+    bench
+        .until(id, 20, |kind| {
+            (*kind == EventKind::TmuxActionsDropped).then_some(())
+        })
+        .await;
+    settle(&mut bench, 1500).await;
+    assert_eq!(windows(&tmux, "late"), before, "dropped, not run late");
+    assert_eq!(dropped_notices(&bench, id), 1, "said once");
+    let _ = bench.sessions.disconnect(id).await;
+}
+
+/// B483: SSH + tmux returning in place (`Timing::resume_in_place`) on a
+/// connection that died without a word while the app was away: a tmux
+/// command given while the return still asks the socket waits for the
+/// answer and, the socket found dead, for the next attach, where it lands
+/// once. It went into the dead socket.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[ignore = "needs sshd and tmux"]
+async fn a_tmux_command_given_while_a_return_asks_the_socket_lands_after_it() {
+    let sshd = Sshd::start().await;
+    let relay = Relay::start(sshd.addr()).await;
+    let tmux = Tmux::named("rc1-return");
+    tmux.new_session("back");
+    let timing = Timing {
+        resume_in_place: true,
+        ..Timing::default()
+    };
+    let (mut bench, id, _) = tmux_via(&relay, &tmux, timing, Protocol::Ssh).await;
+    let before = windows(&tmux, "back");
+    bench.sessions.set_foreground(false);
+    // Silent for good while away; new connections flow.
+    relay.stall();
+    relay.heal();
+    settle(&mut bench, 500).await;
+    bench.sessions.set_foreground(true);
+    bench
+        .sessions
+        .tmux(id, TmuxAction::NewWindow { name: None })
+        .unwrap();
+    let landed = window_made(&mut bench, &tmux, "back", before, 10).await;
+    eprintln!("the new window landed {landed:?} after the return");
+    assert!(landed.is_some(), "the command given meanwhile landed");
+    settle(&mut bench, 1000).await;
+    assert_eq!(windows(&tmux, "back"), before + 1, "once");
+    assert_eq!(dropped_notices(&bench, id), 0);
+    let _ = bench.sessions.disconnect(id).await;
+}
+
+/// B483: mosh + tmux, mosh-server gone and the session dialled again (B402):
+/// a tmux command given while there is no leg waits for the new control
+/// plane and lands, once.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[ignore = "needs sshd, tmux and mosh-server"]
+async fn a_tmux_command_given_while_mosh_is_redialled_lands_on_the_new_plane() {
+    let sshd = Sshd::start().await;
+    let relay = Relay::start(sshd.addr()).await;
+    let tmux = Tmux::named("rc1-redial-mosh");
+    tmux.new_session("mosh");
+    // The system's UDP: the killed server's port refuses at once (B402);
+    // the proxy would swallow that.
+    let addr = std::net::SocketAddr::from(([127, 0, 0, 1], relay.port));
+    let services = Services::new(Arc::new(Keys), trusting(addr));
+    let bench = Bench::new(services, Timing::default());
+    let (mut bench, id, _first) = tmux_on(bench, &relay, &tmux, Protocol::Mosh).await;
+    let before = windows(&tmux, "mosh");
+    let server = bench.sessions.view(id).unwrap().mosh_server_pid.unwrap();
+    // The redial's SSH hangs until the line heals.
+    relay.stall();
+    let _ = std::process::Command::new("kill")
+        .args(["-9", &server.to_string()])
+        .output();
+    bench
+        .state(id, 15, |s| *s == SessionState::Reconnecting)
+        .await;
+    bench
+        .sessions
+        .tmux(id, TmuxAction::NewWindow { name: None })
+        .unwrap();
+    heal_and_redial(&mut bench, &relay).await;
+    let landed = window_made(&mut bench, &tmux, "mosh", before, 10).await;
+    let _second = Reaper(bench.sessions.view(id).and_then(|v| v.mosh_server_pid));
+    eprintln!("the new window landed {landed:?} after the line healed");
+    assert!(landed.is_some(), "the command given meanwhile landed");
+    settle(&mut bench, 1000).await;
+    assert_eq!(windows(&tmux, "mosh"), before + 1, "once");
+    assert_eq!(dropped_notices(&bench, id), 0);
     let _ = bench.sessions.disconnect(id).await;
 }
 

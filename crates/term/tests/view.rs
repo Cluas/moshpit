@@ -405,6 +405,36 @@ fn v15_a_selection_stands_through_a_repaint_of_the_same_text() {
     assert_eq!(t.selection_text(), None, "changed text ends it");
 }
 
+/// B484: text changing under one row of a selection over several ends it,
+/// and no row stays painted selected. The selection was let go while the
+/// frame was being drawn, after it had picked its rows, and the repaint it
+/// asked for was forgotten at the frame's end: only the changed row came
+/// out unselected, the others stayed painted selected (over nothing a tap
+/// or a copy could reach) until something else redrew them.
+#[test]
+fn v15_a_selection_ended_by_new_text_leaves_no_row_painted_selected() {
+    let mut t = term(20, 4, 100);
+    t.feed(b"alpha\r\nbeta\r\ngamma\r\n$ ");
+    t.select_start(SelectKind::Cells, 0, 0, false);
+    t.select_extend(2, 4, true);
+    assert_eq!(t.selection_text().as_deref(), Some("alpha\nbeta\ngamma"));
+    // What the view shows: each row painted selected or not, frame by frame.
+    let mut shown = [false; 4];
+    let mut paint = |f: &moshpit_term::Frame| {
+        for r in &f.changed {
+            shown[r.row as usize] = r.cells.iter().any(|c| c.flags & F::SELECTED != 0);
+        }
+        shown
+    };
+    assert_eq!(paint(&t.frame()), [true, true, true, false]);
+    // Only the middle row changes; the cursor goes back to the prompt.
+    t.feed(b"\x1b[2;1Hbeto\x1b[4;3H");
+    let first = paint(&t.frame());
+    assert_eq!(t.selection_text(), None, "changed text ends it");
+    assert_eq!(first, [false; 4], "no row painted selected");
+    assert_eq!(paint(&t.frame()), [false; 4], "nor after");
+}
+
 /// B477: a handle drags with the selection's other end off the screen
 /// (output scrolled the selected rows up, a long-pressed link starts above
 /// the view): the selection keeps that end where it is, wherever it is,

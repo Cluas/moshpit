@@ -85,7 +85,7 @@ mod tests {
         assert_eq!(stamp_digest.len(), 64);
         assert_eq!(stamp_digest, content_digest(stamp()));
         assert_eq!(
-            digest(&InstallComponent::Pairing { conn: "any".into() }),
+            digest(&InstallComponent::Pairing { conn: "any".into(), install: None }),
             None
         );
         assert_eq!(

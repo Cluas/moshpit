@@ -159,6 +159,9 @@ struct MoshpitApp: App {
         // mint). A launch before the first unlock can't trust them, and
         // sweeps nothing until it can.
         HostCare.shared.forgetOrphanedPairings()
+        // This install's id, if a launch before the first unlock couldn't
+        // read it (B443).
+        HostCare.shared.syncInstallId()
         // What sessions remembered about connections deleted before a
         // delete took it along (B199): swept once per launch, by the same
         // rule — only once the saved connections can be told.

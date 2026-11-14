@@ -91,9 +91,11 @@ pub fn checks(manifest: &InstallManifest, conn: Option<&str>) -> Vec<Check> {
     file(InstallComponent::Stamp);
     file(InstallComponent::Sender);
     if let Some(conn) = conn {
-        file(InstallComponent::Pairing {
-            conn: conn.to_owned(),
-        });
+        // Every recorded pairing of the connection: the legacy conf and each
+        // install's (B443).
+        for pairing in manifest.pairings_of(conn) {
+            file(pairing);
+        }
     }
     for agent in HookAgent::ALL {
         let component = InstallComponent::Hooks {
@@ -295,7 +297,7 @@ mod tests {
             );
         }
         m.set(
-            &InstallComponent::Pairing { conn: CONN.into() },
+            &InstallComponent::Pairing { conn: CONN.into(), install: None },
             Some(Component {
                 digest: Some("c".repeat(64)),
                 connection_id: Some(CONN.into()),

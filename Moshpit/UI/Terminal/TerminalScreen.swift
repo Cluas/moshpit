@@ -4065,12 +4065,19 @@ extension TerminalScreen {
             guard ghost != nil || snapshot.isAttached,
                   let pane = snapshot.activePaneId ?? snapshot.activePanes.first?.id else { return nil }
             let frozen = ghost != nil
-            return .init(source: .pane(controller, pane), inset: compactChrome ? 2 : 4, frozen: frozen,
+            return .init(source: .pane(controller, pane), inset: Self.nshPaneInset, frozen: frozen,
                          slide: snapshot.hasSwipedSinceAttach && !frozen ? snapshot.lastSwitchForward : nil)
         }
         if let herdr = active.herdrControl, herdr.serverNotRunning { return nil }
         return .init(source: .plain(active))
     }
+
+    /// The room around the tmux pane the NSH page shows (B489): none. The
+    /// SwiftUI chrome's 4 pt (2 in iPad landscape) frames panes side by
+    /// side; the page shows one at a time, where it framed nothing and
+    /// cost about a column each side. The terminal centres its grid in
+    /// what it has (B473).
+    nonisolated static let nshPaneInset: CGFloat = 0
 
     /// The host's presentations, hung where the screen draws what they
     /// belong to: the pickers from the breadcrumb (a popover on the iPad, a

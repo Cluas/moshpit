@@ -48,6 +48,10 @@ use crate::snapshot;
 /// lie the person acts on.
 const CLEAR_SCREEN: &[u8] = b"\x1b[H\x1b[2J\x1b[3J";
 
+/// How often a pane another device held is asked for plainly once the
+/// focus has left it (B487), in ms.
+const PROBE_EVERY: u64 = 10_000;
+
 /// The frame channel's state.
 #[derive(Debug, Default)]
 pub(super) struct Attach {
@@ -89,6 +93,12 @@ pub(super) struct Attach {
     /// The held pane's terminal when the hold began (B467): a new one is a
     /// server restarted since, which ended every attach.
     pub held_terminal: Option<String>,
+    /// When the pane another device held was last asked for plainly
+    /// (B487).
+    pub probed_at: Option<u64>,
+    /// The pane a plain ask got back from another device, and the focus
+    /// that device sits on: that focus doesn't pull us after it (B487).
+    pub regained: Option<(String, String)>,
     /// The pane whose veil lifts on its first full frame.
     pub awaiting_full: Option<String>,
     /// The last switch's cost, ask to full frame (`herdrLastSwitch`).
@@ -265,6 +275,24 @@ impl Client {
             // pick, "Open here"). Unless its pane is gone: then the focused
             // one, by itself.
             if !user && !self.pane_gone(&held) && !self.hold_outlived(&held) {
+                // B487: the focus has moved away from it — the other device
+                // has likely moved on, and let the pane go. Asked for
+                // plainly, at most every ten seconds: refused (and said
+                // again) while it is still theirs, ours again once it isn't.
+                // Never a takeover.
+                let due = self
+                    .attach
+                    .probed_at
+                    .is_none_or(|at| self.now.saturating_sub(at) >= PROBE_EVERY);
+                if pane != held && due {
+                    self.attach.probed_at = Some(self.now);
+                    self.attach.held_elsewhere = None;
+                    self.attach.regained = Some((held.clone(), pane.to_owned()));
+                    log::warn!(
+                        "herdr: the focus left {held}, held by another device: asking for it plainly"
+                    );
+                    self.retarget(&held, false);
+                }
                 return;
             }
             self.attach.held_elsewhere = None;
@@ -274,6 +302,18 @@ impl Client {
                 .is_some_and(|(notice, _)| *notice == Notice::OnAnotherDevice)
             {
                 self.clear_notice();
+            }
+        }
+        if user {
+            self.attach.regained = None;
+        } else if let Some((regained, theirs)) = &self.attach.regained {
+            // Back on the pane the plain ask got back: the other device's
+            // focus doesn't pull us after it; a new move of the focus does.
+            if pane == theirs && self.attach.target.as_deref() == Some(regained.as_str()) {
+                return;
+            }
+            if pane != regained {
+                self.attach.regained = None;
             }
         }
         let budgets = &self.config.budgets;
@@ -854,6 +894,8 @@ impl Client {
     /// Another device has `pane`: said with its take-back, and its terminal
     /// noted (B467).
     fn hold(&mut self, pane: String) {
+        // A plain ask refused: still theirs, nothing got back.
+        self.attach.regained = None;
         self.attach.held_terminal = self.poll.terminal_ids.get(&pane).cloned();
         self.attach.held_elsewhere = Some(pane);
         self.set_notice(Notice::OnAnotherDevice, Some(super::NoticeAction::OpenHere));

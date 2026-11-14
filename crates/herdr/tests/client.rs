@@ -642,13 +642,21 @@ fn a_pane_another_device_takes_over_is_said_and_never_taken_back_on_its_own() {
             .map(|(notice, action)| (notice.clone(), action)),
         Some((Notice::OnAnotherDevice, Some(NoticeAction::OpenHere)))
     );
-    // Reads come and go, the focus repeats and moves: nothing is asked of
-    // the channel, and typing goes nowhere.
+    // Reads come and go, the focus repeats and moves: nothing is taken
+    // (B487: once the focus has left it, the pane is asked for plainly,
+    // and refused while that device holds it), and typing goes nowhere.
     rig.run(10_000);
     rig.host.focused = Some("w1:p2".to_owned());
     rig.run(10_000);
-    assert_eq!(rig.attach_lines(), ["w1:p1"], "taken back on its own");
+    assert!(
+        rig.frames.took_over.iter().all(|took| !took),
+        "taken back on its own"
+    );
     assert_eq!(rig.host.held_elsewhere, ["w1:p1"]);
+    assert_eq!(
+        rig.client.notice().map(|(notice, _)| notice.clone()),
+        Some(Notice::OnAnotherDevice)
+    );
     rig.type_text("w1:p1", "rm -rf build\r");
     rig.run(200);
     assert_eq!(rig.typed("w1:p1"), "");
@@ -656,8 +664,13 @@ fn a_pane_another_device_takes_over_is_said_and_never_taken_back_on_its_own() {
     rig.host.focused = Some("w1:p1".to_owned());
     rig.act(Action::NoticeAction);
     rig.run(500);
-    assert_eq!(rig.attach_lines(), ["w1:p1", "w1:p1"]);
-    assert_eq!(rig.frames.took_over, [false, true]);
+    assert_eq!(rig.attach_lines().last().map(String::as_str), Some("w1:p1"));
+    assert_eq!(
+        rig.frames.took_over.last(),
+        Some(&true),
+        "the person's word takes it"
+    );
+    assert_eq!(rig.frames.took_over.iter().filter(|took| **took).count(), 1);
     assert_eq!(rig.host.taken_from_others, ["w1:p1"]);
     assert_eq!(rig.client.notice(), None);
     rig.type_text("w1:p1", "y");
@@ -681,10 +694,11 @@ fn open_here_sticks_after_the_other_device_moved_the_focus() {
     rig.run(10_000);
     assert_eq!(rig.client.attached_pane(), Some("w1:p1"));
     assert_eq!(rig.host.focused.as_deref(), Some("w1:p1"));
-    assert_eq!(
-        rig.attach_lines(),
-        ["w1:p1", "w1:p1"],
-        "followed the focus away"
+    // Plain asks for p1 in between (B487), refused; never the focus's p2.
+    assert!(
+        !rig.attach_lines().contains(&"w1:p2".to_owned()),
+        "followed the focus away: {:?}",
+        rig.attach_lines()
     );
     assert_eq!(rig.client.notice(), None);
     rig.type_text("w1:p1", "y");
@@ -2285,4 +2299,69 @@ fn a_check_queued_behind_the_pick_sees_the_focus_asked_again() {
             .filter(|e| matches!(e, Event::FocusConfirmed { .. }))
             .collect::<Vec<_>>()
     );
+}
+
+// MARK: - B487: a pane the other device left comes back by itself
+
+/// Another device took the pane on screen, then moved on to another pane
+/// (the server's focus went with it, and its attach left ours). The phone
+/// kept saying the pane was on another device until the person tapped
+/// "Open here". Now a plain attach — never a takeover — asks for it again
+/// when the focus moves away from it, and it's ours again: the notice
+/// goes, and the other device's focus doesn't pull us after it.
+#[test]
+fn a_pane_the_other_device_left_comes_back_with_a_plain_attach() {
+    let mut rig = attached();
+    rig.host_take_over();
+    rig.run(100);
+    assert_eq!(
+        rig.client.notice().map(|(notice, _)| notice.clone()),
+        Some(Notice::OnAnotherDevice)
+    );
+    // The other device goes to p2: it holds p2 now, and has let p1 go.
+    rig.host.held_elsewhere = vec!["w1:p2".to_owned()];
+    rig.host.focused = Some("w1:p2".to_owned());
+    rig.act(Action::Refresh);
+    rig.run(3_000);
+    assert_eq!(rig.client.attached_pane(), Some("w1:p1"), "ours again");
+    assert_eq!(rig.client.notice(), None);
+    assert!(rig.host.taken_from_others.is_empty(), "nothing taken");
+    rig.run(20_000);
+    assert_eq!(
+        rig.client.attached_pane(),
+        Some("w1:p1"),
+        "their focus doesn't pull us after it"
+    );
+    assert!(!rig.attach_lines().contains(&"w1:p2".to_owned()));
+}
+
+/// Still theirs: the plain attach is refused, said as before, and asked
+/// again at most every ten seconds.
+#[test]
+fn a_pane_still_held_is_asked_for_plainly_at_most_every_ten_seconds() {
+    let mut rig = attached();
+    rig.host_take_over();
+    rig.run(100);
+    rig.host.held_elsewhere = vec!["w1:p1".to_owned(), "w1:p2".to_owned()];
+    rig.host.focused = Some("w1:p2".to_owned());
+    rig.act(Action::Refresh);
+    rig.run(25_000);
+    let asks = rig
+        .attach_lines()
+        .iter()
+        .filter(|line| *line == "w1:p1")
+        .count();
+    assert!(
+        (2..=4).contains(&asks),
+        "the first attach and a probe each ten seconds at most: {asks}"
+    );
+    assert!(
+        rig.frames.took_over.iter().all(|took| !took),
+        "never a takeover"
+    );
+    assert_eq!(
+        rig.client.notice().map(|(notice, _)| notice.clone()),
+        Some(Notice::OnAnotherDevice)
+    );
+    assert_eq!(rig.client.attached_pane(), None);
 }

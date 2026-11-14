@@ -217,6 +217,18 @@
       "severity": "low: the file is the app's own",
       "status": "fixed",
       "fixed": "In the app since round 21 (B112): HostInstaller.sendIssuedAtSeconds saturates at Int's ends, as this crate does; the case now runs on the Swift side (divergences.swift.txt keeps the trap it died of before) and prints the same on both."
+    },
+    {
+      "id": "per-install-conf",
+      "swift": "HostInstaller.installPairing: push.d/<conn>.conf under the manifest key pairing.<conn>",
+      "symptom": "A phone restored from another's backup has the same connections, ids and all. Both wrote push.d/<conn>.conf and pairing.<conn>; each phone's care found the other's pairing there and wrote its own over it, and the host pushed to whichever phone had connected last (B443).",
+      "trigger": "A pairing written by an install with an id (every shipped build from B443 on).",
+      "minimal_input": "flow pairing (any committed one)",
+      "swift_before": "WRITE $HOME/.moshpit/push.d/<conn>.conf, manifest key pairing.<conn>",
+      "fix": "install_pairing_as: the install's own conf, push.d/<conn>.<install>.conf under pairing.<conn>.<install>. The legacy conf moves over only when its recorded digest is this very conf (a key gone, an rm -f, a removed step); one with another digest is another phone's and stays.",
+      "rust_outcome": "WRITE $HOME/.moshpit/push.d/<conn>.a0a0a0a0b1b1b1b1.conf (the harness's install), manifest key pairing.<conn>.a0a0a0a0b1b1b1b1",
+      "severity": "high: one of two phones on a host gets no pushes, which one depending on who connected last",
+      "committed_cases": "Regenerated from Rust and checked by a script against full-command runs before and after: 24 flow pairing lines and 1 divergence line move only by the conf's path and the manifest key gaining the install (manifests compared as JSON; the input's legacy entry kept when not this conf). Two cases added at the end of cases.txt: this phone's legacy conf moved, and another phone's left."
     }
   ],
   "notes": [

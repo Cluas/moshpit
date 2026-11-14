@@ -218,3 +218,22 @@ struct OrphanedPairingSweepTests {
         #expect(file.read().map(\.connectionId) == [kept.id, later])
     }
 }
+
+/// B443: this install's id, what its conf on a host is named by.
+@Suite("Install identity")
+struct InstallIdentityTests {
+    /// A fresh id is what the core takes, and two are never the same.
+    @Test func aMintedIdIsSixteenHexDigitsAndFresh() {
+        let one = InstallIdentity.mint(), two = InstallIdentity.mint()
+        #expect(one.count == 16 && InstallIdentity.isWellFormed(one))
+        #expect(one != two)
+        #expect(!InstallIdentity.isWellFormed("0123456789ABCDEF"))
+        #expect(!InstallIdentity.isWellFormed("abc"))
+    }
+
+    /// The keychain keeps one id: read twice, the same.
+    @Test func theIdIsKept() {
+        guard let first = InstallIdentity.current() else { return }   // a keychain not readable here
+        #expect(InstallIdentity.current() == first)
+    }
+}

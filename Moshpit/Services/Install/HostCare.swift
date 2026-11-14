@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import Security
 import MoshpitKit
 
 /// Host care, the Host Setup screen, Install Assist's plan and the phone's
@@ -54,8 +55,21 @@ final class HostCare {
             // pair its throwaway connection onto the developer's ~/.moshpit.
             autocareOff: ProcessInfo.processInfo.arguments.contains("-MOSHPIT_AUTOCARE_OFF"))
         core.restoreDeviceToken(token: PushRegistration.storedToken)
+        syncInstallId()
         syncSettings()
     }
+
+    /// This install's id (B443), what its pairing's conf on a host is named
+    /// by: read from the keychain, made the first time. Told to the core
+    /// once; a launch before the first unlock can't read it and tells it at
+    /// the next chance (the app calls this as its stores reload).
+    func syncInstallId() {
+        guard !installIdTold, let id = InstallIdentity.current() else { return }
+        core.installId(id: id)
+        installIdTold = true
+    }
+
+    @ObservationIgnored private var installIdTold = false
 
     /// The language the core's texts are said in: the one the app shows.
     static var locale: String { Bundle.main.preferredLocalizations.first ?? "en" }
@@ -369,5 +383,59 @@ private final class AppGroupPairings: PairingsFile, @unchecked Sendable {
     func remove(connectionId: String) -> Bool {
         guard let id = UUID(uuidString: connectionId) else { return true }
         return PushPairingStore.remove(connectionId: id)
+    }
+}
+
+
+/// This install's id (B443): 16 random lowercase hex digits in the
+/// keychain, `AfterFirstUnlockThisDeviceOnly` — never in a backup, so a phone
+/// restored from another's backup makes its own, and the two keep apart
+/// confs on a host instead of writing over each other's.
+enum InstallIdentity {
+    private static let service = "com.cluas.moshpit.install"
+    private static let account = "install-id"
+
+    /// The id, made if there is none yet; nil while the keychain can't be
+    /// read (before the first unlock) — never a new one then, which would
+    /// part this install from the conf it already has on its hosts.
+    static func current() -> String? {
+        var query = base
+        query[kSecReturnData as String] = true
+        query[kSecMatchLimit as String] = kSecMatchLimitOne
+        var item: CFTypeRef?
+        switch SecItemCopyMatching(query as CFDictionary, &item) {
+        case errSecSuccess:
+            guard let data = item as? Data, let id = String(data: data, encoding: .utf8),
+                  isWellFormed(id) else { return nil }
+            return id
+        case errSecItemNotFound:
+            let id = mint()
+            var add = base
+            add[kSecValueData as String] = Data(id.utf8)
+            add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+            guard SecItemAdd(add as CFDictionary, nil) == errSecSuccess else { return nil }
+            return id
+        default:
+            return nil
+        }
+    }
+
+    private static var base: [String: Any] {
+        [kSecClass as String: kSecClassGenericPassword,
+         kSecAttrService as String: service,
+         kSecAttrAccount as String: account,
+         kSecAttrSynchronizable as String: false]
+    }
+
+    /// 16 lowercase hex digits from the system's CSPRNG.
+    static func mint() -> String {
+        var bytes = [UInt8](repeating: 0, count: 8)
+        _ = SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes)
+        return bytes.map { String(format: "%02x", $0) }.joined()
+    }
+
+    /// 8 to 32 lowercase hex digits: what the core takes.
+    static func isWellFormed(_ id: String) -> Bool {
+        (8...32).contains(id.count) && id.allSatisfy { ("0"..."9").contains($0) || ("a"..."f").contains($0) }
     }
 }

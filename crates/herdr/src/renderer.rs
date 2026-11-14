@@ -71,6 +71,10 @@ use std::collections::{BTreeSet, VecDeque};
 
 use crate::launch::{self, RendererStop, StopKind};
 
+/// How often a terminal another device took is asked for plainly once the
+/// focus has left it (B487), in ms.
+const PROBE_EVERY: u64 = 10_000;
+
 /// One exec the renderer asked for ([`Output::Exec`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ExecId(pub u64);
@@ -299,6 +303,13 @@ pub struct Renderer {
     /// the next report of it is still their pick, `--takeover`, not a
     /// follow.
     lost_pick: Option<String>,
+    /// When the terminal another device took was last asked for plainly
+    /// (B487).
+    probed_at: Option<u64>,
+    /// The terminal a plain ask got back from another device, and the
+    /// focus that device sits on: that focus doesn't pull the loop after
+    /// it (B487).
+    regained: Option<(String, String)>,
     /// The terminal the last retarget pointed the loop at, by the host's
     /// word that the loop came round to it: what is on screen, as far as
     /// anything here knows. None before the first, and after one failed,
@@ -355,6 +366,8 @@ impl Renderer {
             target: None,
             take_over: false,
             lost_pick: None,
+            probed_at: None,
+            regained: None,
             applied: None,
             down: None,
             epoch: 0,
@@ -448,10 +461,40 @@ impl Renderer {
             return;
         }
         match &self.down {
-            Some(Down::TakenOver(_) | Down::Refused(_) | Down::LoopGone) => return,
+            Some(Down::TakenOver(held)) => {
+                // B487: the focus has left the terminal another device took
+                // — that device has likely moved on and let it go. Asked
+                // for plainly, at most every ten seconds: refused (and said
+                // again) while it is still theirs, ours again once it isn't.
+                // Never a takeover.
+                let held = held.clone();
+                let due = self
+                    .probed_at
+                    .is_none_or(|at| now.saturating_sub(at) >= PROBE_EVERY);
+                if terminal != held && due {
+                    self.probed_at = Some(now);
+                    self.regained = Some((held.clone(), terminal.to_owned()));
+                    self.target = None;
+                    self.applied = None;
+                    self.steer(&held, false, now);
+                }
+                return;
+            }
+            Some(Down::Refused(_) | Down::LoopGone) => return,
             // A report of the pane that just closed predates its closing.
             Some(Down::Gone(closed)) if closed == terminal => return,
             _ => {}
+        }
+        if let Some((regained, theirs)) = &self.regained {
+            // Back on the terminal the plain ask got back: the other
+            // device's focus doesn't pull the loop after it; a new move of
+            // the focus does.
+            if terminal == theirs && self.target.as_deref() == Some(regained.as_str()) {
+                return;
+            }
+            if terminal != regained {
+                self.regained = None;
+            }
         }
         if let Some(picked) = self.lost_pick.take()
             && picked == terminal
@@ -471,6 +514,7 @@ impl Renderer {
     /// person taking it back.
     pub fn pick(&mut self, terminal: &str, now: u64) {
         self.lost_pick = None;
+        self.regained = None;
         match &self.down {
             Some(Down::TakenOver(stopped) | Down::Refused(stopped)) if stopped == terminal => {
                 // The same pane, wanted again: not "already showing it".
@@ -845,6 +889,8 @@ impl Renderer {
                 let listed = self.listed.contains(&terminal);
                 match launch::renderer_stop_kind(status, &said, listed, self.server_up) {
                     StopKind::TakenOver => {
+                        // A plain ask refused: still theirs.
+                        self.regained = None;
                         self.down = Some(Down::TakenOver(terminal));
                         self.outputs
                             .push_back(Output::Notice(Notice::OnAnotherDevice));

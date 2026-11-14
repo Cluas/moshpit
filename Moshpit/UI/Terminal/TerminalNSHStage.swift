@@ -559,6 +559,11 @@ final class TerminalNSHStage {
             applyFocus()
             return
         }
+        // The keyboard stays where it is (B486): handed to the new terminal
+        // while the old one, still in the window, holds it. Taken out with
+        // the keyboard, the old one let it drop — a protocol switch's swap
+        // dropped it every time — and only a later `take` brought it back.
+        if old.owns, old.terminal.isFirstResponder { handKeyboard(to: next) }
         if instant {
             dismiss(old)
             next.container.alpha = 1
@@ -689,6 +694,16 @@ final class TerminalNSHStage {
             if let hosted, hosted.owns { hosted.container.geometryHeld = geometryHeld }
         }
         applyFocus()
+    }
+
+    /// `host`'s terminal takes the keyboard from the terminal holding it, in
+    /// this turn: between two text views of one window it never goes down.
+    /// Not while the keyboard is to go (`resign`), nor into a terminal off
+    /// screen.
+    private func handKeyboard(to host: Hosted) {
+        guard focus != .resign, host.owns, host.terminal.window != nil, !host.surface.isFinding else { return }
+        let took = host.terminal.becomeFirstResponder()
+        Log.ui.notice("terminal stage: \(host.key, privacy: .public) took the keyboard from the terminal it replaced: \(took, privacy: .public)")
     }
 
     /// `PaneTerminalHost.updateUIView`'s focus rules: take it (now, and

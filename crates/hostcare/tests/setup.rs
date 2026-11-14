@@ -17,6 +17,7 @@ fn paired_manifest(connection: &str) -> InstallManifest {
     manifest.set(
         &InstallComponent::Pairing {
             conn: connection.into(),
+            install: None,
         },
         Some(Component {
             connection_id: Some(connection.into()),
@@ -1044,6 +1045,7 @@ fn a_push_conf_deleted_by_hand_shows_as_unpaired() {
             m.set(
                 &InstallComponent::Pairing {
                     conn: c.id.to_string(),
+                    install: None,
                 },
                 Some(Component {
                     digest: Some("d".repeat(64)),
@@ -1275,7 +1277,7 @@ fn a_step_keeps_what_another_phone_recorded_meanwhile() {
         let host = rig.host(a.id);
         let mut manifest = host.manifest();
         manifest.set(
-            &InstallComponent::Pairing { conn: b.clone() },
+            &InstallComponent::Pairing { conn: b.clone(), install: None },
             Some(Component {
                 digest: Some(scripts::content_digest(conf_b)),
                 connection_id: Some(b.clone()),

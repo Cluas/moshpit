@@ -24,8 +24,24 @@ pub enum InstallComponent {
     Sender,
     /// A hook registration inside one agent's own config.
     Hooks { agent: String },
-    /// `~/.moshpit/push.d/<conn>.conf` — one paired device's secrets.
-    Pairing { conn: String },
+    /// `~/.moshpit/push.d/<conn>.<install>.conf` — one install's pairing
+    /// of connection `conn`: its secrets, and the phone it pushes to.
+    ///
+    /// Per install (B443): a phone restored from another's backup has the
+    /// same connections, ids and all, and both wrote `<conn>.conf` and the
+    /// manifest's `pairing.<conn>`. Each phone's care found the other's
+    /// pairing there and wrote its own over it, and the host pushed to
+    /// whichever had connected last. `install` is a random id each install
+    /// keeps out of its backups; `None` is the file and key from before it
+    /// (`<conn>.conf`, `pairing.<conn>`), only ever read and removed.
+    Pairing { conn: String, install: Option<String> },
+}
+
+/// Whether `id` can name an install in a pairing's file and key: 8 to 32
+/// lowercase hex digits (what the phones mint), nothing a path or a shell
+/// could read otherwise.
+pub fn is_install_id(id: &str) -> bool {
+    (8..=32).contains(&id.len()) && id.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
 }
 
 impl InstallComponent {
@@ -35,7 +51,11 @@ impl InstallComponent {
             Self::Stamp => "stamp".to_owned(),
             Self::Sender => "sender".to_owned(),
             Self::Hooks { agent } => format!("hooks.{agent}"),
-            Self::Pairing { conn } => format!("pairing.{conn}"),
+            Self::Pairing { conn, install: None } => format!("pairing.{conn}"),
+            Self::Pairing {
+                conn,
+                install: Some(install),
+            } => format!("pairing.{conn}.{install}"),
         }
     }
 
@@ -44,7 +64,11 @@ impl InstallComponent {
         match self {
             Self::Stamp => Some(format!("{DIR}/moshpit-stamp.sh")),
             Self::Sender => Some(format!("{DIR}/moshpit-push.sh")),
-            Self::Pairing { conn } => Some(format!("{DIR}/push.d/{conn}.conf")),
+            Self::Pairing { conn, install: None } => Some(format!("{DIR}/push.d/{conn}.conf")),
+            Self::Pairing {
+                conn,
+                install: Some(install),
+            } => Some(format!("{DIR}/push.d/{conn}.{install}.conf")),
             Self::Hooks { .. } => None,
         }
     }
@@ -139,9 +163,39 @@ impl InstallManifest {
         };
     }
 
-    /// This device's pairing entry, under its per-device key.
+    /// Connection `conn`'s pairing entry from before installs were told
+    /// apart (B443): `pairing.<conn>`.
     pub fn pairing_entry(&self, conn: &str) -> Option<&Component> {
         self.components.get(&format!("pairing.{conn}"))
+    }
+
+    /// Install `install`'s pairing entry for connection `conn` — the legacy
+    /// one with `None` ([`pairing_entry`](Self::pairing_entry)).
+    pub fn pairing_entry_of(&self, conn: &str, install: Option<&str>) -> Option<&Component> {
+        self.get(&InstallComponent::Pairing {
+            conn: conn.to_owned(),
+            install: install.map(str::to_owned),
+        })
+    }
+
+    /// Every pairing of connection `conn` recorded on this host: the legacy
+    /// one and each install's (B443), as components.
+    pub fn pairings_of(&self, conn: &str) -> Vec<InstallComponent> {
+        let legacy = format!("pairing.{conn}");
+        self.components
+            .keys()
+            .filter_map(|key| {
+                let rest = key.strip_prefix(&legacy)?;
+                let install = match rest {
+                    "" => None,
+                    _ => Some(rest.strip_prefix('.').filter(|id| is_install_id(id))?.to_owned()),
+                };
+                Some(InstallComponent::Pairing {
+                    conn: conn.to_owned(),
+                    install,
+                })
+            })
+            .collect()
     }
 
     /// Every device pairing recorded on this host.
@@ -193,7 +247,7 @@ mod tests {
         let conn = "3F2504E0-4F89-11D3-9A0C-0305E82C3301";
         let mut manifest = InstallManifest::empty();
         manifest.set(
-            &InstallComponent::Pairing { conn: conn.into() },
+            &InstallComponent::Pairing { conn: conn.into(), install: None },
             Some(Component {
                 digest: Some("x".into()),
                 connection_id: Some(conn.into()),
@@ -209,12 +263,45 @@ mod tests {
     }
 
     /// `HostAutoCareTests.removalIsScoped`.
+    /// B443: two installs' pairings of one connection (a phone and another
+    /// restored from its backup) keep apart, and apart from the legacy one.
+    #[test]
+    fn two_installs_pairings_of_one_connection_keep_apart() {
+        let mut manifest = InstallManifest::empty();
+        for (install, digest) in [(None, "legacy"), (Some("aaaaaaaa"), "a"), (Some("bbbbbbbb"), "b")] {
+            manifest.set(
+                &InstallComponent::Pairing {
+                    conn: "C".into(),
+                    install: install.map(str::to_owned),
+                },
+                Some(Component {
+                    digest: Some(digest.into()),
+                    ..Component::new(Date::from_unix(0.0))
+                }),
+            );
+        }
+        let digest = |install| manifest.pairing_entry_of("C", install).and_then(|c| c.digest.clone());
+        assert_eq!(digest(None).as_deref(), Some("legacy"));
+        assert_eq!(digest(Some("aaaaaaaa")).as_deref(), Some("a"));
+        assert_eq!(digest(Some("bbbbbbbb")).as_deref(), Some("b"));
+        assert_eq!(manifest.pairing_entries().len(), 3);
+    }
+
+    #[test]
+    fn an_install_id_is_eight_to_thirty_two_lowercase_hex_digits() {
+        assert!(is_install_id("0123456789abcdef"));
+        assert!(is_install_id("deadbeef"));
+        for bad in ["", "abc", "0123456789ABCDEF", "../../x", "aaaa aaaa", "a.b.c.d.e", &"a".repeat(33)] {
+            assert!(!is_install_id(bad), "{bad:?}");
+        }
+    }
+
     #[test]
     fn removing_one_devices_pairing_leaves_every_other_devices_standing() {
         let mut manifest = InstallManifest::empty();
         for conn in ["a", "b"] {
             manifest.set(
-                &InstallComponent::Pairing { conn: conn.into() },
+                &InstallComponent::Pairing { conn: conn.into(), install: None },
                 Some(Component {
                     connection_id: Some(conn.into()),
                     relay_url: Some("r".into()),
@@ -286,13 +373,24 @@ mod tests {
 
     #[test]
     fn components_know_their_key_path_and_mode() {
-        let pairing = InstallComponent::Pairing { conn: "C".into() };
+        let pairing = InstallComponent::Pairing { conn: "C".into(), install: None };
         assert_eq!(pairing.key(), "pairing.C");
         assert_eq!(
             pairing.path().as_deref(),
             Some("$HOME/.moshpit/push.d/C.conf")
         );
         assert_eq!(pairing.mode(), "600");
+        // One install's pairing (B443): its own file and its own key.
+        let own = InstallComponent::Pairing {
+            conn: "C".into(),
+            install: Some("0123456789abcdef".into()),
+        };
+        assert_eq!(own.key(), "pairing.C.0123456789abcdef");
+        assert_eq!(
+            own.path().as_deref(),
+            Some("$HOME/.moshpit/push.d/C.0123456789abcdef.conf")
+        );
+        assert_eq!(own.mode(), "600");
         assert_eq!(
             InstallComponent::Stamp.path().as_deref(),
             Some("$HOME/.moshpit/moshpit-stamp.sh")

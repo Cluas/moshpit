@@ -242,6 +242,10 @@ impl Rig {
         }
     }
 
+    fn taken_nothing(&self) -> bool {
+        self.host.taken_from_others.is_empty()
+    }
+
     fn kill_loop(&mut self) {
         self.host.state = Loop::Gone;
         self.wake_watches(|_| true);
@@ -716,6 +720,8 @@ fn on_first_pane() -> Rig {
 fn a_pane_another_device_takes_over_is_said_and_never_taken_back_on_its_own() {
     let mut rig = on_first_pane();
     rig.park(TAKEN_OVER);
+    // The other device keeps it (a plain ask is refused: B487).
+    rig.host.held = vec!["t-1".to_owned()];
     rig.run_for(300);
 
     assert_eq!(
@@ -731,13 +737,27 @@ fn a_pane_another_device_takes_over_is_said_and_never_taken_back_on_its_own() {
         rig.show(focus);
         rig.run_for(2_000);
     }
-    assert_eq!(rig.host.retargets, 1, "a focus report took a pane back");
+    assert!(
+        rig.host.asked.iter().all(|(_, takeover)| !takeover),
+        "a focus report took a pane back: {:?}",
+        rig.host.asked
+    );
+    assert!(
+        rig.taken_nothing(),
+        "taken: {:?}",
+        rig.host.taken_from_others
+    );
+    assert_eq!(
+        rig.renderer.down(),
+        Some(&Down::TakenOver("t-1".to_owned()))
+    );
     assert!(rig.sent.is_empty(), "typed into {:?}", rig.sent_where());
 
     // One tap: taken back (`--takeover`), and typing reaches it again.
     assert_eq!(rig.take_back(), None);
     rig.run_for(200);
     assert_eq!(rig.host.landed, ["t-1", "t-1"]);
+    assert_eq!(rig.host.asked.last(), Some(&("t-1".to_owned(), true)));
     assert_eq!(rig.renderer.down(), None);
     assert!(rig.cleared(), "the notice stayed up");
     assert!(rig.type_bytes(b"y"));
@@ -836,10 +856,17 @@ fn a_herdr_restart_brings_the_renderer_to_the_focused_panes_new_terminal() {
 fn a_pane_taken_over_and_then_closed_is_left_for_the_focused_one() {
     let mut rig = on_first_pane();
     rig.park(TAKEN_OVER);
+    // Still theirs: B487's plain ask is refused.
+    rig.host.held = vec!["t-1".to_owned()];
     rig.run_for(300);
     rig.show("t-2"); // not followed while taken over…
     rig.run_for(100);
-    assert_eq!(rig.host.retargets, 1);
+    assert!(
+        rig.host
+            .asked
+            .iter()
+            .all(|(terminal, takeover)| terminal != "t-2" && !takeover)
+    );
     rig.tree(&["t-2", "t-3"]); // …until its pane is gone
     rig.run_for(200);
     assert_eq!(rig.renderer.on_screen(), Some("t-2"));
@@ -1152,12 +1179,30 @@ fn following_the_focus_onto_a_pane_another_device_holds_takes_nothing_and_says_s
     // Nothing typed goes anywhere, and the poll's repeats ask nothing.
     assert!(!rig.type_bytes(b"y\r"));
     assert!(rig.sent.is_empty(), "typed into {:?}", rig.sent_where());
+    // Once the focus leaves it, B487 asks for it plainly, refused while
+    // theirs: at most once in these six seconds, and never a takeover.
     let asked = rig.host.retargets;
+    let before = rig.host.asked.len();
     for focus in ["t-2", "t-1", "t-2"] {
         rig.show(focus);
         rig.run_for(2_000);
     }
-    assert_eq!(rig.host.retargets, asked, "a focus report retried the pane");
+    assert!(
+        rig.host.retargets <= asked + 1,
+        "a focus report retried the pane"
+    );
+    assert!(rig.host.asked.iter().all(|(_, takeover)| !takeover));
+    assert!(
+        rig.host.asked[before..]
+            .iter()
+            .all(|(terminal, _)| terminal != "t-1"),
+        "followed the focus: {:?}",
+        rig.host.asked
+    );
+    assert_eq!(
+        rig.renderer.down(),
+        Some(&Down::TakenOver("t-2".to_owned()))
+    );
 
     // "Open here": the person's word takes it.
     assert_eq!(rig.take_back(), None);
@@ -1363,4 +1408,42 @@ fn a_lost_pick_is_forgotten_once_the_focus_moves_elsewhere() {
         rig.host.taken_from_others.is_empty(),
         "a follow takes nothing"
     );
+}
+
+// MARK: - B487: a terminal the other device left comes back by itself
+
+/// Another device took the terminal on screen, then moved on (the focus
+/// went with it, and its client let the terminal go). The loop stayed
+/// parked under "on another device" until the person's tap. Now a plain
+/// retarget — never a takeover — asks for it again when the focus moves
+/// away, at most every ten seconds; once it lands, the other device's
+/// focus doesn't pull the loop after it.
+#[test]
+fn a_terminal_the_other_device_left_comes_back_with_a_plain_retarget() {
+    let mut rig = on_first_pane();
+    rig.park(TAKEN_OVER);
+    rig.run_for(300);
+    assert_eq!(
+        rig.renderer.down(),
+        Some(&Down::TakenOver("t-1".to_owned()))
+    );
+    // The other device is on t-2 now, and holds only that.
+    rig.host.held = vec!["t-2".to_owned()];
+    rig.show("t-2");
+    rig.run_for(500);
+    assert_eq!(rig.renderer.on_screen(), Some("t-1"), "ours again");
+    assert_eq!(rig.renderer.down(), None);
+    assert!(rig.cleared(), "the notice went");
+    assert!(rig.taken_nothing());
+    assert_eq!(rig.host.asked.last(), Some(&("t-1".to_owned(), false)));
+    for _ in 0..5 {
+        rig.show("t-2");
+        rig.run_for(2_000);
+    }
+    assert_eq!(
+        rig.renderer.on_screen(),
+        Some("t-1"),
+        "their focus doesn't pull us after it"
+    );
+    assert!(rig.host.asked.iter().all(|(terminal, _)| terminal != "t-2"));
 }

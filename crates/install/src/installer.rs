@@ -457,10 +457,27 @@ impl<'a, C: HostChannel> HostInstaller<'a, C> {
     /// Install (or repair) everything a push pairing needs, and record it:
     /// the sender, then the stamp script, and only once both landed the
     /// pairing's conf — a host never holds secrets with no program to use
-    /// them. `now` stamps the manifest.
+    /// them. `now` stamps the manifest. The legacy conf, `<conn>.conf`:
+    /// [`install_pairing_as`](Self::install_pairing_as) names an install.
     pub async fn install_pairing(
         &self,
         pairing: &PushPairing,
+        state: &InstallState,
+        now: Date,
+    ) -> Result<InstallReport, ChannelError> {
+        self.install_pairing_as(pairing, None, state, now).await
+    }
+
+    /// [`install_pairing`](Self::install_pairing) for install `install`'s
+    /// own conf, `<conn>.<install>.conf` (B443). The legacy `<conn>.conf`
+    /// it replaces goes with it, but only when its recorded digest is this
+    /// very conf's — what this phone wrote before installs were told apart.
+    /// Another digest is another phone's (a phone restored from this one's
+    /// backup) and is left as it is.
+    pub async fn install_pairing_as(
+        &self,
+        pairing: &PushPairing,
+        install: Option<&str>,
         state: &InstallState,
         now: Date,
     ) -> Result<InstallReport, ChannelError> {
@@ -480,7 +497,15 @@ impl<'a, C: HostChannel> HostInstaller<'a, C> {
             return Ok(report);
         }
         let conn = pairing.connection_id.to_string();
-        let component = InstallComponent::Pairing { conn: conn.clone() };
+        let install = install.filter(|id| crate::manifest::is_install_id(id));
+        let component = InstallComponent::Pairing {
+            conn: conn.clone(),
+            install: install.map(str::to_owned),
+        };
+        let legacy = InstallComponent::Pairing {
+            conn: conn.clone(),
+            install: None,
+        };
         let conf = push_conf(pairing);
         let path = component.path().expect("a pairing is a file");
         self.run(&commands::write_file(
@@ -503,9 +528,18 @@ impl<'a, C: HostChannel> HostInstaller<'a, C> {
             action: Action::Installed { digest: want },
         });
         let steps = report.steps.clone();
+        let mut migrated = false;
+        let this_conf = scripts::content_digest(&conf);
         let manifest = self
             .update_manifest(|manifest| {
-                manifest.remove_pairing(&conn);
+                // This phone's legacy conf moves to its install's (B443):
+                // only the one that is this very conf.
+                if install.is_some()
+                    && manifest.get(&legacy).and_then(|c| c.digest.as_deref()) == Some(this_conf.as_str())
+                {
+                    manifest.set(&legacy, None);
+                    migrated = true;
+                }
                 for step in &steps {
                     let Action::Installed { digest } = &step.action else {
                         continue;
@@ -523,6 +557,14 @@ impl<'a, C: HostChannel> HostInstaller<'a, C> {
                 }
             })
             .await?;
+        if migrated {
+            let path = legacy.path().expect("a pairing is a file");
+            self.run(&commands::remove_file(&path)).await?;
+            report.steps.push(InstallStep {
+                component: legacy,
+                action: Action::Removed,
+            });
+        }
         report.manifest = Some(manifest);
         Ok(report)
     }
@@ -706,10 +748,11 @@ impl<'a, C: HostChannel> HostInstaller<'a, C> {
         Ok(report)
     }
 
-    /// The connections whose pairings on the host push to the phone with
-    /// APNs token `phone` (B354), as their confs are named. A conf with no
-    /// token, or one not named for a connection, is no one's to judge.
-    pub async fn pairings_reaching(&self, phone: &str) -> Result<Vec<String>, ChannelError> {
+    /// The pairings on the host that push to the phone with APNs token
+    /// `phone` (B354), as their confs are named: `<conn>.conf` (the legacy
+    /// one) or `<conn>.<install>.conf` (B443). A conf with no token, or one
+    /// not named so, is no one's to judge.
+    pub async fn pairings_reaching(&self, phone: &str) -> Result<Vec<InstallComponent>, ChannelError> {
         if phone.is_empty() {
             return Ok(Vec::new());
         }
@@ -718,9 +761,20 @@ impl<'a, C: HostChannel> HostInstaller<'a, C> {
             .lines()
             .filter_map(|line| {
                 let (file, token) = line.split_once(' ')?;
-                let conn = file.strip_suffix(".conf")?;
-                (token.eq_ignore_ascii_case(phone) && moshpit_seal::Uuid::parse(conn).is_some())
-                    .then(|| conn.to_owned())
+                if !token.eq_ignore_ascii_case(phone) {
+                    return None;
+                }
+                let stem = file.strip_suffix(".conf")?;
+                let (conn, install) = match stem.split_once('.') {
+                    None => (stem, None),
+                    Some((conn, install)) if crate::manifest::is_install_id(install) => (conn, Some(install)),
+                    Some(_) => return None,
+                };
+                moshpit_seal::Uuid::parse(conn)?;
+                Some(InstallComponent::Pairing {
+                    conn: conn.to_owned(),
+                    install: install.map(str::to_owned),
+                })
             })
             .collect())
     }
@@ -735,6 +789,21 @@ impl<'a, C: HostChannel> HostInstaller<'a, C> {
     pub async fn remove_everything(
         &self,
         conn: &str,
+        state: &InstallState,
+    ) -> Result<InstallReport, ChannelError> {
+        let legacy = InstallComponent::Pairing {
+            conn: conn.to_owned(),
+            install: None,
+        };
+        self.remove_everything_of(&[legacy], state).await
+    }
+
+    /// [`remove_everything`](Self::remove_everything), taking `pairings` —
+    /// this phone's, its install's conf and the legacy one when it is this
+    /// phone's (B443) — off the host; another phone's stays.
+    pub async fn remove_everything_of(
+        &self,
+        pairings: &[InstallComponent],
         state: &InstallState,
     ) -> Result<InstallReport, ChannelError> {
         let mut report = InstallReport::new(&state.facts);
@@ -755,16 +824,13 @@ impl<'a, C: HostChannel> HostInstaller<'a, C> {
             }
             report.steps.extend(removed.steps);
         }
-        let pairing = InstallComponent::Pairing {
-            conn: conn.to_owned(),
-        };
-        current.manifest = self
-            .uninstall(std::slice::from_ref(&pairing), &current)
-            .await?;
-        report.steps.push(InstallStep {
-            component: pairing,
-            action: Action::Removed,
-        });
+        current.manifest = self.uninstall(pairings, &current).await?;
+        for pairing in pairings {
+            report.steps.push(InstallStep {
+                component: pairing.clone(),
+                action: Action::Removed,
+            });
+        }
         // The rest only once no other pairing is left: read under the
         // manifest's lock, so a phone pairing at this moment is seen.
         let token = moshpit_seal::random::hex(8);
@@ -938,9 +1004,17 @@ pub fn agents_to_refresh(state: &InstallState) -> Vec<HookAgent> {
 /// Whether the host's copy of this device's pairing must be rewritten: its
 /// recorded digest is not the digest of the conf the phone would write now.
 pub fn pairing_needs_rewrite(manifest: &InstallManifest, ready: &PushPairing) -> bool {
-    let expected = scripts::content_digest(&push_conf(ready));
-    manifest
-        .pairing_entry(&ready.connection_id.to_string())
-        .and_then(|c| c.digest.as_deref())
-        != Some(expected.as_str())
+    pairing_needs_rewrite_as(manifest, ready, None)
 }
+
+/// [`pairing_needs_rewrite`] for install `install`'s own conf (B443): also
+/// when this phone's legacy conf is still there to move over.
+pub fn pairing_needs_rewrite_as(manifest: &InstallManifest, ready: &PushPairing, install: Option<&str>) -> bool {
+    let expected = scripts::content_digest(&push_conf(ready));
+    let conn = ready.connection_id.to_string();
+    let install = install.filter(|id| crate::manifest::is_install_id(id));
+    let digest = |install: Option<&str>| manifest.pairing_entry_of(&conn, install).and_then(|c| c.digest.clone());
+    digest(install).as_deref() != Some(expected.as_str())
+        || (install.is_some() && digest(None).as_deref() == Some(expected.as_str()))
+}
+

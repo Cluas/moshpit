@@ -15,7 +15,7 @@ use std::collections::HashSet;
 
 use moshpit_install::installer::{
     self, ChannelError, ComponentStatus, HostInstaller, InstallState, installed_hook_agents,
-    pairing_needs_rewrite,
+    pairing_needs_rewrite_as,
 };
 use moshpit_install::{HookAgent, InstallComponent};
 use moshpit_seal::Uuid;
@@ -285,10 +285,11 @@ async fn ensure_pairing_now(
         }
         // The host's copy must match ours byte for byte.
         let mut state = state;
-        if pairing_needs_rewrite(&state.manifest, &ready) {
+        let install = ctx.with(|s| s.push.install_id.clone());
+        if pairing_needs_rewrite_as(&state.manifest, &ready, install.as_deref()) {
             log::info!(target: "moshpit::care", "autocare: rewriting pairing on {}", conn.label);
             let report = installer
-                .install_pairing(&ready, &state, ctx.now().date)
+                .install_pairing_as(&ready, install.as_deref(), &state, ctx.now().date)
                 .await?;
             match report.manifest {
                 Some(manifest) if report.succeeded() => state.manifest = manifest,
@@ -303,8 +304,9 @@ async fn ensure_pairing_now(
     if !may_act(ctx, conn.id) {
         return Ok(());
     }
+    let install = ctx.with(|s| s.push.install_id.clone());
     let report = installer
-        .install_pairing(&pairing, &state, ctx.now().date)
+        .install_pairing_as(&pairing, install.as_deref(), &state, ctx.now().date)
         .await?;
     match report.manifest {
         Some(manifest) if report.succeeded() => {
@@ -347,14 +349,23 @@ async fn forget_left_behind(
             return Vec::new();
         };
         let paired: HashSet<Uuid> = s.store.read().iter().map(|p| p.connection_id).collect();
+        let mine = s.push.install_id.as_deref();
         reaching
             .into_iter()
-            .filter(|c| {
-                Uuid::parse(c).is_some_and(|id| {
-                    !paired.contains(&id) && !saved.contains(&id) && !s.saved.listed.contains(&id)
-                })
+            .filter(|component| {
+                let InstallComponent::Pairing { conn, install } = component else {
+                    return false;
+                };
+                let Some(id) = Uuid::parse(conn) else {
+                    return false;
+                };
+                let let_go = !paired.contains(&id) && !saved.contains(&id) && !s.saved.listed.contains(&id);
+                // Another install's conf pushing to this phone's token is an
+                // earlier install of the app on this very phone: its secret is
+                // gone with it (B443). A legacy one is left to the move over.
+                let earlier_install = matches!((install.as_deref(), mine), (Some(theirs), Some(mine)) if theirs != mine);
+                let_go || earlier_install
             })
-            .map(|c| InstallComponent::Pairing { conn: c })
             .collect()
     });
     if gone.is_empty() || !may_act(ctx, conn.id) {
@@ -363,6 +374,34 @@ async fn forget_left_behind(
     log::info!(target: "moshpit::care", "autocare: removing {} pairing(s) this phone let go of from {}", gone.len(), conn.label);
     installer.uninstall(&gone, state).await?;
     Ok(())
+}
+
+/// This phone's pairings of `conn` on a host (B443): its install's conf,
+/// and the legacy `<conn>.conf` while no install is known — or when its
+/// recorded digest is this phone's conf (`mine`), what it wrote before
+/// installs were told apart. A legacy conf with another digest is another
+/// phone's, and is never this phone's to take.
+pub(crate) fn own_pairings(
+    manifest: &moshpit_install::InstallManifest,
+    conn: &str,
+    install: Option<&str>,
+    mine: Option<&str>,
+) -> Vec<InstallComponent> {
+    let legacy = InstallComponent::Pairing {
+        conn: conn.to_owned(),
+        install: None,
+    };
+    let Some(install) = install else {
+        return vec![legacy];
+    };
+    let mut own = vec![InstallComponent::Pairing {
+        conn: conn.to_owned(),
+        install: Some(install.to_owned()),
+    }];
+    if mine.is_some() && manifest.get(&legacy).and_then(|c| c.digest.as_deref()) == mine {
+        own.push(legacy);
+    }
+    own
 }
 
 /// A deleted connection's pairing taken off its host while the session is
@@ -379,8 +418,13 @@ pub(crate) async fn forget_on_host(ctx: Ctx, connection: Uuid) {
         facts: moshpit_install::HostFacts::default(),
         manifest: moshpit_install::InstallManifest::empty(),
     };
+    // This install's conf; the legacy one goes too while no install is
+    // known (a build before B443's install id). Once one is, a legacy conf
+    // left pushing to this phone is B354's, at the host's next pass.
+    let install = ctx.with(|s| s.push.install_id.clone());
     let component = InstallComponent::Pairing {
         conn: connection.to_string(),
+        install,
     };
     match installer
         .uninstall(std::slice::from_ref(&component), &state)

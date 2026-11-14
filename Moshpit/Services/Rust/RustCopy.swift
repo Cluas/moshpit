@@ -19,8 +19,9 @@ enum RustCopy {
         }
     }
 
-    /// mosh + tmux: what the person asked of tmux while the control plane
-    /// was down didn't come through, and it is back (B401).
+    /// What the person asked of tmux while nothing carried it (mosh's
+    /// control plane down, B401; the connection dialled again, B483)
+    /// didn't come through, and it is back.
     static var tmuxActionsDropped: String {
         String(localized: "Your last tmux action didn't go through: the control connection dropped, and it's back now.")
     }

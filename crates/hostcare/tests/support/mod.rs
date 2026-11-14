@@ -131,6 +131,7 @@ impl Host {
     pub fn pairing_conf(&self, connection: Uuid) -> Option<&String> {
         InstallComponent::Pairing {
             conn: connection.to_string(),
+            install: None,
         }
         .path()
         .and_then(|p| self.files.get(&p))

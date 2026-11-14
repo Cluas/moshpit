@@ -3412,6 +3412,13 @@ public protocol HostCareCoreProtocol: AnyObject, Sendable {
      */
     func hostChanged(connection: String)  -> Bool
     
+    /**
+     * This install's id (B443), read from where no backup carries it: what
+     * its pairing's conf on a host is named by. Anything but 8 to 32
+     * lowercase hex digits is ignored.
+     */
+    func installId(id: String) 
+    
     func isTending(connection: String)  -> Bool
     
     /**
@@ -3694,6 +3701,19 @@ open func hostChanged(connection: String) -> Bool  {
         FfiConverterString.lower(connection),$0
     )
 })
+}
+    
+    /**
+     * This install's id (B443), read from where no backup carries it: what
+     * its pairing's conf on a host is named by. Anything but 8 to 32
+     * lowercase hex digits is ignored.
+     */
+open func installId(id: String)  {try! rustCall() {
+    uniffi_moshpit_ffi_fn_method_hostcarecore_install_id(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(id),$0
+    )
+}
 }
     
 open func isTending(connection: String) -> Bool  {
@@ -23360,6 +23380,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_moshpit_ffi_checksum_method_hostcarecore_host_changed() != 57988) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_moshpit_ffi_checksum_method_hostcarecore_install_id() != 56113) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_moshpit_ffi_checksum_method_hostcarecore_is_tending() != 54536) {

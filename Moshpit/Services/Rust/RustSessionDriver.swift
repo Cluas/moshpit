@@ -294,8 +294,9 @@ final class RustSessionDriver: RustSessionListener {
             session.attachStalled = true
             endFirstFrameWait()
         case .tmuxActionsDropped:
-            // mosh + tmux: commands given while the control plane was down
-            // waited past their bound; it is back now (B401).
+            // Commands given while nothing carried them (mosh's control
+            // plane down, B401; the connection dialled again, B483) waited
+            // past their bound; an attach is back now.
             tmux?.noteRefused(RustCopy.tmuxActionsDropped)
         case .hostKeyPrompt(let prompt, let host, let port, let fingerprint, let previous):
             presentHostKey(prompt: prompt, host: host, port: Int(port),

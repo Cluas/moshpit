@@ -41,6 +41,10 @@ pub(crate) struct PushState {
     pub abandoned: HashSet<String>,
     /// This launch's sweep of pairings whose connection is gone ran.
     pub orphans_swept: bool,
+    /// This install's id (B443): what its conf on a host is named by, so a
+    /// phone restored from another's backup keeps a conf of its own. Kept
+    /// out of backups by the platform; `None` writes the legacy conf.
+    pub install_id: Option<String>,
 }
 
 impl Shared {

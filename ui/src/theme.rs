@@ -218,6 +218,13 @@ pub fn write_color<S: serde::Serializer>(color: &Rgba, serializer: S) -> Result<
 
 /// The NSH theme of the app's tokens with `app`'s colors (the module doc).
 pub fn tokens(app: &AppTheme) -> Tokens {
+    tokens_on(app, None)
+}
+
+/// [`tokens`], with the terminal's ground (`terminal-bg`) `terminal` in
+/// both appearances when given: the terminal screen's, on the terminal
+/// theme's background (B488).
+pub fn tokens_on(app: &AppTheme, terminal: Option<Rgba>) -> Tokens {
     let mut theme = nsh_base::Theme::default();
     // The navigation bar's scroll edge numbers (`bar_edge`); its two
     // colors come from the semantic roles, below.
@@ -235,6 +242,9 @@ pub fn tokens(app: &AppTheme) -> Tokens {
     let (edge, hairline) = bar_colors(app);
     theme.set_color("bar-edge", edge);
     theme.set_color("bar-hairline", hairline);
+    if let Some(ground) = terminal {
+        theme.set_color("terminal-bg", AdaptiveColor::new(ground, ground));
+    }
     theme.into_tokens()
 }
 

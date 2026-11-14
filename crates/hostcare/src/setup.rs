@@ -7,9 +7,9 @@
 
 use moshpit_install::installer::{
     ComponentStatus, HookProof, HostInstaller, InstallReport, InstallState, StepFailure,
-    make_nonce, pairing_needs_rewrite,
+    make_nonce, pairing_needs_rewrite_as,
 };
-use moshpit_install::{HookAgent, HostFacts, InstallComponent};
+use moshpit_install::{HookAgent, HostFacts, InstallComponent, InstallManifest, push_conf, scripts};
 use moshpit_seal::{Date, PushPairing, Uuid};
 
 use crate::care::Stop;
@@ -112,16 +112,24 @@ impl Page {
         &HookAgent::ALL[self.agent.min(HookAgent::ALL.len() - 1)]
     }
 
-    fn pairing_component(&self) -> InstallComponent {
-        InstallComponent::Pairing {
-            conn: self.connection.to_string(),
+    /// This phone's pairing on the host as recorded: its install's conf
+    /// (B443), else the legacy one it wrote before installs were told apart.
+    fn pairing_component(&self, manifest: &InstallManifest, install: Option<&str>) -> InstallComponent {
+        let conn = self.connection.to_string();
+        let own = InstallComponent::Pairing {
+            conn: conn.clone(),
+            install: install.map(str::to_owned),
+        };
+        if install.is_some() && manifest.get(&own).is_none() {
+            return InstallComponent::Pairing { conn, install: None };
         }
+        own
     }
 
-    fn paired_relay(&self) -> Option<String> {
+    fn paired_relay(&self, install: Option<&str>) -> Option<String> {
         self.state.as_ref().and_then(|s| {
             s.manifest
-                .pairing_entry(&self.connection.to_string())
+                .get(&self.pairing_component(&s.manifest, install))
                 .and_then(|c| c.relay_url.clone())
         })
     }
@@ -226,7 +234,7 @@ impl Shared {
             } else {
                 self.relay_error_for(page.connection)
             },
-            paired_relay: page.paired_relay(),
+            paired_relay: page.paired_relay(self.push.install_id.as_deref()),
             relay_url: page.relay_url.clone(),
             pairing: page
                 .state
@@ -247,7 +255,9 @@ impl Shared {
     /// for a secret the phone no longer holds, or a pairing the phone can't
     /// send with, is Stale.
     fn pairing_status(&self, page: &Page, state: &InstallState) -> ComponentStatus {
-        let status = state.status(&page.pairing_component());
+        let install = self.push.install_id.as_deref();
+        let component = page.pairing_component(&state.manifest, install);
+        let status = state.status(&component);
         if status == ComponentStatus::Absent {
             return status;
         }
@@ -256,13 +266,18 @@ impl Shared {
             .pairing(page.connection)
             .filter(|p| !p.send_token.is_empty());
         match ready {
-            Some(phone) if !pairing_needs_rewrite(&state.manifest, &phone) => {
+            // Current also while the legacy conf this phone wrote still
+            // holds it: care moves it over on its next pass (B443).
+            Some(phone)
+                if state.manifest.get(&component).and_then(|c| c.digest.as_deref())
+                    == Some(scripts::content_digest(&push_conf(&phone)).as_str()) =>
+            {
                 ComponentStatus::Current
             }
             _ => ComponentStatus::Stale {
                 installed: state
                     .manifest
-                    .pairing_entry(&page.connection.to_string())
+                    .get(&component)
                     .and_then(|c| c.digest.clone())
                     .unwrap_or_else(|| "unknown".to_owned()),
             },
@@ -341,6 +356,7 @@ pub(crate) async fn inspect(ctx: Ctx, id: u64) {
     });
     let link = Link::setup(&ctx, connection);
     let result = look(&HostInstaller::new(&link), connection, &label).await;
+    let install = ctx.with(|s| s.push.install_id.clone());
     update(&ctx, id, |p| {
         match result {
             Ok(state) => {
@@ -353,7 +369,7 @@ pub(crate) async fn inspect(ctx: Ctx, id: u64) {
         }
         p.phase = Phase::Idle;
         if p.relay_url.is_empty()
-            && let Some(paired) = p.paired_relay()
+            && let Some(paired) = p.paired_relay(install.as_deref())
         {
             p.relay_url = paired;
         }
@@ -411,6 +427,15 @@ pub(crate) async fn run(ctx: Ctx, id: u64, step: Step) {
     let installer = HostInstaller::new(&link);
     let is_current = |ctx: &Ctx| !for_agent || read(ctx, id, |p| p.agent == agent).unwrap_or(false);
     let outcome: Result<(), Stop> = async {
+        // What this phone's conf holds, before the phone lets go of it: the
+        // legacy conf goes with this install's only when it is this one
+        // (B443).
+        let mine = ctx.with(|s| {
+            s.store
+                .pairing(connection)
+                .map(|p| scripts::content_digest(&push_conf(&p)))
+        });
+        let install = ctx.with(|s| s.push.install_id.clone());
         if let Step::Unpair { .. } | Step::RemoveEverything { .. } = step {
             // The phone first: a phone that can't let go stops the unpair
             // before the host is touched. And it stands: care pairs nothing
@@ -445,27 +470,32 @@ pub(crate) async fn run(ctx: Ctx, id: u64, step: Step) {
                 report
             }
             Step::Unpair { .. } => {
-                let component = InstallComponent::Pairing {
-                    conn: connection.to_string(),
-                };
-                installer
-                    .uninstall(std::slice::from_ref(&component), &current)
-                    .await?;
+                let components = crate::care::own_pairings(
+                    &current.manifest,
+                    &connection.to_string(),
+                    install.as_deref(),
+                    mine.as_deref(),
+                );
+                installer.uninstall(&components, &current).await?;
                 InstallReport {
                     facts: current.facts.clone(),
-                    steps: vec![moshpit_install::installer::InstallStep {
-                        component,
-                        action: moshpit_install::installer::Action::Removed,
-                    }],
+                    steps: components
+                        .into_iter()
+                        .map(|component| moshpit_install::installer::InstallStep {
+                            component,
+                            action: moshpit_install::installer::Action::Removed,
+                        })
+                        .collect(),
                     manifest: None,
                     blocked: None,
                     user_action_required: None,
                 }
             }
             Step::RemoveEverything { .. } => {
-                installer
-                    .remove_everything(&connection.to_string(), &current)
-                    .await?
+                let conn = connection.to_string();
+                let components =
+                    crate::care::own_pairings(&current.manifest, &conn, install.as_deref(), mine.as_deref());
+                installer.remove_everything_of(&components, &current).await?
             }
         };
         let still = is_current(&ctx);
@@ -548,8 +578,9 @@ pub(crate) async fn pair(ctx: Ctx, id: u64) {
         });
         // The host as it is now, not as the page last read it (B373).
         let current = look(&installer, connection, &host_label).await?;
+        let install = ctx.with(|s| s.push.install_id.clone());
         let report = installer
-            .install_pairing(&pairing, &current, ctx.now().date)
+            .install_pairing_as(&pairing, install.as_deref(), &current, ctx.now().date)
             .await?;
         drop(ticket);
         update(&ctx, id, |p| p.last_report = Some(report.clone()));
@@ -612,7 +643,10 @@ async fn keep_what_worked(
     if !staged.send_token.is_empty()
         && host
             .as_ref()
-            .is_some_and(|state| !pairing_needs_rewrite(&state.manifest, &staged))
+            .is_some_and(|state| {
+                let install = ctx.with(|s| s.push.install_id.clone());
+                !pairing_needs_rewrite_as(&state.manifest, &staged, install.as_deref())
+            })
     {
         return;
     }
