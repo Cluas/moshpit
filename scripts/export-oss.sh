@@ -174,7 +174,7 @@ scan_message() { # message file
 }
 
 # The team's agent handles stay out of the public history: a message's
-# "<name>'s " goes, and so does a name on its own ("blank1's B496" reads
+# "<name>'s " goes, and so does a name on its own ("<name>'s B496" reads
 # "B496"). The list is private, like the denylist.
 scrub_names() {
   local list="$ROOT/scripts/oss-agent-names.txt" names
