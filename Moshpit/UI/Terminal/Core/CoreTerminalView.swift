@@ -1153,7 +1153,10 @@ enum CoreTermMemory {
         observing = true
         let center = NotificationCenter.default
         center.addObserver(forName: UIApplication.didReceiveMemoryWarningNotification, object: nil, queue: .main) { _ in
-            MainActor.assumeIsolated { memoryWarning() }
+            // The count it returns is logged there. The observer's closure
+            // returns nothing, and Xcode 26's compiler won't let the `Int`
+            // through it, @discardableResult or not.
+            MainActor.assumeIsolated { _ = memoryWarning() }
         }
         center.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main) { _ in
             MainActor.assumeIsolated { background() }

@@ -943,13 +943,24 @@ final class CoreTermMetalCanvas: UIView {
         lastFailure = nil
         encodePass(into: drawable.texture, buffer: buffer, rows: rows)
         let fate = completion.map(CoreTermFrameFate.init)
+        #if !targetEnvironment(simulator)
         if let fate { drawable.addPresentedHandler { shown in fate.resolve(shown: shown.presentedTime > 0) } }
+        #endif
         let failure = gpuFailure
         buffer.addCompletedHandler { buffer in
             if buffer.status == .error {
                 failure.note(buffer.error.map { "\($0)" } ?? "error")
                 fate?.resolve(shown: false)
             }
+            #if targetEnvironment(simulator)
+            // The simulator's SDK has no addPresentedHandler (iPhoneSimulator's
+            // MTLDrawable.h doesn't declare it), so there the command buffer
+            // tells the fate: done without error counts as shown. After an
+            // error it was told above, and only the first word counts. The
+            // fate timeout (CoreTermPresentation.fateTimeout) stands as on a
+            // device.
+            fate?.resolve(shown: true)
+            #endif
         }
         buffer.present(drawable)
         buffer.commit()

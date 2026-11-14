@@ -147,16 +147,29 @@ jobs:
       # `@available(iOS 26)` guards the runtime, not the compile. Xcode 16.x
       # therefore fails with "cannot find type 'SpeechTranscriber'", which is
       # what broke every run while this job still pinned Xcode 16.4 on
-      # macos-15. Pick the newest 26.x on the image, falling back to the
-      # image's default Xcode.app (also 26.x on macos-26) if GitHub rotates
-      # the versioned paths.
+      # macos-15. The app ships built with Xcode 27, so the newest 27.x on the
+      # image is picked, else the newest 26.x (the code compiles under both),
+      # else the image's default Xcode.app if GitHub rotates the versioned
+      # paths.
+      #
+      # The simulator is the iPhone 17 Pro when the chosen Xcode has one, else
+      # its last iPhone: a newer Xcode's runtimes may not carry that name.
       - name: Select Xcode
         run: |
-          XCODE=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1)
+          echo "Xcodes on the image:"
+          ls -d /Applications/Xcode*
+          XCODE=$(ls -d /Applications/Xcode_27*.app 2>/dev/null | sort -V | tail -1)
+          [ -n "$XCODE" ] || XCODE=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1)
           sudo xcode-select -s "${XCODE:-/Applications/Xcode.app}/Contents/Developer"
           xcodebuild -version
-          echo "Available iOS simulators:"
-          xcrun simctl list devicetypes | grep -i iphone || true
+          echo "Available iPhone simulators:"
+          iphones=$(xcrun simctl list devices available |
+            sed -nE 's/^ +(iPhone.*[^ ]) \([0-9A-F-]{36}\).*/\1/p')
+          echo "$iphones"
+          SIMULATOR="iPhone 17 Pro"
+          grep -qxF "$SIMULATOR" <<< "$iphones" || SIMULATOR=$(tail -1 <<< "$iphones")
+          echo "Testing on: $SIMULATOR"
+          echo "SIMULATOR=$SIMULATOR" >> "$GITHUB_ENV"
 
       - name: Install xcodegen
         run: brew install xcodegen
@@ -239,6 +252,6 @@ jobs:
           xcodebuild test \
             -project Moshpit.xcodeproj \
             -scheme Moshpit \
-            -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \
+            -destination "platform=iOS Simulator,name=$SIMULATOR" \
             -clonedSourcePackagesDirPath "$SPM_CACHE_DIR" \
             CODE_SIGNING_ALLOWED=NO
