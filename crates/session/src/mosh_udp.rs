@@ -372,7 +372,7 @@ async fn run(
     let mut metrics_sent: Option<(Instant, bool)> = None;
     let mut diagnostics_sent: Option<(Instant, Diagnostics)> = None;
     // Barriers waiting for the server's acknowledgement: (the newest user
-    // state when asked, who waits).
+    // state carrying input when asked, who waits).
     let mut barriers: Vec<(u64, tokio::sync::oneshot::Sender<()>)> = Vec::new();
     let mut finished = false;
     let mut copy = CopyMode::default();
@@ -517,11 +517,14 @@ async fn run(
                 }
                 MoshCommand::Resume { force } => transport.resume(force, now),
                 MoshCommand::Barrier(reply) => {
-                    let counters = transport.diagnostics();
-                    if counters.server_acked_user_num >= counters.last_user_num {
+                    // The newest input, not an idle state after it: the
+                    // server acks one of those only when it next speaks
+                    // (B522).
+                    let wanted = transport.newest_input_num();
+                    if transport.is_delivered(wanted) {
                         let _ = reply.send(());
                     } else {
-                        barriers.push((counters.last_user_num, reply));
+                        barriers.push((wanted, reply));
                     }
                 }
                 MoshCommand::Roam => {

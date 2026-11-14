@@ -624,6 +624,18 @@ impl Transport {
         self.user_states.last().map_or(0, |state| state.num)
     }
 
+    /// Newest user state that carries input (keystrokes, a size): what a
+    /// delivery waits for. An idle state carries nothing and isn't waited
+    /// for: mosh-server acks it only when it next speaks (B522). The acked
+    /// state when nothing newer carries input.
+    pub fn newest_input_num(&self) -> u64 {
+        self.user_states
+            .iter()
+            .rev()
+            .find(|state| !state.events.is_empty())
+            .map_or(self.server_acked_user_num, |state| state.num)
+    }
+
     /// Newest user state the server acknowledged.
     pub fn server_acked_user_num(&self) -> u64 {
         self.server_acked_user_num

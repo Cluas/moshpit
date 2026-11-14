@@ -546,6 +546,42 @@ fn no_idle_state_while_typing_or_held() {
     );
 }
 
+/// B522 (the Swift client's deliveryIgnoresIdleStates, lost in the port):
+/// a delivery waits for the newest state that carries input, not for an idle
+/// state added after it. mosh-server acks an idle state only when it next
+/// speaks, up to 3 s on a quiet screen: a herdr key over mosh, a reply to a
+/// notification, waited that long after its own bytes had landed.
+#[test]
+fn a_delivery_does_not_wait_for_an_idle_state() {
+    let server = server();
+    let mut transport = Transport::new(&KEY, TransportConfig::default()).unwrap();
+    transport.start(80, 24, 0);
+    transport.on_channel_state(ChannelState::Ready, 0);
+    sent(&mut transport);
+    let typed = transport.send(b"a", 300).unwrap();
+    transport.on_timer(300);
+    sent(&mut transport);
+    let answer = server_datagram(&server, 1, 1, 0, 1, typed, &[], u16::MAX);
+    transport.receive(&answer, 400);
+    assert!(transport.is_delivered(typed));
+    // A quiet 3.6 s: an idle state, unacked.
+    transport.on_timer(4_000);
+    assert_eq!(transport.newest_user_num(), typed + 1, "an idle state");
+    assert_eq!(
+        transport.newest_input_num(),
+        typed,
+        "the idle state carries no input"
+    );
+    assert!(
+        transport.is_delivered(transport.newest_input_num()),
+        "the delivery has landed"
+    );
+    // New input is waited for again.
+    let more = transport.send(b"b", 4_100).unwrap();
+    assert_eq!(transport.newest_input_num(), more);
+    assert!(!transport.is_delivered(more));
+}
+
 // MARK: large input
 
 /// mosh-server's side of a long paste: it inflates each instruction into
