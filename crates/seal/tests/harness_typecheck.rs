@@ -35,8 +35,13 @@
 //!   rig. Without the pinned checkouts (no Xcode build of the app at these
 //!   pins on this Mac yet) they say they skipped.
 //!
-//! All of them run at once, a few at a time. Where there is no Swift
-//! compiler (not macOS), the test says it skipped.
+//! All of them run at once, a few at a time. Where there is no Xcode (not
+//! macOS, or a Mac without it), the test says it skipped: the typechecking
+//! `swiftc` hands each call to Xcode's, and the cuts are its tools'. A
+//! `swiftc` alone doesn't count (CI's Ubuntu image has one). A harness whose
+//! cut reads the app's Swift as of a commit this clone doesn't have says it
+//! skipped, naming the commit: a public clone has none of them, since the
+//! export folds the dev history they're in.
 
 use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
@@ -46,11 +51,13 @@ use std::time::Instant;
 
 /// A harness: its name, the shell commands that typecheck it (run from the
 /// repo with `$OUT` an empty directory of its own and `$RIGS` the shared
-/// one), and how.
+/// one), how, and the commits its cut reads the app's Swift from (`git show`
+/// or `git archive` in its build script, which names them).
 struct Harness {
     name: &'static str,
     build: &'static str,
     how: How,
+    pins: &'static [&'static str],
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -68,22 +75,26 @@ const HARNESSES: &[Harness] = &[
         build: r#"lockf -k "$RIGS/ssh-live.lock" env MOSHPIT_SSH_LIVE_WORK="$RIGS/ssh-live" \
     scripts/verify/ssh-live/build.sh --typecheck"#,
         how: How::Pinned,
+        pins: &[],
     },
     Harness {
         name: "store (crates/store/harness)",
         build: r#"crates/store/harness/build-swift.sh "$OUT""#,
         how: How::Swiftc,
+        pins: &["8c10490a"],
     },
     Harness {
         name: "ssh (crates/ssh/harness)",
         build: r#"lockf -k "$RIGS/ssh-harness.lock" env MOSHPIT_SSH_HARNESS_WORK="$RIGS/ssh-harness" \
     crates/ssh/harness/build-swift.sh --typecheck"#,
         how: How::Pinned,
+        pins: &["81c121a1"],
     },
     Harness {
         name: "host care (crates/hostcare/harness)",
         build: r#"crates/hostcare/harness/build-swift.sh "$OUT/care-swift""#,
         how: How::Swiftc,
+        pins: &["81c121a1"],
     },
     Harness {
         name: "tmux controller (crates/tmux/harness/controller)",
@@ -93,52 +104,62 @@ swiftc -swift-version 5 -parse-as-library -module-name MoshpitKit \
 find "$OUT/pkg/Sources/Controller" -name '*.swift' -print0 |
     xargs -0 swiftc -swift-version 5 -parse-as-library -module-name controller_swift -I "$OUT/kit""#,
         how: How::Swiftc,
+        pins: &[],
     },
     Harness {
         name: "UniFFI smoke (crates/ffi/harness)",
         build: r#"swiftc -swift-version 5 -parse-as-library -I crates/ffi/include \
     Moshpit/Services/Rust/Generated/moshpit_ffi.swift crates/ffi/harness/smoke/main.swift"#,
         how: How::Swiftc,
+        pins: &[],
     },
     Harness {
         name: "herdr (crates/herdr/harness)",
         build: r#"crates/herdr/harness/build-swift.sh "$OUT/herdr-swift""#,
         how: How::Swiftc,
+        pins: &[],
     },
     Harness {
         name: "herdr client (crates/herdr/harness/client)",
         build: r#"crates/herdr/harness/client/build-swift.sh "$OUT/client-swift""#,
         how: How::Swiftc,
+        pins: &[],
     },
     Harness {
         name: "install (crates/install/harness)",
         build: r#"crates/install/harness/build-swift.sh "$OUT/install-swift""#,
         how: How::Swiftc,
+        pins: &["81c121a1"],
     },
     Harness {
         name: "seal (crates/seal/harness)",
         build: r#"crates/seal/harness/build-swift.sh "$OUT/seal-swift""#,
         how: How::Swiftc,
+        pins: &[],
     },
     Harness {
         name: "mosh (crates/mosh/harness)",
         build: r#"crates/mosh/harness/build-swift.sh "$OUT/mosh-swift""#,
         how: How::Swiftc,
+        pins: &[],
     },
     Harness {
         name: "mosh-live (scripts/verify/mosh-live)",
         build: r#"MOSHPIT_MOSH_LIVE_WORK="$OUT" scripts/verify/mosh-live/build.sh"#,
         how: How::Swiftc,
+        pins: &[],
     },
     Harness {
         name: "Home (crates/app/harness/home)",
         build: r#"crates/app/harness/home/build-swift.sh "$OUT/home-swift""#,
         how: How::Swiftc,
+        pins: &["95f649ab"],
     },
     Harness {
         name: "tmux control mode (crates/tmux/harness)",
         build: r#"crates/tmux/harness/build-swift.sh "$OUT/cc-events-swift""#,
         how: How::Swiftc,
+        pins: &[],
     },
     Harness {
         // verify-app-language.sh's build, its one-line stub written the same.
@@ -147,6 +168,7 @@ find "$OUT/pkg/Sources/Controller" -name '*.swift' -print0 |
 swiftc -O -o "$OUT/check" Packages/MoshpitKit/Sources/MoshpitKit/AppLanguage.swift "$OUT/stub.swift" \
     scripts/verify/app-language/main.swift"#,
         how: How::Swiftc,
+        pins: &[],
     },
 ];
 
@@ -188,11 +210,28 @@ fn repo() -> PathBuf {
         .expect("the repo")
 }
 
-fn has_swiftc() -> bool {
-    Command::new("swiftc")
-        .arg("-version")
+fn succeeds(program: &str, args: &[&str]) -> bool {
+    Command::new(program)
+        .args(args)
         .output()
         .is_ok_and(|out| out.status.success())
+}
+
+/// Whether this machine has the Swift compiler the typechecking `swiftc`
+/// hands each call to: Xcode's, through `/usr/bin/xcrun`. Not on Linux,
+/// whose `swiftc` (CI's Ubuntu image has one) comes without xcrun, nor on a
+/// Mac without Xcode or its command line tools. `xcode-select -p` is asked
+/// first: with no tools at all, xcrun would offer them in a dialog instead
+/// of answering.
+fn has_xcode_swiftc() -> bool {
+    succeeds("xcode-select", &["-p"]) && succeeds("/usr/bin/xcrun", &["swiftc", "-version"])
+}
+
+/// Whether this clone has the commit `rev`.
+fn has_commit(rev: &str) -> bool {
+    let repo = repo();
+    let repo = repo.to_str().expect("the repo's path is UTF-8");
+    succeeds("git", &["-C", repo, "cat-file", "-e", rev])
 }
 
 /// Where the ssh rigs work, shared by every worktree on this Mac.
@@ -228,6 +267,11 @@ fn why(text: &str) -> String {
 }
 
 fn typecheck(harness: &Harness, out_dir: &Path, rigs: &Path, shim_path: &str) -> Outcome {
+    if let Some(rev) = harness.pins.iter().copied().find(|rev| !has_commit(rev)) {
+        return Outcome::Skipped(format!(
+            "its cut reads the app's Swift as of {rev}, which this clone doesn't have"
+        ));
+    }
     std::fs::create_dir_all(out_dir).expect("its output directory");
     let log = out_dir.with_extension("calls");
     let path = match harness.how {
@@ -276,8 +320,8 @@ fn typecheck(harness: &Harness, out_dir: &Path, rigs: &Path, shim_path: &str) ->
 
 #[test]
 fn every_swift_harness_typechecks_against_the_apps_sources() {
-    if !has_swiftc() {
-        eprintln!("skipped: no swiftc here to typecheck the Swift harnesses");
+    if !has_xcode_swiftc() {
+        eprintln!("skipped: no Xcode here (xcrun's swiftc) to typecheck the Swift harnesses");
         return;
     }
     let root = std::env::temp_dir().join(format!("harness-typecheck-{}", std::process::id()));
@@ -353,4 +397,27 @@ fn every_swift_harness_typechecks_against_the_apps_sources() {
          cuts or their own Swift before anyone needs them:\n\n{}",
         failures.join("\n\n")
     );
+}
+
+/// Each harness pins only commits its build script names, so a pin the
+/// script moved on from or stopped reading doesn't keep it skipped where it
+/// could run. It reads files only, so it runs everywhere.
+#[test]
+fn each_harness_pins_commits_its_build_script_names() {
+    for harness in HARNESSES {
+        let scripts: String = harness
+            .build
+            .split_whitespace()
+            .map(|word| word.trim_matches('"'))
+            .filter(|word| word.ends_with(".sh"))
+            .filter_map(|path| std::fs::read_to_string(repo().join(path)).ok())
+            .collect();
+        for rev in harness.pins {
+            assert!(
+                scripts.contains(*rev),
+                "{}: pins {rev}, which its build script doesn't name",
+                harness.name
+            );
+        }
+    }
 }
