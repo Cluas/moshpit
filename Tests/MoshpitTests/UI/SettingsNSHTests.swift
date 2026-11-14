@@ -20,19 +20,11 @@ struct SettingsNSHTests {
         return (AppSettings(defaults: defaults), AppThemeStore(defaults: defaults), defaults)
     }
 
-    // MARK: Switches
+    // MARK: Screens
 
-    @Test("each page has its own switch, off unless set")
-    func switches() {
-        let registered = UserDefaults.standard.volatileDomain(forName: UserDefaults.registrationDomain)
+    @Test("each page runs the Rust screen of its name")
+    func names() {
         let screens: [NSHScreen] = [.appIcon, .accent, .voiceEngine, .voiceLanguage]
-        #expect(screens.map(\.switchKey) == [
-            "MOSHPIT_NSH_APP_ICON", "MOSHPIT_NSH_ACCENT", "MOSHPIT_NSH_VOICE_ENGINE", "MOSHPIT_NSH_VOICE_LANGUAGE",
-        ])
-        #expect(Set(NSHScreen.allCases.map(\.switchKey)).count == NSHScreen.allCases.count)
-        for screen in screens {
-            #expect(registered[screen.switchKey] == nil)
-        }
         #expect(screens.map(\.name) == ["app-icon", "accent", "voice-engine", "voice-language"])
     }
 

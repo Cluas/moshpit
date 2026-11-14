@@ -2,43 +2,27 @@ import Foundation
 import MoshpitFFI
 import MoshpitKit
 
-/// Whether the app's stores read and write through the Rust core's store
-/// (crates/store through crates/ffi, docs/nsh/DESIGN.md §3.5–3.6) instead of
-/// their own Swift code: the connections, the SSH key records, the shortcut
-/// bar, the settings, the terminal themes and accents, the trusted host keys
-/// and the push pairings. Either way the same keys, formats and items: iOS
-/// migrates nothing, and the other side reads everything the one wrote.
+/// The app's stores read and write through the Rust core's store
+/// (crates/store through crates/ffi, docs/nsh/DESIGN.md §3.5–3.6): the
+/// connections, the SSH key records, the shortcut bar, the settings, the
+/// terminal themes and accents, the trusted host keys and the push
+/// pairings. The same keys, formats and items the Swift stores used, so
+/// iOS migrates nothing from a build that ran them (the store harness's
+/// 1.0.8 phases hold it).
 ///
-/// The switch is a Bool in `UserDefaults.standard`, set on the hidden Core
-/// Switches page, or for one launch with the launch argument
-/// `-MOSHPIT_RUST_STORE 1` (the argument domain beats the stored value). Off
-/// by default: off is exactly the app without it. It is read ONCE, the
-/// first time anything asks — at launch, before the first store is made —
-/// and holds for the life of the process: storage never changes under a
-/// running app. (A launch before the first unlock reads the preferences as
-/// empty, the switch among them, so it takes the registered default: the
-/// Swift stores, or the Rust ones in a Canary build, which registers the
-/// switch on (``CanaryDefaults``). Both sides keep the sealed-launch rule,
-/// so nothing is lost either way.)
+/// No switch any more (F0): every build is on the Rust store whenever its
+/// library is the one the app was compiled against, as Canary builds were.
+/// The Swift stores' own code goes with batch C.
 enum RustStoreSwitch {
-    static let switchKey = "MOSHPIT_RUST_STORE"
-
     /// Whether this build can run its stores on the Rust core: the library
     /// is linked and is the one the app was compiled against.
     static let available = mp_ffi_abi_version() == UInt32(MP_FFI_ABI_VERSION)
 
     /// This launch's answer, read once.
     static let isOn: Bool = {
-        CanaryDefaults.register()
-        let on = available && UserDefaults.standard.bool(forKey: switchKey)
-        Log.store.notice("stores: \(on ? "Rust" : "Swift", privacy: .public) this launch")
-        return on
+        Log.store.notice("stores: \(available ? "Rust" : "Swift (no Rust core in this build)", privacy: .public) this launch")
+        return available
     }()
-
-    /// What the stored switch says now: the next launch's answer.
-    static var isOnNextLaunch: Bool {
-        available && UserDefaults.standard.bool(forKey: switchKey)
-    }
 
     /// The preferences the Rust stores read and write: the app's own,
     /// `UserDefaults.standard`, with the device's protected-data state for
@@ -54,26 +38,17 @@ enum RustStoreSwitch {
     static let keychain = RustKeychainHost(launchTrust: nil)
 
     /// Before anything reads a push pairing: the pairings go through the
-    /// Rust store when the switch is on (``PushPairingStore/backing``).
+    /// Rust store (``PushPairingStore/backing``).
     /// Without an App Group container (an unsigned build) nothing can be
     /// paired, and nothing changes.
     static func installPushPairings() {
         guard isOn, PushPairingStore.backing == nil, let url = PushPairingStore.fileURL else { return }
         PushPairingStore.backing = RustPushPairings(url: url)
     }
-
-    /// What the Core Switches page says the switch moves.
-    static let note = """
-        On: connections, SSH key records (the keys stay in the keychain), the shortcut bar, \
-        the settings, terminal themes, accents, trusted host keys and push pairings are read \
-        and written by the Rust core's store — the same keys, formats and items, so switching \
-        back loses nothing. From the next launch on: storage never changes under a running app.
-        """
 }
 
-/// The app's stores, made on the side ``RustStoreSwitch`` picked for this
-/// launch. Each is the store class the views and services know, its reads
-/// and writes its own Swift code's or the Rust store's.
+/// The app's stores, made on the Rust store (``RustStoreSwitch``). Each is
+/// the store class the views and services know.
 enum AppStores {
     static func connections() -> ConnectionStore {
         guard RustStoreSwitch.isOn else { return ConnectionStore(readiness: .system) }
@@ -85,9 +60,8 @@ enum AppStores {
         return SSHKeyStore(backing: RustSSHKeyStore(preferences: RustStoreSwitch.preferences, mode: .system))
     }
 
-    /// Always the Rust store (W15d): the shortcut bar's Swift copy is gone,
-    /// whatever the switch says. The same key and stored form, so nothing
-    /// migrates.
+    /// Always the Rust store (W15d): the shortcut bar's Swift copy is gone.
+    /// The same key and stored form, so nothing migrates.
     static func shortcuts() -> ShortcutStore {
         ShortcutStore(backing: RustShortcutStore(preferences: RustStoreSwitch.preferences, mode: .system))
     }

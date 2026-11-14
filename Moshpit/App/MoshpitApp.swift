@@ -30,8 +30,9 @@ struct MoshpitApp: App {
     private let keychain = KeychainService()
 
     init() {
-        // A Canary build's switches, before anything reads one.
-        CanaryDefaults.register()
+        // Resume in place on, as every Canary build has run it, until the
+        // core decides it without the app's preferences (F0b).
+        ResumeInPlaceSwitch.registerDefault()
         // The device's protected-data state, made here on the main thread
         // so the keychain readers that ask it from their own threads (the
         // trusted host keys, B226) never wait on the main queue for it.

@@ -117,14 +117,12 @@ struct CorePaneTests {
         _ = driver
     }
 
-    @Test("a terminal made now gets the view the switch names")
-    func kindFollowsTheSwitch() {
-        if CoreTermSwitch.setByLaunchArgument {
-            #expect(CoreTermSwitch.isOn, "the test host was launched with the switch on")
-        }
-        #expect(TerminalSurfaceKind.current == (CoreTermSwitch.isOn ? .core : .swiftTerm))
+    @Test("a terminal made now is the core's: no switch (F0)")
+    func kindIsTheCore() {
+        #expect(CoreTermSwitch.available, "this build links the terminal core")
+        #expect(TerminalSurfaceKind.current == .core)
         let surface = TmuxSessionController(sshSession: MockTmuxTransport()).surface(for: "%0")
-        #expect((surface is CoreTerminalView) == CoreTermSwitch.isOn)
+        #expect(surface is CoreTerminalView)
     }
 
     @Test("the Swift session's tmux panes take the view their controller was made for", arguments: [true, false])
