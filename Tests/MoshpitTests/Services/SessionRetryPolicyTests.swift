@@ -240,6 +240,22 @@ struct SessionRetryPolicyTests {
         }
     }
 
+    /// B513: Connect on a dead card hands Home the session before it starts
+    /// again; the error its last attempt left must not come with it, or the
+    /// card shows that reason over the new attempt and its OK ends it.
+    @Test("a dead session prepared again comes without its last error (B513)")
+    func preparedAgainWithoutTheLastError() {
+        let hub = SessionHub(metrics: SessionMetricsRegistry())
+        hub.makeSession = { SessionHub.ActiveSession(connection: $0) }
+        let connection = connection()
+        let session = hub.prepare(connection)
+        session.viewModel.fail("refused", retryable: false)
+        #expect(session.viewModel.errorMessage == "refused")
+        let again = hub.prepare(connection)
+        #expect(again === session, "the same dead session, as saved")
+        #expect(again.viewModel.errorMessage == nil, "the last attempt's error came along")
+    }
+
     private func eventually(_ timeout: Double = 2, _ predicate: @MainActor () -> Bool) async -> Bool {
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {

@@ -832,3 +832,85 @@ fn a_hosts_mark_is_its_emoji_its_keys_face_or_its_initial() {
     }
     channel.close();
 }
+
+/// B512: an edit (name, address, emoji) or a key trusted since (its face)
+/// shows on the card's head and in SAVED's row as soon as Home hears it,
+/// not only once the host is added, removed or reconnected.
+#[test]
+fn an_edit_or_a_key_trusted_since_shows_at_once() {
+    let (mut app, channel, _) = phone(Params::default());
+    let host = |id: &str, name: &str, initial: &str, link: Link| Connection {
+        id: id.into(),
+        name: name.into(),
+        initial: initial.into(),
+        user: "me".into(),
+        host: format!("{name}.example.com"),
+        link,
+        ..Connection::default()
+    };
+    show(
+        &mut app,
+        &channel,
+        vec![
+            host("c-live", "alpha", "A", Link::Live),
+            host("c-saved", "beta", "B", Link::Saved),
+        ],
+    );
+    find(&mut app, "id:connection-card-beta");
+    for shown in ["alpha", "A", "beta", "B", "me@beta.example.com"] {
+        assert!(app.screen().shows(shown), "{shown}");
+    }
+
+    let mut live = host("c-live", "alpha-2", "A", Link::Live);
+    live.emoji = Some("🦊".into());
+    let mut saved = host("c-saved", "gamma", "G", Link::Saved);
+    saved.face = Some(Face {
+        side: 3,
+        cells: vec![true, false, true, false, true, false, true, false, true],
+        hue: 2,
+    });
+    show(&mut app, &channel, vec![live, saved]);
+    find(&mut app, "id:connection-card-gamma");
+    for shown in ["alpha-2", "🦊", "gamma", "me@gamma.example.com"] {
+        assert!(
+            app.screen().shows(shown),
+            "{shown} not shown: {:?}",
+            app.screen().texts()
+        );
+    }
+    for gone in ["alpha", "A", "beta", "B", "G", "me@beta.example.com"] {
+        assert!(
+            !app.screen().shows(gone),
+            "{gone} still shown: {:?}",
+            app.screen().texts()
+        );
+    }
+    channel.close();
+}
+
+/// B519: mosh that fell back to SSH (the host has no mosh-server) runs
+/// over SSH, and doesn't roam: its card says SSH, in the warning's
+/// colours, not mosh.
+#[test]
+fn mosh_that_fell_back_says_ssh() {
+    let (mut app, channel, _) = phone(Params::default());
+    let host = |id: &str, name: &str, degraded: bool| Connection {
+        id: id.into(),
+        name: name.into(),
+        initial: "M".into(),
+        user: "me".into(),
+        host: format!("{name}.example.com"),
+        mosh: true,
+        degraded,
+        link: Link::Live,
+        ..Connection::default()
+    };
+    show(&mut app, &channel, vec![host("c-fell", "fell", true)]);
+    find(&mut app, "id:connection-card-fell");
+    assert!(app.screen().shows("SSH"), "{:?}", app.screen().texts());
+    assert!(!app.screen().shows("mosh"), "{:?}", app.screen().texts());
+    show(&mut app, &channel, vec![host("c-fell", "fell", false)]);
+    find(&mut app, "text:mosh");
+    assert!(!app.screen().shows("SSH"));
+    channel.close();
+}

@@ -33,7 +33,7 @@ def plural_spec(key, en_one, zh, ja, en_other=None):
 # ---------- Brand / protocol / glyphs (identical everywhere) ----------
 for k in ["Moshpit", "Vibe Island", "MOSH", "SRTT", "REC",
           "ED25519", "ECDSA-sk", "RSA-4096", "tmux", "paste", "tmux prefix",
-          "⌘B", "＋", "22", "60000", "61000", "/usr/local/bin/mosh-server",
+          "⌘B", "＋", "22", "60000", "61000",
           "ABCdef 012 ~/ssh $", "%lldms", "%lldpt",
           # Glyphs + technical formats the compiler extracts from Text literals;
           # identical in every language by design.
@@ -220,10 +220,6 @@ add("Leaves a teal trail behind the cursor while mosh predicts ahead of the serv
     "mosh 预测领先于服务器时，光标后面留一道青色尾迹",
     "mosh がサーバーより先行して予測する間、カーソルの後ろにティールのトレイルを残します")
 add("BEHAVIOR", "行为", "動作")
-add("Keep Connections Alive", "连接保活", "接続を維持")
-add("Send keepalive pings so the server does not drop idle connections",
-    "定期发保活包，服务器就不会因为空闲把连接断掉",
-    "キープアライブを送信し、アイドル接続がサーバーに切断されないようにします")
 add("MOSH · ROAMING", "MOSH · 漫游", "MOSH · ローミング")
 add("Mosh runs over UDP and survives IP changes. If your server is behind a strict firewall, open the port range above outbound from your iPhone.",
     "Mosh 走 UDP，IP 变了也不掉线。如果服务器的防火墙很严，要让上面这段端口能从 iPhone 连通。",
@@ -237,7 +233,6 @@ add("Adaptive", "自适应", "自動調整")
 add("Always", "始终", "常に")
 add("Never", "从不", "しない")
 add("Experimental", "实验性", "実験的")
-add("Server binary", "服务器程序", "サーバーバイナリ")
 add("UDP port range", "UDP 端口范围", "UDP ポート範囲")
 add("KEYBOARD · KEYS", "键盘 · 密钥", "キーボード · キー")
 add("Shortcuts", "快捷键", "ショートカット")
@@ -413,12 +408,6 @@ add("Quiet by design", "尽量不打扰", "静けさを前提に")
 add("A question must stand for 30 seconds before any phone hears about it — answered at your desk means never announced. All waiting agents share one summary card; only the first rings. A finished turn shows the prompt it answered and only chimes if it ran three minutes or more. Parked agents stay silent.",
     "智能体的提问要等 30 秒还没人答，手机才会收到通知。在电脑前顺手答掉，手机就不会响。所有等你的智能体合成一张摘要卡，只有第一条会响铃。完成通知会带上它刚做完的那条提示词，跑满三分钟的才有提示音。闲着的智能体不发通知。",
     "問いかけは 30 秒間続いて初めて通知されます——デスクですぐ答えれば鳴りません。待機中のエージェントは 1 枚のサマリーカードを共有し、鳴るのは最初の 1 回だけ。完了通知には答えたプロンプトが載り、完了音は 3 分以上かかったターンのみ。放置中のエージェントは静かなままです。")
-# Server binary editor
-add("MOSH SERVER PATH", "MOSH SERVER 路径", "MOSH SERVER パス")
-add("The mosh-server executable on the remote host. Override if it isn't on PATH (e.g. /opt/homebrew/bin/mosh-server).",
-    "远程主机上 mosh-server 的路径。不在 PATH 里的话在这里填（例如 /opt/homebrew/bin/mosh-server）。",
-    "リモートホスト上の mosh-server 実行ファイル。PATH にない場合はここで上書きします（例: /opt/homebrew/bin/mosh-server）。")
-add("Server Binary", "服务器程序", "サーバーバイナリ")
 # UDP editor
 add("UDP PORT RANGE", "UDP 端口范围", "UDP ポート範囲")
 add("mosh binds one UDP port in this range per session. Open it outbound from your iPhone and inbound on the server (default 60000–61000).",
@@ -956,6 +945,7 @@ add("Required", "必填", "必須")
 add("Emoji", "表情", "絵文字")
 add("Shows on the host's mark in place of its key's pattern.", "主机头像上显示这个表情，不再用主机密钥生成的图案。", "ホストのアイコンに、ホスト鍵から作った模様の代わりに表示します。")
 add("One emoji, or leave it empty.", "只能填一个表情，也可以留空。", "絵文字を 1 つ入力するか、空のままにしてください。")
+add("Just the host — the user and port have their own fields.", "只填主机名或地址，用户和端口各有一栏。", "ホスト名かアドレスだけを入力してください。ユーザーとポートは別の欄です。")
 add("Only unauthenticated SOCKS5 proxies are supported. This proxies the SSH connection only — if Mosh is also enabled above, its UDP session connects directly once bootstrapped and is not proxied.",
     "仅支持免认证的 SOCKS5 代理。它只代理 SSH 连接——如果上面同时开了 Mosh，其 UDP 会话在建立后直连，不走代理。",
     "認証なしの SOCKS5 プロキシのみ対応しています。プロキシ経由になるのは SSH 接続のみです——上で Mosh も有効な場合、その UDP セッションは確立後は直接接続され、プロキシを経由しません。")
@@ -1616,7 +1606,6 @@ add("%lldpt")
 add("+")
 add("+ ")
 add("- ")
-add("/usr/local/bin/mosh-server")
 add("2 files changed")
 add("22")
 add("60000")
@@ -1837,8 +1826,6 @@ add("Larger", "放大", "大きく")
 add("Trail while predicting", "预测时显示轨迹", "予測中に軌跡を表示")
 add("mosh only", "仅 mosh", "mosh のみ")
 add("Cursor settings apply to every session.", "光标设置对所有会话生效。", "カーソルの設定はすべてのセッションに適用されます。")
-add("Keep connections alive", "保持连接", "接続を維持")
-add("Sends a keepalive so idle connections aren't dropped.", "定期发保活包，空闲时不被断开。", "キープアライブを送り、アイドル中の接続が切れないようにします。")
 add("Keyboard on open", "打开终端时弹出键盘", "開いたらキーボードを表示")
 add("Remote clipboard read", "允许远端读剪贴板", "リモートからのクリップボード読み取り")
 add("OSC 52; off answers with an empty clipboard", "OSC 52；关闭时回给远端空内容", "OSC 52。オフなら空のクリップボードを返します")

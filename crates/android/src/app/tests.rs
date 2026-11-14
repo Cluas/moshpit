@@ -404,18 +404,61 @@ fn settings_are_written_where_the_store_reads_them() {
     let settings = host.top();
     let state = host.last_post(settings);
     assert_eq!(state["op"], "settings");
-    assert_eq!(state["keepAlive"], true);
-    host.tell(json!({"ev": "set", "key": "keepAlive", "value": false}));
+    assert_eq!(state["moshByDefault"], true);
+    // Gone with its switch (B516): nothing read it.
+    assert!(state.get("keepAlive").is_none());
+    host.tell(json!({"ev": "set", "key": "moshByDefault", "value": false}));
     host.tell(json!({"ev": "set", "key": "fontSize", "value": 15.4}));
     assert_eq!(
-        host.platform.prefs.lock().unwrap()["moshpit.settings.keepAlive"],
+        host.platform.prefs.lock().unwrap()["moshpit.settings.moshByDefault"],
         "b:0"
     );
     let state = host.last_post(settings);
-    assert_eq!(state["keepAlive"], false);
+    assert_eq!(state["moshByDefault"], false);
     assert_eq!(state["fontSize"], 15.0);
+    // The terminal's pinch range, not 18 (B515).
+    host.tell(json!({"ev": "set", "key": "fontSize", "value": 24.0}));
+    assert_eq!(host.last_post(settings)["fontSize"], 24.0);
     host.tell(json!({"ev": "open", "page": "ssh-keys"}));
     assert_eq!(host.name(host.top()), "ssh-keys");
+}
+
+/// B514: the UDP range's page sends `udpRange` on Save; Android had no
+/// case for it, so the edit was refused and the range never changed. Kept
+/// now, checked again as iOS checks it.
+#[test]
+fn the_udp_range_saved_is_kept() {
+    let mut host = Host::start();
+    host.tell(json!({"ev": "settings"}));
+    let settings = host.top();
+    host.tell(json!({"ev": "set", "key": "udpRange", "value": [60010, 60020]}));
+    assert_eq!(host.last_post(settings)["udpRange"], json!([60010, 60020]));
+    assert_eq!(
+        host.platform.prefs.lock().unwrap()["moshpit.settings.udpRangeStart"],
+        "i:60010"
+    );
+    for refused in [
+        json!([61000, 60000]),
+        json!([0, 60000]),
+        json!([60000, 70000]),
+        json!([60000]),
+        json!("60000-61000"),
+    ] {
+        host.tell(json!({"ev": "set", "key": "udpRange", "value": refused}));
+        let prefs = host.platform.prefs.lock().unwrap().clone();
+        assert_eq!(
+            (
+                &*prefs["moshpit.settings.udpRangeStart"],
+                &*prefs["moshpit.settings.udpRangeEnd"]
+            ),
+            ("i:60010", "i:60020"),
+            "{refused} kept"
+        );
+    }
+    assert!(
+        host.posts(settings).is_empty(),
+        "a refused range was posted"
+    );
 }
 
 #[test]

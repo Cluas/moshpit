@@ -72,8 +72,6 @@
   "Trail on predict": "Rastro al predecir",
   "Leaves a teal trail behind the cursor while mosh predicts ahead of the server": "Deja un rastro turquesa tras el cursor mientras mosh va por delante del servidor",
   "BEHAVIOR": "COMPORTAMIENTO",
-  "Keep Connections Alive": "Mantener las conexiones activas",
-  "Send keepalive pings so the server does not drop idle connections": "Envía pings de keepalive para que el servidor no cierre las conexiones inactivas",
   "MOSH · ROAMING": "MOSH · ITINERANCIA",
   "Mosh runs over UDP and survives IP changes. If your server is behind a strict firewall, open the port range above outbound from your iPhone.": "Mosh funciona sobre UDP y sobrevive a los cambios de IP. Si tu servidor está detrás de un firewall estricto, abre el rango de puertos de arriba en salida desde tu iPhone.",
   "Mosh by default": "Mosh por omisión",
@@ -84,7 +82,6 @@
   "Always": "Siempre",
   "Never": "Nunca",
   "Experimental": "Experimental",
-  "Server binary": "Binario del servidor",
   "UDP port range": "Rango de puertos UDP",
   "KEYBOARD · KEYS": "TECLADO · CLAVES",
   "Shortcuts": "Atajos",
@@ -195,9 +192,6 @@
   "When the app isn’t running, your host sends the alert through Moshpit’s push relay. It is encrypted on your host with a key only this device holds — the relay and Apple carry ciphertext and can read none of it. Delivered even from a locked phone.": "Cuando la app no está abierta, tu host envía la alerta a través del servidor relay de Moshpit. Se cifra en tu host con una clave que solo tiene este dispositivo: el relay y Apple transportan texto cifrado y no pueden leer nada. Llega incluso con el teléfono bloqueado.",
   "Quiet by design": "Silencioso por diseño",
   "A question must stand for 30 seconds before any phone hears about it — answered at your desk means never announced. All waiting agents share one summary card; only the first rings. A finished turn shows the prompt it answered and only chimes if it ran three minutes or more. Parked agents stay silent.": "Una pregunta tiene que llevar 30 segundos sin respuesta antes de que el teléfono se entere; si la respondes desde el ordenador, nunca suena. Todos los agentes en espera comparten una sola tarjeta de resumen y solo el primero hace ruido. Un turno terminado muestra el prompt que respondió y solo suena si duró tres minutos o más. Los agentes aparcados guardan silencio.",
-  "MOSH SERVER PATH": "RUTA DE MOSH SERVER",
-  "The mosh-server executable on the remote host. Override if it isn't on PATH (e.g. /opt/homebrew/bin/mosh-server).": "El ejecutable mosh-server en el host remoto. Indícalo si no está en el PATH (p. ej., /opt/homebrew/bin/mosh-server).",
-  "Server Binary": "Binario del servidor",
   "UDP PORT RANGE": "RANGO DE PUERTOS UDP",
   "mosh binds one UDP port in this range per session. Open it outbound from your iPhone and inbound on the server (default 60000–61000).": "mosh ocupa un puerto UDP de este rango por sesión. Ábrelo en salida desde tu iPhone y en entrada en el servidor (por omisión 60000–61000).",
   "From": "Desde",
@@ -1110,8 +1104,6 @@
   "Trail while predicting": "Rastro al predecir",
   "mosh only": "solo mosh",
   "Cursor settings apply to every session.": "Los ajustes del cursor se aplican a todas las sesiones.",
-  "Keep connections alive": "Mantener conexiones activas",
-  "Sends a keepalive so idle connections aren't dropped.": "Envía un keepalive para que no se corten las conexiones inactivas.",
   "Keyboard on open": "Teclado al abrir",
   "Remote clipboard read": "Lectura remota del portapapeles",
   "OSC 52; off answers with an empty clipboard": "OSC 52; desactivado responde con el portapapeles vacío",
@@ -1159,5 +1151,6 @@
   "Setup runs on the host over a live session. Connect first, then set it up here.": "La configuración se hace en el host a través de una sesión activa. Conéctate primero y luego configúralo aquí.",
   "Emoji": "Emoji",
   "Shows on the host's mark in place of its key's pattern.": "Aparece en el icono del host en lugar del patrón de su clave.",
-  "One emoji, or leave it empty.": "Un emoji, o déjalo vacío."
+  "One emoji, or leave it empty.": "Un emoji, o déjalo vacío.",
+  "Just the host — the user and port have their own fields.": "Solo el host: el usuario y el puerto tienen sus propios campos."
 }

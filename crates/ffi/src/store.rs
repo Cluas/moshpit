@@ -1932,7 +1932,7 @@ mod tests {
                 .set("fontSize".into(), SettingValue::Int { value: 1 })
                 .is_err()
         );
-        assert_eq!(store_setting_names().len(), 30);
+        assert_eq!(store_setting_names().len(), 31);
         assert_eq!(store_app_icon("nope".into()).id, "default");
         assert_eq!(
             store_theme_palette((&TerminalTheme::nord()).into()).len(),

@@ -114,24 +114,34 @@ fn uptime(connected_at: f64, now: f64) -> String {
     }
 }
 
-/// The transport's badge: `SSH` or `mosh`.
+/// The transport's badge: `SSH` or `mosh`. mosh that fell back to SSH
+/// (the host has no mosh-server) runs over SSH and doesn't roam: `SSH`
+/// (B519), in the warning's colours ([`fell_back`]).
 fn transport(connection: &Connection) -> &'static str {
-    if connection.mosh { "mosh" } else { "SSH" }
+    if connection.mosh && !connection.degraded {
+        "mosh"
+    } else {
+        "SSH"
+    }
+}
+
+/// The connection asked for mosh and got SSH.
+fn fell_back(connection: &Connection) -> bool {
+    connection.mosh && connection.degraded
 }
 
 /// The head: the target (mark, name, transport, the line under it), ⋯,
 /// the swipe tray (Edit, Disconnect, Delete), and the identifier the
 /// host's long press finds (`home-head-<connection>`).
 fn head(connection: ReadSignal<Connection>, ctx: Ctx) -> AnyElement {
-    let (id, name, initial, face, emoji) = connection.with_untracked(|c| {
-        (
-            c.id.clone(),
-            c.name.clone(),
-            c.initial.clone(),
-            c.face.clone(),
-            c.emoji.clone(),
-        )
-    });
+    let id = connection.with_untracked(|c| c.id.clone());
+    // B512: the name and the mark follow the connection, so an edit or a
+    // key trusted since shows at once.
+    let name = computed(move || connection.with(|c| c.name.clone()));
+    // The identifiers keep the name the card was made with.
+    let named = name.get_untracked();
+    let looks =
+        computed(move || connection.with(|c| (c.initial.clone(), c.face.clone(), c.emoji.clone())));
     let now = ctx.now;
     let link = computed(move || connection.with(|c| c.link));
     let waiting = computed(move || connection.with(Connection::waiting));
@@ -147,7 +157,7 @@ fn head(connection: ReadSignal<Connection>, ctx: Ctx) -> AnyElement {
     });
     let mark = dynamic(move || {
         let status = status.get();
-        let (initial, face, emoji) = (initial.clone(), face.clone(), emoji.clone());
+        let (initial, face, emoji) = looks.get();
         untracked(move || {
             let mark = host_mark(initial).face(face).emoji(emoji);
             match status {
@@ -163,14 +173,21 @@ fn head(connection: ReadSignal<Connection>, ctx: Ctx) -> AnyElement {
         .min_w(px(0.0))
         .child(
             TextToken::Headline
-                .apply(text(name.clone()))
+                .apply(text(move || name.get()))
                 .number_of_lines(1u32)
                 .flex_shrink(1.0)
                 .text_color(move || token("foreground")),
         )
         .child(dynamic(move || {
-            let words = connection.with(transport);
-            untracked(move || badge(words).mono())
+            let (words, fell_back) = connection.with(|c| (transport(c), fell_back(c)));
+            untracked(move || {
+                let badge = badge(words).mono();
+                if fell_back {
+                    badge.variant(BadgeVariant::Warning)
+                } else {
+                    badge
+                }
+            })
         }));
     let second_line = view()
         .flex_row()
@@ -208,10 +225,9 @@ fn head(connection: ReadSignal<Connection>, ctx: Ctx) -> AnyElement {
             })
         }));
     let label = {
-        let name = name.clone();
         move || -> SharedString {
             let mut words = vec![
-                name.clone(),
+                name.get(),
                 connection.with(transport).to_owned(),
                 state_word(link.get()),
                 address.get(),
@@ -247,7 +263,7 @@ fn head(connection: ReadSignal<Connection>, ctx: Ctx) -> AnyElement {
         .duration(Duration::Instant.ms())
         .active(|s| s.bg(move || token("accent")))
         .focus_visible(|s| s.bg(move || token("accent")))
-        .test_id(&format!("connection-card-{name}"))
+        .test_id(&format!("connection-card-{named}"))
         .child(mark)
         .child(
             view()
@@ -263,7 +279,7 @@ fn head(connection: ReadSignal<Connection>, ctx: Ctx) -> AnyElement {
         .items_center()
         .pr(px(6.0))
         .child(target)
-        .child(more(connection, &name, ctx.clone()));
+        .child(more(connection, &named, ctx.clone()));
     let tray = vec![
         Action {
             title: t!("Edit…"),

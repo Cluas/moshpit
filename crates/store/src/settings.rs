@@ -160,7 +160,7 @@ pub const DEFAULT_PUSH_RELAY: &str = "https://push.moshpit.cluas.eu.org";
 /// Every setting of `AppSettings` at the app's committed `HEAD`, in its
 /// order. (Not yet here: `moshpit.settings.showHiddenFiles`, a Bool
 /// defaulting to false, in uncommitted work on the main tree.)
-pub const ALL: [Spec; 30] = [
+pub const ALL: [Spec; 31] = [
     spec(
         "fontSize",
         "moshpit.settings.fontSize",
@@ -343,11 +343,21 @@ pub const ALL: [Spec; 30] = [
         Kind::String,
         Default::String("system"),
     ),
+    // B510: the connections the person unpaired in Host Setup, which
+    // auto-care leaves unpaired (B371). Missing from this table, the Rust
+    // store refused the write and read it back empty, so with the Rust store
+    // on an Unpair lasted until the next connect, which paired again.
+    spec(
+        "hostSetupUnpaired",
+        "moshpit.settings.hostSetupUnpaired",
+        Kind::StringSet,
+        Default::Empty,
+    ),
 ];
 
 /// The settings 1.0.8 did not have: its view of what the app writes
 /// leaves them out.
-pub const SINCE_108: [&str; 1] = ["appearance"];
+pub const SINCE_108: [&str; 2] = ["appearance", "hostSetupUnpaired"];
 
 /// The setting called `name` in `AppSettings`.
 pub fn spec_named(name: &str) -> Option<&'static Spec> {
@@ -594,6 +604,18 @@ impl Settings {
         self.put("hostSetupDeclined", SettingValue::StringSet(ids));
     }
 
+    /// Connections the person unpaired in Host Setup (B371, B510).
+    pub fn host_setup_unpaired(&self) -> Vec<String> {
+        match self.get(spec_named("hostSetupUnpaired").expect("known")) {
+            SettingValue::StringSet(ids) => ids,
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn set_host_setup_unpaired(&self, ids: Vec<String>) {
+        self.put("hostSetupUnpaired", SettingValue::StringSet(ids));
+    }
+
     /// The relay every pairing uses: the constant, or in a debug build a
     /// stored loopback URL (`127.0.0.1`, `localhost`, `::1`).
     pub fn push_relay_url(&self) -> String {
@@ -750,7 +772,10 @@ mod tests {
                 Plist::String("a".into()),
             ])),
         );
-        assert_eq!(s.host_setup_declined(), vec!["b".to_owned(), "a".to_owned()]);
+        assert_eq!(
+            s.host_setup_declined(),
+            vec!["b".to_owned(), "a".to_owned()]
+        );
         let mut declined = s.host_setup_declined();
         declined.push("c".into());
         s.set_host_setup_declined(declined);
@@ -768,6 +793,29 @@ mod tests {
             Some(Plist::String("a".into())),
         );
         assert!(s.host_setup_declined().is_empty());
+    }
+
+    /// B510: an Unpair in Host Setup is kept. The app writes the set by
+    /// its key (`AppSettings.hostSetupUnpaired`); the store takes it and
+    /// reads it back, as it does the declined hosts.
+    #[test]
+    fn an_unpair_in_host_setup_is_kept() {
+        let (defaults, s) = settings();
+        let spec = spec_named("hostSetupUnpaired").expect("a setting the app writes");
+        assert_eq!(spec.key, "moshpit.settings.hostSetupUnpaired");
+        assert_eq!(s.get(spec), SettingValue::StringSet(Vec::new()));
+        assert!(s.set(spec, SettingValue::StringSet(vec!["B".into(), "A".into()])));
+        assert_eq!(
+            defaults.get("moshpit.settings.hostSetupUnpaired"),
+            Some(Plist::Array(vec![
+                Plist::String("A".into()),
+                Plist::String("B".into())
+            ]))
+        );
+        assert_eq!(
+            s.get(spec),
+            SettingValue::StringSet(vec!["A".to_owned(), "B".to_owned()])
+        );
     }
 
     #[test]

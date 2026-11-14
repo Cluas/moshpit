@@ -375,6 +375,28 @@ struct RustSessionTests {
         #expect(quiet.viewModel.errorMessage == nil)
     }
 
+    /// B513: an error nobody dismissed (a redial that failed behind Home)
+    /// belongs to that attempt; the next connect starts without it, as the
+    /// Swift path's `resetForReconnect` starts.
+    @Test("a new connect starts without the last attempt's error (B513)")
+    func newConnectDropsTheLastError() async {
+        let (driver, session, fake) = driver(ServerConnection(host: "h", username: "u"))
+        let task = await started(driver, fake)
+        driver.handle(.state(state: .connected))
+        await task.value
+        driver.handle(.state(state: .reconnecting))
+        driver.handle(.state(state: .failed(kind: .credentials,
+                                            cause: .credentials(why: .rejected(user: "u")),
+                                            log: "refused", retryable: false)))
+        #expect(session.viewModel.errorMessage == SSHError.authenticationFailed.description)
+        let retry = await started(driver, fake)
+        #expect(fake.reconnected.count == 1)
+        #expect(session.viewModel.errorMessage == nil, "the last attempt's error on the new one")
+        driver.handle(.state(state: .connected))
+        await retry.value
+        #expect(session.viewModel.errorMessage == nil)
+    }
+
     @Test("what the core's probe found is the session's: Install Assist has its command (B336)")
     func capabilitiesPublished() async throws {
         var connection = ServerConnection(host: "h", username: "u")

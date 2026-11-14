@@ -110,7 +110,7 @@ fn the_hub_shows_what_the_host_posted() {
         !app.screen().matches("id:settings-icp").unwrap(),
         "no filing off the mainland"
     );
-    for gone in ["Moshpit 1.0.9 (1) · dev", "Keep connections alive", "Blink"] {
+    for gone in ["Moshpit 1.0.9 (1) · dev", "Keyboard on open", "Blink"] {
         assert!(!app.screen().shows(gone), "{gone} is not on the hub");
     }
     channel.close();
@@ -158,8 +158,6 @@ fn each_page_shows_its_settings() {
             "connections",
             &[
                 "Connections",
-                "Keep connections alive",
-                "Sends a keepalive so idle connections aren't dropped.",
                 "Keyboard on open",
                 "Remote clipboard read",
                 "MOSH",
@@ -168,8 +166,6 @@ fn each_page_shows_its_settings() {
                 "Never",
                 "UDP ports",
                 "60000–61000",
-                "mosh-server path",
-                "/opt/homebrew/bin/mosh-server",
                 "Open the server's UDP ports in this range.",
                 "ATTACHED IMAGES",
                 "Keep",
@@ -255,7 +251,7 @@ fn the_controls_are_uikits_with_the_settings_values() {
     let (mut app, channel, natives) =
         start_observing(Screen::Settings, on("connections"), "settings");
     show(&mut app, &channel, state());
-    find(&mut app, "id:settings-server-binary");
+    find(&mut app, "id:settings-udp-range");
     let switch_on = |id: &str| {
         natives.prop(
             natives
@@ -264,7 +260,6 @@ fn the_controls_are_uikits_with_the_settings_values() {
             "on",
         )
     };
-    assert_eq!(switch_on("settings-keep-alive"), Some(json!(true)));
     assert_eq!(switch_on("settings-keyboard-on-open"), Some(json!(false)));
     assert_eq!(switch_on("settings-mosh-default"), Some(json!(true)));
     let retention = natives
@@ -334,13 +329,7 @@ fn what_the_user_does_reaches_the_host() {
             ][..],
         ),
         ("terminal", &[("settings-theme", "theme")][..]),
-        (
-            "connections",
-            &[
-                ("settings-udp-range", "udp-range"),
-                ("settings-server-binary", "server-binary"),
-            ][..],
-        ),
+        ("connections", &[("settings-udp-range", "udp-range")][..]),
         (
             "notifications",
             &[("settings-notification-info", "notification-info")][..],
@@ -367,6 +356,32 @@ fn what_the_user_does_reaches_the_host() {
         quiet(&told);
         channel.close();
     }
+}
+
+/// B515: a pinch on the terminal keeps any size from 8 to 32 points, and
+/// Settings steps from the size it shows within that same range: from a
+/// pinched 24, Smaller used to jump to 18 and Larger did nothing.
+#[test]
+fn a_pinched_size_steps_from_where_it_is() {
+    let (mut app, channel) = start(Screen::Settings, on("terminal"), "settings");
+    let told = hear(&channel);
+    let mut pinched = state();
+    pinched.font_size = 24.4;
+    show(&mut app, &channel, pinched);
+    find(&mut app, "id:settings-font-size");
+    assert!(app.screen().shows("24 pt"), "{:?}", app.screen().texts());
+    app.press("id:settings-font-smaller").unwrap();
+    assert_eq!(
+        next(&told),
+        json!({"ev": "set", "key": "fontSize", "value": 23.0})
+    );
+    app.press("id:settings-font-larger").unwrap();
+    assert_eq!(
+        next(&told),
+        json!({"ev": "set", "key": "fontSize", "value": 25.0})
+    );
+    quiet(&told);
+    channel.close();
 }
 
 #[test]
@@ -413,7 +428,7 @@ fn the_pages_controls_set_what_they_show() {
     );
     // At either end the step does nothing.
     let mut largest = state();
-    largest.font_size = 18.0;
+    largest.font_size = 32.0;
     show(&mut app, &channel, largest);
     app.press("id:settings-font-larger").ok();
     quiet(&told);
@@ -423,17 +438,17 @@ fn the_pages_controls_set_what_they_show() {
         start_observing(Screen::Settings, on("connections"), "settings");
     let told = hear(&channel);
     show(&mut app, &channel, state());
-    find(&mut app, "id:settings-server-binary");
+    find(&mut app, "id:settings-udp-range");
     let node = |name: &str, id: &str| natives.find(name, id).unwrap_or_else(|| panic!("{id}"));
     emit(
         &mut app,
-        node("moshpit/switch", "settings-keep-alive"),
+        node("moshpit/switch", "settings-keyboard-on-open"),
         "change",
-        json!(false),
+        json!(true),
     );
     assert_eq!(
         next(&told),
-        json!({"ev": "set", "key": "keepAlive", "value": false})
+        json!({"ev": "set", "key": "keyboardOnOpen", "value": true})
     );
     emit(
         &mut app,
@@ -481,15 +496,15 @@ fn a_theme_picked_while_settings_shows_reaches_its_colors() {
     let (mut app, channel, natives) =
         start_observing(Screen::Settings, on("connections"), "settings");
     show(&mut app, &channel, state());
-    find(&mut app, "id:settings-server-binary");
-    let keep_alive = natives
-        .find("moshpit/switch", "settings-keep-alive")
+    find(&mut app, "id:settings-udp-range");
+    let switch = natives
+        .find("moshpit/switch", "settings-keyboard-on-open")
         .unwrap();
-    let before = natives.prop(keep_alive, "tint");
+    let before = natives.prop(switch, "tint");
     let mut teal = state();
     teal.app_theme.accent = nsh_core::color::rgb(0x53DCC9);
     show(&mut app, &channel, teal);
-    assert_ne!(natives.prop(keep_alive, "tint"), before);
+    assert_ne!(natives.prop(switch, "tint"), before);
     channel.close();
 }
 
@@ -590,17 +605,15 @@ fn the_pages_speak_the_apps_language() {
 fn text_follows_dynamic_type_and_rows_stack_at_accessibility_sizes() {
     let (mut app, channel) = start(Screen::Settings, on("connections"), "settings");
     show(&mut app, &channel, state());
-    find(&mut app, "id:settings-server-binary");
+    find(&mut app, "id:settings-udp-range");
     let size = |app: &Headless, s: &str| app.screen().span_style(s).unwrap().font_size.0;
-    assert_eq!(size(&app, "text:Keep connections alive"), 17.0);
+    assert_eq!(size(&app, "text:Keyboard on open"), 17.0);
     app.set_environment("xxxLarge", |env| env.font_scale = 23.0 / 17.0)
         .unwrap();
-    assert_eq!(size(&app, "text:Keep connections alive"), 23.0);
+    assert_eq!(size(&app, "text:Keyboard on open"), 23.0);
     app.set_environment("AX3", |env| env.font_scale = 40.0 / 17.0)
         .unwrap();
-    for text in ["60000–61000", "/opt/homebrew/bin/mosh-server"] {
-        assert!(app.screen().shows(text), "{text}");
-    }
+    assert!(app.screen().shows("60000–61000"));
     let title = bounds(&app, "text:UDP ports");
     let value = bounds(&app, "text:60000–61000");
     assert!(
@@ -617,7 +630,7 @@ fn a_reveal_scrolls_the_list_to_a_group_or_its_end() {
             config.viewport = nsh_core::Size::new(Points(402.0), Points(500.0))
         });
     show(&mut app, &channel, state());
-    find(&mut app, "id:settings-server-binary");
+    find(&mut app, "id:settings-udp-range");
     let scrolled_to = |app: &Headless| -> Vec<f32> {
         app.screen()
             .commands()
@@ -674,7 +687,7 @@ fn a_pages_bar_sets_itself_off_from_the_rows_scrolled_under_it() {
             },
         );
         show(&mut app, &channel, state());
-        find(&mut app, "id:settings-server-binary");
+        find(&mut app, "id:settings-udp-range");
         assert_bar_follows_scrolling(&mut app, "settings-list", glass);
         channel.close();
     }
@@ -929,8 +942,6 @@ fn labels_keep_one_line() {
             .0;
         channel.close();
         let mut long = state();
-        long.mosh_server_binary =
-            "/home/somebody/.local/share/mosh/bin/mosh-server-from-a-long-prefix".into();
         long.theme.name = "A Theme With A Very Long Name Indeed".into();
         for (part, titles) in [
             (
@@ -945,23 +956,19 @@ fn labels_keep_one_line() {
                 "connections",
                 if zh {
                     &[
-                        "保持连接",
                         "打开终端时弹出键盘",
                         "允许远端读剪贴板",
                         "新连接默认用 mosh",
                         "预测回显",
                         "UDP 端口",
-                        "mosh-server 路径",
                     ][..]
                 } else {
                     &[
-                        "Keep connections alive",
                         "Keyboard on open",
                         "Remote clipboard read",
                         "Mosh for new connections",
                         "Predictive echo",
                         "UDP ports",
-                        "mosh-server path",
                     ][..]
                 },
             ),
@@ -991,4 +998,30 @@ fn labels_keep_one_line() {
             channel.close();
         }
     }
+}
+
+/// J2: the global mosh-server path was written and shown but read by
+/// nothing (each connection's own path is what mosh-server runs from), so
+/// its row is gone from Connections, and nothing on the page names it.
+#[test]
+fn connections_has_no_global_mosh_server_path() {
+    let (mut app, channel) = start(Screen::Settings, on("connections"), "settings");
+    show(&mut app, &channel, state());
+    find(&mut app, "id:settings-udp-range");
+    assert!(!app.screen().matches("id:settings-server-binary").unwrap());
+    assert!(!app.screen().shows("mosh-server path"));
+    channel.close();
+}
+
+/// B516: "Keep connections alive" was written and shown but read by
+/// nothing: the app probes a live session every 12 s whatever it says (the
+/// probe is also how a dead link is found). Its switch is gone.
+#[test]
+fn connections_has_no_keep_alive_switch() {
+    let (mut app, channel) = start(Screen::Settings, on("connections"), "settings");
+    show(&mut app, &channel, state());
+    find(&mut app, "id:settings-udp-range");
+    assert!(!app.screen().matches("id:settings-keep-alive").unwrap());
+    assert!(!app.screen().shows("Keep connections alive"));
+    channel.close();
 }

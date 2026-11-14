@@ -72,8 +72,6 @@
   "Trail on predict": "Rastro na previsão",
   "Leaves a teal trail behind the cursor while mosh predicts ahead of the server": "Deixa um rastro turquesa atrás do cursor enquanto o mosh está à frente do servidor",
   "BEHAVIOR": "COMPORTAMENTO",
-  "Keep Connections Alive": "Manter conexões ativas",
-  "Send keepalive pings so the server does not drop idle connections": "Envia pings de keepalive para o servidor não derrubar conexões ociosas",
   "MOSH · ROAMING": "MOSH · ROAMING",
   "Mosh runs over UDP and survives IP changes. If your server is behind a strict firewall, open the port range above outbound from your iPhone.": "O Mosh roda sobre UDP e sobrevive a mudanças de IP. Se o seu servidor está atrás de um firewall rígido, abra a faixa de portas acima na saída do seu iPhone.",
   "Mosh by default": "Mosh por padrão",
@@ -84,7 +82,6 @@
   "Always": "Sempre",
   "Never": "Nunca",
   "Experimental": "Experimental",
-  "Server binary": "Binário do servidor",
   "UDP port range": "Faixa de portas UDP",
   "KEYBOARD · KEYS": "TECLADO · CHAVES",
   "Shortcuts": "Atalhos",
@@ -195,9 +192,6 @@
   "When the app isn’t running, your host sends the alert through Moshpit’s push relay. It is encrypted on your host with a key only this device holds — the relay and Apple carry ciphertext and can read none of it. Delivered even from a locked phone.": "Quando o app não está aberto, seu host envia o alerta pelo relay de push do Moshpit. Ele é criptografado no seu host com uma chave que só este aparelho tem: o relay e a Apple carregam texto cifrado e não conseguem ler nada. Chega mesmo com o celular bloqueado.",
   "Quiet by design": "Silencioso de propósito",
   "A question must stand for 30 seconds before any phone hears about it — answered at your desk means never announced. All waiting agents share one summary card; only the first rings. A finished turn shows the prompt it answered and only chimes if it ran three minutes or more. Parked agents stay silent.": "Uma pergunta precisa ficar 30 segundos sem resposta antes de qualquer celular saber dela; se você responde na mesa, ela nunca toca. Todos os agentes em espera compartilham um único cartão de resumo, e só o primeiro toca. Um turno concluído mostra o prompt que ele respondeu e só toca se levou três minutos ou mais. Agentes parados ficam em silêncio.",
-  "MOSH SERVER PATH": "CAMINHO DO MOSH SERVER",
-  "The mosh-server executable on the remote host. Override if it isn't on PATH (e.g. /opt/homebrew/bin/mosh-server).": "O executável mosh-server no host remoto. Informe se ele não estiver no PATH (por exemplo, /opt/homebrew/bin/mosh-server).",
-  "Server Binary": "Binário do servidor",
   "UDP PORT RANGE": "FAIXA DE PORTAS UDP",
   "mosh binds one UDP port in this range per session. Open it outbound from your iPhone and inbound on the server (default 60000–61000).": "O mosh ocupa uma porta UDP desta faixa por sessão. Abra na saída do seu iPhone e na entrada do servidor (padrão 60000–61000).",
   "From": "De",
@@ -1110,8 +1104,6 @@
   "Trail while predicting": "Rastro ao prever",
   "mosh only": "só mosh",
   "Cursor settings apply to every session.": "Os ajustes do cursor valem para todas as sessões.",
-  "Keep connections alive": "Manter conexões ativas",
-  "Sends a keepalive so idle connections aren't dropped.": "Envia keepalive para que conexões ociosas não caiam.",
   "Keyboard on open": "Teclado ao abrir",
   "Remote clipboard read": "Leitura remota da área de transferência",
   "OSC 52; off answers with an empty clipboard": "OSC 52; desativado responde com área vazia",
@@ -1159,5 +1151,6 @@
   "Setup runs on the host over a live session. Connect first, then set it up here.": "A configuração é feita no host por uma sessão ativa. Conecte-se primeiro e depois configure-o aqui.",
   "Emoji": "Emoji",
   "Shows on the host's mark in place of its key's pattern.": "Aparece no ícone do host no lugar do padrão da chave dele.",
-  "One emoji, or leave it empty.": "Um emoji, ou deixe em branco."
+  "One emoji, or leave it empty.": "Um emoji, ou deixe em branco.",
+  "Just the host — the user and port have their own fields.": "Só o host: o usuário e a porta têm campos próprios."
 }

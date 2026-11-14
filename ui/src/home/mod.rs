@@ -760,16 +760,34 @@ fn connections_group(hosts: Memo<Vec<model::Connection>>, ctx: Ctx) -> AnyElemen
         .into_element()
 }
 
-/// SAVED: one card, a row per host that is not connected.
+/// SAVED: one card, a row per host that is not connected. Rebuilt when a
+/// row's host comes or goes or what a row shows changes (an edit, a key
+/// trusted since: B512), not on every change to the hosts.
 fn saved_group(saved: Memo<Vec<model::Connection>>, ctx: Ctx) -> AnyElement {
-    let ids = computed(move || saved.with(|s| s.iter().map(|c| c.id.clone()).collect::<Vec<_>>()));
+    let shown = computed(move || {
+        saved.with(|s| {
+            s.iter()
+                .map(|c| {
+                    (
+                        c.id.clone(),
+                        c.name.clone(),
+                        c.initial.clone(),
+                        c.face.clone(),
+                        c.emoji.clone(),
+                        c.user.clone(),
+                        c.host.clone(),
+                    )
+                })
+                .collect::<Vec<_>>()
+        })
+    });
     view()
         .w_full()
         .gap(px(8.0))
         .test_id("home-saved")
         .child(group_header(t!("Saved"), None))
         .child(dynamic(move || {
-            let _ = ids.get();
+            shown.with(|_| ());
             let hosts = saved.get_untracked();
             let ctx = ctx.clone();
             untracked(move || rows::saved_card(hosts, &ctx))

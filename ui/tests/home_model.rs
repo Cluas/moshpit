@@ -416,3 +416,42 @@ fn each_state_has_its_card_body() {
         Some(CardBody::Rows(host_rows(&live, true, AGENT)))
     );
 }
+
+/// B518: a card's "waiting" badge and the status line count what NEEDS
+/// YOU lists, no more. A hook left for a pane that has gone, a stalled
+/// attach and a herdr over a version skew each said "1 waiting" over an
+/// inbox with nothing in it to tap.
+#[test]
+fn waiting_counts_what_needs_you_lists() {
+    let agree = |connections: &[Connection], what: &str| {
+        assert_eq!(
+            connections.iter().map(Connection::waiting).sum::<usize>(),
+            needs_you(connections, AGENT).len(),
+            "{what}"
+        );
+    };
+    let mut connections = fixture();
+    agree(&connections, "the fixture");
+    assert_eq!(connections[0].waiting(), 1);
+
+    connections[1].control.as_mut().unwrap().hooks.push(hook(
+        "%99",
+        "attention",
+        Some("claude"),
+        None,
+    ));
+    agree(&connections, "a hook for a pane that has gone");
+
+    connections[0].link = Link::Stalled;
+    agree(&connections, "a stalled attach");
+    assert_eq!(connections[0].waiting(), 0);
+
+    let mut skewed = fixture();
+    skewed[0].control.as_mut().unwrap().mismatch = Some(Mismatch {
+        notice: "herdr 0.9 here, 0.8 on the server".into(),
+        restart: true,
+        restarting: false,
+    });
+    agree(&skewed, "a herdr over a version skew");
+    assert_eq!(skewed[0].waiting(), 0);
+}

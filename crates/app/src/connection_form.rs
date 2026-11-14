@@ -440,7 +440,8 @@ impl Draft {
         // Empty: `mosh-server` on PATH, the capability probe intact.
         c.mosh_server_path = non_empty(&s.mosh_server_path);
         c.use_socks_proxy = Some(s.socks);
-        c.socks_proxy_host = non_empty(&s.socks_host);
+        // Spaces round a pasted address are not the proxy's (B511).
+        c.socks_proxy_host = non_empty(s.socks_host.trim());
         c.socks_proxy_port = Some(
             screen::port(&s.socks_port, DEFAULT_PROXY_PORT)
                 .unwrap_or(DEFAULT_PROXY_PORT)

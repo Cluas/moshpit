@@ -789,12 +789,18 @@ impl Connection {
         }
     }
 
-    /// How many agents wait on this connection's human.
+    /// How many agents wait on this connection's human: its rows in NEEDS
+    /// YOU ([`needs_you`]), so the card's badge and the status line never
+    /// count one the inbox doesn't list (B518): a hook left for a pane that
+    /// has gone, a stalled attach, a herdr over a version skew.
     pub fn waiting(&self) -> usize {
-        match (&self.control, self.link.is_up()) {
-            (Some(control), true) => control.waiting(),
-            _ => 0,
+        if !lists_agents(self) {
+            return 0;
         }
+        agent_rows(self, "")
+            .iter()
+            .filter(|a| a.state == AgentState::NeedsYou)
+            .count()
     }
 }
 

@@ -195,6 +195,8 @@ struct ConnectionFormNSHTests {
         var draft = Self.blank()
         draft.name = "box"
         draft.host = "box.example.com"
+        #expect(!draft.canSave(keys: [], secrets: ConnectionSecrets(password: "p")), "no user (B517)")
+        draft.username = "me"
         #expect(!draft.canSave(keys: [], secrets: ConnectionSecrets()), "no password, which nothing asks for later")
         #expect(draft.canSave(keys: [], secrets: ConnectionSecrets(password: " ")))
         draft.port = "70000"

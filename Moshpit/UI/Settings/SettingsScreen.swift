@@ -42,7 +42,6 @@ struct SettingsScreen: View {
     @State private var showKeys = false
     @State private var pushTheme = false
     #endif
-    @State private var showServerBinaryEditor = false
     @State private var showUDPEditor = false
     @State private var showNotifInfo = false
     /// The host Set up a host opened, over its live session.
@@ -121,9 +120,6 @@ struct SettingsScreen: View {
         .preferredColorScheme(showsNSH ? nil : .dark)
         .appSheet(isPresented: $showShortcuts) { ShortcutsPage() }
         .appSheet(isPresented: $showKeys) { SSHKeysPage() }
-        .appSheet(isPresented: $showServerBinaryEditor) {
-            MoshServerBinaryEditor(settings: settings)
-        }
         .appSheet(isPresented: $showUDPEditor) {
             UDPRangeEditor(settings: settings)
         }
@@ -168,16 +164,11 @@ struct SettingsScreen: View {
 
                     FormGroup(title: "BEHAVIOR") {
                         ToggleRow(
-                            label: "Keep Connections Alive",
-                            subtitle: "Send keepalive pings so the server does not drop idle connections",
-                            identifier: "settings-keep-alive",
-                            isOn: settings.keepConnectionsAlive)
-                        .id(SettingsAnchor.behavior)
-                        ToggleRow(
                             label: "Keyboard on Open",
                             subtitle: "Raise the keyboard as soon as a terminal opens, instead of after you tap it",
                             identifier: "settings-keyboard-on-open",
                             isOn: settings.raiseKeyboardOnOpen)
+                        .id(SettingsAnchor.behavior)
                         ToggleRow(
                             label: "Remote Clipboard Read",
                             subtitle: "Let remote programs read your clipboard text (OSC 52) — off answers with an empty clipboard",
@@ -387,7 +378,6 @@ struct SettingsScreen: View {
         switch page {
         case "shortcuts": showShortcuts = true
         case "ssh-keys": showKeys = true
-        case "server-binary": showServerBinaryEditor = true
         case "udp-range": showUDPEditor = true
         case "notification-info": showNotifInfo = true
         case "host-setup":
@@ -494,7 +484,7 @@ struct SettingsScreen: View {
             .accessibilityIdentifier("settings-font")
             ValueRow(label: "Font Size", value: String(localized: "\(Int(settings.wrappedValue.fontSize))pt"))
             VStack(spacing: 10) {
-                Slider(value: settings.fontSize, in: 8...18, step: 1)
+                Slider(value: settings.fontSize, in: 8...32, step: 1)
                     .tint(Ink.accent)
                     .accessibilityIdentifier("settings-font-slider")
                 Text("ABCdef 012 ~/ssh $")
@@ -701,9 +691,6 @@ struct SettingsScreen: View {
                 .contentShape(Rectangle())
             }
             .accessibilityIdentifier("settings-predict")
-            ChevronRow(label: "Server binary",
-                       value: settings.wrappedValue.moshServerBinary) { showServerBinaryEditor = true }
-                .accessibilityIdentifier("settings-server-binary")
             ChevronRow(
                 label: "UDP port range",
                 value: "\(settings.wrappedValue.udpRangeStart) – \(settings.wrappedValue.udpRangeEnd)"
@@ -813,44 +800,6 @@ struct NotificationInfoView: View {
             }
         }
         .padding(.vertical, 6)
-    }
-}
-
-// MARK: - Mosh server-binary editor
-
-struct MoshServerBinaryEditor: View {
-    @Environment(\.dismiss) private var dismiss
-    @Bindable var settings: AppSettings
-    @State private var path = ""
-
-    var body: some View {
-        NavigationStack {
-            Form {
-                FormGroup(
-                    title: "MOSH SERVER PATH",
-                    footer: "The mosh-server executable on the remote host. Override if it isn't on PATH (e.g. /opt/homebrew/bin/mosh-server)."
-                ) {
-                    FieldRow(placeholder: "/usr/local/bin/mosh-server", text: $path, mono: true)
-                }
-            }
-            .moshpitForm()
-            .navigationTitle("Server Binary")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }.foregroundStyle(Ink.accent)
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") {
-                        let trimmed = path.trimmingCharacters(in: .whitespaces)
-                        if !trimmed.isEmpty { settings.moshServerBinary = trimmed }
-                        dismiss()
-                    }.foregroundStyle(Ink.accent).fontWeight(.semibold)
-                }
-            }
-        }
-        .darkOnlyPage()
-        .onAppear { path = settings.moshServerBinary }
     }
 }
 

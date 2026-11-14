@@ -54,7 +54,7 @@ struct SettingsRootNSHTests {
         bad["cursorShape"] = "beam"
         #expect(!NSHSurface.check(screen: screen, message: bad))
         bad = full
-        bad.removeValue(forKey: "keepAlive")
+        bad.removeValue(forKey: "keyboardOnOpen")
         #expect(!NSHSurface.check(screen: screen, message: bad))
         for anchor in SettingsAnchor.allCases {
             #expect(NSHSurface.check(screen: screen, message: ["op": "reveal", "anchor": anchor.rawValue]))
@@ -86,8 +86,10 @@ struct SettingsRootNSHTests {
         #expect(settings.fontName == "Menlo")
         #expect(SettingsModel.apply("fontSize", 12.0, to: settings))
         #expect(settings.fontSize == 12)
+        #expect(SettingsModel.apply("fontSize", 24, to: settings))
+        #expect(settings.fontSize == 24, "a pinch's size, kept (B515)")
         #expect(SettingsModel.apply("fontSize", 40, to: settings))
-        #expect(settings.fontSize == 18, "clamped to the slider's range")
+        #expect(settings.fontSize == 32, "clamped to the pinch's range")
         #expect(SettingsModel.apply("cursorShape", "bar", to: settings))
         #expect(settings.cursorShape == .bar)
         #expect(!SettingsModel.apply("cursorShape", "beam", to: settings))
@@ -99,7 +101,9 @@ struct SettingsRootNSHTests {
         #expect(!SettingsModel.apply("uploadRetentionDays", 3, to: settings))
         #expect(SettingsModel.apply("predictMode", "never", to: settings))
         #expect(settings.predictMode == .never)
-        #expect(!SettingsModel.apply("keepAlive", "yes", to: settings))
+        #expect(!SettingsModel.apply("keyboardOnOpen", "yes", to: settings))
+        // Gone with its switch (B516): nothing read it.
+        #expect(!SettingsModel.apply("keepAlive", false, to: settings))
         #expect(!SettingsModel.apply("colour", true, to: settings))
         // The UDP range's page (R18): a range the rule allows, or nothing.
         #expect(SettingsModel.apply("udpRange", [50000, 50010], to: settings))
@@ -191,25 +195,25 @@ struct SettingsRootNSHTests {
         let set = try #require(await heard.next())
         #expect(set["ev"] as? String == "set")
         #expect(set["key"] as? String == "fontSize")
-        #expect((set["value"] as? Double) == min(max(settings.fontSize.rounded() + 1, 8), 18))
+        #expect((set["value"] as? Double) == min(max(settings.fontSize.rounded() + 1, 8), 32))
     }
 
     @Test("on a real surface: Connections' switches carry the settings, and a flip reaches the host")
     func connectionsSurface() async throws {
         let (settings, _, _, _) = Self.scratch()
-        settings.keepConnectionsAlive = true
+        settings.raiseKeyboardOnOpen = true
         let (surface, heard, done) = try SettingsNSHTests.surface(running: .settings, page: "connections")
         defer { done() }
         #expect(surface.post(SettingsModel.message(Self.snapshot(settings))))
-        let keepAlive = try #require(await SettingsNSHTests.view(identified: "settings-keep-alive", in: surface)
+        let keyboard = try #require(await SettingsNSHTests.view(identified: "settings-keyboard-on-open", in: surface)
             as? UISwitch)
         await NSHTouchAudit.pressablesTakeTouches(in: surface)
-        #expect(keepAlive.isOn)
-        keepAlive.setOn(false, animated: false)
-        keepAlive.sendActions(for: .valueChanged)
+        #expect(keyboard.isOn)
+        keyboard.setOn(false, animated: false)
+        keyboard.sendActions(for: .valueChanged)
         let set = try #require(await heard.next())
         #expect(set["ev"] as? String == "set")
-        #expect(set["key"] as? String == "keepAlive")
+        #expect(set["key"] as? String == "keyboardOnOpen")
         #expect(set["value"] as? Bool == false)
     }
 }

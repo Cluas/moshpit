@@ -129,6 +129,9 @@ final class RustSessionDriver: RustSessionListener {
         if let id {
             switch state {
             case .failed, .ended:
+                // A new attempt: the last one's error is not its own, as
+                // the Swift path's `resetForReconnect` drops it (B513).
+                viewModel.errorMessage = nil
                 viewModel.adoptRustStatus(.connecting, automatic: automatic)
                 core.sessions.reconnect(session: id)
             case .connecting, .connected, .reconnecting:

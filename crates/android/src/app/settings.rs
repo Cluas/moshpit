@@ -8,6 +8,7 @@ use moshpit_ui::app_icon::Icon;
 use moshpit_ui::screen::AppearanceChoice;
 use moshpit_ui::settings::{
     Choice, Count, CursorShape, Message, Part, PredictMode, SettingsState, Swatch, TerminalTheme,
+    udp_ports,
 };
 use moshpit_ui::voice_engine::Engine;
 use serde_json::Value;
@@ -31,10 +32,9 @@ pub const FONTS: [(&str, &str); 10] = [
 ];
 
 /// The switches, by the page's keys and `AppSettings`' names.
-const FLAGS: [(&str, &str); 11] = [
+const FLAGS: [(&str, &str); 10] = [
     ("cursorBlink", "cursorBlink"),
     ("trailOnPredict", "trailOnPredict"),
-    ("keepAlive", "keepConnectionsAlive"),
     ("keyboardOnOpen", "raiseKeyboardOnOpen"),
     ("remoteClipboardRead", "remoteClipboardReadEnabled"),
     ("moshByDefault", "moshByDefault"),
@@ -113,7 +113,6 @@ pub fn state(app: &App) -> SettingsState {
         cursor_color: app.setting_string("cursorColorId"),
         cursor_blink: app.settings_flag("cursorBlink"),
         trail_on_predict: app.settings_flag("trailOnPredict"),
-        keep_alive: app.settings_flag("keepConnectionsAlive"),
         keyboard_on_open: app.settings_flag("raiseKeyboardOnOpen"),
         remote_clipboard_read: app.settings_flag("remoteClipboardReadEnabled"),
         upload_retention_days: app.setting_int("uploadRetentionDays"),
@@ -124,7 +123,6 @@ pub fn state(app: &App) -> SettingsState {
             "experimental" => PredictMode::Experimental,
             _ => PredictMode::Adaptive,
         },
-        mosh_server_binary: app.setting_string("moshServerBinary"),
         udp_range: [low, high],
         shortcuts: Count {
             count: app.shortcuts.toolbar_count() as i64,
@@ -176,7 +174,7 @@ pub fn apply(app: &App, key: &str, value: &Value) -> bool {
             let Some(size) = value.as_f64().filter(|s| s.is_finite()) else {
                 return false;
             };
-            app.settings.set_font_size(size.round().clamp(8.0, 18.0));
+            app.settings.set_font_size(size.round().clamp(8.0, 32.0));
             true
         }
         "cursorShape" => match value.as_str() {
@@ -211,6 +209,20 @@ pub fn apply(app: &App, key: &str, value: &Value) -> bool {
             }
             None => false,
         },
+        // The UDP range's Save (B514): the page checked it (`udp_ports`);
+        // checked again, as iOS checks it.
+        "udpRange" => {
+            let Some([from, to]) = value
+                .as_array()
+                .filter(|range| range.len() == 2)
+                .and_then(|range| Some([range[0].as_i64()?, range[1].as_i64()?]))
+                .and_then(|[from, to]| udp_ports(&from.to_string(), &to.to_string()).ok())
+            else {
+                return false;
+            };
+            put("udpRangeStart", SettingValue::Int(from))
+                && put("udpRangeEnd", SettingValue::Int(to))
+        }
         _ => {
             let (Some(flag), Some((_, name))) =
                 (value.as_bool(), FLAGS.iter().find(|(k, _)| *k == key))

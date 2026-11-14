@@ -232,14 +232,12 @@ pub struct SettingsState {
     pub cursor_color: String,
     pub cursor_blink: bool,
     pub trail_on_predict: bool,
-    pub keep_alive: bool,
     pub keyboard_on_open: bool,
     pub remote_clipboard_read: bool,
     /// Days uploads stay on the server: 1, 7, or 0 for ever.
     pub upload_retention_days: i64,
     pub mosh_by_default: bool,
     pub predict_mode: PredictMode,
-    pub mosh_server_binary: String,
     /// The UDP port range, first and last.
     pub udp_range: [i64; 2],
     /// Shortcuts on the terminal's bar, of how many fit.
@@ -375,7 +373,6 @@ pub enum Page {
     Theme,
     Shortcuts,
     SshKeys,
-    ServerBinary,
     UdpRange,
     NotificationInfo,
     HostSetup,
@@ -390,13 +387,12 @@ pub enum Page {
 
 impl Page {
     /// Every one.
-    pub const ALL: [Page; 16] = [
+    pub const ALL: [Page; 15] = [
         Page::Accent,
         Page::AppIcon,
         Page::Theme,
         Page::Shortcuts,
         Page::SshKeys,
-        Page::ServerBinary,
         Page::UdpRange,
         Page::NotificationInfo,
         Page::HostSetup,
@@ -417,7 +413,6 @@ impl Page {
             Page::Theme => "theme",
             Page::Shortcuts => "shortcuts",
             Page::SshKeys => "ssh-keys",
-            Page::ServerBinary => "server-binary",
             Page::UdpRange => "udp-range",
             Page::NotificationInfo => "notification-info",
             Page::HostSetup => "host-setup",
@@ -452,7 +447,6 @@ pub enum Setting {
     CursorColor(String),
     CursorBlink(bool),
     TrailOnPredict(bool),
-    KeepAlive(bool),
     KeyboardOnOpen(bool),
     RemoteClipboardRead(bool),
     UploadRetentionDays(i64),
@@ -478,7 +472,6 @@ impl Setting {
             Setting::CursorColor(id) => ("cursorColor", json!(id)),
             Setting::CursorBlink(on) => ("cursorBlink", json!(on)),
             Setting::TrailOnPredict(on) => ("trailOnPredict", json!(on)),
-            Setting::KeepAlive(on) => ("keepAlive", json!(on)),
             Setting::KeyboardOnOpen(on) => ("keyboardOnOpen", json!(on)),
             Setting::RemoteClipboardRead(on) => ("remoteClipboardRead", json!(on)),
             Setting::UploadRetentionDays(days) => ("uploadRetentionDays", json!(days)),
@@ -506,9 +499,10 @@ pub struct ScreenProps {
 /// The upload retention's choices, in the segmented control's order.
 const RETENTION: [i64; 3] = [1, 7, 0];
 
-/// The terminal font's sizes, in points.
+/// The terminal font's sizes, in points: the range a pinch on the terminal
+/// keeps (B515), so the steps go on from a pinched size.
 const FONT_MIN: f64 = 8.0;
-const FONT_MAX: f64 = 18.0;
+const FONT_MAX: f64 = 32.0;
 
 /// A page of Settings: the hub, a page it opens, or a page the host pushes
 /// on top: for one of the hub's rows, or one of those pages opens on the
@@ -1845,15 +1839,6 @@ fn connections(state: State, tell: &Tell, anchors: Anchors) -> Vec<AnyElement> {
         .row(toggle(
             state,
             tell,
-            t!("Keep connections alive"),
-            Some(t!("Sends a keepalive so idle connections aren't dropped.")),
-            |s| s.keep_alive,
-            Setting::KeepAlive,
-            "settings-keep-alive",
-        ))
-        .row(toggle(
-            state,
-            tell,
             t!("Keyboard on open"),
             None,
             |s| s.keyboard_on_open,
@@ -1905,22 +1890,6 @@ fn connections(state: State, tell: &Tell, anchors: Anchors) -> Vec<AnyElement> {
                 .chevron()
                 .on_press(open(tell, Page::UdpRange))
                 .test_id("settings-udp-range"),
-        )
-        .row(
-            row(t!("mosh-server path"))
-                .value_with(move || {
-                    let path = state.read(|s| s.mosh_server_binary.clone());
-                    if path.is_empty() {
-                        t!("Automatic").into()
-                    } else {
-                        path.into()
-                    }
-                })
-                .mono_value()
-                .stacked(|| true)
-                .chevron()
-                .on_press(open(tell, Page::ServerBinary))
-                .test_id("settings-server-binary"),
         )
         .footer(t!("Open the server's UDP ports in this range."))
         .test_id("settings-mosh-group");
@@ -2111,13 +2080,11 @@ mod tests {
             cursor_color: "teal".into(),
             cursor_blink: true,
             trail_on_predict: true,
-            keep_alive: true,
             keyboard_on_open: false,
             remote_clipboard_read: false,
             upload_retention_days: 7,
             mosh_by_default: true,
             predict_mode: PredictMode::Adaptive,
-            mosh_server_binary: "/opt/homebrew/bin/mosh-server".into(),
             udp_range: [60000, 61000],
             shortcuts: Count {
                 count: 9,
@@ -2192,7 +2159,7 @@ mod tests {
                 "teal".to_owned(),
             ),
             (with("colour", json!(1)), "colour".to_owned()),
-            (without("keepAlive"), "keepAlive".to_owned()),
+            (without("keyboardOnOpen"), "keyboardOnOpen".to_owned()),
             (without("version"), "version".to_owned()),
             (
                 r#"{"op":"reveal","anchor":"top"}"#.to_owned(),
@@ -2215,8 +2182,8 @@ mod tests {
             json!({"ev": "open", "page": "whisper-model"})
         );
         assert_eq!(
-            Setting::KeepAlive(false).event(),
-            json!({"ev": "set", "key": "keepAlive", "value": false})
+            Setting::KeyboardOnOpen(false).event(),
+            json!({"ev": "set", "key": "keyboardOnOpen", "value": false})
         );
         assert_eq!(
             Setting::CursorShape(CursorShape::Bar).event(),

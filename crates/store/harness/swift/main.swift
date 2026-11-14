@@ -104,7 +104,8 @@ let settingNames = ["fontSize", "themeId", "appThemeId", "appIconId", "fontName"
                     "moshServerBinary", "udpRangeStart", "udpRangeEnd", "notificationsEnabled", "hostSetupDeclined",
                     "pushRelayURL", "liveActivityEnabled", "attentionSoundEnabled", "lockScreenDetailEnabled",
                     "raiseKeyboardOnOpen", "remoteClipboardReadEnabled", "uploadRetentionDays", "voiceInputEnabled",
-                    "voiceInputLocaleId", "voiceEngine", "whisperLanguage", "whisperModelId", "appearance"]
+                    "voiceInputLocaleId", "voiceEngine", "whisperLanguage", "whisperModelId", "appearance",
+                    "hostSetupUnpaired"]
 
 func settingValue(_ s: AppSettings, _ name: String, _ m: Minted) -> String {
     func b(_ v: Bool) -> String { "b" + flag(v) }
@@ -128,6 +129,7 @@ func settingValue(_ s: AppSettings, _ name: String, _ m: Minted) -> String {
     case "udpRangeEnd": return i(s.udpRangeEnd)
     case "notificationsEnabled": return b(s.notificationsEnabled)
     case "hostSetupDeclined": return "a" + sortedHexSet(Array(s.hostSetupDeclined), m)
+    case "hostSetupUnpaired": return "a" + sortedHexSet(Array(s.hostSetupUnpaired), m)
     case "pushRelayURL": return t(s.pushRelayURL)
     case "liveActivityEnabled": return b(s.liveActivityEnabled)
     case "attentionSoundEnabled": return b(s.attentionSoundEnabled)
@@ -168,6 +170,9 @@ func putSetting(_ s: AppSettings, _ name: String, _ token: Substring) {
     case "hostSetupDeclined":
         let items = (try? JSONSerialization.jsonObject(with: Data(text.utf8))) as? [Any] ?? []
         s.hostSetupDeclined = Set(items.compactMap { $0 as? String })
+    case "hostSetupUnpaired":
+        let items = (try? JSONSerialization.jsonObject(with: Data(text.utf8))) as? [Any] ?? []
+        s.hostSetupUnpaired = Set(items.compactMap { $0 as? String })
     case "pushRelayURL": s.pushRelayURL = text
     case "liveActivityEnabled": s.liveActivityEnabled = bool
     case "attentionSoundEnabled": s.attentionSoundEnabled = bool

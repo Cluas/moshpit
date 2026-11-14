@@ -1389,6 +1389,7 @@ mod tests {
         let mut d = record();
         d.name = "box".into();
         d.host = "h".into();
+        d.username = "me".into();
         let fresh: ConnectionRecord =
             (&ServerConnection::new(Uuid::new_v4(), moshpit_seal::foundation::date::Date(0.0)))
                 .into();

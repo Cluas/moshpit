@@ -5690,6 +5690,12 @@ final class SessionHub {
             case .connecting, .connected, .reconnecting: isDead = false
             }
             if !isDead || existing.connection == connection {
+                // A dead session is about to start again: the error its last
+                // attempt left (one nobody dismissed, a redial that failed
+                // behind Home) is history, not this attempt's. Kept, Home's
+                // card showed it the moment Connect was tapped, and its OK
+                // disconnected the attempt just started (B513).
+                if isDead { existing.viewModel.errorMessage = nil }
                 return existing
             }
         }

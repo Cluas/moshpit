@@ -108,6 +108,7 @@ const UDP: (i64, i64) = (60000, 61000);
 fn named(mut draft: Draft) -> Draft {
     draft.fields.name = "box".to_owned();
     draft.fields.host = "box.example.com".to_owned();
+    draft.fields.username = "me".to_owned();
     draft
 }
 
@@ -286,6 +287,7 @@ fn saving_a_pasted_key_connection_as_password_with_no_password_is_refused() {
     let mut saved = blank();
     saved.name = "box".to_owned();
     saved.host = "box.example.com".to_owned();
+    saved.username = "me".to_owned();
     saved.auth_method = AuthMethod::Key;
     saved.keychain_ref = Some("moshpit.secret.r40b-own".to_owned());
     let mut draft = Draft::of(&saved);
@@ -527,6 +529,7 @@ fn a_port_is_a_whole_number_from_1_to_65535_and_save_waits_for_one() {
 
     draft.fields.port = " 2222 ".to_owned();
     draft.fields.socks = true;
+    draft.fields.socks_host = "127.0.0.1".to_owned();
     draft.fields.socks_port = "99999".to_owned();
     assert!(draft.proxy_port_is_wrong() && !draft.can_save(&[]));
     draft.fields.socks_port = String::new();
@@ -570,6 +573,7 @@ fn a_connection_saves_only_with_something_to_sign_in_with() {
     let mut pasted = blank();
     pasted.name = "box".to_owned();
     pasted.host = "box.example.com".to_owned();
+    pasted.username = "me".to_owned();
     pasted.auth_method = AuthMethod::Key;
     pasted.keychain_ref = Some("moshpit.secret.own".to_owned());
     let mut kept = Draft::of(&pasted);
@@ -803,6 +807,7 @@ fn a_save_that_leaves_the_connections_own_item_unnamed_releases_it() {
     let mut saved = blank();
     saved.name = "box".to_owned();
     saved.host = "box.example.com".to_owned();
+    saved.username = "me".to_owned();
     saved.auth_method = AuthMethod::Password;
     saved.keychain_ref = Some("moshpit.secret.own".to_owned());
 
@@ -830,6 +835,7 @@ fn a_save_that_leaves_the_connections_own_item_unnamed_releases_it() {
     let mut on_key = using(&key);
     on_key.name = "box".to_owned();
     on_key.host = "box.example.com".to_owned();
+    on_key.username = "me".to_owned();
     let mut draft = Draft::of(&on_key);
     draft.pick_key(None);
     assert!(draft.set("auth", &json!("password")));
@@ -865,6 +871,7 @@ fn a_save_pointing_at_another_host_or_port_is_a_move() {
     let mut saved = blank();
     saved.name = "box".to_owned();
     saved.host = "box.example.com".to_owned();
+    saved.username = "me".to_owned();
     saved.auth_method = AuthMethod::Password;
     saved.keychain_ref = Some("moshpit.secret.own".to_owned());
     let plan = |edit: &dyn Fn(&mut Draft)| {
@@ -889,4 +896,41 @@ fn a_save_pointing_at_another_host_or_port_is_a_move() {
         .save_plan(None, blank, &[], UDP, || FRESH.to_owned())
         .unwrap();
     assert!(!added.moved);
+}
+
+/// B511: a proxy's host is saved without the spaces round it (a pasted
+/// `127.0.0.1 ` was looked up as typed and never answered), and with the
+/// proxy on and no host the draft doesn't save at all.
+#[test]
+fn a_proxys_host_is_trimmed_and_required() {
+    let mut draft = Draft::of(&studio());
+    assert!(draft.set("socksHost", &json!("  127.0.0.1 ")));
+    let saved = draft.applied(&studio(), UDP);
+    assert_eq!(saved.socks_proxy_host.as_deref(), Some("127.0.0.1"));
+    assert_eq!(saved.use_socks_proxy, Some(true));
+    assert!(draft.set("socksHost", &json!("   ")));
+    assert!(!draft.can_save(&[]), "the proxy on with no host saved");
+    assert!(draft.set("socks", &json!(false)));
+    assert!(draft.can_save(&[]), "a proxy turned off asks for no host");
+}
+
+/// B517: Save waits for a host that is just a host and for a user; what
+/// is saved is trimmed.
+#[test]
+fn a_host_is_just_a_host_and_a_user_is_needed() {
+    let mut draft = named(Draft::new(false));
+    draft.set_given(PASSWORD);
+    assert!(draft.can_save(&[]));
+    for pasted in ["dev@box", "ssh://box", "box:2222", "[::1]", "my box"] {
+        draft.fields.host = pasted.to_owned();
+        assert!(!draft.can_save(&[]), "{pasted} saved");
+    }
+    draft.fields.host = " 2001:db8::7 ".to_owned();
+    assert!(draft.can_save(&[]));
+    draft.fields.username = "  ".to_owned();
+    assert!(!draft.can_save(&[]), "saved with no user");
+    draft.fields.username = " dev ".to_owned();
+    assert!(draft.can_save(&[]));
+    let saved = draft.applied(&blank(), UDP);
+    assert_eq!((&*saved.host, &*saved.username), ("2001:db8::7", "dev"));
 }

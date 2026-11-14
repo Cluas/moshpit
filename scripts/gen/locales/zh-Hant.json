@@ -72,8 +72,6 @@
   "Trail on predict": "預測拖尾",
   "Leaves a teal trail behind the cursor while mosh predicts ahead of the server": "mosh 的預測領先伺服器時，游標後面會留一道青色尾跡",
   "BEHAVIOR": "行為",
-  "Keep Connections Alive": "連線保活",
-  "Send keepalive pings so the server does not drop idle connections": "定期送出保活封包，伺服器就不會因為閒置而切斷連線",
   "MOSH · ROAMING": "MOSH · 漫遊",
   "Mosh runs over UDP and survives IP changes. If your server is behind a strict firewall, open the port range above outbound from your iPhone.": "Mosh 走 UDP，IP 變了也不會斷線。如果伺服器的防火牆很嚴格，要讓上面這段連接埠能從 iPhone 連得到。",
   "Mosh by default": "預設使用 Mosh",
@@ -84,7 +82,6 @@
   "Always": "一律",
   "Never": "永不",
   "Experimental": "實驗性",
-  "Server binary": "伺服器程式",
   "UDP port range": "UDP 連接埠範圍",
   "KEYBOARD · KEYS": "鍵盤 · 金鑰",
   "Shortcuts": "快速鍵",
@@ -195,9 +192,6 @@
   "When the app isn’t running, your host sends the alert through Moshpit’s push relay. It is encrypted on your host with a key only this device holds — the relay and Apple carry ciphertext and can read none of it. Delivered even from a locked phone.": "App 沒在執行時，你的主機經 Moshpit 的推播服務把通知送過來。內容在主機上就用只有這部裝置才有的金鑰加密，推播服務和 Apple 經手的都是密文，一個字也讀不到。鎖定畫面時也收得到。",
   "Quiet by design": "盡量不打擾",
   "A question must stand for 30 seconds before any phone hears about it — answered at your desk means never announced. All waiting agents share one summary card; only the first rings. A finished turn shows the prompt it answered and only chimes if it ran three minutes or more. Parked agents stay silent.": "智能體的提問要等 30 秒還沒人回答，手機才會收到通知。在電腦前順手答掉，手機就不會響。所有在等你的智能體合成一張摘要卡，只有第一則會響鈴。完成通知會帶上它剛做完的那條提示詞，跑滿三分鐘的才有提示音。閒置的智能體不會發通知。",
-  "MOSH SERVER PATH": "MOSH SERVER 路徑",
-  "The mosh-server executable on the remote host. Override if it isn't on PATH (e.g. /opt/homebrew/bin/mosh-server).": "遠端主機上 mosh-server 的路徑。不在 PATH 裡的話在這裡填（例如 /opt/homebrew/bin/mosh-server）。",
-  "Server Binary": "伺服器程式",
   "UDP PORT RANGE": "UDP 連接埠範圍",
   "mosh binds one UDP port in this range per session. Open it outbound from your iPhone and inbound on the server (default 60000–61000).": "每個 mosh 工作階段會在這段範圍裡占一個 UDP 連接埠。伺服器要開放進站，iPhone 這邊要開放出站（預設 60000–61000）。",
   "From": "起",
@@ -1110,8 +1104,6 @@
   "Trail while predicting": "預測時顯示軌跡",
   "mosh only": "僅限 mosh",
   "Cursor settings apply to every session.": "游標設定對所有工作階段生效。",
-  "Keep connections alive": "保持連線",
-  "Sends a keepalive so idle connections aren't dropped.": "定期送出保活封包，閒置時不會被切斷。",
   "Keyboard on open": "打開終端機時顯示鍵盤",
   "Remote clipboard read": "允許遠端讀取剪貼簿",
   "OSC 52; off answers with an empty clipboard": "OSC 52；關閉時回給遠端空的內容",
@@ -1159,5 +1151,6 @@
   "Setup runs on the host over a live session. Connect first, then set it up here.": "設定要透過連線中的工作階段在主機上進行。先連上，再回來設定。",
   "Emoji": "表情符號",
   "Shows on the host's mark in place of its key's pattern.": "主機頭像上顯示這個表情符號，不再用主機金鑰產生的圖案。",
-  "One emoji, or leave it empty.": "只能填一個表情符號，也可以留空。"
+  "One emoji, or leave it empty.": "只能填一個表情符號，也可以留空。",
+  "Just the host — the user and port have their own fields.": "只填主機名稱或位址，使用者和連接埠各有一欄。"
 }

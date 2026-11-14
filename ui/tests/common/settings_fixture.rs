@@ -40,13 +40,11 @@ pub fn state() -> SettingsState {
         cursor_color: "white".into(),
         cursor_blink: false,
         trail_on_predict: true,
-        keep_alive: true,
         keyboard_on_open: false,
         remote_clipboard_read: false,
         upload_retention_days: 7,
         mosh_by_default: true,
         predict_mode: PredictMode::Never,
-        mosh_server_binary: "/opt/homebrew/bin/mosh-server".into(),
         udp_range: [60000, 61000],
         shortcuts: Count {
             count: 9,

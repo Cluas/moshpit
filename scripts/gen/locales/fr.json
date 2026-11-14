@@ -72,8 +72,6 @@
   "Trail on predict": "Traînée de prédiction",
   "Leaves a teal trail behind the cursor while mosh predicts ahead of the server": "Laisse une traînée turquoise derrière le curseur tant que mosh devance le serveur",
   "BEHAVIOR": "COMPORTEMENT",
-  "Keep Connections Alive": "Maintenir les connexions",
-  "Send keepalive pings so the server does not drop idle connections": "Envoie des pings keepalive pour que le serveur ne coupe pas les connexions inactives",
   "MOSH · ROAMING": "MOSH · ITINÉRANCE",
   "Mosh runs over UDP and survives IP changes. If your server is behind a strict firewall, open the port range above outbound from your iPhone.": "Mosh fonctionne en UDP et survit aux changements d’IP. Si votre serveur est derrière un pare-feu strict, ouvrez la plage de ports ci-dessus en sortie depuis votre iPhone.",
   "Mosh by default": "Mosh par défaut",
@@ -84,7 +82,6 @@
   "Always": "Toujours",
   "Never": "Jamais",
   "Experimental": "Expérimental",
-  "Server binary": "Exécutable serveur",
   "UDP port range": "Plage de ports UDP",
   "KEYBOARD · KEYS": "CLAVIER · CLÉS",
   "Shortcuts": "Raccourcis",
@@ -195,9 +192,6 @@
   "When the app isn’t running, your host sends the alert through Moshpit’s push relay. It is encrypted on your host with a key only this device holds — the relay and Apple carry ciphertext and can read none of it. Delivered even from a locked phone.": "Quand l’app n’est pas ouverte, votre hôte envoie l’alerte via le relais push de Moshpit. Elle est chiffrée sur votre hôte avec une clé que seul cet appareil détient : le relais et Apple ne transportent que du texte chiffré et ne peuvent rien en lire. Livrée même sur un iPhone verrouillé.",
   "Quiet by design": "Discret par conception",
   "A question must stand for 30 seconds before any phone hears about it — answered at your desk means never announced. All waiting agents share one summary card; only the first rings. A finished turn shows the prompt it answered and only chimes if it ran three minutes or more. Parked agents stay silent.": "Une question doit rester sans réponse pendant 30 secondes avant qu’un iPhone en entende parler ; répondue depuis votre bureau, elle ne sonne jamais. Tous les agents en attente partagent une seule carte récapitulative, et seul le premier sonne. Un tour terminé affiche le prompt auquel il a répondu et ne sonne que s’il a duré trois minutes ou plus. Les agents en pause restent silencieux.",
-  "MOSH SERVER PATH": "CHEMIN DE MOSH SERVER",
-  "The mosh-server executable on the remote host. Override if it isn't on PATH (e.g. /opt/homebrew/bin/mosh-server).": "L’exécutable mosh-server sur l’hôte distant. À renseigner s’il n’est pas dans le PATH (par ex. /opt/homebrew/bin/mosh-server).",
-  "Server Binary": "Exécutable serveur",
   "UDP PORT RANGE": "PLAGE DE PORTS UDP",
   "mosh binds one UDP port in this range per session. Open it outbound from your iPhone and inbound on the server (default 60000–61000).": "mosh occupe un port UDP de cette plage par session. Ouvrez-la en sortie depuis votre iPhone et en entrée sur le serveur (par défaut 60000–61000).",
   "From": "De",
@@ -1110,8 +1104,6 @@
   "Trail while predicting": "Traînée pendant la prédiction",
   "mosh only": "mosh uniquement",
   "Cursor settings apply to every session.": "Les réglages du curseur s’appliquent à toutes les sessions.",
-  "Keep connections alive": "Maintenir les connexions",
-  "Sends a keepalive so idle connections aren't dropped.": "Envoie un keepalive pour que les connexions inactives ne soient pas coupées.",
   "Keyboard on open": "Clavier à l’ouverture",
   "Remote clipboard read": "Lecture distante du presse-papiers",
   "OSC 52; off answers with an empty clipboard": "OSC 52 ; désactivé, répond avec un presse-papiers vide",
@@ -1159,5 +1151,6 @@
   "Setup runs on the host over a live session. Connect first, then set it up here.": "La configuration se fait sur l’hôte, par une session active. Connectez-vous d’abord, puis configurez-le ici.",
   "Emoji": "Emoji",
   "Shows on the host's mark in place of its key's pattern.": "S’affiche sur l’icône de l’hôte à la place du motif de sa clé.",
-  "One emoji, or leave it empty.": "Un emoji, ou laissez vide."
+  "One emoji, or leave it empty.": "Un emoji, ou laissez vide.",
+  "Just the host — the user and port have their own fields.": "Uniquement l’hôte : l’utilisateur et le port ont leurs propres champs."
 }

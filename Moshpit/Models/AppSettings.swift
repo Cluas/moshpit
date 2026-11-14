@@ -198,6 +198,10 @@ final class AppSettings {
 
     // MARK: BEHAVIOR
 
+    /// Kept as stored, read by nothing (B516): a live session is probed
+    /// every 12 s whatever this says (the probe is how a dead link is
+    /// found). Its switch is gone; the key stays, unmigrated, so an older
+    /// build still reads it harmlessly.
     var keepConnectionsAlive: Bool {
         get { access(keyPath: \.keepConnectionsAlive); return get("moshpit.settings.keepAlive", true) }
         set { withMutation(keyPath: \.keepConnectionsAlive) { put(newValue, "moshpit.settings.keepAlive") } }
@@ -218,6 +222,9 @@ final class AppSettings {
         set { withMutation(keyPath: \.predictMode) { put(newValue.rawValue, "moshpit.settings.predictMode") } }
     }
 
+    /// Kept as stored, read by nothing (R18 E): the setting that reaches
+    /// mosh-server is each connection's own `moshServerPath`. Its row is gone;
+    /// the key stays, unmigrated, so an older build still reads it harmlessly.
     var moshServerBinary: String {
         get { access(keyPath: \.moshServerBinary); return get("moshpit.settings.moshServerBinary", "/opt/homebrew/bin/mosh-server") }
         set { withMutation(keyPath: \.moshServerBinary) { put(newValue, "moshpit.settings.moshServerBinary") } }

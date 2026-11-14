@@ -24921,6 +24921,58 @@
         }
       }
     },
+    "Just the host — the user and port have their own fields.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nur der Host – Benutzer und Port haben eigene Felder."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Solo el host: el usuario y el puerto tienen sus propios campos."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Uniquement l’hôte : l’utilisateur et le port ont leurs propres champs."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ホスト名かアドレスだけを入力してください。ユーザーとポートは別の欄です。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "호스트 이름이나 주소만 입력하세요. 사용자와 포트는 각자의 칸에 입력합니다."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Só o host: o usuário e a porta têm campos próprios."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "只填主机名或地址，用户和端口各有一栏。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "只填主機名稱或位址，使用者和連接埠各有一欄。"
+          }
+        }
+      }
+    },
     "KEY DETAILS": {
       "localizations": {
         "de": {

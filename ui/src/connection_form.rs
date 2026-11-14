@@ -254,6 +254,60 @@ pub fn proxy_port_is_wrong(state: &FormState) -> bool {
     state.socks && port(&state.socks_port, DEFAULT_PROXY_PORT).is_none()
 }
 
+/// What is wrong with the host field, when something is (B517).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HostProblem {
+    /// Nothing, or spaces.
+    Empty,
+    /// More than a host: ssh's own syntax pasted whole (`dev@box`,
+    /// `ssh://box`, `box:2222`, `[2001:db8::1]`) or spaces inside. Saved,
+    /// it never resolved; the user and the port have their own fields.
+    NotJustAHost,
+}
+
+impl HostProblem {
+    /// What the field says under it.
+    fn words(self) -> String {
+        match self {
+            HostProblem::Empty => required_words(),
+            HostProblem::NotJustAHost => {
+                t!("Just the host — the user and port have their own fields.")
+            }
+        }
+    }
+}
+
+/// What is wrong with `host` as typed, if anything: a name or an address
+/// (IPv6 written bare, `2001:db8::1`), spaces round it ignored.
+pub fn host_problem(host: &str) -> Option<HostProblem> {
+    let host = host.trim();
+    if host.is_empty() {
+        return Some(HostProblem::Empty);
+    }
+    let pasted = host
+        .chars()
+        .any(|c| c.is_whitespace() || matches!(c, '@' | '/' | '[' | ']'))
+        // One colon is a port after the host; two or more, an IPv6 address.
+        || host.matches(':').count() == 1;
+    pasted.then_some(HostProblem::NotJustAHost)
+}
+
+/// The host field holds no host, or more than one ([`host_problem`]).
+pub fn host_is_wrong(state: &FormState) -> bool {
+    host_problem(&state.host).is_some()
+}
+
+/// No user to sign in as (B517): it used to save, and every sign-in failed.
+pub fn user_is_wrong(state: &FormState) -> bool {
+    state.username.trim().is_empty()
+}
+
+/// The proxy is on and its host is empty, or spaces (B511): saved, every
+/// connect went direct, past the proxy the person turned on.
+pub fn proxy_host_is_wrong(state: &FormState) -> bool {
+    state.socks && state.socks_host.trim().is_empty()
+}
+
 /// Why the host's Save failed (`{"op": "failed", …}`, §6.5): the form
 /// shows it in a banner under the bar, its contents kept, until the person
 /// edits, saves again or closes it.
@@ -399,9 +453,11 @@ impl Field {
 /// ([`has_credential`]).
 pub fn can_save(state: &FormState) -> bool {
     !state.name.trim().is_empty()
-        && !state.host.trim().is_empty()
+        && !host_is_wrong(state)
+        && !user_is_wrong(state)
         && !port_is_wrong(state)
         && !proxy_port_is_wrong(state)
+        && !proxy_host_is_wrong(state)
         && !emoji_is_wrong(state)
         && has_credential(state)
 }
@@ -530,8 +586,10 @@ impl Draft {
 struct Checked {
     name: bool,
     host: bool,
+    user: bool,
     port: bool,
     proxy_port: bool,
+    proxy_host: bool,
     emoji: bool,
 }
 
@@ -587,6 +645,8 @@ pub fn ConnectionFormScreen(props: ScreenProps) -> impl IntoElement {
                 checked.update(|c| {
                     c.port |= port_is_wrong(&next);
                     c.proxy_port |= proxy_port_is_wrong(&next);
+                    c.proxy_host |= proxy_host_is_wrong(&next);
+                    c.host |= host_problem(&next.host) == Some(HostProblem::NotJustAHost);
                 });
                 state.set(Some(*next));
                 generation.update(|g| *g += 1);
@@ -823,13 +883,13 @@ fn connection(draft: &Draft) -> AnyElement {
                     .on_change(draft.setter(Field::Host))
                     .on_blur(leave(draft, |c| c.host = true)),
             )
-            .error(error_once(
-                state,
-                checked,
-                |c| c.host,
-                |s| s.host.trim().is_empty(),
-                required_words,
-            ))
+            .error(move || {
+                checked
+                    .with(|c| c.host)
+                    .then(|| state.with(|s| s.as_ref().and_then(|s| host_problem(&s.host))))
+                    .flatten()
+                    .map(|problem| SharedString::from(problem.words()))
+            })
             .test_id("connection-form-host"),
             Inset::Content,
         )
@@ -862,8 +922,16 @@ fn connection(draft: &Draft) -> AnyElement {
                     .default_value(start(draft, |s| s.username.clone()))
                     .placeholder("root")
                     .element_ref(&user)
-                    .on_change(draft.setter(Field::Username)),
+                    .on_change(draft.setter(Field::Username))
+                    .on_blur(leave(draft, |c| c.user = true)),
             )
+            .error(error_once(
+                state,
+                checked,
+                |c| c.user,
+                user_is_wrong,
+                required_words,
+            ))
             .test_id("connection-form-username"),
             Inset::Content,
         )
@@ -1156,8 +1224,16 @@ fn proxy_rows(draft: &Draft) -> Vec<AnyElement> {
                 .placeholder("127.0.0.1")
                 .element_ref(&host)
                 .next(&port)
-                .on_change(draft.setter(Field::SocksHost)),
+                .on_change(draft.setter(Field::SocksHost))
+                .on_blur(leave(draft, |c| c.proxy_host = true)),
         )
+        .error(error_once(
+            draft.state,
+            draft.checked,
+            |c| c.proxy_host,
+            proxy_host_is_wrong,
+            required_words,
+        ))
         .test_id("connection-form-proxy-host")
         .into_element(),
         field(

@@ -170,13 +170,11 @@ struct SettingsSnapshot: Equatable {
     var cursorColor: String
     var cursorBlink: Bool
     var trailOnPredict: Bool
-    var keepAlive: Bool
     var keyboardOnOpen: Bool
     var remoteClipboardRead: Bool
     var uploadRetentionDays: Int
     var moshByDefault: Bool
     var predictMode: PredictMode
-    var moshServerBinary: String
     var udpRange: [Int]
     var shortcuts: Int
     var keys: Int
@@ -226,13 +224,11 @@ struct SettingsSnapshot: Equatable {
         cursorColor = settings.cursorColorId
         cursorBlink = settings.cursorBlink
         trailOnPredict = settings.trailOnPredict
-        keepAlive = settings.keepConnectionsAlive
         keyboardOnOpen = settings.raiseKeyboardOnOpen
         remoteClipboardRead = settings.remoteClipboardReadEnabled
         uploadRetentionDays = settings.uploadRetentionDays
         moshByDefault = settings.moshByDefault
         predictMode = settings.predictMode
-        moshServerBinary = settings.moshServerBinary
         udpRange = [settings.udpRangeStart, settings.udpRangeEnd]
         self.shortcuts = shortcuts.toolbarCount
         self.keys = keys.keys.count
@@ -347,7 +343,7 @@ final class SettingsModel {
             settings.fontName = id
         case "fontSize":
             guard let size = (value as? NSNumber)?.doubleValue, size.isFinite else { return false }
-            settings.fontSize = min(max(size.rounded(), 8), 18)
+            settings.fontSize = min(max(size.rounded(), 8), 32)
         case "cursorShape":
             guard let shape = (value as? String).flatMap(CursorShape.init(rawValue:)) else { return false }
             settings.cursorShape = shape
@@ -383,7 +379,6 @@ final class SettingsModel {
     static let flags: [String: ReferenceWritableKeyPath<AppSettings, Bool>] = [
         "cursorBlink": \.cursorBlink,
         "trailOnPredict": \.trailOnPredict,
-        "keepAlive": \.keepConnectionsAlive,
         "keyboardOnOpen": \.raiseKeyboardOnOpen,
         "remoteClipboardRead": \.remoteClipboardReadEnabled,
         "moshByDefault": \.moshByDefault,
@@ -409,13 +404,11 @@ final class SettingsModel {
             "cursorColor": s.cursorColor,
             "cursorBlink": s.cursorBlink,
             "trailOnPredict": s.trailOnPredict,
-            "keepAlive": s.keepAlive,
             "keyboardOnOpen": s.keyboardOnOpen,
             "remoteClipboardRead": s.remoteClipboardRead,
             "uploadRetentionDays": s.uploadRetentionDays,
             "moshByDefault": s.moshByDefault,
             "predictMode": s.predictMode.rawValue,
-            "moshServerBinary": s.moshServerBinary,
             "udpRange": s.udpRange,
             "shortcuts": ["count": s.shortcuts, "limit": ShortcutStore.toolbarLimit],
             "keys": s.keys,

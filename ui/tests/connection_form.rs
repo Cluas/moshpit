@@ -140,7 +140,7 @@ fn a_new_connection_shows_every_section() {
 }
 
 #[test]
-fn edits_reach_the_host_and_save_needs_a_name_and_a_host() {
+fn edits_reach_the_host_and_save_needs_a_name_a_host_and_a_user() {
     let (mut app, channel, natives) = start_tall(Params::default());
     let heard = hear(&channel);
     show(&mut app, &channel, draft());
@@ -158,6 +158,9 @@ fn edits_reach_the_host_and_save_needs_a_name_and_a_host() {
     }
     assert_eq!(last, json!({"ev": "set", "key": "name", "value": "studio"}));
     app.type_text(&input("connection-form-host"), "192.0.2.22")
+        .unwrap();
+    // ...a user to sign in as (B517)...
+    app.type_text(&input("connection-form-username"), "me")
         .unwrap();
     while heard
         .recv_timeout(std::time::Duration::from_millis(300))
@@ -529,6 +532,8 @@ fn the_password_and_the_key_never_cross_the_channel() {
     );
     emit(&mut app, pem, "filled", json!(true));
     app.type_text("id:connection-form-host-input", "h").unwrap();
+    app.type_text("id:connection-form-username-input", "me")
+        .unwrap();
     app.press("id:save-connection").unwrap();
 
     let told = drain(&heard);
@@ -599,11 +604,12 @@ fn says_wrong(app: &App, id: &str) -> bool {
     app.screen().matches(&format!("id:{id}-error")).unwrap()
 }
 
-/// A draft Save takes as it is: a name, a host, a password.
+/// A draft Save takes as it is: a name, a host, a user, a password.
 fn savable() -> FormState {
     let mut state = draft();
     state.name = "box".into();
     state.host = "box.example.com".into();
+    state.username = "me".into();
     state.secrets.password = true;
     state
 }
@@ -657,6 +663,7 @@ fn a_port_that_is_not_one_says_so_once_left_and_save_waits() {
         .unwrap();
     emit(&mut app, socks, "change", json!(true));
     find(&mut app, "id:connection-form-proxy-port");
+    retype(&mut app, "connection-form-proxy-host", "127.0.0.1");
     assert!(saves(&mut app, &heard), "1080 is a port");
     retype(&mut app, "connection-form-proxy-port", "99999");
     find(&mut app, "id:connection-form-proxy-port-error");
@@ -1037,11 +1044,7 @@ fn return_moves_through_the_fields() {
 #[test]
 fn port_70000_says_so_under_the_field_and_save_is_disabled() {
     let (mut app, channel) = start(Screen::ConnectionForm, Params::default(), "connection-form");
-    let mut state = draft();
-    state.name = "box".into();
-    state.host = "box.example.com".into();
-    state.secrets.password = true;
-    show(&mut app, &channel, state);
+    show(&mut app, &channel, savable());
     find(&mut app, "id:connection-form-port");
     let save = |app: &App| {
         app.screen()
@@ -1263,5 +1266,87 @@ fn an_emoji_that_isnt_one_says_so_and_save_waits() {
     assert!(saves(&mut app, &heard), "one emoji saves");
     retype(&mut app, "connection-form-emoji", "");
     assert!(saves(&mut app, &heard), "cleared, back to the key's face");
+    channel.close();
+}
+
+/// B511: with the proxy on, its host is required. Saved empty (or spaces),
+/// every connect went straight to the host, past the proxy the person had
+/// turned on. Save waits, and once the field is left it says Required.
+#[test]
+fn a_proxy_without_a_host_doesnt_save() {
+    let (mut app, channel, natives) = start_tall(Params::default());
+    let heard = hear(&channel);
+    show(&mut app, &channel, savable());
+    find(&mut app, "id:connection-form-port");
+    let socks = natives
+        .find("moshpit/switch", "connection-form-socks")
+        .unwrap();
+    emit(&mut app, socks, "change", json!(true));
+    find(&mut app, "id:connection-form-proxy-host");
+    assert!(!saves(&mut app, &heard), "a proxy with no host saved");
+    for blank in ["", "   "] {
+        retype(&mut app, "connection-form-proxy-host", blank);
+        find(&mut app, "id:connection-form-proxy-host-error");
+        assert!(!saves(&mut app, &heard), "{blank:?} saved as the proxy");
+    }
+    retype(&mut app, "connection-form-proxy-host", "127.0.0.1");
+    assert!(!says_wrong(&app, "connection-form-proxy-host"));
+    assert!(saves(&mut app, &heard), "a proxy with a host");
+    // The proxy off, its host isn't asked for.
+    retype(&mut app, "connection-form-proxy-host", "");
+    let socks = natives
+        .find("moshpit/switch", "connection-form-socks")
+        .unwrap();
+    emit(&mut app, socks, "change", json!(false));
+    assert!(saves(&mut app, &heard), "an unused proxy host held Save");
+    channel.close();
+}
+
+/// B517: the host field takes a host's name or address (IPv6 written
+/// bare), not ssh's own syntax pasted whole — saved, `dev@box`, `box:2222`
+/// or `ssh://box` never resolved, with nothing to say why. And a
+/// connection signs in as someone: an empty user used to save.
+#[test]
+fn a_host_is_just_a_host_and_a_user_is_needed() {
+    let (mut app, channel, _) = start_tall(Params::default());
+    let heard = hear(&channel);
+    show(&mut app, &channel, savable());
+    find(&mut app, "id:connection-form-host");
+    assert!(saves(&mut app, &heard));
+    for pasted in [
+        "dev@box",
+        "ssh://box",
+        "box:2222",
+        "[2001:db8::7]",
+        "my box",
+    ] {
+        retype(&mut app, "connection-form-host", pasted);
+        find(&mut app, "id:connection-form-host-error");
+        assert!(
+            app.screen()
+                .shows("Just the host — the user and port have their own fields."),
+            "{pasted}: {:?}",
+            app.screen().texts()
+        );
+        assert!(!saves(&mut app, &heard), "{pasted} saved");
+    }
+    for host in [
+        "box.example.com",
+        " box ",
+        "192.0.2.7",
+        "2001:db8::7",
+        "fe80::1%en0",
+    ] {
+        retype(&mut app, "connection-form-host", host);
+        assert!(!says_wrong(&app, "connection-form-host"), "{host:?}");
+        assert!(saves(&mut app, &heard), "{host:?} did not save");
+    }
+
+    retype(&mut app, "connection-form-username", "   ");
+    find(&mut app, "id:connection-form-username-error");
+    assert!(!saves(&mut app, &heard), "saved with no user");
+    retype(&mut app, "connection-form-username", "dev");
+    assert!(!says_wrong(&app, "connection-form-username"));
+    assert!(saves(&mut app, &heard));
     channel.close();
 }
