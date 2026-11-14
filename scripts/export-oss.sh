@@ -162,7 +162,28 @@ scan_message() { # message file
       [ -n "$word" ] && [ "${word#\#}" = "$word" ] && hit -F "$word" "denylist"
     done < "$ROOT/scripts/oss-denylist.txt"
   fi
+  if [ -f "$ROOT/scripts/oss-agent-names.txt" ]; then
+    while IFS= read -r word; do
+      [ -n "$word" ] && [ "${word#\#}" = "$word" ] || continue
+      if ! NAME="$word" perl -ne 'BEGIN { $w = $ENV{NAME} } exit 1 if /(?<![\w:\/-])\Q$w\E(?![\w-])/' "$msg"; then
+        echo "LEAK in message (agent name)"; fail=1
+      fi
+    done < "$ROOT/scripts/oss-agent-names.txt"
+  fi
   [ "$fail" -eq 0 ]
+}
+
+# The team's agent handles stay out of the public history: a message's
+# "<name>'s " goes, and so does a name on its own ("blank1's B496" reads
+# "B496"). The list is private, like the denylist.
+scrub_names() {
+  local list="$ROOT/scripts/oss-agent-names.txt" names
+  if [ ! -f "$list" ]; then cat; return; fi
+  names=$(grep -v '^#' "$list" | grep . | paste -sd'|' -)
+  if [ -z "$names" ]; then cat; return; fi
+  NAMES="$names" perl -pe 'BEGIN { $n = $ENV{NAMES} }
+    s/(?<![\w:\/-])(?:$n)\x27s\s+//g;
+    s/(?<![\w:\/-])(?:$n)(?![\w-]) ?//g'
 }
 
 # Comments and docs may still name private-only paths; say so, once, for the
@@ -244,7 +265,8 @@ compose_message() { # sha folded...
          { p[NR] = $0 }
          END { for (i = 1; i <= NR; i++) { if (note != "" && i == NR && has > 0) print note "\n\n"; print p[i] "\n\n" }
                if (note != "" && has == 0) print note "\n" }' \
-    | git interpret-trailers ${folds[@]+"${folds[@]}"} --trailer "Source-Commit: $sha"
+    | git interpret-trailers ${folds[@]+"${folds[@]}"} --trailer "Source-Commit: $sha" \
+    | scrub_names
 }
 
 made=0
