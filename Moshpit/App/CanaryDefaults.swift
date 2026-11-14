@@ -24,7 +24,6 @@ enum CanaryDefaults {
         var defaults: [String: Any] = [
             RustStoreSwitch.switchKey: true,
             RustSessionSwitch.switchKey: true,
-            "MOSHPIT_RUST_TMUX_PARSER": true,
             CoreTermSwitch.switchKey: true,
             ResumeInPlaceSwitch.switchKey: true,
         ]

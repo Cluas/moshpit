@@ -8,7 +8,6 @@ import SwiftUI
 /// `verbatim:`.
 struct CoreSwitchesView: View {
     @Environment(\.dismiss) private var dismiss
-    @AppStorage(TmuxParserBackend.switchKey) private var rustTmuxParser = false
     @AppStorage(RustSessionSwitch.switchKey) private var rustSessions = false
     @AppStorage(ResumeInPlaceSwitch.switchKey) private var resumeInPlace = false
     @AppStorage(RustStoreSwitch.switchKey) private var rustStore = false
@@ -98,31 +97,6 @@ struct CoreSwitchesView: View {
                         .foregroundStyle(Ink.sectionTitle)
                 } footer: {
                     Text(verbatim: Self.storeNote).moshpitFooter()
-                }
-                .moshpitRows()
-
-                Section {
-                    Toggle(isOn: $rustTmuxParser) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(verbatim: "Rust tmux parser")
-                                .font(.body).foregroundStyle(Ink.primary)
-                            Text(verbatim: "Reads tmux -CC with the Rust core instead of the Swift parser. From the next connection on.")
-                                .font(.footnote).foregroundStyle(Ink.meta)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                    }
-                    .tint(Ink.accent)
-                    .disabled(Self.tmuxLocked)
-                    .accessibilityIdentifier("core-switch-rust-tmux-parser")
-                } header: {
-                    Text(verbatim: "TMUX")
-                        .font(Face.mono(10.5, .semibold))
-                        .kerning(1.2)
-                        .foregroundStyle(Ink.sectionTitle)
-                } footer: {
-                    if let note = Self.tmuxNote {
-                        Text(verbatim: note).moshpitFooter()
-                    }
                 }
                 .moshpitRows()
 
@@ -238,16 +212,6 @@ struct CoreSwitchesView: View {
         return note
     }
 
-    /// No Rust parser to switch to, or a launch argument holds the switch
-    /// (the argument domain beats what the toggle would store).
-    private static var tmuxLocked: Bool {
-        !TmuxParserBackend.rustAvailable || setByLaunchArgument
-    }
-
-    private static var setByLaunchArgument: Bool {
-        UserDefaults.standard.volatileDomain(forName: UserDefaults.argumentDomain)[TmuxParserBackend.switchKey] != nil
-    }
-
     /// The switch of `screen`, written to `UserDefaults.standard` as the
     /// page reads it (``NSHScreen/isOn``).
     private func nshSwitch(_ screen: NSHScreen) -> Binding<Bool> {
@@ -280,19 +244,5 @@ struct CoreSwitchesView: View {
         guard !held.isEmpty else { return nil }
         return held.map { "\($0.switchTitle): set for this launch by -\($0.switchKey)." }
             .joined(separator: "\n")
-    }
-
-    /// What the tmux switch's state does not show by itself.
-    private static var tmuxNote: String? {
-        if !TmuxParserBackend.rustAvailable {
-            return "This build has no Rust parser."
-        }
-        if setByLaunchArgument {
-            return "Set for this launch by -\(TmuxParserBackend.switchKey)."
-        }
-        if TmuxParserBackend.rustFailure.isSet {
-            return "The Rust parser failed in this run: every connection uses the Swift parser until the app restarts."
-        }
-        return nil
     }
 }

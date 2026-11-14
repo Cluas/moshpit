@@ -591,38 +591,6 @@ targets:
     dependencies:
       - target: Moshpit
 
-  # The tmux suites again, against the Rust control-mode parser: the same
-  # files as in MoshpitTests, compiled with MOSHPIT_TMUX_RUST_TESTS, which
-  # makes their `.tmuxParserUnderTest` trait hand every TmuxControlClient the
-  # Rust parser (Tests/MoshpitTests/Support/TmuxParserUnderTest.swift). Every
-  # TmuxControlClient and TmuxSessionController test runs against both
-  # parsers in one test run — tests added to these files later too. A suite
-  # that drives the parser goes in this list and gets the trait.
-  MoshpitTmuxRustTests:
-    type: bundle.unit-test
-    platform: iOS
-    sources:
-      - path: Tests/MoshpitTests/Services/TmuxControlClientParserTests.swift
-      - path: Tests/MoshpitTests/Services/TmuxControlClientEdgeTests.swift
-      - path: Tests/MoshpitTests/Services/TmuxControlClientRegressionTests.swift
-      - path: Tests/MoshpitTests/Services/TmuxSessionControllerTests.swift
-      - path: Tests/MoshpitTests/Services/TmuxSidecarSwitchTests.swift
-      - path: Tests/MoshpitTests/Services/TmuxSizeLeaseTests.swift
-      - path: Tests/MoshpitTests/Services/TmuxFormatFieldsTests.swift
-      - path: Tests/MoshpitTests/Mocks/MockTmuxTransport.swift
-      - path: Tests/MoshpitTests/Support/TmuxParserUnderTest.swift
-      - path: Tests/MoshpitTests/Support/SwiftTermAccess.swift
-    settings:
-      base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.cluas.moshpit.tests.tmuxrust
-        GENERATE_INFOPLIST_FILE: YES
-        SWIFT_INCLUDE_PATHS: $(inherited) $(SRCROOT)/crates/ffi/include
-      configs:
-        Debug:
-          SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) DEBUG MOSHPIT_TESTS MOSHPIT_TMUX_RUST_TESTS"
-    dependencies:
-      - target: Moshpit
-
 schemes:
   # Unit tests only, and the point is what it leaves OUT.
   #
@@ -649,14 +617,12 @@ schemes:
       targets:
         Moshpit: all
         MoshpitTests: [test]
-        MoshpitTmuxRustTests: [test]
     run:
       config: Debug
     test:
       config: Debug
       targets:
         - MoshpitTests
-        - MoshpitTmuxRustTests
     analyze:
       config: Debug
 
@@ -665,7 +631,6 @@ schemes:
       targets:
         Moshpit: all
         MoshpitTests: [test]
-        MoshpitTmuxRustTests: [test]
         MoshpitUITests: [test]
     run:
       config: Debug
@@ -673,7 +638,6 @@ schemes:
       config: Debug
       targets:
         - MoshpitTests
-        - MoshpitTmuxRustTests
         - MoshpitUITests
     profile:
       config: Release

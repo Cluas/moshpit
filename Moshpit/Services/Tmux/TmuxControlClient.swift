@@ -67,14 +67,6 @@ struct TmuxCommandResponse: Sendable, Equatable {
 ///   - **No transport.** The caller pumps bytes via ``feed(_:)``; the client
 ///     never reads the SSH stream itself.
 ///
-/// ### Two parsers
-/// The parser below, or the Rust port of it (crates/tmux, through the app's
-/// Rust library — TmuxRustParser.swift) when the switch says so
-/// (``TmuxParserBackend``). Same callbacks, same order, same values: the
-/// tmux test suites run against both. A client keeps the parser it was made
-/// with, unless the Rust one fails — then it carries on with this one and
-/// says so through ``onParserFailure``.
-///
 /// ### Threading
 /// `TmuxControlClient` is an actor. Callers feed bytes via `await feed(_:)`;
 /// callbacks fire on the actor's executor — handlers that need MainActor
@@ -163,24 +155,6 @@ actor TmuxControlClient {
     /// are *not* errors — they pass through silently for forward-compat.
     var onProtocolError: (@Sendable (_ error: TmuxControlError) -> Void)?
 
-    /// Invoked when the Rust parser failed (a caught panic — a bug) and this
-    /// client went on with the Swift parser. What the Rust parser held when
-    /// it failed is lost: the rest of the chunk, maybe the end of a reply
-    /// some command still waits for. Start the control session over.
-    var onParserFailure: (@Sendable (_ reason: String) -> Void)?
-
-    // MARK: - Parser
-
-    /// The parser this client runs; ``TmuxParserBackend/current`` when it was
-    /// made, `.swift` if the Rust parser was asked for but is not in this
-    /// build or has failed since.
-    private(set) var backend: TmuxParserBackend
-
-    #if canImport(MoshpitFFI)
-    /// The Rust parser while ``backend`` is `.rust` (TmuxRustParser.swift).
-    var rustParser: TmuxRustParser?
-    #endif
-
     // MARK: - Internal state
 
     /// Raw transport bytes after the last `\n` fed so far: a line still on
@@ -230,58 +204,23 @@ actor TmuxControlClient {
     /// the next session's boot line.
     private var awaitingBootBlock = true
 
-    // MARK: - Init
-
-    /// A client running `backend`'s parser — by default whichever the
-    /// switch picks (``TmuxParserBackend/current``).
-    init(backend: TmuxParserBackend = .current) {
-        #if canImport(MoshpitFFI)
-        if backend == .rust, let parser = TmuxRustParser() {
-            rustParser = parser
-            self.backend = .rust
-            return
-        }
-        #endif
-        self.backend = .swift
-    }
-
     // MARK: - Public API
 
     /// Feed transport bytes from the SSH session. Safe to call with empty
     /// data; partial lines are buffered until the next call.
     func feed(_ data: Data) {
         guard !data.isEmpty else { return }
-        #if canImport(MoshpitFFI)
-        if let rustParser {
-            feedRust(rustParser, data)
-            return
-        }
-        #endif
         drainLines(data)
     }
 
     /// Discard any partial line in the buffer and any open response block.
     /// Use when reconnecting or after a protocol error to resync.
     func reset() {
-        #if canImport(MoshpitFFI)
-        rustParser?.reset()
-        #endif
         partialLine.removeAll(keepingCapacity: false)
         openBlock = nil
         awaitingBootBlock = true
     }
 
-    #if canImport(MoshpitFFI)
-    /// The Rust parser failed (TmuxRustParser.swift): drop it and go on with
-    /// the Swift parser, from a clean state as after ``reset()``.
-    func dropRustParser() {
-        rustParser = nil
-        backend = .swift
-        partialLine.removeAll(keepingCapacity: false)
-        openBlock = nil
-        awaitingBootBlock = true
-    }
-    #endif
 
     // MARK: - Callback installers
 
@@ -308,8 +247,7 @@ actor TmuxControlClient {
         onClientDetached: (@Sendable (String) -> Void)? = nil,
         onExit: (@Sendable (String?) -> Void)? = nil,
         onCommandResponse: (@Sendable (TmuxCommandResponse) -> Void)? = nil,
-        onProtocolError: (@Sendable (TmuxControlError) -> Void)? = nil,
-        onParserFailure: (@Sendable (String) -> Void)? = nil
+        onProtocolError: (@Sendable (TmuxControlError) -> Void)? = nil
     ) {
         if let onPaneOutput { self.onPaneOutput = onPaneOutput }
         if let onLayoutChange { self.onLayoutChange = onLayoutChange }
@@ -331,7 +269,6 @@ actor TmuxControlClient {
         if let onExit { self.onExit = onExit }
         if let onCommandResponse { self.onCommandResponse = onCommandResponse }
         if let onProtocolError { self.onProtocolError = onProtocolError }
-        if let onParserFailure { self.onParserFailure = onParserFailure }
     }
 
     // MARK: - Line extraction
@@ -1004,69 +941,6 @@ actor TmuxControlClient {
         }
 
         return result
-    }
-}
-
-// MARK: - TmuxParserBackend
-
-/// Which parser reads the control stream: ``TmuxControlClient``'s own, or
-/// the Rust port of it (crates/tmux, through crates/ffi — see
-/// TmuxRustParser.swift).
-///
-/// The first of the runtime switches of docs/nsh/DESIGN.md §3.6: a module
-/// the Rust core replaces keeps its Swift implementation behind a switch
-/// until the Rust one has shipped for two releases. Off by default.
-enum TmuxParserBackend: String, CaseIterable, Sendable {
-    case swift
-    case rust
-
-    /// The switch: a Bool in `UserDefaults.standard`, set on the hidden Core
-    /// Switches page (Settings: tap the version line seven times), or for
-    /// one launch with the launch argument `-MOSHPIT_RUST_TMUX_PARSER 1` —
-    /// launch arguments land in the argument domain, which beats the stored
-    /// value.
-    static let switchKey = "MOSHPIT_RUST_TMUX_PARSER"
-
-    /// A test's choice, for the rest of its task: it beats the switch and
-    /// ``rustFailure``.
-    @TaskLocal static var taskOverride: TmuxParserBackend?
-
-    /// The parser a new client gets. Read when the client is made — at
-    /// every connect and reconnect, never while it runs: the partial line
-    /// and the open reply block live in the parser. Before the first unlock
-    /// the defaults read as empty, so a launch in the background gets the
-    /// Swift parser.
-    static var current: TmuxParserBackend {
-        if let taskOverride { return taskOverride }
-        return chosen(switchOn: UserDefaults.standard.bool(forKey: switchKey),
-                      rustFailed: rustFailure.isSet)
-    }
-
-    /// The switch's choice, unless the Rust parser has already failed in
-    /// this process.
-    static func chosen(switchOn: Bool, rustFailed: Bool) -> TmuxParserBackend {
-        switchOn && !rustFailed ? .rust : .swift
-    }
-
-    /// Set the first time the Rust parser fails in this process (a caught
-    /// panic, TmuxRustParser.swift). From then on new clients get the Swift
-    /// parser, so one bad stream does not fail every reconnect.
-    static let rustFailure = Latch()
-
-    /// A flag that is only ever set.
-    final class Latch: @unchecked Sendable {
-        private let lock = NSLock()
-        private var tripped = false
-
-        var isSet: Bool {
-            lock.lock(); defer { lock.unlock() }
-            return tripped
-        }
-
-        func trip() {
-            lock.lock(); defer { lock.unlock() }
-            tripped = true
-        }
     }
 }
 

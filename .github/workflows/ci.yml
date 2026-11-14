@@ -242,9 +242,8 @@ jobs:
             -scheme Moshpit \
             -clonedSourcePackagesDirPath "$SPM_CACHE_DIR"
 
-      # Run the unit + UI test targets (MoshpitTests, MoshpitTmuxRustTests — the
-      # tmux suites again, on the Rust parser — and MoshpitUITests, all wired
-      # into the shared "Moshpit" scheme's test action in project.yml).
+      # Run the unit + UI test targets (MoshpitTests and MoshpitUITests, both
+      # wired into the shared "Moshpit" scheme's test action in project.yml).
       #
       # CODE_SIGNING_ALLOWED=NO: project.yml sets CODE_SIGN_IDENTITY
       # "Apple Development" / CODE_SIGN_STYLE Automatic and expects a
