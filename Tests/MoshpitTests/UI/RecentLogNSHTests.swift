@@ -16,24 +16,12 @@ struct RecentLogNSHTests {
         category: "layout",
         message: "resize 80x24 → 70x40")
 
-    @Test("the switch picks the NSH page only when it is on, and asks for NSH only then")
-    func switchChoice() {
-        #expect(!NSHScreen.chosen(switchOn: false, available: {
-            Issue.record("NSH was asked for with the switch off")
-            return true
-        }))
-        #expect(NSHScreen.chosen(switchOn: true, available: { true }))
-        #expect(!NSHScreen.chosen(switchOn: true, available: { false }))
-    }
-
-    @Test("the switch is off unless set: no default is registered for it")
-    func offByDefault() {
-        let registered = UserDefaults.standard.volatileDomain(forName: UserDefaults.registrationDomain)
+    @Test("every NSH page shows whenever the build hosts NSH: no switch (F0)")
+    func everyPageShows() {
         for screen in NSHScreen.allCases {
-            #expect(registered[screen.switchKey] == nil)
-            #expect(screen.switchKey.hasPrefix("MOSHPIT_NSH_"))
+            #expect(screen.isOn == NSHSurface.available, "\(screen.name)")
         }
-        #expect(NSHScreen.recentLog.switchKey == "MOSHPIT_NSH_RECENT_LOG")
+        #expect(NSHScreen.recentLog.name == "recent-log")
     }
 
     @Test("this build hosts NSH screens")

@@ -494,22 +494,6 @@ fn a_theme_picked_while_settings_shows_reaches_its_colors() {
 }
 
 #[test]
-fn seven_quick_taps_on_the_version_open_core_switches() {
-    let (mut app, channel) = start(Screen::Settings, Params::default(), "settings");
-    let told = hear(&channel);
-    show(&mut app, &channel, state());
-    find(&mut app, "id:settings-version");
-    for _ in 0..6 {
-        app.press("id:settings-version").unwrap();
-    }
-    quiet(&told);
-    app.press("id:settings-version").unwrap();
-    assert_eq!(next(&told), json!({"ev": "open", "page": "core-switches"}));
-    quiet(&told);
-    channel.close();
-}
-
-#[test]
 fn rows_come_and_go_with_the_state() {
     let (mut app, channel) = start(Screen::Settings, on("voice"), "settings");
     let mut state = state();

@@ -22,16 +22,11 @@
 //!
 //! The hub wears Home's large title ([`crate::home::bar::large_bar`]). Its
 //! version row's long-press menu (Copy) is the host's, on the NSH surface,
-//! for the view identified `settings-version`; seven quick taps on the row
-//! open the hidden Core Switches page. The hub's rows carry no help text;
+//! for the view identified `settings-version`. The hub's rows carry no help
+//! text;
 //! each page's footnote is at most two lines.
 
-use std::{
-    cell::Cell,
-    rc::Rc,
-    sync::Arc,
-    time::{Duration, Instant},
-};
+use std::{rc::Rc, sync::Arc};
 
 use nsh_core::{color::Rgba, prelude::*};
 use serde::{Deserialize, Serialize};
@@ -391,12 +386,11 @@ pub enum Page {
     Feedback,
     GithubIssue,
     Filing,
-    CoreSwitches,
 }
 
 impl Page {
     /// Every one.
-    pub const ALL: [Page; 17] = [
+    pub const ALL: [Page; 16] = [
         Page::Accent,
         Page::AppIcon,
         Page::Theme,
@@ -413,7 +407,6 @@ impl Page {
         Page::Feedback,
         Page::GithubIssue,
         Page::Filing,
-        Page::CoreSwitches,
     ];
 
     /// What the host calls it.
@@ -435,7 +428,6 @@ impl Page {
             Page::Feedback => "feedback",
             Page::GithubIssue => "github-issue",
             Page::Filing => "filing",
-            Page::CoreSwitches => "core-switches",
         }
     }
 
@@ -966,39 +958,14 @@ fn hub_groups(state: State, tell: &Tell) -> Vec<AnyElement> {
     ]
 }
 
-/// Taps on the version row that open Core Switches, and how far apart they
-/// may come (SwiftUI's `onTapGesture(count: 7)`).
-const SECRET_TAPS: u32 = 7;
-const TAP_GAP: Duration = Duration::from_millis(500);
-
-/// About: the version row (long-press: Copy, the host's menu; seven taps:
-/// Core Switches), the tagline under it and, on the mainland storefront,
-/// the APP filing.
+/// About: the version row (long-press: Copy, the host's menu), the tagline
+/// under it and, on the mainland storefront, the APP filing.
 fn about(state: State, tell: &Tell) -> AnyElement {
-    let taps = Rc::new(Cell::new((0_u32, None::<Instant>)));
-    let core_switches = open(tell, Page::CoreSwitches);
     let filing = Rc::new(open(tell, Page::Filing));
     let has_filing = computed(move || state.read(|s| s.filing.is_some()));
     let version = row(t!("Version"))
         .leading_tile("info.circle")
         .value_with(move || short_version(&state.read(|s| s.version.clone())).into())
-        .on_press(move || {
-            // The engine's clock: the system's on a device, the test's in a
-            // headless run (a manual clock's taps are as quick as the test
-            // says, however loaded the machine).
-            let now = nsh_core::time::now();
-            let (count, last) = taps.get();
-            let count = match last {
-                Some(last) if now.duration_since(last) <= TAP_GAP => count + 1,
-                _ => 1,
-            };
-            if count >= SECRET_TAPS {
-                taps.set((0, None));
-                core_switches();
-            } else {
-                taps.set((count, Some(now)));
-            }
-        })
         .test_id("settings-version");
     view()
         .w_full()

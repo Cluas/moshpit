@@ -29,21 +29,12 @@ struct KeysShortcutsSetupNSHTests {
                      publicKey: publicKey, source: source, boundHosts: hosts, lastUsedAt: lastUsed)
     }
 
-    // MARK: Switches
+    // MARK: Screens
 
-    @Test("each page has its own switch, off unless set")
-    func switches() {
-        let registered = UserDefaults.standard.volatileDomain(forName: UserDefaults.registrationDomain)
+    @Test("each page runs the Rust screen of its name")
+    func names() {
         let screens: [NSHScreen] = [.sshKeys, .addKey, .keyPicker, .shortcuts, .addShortcut, .hostSetup]
-        #expect(screens.map(\.switchKey) == [
-            "MOSHPIT_NSH_SSH_KEYS", "MOSHPIT_NSH_ADD_KEY", "MOSHPIT_NSH_KEY_PICKER",
-            "MOSHPIT_NSH_SHORTCUTS", "MOSHPIT_NSH_ADD_SHORTCUT", "MOSHPIT_NSH_HOST_SETUP",
-        ])
         #expect(screens.map(\.name) == ["ssh-keys", "add-key", "key-picker", "shortcuts", "add-shortcut", "host-setup"])
-        #expect(Set(NSHScreen.allCases.map(\.switchKey)).count == NSHScreen.allCases.count)
-        for screen in screens {
-            #expect(registered[screen.switchKey] == nil)
-        }
     }
 
     // MARK: SSH Keys

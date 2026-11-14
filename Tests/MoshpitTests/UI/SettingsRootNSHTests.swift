@@ -31,13 +31,9 @@ struct SettingsRootNSHTests {
                                 shownIcon: { shownIcon })
     }
 
-    @Test("the page has its own switch, off unless set")
-    func switchKey() {
-        #expect(NSHScreen.settings.switchKey == "MOSHPIT_NSH_SETTINGS")
+    @Test("the page runs the Rust screen of its name")
+    func name() {
         #expect(NSHScreen.settings.name == "settings")
-        let registered = UserDefaults.standard.volatileDomain(forName: UserDefaults.registrationDomain)
-        #expect(registered[NSHScreen.settings.switchKey] == nil)
-        #expect(Set(NSHScreen.allCases.map(\.switchKey)).count == NSHScreen.allCases.count)
     }
 
     @Test("every state is a message the Rust screen takes; bad ones are refused")

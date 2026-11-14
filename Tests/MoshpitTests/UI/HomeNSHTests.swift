@@ -81,14 +81,9 @@ struct HomeNSHTests {
          HomeNSHMenus.Row(id: edge, link: .saved, tree: nil)]
     }
 
-    @Test("Home has its own switch, off unless set")
-    func switches() {
-        #expect(NSHScreen.home.switchKey == "MOSHPIT_NSH_HOME")
+    @Test("Home runs the Rust screen of its name")
+    func name() {
         #expect(NSHScreen.home.name == "home")
-        let registered = UserDefaults.standard.volatileDomain(forName: UserDefaults.registrationDomain)
-        #expect(registered[NSHScreen.home.switchKey] == nil)
-        #expect(Set(NSHScreen.allCases.map(\.switchKey)).count == NSHScreen.allCases.count)
-        #expect(NSHScreen.chosen(switchOn: false, available: { true }) == false)
     }
 
     @Test("NSH Home shows only with sessions on the core, where its record is read")
