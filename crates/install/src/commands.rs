@@ -302,15 +302,24 @@ pub const REMOVE_DIR_IF_EMPTY: &str = "rmdir \"$HOME/.moshpit\" 2>/dev/null; tru
 /// B376: a lock that already names `token` is this holder's — the same
 /// command sent again after a dropped connection, its first run having
 /// taken the lock. It used to wait those five seconds on itself and fail.
+///
+/// B448: a holder writes its `at` just after its `mkdir`, so a waiter can
+/// find the lock with no `at` yet — and one that had waited four tries
+/// took that for a holder that never came back, broke the fresh lock, and
+/// took it too: two writers at once, one's change lost (the cloud CI's
+/// `two_changes_at_once_both_land`, three writers starting together). The
+/// time is now read before the `mkdir`, so nothing runs between it and
+/// writing `at`, and a lock is broken for an empty `at` only when four
+/// tries in a row, a second apart, found it empty.
 pub fn lock(token: &str) -> String {
     let t = quote(token);
     format!(
-        "d=\"$HOME/.moshpit/.lock\"; mkdir -p \"$HOME/.moshpit\" || exit 1; i=0; \
-         while ! mkdir \"$d\" 2>/dev/null; do a=$(cat \"$d/at\" 2>/dev/null); [ \"${{a#*.}}\" = {t} ] && break; \
+        "d=\"$HOME/.moshpit/.lock\"; mkdir -p \"$HOME/.moshpit\" || exit 1; i=0; e=0; \
+         while s=$(date +%s); ! mkdir \"$d\" 2>/dev/null; do a=$(cat \"$d/at\" 2>/dev/null); [ \"${{a#*.}}\" = {t} ] && break; \
          i=$((i+1)); [ $i -le 6 ] || {{ echo 'another Moshpit is changing this host right now: try again in a moment' >&2; exit 75; }}; \
-         a=${{a%%.*}}; n=$(date +%s); \
-         case \"$a\" in ''|*[!0-9]*) [ $i -lt 4 ] || rm -rf \"$d\" ;; *) [ $((n - a)) -le 60 ] || rm -rf \"$d\" ;; esac; \
-         [ -d \"$d\" ] && sleep 1; done; printf '%s.%s' \"$(date +%s)\" {t} > \"$d/at\""
+         a=${{a%%.*}}; \
+         case \"$a\" in ''|*[!0-9]*) e=$((e+1)); [ $e -lt 4 ] || rm -rf \"$d\" ;; *) e=0; [ $((s - a)) -le 60 ] || rm -rf \"$d\" ;; esac; \
+         [ -d \"$d\" ] && sleep 1; done; printf '%s.%s' \"$s\" {t} > \"$d/at\""
     )
 }
 

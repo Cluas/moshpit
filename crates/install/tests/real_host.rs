@@ -1104,6 +1104,59 @@ fn a_held_lock_is_waited_for_and_a_dead_one_broken() {
     assert!(manifest.pairing_entry(FIRST).is_some());
 }
 
+/// B448: the next holder of the lock takes it with `mkdir` and writes its
+/// `at` a moment later. A waiter that had waited four tries and read the
+/// lock in that moment, with no `at` yet, broke the fresh lock and took it
+/// too: two writers at once, and one's change was lost. Here the next
+/// holder's moment lasts a poll, at the waiter's fourth try: the waiter
+/// takes the lock only once it is let go.
+#[test]
+fn a_lock_taken_a_moment_ago_is_not_broken_for_its_missing_at() {
+    use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+    let home = home();
+    let lock = home.0.join(".moshpit/.lock");
+    std::fs::create_dir_all(&lock).unwrap();
+    let now = || SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
+    std::fs::write(lock.join("at"), format!("{}.held", now())).unwrap();
+    let start = Instant::now();
+    let waiter = {
+        let home = home.0.clone();
+        std::thread::spawn(move || {
+            let result = block_on(Shell::at(&home).run(&moshpit_install::commands::lock("waiter0123456789")));
+            (result, Instant::now())
+        })
+    };
+    let until = |at: f64| {
+        let wake = start + Duration::from_secs_f64(at);
+        std::thread::sleep(wake.saturating_duration_since(Instant::now()));
+    };
+    // The holder lets go; the next one has made the directory, not yet `at`.
+    until(2.5);
+    std::fs::remove_file(lock.join("at")).unwrap();
+    // Its `at` lands; it holds the lock a little longer, then lets go.
+    until(3.8);
+    std::fs::write(lock.join("at"), format!("{}.next", now())).unwrap();
+    until(4.5);
+    std::fs::remove_dir_all(&lock).unwrap();
+    let released = Instant::now();
+    let (result, taken) = waiter.join().unwrap();
+    result.expect("the waiter takes the lock");
+    assert!(taken >= released, "the waiter broke a live lock {:?} before it was let go", released - taken);
+}
+
+/// B448: a lock left with no `at` for good — a holder gone between its
+/// `mkdir` and its `at` — is still broken, once four tries found it so.
+#[test]
+fn a_lock_left_with_no_at_is_broken_after_four_tries() {
+    let home = home();
+    let lock = home.0.join(".moshpit/.lock");
+    std::fs::create_dir_all(&lock).unwrap();
+    let started = std::time::Instant::now();
+    block_on(Shell::at(&home.0).run(&moshpit_install::commands::lock("waiter0123456789"))).expect("broken and taken");
+    assert!(started.elapsed() >= std::time::Duration::from_secs(3), "broken too soon");
+    assert!(std::fs::read_to_string(lock.join("at")).unwrap().ends_with(".waiter0123456789"));
+}
+
 /// Two phones changing one host at once: both changes land.
 #[test]
 fn two_changes_at_once_both_land() {
