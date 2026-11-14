@@ -821,11 +821,14 @@ fn v22_a_touch_or_typing_stops_a_coast() {
     assert!(!t.flinging(), "a resize stops it");
 }
 
-/// B521: a coast for a program that wants the mouse goes as wheel reports,
-/// paced (every other refresh at most) and bounded (three a refresh, sixty
-/// rows in all), however fast the fling: each report is work for the
-/// program, and a flood is what it falls behind on. The host's rows (tmux,
-/// herdr) are paced the same.
+/// B521, B523: a coast for a program that wants the mouse goes as wheel
+/// reports, paced (every other refresh at most) and bounded: each step and
+/// the whole coast what its speed travels, at most six reports a step and
+/// 150 in all, however fast the fling (each report is work for the
+/// program, and a flood is what it falls behind on). The host's rows (tmux,
+/// herdr) are paced the same, with room for more: a step is one command
+/// whatever its rows. It was three a step and sixty in all at any speed:
+/// a faster fling went no faster.
 #[test]
 fn v22_a_coast_to_a_wheel_or_the_host_is_paced_and_bounded() {
     let mut t = tall(50);
@@ -840,32 +843,163 @@ fn v22_a_coast_to_a_wheel_or_the_host_is_paced_and_bounded() {
     assert!(t.fling_start_at(now, false));
     let (moved, ticks) = coast(&mut t);
     assert_eq!(moved, 0, "the history stays: the program scrolls");
-    assert!(ticks.iter().all(|n| (1..=3).contains(n)), "{ticks:?}");
-    assert_eq!(
-        ticks.iter().sum::<usize>(),
-        60,
-        "sixty rows in all: {ticks:?}"
-    );
+    assert!(ticks.iter().all(|n| (1..=6).contains(n)), "{ticks:?}");
+    assert!(ticks.contains(&6), "at the ceiling: {ticks:?}");
+    // Past six a step what the step couldn't take was dropped: some 145 of
+    // the 166 rows the speed travels, never past 150.
+    let all = ticks.iter().sum::<usize>();
+    assert!((120..=150).contains(&all), "{all} {ticks:?}");
 
-    // The host's rows: the same pace, by the row.
-    let mut t = tall(50);
-    let mut now = 0;
-    for _ in 0..5 {
-        now += 10;
-        t.fling_track_at(now, 100.0);
-    }
-    assert!(t.fling_start_at(now, true));
-    let mut rows = Vec::new();
-    for _ in 0..2_000 {
-        let Some(dy) = t.fling_step(1.0 / 60.0) else {
-            break;
-        };
-        if let ScrollAction::Host { rows: n } = t.scroll_drag(dy, true) {
-            rows.push(n);
+    // The host's rows: by the row, below its ceilings as far and as fast as
+    // the speed goes (10000 px/s of 30-px rows: some 166 rows, 11 a step).
+    let rows = host_coast(&mut tall(50), &[100.0]).remove(0);
+    assert!(rows.iter().all(|n| (1..=12).contains(n)), "{rows:?}");
+    let all: i32 = rows.iter().sum();
+    assert!((160..=167).contains(&all), "{all} rows: {rows:?}");
+}
+
+/// Flicks of `px` pixels a move (5 moves 10 ms apart), each lifted, its
+/// coast run 150 ms, then stopped by the next flick's touch; the last one's
+/// coast runs out. Every coast's travel goes through the view's routing
+/// (`host`: the host's rows). The flicks' speeds, the travel in all, the
+/// most a refresh moved.
+fn flicks(t: &mut moshpit_term::Terminal, px: &[f64], host: bool) -> (Vec<f64>, f64, f64) {
+    let (mut speeds, mut travel, mut peak) = (Vec::new(), 0.0, 0.0f64);
+    let mut now = 1_000;
+    for (i, step) in px.iter().enumerate() {
+        for _ in 0..5 {
+            now += 10;
+            t.fling_track_at(now, *step);
+            let _ = t.scroll_drag(*step, host);
+        }
+        assert!(t.fling_start_at(now, host), "flick {i} coasts");
+        speeds.push(t.fling_velocity().unwrap());
+        let last = i + 1 == px.len();
+        let frames = if last { 10_000 } else { 9 };
+        for _ in 0..frames {
+            let Some(dy) = t.fling_step(1.0 / 60.0) else {
+                break;
+            };
+            travel += dy;
+            peak = peak.max(dy.abs());
+            let _ = t.scroll_drag(dy, host);
+        }
+        now += 150;
+        if !last {
+            assert!(t.fling_stop_at(now), "the next touch stops the coast");
         }
     }
-    assert!(rows.iter().all(|n| (1..=3).contains(n)), "{rows:?}");
-    assert_eq!(rows.iter().sum::<i32>(), 60, "{rows:?}");
+    (speeds, travel, peak)
+}
+
+/// The host's rows each coast of `px`-pixel flicks sends, step by step.
+fn host_coast(t: &mut moshpit_term::Terminal, px: &[f64]) -> Vec<Vec<i32>> {
+    let mut coasts = Vec::new();
+    let mut now = 1_000;
+    for (i, step) in px.iter().enumerate() {
+        for _ in 0..5 {
+            now += 10;
+            t.fling_track_at(now, *step);
+        }
+        assert!(t.fling_start_at(now, true));
+        let last = i + 1 == px.len();
+        let mut rows = Vec::new();
+        for _ in 0..(if last { 10_000 } else { 9 }) {
+            let Some(dy) = t.fling_step(1.0 / 60.0) else {
+                break;
+            };
+            if let ScrollAction::Host { rows: n } = t.scroll_drag(dy, true) {
+                rows.push(n);
+            }
+        }
+        coasts.push(rows);
+        now += 150;
+        if !last {
+            assert!(t.fling_stop_at(now));
+        }
+    }
+    coasts
+}
+
+/// B523 (the user, on Canary 131: quick flicks one after another didn't
+/// add up): a flick the same way as the coast its touch stopped goes at
+/// both speeds added, as UIScrollView's do, so two and three quick flicks
+/// go faster and further than one. It started from its own speed again.
+#[test]
+fn v22_quick_flicks_the_same_way_stack() {
+    let (one, far, fast) = flicks(&mut tall(5_000), &[30.0], false);
+    let (two, farther, faster) = flicks(&mut tall(5_000), &[30.0, 30.0], false);
+    let (three, farthest, fastest) = flicks(&mut tall(5_000), &[30.0, 30.0, 30.0], false);
+    assert!((one[0] - 3_000.0).abs() < 1.0, "{one:?}");
+    // The second carries what was left of the first: 3000 px/s after
+    // 150 ms of 0.998 a ms, some 2220.
+    assert!((4_900.0..5_400.0).contains(&two[1]), "{two:?}");
+    assert!(three[2] > two[1], "{three:?}");
+    assert!(
+        farther > far * 1.5 && farthest > farther,
+        "{far} {farther} {farthest}"
+    );
+    assert!(
+        faster > fast && fastest > faster,
+        "{fast} {faster} {fastest}"
+    );
+}
+
+/// B523: only a quick flick the same way stacks. The other way starts
+/// from its own speed; a finger that rested lets go at rest; a slow drag
+/// or a lift long after the touch carries nothing; a tap that only stopped
+/// the coast leaves nothing for later.
+#[test]
+fn v22_only_a_quick_flick_the_same_way_stacks() {
+    // The other way.
+    let (speeds, _, _) = flicks(&mut tall(5_000), &[30.0, -30.0], false);
+    assert!((speeds[1] + 3_000.0).abs() < 1.0, "{speeds:?}");
+    // Slow: 2 px every 10 ms, 200 px/s, coasts at its own speed.
+    let (speeds, _, _) = flicks(&mut tall(5_000), &[30.0, 2.0], false);
+    assert!((speeds[1] - 200.0).abs() < 1.0, "{speeds:?}");
+
+    // At rest before the lift: no coast, nothing carried.
+    let mut t = tall(5_000);
+    let lift = drag_for_a_fling(&mut t, 0, 150.0, 30.0);
+    assert!(t.fling_start_at(lift, false));
+    assert!(t.fling_stop_at(lift + 100));
+    let lift = drag_for_a_fling(&mut t, lift + 100, 150.0, 30.0);
+    assert!(!t.fling_start_at(lift + 80, false), "rested");
+
+    // Lifted long after the touch: its own speed.
+    let mut t = tall(5_000);
+    let lift = drag_for_a_fling(&mut t, 0, 150.0, 30.0);
+    assert!(t.fling_start_at(lift, false));
+    assert!(t.fling_stop_at(lift + 100));
+    let lift = drag_for_a_fling(&mut t, lift + 500, 150.0, 30.0);
+    assert!(t.fling_start_at(lift, false));
+    assert!((t.fling_velocity().unwrap() - 3_000.0).abs() < 1.0);
+}
+
+/// B523: on the host's route a stacked coast sends more rows a step and
+/// more in all, up to the ceilings (12 a step, 400 in all), each step one
+/// command; what a step can't take is dropped, never owed.
+#[test]
+fn v22_a_stacked_coast_to_the_host_grows_up_to_its_ceilings() {
+    // The last coast of each: what the stacked speed sends.
+    let one = host_coast(&mut tall(50), &[30.0]).pop().unwrap();
+    let three = host_coast(&mut tall(50), &[30.0, 30.0, 30.0])
+        .pop()
+        .unwrap();
+    let many = host_coast(&mut tall(50), &[200.0; 6]);
+    let sizes = |r: &[i32]| (r.iter().copied().max().unwrap_or(0), r.iter().sum::<i32>());
+    let ((top1, all1), (top3, all3)) = (sizes(&one), sizes(&three));
+    assert!(top3 > top1 && all3 > all1, "{one:?} {three:?}");
+    assert!(
+        many.iter().flatten().all(|n| *n <= 12),
+        "never past 12 a step: {many:?}"
+    );
+    let (top_many, all_many) = sizes(many.last().unwrap());
+    assert_eq!(top_many, 12, "at the step's ceiling: {many:?}");
+    assert!(
+        all_many > all3 && all_many <= 400,
+        "further, never past 400: {all_many}"
+    );
 }
 
 #[test]

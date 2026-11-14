@@ -254,6 +254,10 @@ protocol TerminalSurfaceDelegate: AnyObject {
     /// A drag may scroll even without local history (tmux, herdr, a mouse
     /// app).
     var surfaceScrollsElsewhere: Bool { get }
+    /// A drag's rows go to the host's own scrollback (herdr, mosh's tmux),
+    /// so a coast goes there paced (B523). A tmux pane's own scrollback is
+    /// this terminal's, by the pixel.
+    var surfaceScrollsHostRows: Bool { get }
     /// A horizontal swipe switches panes or windows.
     var surfaceCanSwitch: Bool { get }
     func surface(_ surface: TerminalSurface, switchForward forward: Bool)
@@ -277,6 +281,7 @@ extension TerminalSurfaceDelegate {
     func surfaceClipboardRequest(_ surface: TerminalSurface) { surface.answerClipboard(nil) }
     func surface(_ surface: TerminalSurface, reached mark: TerminalMark) {}
     func surfaceScrollWillBegin(_ surface: TerminalSurface) {}
+    var surfaceScrollsHostRows: Bool { false }
     func surface(_ surface: TerminalSurface, scrollPixels dy: CGFloat) -> CGFloat {
         surface.drag(dy, hostRows: false).moved
     }

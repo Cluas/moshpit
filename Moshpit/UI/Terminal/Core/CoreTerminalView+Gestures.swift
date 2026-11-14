@@ -3,7 +3,7 @@ import MoshpitKit
 import UIKit
 
 // Touch, the pointer and the edit menu on the core view, with the rules the
-// SwiftTerm path learned (TerminalScrollGesture, docs/PATCHES.md):
+// SwiftTerm path learned (its gesture code and patch notes, at cf25626b):
 //
 // - one one-finger pan for both axes, locked to the first ~12 pt: vertical
 //   scrolls (the owner routes it: wheel to a mouse app, tmux copy-mode,
@@ -162,8 +162,9 @@ extension CoreTerminalView: UIGestureRecognizerDelegate, UIEditMenuInteractionDe
                 }
             case .vertical:
                 // The lift coasts at the drag's speed; the scroll ends when
-                // the coast does (B521).
-                let elsewhere = surfaceDelegate?.surfaceScrollsElsewhere == true
+                // the coast does (B521). Paced only for the host's rows
+                // (B523): a tmux pane's coast is its own terminal's.
+                let elsewhere = surfaceDelegate?.surfaceScrollsHostRows == true
                 if let term, mp_term_fling_start(term, elsewhere) {
                     startCoast()
                 } else {

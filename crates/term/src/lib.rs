@@ -594,6 +594,9 @@ pub struct Terminal {
     /// The drag's recent moves, and the coast after its lift (B521).
     velocity: scroll::Velocity,
     fling: Option<scroll::Fling>,
+    /// The speed of the coast a touch stopped, and when: a quick flick the
+    /// same way adds it (B523).
+    carried: Option<(f64, u64)>,
     /// The view's top row the scroll model set last (a different one: the
     /// core moved the view itself).
     scroll_top: Option<StableRowIndex>,
@@ -695,6 +698,7 @@ impl Terminal {
             scroll: scroll::Scroll::default(),
             velocity: scroll::Velocity::default(),
             fling: None,
+            carried: None,
             scroll_top: None,
             a11y_last: Vec::new(),
             a11y_last_cursor: 0,
@@ -2819,17 +2823,41 @@ impl Terminal {
         self.fling_start_at(now, elsewhere)
     }
 
-    /// [`Terminal::fling_start`] at `at_ms` on the terminal's clock.
+    /// [`Terminal::fling_start`] at `at_ms` on the terminal's clock. A
+    /// quick flick the same way as the coast its touch stopped goes at both
+    /// speeds added (B523: flicks stack, as UIScrollView's do), up to
+    /// [`scroll::MAX_FLING`].
     pub fn fling_start_at(&mut self, at_ms: u64, elsewhere: bool) -> bool {
-        let velocity = self.velocity.at(at_ms);
+        let mut velocity = self.velocity.at(at_ms);
         self.velocity.clear();
         self.fling = None;
+        let carried = self.carried.take();
         if !velocity.is_finite() || velocity.abs() < scroll::MIN_FLING {
             return false;
         }
-        let paced = (elsewhere || self.modes().mouse != 0).then(|| self.cell_px() as f64);
-        self.fling = Some(scroll::Fling::new(velocity, paced));
+        if let Some((carry, stopped)) = carried
+            && carry.signum() == velocity.signum()
+            && velocity.abs() >= scroll::STACK_MIN
+            && at_ms.saturating_sub(stopped) <= scroll::STACK_WITHIN_MS
+        {
+            velocity += carry;
+        }
+        let velocity = velocity.clamp(-scroll::MAX_FLING, scroll::MAX_FLING);
+        let row = self.cell_px() as f64;
+        let pacing = if elsewhere {
+            Some(scroll::Pacing::host(row))
+        } else if self.modes().mouse != 0 {
+            Some(scroll::Pacing::wheel(row))
+        } else {
+            None
+        };
+        self.fling = Some(scroll::Fling::new(velocity, pacing));
         true
+    }
+
+    /// The coast's speed now, pixels a second (positive: older).
+    pub fn fling_velocity(&self) -> Option<f64> {
+        self.fling.as_ref().map(scroll::Fling::velocity)
     }
 
     /// One display refresh of a coast, `dt` seconds on: the pixels to move
@@ -2854,10 +2882,19 @@ impl Terminal {
         (going || dy != 0.0).then_some(dy)
     }
 
-    /// A touch: true if it stopped a coast (that touch is not a tap).
+    /// A touch: true if it stopped a coast (that touch is not a tap). The
+    /// coast's speed is kept for a flick to add (B523).
     pub fn fling_stop(&mut self) -> bool {
+        let now = self.now_ms();
+        self.fling_stop_at(now)
+    }
+
+    /// [`Terminal::fling_stop`] at `at_ms` on the terminal's clock.
+    pub fn fling_stop_at(&mut self, at_ms: u64) -> bool {
         self.velocity.clear();
-        self.fling.take().is_some()
+        let stopped = self.fling.take();
+        self.carried = stopped.as_ref().map(|f| (f.velocity(), at_ms));
+        stopped.is_some()
     }
 
     /// Whether a coast is under way.

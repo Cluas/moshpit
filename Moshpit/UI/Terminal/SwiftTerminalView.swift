@@ -1462,6 +1462,10 @@ extension SwiftTerminalView.Coordinator: TerminalSurfaceDelegate {
 
     var surfaceScrollsElsewhere: Bool { onScroll != nil || onScrollPixels != nil }
 
+    /// Rows for the host (herdr, mosh's tmux); a tmux pane's controller
+    /// scrolls the pane's own terminal by the pixel, or wheels its program.
+    var surfaceScrollsHostRows: Bool { onScroll != nil }
+
     var surfaceCanSwitch: Bool { onSwitch != nil }
 
     func surface(_ surface: TerminalSurface, switchForward forward: Bool) {

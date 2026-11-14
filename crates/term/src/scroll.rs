@@ -62,6 +62,18 @@ const STOP_SPEED: f64 = 20.0;
 /// go where it was put stays there.
 pub const MIN_FLING: f64 = 60.0;
 
+/// The fastest a coast goes, flicks stacked or not, in pixels a second
+/// (some 10,000 pt/s at 3x: about the fastest flick a phone reads).
+pub const MAX_FLING: f64 = 30_000.0;
+
+/// A flick adds the coast its touch stopped to its own speed (B523, as
+/// UIScrollView does: quick flicks one after another go faster and
+/// further) when it is this fast at least, the same way, and lifted within
+/// [`STACK_WITHIN_MS`] of that touch. A slow drag, a long hold or the
+/// other way carries nothing.
+pub const STACK_MIN: f64 = 300.0;
+pub const STACK_WITHIN_MS: u64 = 400;
+
 /// A drag's recent moves, for the speed it is let go at.
 #[derive(Debug, Clone, Default)]
 pub struct Velocity {
@@ -74,7 +86,8 @@ impl Velocity {
     pub const WINDOW_MS: u64 = 100;
     /// A finger still this long before the lift let go at rest.
     pub const REST_MS: u64 = 50;
-    /// A move's own span when nothing came before it in the drag.
+    /// A move's own span when nothing came before it in the drag and
+    /// nothing after it tells the drag's pace.
     const FIRST_MS: u64 = 16;
 
     /// A move of `dy` pixels at `at_ms`.
@@ -105,9 +118,18 @@ impl Velocity {
             return 0.0;
         };
         let travel: f64 = self.samples.iter().skip(first).map(|(_, dy)| dy).sum();
+        // The window's first move began where the one before it ended; with
+        // none before it, a pace's length earlier (the drag's own pace).
         let start = match first.checked_sub(1) {
             Some(before) => self.samples[before].0,
-            None => self.samples[first].0.saturating_sub(Self::FIRST_MS),
+            None => {
+                let at = self.samples[first].0;
+                let pace = self
+                    .samples
+                    .get(first + 1)
+                    .map_or(Self::FIRST_MS, |(next, _)| next.saturating_sub(at).max(1));
+                at.saturating_sub(pace)
+            }
         };
         let span = last.saturating_sub(start).max(1) as f64 / 1000.0;
         travel / span
@@ -118,17 +140,60 @@ impl Velocity {
     }
 }
 
+/// Where a paced coast goes (B521, B523): a row's pixels, and the most a
+/// step and a whole coast may take there, whatever the speed. Each step is
+/// work for the far end; past these it falls behind and the scroll runs on
+/// after the finger, which reads as jitter.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Pacing {
+    row: f64,
+    step_ceiling: f64,
+    most_ceiling: f64,
+}
+
+impl Pacing {
+    /// The host's rows (tmux's copy-mode, herdr's scrollback): a step is one
+    /// command (tmux `send-keys -X -N <n> scroll-up`, herdr's scroll of `n`
+    /// lines) and one repaint whatever its rows, so the step may be large:
+    /// at most 12 rows (360 a second at 30 steps a second, some ten screens
+    /// a second) and 400 in all (about eight screens' worth of history).
+    /// Thirty small commands a second keep up over a slow link; more
+    /// commands, or bigger ones, is a queue the person waits out.
+    pub fn host(row: f64) -> Self {
+        Pacing {
+            row,
+            step_ceiling: 12.0,
+            most_ceiling: 400.0,
+        }
+    }
+
+    /// Wheel reports for a program that wants the mouse (vim, less
+    /// --mouse, Claude Code): every report is a scroll it computes and
+    /// redraws, so at most 6 a step (what a drag's move sends at most) and
+    /// 150 in all.
+    pub fn wheel(row: f64) -> Self {
+        Pacing {
+            row,
+            step_ceiling: 6.0,
+            most_ceiling: 150.0,
+        }
+    }
+}
+
 /// A coast after a lift. This terminal's own history takes it by the
 /// pixel; a wheel or the host's rows take it paced (at most every
-/// [`Fling::PACE`]), at most [`Fling::STEP_ROWS`] rows a step and
-/// [`Fling::MOST_ROWS`] in all: each step there is a wheel report or a
-/// host command, and a fast fling's every pixel was a flood the program
-/// fell behind on (the jitter 1.0.4 heard about).
+/// [`Fling::PACE`]), each step and the whole coast bounded by what its
+/// speed travels, at least [`Fling::STEP_ROWS`] and [`Fling::MOST_ROWS`]
+/// and at most the route's ceilings ([`Pacing`]): a faster fling (flicks
+/// stacked, B523) goes faster and further, and never floods the program
+/// (a fast fling's every pixel was a flood it fell behind on: the jitter
+/// 1.0.4 heard about).
 #[derive(Debug, Clone)]
 pub struct Fling {
     momentum: Momentum,
-    /// The row's pixels, for a paced coast; `None`: by the pixel.
-    paced_row: Option<f64>,
+    /// The row's pixels and this coast's bounds in rows, for a paced coast;
+    /// `None`: by the pixel.
+    paced: Option<(f64, f64, f64)>,
     /// Travel not yet released, and how long since the last release.
     pending: f64,
     since: f64,
@@ -138,15 +203,27 @@ pub struct Fling {
 
 impl Fling {
     pub const PACE: f64 = 1.0 / 30.0;
+    /// The least a paced step and coast may take, however slow.
     pub const STEP_ROWS: f64 = 3.0;
     pub const MOST_ROWS: f64 = 60.0;
+    /// How far a coast at a speed goes, in seconds of that speed: the sum
+    /// of 0.998 a ms is 1 / (1 - 0.998) ms.
+    const REACH_S: f64 = 0.5;
 
-    /// A coast at `velocity` pixels a second; `paced_row`: the row's pixels
-    /// when it goes to a wheel or the host.
-    pub fn new(velocity: f64, paced_row: Option<f64>) -> Self {
+    /// A coast at `velocity` pixels a second; `pacing`: where it goes when
+    /// that is a wheel or the host.
+    pub fn new(velocity: f64, pacing: Option<Pacing>) -> Self {
+        let paced = pacing.filter(|p| p.row > 0.0).map(|p| {
+            let rows_a_second = velocity.abs() / p.row;
+            // What the speed travels in a step and in all, kept between
+            // the floor and the route's ceiling.
+            let step = (rows_a_second * Self::PACE).clamp(Self::STEP_ROWS, p.step_ceiling);
+            let most = (rows_a_second * Self::REACH_S).clamp(Self::MOST_ROWS, p.most_ceiling);
+            (p.row, step, most)
+        });
         Fling {
             momentum: Momentum { velocity },
-            paced_row: paced_row.filter(|row| *row > 0.0),
+            paced,
             pending: 0.0,
             since: 0.0,
             sent: 0.0,
@@ -159,7 +236,7 @@ impl Fling {
 
     /// Whether it goes to a wheel or the host (paced and bounded).
     pub fn is_paced(&self) -> bool {
-        self.paced_row.is_some()
+        self.paced.is_some()
     }
 
     /// `dt` seconds on: the pixels to move now (0: none this refresh), and
@@ -173,7 +250,7 @@ impl Fling {
         if let Some(m) = next {
             self.momentum = m;
         }
-        let Some(row) = self.paced_row else {
+        let Some((row, step, most)) = self.paced else {
             return (moved, going);
         };
         self.pending += moved;
@@ -182,14 +259,14 @@ impl Fling {
             return (0.0, true);
         }
         self.since = 0.0;
-        let room = (Self::MOST_ROWS - self.sent).max(0.0) * row;
-        let cap = (Self::STEP_ROWS * row).min(room);
+        let room = (most - self.sent).max(0.0) * row;
+        let cap = (step * row).min(room);
         // What the step can't take is dropped, not owed: a backlog is what
         // the program falls behind on.
         let out = self.pending.clamp(-cap, cap);
         self.pending = 0.0;
         self.sent += out.abs() / row;
-        (out, going && self.sent < Self::MOST_ROWS)
+        (out, going && self.sent < most)
     }
 }
 
@@ -301,35 +378,57 @@ mod tests {
         // 3000 px/s at 0.998 a ms, down to the stop at 20: 1490 px.
         assert!((total - 1490.0).abs() < 5.0, "{total}");
 
-        let row = 50.0;
-        let mut paced = Fling::new(20_000.0, Some(row));
-        let mut releases = Vec::new();
-        let mut frames = 0;
-        loop {
-            let (moved, going) = paced.step(1.0 / 60.0);
-            frames += 1;
-            if moved != 0.0 {
-                releases.push((frames, moved));
+        // Paced, a coast releases every 1/30 s (every other refresh at 60
+        // Hz), each step and the whole coast what its speed travels, here
+        // past the host's ceilings: 12 rows a step, 400 in all at most (what
+        // the capped steps dropped while the speed was past them isn't
+        // owed, so less).
+        let row = 30.0;
+        let run = |mut fling: Fling| {
+            let (mut releases, mut frames) = (Vec::new(), 0);
+            loop {
+                let (moved, going) = fling.step(1.0 / 60.0);
+                frames += 1;
+                if moved != 0.0 {
+                    releases.push((frames, moved / row));
+                }
+                if !going {
+                    return releases;
+                }
+                assert!(frames < 10_000);
             }
-            if !going {
-                break;
-            }
-            assert!(frames < 10_000);
-        }
-        assert!(
-            releases.iter().all(|(_, m)| *m <= 3.0 * row + 1e-9),
-            "{releases:?}"
+        };
+        let host = run(Fling::new(MAX_FLING, Some(Pacing::host(row))));
+        assert!(host.iter().all(|(_, r)| *r <= 12.0 + 1e-9), "{host:?}");
+        assert!(host.iter().any(|(_, r)| (*r - 12.0).abs() < 1e-9));
+        let rows: f64 = host.iter().map(|(_, r)| r).sum();
+        assert!(rows > 300.0 && rows <= 400.0 + 1e-6, "{rows}");
+        assert!(host.windows(2).all(|w| w[1].0 - w[0].0 >= 2), "{host:?}");
+        // The wheel's ceilings: 6 a step, 150 in all.
+        let wheel = run(Fling::new(MAX_FLING, Some(Pacing::wheel(row))));
+        assert!(wheel.iter().all(|(_, r)| *r <= 6.0 + 1e-9), "{wheel:?}");
+        let rows: f64 = wheel.iter().map(|(_, r)| r).sum();
+        assert!((rows - 150.0).abs() < 1e-6, "{rows}");
+        // Below the ceilings a coast goes as far as its speed takes it, and
+        // a faster one further and faster (B523).
+        let slow = run(Fling::new(3_000.0, Some(Pacing::host(row))));
+        let fast = run(Fling::new(9_000.0, Some(Pacing::host(row))));
+        let (far, farther) = (
+            slow.iter().map(|(_, r)| r).sum::<f64>(),
+            fast.iter().map(|(_, r)| r).sum::<f64>(),
         );
-        let rows: f64 = releases.iter().map(|(_, m)| m / row).sum();
-        assert!((rows - 60.0).abs() < 1e-6, "sixty rows in all: {rows}");
-        // Every other frame at 60 Hz.
+        assert!((far - 1490.0 / row).abs() < 0.5, "{far}");
+        assert!((farther - 4490.0 / row).abs() < 0.5, "{farther}");
+        let peak = |r: &[(i32, f64)]| r.iter().map(|(_, x)| *x).fold(0.0, f64::max);
         assert!(
-            releases.windows(2).all(|w| w[1].0 - w[0].0 >= 2),
-            "{releases:?}"
+            peak(&fast) > 2.5 * peak(&slow),
+            "{} {}",
+            peak(&fast),
+            peak(&slow)
         );
 
         // A slow paced fling ends with what it travelled, released.
-        let mut slow = Fling::new(-300.0, Some(row));
+        let mut slow = Fling::new(-300.0, Some(Pacing::host(50.0)));
         let mut travelled = 0.0;
         loop {
             let (moved, going) = slow.step(1.0 / 60.0);
