@@ -591,6 +591,9 @@ pub struct Terminal {
     /// The shadow document of the platform's text input.
     pub ime: Ime,
     scroll: scroll::Scroll,
+    /// The drag's recent moves, and the coast after its lift (B521).
+    velocity: scroll::Velocity,
+    fling: Option<scroll::Fling>,
     /// The view's top row the scroll model set last (a different one: the
     /// core moved the view itself).
     scroll_top: Option<StableRowIndex>,
@@ -690,6 +693,8 @@ impl Terminal {
             extra_rows: 0,
             ime: Ime::new(),
             scroll: scroll::Scroll::default(),
+            velocity: scroll::Velocity::default(),
+            fling: None,
             scroll_top: None,
             a11y_last: Vec::new(),
             a11y_last_cursor: 0,
@@ -1003,7 +1008,7 @@ impl Terminal {
         self.view_top = Some(top);
         self.scroll_top = self.view_top;
         self.scroll.offset_px = self.display_offset() as i64 * self.cell_px();
-        self.scroll.momentum = None;
+        self.fling = None;
     }
 
     fn reconfigure(&mut self) {
@@ -1585,7 +1590,7 @@ impl Terminal {
         if self.view_top.is_some() {
             self.scroll_top = self.view_top;
             self.scroll.offset_px = self.display_offset() as i64 * self.cell_px();
-            self.scroll.momentum = None;
+            self.fling = None;
             self.full_damage = true;
         }
     }
@@ -1673,7 +1678,7 @@ impl Terminal {
     pub fn scroll_to_bottom(&mut self) {
         self.view_top = None;
         self.scroll.offset_px = 0;
-        self.scroll.momentum = None;
+        self.fling = None;
         self.scroll_top = None;
         self.set_extra_rows(0);
     }
@@ -2694,7 +2699,6 @@ impl Terminal {
     /// rows for it. Else a program that wants the mouse gets wheel ticks,
     /// and otherwise this terminal's history moves by the pixel.
     pub fn scroll_drag(&mut self, dy: f64, host_rows: bool) -> ScrollAction {
-        self.scroll.momentum = None;
         let cell = self.cell_px() as f64;
         if host_rows {
             let rows = self
@@ -2792,41 +2796,73 @@ impl Terminal {
         ScrollAction::None
     }
 
-    /// A fling at `velocity` pixels a second: true if the history coasts
-    /// (the host turned coasting on, and the drag was the local history's).
-    pub fn scroll_fling(&mut self, velocity: f64) -> bool {
-        if !self.scroll.coast || self.modes().mouse != 0 || !velocity.is_finite() {
+    // --- The coast after a lift (B521) ---------------------------------------
+
+    /// A drag's vertical move, `dy` device pixels (positive: older),
+    /// wherever it went: the speed its lift lets go at is read from these.
+    pub fn fling_track(&mut self, dy: f64) {
+        let now = self.now_ms();
+        self.fling_track_at(now, dy);
+    }
+
+    /// [`Terminal::fling_track`] at `at_ms` on the terminal's clock.
+    pub fn fling_track_at(&mut self, at_ms: u64, dy: f64) {
+        self.velocity.add(at_ms, dy);
+    }
+
+    /// The drag's lift: true if it coasts, at the drag's last speed.
+    /// `elsewhere`: the drag went to the host (tmux, herdr) and not to this
+    /// terminal; there, and for a program that wants the mouse (wheel
+    /// ticks), the coast is paced and bounded.
+    pub fn fling_start(&mut self, elsewhere: bool) -> bool {
+        let now = self.now_ms();
+        self.fling_start_at(now, elsewhere)
+    }
+
+    /// [`Terminal::fling_start`] at `at_ms` on the terminal's clock.
+    pub fn fling_start_at(&mut self, at_ms: u64, elsewhere: bool) -> bool {
+        let velocity = self.velocity.at(at_ms);
+        self.velocity.clear();
+        self.fling = None;
+        if !velocity.is_finite() || velocity.abs() < scroll::MIN_FLING {
             return false;
         }
-        self.scroll.momentum = Some(Momentum { velocity });
+        let paced = (elsewhere || self.modes().mouse != 0).then(|| self.cell_px() as f64);
+        self.fling = Some(scroll::Fling::new(velocity, paced));
         true
     }
 
-    /// One display refresh of a coast, `dt` seconds on.
-    pub fn scroll_tick(&mut self, dt: f64) -> ScrollAction {
-        let Some(m) = self.scroll.momentum.take() else {
-            return ScrollAction::None;
-        };
-        let (moved, next) = m.step(dt);
-        let action = self.scroll_local(moved);
-        self.scroll.momentum = if action == ScrollAction::None {
-            None
-        } else {
-            next
-        };
-        action
+    /// One display refresh of a coast, `dt` seconds on: the pixels to move
+    /// now (0: none this refresh), to route as a drag's are. `None`: it has
+    /// stopped. This terminal's own history stops it at either end.
+    pub fn fling_step(&mut self, dt: f64) -> Option<f64> {
+        let fling = self.fling.as_mut()?;
+        let paced = fling.is_paced();
+        let (dy, going) = fling.step(dt);
+        if !going {
+            self.fling = None;
+        }
+        if !paced && dy != 0.0 {
+            self.sync_scroll();
+            let max = self.history_len() as i64 * self.cell_px();
+            let off = self.scroll.offset_px;
+            if (dy < 0.0 && off <= 0) || (dy > 0.0 && off >= max) {
+                self.fling = None;
+                return None;
+            }
+        }
+        (going || dy != 0.0).then_some(dy)
     }
 
-    pub fn set_coast(&mut self, on: bool) {
-        self.scroll.coast = on;
-        if !on {
-            self.scroll.momentum = None;
-        }
+    /// A touch: true if it stopped a coast (that touch is not a tap).
+    pub fn fling_stop(&mut self) -> bool {
+        self.velocity.clear();
+        self.fling.take().is_some()
     }
 
     /// Whether a coast is under way.
-    pub fn coasting(&self) -> bool {
-        self.scroll.momentum.is_some()
+    pub fn flinging(&self) -> bool {
+        self.fling.is_some()
     }
 
     /// Pixels into the history.

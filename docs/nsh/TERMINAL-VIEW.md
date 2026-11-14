@@ -89,7 +89,7 @@
 | V19 | 本地历史按像素滚，偏移落在设备像素网格上；松手离底不到半行就回到底 | 补丁 21 | Rust `scroll` | `scroll.rs` |
 | V20 | 滚动去向：tmux/herdr 交给宿主；程序要鼠标就发滚轮；否则本地历史 | `project_scroll_architecture` | Rust `scroll` | `scroll.rs` |
 | V21 | 读历史时新输出不把视口拽回底部；打字、粘贴回到底部 | App 规则 | Rust `scroll` + 内核视口 | `scroll.rs` |
-| V22 | 松手不滑行（惯性作为数据提供，默认关） | 1.0.4 真机反馈 | Rust `scroll` | `scroll.rs` |
+| V22 | 松手按滑动速度惯性滑行（取松手前 100 ms 的速度，按 UIScrollView 的 0.998/ms 减速；松手前停住了就不滑）；本地历史按像素滑、到顶到底就停；滚轮（要鼠标的程序）和宿主的行（tmux、herdr）限速限量：每 1/30 s 放一次、每次至多 3 行、一次甩至多 60 行；再碰一下就停、这一下不算点按；打字、改尺寸也停 | B521（推翻 1.0.4 的「松手不滑行」，用户 11-15 要的） | Rust `scroll`（物理）+ iOS 手势（每帧按拖动的路由送出） | `scroll.rs`、`view.rs` 的 v22_* |
 | V23 | 横向滑动切 pane/窗口，轴在头 12 pt 定下 | `TerminalScrollGesture` | iOS | 真机 |
 | V24 | 指针是 I 形；Mac 上指针拖动选择、没有把手 | 补丁 48、49，B173 | iOS | 真机 |
 | V25 | Tab、Shift-Tab 留在终端，终端不是焦点停靠点；Mac 上 Esc 到终端 | 补丁 50、51，B175 | iOS + Rust 编码 | `input.rs`；真机 |

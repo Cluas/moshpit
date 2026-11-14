@@ -23,7 +23,7 @@ pub type MpTermWaker = unsafe extern "C" fn(ctx: *mut c_void);
 
 /// `MP_TERM_ABI_VERSION` (moshpit_term.h): bumped whenever the C ABI
 /// changes shape, so a view refuses a stale library instead of misreading it.
-pub const ABI_VERSION: u32 = 14;
+pub const ABI_VERSION: u32 = 15;
 
 /// The `MP_TERM_ABI_VERSION` this library was built with.
 #[unsafe(no_mangle)]
@@ -1530,35 +1530,53 @@ pub unsafe extern "C" fn mp_term_scroll_end(t: *const MpTerm) -> MpScrollAction 
     }))
 }
 
-/// A fling: true if the history coasts (call mp_term_scroll_tick each
-/// refresh until it returns nothing).
+/// A drag's vertical move, `dy` device pixels (positive: older), wherever
+/// it went: what the lift's speed is read from (B521).
 ///
 /// # Safety
 /// `t` live.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn mp_term_scroll_fling(t: *const MpTerm, velocity: f64) -> bool {
-    let t = term!(t, false);
-    guard(false, || t.with(|term| term.scroll_fling(velocity)))
-}
-
-/// # Safety
-/// `t` live.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn mp_term_scroll_tick(t: *const MpTerm, dt: f64) -> MpScrollAction {
-    let t = term!(t, scroll_action(ScrollAction::None));
-    scroll_action(guard(ScrollAction::None, || {
-        t.with(|term| term.scroll_tick(dt))
-    }))
-}
-
-/// Whether a fling coasts (off by default).
-///
-/// # Safety
-/// `t` live.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn mp_term_set_coast(t: *const MpTerm, on: bool) {
+pub unsafe extern "C" fn mp_term_fling_track(t: *const MpTerm, dy: f64) {
     let t = term!(t);
-    guard((), || t.with(|term| term.set_coast(on)));
+    guard((), || t.with(|term| term.fling_track(dy)));
+}
+
+/// The drag's lift: true if it coasts. `elsewhere`: the drag went to the
+/// host (tmux, herdr).
+///
+/// # Safety
+/// `t` live.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn mp_term_fling_start(t: *const MpTerm, elsewhere: bool) -> bool {
+    let t = term!(t, false);
+    guard(false, || t.with(|term| term.fling_start(elsewhere)))
+}
+
+/// One display refresh of a coast, `dt` seconds on: true while it coasts;
+/// `dy` (may be NULL) gets the pixels to route now, as a drag's (0: none
+/// this refresh).
+///
+/// # Safety
+/// `t` live; `dy` NULL or writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn mp_term_fling_step(t: *const MpTerm, dt: f64, dy: *mut f64) -> bool {
+    let t = term!(t, false);
+    let step = guard(None, || t.with(|term| term.fling_step(dt)));
+    if !dy.is_null() {
+        // SAFETY: the caller's writable f64.
+        unsafe { *dy = step.unwrap_or(0.0) };
+    }
+    step.is_some()
+}
+
+/// A touch: true if it stopped a coast (that touch is then not a tap).
+///
+/// # Safety
+/// `t` live.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn mp_term_fling_stop(t: *const MpTerm) -> bool {
+    let t = term!(t, false);
+    guard(false, || t.with(|term| term.fling_stop()))
 }
 
 // --- Accessibility -----------------------------------------------------------

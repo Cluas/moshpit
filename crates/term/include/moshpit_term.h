@@ -13,7 +13,7 @@ extern "C" {
 
 /// Bumped whenever anything below changes shape: a view checks
 /// `mp_term_abi_version() == MP_TERM_ABI_VERSION` before it uses the core.
-#define MP_TERM_ABI_VERSION 14
+#define MP_TERM_ABI_VERSION 15
 uint32_t mp_term_abi_version(void);
 
 typedef struct MpTerm MpTerm;
@@ -402,10 +402,18 @@ typedef struct {
 /// scrolls its own buffer (tmux, herdr).
 MpScrollAction mp_term_scroll_drag(const MpTerm *_Nonnull t, double dy, bool host_rows);
 MpScrollAction mp_term_scroll_end(const MpTerm *_Nonnull t);
-/// True if the history coasts (coasting is off unless mp_term_set_coast).
-bool mp_term_scroll_fling(const MpTerm *_Nonnull t, double velocity);
-MpScrollAction mp_term_scroll_tick(const MpTerm *_Nonnull t, double dt);
-void mp_term_set_coast(const MpTerm *_Nonnull t, bool on);
+/// A drag's vertical move, `dy` device pixels (positive: older), wherever it
+/// went: the lift's speed is read from these (B521).
+void mp_term_fling_track(const MpTerm *_Nonnull t, double dy);
+/// The drag's lift: true if it coasts; `elsewhere`: the drag went to the
+/// host (tmux, herdr). There, and for a program that wants the mouse, the
+/// coast is paced and bounded.
+bool mp_term_fling_start(const MpTerm *_Nonnull t, bool elsewhere);
+/// One display refresh of a coast, `dt` seconds on: true while it coasts;
+/// `dy` gets the pixels to route now, as a drag's (0: none this refresh).
+bool mp_term_fling_step(const MpTerm *_Nonnull t, double dt, double *_Nullable dy);
+/// A touch: true if it stopped a coast (that touch is then not a tap).
+bool mp_term_fling_stop(const MpTerm *_Nonnull t);
 
 // MARK: Accessibility (V33)
 

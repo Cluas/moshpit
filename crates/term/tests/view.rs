@@ -726,24 +726,146 @@ fn v21_new_cell_pixels_while_reading_keep_whole_rows() {
     assert!(f.display_offset > 0, "still reading");
 }
 
-#[test]
-fn v22_no_coast_unless_the_host_asks() {
-    let mut t = tall(500);
-    assert!(
-        !t.scroll_fling(3_000.0),
-        "off by default (1.0.4's feedback)"
-    );
-    t.set_coast(true);
-    assert!(t.scroll_fling(3_000.0));
-    let mut moved = 0;
-    for _ in 0..600 {
-        match t.scroll_tick(1.0 / 60.0) {
+/// A drag of `px` pixels in moves of `step` every 10 ms from `at`, routed
+/// as the view routes it and tracked for the lift; when it ended.
+fn drag_for_a_fling(t: &mut moshpit_term::Terminal, at: u64, px: f64, step: f64) -> u64 {
+    let mut now = at;
+    let mut left = px;
+    while left.abs() > 0.0 {
+        let dy = if left.abs() < step.abs() { left } else { step };
+        now += 10;
+        t.fling_track_at(now, dy);
+        let _ = t.scroll_drag(dy, false);
+        left -= dy;
+    }
+    now
+}
+
+/// Plays a coast through the view's routing, 60 Hz: the history's moved
+/// pixels, and the wheel reports per refresh.
+fn coast(t: &mut moshpit_term::Terminal) -> (i64, Vec<usize>) {
+    let (mut moved, mut ticks) = (0, Vec::new());
+    for _ in 0..2_000 {
+        let Some(dy) = t.fling_step(1.0 / 60.0) else {
+            return (moved, ticks);
+        };
+        match t.scroll_drag(dy, false) {
             ScrollAction::Local { moved_px } => moved += moved_px,
-            _ => break,
+            ScrollAction::Wheel(bytes) => ticks.push(bytes.iter().filter(|b| **b == b'M').count()),
+            _ => {}
         }
     }
-    assert!(moved > 300, "coasted {moved} px");
-    assert!(!t.coasting(), "and stopped");
+    panic!("the coast never stopped");
+}
+
+/// B521 (V22 overturned, the owner's call): a lift coasts at the drag's
+/// speed, slowing as UIScrollView slows, and stops; a finger that rested
+/// before the lift doesn't coast; it stops at the history's top and on the
+/// live screen. It didn't coast at all unless the host turned coasting on,
+/// which it never did.
+#[test]
+fn v22_a_lift_coasts_at_the_drags_speed() {
+    let mut t = tall(500);
+    // 30 px every 10 ms: 3000 px/s.
+    let lift = drag_for_a_fling(&mut t, 0, 300.0, 30.0);
+    let before = t.scroll_offset_px();
+    assert!(t.fling_start_at(lift, false), "it coasts");
+    let (moved, _) = coast(&mut t);
+    assert!(
+        (1_400..=1_600).contains(&moved),
+        "about UIScrollView's 1490 px for 3000 px/s: {moved}"
+    );
+    assert_eq!(t.scroll_offset_px(), before + moved);
+    assert!(!t.flinging(), "and stopped");
+
+    // Let go at rest: no coast.
+    let lift = drag_for_a_fling(&mut t, 10_000, 300.0, 30.0);
+    assert!(!t.fling_start_at(lift + 80, false), "the finger rested");
+    assert!(!t.flinging());
+
+    // Toward the top of a short history: it stops there.
+    let mut t = tall(30);
+    let lift = drag_for_a_fling(&mut t, 0, 120.0, 40.0);
+    assert!(t.fling_start_at(lift, false));
+    let (moved, _) = coast(&mut t);
+    assert!(moved > 0);
+    assert_eq!(t.scroll_drag(10.0, false), ScrollAction::None, "at the top");
+
+    // Toward the live screen: it lands there and stops.
+    let lift = drag_for_a_fling(&mut t, 20_000, -120.0, -40.0);
+    assert!(t.fling_start_at(lift, false));
+    let _ = coast(&mut t);
+    assert_eq!(t.scroll_offset_px(), 0, "on the live screen");
+}
+
+/// B521: a touch stops a coast (and says so: that touch is not a tap);
+/// typing stops it, as a resize does.
+#[test]
+fn v22_a_touch_or_typing_stops_a_coast() {
+    let mut t = tall(500);
+    let lift = drag_for_a_fling(&mut t, 0, 300.0, 30.0);
+    assert!(t.fling_start_at(lift, false));
+    assert!(t.fling_step(1.0 / 60.0).is_some());
+    assert!(t.fling_stop(), "a coast was stopped: not a tap");
+    assert!(!t.fling_stop(), "nothing to stop: a tap");
+    assert_eq!(t.fling_step(1.0 / 60.0), None);
+
+    let lift = drag_for_a_fling(&mut t, 1_000, 300.0, 30.0);
+    assert!(t.fling_start_at(lift, false));
+    let _ = t.key(moshpit_term::Key::Char('a'), 0, true, 1);
+    assert!(!t.flinging(), "typing stops it");
+
+    let lift = drag_for_a_fling(&mut t, 2_000, 300.0, 30.0);
+    assert!(t.fling_start_at(lift, false));
+    t.resize(30, 6);
+    assert!(!t.flinging(), "a resize stops it");
+}
+
+/// B521: a coast for a program that wants the mouse goes as wheel reports,
+/// paced (every other refresh at most) and bounded (three a refresh, sixty
+/// rows in all), however fast the fling: each report is work for the
+/// program, and a flood is what it falls behind on. The host's rows (tmux,
+/// herdr) are paced the same.
+#[test]
+fn v22_a_coast_to_a_wheel_or_the_host_is_paced_and_bounded() {
+    let mut t = tall(50);
+    t.feed(b"\x1b[?1000h\x1b[?1006h");
+    let _ = t.frame();
+    // A very fast fling: 100 px every 10 ms, 10000 px/s.
+    let mut now = 0;
+    for _ in 0..5 {
+        now += 10;
+        t.fling_track_at(now, 100.0);
+    }
+    assert!(t.fling_start_at(now, false));
+    let (moved, ticks) = coast(&mut t);
+    assert_eq!(moved, 0, "the history stays: the program scrolls");
+    assert!(ticks.iter().all(|n| (1..=3).contains(n)), "{ticks:?}");
+    assert_eq!(
+        ticks.iter().sum::<usize>(),
+        60,
+        "sixty rows in all: {ticks:?}"
+    );
+
+    // The host's rows: the same pace, by the row.
+    let mut t = tall(50);
+    let mut now = 0;
+    for _ in 0..5 {
+        now += 10;
+        t.fling_track_at(now, 100.0);
+    }
+    assert!(t.fling_start_at(now, true));
+    let mut rows = Vec::new();
+    for _ in 0..2_000 {
+        let Some(dy) = t.fling_step(1.0 / 60.0) else {
+            break;
+        };
+        if let ScrollAction::Host { rows: n } = t.scroll_drag(dy, true) {
+            rows.push(n);
+        }
+    }
+    assert!(rows.iter().all(|n| (1..=3).contains(n)), "{rows:?}");
+    assert_eq!(rows.iter().sum::<i32>(), 60, "{rows:?}");
 }
 
 #[test]

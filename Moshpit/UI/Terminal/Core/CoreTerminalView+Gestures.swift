@@ -8,7 +8,9 @@ import UIKit
 // - one one-finger pan for both axes, locked to the first ~12 pt: vertical
 //   scrolls (the owner routes it: wheel to a mouse app, tmux copy-mode,
 //   herdr, or this view's own history by the pixel), horizontal switches
-//   panes; no coast after the lift (1.0.4's device feedback);
+//   panes; the lift coasts at the drag's speed, each refresh's travel
+//   routed as the drag's was (B521: the core's physics, paced and bounded
+//   for a wheel or the host); a touch stops a coast, and isn't a tap;
 // - a tap is a tap: it opens a link without taking the keyboard (patches
 //   4, 13), raises the keyboard only on the cursor's own rows, clicks for a
 //   program that wants the mouse, dismisses a selection (20); it never
@@ -32,6 +34,23 @@ final class CoreTermGestureState {
     var selecting = false
     /// A handle is being dragged (the selection keeps its other end).
     var draggingHandle = false
+    /// The coast after a lift (B521), and when it last moved.
+    var coast: CADisplayLink?
+    var coastAt: CFTimeInterval = 0
+    /// The touch that stopped a coast: no tap of it (B521).
+    weak var coastStopper: UITouch?
+}
+
+/// The coast's refresh, without the link keeping the view.
+private final class CoreTermCoastTarget: NSObject {
+    private weak var view: CoreTerminalView?
+    init(_ view: CoreTerminalView) { self.view = view }
+    @objc func tick(_ link: CADisplayLink) {
+        MainActor.assumeIsolated {
+            guard let view else { return link.invalidate() }
+            view.coastTick(link)
+        }
+    }
 }
 
 /// A selection handle: a bar the height of a row and a knob, in a
@@ -129,6 +148,8 @@ extension CoreTerminalView: UIGestureRecognizerDelegate, UIEditMenuInteractionDe
                 gestures.axis = abs(t.x) > abs(t.y) ? .horizontal : .vertical
             }
             guard gestures.axis == .vertical else { return }
+            // Every move, wherever it goes: the lift's speed (B521).
+            if let term { mp_term_fling_track(term, Double(t.y * metrics.scale)) }
             _ = surfaceDelegate?.surface(self, scrollPixels: t.y)
             g.setTranslation(.zero, in: self)
         case .ended:
@@ -140,7 +161,14 @@ extension CoreTerminalView: UIGestureRecognizerDelegate, UIEditMenuInteractionDe
                     surfaceDelegate?.surface(self, switchForward: dx < 0)
                 }
             case .vertical:
-                surfaceDelegate?.surfaceScrollDidEnd(self)
+                // The lift coasts at the drag's speed; the scroll ends when
+                // the coast does (B521).
+                let elsewhere = surfaceDelegate?.surfaceScrollsElsewhere == true
+                if let term, mp_term_fling_start(term, elsewhere) {
+                    startCoast()
+                } else {
+                    surfaceDelegate?.surfaceScrollDidEnd(self)
+                }
             case nil:
                 break
             }
@@ -149,6 +177,49 @@ extension CoreTerminalView: UIGestureRecognizerDelegate, UIEditMenuInteractionDe
             if gestures.axis == .vertical { surfaceDelegate?.surfaceScrollDidEnd(self) }
             gestures.axis = nil
         }
+    }
+
+    // MARK: The coast (B521)
+
+    private func startCoast() {
+        gestures.coast?.invalidate()
+        let link = CADisplayLink(target: CoreTermCoastTarget(self), selector: #selector(CoreTermCoastTarget.tick(_:)))
+        link.add(to: .main, forMode: .common)
+        gestures.coast = link
+        gestures.coastAt = CACurrentMediaTime()
+    }
+
+    /// One refresh of the coast: the core's travel for it, routed as a
+    /// drag's (the history, a wheel, the host's rows). Typing, a resize or
+    /// the live screen stop it in the core.
+    fileprivate func coastTick(_ link: CADisplayLink) {
+        guard let term else { return endCoast() }
+        let now = link.timestamp
+        let dt = max(0, now - gestures.coastAt)
+        gestures.coastAt = now
+        var dy: Double = 0
+        let going = mp_term_fling_step(term, dt, &dy)
+        if dy != 0 {
+            _ = surfaceDelegate?.surface(self, scrollPixels: CGFloat(dy) / metrics.scale)
+        }
+        if !going { endCoast() }
+    }
+
+    /// The coast is over: the scroll ends (the dock near the live screen,
+    /// the host's end of a scroll).
+    private func endCoast() {
+        guard let link = gestures.coast else { return }
+        link.invalidate()
+        gestures.coast = nil
+        surfaceDelegate?.surfaceScrollDidEnd(self)
+    }
+
+    /// A touch on a coast stops it; that touch is no tap (B521).
+    private func touchStopsCoast(_ touch: UITouch) {
+        guard gestures.coast != nil else { return }
+        if let term { _ = mp_term_fling_stop(term) }
+        gestures.coastStopper = touch
+        endCoast()
     }
 
     @objc private func handlePinch(_ g: UIPinchGestureRecognizer) {
@@ -433,6 +504,14 @@ extension CoreTerminalView: UIGestureRecognizerDelegate, UIEditMenuInteractionDe
             let canScroll = surfaceDelegate?.surfaceScrollsElsewhere == true || termModes.mouse != 0 || historyLines > 0
             return canScroll || surfaceDelegate?.surfaceCanSwitch == true
         }
+        return true
+    }
+
+    func gestureRecognizer(_ g: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+        // A touch on a coast stops it; taps don't see that touch (B521). The
+        // pan and the long press do: a new drag, a selection.
+        touchStopsCoast(touch)
+        if g is UITapGestureRecognizer, gestures.coastStopper === touch { return false }
         return true
     }
 
