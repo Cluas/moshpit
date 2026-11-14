@@ -261,7 +261,7 @@ struct AgentsScriptTests {
                 // A herdr session on screen, its pane as the app reads it
                 // (B407).
                 let session = Self.herdrSession(connection, focused: event.visible ?? "")
-                AgentControlBridge.shared.visiblePane = { PaneOnScreen.of(session) }
+                AgentControlBridge.shared.visiblePane = { PaneOnScreen.of(session, foreground: true) }
                 monitor.sweep()
             case "push":
                 _ = standing.noteStanding(conn: Self.conn, entry: .init(
