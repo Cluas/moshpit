@@ -22,15 +22,22 @@ final class NSHConnectionFlowUITest: XCTestCase {
         app.waitNSH("connection-form")
         XCTAssertFalse(app.waitNSH("save-connection").isEnabled, "Save is enabled on an empty form")
 
+        // A new connection starts with Mosh as Settings' default says
+        // (run 11: on), so the flow reads the switch first and checks both
+        // ways from there.
         let mosh = app.waitNSH("toggle-use-mosh")
-        XCTAssertFalse(app.nsh("connection-form-predict").exists, "Mosh's rows show while Use Mosh is off")
         if !mosh.isHittable { app.reveal(mosh) }
+        let rows = app.nsh("connection-form-predict")
+        let startsOn = try XCTUnwrap(mosh.isOn, "Use Mosh reports no state: \(mosh.spoken)")
+        XCTAssertEqual(rows.exists, startsOn, "Mosh's rows don't follow Use Mosh (on: \(startsOn))")
         mosh.tap()
-        XCTAssertTrue(app.nsh("connection-form-predict").waitForExistence(timeout: 5),
-                      "turning Use Mosh on showed none of its rows")
+        if startsOn {
+            XCTAssertTrue(rows.waitForNonExistence(timeout: 5), "Mosh's rows stayed after turning it off")
+        } else {
+            XCTAssertTrue(rows.waitForExistence(timeout: 5), "turning Use Mosh on showed none of its rows")
+        }
         app.nsh("toggle-use-mosh").tap()
-        XCTAssertTrue(app.nsh("connection-form-predict").waitForNonExistence(timeout: 5),
-                      "Mosh's rows stayed after turning it off")
+        XCTAssertEqual(app.nsh("toggle-use-mosh").isOn, startsOn, "Use Mosh didn't flip back")
 
         app.tapNSH("connection-form-cancel")
         app.waitNSH("home-settings", "Cancel didn't go back to Home")

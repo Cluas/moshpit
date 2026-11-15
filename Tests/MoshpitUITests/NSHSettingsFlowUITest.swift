@@ -93,11 +93,15 @@ final class NSHSettingsFlowUITest: XCTestCase {
         for id in ["default", "pit", "island", "wq", "prefix", "localhost", "prompt", "cursor", "hail"] {
             XCTAssertTrue(app.nsh("app-icon-\(id)").waitForExistence(timeout: 3), "missing icon \(id)")
         }
+        #if !targetEnvironment(simulator)
+        // A simulator can't switch icons, and asking blocks the app's main
+        // thread long enough to time XCUITest's queries out (runs 10, 11).
         app.tapNSH("app-icon-pit")
         let alert = app.alerts.firstMatch
         if alert.waitForExistence(timeout: 3) {
             alert.buttons.element(boundBy: alert.buttons.count - 1).tap()
         }
+        #endif
 
         app.backNSH()
         let accent = app.waitNSH("settings-accent").spoken

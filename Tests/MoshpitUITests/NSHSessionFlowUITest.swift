@@ -23,9 +23,16 @@ final class NSHSessionFlowUITest: XCTestCase {
         guard let session = NSHFlow.seededSession() else {
             throw XCTSkip("needs a host: TEST_RUNNER_MOSHPIT_SEED_USER and _KEY_B64 (the local rig, or a staged one)")
         }
-        let app = NSHFlow.launch(session)
+        // Home first (`-MOSHPIT_SEED_HOME 1`): without it the seeded
+        // terminal is the app's root and Back has nowhere to go (run 11).
+        let app = NSHFlow.launch(session + ["-MOSHPIT_SEED_HOME", "1"])
+        let name = ProcessInfo.processInfo.environment["MOSHPIT_SEED_NAME"] ?? "devbox"
 
-        // The seeded connection connects and its terminal comes up.
+        // The connection connects from Home; its card's head opens its
+        // terminal.
+        let head = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", name)).firstMatch
+        XCTAssertTrue(head.waitForExistence(timeout: 30), "Home has no card for \(name)")
+        head.tap()
         app.waitNSH("terminal-screen", timeout: 30, "the seeded session's terminal never came up")
         let window = app.waitNSH("terminal-crumb-window", timeout: 30, "no window segment on the breadcrumb")
         XCTAssertTrue(window.isEnabled, "the window segment is inert on a live session")
@@ -46,7 +53,6 @@ final class NSHSessionFlowUITest: XCTestCase {
         // Back is Home, with the host's card.
         app.tapNSH("terminal-back")
         app.waitNSH("home-settings", "Back from the terminal didn't reach Home")
-        let name = ProcessInfo.processInfo.environment["MOSHPIT_SEED_NAME"] ?? "devbox"
         XCTAssertTrue(app.nsh(anyOf: ["home-card-\(name)", "connection-card-\(name)"])
                         .waitForExistence(timeout: NSHFlow.timeout),
                       "Home has no card for \(name)")
