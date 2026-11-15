@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# The gate on what leaves this machine for the public repository, installed
+# The gate on what leaves this machine for the public repository
+# (github.com/Cluas/moshpit; other remotes pass), installed
 # by scripts/setup-hooks.sh (every team member's checkout has it):
 #
 # - only main goes out (and tags): branches stay local, integrated work
@@ -15,6 +16,13 @@
 set -uo pipefail
 
 remote="${1:-origin}"
+url="${2:-}"
+# The public repository's gate: a push anywhere else (a fork, an archived
+# remote) isn't this gate's to judge.
+case "$url" in
+    *github.com[:/]Cluas/moshpit | *github.com[:/]Cluas/moshpit.git | *github.com[:/]Cluas/moshpit/) ;;
+    *) exit 0 ;;
+esac
 zero=0000000000000000000000000000000000000000
 root="$(git rev-parse --show-toplevel)"
 scan=(python3 -I "$root/scripts/oss-scan.py")
