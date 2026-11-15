@@ -240,6 +240,26 @@ mod tests {
         }
     }
 
+    /// A session name someone else chose goes back quoted whole, whatever
+    /// mark joins its apostrophe (the Swift `ShellQuoteCallSiteTests` case,
+    /// kept when the Swift chain went, E2).
+    #[test]
+    fn the_sidecar_quotes_a_session_name_whole() {
+        for mark in ["\u{301}", "\u{FE0F}", "\u{1F3FB}", "\u{200D}", "\u{903}"] {
+            let preferred = SidecarReturn {
+                id: "$7".into(),
+                name: Some(format!("dev'{mark}; touch INJECTED; '")),
+            };
+            let chain = sidecar_chain("tmux", Some(&preferred));
+            assert!(chain.starts_with("tmux -CC attach -t '$7' 2>/dev/null || "));
+            let target = format!(r"'=dev'\''{mark}; touch INJECTED; '\'''");
+            assert!(
+                chain.contains(&format!(" || tmux -CC attach -t {target} 2>/dev/null || ")),
+                "{chain}"
+            );
+        }
+    }
+
     /// B267: the programs are one word for the login shell (`sh -c`), find
     /// tmux as the probe does, attach, and leave the channel to its shell
     /// after; nothing in them waits on a prompt.

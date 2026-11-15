@@ -31,6 +31,8 @@ pub const EGG_KEY: &str = "moshpit.pet.egg.v1";
 pub const STYLE_KEY: &str = "moshpit.pet.style";
 /// Whether the companion is on.
 pub const SHOWN_KEY: &str = "moshpit.pet.shown";
+/// Whether it talks (「让它说话」).
+pub const TALK_KEY: &str = "moshpit.pet.talk";
 
 /// What the preferences hold.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -99,6 +101,23 @@ pub fn read_shown(defaults: &dyn Defaults) -> bool {
         Some(Plist::Bool(on)) => on,
         _ => true,
     }
+}
+
+/// Whether it talks; on until it's turned off.
+pub fn read_talk(defaults: &dyn Defaults) -> bool {
+    match defaults.get(TALK_KEY) {
+        Some(Plist::Bool(on)) => on,
+        _ => true,
+    }
+}
+
+/// Keeps whether it talks, under the same rule. Whether written.
+pub fn write_talk(defaults: &dyn Defaults, readiness: &Readiness, talk: bool) -> bool {
+    if !readiness.is_readable(defaults) {
+        return false;
+    }
+    defaults.set(TALK_KEY, Some(Plist::Bool(talk)));
+    true
 }
 
 /// Keeps the style and the switch, under the same rule. Whether written.
@@ -189,6 +208,9 @@ mod tests {
         );
         defaults.set(STYLE_KEY, Some(Plist::String("neon".into())));
         assert_eq!(read_style(&defaults), Style::Pixel);
+        assert!(read_talk(&defaults), "it talks until it's told not to");
+        assert!(write_talk(&defaults, &Readiness::System, false));
+        assert!(!read_talk(&defaults));
     }
 
     #[test]

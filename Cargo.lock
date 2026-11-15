@@ -2572,6 +2572,7 @@ dependencies = [
 name = "moshpit-tmux"
 version = "0.1.0"
 dependencies = [
+ "log",
  "memchr",
  "moshpit-herdr",
  "moshpit-term",

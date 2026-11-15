@@ -1,51 +1,29 @@
-import Citadel
 import Foundation
-import NIOCore
 import Testing
 @testable import Moshpit
 
-/// Counts whether `SSHService.connect` got as far as dialing: it only does
-/// once it has built an authentication method from the stored key, so being
-/// reached is the proof the connect path's key loading accepted the key.
-private final class AuthProbe: SSHClientProvider, @unchecked Sendable {
-    private let lock = NSLock()
-    private var reached = false
-
-    var wasReached: Bool { lock.withLock { reached } }
-
-    func connect(host: String, port: Int, authenticationMethod: SSHAuthenticationMethod,
-                 hostKeyValidator: SSHHostKeyValidator) async throws -> SignedInClient {
-        lock.withLock { reached = true }
-        throw CancellationError()
-    }
-
-    func connect(on channel: Channel, authenticationMethod: SSHAuthenticationMethod,
-                 hostKeyValidator: SSHHostKeyValidator) async throws -> SignedInClient {
-        lock.withLock { reached = true }
-        throw CancellationError()
-    }
-}
-
-/// A key that imports has to connect. `SSHService` signs with one form only —
-/// an unencrypted openssh-key-v1 Ed25519, RSA or ECDSA P-256 key — and import
-/// used to store whatever was pasted, so PEM keys and every key behind a
+/// A key that imports has to connect. The connect path signs with one form
+/// only — an unencrypted openssh-key-v1 file — and import used to store
+/// whatever was pasted, so PEM keys and every key behind a
 /// passphrase imported fine and then failed each connection. Import now
 /// converts to that form, asking for the passphrase, and refuses what it can't.
 @Suite("SSH key import: what imports, connects")
 struct SSHKeyImportTests {
 
-    /// Whether `SSHService.connect` builds an authentication method from
-    /// `stored` as a key's Keychain item, stored the way Add Key stores it.
+    /// Whether the connect path signs in with `stored` as a key's Keychain
+    /// item, stored the way Add Key stores it: the key the Rust core is
+    /// handed (``SSHService/rustCoreCredential(_:onKeyPassphrase:)``, which
+    /// converts a key kept as pasted) is one its key reader signs with.
     private static func connectPathAccepts(_ stored: Data) async throws -> Bool {
         let keychain = KeychainService.inMemory()
         let ref = keychain.generateRef()
         try await keychain.saveSecret(stored, forRef: ref, requireBiometry: false)
-        let probe = AuthProbe()
-        let service = SSHService(keychain: keychain, hostKeyValidator: .inMemory(), clientProvider: probe)
+        let service = SSHService(keychain: keychain, protectedDataAvailable: { true })
         let connection = ServerConnection(name: "imported", host: "192.0.2.1", username: "tester",
                                           authMethod: .key, keychainRef: ref)
-        _ = try? await service.connect(connection)
-        return probe.wasReached
+        guard case .key(let key)? = try? await service.rustCoreCredential(connection, onKeyPassphrase: { _, _ in nil })
+        else { return false }
+        return (try? sshKeySigningParts(text: key)) != nil
     }
 
     private static func fixture(_ name: String) -> SSHKeyFixtures.Key {

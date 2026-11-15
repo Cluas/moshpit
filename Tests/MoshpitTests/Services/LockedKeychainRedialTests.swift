@@ -1,6 +1,4 @@
-import Citadel
 import Foundation
-import NIOCore
 import Security
 import Testing
 import UIKit
@@ -18,6 +16,8 @@ import UIKit
 /// rule since W10b (B201): the lock is `CredentialsLocked` — retried on the
 /// unlock and the foreground return, with its own quiet words — and a
 /// credential that is really gone or unreadable still waits for the person.
+/// The retries are crates/session's (`lifecycle.rs`); what the keychain's
+/// answer means is this app's, and is tested here.
 @Suite("locked keychain: retried on the unlock (B211)")
 @MainActor
 struct LockedKeychainRedialTests {
@@ -25,56 +25,23 @@ struct LockedKeychainRedialTests {
     nonisolated static let ref = "moshpit.secret.b211"
 
     private func makeConnection(_ authMethod: AuthMethod = .password) -> ServerConnection {
-        var connection = ServerConnection(
+        ServerConnection(
             name: "locked",
             host: "192.0.2.1",   // RFC5737 TEST-NET-1 — never routable
             port: 22,
             username: "tester",
             authMethod: authMethod,
             keychainRef: Self.ref)
-        connection.multiplexer = .none   // a plain shell: the shortest start() path
-        return connection
     }
 
     private func makeService(_ phone: LockablePhone) -> SSHService {
         SSHService(keychain: KeychainService(backend: phone),
-                   hostKeyValidator: .inMemory(),
-                   clientProvider: HandshakeProvider(),
                    protectedDataAvailable: { phone.unlocked })
     }
 
-    /// `SSHService.connect` as the session dials it, signed in once the dial
-    /// got past the credential (the stub provider's marker: Citadel's client
-    /// can't be made in a test).
-    private func dialer(_ service: SSHService, _ dials: DialCounter) -> TerminalViewModel.Dialer {
-        { connection, _ in
-            dials.bump()
-            do {
-                _ = try await service.connect(connection)
-            } catch SSHError.underlying(let error) where error is SignedInMarker {
-                return SSHSession(connection: connection, transport: QuietTransport())
-            }
-            throw DialFailed()   // the stub provider never returns a client
-        }
-    }
-
-    private func makeHub(_ service: SSHService, _ dials: DialCounter,
-                         unlocks: NotificationCenter) -> SessionHub {
-        let hub = SessionHub(metrics: SessionMetricsRegistry(), unlocks: unlocks)
-        let dial = dialer(service, dials)
-        hub.makeSession = { connection in
-            let session = SessionHub.ActiveSession(connection: connection, dial: dial)
-            session.probeTimeout = 0.2
-            session.foregroundProbeTimeout = 0.2
-            session.stalledDialGrace = 0
-            return session
-        }
-        return hub
-    }
-
-    private func unlock(_ phone: LockablePhone, on center: NotificationCenter) {
-        phone.unlocked = true
-        center.post(name: UIApplication.protectedDataDidBecomeAvailableNotification, object: nil)
+    /// The credential the Rust core's sign-in asks for.
+    private func credential(_ service: SSHService, _ connection: ServerConnection) async throws -> RustCoreCredential {
+        try await service.rustCoreCredential(connection) { _, _ in nil }
     }
 
     // MARK: What the keychain's answer means
@@ -89,34 +56,22 @@ struct LockedKeychainRedialTests {
         secureEnclave.sshKeyAlgorithmRaw = SSHKeyAlgorithm.seP256.rawValue
         for (name, connection) in [("password", makeConnection(.password)), ("key", makeConnection(.key)),
                                    ("Secure Enclave key", secureEnclave)] {
-            do {
-                _ = try await service.connect(connection)
-                Issue.record("\(name): signed in with the keychain locked")
-            } catch SSHError.credentialLocked {
-                // The lock: retried, worded as the lock.
-            } catch {
-                Issue.record("\(name): \(error) — before B211 every refusal was credentialUnavailable")
-            }
+            let failed = await failure { _ = try await credential(service, connection) }
+            #expect(failed.isLocked, "\(name): \(String(describing: failed)) — before B211 every refusal was credentialUnavailable")
         }
-        // The Rust session reads through the same call.
-        let rust = await failure { _ = try await service.rustCoreCredential(makeConnection(.password)) { _, _ in nil } }
-        #expect(rust.isLocked, "\(String(describing: rust))")
-        #expect(phone.reads == 4, "every attempt asked the keychain; none was answered from a cache")
+        #expect(phone.reads == 3, "every attempt asked the keychain; none was answered from a cache")
 
         // Nothing about the lock is remembered: unlocked, the same read signs in.
         phone.unlocked = true
-        let signedIn = await failure { _ = try await service.connect(makeConnection(.password)) }
-        guard case .underlying(let error)? = signedIn, error is SignedInMarker else {
-            Issue.record("unlocked, the dial didn't get past the credential: \(String(describing: signedIn))")
-            return
-        }
+        let signedIn = try await credential(service, makeConnection(.password))
+        #expect(signedIn == .password("hunter2"))
     }
 
     @Test("a credential that is really gone or refused still waits for the person")
     func missingCredentialStaysPermanent() async {
         // Unlocked, and the item isn't there: lost to a re-install.
         let gone = makeService(LockablePhone(items: [:]))
-        let lost = await failure { _ = try await gone.connect(makeConnection()) }
+        let lost = await failure { _ = try await credential(gone, makeConnection()) }
         #expect(lost.isUnavailable, "\(String(describing: lost))")
         // Face ID cancelled, by the person or the system, or failed too often
         // (B392): its own failure, not a lost credential — and not retried.
@@ -124,7 +79,7 @@ struct LockedKeychainRedialTests {
             let declined = LockablePhone(items: [Self.ref: Data("hunter2".utf8)])
             declined.refusal = status
             let service = makeService(declined)
-            let refused = await failure { _ = try await service.connect(makeConnection()) }
+            let refused = await failure { _ = try await credential(service, makeConnection()) }
             let cancelled = refused.isCancelled
             #expect(cancelled, "\(status): \(String(describing: refused))")
         }
@@ -138,134 +93,8 @@ struct LockedKeychainRedialTests {
         phone.unlocked = false
         phone.readsEmptyWhileLocked = true
         let service = makeService(phone)
-        let sealed = await failure { _ = try await service.connect(makeConnection()) }
+        let sealed = await failure { _ = try await credential(service, makeConnection()) }
         #expect(sealed.isLocked, "an empty read before the unlock taken for a lost credential: \(String(describing: sealed))")
-    }
-
-    @Test("the lock is retried and waits for the unlock; a lost credential is neither")
-    func classification() {
-        #expect(TerminalViewModel.retryable(SSHError.credentialLocked))
-        #expect(TerminalViewModel.waitsForUnlock(SSHError.credentialLocked))
-        #expect(TerminalViewModel.waitsForUnlock(SSHError.hostKeysLocked))
-        #expect(TerminalViewModel.waitsForUnlock(KnownHostsUnreadable(reason: "locked", locked: true)))
-        #expect(!TerminalViewModel.retryable(SSHError.credentialUnavailable))
-        #expect(!TerminalViewModel.waitsForUnlock(SSHError.credentialUnavailable))
-        #expect(!TerminalViewModel.retryable(SSHError.credentialCancelled))
-        #expect(!TerminalViewModel.waitsForUnlock(SSHError.credentialCancelled))
-        #expect(!TerminalViewModel.waitsForUnlock(SSHError.connectionFailed))
-        #expect(!TerminalViewModel.waitsForUnlock(SSHError.authenticationFailed))
-        // Its own words: not the re-install advice.
-        #expect(SSHError.credentialLocked.description != SSHError.credentialUnavailable.description)
-        #expect(SSHError.credentialCancelled.description != SSHError.credentialUnavailable.description)
-    }
-
-    // MARK: The session
-
-    /// The field shape: connected, backgrounded (the cached secret wiped, as
-    /// `SessionHub.setForeground(false)` wipes it), the phone locked, and
-    /// the transport dies while away. The reconnect can't read the keychain.
-    @Test("a reconnect the locked keychain refused dials again when the device unlocks")
-    func lockedReconnectRedialsOnUnlock() async throws {
-        let phone = LockablePhone(items: [Self.ref: Data("hunter2".utf8)])
-        let service = makeService(phone)
-        let dials = DialCounter()
-        let center = NotificationCenter()
-        let hub = makeHub(service, dials, unlocks: center)
-        let session = hub.prepare(makeConnection())
-        await hub.start(session, theme: .githubDark, fontSize: 14)
-        #expect(session.viewModel.status == .connected)
-
-        await service.clearAllCachedSecrets()
-        phone.unlocked = false
-        await session.connectionDropped(reason: "b211")
-        #expect(dials.count == 2)
-        #expect(session.viewModel.status == .failed(SSHError.credentialLocked.description),
-                "the lock read as a lost credential: \(session.viewModel.status)")
-        #expect(session.viewModel.failureRetryable)
-        #expect(session.viewModel.failureWaitsForUnlock)
-        // Not news: the screen keeps saying it is reconnecting, no card.
-        #expect(session.viewModel.connState == .reconnecting)
-        #expect(session.viewModel.errorMessage == nil)
-
-        unlock(phone, on: center)
-        #expect(await eventually { session.viewModel.status == .connected },
-                "the unlock dialled nothing: \(session.viewModel.status)")
-        #expect(dials.count == 3)
-        #expect(!session.viewModel.failureWaitsForUnlock)
-        await hub.disconnect(session.id)
-    }
-
-    /// Face ID's item read in the background: the device is unlocked, but no
-    /// prompt can show, and the keychain refuses the same way. Coming back
-    /// to the app dials it again — before B211, never.
-    @Test("a credential refused in the background is dialled again on the foreground return")
-    func lockedFailureRedialsOnForeground() async throws {
-        let phone = LockablePhone(items: [Self.ref: Data("hunter2".utf8)])
-        phone.refusal = errSecInteractionNotAllowed   // refused even though unlocked
-        let service = makeService(phone)
-        let dials = DialCounter()
-        let hub = makeHub(service, dials, unlocks: NotificationCenter())
-        let session = hub.prepare(makeConnection())
-        await hub.start(session, theme: .githubDark, fontSize: 14)
-        #expect(session.viewModel.status == .failed(SSHError.credentialLocked.description))
-        #expect(session.viewModel.failureRetryable)
-
-        phone.refusal = nil   // in the foreground, Face ID can ask
-        await hub.resumeAll(force: false)
-        #expect(session.viewModel.status == .connected)
-        #expect(dials.count == 2)
-        await hub.disconnect(session.id)
-    }
-
-    @Test("the unlock leaves a lost credential, and every other failure, to their own rules")
-    func unlockLeavesOtherFailuresAlone() async {
-        let center = NotificationCenter()
-        let gone = LockablePhone(items: [:])
-        let goneDials = DialCounter()
-        let goneHub = makeHub(makeService(gone), goneDials, unlocks: center)
-        let lost = goneHub.prepare(makeConnection())
-        await goneHub.start(lost, theme: .githubDark, fontSize: 14)
-        #expect(lost.viewModel.status == .failed(SSHError.credentialUnavailable.description))
-
-        // A host it couldn't reach: retried by the tick and the foreground
-        // return, not by an unlock.
-        let unreachable = DialScript { _ in throw SSHError.connectionFailed }
-        let flakyHub = SessionHub(metrics: SessionMetricsRegistry(), unlocks: center)
-        flakyHub.makeSession = { SessionHub.ActiveSession(connection: $0, dial: unreachable.dialer) }
-        let flaky = flakyHub.prepare(makeConnection())
-        await flakyHub.start(flaky, theme: .githubDark, fontSize: 14)
-
-        center.post(name: UIApplication.protectedDataDidBecomeAvailableNotification, object: nil)
-        await goneHub.deviceUnlocked()
-        await flakyHub.deviceUnlocked()
-        try? await Task.sleep(for: .milliseconds(100))
-        #expect(goneDials.count == 1, "a lost credential was dialled again on the unlock")
-        #expect(unreachable.dials == 1, "the unlock is not a network change")
-        #expect(lost.viewModel.status == .failed(SSHError.credentialUnavailable.description))
-        await goneHub.disconnect(lost.id)
-        await flakyHub.disconnect(flaky.id)
-    }
-
-    /// The trusted host keys are one keychain item too: crates/session's
-    /// `waits_for_unlock` covers both.
-    @Test("host keys the locked keychain kept shut are dialled again on the unlock")
-    func lockedHostKeysRedialOnUnlock() async {
-        let script = DialScript { _ in
-            try await Task.sleep(for: .milliseconds(20))
-            throw SSHError.map(KnownHostsUnreadable(reason: "the device is locked", locked: true))
-        }
-        let center = NotificationCenter()
-        let hub = SessionHub(metrics: SessionMetricsRegistry(), unlocks: center)
-        hub.makeSession = { SessionHub.ActiveSession(connection: $0, dial: script.dialer) }
-        let session = hub.prepare(makeConnection())
-        await hub.start(session, theme: .githubDark, fontSize: 14)
-        #expect(session.viewModel.failureWaitsForUnlock)
-
-        script.behavior = { connection in SSHSession(connection: connection, transport: QuietTransport()) }
-        center.post(name: UIApplication.protectedDataDidBecomeAvailableNotification, object: nil)
-        #expect(await eventually { session.viewModel.status == .connected })
-        #expect(script.dials == 2)
-        await hub.disconnect(session.id)
     }
 
     // MARK: The Rust session
@@ -322,8 +151,11 @@ struct LockedKeychainRedialTests {
         _ = core
     }
 
-    @Test("the Rust session words the lock as the Swift session does")
+    @Test("the Rust session words the lock as the lock, not the re-install advice")
     func rustCopyIsTheSame() {
+        // Its own words: not the re-install advice.
+        #expect(SSHError.credentialLocked.description != SSHError.credentialUnavailable.description)
+        #expect(SSHError.credentialCancelled.description != SSHError.credentialUnavailable.description)
         #expect(RustCopy.failure(kind: .credentialsLocked, cause: .credentials(why: .locked))
                 == SSHError.credentialLocked.description)
         // B392: a cancel — Face ID's or the passphrase card's — is said as
@@ -431,24 +263,4 @@ final class LockablePhone: KeychainBackend, @unchecked Sendable {
     }
 
     func exists(account: String) -> Bool { lock.withLock { items[account] != nil } }
-}
-
-/// Where a sign-in got past the credential: the dial itself, answered after a
-/// handshake's worth of time with this marker.
-struct SignedInMarker: Error, Equatable {}
-
-private struct HandshakeProvider: SSHClientProvider {
-    func connect(host: String, port: Int,
-                 authenticationMethod: SSHAuthenticationMethod,
-                 hostKeyValidator: SSHHostKeyValidator) async throws -> SignedInClient {
-        try await Task.sleep(for: .milliseconds(30))
-        throw SignedInMarker()
-    }
-
-    func connect(on channel: Channel,
-                 authenticationMethod: SSHAuthenticationMethod,
-                 hostKeyValidator: SSHHostKeyValidator) async throws -> SignedInClient {
-        try await Task.sleep(for: .milliseconds(30))
-        throw SignedInMarker()
-    }
 }

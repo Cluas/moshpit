@@ -51,6 +51,7 @@ struct State {
     cloud_settled: bool,
     style: Style,
     shown: bool,
+    talk: bool,
     moment: Option<Moment>,
     /// Counts the moments, so a page plays each once.
     moment_seq: u64,
@@ -110,6 +111,7 @@ impl PetMachine {
             egg,
             pet,
             moment: s.moment,
+            talk: s.talk,
         }
     }
 }
@@ -127,6 +129,7 @@ impl PetMachine {
             cloud_settled: false,
             style: stored::read_style(&defaults),
             shown: stored::read_shown(&defaults),
+            talk: stored::read_talk(&defaults),
             moment: None,
             moment_seq: 0,
             thresholds: Thresholds::MEDIUM,
@@ -358,6 +361,18 @@ impl PetMachine {
         self.notify();
     }
 
+    /// Whether it talks on Home (「让它说话」).
+    pub fn set_talk(&self, talk: bool) {
+        let mut s = lock(&self.state);
+        if s.talk == talk {
+            return;
+        }
+        s.talk = talk;
+        stored::write_talk(&self.defaults, &Readiness::System, talk);
+        drop(s);
+        self.notify();
+    }
+
     /// How fast it grows: `faster`, `medium` (the default) or `slower`.
     pub fn set_pace(&self, pace: String) {
         let thresholds = match pace.as_str() {
@@ -517,6 +532,10 @@ mod tests {
         let listener = Arc::new(Count::default());
         m.set_listener(Some(listener.clone()));
         let egg = |m: &PetMachine| message(m)["egg"].clone();
+        // Before the hatch the island shows the egg, whole, then cracked.
+        let still = |pose| moshpit_pet::egg(pose, 0).unwrap().encode();
+        let island = |m: &PetMachine| m.island("working".into()).unwrap();
+        assert_eq!(island(&m).pose, still(EggPose::Still));
         assert_eq!(m.tap_egg(), 1);
         assert_eq!(
             (egg(&m)["ready"].as_bool(), egg(&m)["taps"].as_u64()),
@@ -524,7 +543,7 @@ mod tests {
         );
         assert_eq!(m.tap_egg(), 2);
         assert_eq!(egg(&m)["ready"], true, "the second tap cracks it");
-        assert!(m.island("idle".into()).unwrap().pose.starts_with("px1:"));
+        assert_eq!(island(&m).pose, still(EggPose::Ready));
         assert_eq!(m.tap_egg(), 3);
         // iCloud hasn't settled: no hatch yet, however often it's asked.
         assert_eq!(message(&m)["may_hatch"], false);
@@ -539,6 +558,7 @@ mod tests {
         assert_eq!(message(&m)["may_hatch"], true);
         assert!(m.hatch(vec![4; 16], 1_800_000_000, 9));
         assert_eq!(message(&m)["moment"], "hatched");
+        assert_ne!(island(&m).pose, still(EggPose::Ready), "the pet now");
         assert!(message(&m)["egg"].is_null());
         assert_eq!(m.tap_egg(), 0, "a pet isn't an egg");
         assert!(*lock(&listener.0) >= 5, "each tap told");
@@ -612,6 +632,8 @@ mod tests {
         assert_eq!(m.seen(t0 + 3 * 86_400), Some(1));
         assert_eq!(message(&m)["moment"], "grew");
         m.rename("Pip".into(), t0 + 10);
+        assert_eq!(message(&m)["talk"], true);
+        m.set_talk(false);
         m.set_choice("pixel".into(), false);
         assert_eq!(m.seen(t0 + 400 * 86_400), None, "not while it's hidden");
         let again = PetMachine::new(prefs, "phone".into());
@@ -620,9 +642,10 @@ mod tests {
             (
                 v["pet"]["name"].as_str(),
                 v["pet"]["stage"].as_u64(),
-                v["shown"].as_bool()
+                v["shown"].as_bool(),
+                v["talk"].as_bool()
             ),
-            (Some("Pip"), Some(1), Some(false))
+            (Some("Pip"), Some(1), Some(false), Some(false))
         );
     }
 }

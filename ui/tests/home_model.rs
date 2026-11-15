@@ -10,7 +10,7 @@ use common::home_fixture::{AGENT, fixture, herdr_host, hook, tmux_host};
 use moshpit_ui::home::model::{
     AgentState, CardBody, Connection, ConnectionFailure, Control, FailureReason, HostRow, Link,
     Mismatch, Mux, Summary, card_body, folder_name, host_rows, is_unnamed_window, needs_you,
-    pane_title, summary,
+    pane_place, pane_title, summary,
 };
 
 fn titles(rows: &[HostRow]) -> Vec<String> {
@@ -163,6 +163,8 @@ fn a_pane_is_called_by_its_project() {
         ("Tab 1", ""),
         ("Tab 12", "claude"),
         ("", "zsh"),
+        ("1", "claude"),
+        ("12", "zsh"),
     ] {
         assert!(is_unnamed_window(name, command), "{name:?} ({command})");
     }
@@ -174,6 +176,24 @@ fn a_pane_is_called_by_its_project() {
     assert_eq!(folder_name("/root"), None);
     assert_eq!(folder_name("/"), None);
     assert_eq!(folder_name("/srv/my app").as_deref(), Some("my app"));
+
+    // Where a pane is, for the island: the same names, none when nothing
+    // names it (the island then says the host alone) — never a version or
+    // a bare index.
+    for (command, window, workspace, path, place) in [
+        ("2.1.322", "2.1.322", None, Some("/Users/me"), None),
+        ("claude", "1", None, None, None),
+        ("claude", "moshpit", None, Some("/srv/other"), Some("moshpit")),
+        ("claude", "claude", None, Some("/home/dev/src/x/"), Some("x")),
+        ("claude", "Tab 1", Some("magpie"), Some("/srv/other"), Some("magpie")),
+        ("claude", "Tab 1", Some("~"), Some("/srv/proj-4"), Some("proj-4")),
+    ] {
+        assert_eq!(
+            pane_place(command, window, workspace, path).as_deref(),
+            place,
+            "{command} in {window:?}"
+        );
+    }
 }
 
 /// The summary says only what is so: never "nothing works" beside a
@@ -229,6 +249,38 @@ fn the_summary_says_only_what_is_so() {
             done: 1,
             idle: 1,
         }
+    );
+}
+
+/// B552: a host still dialling or attaching is not online yet: the line
+/// read "1 connection online" over its card spinning "Connecting…". A
+/// connected host whose tmux attach stalled is (its card says why, and it
+/// is connected); so is one with a herdr version skew.
+#[test]
+fn a_host_is_online_once_its_card_stops_spinning() {
+    let host = |link: Link| Connection {
+        id: "c".into(),
+        name: "plain".into(),
+        link,
+        ..Connection::default()
+    };
+    for spinning in [Link::Connecting, Link::Reconnecting, Link::Attaching] {
+        assert_eq!(
+            summary(&[host(spinning)], AGENT),
+            Summary::Nothing,
+            "{spinning:?}"
+        );
+    }
+    for up in [Link::Live, Link::Stalled] {
+        assert_eq!(
+            summary(&[host(up)], AGENT),
+            Summary::Online { connections: 1 },
+            "{up:?}"
+        );
+    }
+    assert_eq!(
+        summary(&[host(Link::Live), host(Link::Connecting)], AGENT),
+        Summary::Online { connections: 1 }
     );
 }
 

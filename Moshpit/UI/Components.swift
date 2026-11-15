@@ -25,7 +25,6 @@ enum Haptics {
 /// a `Form` or `List` (see `moshpitForm()`).
 struct FormGroup<Content: View>: View {
     var title: LocalizedStringKey?
-    var titleSuffix: LocalizedStringKey?
     var footer: LocalizedStringKey?
     @ViewBuilder var content: Content
 
@@ -39,7 +38,7 @@ struct FormGroup<Content: View>: View {
                 .moshpitRows()
         } header: {
             if let title {
-                SectionKicker(title: title, suffix: titleSuffix)
+                SectionKicker(title: title)
             }
         } footer: {
             if let footer {
@@ -55,30 +54,14 @@ struct FormGroup<Content: View>: View {
 /// Settings; sized off `caption2` so it still follows the reading size.
 struct SectionKicker: View {
     let title: LocalizedStringKey
-    var suffix: LocalizedStringKey?
-    /// A count riding beside the title as a chip, the way CONNECTIONS · 1
-    /// has always read on the home screen.
-    var count: Int?
 
     var body: some View {
-        HStack(spacing: 7) {
-            Text(title)
-                .font(Face.mono(10.5, .semibold))
-                .kerning(1.2)
-                .foregroundStyle(Ink.sectionTitle)
-                .textCase(.uppercase)
-            if let count {
-                CountBadge(count: count)
-            }
-            if let suffix {
-                // The "(optional)" aside reads as an aside only in its own case.
-                Text(suffix)
-                    .font(Face.text(11))
-                    .foregroundStyle(Ink.meta)
-                    .textCase(nil)
-            }
-        }
-        .padding(.leading, 2)
+        Text(title)
+            .font(Face.mono(10.5, .semibold))
+            .kerning(1.2)
+            .foregroundStyle(Ink.sectionTitle)
+            .textCase(.uppercase)
+            .padding(.leading, 2)
     }
 }
 
@@ -163,150 +146,6 @@ struct FieldRow: View {
     }
 }
 
-/// Label + a short numeric field (port, range bound). Right-aligned in a
-/// fixed column beside the label; at accessibility sizes `LabeledContent`
-/// stacks the field under the label, where a fixed right-aligned column
-/// would read as a random indent, so the field goes leading and full width.
-struct NumberFieldRow: View {
-    let label: LocalizedStringKey
-    let placeholder: LocalizedStringKey
-    @Binding var text: String
-    var mono: Bool = false
-    /// What is wrong with the text, shown under the field in the danger
-    /// ink while there is something (a port that is not one).
-    var issue: LocalizedStringKey? = nil
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-
-    var body: some View {
-        let stacked = dynamicTypeSize.isAccessibilitySize
-        VStack(alignment: .leading, spacing: 4) {
-            LabeledContent {
-                TextField(placeholder, text: $text)
-                    .keyboardType(.numberPad)
-                    .font(mono ? .system(.body, design: .monospaced) : .body)
-                    .foregroundStyle(Ink.fixedValue)
-                    .multilineTextAlignment(stacked ? .leading : .trailing)
-                    .frame(width: stacked ? nil : 100)
-            } label: {
-                Text(label).font(.body).foregroundStyle(Ink.primary)
-            }
-            if let issue {
-                Text(issue)
-                    .font(.footnote)
-                    .foregroundStyle(Ink.danger)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-    }
-}
-
-/// Label + fixed (non-interactive) trailing value.
-struct ValueRow: View {
-    let label: LocalizedStringKey
-    /// Dynamic, pre-formatted display value (kept `String` on purpose).
-    let value: String
-    var valueMono: Bool = false
-
-    var body: some View {
-        LabeledContent {
-            Text(value)
-                .font(valueMono ? .system(.body, design: .monospaced) : .body)
-                .foregroundStyle(Ink.fixedValue)
-        } label: {
-            Text(label).font(.body).foregroundStyle(Ink.primary)
-        }
-    }
-}
-
-/// Label (+ optional subtitle) + trailing dimmed value + chevron. Tappable —
-/// the row highlights like any list row, and opens a sheet or editor.
-struct ChevronRow: View {
-    let label: LocalizedStringKey
-    var subtitle: LocalizedStringKey?
-    /// Dynamic, pre-formatted display value (kept `String` on purpose).
-    var value: String?
-    /// The row leaves the app (Safari, Mail): the trailing glyph is ↗ rather
-    /// than a chevron, so the row does not promise a push it will not make.
-    var external = false
-    var action: () -> Void = {}
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 10) {
-                // At accessibility sizes the value drops under the label, the
-                // way `LabeledContent` does, instead of truncating to "Signal R…".
-                let stacked = dynamicTypeSize.isAccessibilitySize
-                let layout = stacked
-                    ? AnyLayout(VStackLayout(alignment: .leading, spacing: 4))
-                    : AnyLayout(HStackLayout(spacing: 10))
-                layout {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(label).font(.body).foregroundStyle(Ink.primary)
-                        if let subtitle {
-                            Text(subtitle)
-                                .font(.footnote)
-                                .foregroundStyle(Ink.meta)
-                                .multilineTextAlignment(.leading)
-                        }
-                    }
-                    if !stacked { Spacer(minLength: 8) }
-                    if let value {
-                        Text(value)
-                            .font(.body)
-                            .foregroundStyle(Ink.meta)
-                            .lineLimit(stacked ? nil : 1)
-                            .multilineTextAlignment(.leading)
-                    }
-                }
-                if stacked { Spacer(minLength: 8) }
-                if external {
-                    Image(systemName: "arrow.up.right")
-                        .font(.footnote.weight(.semibold))
-                        .foregroundStyle(Ink.meta)
-                } else {
-                    MiniChevron()
-                }
-            }
-        }
-    }
-}
-
-/// Title (+ optional subtitle) + trailing switch.
-///
-/// Laid out by hand rather than as `Toggle(label)`: SwiftUI folds a labelled
-/// toggle into one accessibility element, which hides the title from
-/// `staticTexts` queries the UI tests (and VoiceOver's rotor) rely on.
-struct ToggleRow: View {
-    let label: LocalizedStringKey
-    var subtitle: LocalizedStringKey?
-    /// Stable handle for UI tests. The row's Toggle carries an EMPTY label
-    /// (the visible text is our own views), so to XCUI it is an anonymous
-    /// switch — unaddressable without this.
-    var identifier: String?
-    @Binding var isOn: Bool
-
-    var body: some View {
-        HStack(spacing: 10) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(label).font(.body).foregroundStyle(Ink.primary)
-                if let subtitle {
-                    Text(subtitle)
-                        .font(.footnote)
-                        .foregroundStyle(Ink.meta)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-            Spacer(minLength: 8)
-            Toggle("", isOn: $isOn)
-                .labelsHidden()
-                .tint(Ink.accent)
-                .accessibilityLabel(Text(label))
-                .accessibilityIdentifier(identifier ?? "")
-        }
-    }
-}
-
 struct MiniChevron: View {
     var color: Color = Ink.meta
     var body: some View {
@@ -316,454 +155,18 @@ struct MiniChevron: View {
     }
 }
 
-/// The system's indicator for a row that opens a menu in place (the one a
-/// `.menu` Picker draws), for rows built on `Menu` because their labels carry
-/// more than a title.
-struct MenuChevron: View {
-    var body: some View {
-        Image(systemName: "chevron.up.chevron.down")
-            .font(.caption2.weight(.semibold))
-            .foregroundStyle(Ink.meta)
-    }
-}
-
-// MARK: - Segmented control
-
-struct SegItem<Value: Hashable>: Identifiable {
-    let value: Value
-    let label: LocalizedStringKey
-    var id: Value { value }
-}
-
-/// The system segmented control. Segments are titles only — the same control
-/// iOS Settings uses — so it reads as a control, not a custom pill strip.
-struct PillSegmentedControl<Value: Hashable>: View {
-    let items: [SegItem<Value>]
-    @Binding var selection: Value
-
-    var body: some View {
-        Picker(selection: $selection) {
-            ForEach(items) { item in
-                Text(item.label).tag(item.value)
-            }
-        } label: {
-            EmptyView()
-        }
-        .pickerStyle(.segmented)
-        .labelsHidden()
-    }
-}
-
 // MARK: - Status pills (§3.10)
 
+/// What the transport pill says (``TerminalNSHPage``'s `pill`).
 enum TransportPillKind {
     case mosh, moshRoaming, ssh
-
-    var label: String {
-        switch self {
-        case .mosh: return "MOSH"
-        case .moshRoaming: return "MOSH · roaming"
-        case .ssh: return "SSH"
-        }
-    }
-    var bg: Color {
-        switch self {
-        case .mosh: return Ink.moshPillBG
-        case .moshRoaming: return Ink.roamPillBG
-        case .ssh: return Ink.sshPillBG
-        }
-    }
-    var fg: Color {
-        switch self {
-        case .mosh: return Ink.moshPillText
-        case .moshRoaming: return Ink.roamPillText
-        case .ssh: return Ink.sshPillText
-        }
-    }
-    var border: Color? {
-        switch self {
-        case .mosh: return Ink.moshPillBorder
-        case .moshRoaming: return Ink.roamPillBorder
-        // Explicit .clear (not nil): skips the shared fallback stroke so this
-        // reads as a soft, borderless chip — like the breadcrumb crumbs it
-        // sits beside — instead of a second outlined box next to theirs.
-        case .ssh: return Color.clear
-        }
-    }
-    var dotColor: Color {
-        switch self {
-        case .mosh: return Ink.mosh
-        case .moshRoaming: return Ink.warn
-        case .ssh: return Ink.success
-        }
-    }
 }
 
 /// Live connection state, surfaced on the transport pill so a dropped/
 /// reconnecting session is never silent.
 enum TransportConnState { case live, connecting, reconnecting, offline }
 
-extension TransportConnState {
-    /// The one colour for this state, for every surface that shows it.
-    ///
-    /// There used to be three independent mappings — the pill painted
-    /// connecting *and* reconnecting amber, ``TerminalConnectingView`` painted
-    /// them accent and blue, and the home card's row painted both amber with a
-    /// "WAIT" caption. One event, three colours, and on the connecting screen
-    /// the reconnect visibly changed hue partway through. A state that means one
-    /// thing has to look like one thing, so the mapping lives here and the
-    /// surfaces read it.
-    ///
-    /// Amber is deliberately not in this list. It is the app's "an agent needs
-    /// you" colour, and spending it on a transport hiccup is what made a
-    /// reconnect shout as loudly as an agent waiting on a human.
-    /// `nil` for ``live``: a healthy session's colour belongs to its transport
-    /// (SSH and mosh read differently on the pill), so callers keep their own.
-    var transientTint: Color? {
-        switch self {
-        // The user's own accent: a first connect is the app doing what it was
-        // asked, not a fault.
-        case .connecting: return Ink.accent
-        // Fixed transport blue, theme or no theme — the same hue the mosh roam
-        // banner uses, because a reconnect is that same story: the line is
-        // moving, not gone.
-        case .reconnecting: return Ink.signal
-        // Nothing is being attempted. This is the only one that earns red.
-        case .offline: return Ink.danger
-        case .live: return nil
-        }
-    }
-}
-
-struct TransportPill: View {
-    let kind: TransportPillKind
-    var connState: TransportConnState = .live
-    /// A protocol switch is under way: the word changes at once (nothing
-    /// moves through a switch).
-    var still = false
-    @State private var pulsing = false
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    /// The state the LABEL shows — which deliberately lags the state the dot
-    /// shows. The dot recolors and pulses the instant anything changes (a
-    /// dropped session is never silent), but swapping the pill's TEXT is a
-    /// layout event: "tmux" → "reconnecting" more than doubles the pill and
-    /// shoves the whole header. Health flaps routinely bounce through
-    /// reconnecting and back within a second, and every bounce used to slam a
-    /// long word in and out of the layout. Now a transient state must STAND
-    /// for a beat before it earns words; recovery snaps back immediately.
-    @State private var labelState: TransportConnState = .live
-    @State private var labelDebounce: Task<Void, Never>?
-
-    private var dotColor: Color {
-        connState.transientTint ?? kind.dotColor
-    }
-
-    private var label: String {
-        switch labelState {
-        // Reconnecting deliberately keeps the transport word. The word
-        // "reconnecting" more than doubled the pill and shoved the whole
-        // header, for a state that routinely lasts under a second — the story
-        // is told by MOTION instead: the dot pulses in transport blue and the
-        // capsule's border breathes the same colour. Only `offline`, the state
-        // where nothing is being attempted, still earns a word.
-        case .live, .connecting, .reconnecting: return kind.label
-        case .offline: return String(localized: "offline")
-        }
-    }
-
-    private func adoptLabelState(_ new: TransportConnState) {
-        labelDebounce?.cancel()
-        switch new {
-        case .live, .connecting:
-            // Good news and no-text states apply at once.
-            withAnimation(still ? nil : .snappy(duration: 0.25)) { labelState = new }
-        case .reconnecting, .offline:
-            labelDebounce = Task {
-                try? await Task.sleep(for: .milliseconds(800))
-                guard !Task.isCancelled else { return }
-                withAnimation(.snappy(duration: 0.25)) { labelState = new }
-            }
-        }
-    }
-
-    private var animates: Bool {
-        connState == .connecting || connState == .reconnecting || kind == .moshRoaming
-    }
-
-    var body: some View {
-        HStack(spacing: 5) {
-            Circle()
-                .fill(dotColor)
-                .frame(width: 6, height: 6)
-                .shadow(color: dotColor.opacity(0.7), radius: 4)
-                .scaleEffect(animates && pulsing ? 1.6 : 1)
-                .opacity(animates && pulsing ? 0.55 : 1)
-            Text(label)
-                .font(Face.mono(10, .bold))
-                .kerning(0.45)
-                .foregroundStyle(kind.fg)
-                .lineLimit(1)
-                .fixedSize()
-        }
-        .padding(EdgeInsets(top: 7, leading: 10, bottom: 7, trailing: 10))
-        .background(kind.bg, in: Capsule(style: .continuous))
-        .overlay {
-            Capsule(style: .continuous)
-                .strokeBorder(
-                    connState.transientTint.map { $0.opacity(pulsing ? 0.7 : 0.25) }
-                        ?? kind.border ?? Color.white.opacity(0.09),
-                    lineWidth: 1)
-        }
-        // The width change itself animates, so when "offline" does earn its
-        // place the pill grows instead of teleporting.
-        .animation(still ? nil : .snappy(duration: 0.25), value: label)
-        .onChange(of: connState, initial: true) { _, new in
-            adoptLabelState(new)
-        }
-        .onAppear {
-            guard animates, !reduceMotion else { return }
-            withAnimation(Motion.roamPulse) {
-                pulsing = true
-            }
-        }
-        .onChange(of: animates) { _, on in
-            if on, !reduceMotion {
-                withAnimation(Motion.roamPulse) { pulsing = true }
-            } else {
-                withAnimation(.default) { pulsing = false }
-            }
-        }
-    }
-}
-
-// MARK: - Shortcut chip (§3.5)
-
-struct ShortcutChip: View {
-    let label: String
-    var custom: Bool = false
-    var size: CGFloat = 11
-
-    var body: some View {
-        Text(label)
-            .font(Face.mono(size, .semibold))
-            .kerning(0.22)
-            .lineLimit(1)
-            .fixedSize()
-            .foregroundStyle(custom ? Ink.customChipText : .white)
-            .padding(EdgeInsets(top: 5, leading: 7, bottom: 5, trailing: 7))
-            .frame(minWidth: 36)
-            .background(
-                custom ? Ink.customChipBG : Ink.chipNeutralBG,
-                in: RoundedRectangle(cornerRadius: Metrics.controlRadius, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: Metrics.controlRadius, style: .continuous)
-                    .strokeBorder(custom ? Ink.customChipBorder : Ink.groupBorder, lineWidth: 1)
-            )
-    }
-}
-
-// MARK: - Host chip multiselect (§3.6)
-
-struct HostChipsRow: View {
-    let hosts: [String]
-    @Binding var selected: Set<String>
-    /// Each chip's accessibility identifier is this and its host (UI tests;
-    /// the NSH pages' chips carry the same).
-    var identifierPrefix: String?
-
-    var body: some View {
-        FlowLayout(spacing: 6) {
-            ForEach(hosts, id: \.self) { host in
-                let on = selected.contains(host)
-                Button {
-                    if on { selected.remove(host) } else { selected.insert(host) }
-                } label: {
-                    HStack(spacing: 3) {
-                        Text(on ? "−" : "+")
-                            .font(Face.mono(14))
-                            .foregroundStyle(on ? Ink.hostChipOnText : Ink.accent)
-                        Text(host)
-                            .font(Face.mono(11.5))
-                            .foregroundStyle(on ? Ink.hostChipOnText : Color.white.opacity(0.72))
-                    }
-                    .padding(EdgeInsets(top: 6, leading: 10, bottom: 6, trailing: 10))
-                    .background(
-                        on ? Ink.hostChipOnBG : Color.white.opacity(0.055),
-                        in: RoundedRectangle(cornerRadius: Metrics.controlRadius, style: .continuous))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: Metrics.controlRadius, style: .continuous).strokeBorder(
-                            on ? Ink.hostChipOnBorder : Ink.faintFill, lineWidth: 1))
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier(identifierPrefix.map { $0 + host } ?? "")
-            }
-        }
-        .padding(EdgeInsets(top: 10, leading: 0, bottom: 8, trailing: 0))
-    }
-}
-
-/// Minimal wrapping flow layout for chip rows.
-struct FlowLayout: Layout {
-    var spacing: CGFloat = 6
-
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        let width = proposal.width ?? .infinity
-        var x: CGFloat = 0, y: CGFloat = 0, rowHeight: CGFloat = 0
-        for subview in subviews {
-            let size = subview.sizeThatFits(.unspecified)
-            if x > 0, x + size.width > width {
-                x = 0
-                y += rowHeight + spacing
-                rowHeight = 0
-            }
-            x += size.width + spacing
-            rowHeight = max(rowHeight, size.height)
-        }
-        return CGSize(width: width, height: y + rowHeight)
-    }
-
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        var x = bounds.minX, y = bounds.minY, rowHeight: CGFloat = 0
-        for subview in subviews {
-            let size = subview.sizeThatFits(.unspecified)
-            if x > bounds.minX, x + size.width > bounds.maxX {
-                x = bounds.minX
-                y += rowHeight + spacing
-                rowHeight = 0
-            }
-            subview.place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(size))
-            x += size.width + spacing
-            rowHeight = max(rowHeight, size.height)
-        }
-    }
-}
-
-// MARK: - Color swatch selectors (§3.6)
-
-struct ColorSwatchRow: View {
-    let colors: [(id: String, color: Color)]
-    @Binding var selection: String
-    var diameter: CGFloat = 22
-    /// Each swatch's accessibility identifier is this and its id (UI tests).
-    var identifierPrefix: String?
-
-    var body: some View {
-        HStack(spacing: 8) {
-            ForEach(colors, id: \.id) { entry in
-                let on = entry.id == selection
-                Button {
-                    selection = entry.id
-                } label: {
-                    Circle()
-                        .fill(entry.color)
-                        .frame(width: diameter, height: diameter)
-                        .overlay(Circle().strokeBorder(Color.white.opacity(0.10), lineWidth: 1))
-                        .overlay {
-                            if on {
-                                Circle().strokeBorder(Color.white.opacity(0.85), lineWidth: 2)
-                                    .padding(-2)
-                            }
-                        }
-                        .padding(2)
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier(identifierPrefix.map { $0 + entry.id } ?? "")
-            }
-        }
-    }
-}
-
-// MARK: - Key hint chip (sheet footers)
-
-struct KeyHintChip: View {
-    let label: String
-    var body: some View {
-        Text(label)
-            .font(Face.mono(11))
-            .foregroundStyle(Ink.keyChipText)
-            .padding(EdgeInsets(top: 2, leading: 5, bottom: 2, trailing: 5))
-            .background(Ink.keyChipBG, in: RoundedRectangle(cornerRadius: 5, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 5, style: .continuous)
-                    .strokeBorder(Ink.groupBorder, lineWidth: 1)
-            )
-    }
-}
-
-// MARK: - Compact bottom sheet scaffolding (§3.3)
-
-/// Shared chrome for the tmux Windows / Sessions / Select Pane sheets: a
-/// system sheet at medium/large detents, an inline title with the ＋ in the
-/// bar, an inset-grouped `List` for the rows, and the keyboard hints as the
-/// section's footer. iOS 26 gives the sheet its Liquid Glass surface on its
-/// own — setting a presentation background would take that away, so the
-/// dark fill is only applied where there is no glass to lose (iOS 18).
-struct CompactSheet<Content: View>: View {
-    let title: LocalizedStringKey
-    var onPlus: (() -> Void)?
-    let footerHint: LocalizedStringKey
-    /// Keyboard glyph chips (⌃, b s, …) — never localized.
-    let footerKeys: [String]
-    /// The `.id` of the row you're on. The list opens scrolled to it — with
-    /// twenty windows the current one is usually below the fold, and the
-    /// first thing anyone did was scroll looking for the checkmark.
-    var focus: AnyHashable?
-    @ViewBuilder var content: Content
-    @State private var revealed = false
-
-    var body: some View {
-        NavigationStack {
-            ScrollViewReader { proxy in
-                List {
-                    Section {
-                        content
-                            .moshpitRows()
-                    } footer: {
-                        HStack(alignment: .firstTextBaseline) {
-                            Text(footerHint)
-                                .moshpitFooter()
-                            Spacer()
-                            HStack(spacing: 4) {
-                                ForEach(footerKeys, id: \.self) { KeyHintChip(label: $0) }
-                            }
-                        }
-                    }
-                }
-                .listStyle(.insetGrouped)
-                .scrollContentBackground(.hidden)
-                .onAppear { reveal(with: proxy) }
-                // The snapshot can still be empty when the sheet appears.
-                .onChange(of: focus) { reveal(with: proxy) }
-            }
-            .navigationTitle(title)
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                if let onPlus {
-                    ToolbarItem(placement: .confirmationAction) {
-                        Button(action: onPlus) {
-                            Label("New", systemImage: "plus")
-                        }
-                        .foregroundStyle(Ink.accent)
-                    }
-                }
-            }
-        }
-        .presentationDetents([.medium, .large])
-        .presentationDragIndicator(.visible)
-        .sheetSurface()
-        .darkOnlyPage()
-    }
-
-    /// Once per presentation: a later refresh must not yank the list out
-    /// from under a thumb that is scrolling it.
-    private func reveal(with proxy: ScrollViewProxy) {
-        guard !revealed, let focus else { return }
-        revealed = true
-        // Next turn of the run loop — on appear the rows aren't laid out yet.
-        DispatchQueue.main.async { proxy.scrollTo(focus, anchor: .center) }
-    }
-}
+// MARK: - Sheet surface and chrome
 
 extension View {
     /// The tmux sheets' surface: nothing on iOS 26 (the system sheet is
@@ -775,17 +178,6 @@ extension View {
             self
         } else {
             self.presentationBackground(Ink.sheet)
-        }
-    }
-
-    /// Chrome capsules and circles in the terminal's top bar: Liquid Glass on
-    /// iOS 26, the bar material with a hairline below it.
-    @ViewBuilder func glassChrome<S: InsettableShape>(in shape: S) -> some View {
-        if #available(iOS 26.0, *) {
-            self.glassEffect(.regular.interactive(), in: shape)
-        } else {
-            self.background(.bar, in: shape)
-                .overlay(shape.strokeBorder(Ink.groupBorder, lineWidth: 1))
         }
     }
 }
@@ -1051,23 +443,6 @@ extension View {
     }
 }
 
-/// The little count chip that rides next to a section title — one shape for
-/// CONNECTIONS / AGENTS / WORKSPACES (and any future section) so every header
-/// counts in the same voice.
-struct CountBadge: View {
-    let count: Int
-
-    var body: some View {
-        Text("\(count)")
-            .font(Face.mono(10, .bold))
-            .foregroundStyle(Ink.meta)
-            .padding(.horizontal, 5)
-            .padding(.vertical, 2)
-            .background(Color.white.opacity(0.06),
-                        in: RoundedRectangle(cornerRadius: 4, style: .continuous))
-    }
-}
-
 /// A one-decision information card — errors and notices that only need OK.
 struct MoshpitNoticeCard: View {
     var icon: String = "exclamationmark.circle.fill"
@@ -1097,6 +472,8 @@ struct MoshpitInputCard: View {
     let confirmLabel: LocalizedStringKey
     /// A field whose text is never shown (a passphrase).
     var secure = false
+    /// What the field holds, for the keyboard's AutoFill (a one-time code).
+    var contentType: UITextContentType?
     let onCancel: () -> Void
     let onConfirm: () -> Void
     @FocusState private var focused: Bool
@@ -1114,6 +491,7 @@ struct MoshpitInputCard: View {
                 .foregroundStyle(Ink.primary)
                 .autocorrectionDisabled()
                 .textInputAutocapitalization(.never)
+                .textContentType(contentType)
                 .submitLabel(.done)
                 .onSubmit(onConfirm)
                 .focused($focused)
@@ -1164,6 +542,28 @@ struct KeyPassphrasePromptCard: View {
     }
 }
 
+/// What the server asks at sign-in beyond the password — a one-time code
+/// (``TerminalViewModel/SignInQuestion``, B563) — in its own words, shared
+/// by the home and terminal screens like ``KeyPassphrasePromptCard``.
+struct SignInQuestionCard: View {
+    let question: TerminalViewModel.SignInQuestion
+    @State private var answer = ""
+
+    var body: some View {
+        MoshpitInputCard(
+            icon: "lock.rotation",
+            title: "Sign In to \(question.host)",
+            message: Text(verbatim: question.words),
+            placeholder: "Answer",
+            text: $answer,
+            confirmLabel: "Send",
+            secure: !question.echo,
+            contentType: .oneTimeCode,
+            onCancel: { question.decide(nil) },
+            onConfirm: { question.decide(answer) })
+    }
+}
+
 /// The shared TOFU host-key card, built for both the home and terminal screens
 /// so the two presentations can't drift. `prompt.decide(_:)` clears the prompt
 /// and resumes the suspended handshake.
@@ -1199,81 +599,21 @@ func hostKeyPromptCard(_ prompt: TerminalViewModel.HostKeyPrompt) -> some View {
         ) {
             VStack(spacing: 8) {
                 MonoCodeBlock(label: "SHA256 fingerprint", text: prompt.fingerprint, accent: true)
-                MonoCodeBlock(label: "Verify on server", text: "ssh-keygen -lf \\\n  /etc/ssh/ssh_host_ed25519_key.pub")
-            }
-        }
-    }
-}
-
-struct SheetListRow: View {
-    let icon: String
-    let name: String
-    let meta: String
-    let isActive: Bool
-    /// Agent activity dot (shared `AgentPalette`): teal = working, amber =
-    /// needs you, nil = no agent signal. Answers "which window needs me"
-    /// right in the picker instead of forcing a guess by name.
-    var statusColor: Color?
-    /// What the dot MEANS, for people who can't lean on its colour — read by
-    /// VoiceOver and appended to the row's label ("Claude Code, needs you").
-    /// A colour with no words is a signal only some users receive.
-    var statusLabel: String?
-    /// Small mono text before the dot — the Agents section's "for how long".
-    var trailing: String?
-    var action: () -> Void
-
-    /// A plain list row: the current item is said by the checkmark, the way
-    /// every system picker says it, not by filling the whole row in accent.
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 12) {
-                Image(systemName: icon)
-                    .font(.body.weight(.semibold))
-                    .foregroundStyle(isActive ? Ink.accent : Ink.secondary)
-                    .frame(width: 28)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(name).font(.body).foregroundStyle(Ink.primary)
-                    if !meta.isEmpty {
-                        Text(meta)
-                            .font(.system(.footnote, design: .monospaced))
-                            .foregroundStyle(Ink.meta)
+                // The key that came by ssh-rsa is an RSA key (B564).
+                MonoCodeBlock(label: "Verify on server", text: prompt.olderAlgorithm == nil
+                    ? "ssh-keygen -lf \\\n  /etc/ssh/ssh_host_ed25519_key.pub"
+                    : "ssh-keygen -lf \\\n  /etc/ssh/ssh_host_rsa_key.pub")
+                if let older = prompt.olderAlgorithm {
+                    Label {
+                        Text("This server uses an older host-key algorithm (\(older), SHA-1).")
+                    } icon: {
+                        Image(systemName: "exclamationmark.triangle.fill")
                     }
-                }
-                Spacer(minLength: 8)
-                if let trailing {
-                    Text(trailing)
-                        .font(.system(.footnote, design: .monospaced))
-                        .foregroundStyle(Ink.meta)
-                }
-                if let statusColor {
-                    Circle()
-                        .fill(statusColor)
-                        .frame(width: 8, height: 8)
-                        .shadow(color: statusColor.opacity(0.8), radius: 4)
-                }
-                if isActive {
-                    Image(systemName: "checkmark")
-                        .font(.body.weight(.semibold))
-                        .foregroundStyle(Ink.accent)
+                    .font(Face.text(13))
+                    .foregroundStyle(Ink.warnText)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
-            .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
-        // A pointer on the iPad lights the row the way it lights a list cell.
-        .hoverEffect(.highlight)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(accessibilitySummary)
-        .accessibilityAddTraits(isActive ? .isSelected : [])
-    }
-
-    /// "name, meta, needs you, 2m, active" — the dot and the trailing time as
-    /// words, in reading order.
-    private var accessibilitySummary: String {
-        var parts = [name, meta]
-        if let statusLabel { parts.append(statusLabel) }
-        if let trailing, trailing != statusLabel { parts.append(trailing) }
-        if isActive { parts.append(String(localized: "active")) }
-        return parts.filter { !$0.isEmpty }.joined(separator: ", ")
     }
 }

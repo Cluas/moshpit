@@ -7,6 +7,9 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
+# MIT OR Apache-2.0. Which way a phone's attach went (its own group or the
+# session itself, B459), for the diagnostics log the host keeps.
+log = "0.4"
 # Unlicense OR MIT. Newline, backslash and "%begin " searches on the hot path.
 memchr = "2.8"
 # The app's one paste sanitizer (`BracketedPaste`), shell quoting and

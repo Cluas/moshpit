@@ -94,7 +94,7 @@ fn hook(pane: &str, state: &str, since: f64) -> Hook {
         since: Some(since),
         command: Some("claude".into()),
         title: Some("Bash: npm test".into()),
-        place: PaneWhere { command: "claude".into(), session: Some("work".into()), window: Some("1: api".into()) },
+        place: PaneWhere { command: "claude".into(), session: Some("work".into()), window: Some("1: api".into()), name: None },
     }
 }
 
@@ -323,6 +323,48 @@ fn the_island_ends_once_when_the_agents_are_gone_and_comes_back_with_them() {
     assert_eq!(islands(&back), 1, "the new island gets the state at once");
 }
 
+// MARK: - What the island says
+
+/// The island says where an agent is as Home does, "moshpit · devbox"
+/// (Home's name for the pane, then the host), the host alone when nothing
+/// names the pane; a title that only names the agent ("Claude Code") is no
+/// news and goes.
+#[test]
+fn the_island_says_where_as_home_does_and_drops_a_title_that_only_names_the_agent() {
+    let island = |effects: &[Effect]| {
+        effects
+            .iter()
+            .rev()
+            .find_map(|e| if let Effect::Island(state) = e { Some(state.clone()) } else { None })
+    };
+    let mut bench = Bench::new(Settings::default(), &[]);
+    let mut named = hook("%1", "working", T0);
+    named.place.name = Some("moshpit".into());
+    named.title = Some("Claude Code".into());
+    bench.monitor.hooks(CONN, vec![named], T0 + 1.0, TMUX);
+    let state = island(&bench.monitor.take_effects()).expect("an island");
+    assert_eq!(state.agents[0].place, "moshpit · devbox");
+    assert_eq!(state.agents[0].detail, None, "only the agent's name");
+    assert_eq!(state.agents[0].location, "devbox · work · 1: api", "as before, for the cards");
+
+    let mut bench = Bench::new(Settings::default(), &[]);
+    bench.monitor.hooks(CONN, vec![hook("%1", "working", T0)], T0 + 1.0, TMUX);
+    let state = island(&bench.monitor.take_effects()).expect("an island");
+    assert_eq!(state.agents[0].place, "devbox", "nothing names it: the host");
+    assert_eq!(state.agents[0].detail.as_deref(), Some("Bash: npm test"));
+
+    for (detail, command, only) in [
+        ("Claude Code", "claude", true),
+        ("claude", "claude", true),
+        ("Codex CLI", "codex", true),
+        ("Bash: npm test", "claude", false),
+        ("Claude is waiting for your input", "claude", false),
+        ("Claude Code", "", false),
+    ] {
+        assert_eq!(names_only_the_agent(detail, command), only, "{detail:?} for {command:?}");
+    }
+}
+
 // MARK: - A long finish rings once
 
 #[test]
@@ -357,6 +399,16 @@ fn every_finished_turn_is_one_finished_effect_with_the_cards_off_too() {
         assert_eq!(finished(&bench.poll("%1", "working", T0 + 700.0, T0 + 799.0)), 0);
         assert_eq!(finished(&bench.poll("%1", "done", T0 + 800.0, T0 + 801.0)), 1, "the next turn");
     }
+    // A turn that finishes with its pane on screen posts no card (B449),
+    // and counts all the same.
+    let mut bench = Bench::new(Settings::default(), &[]);
+    let visible = Visible { conn: CONN.into(), pane: Some("%1".into()) };
+    bench.monitor.sweep(Some(&visible), T0);
+    bench.monitor.take_effects();
+    assert_eq!(finished(&bench.poll("%1", "working", T0, T0 + 595.0)), 0);
+    let effects = bench.poll("%1", "done", T0 + 597.0, T0 + 597.0);
+    assert!(posts(&effects).iter().all(|c| !c.id.starts_with(DONE_CARD)), "no card: {effects:?}");
+    assert_eq!(finished(&effects), 1, "on screen, counted");
 }
 
 /// B442: with the sound off the record wasn't consulted, so a long finish
@@ -465,7 +517,7 @@ fn looking_at_a_prompt_acknowledges_it() {
 #[test]
 fn agent_output_earns_a_row_after_the_promotion_delay_and_goes_done_when_quiet() {
     let mut bench = Bench::quiet();
-    let at = |cmd: &str| PaneWhere { command: cmd.into(), session: Some("work".into()), window: None };
+    let at = |cmd: &str| PaneWhere { command: cmd.into(), session: Some("work".into()), window: None, name: None };
     bench.monitor.output(CONN, "%2", at("cargo"), T0);
     assert!(bench.monitor.state_since_by_pane(CONN).is_empty(), "a build is not an agent");
     bench.monitor.output(CONN, "%1", at("claude"), T0);
@@ -486,7 +538,7 @@ fn agent_output_earns_a_row_after_the_promotion_delay_and_goes_done_when_quiet()
 #[test]
 fn a_bell_is_attention_at_once_through_the_grace() {
     let mut bench = Bench::new(Settings::default(), &[]);
-    let at = PaneWhere { command: "zsh".into(), session: None, window: None };
+    let at = PaneWhere { command: "zsh".into(), session: None, window: None, name: None };
     bench.monitor.bell(CONN, "%3", at, T0);
     bench.monitor.sweep(None, T0 + 31.0);
     let effects = bench.monitor.take_effects();
@@ -540,7 +592,7 @@ fn graces_due_at_one_sweep_announce_in_the_order_they_ran_out() {
 fn a_card_for_a_pane_no_poll_named_says_where_from_the_tree() {
     let mut bench = Bench::quiet();
     bench.monitor.set_settings(Settings::default());
-    let place = |command: &str| PaneWhere { command: command.into(), session: Some("work".into()), window: Some("1: api".into()) };
+    let place = |command: &str| PaneWhere { command: command.into(), session: Some("work".into()), window: Some("1: api".into()), name: None };
     bench.monitor.tree(CONN, [("%2".to_owned(), place("codex"))].into_iter().collect());
     assert!(bench.pushed("%1", T0 as i64 + 31, T0 + 31.0));
     assert!(!bench.pushed("%2", T0 as i64 + 35, T0 + 35.0));
@@ -556,7 +608,7 @@ fn unstamped(pane: &str) -> Hook {
     Hook {
         pane: pane.into(),
         command: Some("zsh".into()),
-        place: PaneWhere { command: "zsh".into(), session: Some("work".into()), window: Some("1: api".into()) },
+        place: PaneWhere { command: "zsh".into(), session: Some("work".into()), window: Some("1: api".into()), name: None },
         ..Hook::default()
     }
 }
@@ -565,7 +617,7 @@ fn tree_of(panes: &[&str]) -> BTreeMap<String, PaneWhere> {
     panes
         .iter()
         .map(|pane| {
-            let place = PaneWhere { command: "claude".into(), session: Some("work".into()), window: Some("1: api".into()) };
+            let place = PaneWhere { command: "claude".into(), session: Some("work".into()), window: Some("1: api".into()), name: None };
             ((*pane).to_owned(), place)
         })
         .collect()

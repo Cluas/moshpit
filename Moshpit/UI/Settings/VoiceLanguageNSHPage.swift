@@ -1,19 +1,5 @@
 import SwiftUI
 
-/// Settings › Voice Input › Language: the SwiftUI page
-/// (``VoiceLanguageView``), or the NSH one while its switch is on
-/// (``NSHScreen/voiceLanguage``). With the switch off the SwiftUI page is all
-/// there is: no NSH code runs.
-struct VoiceLanguagePage: View {
-    var body: some View {
-        if NSHScreen.voiceLanguage.isOn {
-            VoiceLanguageNSHPage()
-        } else {
-            VoiceLanguageView()
-        }
-    }
-}
-
 /// Settings › Voice Input › Language drawn by NSH
 /// (`ui/src/voice_language.rs`): the languages the engine in use offers and
 /// the one picked come from the host (``VoiceLanguageModel``), which reads
@@ -27,7 +13,7 @@ struct VoiceLanguageNSHPage: View {
 
     var body: some View {
         if failed {
-            VoiceLanguageView()
+            NSHPageFailed { failed = false }
         } else {
             NSHPage(
                 screen: .voiceLanguage,
@@ -146,7 +132,7 @@ final class VoiceLanguageModel {
     }
 
     /// What Automatic resolves to right now, spelled out, as the SwiftUI page
-    /// says it (``VoiceLanguageView``'s `automaticDetail`).
+    /// said it (`automaticDetail`, before batch D).
     static func automaticDetail() -> String {
         let candidates = VoiceLanguageResolver.spokenLanguageCandidates()
         guard let first = candidates.first else { return Locale.current.identifier }

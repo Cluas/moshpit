@@ -50,6 +50,19 @@ pub enum SshError {
         port: u16,
         reason: String,
     },
+    /// The server and this client have no algorithm of a kind in common
+    /// (key exchange, host key, cipher, MAC): a server that only offers an
+    /// `ssh-rsa` host key, or SHA-1 key exchange. Nothing changes on a
+    /// retry (B561).
+    #[error("{host}:{port} offers no {what} algorithm this client uses (it offers {theirs:?})")]
+    Incompatible {
+        host: String,
+        port: u16,
+        /// "key exchange", "host key", "cipher", "MAC" or "compression".
+        what: &'static str,
+        /// What the server offered.
+        theirs: Vec<String>,
+    },
     /// A host this device never trusted, and the person (or the default
     /// policy) said no.
     #[error("the host key of {host}:{port} ({fingerprint}) was not trusted")]
@@ -95,6 +108,9 @@ pub enum SshError {
     /// code). Only the person could answer it (B393).
     #[error("{host} asks questions at sign-in that only a person can answer")]
     InteractivePrompts { host: String },
+    /// The person declined what the server asked at sign-in (B563).
+    #[error("signing in to {host} was declined at the server's question")]
+    SignInDeclined { host: String },
     #[error(transparent)]
     Key(#[from] KeyError),
     /// The hardware key's signer failed or answered something unusable.

@@ -224,15 +224,20 @@ fn a_fresh_attach_polls_hooks_behind_the_tree() {
     let tree = rig.index_of("list-panes -a -F '#{pane_id} ").unwrap();
     let stamps = rig.index_of("list-panes -a -F '#{pane_id}|").unwrap();
     assert!(stamps > tree);
-    // The session's layouts are read on both sides of our first size
+    // Who is on the session first (B459: a desktop's control client keeps
+    // the phone off a group of its own; the group follows the answer).
+    // Then the session's layouts are read on both sides of our first size
     // report (B150), then the boot pre-reads for the size lease go ahead
     // of discovery.
+    assert_eq!(rig.commands[0], "display-message -p 'self=#{client_name}'");
+    assert!(rig.commands[1].starts_with("list-clients -F 'cc="));
+    assert_eq!(rig.commands[2], "show-options -sqv @moshpit_cc");
     let layouts = "list-windows -t '$0' -F '#{window_id} #{window_panes} \
                    #{window_zoomed_flag} #{pane_id} #{window_layout}'";
-    assert_eq!(rig.commands[0], layouts);
-    assert!(rig.commands[1].starts_with("refresh-client -C 80x24"));
-    assert_eq!(rig.commands[2], layouts);
-    assert!(rig.commands[3].starts_with("display-message -p '#{client_name}'"));
+    assert_eq!(rig.commands[3], layouts);
+    assert!(rig.commands[4].starts_with("refresh-client -C 80x24"));
+    assert_eq!(rig.commands[5], layouts);
+    assert!(rig.commands[6].starts_with("display-message -p '#{client_name}'"));
 }
 
 // MARK: - sizes
@@ -765,7 +770,8 @@ fn new_pane_in_an_off_screen_window_switches_first() {
     let mut rig = attached();
     discover(&mut rig, TWO_SESSIONS);
     rig.with(|c, now| c.new_pane_in_window("@1", now));
-    let hop = rig.index_of("switch-client -t $1").unwrap();
+    // B459: the hop is into the phone's own group of `$1`.
+    let hop = rig.index_of("new-session -t '$1'").unwrap();
     let select = rig.index_of("select-window -t @1").unwrap();
     let split = rig.index_of("split-window -t %1").unwrap();
     let zoom = rig.index_of("resize-pane -Z -t @1").unwrap();
@@ -1353,6 +1359,10 @@ fn paste_goes_through_a_buffer_bracketed_by_tmux() {
         rig.commands[base + 1],
         "paste-buffer -p -b moshpit-paste -d -t %0"
     );
+    // The next paste waits for tmux to have run this one (B485).
+    rig.settle();
+    rig.wait(150);
+    let base = rig.commands.len() - 2;
     let text = "line1\nline2 has $HOME, ~root, \"quote\", back\\slash, 中文🎉";
     rig.with(|c, now| c.send_paste(text, "%0", now));
     let set = &rig.commands[base + 2];
@@ -1364,6 +1374,84 @@ fn paste_goes_through_a_buffer_bracketed_by_tmux() {
         )
     );
     assert!(!set.contains('\n'));
+}
+
+/// B485: a key typed right behind a paste (the image panel's Send: the
+/// path, then Return) goes to tmux only once tmux has run the paste
+/// (paste-buffer's answer) and 150 ms more, so the two never reach the
+/// program together however the network bunches them (Claude Code drops a
+/// Return that comes with an image path's paste). In order; a paste among
+/// what waits waits in turn; with no answer they go after 2 s.
+#[test]
+fn a_key_behind_a_paste_waits_for_tmux_to_have_run_it() {
+    let mut rig = attached();
+    rig.settle();
+    let base = rig.commands.len();
+    rig.with(|c, now| c.send_paste(" /tmp/a.jpg ", "%0", now));
+    rig.with(|c, now| c.send_input(b"\r", "%0", now));
+    assert_eq!(
+        rig.since(base).len(),
+        2,
+        "the paste only: {:?}",
+        rig.since(base)
+    );
+    rig.wait(500);
+    assert_eq!(rig.since(base).len(), 2, "no answer yet");
+    rig.answer_pending();
+    rig.wait(100);
+    assert_eq!(rig.since(base).len(), 2, "150 ms after the answer");
+    rig.wait(60);
+    assert_eq!(rig.since(base)[2..], ["send-keys -t %0 -H 0d"]);
+
+    // No answer: after 2 s, in order up to the next paste, which the rest
+    // waits behind.
+    let base = rig.commands.len();
+    rig.with(|c, now| c.send_paste("x", "%0", now));
+    rig.with(|c, now| c.send_input(b"y", "%0", now));
+    rig.with(|c, now| c.send_paste("z", "%0", now));
+    rig.with(|c, now| c.send_input(b"w", "%0", now));
+    rig.wait(1_900);
+    assert_eq!(rig.since(base).len(), 2);
+    rig.wait(200);
+    assert_eq!(
+        rig.since(base)[2..],
+        [
+            "send-keys -t %0 -H 79",
+            "set-buffer -b moshpit-paste -- \"z\"",
+            "paste-buffer -p -b moshpit-paste -d -t %0",
+        ]
+    );
+    rig.settle();
+    rig.wait(150);
+    assert_eq!(rig.since(base).last().unwrap(), "send-keys -t %0 -H 77");
+}
+
+/// B485: a paste's answer that comes after its wait ran out (a slow link)
+/// settles only that paste: what follows the next one still waits for the
+/// next one's own answer. It settled whichever paste was waiting, so the
+/// key behind the next paste went before tmux had run it.
+#[test]
+fn a_late_answer_settles_only_its_own_paste() {
+    let mut rig = attached();
+    rig.settle();
+    let base = rig.commands.len();
+    rig.with(|c, now| c.send_paste("x", "%0", now));
+    rig.with(|c, now| c.send_paste("z", "%0", now));
+    rig.with(|c, now| c.send_input(b"w", "%0", now));
+    // x's wait runs out unanswered: z goes, and w waits behind it.
+    rig.wait(2_100);
+    assert_eq!(rig.since(base).len(), 4, "{:?}", rig.since(base));
+    // x's two answers, late; z's not yet.
+    for _ in 0..2 {
+        let num = 9_000 + rig.answered as i64;
+        rig.answered += 1;
+        rig.push(&moshpit_tmux::rig::block(num, &[], false));
+    }
+    rig.wait(500);
+    assert_eq!(rig.since(base).len(), 4, "w still waits for z's answer");
+    rig.answer_pending();
+    rig.wait(150);
+    assert_eq!(rig.since(base).last().unwrap(), "send-keys -t %0 -H 77");
 }
 
 #[test]

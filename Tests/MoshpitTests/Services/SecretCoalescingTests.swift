@@ -1,14 +1,13 @@
-import Citadel
 import Foundation
-import NIOCore
 import Testing
 @testable import Moshpit
 
 /// `SSHService.resolveSecret`'s in-flight coalescing: concurrent resolutions of
 /// one connection must share ONE keychain read — each read is a Face ID prompt,
 /// and the actor's reentrancy otherwise turns one user action into two sheets.
-/// Not hypothetical: mosh+tmux authenticates two SSH connections (bootstrap +
-/// `-CC` sidecar) with the same credential, and `resumeAll` is now concurrent.
+/// Not hypothetical: sessions resume together on the way back, and the Rust
+/// core asks for a connection's credential on every dial
+/// (``SSHService/rustCoreCredential(_:onKeyPassphrase:)``).
 
 /// In-memory backend that counts loads and holds each one open for `delay`.
 /// The hold is the point: it pins the first resolution inside the keychain
@@ -43,7 +42,7 @@ private final class SleepyCountingBackend: KeychainBackend, @unchecked Sendable 
         lock.unlock()
         // Blocks the keychain actor's thread, not SSHService — callers of
         // `resolveSecret` are suspended at an await, so the service stays
-        // reentrant, which is what lets a second connect race in.
+        // reentrant, which is what lets a second sign-in race in.
         Thread.sleep(forTimeInterval: delay)
         guard let data else { throw KeychainError.notFound }
         return data
@@ -57,22 +56,6 @@ private final class SleepyCountingBackend: KeychainBackend, @unchecked Sendable 
     func exists(account: String) -> Bool {
         lock.lock(); defer { lock.unlock() }
         return store[account] != nil
-    }
-}
-
-/// Never opens a socket; throws so the test can tell "credential resolution
-/// succeeded and dispatch reached the network" apart from a pre-flight failure.
-private struct StubProviderError: Error {}
-private struct StubClientProvider: SSHClientProvider {
-    func connect(host: String, port: Int,
-                 authenticationMethod: SSHAuthenticationMethod,
-                 hostKeyValidator: SSHHostKeyValidator) async throws -> SignedInClient {
-        throw StubProviderError()
-    }
-    func connect(on channel: Channel,
-                 authenticationMethod: SSHAuthenticationMethod,
-                 hostKeyValidator: SSHHostKeyValidator) async throws -> SignedInClient {
-        throw StubProviderError()
     }
 }
 
@@ -92,23 +75,24 @@ struct SecretCoalescingTests {
     }
 
     private func makeService(backend: SleepyCountingBackend) -> SSHService {
-        SSHService(
-            keychain: KeychainService(backend: backend),
-            hostKeyValidator: .inMemory(),
-            clientProvider: StubClientProvider())
+        SSHService(keychain: KeychainService(backend: backend), protectedDataAvailable: { true })
     }
 
-    @Test("two concurrent connects share one keychain read")
-    func concurrentConnectsCoalesce() async {
+    /// The credential the Rust core's sign-in asks for; its failure is
+    /// dropped, the reads it made are what is counted.
+    private func signIn(_ service: SSHService, _ connection: ServerConnection) async {
+        _ = try? await service.rustCoreCredential(connection) { _, _ in nil }
+    }
+
+    @Test("two concurrent sign-ins share one keychain read")
+    func concurrentSignInsCoalesce() async {
         let backend = SleepyCountingBackend(
             seed: [Self.ref: Data("hunter2".utf8)], delay: 0.15)
         let service = makeService(backend: backend)
         let connection = makeConnection()
 
-        // Both fail at the stub provider — AFTER credential resolution, which
-        // is the part under test.
-        async let first: Void = { _ = try? await service.connect(connection) }()
-        async let second: Void = { _ = try? await service.connect(connection) }()
+        async let first: Void = signIn(service, connection)
+        async let second: Void = signIn(service, connection)
         _ = await (first, second)
 
         #expect(backend.loads == 1,
@@ -122,11 +106,11 @@ struct SecretCoalescingTests {
         let service = makeService(backend: backend)
         let connection = makeConnection()
 
-        _ = try? await service.connect(connection)
-        _ = try? await service.connect(connection)
+        await signIn(service, connection)
+        await signIn(service, connection)
 
         #expect(backend.loads == 2,
-                "a failed resolution left registered would replay its error to every future connect")
+                "a failed resolution left registered would replay its error to every future sign-in")
     }
 
     @Test("a background wipe is not undone by a read that finishes after it")
@@ -136,18 +120,18 @@ struct SecretCoalescingTests {
         let service = makeService(backend: backend)
         let connection = makeConnection()
 
-        // First connect starts its (slow) keychain read…
-        let inFlight = Task { _ = try? await service.connect(connection) }
+        // The first sign-in starts its (slow) keychain read…
+        let inFlight = Task { await signIn(service, connection) }
         // …the app backgrounds mid-read and wipes every cached secret…
         try await Task.sleep(for: .milliseconds(60))
         await service.clearAllCachedSecrets()
         await inFlight.value
 
-        // …so the next connect must go back to the keychain. If the late
+        // …so the next sign-in must go back to the keychain. If the late
         // completion had repopulated the cache, this would be a cache hit and
         // the wipe's "authenticate on every read survives backgrounding"
         // guarantee would be quietly gone.
-        _ = try? await service.connect(connection)
+        await signIn(service, connection)
         #expect(backend.loads == 2)
     }
 }

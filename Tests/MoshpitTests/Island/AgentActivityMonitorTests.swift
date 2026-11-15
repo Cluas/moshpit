@@ -55,6 +55,27 @@ struct AgentActivityMonitorTests {
     /// The announced-episode record the machine keeps is the one earlier
     /// builds wrote: `"<uuid>|<pane>" -> epoch seconds` under the same key,
     /// so updating the app doesn't re-announce what is still standing.
+    /// B538: a session that connected with notifications and the Live
+    /// Activity both off was never watched: turning either on later did
+    /// nothing for it until it reconnected. It is watched whatever they say;
+    /// the machine decides, from the settings, what reaches the phone.
+    @Test("a session is watched whatever the switches say (B538)")
+    func watchedWithTheSwitchesOff() {
+        let name = "test.agentmonitor.off.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: name)!
+        defer { defaults.removePersistentDomain(forName: name) }
+        let settings = AppSettings(defaults: defaults)
+        settings.notificationsEnabled = false
+        settings.liveActivityEnabled = false
+        let monitor = AgentActivityMonitor(settings: settings, writeWidget: { _ in })
+        let mux = AgentStandingTests.FakeMux()
+        let connection = ServerConnection(name: "quiet", host: "192.0.2.2", port: 22,
+                                          username: "tester", authMethod: .password)
+        monitor.track(connection: connection, controller: mux)
+        #expect(mux.onAgentHooksUpdated != nil, "connected with both off, never watched")
+        monitor.untrack(connectionId: connection.id)
+    }
+
     @Test("the announced record is read and written where earlier builds kept it")
     func announcedRecordKeepsItsKey() {
         #expect(AgentActivityMonitor.announcedKey == "island.announcedEpisodes")

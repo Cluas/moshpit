@@ -46,10 +46,27 @@ struct ConnectionDeletionTests {
         func changed(change: HostCareChange) {}
     }
 
+    /// A pairings file of the test's own: written as the app writes it (the
+    /// Rust store), read as the notification service reads it.
+    struct TestPairingsFile {
+        let url: URL
+        private var store: RustPushPairings { RustPushPairings(url: url) }
+        func read() -> [PushPairing] { PushPairingFile(url: url).read() }
+        @discardableResult func write(_ pairings: [PushPairing]) -> Bool { store.write(pairings) }
+        @discardableResult func upsert(_ pairing: PushPairing) -> Bool { store.upsert(pairing) }
+        func remove(connectionId: UUID) -> Bool { store.remove(connectionId: connectionId) }
+    }
+
+    /// A pairing for connection `id`, its send token not minted yet.
+    static func pairing(_ id: UUID, host: String, relayURL: String = relayURL) -> PushPairing {
+        PushPairing(connectionId: id, hostLabel: host, secretHex: String(repeating: "ab", count: 32),
+                    sendToken: "", relayURL: relayURL, createdAt: Date())
+    }
+
     /// A pairings file of the test's own, as the core reaches one.
     final class FilePairings: PairingsFile, @unchecked Sendable {
-        let file: PushPairingFile
-        init(_ file: PushPairingFile) { self.file = file }
+        let file: TestPairingsFile
+        init(_ file: TestPairingsFile) { self.file = file }
         func read() -> [PairingRecord] { file.read().map(PairingRecord.init) }
         func upsert(pairing: PairingRecord) -> Bool { PushPairing(pairing).map(file.upsert) ?? false }
         func remove(connectionId: String) -> Bool {
@@ -57,16 +74,16 @@ struct ConnectionDeletionTests {
         }
     }
 
-    private static let relayURL = "https://relay.example.com"
+    static let relayURL = "https://relay.example.com"
 
-    private func makePairingsFile() throws -> PushPairingFile {
+    private func makePairingsFile() throws -> TestPairingsFile {
         let dir = FileManager.default.temporaryDirectory
             .appendingPathComponent("deletion-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        return PushPairingFile(url: dir.appendingPathComponent("push-pairings.json"))
+        return TestPairingsFile(url: dir.appendingPathComponent("push-pairings.json"))
     }
 
-    private func cleanUp(_ file: PushPairingFile) {
+    private func cleanUp(_ file: TestPairingsFile) {
         try? FileManager.default.removeItem(at: file.url.deletingLastPathComponent())
     }
 
@@ -76,7 +93,7 @@ struct ConnectionDeletionTests {
         return (ConnectionStore(defaults: defaults), defaults, suite)
     }
 
-    private func core(_ file: PushPairingFile) -> HostCareCore {
+    private func core(_ file: TestPairingsFile) -> HostCareCore {
         HostCareCore(platform: NoHost(), pairings: FilePairings(file), environment: "sandbox", autocareOff: true)
     }
 
@@ -194,8 +211,8 @@ struct ConnectionDeletionTests {
         store.add(doomed)
         store.add(kept)
         try #require(file.write([
-            PushPairing.make(connectionId: doomed.id, hostLabel: doomed.name, relayURL: Self.relayURL),
-            PushPairing.make(connectionId: kept.id, hostLabel: kept.name, relayURL: Self.relayURL),
+            Self.pairing(doomed.id, host: doomed.name),
+            Self.pairing(kept.id, host: kept.name),
         ]))
 
         try await ConnectionDeletion.delete(doomed, from: store, keys: SSHKeyStore(defaults: defaults),

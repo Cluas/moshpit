@@ -24,6 +24,10 @@
 //!   name, its mark and its state.
 //! - Every session starts open; past eight, only the one in use does.
 //! - Disconnected, the page is read only under a banner that reconnects.
+//! - A session, a window or a pane swipes open on its most used actions
+//!   (B499: [`swipe::session_tray`], [`swipe::window_tray`],
+//!   [`swipe::pane_tray`]), one row of the page at a time; read only,
+//!   none.
 
 pub mod model;
 
@@ -38,6 +42,7 @@ use crate::{
     home::{
         Intent, TreeState,
         model::{AgentState, Connection, Link, Mux},
+        swipe,
     },
     nav_bar::{self, BarButton, BarContent, BarMetrics, NavBar},
     screen::Screen,
@@ -127,13 +132,17 @@ pub fn SessionsScreen(props: ScreenProps) -> impl IntoElement {
     let back = params.back.clone().unwrap_or_else(|| t!("Moshpit"));
     let connection = signal(None::<Connection>);
     let disclosure = signal(Disclosure::default());
+    // The row whose swipe tray is open (one at a time on the page).
+    let open = signal(None::<String>);
     // The disclosure the host kept, which may come before the host does.
     let kept = stored(Vec::<TreeState>::new());
     let take = move |id: &str| {
         if disclosure.with_untracked(|d| d.told) {
             return;
         }
-        let tree = kept.with(|trees| trees.iter().find(|t| t.connection == id).cloned());
+        // Only what this page told: a tree Home's idle group made is not
+        // one (B553).
+        let tree = kept.with(|trees| trees.iter().find(|t| t.connection == id && t.told).cloned());
         if let Some(tree) = tree {
             disclosure.set(Disclosure::told(&tree));
         }
@@ -213,7 +222,7 @@ pub fn SessionsScreen(props: ScreenProps) -> impl IntoElement {
     };
     let body = {
         let tell = tell.clone();
-        move || body(connection, disclosure, live, tell.clone())
+        move || body(connection, disclosure, live, open, tell.clone())
     };
     let list = page(
         bar,
@@ -255,6 +264,7 @@ fn body(
     connection: Signal<Option<Connection>>,
     disclosure: Signal<Disclosure>,
     live: Memo<bool>,
+    open: Signal<Option<String>>,
     tell: Tell,
 ) -> Vec<AnyElement> {
     let Some(host) = connection.get() else {
@@ -313,17 +323,45 @@ fn body(
         return parts;
     }
     let read_only = !live.get();
+    // The trays (B499): none on a page that is read only.
+    let trays = (!read_only).then_some(Trays {
+        mux: control.mux,
+        open,
+    });
     for group in groups {
         parts.push(session_card(
             &host.id,
             group,
             &words,
             read_only,
+            trays,
             disclosure,
             tell.clone(),
         ));
     }
     parts
+}
+
+/// The page's swipe trays (B499): the multiplexer the actions are
+/// worded for, and the row whose tray is open.
+#[derive(Clone, Copy)]
+struct Trays {
+    mux: Mux,
+    open: Signal<Option<String>>,
+}
+
+impl Trays {
+    /// `line` in a tray of `actions`, named `key` among the page's rows.
+    fn wrap(
+        self,
+        line: crate::ui::row::Row,
+        key: String,
+        actions: Vec<swipe::Action>,
+        tell: &Tell,
+    ) -> crate::ui::row::Row {
+        let (open, tell) = (self.open, tell.clone());
+        line.wrapped(move |content| swipe::tray_row(key, open, actions, tell, content))
+    }
 }
 
 /// A session's card: its head, then (open) its windows and their panes.
@@ -332,6 +370,7 @@ fn session_card(
     group: Group,
     words: &Words,
     read_only: bool,
+    trays: Option<Trays>,
     disclosure: Signal<Disclosure>,
     tell: Tell,
 ) -> AnyElement {
@@ -352,6 +391,18 @@ fn session_card(
             .value(crate::plural!("%lld waiting", group.waiting as i64))
             .value_tone(Tone::Warning)
             .value_dot(Status::Attention);
+    }
+    if let Some(trays) = trays {
+        let actions = swipe::worded(
+            swipe::session_tray(connection, &session, group.repo.is_some()),
+            trays.mux,
+        );
+        head = trays.wrap(
+            head,
+            format!("session:{connection}:{session}"),
+            actions,
+            &tell,
+        );
     }
     {
         let (connection, session, tell) = (connection.to_owned(), session.clone(), tell.clone());
@@ -375,11 +426,11 @@ fn session_card(
     if group.expanded {
         for window in group.windows {
             card = card.row(window_row(
-                connection, &window, read_only, disclosure, &tell,
+                connection, &window, read_only, trays, disclosure, &tell,
             ));
             if window.expanded {
                 for pane in &window.panes {
-                    card = card.row(pane_row(connection, pane, words, read_only, &tell));
+                    card = card.row(pane_row(connection, pane, words, read_only, trays, &tell));
                 }
             }
         }
@@ -392,11 +443,21 @@ fn window_row(
     connection: &str,
     window: &WindowItem,
     read_only: bool,
+    trays: Option<Trays>,
     disclosure: Signal<Disclosure>,
     tell: &Tell,
 ) -> crate::ui::row::Row {
     let mut line =
         row(window.title.clone()).test_id(&format!("home-window-{connection}-{}", window.id));
+    if let Some(trays) = trays {
+        let actions = swipe::worded(swipe::window_tray(connection, &window.id), trays.mux);
+        line = trays.wrap(
+            line,
+            format!("window:{connection}:{}", window.id),
+            actions,
+            tell,
+        );
+    }
     if !window.subtitle.is_empty() {
         line = line.subtitle(window.subtitle.clone());
     }
@@ -434,6 +495,7 @@ fn pane_row(
     pane: &PaneItem,
     words: &Words,
     read_only: bool,
+    trays: Option<Trays>,
     tell: &Tell,
 ) -> crate::ui::row::Row {
     let title = if pane.title.is_empty() {
@@ -442,6 +504,16 @@ fn pane_row(
         pane.title.clone()
     };
     let mut line = row(title).test_id(&format!("home-pane-{connection}-{}", pane.id));
+    if let Some(trays) = trays {
+        // The window above names it: no Rename here, the kill only.
+        let actions = swipe::worded(swipe::pane_tray(connection, &pane.id, None), trays.mux);
+        line = trays.wrap(
+            line,
+            format!("pane:{connection}:{}", pane.id),
+            actions,
+            tell,
+        );
+    }
     if let Some(path) = &pane.path {
         line = line.subtitle(path.clone()).mono_subtitle();
     }

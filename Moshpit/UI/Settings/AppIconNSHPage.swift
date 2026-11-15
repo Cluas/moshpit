@@ -1,27 +1,13 @@
 import SwiftUI
 import UIKit
 
-/// Settings › App Icon: the SwiftUI page (``AppIconGalleryView``), or the NSH
-/// one while its switch is on (``NSHScreen/appIcon``). With the switch off
-/// the SwiftUI page is all there is: no NSH code runs.
-struct AppIconPage: View {
-    var body: some View {
-        if NSHScreen.appIcon.isOn {
-            AppIconNSHPage()
-        } else {
-            AppIconGalleryView()
-                .darkOnlyPage()
-        }
-    }
-}
-
 /// Settings › App Icon drawn by NSH (`ui/src/app_icon.rs`). The icons and the
 /// one in use come from the host (``AppIconModel``). Picking one stays the
 /// host's to do: iOS switches the icon (`setAlternateIconName`), the setting
 /// follows only once iOS has, and the screen shows the outcome — the new
 /// pick, or why iOS refused it. The tick is the icon iOS shows, not the
 /// stored setting the SwiftUI page ticks (``AppIconModel/selectedID(_:)``).
-/// If NSH cannot run here, the SwiftUI page shows instead.
+/// If its screen can't run, the page says so (``NSHPageFailed``).
 struct AppIconNSHPage: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(AppSettings.self) private var settings
@@ -30,8 +16,7 @@ struct AppIconNSHPage: View {
 
     var body: some View {
         if failed {
-            AppIconGalleryView()
-                .darkOnlyPage()
+            NSHPageFailed { failed = false }
         } else {
             NSHPage(
                 screen: .appIcon,

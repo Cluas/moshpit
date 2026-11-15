@@ -3,14 +3,13 @@ import SwiftUI
 import UIKit
 
 /// Home › Add Connection and Edit Connection drawn by NSH
-/// (`ui/src/connection_form.rs`), in place of ``AddConnectionView`` behind
-/// the switch `MOSHPIT_NSH_CONNECTION_FORM`.
+/// (`ui/src/connection_form.rs`). If its screen can't run, the sheet says
+/// so (``NSHPageFailed``).
 ///
 /// The draft is the shared Rust model's, kept by the host
 /// (``ConnectionFormModel``): the screen tells each edit as it is made and
-/// the model takes it, so a page made again starts from it. Saving is the
-/// SwiftUI form's, the same function
-/// (``ConnectionDraft/save(existing:store:keychain:settings:keys:secrets:)``):
+/// the model takes it, so a page made again starts from it. Saving is
+/// ``ConnectionDraft/save(existing:store:keychain:settings:keys:secrets:release:forgetPairing:)``:
 /// the app's connection store and keychain. The key picker, the error card and
 /// the sheet's dismissal are the host's.
 struct ConnectionFormNSHPage: View {
@@ -46,20 +45,20 @@ struct ConnectionFormNSHPage: View {
         // A new connection starts from the settings (B256): the app's one
         // settings object, the environment's too — an init can't read that.
         let draft = existing.map(ConnectionDraft.init) ?? ConnectionDraft(newWith: .shared)
-        _model = State(initialValue: ConnectionFormModel(draft: draft))
+        _model = State(initialValue: ConnectionFormModel(
+            draft: draft, saved: store.connections, editing: existing?.id))
         _selectedKeyId = State(initialValue: draft.selectedKeyId)
     }
 
-    /// Keys that can sign in: all but hardware tokens' (the form's
-    /// `connectableKeys`).
+    /// Keys that can sign in: all but hardware tokens' (an ECDSA-sk key's
+    /// private half lives on the token).
     private var connectableKeys: [SSHKeyRecord] {
         keyStore.keys.filter { $0.algorithm != .ecdsaSK }
     }
 
     var body: some View {
         if failed {
-            AddConnectionView(store: store, keychain: keychain, existing: existing,
-                              releaseSecret: releaseSecret)
+            NSHSheetFailed { failed = false }
         } else {
             NavigationStack {
                 NSHPage(
@@ -76,7 +75,7 @@ struct ConnectionFormNSHPage: View {
                     .nshPage()
                     .navigationTitle(existing == nil ? "Add Connection" : "Edit Connection")
                     .appSheet(isPresented: $showKeyPicker) {
-                        KeyPickerSheet(keys: connectableKeys, selectedKeyId: $selectedKeyId)
+                        KeyPickerNSHPage(keys: connectableKeys, selectedKeyId: $selectedKeyId)
                     }
                     .onChange(of: selectedKeyId) { _, id in
                         model.pickKey(id, settings: settings, keys: keyStore.keys)
@@ -151,8 +150,15 @@ final class ConnectionFormModel {
     /// picked one was gone.
     private var postedKey: ConnectionKeyRow?
 
-    init(draft: ConnectionDraft) {
+    /// The saved connections and the one edited: for the warning of a
+    /// duplicate (B532).
+    private let saved: [ServerConnection]
+    private let editing: UUID?
+
+    init(draft: ConnectionDraft, saved: [ServerConnection] = [], editing: UUID? = nil) {
         self.draft = draft
+        self.saved = saved
+        self.editing = editing
     }
 
     /// Registers the form's own fields on `surface`, before its screen
@@ -249,7 +255,8 @@ final class ConnectionFormModel {
     func message(settings: AppSettings, keys: [SSHKeyRecord]) -> [String: Any] {
         let json = connectionFormMessage(
             draft: draft, given: secrets.given, keys: keys.map(KeyRecord.init),
-            udpStart: Int64(settings.udpRangeStart), udpEnd: Int64(settings.udpRangeEnd))
+            udpStart: Int64(settings.udpRangeStart), udpEnd: Int64(settings.udpRangeEnd),
+            saved: saved.map(ConnectionRecord.init), editing: editing?.uuidString)
         return (try? JSONSerialization.jsonObject(with: Data(json.utf8))) as? [String: Any] ?? [:]
     }
 }

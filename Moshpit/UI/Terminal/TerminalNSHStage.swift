@@ -13,12 +13,16 @@ import UIKit
 /// scrollback or its place in it. The stage puts the one to show in the
 /// slot inside a ``TerminalHostContainer`` — the container whose frame lock
 /// keeps the terminal still while the keyboard moves (the coordinator's
-/// keyboard observers drive it, as under SwiftUI) — and does what
-/// `TerminalScreen.terminalContent`, `TmuxPaneSplitView` and
-/// `PaneTerminalHost` do:
+/// keyboard observers drive it) — and does this:
 ///
 /// - a pane switch slides the new pane in from the swipe's side once a
 ///   swipe has happened (the controller's 0.22 s), and fades otherwise;
+/// - a sideways drag moves the terminal with the finger, uncovering the
+///   page's backstage under the slot (the pane it would go to), and
+///   rubber-bands where the page names no neighbour; let go past a third of
+///   the width or flicked, the terminal flies on and the neighbour is
+///   asked for (``onSwitchPane``), else it springs back (the pane-switch
+///   design's step 1, `ui/src/terminal/switcher.rs`);
 /// - a reconnect's kept frame (the retired controller's pane, frozen,
 ///   untouchable) stays until the new attach has painted, then cross-fades
 ///   to it (0.3 s), so the frame never jumps;
@@ -30,6 +34,16 @@ import UIKit
 /// window while the terminal still holds the keyboard — moving a first
 /// responder between two superviews of one window keeps it — and the new
 /// slot adopts it from there, so the keyboard never moves (spike G5).
+/// What the stage needs of a tmux controller: each pane's one terminal, for
+/// the pane's whole life, and its coordinator (``RustTmuxController``).
+@MainActor
+protocol PaneTerminalSource: AnyObject {
+    func surface(for paneId: String) -> TerminalSurface
+    func coordinator(for paneId: String) -> SwiftTerminalView.Coordinator?
+}
+
+extension RustTmuxController: PaneTerminalSource {}
+
 @MainActor
 final class TerminalNSHStage {
     /// What the slot shows.
@@ -39,7 +53,7 @@ final class TerminalNSHStage {
             /// tmux or herdr connect, herdr's focused pane.
             case plain(SessionHub.ActiveSession)
             /// A tmux pane of `controller`.
-            case pane(TmuxSessionController, String)
+            case pane(any PaneTerminalSource, String)
         }
 
         let source: Source
@@ -591,14 +605,23 @@ final class TerminalNSHStage {
         var plain = false
         if case .plain = target.source { plain = true }
         let reconnect = previous?.frozen == true || target.frozen || plain
-        let slide = reconnect ? nil : target.slide
+        // A swipe that asked for this pane says the side it comes from.
+        var swiped: Bool?
+        if let committed, CACurrentMediaTime() - committed.at < Self.committedFor { swiped = committed.forward }
+        committed = nil
+        let slide = reconnect ? nil : (swiped ?? target.slide)
         let duration = reconnect ? Self.crossfadeDuration : Self.switchDuration
         if let forward = slide, let slot = next.container.superview {
             let width = slot.bounds.width
             next.container.transform = CGAffineTransform(translationX: forward ? width : -width, y: 0)
         }
         next.container.alpha = 0
-        retire(old, duration: duration, slideForward: slide)
+        // A terminal a swipe threw is on its way out already: it only fades.
+        retire(old, duration: duration, slideForward: old === flying ? nil : slide)
+        if old.coordinator !== next.coordinator {
+            old.coordinator?.onSwipe = nil
+            old.coordinator?.onStep = nil
+        }
         UIView.animate(withDuration: duration, delay: 0, options: [.curveEaseInOut, .allowUserInteraction]) {
             next.container.alpha = 1
             next.container.transform = .identity
@@ -636,6 +659,13 @@ final class TerminalNSHStage {
         }
         hosted.container.host(surface)
         coordinator?.hostContainer = hosted.container
+        // The sideways drag and VoiceOver's steps are this stage's while it
+        // hosts the terminal (the page's order, no wrap-around).
+        coordinator?.onSwipe = { [weak self, weak hosted] phase in
+            guard let self, let hosted, self.hosted === hosted else { return }
+            self.swipe(phase, on: hosted)
+        }
+        coordinator?.onStep = { [weak self] forward in _ = self?.step(forward: forward) }
         hosted.container.geometryHeld = geometryHeld
         hosted.container.isUserInteractionEnabled = !target.frozen
         if let slot {
@@ -701,6 +731,224 @@ final class TerminalNSHStage {
     /// The shown pane on top of what fades out.
     private func bringForward(_ host: Hosted, in slot: UIView) {
         if host.container.superview === slot { slot.bringSubviewToFront(host.container) }
+    }
+
+    // MARK: The sideways swipe
+
+    /// How far the drag goes, as a share of the width, before a lift
+    /// switches; a flick faster than ``flickSpeed`` (points a second) past
+    /// ``flickDistance`` switches too.
+    static let commitShare: CGFloat = 0.35
+    static let flickSpeed: CGFloat = 500
+    static let flickDistance: CGFloat = 24
+    /// Where nothing is: the drag moves the terminal a quarter as far, never
+    /// past ``rubberLimit``.
+    static let rubberShare: CGFloat = 0.25
+    static let rubberLimit: CGFloat = 60
+    /// The structural spring's response (`spring-structural`, critically
+    /// damped).
+    static let springResponse: TimeInterval = 0.35
+    /// The pane coming back after a swipe switched the one terminal in
+    /// place (mosh, herdr): `base`.
+    static let returnDuration: TimeInterval = 0.24
+    /// How long a committed swipe's side waits for the pane it asked for.
+    static let committedFor: CFTimeInterval = 1.5
+    /// The hint's nudge toward the next pane.
+    static let nudgeDistance: CGFloat = 32
+
+    /// The panes either side of the one shown, by id (the page's
+    /// `switcher.rs`): none either side with nowhere to go.
+    private(set) var neighbours: (previous: String?, next: String?) = (nil, nil)
+    /// Show pane `pane` (`forward`: the next one): a swipe let go past the
+    /// threshold, or a step.
+    var onSwitchPane: ((_ pane: String, _ forward: Bool) -> Void)?
+    /// A swipe began (true) or settled (false): the page shows its dots
+    /// while it lasts.
+    var onSwiping: ((Bool) -> Void)?
+
+    /// The drag under way: on which host, how far, and whether past the
+    /// threshold (its haptic says each crossing).
+    private struct Drag {
+        weak var host: Hosted?
+        var past = false
+    }
+    private var drag: Drag?
+    /// The direction of the switch a swipe or a step asked for, until the
+    /// pane shows (``committedFor`` at most).
+    private var committed: (forward: Bool, at: CFTimeInterval)?
+    /// The terminal a committed swipe threw, while it flies.
+    private weak var flying: Hosted?
+
+    func setNeighbours(previous: String?, next: String?) {
+        neighbours = (previous, next)
+    }
+
+    /// Whether a drag of `dx` goes to the next pane: leftward in a
+    /// left-to-right layout.
+    private func forward(_ dx: CGFloat) -> Bool {
+        let ltr = (slot?.effectiveUserInterfaceLayoutDirection ?? .leftToRight) == .leftToRight
+        return ltr ? dx < 0 : dx > 0
+    }
+
+    /// The pane a drag of `dx` would go to.
+    private func neighbour(_ dx: CGFloat) -> String? {
+        guard dx != 0 else { return nil }
+        return forward(dx) ? neighbours.next : neighbours.previous
+    }
+
+    /// Where a drag of `dx` puts the terminal toward nothing: resisting,
+    /// never past ``rubberLimit``.
+    static func rubberBand(_ dx: CGFloat) -> CGFloat {
+        let d = rubberLimit
+        let x = abs(dx)
+        let shown = d * (1 - 1 / (x * rubberShare / d + 1))
+        return dx < 0 ? -shown : shown
+    }
+
+    private var reduceMotion: Bool { UIAccessibility.isReduceMotionEnabled }
+
+    /// One phase of a sideways drag on `host`'s terminal.
+    private func swipe(_ phase: TerminalSwipe, on host: Hosted) {
+        switch phase {
+        case .began:
+            // One pane: no swipe, no rubber band hinting at more.
+            guard neighbours.previous != nil || neighbours.next != nil, host.owns, target?.frozen != true else {
+                drag = nil
+                return
+            }
+            // A settle still in flight stops where it is.
+            if let presentation = host.container.layer.presentation() {
+                host.container.transform = presentation.affineTransform()
+            }
+            host.container.layer.removeAllAnimations()
+            drag = Drag(host: host)
+            uncover(true)
+            onSwiping?(true)
+        case .moved(let dx):
+            guard var drag, drag.host === host else { return }
+            let width = max(host.container.bounds.width, 1)
+            let toward = neighbour(dx)
+            let x = toward == nil ? Self.rubberBand(dx) : dx
+            host.container.transform = CGAffineTransform(translationX: x, y: 0)
+            let past = toward != nil && abs(dx) > width * Self.commitShare
+            if past != drag.past { Haptics.select() }
+            drag.past = past
+            self.drag = drag
+        case .ended(let dx, let velocity):
+            guard let drag, drag.host === host else { return }
+            self.drag = nil
+            let width = max(host.container.bounds.width, 1)
+            let flick = abs(velocity) > Self.flickSpeed && abs(dx) > Self.flickDistance && (velocity < 0) == (dx < 0)
+            if let pane = neighbour(dx), abs(dx) > width * Self.commitShare || flick {
+                if !drag.past { Haptics.select() }
+                commit(host, to: pane, forward: forward(dx), toward: dx < 0 ? -width : width, velocity: velocity)
+            } else {
+                if neighbour(dx) == nil, abs(dx) > 8 { Haptics.tap(.light) }
+                settle(host, velocity: velocity)
+            }
+        case .cancelled:
+            guard let drag, drag.host === host else { return }
+            self.drag = nil
+            settle(host, velocity: 0)
+        }
+    }
+
+    /// The slot's own ground off (on): the page's backstage under it shows
+    /// where the terminal moved away.
+    private func uncover(_ open: Bool) {
+        for slot in slots.compactMap(\.slot) {
+            if open { slot.backgroundColor = .clear } else { paint(slot) }
+        }
+    }
+
+    /// Springs `host` back to its place, at the lift's speed.
+    private func settle(_ host: Hosted, velocity: CGFloat) {
+        let done = { [weak self] in
+            guard let self, self.drag == nil else { return }
+            self.uncover(false)
+            self.onSwiping?(false)
+        }
+        guard !reduceMotion else {
+            host.container.transform = .identity
+            return done()
+        }
+        spring(host, to: 0, velocity: velocity, completion: done)
+    }
+
+    /// The structural spring (critically damped) moving `host` to `x` from
+    /// where it is, carrying the lift's `velocity`.
+    private func spring(_ host: Hosted, to x: CGFloat, velocity: CGFloat, completion: @escaping () -> Void) {
+        let from = host.container.transform.tx
+        let distance = x - from
+        let relative = abs(distance) > 1 ? velocity / distance : 0
+        let timing = UISpringTimingParameters(dampingRatio: 1, initialVelocity: CGVector(dx: relative, dy: 0))
+        let animator = UIViewPropertyAnimator(duration: Self.springResponse, timingParameters: timing)
+        animator.isUserInteractionEnabled = true
+        animator.addAnimations { host.container.transform = CGAffineTransform(translationX: x, y: 0) }
+        animator.addCompletion { _ in completion() }
+        animator.startAnimation()
+    }
+
+    /// The swipe switches: `host` flies on toward `x` (off the slot) while
+    /// the pane is asked for. A new pane's terminal slides in from that side
+    /// when it shows (``show(_:instant:)``); the one terminal of a mosh or
+    /// herdr session, switched in place, comes back from the other side
+    /// under its switch veil.
+    private func commit(_ host: Hosted, to pane: String, forward: Bool, toward x: CGFloat, velocity: CGFloat) {
+        committed = (forward, CACurrentMediaTime())
+        flying = host
+        onSwitchPane?(pane, forward)
+        let done = { [weak self, weak host] in
+            guard let self else { return }
+            if let host, self.hosted === host, self.drag == nil {
+                // Still this terminal: it switched in place (or the new pane
+                // isn't here yet). It comes back from the other side.
+                if self.reduceMotion {
+                    host.container.transform = .identity
+                } else {
+                    host.container.transform = CGAffineTransform(translationX: -x, y: 0)
+                    UIView.animate(withDuration: Self.returnDuration, delay: 0,
+                                   options: [.curveEaseInOut, .allowUserInteraction]) {
+                        host.container.transform = .identity
+                    }
+                }
+            }
+            if self.flying === host { self.flying = nil }
+            self.uncover(false)
+            self.onSwiping?(false)
+        }
+        guard !reduceMotion else { return done() }
+        spring(host, to: x, velocity: velocity, completion: done)
+    }
+
+    /// One pane on (VoiceOver's Next pane / Previous pane, a lift on a view
+    /// that doesn't track the drag): nothing past either end.
+    @discardableResult
+    func step(forward: Bool) -> Bool {
+        guard let pane = forward ? neighbours.next : neighbours.previous else { return false }
+        committed = (forward, CACurrentMediaTime())
+        Haptics.select()
+        onSwitchPane?(pane, forward)
+        return true
+    }
+
+    /// The hint's nudge: the terminal leans ``nudgeDistance`` toward the
+    /// pane a swipe would go to, uncovering its name, and springs back.
+    func nudge(forward: Bool) {
+        guard !reduceMotion, drag == nil, let hosted, hosted.owns,
+              (forward ? neighbours.next : neighbours.previous) != nil else { return }
+        let ltr = (slot?.effectiveUserInterfaceLayoutDirection ?? .leftToRight) == .leftToRight
+        let x = (forward == ltr ? -1 : 1) * Self.nudgeDistance
+        uncover(true)
+        UIView.animate(withDuration: 0.24, delay: 0.3, options: [.curveEaseOut, .allowUserInteraction]) {
+            hosted.container.transform = CGAffineTransform(translationX: x, y: 0)
+        } completion: { [weak self, weak hosted] _ in
+            guard let self, let hosted, self.drag == nil else { return }
+            self.spring(hosted, to: 0, velocity: 0) { [weak self] in
+                guard let self, self.drag == nil else { return }
+                self.uncover(false)
+            }
+        }
     }
 
     // MARK: The keyboard and the geometry hold

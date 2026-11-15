@@ -2,8 +2,8 @@
 import Foundation
 
 /// A DEBUG launch argument that fills Home with a set of connections for
-/// this launch only, for comparing the SwiftUI list with the NSH one on a
-/// device (`-MOSHPIT_SEED_HOME_FIXTURE <base64 JSON>`). Nothing here
+/// this launch only, on a device (`-MOSHPIT_SEED_HOME_FIXTURE <base64
+/// JSON>`). Nothing here
 /// outlives the launch: the connections live in a store that can never
 /// write (it never trusts what it read: ``DefaultsReadiness``), the key in
 /// the connect path's in-memory cache, the hosts' keys in ``LaunchTrust``.

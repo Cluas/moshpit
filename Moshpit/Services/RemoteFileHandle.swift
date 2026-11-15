@@ -5,9 +5,8 @@ import Foundation
 /// each is its own request on the wire. Closed by whoever opened it, or with
 /// the connection it came from.
 ///
-/// Either connection stands behind it: a Swift `SSHSession`'s Citadel
-/// file, or the Rust session's own SFTP lent to the app (``BorrowedHost``,
-/// W14b), so the player and the covers never ask which.
+/// The Rust session's own SFTP, lent to the app (``BorrowedHost``, W14b),
+/// stands behind it.
 final class RemoteFileHandle: @unchecked Sendable {
     let size: UInt64
     private let reader: @Sendable (UInt64, UInt32) async throws -> [UInt8]

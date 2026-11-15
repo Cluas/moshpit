@@ -416,9 +416,11 @@ pub fn on_event(app: &mut App, core: &Core, surface: u64, ev: &str, event: &Valu
                 });
             if let Some(collapsed) = strings("collapsed") {
                 tree.collapsed = collapsed;
+                tree.told = true;
             }
             if let Some(expanded) = strings("expanded") {
                 tree.expanded = expanded;
+                tree.told = true;
             }
             if let Some(idle) = event["idle"].as_bool() {
                 tree.idle = idle;

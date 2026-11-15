@@ -1,4 +1,3 @@
-import Citadel
 import Foundation
 import Testing
 @testable import Moshpit
@@ -482,10 +481,44 @@ enum SSHKeyFixtures {
 extension StoredKey {
     /// Whether 1.0.8's connect path reads `text` as stored: its first step,
     /// Citadel's key detection, takes only an openssh-key-v1 file with
-    /// nothing but "\n" between its lines. What the tests hold
-    /// ``assess(_:passphrase:)``'s "usable" to (the app no longer asks
-    /// Citadel: the Rust reader decides, the same way).
+    /// nothing but "\n" between its lines, of a kind it names. What the
+    /// tests hold ``assess(_:passphrase:)``'s "usable" to. Citadel went with
+    /// the Swift transport (E4); this is its
+    /// `SSHKeyDetection.detectPrivateKeyType` as 1.0.8 linked it (0.12.1),
+    /// step for step (``olderBuildKeyType(_:)``).
     static func connectPathReads(_ text: String) -> Bool {
-        (try? SSHKeyDetection.detectPrivateKeyType(from: text)) != nil
+        olderBuildKeyType(text) != nil
+    }
+
+    /// The kind of key 1.0.8's key detection finds in `text` ("ssh-ed25519"),
+    /// nil where it finds none.
+    static func olderBuildKeyType(_ text: String) -> String? {
+        let begin = "-----BEGIN OPENSSH PRIVATE KEY-----", end = "-----END OPENSSH PRIVATE KEY-----"
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.hasPrefix(begin) else { return nil }
+        var content = trimmed.replacingOccurrences(of: "\n", with: "")
+        guard content.hasPrefix(begin), content.hasSuffix(end) else { return nil }
+        content.removeLast(end.count)
+        content.removeFirst(begin.count)
+        guard let data = Data(base64Encoded: content) else { return nil }
+        let bytes = [UInt8](data)
+        let magic = Array("openssh-key-v1\0".utf8)
+        guard bytes.starts(with: magic) else { return nil }
+        var offset = magic.count
+        func uint32() -> Int? {
+            guard offset + 4 <= bytes.count else { return nil }
+            defer { offset += 4 }
+            return bytes[offset..<offset + 4].reduce(0) { $0 << 8 | Int($1) }
+        }
+        // The cipher, the KDF and its options: skipped.
+        for _ in 0..<3 {
+            guard let length = uint32() else { return nil }
+            offset += length
+        }
+        guard uint32() == 1, uint32() != nil, let typeLength = uint32(),
+              offset + typeLength <= bytes.count,
+              let type = String(bytes: bytes[offset..<offset + typeLength], encoding: .utf8) else { return nil }
+        let known = ["ssh-rsa", "ssh-ed25519", "ecdsa-sha2-nistp256", "ecdsa-sha2-nistp384", "ecdsa-sha2-nistp521"]
+        return known.contains(type) ? type : nil
     }
 }

@@ -60,7 +60,8 @@ struct HostCapabilities: Codable, Equatable, Sendable {
     /// SAME binary works fine from an interactive login shell. Without this,
     /// a real tmux install can probe as "missing" and silently degrade a
     /// session to plain SSH for no reason the user can see.
-    /// Shared with `MoshBootstrap`: the bootstrap's `mosh-server new` runs over
+    /// The core's mosh bootstrap searches the same dirs (crates/mosh's
+    /// `bootstrap::EXTRA_PATH_DIRS`): its `mosh-server new` runs over
     /// the same non-interactive exec channel, so it must search the same dirs
     /// the probe did — otherwise a host can pass the probe and still fail the
     /// launch with "command not found" (seen live on a macOS/Homebrew host).

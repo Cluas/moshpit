@@ -243,9 +243,8 @@ fn an_agents_pane_carries_its_state() {
     channel.close();
 }
 
-#[test]
-fn past_eight_sessions_only_the_one_in_use_starts_open() {
-    let (mut app, channel) = start(Screen::Sessions, Params::default(), "sessions");
+/// A host of ten sessions, one window and one pane each, `$3` in use.
+fn ten_sessions() -> Control {
     let mut many = control();
     many.sessions = (0..10)
         .map(|i| SessionInfo {
@@ -261,7 +260,13 @@ fn past_eight_sessions_only_the_one_in_use_starts_open() {
         .collect();
     many.active_session = Some("$3".into());
     many.hooks.clear();
-    show(&mut app, &channel, host(Link::Live, Some(many)));
+    many
+}
+
+#[test]
+fn past_eight_sessions_only_the_one_in_use_starts_open() {
+    let (mut app, channel) = start(Screen::Sessions, Params::default(), "sessions");
+    show(&mut app, &channel, host(Link::Live, Some(ten_sessions())));
     assert!(
         app.screen()
             .matches(&format!("id:home-window-{HOST}-@3"))
@@ -282,6 +287,38 @@ fn past_eight_sessions_only_the_one_in_use_starts_open() {
     channel.close();
 }
 
+/// B553: Home's idle group opened on a host makes the host keep a tree for
+/// it before this page ever told one (`{"ev": "tree", "idle": true}`):
+/// that is not a disclosure this page kept, so past eight sessions still
+/// only the one in use starts open. Every session opened.
+#[test]
+fn homes_idle_group_is_not_a_disclosure_this_page_kept() {
+    let (mut app, channel) = start(Screen::Sessions, Params::default(), "sessions");
+    post(
+        &mut app,
+        &channel,
+        &Message::Trees(vec![TreeState {
+            connection: HOST.into(),
+            idle: true,
+            ..TreeState::default()
+        }])
+        .to_json(),
+    );
+    show(&mut app, &channel, host(Link::Live, Some(ten_sessions())));
+    assert!(
+        app.screen()
+            .matches(&format!("id:home-window-{HOST}-@3"))
+            .unwrap()
+    );
+    assert!(
+        !app.screen()
+            .matches(&format!("id:home-window-{HOST}-@0"))
+            .unwrap(),
+        "every session opened"
+    );
+    channel.close();
+}
+
 #[test]
 fn a_disclosure_the_host_kept_comes_back() {
     let (mut app, channel) = open();
@@ -291,6 +328,7 @@ fn a_disclosure_the_host_kept_comes_back() {
         &Message::Trees(vec![TreeState {
             connection: HOST.into(),
             collapsed: vec!["$0".into()],
+            told: true,
             ..TreeState::default()
         }])
         .to_json(),
@@ -317,6 +355,7 @@ fn a_disclosure_kept_before_the_host_came_waits_for_it() {
         &Message::Trees(vec![TreeState {
             connection: HOST.into(),
             collapsed: vec!["$1".into()],
+            told: true,
             ..TreeState::default()
         }])
         .to_json(),
@@ -382,6 +421,41 @@ fn herdr_says_workspaces() {
     none.hooks.clear();
     show(&mut app, &channel, host(Link::Live, Some(none)));
     assert!(app.screen().shows("No herdr workspaces on this host"));
+    channel.close();
+}
+
+/// B555: two herdr workspaces with one name (two agents in one repo) are
+/// told apart by their ids, the name kept: "api · w4", as the terminal's
+/// breadcrumb says. The cards said "w4" and "w5", the name nowhere.
+#[test]
+fn herdr_workspaces_of_one_name_keep_it() {
+    let (mut app, channel) = start(Screen::Sessions, Params::default(), "sessions");
+    let mut twins = control();
+    twins.mux = Mux::Herdr;
+    twins.sessions = ["w4", "w5"]
+        .map(|id| SessionInfo {
+            id: id.into(),
+            name: "api".into(),
+        })
+        .to_vec();
+    twins.windows = vec![
+        window("w4:t1", "w4", 1, "Tab 1", 1),
+        window("w5:t1", "w5", 1, "Tab 1", 1),
+    ];
+    twins.panes = vec![
+        pane("w4:p1", "w4:t1", 0, "zsh", "/src/api"),
+        pane("w5:p1", "w5:t1", 0, "zsh", "/src/api"),
+    ];
+    twins.active_session = Some("w4".into());
+    twins.hooks.clear();
+    show(&mut app, &channel, host(Link::Live, Some(twins)));
+    for title in ["api · w4", "api · w5"] {
+        assert!(
+            app.screen().shows(title),
+            "{title}: {:?}",
+            app.screen().texts()
+        );
+    }
     channel.close();
 }
 

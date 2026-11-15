@@ -24,12 +24,13 @@ struct ConnectionCredentialTests {
         var saved = ServerConnection()
         saved.name = "box"
         saved.host = "box.example.com"
+        saved.username = "me"
         saved.authMethod = .key
         saved.keychainRef = ref
         store.add(saved)
 
         var draft = ConnectionDraft(saved)
-        draft.authMethod = .password
+        draft.auth = .password
         var secrets = ConnectionSecrets()
         await #expect(throws: ConnectionSaveRefusal.NewSecretNeeded(auth: .password)) {
             try await draft.save(existing: saved, store: store, keychain: keychain,
@@ -58,6 +59,7 @@ struct ConnectionCredentialTests {
         var draft = ConnectionDraft(newWith: .shared)
         draft.name = "box"
         draft.host = "box.example.com"
+        draft.username = "me"
         try await draft.save(existing: nil, store: store, keychain: keychain, settings: .shared, keys: [],
                              secrets: ConnectionSecrets(password: "hunter2"))
         let added = try #require(store.connections.first)
@@ -67,7 +69,7 @@ struct ConnectionCredentialTests {
         let key = SSHKeyRecord(name: "laptop", algorithm: .ed25519, source: .generated,
                                keychainRef: "moshpit.secret.key-k")
         var keyed = ConnectionDraft(added)
-        keyed.authMethod = .key
+        keyed.auth = .key
         keyed.selectedKeyId = key.id
         try await keyed.save(existing: added, store: store, keychain: keychain, settings: .shared, keys: [key],
                              secrets: ConnectionSecrets(password: "not-written"))
@@ -93,6 +95,7 @@ struct ConnectionCredentialTests {
         var draft = ConnectionDraft(newWith: .shared)
         draft.name = "box"
         draft.host = "box.example.com"
+        draft.username = "me"
         try await draft.save(existing: nil, store: store, keychain: keychain, settings: .shared, keys: [],
                              secrets: ConnectionSecrets(password: "hunter2"))
         let added = try #require(store.connections.first)
@@ -102,7 +105,7 @@ struct ConnectionCredentialTests {
                                keychainRef: "moshpit.secret.key-k")
         keyStore.add(key)
         var keyed = ConnectionDraft(added)
-        keyed.authMethod = .key
+        keyed.auth = .key
         keyed.selectedKeyId = key.id
         var released: [String] = []
         try await keyed.save(existing: added, store: store, keychain: keychain, settings: .shared,
@@ -131,6 +134,7 @@ struct ConnectionCredentialTests {
         var saved = ServerConnection()
         saved.name = "box"
         saved.host = "box.example.com"
+        saved.username = "me"
         saved.authMethod = .password
         saved.keychainRef = "moshpit.secret.own"
         store.add(saved)
@@ -152,6 +156,20 @@ struct ConnectionCredentialTests {
                                  forgetPairing: { _ in throw PushPairingForgetFailure() })
         }
         #expect(store.connections.first?.host == "box.example.com", "saved though the pairing stayed")
+
+        // B534: with a new password too, the forget that fails leaves the
+        // record signing in with its own (the new one went to a fresh
+        // item, deleted again), and nothing saved.
+        var movedWithPassword = ConnectionDraft(now)
+        movedWithPassword.host = "third.example.com"
+        await #expect(throws: PushPairingForgetFailure.self) {
+            try await movedWithPassword.save(existing: now, store: store, keychain: keychain, settings: .shared,
+                                             keys: [], secrets: ConnectionSecrets(password: "new-pass"),
+                                             forgetPairing: { _ in throw PushPairingForgetFailure() })
+        }
+        #expect(try await keychain.loadPassword(forRef: "moshpit.secret.own") == "hunter2",
+                "the record kept signs in with the new password")
+        #expect(store.connections.first?.keychainRef == "moshpit.secret.own")
 
         try await moved.save(existing: now, store: store, keychain: keychain, settings: .shared,
                              keys: [], secrets: ConnectionSecrets(),

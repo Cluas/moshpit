@@ -72,12 +72,23 @@ pub(crate) async fn dial(
     Ok(stream)
 }
 
-/// Connects to the first of `host`'s addresses that answers.
+/// Connects to the first of `host`'s addresses that answers. An IPv6
+/// address in brackets (`[2001:db8::1]`, as a URL writes it) is the
+/// address: the name lookup takes none (B562).
 async fn connect_any(host: &str, port: u16) -> io::Result<TcpStream> {
     connect_first(interleave(
-        tokio::net::lookup_host((host, port)).await?.collect(),
+        tokio::net::lookup_host((unbracketed(host), port))
+            .await?
+            .collect(),
     ))
     .await
+}
+
+/// `host` without the brackets around an IPv6 address.
+pub fn unbracketed(host: &str) -> &str {
+    host.strip_prefix('[')
+        .and_then(|h| h.strip_suffix(']'))
+        .unwrap_or(host)
 }
 
 /// Races the addresses in order, each starting `ATTEMPT_DELAY` after the
@@ -174,10 +185,7 @@ pub(crate) async fn socks5_connect(
 
     // CONNECT.
     let mut request = vec![5, 1, 0];
-    let bare = host
-        .strip_prefix('[')
-        .and_then(|h| h.strip_suffix(']'))
-        .unwrap_or(host);
+    let bare = unbracketed(host);
     match bare.parse::<IpAddr>() {
         Ok(IpAddr::V4(v4)) => {
             request.push(1);
@@ -258,6 +266,18 @@ mod tests {
 
     /// `localhost` is `::1` and `127.0.0.1` here; only the IPv4 address
     /// listens, so whichever comes first, the connection lands.
+    #[tokio::test]
+    async fn an_address_in_brackets_is_dialled_as_the_address() {
+        // B562: `[::1]` resolves to nothing; `::1` is the address.
+        let Ok(live) = tokio::net::TcpListener::bind("[::1]:0").await else {
+            eprintln!("skipped: no IPv6 loopback here");
+            return;
+        };
+        let port = live.local_addr().unwrap().port();
+        let stream = connect_any("[::1]", port).await.unwrap();
+        assert_eq!(stream.peer_addr().unwrap().port(), port);
+    }
+
     #[tokio::test]
     async fn the_address_that_answers_wins() {
         let live = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();

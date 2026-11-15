@@ -14,14 +14,13 @@
 //! is the value, an array or dictionary names its members by index, always
 //! greater than its own.
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::BTreeSet;
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use moshpit_seal::foundation::date::Date;
 use moshpit_seal::foundation::uuid::Uuid;
 use moshpit_store::app_themes::{self, AppTheme, AppThemeStore};
 use moshpit_store::connections::{self, ConnectionStore, ServerConnection};
-use moshpit_store::known_hosts::{self, KeychainKnownHosts, KnownHostsStore};
 use moshpit_store::push::{PushPairing, PushPairingFile};
 use moshpit_store::secrets;
 use moshpit_store::settings::{self, Settings};
@@ -1678,81 +1677,6 @@ impl SettingsHandle {
     }
 }
 
-// MARK: - Known hosts
-
-/// The trusted map can't be read (or written) now.
-#[derive(Debug, Clone, PartialEq, Eq, uniffi::Error)]
-pub enum KnownHostsFailure {
-    /// The device is locked: decide nothing yet.
-    Locked,
-    Unavailable {
-        reason: String,
-    },
-}
-
-impl std::fmt::Display for KnownHostsFailure {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Locked => f.write_str("known hosts: the device is locked"),
-            Self::Unavailable { reason } => write!(f, "known hosts unreadable: {reason}"),
-        }
-    }
-}
-
-impl std::error::Error for KnownHostsFailure {}
-
-fn known_hosts_failure(error: known_hosts::StoreError) -> KnownHostsFailure {
-    match error {
-        known_hosts::StoreError::Locked => KnownHostsFailure::Locked,
-        known_hosts::StoreError::Unavailable(reason) => KnownHostsFailure::Unavailable { reason },
-    }
-}
-
-/// The trusted host keys in the keychain item `moshpit.knownHosts`.
-#[derive(uniffi::Object)]
-pub struct KnownHostsHandle(KeychainKnownHosts);
-
-#[uniffi::export]
-impl KnownHostsHandle {
-    /// `preferences` answers whether protected data is readable now: "no
-    /// item" read while it isn't — a launch before the first unlock after a
-    /// reboot — is [`KnownHostsFailure::Locked`], not an empty map (B226's
-    /// rule, as the sessions' known hosts apply it). Without it the handle
-    /// read every trusted host as new before the unlock, and the first
-    /// write after it put one entry over all of them (B251).
-    #[uniffi::constructor]
-    pub fn new(
-        keychain: Arc<dyn KeychainHost>,
-        preferences: Arc<dyn PreferencesHost>,
-    ) -> Arc<Self> {
-        let unlocked = HostDefaults(preferences);
-        Arc::new(Self(
-            KeychainKnownHosts::new(Arc::new(HostKeychain(keychain)))
-                .with_unlock_probe(Arc::new(move || unlocked.protected_data_available())),
-        ))
-    }
-
-    /// `host:port` → `SHA256:…`.
-    pub fn read(&self) -> Result<HashMap<String, String>, KnownHostsFailure> {
-        self.0
-            .read()
-            .map(|table| table.into_iter().collect())
-            .map_err(known_hosts_failure)
-    }
-
-    pub fn write(&self, entries: HashMap<String, String>) -> Result<(), KnownHostsFailure> {
-        self.0
-            .write(&entries.into_iter().collect())
-            .map_err(known_hosts_failure)
-    }
-}
-
-/// The map's key for a host: `host:port`.
-#[uniffi::export]
-pub fn store_known_hosts_entry(host: String, port: u16) -> String {
-    known_hosts::entry(&host, port)
-}
-
 // MARK: - Push pairings
 
 /// One paired host (`PushPairing`): dates as seconds since 2001, the
@@ -1852,6 +1776,8 @@ impl PushPairingFileHandle {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+
     use super::*;
 
     #[derive(Default)]
@@ -1990,7 +1916,6 @@ mod tests {
         // Sealed: nothing can be counted.
         let sealed = ConnectionStoreHandle::new(
             Arc::new(SealedPrefs(Arc::new(Sealed {
-                vault: Vault::default(),
                 unlocked: std::sync::atomic::AtomicBool::new(false),
             }))),
             ReadinessMode::System,
@@ -2099,43 +2024,15 @@ mod tests {
     /// An unencrypted ed25519 OpenSSH private key (crates/ssh's fixture).
     const ED25519: &str = include_str!("../../ssh/tests/fixtures/keys/ed25519");
 
-    /// A device before its first unlock since boot: the keychain answers
-    /// "no item" for the known-hosts map (as iOS can then), and protected
-    /// data is unavailable until `unlock`.
+    /// A device before its first unlock since boot: protected data is
+    /// unavailable until `unlocked`.
     struct Sealed {
-        vault: Vault,
         unlocked: std::sync::atomic::AtomicBool,
     }
 
     impl Sealed {
         fn sealed(&self) -> bool {
             !self.unlocked.load(std::sync::atomic::Ordering::SeqCst)
-        }
-    }
-
-    struct SealedKeychain(Arc<Sealed>);
-
-    impl KeychainHost for SealedKeychain {
-        fn save(&self, account: String, secret: Vec<u8>, b: bool) -> Result<(), KeychainFailure> {
-            self.0.vault.save(account, secret, b)
-        }
-        fn load(&self, account: String, prompt: String) -> Result<Vec<u8>, KeychainFailure> {
-            if self.0.sealed() {
-                return Err(KeychainFailure::NotFound);
-            }
-            self.0.vault.load(account, prompt)
-        }
-        fn delete(&self, account: String) -> Result<(), KeychainFailure> {
-            self.0.vault.delete(account)
-        }
-        fn exists(&self, account: String) -> bool {
-            !self.0.sealed() && self.0.vault.exists(account)
-        }
-        fn accounts(&self) -> Result<Vec<String>, KeychainFailure> {
-            self.0.vault.accounts()
-        }
-        fn load_silently(&self, account: String) -> Result<Vec<u8>, KeychainFailure> {
-            self.load(account, String::new())
         }
     }
 
@@ -2149,51 +2046,6 @@ mod tests {
         fn protected_data_available(&self) -> bool {
             !self.0.sealed()
         }
-    }
-
-    /// B251 (B226's rule on the store's own handle): before the first
-    /// unlock "no item" is the lock's answer, not an empty map — the
-    /// handle read every trusted host as new, and a write then (the
-    /// first trust) put one entry over all of them. After the unlock the
-    /// map reads as it is, and an item that truly isn't there is empty.
-    #[test]
-    fn known_hosts_read_before_the_first_unlock_are_locked_not_empty() {
-        let device = Arc::new(Sealed {
-            vault: Vault::default(),
-            unlocked: std::sync::atomic::AtomicBool::new(false),
-        });
-        device
-            .vault
-            .save(
-                "moshpit.knownHosts".into(),
-                br#"{"box:22":"SHA256:abc","pi:22":"SHA256:def"}"#.to_vec(),
-                false,
-            )
-            .unwrap();
-        let hosts = KnownHostsHandle::new(
-            Arc::new(SealedKeychain(device.clone())),
-            Arc::new(SealedPrefs(device.clone())),
-        );
-        assert_eq!(hosts.read(), Err(KnownHostsFailure::Locked));
-        // The handle as it was, with no probe: the same read was a map with
-        // nothing in it.
-        let unprobed = KnownHostsHandle(KeychainKnownHosts::new(Arc::new(HostKeychain(Arc::new(
-            SealedKeychain(device.clone()),
-        )))));
-        assert_eq!(unprobed.read(), Ok(HashMap::new()));
-
-        device
-            .unlocked
-            .store(true, std::sync::atomic::Ordering::SeqCst);
-        let table = hosts.read().unwrap();
-        assert_eq!(table.len(), 2, "{table:?}");
-        assert_eq!(table.get("box:22").map(String::as_str), Some("SHA256:abc"));
-
-        let empty = KnownHostsHandle::new(
-            Arc::new(Vault::default()),
-            Arc::new(SealedPrefs(device.clone())),
-        );
-        assert_eq!(empty.read(), Ok(HashMap::new()));
     }
 
     /// B232 through the handles: a key a connection uses stays and says

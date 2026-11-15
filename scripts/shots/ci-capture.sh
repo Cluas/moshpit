@@ -27,9 +27,6 @@ locales=("$@"); [ "${#locales[@]}" -gt 0 ] || locales=(en-US)
 root="$(cd "$(dirname "$0")/../.." && pwd)"
 bundle=com.cluas.moshpit
 work="$(mktemp -d)"
-port=2222
-host=devbox.example.com
-user="$(id -un)"
 mkdir -p "$out"
 
 log() { echo "▶ $*"; }
@@ -37,71 +34,12 @@ fail() { echo "✘ $*" >&2; exit 1; }
 
 # ── The staged host ─────────────────────────────────────────────────────
 
-log "a throwaway key and an sshd of our own on 127.0.0.1:$port"
-ssh-keygen -q -t ed25519 -N '' -C shots -f "$work/id"
-cp "$work/id.pub" "$work/authorized_keys"
-chmod 600 "$work/authorized_keys"
-ssh-keygen -q -t ed25519 -N '' -f "$work/host_ed25519"
-cat > "$work/sshd_config" <<EOF
-Port $port
-ListenAddress 127.0.0.1
-HostKey $work/host_ed25519
-AuthorizedKeysFile $work/authorized_keys
-PasswordAuthentication no
-KbdInteractiveAuthentication no
-PubkeyAuthentication yes
-UsePAM no
-StrictModes no
-PidFile $work/sshd.pid
-AllowUsers $user
-EOF
-sudo /usr/sbin/sshd -f "$work/sshd_config" -E "$work/sshd.log"
-trap 'sudo kill "$(cat "$work/sshd.pid" 2>/dev/null)" 2>/dev/null || true; rm -rf "$work"' EXIT
-grep -q " $host\$" /etc/hosts || echo "127.0.0.1 $host" | sudo tee -a /etc/hosts >/dev/null
-for _ in $(seq 1 20); do
-    ssh -i "$work/id" -p "$port" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
-        -o BatchMode=yes "$user@$host" true 2>/dev/null && break
-    sleep 0.5
-done
-ssh -i "$work/id" -p "$port" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
-    -o BatchMode=yes "$user@$host" true || { cat "$work/sshd.log" >&2; fail "sshd never answered as $host"; }
-fingerprint="$(ssh-keygen -l -E sha256 -f "$work/host_ed25519.pub" | awk '{print $2}')"
-key_b64="$(base64 < "$work/id" | tr -d '\n')"
-log "host key $fingerprint"
-
-tmux_bin="$(command -v tmux)" || fail "no tmux (brew install tmux)"
-cat > "$work/stage-tmux" <<EOF
-#!/bin/sh
-exec "$tmux_bin" -L moshpit-shots "\$@"
-EOF
-chmod +x "$work/stage-tmux"
-tmux() { "$work/stage-tmux" "$@"; }
-
-log "staged repos and a tmux session on its own socket"
-stage="$work/stage"
-stage_repo() {  # <name> <branch> <file> <content>
-    local dir="$stage/$1"
-    mkdir -p "$dir"
-    git -C "$dir" init -q
-    printf '%s\n' "$4" > "$dir/$3"
-    git -C "$dir" add -A
-    git -C "$dir" -c user.email=dev@example.com -c user.name=Dev commit -qm "Initial commit"
-    [ "$2" = main ] || git -C "$dir" checkout -q -b "$2"
-}
-stage_repo payments-api fix-webhook-retry retry.js 'export function retry(fn, times = 3) {
-  return fn();
-}'
-stage_repo dashboard main app.tsx 'export default function App() {
-  return <Shell />;
-}'
-stage_repo infra main main.tf 'resource "aws_s3_bucket" "artifacts" {}'
-tmux kill-server 2>/dev/null || true
-tmux new-session -d -s work -x 120 -y 40 -c "$stage/payments-api" -n claude \
-    "sh $root/scripts/shots/stage/claude-session.sh"
-tmux new-window -t work -n build -c "$stage/payments-api" "sh $root/scripts/shots/stage/build-session.sh"
-tmux new-window -t work -n shell -c "$stage/infra"
-tmux select-window -t work:claude
-tmux list-windows -t work
+log "the staged host (scripts/shots/stage-host.sh)"
+trap '"$root/scripts/shots/stage-host.sh" stop "$work/host"; rm -rf "$work"' EXIT
+"$root/scripts/shots/stage-host.sh" start "$work/host" > "$work/seed.env"
+seed() { sed -n "s/^MOSHPIT_SEED_$1=//p" "$work/seed.env"; }
+user="$(seed USER)"; key_b64="$(seed KEY_B64)"; host="$(seed HOST)"; port="$(seed PORT)"
+fingerprint="$(seed TRUST_FP)"; stage_tmux="$(seed TMUX_BIN)"
 
 # ── The simulator ───────────────────────────────────────────────────────
 
@@ -135,12 +73,12 @@ xcrun simctl install "$udid" "$app"
 session=(-MOSHPIT_SEED_USER "$user" -MOSHPIT_SEED_KEY_B64 "$key_b64"
     -MOSHPIT_SEED_HOST "$host" -MOSHPIT_SEED_PORT "$port"
     -MOSHPIT_SEED_TRUST_FP "$fingerprint" -MOSHPIT_SEED_NAME devbox
-    -MOSHPIT_SEED_MUX tmux -MOSHPIT_SEED_TMUX_BIN "$work/stage-tmux")
+    -MOSHPIT_SEED_MUX tmux -MOSHPIT_SEED_TMUX_BIN "$stage_tmux")
 quiet=(-MOSHPIT_SEED_QUIET 1 -MOSHPIT_AUTOCARE_OFF
     -moshpit.settings.notifications '<false/>' -moshpit.settings.liveActivity '<false/>')
 
 # Home: the runner, connected, beside two hosts that aren't.
-home_fixture="$(python3 -I - "$key_b64" "$fingerprint" "$port" "$user" "$work/stage-tmux" "$host" <<'EOF'
+home_fixture="$(python3 -I - "$key_b64" "$fingerprint" "$port" "$user" "$stage_tmux" "$host" <<'EOF'
 import base64, json, sys
 key, fingerprint, port, user, tmux, host = sys.argv[1:7]
 fixture = {
@@ -203,12 +141,11 @@ for locale in "${locales[@]}"; do
     shoot "$locale" 12-icons 6 "${quiet[@]}" -MOSHPIT_SEED_SCREEN app-icon-nsh
 done
 xcrun simctl terminate "$udid" "$bundle" 2>/dev/null || true
-tmux kill-server 2>/dev/null || true
 
 # What the app said, for a shot that came out wrong.
 xcrun simctl spawn "$udid" log show --last 15m --style compact \
     --predicate 'subsystem BEGINSWITH "com.cluas.moshpit"' > "$out/app-$device.log" 2>/dev/null || true
-cp "$work/sshd.log" "$out/sshd-$device.log" 2>/dev/null || true
+cp "$work/host/sshd.log" "$out/sshd-$device.log" 2>/dev/null || true
 
 [ "$sizes_wrong" -eq 0 ] || fail "some shots are not $px"
 log "done: $out"

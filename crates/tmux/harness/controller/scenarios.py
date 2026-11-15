@@ -328,8 +328,8 @@ S["scroll-mouse-streaming"] = SCROLL + [flags(1, 0), "config streaming=60", "set
                                         "input %0 6b", "settle"]
 S["scroll-alt-mouse"] = SCROLL + [flags(1, 1), "config streaming=60", "settle", "mouse", "settle",
                                   "recv %output %0 repaint\\n", "scroll -2", "scroll-px -40 16", "settle"]
-S["scroll-alt-no-mouse"] = SCROLL + [flags(0, 1), "settle", "mouse", "settle", "scroll 3",
-                                     "scroll-px 30 16", "scroll-end", "dump"]
+S["div-scroll-alt-no-mouse"] = SCROLL + [flags(0, 1), "settle", "mouse", "settle", "scroll 3",
+                                         "scroll-px 30 16", "scroll-end", "dump"]
 
 # The mosh sidecar.
 SIDECAR = ["config renders=0", "attach", BOOT]

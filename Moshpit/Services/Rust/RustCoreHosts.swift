@@ -80,6 +80,20 @@ final class ProtectedDataFlag: @unchecked Sendable {
     }
 }
 
+extension ProtectedDataFlag {
+    /// The app's one flag, made the first time anything asks for it: at
+    /// launch, on the main thread, where `MoshpitApp.init` asks first — so
+    /// a read off the main thread later never waits on it. Made from off
+    /// the main thread (a test with no app) it waits for the main queue
+    /// once, as ``DefaultsReadiness/system`` does.
+    static let app: ProtectedDataFlag = {
+        if Thread.isMainThread {
+            return MainActor.assumeIsolated { ProtectedDataFlag() }
+        }
+        return DispatchQueue.main.sync { MainActor.assumeIsolated { ProtectedDataFlag() } }
+    }()
+}
+
 /// Foundation property-list objects to the store's node list and back
 /// (crates/ffi/src/store.rs: node 0 is the value; an array or dictionary
 /// names its members by index).
@@ -144,17 +158,16 @@ enum PlistNodes {
 
 // MARK: - Keychain
 
-/// The keychain as the store's ``KeychainHost``: the backend the Swift
-/// transport's ``KeychainKnownHostsStore`` reads, so both read and write the
-/// same item, `moshpit.knownHosts`, with the same protection.
+/// The keychain as the core's ``KeychainHost``: the backend
+/// ``KeychainService`` uses, so the sessions' known hosts
+/// (`moshpit.knownHosts`) and the secrets keep the protection 1.0.8 gave
+/// them.
 final class RustKeychainHost: KeychainHost, @unchecked Sendable {
     private let backend: KeychainBackend
     /// The hosts trusted for this launch (``LaunchTrust``) laid over the
     /// known-hosts item: the app's table for the Rust sessions, which decide
-    /// inside the core. `nil` for ``HostKeyValidator``'s store, which
-    /// decides those hosts itself and reads the item as stored, as the Swift
-    /// store does. A test gives its own table, so nothing it trusts outlives
-    /// it.
+    /// inside the core. `nil` reads the item as stored. A test gives its
+    /// own table, so nothing it trusts outlives it.
     private let launchTrust: LaunchTrust.Table?
 
     init(backend: KeychainBackend? = nil, launchTrust: LaunchTrust.Table? = LaunchTrust.shared) {

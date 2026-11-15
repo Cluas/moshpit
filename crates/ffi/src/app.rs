@@ -33,8 +33,7 @@ use moshpit_store::app_themes::AppTheme;
 use moshpit_store::connections::{self, ServerConnection};
 use moshpit_store::shortcuts::TerminalShortcut;
 use moshpit_store::ssh_keys::SshKeyRecord;
-use moshpit_ui::connection_form::{Auth, Mux};
-use moshpit_ui::settings::PredictMode as ScreenPredict;
+use moshpit_ui::connection_form::{Auth, ConnectionPredict, Mux};
 
 use crate::store::{
     AccentThemeRecord, AuthMethod, ConnectionRecord, KeyRecord, ShortcutRecord, StoreError,
@@ -73,7 +72,6 @@ pub struct ConnectionDraft {
     pub selected_key: Option<String>,
     pub use_mosh: bool,
     pub predict_mode_raw: String,
-    pub roam_on_cellular: bool,
     pub multiplexer_raw: String,
     pub tmux_path: String,
     pub herdr_path: String,
@@ -150,6 +148,8 @@ pub enum ConnectionSaveRefusal {
     Incomplete,
     /// A record the store can't take (an id that is not a UUID).
     Invalid { why: String },
+    /// The connection being edited was deleted meanwhile (B536).
+    Gone,
 }
 
 impl std::fmt::Display for ConnectionSaveRefusal {
@@ -158,6 +158,7 @@ impl std::fmt::Display for ConnectionSaveRefusal {
             Self::NewSecretNeeded { .. } => f.write_str(form::NEW_SECRET_NEEDED),
             Self::Incomplete => f.write_str(Refusal::Incomplete.message()),
             Self::Invalid { why } => f.write_str(why),
+            Self::Gone => f.write_str(form::GONE),
         }
     }
 }
@@ -193,7 +194,6 @@ impl From<&Draft> for ConnectionDraft {
             selected_key: d.key.map(|id| id.to_string()),
             use_mosh: f.mosh,
             predict_mode_raw: f.predict_mode.id().to_owned(),
-            roam_on_cellular: f.roam_on_cellular,
             multiplexer_raw: f.mux.id().to_owned(),
             tmux_path: f.tmux_path.clone(),
             herdr_path: f.herdr_path.clone(),
@@ -226,11 +226,7 @@ fn draft(d: &ConnectionDraft, given: SecretsGiven) -> Draft {
         AuthMethod::Password => Auth::Password,
         AuthMethod::Key => Auth::Key,
     };
-    f.predict_mode = ScreenPredict::ALL
-        .into_iter()
-        .find(|m| m.id() == d.predict_mode_raw)
-        .unwrap_or_default();
-    f.roam_on_cellular = d.roam_on_cellular;
+    f.predict_mode = ConnectionPredict::named(&d.predict_mode_raw).unwrap_or_default();
     f.mux = Mux::ALL
         .into_iter()
         .find(|m| m.id() == d.multiplexer_raw)
@@ -338,59 +334,6 @@ pub fn connection_draft_can_save(
     self::draft(&draft, given).can_save(&self::keys(keys))
 }
 
-/// The port field holds no port.
-#[uniffi::export]
-pub fn connection_draft_port_is_wrong(draft: ConnectionDraft) -> bool {
-    self::draft(
-        &draft,
-        SecretsGiven {
-            password: false,
-            key: false,
-        },
-    )
-    .port_is_wrong()
-}
-
-/// The proxy's port field holds no port, while the proxy is on.
-#[uniffi::export]
-pub fn connection_draft_proxy_port_is_wrong(draft: ConnectionDraft) -> bool {
-    self::draft(
-        &draft,
-        SecretsGiven {
-            password: false,
-            key: false,
-        },
-    )
-    .proxy_port_is_wrong()
-}
-
-/// The connection edited keeps a key that saving with none picked or
-/// pasted keeps.
-#[uniffi::export]
-pub fn connection_draft_keeps_stored_key(draft: ConnectionDraft) -> bool {
-    self::draft(
-        &draft,
-        SecretsGiven {
-            password: false,
-            key: false,
-        },
-    )
-    .keeps_stored_key()
-}
-
-/// The connection edited keeps a password of its own.
-#[uniffi::export]
-pub fn connection_draft_keeps_stored_password(draft: ConnectionDraft) -> bool {
-    self::draft(
-        &draft,
-        SecretsGiven {
-            password: false,
-            key: false,
-        },
-    )
-    .keeps_stored_password()
-}
-
 /// Where a secret field stands, for the person.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, uniffi::Enum)]
 pub enum ConnectionSecretState {
@@ -490,6 +433,7 @@ pub fn connection_draft_save_plan(
                 auth: auth_method(auth),
             },
             Refusal::Incomplete => ConnectionSaveRefusal::Incomplete,
+            Refusal::Gone => ConnectionSaveRefusal::Gone,
         })?;
     Ok(ConnectionSavePlan {
         connection: (&plan.connection).into(),
@@ -502,6 +446,9 @@ pub fn connection_draft_save_plan(
 
 /// `{"op": "form", …}` of the draft, as JSON: of the secrets, only whether
 /// there is one.
+///
+/// `saved`: the saved connections, `editing` the one edited (a UUID), for
+/// the warning of a duplicate (B532).
 #[uniffi::export]
 pub fn connection_form_message(
     draft: ConnectionDraft,
@@ -509,8 +456,17 @@ pub fn connection_form_message(
     keys: Vec<KeyRecord>,
     udp_start: i64,
     udp_end: i64,
+    saved: Vec<ConnectionRecord>,
+    editing: Option<String>,
 ) -> String {
-    self::draft(&draft, given).message(&self::keys(keys), (udp_start, udp_end))
+    let mut model = self::draft(&draft, given);
+    let saved: Vec<ServerConnection> = saved
+        .into_iter()
+        .filter_map(|record| connection(record).ok())
+        .collect();
+    let editing = editing.and_then(|id| Uuid::parse(&id));
+    model.fields.others = form::others(&saved, editing);
+    model.message(&self::keys(keys), (udp_start, udp_end))
 }
 
 /// The key row the form shows: the key picked as `keys` have it, none when

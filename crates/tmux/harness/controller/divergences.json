@@ -34,6 +34,31 @@
       "pattern": "@moshpit_zoomed",
       "kind": "on-purpose",
       "why": "B458: the Rust controller marks the immersive zoom it makes (set-option -w @moshpit_zoomed '<client> <pane>') and unsets the mark when its layout replay undoes the zoom, so an attach after the phone died can unzoom a window still zoomed on that pane, and never a zoom nobody marked. The Swift controller marks nothing. Those lines are taken out of the Rust log."
+    },
+    {
+      "pattern": "^> new-session -t '\\$[0-9]+' -s '[^']*~mp-[^']*' -P -F '#\\{session_id\\}'$",
+      "kind": "on-purpose",
+      "why": "B459: the Rust controller views each session through a grouped session of its own (new-session -t, made from the -CC client, which moves it there), so its window switches never move a desktop on the same session. The Swift controller attaches to the session itself. The make is taken out of the Rust log; in the harness's scripts tmux answers it without an id, so the Rust controller stays on the session as Swift does."
+    },
+    {
+      "pattern": "^> set-option -t '=[^']*~mp-[^']*:' (destroy-unattached on|@moshpit_group_of '\\$[0-9]+')$",
+      "kind": "on-purpose",
+      "why": "B459: the group's own options, set right after the make (destroy-unattached, so tmux removes the group with the phone's client; the mark naming the session it views)."
+    },
+    {
+      "pattern": "^> list-sessions -F '#\\{session_id\\} #\\{session_attached\\} #\\{@moshpit_group_of\\}'$",
+      "kind": "on-purpose",
+      "why": "B459: an attach sweeps the groups a dead phone left (marked, no client on them, or their session gone)."
+    },
+    {
+      "pattern": "^> (display-message -p 'self=#\\{client_name\\}'|list-clients -F 'cc=#\\{client_control_mode\\} #\\{session_id\\} #\\{client_name\\}'|show-options -sqv @moshpit_cc)$",
+      "kind": "on-purpose",
+      "why": "B459: before it makes a group, an attach asks who is on the session — its own name, the clients, and the server option @moshpit_cc where Moshpit's control clients keep their names: with a control client that isn't Moshpit's there (a desktop's tmux integration, which may close its tabs when a group goes), the phone stays on the session."
+    },
+    {
+      "pattern": "^> set-option -s (-a -F )?@moshpit_cc ",
+      "kind": "on-purpose",
+      "why": "B459: Moshpit's control clients keep @moshpit_cc to the ones still attached, and themselves (a mosh sidecar adds itself)."
     }
   ],
   "divergences": [
@@ -204,6 +229,35 @@
       ],
       "swift_has": [
         "mouse=0 alt=0"
+      ]
+    },
+    {
+      "id": "scroll-alt-no-mouse",
+      "kind": "on-purpose",
+      "fixture": "div-scroll-alt-no-mouse",
+      "swift": "Moshpit/Services/Tmux/TmuxSessionController.swift scrollRoute (an alternate-screen pane without the mouse: .drop)",
+      "symptom": "A swipe over an alternate-screen program without the mouse (less, man, git log) did nothing.",
+      "trigger": "Any swipe over such a pane, its flags read.",
+      "rust": "The arrow keys, as xterm's alternate scroll gives them (B500, the owner's call): one send-keys -t <pane> -N <n> Up|Down a tick, for tmux to encode by the pane's real cursor-key mode; a pixel drag's whole rows, the rest carried. Before tmux has said the mouse is off, nothing, as before.",
+      "evidence": "B500; crates/tmux/tests/scroll.rs an_alt_screen_pane_without_the_mouse_gets_the_arrow_keys",
+      "rust_has": ["> send-keys -t %0 -N 3 Up"],
+      "swift_has": []
+    },
+    {
+      "id": "phone-group-switch",
+      "kind": "on-purpose",
+      "fixture": "select-session-hop",
+      "fixtures": ["select-session-hop", "new-window-in-session-new-pane"],
+      "swift": "Moshpit/Services/Tmux/TmuxSessionController.swift (selectSession: switch-client -t <session>)",
+      "symptom": "A session's current window is the session's, shown by every client on it: the phone's window switch, its restore and the window picked with a session switch moved every desktop on that session with it (B459, reopened 11-14).",
+      "trigger": "A session switch (a pick in another session's tree, a new pane in another session's window).",
+      "rust": "The switch goes into a grouped session of the target's own (new-session -t, which moves this client there in one step, so the select-window that follows lands in the group); only when tmux refuses one does the plain switch-client follow, once the make's reply is in. The scripts' tmux answers the make without an id: Rust's switch-client comes after the reply instead of in the make's place.",
+      "evidence": "crates/tmux/tests/group.rs, crates/tmux/tests/live_group.rs (a private tmux 3.6a)",
+      "rust_has": [
+        "new-session -t '$1' -s 'dev~mp-iPhone-"
+      ],
+      "swift_has": [
+        "switch-client -t $1"
       ]
     }
   ]

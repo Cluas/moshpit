@@ -48,57 +48,6 @@ struct ShellQuoteCallSiteTests {
         #expect(PosixShell.unquote(SessionHub.ActiveSession.shellQuote(value)) == value)
     }
 
-    // MARK: - tmux: session names typed into the login shell
-
-    @Test("The sidecar's chain quotes a session name", arguments: marks)
-    func tmuxAttachLines(_ mark: String) throws {
-        let name = "dev'\(mark); touch INJECTED; '"
-        let target = "'=dev'\\''\(mark); touch INJECTED; '\\'''"
-        let chain = try #require(PosixShell.shPayload(SessionHub.ActiveSession.tmuxSidecarAttachChain(
-            tmux: "tmux", preferred: .init(id: "$7", name: name))))
-        #expect(chain.hasPrefix("tmux -CC attach -t '$7' 2>/dev/null || "))
-        #expect(chain.contains(" || tmux -CC attach -t \(target) 2>/dev/null || "))
-    }
-
-    // MARK: - tmux: names on the control channel
-
-    private func attachedController() async -> (TmuxSessionController, MockTmuxTransport) {
-        let transport = MockTmuxTransport()
-        let controller = TmuxSessionController(sshSession: transport)
-        await controller.attach()
-        transport.pushText("%begin 100 0 0\n%end 100 0 0\n\n")
-        let deadline = ContinuousClock.now + .seconds(1)
-        while await transport.recordedCommands().count < 3, ContinuousClock.now < deadline {
-            try? await Task.sleep(for: .milliseconds(5))
-        }
-        return (controller, transport)
-    }
-
-    @Test("Session and window names reach tmux as one quoted argument", arguments: marks)
-    func tmuxNames(_ mark: String) async throws {
-        let (controller, transport) = await attachedController()
-        let baseline = await transport.recordedCommands().count
-        // A tmux command-string literal, not a shell word (B139): inside its
-        // double quotes an apostrophe is nothing special, marked or not.
-        let name = Self.hostile(mark), quoted = "\"\(name)\""
-
-        controller.renameSession("$1", to: name)
-        controller.renameWindow("@1", to: name)
-        controller.newSession(named: name)
-        controller.newWindow(named: name)
-
-        let deadline = ContinuousClock.now + .seconds(2)
-        while await transport.recordedCommands().count < baseline + 4, ContinuousClock.now < deadline {
-            try? await Task.sleep(for: .milliseconds(5))
-        }
-        let sent = await transport.recordedCommands().dropFirst(baseline)
-            .map { $0.trimmingCharacters(in: .newlines) }
-        #expect(sent.contains("rename-session -t $1 -- \(quoted)"))
-        #expect(sent.contains("rename-window -t @1 -- \(quoted)"))
-        #expect(sent.contains("new-session -d -P -F '#{session_id}' -s \(quoted)"))
-        #expect(sent.contains("new-window -P -F '#{window_id}' -n \(quoted)"))
-    }
-
     // MARK: - Image paths pasted at a prompt
 
     @Test("An uploaded path with a marked apostrophe is quoted in every insert style", arguments: marks)

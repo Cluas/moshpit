@@ -111,6 +111,11 @@ impl PredictMode {
     }
 }
 
+/// `predictModeRaw` for a connection that pins Adaptive itself (B531):
+/// "adaptive" means "as Settings says". An older build reads it as a value
+/// it doesn't know: as Settings says.
+pub const PINNED_ADAPTIVE: &str = "pinnedAdaptive";
+
 /// One saved connection, field for field as the app stores it.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -242,6 +247,39 @@ impl ServerConnection {
 
     pub fn set_predict_mode(&mut self, mode: PredictMode) {
         self.predict_mode_raw = Some(mode.raw_value().to_owned());
+    }
+
+    /// The connection's own predictive echo (B531); `None`: as Settings
+    /// says. "adaptive" has always meant that (the form saved it for every
+    /// connection, and sessions read it so), and so do no value and one
+    /// this build doesn't know; a connection pinning Adaptive itself is
+    /// [`PINNED_ADAPTIVE`].
+    pub fn predict(&self) -> Option<PredictMode> {
+        match self.predict_mode_raw.as_deref() {
+            None | Some("adaptive") => None,
+            Some(PINNED_ADAPTIVE) => Some(PredictMode::Adaptive),
+            Some(raw) => PredictMode::from_raw(raw),
+        }
+    }
+
+    /// Sets [`ServerConnection::predict`].
+    pub fn set_predict(&mut self, mode: Option<PredictMode>) {
+        self.predict_mode_raw = Some(
+            match mode {
+                None => "adaptive",
+                Some(PredictMode::Adaptive) => PINNED_ADAPTIVE,
+                Some(mode) => mode.raw_value(),
+            }
+            .to_owned(),
+        );
+    }
+
+    /// The stored predictive echo is one this build reads (none counts).
+    pub fn predict_is_known(&self) -> bool {
+        match self.predict_mode_raw.as_deref() {
+            None | Some("adaptive" | PINNED_ADAPTIVE) => true,
+            Some(raw) => PredictMode::from_raw(raw).is_some(),
+        }
     }
 
     pub fn ssh_key_algorithm(&self) -> Option<SshKeyAlgorithm> {
@@ -551,7 +589,7 @@ impl ConnectionStore {
 
     /// Fields `ServerConnection` no longer has but every build up to 1.0.8
     /// REQUIRES on each stored connection, with the values those builds
-    /// wrote by default (`ConnectionStore.rollbackFields`).
+    /// wrote by default (the Swift store's `rollbackFields`, before batch C).
     pub fn rollback_fields() -> [(&'static str, Value); 6] {
         let number = |n: &str| Value::Number(Number::from_literal(n));
         [

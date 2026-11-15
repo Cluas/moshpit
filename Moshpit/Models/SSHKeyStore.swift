@@ -101,8 +101,8 @@ extension SSHKeyRecord {
         requireBiometry = try container.decode(Bool.self, forKey: .requireBiometry)
         createdAt = try container.decode(Date.self, forKey: .createdAt)
         lastUsedAt = try container.decodeIfPresent(Date.self, forKey: .lastUsedAt)
-        // Unreadable here means unreadable everywhere: the record is carried
-        // as stored (``StoredList``), not guessed at.
+        // Unreadable here means unreadable everywhere: the store carries the
+        // record as stored, not guessed at.
         let olderBuildsName = try container.decode(SSHKeyAlgorithm.self, forKey: .algorithm)
         // A real algorithm from a build newer than this one may be one this
         // build has no name for; then it reads what older builds read.
@@ -147,52 +147,39 @@ extension SSHKeyRecord {
 
 // MARK: - Store
 
+/// The SSH key records, as the views watch them: the Rust store
+/// (`crates/store/src/ssh_keys.rs`, through ``SSHKeyStoreBacking``) does
+/// every read and write — the stored form every build reads, records this
+/// build can't decode carried as stored (dropping one orphaned its private
+/// key in the keychain), the sealed-launch rule — and this object keeps what
+/// the views observe.
 @Observable
 final class SSHKeyStore {
-    private static let storageKey = "moshpit.sshkeys.v1"
-    /// Read one record at a time — see ``StoredList``. A record this build
-    /// can't decode (a newer build's algorithm, say) is carried, not dropped:
-    /// dropping it orphaned the key in the Keychain, the one place the private
-    /// half lives.
-    private static let list = StoredList<SSHKeyRecord>(key: storageKey)
-
     private(set) var keys: [SSHKeyRecord] = []
 
-    @ObservationIgnored private let defaults: UserDefaults
-    @ObservationIgnored private let readiness: DefaultsReadiness
-    /// True once `keys` came from defaults known to be readable
-    /// (``DefaultsReadiness``) and anything the read skipped is safe; until
-    /// then nothing here is written back.
+    /// True once `keys` came from preferences known to be readable and
+    /// anything the read skipped is safe; until then nothing here is
+    /// written back.
     @ObservationIgnored private(set) var isAuthoritative = false
-    /// Stored records this build could not decode, written back as stored.
-    @ObservationIgnored private var carried: [Any] = []
-    /// False when the last read found something other than a list under the
-    /// key (see ``StoredList``): whatever keys it held can't be told apart.
-    @ObservationIgnored private var readAList = true
 
-    /// What reads and writes the records when it isn't the code below:
-    /// the Rust store, behind the `MOSHPIT_RUST_STORE` switch
-    /// (``SSHKeyStoreBacking``). nil: the code below, as ever.
-    @ObservationIgnored private let backing: SSHKeyStoreBacking?
+    @ObservationIgnored private let backing: SSHKeyStoreBacking
 
-    init(defaults: UserDefaults = .standard, readiness: DefaultsReadiness = .always) {
-        self.defaults = defaults
-        self.readiness = readiness
-        backing = nil
-        load()
+    /// The Rust store over `defaults`, readable as `readiness` says (tests
+    /// and scratch suites; the app's is ``AppStores/sshKeys()``).
+    convenience init(defaults: UserDefaults = .standard, readiness: DefaultsReadiness = .always) {
+        let host = RustPreferencesHost(defaults: defaults, available: readiness.protectedDataAvailable)
+        self.init(backing: RustSSHKeyStore(preferences: host, mode: .system))
     }
 
     /// A store whose every read and write is `backing`'s; this object keeps
-    /// what the views observe. `defaults` and `readiness` go unused.
+    /// what the views observe.
     init(backing: SSHKeyStoreBacking) {
-        defaults = .standard
-        readiness = .always
         self.backing = backing
-        adopt(backing)
+        adopt()
     }
 
-    /// Take what `backing` holds now, changing only what changed.
-    private func adopt(_ backing: SSHKeyStoreBacking) {
+    /// Take what the backing holds now, changing only what changed.
+    private func adopt() {
         let held = backing.keys
         if held != keys { keys = held }
         isAuthoritative = backing.isAuthoritative
@@ -202,80 +189,38 @@ final class SSHKeyStore {
     var importedKeys: [SSHKeyRecord] { keys.filter { $0.source != .secureEnclave } }
 
     /// Every keychain ref a stored key record holds, the carried ones' too —
-    /// each the only handle on a private key. nil when that can't be known:
-    /// a read that can't be trusted (``isAuthoritative``), a stored value
-    /// that isn't a list, a carried entry whose `keychainRef` can't be read.
-    /// `excluding` leaves one record out (the key being deleted).
+    /// each the only handle on a private key. nil when that can't be known
+    /// (a read that can't be trusted, a stored value that isn't a list, a
+    /// carried entry whose `keychainRef` can't be read). `excluding` leaves
+    /// one record out (the key being deleted).
     func keychainRefs(excluding excluded: UUID? = nil) -> Set<String>? {
-        if let backing { return backing.keychainRefs(excluding: excluded) }
-        guard isAuthoritative, readAList else { return nil }
-        var refs = Set(keys.filter { $0.id != excluded }.compactMap(\.keychainRef))
-        for entry in carried {
-            guard let fields = entry as? [String: Any] else { return nil }
-            switch fields["keychainRef"] {
-            case nil, is NSNull: continue
-            case let ref as String: refs.insert(ref)
-            default: return nil
-            }
-        }
-        return refs
+        backing.keychainRefs(excluding: excluded)
     }
 
     func add(_ record: SSHKeyRecord) {
-        if let backing {
-            backing.add(record)
-            return adopt(backing)
-        }
-        reloadIfNeeded()
-        keys.append(record)
-        persist()
+        backing.add(record)
+        adopt()
     }
 
     /// The record alone. Deleting a key is ``SSHKeyDeletion``'s: the record
     /// leaving here never took its private key with it (B232).
     func remove(id: UUID) {
-        if let backing {
-            backing.remove(id: id)
-            return adopt(backing)
-        }
-        reloadIfNeeded()
-        keys.removeAll { $0.id == id }
-        persist()
+        backing.remove(id: id)
+        adopt()
     }
 
     /// Read again if the last read could not be trusted; a no-op otherwise.
     func reloadIfNeeded() {
-        if let backing {
-            backing.reloadIfNeeded()
-            return adopt(backing)
-        }
-        if !isAuthoritative { load() }
-    }
-
-    private func load() {
-        let readable = readiness.isReadable(defaults)
-        let contents = Self.list.read(from: defaults)
-        keys = contents.elements
-        carried = contents.carried
-        readAList = contents.isList
-        isAuthoritative = readable && Self.list.secure(contents, in: defaults)
-        if readable { readiness.markReadable(defaults) }
-    }
-
-    private func persist() {
-        // A sealed file is not an empty list; never write over one.
-        guard isAuthoritative else { return }
-        if let data = Self.list.encode(keys, carrying: carried) {
-            defaults.set(data, forKey: Self.storageKey)
-        }
+        backing.reloadIfNeeded()
+        adopt()
     }
 }
 
-/// What an ``SSHKeyStore`` reads and writes through when it isn't its own
-/// Swift code: the Rust store (crates/store, through crates/ffi), behind the
-/// `MOSHPIT_RUST_STORE` switch (`RustStoreSwitch`). Each member keeps the
-/// contract of the store's member of the same name. Key material is never
-/// here: the records name their keychain items, as ever.
+/// What an ``SSHKeyStore`` reads and writes through: the Rust store
+/// (crates/store, through crates/ffi; ``RustSSHKeyStore``), or a test's
+/// stand-in. Each member keeps the contract of the store's member of the
+/// same name. Key material is never here: the records name their keychain
+/// items.
 protocol SSHKeyStoreBacking: AnyObject {
     var keys: [SSHKeyRecord] { get }
     var isAuthoritative: Bool { get }
@@ -287,17 +232,17 @@ protocol SSHKeyStoreBacking: AnyObject {
 
 #if DEBUG
 extension SSHKeyStore {
-    /// A capture run's store (``KeysCapture``): `records`, in memory. It reads
-    /// from a suite of its own (never the app's defaults) as defaults it
-    /// can't trust, so it writes nothing: not the records, not the readiness
-    /// sentinel.
+    /// A capture run's store (``KeysCapture``): `records`, for this launch
+    /// only — the Rust store over preferences kept in memory
+    /// (``LaunchOnlyPreferences``), whose read is never trusted, so it
+    /// writes nothing, the app's own keys left alone.
     @MainActor
     static func capture(_ records: [SSHKeyRecord]) -> SSHKeyStore {
-        // A suite name UserDefaults takes; never a fallback to the app's.
-        let store = SSHKeyStore(defaults: UserDefaults(suiteName: "moshpit.capture.keys")!,
-                                readiness: DefaultsReadiness { false })
-        store.keys = records
-        return store
+        let preferences = LaunchOnlyPreferences()
+        if let data = try? JSONEncoder().encode(records), let value = PlistNodes.value(data) {
+            preferences.set(key: "moshpit.sshkeys.v1", value: value)
+        }
+        return SSHKeyStore(backing: RustSSHKeyStore(preferences: preferences, mode: .system))
     }
 }
 #endif

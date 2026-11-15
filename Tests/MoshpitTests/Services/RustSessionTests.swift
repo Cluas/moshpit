@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-import Crypto
+import CryptoKit
 @testable import Moshpit
 
 /// A registry that records what it was asked and answers from what the test
@@ -25,6 +25,10 @@ final class FakeCoreSessions: CoreSessionsProtocol, @unchecked Sendable {
     var nextToken: UInt64 = 100
 
     func answerHostKey(session: UInt64, prompt: UInt64, trust: Bool) { answers.append((session, prompt, trust)) }
+    var questionAnswers: [(UInt64, UInt64, String?)] = []
+    func answerQuestion(session: UInt64, prompt: UInt64, answer: String?) {
+        questionAnswers.append((session, prompt, answer))
+    }
     func connect(spec: SessionSpec) -> UInt64 { connected.append(spec); return nextId }
     func disconnect(session: UInt64) { disconnected.append(session) }
     func flush() -> UInt64 { flushes += 1; return flushes }
@@ -377,8 +381,7 @@ struct RustSessionTests {
     }
 
     /// B513: an error nobody dismissed (a redial that failed behind Home)
-    /// belongs to that attempt; the next connect starts without it, as the
-    /// Swift path's `resetForReconnect` starts.
+    /// belongs to that attempt; the next connect starts without it.
     @Test("a new connect starts without the last attempt's error (B513)")
     func newConnectDropsTheLastError() async {
         let (driver, session, fake) = driver(ServerConnection(host: "h", username: "u"))
@@ -396,6 +399,30 @@ struct RustSessionTests {
         driver.handle(.state(state: .connected))
         await retry.value
         #expect(session.viewModel.errorMessage == nil)
+    }
+
+    /// B533: Settings' predictive echo and its trail reach a live mosh
+    /// session at once; they used to wait for its next connect.
+    @Test("Settings' predictive echo reaches a live mosh session at once (B533)")
+    func predictionFollowsSettings() async {
+        let settings = AppSettings.shared
+        let (mode, trail) = (settings.predictMode, settings.trailOnPredict)
+        defer {
+            settings.predictMode = mode
+            settings.trailOnPredict = trail
+        }
+        var connection = ServerConnection(host: "h", username: "u")
+        connection.connectionProtocol = .mosh
+        let (driver, session, fake) = driver(connection)
+        let task = await started(driver, fake)
+        driver.handle(.state(state: .connected))
+        await task.value
+        settings.predictMode = mode == .always ? .never : .always
+        let moded = await eventually { session.coordinator.prediction?.mode == settings.predictMode }
+        #expect(moded, "the live session kept the mode it connected with")
+        settings.trailOnPredict = !trail
+        let trailed = await eventually { session.coordinator.prediction?.trail == !trail }
+        #expect(trailed, "the live session kept the trail it connected with")
     }
 
     @Test("what the core's probe found is the session's: Install Assist has its command (B336)")
@@ -485,8 +512,10 @@ struct RustSessionTests {
         var retired = false
         session.endedSink = { retired = true }
         let task = await started(driver, fake)
-        driver.handle(.hostKeyPrompt(prompt: 3, host: "h", port: 22, fingerprint: "SHA256:x", previous: nil))
+        driver.handle(.hostKeyPrompt(prompt: 3, host: "h", port: 22, fingerprint: "SHA256:x", previous: nil,
+                                     olderAlgorithm: nil))
         #expect(session.viewModel.hostKeyPrompt?.fingerprint == "SHA256:x")
+        #expect(session.viewModel.hostKeyPrompt?.olderAlgorithm == nil)
         session.viewModel.hostKeyPrompt?.decide(false)
         #expect(session.viewModel.hostKeyPrompt == nil)
         #expect(fake.answers.count == 1)
@@ -504,6 +533,101 @@ struct RustSessionTests {
         #expect(session.viewModel.status == .disconnected)
         #expect(session.viewModel.declinedHostKey)
         #expect(retired, "the declined session is taken out")
+    }
+
+    /// B563: what the server asks at sign-in beyond the password goes on a
+    /// card in the server's words; the person's answer, or their no, goes
+    /// back to the core; a question the core withdraws closes its card.
+    @Test("a server's sign-in question is asked on a card, and the answer reaches the core")
+    func signInQuestionCard() async {
+        let (driver, session, fake) = driver(ServerConnection(host: "h", username: "u"))
+        let task = await started(driver, fake)
+        driver.handle(.signInQuestion(prompt: 4, host: "h", name: "", instructions: "",
+                                      text: "Verification code: ", echo: false))
+        let question = session.viewModel.signInQuestion
+        #expect(question?.words == "Verification code:")
+        #expect(question?.echo == false)
+        question?.decide("424242")
+        #expect(session.viewModel.signInQuestion == nil)
+        #expect(fake.questionAnswers.count == 1)
+        #expect(fake.questionAnswers.first.map { $0.0 == 7 && $0.1 == 4 && $0.2 == "424242" } == true)
+
+        driver.handle(.signInQuestion(prompt: 5, host: "h", name: "", instructions: "",
+                                      text: "Token: ", echo: false))
+        session.viewModel.signInQuestion?.decide(nil)
+        #expect(fake.questionAnswers.last.map { $0.1 == 5 && $0.2 == nil } == true)
+
+        driver.handle(.signInQuestion(prompt: 6, host: "h", name: "", instructions: "",
+                                      text: "Token: ", echo: false))
+        driver.handle(.signInQuestionWithdrawn(prompt: 6))
+        #expect(session.viewModel.signInQuestion == nil)
+        #expect(fake.questionAnswers.count == 2, "a withdrawn question isn't answered")
+        driver.handle(.state(state: .connected))
+        await task.value
+    }
+
+    /// B564: a host key that came by ssh-rsa says so on the New Host card.
+    @Test("a host key by the older algorithm carries it to the card")
+    func olderHostKeyCard() async {
+        let (driver, session, fake) = driver(ServerConnection(host: "h", username: "u"))
+        let task = await started(driver, fake)
+        driver.handle(.hostKeyPrompt(prompt: 3, host: "h", port: 22, fingerprint: "SHA256:x", previous: nil,
+                                     olderAlgorithm: "ssh-rsa"))
+        #expect(session.viewModel.hostKeyPrompt?.olderAlgorithm == "ssh-rsa")
+        session.viewModel.hostKeyPrompt?.decide(true)
+        driver.handle(.olderHostKeyAlgorithm(algorithm: "ssh-rsa"))
+        driver.handle(.state(state: .connected))
+        await task.value
+    }
+
+    @Test("the server's words are shown as sent, without terminal escapes")
+    func serverWords() {
+        #expect(RustSessionDriver.serverWords(name: "Duo", instructions: "\u{1B}[1mPick one\u{1B}[0m\n",
+                                              prompt: "Passcode: ")
+                == "Duo\nPick one\nPasscode:")
+        #expect(RustSessionDriver.serverWords(name: "", instructions: "\u{1B}]0;title\u{07}Hi\u{07}",
+                                              prompt: "Code:\r") == "Hi\nCode:")
+        #expect(RustSessionDriver.serverWords(name: "", instructions: "", prompt: "Code: ") == "Code:")
+        #expect(RustSessionDriver.serverWords(name: "", instructions: "", prompt: String(repeating: "x", count: 900)).count == 600)
+    }
+
+    /// The passphrase card of a key kept behind one (B125): the core's
+    /// credential call asks through the terminal's card, and what the person
+    /// types unlocks the key the core is handed.
+    @Test("a key's passphrase is asked on the terminal's card, and the answer reaches the core")
+    func passphraseCard() async throws {
+        let key = try #require(SSHKeyFixtures.all.first { $0.name == "Ed25519 · OpenSSH · passphrase" })
+        let keychain = KeychainService.inMemory()
+        let ref = keychain.generateRef()
+        try await keychain.savePrivateKey(key.privateKey, forRef: ref, requireBiometry: false)
+        let connection = ServerConnection(name: "t", host: "192.0.2.1", port: 22, username: "me",
+                                          authMethod: .key, keychainRef: ref)
+        let fake = FakeCoreSessions()
+        let credentials = RustCredentialHost(service: SSHService(keychain: keychain, protectedDataAvailable: { true }))
+        let core = RustCore(sessions: fake, credentials: credentials)
+        let session = SessionHub.ActiveSession(connection: connection)
+        let driver = RustSessionDriver(session: session, core: core, appearance: Self.look)
+        session.rust = driver
+        let task = await started(driver, fake)
+
+        let asked = Task { try await credentials.credential(connectionId: connection.id.uuidString) }
+        var waited = 0
+        while session.viewModel.keyPassphrasePrompt == nil, waited < 300 {
+            waited += 1
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        let prompt = try #require(session.viewModel.keyPassphrasePrompt)
+        #expect(prompt.host == "192.0.2.1")
+        #expect(!prompt.wrong)
+        prompt.decide(SSHKeyFixtures.passphrase)
+        guard case .key(let openssh) = try await asked.value else {
+            Issue.record("not a key")
+            return
+        }
+        #expect(!SSHKeyFactory.isEncrypted(openssh))
+        #expect(session.viewModel.keyPassphrasePrompt == nil)
+        driver.handle(.state(state: .connected))
+        await task.value
     }
 
     @Test("a host-key failure the person didn't decline is still a failure, with its card")
@@ -544,7 +668,6 @@ struct RustSessionTests {
         driver.handle(.firstFrame(attach: 1))
         #expect(!session.awaitingFirstFrame)
         #expect(first.paintedSinceAttach)
-        #expect(first.hasPaintedSinceAttach)
 
         // A drop: the painted surface stays, frozen; the new attach gets a
         // new one, which takes over once it paints.
@@ -595,7 +718,7 @@ struct RustSessionTests {
         driver.handle(.treeChanged)
         let tmux = try #require(session.tmuxController)
         #expect(tmux.notice == "can't find window")
-        #expect(tmux.sizeFollow == TmuxSessionController.SizeFollow(windowId: "@1", ownerLabel: "iPad"))
+        #expect(tmux.sizeFollow == RustTmuxController.SizeFollow(windowId: "@1", ownerLabel: "iPad"))
         #expect(tmux.agentHooks["%1"]?.state == "attention")
         #expect(tmux.agentHooks["%1"]?.since == Date(timeIntervalSince1970: 1_800_000_000))
         #expect(tmux.agentHooksLoaded)

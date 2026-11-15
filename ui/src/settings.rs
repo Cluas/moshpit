@@ -473,6 +473,8 @@ pub enum Setting {
     Companion(moshpit_pet::Style, bool),
     /// The pet's name (its card).
     PetName(String),
+    /// Whether it talks on Home (「让它说话」).
+    PetTalk(bool),
 }
 
 impl Setting {
@@ -501,6 +503,7 @@ impl Setting {
                 ("companion", json!({"style": style.id(), "shown": shown}))
             }
             Setting::PetName(name) => ("petName", json!(name)),
+            Setting::PetTalk(on) => ("petTalk", json!(on)),
         };
         json!({"ev": "set", "key": key, "value": value})
     }
@@ -880,7 +883,40 @@ fn hub(root: View, state: State, tell: Tell, anchors: Anchors, ready: Memo<bool>
 /// matters most and a chevron.
 fn hub_groups(state: State, tell: &Tell) -> Vec<AnyElement> {
     let on_off = |on: bool| -> SharedString { if on { t!("On") } else { t!("Off") }.into() };
-    vec![
+    // Notifications and Voice input: one group, each where it is wired
+    // (B539).
+    let shown = rows(Os::current());
+    let alerts_and_voice = (shown.notifications || shown.voice).then(|| {
+        let mut group = section();
+        if shown.notifications {
+            group = group.row(
+                row(t!("Notifications"))
+                    .leading_tile("bell")
+                    .value_with(move || on_off(state.read(|s| s.notifications)))
+                    .chevron()
+                    .on_press(go(tell, Part::Notifications))
+                    .test_id("settings-open-notifications"),
+            );
+        }
+        if shown.voice {
+            group = group.row(
+                row(t!("Voice input"))
+                    .leading_tile("mic")
+                    .value_with(move || {
+                        if state.read(|s| s.voice_input) {
+                            state.read(|s| s.voice_engine).name().into()
+                        } else {
+                            on_off(false)
+                        }
+                    })
+                    .chevron()
+                    .on_press(go(tell, Part::Voice))
+                    .test_id("settings-open-voice"),
+            );
+        }
+        group.into_element()
+    });
+    let mut groups = vec![
         section()
             .row(
                 row(t!("Appearance"))
@@ -927,30 +963,9 @@ fn hub_groups(state: State, tell: &Tell) -> Vec<AnyElement> {
                     .test_id("settings-ssh-keys"),
             )
             .into_element(),
-        section()
-            .row(
-                row(t!("Notifications"))
-                    .leading_tile("bell")
-                    .value_with(move || on_off(state.read(|s| s.notifications)))
-                    .chevron()
-                    .on_press(go(tell, Part::Notifications))
-                    .test_id("settings-open-notifications"),
-            )
-            .row(
-                row(t!("Voice input"))
-                    .leading_tile("mic")
-                    .value_with(move || {
-                        if state.read(|s| s.voice_input) {
-                            state.read(|s| s.voice_engine).name().into()
-                        } else {
-                            on_off(false)
-                        }
-                    })
-                    .chevron()
-                    .on_press(go(tell, Part::Voice))
-                    .test_id("settings-open-voice"),
-            )
-            .into_element(),
+    ];
+    groups.extend(alerts_and_voice);
+    groups.extend([
         section()
             .row(
                 row(t!("Set up a host"))
@@ -977,7 +992,8 @@ fn hub_groups(state: State, tell: &Tell) -> Vec<AnyElement> {
             )
             .into_element(),
         about(state, tell),
-    ]
+    ]);
+    groups
 }
 
 /// About: the version row (long-press: Copy, the host's menu), the tagline
@@ -1466,18 +1482,43 @@ fn labelled(title: String, control: impl IntoElement) -> AnyElement {
         .into_element()
 }
 
-/// The rows Settings shows only on some platforms (B258).
+/// The rows Settings shows only on some platforms (B258), and the ones a
+/// host doesn't read yet (B539): Android's terminal takes the theme and the
+/// font size, its connections the UDP range and mosh for new ones; its
+/// other controls changed nothing, so they wait until they are wired.
 struct Rows {
     /// App Icon: Android has no alternate icons.
     app_icon: bool,
     /// Live Activity: Android has none (nor a Dynamic Island).
     live_activity: bool,
+    /// The terminal's font (Android draws its own).
+    font: bool,
+    /// The cursor's shape, colour, blink and trail.
+    cursor: bool,
+    /// Keyboard on open, remote clipboard read.
+    behavior: bool,
+    /// Predictive echo (Android predicts nothing).
+    predict: bool,
+    /// How long attached images are kept (Android attaches none).
+    images: bool,
+    /// Notifications' page (Android pairs nothing for push).
+    notifications: bool,
+    /// Voice input's page.
+    voice: bool,
 }
 
 fn rows(os: Os) -> Rows {
+    let apple = !os.is_android();
     Rows {
-        app_icon: !os.is_android(),
-        live_activity: !os.is_android(),
+        app_icon: apple,
+        live_activity: apple,
+        font: apple,
+        cursor: apple,
+        behavior: apple,
+        predict: apple,
+        images: apple,
+        notifications: apple,
+        voice: apple,
     }
 }
 
@@ -1644,6 +1685,11 @@ fn companion_group(pet: PetSignal, tell: &Tell) -> AnyElement {
         .items_center()
         .justify_center()
         .child(crate::ui::companion::companion(pet_figure(pet), 32.0));
+    let talks = move || pet.with(|p| p.as_ref().is_none_or(|p| p.talk));
+    let talk = {
+        let tell = tell.clone();
+        move |on: bool| tell(Setting::PetTalk(on).event())
+    };
     section()
         .header(t!("COMPANION"))
         .row(
@@ -1653,6 +1699,17 @@ fn companion_group(pet: PetSignal, tell: &Tell) -> AnyElement {
                     switch(on, toggle)
                         .label(t!("Pixel Companion"))
                         .test_id("settings-companion-shown"),
+                ),
+        )
+        .row(
+            row(t!("Let It Talk"))
+                .subtitle(t!("A short line on Home now and then"))
+                .disabled(move || !on())
+                .trailing(
+                    switch(talks, talk)
+                        .disabled(move || !on())
+                        .label(t!("Let It Talk"))
+                        .test_id("settings-companion-talk"),
                 ),
         )
         .row(
@@ -1954,22 +2011,27 @@ fn terminal(state: State, tell: &Tell, anchors: Anchors) -> Vec<AnyElement> {
         ))
         .footer(t!("Cursor settings apply to every session."))
         .test_id("settings-cursor-group");
-    vec![
-        preview(state),
-        section()
-            .item(font_select(state, tell), Inset::Content)
-            .row(size_row(state, tell))
-            .row(
-                row(t!("Theme"))
-                    .value_with(move || state.read(|s| s.theme.name.clone()).into())
-                    .chevron()
-                    .on_press(open(tell, Page::Theme))
-                    .test_id("settings-theme"),
-            )
-            .test_id("settings-display-group")
-            .into_element(),
-        anchors.mark(Anchor::Cursor, cursor.into_element()),
-    ]
+    // Each where it is wired (B539).
+    let shown = rows(Os::current());
+    let mut display = section();
+    if shown.font {
+        display = display.item(font_select(state, tell), Inset::Content);
+    }
+    let display = display
+        .row(size_row(state, tell))
+        .row(
+            row(t!("Theme"))
+                .value_with(move || state.read(|s| s.theme.name.clone()).into())
+                .chevron()
+                .on_press(open(tell, Page::Theme))
+                .test_id("settings-theme"),
+        )
+        .test_id("settings-display-group");
+    let mut page = vec![preview(state), display.into_element()];
+    if shown.cursor {
+        page.push(anchors.mark(Anchor::Cursor, cursor.into_element()));
+    }
+    page
 }
 
 /// Font: the system's menu of the terminal's fonts.
@@ -2214,18 +2276,21 @@ fn connections(state: State, tell: &Tell, anchors: Anchors) -> Vec<AnyElement> {
             "settings-remote-clipboard",
         ))
         .test_id("settings-behavior-group");
-    let mosh = section()
-        .header(t!("MOSH"))
-        .row(toggle(
-            state,
-            tell,
-            t!("Mosh for new connections"),
-            None,
-            |s| s.mosh_by_default,
-            Setting::MoshByDefault,
-            "settings-mosh-default",
-        ))
-        .item(
+    // Each where it is wired (B539).
+    let shown = rows(Os::current());
+    let mosh = section().header(t!("MOSH")).row(toggle(
+        state,
+        tell,
+        t!("Mosh for new connections"),
+        None,
+        |s| s.mosh_by_default,
+        Setting::MoshByDefault,
+        "settings-mosh-default",
+    ));
+    let mosh = if !shown.predict {
+        mosh
+    } else {
+        mosh.item(
             select(
                 t!("Predictive echo"),
                 PredictMode::ALL.map(|mode| option(mode.id(), mode.title())),
@@ -2239,6 +2304,8 @@ fn connections(state: State, tell: &Tell, anchors: Anchors) -> Vec<AnyElement> {
             .test_id("settings-predict"),
             Inset::Content,
         )
+    };
+    let mosh = mosh
         .row(
             row(t!("UDP ports"))
                 .value_with(move || {
@@ -2274,11 +2341,15 @@ fn connections(state: State, tell: &Tell, anchors: Anchors) -> Vec<AnyElement> {
             "Images upload to the host's ~/.moshpit/uploads; each connect clears expired ones."
         ))
         .test_id("settings-images-group");
-    vec![
-        anchors.mark(Anchor::Behavior, behavior.into_element()),
-        anchors.mark(Anchor::Mosh, mosh.into_element()),
-        images.into_element(),
-    ]
+    let mut page = Vec::new();
+    if shown.behavior {
+        page.push(anchors.mark(Anchor::Behavior, behavior.into_element()));
+    }
+    page.push(anchors.mark(Anchor::Mosh, mosh.into_element()));
+    if shown.images {
+        page.push(images.into_element());
+    }
+    page
 }
 
 // --- Notifications -------------------------------------------------------------
@@ -2403,6 +2474,26 @@ mod tests {
     fn android_leaves_out_the_app_icon_and_live_activity_rows() {
         assert!(!rows(Os::Android).app_icon && !rows(Os::Android).live_activity);
         assert!(rows(Os::Apple).app_icon && rows(Os::Apple).live_activity);
+    }
+
+    /// B539: Android shows only what it reads; the font, the cursor, the
+    /// behaviour switches, predictive echo, attached images, notifications
+    /// and voice input wait until they are wired. Every one shows on Apple.
+    #[test]
+    fn android_leaves_out_what_it_does_not_read_yet() {
+        let shown = |r: Rows| {
+            [
+                r.font,
+                r.cursor,
+                r.behavior,
+                r.predict,
+                r.images,
+                r.notifications,
+                r.voice,
+            ]
+        };
+        assert_eq!(shown(rows(Os::Android)), [false; 7]);
+        assert_eq!(shown(rows(Os::Apple)), [true; 7]);
     }
 
     /// A state as the host posts it.

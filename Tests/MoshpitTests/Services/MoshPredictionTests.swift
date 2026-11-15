@@ -43,4 +43,20 @@ struct MoshPredictionTests {
         #expect(view.prediction == nil)
         #expect(coordinator.predict(Data("a".utf8)) == nil)
     }
+
+    /// B531: "adaptive" (and nothing, and a value this build doesn't know)
+    /// is as Settings says; a connection pinning Adaptive is
+    /// "pinnedAdaptive". The Rust session's prediction reads it so.
+    @Test("a connection's own predictive echo, or Settings' (B531)")
+    func predictOverride() {
+        var connection = ServerConnection()
+        let cases: [(String?, PredictMode?)] = [
+            (nil, nil), ("adaptive", nil), ("turbo", nil), ("pinnedAdaptive", .adaptive),
+            ("always", .always), ("never", .never), ("experimental", .experimental),
+        ]
+        for (raw, own) in cases {
+            connection.predictModeRaw = raw
+            #expect(connection.predictOverride == own, "\(raw ?? "nil")")
+        }
+    }
 }

@@ -1,8 +1,9 @@
 # Contributing to Moshpit
 
-Thanks for your interest in contributing. Moshpit is an iOS SSH / Mosh / tmux
-terminal client built with SwiftUI, targeting iOS 18. This guide covers the
-project's workflow and conventions so your change lands cleanly.
+Thanks for your interest in contributing. Moshpit is an SSH / Mosh / tmux
+terminal for iPhone and iPad: a Rust core and screens (`crates/`, `ui/`) under a
+thin Swift host (`Moshpit/`, `Extensions/`), targeting iOS 18. This guide covers
+the project's workflow and conventions so your change lands cleanly.
 
 By participating you agree to abide by our [Code of Conduct](CODE_OF_CONDUCT.md).
 
@@ -36,7 +37,13 @@ explains itself in its header.
 
 ```bash
 brew install xcodegen
+# Rust: rustup reads rust-toolchain.toml and installs the pinned toolchain on
+# first use; the app's "Build Rust" phase adds the iOS targets it needs.
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 ```
+
+You also need Xcode 27 (what CI and the App Store build use; the app deploys
+to iOS 18).
 
 ### Generate, build, and run
 
@@ -44,10 +51,11 @@ brew install xcodegen
 # Regenerate the Xcode project from project.yml
 xcodegen generate
 
-# Build for the simulator
+# Build for the simulator: the "Build Rust" phase builds crates/ffi into
+# libmoshpit_ffi.a first (scripts/rust/build-ios.sh)
 xcodebuild -project Moshpit.xcodeproj -scheme Moshpit \
   -sdk iphonesimulator \
-  -destination 'platform=iOS Simulator,name=iPhone 17 Pro' build
+  -destination 'platform=iOS Simulator,name=iPhone 18 Pro' build
 
 # Or open in Xcode and Cmd+R
 open Moshpit.xcodeproj
@@ -55,13 +63,23 @@ open Moshpit.xcodeproj
 
 ### Run the tests
 
-The test suite is the Moshpit scheme's `MoshpitTests` (unit) and `MoshpitUITests`
-targets. Run them locally before opening a PR:
+Most of the logic is Rust, in `crates/` and `ui/`; its tests run with cargo, as
+CI does:
 
 ```bash
+cargo test --workspace --locked
+cargo clippy --workspace --all-targets --locked -- -D warnings
+cargo test -p moshpit-session     # one crate while you work on it
+```
+
+The iOS app's tests are the Moshpit scheme's `MoshpitTests` (unit) and
+`MoshpitUITests` targets. Run them locally before opening a PR:
+
+```bash
+scripts/rust/test-build-ios.sh    # the Rust phase's profiles and links, without building
 xcodebuild test -project Moshpit.xcodeproj -scheme Moshpit \
   -sdk iphonesimulator \
-  -destination 'platform=iOS Simulator,name=iPhone 17 Pro'
+  -destination 'platform=iOS Simulator,name=iPhone 18 Pro'
 ```
 
 For the unit tests alone, use the `MoshpitUnitTests` scheme instead: it leaves
@@ -160,7 +178,7 @@ minimal surface is a feature, not a limitation.
 
 - Branch off `main`.
 - Keep the change focused; unrelated cleanups belong in their own PR.
-- Run `xcodegen generate` and the test suite before pushing.
+- Run `xcodegen generate`, the Rust tests and the app's test suite before pushing.
 - Fill out the PR template. Describe what changed and, in the spirit above, why.
 - Include a simulator screenshot or short clip for any user-facing UI change.
 

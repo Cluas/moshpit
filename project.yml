@@ -44,16 +44,6 @@ packages:
   # the app/extension boundary is a module boundary the compiler checks.
   MoshpitKit:
     path: Packages/MoshpitKit
-  Citadel:
-    url: https://github.com/orlandos-nl/Citadel.git
-    from: "0.7.0"
-  # RSA signatures over SHA-2 (rsa-sha2-512/256, RFC 8332) for RSA sign-in:
-  # `_RSA.Signing` from swift-crypto's _CryptoExtras, which Citadel already
-  # links and pins (it signs with SHA-1 only, which OpenSSH 8.8+ refuses).
-  # Named here because the app imports the module itself.
-  SwiftCrypto:
-    url: https://github.com/apple/swift-crypto.git
-    from: "3.12.3"
   # Local Whisper for dictation (Settings → VOICE INPUT → Recognition).
   # Apple's own transcribers take exactly ONE locale and have no
   # code-switching mode, so a sentence carrying English command names inside
@@ -70,15 +60,6 @@ packages:
   WhisperKit:
     url: https://github.com/argmaxinc/WhisperKit.git
     from: "1.1.0"
-  # SOCKS5 client handshake for the optional per-connection proxy (Add
-  # Connection → Proxy). `swift-nio-extras` ships several library products;
-  # naming the package key `NIOSOCKS` (matching the one product we want)
-  # keeps the default package→product resolution working with no explicit
-  # `product:` override — see the WhisperKit note above for what happens
-  # when the two names diverge.
-  NIOSOCKS:
-    url: https://github.com/apple/swift-nio-extras.git
-    from: "1.34.0"
 
 targets:
   Moshpit:
@@ -244,13 +225,8 @@ targets:
           SWIFT_COMPILATION_MODE: $(MOSHPIT_SWIFT_COMPILATION_MODE)
     dependencies:
       - package: MoshpitKit
-      - package: Citadel
-      - package: SwiftCrypto
-        product: _CryptoExtras
       - package: WhisperKit
         product: WhisperKit
-      - package: NIOSOCKS
-        product: NIOSOCKS
       - target: MoshpitIsland
         embed: true
       - target: MoshpitShare
@@ -526,8 +502,7 @@ schemes:
   # Iterating on test code only? Build once with `build-for-testing`, then
   # `test-without-building` — that saves a further ~60 s per cycle. And do NOT
   # run `xcodegen generate` unless project.yml changed: rewriting the pbxproj
-  # invalidates DerivedData and forces a full rebuild of WhisperKit,
-  # Citadel and swift-nio.
+  # invalidates DerivedData and forces a full rebuild of WhisperKit.
   MoshpitUnitTests:
     build:
       targets:

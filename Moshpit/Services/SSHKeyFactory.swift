@@ -232,10 +232,4 @@ enum SSHKeyFactory {
     static func publicKeyBlob(of text: String) throws -> Data {
         try keyReader { try sshKeyPublicBlob(text: text) }
     }
-
-    /// The private numbers of the unencrypted key in `text`, for the
-    /// connect path's signers (CryptoKit, Security).
-    static func signingParts(of text: String) throws -> SigningParts {
-        try keyReader { try sshKeySigningParts(text: text) }
-    }
 }

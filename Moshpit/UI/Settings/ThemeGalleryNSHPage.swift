@@ -1,28 +1,13 @@
 import SwiftUI
 import UIKit
 
-/// Settings › Theme: the SwiftUI page (``ThemeGalleryView``), or the NSH one
-/// while its switch is on (``NSHScreen/theme``). With the switch off the
-/// SwiftUI page is all there is: no NSH code runs.
-struct ThemePage: View {
-    var body: some View {
-        if NSHScreen.theme.isOn {
-            ThemeGalleryNSHPage()
-        } else {
-            ThemeGalleryView()
-                .darkOnlyPage()
-        }
-    }
-}
-
 /// Settings › Theme drawn by NSH (`ui/src/theme_gallery.rs`): the built-in
 /// and the user's own terminal themes, from the host (``ThemeGalleryModel``).
-/// The page behaves as the SwiftUI one does: a pick applies at once; New
-/// Theme, Duplicate and a custom theme's edit button open the editor sheet
-/// (the one its own switch picks, ``ThemeEditorPage``); Import JSON… opens
-/// the same import sheet; each row has the same long-press menu (UIKit's,
-/// on the NSH surface: ``NSHContextMenus``); Delete asks with the card the
-/// NSH page draws, for the theme the model names.
+/// A pick applies at once; New Theme, Duplicate and a custom theme's edit
+/// button open the editor sheet (``ThemeEditorNSHPage``); Import JSON…
+/// opens the import sheet (``ThemeImportView``); each row has a long-press
+/// menu (UIKit's, on the NSH surface: ``NSHContextMenus``); Delete asks with
+/// the card the NSH page draws, for the theme the model names.
 struct ThemeGalleryNSHPage: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(AppSettings.self) private var settings
@@ -37,8 +22,7 @@ struct ThemeGalleryNSHPage: View {
 
     var body: some View {
         if failed {
-            ThemeGalleryView()
-                .darkOnlyPage()
+            NSHPageFailed { failed = false }
         } else {
             let snapshot = ThemeGallerySnapshot(themes: themes, settings: settings)
             NSHPage(
@@ -63,7 +47,7 @@ struct ThemeGalleryNSHPage: View {
                 }
                 // `item:`, so the sheet opens on the theme asked for.
                 .appSheet(item: $editing) { theme in
-                    ThemeEditorPage(theme: theme) { saved in
+                    ThemeEditorNSHPage(theme: theme) { saved in
                         themes.save(saved)
                         settings.themeId = saved.id      // editing implies wanting it
                     }
@@ -99,7 +83,7 @@ struct ThemeGalleryNSHPage: View {
         }
     }
 
-    /// Each row's long-press menu, as the SwiftUI page's `.contextMenu`s:
+    /// Each row's long-press menu:
     /// Duplicate & Edit on a built-in theme; Edit, Duplicate, Copy JSON and
     /// Delete on the user's own. The menu finds the theme as it is when it
     /// opens.
@@ -142,19 +126,19 @@ struct ThemeGalleryNSHPage: View {
 
     #if DEBUG
     /// A capture run's editor or delete card, over the first custom theme,
-    /// and its scroll: as the SwiftUI page scrolls (``ThemeGalleryAnchor``),
-    /// and again once the text has settled, so the shot finds the rows
-    /// where the final layout has them.
+    /// and its scroll (``ThemeGalleryAnchor``): once the page is up, and
+    /// again once the text has settled, so the shot finds the rows where
+    /// the final layout has them.
     private func seedCapture(_ snapshot: ThemeGallerySnapshot) {
         if ThemeGalleryAnchor.requested {
             for delay in [0.9, 2.0] {
                 DispatchQueue.main.asyncAfter(deadline: .now() + delay) { model.reveal() }
             }
         }
-        if let request = CaptureScreen.deleteRequested, request.theme, let first = snapshot.custom.first {
+        if CaptureScreen.deleteRequested == true, let first = snapshot.custom.first {
             model.confirmDelete(first.id)
         }
-        if let request = CaptureScreen.editorRequested, request.theme {
+        if CaptureScreen.editorRequested == true {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                 editing = themes.customThemes.first ?? themes.makeDraft()
             }
@@ -237,7 +221,7 @@ final class ThemeGalleryModel {
         post()
     }
 
-    /// The card's Delete: as the SwiftUI page removes a theme, the selection
+    /// The card's Delete: removes the theme, the selection
     /// moving to the default when it was the one deleted.
     func remove(_ id: String, settings: AppSettings, themes: ThemeStore) {
         deleting = nil
@@ -289,7 +273,7 @@ final class ThemeGalleryModel {
     /// (its long-press menu's part).
     nonisolated static func cellID(_ id: String) -> String { "theme-cell-\(id)" }
 
-    /// A custom theme's menu, as the SwiftUI page's.
+    /// A custom theme's menu.
     static func customActions(edit: @escaping () -> Void, duplicate: @escaping () -> Void,
                               copyJSON: @escaping () -> Void, delete: @escaping () -> Void) -> [UIMenuElement] {
         [

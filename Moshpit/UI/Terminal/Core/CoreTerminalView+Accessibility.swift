@@ -47,6 +47,7 @@ extension CoreTerminalView: UIAccessibilityReadingContent {
         let cursorRow = rows.info.cursor.visible ? Int(rows.info.cursor.row) : -1
         var elements: [CoreTermRowElement] = []
         elements.reserveCapacity(rows.gridRows)
+        let switching = paneSwitchActions()
         for r in 0..<rows.gridRows {
             let e = accessibilityRows.indices.contains(r) ? accessibilityRows[r] : CoreTermRowElement(accessibilityContainer: self)
             e.row = r
@@ -55,6 +56,7 @@ extension CoreTerminalView: UIAccessibilityReadingContent {
             e.isAccessibilityElement = !text.isEmpty || r == cursorRow
             e.accessibilityTraits = [.staticText]
             e.accessibilityHint = r == cursorRow ? String(localized: "Cursor") : nil
+            e.accessibilityCustomActions = switching
             e.accessibilityFrameInContainerSpace = CGRect(x: 0, y: y(ofRow: r), width: bounds.width,
                                                           height: metrics.height)
             elements.append(e)

@@ -3,9 +3,16 @@ import OSLog
 import MoshpitKit
 
 /// The app's own recent log, read back through `OSLogStore` — what the
-/// Recent Log screen shows and what a feedback mail can attach. Nothing is
-/// collected or persisted beyond what the system already keeps; see
-/// `DiagnosticsLogView` for why reading it back on the phone matters.
+/// Recent Log screen shows and what a feedback mail can attach.
+///
+/// It exists because of how bugs get reported: from a phone, never plugged
+/// into a Mac when the bug happens. The log has the answers in it (`layout:`
+/// names every terminal resize with its before-and-after size, `health:` the
+/// cause of every reconnect), and `OSLogStore(scope: .currentProcessIdentifier)`
+/// lets the app read what it wrote itself, so the answer travels as a
+/// screenshot instead. Nothing is collected, uploaded or persisted beyond
+/// what the system already keeps — it is the same log `log stream` would
+/// show, shown where the problem was seen.
 enum DiagnosticsLog {
     struct Entry: Identifiable {
         let id = UUID()

@@ -216,15 +216,14 @@ enum ClipboardImageReader {
 
 /// What the attachment flow needs from a transport: one call that lands bytes
 /// in the app's remote uploads directory and returns the absolute path.
-/// `SSHSession` provides the real SFTP implementation; tests provide a fake.
+/// The Rust session's lent connection provides it (``BorrowedHost``); tests
+/// provide a fake.
 protocol FileUploader: Sendable {
     func uploadToUploadsDirectory(
         _ data: Data,
         named filename: String,
         progress: (@Sendable (Double) -> Void)?) async throws -> String
 }
-
-extension SSHSession: FileUploader {}
 
 // MARK: - Controller
 

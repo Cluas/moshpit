@@ -13,6 +13,7 @@ use russh::client::{self, AuthResult, DisconnectReason, KeyboardInteractiveAuthR
 use russh::keys::{Algorithm, EcdsaCurve, HashAlg, PrivateKeyWithHashAlg, PublicKeyOrCertificate};
 use russh::{ChannelMsg, Disconnect, MethodKind};
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
+use tokio::net::TcpStream;
 use tokio::sync::watch;
 use tokio_util::sync::{CancellationToken, WaitForCancellationFutureOwned};
 
@@ -21,6 +22,7 @@ use crate::channel::{Output, Process, PtyRequest};
 use crate::dial;
 use crate::error::SshError;
 use crate::host_key::{HostKey, HostKeyPolicy, HostKeyRefusal};
+use crate::questions::{SignInQuestion, SignInQuestions, reads_as_password};
 use crate::sftp::Sftp;
 use crate::target::{ConnectOptions, Target};
 use crate::upload;
@@ -90,17 +92,34 @@ struct Inner {
 impl Ssh {
     /// Dials (straight or through the proxy), checks the host key with
     /// `policy`, signs in. Never retries: the session layer owns reconnects.
+    /// What the server asks at sign-in beyond the password is never
+    /// answered ([`Ssh::connect_asking`] asks the person).
     pub async fn connect(
         target: &Target,
         auth: Auth,
         policy: Arc<dyn HostKeyPolicy>,
         options: &ConnectOptions,
     ) -> Result<Ssh, SshError> {
+        Self::connect_asking(target, auth, policy, None, options).await
+    }
+
+    /// [`Ssh::connect`], with `questions` answering what the server asks at
+    /// sign-in that the saved password doesn't (keyboard-interactive: a
+    /// one-time code, B563); the time the person takes doesn't count
+    /// against the handshake.
+    pub async fn connect_asking(
+        target: &Target,
+        auth: Auth,
+        policy: Arc<dyn HostKeyPolicy>,
+        questions: Option<Arc<dyn SignInQuestions>>,
+        options: &ConnectOptions,
+    ) -> Result<Ssh, SshError> {
         let stream = dial::dial(&target.host, target.port, options).await?;
-        let peer = match options.proxy {
+        let peer_of = |stream: &TcpStream| match options.proxy {
             None => stream.peer_addr().ok(),
             Some(_) => None,
         };
+        let peer = peer_of(&stream);
 
         let kill = CancellationToken::new();
         // Whatever happens below — a timeout, an error, the caller dropping
@@ -110,39 +129,76 @@ impl Ssh {
         let waiting = Waiting::new();
         let decided = Arc::new(Mutex::new(Decided::default()));
         let closing = Arc::new(AtomicBool::new(false));
-        let (end_tx, end_rx) = watch::channel(None);
-        let handler = ClientHandler {
-            host: target.host.clone(),
-            port: target.port,
-            policy,
-            waiting: waiting.clone(),
-            decided: decided.clone(),
-            closing: closing.clone(),
-            end: end_tx,
-            kill: kill.clone(),
+        // Each dial has its own end: what a dial given up says of itself is
+        // not the connection's.
+        let handler = |older: Option<&'static str>| {
+            let (end, ended) = watch::channel(None);
+            let handler = ClientHandler {
+                host: target.host.clone(),
+                port: target.port,
+                policy: policy.clone(),
+                older,
+                waiting: waiting.clone(),
+                decided: decided.clone(),
+                closing: closing.clone(),
+                end,
+                kill: kill.clone(),
+            };
+            (handler, ended)
         };
-        let config = Arc::new(client_config(options));
         let stalled = Arc::new(AtomicBool::new(false));
         let heard = Arc::new(Heard::new());
-        let stream = Killable::new(stream, kill.clone(), stalled.clone(), heard.clone());
+        let killable = |stream| Killable::new(stream, kill.clone(), stalled.clone(), heard.clone());
 
         let handshake = async {
-            let mut handle = client::connect_stream(config, stream, handler)
-                .await
-                .map_err(|e| handshake_error(e, target, &decided))?;
-            sign_in(&mut handle, target, auth, &waiting).await?;
-            Ok::<_, SshError>(handle)
+            let (first, ended) = handler(None);
+            let opened = client::connect_stream(
+                Arc::new(client_config(options, false)),
+                killable(stream),
+                first,
+            )
+            .await;
+            let (mut handle, peer, ended) = match opened {
+                Ok(handle) => (handle, peer, ended),
+                Err(e) => match handshake_error(e, target, &decided) {
+                    // B564: a server whose host key is signed with SHA-1
+                    // only is dialled again, offered that alone — never
+                    // chosen over anything better, and known for certain
+                    // to be what the key exchange used.
+                    SshError::Incompatible {
+                        what: "host key",
+                        theirs,
+                        ..
+                    } if theirs.iter().any(|name| name == OLDER_HOST_KEY.as_str()) => {
+                        let stream = dial::dial(&target.host, target.port, options).await?;
+                        let peer = peer_of(&stream);
+                        let (again, ended) = handler(Some(OLDER_HOST_KEY.as_str()));
+                        let handle = client::connect_stream(
+                            Arc::new(client_config(options, true)),
+                            killable(stream),
+                            again,
+                        )
+                        .await
+                        .map_err(|e| handshake_error(e, target, &decided))?;
+                        (handle, peer, ended)
+                    }
+                    error => return Err(error),
+                },
+            };
+            sign_in(&mut handle, target, auth, &waiting, questions.as_deref()).await?;
+            Ok::<_, SshError>((handle, peer, ended))
         };
-        let handle = match waiting.within(options.handshake_timeout, handshake).await {
-            Some(result) => result?,
-            None => {
-                return Err(SshError::HandshakeTimeout {
-                    host: target.host.clone(),
-                    port: target.port,
-                    timeout: options.handshake_timeout,
-                });
-            }
-        };
+        let (handle, peer, end_rx) =
+            match waiting.within(options.handshake_timeout, handshake).await {
+                Some(result) => result?,
+                None => {
+                    return Err(SshError::HandshakeTimeout {
+                        host: target.host.clone(),
+                        port: target.port,
+                        timeout: options.handshake_timeout,
+                    });
+                }
+            };
         abandon.disarm();
 
         let host_key = decided
@@ -173,6 +229,12 @@ impl Ssh {
 
     pub fn target(&self) -> &Target {
         &self.inner.target
+    }
+
+    /// `ssh-rsa` when the server offered no host-key algorithm but that
+    /// one (B564): worth saying, never a reason to refuse.
+    pub fn older_host_key_algorithm(&self) -> Option<&'static str> {
+        self.inner.host_key.older_algorithm()
     }
 
     /// The address the connection reached, when it went straight to the
@@ -473,9 +535,16 @@ const CLOSE_GRACE: Duration = Duration::from_secs(2);
 /// this client the same key it showed the app (and the fingerprint trusted
 /// then still matches). RSA, which the app never accepted as a host key,
 /// comes last, SHA-2 only.
-fn client_config(options: &ConnectOptions) -> client::Config {
+///
+/// `older`: the dial again for a server that offers no host-key algorithm
+/// but [`OLDER_HOST_KEY`] (B564), which offers that alone.
+fn client_config(options: &ConnectOptions, older: bool) -> client::Config {
     let mut preferred = russh::Preferred::DEFAULT.clone();
-    preferred.key = HOST_KEY_ORDER.into();
+    preferred.key = if older {
+        (&[OLDER_HOST_KEY][..]).into()
+    } else {
+        HOST_KEY_ORDER.into()
+    };
     preferred.compression = (&[russh::compression::NONE][..]).into();
     client::Config {
         preferred,
@@ -487,7 +556,14 @@ fn client_config(options: &ConnectOptions) -> client::Config {
     }
 }
 
+/// The host-key algorithm of a server that offers nothing better: `ssh-rsa`,
+/// signed with SHA-1 (an old dropbear, an OpenSSH before 7.2). Used only
+/// then, on a dial of its own, and said where the person sees it (B564).
+pub const OLDER_HOST_KEY: Algorithm = Algorithm::Rsa { hash: None };
+
 /// `SSHKeyExchangeStateMachine.bundledServerHostKeyAlgorithms`, then RSA.
+/// [`OLDER_HOST_KEY`] is not here: it is offered only when the server has
+/// nothing in this list.
 pub const HOST_KEY_ORDER: &[Algorithm] = &[
     Algorithm::Ed25519,
     Algorithm::Ecdsa {
@@ -512,12 +588,18 @@ async fn sign_in(
     target: &Target,
     auth: Auth,
     waiting: &Waiting,
+    questions: Option<&dyn SignInQuestions>,
 ) -> Result<(), SshError> {
     let user = target.user.clone();
     let closed = |e: russh::Error| SshError::Handshake {
         host: target.host.clone(),
         port: target.port,
         reason: format!("closed during sign-in: {e}"),
+    };
+    let asked = Asking {
+        host: &target.host,
+        questions,
+        waiting,
     };
     let (method, result) = match auth {
         Auth::Password(password) => {
@@ -534,17 +616,13 @@ async fn sign_in(
                 } if !remaining_methods.contains(&MethodKind::Password)
                     && remaining_methods.contains(&MethodKind::KeyboardInteractive) =>
                 {
-                    match keyboard_interactive(handle, &user, &password)
+                    let answered = keyboard_interactive(handle, &user, Some(&password), &asked)
                         .await
-                        .map_err(closed)?
-                    {
-                        Some(result) => ("keyboard-interactive", result),
-                        None => {
-                            return Err(SshError::InteractivePrompts {
-                                host: target.host.clone(),
-                            });
-                        }
-                    }
+                        .map_err(closed)?;
+                    (
+                        "keyboard-interactive",
+                        interactive_result(answered, target)?,
+                    )
                 }
                 result => ("password", result),
             }
@@ -600,7 +678,7 @@ async fn sign_in(
                 waiting: waiting.clone(),
             };
             let result = handle
-                .authenticate_publickey_with(user, public_key, hash, &mut signer)
+                .authenticate_publickey_with(user.clone(), public_key, hash, &mut signer)
                 .await
                 .map_err(|e| match e {
                     PlatformSignError::Signer(e) => SshError::Signer(e),
@@ -608,6 +686,26 @@ async fn sign_in(
                 })?;
             ("publickey", result)
         }
+    };
+    // B565: a key (or a password) that was only the first factor, with
+    // keyboard-interactive the second (`AuthenticationMethods
+    // publickey,keyboard-interactive`, the common 2FA setup): every prompt
+    // of the second is the person's — the saved password, if any, was the
+    // first factor's. It read as a wrong key.
+    let (method, result) = match result {
+        AuthResult::Failure {
+            remaining_methods,
+            partial_success: true,
+        } if remaining_methods.contains(&MethodKind::KeyboardInteractive) => {
+            let answered = keyboard_interactive(handle, &user, None, &asked)
+                .await
+                .map_err(closed)?;
+            (
+                "keyboard-interactive",
+                interactive_result(answered, target)?,
+            )
+        }
+        result => (method, result),
     };
     match result {
         AuthResult::Success => Ok(()),
@@ -633,50 +731,115 @@ async fn sign_in(
     }
 }
 
+/// Who answers a keyboard-interactive round's prompts besides the saved
+/// password: the person, through `questions`, when there is one.
+struct Asking<'a> {
+    host: &'a str,
+    questions: Option<&'a dyn SignInQuestions>,
+    waiting: &'a Waiting,
+}
+
+/// The server's verdict on a keyboard-interactive sign-in, or why there is
+/// none.
+fn interactive_result(answered: Interactive, target: &Target) -> Result<AuthResult, SshError> {
+    match answered {
+        Interactive::Done(result) => Ok(result),
+        Interactive::Unanswerable => Err(SshError::InteractivePrompts {
+            host: target.host.clone(),
+        }),
+        Interactive::Declined => Err(SshError::SignInDeclined {
+            host: target.host.clone(),
+        }),
+    }
+}
+
+/// How a keyboard-interactive sign-in ended.
+enum Interactive {
+    /// The server's verdict.
+    Done(AuthResult),
+    /// A prompt only the person can answer, and nobody to ask: the round
+    /// is left unanswered.
+    Unanswerable,
+    /// The person declined a prompt.
+    Declined,
+}
+
 /// The saved password, given through keyboard-interactive (B393), for a
-/// server that takes a password only by asking for it. A round asking for
-/// one hidden answer is answered with the password, once; a round asking
-/// nothing (PAM's closing one) is answered empty. Anything else is the
-/// person's to answer, not the saved password's: a prompt shown as typed,
-/// several hidden ones at once (a password and a code), a second hidden
-/// one (a one-time code) — `None`, with the round left unanswered.
+/// server that takes a password only by asking for it: a hidden prompt
+/// that reads as the password's ([`reads_as_password`]) gets it, once. A
+/// round asking nothing (PAM's closing one) is answered empty. Every other
+/// prompt — a one-time code, a token, a prompt shown as typed, a password
+/// asked again — is the person's (B563): asked with the server's words
+/// when there is someone to ask, else the round is left unanswered. A
+/// one-time code asked before the password used to get the password.
+/// Without a saved password (a second factor after a key, B565) every
+/// prompt is the person's.
 async fn keyboard_interactive(
     handle: &mut client::Handle<ClientHandler>,
     user: &str,
-    password: &str,
-) -> Result<Option<AuthResult>, russh::Error> {
+    password: Option<&str>,
+    asking: &Asking<'_>,
+) -> Result<Interactive, russh::Error> {
     let mut response = handle
         .authenticate_keyboard_interactive_start(user, None::<String>)
         .await?;
     let mut answered = false;
     for _ in 0..KEYBOARD_INTERACTIVE_ROUNDS {
         let answers = match response {
-            KeyboardInteractiveAuthResponse::Success => return Ok(Some(AuthResult::Success)),
+            KeyboardInteractiveAuthResponse::Success => {
+                return Ok(Interactive::Done(AuthResult::Success));
+            }
             KeyboardInteractiveAuthResponse::Failure {
                 remaining_methods,
                 partial_success,
             } => {
-                return Ok(Some(AuthResult::Failure {
+                return Ok(Interactive::Done(AuthResult::Failure {
                     remaining_methods,
                     partial_success,
                 }));
             }
-            KeyboardInteractiveAuthResponse::InfoRequest { prompts, .. } => {
-                match prompts.as_slice() {
-                    [] => Vec::new(),
-                    [prompt] if !prompt.echo && !answered => {
+            KeyboardInteractiveAuthResponse::InfoRequest {
+                name,
+                instructions,
+                prompts,
+            } => {
+                let mut answers = Vec::with_capacity(prompts.len());
+                for prompt in &prompts {
+                    if let Some(password) = password
+                        && !prompt.echo
+                        && !answered
+                        && reads_as_password(&prompt.prompt)
+                    {
                         answered = true;
-                        vec![password.to_owned()]
+                        answers.push(password.to_owned());
+                        continue;
                     }
-                    _ => return Ok(None),
+                    let Some(questions) = asking.questions else {
+                        return Ok(Interactive::Unanswerable);
+                    };
+                    let question = SignInQuestion {
+                        name: name.clone(),
+                        instructions: instructions.clone(),
+                        prompt: prompt.prompt.clone(),
+                        echo: prompt.echo,
+                    };
+                    match asking
+                        .waiting
+                        .on_person(questions.ask(asking.host, &question))
+                        .await
+                    {
+                        Some(answer) => answers.push(answer),
+                        None => return Ok(Interactive::Declined),
+                    }
                 }
+                answers
             }
         };
         response = handle
             .authenticate_keyboard_interactive_respond(answers)
             .await?;
     }
-    Ok(None)
+    Ok(Interactive::Unanswerable)
 }
 
 /// How many keyboard-interactive rounds are answered before the server is
@@ -726,6 +889,20 @@ fn handshake_error(e: russh::Error, target: &Target, decided: &Mutex<Decided>) -
             HostKeyRefusal::Locked => SshError::HostKeysLocked { host, port },
         };
     }
+    if let russh::Error::NoCommonAlgo { kind, theirs, .. } = &e {
+        return SshError::Incompatible {
+            host,
+            port,
+            what: match kind {
+                russh::AlgorithmKind::Kex => "key exchange",
+                russh::AlgorithmKind::Key => "host key",
+                russh::AlgorithmKind::Cipher => "cipher",
+                russh::AlgorithmKind::Mac => "MAC",
+                russh::AlgorithmKind::Compression => "compression",
+            },
+            theirs: theirs.clone(),
+        };
+    }
     SshError::Handshake {
         host,
         port,
@@ -744,6 +921,8 @@ struct ClientHandler {
     host: String,
     port: u16,
     policy: Arc<dyn HostKeyPolicy>,
+    /// The older host-key algorithm this dial offers alone, when it does.
+    older: Option<&'static str>,
     waiting: Waiting,
     decided: Arc<Mutex<Decided>>,
     closing: Arc<AtomicBool>,
@@ -765,7 +944,8 @@ impl client::Handler for ClientHandler {
             PublicKeyOrCertificate::Certificate(cert) => {
                 russh::keys::PublicKey::from(cert.public_key().clone())
             }
-        });
+        })
+        .negotiated_as(self.older);
         self.decided.lock().unwrap_or_else(|e| e.into_inner()).seen = Some(key.clone());
         let verdict = tokio::select! {
             verdict = self.policy.check(&self.host, self.port, &key, &self.waiting) => verdict,

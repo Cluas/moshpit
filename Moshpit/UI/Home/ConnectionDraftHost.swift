@@ -4,8 +4,8 @@ import Foundation
 // (`crates/app/src/connection_form.rs`, through `crates/ffi/src/app.rs`),
 // the one Android runs too: ``ConnectionDraft`` is its record, and its
 // rules — the ports, Save, the credential a save points the connection at
-// (B294, B298) — are Rust functions. Both iOS forms drive it: the SwiftUI
-// one (``AddConnectionView``) and the NSH one (``ConnectionFormNSHPage``).
+// (B294, B298) — are Rust functions. The iOS form, NSH's
+// (``ConnectionFormNSHPage``), drives it.
 //
 // What stays here is the host's: the password and the pasted key
 // (``ConnectionSecrets``), which never reach Rust — the model hears only
@@ -26,25 +26,10 @@ extension ConnectionDraft {
             ?? connectionDraftNew(moshByDefault: c.connectionProtocol == .mosh)
     }
 
-    var authMethod: AuthMethod {
-        get { auth == .key ? .key : .password }
-        set { auth = newValue == .key ? .key : .password }
-    }
-
     /// The managed key picked from SSH Keys; nil: paste a PEM.
     var selectedKeyId: UUID? {
         get { selectedKey.flatMap(UUID.init(uuidString:)) }
         set { selectedKey = newValue?.uuidString }
-    }
-
-    var predictMode: PredictMode {
-        get { PredictMode(rawValue: predictModeRaw) ?? .adaptive }
-        set { predictModeRaw = newValue.rawValue }
-    }
-
-    var multiplexer: Multiplexer {
-        get { Multiplexer(rawValue: multiplexerRaw) ?? .tmux }
-        set { multiplexerRaw = newValue.rawValue }
     }
 
     /// Save's rule: a name, a host, ports that are ports, and something to
@@ -52,19 +37,6 @@ extension ConnectionDraft {
     func canSave(keys: [SSHKeyRecord], secrets: ConnectionSecrets) -> Bool {
         connectionDraftCanSave(draft: self, given: secrets.given, keys: keys.map(KeyRecord.init))
     }
-
-    /// The port field holds no port (the form says so under it).
-    var portIsWrong: Bool { connectionDraftPortIsWrong(draft: self) }
-
-    /// The proxy's port field holds no port, while the proxy is on.
-    var proxyPortIsWrong: Bool { connectionDraftProxyPortIsWrong(draft: self) }
-
-    /// The connection edited keeps a key that saving with none picked or
-    /// pasted keeps.
-    var keepsStoredKey: Bool { connectionDraftKeepsStoredKey(draft: self) }
-
-    /// The connection edited keeps a password of its own.
-    var keepsStoredPassword: Bool { connectionDraftKeepsStoredPassword(draft: self) }
 
     /// `connection` with the draft's fields (the ones saving writes).
     func applied(to connection: ServerConnection, settings: AppSettings) -> ServerConnection {
@@ -82,17 +54,24 @@ extension ConnectionDraft {
     /// saved, the item the connection owned and no longer names (it signs
     /// in with a managed key now, B325) goes to `release`.
     ///
-    /// A connection now pointing at another host or port (B328) first has
-    /// its push pairing forgotten (`forgetPairing`, ``HostCare`` by
-    /// default): it belongs to the box it pointed at before, which would go
-    /// on pushing under it. That is the one step that can fail, so it goes
-    /// first, and a phone that can't let go saves nothing
-    /// (``PushPairingForgetFailure``).
+    /// A connection now pointing at another host or port (B328) has its
+    /// push pairing forgotten (`forgetPairing`, ``HostCare`` by default): it
+    /// belongs to the box it pointed at before, which would go on pushing
+    /// under it. A phone that can't let go saves nothing
+    /// (``PushPairingForgetFailure``). It comes after the keychain write
+    /// (B534): a write that failed had already lost the pairing. A move's
+    /// new secret goes to a fresh item (the plan's), so a failed forget is
+    /// undone by deleting that item, and the record kept still signs in
+    /// with its own.
     @MainActor
     func save(existing: ServerConnection?, store: ConnectionStore, keychain: KeychainService,
               settings: AppSettings, keys: [SSHKeyRecord], secrets: ConnectionSecrets,
               release: (String) async -> Void = { _ in },
               forgetPairing: ((UUID) throws -> Void)? = nil) async throws {
+        // The record as saved now, not as the form opened it: one deleted
+        // meanwhile is refused (B536), where the update used to change
+        // nothing and the form closed as saved.
+        let existing = existing.flatMap { store.saved($0.id) }
         let plan = try connectionDraftSavePlan(
             draft: self, existing: existing.map(ConnectionRecord.init),
             fresh: ConnectionRecord(ServerConnection()), keys: keys.map(KeyRecord.init),
@@ -100,12 +79,6 @@ extension ConnectionDraft {
             udpEnd: Int64(settings.udpRangeEnd), newRef: keychain.generateRef())
         guard let connection = ServerConnection(plan.connection) else {
             throw ConnectionSaveRefusal.Invalid(why: "not a UUID: \(plan.connection.id)")
-        }
-        if plan.moved {
-            try (forgetPairing ?? { try HostCare.shared.hostChanged($0) })(connection.id)
-            // What this process learned about the old box; the store's
-            // update forgets the stored copy (B431).
-            HostCapabilityCache.shared.forget(connection.id)
         }
         if let write = plan.write, let ref = connection.keychainRef {
             switch write {
@@ -123,6 +96,20 @@ extension ConnectionDraft {
                     throw ConnectionKeychainFailure(secret: .key, error: error)
                 }
             }
+        }
+        if plan.moved {
+            do {
+                try (forgetPairing ?? { try HostCare.shared.hostChanged($0) })(connection.id)
+            } catch {
+                // The fresh item nothing names yet goes with the save.
+                if plan.write != nil, let ref = connection.keychainRef, ref != existing?.keychainRef {
+                    try? await keychain.delete(forRef: ref)
+                }
+                throw error
+            }
+            // What this process learned about the old box; the store's
+            // update forgets the stored copy (B431).
+            HostCapabilityCache.shared.forget(connection.id)
         }
         // Drop any cached (possibly stale) credential so the new one is used.
         await SSHService.shared.clearCachedSecret(for: connection.id)
@@ -157,6 +144,8 @@ extension ConnectionSaveRefusal: CustomStringConvertible {
             String(localized: "Could not save")
         case .Invalid(let why):
             why
+        case .Gone:
+            String(localized: "This connection was deleted while you were editing it.")
         }
     }
 }

@@ -6,8 +6,7 @@ struct MoshpitApp: App {
     @State private var store: ConnectionStore
     @State private var settings: AppSettings
     @State private var metrics: SessionMetricsRegistry
-    // Every store on the side the storage switch picked for this launch
-    // (RustStoreSwitch): its own Swift code, or the Rust core's store.
+    // Every store on the Rust core's store (AppStores).
     @State private var shortcuts = AppStores.shortcuts()
     @State private var sshKeys = AppStores.sshKeys()
     @State private var themes = AppStores.themes()
@@ -31,12 +30,12 @@ struct MoshpitApp: App {
 
     init() {
         // The device's protected-data state, made here on the main thread
-        // so the keychain readers that ask it from their own threads (the
-        // trusted host keys, B226) never wait on the main queue for it.
+        // so the stores that ask it from their own threads (the
+        // sealed-launch rule) never wait on the main queue for it.
         _ = ProtectedDataFlag.app
-        // The push pairings through the Rust store when its switch is on —
-        // before anything below reads one.
-        RustStoreSwitch.installPushPairings()
+        // The push pairings through the Rust store, before anything below
+        // reads one.
+        AppStores.installPushPairings()
         let metrics = SessionMetricsRegistry()
         let settings = AppSettings.shared
         let store = AppStores.connections()

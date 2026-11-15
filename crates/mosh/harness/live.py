@@ -1,24 +1,25 @@
 #!/usr/bin/env python3
-"""Live experiments: the app's Swift MoshTransport and the Rust port against
-a real mosh-server on this Mac, through a UDP proxy that can drop either
-direction and records every datagram.
+"""Live experiments: the Rust mosh client (crates/mosh) against a real
+mosh-server on this Mac, through a UDP proxy that can drop either direction
+and records every datagram. (They compared the app's Swift client too,
+until it was deleted (E2); divergences.json keeps what they found.)
 
-    live.py throwaway [--client swift|rust|both] [--count N] [--interval MS]
-    live.py ttl       [--client swift|rust|both]
-    live.py redraw    [--client swift|rust|both]
-    live.py idle      [--client swift|rust|both|mosh|all]
-    live.py paste     [--client swift|rust|both|mosh|all] [--sizes N,N]
+    live.py throwaway [--count N] [--interval MS]
+    live.py ttl
+    live.py redraw
+    live.py idle      [--client rust|mosh|all]
+    live.py paste     [--client rust|mosh|all] [--sizes N,N]
                       [--pattern periodic|random] [--loss P] [--delay MS]
-    live.py typing    [--client swift|rust|both|mosh|all] [--count N]
+    live.py typing    [--client rust|mosh|all] [--count N]
                       [--interval MS] [--loss P] [--delay MS] [--seed N]
-    live.py exit      [--client swift|rust|both|mosh|all]
-    live.py refused   [--client swift|rust|both|mosh|all]
-    live.py rebuild   [--client swift|rust|both]
+    live.py exit      [--client rust|mosh|all]
+    live.py refused   [--client rust|mosh|all]
+    live.py rebuild
     live.py capture   [--out DIR]        record a session's wire datagrams
     live.py [...] --no-build
 
-MOSH_HARNESS_SWIFT / MOSH_HARNESS_RUST run other builds of the two clients
-(a copy of the binaries from before a change, say) instead of this tree's.
+MOSH_HARNESS_RUST runs another build of the client (a copy of the binary
+from before a change, say) instead of this tree's.
 
 The server runs `mosh-server new -i 127.0.0.1` with a small Python program
 as its command: it logs every byte it reads (raw tty, no echo) with a
@@ -47,9 +48,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 CRATE = os.path.dirname(HERE)
 REPO = os.path.dirname(os.path.dirname(CRATE))
 WORK = os.path.join(REPO, "target", "mosh-harness")
-BUILT_SWIFT = os.path.join(WORK, "mosh-swift")
 BUILT_RUST = os.path.join(REPO, "target", "release", "examples", "mosh_harness")
-SWIFT = os.environ.get("MOSH_HARNESS_SWIFT") or BUILT_SWIFT
 RUST = os.environ.get("MOSH_HARNESS_RUST") or BUILT_RUST
 NICE = ["nice", "-n", "10"]
 
@@ -110,8 +109,6 @@ while True:
 
 
 def build():
-    subprocess.run(NICE + [os.path.join(HERE, "build-swift.sh"), BUILT_SWIFT], check=True,
-                   stdout=subprocess.DEVNULL)
     env = dict(os.environ, CARGO_BUILD_JOBS="2")
     subprocess.run(NICE + ["cargo", "build", "--quiet", "--release", "-p", "moshpit-mosh",
                            "--example", "mosh_harness"], check=True, cwd=REPO, env=env)
@@ -294,7 +291,7 @@ class Proxy(threading.Thread):
 
 def run_client(client, proxy, server, ttl, steps, schedule=()):
     """Runs a client; `schedule` is [(seconds after start, callback)]."""
-    binary = SWIFT if client == "swift" else RUST
+    binary = RUST
     argv = NICE + [binary, "live", "127.0.0.1", str(proxy.port), server.key, str(ttl)] + steps
     proc = subprocess.Popen(argv, stdout=subprocess.PIPE, text=True)
     started = time.time()
@@ -316,7 +313,7 @@ def frames(lines):
 
 
 def clients(choice):
-    return {"both": ["swift", "rust"], "all": ["swift", "rust", "mosh"]}.get(choice, [choice])
+    return {"all": ["rust", "mosh"]}.get(choice, [choice])
 
 
 def run_mosh_client(proxy, server, seconds, schedule=(), writes=(), typed=None, exited=None):
@@ -782,11 +779,10 @@ def refused(args):
 def rebuild(args):
     """Three forced resumes 600 ms apart (a new flow each, as after a long
     suspension) while the remote prints a line every 100 ms: does output
-    keep coming, and how many receives did the Swift client have pending
-    at once on each flow (it must be one; the Rust driver reads its one
-    socket)? A cancelled NWConnection completes its pending receive with
-    neither data nor error, which used to arm a second receive loop on the
-    replacement flow, one more per rebuild."""
+    keep coming on each flow (one socket read at a time)? The Swift client's
+    cancelled NWConnection completed its pending receive with neither data
+    nor error, which armed a second receive loop on the replacement flow,
+    one more per rebuild."""
     for client in clients(args.client):
         server = Server(screen="tick:100")
         proxy = Proxy(server.port)
@@ -841,7 +837,7 @@ def main():
     parser.add_argument("experiment",
                         choices=["throwaway", "ttl", "redraw", "idle", "paste", "typing", "exit",
                                  "refused", "rebuild", "capture"])
-    parser.add_argument("--client", choices=["swift", "rust", "both", "mosh", "all"], default="both")
+    parser.add_argument("--client", choices=["rust", "mosh", "all"], default="rust")
     parser.add_argument("--count", type=int, default=1100)
     parser.add_argument("--interval", type=int, default=15)
     parser.add_argument("--sizes", default="4194000,4194500")

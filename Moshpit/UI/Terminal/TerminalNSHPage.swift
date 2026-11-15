@@ -2,17 +2,14 @@ import MoshpitKit
 import SwiftUI
 import UIKit
 
-/// The terminal screen drawn by NSH (`ui/src/terminal`), in place of
-/// ``TerminalScreen``'s SwiftUI chrome behind the switch
-/// `MOSHPIT_NSH_TERMINAL` (``NSHScreen/terminal``), read once when the
-/// screen is made.
+/// The terminal screen drawn by NSH (`ui/src/terminal`, ``NSHScreen/terminal``).
 ///
 /// ``TerminalScreen`` stays the owner of everything that is not drawn: the
 /// session and its lifecycle (connect, reconnect, the protocol switch,
 /// leaving), the person's keyboard intent, the sheets, popovers, cards and
 /// pickers it presents, the hardware keyboard's commands. It reads what the
-/// chrome shows from its session as its SwiftUI body does
-/// (``TerminalNSHChrome``) and hands it to this page; the page posts it to
+/// chrome shows from its session (``TerminalNSHChrome``) and hands it to
+/// this page; the page posts it to
 /// the screen when it changes, and turns what the screen tells it into
 /// ``TerminalNSHIntent``s for the screen to perform. The terminal itself is
 /// the session's, shown by the page's ``TerminalNSHStage`` in the slot the
@@ -27,6 +24,8 @@ struct TerminalNSHPage<Anchors: View>: View {
     let model: TerminalNSHModel
     let chrome: TerminalNSHChrome
     let bar: TerminalNSHBar
+    /// The session's panes a sideways swipe walks.
+    let switcher: TerminalNSHSwitcher
     let diagnostics: TerminalNSHDiagnostics
     /// The panels' controllers, while each is up.
     let dictation: VoiceDictationController?
@@ -38,6 +37,8 @@ struct TerminalNSHPage<Anchors: View>: View {
     let geometryHeld: Bool
     let appearance: TerminalNSHStage.Appearance
     let onPaste: (String) -> Void
+    /// A swipe (or VoiceOver's step) asks for this pane: the page's order.
+    let onSelectPane: (String) -> Void
     let perform: (TerminalNSHIntent) -> Void
     var onFailure: () -> Void = {}
     /// The host's popovers and their anchors, laid over the page where the
@@ -67,6 +68,7 @@ struct TerminalNSHPage<Anchors: View>: View {
         // chrome one change late (the veil stayed up after the reconnect).
         .onChange(of: chrome) { _, new in model.update(new) }
         .onChange(of: bar) { _, new in model.update(new) }
+        .onChange(of: switcher) { _, new in model.update(new) }
         .onChange(of: diagnostics) { _, new in model.update(new) }
         .onChange(of: dictation.map(ObjectIdentifier.init)) { model.watch(dictation: dictation) }
         .onChange(of: attachment.map(ObjectIdentifier.init)) { model.watch(attachment: attachment) }
@@ -90,11 +92,13 @@ struct TerminalNSHPage<Anchors: View>: View {
 
     private func update() {
         model.stage.onPaste = onPaste
+        model.stage.onSwitchPane = { pane, _ in onSelectPane(pane) }
         model.stage.apply(appearance: appearance)
         model.stage.apply(focus: focus, geometryHeld: geometryHeld)
         model.stage.show(target, instant: chrome.still)
         model.update(chrome)
         model.update(bar)
+        model.update(switcher)
         model.update(diagnostics)
         model.watch(dictation: dictation)
         model.watch(attachment: attachment)
@@ -114,12 +118,18 @@ final class TerminalNSHModel {
     /// (B496): the chrome sends it to the page.
     private(set) var ground: UInt32?
 
+    /// The swipe's one-time hint was shown on this device
+    /// (``TerminalNSHSwitcher/hintSeenKey``).
+    private(set) var hintSeen = UserDefaults.standard.bool(forKey: TerminalNSHSwitcher.hintSeenKey)
+
     init() {
         stage.onGround = { [weak self] ground in self?.ground = ground }
+        stage.onSwiping = { [weak self] active in self?.surface?.post(["op": "swipe", "active": active]) }
     }
     @ObservationIgnored private weak var surface: NSHSurface?
     @ObservationIgnored private(set) var chrome: TerminalNSHChrome?
     @ObservationIgnored private(set) var bar: TerminalNSHBar?
+    @ObservationIgnored private(set) var switcher: TerminalNSHSwitcher?
     @ObservationIgnored private(set) var diagnostics: TerminalNSHDiagnostics?
     /// Hangs the page's action sheets from the piece they belong to.
     @ObservationIgnored private let dialogAnchor = NSHDialogAnchor()
@@ -167,6 +177,7 @@ final class TerminalNSHModel {
         #endif
         if let chrome { surface.post(chrome.message) }
         if let bar { surface.post(bar.message) }
+        if let switcher { surface.post(switcher.message) }
         if let diagnostics { surface.post(diagnostics.message) }
         for (op, panel) in panels.sorted(by: { $0.key < $1.key }) {
             surface.post(TerminalNSHPanel.message(op, panel))
@@ -203,6 +214,12 @@ final class TerminalNSHModel {
         guard bar != self.bar else { return }
         self.bar = bar
         surface?.post(bar.message)
+    }
+
+    func update(_ switcher: TerminalNSHSwitcher) {
+        guard switcher != self.switcher else { return }
+        self.switcher = switcher
+        surface?.post(switcher.message)
     }
 
     func update(_ diagnostics: TerminalNSHDiagnostics) {
@@ -312,6 +329,18 @@ final class TerminalNSHModel {
                 dialogAnchor.arm(surface: surface, rect: pill)
             }
             return nil
+        case "neighbours":
+            // The panes either side, by the page's order (`switcher.rs`):
+            // what the stage's swipe rubber-bands against and switches to.
+            stage.setNeighbours(previous: message["previous"] as? String, next: message["next"] as? String)
+            return nil
+        case "swipe-hint":
+            // Shown once on this device; the terminal leans toward the pane
+            // a swipe would go to.
+            UserDefaults.standard.set(true, forKey: TerminalNSHSwitcher.hintSeenKey)
+            hintSeen = true
+            stage.nudge(forward: message["forward"] as? Bool ?? true)
+            return nil
         case "anchor":
             guard let name = message["name"] as? String,
                   let rect = (message["rect"] as? [Any])?.compactMap(NSHHostComponents.number),
@@ -405,6 +434,36 @@ enum TerminalNSHIntent: Equatable {
             self = .preview(panel)
         default: return nil
         }
+    }
+}
+
+// MARK: - The swipe's panes
+
+/// The session's panes a sideways swipe walks (`ui/src/terminal/model.rs`'s
+/// `Switcher`): `{"op": "switcher", "tree": {…} | null, "hintSeen": bool}`.
+/// The tree is the live controller's, whole for the active session (the
+/// breadcrumb's is trimmed to the active pane); none while the breadcrumb
+/// has no live plan: a reconnect's kept tree isn't swiped through.
+struct TerminalNSHSwitcher: Equatable {
+    var tree: BreadcrumbPlan.Tree?
+    var hintSeen = false
+
+    /// Where the hint's once-on-this-device is kept.
+    static let hintSeenKey = "MoshpitPaneSwipeHintSeen"
+
+    /// `snapshot`'s active session, its windows and their panes, and their
+    /// stamps, in the breadcrumb tree's shape.
+    static func tree(snapshot: TmuxSnapshot, hooks: [String: AgentHook], mux: String) -> BreadcrumbPlan.Tree? {
+        guard let session = snapshot.activeSessionId else { return nil }
+        var trimmed = snapshot
+        trimmed.windows = snapshot.windows.filter { $0.value.sessionId == session }
+        trimmed.panes = snapshot.panes.filter { trimmed.windows[$0.value.windowId] != nil }
+        let kept = hooks.filter { trimmed.panes[$0.key] != nil }
+        return BreadcrumbPlan.Tree(mux: mux, attached: snapshot.isAttached, snapshot: trimmed, hooks: kept)
+    }
+
+    var message: [String: Any] {
+        ["op": "switcher", "tree": tree?.json ?? NSNull(), "hintSeen": hintSeen]
     }
 }
 

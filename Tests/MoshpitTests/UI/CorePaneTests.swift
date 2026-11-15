@@ -118,7 +118,7 @@ struct CorePaneTests {
         #expect(mp_term_abi_version() == UInt32(MP_TERM_ABI_VERSION), "this build links the terminal core")
         let surface = TerminalSurfaces.make(font: Self.font, grid: TerminalGrid(cols: 20, rows: 3))
         #expect(surface is CoreTerminalView)
-        let controller = TmuxSessionController(sshSession: MockTmuxTransport())
+        let controller = TerminalNSHTests.paneController()
         let pane = controller.surface(for: "%0")
         #expect(pane is CoreTerminalView)
         #expect(pane === controller.surface(for: "%0"))

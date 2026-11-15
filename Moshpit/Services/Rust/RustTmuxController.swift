@@ -1,17 +1,29 @@
 import Foundation
 import MoshpitKit
 import MoshpitFFI
+import Observation
 import QuartzCore
+import SwiftUI
 import UIKit
 
-/// tmux on the Rust core, as the terminal chrome reads tmux: a
-/// ``TmuxSessionController`` whose observable surface — the tree, the
-/// notice, the refresh spinner, the size-lease follower's veil, the agents'
-/// stamps — mirrors the core's controller (`TmuxReadModel`), whose pane
-/// terminals are fed by their byte channels, and whose every action is an
-/// intent to the core. The breadcrumb, the sheets, the Home tree, the
-/// follower's veil, swipes and scrolling work on it as they do on the Swift
-/// controller, unchanged; none of the Swift controller's own tmux logic runs.
+/// tmux on the Rust core, as the terminal chrome reads tmux: an observable
+/// surface — the tree, the notice, the refresh spinner, the size-lease
+/// follower's veil, the agents' stamps — that mirrors the core's controller
+/// (`TmuxReadModel`), pane terminals fed by their byte channels, and every
+/// action an intent to the core. The breadcrumb, the sheets, the Home tree,
+/// the follower's veil, swipes and scrolling read it.
+///
+/// It used to be a subclass of the Swift controller (`TmuxSessionController`)
+/// that overrode its every action; that controller is gone (E3), and what
+/// this one inherited from it lives here.
+///
+/// ### Contract
+///   - The observation-tracked surface is ``snapshot`` and the chrome's
+///     ``notice``, ``isRefreshing``, ``sizeFollow`` and ``agentHooksLoaded``.
+///     The pane terminals are never observed: a window switch must not
+///     destroy a terminal view.
+///   - ``surface(for:)`` returns the same terminal for the same pane for the
+///     pane's whole life.
 ///
 /// One per attach: a reconnect's new attach gets a fresh one (fresh pane
 /// terminals, as the core mints fresh channels), and the driver keeps the
@@ -33,8 +45,45 @@ import UIKit
 /// off a repaint not yet drawn.
 ///
 /// A pane's terminal is the core's view (docs/nsh/TERMINAL-VIEW.md).
+@Observable
 @MainActor
-final class RustTmuxController: TmuxSessionController {
+final class RustTmuxController: MultiplexerControlling {
+    /// `MultiplexerControlling.multiplexer`: the vocabulary and key hints
+    /// the sheets print.
+    nonisolated var multiplexer: Multiplexer { .tmux }
+
+    typealias Snapshot = TmuxSnapshot
+
+    // MARK: What the chrome observes (mirrored from the core)
+
+    private(set) var snapshot = Snapshot()
+    /// tmux's last word, or what the core refused (B250).
+    private(set) var notice: String?
+    private(set) var isRefreshing = false
+    /// The window another device holds the size lease on, while this one
+    /// follows it (the follower's veil).
+    private(set) var sizeFollow: SizeFollow?
+    struct SizeFollow: Equatable {
+        var windowId: String
+        var ownerLabel: String
+    }
+    /// Each pane's agent stamps (`@moshpit_*`), as the core last read them.
+    @ObservationIgnored private(set) var agentHooks: [String: AgentHook] = [:]
+    private(set) var agentHooksLoaded = false
+
+    // MARK: Who listens
+
+    /// A pane wrote output (the agent monitor's heuristic).
+    @ObservationIgnored var onPaneActivity: ((String) -> Void)?
+    /// A pane rang the bell.
+    @ObservationIgnored var onPaneBell: ((String) -> Void)?
+    /// The agent stamps were read again.
+    @ObservationIgnored var onAgentHooksUpdated: (() -> Void)?
+    /// A pinch settled on a font size.
+    @ObservationIgnored var onFontSizeCommitted: ((Double) -> Void)?
+    /// A host path in a pane was tapped.
+    @ObservationIgnored var onOpenRemotePath: ((String) -> Void)?
+
     /// The look new pane terminals take (and existing ones are moved to).
     struct Appearance: Equatable {
         var theme: TerminalTheme
@@ -52,20 +101,20 @@ final class RustTmuxController: TmuxSessionController {
 
     /// The core's attach this surface shows; nil until the attach lists its
     /// panes (the surface is up before tmux confirms, for the empty state).
-    var attach: UInt64?
-    private weak var driver: RustSessionDriver?
-    private var look: Appearance
+    @ObservationIgnored var attach: UInt64?
+    @ObservationIgnored private weak var driver: RustSessionDriver?
+    @ObservationIgnored private var look: Appearance
     /// The grid pane terminals are born at, until their view reports one.
-    private let birthGrid: (cols: Int, rows: Int)
-    private var panes: [String: PaneTerminal] = [:]
-    private var model: TmuxReadModel?
-    private var rowCarry = ScrollRowCarry()
+    @ObservationIgnored private let birthGrid: (cols: Int, rows: Int)
+    @ObservationIgnored private var panes: [String: PaneTerminal] = [:]
+    @ObservationIgnored private var model: TmuxReadModel?
+    @ObservationIgnored private var rowCarry = ScrollRowCarry()
     /// Whether a pane of this attach has been revealed.
-    private(set) var paintedSinceAttach = false
+    @ObservationIgnored private(set) var paintedSinceAttach = false
     /// What the core refused, worded here (B250): the notice, for as long
     /// as one of tmux's own lasts, unless tmux has one of its own to say.
-    private var refusal: String?
-    private var refusalClear: Task<Void, Never>?
+    @ObservationIgnored private var refusal: String?
+    @ObservationIgnored private var refusalClear: Task<Void, Never>?
 
     /// A pane's persistent terminal and what feeds it.
     private final class PaneTerminal {
@@ -83,14 +132,15 @@ final class RustTmuxController: TmuxSessionController {
     }
 
     /// The mosh sidecar's surface: no pane terminals.
-    let sidecar: Bool
-    init(driver: RustSessionDriver, appearance: Appearance, grid: (cols: Int, rows: Int),
+    @ObservationIgnored let sidecar: Bool
+    /// `driver` nil: a surface with no core behind it (the stage's tests),
+    /// whose actions go nowhere.
+    init(driver: RustSessionDriver?, appearance: Appearance, grid: (cols: Int, rows: Int),
          sidecar: Bool = false) {
         self.driver = driver
         look = appearance
         birthGrid = grid
         self.sidecar = sidecar
-        super.init(sshSession: RustNullTransport(), rendersOutput: !sidecar)
     }
 
     // MARK: Mirroring the core
@@ -132,8 +182,27 @@ final class RustTmuxController: TmuxSessionController {
         let follow = model.sizeFollowWindow.map {
             SizeFollow(windowId: $0, ownerLabel: model.sizeFollowOwner ?? "")
         }
-        mirrorRust(snapshot: snapshot, notice: model.notice ?? refusal, isRefreshing: model.refreshing,
-                   sizeFollow: follow, agentHooks: hooks, agentHooksLoaded: model.agentHooksLoaded)
+        publish(snapshot: snapshot, notice: model.notice ?? refusal, isRefreshing: model.refreshing,
+                sizeFollow: follow, agentHooks: hooks, agentHooksLoaded: model.agentHooksLoaded)
+    }
+
+    /// What the chrome reads, set only where it changed (each set is a
+    /// SwiftUI invalidation); a pane switch animates.
+    private func publish(snapshot new: Snapshot, notice: String?, isRefreshing: Bool,
+                         sizeFollow: SizeFollow?, agentHooks: [String: AgentHook],
+                         agentHooksLoaded: Bool) {
+        if snapshot != new {
+            if snapshot.activePaneId != nil, snapshot.activePaneId != new.activePaneId {
+                withAnimation(.easeInOut(duration: 0.22)) { snapshot = new }
+            } else {
+                snapshot = new
+            }
+        }
+        if self.notice != notice { self.notice = notice }
+        if self.isRefreshing != isRefreshing { self.isRefreshing = isRefreshing }
+        if self.sizeFollow != sizeFollow { self.sizeFollow = sizeFollow }
+        if self.agentHooks != agentHooks { self.agentHooks = agentHooks }
+        if self.agentHooksLoaded != agentHooksLoaded { self.agentHooksLoaded = agentHooksLoaded }
     }
 
     /// An intent to the core; one it refused says why, as the notice.
@@ -157,8 +226,8 @@ final class RustTmuxController: TmuxSessionController {
 
     /// The notice as it stands: tmux's own, else the refusal.
     private func showNotice() {
-        mirrorRust(snapshot: snapshot, notice: model?.notice ?? refusal, isRefreshing: isRefreshing,
-                   sizeFollow: sizeFollow, agentHooks: agentHooks, agentHooksLoaded: agentHooksLoaded)
+        publish(snapshot: snapshot, notice: model?.notice ?? refusal, isRefreshing: isRefreshing,
+                sizeFollow: sizeFollow, agentHooks: agentHooks, agentHooksLoaded: agentHooksLoaded)
     }
 
     /// The current attach's panes and their channels: each pane terminal
@@ -187,7 +256,6 @@ final class RustTmuxController: TmuxSessionController {
 
     func notePainted() {
         paintedSinceAttach = true
-        mirrorRustFirstFrame()
     }
 
     /// Stops reading every channel (the surface is done: replaced, or the
@@ -344,8 +412,9 @@ final class RustTmuxController: TmuxSessionController {
         coordinator.onOpenRemotePath = { [weak self] path in self?.onOpenRemotePath?(path) }
     }
 
-    /// Panes made before the session supplied it get theirs when it does.
-    override var pathLinksFactory: ((_ paneId: String) -> RemotePathLinks)? {
+    /// Host paths in a pane's output, confirmed for a link (W14b); panes
+    /// made before the session supplied it get theirs when it does.
+    @ObservationIgnored var pathLinksFactory: ((_ paneId: String) -> RemotePathLinks)? {
         didSet {
             for (paneId, pane) in panes where pane.coordinator.pathLinks == nil {
                 pane.coordinator.pathLinks = pathLinksFactory?(paneId)
@@ -386,11 +455,11 @@ final class RustTmuxController: TmuxSessionController {
 
     // MARK: The controller's surface, on the core
 
-    override func configureAppearance(theme: TerminalTheme, fontSize: Double,
-                                      fontName: String = "system",
-                                      cursorShape: CursorShape = .block,
-                                      cursorColorId: String = "teal",
-                                      cursorBlink: Bool = true) {
+    func configureAppearance(theme: TerminalTheme, fontSize: Double,
+                             fontName: String = "system",
+                             cursorShape: CursorShape = .block,
+                             cursorColorId: String = "teal",
+                             cursorBlink: Bool = true) {
         configure(Appearance(theme: theme, fontSize: fontSize, fontName: fontName,
                              cursorShape: cursorShape, cursorColorId: cursorColorId,
                              cursorBlink: cursorBlink))
@@ -413,57 +482,52 @@ final class RustTmuxController: TmuxSessionController {
         }
     }
 
-    override func surface(for paneId: String) -> TerminalSurface {
+    func surface(for paneId: String) -> TerminalSurface {
         paneTerminal(paneId).terminal
     }
 
-    override func coordinator(for paneId: String) -> SwiftTerminalView.Coordinator? {
+    func coordinator(for paneId: String) -> SwiftTerminalView.Coordinator? {
         panes[paneId]?.coordinator
     }
 
-    override var activeCoordinator: SwiftTerminalView.Coordinator? {
+    var activeCoordinator: SwiftTerminalView.Coordinator? {
         inputPaneId.flatMap { panes[$0]?.coordinator }
     }
 
-    override func selectWindow(_ windowId: String) { driver?.perform(.selectWindow(id: windowId)) }
-    override func selectSession(_ sessionId: String) { driver?.perform(.selectSession(id: sessionId)) }
-    override func selectPane(_ paneId: String) { driver?.perform(.selectPane(id: paneId)) }
-    override func switchPaneOrWindow(forward: Bool) {
+    func selectWindow(_ windowId: String) { driver?.perform(.selectWindow(id: windowId)) }
+    func selectSession(_ sessionId: String) { driver?.perform(.selectSession(id: sessionId)) }
+    func selectPane(_ paneId: String) { driver?.perform(.selectPane(id: paneId)) }
+    func switchPaneOrWindow(forward: Bool) {
         driver?.perform(.switchPaneOrWindow(forward: forward))
     }
-    override func newWindow(named name: String? = nil) { perform(.newWindow(name: name)) }
-    override func newWindow(inSession sessionId: String, named name: String?) {
+    func newWindow(named name: String? = nil) { perform(.newWindow(name: name)) }
+    func newWindow(inSession sessionId: String, named name: String?) {
         perform(.newWindowInSession(session: sessionId, name: name))
     }
-    override func newPane() { driver?.perform(.newPane) }
-    override func newPane(inWindow windowId: String) {
+    func newPane() { driver?.perform(.newPane) }
+    func newPane(inWindow windowId: String) {
         driver?.perform(.newPaneInWindow(window: windowId))
     }
-    override func newSession(named name: String? = nil) { perform(.newSession(name: name)) }
-    override func renameSession(_ sessionId: String, to name: String) {
+    func newSession(named name: String? = nil) { perform(.newSession(name: name)) }
+    func renameSession(_ sessionId: String, to name: String) {
         perform(.renameSession(session: sessionId, name: name))
     }
-    override func killSession(_ sessionId: String) { driver?.perform(.killSession(id: sessionId)) }
-    override func renameWindow(_ windowId: String, to name: String) {
+    func killSession(_ sessionId: String) { driver?.perform(.killSession(id: sessionId)) }
+    func renameWindow(_ windowId: String, to name: String) {
         perform(.renameWindow(window: windowId, name: name))
     }
-    override func killWindow(_ windowId: String) { driver?.perform(.killWindow(id: windowId)) }
-    override func killPane(_ paneId: String) { driver?.perform(.killPane(id: paneId)) }
-    override func refresh() { driver?.perform(.refresh) }
-    override func pollAgentHooks() { driver?.perform(.pollAgentHooks) }
-    override func takeSizeOwnership() { driver?.perform(.takeSizeOwnership) }
-    override func refreshActivePaneMouse() { driver?.perform(.scrollBegan) }
+    func killWindow(_ windowId: String) { driver?.perform(.killWindow(id: windowId)) }
+    func killPane(_ paneId: String) { driver?.perform(.killPane(id: paneId)) }
+    func refresh() { driver?.perform(.refresh) }
+    func pollAgentHooks() { driver?.perform(.pollAgentHooks) }
+    func takeSizeOwnership() { driver?.perform(.takeSizeOwnership) }
 
-    override func sendInput(_ data: Data, paneId: String) {
+    func sendInput(_ data: Data, paneId: String) {
         write(data, toPane: paneId)
     }
 
-    override func sendPaste(_ text: String, paneId: String) {
+    func sendPaste(_ text: String, paneId: String) {
         paste(text, toPane: paneId)
-    }
-
-    override func releaseScrollHolds() {
-        for pane in panes.values { pane.coordinator.releaseScrollHold() }
     }
 
     // Scrolling: a tick goes where the core routes it; a drag's pixels go
@@ -487,7 +551,9 @@ final class RustTmuxController: TmuxSessionController {
     ///   flips every half second for a ticking status line);
     /// - another mouse app gets the wheel while it isn't repainting (its
     ///   repaint would fight the wheel over the viewport);
-    /// - an alternate-screen pane otherwise nothing; a shell its history.
+    /// - an alternate-screen pane otherwise its rows go to the core, whose
+    ///   controller presses the arrow keys once tmux has said the mouse is
+    ///   off (B500: less, man, git log), else nothing; a shell its history.
     private func scrollRoute(_ pane: PaneTerminal) -> ScrollRoute {
         let wantsMouse = model?.wantsMouse ?? false
         let alternate = model?.altScreen ?? false
@@ -496,16 +562,16 @@ final class RustTmuxController: TmuxSessionController {
         if !alternate, pane.coordinator.surface?.isReadingScrollback == true { return .local }
         let streaming = CACurrentMediaTime() - (pane.feeder?.lastFedAt ?? 0) < 0.5
         if wantsMouse, !streaming { return .wheel }
-        return alternate ? .drop : .local
+        return alternate ? .wheel : .local
     }
 
-    override func scroll(lines: Int) {
+    func scroll(lines: Int) {
         guard lines != 0 else { return }
         driver?.perform(.scrollLines(lines: Int64(lines)))
     }
 
     @discardableResult
-    override func scroll(pixels dy: CGFloat) -> CGFloat {
+    func scroll(pixels dy: CGFloat) -> CGFloat {
         guard dy != 0, dy.isFinite, let paneId = inputPaneId, let pane = panes[paneId] else { return 0 }
         switch scrollRoute(pane) {
         case .wheel:
@@ -523,7 +589,7 @@ final class RustTmuxController: TmuxSessionController {
         }
     }
 
-    override func scrollDidEnd() {
+    func scrollDidEnd() {
         guard let paneId = inputPaneId, let pane = panes[paneId] else { return }
         if scrollRoute(pane) == .local {
             pane.coordinator.settleLocalScroll()
@@ -537,31 +603,17 @@ final class RustTmuxController: TmuxSessionController {
         }
     }
 
-    override func click(col: Int, row: Int) {
+    func click(col: Int, row: Int) {
         driver?.perform(.click(col: Int64(col), row: Int64(row)))
     }
 
-    // What the hub's Swift tmux paths drive: the core does it (the pins on
-    // the screen's and the app's comings and goings), or it isn't needed here.
     // A pane's working directory (path previews, the Files key) is asked of
-    // tmux over the session's own connection.
+    // tmux over the session's own connection. The window pins and the
+    // writes are the core's: it hands the pins back on the screen's and the
+    // app's comings and goings itself.
 
-    override func releaseWindowPins() {}
-    override func repinActiveWindow() {}
-    override func flushPendingWrites() async {}
-    override func beginControlMode() async {}
-    override func attach() async {}
-    override func detach() async {}
-    override func panePath(_ paneId: String) async -> String? {
+    func panePath(_ paneId: String) async -> String? {
         await driver?.side.panePath(paneId)
     }
-    override func cancelStaleCopyMode() {}
-    override func resyncActivePane(reveal: Bool = true) {}
 }
 
-/// The transport the Swift controller underneath is made with: nothing reads
-/// or writes through it (every action goes to the core).
-private struct RustNullTransport: TmuxTransport {
-    var dataStream: AsyncStream<Data> { AsyncStream { $0.finish() } }
-    func write(_ data: Data) async throws {}
-}

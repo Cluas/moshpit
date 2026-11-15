@@ -64,7 +64,7 @@ struct SmokeSeedTests {
     /// seeded session that reconnected after one had no key left.
     @Test("a seed's key is read before the keychain, and outlives a background")
     func seedKeyOutlivesABackground() async throws {
-        let service = SSHService(keychain: .inMemory(), hostKeyValidator: .inMemory())
+        let service = SSHService(keychain: .inMemory())
         let connection = ServerConnection(name: "rig", host: "rig.example.com", username: "rig",
                                           authMethod: .password, keychainRef: "smoke.seed.none")
         await service.seedSecretForThisLaunch(connectionId: connection.id, secret: "launch only")

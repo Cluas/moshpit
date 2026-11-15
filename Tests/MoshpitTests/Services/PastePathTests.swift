@@ -34,64 +34,6 @@ struct PastePathTests {
         bare: "ls\ntouch INJECTED\n",
     ]
 
-    private func occurrences(of marker: String, in data: Data) -> Int {
-        let bytes = [UInt8](data), pattern = [UInt8](marker.utf8)
-        guard bytes.count >= pattern.count else { return 0 }
-        return (0...(bytes.count - pattern.count))
-            .filter { Array(bytes[$0..<($0 + pattern.count)]) == pattern }.count
-    }
-
-    private func waitUntil(timeout: Duration = .seconds(10), _ done: () async -> Bool) async -> Bool {
-        let deadline = ContinuousClock.now + timeout
-        while !(await done()) {
-            guard ContinuousClock.now < deadline else { return false }
-            try? await Task.sleep(for: .milliseconds(10))
-        }
-        return true
-    }
-
-    // MARK: - tmux
-
-    private func attachedController() async -> (TmuxSessionController, MockTmuxTransport) {
-        let transport = MockTmuxTransport()
-        let controller = TmuxSessionController(sshSession: transport)
-        await controller.attach()
-        transport.pushText("%begin 100 0 0\n%end 100 0 0\n\n")
-        _ = await waitUntil(timeout: .seconds(1)) { await transport.recordedCommands().count >= 3 }
-        return (controller, transport)
-    }
-
-    /// tmux 3.6a brackets the buffer as it is: `paste-buffer -p` with a
-    /// marker in the buffer ended the paste early in zsh.
-    @Test("tmux: the paste buffer never holds a marker", arguments: [combining, assembled, bare])
-    func tmuxPasteBuffer(_ pasted: String) async throws {
-        let (controller, transport) = await attachedController()
-        let baseline = await transport.recordedCommands().count
-
-        controller.sendPaste(pasted, paneId: "%0")
-
-        #expect(await waitUntil(timeout: .seconds(2)) {
-            await transport.recordedCommands().count >= baseline + 2
-        })
-        let commands = await transport.recordedCommands().dropFirst(baseline)
-            .map { $0.trimmingCharacters(in: .newlines) }
-        let literal = TmuxSessionController.tmuxCommandStringLiteral(Self.cleaned[pasted]!)
-        #expect(commands.first == "set-buffer -b moshpit-paste -- \(literal)")
-        #expect(!(commands.first ?? "").contains("\\u001b[201~"), "an end marker went into the buffer")
-        #expect(commands.dropFirst().first == "paste-buffer -p -b moshpit-paste -d -t %0")
-    }
-
-    @Test("tmux: text that is nothing but markers pastes nothing")
-    func tmuxOnlyMarkers() async throws {
-        let (controller, transport) = await attachedController()
-        let baseline = await transport.recordedCommands().count
-
-        controller.sendPaste("\(Self.end)\(Self.start)\u{1B}[20\(Self.end)1~", paneId: "%0")
-
-        try? await Task.sleep(for: .milliseconds(100))
-        #expect(await transport.recordedCommands().count == baseline)
-    }
-
     // MARK: - The terminal view's own Paste and ⌘V
 
     /// The core's view and its coordinator; `paste` is what the view's Paste

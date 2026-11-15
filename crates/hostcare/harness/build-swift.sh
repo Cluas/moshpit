@@ -20,6 +20,10 @@ rev="${MOSHPIT_SWIFT_CARE_REV:-81c121a1}"
 kit="$repo/Packages/MoshpitKit/Sources/MoshpitKit"
 mkdir -p "$work" "$src"
 
+# The pairing file's Swift writer as of the same commit: the app's went with
+# batch C (the Rust store writes it), and PushService here still pairs
+# through it.
+git -C "$repo" show "$rev:Packages/MoshpitKit/Sources/MoshpitKit/Push/PushPairing.swift" >"$work/PushPairing.swift"
 for path in Moshpit/Services/Install/HostScripts.swift Moshpit/Services/Install/InstallManifest.swift \
     Moshpit/Services/Install/HostChannel.swift Moshpit/Services/Install/HostInstaller.swift \
     Moshpit/Services/Install/AgentHookConfig.swift Moshpit/Services/Install/HostAutoCare.swift \
@@ -49,7 +53,7 @@ swiftc -O -wmo -swift-version 5 -parse-as-library -module-name MoshpitKit \
     -emit-module -emit-module-path "$work/MoshpitKit.swiftmodule" \
     -emit-library -static -o "$work/libMoshpitKit.a" \
     "$kit/Log.swift" "$kit/AppLanguage.swift" \
-    "$kit/Push/PushSealedBox.swift" "$kit/Push/PushPairing.swift" "$kit/Push/PushStanding.swift" \
+    "$kit/Push/PushSealedBox.swift" "$work/PushPairing.swift" "$kit/Push/PushStanding.swift" \
     "$kit/Push/AppGroupFileLock.swift" \
     "$kit/Push/AgentNotificationCopy.swift" "$kit/Push/PushRemoteNotification.swift" \
     "$kit/Push/PushPrefs.swift" "$kit/Push/PushDiagnostics.swift" \

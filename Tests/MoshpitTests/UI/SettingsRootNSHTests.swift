@@ -4,11 +4,10 @@ import Testing
 import UIKit
 @testable import Moshpit
 
-/// Settings itself in NSH: its switch, the data path between the host and the
-/// screen — the state the Swift side posts is a message the Rust screen takes
+/// Settings itself in NSH: the data path between the host and the screen — the state the Swift side posts is a message the Rust screen takes
 /// (`ui/src/settings.rs`'s tests and `ui/tests/settings.rs` cover the screen),
-/// what the screen tells the host is applied to `AppSettings` as the SwiftUI
-/// page's controls apply it or opens what the row opens — and a real surface
+/// what the screen tells the host is applied to `AppSettings` or opens what
+/// the row opens — and a real surface
 /// on the device that runs the screen, shows UIKit's controls with the
 /// settings' values and reports what the user does.
 @Suite("NSH Settings root")
@@ -226,14 +225,11 @@ struct SettingsRootNSHTests {
 @MainActor
 struct AppAppearanceWindowTests {
 
-    @Test("the chosen appearance is the window's while the NSH Home shows, dark under the SwiftUI one")
+    @Test("the chosen appearance is the window's")
     func windowStyle() {
-        #expect(AppAppearance.windowStyle(chosen: .system, nshHome: true) == .unspecified)
-        #expect(AppAppearance.windowStyle(chosen: .light, nshHome: true) == .light)
-        #expect(AppAppearance.windowStyle(chosen: .dark, nshHome: true) == .dark)
-        for chosen in AppAppearance.allCases {
-            #expect(AppAppearance.windowStyle(chosen: chosen, nshHome: false) == .dark, "\(chosen)")
-        }
+        #expect(AppAppearance.system.interfaceStyle == .unspecified)
+        #expect(AppAppearance.light.interfaceStyle == .light)
+        #expect(AppAppearance.dark.interfaceStyle == .dark)
     }
 
     @Test("the probe sets its window's style once in the window, and again as the choice changes")

@@ -16,12 +16,12 @@
 # level: turn mouse reporting on (DECSET 1002/1006, which is what tmux reads as
 # `#{mouse_any_flag}`), then echo every byte it receives so the delivered report
 # is visible. The bytes sent are exactly
-# SessionHub.ActiveSession.clickBytes(col:row:), delivered the way
-# TmuxSessionController.sendInput does it: `send-keys -H <hex>`.
+# moshpit-tmux's `click_bytes(col, row)`, delivered the way the
+# controller's `send_input` does it: `send-keys -H <hex>`.
 import os, pty, subprocess, sys, time
 
 SOCK = "moshpit-click-verify"
-# clickBytes(col: 8, row: 29) — 0-based cell in, 1-based on the wire.
+# click_bytes(8, 29) — 0-based cell in, 1-based on the wire.
 CLICK = b"\x1b[<0;9;30M\x1b[<0;9;30m"
 
 

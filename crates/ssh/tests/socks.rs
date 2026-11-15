@@ -4,11 +4,13 @@
 
 mod support;
 
+use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Duration;
 
 use moshpit_ssh::{
-    Auth, ConnectOptions, ProxyError, Socks5Proxy, Socks5Reply, Ssh, SshError, Target,
+    Auth, ConnectOptions, KnownHosts, ProxyError, Socks5Proxy, Socks5Reply, Ssh, SshError, Target,
+    TrustOnFirstUse,
 };
 use support::*;
 
@@ -74,6 +76,48 @@ async fn the_host_key_is_the_hosts_not_the_proxys() {
     let proxy = Proxy::start(ProxyMode::Tunnel).await;
     let ssh = connect_via(&host.target(), &via(&proxy)).await.unwrap();
     assert_eq!(ssh.host_key(), &host.host_keys[0]);
+}
+
+/// Signing in through the proxy ends as it ends directly: the right
+/// password runs a command, a wrong one is a failed sign-in, and a host key
+/// the person won't trust is that refusal, with nothing trusted — never an
+/// unreachable server (the Swift transport's SOCKSSignInTests, gone with it).
+#[tokio::test]
+async fn signing_in_through_the_proxy_ends_as_it_ends_directly() {
+    let host = Host::start(Bench::default()).await;
+    let proxy = Proxy::start(ProxyMode::Tunnel).await;
+    let sign_in = |auth: Auth| {
+        let target = host.target();
+        let options = via(&proxy);
+        async move { Ssh::connect(&target, auth, Arc::new(AcceptAny), &options).await }
+    };
+
+    let ssh = sign_in(Auth::password(PASSWORD)).await.unwrap();
+    let out = ssh.run("echo hello").await.unwrap();
+    assert_eq!(out.stdout(), b"hello\n");
+    assert!(out.success());
+
+    let wrong = sign_in(Auth::password("hunter2")).await.err().unwrap();
+    assert!(matches!(wrong, SshError::AuthFailed { .. }), "{wrong:?}");
+
+    let known = Arc::new(KnownHosts::in_memory(BTreeMap::new()));
+    let declined = Ssh::connect(
+        &host.target(),
+        Auth::password(PASSWORD),
+        Arc::new(TrustOnFirstUse::new(
+            known.clone(),
+            Person::answering(&[false]),
+        )),
+        &via(&proxy),
+    )
+    .await
+    .err()
+    .unwrap();
+    assert!(
+        matches!(declined, SshError::HostKeyNotTrusted { .. }),
+        "{declined:?}"
+    );
+    assert!(known.snapshot().is_empty());
 }
 
 async fn refused(mode: ProxyMode) -> ProxyError {

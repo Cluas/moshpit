@@ -8,19 +8,18 @@ import Foundation
 /// (``HostConnectionError/notAnswering``); ``RustSideChannel`` borrows again
 /// for the next call.
 ///
-/// SFTP first. A host with the subsystem turned off gets the exec forms the
-/// Swift path uses (`RemoteFileCommands`, `RemoteFileEdits`), on exec
-/// channels of the same connection — and only that host: SFTP saying a file
-/// isn't there, or isn't this account's to read, is said so, where the Swift
-/// path tried exec on any SFTP failure and reported what that said
-/// (a generic "couldn't reach the host" for an unreadable file).
+/// SFTP first. A host with the subsystem turned off gets the exec forms
+/// (`RemoteFileCommands`, `RemoteFileEdits`), on exec channels of the same
+/// connection — and only that host: SFTP saying a file isn't there, or isn't
+/// this account's to read, is said so, not tried again over exec and
+/// reported as a generic "couldn't reach the host".
 ///
-/// A command's answer is its stdout, what the parsers read; the Swift
-/// path's `executeCommand` merges stderr in, which a parser can take for
-/// data. It succeeds only with exit status 0 on a channel the host closed
-/// in order (B136). The exec forms of an edit read their marker whatever
-/// the status: `RemoteFileEdits` prints "taken" and exits 1, which the
-/// Swift path's status check turned into a generic failure.
+/// A command's answer is its stdout, what the parsers read: stderr merged
+/// in is something a parser can take for data. It succeeds only with exit
+/// status 0 on a channel the host closed in order (B136). The exec forms of
+/// an edit read their marker whatever the status: `RemoteFileEdits` prints
+/// "taken" and exits 1, which a status check alone turns into a generic
+/// failure.
 ///
 /// A Swift task's cancellation doesn't reach a UniFFI future, so each call
 /// goes through the connection bound to a token of its own

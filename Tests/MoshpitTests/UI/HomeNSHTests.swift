@@ -4,9 +4,7 @@ import Testing
 import UIKit
 @testable import Moshpit
 
-/// Home in NSH: its switches (it shows only with sessions on the core,
-/// where its record is read), the data path between the host and the
-/// screen — the page asks the core for Home's record (`app::home`, whose
+/// Home in NSH: the data path between the host and the screen — the page asks the core for Home's record (`app::home`, whose
 /// tests and `crates/app/harness/home`'s cross-check hold what it says)
 /// with every saved connection and its session on the core, reads it again
 /// after every batch of the sessions' events, and posts it as the core
@@ -84,15 +82,6 @@ struct HomeNSHTests {
     @Test("Home runs the Rust screen of its name")
     func name() {
         #expect(NSHScreen.home.name == "home")
-    }
-
-    @Test("NSH Home shows only with sessions on the core, where its record is read")
-    func needsSessionsOnTheCore() {
-        #expect(HomeNSHPage.shows(nsh: true, rustSessions: true))
-        #expect(!HomeNSHPage.shows(nsh: true, rustSessions: false),
-                "sessions on the Swift path: the SwiftUI list, whose cards read them")
-        #expect(!HomeNSHPage.shows(nsh: false, rustSessions: true))
-        #expect(!HomeNSHPage.shows(nsh: false, rustSessions: false))
     }
 
     /// Two saved connections, the studio with a session on the core.
@@ -203,6 +192,11 @@ struct HomeNSHTests {
         #expect(HomeIntent(["ev": "jump", "connection": id]) == nil)
 
         let model = HomeNSHModel()
+        // Home's idle group alone makes a tree the sessions page didn't
+        // tell (B553).
+        let other = UUID().uuidString
+        #expect(model.handle(["ev": "tree", "connection": other, "idle": true]) == nil)
+        #expect(model.trees[other]?.told == false)
         #expect(model.handle(["ev": "tree", "connection": id, "collapsed": ["$0"], "expanded": [],
                               "idle": true]) == nil)
         #expect(model.trees[id]?.collapsed == ["$0"])
@@ -216,8 +210,10 @@ struct HomeNSHTests {
         #expect(model.handle(["ev": "tree", "connection": id, "idle": true]) == nil)
         #expect(model.handle(["ev": "refresh", "connection": id]) == .refresh(Self.studio))
         let trees = model.treesMessage["trees"] as? [[String: Any]]
-        #expect(trees?.first?["connection"] as? String == id)
-        #expect(trees?.first?["idle"] as? Bool == true)
+        let mine = trees?.first { $0["connection"] as? String == id }
+        #expect(mine?["idle"] as? Bool == true)
+        #expect(mine?["told"] as? Bool == true, "the sessions page told its part")
+        #expect(NSHSurface.check(screen: NSHScreen.sessions.name, message: model.treesMessage))
     }
 
     @Test("the name cards refuse what the multiplexer would not get as typed")
@@ -236,7 +232,7 @@ struct HomeNSHTests {
         }
     }
 
-    @Test("the rows' long-press menus carry the SwiftUI card's actions, in its words")
+    @Test("the rows' long-press menus carry each row's actions, in Home's words")
     func menus() {
         let menus = HomeNSHMenus.menus(for: Self.rows()) { _ in }
         let id = Self.studio.uuidString

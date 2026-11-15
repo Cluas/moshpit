@@ -15,9 +15,9 @@ import UIKit
 /// the phone grid, taking our clients out of `window-size latest` — and every
 /// one of those is a control-mode command with a round trip. Without an
 /// assertion the app can be suspended between queueing them and their bytes
-/// reaching the socket, and then, as `TmuxSessionController.releaseWindowPins`
-/// puts it, "once iOS suspends/kills us we never get another chance to run
-/// code". The teardown was already written as if it completed synchronously;
+/// reaching the socket, and then, as the Swift tmux controller's
+/// `releaseWindowPins` put it, "once iOS suspends/kills us we never get
+/// another chance to run code". The teardown was already written as if it completed synchronously;
 /// this is what makes that true.
 ///
 /// The assertion MUST be ended. One the app never ends is not a longer grace

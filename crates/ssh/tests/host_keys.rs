@@ -292,3 +292,92 @@ async fn giving_up_on_a_connect_withdraws_the_question() {
     .await;
     assert!(known.snapshot().is_empty());
 }
+
+/// B561: a server and this client with no algorithm in common (here, a
+/// server that only offers a CBC cipher) is its own error, saying which
+/// kind and what each side offers — not a handshake that went away, which
+/// the session dials again forever.
+#[tokio::test]
+async fn no_algorithm_in_common_is_said_as_such() {
+    let host = Host::start(Bench {
+        ciphers: Some(vec![russh::cipher::AES_128_CBC]),
+        ..Default::default()
+    })
+    .await;
+    let err = Ssh::connect(
+        &host.target(),
+        Auth::key(fixture_key("ed25519")),
+        Arc::new(AcceptAny),
+        &options(),
+    )
+    .await
+    .err()
+    .unwrap();
+    match err {
+        SshError::Incompatible { what, theirs, .. } => {
+            assert_eq!(what, "cipher");
+            assert_eq!(theirs, vec!["aes128-cbc".to_owned()]);
+        }
+        other => panic!("{other:?}"),
+    }
+}
+
+/// B564: a server whose only host-key algorithm is `ssh-rsa` (SHA-1: an
+/// old dropbear, an OpenSSH before 7.2) is reached — it used to be
+/// "incompatible" — and the key says so: on the New Host card, and on the
+/// connection, every time.
+#[tokio::test]
+async fn a_server_with_only_ssh_rsa_is_reached_and_says_so() {
+    let host = Host::start(Bench {
+        host_keys: vec![fixture_private("rsa2048")],
+        preferred_keys: Some(vec![russh::keys::Algorithm::Rsa { hash: None }]),
+        ..Default::default()
+    })
+    .await;
+    let known = Arc::new(KnownHosts::in_memory(BTreeMap::new()));
+    let person = Person::answering(&[true]);
+    let ssh = connect_with(&host.target(), tofu(&known, person.clone()), &options())
+        .await
+        .unwrap();
+    assert_eq!(ssh.run("echo in").await.unwrap().stdout(), b"in\n");
+    assert_eq!(ssh.older_host_key_algorithm(), Some("ssh-rsa"));
+    assert_eq!(*person.older.lock().unwrap(), vec![Some("ssh-rsa")]);
+    // The dial that found nothing better, then the one offering ssh-rsa.
+    assert_eq!(host.seen().connections, 2);
+    assert_eq!(
+        known.snapshot(),
+        BTreeMap::from([(entry(&host), host.host_keys[0].fingerprint())])
+    );
+
+    // Trusted now: nothing asked, still said.
+    let again = connect_with(&host.target(), tofu(&known, person.clone()), &options())
+        .await
+        .unwrap();
+    assert_eq!(again.older_host_key_algorithm(), Some("ssh-rsa"));
+    assert_eq!(person.asked().len(), 1);
+}
+
+/// `ssh-rsa` is the last resort: an RSA host key a server also signs with
+/// SHA-2 is used that way, on the first dial, and is nothing to mention.
+#[tokio::test]
+async fn an_rsa_host_key_signed_with_sha2_is_not_the_older_algorithm() {
+    let host = Host::start(Bench {
+        host_keys: vec![fixture_private("rsa2048")],
+        preferred_keys: Some(vec![
+            russh::keys::Algorithm::Rsa { hash: None },
+            russh::keys::Algorithm::Rsa {
+                hash: Some(russh::keys::HashAlg::Sha256),
+            },
+        ]),
+        ..Default::default()
+    })
+    .await;
+    let known = Arc::new(KnownHosts::in_memory(BTreeMap::new()));
+    let person = Person::answering(&[true]);
+    let ssh = connect_with(&host.target(), tofu(&known, person.clone()), &options())
+        .await
+        .unwrap();
+    assert_eq!(ssh.older_host_key_algorithm(), None);
+    assert_eq!(*person.older.lock().unwrap(), vec![None]);
+    assert_eq!(host.seen().connections, 1);
+}

@@ -1,10 +1,10 @@
 //! Host keys: their fingerprints, the trusted map, and trust on first use.
 //!
-//! A port of `Moshpit/Services/HostKeyValidator.swift`. The map is the one
-//! the app keeps in the keychain today, `"host:port" → "SHA256:…"`, read and
-//! written whole through [`KnownHostsStore`] (the platform's keychain);
-//! nothing here moves or reformats it, so the Rust and Swift transports can
-//! take turns on the same trusted keys. The map's model — the store trait,
+//! A port of the Swift transport's `HostKeyValidator` (deleted in E4-SSH).
+//! The map is the one the app keeps in the keychain, `"host:port" →
+//! "SHA256:…"`, read and written whole through [`KnownHostsStore`] (the
+//! platform's keychain); nothing here moves or reformats it, so the builds
+//! that ran the Swift transport read the same trusted keys. The map's model — the store trait,
 //! its errors, the entry key — and the keychain item's bytes are
 //! `moshpit-store`'s (`known_hosts`), re-exported here.
 //!
@@ -32,12 +32,35 @@ use crate::waiting::Waiting;
 pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
 /// The key a host presented during key exchange.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct HostKey {
     key: PublicKey,
+    /// The older algorithm the key exchange had to use, when it did.
+    older: Option<&'static str>,
 }
 
+/// The same key, however it was negotiated.
+impl PartialEq for HostKey {
+    fn eq(&self, other: &Self) -> bool {
+        self.key == other.key
+    }
+}
+
+impl Eq for HostKey {}
+
 impl HostKey {
+    /// `ssh-rsa` when the server offered nothing better (B564): its
+    /// signature over the key exchange is SHA-1. `None` for every other
+    /// negotiation, and for a key read from storage.
+    pub fn older_algorithm(&self) -> Option<&'static str> {
+        self.older
+    }
+
+    pub(crate) fn negotiated_as(mut self, older: Option<&'static str>) -> Self {
+        self.older = older;
+        self
+    }
+
     /// `ssh-ed25519`, `ecdsa-sha2-nistp256`, `ssh-rsa`, …
     pub fn algorithm(&self) -> String {
         self.key.algorithm().as_str().to_owned()
@@ -68,7 +91,7 @@ impl From<PublicKey> for HostKey {
     fn from(mut key: PublicKey) -> Self {
         // A known_hosts line's comment is not part of the key.
         key.set_comment("");
-        Self { key }
+        Self { key, older: None }
     }
 }
 
@@ -248,11 +271,11 @@ impl KnownHosts {
     /// shrinks to what this process happens to know.
     ///
     /// Fix (known-hosts-fresh-merge): read again for the write, not from the
-    /// copy decisions are made from. The keychain item has other writers in
-    /// the same process — the Swift transport's `HostKeyValidator` while the
-    /// Rust session switch is on — and a trust one of them wrote after this
-    /// copy was read was written away by the next trust made here (the
-    /// Swift side's `save` merges onto its own copy the same way).
+    /// copy decisions are made from. The keychain item had other writers in
+    /// the same process — the Swift transport's `HostKeyValidator`, until
+    /// E4-SSH — and a trust one of them wrote after this copy was read was
+    /// written away by the next trust made here. Any other writer of the
+    /// item is kept the same way.
     fn save(&self, state: &mut TableState) {
         if state.unsaved.is_empty() {
             return;

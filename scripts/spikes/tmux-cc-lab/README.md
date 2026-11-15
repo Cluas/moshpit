@@ -1,7 +1,10 @@
 # tmux -CC lab — SSH+tmux 渲染的测试框架
 
-SSH+tmux 模式下 App 是一个 **tmux 控制客户端（`-CC`）**：`TmuxSessionController`
-把 `%output` 字节喂进每个 pane 自己的 SwiftTerm，用 `capture-pane` 做权威重绘
+> 写于 Swift 控制器时期。E3 之后 -CC 控制器是 Rust 核心的（crates/tmux），
+> 下面提到的 Swift 类型和测试都已删掉，场景由 crates/tmux 的测试接着管。
+
+SSH+tmux 模式下 App 是一个 **tmux 控制客户端（`-CC`）**：控制器
+把 `%output` 字节喂进每个 pane 自己的终端，用 `capture-pane` 做权威重绘
 （resync），用 `resize-window`/`refresh-client -C` 把 window 钉在手机网格上。
 对端（tmux、Claude Code、mosh）全是 **diff 渲染器**：它们认为没变的格子永远
 不会重发，所以本地网格一旦和对端模型分歧，分歧就是永久的，且随滚动扩散
@@ -10,7 +13,7 @@ SSH+tmux 模式下 App 是一个 **tmux 控制客户端（`-CC`）**：`TmuxSess
 
 ## 三层测试
 
-### 1. 单元回放（CI 常驻）— `Tests/MoshpitTests/Services/TmuxSessionControllerTests.swift`
+### 1. 单元回放 — 原 `TmuxSessionControllerTests.swift`（已删，见 crates/tmux/tests）
 
 `MockTmuxTransport` 把 -CC 协议行直接推进控制器，逐格断言 SwiftTerm 网格。
 关键场景（2026-08-19 新增）：
@@ -82,27 +85,21 @@ python3 scripts/spikes/tmux-cc-lab/lab.py analyze <bin> # 分析任意 -CC 字�
    收到裸文本。唯一的坑是参数怎么送进去——argv 预分割会绕开 tmux 自己的
    command-string 转义层（`\n \$ \~ \" \\` 都不会被解析），必须走
    `source-file`/控制模式实际吃的那条解析路径才算数（见
-   `TmuxSessionController.tmuxCommandStringLiteral` 和
-   `TmuxSessionControllerTests`）。
+   crates/tmux 的 `format.rs`，当初 Swift 的 `tmuxCommandStringLiteral` 同理）。
 
-### 3. 全链路 e2e（真 tmux ↔ 真控制器）— `run-e2e.sh`
+### 3. 全链路 e2e（已退役）
 
-`lab.py serve` 起真 tmux + 桌面敌人，开两个 TCP 口：数据口桥接
-`tmux -CC attach` 的 pty，控制口收 JSON 指令（敌人敲键/抓 ground truth）。
-模拟器里的测试 `TmuxLabE2ETests` 用 `LabSocketTransport` 接上生产
-`TmuxSessionController` + SwiftTerm，打三轮真实尺寸战争（release → 敌人赢
-latest → repin → 滚动），最后**逐行比对本地网格 vs `capture-pane`**。
-
-```bash
-./scripts/spikes/tmux-cc-lab/run-e2e.sh [sim-udid]   # 无 lab 时测试自动 skip
-```
+原来的 `run-e2e.sh` 用 `lab.py serve` 起真 tmux，把模拟器里 Swift 的
+`TmuxSessionController` 接上去打尺寸战争。Swift 控制器在 E3 删掉了，这条链路随之退役；
+同样的场景现在由 Rust 控制器的测试覆盖（`crates/tmux/tests/` 的 rig 和
+`live_group.rs` 这类私有 tmux 实测）。`lab.py serve` 留着，没有调用方。
 
 ## 真机取证链
 
 1. 服务端：`~/.local/bin/moshpit-cc-tap`（把 App 的 tmux 路径指过去），
    录制落 `~/.moshpit/cctap/out-*.bin` → `lab.py analyze` 直接吃。
-2. App 端：`-MOSHPIT_CC_TAP <dir>` 启动参数 → `cc-raw.bin` + `cc-pairing.log`
-   （SEND/POP/FRAME/FRAME-REJECT 全配对）。
+2. App 端：原来的 `-MOSHPIT_CC_TAP <dir>` 只录 Swift 控制器看到的 -CC 字节，随
+   Swift 控制器（E3）删掉了；-CC 流现在在 Rust 核心里。
 3. 症状→指纹速查：满屏碎片折行 = 外来宽度字节直画（查 layout 横跳）；
    小段 `5;210m` 字面量 = 门控切了序列（查开门时序）；滚动时部分格子不动 =
    修复帧没落地的 diff 分歧（查 FRAME-REJECT 后有没有重试成功）。

@@ -1,33 +1,12 @@
 import MoshpitKit
 import SwiftUI
 
-/// Settings › Voice Input › Model: the SwiftUI page (``WhisperModelView``), or
-/// the NSH one while its switch is on (``NSHScreen/whisperModel``). Settings'
-/// Model row and Recognition's Download a model both push this. With the
-/// switch off the SwiftUI page is all there is: no NSH code runs.
-struct WhisperModelPage: View {
-    var body: some View {
-        if Self.showsNSH {
-            WhisperModelNSHPage()
-        } else {
-            WhisperModelView()
-        }
-    }
-
-    private static var showsNSH: Bool {
-        #if DEBUG
-        if CaptureScreen.requested == .whisperModelNSH { return NSHSurface.available }
-        #endif
-        return NSHScreen.whisperModel.isOn
-    }
-}
-
 /// Settings › Voice Input › Model drawn by NSH (`ui/src/whisper_model.rs`):
 /// the models, their downloads and the one in use come from the host
 /// (``WhisperModelPageModel``, over `WhisperModelStore` and
 /// `WhisperDownloadCenter`), again whenever any of it changes; what the user
-/// does goes back and is done as the SwiftUI page does it. Removal asks
-/// first with the SwiftUI page's alert, and goes to the store: a model
+/// does goes back to the host. Removal asks first, with an alert, and goes
+/// to the store: a model
 /// removed while it is still loading is the store's to drop (B124), not
 /// something this page tracks.
 struct WhisperModelNSHPage: View {
@@ -42,7 +21,7 @@ struct WhisperModelNSHPage: View {
 
     var body: some View {
         if failed {
-            WhisperModelView()
+            NSHPageFailed { failed = false }
         } else {
             NSHPage(
                 screen: .whisperModel,
@@ -119,7 +98,7 @@ final class WhisperModelPageModel {
     }
 
     /// The model a session would use: the stored pick when it is installed,
-    /// otherwise whatever else is (the SwiftUI page's `selectedVariant`).
+    /// otherwise whatever else is.
     static func selected(_ settings: AppSettings) -> String? {
         WhisperModelSeed.requested?.selected ?? WhisperModelStore.resolvedVariant(preferring: settings.whisperModelId)
     }
@@ -131,7 +110,7 @@ final class WhisperModelPageModel {
     }
 
     /// Download or Resume: the first model on the device becomes the one in
-    /// use, as on the SwiftUI page.
+    /// use.
     func download(_ id: String, settings: AppSettings) {
         guard options.contains(where: { $0.id == id }) else { return }
         WhisperDownloadCenter.shared.start(id) { variant in
@@ -193,15 +172,14 @@ final class WhisperModelPageModel {
         return message
     }
 
-    /// Bytes as the SwiftUI page formats them.
+    /// Bytes as a file size (`ByteCountFormatter`'s `.file` style).
     nonisolated static func format(_ bytes: Int64) -> String {
         bytes.formatted(.byteCount(style: .file))
     }
 }
 
 /// What a capture run has the model pages show (`-MOSHPIT_SEED_WHISPER
-/// mixed`), so the SwiftUI and NSH pages can be shot with the same models
-/// and compared pixel for pixel: one downloaded and in use, one downloading,
+/// mixed`): one downloaded and in use, one downloading,
 /// one paused, one not downloaded, and a failure. Nothing is written: the
 /// seed stands in for the catalog, the downloads and the pick. DEBUG only.
 struct WhisperModelSeed {

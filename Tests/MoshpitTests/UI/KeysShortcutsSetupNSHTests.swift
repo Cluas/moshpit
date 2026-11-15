@@ -348,15 +348,6 @@ struct KeysShortcutsSetupNSHTests {
         #expect(store.shortcuts.last?.summary == "status", "the second Save is the first one updated")
     }
 
-    /// A shortcut bound to a host renamed or deleted since: the SwiftUI
-    /// editor's chips show the binding, so it can come off.
-    @Test("the SwiftUI editor's host chips show a binding to a host gone since")
-    func chipHostsKeepGoneBindings() {
-        #expect(AddShortcutView.chipHosts(["m1-pro", "nas"], bound: ["nas", "old-box"])
-                == ["m1-pro", "nas", "old-box"])
-        #expect(AddShortcutView.chipHosts(["m1-pro"], bound: []) == ["m1-pro"])
-    }
-
     // MARK: Set up this host
 
     /// The demo's page, once the core has read its canned host.

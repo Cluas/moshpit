@@ -1,34 +1,17 @@
 import SwiftUI
 import UIKit
 
-/// Settings › SSH Keys: the SwiftUI page (``SSHKeysView``), or the NSH one
-/// while its switch is on (``NSHScreen/sshKeys``). With the switch off the
-/// SwiftUI page is all there is: no NSH code runs.
+/// Settings › SSH Keys, as Settings presents it: the NSH page, with a
+/// capture run's sheet and keys over it (DEBUG).
 struct SSHKeysPage: View {
     var body: some View {
-        content
+        SSHKeysNSHPage()
         #if DEBUG
             // A capture run's sheet over the page, and its keys: in memory,
             // never written.
             .modifier(KeysCapture.Present())
             .modifier(KeysCapture.Store())
         #endif
-    }
-
-    @ViewBuilder
-    private var content: some View {
-        if Self.showsNSH {
-            SSHKeysNSHPage()
-        } else {
-            SSHKeysView()
-        }
-    }
-
-    static var showsNSH: Bool {
-        #if DEBUG
-        if let screen = CaptureScreen.requested, KeysCapture.forcesNSHKeys(screen) { return NSHSurface.available }
-        #endif
-        return NSHScreen.sshKeys.isOn
     }
 }
 
@@ -39,8 +22,8 @@ struct SSHKeysPage: View {
 /// the system alert the page shows and deletes the key as the SwiftUI page
 /// does (``SSHKeyDeletion``: its private key, then its record — or an alert
 /// says which connections still use it), + and an empty group's button
-/// present Add Key (the one its own switch picks), on the method the button
-/// names. If NSH cannot run here, the SwiftUI page shows.
+/// present Add Key, on the method the button names. If its screen can't
+/// run, the page says so (``NSHPageFailed``).
 struct SSHKeysNSHPage: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(SSHKeyStore.self) private var keyStore
@@ -50,11 +33,11 @@ struct SSHKeysNSHPage: View {
     @State private var failed = false
     @State private var showAdd = false
     /// The method Add Key opens on: an empty group's button picks it.
-    @State private var addMethod: AddKeyView.Method = .generate
+    @State private var addMethod: AddKeyMethod = .generate
 
     var body: some View {
         if failed {
-            SSHKeysView()
+            NSHSheetFailed { failed = false }
         } else {
             let snapshot = SSHKeysSnapshot(store: keyStore)
             NavigationStack {
@@ -63,7 +46,7 @@ struct SSHKeysNSHPage: View {
                     attach: { surface in
                         model.attach(surface, current: snapshot)
                         #if DEBUG
-                        if let id = KeysCapture.deleteRequested(nsh: true, in: snapshot) {
+                        if let id = KeysCapture.deleteRequested(in: snapshot) {
                             model.confirmDelete(id)
                         }
                         #endif
@@ -75,7 +58,7 @@ struct SSHKeysNSHPage: View {
                     .onAppear { model.update(snapshot) }
                     .onChange(of: snapshot) { _, new in model.update(new) }
             }
-            .appSheet(isPresented: $showAdd) { AddKeyPage(method: addMethod) }
+            .appSheet(isPresented: $showAdd) { AddKeyNSHPage(method: addMethod) }
         }
     }
 
@@ -274,7 +257,7 @@ final class SSHKeysModel {
         return message
     }
 
-    /// How long a key goes unused before its row says so (`SSHKeyRow`).
+    /// How long a key goes unused before its row says so.
     nonisolated static let staleAfter: TimeInterval = 90 * 86400
 
     /// One key's metadata, as the SwiftUI row reads it: the avatar its source

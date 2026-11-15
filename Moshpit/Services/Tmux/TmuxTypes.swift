@@ -140,3 +140,40 @@ struct SessionInfo: Codable, Sendable, Equatable, Identifiable, Hashable {
         self.isAttached = isAttached
     }
 }
+
+// MARK: - Ids
+
+enum TmuxId {
+    /// Whether `id` has tmux's own shape (`%3`, `@12`, `$0`): checked before
+    /// any id read off the wire is stored or spliced into a command.
+    static func isValid(_ id: String) -> Bool {
+        guard let first = id.first, first == "%" || first == "@" || first == "$" else { return false }
+        let digits = id.dropFirst()
+        return !digits.isEmpty && digits.allSatisfy { $0.isASCII && $0.isNumber }
+    }
+}
+
+// MARK: - AgentHook
+
+/// One pane's raw `@moshpit_*` hook stamp, as the core reads it off tmux
+/// (and herdr's agent states, in the same shape). Deliberately
+/// framework-free and string-typed: the mapping to
+/// `AgentActivityAttributes.AgentState` is the monitor's job, and an unset
+/// tmux user option reads back as an empty string, normalised to `nil`.
+///
+///   - `state`: `"working"` | `"attention"` | `"done"`, or `nil` when the pane
+///     has no precise hook data (the monitor falls back to the output
+///     heuristic for that pane).
+///   - `agent`: `@moshpit_agent`, e.g. `"claude"` / `"codex"` (the row label).
+///   - `since`: `@moshpit_since` as a `Date`, or `nil` (the caller uses `Date()`).
+///   - `command`: what is RUNNING in the pane now, polled fresh every round:
+///     a killed agent fires no final hook, so the monitor spots stamps whose
+///     agent has died by asking what the pane is doing now.
+///   - `title`: optional `@moshpit_title` headline.
+struct AgentHook: Equatable, Sendable {
+    var state: String?
+    var agent: String?
+    var since: Date?
+    var command: String?
+    var title: String?
+}

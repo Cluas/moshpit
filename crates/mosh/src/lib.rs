@@ -23,9 +23,9 @@
 //! Where this port deliberately differed from the Swift implementation it is
 //! marked `Fix (<id>)` in the source; `harness/divergences.json` lists every
 //! fix with the Swift location, the symptom, the trigger and a minimal input.
-//! The Swift client has since taken every fix but `excerpt-unicode` (each
-//! entry names its Swift commit), and `harness/equivalence.py` holds the two
-//! to identical output.
+//! The Swift client took every fix but `excerpt-unicode` (each entry names
+//! its Swift commit) before it was deleted (E2); this crate is the only mosh
+//! client now.
 
 pub mod bootstrap;
 pub mod compress;

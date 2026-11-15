@@ -19,8 +19,7 @@
 //! - [`moshpit_session`]: the session layer (SSH, mosh, tmux's controller,
 //!   herdr's client), through UniFFI ([`session`], [`herdr`], and
 //!   [`borrow`] for the session's SSH lent to what runs beside a terminal):
-//!   what the app runs a terminal on behind its `MOSHPIT_RUST_SESSION`
-//!   switch.
+//!   what the app runs every terminal on.
 //! - [`moshpit_ssh::keyfile`]: SSH keys — import in every form, generation,
 //!   what a stored key is and what the keychain keeps — through UniFFI
 //!   ([`keys`]); the keychain, the Secure Enclave and the file picker stay
@@ -42,8 +41,8 @@
 //!   Activity's sprites; the seed, the clock and iCloud are the app's.
 //! - [`moshpit_ui`]: the NSH screens, with NSH itself, and on iOS their
 //!   host's C ABI (`mp_ui_*`, `ui/include/moshpit_ui.h`, in the
-//!   `MoshpitFFI` module too): the app runs a screen in an NSH view behind
-//!   its switch. NSH runs the screens' tasks on the core's runtime
+//!   `MoshpitFFI` module too): the app runs every screen in an NSH view.
+//!   NSH runs the screens' tasks on the core's runtime
 //!   (`moshpit-runtime`).
 //!
 //! Built by `scripts/rust/build-ios.sh` from the app target's "Build Rust"

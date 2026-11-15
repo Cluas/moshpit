@@ -35,11 +35,9 @@ private struct TerminalDirectorHooks: ViewModifier {
 }
 
 /// W11g's director (`-MOSHPIT_TERMINAL_DIRECTOR <mode>`): drives the terminal
-/// screen the way a person would and measures it, on whichever UI draws the
-/// screen (SwiftUI, or NSH with `-MOSHPIT_NSH_TERMINAL 1`) and whichever path
-/// runs the session (`-MOSHPIT_RUST_SESSION 0/1`), so the two can be
-/// compared on one device. Evidence goes to stderr as `[w11g] …` lines
-/// (`devicectl device process launch --console`). Spike G5's method.
+/// screen the way a person would and measures it. Evidence goes to stderr
+/// as `[w11g] …` lines (`devicectl device process launch --console`).
+/// Spike G5's method.
 ///
 /// - `keyboard [-MOSHPIT_DIRECTOR_CYCLES n]`: raises and puts away the
 ///   keyboard through the screen's own intent, n times; per transition: the
@@ -123,8 +121,7 @@ enum TerminalDirector {
     }
 
     private static func run(_ mode: String) async {
-        let ui = NSHScreen.terminal.isOn ? "nsh" : "swiftui"
-        say("director \(mode) ui=\(ui) device \(UIDevice.current.model) iOS \(UIDevice.current.systemVersion)")
+        say("director \(mode) ui=nsh device \(UIDevice.current.model) iOS \(UIDevice.current.systemVersion)")
         // Live, attached, painted, then a beat.
         let ready = await wait(60) {
             guard let session, shown != nil else { return false }
@@ -135,8 +132,8 @@ enum TerminalDirector {
         say("session \(session.rust == nil ? "swift" : "rust") \(session.connection.connectionProtocol.rawValue)+\(session.connection.multiplexer.rawValue)")
         await sleep(3)
         switch mode {
-        case "keyboard": await keyboardCycles(ui: ui)
-        case "switch": await switches(ui: ui)
+        case "keyboard": await keyboardCycles(ui: "nsh")
+        case "switch": await switches(ui: "nsh")
         case "shots": await shots()
         case "sheets": await sheets()
         case "rekey": await rekey()
@@ -151,8 +148,8 @@ enum TerminalDirector {
             // One launch, one connect: the shots, the keyboard, the switches,
             // and on the NSH screen the rekey.
             await shots()
-            await keyboardCycles(ui: ui)
-            if session.tmuxControl != nil { await switches(ui: ui) }
+            await keyboardCycles(ui: "nsh")
+            if session.tmuxControl != nil { await switches(ui: "nsh") }
             if TerminalNSHModel.current != nil { await rekey() }
         default: say("FAIL unknown director mode \(mode)")
         }

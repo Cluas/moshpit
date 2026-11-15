@@ -14,9 +14,17 @@
 //! lets it grow). A tap pets it, with a light tap of the haptics; seven
 //! quick taps, a pogo.
 
-use std::{cell::RefCell, rc::Rc, time::Duration};
+use std::{
+    cell::{Cell, RefCell},
+    rc::Rc,
+    time::Duration,
+};
 
-use moshpit_pet::{Look, Moment, PetView, Pose, Style, easter::Taps};
+use moshpit_pet::{
+    Look, Moment, PetView, Pose, Style,
+    easter::Taps,
+    talk::{Chatter, Cue},
+};
 use nsh_core::prelude::*;
 use serde_json::json;
 
@@ -24,7 +32,12 @@ use super::{
     Ctx,
     model::{self, AgentState, Connection, Link},
 };
-use crate::ui::companion::{Figure, companion};
+use crate::ui::{
+    bubble::speech,
+    companion::{Figure, companion},
+};
+
+use super::talk::{Fill, Visible, pet_name, speaker, talks, who, words};
 
 /// Where the companion sits.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -90,6 +103,10 @@ const TARGET: f32 = 44.0;
 const ABOVE: f32 = 39.0;
 /// Clear of the head's ⋯ (its 44 pt target) and a little more.
 const FROM_END: f32 = 56.0;
+/// The bubble's gap from the pet's target, and half a line's height (its
+/// bottom sits that far under the pet's middle).
+const SAYS_GAP: f32 = 2.0;
+const SAYS_HALF_LINE: f32 = 15.0;
 
 /// The page's pet state: what the host posted, and the moment last played.
 #[derive(Clone)]
@@ -100,6 +117,14 @@ pub(crate) struct PetCtx {
     /// A figure played once (a pet, a moment), then back to the pose.
     showing: Signal<Option<Figure>>,
     taps: Rc<RefCell<Taps>>,
+    /// Whether Home is on screen, the local hour and day (the host's
+    /// `{"op": "visible"}`).
+    pub(crate) visible: Signal<Visible>,
+    /// Whether it talks, and what (§17): the core's chatter.
+    pub(crate) chatter: Rc<RefCell<Chatter>>,
+    /// The line in its bubble, numbered.
+    pub(crate) saying: Signal<Option<(u64, String)>>,
+    said: Rc<Cell<u64>>,
 }
 
 impl PetCtx {
@@ -110,7 +135,64 @@ impl PetCtx {
             played: Rc::new(RefCell::new(0)),
             showing: signal(None),
             taps: Rc::new(RefCell::new(Taps::default())),
+            visible: signal(Visible::default()),
+            chatter: Rc::new(RefCell::new(Chatter::default())),
+            saying: signal(None),
+            said: Rc::new(Cell::new(0)),
         }
+    }
+
+    /// `cue` happened at `now`: the pet says a line if it talks and the
+    /// core says it may, and screen readers hear it.
+    pub(crate) fn cue(&self, cue: Cue, fill: Fill, now: f64) {
+        let Some(view) = self.view.get_untracked() else {
+            return;
+        };
+        if !talks(&view) {
+            return;
+        }
+        let hour = self.visible.with_untracked(|v| v.hour);
+        let Some(parts) = speaker(&view, hour) else {
+            return;
+        };
+        let line = self.chatter.borrow_mut().cue(cue, who(&parts), now);
+        self.show(line, &view, fill);
+    }
+
+    /// Home has settled after appearing: a milestone kept for this visit,
+    /// or the night's or the morning's line.
+    pub(crate) fn arrived(&self, now: f64) {
+        let Some(view) = self.view.get_untracked() else {
+            return;
+        };
+        if !talks(&view) {
+            return;
+        }
+        let Visible { hour, day, .. } = self.visible.get_untracked();
+        let Some(parts) = speaker(&view, hour) else {
+            return;
+        };
+        let line = self.chatter.borrow_mut().arrived(who(&parts), now, day);
+        self.show(line, &view, Fill::default());
+    }
+
+    fn show(&self, line: Option<&'static str>, view: &PetView, fill: Fill) {
+        let name = pet_name(view);
+        let Some(words) = line.and_then(|id| {
+            words(
+                id,
+                &Fill {
+                    name: name.clone(),
+                    ..fill
+                },
+            )
+        }) else {
+            return;
+        };
+        let n = self.said.get() + 1;
+        self.said.set(n);
+        announce_for_accessibility(t!("%@: %@", arg1 = name, arg2 = words.clone()));
+        self.saying.set(Some((n, words)));
     }
 }
 
@@ -224,6 +306,7 @@ fn perched(ctx: Ctx) -> AnyElement {
         });
     }
     let showing = pet.showing;
+    let saying = pet.saying;
     let shown = computed(move || showing.get().or_else(|| base.get()));
     let label = {
         let view = pet.view;
@@ -269,12 +352,16 @@ fn perched(ctx: Ctx) -> AnyElement {
                 return;
             };
             haptic(Haptic::Impact(HapticImpact::Light));
-            let pogo = pet
-                .taps
-                .borrow_mut()
-                .tap(nsh_core::time::unix_ms() / 1000.0);
+            let now = nsh_core::time::unix_ms() / 1000.0;
+            let pogo = pet.taps.borrow_mut().tap(now);
             let pose = if pogo { Pose::Pogo } else { Pose::Petted };
             play(&pet, Figure::Pet { look, pose });
+            // A tap always answers (§17.1).
+            pet.cue(
+                if pogo { Cue::Pogo } else { Cue::Tap },
+                Fill::default(),
+                now,
+            );
         }
     };
     view()
@@ -295,6 +382,18 @@ fn perched(ctx: Ctx) -> AnyElement {
             Some(f) => untracked(move || companion(move || f, ART)),
             None => untracked(|| view().into_element()),
         }))
+        // What it says (§17.3): on its leading side, the bubble's bottom
+        // level with its middle, so a second line grows upward.
+        .child(
+            view()
+                .absolute()
+                .right(px(TARGET + SAYS_GAP))
+                .bottom(px(TARGET / 2.0 - SAYS_HALF_LINE))
+                .w(px(crate::ui::bubble::MAX_WIDTH))
+                .items_end()
+                .pointer_events(PointerEvents::None)
+                .child(speech(saying)),
+        )
         .into_element()
 }
 

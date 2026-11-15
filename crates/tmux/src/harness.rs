@@ -1,7 +1,7 @@
-//! The G2 equivalence harness's side of the parser: feed plans and the JSON
-//! line format, shared by `examples/cc_events.rs` and the capture tests.
-//! `harness/swift/main.swift` implements the same plans and prints the same
-//! bytes for the Swift parser; see `harness/equivalence.py`.
+//! The G2 parser harness: feed plans and the JSON line format, shared by
+//! `examples/cc_events.rs` and the capture tests. Its Swift side, which
+//! held the app's Swift parser to the same bytes, was retired with that
+//! parser (E3); the recorded Swift output stays as the goldens.
 
 use std::ops::Range;
 

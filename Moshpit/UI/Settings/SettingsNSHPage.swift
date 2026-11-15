@@ -2,9 +2,7 @@ import MoshpitKit
 import SwiftUI
 import UIKit
 
-/// A page Settings pushes on its own stack, for a row of the NSH root: each
-/// is the page its own switch picks (the NSH one or the SwiftUI one), so the
-/// NSH pages chain from the NSH root as they do from the SwiftUI one.
+/// A page Settings pushes on its own stack, for a row of the NSH root.
 enum SettingsPage: String, Hashable, Identifiable {
     case accent
     case appIcon = "app-icon"
@@ -19,13 +17,13 @@ enum SettingsPage: String, Hashable, Identifiable {
     @ViewBuilder
     var page: some View {
         switch self {
-        case .accent: AccentPage()
-        case .appIcon: AppIconPage()
-        case .theme: ThemePage()
-        case .voiceEngine: VoiceEnginePage()
-        case .whisperModel: WhisperModelPage()
-        case .voiceLanguage: VoiceLanguagePage()
-        case .recentLog: RecentLogPage()
+        case .accent: AccentNSHPage()
+        case .appIcon: AppIconNSHPage()
+        case .theme: ThemeGalleryNSHPage()
+        case .voiceEngine: VoiceEngineNSHPage()
+        case .whisperModel: WhisperModelNSHPage()
+        case .voiceLanguage: VoiceLanguageNSHPage()
+        case .recentLog: RecentLogNSHPage()
         }
     }
 }
@@ -49,7 +47,7 @@ enum SettingsPart: String, Hashable, Identifiable, CaseIterable {
     #if DEBUG
     /// The page a capture run has the NSH hub push once it is up
     /// (`-MOSHPIT_SEED_SETTINGS_PAGE terminal`, with `-MOSHPIT_SEED_SCREEN
-    /// settings-nsh`); `-MOSHPIT_SEED_SCROLL` then scrolls that page.
+    /// settings`); `-MOSHPIT_SEED_SCROLL` then scrolls that page.
     static var requested: SettingsPart? {
         let args = ProcessInfo.processInfo.arguments
         guard let i = args.firstIndex(of: "-MOSHPIT_SEED_SETTINGS_PAGE"), i + 1 < args.count else { return nil }
@@ -68,7 +66,7 @@ enum SettingsPart: String, Hashable, Identifiable, CaseIterable {
 /// it shows comes from the host (``SettingsModel``, from
 /// ``SettingsSnapshot``: the settings, the stores' counts, the catalogs'
 /// names), again whenever any of it changes; what the user changes comes back
-/// and is applied to `AppSettings` as the SwiftUI page's bindings apply it.
+/// and is applied to `AppSettings`.
 /// The navigation stays SwiftUI's: a row asks for a page (`onOpen`) and
 /// ``SettingsScreen`` pushes it, presents the sheet or opens the link. The
 /// version line's Copy menu is UIKit's, on the surface (``NSHContextMenus``).
@@ -91,7 +89,11 @@ struct SettingsNSHPage: View {
     var hosts: [SettingsHost] = []
     /// A connection picked on that list.
     var onSetup: (UUID) -> Void = { _ in }
-    var onFailure: () -> Void
+    /// The hub's screen couldn't run. A page of it that can't says so in
+    /// its own place instead, under the system's back button, and its Try
+    /// again runs that page again: it used to pop the stack and mark the
+    /// hub failed, whose Try again brought back the hub.
+    var onFailure: () -> Void = {}
 
     @Environment(\.dismiss) private var dismiss
     /// A page one of this page's rows pushed (Terminal's Theme…): pushed
@@ -103,8 +105,20 @@ struct SettingsNSHPage: View {
     @State private var model = SettingsModel()
     @State private var menus = NSHContextMenus()
     @State private var hostsFeed = SettingsHostsFeed()
+    /// This page of the hub couldn't run (the hub's own goes to
+    /// `onFailure`).
+    @State private var failed = false
 
     var body: some View {
+        if failed {
+            NSHPageFailed { failed = false }
+        } else {
+            page
+        }
+    }
+
+    @ViewBuilder
+    private var page: some View {
         let snapshot = SettingsSnapshot(
             settings: settings, shortcuts: shortcutStore, keys: keyStore, themes: themes,
             liveSession: liveSession, showsFilingNumber: showsFilingNumber)
@@ -129,7 +143,9 @@ struct SettingsNSHPage: View {
                 model.handle(message, settings: settings, onOpen: open, onDone: onDone,
                              onBack: { dismiss() })
             },
-            onFailure: onFailure)
+            onFailure: {
+                if part == nil { onFailure() } else { failed = true }
+            })
             .nshPage()
             .onAppear {
                 model.update(snapshot)
@@ -141,7 +157,7 @@ struct SettingsNSHPage: View {
             .navigationDestination(item: $pushed) { page in page.page }
             .navigationDestination(item: $pushedPart) { part in
                 SettingsNSHPage(part: part, liveSession: liveSession, showsFilingNumber: showsFilingNumber,
-                                onOpen: onOpen, onDone: onDone, onFailure: onFailure)
+                                onOpen: onOpen, onDone: onDone)
             }
     }
 
@@ -287,10 +303,9 @@ final class SettingsModel {
         if let snapshot { surface.post(Self.message(snapshot)) }
         if let pet { surface.post(json: pet) }
         #if DEBUG
-        // As the SwiftUI page scrolls (``SettingsAnchor/scroll(_:)``), and
-        // again once the native controls have reported their sizes and the
-        // text settled, so the shot finds the rows where the final layout has
-        // them.
+        // Twice: once the page is up, and again once the native controls
+        // have reported their sizes and the text settled, so the shot finds
+        // the rows where the final layout has them.
         if let anchor = SettingsAnchor.requested {
             for delay in [0.9, 2.0] {
                 DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak surface] in
@@ -362,6 +377,9 @@ final class SettingsModel {
         case "petName":
             guard let name = value as? String else { return false }
             CompanionPet.shared.rename(name)
+        case "petTalk":
+            guard let on = flag else { return false }
+            CompanionPet.shared.setTalk(on)
         case "font":
             guard let id = value as? String, TerminalFont.families.contains(where: { $0.id == id }) else { return false }
             settings.fontName = id
@@ -455,8 +473,8 @@ final class SettingsModel {
 }
 
 /// Where a capture run has Settings scrolled to (`-MOSHPIT_SEED_SCROLL
-/// <anchor>`), on the SwiftUI page and the NSH one alike, so both are
-/// pictured at the same rows: a group's first row at the top, or the end.
+/// <anchor>`): a group's first row at the top, or the end. The page reveals
+/// it (``SettingsModel/attach(_:)``).
 enum SettingsAnchor: String, CaseIterable {
     case cursor, behavior, mosh, notifications, bottom
 
@@ -465,17 +483,6 @@ enum SettingsAnchor: String, CaseIterable {
         let args = ProcessInfo.processInfo.arguments
         guard let i = args.firstIndex(of: "-MOSHPIT_SEED_SCROLL"), i + 1 < args.count else { return nil }
         return SettingsAnchor(rawValue: args[i + 1])
-    }
-
-    /// The SwiftUI page's half: scrolls its list to the anchor asked for, a
-    /// moment after it appears (the NSH page's is ``SettingsModel/attach(_:)``).
-    @MainActor
-    static func scroll(_ proxy: ScrollViewProxy) async {
-        guard let anchor = requested else { return }
-        for delay in [900, 1100] {
-            try? await Task.sleep(for: .milliseconds(delay))
-            proxy.scrollTo(anchor, anchor: anchor == .bottom ? .bottom : .top)
-        }
     }
     #endif
 }

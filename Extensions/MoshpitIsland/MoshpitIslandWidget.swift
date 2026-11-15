@@ -50,6 +50,27 @@ private let green = AgentPalette.doneAdaptive
 // full mono font — that keeps digits from jittering sideways without
 // dragging the rest of the type family along with them.
 
+/// The Live Activity: the Dynamic Island and the lock screen.
+///
+/// The expanded island, laid out once (Canary 130's review: the state said
+/// twice, names that were window titles and versions, rows cut by the
+/// island's curves):
+///
+/// - **leading**: the companion (the pet, the egg before it hatches, the
+///   Moshpit mark with the companion off), then the agent's name and, under
+///   it, where it is as Home says it ("moshpit · mac");
+/// - **trailing**: the one state label with its timer beside it (or the
+///   quiet state alone), vertically centred, inset from the corner;
+/// - **center**: nothing (it repeated the state);
+/// - **bottom**, inset from the curved corners: what it's asking or doing
+///   (amber when it asks), then up to two other agents, one line each
+///   (dot · name · place … time or state), then Switch (a 44 pt target) with
+///   "+N more" on the same line when there are more.
+///
+/// The compact pill: the companion (or the mark) leading; trailing, the
+/// one thing that matters most (the count waiting on you, the timer, the
+/// count working, a check). Minimal: the companion, else the count waiting,
+/// else the mark.
 struct MoshpitIslandLiveActivity: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: AgentActivityAttributes.self) { context in
@@ -61,91 +82,121 @@ struct MoshpitIslandLiveActivity: Widget {
             let still = context.state.companionStill(stale: context.isStale)
             return DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
-                    HStack(spacing: 6) {
-                        CompanionMark(still: still, state: headline?.state ?? .idle, size: 40, alwaysDark: true)
-                        Text(headline.map { displayCommand($0) } ?? "Moshpit")
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundStyle(Color.primary)
-                            .lineLimit(1)
+                    HStack(spacing: 8) {
+                        CompanionMark(still: still, size: 36, alwaysDark: true)
+                        if let headline {
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(headline.name)
+                                    .font(.system(size: 15, weight: .semibold))
+                                    .foregroundStyle(Color.primary)
+                                    .lineLimit(1)
+                                Text(headline.whereabouts)
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(Color.primary.opacity(0.55))
+                                    .lineLimit(1)
+                            }
+                        } else {
+                            Text("Moshpit")
+                                .font(.system(size: 15, weight: .semibold))
+                                .foregroundStyle(Color.primary)
+                        }
                     }
-                    .padding(.leading, 4)
+                    .padding(.leading, 6)
+                    .frame(maxHeight: .infinity, alignment: .center)
+                    .dynamicIsland(verticalPlacement: .belowIfTooWide)
                     .environment(\.colorScheme, .dark)
                 }
                 DynamicIslandExpandedRegion(.trailing) {
                     if let headline {
-                        StatusBadge(agent: headline, compact: true).padding(.trailing, 4)
+                        StateAndTime(agent: headline)
+                            .padding(.trailing, 6)
+                            .frame(maxHeight: .infinity, alignment: .center)
                             .environment(\.colorScheme, .dark)
-                    }
-                }
-                DynamicIslandExpandedRegion(.center) {
-                    // Prime real estate for the headline's state label + where
-                    // it lives — previously this whole region was empty.
-                    if let headline {
-                        VStack(spacing: 2) {
-                            Text(headline.state.label.uppercased())
-                                .font(.system(size: 10, weight: .bold))
-                                .kerning(0.5)
-                                .foregroundStyle(stateColor(headline.state))
-                            Text(headline.location)
-                                .font(.system(size: 10, design: .monospaced))
-                                .foregroundStyle(Color.primary.opacity(0.55))
-                                .lineLimit(1)
-                        }
-                        .environment(\.colorScheme, .dark)
                     }
                 }
                 DynamicIslandExpandedRegion(.bottom) {
                     VStack(alignment: .leading, spacing: 4) {
-                        // What the headline agent is doing / asking — the actual
-                        // content; give it room instead of a single clipped line.
-                        // Smart-truncated: a raw "claude --resume <uuid>" hook
-                        // title used to just get chopped mid-UUID by lineLimit.
+                        // What the headline agent is doing / asking; smart-
+                        // truncated so a long command stays readable.
                         if let headline, let detail = headline.detail, !detail.isEmpty {
                             Text(smartTruncate(detail))
-                                .font(.system(size: 11, design: .monospaced))
+                                .font(.system(size: 12, design: .monospaced))
                                 .foregroundStyle(headline.state == .attention ? amber : Color.primary.opacity(0.7))
                                 .lineLimit(1)
                         }
-                        // The OTHER agents as real rows (dot · name · live timer),
-                        // not an opaque "+N more".
                         OtherAgentRows(state: context.state)
                         if context.isStale {
                             StaleHint()
                         }
-                        // Several agents: let the pill cycle through them.
                         if context.state.agents.count > 1 {
-                            SwitchAgentButton().padding(.top, 2)
+                            HStack {
+                                SwitchAgentButton()
+                                Spacer(minLength: 8)
+                                let more = context.state.agents.count - 1 - OtherAgentRows.shown
+                                if more > 0 {
+                                    Text(AppLanguage.string("+\(more) more"))
+                                        .font(.system(size: 11, weight: .medium))
+                                        .foregroundStyle(Color.primary.opacity(0.45))
+                                }
+                            }
                         }
                     }
-                    .padding(.horizontal, 4)
+                    // Clear of the island's curved bottom corners.
+                    .padding(.horizontal, 14)
+                    .padding(.bottom, 2)
                     .environment(\.colorScheme, .dark)
                 }
             } compactLeading: {
-                CompanionMark(still: still, state: headline?.state ?? .idle, size: 24, alwaysDark: true)
+                CompanionMark(still: still, size: 24, alwaysDark: true)
                     .environment(\.colorScheme, .dark)
             } compactTrailing: {
                 CompactTrailing(state: context.state)
                     .environment(\.colorScheme, .dark)
             } minimal: {
-                // The one slot visible alongside another app's activity — show
-                // the strongest signal we have, not just a dot: attention count
-                // in amber, else the working dot.
+                // The one slot beside another app's activity: the companion
+                // (its pose says the state); else the count waiting on you;
+                // else the mark.
                 Group {
                     if still != nil {
-                        CompanionMark(still: still, state: headline?.state ?? .idle, size: 24, alwaysDark: true)
+                        CompanionMark(still: still, size: 24, alwaysDark: true)
                     } else if context.state.attentionCount > 0 {
                         Text("\(context.state.attentionCount)")
                             .font(.system(size: 12, weight: .heavy))
                             .monospacedDigit()
                             .foregroundStyle(amber)
                     } else {
-                        StateDot(state: headline?.state ?? .idle)
+                        IslandMark(size: 22)
                     }
                 }
                 .environment(\.colorScheme, .dark)
             }
             .widgetURL(context.state.headlineDeepLink.flatMap(URL.init(string:)))
             .keylineTint(teal)
+        }
+    }
+}
+
+/// The state's one label and its timer beside it ("WORKING 1:23"), or the
+/// quiet state alone ("done").
+private struct StateAndTime: View {
+    let agent: AgentActivityAttributes.Agent
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Text(agent.state.label.uppercased())
+                .font(.system(size: 10, weight: .bold))
+                .kerning(0.4)
+                .foregroundStyle(stateColor(agent.state).opacity(0.85))
+                .lineLimit(1)
+                .fixedSize()
+            if agent.state == .working || agent.state == .attention {
+                Text(agent.startedAt, style: .timer)
+                    .font(.system(size: 14, weight: .semibold))
+                    .monospacedDigit()
+                    .foregroundStyle(stateColor(agent.state))
+                    .frame(maxWidth: 56, alignment: .trailing)
+                    .multilineTextAlignment(.trailing)
+            }
         }
     }
 }
@@ -261,20 +312,26 @@ private struct AgentRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 10) {
-                CompanionMark(still: companion, state: agent.state, size: 32)
+                // The headline: the companion (or, switched off, the mark);
+                // the rest: their state's dot.
+                if compact {
+                    StateDot(state: agent.state)
+                } else {
+                    CompanionMark(still: companion, size: 32)
+                }
                 if compact {
                     // Name and location share ONE line for the trailing agents.
                     // Stacking them cost ~16pt each, and this activity is
                     // already at the height iOS starts clipping (see
                     // LockScreenView) — that budget buys the top and bottom
                     // padding instead, which every row benefits from.
-                    Text(displayCommand(agent))
+                    Text(agent.name)
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(Color.primary)
                         .lineLimit(1)
-                    Text(agent.location)
-                        .font(.system(size: 10, design: .monospaced))
-                        .foregroundStyle(Color.primary.opacity(0.4))
+                    Text(agent.whereabouts)
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color.primary.opacity(0.45))
                         .lineLimit(1)
                         .layoutPriority(-1)
                 } else {
@@ -288,13 +345,13 @@ private struct AgentRow: View {
                         // card has the height again, and the hierarchy is worth
                         // more than the two lines cost: telling you which agent
                         // wants what IS the card's whole job now.
-                        Text(displayCommand(agent))
+                        Text(agent.name)
                             .font(.system(size: 16, weight: .semibold))
                             .foregroundStyle(Color.primary)
                             .lineLimit(1)
-                        Text(agent.location)
-                            .font(.system(size: 11, design: .monospaced))
-                            .foregroundStyle(Color.primary.opacity(0.45))
+                        Text(agent.whereabouts)
+                            .font(.system(size: 12))
+                            .foregroundStyle(Color.primary.opacity(0.5))
                             .lineLimit(1)
                     }
                 }
@@ -319,19 +376,22 @@ private struct AgentRow: View {
 /// Preset quick-reply templates offered under Allow/Deny — one tap sends the
 /// text + Enter to the agent's pane (see AgentAction.reply).
 /// Cycle which agent the Dynamic Island pill shows (when several are active).
+/// Its capsule is drawn small; its target is 44 pt tall.
 private struct SwitchAgentButton: View {
     var body: some View {
         Button(intent: AgentCycleIntent()) {
             HStack(spacing: 4) {
                 Image(systemName: "arrow.left.arrow.right")
-                    .font(.system(size: 9, weight: .semibold))
+                    .font(.system(size: 10, weight: .semibold))
                 Text(AppLanguage.string("Switch"))
-                    .font(.system(size: 11, weight: .medium))
+                    .font(.system(size: 12, weight: .medium))
             }
-            .foregroundStyle(Color.primary.opacity(0.75))
-            .padding(.horizontal, 10)
-            .padding(.vertical, 4)
+            .foregroundStyle(Color.primary.opacity(0.8))
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
             .overlay(Capsule().strokeBorder(Color.primary.opacity(0.22), lineWidth: 1))
+            .frame(minHeight: 44)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
     }
@@ -339,11 +399,11 @@ private struct SwitchAgentButton: View {
 
 // MARK: - Shared bits
 
-/// The companion's still where there is one (a ``PixelSprite``), else the
-/// state's dot, as before the companion.
+/// The companion's still where there is one (a ``PixelSprite``: the pet in
+/// the agents' pose, or the egg before it hatches), else (the companion off)
+/// Moshpit's mark.
 private struct CompanionMark: View {
     let still: String?
-    let state: AgentActivityAttributes.AgentState
     let size: CGFloat
     var alwaysDark = false
 
@@ -351,7 +411,8 @@ private struct CompanionMark: View {
         if let still, PixelSprite(encoded: still) != nil {
             SpriteView(encoded: still, size: size, alwaysDark: alwaysDark)
         } else {
-            StateDot(state: state)
+            IslandMark(size: size * 0.85)
+                .frame(width: size, height: size)
         }
     }
 }
@@ -447,56 +508,51 @@ private struct CompactTrailing: View {
                 .font(.system(size: 12, weight: .bold))
                 .foregroundStyle(stateColor(.done))
         } else if let headline = state.headline {
-            // The pill's smallest slot — a bare 4-char fragment of the raw
-            // command is the one place a code-flavoured mono clip is actually
-            // the right call, since there's no room for anything else.
-            Text(String(headline.command.prefix(4)))
-                .font(.system(size: 12, weight: .bold, design: .monospaced))
-                .foregroundStyle(Color.primary)
+            // Nothing pressing: the state's dot (a clipped "clau" said
+            // nothing the leading companion doesn't).
+            StateDot(state: headline.state)
         }
     }
 }
 
-/// The non-headline agents as compact live rows in the expanded island —
-/// each with its own state dot, name, window and ticking timer. Replaces the
-/// old "+N more", which hid everything useful.
+/// The non-headline agents in the expanded island, one tidy line each:
+/// dot · name · where it is (as Home says it) … the timer or the state. At
+/// most ``shown``; the Switch row counts the rest.
 private struct OtherAgentRows: View {
     let state: AgentActivityAttributes.ContentState
+    static let shown = 2
 
     var body: some View {
         let headlineId = state.headline?.id
         let others = state.agents.filter { $0.id != headlineId }
-        ForEach(others.prefix(2)) { agent in
+        ForEach(others.prefix(Self.shown)) { agent in
             HStack(spacing: 6) {
                 StateDot(state: agent.state)
-                Text(displayCommand(agent))
-                    .font(.system(size: 11, weight: .semibold))
+                Text(agent.name)
+                    .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(Color.primary.opacity(0.85))
                     .lineLimit(1)
-                Text(agent.location)
-                    .font(.system(size: 10, design: .monospaced))
-                    .foregroundStyle(Color.primary.opacity(0.45))
+                    .fixedSize()
+                Text(agent.whereabouts)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color.primary.opacity(0.5))
                     .lineLimit(1)
-                Spacer(minLength: 4)
+                    .truncationMode(.middle)
+                Spacer(minLength: 6)
                 switch agent.state {
                 case .working, .attention:
                     Text(agent.startedAt, style: .timer)
-                        .font(.system(size: 10, weight: .medium))
+                        .font(.system(size: 11, weight: .medium))
                         .monospacedDigit()
                         .foregroundStyle(stateColor(agent.state))
-                        .frame(maxWidth: 44)
+                        .frame(maxWidth: 48, alignment: .trailing)
                         .multilineTextAlignment(.trailing)
                 case .done, .idle:
                     Text(agent.state.label)
-                        .font(.system(size: 10, weight: .medium))
+                        .font(.system(size: 11, weight: .medium))
                         .foregroundStyle(stateColor(agent.state))
                 }
             }
-        }
-        if others.count > 2 {
-            Text(AppLanguage.string("+\(others.count - 2) more"))
-                .font(.system(size: 10, weight: .medium))
-                .foregroundStyle(Color.primary.opacity(0.4))
         }
     }
 }
@@ -550,10 +606,6 @@ private func stateColor(_ state: AgentActivityAttributes.AgentState) -> Color {
     case .done:      return green
     case .idle:      return Color.primary.opacity(0.45)
     }
-}
-
-private func displayCommand(_ agent: AgentActivityAttributes.Agent) -> String {
-    agent.command.isEmpty ? "shell" : agent.command
 }
 
 /// Shortens long opaque tokens — session ids, hashes, absolute paths —

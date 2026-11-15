@@ -15,9 +15,10 @@ use common::{
     zh_hans,
 };
 use moshpit_ui::{
-    connection_form::{Auth, FormState, KeyChoice, Message, Mux, SaveFailure, Secrets},
+    connection_form::{
+        Auth, ConnectionPredict, FormState, KeyChoice, Message, Mux, Other, SaveFailure, Secrets,
+    },
     screen::{Params, Screen},
-    settings::PredictMode,
 };
 use nsh_core::{Points, Size};
 use serde_json::json;
@@ -27,7 +28,6 @@ fn draft() -> FormState {
         editing: false,
         port: "22".into(),
         udp_range: "60000 – 61000".into(),
-        roam_on_cellular: true,
         socks_port: "1080".into(),
         mux: Mux::Tmux,
         ..FormState::default()
@@ -182,7 +182,7 @@ fn edits_reach_the_host_and_save_needs_a_name_a_host_and_a_user() {
         json!({"ev": "set", "key": "mosh", "value": true})
     );
     find(&mut app, "text:Predict Mode");
-    assert!(app.screen().shows("Adaptive"));
+    assert!(app.screen().shows("As in Settings"));
     assert!(
         app.screen()
             .matches(&input("connection-form-mosh-server"))
@@ -249,7 +249,7 @@ fn an_edit_starts_from_the_saved_connection_and_can_delete_it() {
         label: "laptop · ED25519".into(),
     });
     state.mosh = true;
-    state.predict_mode = PredictMode::Never;
+    state.predict_mode = ConnectionPredict::Never;
     state.socks = true;
     state.socks_host = "proxy.example.com".into();
     show(&mut app, &channel, state);
@@ -303,7 +303,7 @@ fn in_the_apps_language() {
         "密码",
         "使用 mosh",
         "换网络不断线；需要 UDP。",
-        "自适应",
+        "跟随设置",
     ] {
         assert!(
             app.screen().shows(text),
@@ -679,6 +679,42 @@ fn a_port_that_is_not_one_says_so_once_left_and_save_waits() {
         .unwrap();
     emit(&mut app, socks, "change", json!(false));
     assert!(saves(&mut app, &heard), "a hidden proxy port held Save");
+    channel.close();
+}
+
+/// B551: a saved connection an old app saved without a name or a user
+/// (B517: it used to save, and every sign-in failed), or with an emoji the
+/// form refuses, opened to edit: Save waited, and nothing said why until
+/// each field was entered and left; the empty fields showed their grey
+/// placeholders ("my-server", "root") as if filled. Nothing is being typed:
+/// they say so at once. A new connection's empty fields stay quiet.
+#[test]
+fn a_saved_connection_missing_what_save_needs_says_so_at_once() {
+    let (mut app, channel, _) = start_tall(Params::default());
+    let heard = hear(&channel);
+    let mut state = savable();
+    state.editing = true;
+    state.name = String::new();
+    state.username = String::new();
+    state.emoji = "ab".into();
+    show(&mut app, &channel, state);
+    find(&mut app, "id:connection-form-name");
+    for id in [
+        "connection-form-name",
+        "connection-form-username",
+        "connection-form-emoji",
+    ] {
+        assert!(says_wrong(&app, id), "{id}");
+    }
+    assert!(!saves(&mut app, &heard));
+    channel.close();
+
+    let (mut app, channel, _) = start_tall(Params::default());
+    show(&mut app, &channel, draft());
+    find(&mut app, "id:connection-form-name");
+    for id in ["connection-form-name", "connection-form-username"] {
+        assert!(!says_wrong(&app, id), "a new connection's {id}");
+    }
     channel.close();
 }
 
@@ -1348,5 +1384,106 @@ fn a_host_is_just_a_host_and_a_user_is_needed() {
     retype(&mut app, "connection-form-username", "dev");
     assert!(!says_wrong(&app, "connection-form-username"));
     assert!(saves(&mut app, &heard));
+    channel.close();
+}
+
+/// B530: "Roam on Cellular" was saved per connection and read by nothing
+/// (mosh roams whatever the network; nothing dials over cellular on its
+/// own). Its switch is gone from the mosh rows.
+#[test]
+fn the_mosh_rows_have_no_roam_on_cellular() {
+    let (mut app, channel, _) = start_tall(Params::default());
+    let mut mosh = savable();
+    mosh.mosh = true;
+    show(&mut app, &channel, mosh);
+    find(&mut app, "text:Predict Mode");
+    assert!(!app.screen().matches("id:connection-form-roam").unwrap());
+    assert!(!app.screen().shows("Roam on Cellular"));
+    channel.close();
+}
+
+/// B531: a connection's predictive echo is as Settings says (the first,
+/// and a new connection's), or its own: Adaptive, Always, Never or
+/// Experimental. "Adaptive" used to be the only way to say "as Settings
+/// says", so a connection could never pin Adaptive itself.
+#[test]
+fn predict_mode_is_settings_or_its_own() {
+    let (mut app, channel, natives) = start_tall(Params::default());
+    let heard = hear(&channel);
+    let mut mosh = savable();
+    mosh.mosh = true;
+    show(&mut app, &channel, mosh);
+    find(&mut app, "text:Predict Mode");
+    let menu = natives
+        .find("moshpit/menu", "connection-form-predict")
+        .unwrap();
+    assert_eq!(
+        natives.prop(menu, "items"),
+        Some(json!([
+            {"id": "settings", "title": "As in Settings", "checked": true},
+            {"id": "adaptive", "title": "Adaptive"},
+            {"id": "always", "title": "Always"},
+            {"id": "never", "title": "Never"},
+            {"id": "experimental", "title": "Experimental"},
+        ]))
+    );
+    drain(&heard);
+    emit(&mut app, menu, "select", json!("adaptive"));
+    assert_eq!(
+        drain(&heard),
+        [json!({"ev": "set", "key": "predictMode", "value": "adaptive"})]
+    );
+    channel.close();
+}
+
+/// B532: a connection with the same user, host and port as a saved one, or
+/// the same name, says which one under CONNECTION once its fields are
+/// left. A warning only: Save still saves.
+#[test]
+fn a_duplicate_says_which_and_still_saves() {
+    let (mut app, channel, _) = start_tall(Params::default());
+    let heard = hear(&channel);
+    let mut state = savable();
+    state.others = vec![Other {
+        name: "gpu-01".into(),
+        user: "me".into(),
+        host: "BOX.example.com".into(),
+        port: 22,
+    }];
+    show(&mut app, &channel, state);
+    find(&mut app, "id:connection-form-host");
+    assert!(
+        !app.screen()
+            .matches("id:connection-form-duplicate")
+            .unwrap(),
+        "said before a field was left"
+    );
+    retype(&mut app, "connection-form-host", "box.example.com");
+    find(&mut app, "id:connection-form-duplicate");
+    assert!(
+        app.screen().shows("Same user, host and port as “gpu-01”."),
+        "{:?}",
+        app.screen().texts()
+    );
+    assert!(saves(&mut app, &heard), "a duplicate held Save");
+
+    retype(&mut app, "connection-form-port", "2222");
+    retype(&mut app, "connection-form-name", "GPU-01");
+    find(
+        &mut app,
+        "text:“gpu-01” is already another connection's name.",
+    );
+    assert!(saves(&mut app, &heard));
+
+    retype(&mut app, "connection-form-name", "other");
+    assert!(
+        !app.screen()
+            .shows("“gpu-01” is already another connection's name.")
+    );
+    assert!(
+        !app.screen()
+            .matches("id:connection-form-duplicate")
+            .unwrap()
+    );
     channel.close();
 }

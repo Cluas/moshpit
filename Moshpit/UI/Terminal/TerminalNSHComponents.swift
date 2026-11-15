@@ -7,7 +7,7 @@ import UIKit
 ///
 /// - `moshpit/terminal`: the slot the session's terminal shows in
 ///   (``TerminalNSHSlot``, the page's ``TerminalNSHStage``).
-/// - `moshpit/glass`: the top bar's glass, `glassChrome(in:)`'s: Liquid
+/// - `moshpit/glass`: the top bar's glass: Liquid
 ///   Glass (`UIGlassEffect`, regular, interactive) on iOS 26 and later; the
 ///   bar's material (SwiftUI's `.bar`, the system chrome material) with a
 ///   hairline border below. A leaf: what sits on it is its sibling. Props

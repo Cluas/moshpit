@@ -1,8 +1,10 @@
-//! Scripted sessions for the controller equivalence harness
-//! (`harness/controller/`): the same script runs through this controller and
-//! through the app's Swift `TmuxSessionController` (built for macOS by
-//! `harness/controller/build-swift.sh`), and both print the same log format,
-//! compared line by line.
+//! Scripted sessions for the controller's committed logs
+//! (`tests/fixtures/controller/`, checked by `tests/controller_logs.rs`).
+//! The scripts were the equivalence harness's, which ran each through this
+//! controller and the app's Swift `TmuxSessionController` and compared the
+//! logs line by line; the Swift side was retired with that controller (E3),
+//! and `harness/controller/divergences.json` keeps what the comparison
+//! found.
 //!
 //! A script is one step per line (`#` starts a comment). Text arguments use
 //! escapes: `\n \r \t \e \\ \s` (a space) and `\xHH` (one byte).

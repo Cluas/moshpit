@@ -74,6 +74,14 @@ impl Link {
     pub fn is_up(self) -> bool {
         self.has_session() && self != Link::Dead
     }
+
+    /// Up and settled: what Home's top line counts as online. A host still
+    /// dialling or attaching is not, while its card spins (B552: "1
+    /// connection online" over "Connecting…"); a stalled attach is
+    /// connected, and its card says why.
+    pub fn is_online(self) -> bool {
+        self.is_up() && !self.is_connecting()
+    }
 }
 
 /// The transport's state as the terminal's pill reads it
@@ -1007,13 +1015,15 @@ fn is_version(name: &str) -> bool {
 }
 
 /// Whether a window's name is one nobody chose (§6.1, the naming rules'
-/// second and fourth): empty, the pane's program (as tmux's automatic
-/// rename sets it: the command, its display name, a version), a shell or
-/// a known agent's name, or herdr's `Tab N`.
+/// second and fourth): empty, a bare number (an index, not a name), the
+/// pane's program (as tmux's automatic rename sets it: the command, its
+/// display name, a version), a shell or a known agent's name, or herdr's
+/// `Tab N`.
 pub fn is_unnamed_window(name: &str, command: &str) -> bool {
     let name = name.trim();
     let lowered = name.to_lowercase();
     if name.is_empty()
+        || name.bytes().all(|b| b.is_ascii_digit())
         || is_version(name)
         || lowered == command.to_lowercase()
         || lowered == display_command(command).to_lowercase()
@@ -1037,6 +1047,27 @@ pub fn folder_name(path: &str) -> Option<String> {
     parts.last().map(|last| (*last).to_owned())
 }
 
+/// Where a pane is, as Home names it (§6.1, the naming rules): its herdr
+/// workspace (`workspace`, none under tmux), else its window's name when
+/// someone chose it (not the program's own, a version, a shell or `Tab N`:
+/// [`is_unnamed_window`]), else its folder. None when nothing names it:
+/// Home then says the agent and the window's index; the island, the host
+/// alone.
+pub fn pane_place(
+    command: &str,
+    window_name: &str,
+    workspace: Option<&str>,
+    path: Option<&str>,
+) -> Option<String> {
+    let window_name = window_name.trim();
+    workspace
+        .map(str::trim)
+        .filter(|name| !name.is_empty() && *name != "~")
+        .map(str::to_owned)
+        .or_else(|| (!is_unnamed_window(window_name, command)).then(|| window_name.to_owned()))
+        .or_else(|| path.and_then(folder_name))
+}
+
 /// What pane `pane` of `control` is called (§6.1, the naming rules);
 /// `fallback` is the word for an agent no stamp names ("agent").
 pub fn pane_title(control: &Control, pane: &PaneInfo, fallback: &str) -> PaneTitle {
@@ -1053,14 +1084,8 @@ pub fn pane_title(control: &Control, pane: &PaneInfo, fallback: &str) -> PaneTit
     let workspace = window
         .filter(|_| control.mux == Mux::Herdr)
         .and_then(|w| control.sessions.iter().find(|s| s.id == w.session))
-        .map(|s| s.name.trim())
-        .filter(|name| !name.is_empty() && *name != "~");
-    let named_window =
-        (!is_unnamed_window(window_name, &pane.command)).then(|| window_name.to_owned());
-    let title = workspace
-        .map(str::to_owned)
-        .or(named_window)
-        .or_else(|| pane.path.as_deref().and_then(folder_name))
+        .map(|s| s.name.as_str());
+    let title = pane_place(&pane.command, window_name, workspace, pane.path.as_deref())
         .unwrap_or_else(|| {
             let who = agent
                 .clone()
@@ -1260,7 +1285,7 @@ pub fn summary(connections: &[Connection], fallback: &str) -> Summary {
     if waiting > 0 {
         return Summary::NeedsYou { waiting };
     }
-    let online = connections.iter().filter(|c| c.link.is_up()).count();
+    let online = connections.iter().filter(|c| c.link.is_online()).count();
     if online == 0 {
         return Summary::Nothing;
     }
@@ -1290,6 +1315,9 @@ pub enum CardBody {
     /// The session dials, redials or attaches its multiplexer: a spinner
     /// row, "Connecting…", or "Connecting to tmux…" with `mux` attaching.
     Connecting { mux: Option<Mux> },
+    /// Its disconnect is under way (the teardown flushes for up to ~2 s): a
+    /// spinner row, "Disconnecting…", and nothing to tap (B535).
+    Disconnecting,
     /// The session is gone: "Reconnect", "Lost 25m ago" from `lost_at`.
     /// `reason`: why it failed, when it did (R19 may word a host key's
     /// differently); none for a session that ended.
@@ -1316,6 +1344,7 @@ pub enum CardBody {
 pub fn card_body(connection: &Connection, idle_expanded: bool, fallback: &str) -> Option<CardBody> {
     let body = match connection.link {
         Link::Saved => return None,
+        _ if connection.disconnecting => CardBody::Disconnecting,
         Link::Connecting | Link::Reconnecting => CardBody::Connecting { mux: None },
         Link::Attaching => CardBody::Connecting {
             mux: Some(connection.control.as_ref().map_or(Mux::Tmux, |c| c.mux)),
@@ -1609,6 +1638,73 @@ mod tests {
         assert_eq!(entries[2].signal, None);
         assert_eq!(entries[2].since, None, "idle shows no duration");
         assert_eq!(entries[0].since, Some(1000.0));
+    }
+
+    /// What the SwiftUI card's own tests pinned (AgentSectionTests,
+    /// HomeTreeRowsTests), kept when the card went (D8): agents in one
+    /// state keep their order poll after poll (by name, then pane), one
+    /// with no name and no command says the generic word, and a level's
+    /// key never meets another level's however alike the raw ids.
+    #[test]
+    fn ties_keep_their_order_and_keys_their_level() {
+        let hook = |pane: &str, agent: Option<&str>| Hook {
+            pane: pane.into(),
+            state: Some("working".into()),
+            agent: agent.map(Into::into),
+            since: None,
+        };
+        let mut control = control();
+        control.hooks = vec![
+            hook("%9", Some("codex")),
+            hook("%4", Some("codex")),
+            hook("%1", None),
+        ];
+        let panes = |control: &Control| {
+            agent_entries(control, "agent")
+                .into_iter()
+                .map(|e| (e.pane, e.name))
+                .collect::<Vec<_>>()
+        };
+        let first = panes(&control);
+        assert_eq!(
+            first,
+            [
+                ("%1".to_owned(), "agent".to_owned()),
+                ("%4".to_owned(), "codex".to_owned()),
+                ("%9".to_owned(), "codex".to_owned()),
+            ]
+        );
+        control.hooks.reverse();
+        assert_eq!(panes(&control), first, "the hooks' order changes nothing");
+
+        let alike = Control {
+            mux: Mux::Tmux,
+            attached: true,
+            sessions: vec![SessionInfo {
+                id: "1".into(),
+                name: "one".into(),
+            }],
+            windows: vec![WindowInfo {
+                id: "1".into(),
+                session: "1".into(),
+                index: 1,
+                name: "one".into(),
+                pane_count: 1,
+            }],
+            panes: vec![PaneInfo {
+                id: "1".into(),
+                window: "1".into(),
+                index: 0,
+                command: String::new(),
+                path: None,
+            }],
+            ..Control::default()
+        };
+        let keys: Vec<String> = tree_rows(&alike, &[], &["1".into()], "Window")
+            .iter()
+            .map(TreeRow::key)
+            .collect();
+        assert_eq!(keys, ["s1", "w1", "p1"]);
     }
 
     #[test]

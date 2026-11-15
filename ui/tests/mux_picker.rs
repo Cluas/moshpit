@@ -255,3 +255,82 @@ fn herdr_workspaces_in_chinese() {
         );
     }
 }
+
+/// A window tmux named after Claude Code's binary (its version) is called
+/// what Home calls it, in its row and in the active session's meta; only
+/// the windows list promises a swipe (it walks the session's panes, never
+/// another session).
+#[test]
+fn version_named_windows_say_their_folder_and_sessions_are_tapped() {
+    let (mut app, channel) = open(Params::default());
+    show(
+        &mut app,
+        &channel,
+        &json!({
+            "op": "picker", "kind": "windows", "mux": "tmux", "active": "@2",
+            "rows": [
+                {"id": "@1", "index": 1, "name": "codex", "panes": 1, "command": "codex",
+                 "path": "/home/dev/src/api", "agent": "codex"},
+                {"id": "@2", "index": 2, "name": "2.1.322", "panes": 3, "command": "2.1.322",
+                 "path": "/home/dev/src/trainer", "agent": "claude", "signal": "attention"},
+                {"id": "@3", "index": 3, "name": "2.1.322", "panes": 1, "command": "2.1.322",
+                 "path": "/home/dev"}
+            ]
+        }),
+    );
+    app.wait_for("id:mux-picker-row-@3").unwrap();
+    for text in [
+        "1: api",
+        "2: trainer",
+        "3: claude",
+        "3 panes · claude",
+        "Swipe to switch",
+    ] {
+        assert!(
+            app.screen().shows(text),
+            "{text}: {:?}",
+            app.screen().texts()
+        );
+    }
+    assert!(
+        !app.screen().texts().iter().any(|t| t.contains("2.1.322")),
+        "a version string: {:?}",
+        app.screen().texts()
+    );
+
+    show(
+        &mut app,
+        &channel,
+        &json!({
+            "op": "picker", "kind": "sessions", "mux": "tmux", "active": "$0",
+            "rows": [
+                {"id": "$0", "name": "work", "windows": 4, "window": "2:2.1.322",
+                 "command": "2.1.322", "path": "/home/dev/src/trainer", "agent": "claude"},
+                {"id": "$1", "name": "play"}
+            ]
+        }),
+    );
+    app.wait_for("id:mux-picker-row-$1").unwrap();
+    for text in ["4 windows · 2: trainer", "Tap to switch"] {
+        assert!(
+            app.screen().shows(text),
+            "{text}: {:?}",
+            app.screen().texts()
+        );
+    }
+    assert!(
+        !app.screen().shows("Swipe to switch"),
+        "sessions never swipe"
+    );
+
+    // herdr's tabs are swiped through too now.
+    show(&mut app, &channel, &windows("herdr"));
+    app.wait_for("text:Tabs").unwrap();
+    assert!(
+        app.screen().shows("Swipe to switch"),
+        "{:?}",
+        app.screen().texts()
+    );
+    assert!(!app.screen().shows("Tap to switch"));
+    channel.close();
+}

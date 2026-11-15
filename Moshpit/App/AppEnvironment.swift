@@ -168,3 +168,18 @@ private struct AppPopover<Popover: View>: ViewModifier {
         }
     }
 }
+
+/// Tiny environment wrapper so sheets can reach the ConnectionStore without
+/// threading it through every initializer.
+@Observable
+final class ConnectionStoreHolder {
+    let store: ConnectionStore
+    init(store: ConnectionStore) { self.store = store }
+}
+
+/// Environment wrapper for the KeychainService actor.
+@Observable
+final class KeychainServiceHolder {
+    let service: KeychainService
+    init(service: KeychainService) { self.service = service }
+}

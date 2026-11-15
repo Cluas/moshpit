@@ -1,26 +1,12 @@
 import SwiftUI
 import UIKit
 
-/// Settings › Accent: the SwiftUI page (``AccentGalleryView``), or the NSH one
-/// while its switch is on (``NSHScreen/accent``). With the switch off the
-/// SwiftUI page is all there is: no NSH code runs.
-struct AccentPage: View {
-    var body: some View {
-        if NSHScreen.accent.isOn {
-            AccentNSHPage()
-        } else {
-            AccentGalleryView()
-                .darkOnlyPage()
-        }
-    }
-}
-
 /// Settings › Accent drawn by NSH (`ui/src/accent.rs`): the built-in and the
-/// user's own accents, from the host (``AccentModel``). The page behaves as
-/// the SwiftUI one does: a pick is ticked at once and applied as the page
-/// goes away (``AccentModel/commit(_:)``, see ``AccentGalleryView``'s
-/// `pendingID`); New and a custom accent's edit button open the editor sheet
-/// (the one its own switch picks, ``AccentEditorPage``); a custom accent's
+/// user's own accents, from the host (``AccentModel``). A pick is ticked at
+/// once and applied as the page goes away (``AccentModel/commit(_:)``,
+/// ``AccentModel/pendingID`` says why); New and a custom accent's edit
+/// button open the editor sheet
+/// (``AccentEditorNSHPage``); a custom accent's
 /// row has the same context menu (UIKit's, on the NSH surface:
 /// ``AccentRowMenus``); Delete asks with the card the NSH page draws, for
 /// the accent the model names.
@@ -35,8 +21,7 @@ struct AccentNSHPage: View {
 
     var body: some View {
         if failed {
-            AccentGalleryView()
-                .darkOnlyPage()
+            NSHPageFailed { failed = false }
         } else {
             NSHPage(
                 screen: .accent,
@@ -57,7 +42,7 @@ struct AccentNSHPage: View {
                 .navigationTitle("Accent")
                 .onDisappear { model.commit(settings) }
                 .appSheet(item: $editing) { theme in
-                    AccentEditorPage(theme: theme) { saved in
+                    AccentEditorNSHPage(theme: theme) { saved in
                         // Persisted at once (the user pressed Save), picked
                         // like any other accent.
                         store.save(saved)
@@ -97,10 +82,10 @@ struct AccentNSHPage: View {
     #if DEBUG
     /// A capture run's editor or delete card, over the first custom accent.
     private func seedCapture() {
-        if let request = CaptureScreen.deleteRequested, !request.theme, let first = store.customThemes.first {
+        if CaptureScreen.deleteRequested == false, let first = store.customThemes.first {
             model.confirmDelete(first.id, settings: settings, store: store)
         }
-        if let request = CaptureScreen.editorRequested, !request.theme {
+        if CaptureScreen.editorRequested == false {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                 editing = store.customThemes.first
                     ?? store.makeDraft(basedOn: AppThemeCatalog.theme(for: settings.appThemeId))
@@ -116,8 +101,12 @@ struct AccentNSHPage: View {
 @MainActor
 final class AccentModel {
     /// The accent picked here and not yet applied: ticked at once, written to
-    /// the settings as the page goes away (``AccentGalleryView``'s
-    /// `pendingID` says why).
+    /// the settings as the page goes away. Writing `appThemeId` at once would
+    /// recolor the app at once, but the root view rebuilds its whole subtree
+    /// on that change (`Ink`'s tokens are static computed properties that
+    /// Observation can't track), and the rebuild takes this pushed page down
+    /// with it: a tap bounced the user back to Settings, so comparing two
+    /// accents meant navigating back each time.
     private(set) var pendingID: String?
     /// The custom accent the delete card asks about, while it shows.
     private(set) var deleting: String?
@@ -174,7 +163,7 @@ final class AccentModel {
     }
 
     /// Deletes custom accent `theme` (the card's Delete); one that was
-    /// picked or in effect gives way to Signal Room, as on the SwiftUI page.
+    /// picked or in effect gives way to Signal Room.
     func remove(_ theme: AppTheme, settings: AppSettings, store: AppThemeStore) {
         deleting = nil
         let wasSelected = selectedID(settings, store: store) == theme.id
@@ -256,7 +245,7 @@ final class AccentRowMenus: NSObject, UIContextMenuInteractionDelegate {
         return nil
     }
 
-    /// The menu's actions for `theme`, as the SwiftUI page's.
+    /// The menu's actions for `theme`.
     func actions(for theme: AppTheme) -> [UIAction] {
         [
             UIAction(title: String(localized: "Edit"), image: UIImage(systemName: "slider.horizontal.3")) {

@@ -100,7 +100,7 @@ fn kept<T: Clone + PartialEq + 'static>(read: impl Fn() -> Option<T> + 'static) 
 }
 
 /// The banner and the notice, laid over the screen under the top bar.
-pub(crate) fn over_pane(ctx: Ctx) -> AnyElement {
+pub(crate) fn over_pane(ctx: Ctx, order: Memo<super::switcher::Order>) -> AnyElement {
     let compact = {
         let ctx = ctx.clone();
         computed(move || ctx.compact())
@@ -119,7 +119,9 @@ pub(crate) fn over_pane(ctx: Ctx) -> AnyElement {
                 .pointer_events(PointerEvents::BoxNone)
                 .test_id("terminal-banners")
                 .child(banner_slot(ctx.clone()))
-                .child(notice_slot(ctx)),
+                .child(notice_slot(ctx.clone()))
+                // The swipe's dots, under whatever banner is up.
+                .child(super::switcher::dots(ctx, order)),
         )
         .into_element()
 }

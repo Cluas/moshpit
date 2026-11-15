@@ -50,7 +50,7 @@ enum KeychainReferences {
     @discardableResult
     static func release(_ ref: String, connections: ConnectionStore, keys: SSHKeyStore,
                         keychain: KeychainService,
-                        preferences: PreferencesHost = RustStoreSwitch.preferences) async -> StoreSecretFate {
+                        preferences: PreferencesHost = AppStores.preferences) async -> StoreSecretFate {
         let held = referenced(connections: connections, keys: keys)
         let fate = storeRelease(preferences: preferences, mode: .system, account: ref,
                                 referenced: held.map(Array.init), keychain: keychain.storeHost)
@@ -63,7 +63,7 @@ enum KeychainReferences {
     /// it (B325), or the drop failed. ``release(_:connections:keys:keychain:preferences:)``
     /// drops it once the session lets go; if the app ends first, the next
     /// launch does (``settleReleasesOnce``). Never offered back as a key.
-    static func hold(_ ref: String, preferences: PreferencesHost = RustStoreSwitch.preferences) {
+    static func hold(_ ref: String, preferences: PreferencesHost = AppStores.preferences) {
         if !storeHoldRelease(preferences: preferences, mode: .system, account: ref) {
             Log.store.error("keychain: an item a connection left couldn't be listed to drop later")
         }
@@ -80,7 +80,7 @@ enum KeychainReferences {
     @discardableResult
     static func settleReleasesOnce(connections: ConnectionStore, keys: SSHKeyStore,
                                    keychain: KeychainService,
-                                   preferences: PreferencesHost = RustStoreSwitch.preferences)
+                                   preferences: PreferencesHost = AppStores.preferences)
         -> [StoreSettledRelease] {
         guard !settled, let held = referenced(connections: connections, keys: keys) else { return [] }
         settled = true
@@ -118,7 +118,7 @@ enum KeychainReferences {
     @discardableResult
     static func recoverOrphansOnce(connections: ConnectionStore, keys: SSHKeyStore,
                                    keychain: KeychainService,
-                                   preferences: PreferencesHost = RustStoreSwitch.preferences) async -> [SSHKeyRecord] {
+                                   preferences: PreferencesHost = AppStores.preferences) async -> [SSHKeyRecord] {
         guard !looked else { return [] }
         // What a connection let go of is to be dropped, not offered back
         // as a key (B428).

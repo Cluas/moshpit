@@ -22,10 +22,14 @@ struct StageSwapTests {
     /// A controller whose pane's terminal is made again under the same
     /// pane id (what a controller's own re-mint does): the target, the same
     /// value, names a new terminal.
-    final class RemintingController: TmuxSessionController {
+    final class RemintingController: PaneTerminalSource {
+        let panes = TerminalNSHTests.paneController()
         var reminted: TerminalSurface?
-        override func surface(for paneId: String) -> TerminalSurface {
-            reminted ?? super.surface(for: paneId)
+        func surface(for paneId: String) -> TerminalSurface {
+            reminted ?? panes.surface(for: paneId)
+        }
+        func coordinator(for paneId: String) -> SwiftTerminalView.Coordinator? {
+            panes.coordinator(for: paneId)
         }
     }
 
@@ -33,7 +37,7 @@ struct StageSwapTests {
 
     @Test("A terminal made again under the same target is in the slot, sized, on the next turn: no re-run")
     func aNewTerminalUnderTheSameTargetIsHosted() async throws {
-        let controller = RemintingController(sshSession: MockTmuxTransport())
+        let controller = RemintingController()
         let stage = TerminalNSHStage()
         let (slot, window) = TerminalNSHTests.slot(for: stage)
         defer { window.isHidden = true }
@@ -57,7 +61,7 @@ struct StageSwapTests {
 
     @Test("A terminal put in the slot is drawn whole there")
     func hostingDrawsWhole() throws {
-        let controller = TmuxSessionController(sshSession: MockTmuxTransport())
+        let controller = TerminalNSHTests.paneController()
         let stage = TerminalNSHStage()
         let (_, window) = TerminalNSHTests.slot(for: stage)
         defer { window.isHidden = true }
@@ -69,7 +73,7 @@ struct StageSwapTests {
 
     @Test("Nothing changes for a terminal minted for another pane")
     func anotherPanesTerminalChangesNothing() async throws {
-        let controller = TmuxSessionController(sshSession: MockTmuxTransport())
+        let controller = TerminalNSHTests.paneController()
         let stage = TerminalNSHStage()
         let (_, window) = TerminalNSHTests.slot(for: stage)
         defer { window.isHidden = true }
@@ -85,7 +89,7 @@ struct StageSwapTests {
 
     @Test("A screen out of sight never takes the terminal from the one in sight")
     func aStageOutOfSightKeepsItsHands() throws {
-        let controller = TmuxSessionController(sshSession: MockTmuxTransport())
+        let controller = TerminalNSHTests.paneController()
         let target = TerminalNSHStage.Target(source: .pane(controller, "%1"), inset: 4)
         // The screen below in the stack (or one on its way out): its slot is
         // in no window.
@@ -110,7 +114,7 @@ struct StageSwapTests {
 
     @Test("The look after hosting puts back a host knocked out of its slot and faded, and says so")
     func theCheckPutsItRight() throws {
-        let controller = TmuxSessionController(sshSession: MockTmuxTransport())
+        let controller = TerminalNSHTests.paneController()
         let stage = TerminalNSHStage()
         let (slot, window) = TerminalNSHTests.slot(for: stage)
         defer { window.isHidden = true }
@@ -134,7 +138,7 @@ struct StageSwapTests {
 
     @Test("The look lifts a pane-switch veil stuck over the terminal")
     func theCheckLiftsAStuckVeil() throws {
-        let controller = TmuxSessionController(sshSession: MockTmuxTransport())
+        let controller = TerminalNSHTests.paneController()
         let stage = TerminalNSHStage()
         let (_, window) = TerminalNSHTests.slot(for: stage)
         defer { window.isHidden = true }
@@ -154,7 +158,7 @@ struct StageSwapTests {
         let stage = TerminalNSHStage()
         #expect(stage.check(why: "test") == nil)
         #expect(stage.verify(why: "test") == .nothing)
-        let controller = TmuxSessionController(sshSession: MockTmuxTransport())
+        let controller = TerminalNSHTests.paneController()
         stage.register(TerminalNSHSlotView(frame: CGRect(x: 0, y: 0, width: 300, height: 400)))
         stage.show(.init(source: .pane(controller, "%1"), inset: 4))
         #expect(stage.check(why: "test") == nil, "the slot is in no window")

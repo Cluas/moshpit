@@ -27,7 +27,8 @@ pub enum ScrollAction {
     None,
     /// This terminal's history moved this many pixels (positive: older).
     Local { moved_px: i64 },
-    /// Wheel reports for the program, encoded.
+    /// Wheel reports for the program, encoded; for an alternate-screen
+    /// program without the mouse, its arrow keys (B500).
     Wheel(Vec<u8>),
     /// Rows for the host to scroll (positive: older).
     Host { rows: i32 },

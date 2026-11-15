@@ -21,10 +21,6 @@ enum TerminalFont {
         ("Courier New", "Courier"),
     ]
 
-    static func label(for id: String) -> String {
-        families.first { $0.id == id }?.label ?? "SF Mono"
-    }
-
     /// Build a font at `size` for the given family id, always falling back to
     /// the system monospaced font if the named family fails to load. The result
     /// carries a CJK fallback (see ``withCJKFallback``).
@@ -79,8 +75,8 @@ enum TerminalFont {
     }
 }
 
-/// Validation for the UDP port-range editor — pure so it can be unit-tested
-/// independently of the SwiftUI sheet.
+/// Validation for Settings' UDP port range (``SettingsModel``) — pure so it
+/// can be unit-tested on its own.
 enum UDPPortRange {
     enum ValidationError: Error, Equatable { case nonNumeric, outOfBounds, inverted }
 

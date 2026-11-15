@@ -6,13 +6,6 @@ incorporates the following third-party components, each under its own license.
 
 ## Swift Package Dependencies
 
-### Citadel
-
-- Source: https://github.com/orlandos-nl/Citadel
-- License: MIT
-
-Citadel provides the SSH client implementation used by Moshpit.
-
 ### WhisperKit
 
 - Source: https://github.com/argmaxinc/WhisperKit
@@ -52,11 +45,13 @@ referenced file for full attribution, source URLs, and license text pointers.
 
 ## Clean-Room Disclaimer — Mosh State Synchronization Protocol
 
-The Swift sources under `Moshpit/Services/Mosh/` (`MoshBootstrap.swift`,
+The Swift sources that were under `Moshpit/Services/Mosh/` (`MoshBootstrap.swift`,
 `MoshCompression.swift`, `MoshCrypto.swift`, `MoshTransport.swift`,
-`MoshWire.swift`, `OCB3.swift`) are an **independent, clean-room Swift
+`MoshWire.swift`, `OCB3.swift`) were an **independent, clean-room Swift
 reimplementation** of mosh's State Synchronization Protocol (SSP) and its
-associated wire format and cryptography.
+associated wire format and cryptography. The app's mosh client is now
+`crates/mosh/`, a port of those Swift sources to Rust; the Swift sources
+were removed when every session moved to the Rust core.
 
 This implementation was written from the public description of the protocol —
 its published specification and RFC-style documented on-the-wire behavior — for

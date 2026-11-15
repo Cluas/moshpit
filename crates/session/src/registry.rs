@@ -170,6 +170,12 @@ impl Sessions {
         self.send(id, Msg::AnswerHostKey { prompt, trust });
     }
 
+    /// The person's answer to a [`crate::EventKind::SignInQuestion`]
+    /// (`None`: declined).
+    pub fn answer_question(&self, id: SessionId, prompt: u64, answer: Option<String>) {
+        self.send(id, Msg::AnswerQuestion { prompt, answer });
+    }
+
     /// Something for the session's tmux to do — unless it is refused as
     /// asked ([`TmuxAction::refusal`]): then nothing is sent, and the host
     /// says why.

@@ -1,23 +1,27 @@
 #!/bin/bash
 # Builds the Swift side of the ssh cross-check for macOS: a SwiftPM package
-# over copies of the packages the app pins (swift-nio-ssh — the Wellz26 fork
-# Citadel uses — swift-nio, swift-crypto and theirs), taken by revision from
-# an Xcode SourcePackages checkout of the app and never modified there, with
+# over copies of the packages the app pinned (swift-nio-ssh — the Wellz26
+# fork Citadel uses — swift-nio, swift-crypto and theirs), taken by revision
+# from an Xcode SourcePackages checkout of the app and never modified there,
+# with
 #
 #   - the app's UNCHANGED Moshpit/Services/SSHKeyFactory.swift with the key
 #     reading it calls (SSHPrivateKeyFile.swift, BcryptPBKDF.swift), as of
-#     81c121a1, the last commit before they moved to Rust,
-#     Moshpit/Services/Shell.swift (ExecUploadCommands quotes with it), and
+#     81c121a1, the last commit before they moved to Rust;
+#   - Moshpit/Services/Shell.swift (ExecUploadCommands quotes with it) and
 #     Moshpit/Services/SOCKSProxyDialer.swift, the latter over NIOSOCKS's
-#     sources from the swift-nio-extras the app pins (as a target of its own:
-#     the whole package needs a dozen more);
+#     sources from the swift-nio-extras the app pinned (as a target of its
+#     own: the whole package needs a dozen more), as of 2e75a2e5, the last
+#     commit with the Swift SSH transport (E4-SSH deleted it, and the
+#     packages with it: the pins are read from that commit's Package.resolved
+#     too);
 #   - Citadel's UNCHANGED Sources/Citadel/SSHKeyTypeDetection.swift (the
-#     detection SSHService.makeAuthMethod runs before every key sign-in);
-#   - HostKeyValidator.fingerprint(of:), cut verbatim out of the app's
-#     HostKeyValidator.swift, the SSHKeyAlgorithm and ExecUploadCommands
-#     enums, cut verbatim out of SSHKeyStore.swift and SSHService.swift, and
-#     the InboundHold handler SOCKSProxyDialer sets up, cut verbatim out of
-#     SSHDial.swift (the files around them import UIKit and Citadel);
+#     detection SSHService.makeAuthMethod ran before every key sign-in);
+#   - HostKeyValidator.fingerprint(of:), the SSHKeyAlgorithm and
+#     ExecUploadCommands enums and the InboundHold handler SOCKSProxyDialer
+#     sets up, cut verbatim out of HostKeyValidator.swift, SSHKeyStore.swift,
+#     SSHService.swift and SSHDial.swift as of the same commits (the files
+#     around them import UIKit and Citadel);
 #   - harness/swift/main.swift.
 #
 # Same language mode and optimisation as the app's Release build (Swift 5,
@@ -44,7 +48,12 @@ here="$(cd "$(dirname "$0")" && pwd)"
 repo="$(cd "$here/../../.." && pwd)"
 work="${MOSHPIT_SSH_HARNESS_WORK:-$repo/target/ssh-harness}"
 out="${1:-$work/ssh-swift}"
-resolved="$repo/Moshpit.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved"
+# The Swift SSH transport as of its last commit, and the packages it pinned.
+swift_ssh_rev=2e75a2e5
+mkdir -p "$work"
+resolved="$work/Package.resolved-$swift_ssh_rev"
+git -C "$repo" show "$swift_ssh_rev:Moshpit.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved" \
+    > "$resolved"
 packages="swift-nio-ssh swift-nio swift-crypto swift-atomics swift-collections swift-system swift-asn1 citadel swift-nio-extras"
 
 pinned() {
@@ -121,8 +130,12 @@ for file in SSHKeyFactory SSHPrivateKeyFile BcryptPBKDF; do
     git -C "$repo" show "$swift_keys_rev:Moshpit/Services/$file.swift" > "$sources/$file.swift"
 done
 git -C "$repo" show "$swift_keys_rev:Moshpit/Models/SSHKeyStore.swift" > "$work/SSHKeyStore-$swift_keys_rev.swift"
-cp "$repo/Moshpit/Services/Shell.swift" "$sources/"
-cp "$repo/Moshpit/Services/SOCKSProxyDialer.swift" "$sources/"
+for file in Shell SOCKSProxyDialer; do
+    git -C "$repo" show "$swift_ssh_rev:Moshpit/Services/$file.swift" > "$sources/$file.swift"
+done
+for file in HostKeyValidator SSHService SSHDial; do
+    git -C "$repo" show "$swift_ssh_rev:Moshpit/Services/$file.swift" > "$work/$file-$swift_ssh_rev.swift"
+done
 cp "$work/pkgs/citadel/Sources/Citadel/SSHKeyTypeDetection.swift" "$sources/"
 cp "$here/swift/main.swift" "$sources/"
 
@@ -145,7 +158,7 @@ cut_out() {
     echo "import NIOSSH"
     echo
     echo "enum HostKeyValidator {"
-    cut_out "$repo/Moshpit/Services/HostKeyValidator.swift" \
+    cut_out "$work/HostKeyValidator-$swift_ssh_rev.swift" \
         "    static func fingerprint(of key: NIOSSHPublicKey) -> String {" "    }"
     echo "}"
 } > "$sources/HostKeyFingerprint.swift"
@@ -157,13 +170,13 @@ cut_out() {
     echo "// Cut verbatim from Moshpit/Services/SSHService.swift by harness/build-swift.sh."
     echo "import Foundation"
     echo
-    cut_out "$repo/Moshpit/Services/SSHService.swift" "enum ExecUploadCommands {" "}"
+    cut_out "$work/SSHService-$swift_ssh_rev.swift" "enum ExecUploadCommands {" "}"
 } > "$sources/ExecUploadCommands.swift"
 {
     echo "// Cut verbatim from Moshpit/Services/SSHDial.swift by harness/build-swift.sh."
     echo "import NIOCore"
     echo
-    cut_out "$repo/Moshpit/Services/SSHDial.swift" "final class InboundHold:" "}"
+    cut_out "$work/SSHDial-$swift_ssh_rev.swift" "final class InboundHold:" "}"
 } > "$sources/InboundHold.swift"
 
 cat > "$pkg/Package.swift" <<'EOF'

@@ -1388,6 +1388,11 @@ void uniffi_moshpit_ffi_fn_method_petmachine_set_listener(uint64_t ptr, RustBuff
 void uniffi_moshpit_ffi_fn_method_petmachine_set_pace(uint64_t ptr, RustBuffer pace, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_PETMACHINE_SET_TALK
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_PETMACHINE_SET_TALK
+void uniffi_moshpit_ffi_fn_method_petmachine_set_talk(uint64_t ptr, int8_t talk, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_PETMACHINE_STATUS
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_PETMACHINE_STATUS
 RustBuffer uniffi_moshpit_ffi_fn_method_petmachine_status(uint64_t ptr, RustCallStatus *_Nonnull out_status
@@ -1421,6 +1426,11 @@ RustBuffer uniffi_moshpit_ffi_fn_method_coresessions_home_message(uint64_t ptr, 
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_CORESESSIONS_ANSWER_HOST_KEY
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_CORESESSIONS_ANSWER_HOST_KEY
 void uniffi_moshpit_ffi_fn_method_coresessions_answer_host_key(uint64_t ptr, uint64_t session, uint64_t prompt, int8_t trust, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_CORESESSIONS_ANSWER_QUESTION
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_CORESESSIONS_ANSWER_QUESTION
+void uniffi_moshpit_ffi_fn_method_coresessions_answer_question(uint64_t ptr, uint64_t session, uint64_t prompt, RustBuffer answer, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_CORESESSIONS_BORROW_SSH
@@ -1818,31 +1828,6 @@ RustBuffer uniffi_moshpit_ffi_fn_method_keychainhost_accounts(uint64_t ptr, Rust
 RustBuffer uniffi_moshpit_ffi_fn_method_keychainhost_load_silently(uint64_t ptr, RustBuffer account, RustCallStatus *_Nonnull out_status
 );
 #endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_CLONE_KNOWNHOSTSHANDLE
-#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_CLONE_KNOWNHOSTSHANDLE
-uint64_t uniffi_moshpit_ffi_fn_clone_knownhostshandle(uint64_t handle, RustCallStatus *_Nonnull out_status
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FREE_KNOWNHOSTSHANDLE
-#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FREE_KNOWNHOSTSHANDLE
-void uniffi_moshpit_ffi_fn_free_knownhostshandle(uint64_t handle, RustCallStatus *_Nonnull out_status
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_CONSTRUCTOR_KNOWNHOSTSHANDLE_NEW
-#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_CONSTRUCTOR_KNOWNHOSTSHANDLE_NEW
-uint64_t uniffi_moshpit_ffi_fn_constructor_knownhostshandle_new(uint64_t keychain, uint64_t preferences, RustCallStatus *_Nonnull out_status
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_KNOWNHOSTSHANDLE_READ
-#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_KNOWNHOSTSHANDLE_READ
-RustBuffer uniffi_moshpit_ffi_fn_method_knownhostshandle_read(uint64_t ptr, RustCallStatus *_Nonnull out_status
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_KNOWNHOSTSHANDLE_WRITE
-#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_KNOWNHOSTSHANDLE_WRITE
-void uniffi_moshpit_ffi_fn_method_knownhostshandle_write(uint64_t ptr, RustBuffer entries, RustCallStatus *_Nonnull out_status
-);
-#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_CLONE_PREFERENCESHOST
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_CLONE_PREFERENCESHOST
 uint64_t uniffi_moshpit_ffi_fn_clone_preferenceshost(uint64_t handle, RustCallStatus *_Nonnull out_status
@@ -2138,16 +2123,6 @@ int8_t uniffi_moshpit_ffi_fn_func_connection_draft_can_save(RustBuffer draft, Ru
 RustBuffer uniffi_moshpit_ffi_fn_func_connection_draft_handle(RustBuffer draft, RustBuffer message_json, RustCallStatus *_Nonnull out_status
 );
 #endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_CONNECTION_DRAFT_KEEPS_STORED_KEY
-#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_CONNECTION_DRAFT_KEEPS_STORED_KEY
-int8_t uniffi_moshpit_ffi_fn_func_connection_draft_keeps_stored_key(RustBuffer draft, RustCallStatus *_Nonnull out_status
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_CONNECTION_DRAFT_KEEPS_STORED_PASSWORD
-#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_CONNECTION_DRAFT_KEEPS_STORED_PASSWORD
-int8_t uniffi_moshpit_ffi_fn_func_connection_draft_keeps_stored_password(RustBuffer draft, RustCallStatus *_Nonnull out_status
-);
-#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_CONNECTION_DRAFT_NEW
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_CONNECTION_DRAFT_NEW
 RustBuffer uniffi_moshpit_ffi_fn_func_connection_draft_new(int8_t mosh_by_default, RustCallStatus *_Nonnull out_status
@@ -2161,16 +2136,6 @@ RustBuffer uniffi_moshpit_ffi_fn_func_connection_draft_of(RustBuffer connection,
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_CONNECTION_DRAFT_PICK_KEY
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_CONNECTION_DRAFT_PICK_KEY
 RustBuffer uniffi_moshpit_ffi_fn_func_connection_draft_pick_key(RustBuffer draft, RustBuffer id, RustCallStatus *_Nonnull out_status
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_CONNECTION_DRAFT_PORT_IS_WRONG
-#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_CONNECTION_DRAFT_PORT_IS_WRONG
-int8_t uniffi_moshpit_ffi_fn_func_connection_draft_port_is_wrong(RustBuffer draft, RustCallStatus *_Nonnull out_status
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_CONNECTION_DRAFT_PROXY_PORT_IS_WRONG
-#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_CONNECTION_DRAFT_PROXY_PORT_IS_WRONG
-int8_t uniffi_moshpit_ffi_fn_func_connection_draft_proxy_port_is_wrong(RustBuffer draft, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_CONNECTION_DRAFT_SAVE_PLAN
@@ -2190,7 +2155,7 @@ RustBuffer uniffi_moshpit_ffi_fn_func_connection_form_key_row(RustBuffer draft, 
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_CONNECTION_FORM_MESSAGE
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_CONNECTION_FORM_MESSAGE
-RustBuffer uniffi_moshpit_ffi_fn_func_connection_form_message(RustBuffer draft, RustBuffer given, RustBuffer keys, int64_t udp_start, int64_t udp_end, RustCallStatus *_Nonnull out_status
+RustBuffer uniffi_moshpit_ffi_fn_func_connection_form_message(RustBuffer draft, RustBuffer given, RustBuffer keys, int64_t udp_start, int64_t udp_end, RustBuffer saved, RustBuffer editing, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_CONNECTION_PORT
@@ -2487,11 +2452,6 @@ int8_t uniffi_moshpit_ffi_fn_func_store_defaults_readable(uint64_t host, RustBuf
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_STORE_HOLD_RELEASE
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_STORE_HOLD_RELEASE
 int8_t uniffi_moshpit_ffi_fn_func_store_hold_release(uint64_t preferences, RustBuffer mode, RustBuffer account, RustCallStatus *_Nonnull out_status
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_STORE_KNOWN_HOSTS_ENTRY
-#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_STORE_KNOWN_HOSTS_ENTRY
-RustBuffer uniffi_moshpit_ffi_fn_func_store_known_hosts_entry(RustBuffer host, uint16_t port, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_STORE_MARK_DEFAULTS_READABLE
@@ -2840,18 +2800,6 @@ uint16_t uniffi_moshpit_ffi_checksum_func_connection_draft_handle(void
     
 );
 #endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_CONNECTION_DRAFT_KEEPS_STORED_KEY
-#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_CONNECTION_DRAFT_KEEPS_STORED_KEY
-uint16_t uniffi_moshpit_ffi_checksum_func_connection_draft_keeps_stored_key(void
-    
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_CONNECTION_DRAFT_KEEPS_STORED_PASSWORD
-#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_CONNECTION_DRAFT_KEEPS_STORED_PASSWORD
-uint16_t uniffi_moshpit_ffi_checksum_func_connection_draft_keeps_stored_password(void
-    
-);
-#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_CONNECTION_DRAFT_NEW
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_CONNECTION_DRAFT_NEW
 uint16_t uniffi_moshpit_ffi_checksum_func_connection_draft_new(void
@@ -2867,18 +2815,6 @@ uint16_t uniffi_moshpit_ffi_checksum_func_connection_draft_of(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_CONNECTION_DRAFT_PICK_KEY
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_CONNECTION_DRAFT_PICK_KEY
 uint16_t uniffi_moshpit_ffi_checksum_func_connection_draft_pick_key(void
-    
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_CONNECTION_DRAFT_PORT_IS_WRONG
-#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_CONNECTION_DRAFT_PORT_IS_WRONG
-uint16_t uniffi_moshpit_ffi_checksum_func_connection_draft_port_is_wrong(void
-    
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_CONNECTION_DRAFT_PROXY_PORT_IS_WRONG
-#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_CONNECTION_DRAFT_PROXY_PORT_IS_WRONG
-uint16_t uniffi_moshpit_ffi_checksum_func_connection_draft_proxy_port_is_wrong(void
     
 );
 #endif
@@ -3251,12 +3187,6 @@ uint16_t uniffi_moshpit_ffi_checksum_func_store_defaults_readable(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_STORE_HOLD_RELEASE
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_STORE_HOLD_RELEASE
 uint16_t uniffi_moshpit_ffi_checksum_func_store_hold_release(void
-    
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_STORE_KNOWN_HOSTS_ENTRY
-#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_STORE_KNOWN_HOSTS_ENTRY
-uint16_t uniffi_moshpit_ffi_checksum_func_store_known_hosts_entry(void
     
 );
 #endif
@@ -4106,6 +4036,12 @@ uint16_t uniffi_moshpit_ffi_checksum_method_petmachine_set_pace(void
     
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_PETMACHINE_SET_TALK
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_PETMACHINE_SET_TALK
+uint16_t uniffi_moshpit_ffi_checksum_method_petmachine_set_talk(void
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_PETMACHINE_STATUS
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_PETMACHINE_STATUS
 uint16_t uniffi_moshpit_ffi_checksum_method_petmachine_status(void
@@ -4127,6 +4063,12 @@ uint16_t uniffi_moshpit_ffi_checksum_method_coresessions_home_message(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_CORESESSIONS_ANSWER_HOST_KEY
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_CORESESSIONS_ANSWER_HOST_KEY
 uint16_t uniffi_moshpit_ffi_checksum_method_coresessions_answer_host_key(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_CORESESSIONS_ANSWER_QUESTION
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_CORESESSIONS_ANSWER_QUESTION
+uint16_t uniffi_moshpit_ffi_checksum_method_coresessions_answer_question(void
     
 );
 #endif
@@ -4496,18 +4438,6 @@ uint16_t uniffi_moshpit_ffi_checksum_method_keychainhost_load_silently(void
     
 );
 #endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_KNOWNHOSTSHANDLE_READ
-#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_KNOWNHOSTSHANDLE_READ
-uint16_t uniffi_moshpit_ffi_checksum_method_knownhostshandle_read(void
-    
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_KNOWNHOSTSHANDLE_WRITE
-#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_KNOWNHOSTSHANDLE_WRITE
-uint16_t uniffi_moshpit_ffi_checksum_method_knownhostshandle_write(void
-    
-);
-#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_PREFERENCESHOST_GET
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_PREFERENCESHOST_GET
 uint16_t uniffi_moshpit_ffi_checksum_method_preferenceshost_get(void
@@ -4823,12 +4753,6 @@ uint16_t uniffi_moshpit_ffi_checksum_constructor_connectionstorehandle_new(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_CONSTRUCTOR_KEYSTOREHANDLE_NEW
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_CONSTRUCTOR_KEYSTOREHANDLE_NEW
 uint16_t uniffi_moshpit_ffi_checksum_constructor_keystorehandle_new(void
-    
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_CONSTRUCTOR_KNOWNHOSTSHANDLE_NEW
-#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_CONSTRUCTOR_KNOWNHOSTSHANDLE_NEW
-uint16_t uniffi_moshpit_ffi_checksum_constructor_knownhostshandle_new(void
     
 );
 #endif

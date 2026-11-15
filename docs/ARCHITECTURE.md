@@ -1,5 +1,12 @@
 # Moshpit Architecture
 
+> **Out of date.** This document describes the app as it was before the Rust
+> core: Swift transports, SwiftTerm, the SwiftUI screens. Sessions, the
+> terminal, the stores and the screens now live in Rust (`crates/`, `ui/`),
+> and the Swift side is a thin host. Until it is rewritten, the README's
+> "How it is built" and repository layout are the current picture, and
+> `docs/nsh/` has the design notes.
+
 Moshpit is an iOS SSH / Mosh / tmux terminal client, built with SwiftUI and
 targeting iOS 18. It connects to remote servers, runs interactive shells and
 CLI coding agents (Claude Code, Codex, …), and surfaces live agent status on

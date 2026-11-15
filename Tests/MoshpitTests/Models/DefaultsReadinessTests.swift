@@ -35,9 +35,9 @@ struct DefaultsReadinessTests {
         defer { defaults.removePersistentDomain(forName: name) }
         let readiness = DefaultsReadiness { false }
 
-        readiness.markReadable(defaults)
+        // What the store writes after its first trusted read (crates/store).
+        defaults.set(true, forKey: DefaultsReadiness.sentinelKey)
         #expect(readiness.isReadable(defaults))
-        #expect(defaults.bool(forKey: DefaultsReadiness.sentinelKey))
     }
 
     // Each store below: sealed at launch (empty suite, phone locked), shown

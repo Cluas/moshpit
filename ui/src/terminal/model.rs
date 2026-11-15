@@ -19,6 +19,9 @@
 //!   voice input panel and its meter.
 //! - `{"op": "attachment", …}` ([`Attachment`]), `{"op": "preview", …}`
 //!   ([`Preview`]): the image upload panel and a host file's preview panel.
+//! - `{"op": "switcher", …}` ([`Switcher`]) and `{"op": "swipe", …}`: the
+//!   session's panes a sideways swipe walks, and a swipe under way
+//!   ([`super::switcher`]).
 
 use serde::{Deserialize, Serialize};
 
@@ -114,6 +117,32 @@ fn yes() -> bool {
     true
 }
 
+/// What a window is called (UI-DESIGN §6.1, the naming rules): its own
+/// name when someone gave it one, else the folder its pane works in. None
+/// when it has neither: the caller says the window's number, or what runs
+/// in it. tmux's automatic name ("2.1.322", "zsh", "claude") is no name.
+pub fn project_name(window_name: &str, command: &str, path: Option<&str>) -> Option<String> {
+    use crate::home::model::{folder_name, is_unnamed_window};
+    let name = window_name.trim();
+    if is_unnamed_window(name, command) {
+        path.and_then(folder_name)
+    } else {
+        Some(name.to_owned())
+    }
+}
+
+/// `{"op": "switcher", …}`: what a sideways swipe walks (`switcher.rs`).
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase", default)]
+pub struct Switcher {
+    /// The live session's tree, whole: every window and pane of the active
+    /// session and their stamps (the breadcrumb's is trimmed to the active
+    /// pane). None while there is no live multiplexer: no swipe then.
+    pub tree: Option<crate::home::model::Control>,
+    /// The swipe's one-time hint was shown on this device already.
+    pub hint_seen: bool,
+}
+
 /// The breadcrumb's three names (UI-DESIGN §6.3): `session › project ›
 /// agent` — `train › trainer › claude`, not `0 › 1:2.1.322 › claude`.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -134,7 +163,7 @@ impl Crumbs {
     /// names. Each falls back to the host's string where the tree can't
     /// tell (no tree, a pane it doesn't hold).
     pub fn names(&self, agent: &str) -> Names {
-        use crate::home::model::{folder_name, is_unnamed_window, pane_title};
+        use crate::home::model::pane_title;
         let mut names = Names {
             session: self.session.clone(),
             project: self.window.clone(),
@@ -159,15 +188,8 @@ impl Crumbs {
             return names;
         };
         if let Some(window) = tree.windows.iter().find(|w| w.id == pane.window) {
-            let name = window.name.trim();
-            names.project = if is_unnamed_window(name, &pane.command) {
-                pane.path
-                    .as_deref()
-                    .and_then(folder_name)
-                    .unwrap_or_else(|| window.index.to_string())
-            } else {
-                name.to_owned()
-            };
+            names.project = project_name(&window.name, &pane.command, pane.path.as_deref())
+                .unwrap_or_else(|| window.index.to_string());
         }
         let title = pane_title(tree, pane, agent);
         let who = title

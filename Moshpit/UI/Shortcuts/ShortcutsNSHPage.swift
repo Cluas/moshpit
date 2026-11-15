@@ -1,42 +1,25 @@
 import MoshpitKit
 import SwiftUI
 
-/// Settings › Shortcuts: the SwiftUI page (``ShortcutsView``), or the NSH one
-/// while its switch is on (``NSHScreen/shortcuts``). With the switch off the
-/// SwiftUI page is all there is: no NSH code runs.
+/// Settings › Shortcuts, as Settings presents it: the NSH page, with a
+/// capture run's editor over it (DEBUG).
 struct ShortcutsPage: View {
     var body: some View {
-        content
+        ShortcutsNSHPage()
         #if DEBUG
             .modifier(ShortcutsCapture.Present())
         #endif
-    }
-
-    @ViewBuilder
-    private var content: some View {
-        if Self.showsNSH {
-            ShortcutsNSHPage()
-        } else {
-            ShortcutsView()
-        }
-    }
-
-    static var showsNSH: Bool {
-        #if DEBUG
-        if CaptureScreen.requested == .shortcutsNSH { return NSHSurface.available }
-        #endif
-        return NSHScreen.shortcuts.isOn
     }
 }
 
 /// Settings › Shortcuts drawn by NSH (`ui/src/shortcuts.rs`) in the sheet's
 /// own stack. The bar, the user's own shortcuts and the rest come from the
 /// store (``ShortcutsModel``, again whenever it changes); every change the
-/// page asks for goes through the store as the SwiftUI page's does (its
-/// moves, `removeFromToolbar`, `remove`, `addToToolbar`), which saves in the
-/// format every build since 1.0.8 reads. + and a custom shortcut open the
-/// editor its own switch picks. If NSH cannot run here, the SwiftUI page
-/// shows.
+/// page asks for goes through the store (its moves, `removeFromToolbar`,
+/// `remove`, `addToToolbar`), which saves in the format every build since
+/// 1.0.8 reads. + and a custom shortcut open the editor
+/// (``AddShortcutNSHPage``). If its screen can't run, the page says so
+/// (``NSHPageFailed``).
 struct ShortcutsNSHPage: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(ShortcutStore.self) private var store
@@ -47,7 +30,7 @@ struct ShortcutsNSHPage: View {
 
     var body: some View {
         if failed {
-            ShortcutsView()
+            NSHSheetFailed { failed = false }
         } else {
             let snapshot = ShortcutsSnapshot(store: store)
             NavigationStack {
@@ -61,8 +44,8 @@ struct ShortcutsNSHPage: View {
                     .onAppear { model.update(snapshot) }
                     .onChange(of: snapshot) { _, new in model.update(new) }
             }
-            .appSheet(isPresented: $showAdd) { AddShortcutPage() }
-            .appSheet(item: $editing) { shortcut in AddShortcutPage(existing: shortcut) }
+            .appSheet(isPresented: $showAdd) { AddShortcutNSHPage() }
+            .appSheet(item: $editing) { shortcut in AddShortcutNSHPage(existing: shortcut) }
         }
     }
 
@@ -182,33 +165,11 @@ final class ShortcutsModel {
     }
 }
 
-/// Shortcuts › Add Shortcut, or a custom shortcut's editor: the SwiftUI page
-/// (``AddShortcutView``), or the NSH one while its switch is on
-/// (``NSHScreen/addShortcut``).
-struct AddShortcutPage: View {
-    var existing: TerminalShortcut?
-
-    var body: some View {
-        if Self.showsNSH {
-            AddShortcutNSHPage(existing: existing)
-        } else {
-            AddShortcutView(existing: existing)
-        }
-    }
-
-    static var showsNSH: Bool {
-        #if DEBUG
-        if [.addShortcutNSH, .editShortcutNSH].contains(CaptureScreen.requested) { return NSHSurface.available }
-        #endif
-        return NSHScreen.addShortcut.isOn
-    }
-}
-
 /// The shortcut editor drawn by NSH (`ui/src/add_shortcut.rs`) in the
 /// sheet's own stack. The draft is the host's (``AddShortcutModel``): the
-/// page tells it each change and Save; saving is the SwiftUI page's
-/// (`store.add` or `store.update`). If NSH cannot run here, the SwiftUI page
-/// shows.
+/// page tells it each change and Save; saving is the store's (`store.add`
+/// or `store.update`). If its screen can't run, the page says so
+/// (``NSHPageFailed``).
 struct AddShortcutNSHPage: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(ShortcutStore.self) private var store
@@ -226,7 +187,7 @@ struct AddShortcutNSHPage: View {
 
     var body: some View {
         if failed {
-            AddShortcutView(existing: existing)
+            NSHSheetFailed { failed = false }
         } else {
             NavigationStack {
                 NSHPage(
@@ -342,7 +303,7 @@ final class AddShortcutModel {
 #if DEBUG
 /// A capture run of the shortcuts pages (DEBUG only): Add Shortcut, or the
 /// editor of a custom shortcut held in memory (Save is never pressed), over
-/// Shortcuts, so the SwiftUI and NSH editors can be shot in the same state.
+/// Shortcuts.
 enum ShortcutsCapture {
     /// A custom text shortcut, as a user makes one.
     static let custom: TerminalShortcut = {
@@ -365,12 +326,25 @@ enum ShortcutsCapture {
                 .task {
                     guard let screen = CaptureScreen.requested else { return }
                     try? await Task.sleep(for: .milliseconds(800))
-                    if [.addShortcut, .addShortcutNSH].contains(screen) { showAdd = true }
-                    if [.editShortcut, .editShortcutNSH].contains(screen) { editing = ShortcutsCapture.custom }
+                    if screen == .addShortcut { showAdd = true }
+                    if screen == .editShortcut { editing = ShortcutsCapture.custom }
                 }
-                .appSheet(isPresented: $showAdd) { AddShortcutPage() }
-                .appSheet(item: $editing) { shortcut in AddShortcutPage(existing: shortcut) }
+                .appSheet(isPresented: $showAdd) { AddShortcutNSHPage() }
+                .appSheet(item: $editing) { shortcut in AddShortcutNSHPage(existing: shortcut) }
         }
     }
 }
 #endif
+
+extension View {
+    /// A new shortcut saved while the toolbar was full (B252): where it went
+    /// and how to put it on the bar. `done` runs once it is read (the
+    /// editor goes).
+    func savedOffToolbarAlert(isPresented: Binding<Bool>, done: @escaping () -> Void) -> some View {
+        alert("Saved under AVAILABLE", isPresented: isPresented) {
+            Button("OK") { done() }
+        } message: {
+            Text("The toolbar is full: it holds \(ShortcutStore.toolbarLimit) shortcuts. Take one off with −, then add this one with ＋.")
+        }
+    }
+}

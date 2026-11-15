@@ -2,8 +2,8 @@
 # W14b on a real device: the features beside a terminal on a Rust session —
 # path probe, preview, a stream's first MiB, a folder listing, an image
 # upload, the maintenance pass's read of the host — on the session's own
-# connection (borrowed) against a Swift SSH connection of their own (the
-# app before W14b, `-MOSHPIT_SIDE_BORROW 0` on the same Debug build).
+# connection (borrowed). The Swift SSH connection it was measured against
+# (`-MOSHPIT_SIDE_BORROW 0`) went with the Swift transport (E4-SSH).
 # Counts the sign-ins each run costs in a private sshd's log and prints the
 # app's own timings (`RustSideProbe`, DEBUG launch arguments only).
 #
@@ -117,7 +117,7 @@ KEY=$(base64 < "$dir/client" | tr -d '\n')
 
 run() {
     local scenario=$1 mode=$2 id=$3
-    local args=(-MOSHPIT_RUST_SESSION 1 -MOSHPIT_AUTOCARE_OFF
+    local args=(-MOSHPIT_AUTOCARE_OFF
                 -MOSHPIT_RUST_SEED_HOST "$ADDR" -MOSHPIT_RUST_SEED_PORT "$PORT"
                 -MOSHPIT_RUST_SEED_USER "$USER_NAME" -MOSHPIT_RUST_SEED_KEY_B64 "$KEY"
                 -MOSHPIT_RUST_SEED_TRUST_FP "$FP" -MOSHPIT_RUST_SEED_ID "$id"
@@ -128,7 +128,6 @@ run() {
         mosh) args+=(-MOSHPIT_RUST_SEED_MOSH 1) ;;
         mosh+tmux) args+=(-MOSHPIT_RUST_SEED_MOSH 1 -MOSHPIT_RUST_SEED_MUX tmux) ;;
     esac
-    [ "$mode" = dial ] && args+=(-MOSHPIT_SIDE_BORROW 0)
     local before log
     before=$(count)
     log="$dir/$scenario-$mode.log"
@@ -149,7 +148,7 @@ run() {
 
 n=0
 for scenario in "${scenarios[@]}"; do
-    for mode in dial borrow; do
+    for mode in borrow; do
         n=$((n + 1))
         run "$scenario" "$mode" "$(printf '0B14B000-0000-4000-8000-%012d' "$n")"
         for p in $(ours_mosh_servers); do

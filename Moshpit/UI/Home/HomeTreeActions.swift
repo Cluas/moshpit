@@ -3,8 +3,8 @@ import UIKit
 
 /// What the multiplexer tree's asks do — open a window or a pane, refresh,
 /// a new session, window, pane or agent task, a rename, a kill (asked
-/// first), a worktree's removal — run against the session's multiplexer
-/// with the SwiftUI card's confirmations and cards. Home's page
+/// first), a worktree's removal — run against the session's multiplexer,
+/// with their confirmations and cards. Home's page
 /// (``HomeNSHPage``) and a host's sessions page (``SessionsNSHPage``) send
 /// the same intents (``HomeIntent``), and both hand them here.
 @MainActor
@@ -131,7 +131,7 @@ struct HomeTreeActions {
 }
 
 /// The tree's confirmations and sheets, on whichever page asked: a kill's
-/// dialog, a worktree's removal, a new agent task (the SwiftUI card's).
+/// dialog, a worktree's removal, a new agent task.
 ///
 /// The confirmations hang from the row whose menu asked (B498,
 /// ``NSHConfirmation``): a SwiftUI `confirmationDialog` on the page hung
@@ -179,10 +179,9 @@ struct HomeTreeDialogs: ViewModifier {
         if !shown { killTarget = nil }
     }
 
-    // A worktree's removal: two stages on purpose (``WorktreeRemovalDialogs``,
-    // the SwiftUI card's): the second appears ONLY when herdr reports the
-    // checkout is dirty, the one case where this destroys work that exists
-    // nowhere else.
+    // A worktree's removal: two stages on purpose: the second appears ONLY
+    // when herdr reports the checkout is dirty, the one case where this
+    // destroys work that exists nowhere else.
 
     private func confirmRemoval(_ target: ConnectionCard.WorktreeTarget) {
         let shown = NSHConfirmation.present(

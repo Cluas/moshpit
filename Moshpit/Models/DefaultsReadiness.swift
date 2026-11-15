@@ -46,16 +46,10 @@ struct DefaultsReadiness {
         }
     }
 
+    /// The sentinel, written by the stores (crates/store) after their first
+    /// trusted read, or the system's word.
     func isReadable(_ defaults: UserDefaults) -> Bool {
         defaults.bool(forKey: Self.sentinelKey) || protectedDataAvailable()
-    }
-
-    /// Record that a trusted load happened, so the next locked launch can tell
-    /// "the file was there" from "the file was sealed". Written once.
-    func markReadable(_ defaults: UserDefaults) {
-        if !defaults.bool(forKey: Self.sentinelKey) {
-            defaults.set(true, forKey: Self.sentinelKey)
-        }
     }
 }
 

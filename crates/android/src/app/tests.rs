@@ -144,7 +144,7 @@ fn each_page_keeps_its_own_part_of_a_hosts_tree() {
     let trees: Value = serde_json::from_str(&trees).unwrap();
     assert_eq!(
         trees["trees"],
-        json!([{"connection": id, "collapsed": ["$0"], "expanded": ["@2"], "idle": true}])
+        json!([{"connection": id, "collapsed": ["$0"], "expanded": ["@2"], "idle": true, "told": true}])
     );
     host.tell(json!({"ev": "tree", "connection": id, "idle": false}));
     let app = host.core.lock();

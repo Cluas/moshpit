@@ -142,8 +142,7 @@ fn a_new_draft_has_the_defaults_both_forms_had() {
     assert_eq!(d.fields.socks_port, "1080");
     assert_eq!(d.fields.mux, Mux::Tmux, "tmux unless picked otherwise");
     assert_eq!(d.fields.auth, Auth::Password);
-    assert_eq!(d.fields.predict_mode, ScreenPredict::Adaptive);
-    assert!(d.fields.roam_on_cellular);
+    assert_eq!(d.fields.predict_mode, ConnectionPredict::Settings);
     assert!(!d.fields.editing);
     assert_eq!(d.key, None);
     assert_eq!(d.stored, Stored::None);
@@ -428,7 +427,6 @@ fn what_the_screen_tells_is_an_edit_or_an_intent() {
     }
     for (key, value) in [
         ("mosh", json!(true)),
-        ("roamOnCellular", json!(false)),
         ("socks", json!(true)),
         ("auth", json!("key")),
         ("predictMode", json!("always")),
@@ -450,9 +448,11 @@ fn what_the_screen_tells_is_an_edit_or_an_intent() {
         (&*d.tmux_path, &*d.herdr_path),
         ("/usr/bin/tmux", "/usr/bin/herdr")
     );
-    assert!(d.mosh && !d.roam_on_cellular && d.socks);
+    assert!(d.mosh && d.socks);
+    // Gone with its switch (B530): nothing read it.
+    assert!(!draft.clone().set("roamOnCellular", &json!(false)));
     assert_eq!(d.auth, Auth::Key);
-    assert_eq!(d.predict_mode, ScreenPredict::Always);
+    assert_eq!(d.predict_mode, ConnectionPredict::Always);
     assert_eq!(d.mux, Mux::None);
     assert!(!draft.can_save(&[]), "a key connection with no key");
 
@@ -656,7 +656,11 @@ fn a_saved_connections_draft_writes_it_back_as_it_was() {
     assert_eq!((written.ssh_port, &*written.username), (2222, "cluas"));
     assert_eq!(written.connection_protocol, ConnectionProtocol::Mosh);
     assert_eq!(written.predict_mode(), PredictMode::Never);
-    assert_eq!(written.roam_on_cellular, Some(false));
+    assert_eq!(
+        written.roam_on_cellular,
+        Some(false),
+        "kept as stored (B530)"
+    );
     assert_eq!(written.multiplexer(), Multiplexer::Herdr);
     assert!(!written.use_tmux, "the legacy flag kept in step");
     assert_eq!(written.herdr_path.as_deref(), Some("/opt/herdr/bin/herdr"));
@@ -884,7 +888,12 @@ fn a_save_pointing_at_another_host_or_port_is_a_move() {
     assert!(plan(&|d| assert!(d.set("host", &json!("other.example.com")))).moved);
     assert!(plan(&|d| assert!(d.set("port", &json!("2222")))).moved);
     assert!(!plan(&|d| assert!(d.set("name", &json!("renamed")))).moved);
-    assert!(!plan(&|d| assert!(d.set("username", &json!("root")))).moved);
+    // B556: another user is another home on the box, where the pairing
+    // was installed: the old account's hooks must not push as this one.
+    assert!(
+        plan(&|d| assert!(d.set("username", &json!("root")))).moved,
+        "another user"
+    );
     assert!(
         !plan(&|d| assert!(d.set("host", &json!("Box.Example.COM")))).moved,
         "the same host in other letters"
@@ -933,4 +942,173 @@ fn a_host_is_just_a_host_and_a_user_is_needed() {
     assert!(draft.can_save(&[]));
     let saved = draft.applied(&blank(), UDP);
     assert_eq!((&*saved.host, &*saved.username), ("2001:db8::7", "dev"));
+}
+
+/// B537: a value this build doesn't know (a newer build's multiplexer or
+/// predict mode) survives an edit that leaves it alone, instead of being
+/// written over with the form's default; one the form changes is written.
+/// And a name's spaces are not its.
+#[test]
+fn an_edit_keeps_values_it_doesnt_know_and_trims_the_name() {
+    let mut saved = studio();
+    saved.predict_mode_raw = Some("turbo".to_owned());
+    saved.multiplexer_raw = Some("zellij".to_owned());
+    let mut draft = Draft::of(&saved);
+    draft.fields.name = "  studio  ".to_owned();
+    let written = draft.applied(&saved, UDP);
+    assert_eq!(written.name, "studio");
+    assert_eq!(written.predict_mode_raw.as_deref(), Some("turbo"));
+    assert_eq!(written.multiplexer_raw.as_deref(), Some("zellij"));
+    assert_eq!(written.use_tmux, saved.use_tmux);
+
+    assert!(draft.set("predictMode", &json!("always")));
+    assert!(draft.set("mux", &json!("herdr")));
+    let written = draft.applied(&saved, UDP);
+    assert_eq!(written.predict_mode(), PredictMode::Always);
+    assert_eq!(written.multiplexer(), Multiplexer::Herdr);
+}
+
+/// B536: the connection being edited was deleted meanwhile (from another
+/// page, or Home's swipe). Saving used to go on as if it were there: iOS
+/// wrote the secret and updated nothing, and the form closed as saved;
+/// Android saved the edit as a new connection. It is refused now, and
+/// says why.
+#[test]
+fn an_edit_of_a_connection_deleted_meanwhile_is_refused() {
+    let mut saved = blank();
+    saved.name = "box".to_owned();
+    saved.host = "box.example.com".to_owned();
+    saved.username = "me".to_owned();
+    saved.auth_method = AuthMethod::Password;
+    saved.keychain_ref = Some("moshpit.secret.own".to_owned());
+    let mut draft = Draft::of(&saved);
+    draft.set_given(PASSWORD);
+    assert!(draft.can_save(&[]));
+    let refused = draft
+        .save_plan(None, blank, &[], UDP, || FRESH.to_owned())
+        .expect_err("saved over nothing");
+    assert_eq!(
+        refused.message(),
+        "This connection was deleted while you were editing it."
+    );
+    assert!(
+        draft
+            .save_plan(Some(&saved), blank, &[], UDP, || FRESH.to_owned())
+            .is_ok(),
+        "still there: saved"
+    );
+}
+
+/// B534: a move to another host with a new secret writes it to a fresh
+/// item, not over the connection's own: the host forgets the old box's
+/// push pairing between the write and the store, and either can fail. In
+/// place, a failed forget left the old record (unchanged, saved nothing)
+/// signing in with the new secret; written first and forgotten after, a
+/// failed write had already lost the pairing. A fresh item is undone by
+/// deleting it; the own one goes once the save is done (`released`).
+#[test]
+fn a_move_with_a_new_secret_writes_a_fresh_item() {
+    let mut saved = blank();
+    saved.name = "box".to_owned();
+    saved.host = "box.example.com".to_owned();
+    saved.username = "me".to_owned();
+    saved.auth_method = AuthMethod::Password;
+    saved.keychain_ref = Some("moshpit.secret.own".to_owned());
+    let plan = |host: &str, given: bool| {
+        let mut draft = Draft::of(&saved);
+        assert!(draft.set("host", &json!(host)));
+        if given {
+            draft.set_given(PASSWORD);
+        }
+        draft
+            .save_plan(Some(&saved), blank, &[], UDP, || FRESH.to_owned())
+            .unwrap()
+    };
+    let moved = plan("other.example.com", true);
+    assert!(moved.moved);
+    assert_eq!(moved.write, Some(AuthMethod::Password));
+    assert_eq!(moved.connection.keychain_ref.as_deref(), Some(FRESH));
+    assert_eq!(moved.released.as_deref(), Some("moshpit.secret.own"));
+
+    // Moved, the secret kept: nothing written, the own item kept.
+    let kept = plan("other.example.com", false);
+    assert!(kept.moved && kept.write.is_none());
+    assert_eq!(
+        kept.connection.keychain_ref.as_deref(),
+        Some("moshpit.secret.own")
+    );
+    assert_eq!(kept.released, None);
+
+    // Not moved: the new secret over its own item, as before.
+    let stayed = plan("box.example.com", true);
+    assert!(!stayed.moved);
+    assert_eq!(
+        stayed.connection.keychain_ref.as_deref(),
+        Some("moshpit.secret.own")
+    );
+    assert_eq!(stayed.released, None);
+}
+
+/// B531: a connection's predictive echo is as Settings says, or its own:
+/// Adaptive, Always, Never or Experimental. "adaptive" was the only way to
+/// say "as Settings says" (the form saved it for every connection, and the
+/// session read it so), so it keeps that meaning, and a connection that
+/// pins Adaptive itself is stored as "pinnedAdaptive".
+#[test]
+fn a_connection_predicts_as_settings_says_or_as_it_says() {
+    let mut saved = studio();
+    saved.predict_mode_raw = Some("adaptive".to_owned());
+    let mut draft = Draft::of(&saved);
+    assert!(draft.set("predictMode", &json!("adaptive")));
+    let pinned = draft.applied(&saved, UDP);
+    assert_eq!(pinned.predict_mode_raw.as_deref(), Some("pinnedAdaptive"));
+
+    let mut draft = Draft::of(&pinned);
+    assert!(draft.set("predictMode", &json!("settings")));
+    let follows = draft.applied(&pinned, UDP);
+    assert_eq!(follows.predict_mode_raw.as_deref(), Some("adaptive"));
+
+    for (raw, id) in [
+        (None, "settings"),
+        (Some("adaptive"), "settings"),
+        (Some("pinnedAdaptive"), "adaptive"),
+        (Some("always"), "always"),
+        (Some("never"), "never"),
+        (Some("experimental"), "experimental"),
+    ] {
+        let mut c = studio();
+        c.predict_mode_raw = raw.map(str::to_owned);
+        let shown: serde_json::Value =
+            serde_json::from_str(&Draft::of(&c).message(&[], UDP)).unwrap();
+        assert_eq!(shown["predictMode"], json!(id), "{raw:?}");
+        // Unchanged, it is written back as it was.
+        assert_eq!(
+            Draft::of(&c).applied(&c, UDP).predict_mode_raw.as_deref(),
+            raw.or(Some("adaptive")),
+            "{raw:?}"
+        );
+    }
+}
+
+/// B532: the form compares itself with every saved connection but the one
+/// it edits.
+#[test]
+fn the_others_are_every_saved_connection_but_the_one_edited() {
+    let studio = studio();
+    let mut nas = blank();
+    nas.name = "nas".to_owned();
+    nas.host = "nas.lan".to_owned();
+    nas.username = "root".to_owned();
+    nas.port = 2200;
+    let saved = vec![studio.clone(), nas];
+    assert_eq!(
+        others(&saved, Some(studio.id)),
+        vec![screen::Other {
+            name: "nas".into(),
+            user: "root".into(),
+            host: "nas.lan".into(),
+            port: 2200,
+        }]
+    );
+    assert_eq!(others(&saved, None).len(), 2, "a new connection");
 }

@@ -992,3 +992,73 @@ fn a_tap_reaches_the_egg_on_each_cards_edge_and_the_page_asks_to_hatch() {
         channel.close();
     }
 }
+
+/// B535: a disconnect flushes the session for up to ~2 s. Until it is
+/// over the card says so — "Disconnecting…", a spinner in ⋯'s place —
+/// and offers nothing to tap: an Open or Connect asked of a session being
+/// torn down was lost.
+#[test]
+fn a_disconnect_under_way_says_so_and_takes_no_taps() {
+    let (mut app, channel, natives) = phone(Params::default());
+    let heard = hear(&channel);
+    let live = |disconnecting: bool| Connection {
+        id: "c-box".into(),
+        name: "box".into(),
+        initial: "B".into(),
+        user: "me".into(),
+        host: "box.example.com".into(),
+        link: Link::Live,
+        disconnecting,
+        ..Connection::default()
+    };
+    show(&mut app, &channel, vec![live(true)]);
+    find(&mut app, "id:card-disconnecting-box");
+    assert!(app.screen().shows("Disconnecting…"));
+    assert!(!app.screen().shows("Open terminal"));
+    assert_eq!(natives.count("moshpit/action-menu"), 0, "⋯ while it goes");
+    app.press("id:connection-card-box").unwrap();
+    quiet(&heard);
+
+    show(&mut app, &channel, vec![live(false)]);
+    find(&mut app, "text:Open terminal");
+    assert!(!app.screen().shows("Disconnecting…"));
+    assert_eq!(natives.count("moshpit/action-menu"), 1);
+    app.press("id:connection-card-box").unwrap();
+    assert_eq!(next(&heard), json!({"ev": "enter", "connection": "c-box"}));
+    channel.close();
+}
+
+/// It talks (PET-DESIGN §17): a tap on the pet answers with a line in a
+/// bubble beside it, which takes no touches; with 「让它说话」 off, a tap
+/// only pets it.
+#[test]
+fn a_tap_on_the_pet_answers_in_a_bubble_unless_it_is_told_not_to_talk() {
+    let pet = |talk: bool| {
+        json!({
+            "op": "pet", "style": "pixel", "shown": true, "may_hatch": false, "talk": talk, "seq": 0,
+            "pet": {
+                "seed": "07070707070707070707070707070707", "stage": 1, "hatch_hour": 14,
+                "flags": 0, "crowned": false, "name": "", "species": "tun",
+                "hatched_at": 1_800_000_000, "tasks": 12,
+                "traits": {"fur": "natural", "shiny": false, "pattern": "plain", "eyes": "dot", "size": "regular"},
+                "history": [], "found": []
+            }
+        })
+        .to_string()
+    };
+    for talk in [true, false] {
+        let (mut app, channel, _) = phone(Params::default());
+        show(&mut app, &channel, hosts());
+        post(&mut app, &channel, &pet(talk));
+        post(&mut app, &channel, r#"{"op":"visible","visible":true,"hour":14,"day":20000}"#);
+        find(&mut app, "id:home-pet");
+        app.press("id:home-pet").unwrap();
+        let says = app
+            .screen()
+            .layout_nodes()
+            .into_iter()
+            .any(|n| n.test_id.as_deref() == Some("home-pet-says"));
+        assert_eq!(says, talk, "talk {talk}: {:?}", app.screen().texts());
+        channel.close();
+    }
+}

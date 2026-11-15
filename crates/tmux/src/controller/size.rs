@@ -461,10 +461,17 @@ impl Controller {
         let ours = self.size.our_client_name.clone();
         let active = self.snapshot.active_window_id.clone();
         let gone = |name: &str| !clients.contains(name) && Some(name) != ours.as_deref();
+        // `-a` names a window once per session holding it (a phone's group,
+        // B459; a linked window): each is swept once — a zoom toggled twice
+        // is a zoom left on.
+        let mut swept = std::collections::BTreeSet::new();
         for line in &response.lines {
             let Some(row) = SweepRow::parse(line) else {
                 continue;
             };
+            if !swept.insert(row.window.clone()) {
+                continue;
+            }
             let window = row.window.as_str();
             // B458: a zoom the phone made, its client gone. Unzoomed only
             // while the window is still zoomed on the pane the phone zoomed:

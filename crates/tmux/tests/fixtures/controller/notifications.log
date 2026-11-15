@@ -63,6 +63,9 @@
 = p %1 w=@1 idx=0 act=1 80x24 cmd=vim
 = follow=- notice=- refreshing=0 resized=@0 mouse=0 alt=0 client=moshpit-a hooks-loaded=0 painted=1 renderer=- renderer-session=- owned=
 @31 recv %session-changed $42 newone\n
+> new-session -t '$42' -s 'newone~mp-iPhone-42-1hc' -P -F '#{session_id}'
+> set-option -t '=newone~mp-iPhone-42-1hc:' destroy-unattached on
+> set-option -t '=newone~mp-iPhone-42-1hc:' @moshpit_group_of '$42'
 > refresh-client -C 70x35
 > display-message -p '#{client_name}'
 > list-clients -F '#{client_name}'

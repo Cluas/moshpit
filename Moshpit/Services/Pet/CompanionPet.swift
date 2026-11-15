@@ -95,6 +95,9 @@ final class CompanionPet {
 
     func rename(_ name: String) { machine.rename(name: name, now: Self.now) }
 
+    /// Settings › Appearance: 「让它说话」.
+    func setTalk(_ on: Bool) { machine.setTalk(talk: on) }
+
     /// Settings › Appearance: the style (`minimal`, `pixel`) and the switch.
     func choose(style: String, shown: Bool) { machine.setChoice(style: style, shown: shown) }
 

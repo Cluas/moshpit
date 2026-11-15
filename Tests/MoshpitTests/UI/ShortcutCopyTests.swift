@@ -2,11 +2,11 @@ import Foundation
 import Testing
 @testable import Moshpit
 
-/// B234: the quick keys' group names and descriptions, and what the
-/// built-in shortcuts are called, were English in every language — on the
-/// SwiftUI pages and the NSH ones that copied them. Read here from the
-/// app's own compiled catalog, one language at a time.
-@Suite("Shortcut editor copy in every language (B234)")
+/// B234: what the built-in shortcuts are called was English in every
+/// language. Read here from the app's own compiled catalog, one language at
+/// a time. (The editor's quick keys are `ui/src/add_shortcut.rs`'s, tested
+/// there.)
+@Suite("Built-in shortcuts' names in every language (B234)")
 struct ShortcutCopyTests {
 
     private static let languages = ["zh-Hans", "zh-Hant", "ja", "ko", "de", "es", "fr", "pt-BR"]
@@ -17,14 +17,12 @@ struct ShortcutCopyTests {
         return try #require(Bundle(path: path))
     }
 
-    /// Every text the editor shows of its own: the built-ins' names, the
-    /// quick keys' descriptions, their groups.
+    /// The built-ins' names.
     private static var english: [String] {
         ShortcutStore.builtins.map(\.summary)
-            + AddShortcutView.presetGroups.flatMap { $0.1.map(\.summary) }.filter { !$0.isEmpty }
     }
 
-    @Test("every built-in's name and every quick key's description is in each language", arguments: languages)
+    @Test("every built-in's name is in each language", arguments: languages)
     func describedInEveryLanguage(language: String) throws {
         let bundle = try Self.bundle(language)
         // Proper names of keys a language may keep as they are.
@@ -44,9 +42,6 @@ struct ShortcutCopyTests {
                 #expect(shown != text, "\(language): \"\(text)\" is still English")
             }
         }
-        for group in AddShortcutView.presetGroups.map(\.0) where !alike.contains(group) {
-            #expect(ShortcutCopy.group(group, bundle: bundle) != group, "\(language): \(group)")
-        }
     }
 
     @Test("Chinese reads as Chinese")
@@ -55,7 +50,6 @@ struct ShortcutCopyTests {
         #expect(ShortcutCopy.describe("Interrupt (SIGINT)", bundle: zh) == "中断（SIGINT）")
         #expect(ShortcutCopy.describe("Tab", bundle: zh) == "Tab 键", "the key, not the multiplexer's tab")
         #expect(ShortcutCopy.describe("Clear line before cursor", bundle: zh) == "删掉光标前的内容")
-        #expect(ShortcutCopy.group("F-KEYS", bundle: zh) == "功能键")
     }
 
     @Test("a built-in is shown translated and stored as it was; the user's own words are their own")

@@ -2,16 +2,13 @@ import SwiftUI
 import UIKit
 import MoshpitKit
 
-/// Screen 2 — Settings. APPEARANCE / DISPLAY / CURSOR / BEHAVIOR /
-/// MOSH·ROAMING / NOTIFICATIONS / VOICE INPUT groups, exactly per prototype.
+/// Settings: SwiftUI's stack around the NSH hub (``SettingsNSHPage``,
+/// `ui/src/settings.rs`). The hub's rows ask for a page (``open(_:)``),
+/// pushed here, or a sheet, presented here; Set up a host routes through
+/// ``go(_:)``. The SwiftUI form it used to fall back to is gone (D5).
 struct SettingsScreen: View {
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
-    @Environment(AppSettings.self) private var settings
-    @Environment(ShortcutStore.self) private var shortcutStore
-    @Environment(SSHKeyStore.self) private var keyStore
-    @Environment(ThemeStore.self) private var themes
 
     /// The saved connections, connected or not: Set up a host picks one
     /// (``HostSetupRoute``).
@@ -34,23 +31,20 @@ struct SettingsScreen: View {
     // dropped by SwiftUI, and the capture run then filed a picture of Home
     // under the gallery's name.
     @State private var pushTheme = false
-    /// A page of Settings' stack a capture run pushes (the NSH page or the
-    /// SwiftUI one: ``CaptureScreen/pushedInSettings``).
+    /// A page of Settings' stack a capture run pushes
+    /// (``CaptureScreen/pushedInSettings``).
     @State private var pushCapture: CaptureScreen?
     #else
     @State private var showShortcuts = false
     @State private var showKeys = false
     @State private var pushTheme = false
     #endif
-    @State private var showUDPEditor = false
-    @State private var showNotifInfo = false
     /// The host Set up a host opened, over its live session.
     @State private var settingUp: HostSetupTarget?
     /// A connection picked that isn't connected: asked to connect first.
     @State private var asking: SettingsHost?
     @State private var showFeedback = false
-    /// The hidden Core Switches page (seven taps on the version line).
-    /// The NSH page could not run here: the SwiftUI one shows instead.
+    /// The hub's screen could not run here: the page says so.
     @State private var nshFailed = false
     /// A page the NSH page's rows asked for, pushed on Settings' stack.
     @State private var pushed: SettingsPage?
@@ -61,11 +55,9 @@ struct SettingsScreen: View {
     @State private var showsFilingNumber = false
 
     var body: some View {
-        @Bindable var settings = settings
-
         NavigationStack {
-            root(settings: $settings)
-            .navigationDestination(isPresented: $pushTheme) { ThemePage() }
+            root
+            .navigationDestination(isPresented: $pushTheme) { ThemeGalleryNSHPage() }
             .navigationDestination(item: $pushed) { page in page.page }
             .navigationDestination(item: $pushedPart) { part in
                 SettingsNSHPage(
@@ -75,11 +67,7 @@ struct SettingsScreen: View {
                     onOpen: open,
                     onDone: { dismiss() },
                     hosts: hosts,
-                    onSetup: { go(HostSetupRoute.choosing($0, in: hosts)) },
-                    onFailure: {
-                        pushedPart = nil
-                        nshFailed = true
-                    })
+                    onSetup: { go(HostSetupRoute.choosing($0, in: hosts)) })
             }
             #if DEBUG
             .navigationDestination(item: $pushCapture) { screen in screen.settingsPage }
@@ -94,11 +82,11 @@ struct SettingsScreen: View {
                     try? await Task.sleep(for: .milliseconds(600))
                     pushCapture = screen
                 }
-                if CaptureScreen.requested == .feedback || CaptureScreen.requested == .feedbackNSH {
+                if CaptureScreen.requested == .feedback {
                     try? await Task.sleep(for: .milliseconds(600))
                     showFeedback = true
                 }
-                if showsNSH, let part = SettingsPart.requested {
+                if let part = SettingsPart.requested {
                     try? await Task.sleep(for: .milliseconds(600))
                     pushedPart = part
                 }
@@ -115,17 +103,8 @@ struct SettingsScreen: View {
                 }
             }
         }
-        // The NSH page follows the app's appearance (R18); the SwiftUI one
-        // is on the dark-only palette.
-        .preferredColorScheme(showsNSH ? nil : .dark)
         .appSheet(isPresented: $showShortcuts) { ShortcutsPage() }
         .appSheet(isPresented: $showKeys) { SSHKeysPage() }
-        .appSheet(isPresented: $showUDPEditor) {
-            UDPRangeEditor(settings: settings)
-        }
-        .appSheet(isPresented: $showNotifInfo) {
-            NotificationInfoView()
-        }
         .appSheet(item: $settingUp) { target in
             HostSetupPage(connection: target.connection, testPane: target.testPane)
         }
@@ -139,207 +118,23 @@ struct SettingsScreen: View {
         } message: { _ in
             Text("Setup runs on the host over a live session. Connect first, then set it up here.")
         }
-        .appSheet(isPresented: $showFeedback) { FeedbackPage() }
+        .appSheet(isPresented: $showFeedback) { FeedbackNSHPage() }
     }
 
-    /// The page at the root of Settings' stack: the SwiftUI form, or the NSH
-    /// page while its switch is on (``NSHScreen/settings``). Either way the
-    /// stack is SwiftUI's: the NSH page's rows ask for a page (``open(_:)``)
-    /// and it is pushed here, the one its own switch picks.
+    /// The page at the root of Settings' stack: the NSH hub. Its rows ask
+    /// for a page (``open(_:)``), pushed on this stack.
     @ViewBuilder
-    private func root(settings: Bindable<AppSettings>) -> some View {
-        if showsNSH {
+    private var root: some View {
+        if nshFailed {
+            NSHPageFailed { nshFailed = false }
+        } else {
             SettingsNSHPage(
                 liveSession: liveSession,
                 showsFilingNumber: showsFilingNumber,
                 onOpen: open,
                 onDone: { dismiss() },
                 onFailure: { nshFailed = true })
-        } else {
-            ScrollViewReader { proxy in
-                Form {
-                    appearanceGroup(settings: settings)
-                    displayGroup(settings: settings)
-                    cursorGroup(settings: settings)
-
-                    FormGroup(title: "BEHAVIOR") {
-                        ToggleRow(
-                            label: "Keyboard on Open",
-                            subtitle: "Raise the keyboard as soon as a terminal opens, instead of after you tap it",
-                            identifier: "settings-keyboard-on-open",
-                            isOn: settings.raiseKeyboardOnOpen)
-                        .id(SettingsAnchor.behavior)
-                        ToggleRow(
-                            label: "Remote Clipboard Read",
-                            subtitle: "Let remote programs read your clipboard text (OSC 52) — off answers with an empty clipboard",
-                            identifier: "settings-remote-clipboard",
-                            isOn: settings.remoteClipboardReadEnabled)
-                    }
-
-                    FormGroup(
-                        title: "ATTACHED IMAGES",
-                        footer: "Images you attach are uploaded to ~/.moshpit/uploads on the server. Each connect deletes uploads older than this — they are working files for an agent, not a backup."
-                    ) {
-                        PillSegmentedControl(
-                            items: [
-                                SegItem(value: 1, label: "24 hours"),
-                                SegItem(value: 7, label: "7 days"),
-                                SegItem(value: 0, label: "Keep forever"),
-                            ],
-                            selection: settings.uploadRetentionDays)
-                        .accessibilityIdentifier("settings-upload-retention")
-                    }
-
-                    moshGroup(settings: settings)
-
-                    FormGroup(title: "KEYBOARD · KEYS") {
-                        ChevronRow(
-                            label: "Shortcuts",
-                            value: "\(shortcutStore.toolbarCount)/\(ShortcutStore.toolbarLimit)"
-                        ) { showShortcuts = true }
-                        .accessibilityIdentifier("settings-shortcuts")
-                        ChevronRow(
-                            label: "SSH Keys",
-                            value: String(localized: "\(keyStore.keys.count) keys")
-                        ) { showKeys = true }
-                        .accessibilityIdentifier("settings-ssh-keys")
-                    }
-
-                    FormGroup(
-                        title: "NOTIFICATIONS",
-                        footer: "Moshpit watches the active session for agent activity and posts a local alert when your agent needs attention — natively on herdr, via the bell and hooks on tmux."
-                    ) {
-                        ToggleRow(
-                            label: "Notifications",
-                            subtitle: "Alert when an agent needs you",
-                            identifier: "settings-notifications",
-                            isOn: settings.notificationsEnabled)
-                        .id(SettingsAnchor.notifications)
-                        ToggleRow(
-                            label: "Live Activity",
-                            subtitle: "Show agent session status in the Dynamic Island",
-                            identifier: "settings-live-activity",
-                            isOn: settings.liveActivityEnabled)
-                        ToggleRow(
-                            label: "Alert sound",
-                            subtitle: "Play a sound when the agent needs you",
-                            identifier: "settings-alert-sound",
-                            isOn: settings.attentionSoundEnabled)
-                        ToggleRow(
-                            label: "Show detail on lock screen",
-                            subtitle: "Display what the agent is running, asking, or was asked — off keeps it private",
-                            identifier: "settings-lock-screen-detail",
-                            isOn: settings.lockScreenDetailEnabled)
-                        ChevronRow(label: "How notifications work") { showNotifInfo = true }
-                            .accessibilityIdentifier("settings-notification-info")
-                        // Shown on herdr too, unlike the sheet this
-                        // replaced. That one only installed tmux hooks, so
-                        // hiding it on herdr was right — herdr reports agent
-                        // status itself. This screen also pairs the host for
-                        // pushes, which works on any multiplexer, and the
-                        // hook script is what FIRES a push even where its
-                        // tmux stamping is inert. The sheet says which half
-                        // applies.
-                        if liveSession {
-                            ChevronRow(label: "Set up this host") { go(HostSetupRoute.entering(hosts)) }
-                                .accessibilityIdentifier("settings-host-setup")
-                        } else {
-                            // Not a dead grey row. Host setup happens ON the
-                            // host — the phone only holds its half of each
-                            // pairing — so with nothing connected there is
-                            // nothing to act on. But since auto-care made
-                            // setup automatic, this row's job offline is to
-                            // SAY that, and to show the half the phone does
-                            // have: which hosts are paired.
-                            ChevronRow(label: "Set up this host",
-                                       subtitle: "Automatic — connect to inspect") {
-                                go(HostSetupRoute.entering(hosts))
-                            }
-                            .accessibilityIdentifier("settings-host-setup")
-                        }
-                    }
-
-                    voiceGroup(settings: settings)
-
-                    FormGroup(
-                        title: "DIAGNOSTICS",
-                        footer: "What the app logged about this session: every terminal resize with its before-and-after size, and the cause of every reconnect. Screenshot it — or copy it — when something looks wrong."
-                    ) {
-                        // The SwiftUI page, or its NSH one behind a switch.
-                        NavigationLink { RecentLogPage() } label: {
-                            HStack(spacing: 10) {
-                                Text("Recent Log")
-                                    .font(.body).foregroundStyle(Ink.primary)
-                                Spacer()
-                            }
-                        }
-                        .accessibilityIdentifier("settings-recent-log")
-                    }
-
-                    FormGroup(
-                        title: "FEEDBACK",
-                        footer: "Mail goes to support@cluas.eu.org through your own Mail app and leaves only when you tap Send there. Issues are public and sit next to the code; keep security reports to mail."
-                    ) {
-                        ChevronRow(label: "Send Feedback",
-                                   subtitle: "A bug, an idea, a screen that reads wrong") {
-                            showFeedback = true
-                        }
-                        .accessibilityIdentifier("settings-feedback")
-                        // The public channel — the site's Support page already
-                        // points at it, and Settings should agree. Opens GitHub's
-                        // template chooser in Safari, so a bug report and a
-                        // feature request each start in shape.
-                        ChevronRow(label: "Open a GitHub Issue",
-                                   subtitle: "Bug reports and feature requests, in the open",
-                                   external: true) {
-                            openURL(FeedbackChannels.newIssueURL)
-                        }
-                        .accessibilityIdentifier("settings-github-issue")
-                    }
-
-                    // Build identity — long-press to copy (for bug reports) — and,
-                    // on mainland-store copies, the MIIT APP filing. China's
-                    // regulator requires the number shown inside the app, not only
-                    // on the store listing, and the filing is what keeps the app on
-                    // sale there. To everyone else it is a line of regulatory
-                    // Chinese, so only that storefront shows it.
-                    Section {
-                        VStack(spacing: 6) {
-                            Text(Self.versionLine)
-                                .contextMenu {
-                                    Button("Copy") { UIPasteboard.general.string = Self.versionLine }
-                                }
-                                .accessibilityIdentifier("settings-version")
-                            if showsFilingNumber {
-                                Link(destination: Self.icpFilingURL) {
-                                    Text("APP filing \(Self.icpFilingNumber)")
-                                }
-                                .accessibilityIdentifier("settings-icp")
-                            }
-                        }
-                        .font(.system(.caption2, design: .monospaced))
-                        .foregroundStyle(Ink.meta)
-                        .frame(maxWidth: .infinity)
-                        .id(SettingsAnchor.bottom)
-                    }
-                    .listRowBackground(Color.clear)
-                    .listRowInsets(EdgeInsets())
-                }
-                .moshpitForm()
-                #if DEBUG
-                .task { await SettingsAnchor.scroll(proxy) }
-                #endif
-            }
         }
-    }
-
-    /// Whether the root is the NSH page: its switch is on and NSH runs here.
-    private var showsNSH: Bool {
-        guard !nshFailed else { return false }
-        #if DEBUG
-        if CaptureScreen.requested == .settingsNSH { return NSHSurface.available }
-        #endif
-        return NSHScreen.settings.isOn
     }
 
     /// Set up a host, where `route` goes: the list pushed, the host's setup
@@ -364,8 +159,7 @@ struct SettingsScreen: View {
     }
 
     /// What a row of the NSH page asked for (`ui/src/settings.rs`'s `Page`):
-    /// a page pushed on the stack, a sheet, or a link, as the SwiftUI rows
-    /// open them.
+    /// a page pushed on the stack, a sheet, or a link.
     private func open(_ page: String) {
         if let part = SettingsPart(rawValue: page) {
             pushedPart = part
@@ -378,8 +172,6 @@ struct SettingsScreen: View {
         switch page {
         case "shortcuts": showShortcuts = true
         case "ssh-keys": showKeys = true
-        case "udp-range": showUDPEditor = true
-        case "notification-info": showNotifInfo = true
         case "host-setup":
             go(HostSetupRoute.entering(hosts))
         case "feedback": showFeedback = true
@@ -389,10 +181,6 @@ struct SettingsScreen: View {
         }
     }
 
-    /// Build identity for the footer: marketing version + build number from the
-    /// bundle, plus the `MoshpitBuildStamp` (git SHA · build time) injected into
-    /// the product's Info.plist by scripts/release/build-ipa.sh. Xcode/simulator builds
-    /// carry no stamp → "dev". A "+" after the SHA means uncommitted changes.
     /// 工信部 APP 备案号 for Moshpit (filed 2026-09 through Tencent Cloud under the
     /// cluas.cn domain). The website carries the sibling site filing number; the
     /// store listing carries this one. Changing the distribution certificate or
@@ -400,6 +188,10 @@ struct SettingsScreen: View {
     static let icpFilingNumber = "浙ICP备2025212603号-2A"
     static let icpFilingURL = URL(string: "https://beian.miit.gov.cn/")!
 
+    /// Build identity for the footer: marketing version + build number from the
+    /// bundle, plus the `MoshpitBuildStamp` (git SHA · build time) injected into
+    /// the product's Info.plist by scripts/release/build-ipa.sh. Xcode/simulator builds
+    /// carry no stamp → "dev". A "+" after the SHA means uncommitted changes.
     static let versionLine: String = {
         let info = Bundle.main.infoDictionary
         let version = info?["CFBundleShortVersionString"] as? String ?? "?"
@@ -407,297 +199,6 @@ struct SettingsScreen: View {
         let stamp = info?["MoshpitBuildStamp"] as? String ?? "dev"
         return "Moshpit \(version) (\(build)) · \(stamp)"
     }()
-
-    // MARK: APPEARANCE
-
-    /// App chrome: accent color and app icon, each its own screen. They used to
-    /// be one list where picking a color also swapped the icon; they are
-    /// separate because the icon cannot follow a custom accent (iOS only
-    /// switches to icons bundled at build time), and because wanting a green
-    /// accent is not the same as wanting the green icon.
-    @ViewBuilder
-    private func appearanceGroup(settings: Bindable<AppSettings>) -> some View {
-        let theme = AppThemeCatalog.theme(for: settings.wrappedValue.appThemeId)
-        let icon = AppIconCatalog.option(for: settings.wrappedValue.appIconId)
-
-        FormGroup(
-            title: "APPEARANCE",
-            footer: "The accent color tints the app's controls and highlights. The home-screen icon is a separate choice. Both are separate from the terminal color scheme (Display → Theme, below)."
-        ) {
-            // The SwiftUI page, or its NSH one behind a switch.
-            NavigationLink {
-                AccentPage()
-            } label: {
-                // `LabeledContent` so the value drops under the label at
-                // accessibility sizes instead of truncating.
-                LabeledContent {
-                    HStack(spacing: 10) {
-                        Circle()
-                            .fill(theme.accent)
-                            .frame(width: 20, height: 20)
-                            .overlay(Circle().strokeBorder(Color.white.opacity(0.16), lineWidth: 1))
-                        Text(theme.name).font(.body).foregroundStyle(Ink.meta)
-                    }
-                } label: {
-                    Text("Accent").font(.body).foregroundStyle(Ink.primary)
-                }
-            }
-            .accessibilityIdentifier("settings-accent")
-
-            NavigationLink {
-                AppIconPage()
-            } label: {
-                LabeledContent {
-                    HStack(spacing: 10) {
-                        AppIconThumb(option: icon, side: 24)
-                        Text(icon.name).font(.body).foregroundStyle(Ink.meta)
-                    }
-                } label: {
-                    Text("App Icon").font(.body).foregroundStyle(Ink.primary)
-                }
-            }
-            .accessibilityIdentifier("settings-app-icon")
-        }
-    }
-
-    // MARK: DISPLAY
-
-    @ViewBuilder
-    private func displayGroup(settings: Bindable<AppSettings>) -> some View {
-        let theme = themes.theme(id: settings.wrappedValue.themeId)
-
-        FormGroup(title: "DISPLAY") {
-            Menu {
-                ForEach(TerminalFont.families, id: \.id) { family in
-                    Button(family.label) { settings.wrappedValue.fontName = family.id }
-                }
-            } label: {
-                HStack(spacing: 10) {
-                    Text("Font").font(.body).foregroundStyle(Ink.primary)
-                    Spacer()
-                    Text(TerminalFont.label(for: settings.wrappedValue.fontName))
-                        .font(.body).foregroundStyle(Ink.meta)
-                    MenuChevron()
-                }
-                .contentShape(Rectangle())
-            }
-            .accessibilityIdentifier("settings-font")
-            ValueRow(label: "Font Size", value: String(localized: "\(Int(settings.wrappedValue.fontSize))pt"))
-            VStack(spacing: 10) {
-                Slider(value: settings.fontSize, in: 8...32, step: 1)
-                    .tint(Ink.accent)
-                    .accessibilityIdentifier("settings-font-slider")
-                Text("ABCdef 012 ~/ssh $")
-                    .font(Face.mono(settings.wrappedValue.fontSize * 0.85))
-                    .foregroundStyle(Ink.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Ink.terminalBG, in: RoundedRectangle(cornerRadius: Metrics.controlRadius, style: .continuous))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: Metrics.controlRadius, style: .continuous)
-                            .strokeBorder(Ink.groupBorder, lineWidth: 1))
-                    .accessibilityIdentifier("settings-font-preview")
-            }
-            .padding(.vertical, 8)
-            // Themes get their own screen rather than a menu: a list of names
-            // can't answer "what will my terminal look like", which is the only
-            // question being asked here.
-            // The SwiftUI page, or its NSH one behind a switch.
-            NavigationLink {
-                ThemePage()
-            } label: {
-                LabeledContent {
-                    HStack(spacing: 10) {
-                        ThemeSwatchStrip(theme: theme)
-                        Text(theme.name).font(.body).foregroundStyle(Ink.meta)
-                    }
-                } label: {
-                    Text("Theme").font(.body).foregroundStyle(Ink.primary)
-                }
-            }
-            .accessibilityIdentifier("settings-theme")
-        }
-    }
-
-    // MARK: CURSOR
-
-    @ViewBuilder
-    private func cursorGroup(settings: Bindable<AppSettings>) -> some View {
-        FormGroup(
-            title: "CURSOR",
-            footer: "Shape and color apply to all SSH / mosh sessions. With trail on, characters that mosh's predictive echo shows ahead of the server are marked with a translucent trail until confirmed."
-        ) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Shape").font(.body).foregroundStyle(Ink.primary)
-                Text("Applies to all sessions").font(.footnote).foregroundStyle(Ink.meta)
-                PillSegmentedControl(
-                    items: [
-                        SegItem(value: CursorShape.block, label: "Block"),
-                        SegItem(value: CursorShape.bar, label: "Bar"),
-                        SegItem(value: CursorShape.underline, label: "Underline"),
-                    ],
-                    selection: settings.cursorShape)
-                    .padding(.top, 6)
-                    .accessibilityIdentifier("settings-cursor-shape")
-            }
-            .padding(.vertical, 4)
-            .id(SettingsAnchor.cursor)
-
-            // Swatches beside the text, or under it at accessibility sizes —
-            // four swatches next to four lines of wrapped footnote is neither.
-            let stacked = dynamicTypeSize.isAccessibilitySize
-            let colorLayout = stacked
-                ? AnyLayout(VStackLayout(alignment: .leading, spacing: 10))
-                : AnyLayout(HStackLayout(spacing: 10))
-            colorLayout {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Color").font(.body).foregroundStyle(Ink.primary)
-                    Text("Current session · switches to amber while roaming")
-                        .font(.footnote).foregroundStyle(Ink.meta)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                if !stacked { Spacer() }
-                ColorSwatchRow(
-                    colors: ["teal", "green", "white", "accent"].map { (id: $0, color: TerminalCursor.color(forId: $0)) },
-                    selection: settings.cursorColorId,
-                    identifierPrefix: "settings-cursor-color-")
-            }
-
-            ToggleRow(label: "Blink", subtitle: "1.1s cadence, follows the iOS system default",
-                      identifier: "settings-cursor-blink", isOn: settings.cursorBlink)
-            ToggleRow(
-                label: "Trail on predict",
-                subtitle: "Leaves a signal trail behind the cursor while mosh predicts ahead of the server",
-                identifier: "settings-cursor-trail",
-                isOn: settings.trailOnPredict)
-
-            CursorPreview(
-                shape: settings.wrappedValue.cursorShape,
-                colorId: settings.wrappedValue.cursorColorId,
-                blink: settings.wrappedValue.cursorBlink,
-                trail: settings.wrappedValue.trailOnPredict)
-            .accessibilityIdentifier("settings-cursor-preview")
-        }
-    }
-
-    // MARK: VOICE INPUT
-
-    /// What the picked dictation language is called, for the Language row's
-    /// value slot. The two engines keep separate language settings, so this
-    /// reads whichever one is live. "" reads as Automatic / Auto-detect, not
-    /// the resolved language — the picker's own detail line spells that out.
-    private func voiceLanguageName(_ settings: AppSettings) -> String {
-        if settings.voiceEngine == .whisper {
-            return WhisperLanguageCatalog.displayName(for: settings.whisperLanguage)
-        }
-        let id = settings.voiceInputLocaleId
-        guard !id.isEmpty else { return String(localized: "Automatic") }
-        return Locale.current.localizedString(forIdentifier: id) ?? id
-    }
-
-    /// The Model row's value: the model that would actually be used, or a
-    /// prompt when there is none. Never shows a stored-but-deleted variant.
-    private func voiceModelName(_ settings: AppSettings) -> String {
-        guard let variant = WhisperModelStore.resolvedVariant(preferring: settings.whisperModelId) else {
-            return String(localized: "None")
-        }
-        return WhisperModelStore.displayName(for: variant)
-    }
-
-    @ViewBuilder
-    private func voiceGroup(settings: Bindable<AppSettings>) -> some View {
-        FormGroup(
-            title: "VOICE INPUT",
-            footer: "Dictate commands and prompts from the mic key on the terminal bar. Speech is transcribed entirely on-device — your voice never leaves this device, and nothing is typed until you tap Insert."
-        ) {
-            ToggleRow(
-                label: "Enable Voice Input",
-                subtitle: "Adds a mic key to the terminal bar",
-                identifier: "settings-voice-input",
-                isOn: settings.voiceInputEnabled)
-            if settings.wrappedValue.voiceInputEnabled {
-                // The SwiftUI pages, or their NSH ones behind switches.
-                NavigationLink {
-                    VoiceEnginePage()
-                } label: {
-                    settingsValueRow(
-                        title: String(localized: "Recognition"),
-                        value: settings.wrappedValue.voiceEngine.displayName)
-                }
-                .accessibilityIdentifier("settings-voice-engine")
-
-                if settings.wrappedValue.voiceEngine == .whisper {
-                    NavigationLink {
-                        WhisperModelPage()
-                    } label: {
-                        settingsValueRow(
-                            title: String(localized: "Model"),
-                            value: voiceModelName(settings.wrappedValue))
-                    }
-                    .accessibilityIdentifier("settings-voice-model")
-                }
-
-                NavigationLink {
-                    VoiceLanguagePage()
-                } label: {
-                    settingsValueRow(
-                        title: String(localized: "Language"),
-                        value: voiceLanguageName(settings.wrappedValue))
-                }
-                .accessibilityIdentifier("settings-voice-language")
-            }
-        }
-    }
-
-    private func settingsValueRow(title: String, value: String) -> some View {
-        HStack(spacing: 10) {
-            Text(title).font(.body).foregroundStyle(Ink.primary)
-            Spacer()
-            Text(value)
-                .font(.body).foregroundStyle(Ink.meta).lineLimit(1)
-        }
-    }
-
-    // MARK: MOSH · ROAMING
-
-    @ViewBuilder
-    private func moshGroup(settings: Bindable<AppSettings>) -> some View {
-        FormGroup(
-            title: "MOSH · ROAMING",
-            footer: "Mosh runs over UDP and survives IP changes. If your server is behind a strict firewall, open the port range above outbound from your iPhone."
-        ) {
-            ToggleRow(
-                label: "Mosh by default",
-                subtitle: "Wrap new SSH hosts with mosh-server on connect",
-                identifier: "settings-mosh-default",
-                isOn: settings.moshByDefault)
-            .id(SettingsAnchor.mosh)
-            Menu {
-                ForEach(PredictMode.allCases, id: \.self) { mode in
-                    Button(mode.label) { settings.wrappedValue.predictMode = mode }
-                }
-            } label: {
-                HStack(spacing: 10) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Predictive Echo").font(.body).foregroundStyle(Ink.primary)
-                        Text("Show typed characters locally before server confirms")
-                            .font(.footnote).foregroundStyle(Ink.meta)
-                            .multilineTextAlignment(.leading)
-                    }
-                    Spacer()
-                    Text(settings.wrappedValue.predictMode.label)
-                        .font(.body).foregroundStyle(Ink.meta)
-                    MenuChevron()
-                }
-                .contentShape(Rectangle())
-            }
-            .accessibilityIdentifier("settings-predict")
-            ChevronRow(
-                label: "UDP port range",
-                value: "\(settings.wrappedValue.udpRangeStart) – \(settings.wrappedValue.udpRangeEnd)"
-            ) { showUDPEditor = true }
-            .accessibilityIdentifier("settings-udp-range")
-        }
-    }
 }
 
 // MARK: - Host setup, seen from offline
@@ -754,218 +255,20 @@ struct OfflineHostInfoView: View {
     }
 }
 
-// MARK: - Notification info
-
-/// Honest explainer for how Moshpit's notifications work. Kept honest twice:
-/// it originally said "local only, no cloud push server" because that was
-/// true; the push relay then shipped and the page kept saying it for a while,
-/// which is exactly the kind of drift an explainer exists to prevent.
-struct NotificationInfoView: View {
-    @Environment(\.dismiss) private var dismiss
-
-    var body: some View {
-        NavigationStack {
-            List {
-                row("bell.fill", Ink.warn, "Agents stamp their state",
-                    "Coding agents (Claude Code, Codex, …) report working / needs-you / done through hooks Moshpit installs on your host — precise states, not guesses. The terminal bell still works as a fallback for everything else.")
-                row("bubbles.and.sparkles.fill", Ink.accent, "Live Activity",
-                    "While a session is attached, the Dynamic Island shows whether the agent is working, idle, or waiting on you. Tapping it deep-links straight back to that pane.")
-                row("paperplane.fill", Ink.mosh, "Push, sealed end-to-end",
-                    "When the app isn’t running, your host sends the alert through Moshpit’s push relay. It is encrypted on your host with a key only this device holds — the relay and Apple carry ciphertext and can read none of it. Delivered even from a locked phone.")
-                row("moon.zzz.fill", Ink.meta, "Quiet by design",
-                    "A question must stand for 30 seconds before any phone hears about it — answered at your desk means never announced. All waiting agents share one summary card; only the first rings. A finished turn shows the prompt it answered and only chimes if it ran three minutes or more. Parked agents stay silent.")
-            }
-            .listStyle(.insetGrouped)
-            .moshpitForm()
-            .navigationTitle("How notifications work")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { dismiss() }.foregroundStyle(Ink.accent)
-                }
-            }
-        }
-        .darkOnlyPage()
-    }
-
-    private func row(_ icon: String, _ tint: Color, _ title: LocalizedStringKey, _ body: LocalizedStringKey) -> some View {
-        HStack(alignment: .top, spacing: 14) {
-            Image(systemName: icon)
-                .font(.title3)
-                .foregroundStyle(tint)
-                .frame(width: 28)
-            VStack(alignment: .leading, spacing: 4) {
-                Text(title).font(.headline).foregroundStyle(Ink.primary)
-                Text(body).font(.subheadline).foregroundStyle(Ink.secondary)
-            }
-        }
-        .padding(.vertical, 6)
-    }
-}
-
-// MARK: - UDP port-range editor
-
-struct UDPRangeEditor: View {
-    @Environment(\.dismiss) private var dismiss
-    @Bindable var settings: AppSettings
-    @State private var start = ""
-    @State private var end = ""
-    @State private var error: String?
-
-    var body: some View {
-        NavigationStack {
-            Form {
-                FormGroup(
-                    title: "UDP PORT RANGE",
-                    footer: "mosh binds one UDP port in this range per session. Open it outbound from your iPhone and inbound on the server (default 60000–61000)."
-                ) {
-                    NumberFieldRow(label: "From", placeholder: "60000", text: $start, mono: true)
-                    NumberFieldRow(label: "To", placeholder: "61000", text: $end, mono: true)
-                }
-            }
-            .moshpitForm()
-            .navigationTitle("UDP Port Range")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }.foregroundStyle(Ink.accent)
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Save", action: save).foregroundStyle(Ink.accent).fontWeight(.semibold)
-                }
-            }
-            .moshpitCard(isPresented: Binding(
-                get: { error != nil }, set: { if !$0 { error = nil } }
-            )) {
-                MoshpitNoticeCard(title: "Invalid range", message: error ?? "") {
-                    error = nil
-                }
-            }
-        }
-        .darkOnlyPage()
-        .onAppear {
-            start = String(settings.udpRangeStart)
-            end = String(settings.udpRangeEnd)
-        }
-    }
-
-    private func save() {
-        switch UDPPortRange.validate(from: start, to: end) {
-        case .success(let (s, e)):
-            settings.udpRangeStart = s
-            settings.udpRangeEnd = e
-            dismiss()
-        case .failure(.nonNumeric):
-            error = String(localized: "Enter numeric ports.")
-        case .failure(.outOfBounds):
-            error = String(localized: "Ports must be 1–65535.")
-        case .failure(.inverted):
-            error = String(localized: "From must be ≤ To.")
-        }
-    }
-}
-
-// MARK: - Cursor preview box
-
-struct CursorPreview: View {
-    let shape: CursorShape
-    let colorId: String
-    let blink: Bool
-    let trail: Bool
-
-    @State private var visible = true
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    /// The colour the terminal draws it in.
-    private var cursorColor: Color { TerminalCursor.color(forId: colorId) }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 0) {
-                prompt("trade", dim: false)
-                cursor(.block, active: shape == .block)
-            }
-            HStack(spacing: 0) {
-                prompt("git push", dim: true)
-                cursor(.bar, active: shape == .bar)
-            }
-            HStack(spacing: 0) {
-                prompt("ls -la", dim: true)
-                cursor(.underline, active: shape == .underline)
-            }
-        }
-        .padding(EdgeInsets(top: 10, leading: 12, bottom: 10, trailing: 12))
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Ink.terminalBG, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .strokeBorder(Ink.groupBorder, lineWidth: 1))
-        .padding(.vertical, 10)
-        .onAppear {
-            guard blink, !reduceMotion else { return }
-            withAnimation(.easeInOut(duration: 0.55).repeatForever(autoreverses: true)) {
-                visible = false
-            }
-        }
-    }
-
-    private func prompt(_ cmd: String, dim: Bool) -> some View {
-        HStack(spacing: 6) {
-            Text("➜").font(Face.mono(11)).foregroundStyle(Ink.promptGreen.opacity(dim ? 0.5 : 1))
-                Text(cmd).font(Face.mono(11))
-                .foregroundStyle(dim ? Ink.termMuted : Ink.primary)
-        }
-    }
-
-    @ViewBuilder
-    private func cursor(_ kind: CursorShape, active: Bool) -> some View {
-        let color = cursorColor
-        let opacity = blink && active ? (visible ? 1.0 : 0.2) : 1.0
-        HStack(spacing: 0) {
-            if trail && active {
-                LinearGradient(
-                    colors: [color.opacity(0), color.opacity(0.55)],
-                    startPoint: .leading, endPoint: .trailing)
-                    .frame(width: 18, height: kind == .underline ? 2 : 12)
-            }
-            Group {
-                switch kind {
-                case .block: Rectangle().frame(width: 7, height: 12)
-                case .bar: Rectangle().frame(width: 2, height: 12)
-                case .underline: Rectangle().frame(width: 8, height: 2)
-                }
-            }
-            .foregroundStyle(color)
-            .opacity(opacity)
-        }
-        .padding(.leading, 2)
-        .opacity(active ? 1 : 0.6)
-    }
-}
-
 #if DEBUG
 extension CaptureScreen {
     /// The page a capture run pushes in Settings' stack
-    /// (``pushedInSettings``): the one its switch picks, or the NSH one.
+    /// (``pushedInSettings``).
     @ViewBuilder
     var settingsPage: some View {
         switch self {
-        case .appIcon: AppIconPage()
-        case .appIconNSH: AppIconNSHPage()
-        case .recentLog: RecentLogPage()
-        case .recentLogNSH: RecentLogNSHPage()
-        case .accent: AccentPage()
-        case .accentNSH: AccentNSHPage()
-        case .voiceEngine: VoiceEnginePage()
-        case .voiceEngineNSH: VoiceEngineNSHPage()
-        case .voiceLanguage: VoiceLanguagePage()
-        case .voiceLanguageNSH: VoiceLanguageNSHPage()
-        case .whisperModel: WhisperModelPage()
-        case .whisperModelNSH: WhisperModelNSHPage()
-        case .themeNSH, .themeDeleteNSH: ThemeGalleryNSHPage()
-        case .themeEditor, .themeEditorNSH, .themeDelete: ThemePage()
-        case .accentEditor, .accentEditorNSH, .accentDelete: AccentPage()
-        case .accentDeleteNSH: AccentNSHPage()
+        case .appIcon: AppIconNSHPage()
+        case .recentLog: RecentLogNSHPage()
+        case .accent, .accentEditor, .accentDelete: AccentNSHPage()
+        case .voiceEngine: VoiceEngineNSHPage()
+        case .voiceLanguage: VoiceLanguageNSHPage()
+        case .whisperModel: WhisperModelNSHPage()
+        case .themeEditor, .themeDelete: ThemeGalleryNSHPage()
         default: EmptyView()
         }
     }

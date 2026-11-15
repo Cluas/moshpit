@@ -48,14 +48,6 @@ struct SwitchStillTests {
         #expect(unresolved == .none)
     }
 
-    @Test("The cover stack does not animate through a switch, and does otherwise")
-    func theCoversMoveOnlyOutsideASwitch() {
-        let still = TerminalScreen.coverAnimation(still: true)
-        #expect(still == nil)
-        let moving = TerminalScreen.coverAnimation(still: false)
-        #expect(moving != nil)
-    }
-
     @Test("The NSH chrome tells the page a switch is under way")
     func theChromeSaysStill() {
         var chrome = TerminalNSHChrome()
@@ -72,7 +64,7 @@ struct SwitchStillTests {
 
     @Test("A switch's swap is at once: the old terminal leaves the slot in the same turn")
     func theStageSwapsAtOnce() throws {
-        let controller = TmuxSessionController(sshSession: MockTmuxTransport())
+        let controller = TerminalNSHTests.paneController()
         let stage = TerminalNSHStage()
         let (slot, window) = TerminalNSHTests.slot(for: stage)
         defer { window.isHidden = true }
@@ -87,24 +79,12 @@ struct SwitchStillTests {
         #expect(container.superview === slot)
     }
 
-    /// Panes on the core's terminal, each made once: the picture is drawn
-    /// from the terminal's own rows (the phone's path).
-    final class CoreController: TmuxSessionController {
-        private var made: [String: TerminalSurface] = [:]
-        override func surface(for paneId: String) -> TerminalSurface {
-            if let surface = made[paneId] { return surface }
-            let surface = TerminalSurfaces.make(font: UIFont.monospacedSystemFont(ofSize: 12, weight: .regular),
-                                                grid: TerminalGrid(cols: 80, rows: 24))
-            made[paneId] = surface
-            return surface
-        }
-    }
 
     @Test("A switch keeps the pane's picture on top of the slot until it is released")
     func theStageHoldsThePicture() throws {
         // The core's terminal, as the app ships (its picture is drawn from
         // its rows): a fresh test host leaves the core's switch off.
-        let controller = CoreController(sshSession: MockTmuxTransport())
+        let controller = TerminalNSHTests.paneController()
         let stage = TerminalNSHStage()
         let (slot, window) = TerminalNSHTests.slot(for: stage)
         defer { window.isHidden = true }
@@ -123,7 +103,7 @@ struct SwitchStillTests {
 
     @Test("B486: the keyboard survives the switch's swap: the new terminal takes it before the old one goes")
     func theKeyboardSurvivesTheSwap() throws {
-        let controller = TmuxSessionController(sshSession: MockTmuxTransport())
+        let controller = TerminalNSHTests.paneController()
         let stage = TerminalNSHStage()
         let (_, window) = TerminalNSHTests.slot(for: stage)
         defer { window.isHidden = true }
@@ -140,7 +120,7 @@ struct SwitchStillTests {
 
     @Test("B486: a keyboard asked away stays away through a swap")
     func aResignedKeyboardStaysAway() throws {
-        let controller = TmuxSessionController(sshSession: MockTmuxTransport())
+        let controller = TerminalNSHTests.paneController()
         let stage = TerminalNSHStage()
         let (_, window) = TerminalNSHTests.slot(for: stage)
         defer { window.isHidden = true }
@@ -156,7 +136,7 @@ struct SwitchStillTests {
     @Test("B489: the NSH page's tmux pane fills its slot: no inset")
     func thePaneFillsTheSlot() throws {
         #expect(TerminalScreen.nshPaneInset == 0)
-        let controller = TmuxSessionController(sshSession: MockTmuxTransport())
+        let controller = TerminalNSHTests.paneController()
         let stage = TerminalNSHStage()
         let (slot, window) = TerminalNSHTests.slot(for: stage)
         defer { window.isHidden = true }
@@ -188,7 +168,7 @@ struct SwitchStillTests {
 
     @Test("B496: the stage says the shown terminal's ground, and says it again only when it changes")
     func theStageSaysTheGround() throws {
-        let controller = CoreController(sshSession: MockTmuxTransport())
+        let controller = TerminalNSHTests.paneController()
         let stage = TerminalNSHStage()
         var said: [UInt32?] = []
         stage.onGround = { said.append($0) }

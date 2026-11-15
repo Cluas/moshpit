@@ -172,7 +172,7 @@ final class ShortcutStore {
     @ObservationIgnored private let backing: ShortcutStoreBacking
 
     /// The Rust store over `defaults`, readable as `readiness` says (tests
-    /// and scratch suites; the app's is ``RustStoreSwitch/shortcuts()``).
+    /// and scratch suites; the app's is ``AppStores/shortcuts()``).
     convenience init(defaults: UserDefaults = .standard, readiness: DefaultsReadiness = .always) {
         let host = RustPreferencesHost(defaults: defaults, available: readiness.protectedDataAvailable)
         self.init(backing: RustShortcutStore(preferences: host, mode: .system))

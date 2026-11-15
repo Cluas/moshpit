@@ -380,6 +380,15 @@ pub(crate) struct TmuxLeg {
 }
 
 impl TmuxLeg {
+    /// A leg whose commands a test reads, running nothing.
+    #[cfg(test)]
+    pub fn for_tests(commands: mpsc::UnboundedSender<TmuxCommand>) -> Self {
+        TmuxLeg {
+            commands,
+            task: tokio::spawn(async {}),
+        }
+    }
+
     pub fn spawn(
         start: TmuxStart,
         clock: impl Fn() -> u64 + Send + Sync + 'static,

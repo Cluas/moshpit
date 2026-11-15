@@ -25,25 +25,25 @@ struct ConnStateTests {
         return TerminalViewModel(connection: connection)
     }
 
-    @Test("an automatic reconnect reads as reconnecting, never offline")
-    func automaticReconnectIsNotOffline() {
+    // Every state below is set the way ``RustSessionDriver`` sets it from the
+    // core's session state (``TerminalViewModel/adoptRustStatus(_:automatic:error:)``).
+
+    @Test("an automatic redial reads as reconnecting, never offline")
+    func automaticRedialIsNotOffline() {
         let vm = makeViewModel()
-        // `markReconnecting` only fires from a previously-live state — it must
-        // never interrupt an initial connect — so the session has to be up
-        // before it can drop.
-        vm.markConnected()
+        vm.adoptRustStatus(.connected, automatic: false)
         #expect(vm.connState == .live)
 
-        vm.markReconnecting()
+        // The link dropped and the core redials on its own.
+        vm.adoptRustStatus(.reconnecting, automatic: true)
         #expect(vm.connState == .reconnecting)
 
-        // The retry attempt begins: `beginAttempt(automatic:)` raises the flag,
-        // and the attempt itself will push `status` back to `.connecting`. Both
-        // of those used to be able to win, which is what made one reconnect
-        // cross from blue to red.
-        vm.beginAttempt(automatic: true)
+        // The redial's own attempt reports connecting; the flag keeps it
+        // reconnecting. Both used to be able to win, which is what made one
+        // reconnect cross from blue to red.
+        vm.adoptRustStatus(.connecting, automatic: true)
         #expect(vm.connState == .reconnecting,
-                "an in-flight automatic reconnect must not report offline — the app is dialling")
+                "an in-flight automatic redial must not report offline: the core is dialling")
     }
 
     @Test("a fresh view model reads as connecting, not offline")
@@ -53,38 +53,24 @@ struct ConnStateTests {
         #expect(makeViewModel().connState == .connecting)
     }
 
-    @Test("a user-initiated attempt is connecting, not reconnecting")
+    @Test("a connect the person asked for is connecting, not reconnecting")
     func manualAttemptIsConnecting() {
         let vm = makeViewModel()
-        vm.beginAttempt(automatic: false)
+        vm.adoptRustStatus(.connecting, automatic: false)
         #expect(vm.connState == .connecting)
     }
 
-    @Test("only a state with nothing in flight earns offline — and its own colour")
+    @Test("only a state with nothing in flight earns offline")
     func offlineIsReservedForNoAttempt() {
-        let vm = makeViewModel()
-        vm.fail("host unreachable")
-        #expect(vm.connState == .offline)
-        // Red belongs to this state alone; the two states that mean "working on
-        // it" must not borrow it.
-        #expect(TransportConnState.offline.transientTint == Ink.danger)
-        #expect(TransportConnState.reconnecting.transientTint != Ink.danger)
-        #expect(TransportConnState.connecting.transientTint != Ink.danger)
-    }
+        let failed = makeViewModel()
+        failed.adoptRustStatus(.failed("host unreachable"), automatic: false, error: "host unreachable")
+        #expect(failed.connState == .offline)
+        #expect(failed.errorMessage == "host unreachable")
 
-    @Test("live has no transient tint, so a pill keeps its transport's own colour")
-    func liveDefersToTransport() {
-        // SSH and mosh read differently when healthy; only the transient states
-        // override that.
-        #expect(TransportConnState.live.transientTint == nil)
-    }
-
-    @Test("connecting and reconnecting are told apart by colour, not just wording")
-    func transientStatesAreDistinct() {
-        // The whole point of the consolidation: one event, one colour — but two
-        // different events still have to look different.
-        #expect(TransportConnState.connecting.transientTint
-                != TransportConnState.reconnecting.transientTint)
+        let down = makeViewModel()
+        down.adoptRustStatus(.disconnected, automatic: false)
+        #expect(down.connState == .offline)
+        #expect(down.errorMessage == nil, "a plain disconnect raises no card")
     }
 
     // MARK: A session the server ended
@@ -93,55 +79,39 @@ struct ConnStateTests {
     /// as a failure — "Connection Error" over a "LINE DROPPED" veil — though
     /// nothing failed and nothing dropped.
     @Test("a session the server ended is its own state: offline, said, and not a failure")
-    func endedIsItsOwnState() async {
+    func endedIsItsOwnState() {
+        let ended = "The session ended: the remote shell exited."
         let vm = makeViewModel()
-        vm.markConnected()
+        vm.adoptRustStatus(.connected, automatic: false)
 
-        vm.end("The session ended: the remote shell exited.")
+        vm.adoptRustStatus(.ended(ended), automatic: false, error: ended)
 
-        #expect(vm.status == .ended("The session ended: the remote shell exited."))
+        #expect(vm.status == .ended(ended))
         #expect(vm.endedByServer)
         #expect(vm.connState == .offline, "nothing is being attempted")
-        #expect(vm.errorMessage == "The session ended: the remote shell exited.")
-
-        // Nothing turns it into a reconnect, and tearing it down keeps it.
-        vm.markReconnecting()
-        #expect(vm.endedByServer)
-        await vm.disconnect()
-        #expect(vm.status == .ended("The session ended: the remote shell exited."))
+        #expect(vm.errorMessage == ended)
 
         // A failure is still a failure.
         let failed = makeViewModel()
-        failed.fail("host unreachable")
+        failed.adoptRustStatus(.failed("host unreachable"), automatic: false, error: "host unreachable")
         #expect(!failed.endedByServer)
     }
 
     /// The end is said even when the last attempt was an automatic one —
     /// unlike a failure inside an automatic retry, nothing retries an end.
-    @Test("an end is said even after an automatic reconnect")
+    @Test("an end is said even after an automatic redial")
     func endIsAlwaysSaid() {
+        let ended = "The session ended: the remote shell exited."
         let vm = makeViewModel()
-        vm.beginAttempt(automatic: true)
-        vm.markConnected()
-        vm.beginAttempt(automatic: true)
+        vm.adoptRustStatus(.reconnecting, automatic: true)
+        vm.adoptRustStatus(.connected, automatic: false)
+        vm.adoptRustStatus(.reconnecting, automatic: true)
 
-        vm.end("The session ended: the remote shell exited.")
+        vm.adoptRustStatus(.ended(ended), automatic: false, error: ended)
 
-        #expect(vm.errorMessage == "The session ended: the remote shell exited.")
+        #expect(vm.errorMessage == ended)
         #expect(!vm.isAutoReconnectInFlight)
         #expect(vm.connState == .offline)
-    }
-
-    @Test("the veil over an ended session says so, not that the line dropped")
-    func veilNamesTheEnd() {
-        #expect(ReconnectVeil.label(state: .offline, isMosh: false, ended: true)
-                == String(localized: "Session ended"))
-        #expect(ReconnectVeil.label(state: .offline, isMosh: true, ended: true)
-                == String(localized: "Session ended"))
-        #expect(ReconnectVeil.label(state: .offline, isMosh: false, ended: false)
-                == String(localized: "Line dropped"))
-        #expect(ReconnectVeil.label(state: .reconnecting, isMosh: true, ended: false)
-                == String(localized: "Riding the handoff"))
     }
 
     /// B323: on the Rust core herdr's veil waits for herdr's first frame,

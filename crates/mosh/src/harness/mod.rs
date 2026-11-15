@@ -1,8 +1,8 @@
-//! Shared code for the equivalence harness (`harness/`, `examples/`) and the
-//! golden tests: the seeded generator, hex helpers, server-side encoding,
-//! and the two case formats both front ends run ([`wire`], [`ssp`]).
-//! `harness/swift/main.swift` implements the same formats over the app's
-//! Swift sources.
+//! Shared code for the harness (`harness/`, `examples/`) and the golden
+//! tests: the seeded generator, hex helpers, server-side encoding, and the
+//! two case formats ([`wire`], [`ssp`]). The app's Swift client printed the
+//! same formats until it was deleted (E2); its recorded outputs are the
+//! frozen goldens `tests/equivalence.rs` reads.
 
 pub mod ssp;
 pub mod wire;

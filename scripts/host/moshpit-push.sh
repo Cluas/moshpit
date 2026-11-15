@@ -147,6 +147,17 @@ if [ -n "${HERDR_PANE_ID:-}" ]; then
   esac
 elif [ -n "${TMUX:-}" ] && command -v tmux >/dev/null 2>&1; then
   SESSION=$(tmux display-message -p "#S" 2>/dev/null || echo "")
+  # A phone views a session through a group of its own (B459), and tmux
+  # names the pane's best session: the phone's group while it is on it. The
+  # group's mark names the session it views.
+  case "$SESSION" in
+    *~mp-*)
+      OF=$(tmux display-message -p '#{@moshpit_group_of}' 2>/dev/null || echo "")
+      case "$OF" in
+        \$*) SESSION=$(tmux display-message -p -t "$OF" '#S' 2>/dev/null || echo "$SESSION") ;;
+      esac
+      ;;
+  esac
 fi
 HOST="${MOSHPIT_PUSH_HOST:-$(hostname 2>/dev/null || echo host)}"
 

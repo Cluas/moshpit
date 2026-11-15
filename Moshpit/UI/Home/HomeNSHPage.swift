@@ -2,8 +2,7 @@ import MoshpitKit
 import SwiftUI
 import UIKit
 
-/// Home's connection list drawn by NSH (`ui/src/home`), in place of
-/// ``HomeView``'s SwiftUI list behind the switch `MOSHPIT_NSH_HOME`.
+/// Home's connection list drawn by NSH (`ui/src/home`).
 ///
 /// ``HomeView`` stays the owner of everything around the list: the
 /// navigation (the phone's stack, the iPad's split view), the sheets, the
@@ -12,10 +11,8 @@ import UIKit
 /// the core for Home's record (``HomeRecord``: `app::home`, built from the
 /// session registry and the agents monitor's clock) and posts it whenever it
 /// changes; the screen draws it and tells the host what the user asks for
-/// (``HomeIntent``). The record is read from the core's sessions only, so the
-/// page shows only with sessions on the core (``shows(nsh:rustSessions:)``).
-/// Connection-level asks go to Home (``HomeNSHActions``) exactly as the
-/// SwiftUI card's closures do; the tree's (open a window or a pane, rename,
+/// (``HomeIntent``). Connection-level asks go to Home (``HomeNSHActions``);
+/// the tree's (open a window or a pane, rename,
 /// kill, a new session, window, pane or agent task, a worktree's removal)
 /// are run against the session's multiplexer by ``HomeTreeActions``, as a
 /// host's sessions page (``SessionsNSHPage``) runs them.
@@ -36,6 +33,8 @@ struct HomeNSHPage: View {
     /// The companion (moshpit-design PET-DESIGN §7.3): its message is posted
     /// beside Home's record whenever it changes.
     private let pet = CompanionPet.shared
+    /// The app in front or not: the pet talks only while Home is seen.
+    @Environment(\.scenePhase) private var scenePhase
     @State private var killTarget: HomeKillTarget?
     @State private var worktreeTarget: ConnectionCard.WorktreeTarget?
     @State private var worktreeForceTarget: ConnectionCard.WorktreeTarget?
@@ -57,6 +56,8 @@ struct HomeNSHPage: View {
             },
             onMessage: { message in
                 guard let intent = model.handle(message) else { return }
+                // A tray's action: its confirmation hangs from its row (B499).
+                menus.anchor(to: message)
                 perform(intent)
             },
             onFailure: onFailure)
@@ -86,6 +87,7 @@ struct HomeNSHPage: View {
                 pet.onHome = false
             }
             .onChange(of: pet.revision) { _, _ in model.updatePet(pet.message) }
+            .onChange(of: scenePhase) { _, phase in model.active = phase == .active }
             .onChange(of: record) { _, new in model.update(new) }
             .onChange(of: cards) { _, new in show(new) }
             .modifier(HomeTreeDialogs(
@@ -94,8 +96,8 @@ struct HomeNSHPage: View {
                 menus: menus, actions: actions))
     }
 
-    /// ⌘, and ⌘N, which the SwiftUI list's toolbar buttons carry: the bar is
-    /// the screen's now, so the shortcuts ride on buttons nobody sees.
+    /// ⌘, and ⌘N: the bar is the screen's, so the shortcuts ride on
+    /// buttons nobody sees.
     private var shortcuts: some View {
         ZStack {
             Button("Settings") { actions.settings() }
@@ -113,14 +115,6 @@ struct HomeNSHPage: View {
     private func show(_ rows: [HomeNSHMenus.Row]) {
         menus.menus = HomeNSHMenus.menus(for: rows, perform: perform)
         menus.cornerRadius = HomeNSHMenus.corners(for: rows)
-    }
-
-    /// Whether Home's list is this page: Home's NSH switch is on (or a
-    /// capture run asks for it), and sessions run on the core — the record
-    /// is read from the core's registry, where a session on the Swift path
-    /// isn't; with sessions on the Swift path, the SwiftUI list shows.
-    static func shows(nsh: Bool, rustSessions: Bool) -> Bool {
-        nsh && rustSessions
     }
 
     // MARK: What the screen asks for
@@ -155,8 +149,7 @@ struct HomeNSHPage: View {
     }
 }
 
-/// What Home does for the NSH page's connection-level asks: the closures
-/// the SwiftUI card gets (`onConnect`, `onEnter`, …), and Home's
+/// What Home does for the NSH page's connection-level asks, and Home's
 /// screen-wide card.
 struct HomeNSHActions {
     var settings: () -> Void
@@ -174,7 +167,7 @@ struct HomeNSHActions {
     var present: (ConnectionCard.Modal) -> Void
 
     /// The rename card, pre-filled with `currentName`, applying through
-    /// `apply` (the SwiftUI card's `beginRename`).
+    /// `apply`.
     static func rename(title: String, currentName: String,
                        apply: @escaping (String) -> Void) -> ConnectionCard.Modal {
         ConnectionCard.Modal(kind: .input(ConnectionCard.InputRequest(
@@ -184,7 +177,7 @@ struct HomeNSHActions {
     }
 
     /// The name-before-create card: blank lets the multiplexer name it
-    /// (`apply` gets nil), as the SwiftUI card's `beginCreate`.
+    /// (`apply` gets nil).
     static func create(noun: String, apply: @escaping (String?) -> Void) -> ConnectionCard.Modal {
         ConnectionCard.Modal(kind: .input(ConnectionCard.InputRequest(
             icon: "plus", title: "New \(noun)",
@@ -204,7 +197,7 @@ struct HomeNSHActions {
 }
 
 /// A kill waiting on its confirmation: what the button says, the dialog's
-/// question, what the kill does (the SwiftUI card's `KillTarget`).
+/// question, what the kill does.
 struct HomeKillTarget: Identifiable {
     let id = UUID()
     let label: String
@@ -212,8 +205,7 @@ struct HomeKillTarget: Identifiable {
     let perform: () -> Void
 }
 
-/// A new agent task's sheet waiting to show (the SwiftUI card's
-/// `AgentTaskTarget`).
+/// A new agent task's sheet waiting to show.
 struct HomeAgentTaskTarget: Identifiable {
     let id = UUID()
     let initialRepos: [String]
@@ -285,14 +277,31 @@ final class HomeNSHModel {
     private(set) var record: HomeRecord?
     /// By connection id: the sessions collapsed, the windows showing their
     /// panes, and whether Home's idle group is open, as the screen last
-    /// told them.
-    private(set) var trees: [String: (collapsed: [String], expanded: [String], idle: Bool)] = [:]
+    /// told them; `told` once the sessions page told its part (a tree Home's
+    /// idle group alone made is not its disclosure, B553).
+    private(set) var trees: [String: (collapsed: [String], expanded: [String], idle: Bool, told: Bool)] = [:]
     private weak var surface: NSHSurface?
     /// The companion's last message (`{"op": "pet"}`).
     private var pet: String?
     /// Home is on screen (not under a pushed page): the egg hatches only
-    /// then, so the person sees it.
-    var visible = false
+    /// then, so the person sees it, and the pet talks only then.
+    var visible = false {
+        didSet { if visible != oldValue { postVisible() } }
+    }
+    /// The app is in front.
+    var active = true {
+        didSet { if active != oldValue { postVisible() } }
+    }
+
+    /// `{"op": "visible"}`: whether Home is seen, with the local hour and
+    /// the local day's number (the pet's night and morning lines).
+    private func postVisible() {
+        let now = Date()
+        let hour = Calendar.current.component(.hour, from: now)
+        let offset = Double(TimeZone.current.secondsFromGMT(for: now))
+        let day = Int(((now.timeIntervalSince1970 + offset) / 86_400).rounded(.down))
+        surface?.post(json: "{\"op\":\"visible\",\"visible\":\(visible && active),\"hour\":\(hour),\"day\":\(day)}")
+    }
 
     /// `surface` shows Home from now on: the trees as they were, then the
     /// current state.
@@ -301,6 +310,7 @@ final class HomeNSHModel {
         if !trees.isEmpty { surface.post(treesMessage) }
         if let record { surface.post(json: record.message) }
         if let pet { surface.post(json: pet) }
+        postVisible()
     }
 
     /// The companion as it is now.
@@ -348,9 +358,15 @@ final class HomeNSHModel {
             break
         }
         if message["ev"] as? String == "tree", let connection = message["connection"] as? String {
-            var tree = trees[connection] ?? (collapsed: [], expanded: [], idle: false)
-            if let collapsed = message["collapsed"] as? [String] { tree.collapsed = collapsed }
-            if let expanded = message["expanded"] as? [String] { tree.expanded = expanded }
+            var tree = trees[connection] ?? (collapsed: [], expanded: [], idle: false, told: false)
+            if let collapsed = message["collapsed"] as? [String] {
+                tree.collapsed = collapsed
+                tree.told = true
+            }
+            if let expanded = message["expanded"] as? [String] {
+                tree.expanded = expanded
+                tree.told = true
+            }
             if let idle = message["idle"] as? Bool { tree.idle = idle }
             trees[connection] = tree
             return nil
@@ -366,7 +382,7 @@ final class HomeNSHModel {
     var treesMessage: [String: Any] {
         ["op": "trees", "trees": trees.keys.sorted().map { id in
             ["connection": id, "collapsed": trees[id]!.collapsed, "expanded": trees[id]!.expanded,
-             "idle": trees[id]!.idle]
+             "idle": trees[id]!.idle, "told": trees[id]!.told]
         }]
     }
 }

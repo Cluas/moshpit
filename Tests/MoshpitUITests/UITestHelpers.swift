@@ -19,19 +19,6 @@ extension XCTestCase {
     }
 }
 
-extension XCTestCase {
-    /// Skips a flow written in September for a SwiftUI screen (Settings,
-    /// its App Icon and Theme pages, the connection form, the key form): the
-    /// page changed since, so the navigation bars, switches and rows it looks
-    /// for are no longer there (the first public CI runs, on Xcode 27.2). An
-    /// NSH page replaces each now (F0), and the flow stays skipped until it
-    /// is written again against it, whose rows `NSHSurface` reaches by
-    /// accessibility id.
-    func skipUntilRewrittenForNSH(_ page: String) throws {
-        throw XCTSkip("written for the SwiftUI \(page) as it was in September; NSH draws it now: to be written again against the NSH page")
-    }
-}
-
 extension XCUIApplication {
     /// Scroll until `element` is on screen and returns whether it got there.
     ///

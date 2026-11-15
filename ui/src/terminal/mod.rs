@@ -43,6 +43,7 @@ mod panels;
 pub mod picker;
 pub mod prompt;
 pub mod shortcuts;
+pub mod switcher;
 
 use std::{rc::Rc, sync::Arc};
 
@@ -55,7 +56,7 @@ use crate::{
     screen::Screen,
     theme,
 };
-pub use model::{Attachment, Bar, Chrome, Counters, Diagnostics, Dictation, Preview};
+pub use model::{Attachment, Bar, Chrome, Counters, Diagnostics, Dictation, Preview, Switcher};
 
 /// A message from the host.
 #[derive(Debug, Clone, PartialEq)]
@@ -81,6 +82,18 @@ pub enum Message {
     /// `{"op": "key", "stroke": "mod+k"}`: one of the host's key commands
     /// (the scene's menu took the press before NSH's keymap could).
     Key(String),
+    /// `{"op": "switcher", "tree": {…} | null, "hintSeen": bool}`: the
+    /// session's panes a sideways swipe walks ([`switcher`]).
+    Switcher(Box<Switcher>),
+    /// `{"op": "swipe", "active": bool}`: a sideways swipe began (the
+    /// terminal follows the finger) or settled.
+    Swipe(bool),
+}
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SwipeFields {
+    active: bool,
 }
 
 #[derive(serde::Deserialize)]
@@ -131,6 +144,12 @@ impl Message {
                 .map_err(error),
             "diagnostics" => serde_json::from_value(fields)
                 .map(|d| Message::Diagnostics(Box::new(d)))
+                .map_err(error),
+            "switcher" => serde_json::from_value(fields)
+                .map(|s| Message::Switcher(Box::new(s)))
+                .map_err(error),
+            "swipe" => serde_json::from_value::<SwipeFields>(fields)
+                .map(|f| Message::Swipe(f.active))
                 .map_err(error),
             "rekey" if fields.as_object().is_some_and(|f| f.is_empty()) => Ok(Message::Rekey),
             "rekey" => Err("terminal: rekey: takes no fields".to_owned()),
@@ -259,6 +278,19 @@ pub enum Intent {
         name: &'static str,
         rect: [f32; 4],
     },
+    /// The panes either side of the one shown, by id ([`switcher`]): what
+    /// the host's swipe rubber-bands against and switches to. None either
+    /// side with nowhere to go (one pane, a cover over it).
+    Neighbours {
+        previous: Option<String>,
+        next: Option<String>,
+    },
+    /// The one-time swipe hint is showing: the host remembers it on this
+    /// device and nudges the terminal toward the pane it would go to
+    /// (`forward`: the next one).
+    SwipeHint {
+        forward: bool,
+    },
 }
 
 impl Intent {
@@ -300,6 +332,10 @@ impl Intent {
             Intent::Preview(action) => json!({"ev": "preview", "action": action.name()}),
             Intent::Handover => ev("handover"),
             Intent::Anchor { name, rect } => json!({"ev": "anchor", "name": name, "rect": rect}),
+            Intent::Neighbours { previous, next } => {
+                json!({"ev": "neighbours", "previous": previous, "next": next})
+            }
+            Intent::SwipeHint { forward } => json!({"ev": "swipe-hint", "forward": forward}),
         }
     }
 }
@@ -331,6 +367,10 @@ pub(crate) struct Ctx {
     /// The transport pill: what its popover hangs from, and where it is.
     pub pill: ElementRef,
     pub pill_rect: Signal<Option<Bounds<Points>>>,
+    /// The session's panes a sideways swipe walks.
+    pub switcher: Signal<Switcher>,
+    /// A sideways swipe is under way (the host's).
+    pub swiping: Signal<bool>,
 }
 
 impl Ctx {
@@ -458,8 +498,12 @@ pub fn TerminalScreen(props: ScreenProps) -> impl IntoElement {
         diagnostics: signal(Diagnostics::default()),
         pill: element_ref(),
         pill_rect: signal(None),
+        switcher: signal(Switcher::default()),
+        swiping: signal(false),
     };
     shortcuts::bind(&ctx, &keys);
+    let order = switcher::order(&ctx);
+    switcher::tell_neighbours(&ctx, order);
     {
         let ctx = ctx.clone();
         channel::hear(
@@ -492,6 +536,16 @@ pub fn TerminalScreen(props: ScreenProps) -> impl IntoElement {
                     }
                 }
                 Message::Key(stroke) => keys.run(&ctx, &stroke, shortcuts::Via::Host),
+                Message::Switcher(next) => {
+                    if ctx.switcher.with_untracked(|s| *s != *next) {
+                        ctx.switcher.set(*next);
+                    }
+                }
+                Message::Swipe(active) => {
+                    if ctx.swiping.get_untracked() != active {
+                        ctx.swiping.set(active);
+                    }
+                }
                 Message::Rekey => {
                     // The host hears this before the batch that takes the
                     // old element out of the window: it moves the terminal
@@ -517,11 +571,11 @@ pub fn TerminalScreen(props: ScreenProps) -> impl IntoElement {
                 // starts, moving with it in the commit that hears it.
                 .mb_keyboard()
                 .child(bar::top_bar(ctx.clone()))
-                .child(cover::pane_area(ctx.clone()))
+                .child(cover::pane_area(ctx.clone(), order))
                 .child(panels::panels(ctx.clone()))
                 .child(keys::shortcut_bar(ctx.clone())),
         )
-        .child(chrome::over_pane(ctx.clone()))
+        .child(chrome::over_pane(ctx.clone(), order))
         .child(diagnostics::popover(ctx))
 }
 

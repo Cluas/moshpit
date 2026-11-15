@@ -20,6 +20,7 @@ use moshpit_ui::{
 };
 use nsh_core::{
     Bounds, EdgeInsets, NodeId, Points, Size,
+    geometry::{point, px},
     platform::{HostEnvironment, Idiom, Os},
 };
 use nsh_engine::EngineConfig;
@@ -186,6 +187,48 @@ fn every_key_takes_presses_over_44_pt_of_height_and_has_a_name() {
             );
         }
     }
+    channel.close();
+}
+
+/// The arrows the screen told the host until it went quiet.
+fn arrows(rx: &std::sync::mpsc::Receiver<String>) -> Vec<String> {
+    let mut arrows = Vec::new();
+    while let Ok(json) = rx.recv_timeout(Duration::from_millis(200)) {
+        let value: Value = serde_json::from_str(&json).unwrap();
+        match value["ev"].as_str() {
+            Some("anchor") => {}
+            Some("arrow") => arrows.push(value["dir"].as_str().unwrap().to_owned()),
+            _ => panic!("the screen told the host {value}"),
+        }
+    }
+    arrows
+}
+
+/// The joystick sends its arrow the moment a push leaves the dead zone,
+/// and once: the push going on the same way sends nothing more until the
+/// hold repeats it, and the finger lifting stops it (the SwiftUI bar's
+/// `JoystickRepeater` pinned this; it went in D7).
+#[test]
+fn the_joystick_sends_its_arrow_once_then_repeats_until_the_finger_lifts() {
+    let (mut app, channel, _) = open(false);
+    let heard = hear(&channel);
+    app.drag_and_hold("id:dpad-joystick", point(px(40.0), px(0.0)))
+        .unwrap();
+    assert_eq!(arrows(&heard), ["right"], "once, however far the push went");
+    // Held: it repeats once the delay is over.
+    app.run_for(Duration::from_millis(500)).unwrap();
+    let repeated = arrows(&heard);
+    assert!(
+        !repeated.is_empty() && repeated.iter().all(|dir| dir == "right"),
+        "{repeated:?}"
+    );
+    app.drop_held().unwrap();
+    app.run_for(Duration::from_millis(500)).unwrap();
+    assert_eq!(
+        arrows(&heard),
+        Vec::<String>::new(),
+        "nothing after the lift"
+    );
     channel.close();
 }
 

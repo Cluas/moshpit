@@ -33,17 +33,31 @@ impl From<&AgentSettingsValue> for agents::Settings {
     }
 }
 
-/// Where a pane lives, from the app's tree.
+/// Where a pane lives, from the app's tree. `window_name`, `workspace`
+/// (herdr's, none under tmux) and `path` are what Home names it from
+/// (`moshpit_ui`'s `pane_place`), so the island says it as Home does.
 #[derive(Debug, Clone, PartialEq, uniffi::Record)]
 pub struct AgentPaneWhereValue {
     pub command: String,
     pub session: Option<String>,
     pub window: Option<String>,
+    #[uniffi(default = None)]
+    pub window_name: Option<String>,
+    #[uniffi(default = None)]
+    pub workspace: Option<String>,
+    #[uniffi(default = None)]
+    pub path: Option<String>,
 }
 
 impl From<AgentPaneWhereValue> for agents::PaneWhere {
     fn from(value: AgentPaneWhereValue) -> Self {
-        Self { command: value.command, session: value.session, window: value.window }
+        let name = moshpit_ui::home::model::pane_place(
+            &value.command,
+            value.window_name.as_deref().unwrap_or(""),
+            value.workspace.as_deref(),
+            value.path.as_deref(),
+        );
+        Self { command: value.command, session: value.session, window: value.window, name }
     }
 }
 
@@ -68,6 +82,8 @@ pub struct AgentRowValue {
     pub pane_id: String,
     pub command: String,
     pub location: String,
+    /// "moshpit · mac": Home's name for the pane and the host.
+    pub place: String,
     pub detail: Option<String>,
     pub state: String,
     pub started_at: f64,
@@ -127,6 +143,7 @@ fn island(state: agents::IslandState) -> AgentIslandValue {
                 pane_id: a.pane_id,
                 command: a.command,
                 location: a.location,
+                place: a.place,
                 detail: a.detail,
                 state: a.state.raw().to_owned(),
                 started_at: a.started_at,

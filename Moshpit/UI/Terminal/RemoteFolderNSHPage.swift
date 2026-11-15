@@ -4,12 +4,10 @@ import SwiftUI
 import UIKit
 
 /// The sheet a tapped folder path (or the Files key) opens, drawn by NSH
-/// (`ui/src/terminal/folder.rs`) whenever the terminal is, else by its own
-/// switch (``NSHScreen/remoteFolder``): the same stack and container as
-/// ``RemoteFolderSheet`` (half height first, full height a drag up, the
-/// grabber), each folder an NSH page of its own, pushed in SwiftUI's stack
-/// so the edge swipe goes back. If NSH cannot run here, the SwiftUI sheet
-/// shows.
+/// (`ui/src/terminal/folder.rs`): half height first, full height a drag
+/// up, the grabber; each folder an NSH page of its own, pushed in SwiftUI's
+/// stack so the edge swipe goes back. If its screen can't run, the sheet
+/// says so (``NSHPageFailed``).
 struct RemoteFolderNSHSheet: View {
     let files: RemoteFileAccess
     @State private var root: RemoteFileEntry
@@ -24,7 +22,7 @@ struct RemoteFolderNSHSheet: View {
 
     var body: some View {
         if failed {
-            RemoteFolderSheet(folder: root, files: files)
+            NSHSheetFailed { failed = false }
         } else {
             NavigationStack(path: $trail) {
                 RemoteFolderNSHPage(folder: root, files: files, pushed: false, open: open, climb: climb,
@@ -232,7 +230,7 @@ struct RemoteFolderFacts: Equatable {
         editFailureId = model.editFailureId
     }
 
-    /// When it changed and how big it is (`RemoteFolderView.meta`).
+    /// When it changed and how big it is.
     static func meta(_ entry: RemoteFileEntry) -> String {
         var parts: [String] = []
         if let modified = entry.modified {
@@ -311,7 +309,7 @@ final class RemoteFolderNSHModel {
         surface?.post(message) ?? false
     }
 
-    /// A tile's or a row's menu (`RemoteFolderView.actions`), by its
+    /// A tile's or a row's menu, by its
     /// identifier: Open and Share for a file, Rename, Delete. A pick goes
     /// back to the page (`perform(action, path)`), which asks where it asks.
     static func menus(for facts: RemoteFolderFacts,

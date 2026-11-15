@@ -195,7 +195,7 @@ final class RustSideChannel {
     /// when tmux can't say, or the session isn't there to ask.
     func panePath(_ paneId: String) async -> String? {
         // Spliced bare: a pane id or nothing (B146).
-        guard paneId.hasPrefix("%"), TmuxSessionController.isValidTmuxId(paneId),
+        guard paneId.hasPrefix("%"), TmuxId.isValid(paneId),
               let connection = session?.connection else { return nil }
         let custom = connection.tmuxPath?.trimmingCharacters(in: .whitespaces) ?? ""
         let tmux = custom.isEmpty ? "tmux" : custom
@@ -290,27 +290,3 @@ struct Lent: HostConnection {
         }
     }
 }
-
-extension SessionHub.ActiveSession {
-    /// The Rust session whose own connection side features borrow; nil on
-    /// the Swift path. In a DEBUG measurement run, `-MOSHPIT_SIDE_BORROW 0`
-    /// puts back what W14b replaced — a Swift SSH connection dialled for the
-    /// features beside a Rust session — to compare the two on one build.
-    var lendingRust: RustSessionDriver? {
-        #if DEBUG
-        if RustSideChannel.dialsForMeasurement { return nil }
-        #endif
-        return rust
-    }
-}
-
-#if DEBUG
-extension RustSideChannel {
-    /// `-MOSHPIT_SIDE_BORROW 0` (DEBUG only): see `lendingRust`.
-    nonisolated static let dialsForMeasurement: Bool = {
-        let args = ProcessInfo.processInfo.arguments
-        guard let i = args.firstIndex(of: "-MOSHPIT_SIDE_BORROW"), i + 1 < args.count else { return false }
-        return args[i + 1] == "0"
-    }()
-}
-#endif

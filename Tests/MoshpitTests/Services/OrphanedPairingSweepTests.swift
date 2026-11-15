@@ -16,7 +16,7 @@ import MoshpitKit
 @Suite("Orphaned push pairings")
 struct OrphanedPairingSweepTests {
 
-    private func core(_ file: PushPairingFile) -> HostCareCore {
+    private func core(_ file: ConnectionDeletionTests.TestPairingsFile) -> HostCareCore {
         HostCareCore(platform: ConnectionDeletionTests.NoHost(),
                      pairings: ConnectionDeletionTests.FilePairings(file),
                      environment: "sandbox", autocareOff: true)
@@ -62,22 +62,21 @@ struct OrphanedPairingSweepTests {
         return (UserDefaults(suiteName: suite)!, suite)
     }
 
-    private func makePairingsFile() throws -> PushPairingFile {
+    private func makePairingsFile() throws -> ConnectionDeletionTests.TestPairingsFile {
         let dir = FileManager.default.temporaryDirectory
             .appendingPathComponent("orphans-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        return PushPairingFile(url: dir.appendingPathComponent("push-pairings.json"))
+        return ConnectionDeletionTests.TestPairingsFile(url: dir.appendingPathComponent("push-pairings.json"))
     }
 
-    private func cleanUp(_ file: PushPairingFile) {
+    private func cleanUp(_ file: ConnectionDeletionTests.TestPairingsFile) {
         try? FileManager.default.removeItem(at: file.url.deletingLastPathComponent())
     }
 
     /// One pairing per id, none minted yet — each due a send token.
-    private func pair(_ ids: [UUID], in file: PushPairingFile) -> Bool {
+    private func pair(_ ids: [UUID], in file: ConnectionDeletionTests.TestPairingsFile) -> Bool {
         file.write(ids.map {
-            PushPairing.make(connectionId: $0, hostLabel: "host-\($0.uuidString.prefix(4))",
-                             relayURL: Self.relayURL)
+            ConnectionDeletionTests.pairing($0, host: "host-\($0.uuidString.prefix(4))", relayURL: Self.relayURL)
         })
     }
 
@@ -215,8 +214,7 @@ struct OrphanedPairingSweepTests {
         #expect(file.read().map(\.connectionId) == [kept.id])
 
         let later = UUID()
-        try #require(file.upsert(PushPairing.make(connectionId: later, hostLabel: "later",
-                                                  relayURL: Self.relayURL)))
+        try #require(file.upsert(ConnectionDeletionTests.pairing(later, host: "later", relayURL: Self.relayURL)))
         #expect(sweep(core, store) == 0)
         #expect(file.read().map(\.connectionId) == [kept.id, later])
     }

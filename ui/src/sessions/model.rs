@@ -190,8 +190,14 @@ pub fn groups(control: &Control, disclosure: &Disclosure, words: &Words) -> Vec<
         .into_iter()
         .map(|session| {
             let windows = control.windows_in(&session.id);
+            // Twins are told apart by their ids, the name kept: "api ·
+            // w4", as the terminal's breadcrumb says (B555: the name was
+            // dropped). A name of "~" says nothing beside the id.
             let display = control.session_display_name(session);
-            let (title, _) = split_display_name(&display);
+            let title = match split_display_name(&display) {
+                (id, Some(name)) => format!("{name} · {id}"),
+                (id, None) => id,
+            };
             let open = disclosure.open(&session.id, &sessions, active.as_deref());
             let titles: Vec<String> = windows
                 .iter()

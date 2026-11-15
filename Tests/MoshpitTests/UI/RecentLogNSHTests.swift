@@ -3,8 +3,8 @@ import Testing
 import UIKit
 @testable import Moshpit
 
-/// Settings › Recent Log in NSH: its switch, and the data path between the
-/// host and the screen — what the Swift side posts is what the Rust screen
+/// Settings › Recent Log in NSH: the data path between the host and the
+/// screen — what the Swift side posts is what the Rust screen
 /// takes (`ui/src/recent_log.rs`'s tests and `ui/tests/recent_log.rs` cover
 /// the screen itself), and a real surface on the device runs the screen,
 /// shows what is posted and tells the host about the back button.

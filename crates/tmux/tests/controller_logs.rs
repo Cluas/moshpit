@@ -1,14 +1,15 @@
-//! The controller equivalence harness without swiftc: every script in
+//! The controller's committed logs: every script in
 //! tests/fixtures/controller/ must still print its committed log
-//! (`<name>.log`, written by `harness/controller/equivalence.py
-//! update-goldens`). For every script but the divergence fixtures (`div-*`)
-//! that log is also what the app's Swift controller prints (byte for byte,
-//! or but for the dead-pane normalisation); for those, the Rust log is the
-//! right one and divergences.json says why.
+//! (`<name>.log`). These were the equivalence harness's goldens: for every
+//! script but the divergence fixtures (`div-*`) the log was also what the
+//! app's Swift controller printed (byte for byte, or but for the
+//! normalisations divergences.json lists), and for those the Rust log is the
+//! right one and divergences.json says why. The Swift controller is gone
+//! (E3); the logs are Rust's alone now.
 //!
 //! `MOSHPIT_BLESS_CONTROLLER_LOGS=1` writes the Rust logs as the goldens
-//! instead of checking them (a change the harness must then know about:
-//! a divergence or a normalisation in divergences.json).
+//! instead of checking them (say why in the commit, and in divergences.json
+//! where the change departs from what the Swift controller did).
 
 use std::fs;
 use std::path::Path;

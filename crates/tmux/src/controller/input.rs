@@ -31,6 +31,9 @@ use super::{Controller, Notification, Reply, ViewAction};
 pub enum ScrollRoute {
     /// SGR wheel events into the pane's program.
     Wheel,
+    /// The arrow keys, for an alternate-screen program without the mouse
+    /// (less, man, git log): xterm's alternate scroll (B500).
+    Arrows,
     /// Nothing.
     Drop,
     /// The view pages its local scrollback.
@@ -131,6 +134,33 @@ pub fn click_bytes(col: i64, row: i64) -> Vec<u8> {
     format!("\u{1b}[<0;{c};{r}M\u{1b}[<0;{c};{r}m").into_bytes()
 }
 
+/// The most arrow presses one scroll tick sends: what a wheel tick at most
+/// sends ([`wheel_bytes`]'s six) and twice that, for a coast's larger steps.
+const MAX_ARROWS: u64 = 12;
+
+/// How long what follows a paste waits once tmux has run it (B485), and at
+/// most when tmux doesn't answer (the connection may be going).
+const PASTE_SETTLE_MS: u64 = 150;
+const PASTE_HOLD_MS: u64 = 2_000;
+
+/// Input held behind a paste (B485).
+#[derive(Debug)]
+pub(super) enum Held {
+    Input {
+        pane: String,
+        bytes: Vec<u8>,
+    },
+    Paste {
+        pane: String,
+        text: String,
+    },
+    /// A pager's arrow presses (B500).
+    Arrows {
+        pane: String,
+        lines: i64,
+    },
+}
+
 impl Controller {
     // MARK: Keys and paste
 
@@ -145,6 +175,14 @@ impl Controller {
 
     pub(super) fn send_input_now(&mut self, bytes: &[u8], pane: &str) {
         if bytes.is_empty() || !is_valid_id(pane) {
+            return;
+        }
+        // Behind a paste tmux hasn't run yet, or only just (B485).
+        if let Some((_, held)) = self.paste_gate.as_mut() {
+            held.push(Held::Input {
+                pane: pane.to_owned(),
+                bytes: bytes.to_vec(),
+            });
             return;
         }
         // A keystroke snaps a reader back to the live bottom first.
@@ -175,14 +213,76 @@ impl Controller {
         self.begin_input(now);
         let text = paste_body(text);
         if !text.is_empty() && is_valid_id(pane) {
-            let literal = command_string_literal(&text);
-            self.send(format!("set-buffer -b moshpit-paste -- {literal}"));
-            self.send(format!("paste-buffer -p -b moshpit-paste -d -t {pane}"));
-            if self.pane_is_on_screen(pane) {
-                self.note_user_interaction();
-            }
+            self.paste_now(text, pane);
         }
         self.finish_input();
+    }
+
+    /// The paste, or behind the one before it (B485). What follows it waits
+    /// until tmux has run it (paste-buffer's answer) and [`PASTE_SETTLE_MS`]
+    /// more: a program taking a paste in may drop a key that comes with it
+    /// (Claude Code, making an image's path an attachment, drops the Return
+    /// behind it: the image panel's Send only pasted), and a key sent a
+    /// moment after a paste still reached tmux with it when the network
+    /// held them together. Without an answer, [`PASTE_HOLD_MS`] at most.
+    fn paste_now(&mut self, text: String, pane: &str) {
+        if let Some((_, held)) = self.paste_gate.as_mut() {
+            held.push(Held::Paste {
+                pane: pane.to_owned(),
+                text,
+            });
+            return;
+        }
+        self.pastes += 1;
+        let paste = self.pastes;
+        let literal = command_string_literal(&text);
+        self.send(format!("set-buffer -b moshpit-paste -- {literal}"));
+        self.send_command(
+            format!("paste-buffer -p -b moshpit-paste -d -t {pane}"),
+            Reply::Pasted(paste),
+        );
+        if self.pane_is_on_screen(pane) {
+            self.note_user_interaction();
+        }
+        if self.snapshot.is_attached {
+            self.paste_gate = Some((paste, Vec::new()));
+            self.arm(Slot::PasteSettle, PASTE_HOLD_MS, Action::PasteSettled);
+        }
+    }
+
+    /// tmux ran paste `paste` (or refused it): what waits behind it goes
+    /// once it has had its time (B485). An earlier paste's answer, late past
+    /// its wait, settles nothing of a later one's.
+    pub(super) fn pasted(&mut self, paste: u64) {
+        if self
+            .paste_gate
+            .as_ref()
+            .is_some_and(|(gate, _)| *gate == paste)
+        {
+            self.arm(Slot::PasteSettle, PASTE_SETTLE_MS, Action::PasteSettled);
+        }
+    }
+
+    /// What waited behind the paste goes, in order, up to a paste, which
+    /// the rest then waits behind.
+    pub(super) fn paste_settled(&mut self) {
+        let Some((_, held)) = self.paste_gate.take() else {
+            return;
+        };
+        let mut held = held.into_iter();
+        while let Some(step) = held.next() {
+            match step {
+                Held::Input { pane, bytes } => self.send_input_now(&bytes, &pane),
+                Held::Arrows { pane, lines } => self.send_arrows(lines, &pane),
+                Held::Paste { pane, text } => {
+                    self.paste_now(text, &pane);
+                    if let Some((_, gate)) = self.paste_gate.as_mut() {
+                        gate.extend(held);
+                    }
+                    return;
+                }
+            }
+        }
     }
 
     /// Whether the pane's window is the active one (`panes[p]?.windowId ==
@@ -319,7 +419,9 @@ impl Controller {
     /// park every later tick. Claude on the primary screen with no flags yet
     /// gets nothing. A primary-screen mouse app that is repainting right now
     /// would fight the wheel over its viewport: park locally. An alt-screen
-    /// pane without the mouse has no local history worth paging.
+    /// pane without the mouse has no local history worth paging: its
+    /// program gets the arrow keys (B500), once tmux has said the mouse is
+    /// off — before that, nothing rather than a guess.
     pub fn scroll_route(&self) -> Option<(String, ScrollRoute)> {
         let pane = self.snapshot.input_pane()?;
         let flags = self.input_flags_of(&pane);
@@ -329,6 +431,8 @@ impl Controller {
             ScrollRoute::Drop
         } else if flags.wants_mouse && !self.is_streaming(&pane) {
             ScrollRoute::Wheel
+        } else if flags.alt_screen && self.pane_flags.contains_key(&pane) {
+            ScrollRoute::Arrows
         } else if flags.alt_screen {
             ScrollRoute::Drop
         } else {
@@ -345,6 +449,7 @@ impl Controller {
         {
             match route {
                 ScrollRoute::Wheel => self.send_wheel(lines, &pane),
+                ScrollRoute::Arrows => self.send_arrows(lines, &pane),
                 ScrollRoute::Drop => {}
                 ScrollRoute::Local => self.view(&pane, ViewAction::ScrollLocal { lines }),
             }
@@ -364,6 +469,13 @@ impl Controller {
                 let rows = self.wheel_carry.take(dy, cell_height);
                 if rows != 0 {
                     self.send_wheel(rows, &pane);
+                }
+                PixelScroll::Consumed(dy)
+            }
+            Some((pane, ScrollRoute::Arrows)) => {
+                let rows = self.wheel_carry.take(dy, cell_height);
+                if rows != 0 {
+                    self.send_arrows(rows, &pane);
                 }
                 PixelScroll::Consumed(dy)
             }
@@ -398,6 +510,27 @@ impl Controller {
 
     /// Wheel events at the pane's centre, through the keystroke path (they
     /// count as an interaction).
+    /// `lines` arrow presses (positive: older, up), one `send-keys` for
+    /// tmux to encode by the pane's real cursor-key mode (the arrow-keys
+    /// rule), at most [`MAX_ARROWS`] at once (B500).
+    fn send_arrows(&mut self, lines: i64, pane: &str) {
+        if lines == 0 || !is_valid_id(pane) {
+            return;
+        }
+        // Behind a paste, with the keys typed after it (B485): in the order
+        // given.
+        if let Some((_, held)) = self.paste_gate.as_mut() {
+            held.push(Held::Arrows {
+                pane: pane.to_owned(),
+                lines,
+            });
+            return;
+        }
+        let key = if lines > 0 { "Up" } else { "Down" };
+        let count = lines.unsigned_abs().min(MAX_ARROWS);
+        self.send(format!("send-keys -t {pane} -N {count} {key}"));
+    }
+
     fn send_wheel(&mut self, lines: i64, pane: &str) {
         let (cols, rows) = self.pane_grid(pane);
         let wheel = wheel_bytes(lines, (cols / 2).max(1), (rows / 2).max(1));

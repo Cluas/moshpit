@@ -357,6 +357,24 @@ mod tests {
         assert_eq!(keychain.snapshot()["moshpit.knownHosts.backup"], b"garbage");
     }
 
+    /// B155: a salvaged map keeps a host that starts with U+FEFF as it was
+    /// stored (Swift's JSONSerialization dropped it from every key, and the
+    /// fingerprint came back under another host). Pinned in Rust when the
+    /// Swift store and its test went (C).
+    #[test]
+    fn a_salvaged_map_keeps_a_host_that_starts_with_a_byte_order_mark() {
+        let stored =
+            "{\"\u{FEFF}b.example:22\":\"SHA256:BBBB\",\"a.example:22\":[\"SHA256:AAAA\"]}"
+                .as_bytes()
+                .to_vec();
+        let keychain = Arc::new(MemoryKeychain::with([(ACCOUNT.to_owned(), stored)]));
+        let store = KeychainKnownHosts::new(keychain);
+        assert_eq!(
+            store.read(),
+            Ok(table(&[("\u{FEFF}b.example:22", "SHA256:BBBB")]))
+        );
+    }
+
     /// Fix (known-hosts-backup): Swift wrote the second map over the first
     /// one's copy.
     #[test]

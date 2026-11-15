@@ -755,7 +755,9 @@ impl Client {
         self.attach.target = None;
         self.attach.take_over = false;
         self.dirty = true;
+        let settling = self.attach.settling.take();
         self.drop_all_held(true);
+        self.hold_settling(settling);
         let reason = reason.unwrap_or_default();
         if self.attach.awaiting_full.take().is_some() {
             log::warn!(
@@ -887,7 +889,9 @@ impl Client {
         self.attach.switch = None;
         self.timers.cancel(&Slot::Settle);
         self.timers.cancel(&Slot::ReleaseAck);
+        let settling = self.attach.settling.take();
         self.drop_all_held(true);
+        self.hold_settling(settling);
         self.dirty = true;
         if let Some(awaiting) = self.attach.awaiting_full.take() {
             self.view(&awaiting, ViewAction::Reveal);
@@ -1116,10 +1120,46 @@ impl Client {
         if self.attach.input_pane() == Some(pane.as_str()) {
             self.release_steps(&pane, steps);
         } else {
+            self.hold_settling(Some(Settling { pane, steps }));
+        }
+    }
+
+    /// What waited behind a paste, its pane's attach gone before it went
+    /// (the attach ended or closed: herdr re-attaching it, the server
+    /// restarted): it waits for the pane's next attach as a follow's typing
+    /// does (B493), ahead of what was typed since, and goes once that
+    /// paints — the round trips of the re-attach being the rest of the
+    /// paste's time. It was dropped and said: the image panel's Send lost
+    /// its Return (B527). An attach to another pane drops it, said, as any
+    /// hold; never into another pane.
+    fn hold_settling(&mut self, settling: Option<Settling>) {
+        let Some(Settling { pane, steps }) = settling else {
+            return;
+        };
+        self.timers.cancel(&Slot::PasteSettle);
+        if steps.is_empty() {
+            return;
+        }
+        let ours = match self.attach.held.pane.as_deref() {
+            Some(held) => held == pane,
+            None => self
+                .attach
+                .target
+                .as_deref()
+                .is_none_or(|target| target == pane),
+        };
+        if !ours {
             for step in steps {
                 self.not_sent(&pane, step);
             }
+            return;
         }
+        if self.attach.held.pane.is_none() {
+            self.attach.held.pane = Some(pane);
+            self.arm(Slot::HeldInput, FOLLOW_HOLD);
+        }
+        let since = std::mem::replace(&mut self.attach.held.steps, steps);
+        self.attach.held.steps.extend(since);
     }
 
     fn send_input(&mut self, pane: &str, bytes: &[u8]) {

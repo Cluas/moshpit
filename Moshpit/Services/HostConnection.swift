@@ -5,17 +5,14 @@ import Foundation
 /// commands on exec channels, and files over SFTP with exec forms for a host
 /// that has SFTP turned off.
 ///
-/// Two kinds stand behind it, chosen per session:
+/// The Rust session's own connection stands behind it, lent
+/// (``RustSideChannel`` and the ``BorrowedHost`` it hands each call, W14b):
+/// the session's SSH, mosh + tmux's control connection, or the one side
+/// connection plain mosh keeps. No second sign-in, no second Face ID; when
+/// the session is reconnecting or gone, a call says so
+/// (``HostConnectionError``) instead of dialling.
 ///
-/// - A Swift `SSHSession`: the Swift path's own connection, or one dialled
-///   for the feature when the session has none to lend (pure mosh).
-/// - The Rust session's own connection, lent (``RustSideChannel`` and the
-///   ``BorrowedHost`` it hands each call, W14b): the session's SSH, mosh +
-///   tmux's control connection, or the one side connection plain mosh keeps.
-///   No second sign-in, no second Face ID; when the session is reconnecting
-///   or gone, a call says so (``HostConnectionError``) instead of dialling.
-///
-/// The rules every kind keeps: a command is a POSIX sh script run as
+/// The rules it keeps: a command is a POSIX sh script run as
 /// `sh -c` whatever the login shell (B138), its words quoted by the one
 /// scalar-safe quoter (`Shell.quote`, B113), and it succeeds only with exit
 /// status 0 (B136).
@@ -57,7 +54,7 @@ protocol HostConnection: FileUploader {
 
 /// Why the session's lent connection couldn't do what was asked, worded for
 /// the person where it reaches one (the preview card, the folder sheet, the
-/// image overlay). The Swift path's own errors keep their own words.
+/// image overlay).
 enum HostConnectionError: Error, Equatable, LocalizedError, CustomStringConvertible {
     /// The session is reconnecting, and wasn't back within the wait.
     case reconnecting

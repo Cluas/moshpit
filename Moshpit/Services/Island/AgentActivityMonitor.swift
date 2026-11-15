@@ -155,11 +155,15 @@ final class AgentActivityMonitor {
 
     /// Track a connection's multiplexer, whichever it is. The output and
     /// bell heuristics are tmux-only: herdr reports `agent_status` itself.
+    /// Whatever the switches say (B538): a session that connected with
+    /// notifications and the Live Activity off was never watched, so
+    /// turning either on later did nothing for it until it reconnected, and
+    /// Home had no "since" for its agents. The machine decides what reaches
+    /// the phone, from the settings as they are then.
     func track<C: MultiplexerControlling>(connection: ServerConnection, controller: C) {
-        guard settings.liveActivityEnabled || settings.notificationsEnabled else { return }
         let id = connection.id
         conns[id] = ConnRef(connection: connection, controller: controller)
-        if let tmux = controller as? TmuxSessionController {
+        if let tmux = controller as? RustTmuxController {
             tmux.onPaneActivity = { [weak self] paneId in
                 self?.output(connectionId: id, paneId: paneId)
             }
@@ -198,7 +202,6 @@ final class AgentActivityMonitor {
     /// every controller it ever wires: a reconnect rebuilds it, and the weak
     /// ref `track` keeps goes nil with the old one.
     func trackWhenReady(connection: ServerConnection, session: SessionHub.ActiveSession) {
-        guard settings.liveActivityEnabled || settings.notificationsEnabled else { return }
         session.onMultiplexerControlChanged = { [weak self] controller in
             self?.track(connection: connection, controller: controller)
         }
@@ -382,16 +385,23 @@ final class AgentActivityMonitor {
         guard let window = snapshot.windows[pane.windowId] else {
             return AgentPaneWhereValue(command: pane.command, session: nil, window: nil)
         }
-        let session = snapshot.sessions[window.sessionId].map { snapshot.sessionDisplayName($0) }
-        return AgentPaneWhereValue(command: pane.command, session: session,
-                                   window: window.displayTitle(vocab))
+        let session = snapshot.sessions[window.sessionId]
+        let herdr = conns[connectionId]?.connection.multiplexer == .herdr
+        // The window's own name, herdr's workspace and the pane's folder:
+        // what Home names it from, so the island says it as Home does.
+        return AgentPaneWhereValue(command: pane.command,
+                                   session: session.map { snapshot.sessionDisplayName($0) },
+                                   window: window.displayTitle(vocab),
+                                   windowName: window.name,
+                                   workspace: herdr ? session?.name : nil,
+                                   path: pane.path)
     }
 
     static func content(_ state: AgentIslandValue) -> AgentActivityAttributes.ContentState {
         let agents = state.agents.map { row in
             AgentActivityAttributes.Agent(
                 id: row.id, connectionId: row.connectionId, paneId: row.paneId,
-                command: row.command, location: row.location, detail: row.detail,
+                command: row.command, location: row.location, place: row.place, detail: row.detail,
                 state: AgentActivityAttributes.AgentState(rawValue: row.state) ?? .working,
                 startedAt: Date(timeIntervalSince1970: row.startedAt))
         }

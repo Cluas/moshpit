@@ -334,6 +334,74 @@ fn the_push_test_names_a_pane_no_real_pane_can_be() {
     assert_eq!(pane_sent(&capture), moshpit_install::commands::SELF_TEST_PANE);
 }
 
+/// B459: a phone views a session through a group of its own
+/// (`<session>~mp-<device>-<tag>`, marked `@moshpit_group_of`), and a hook
+/// inside the session's pane asks tmux for `#S`: tmux names the session it
+/// finds best for the pane, the phone's group while the phone is on it. The
+/// lock screen said "m1-pro · t~mp-iPhone-x7k". The push names the session.
+#[test]
+fn a_push_names_the_session_not_the_phones_group() {
+    use moshpit_seal::foundation::json::{self, Dialect};
+    let home = home();
+    let Some(tmux) = Tmux::start(&home.0) else {
+        return;
+    };
+    let (shell, capture) = paired_host(&home.0, &[pairing(PROVED, PHONE)]);
+    let installer = HostInstaller::new(&shell);
+    let state = block_on(installer.inspect()).expect("inspect");
+    let step = block_on(installer.install_script(&InstallComponent::Sender, &state))
+        .expect("the sender lands");
+    assert!(!step.is_failure());
+    let session = tmux.run(&["display-message", "-p", "-t", "t", "#{session_id}"]);
+    tmux.run(&["new-session", "-d", "-t", "t", "-s", "t~mp-iPhone-x7k"]);
+    tmux.run(&[
+        "set-option",
+        "-t",
+        "=t~mp-iPhone-x7k:",
+        "@moshpit_group_of",
+        &session,
+    ]);
+    // The phone's client, on its group.
+    let mut phone = std::process::Command::new(tmux.bin.join("tmux"))
+        .args(["-C", "attach", "-t", "=t~mp-iPhone-x7k"])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::null())
+        .env_clear()
+        .env("PATH", "/usr/bin:/bin")
+        .spawn()
+        .unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(300));
+    let pane = tmux.pane();
+    let status = std::process::Command::new("sh")
+        .arg(home.0.join(".moshpit/moshpit-push.sh"))
+        .args(["attention", "claude", "waiting"])
+        .stdin(std::process::Stdio::null())
+        .env_clear()
+        .env("HOME", &home.0)
+        .env("PATH", format!("{}:/usr/bin:/bin", tmux.bin.display()))
+        .env("TMUX", format!("{},1,0", tmux.socket.display()))
+        .env("TMUX_PANE", &pane)
+        .status()
+        .unwrap();
+    let _ = phone.kill();
+    let _ = phone.wait();
+    assert!(status.success());
+    let request = std::fs::read_dir(&capture)
+        .unwrap()
+        .next()
+        .expect("a push")
+        .unwrap()
+        .path();
+    let body = json::parse(&std::fs::read(&request).unwrap(), Dialect::Decoder).expect("JSON");
+    let env = body
+        .as_object()
+        .and_then(|o| o.get("env"))
+        .expect("an envelope");
+    let envelope: moshpit_seal::Envelope = json::decode_value(env).expect("an envelope");
+    let status = moshpit_seal::envelope::open(&envelope, &"ab".repeat(32)).expect("it opens");
+    assert_eq!(status.sess.as_deref(), Some("t"));
+}
+
 /// B354: which of the host's pairings push to a phone, read with the
 /// host's own `sh` and `sed`. Only the confs carrying that phone's APNs
 /// token, named for a connection; no secret or send token is ever printed.

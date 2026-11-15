@@ -241,10 +241,15 @@ fn head(connection: ReadSignal<Connection>, ctx: Ctx) -> AnyElement {
         }));
     let label = {
         move || -> SharedString {
+            let state = if connection.with(|c| c.disconnecting) {
+                t!("Disconnecting")
+            } else {
+                state_word(link.get())
+            };
             let mut words = vec![
                 name.get(),
                 connection.with(transport).to_owned(),
-                state_word(link.get()),
+                state,
                 address.get(),
             ];
             let n = waiting.get();
@@ -257,6 +262,9 @@ fn head(connection: ReadSignal<Connection>, ctx: Ctx) -> AnyElement {
     let tap = {
         let (ctx, id) = (ctx.clone(), id.clone());
         move || match link.get_untracked() {
+            // Its teardown is under way: nothing to enter or connect until
+            // it is over (B535); the card says so.
+            _ if connection.with_untracked(|c| c.disconnecting) => {}
             Link::Dead => ctx.ask(Intent::Connect(id.clone())),
             Link::Saved => ctx.ask(Intent::Connect(id.clone())),
             _ => ctx.ask(Intent::Enter(id.clone())),
@@ -301,18 +309,21 @@ fn head(connection: ReadSignal<Connection>, ctx: Ctx) -> AnyElement {
             symbol: "pencil",
             tint: Tint::Accent,
             intent: Intent::Edit(id.clone()),
+            row: None,
         },
         Action {
             title: t!("Disconnect"),
             symbol: "bolt.slash",
             tint: Tint::Warn,
             intent: Intent::Disconnect(id.clone()),
+            row: None,
         },
         Action {
             title: t!("Delete…"),
             symbol: "trash",
             tint: Tint::Danger,
             intent: Intent::Delete(id.clone()),
+            row: None,
         },
     ];
     view()
@@ -322,7 +333,7 @@ fn head(connection: ReadSignal<Connection>, ctx: Ctx) -> AnyElement {
             format!("head:{id}"),
             ctx.open,
             tray,
-            ctx.clone(),
+            ctx.teller(),
             row.into_element(),
         ))
         .into_element()
@@ -334,6 +345,20 @@ fn head(connection: ReadSignal<Connection>, ctx: Ctx) -> AnyElement {
 fn more(connection: ReadSignal<Connection>, name: &str, ctx: Ctx) -> AnyElement {
     let name = name.to_owned();
     let menu = dynamic(move || {
+        // Its disconnect under way: a spinner in ⋯'s place, and no menu
+        // (B535).
+        if connection.with(|c| c.disconnecting) {
+            return untracked(|| {
+                view()
+                    .absolute()
+                    .inset_0()
+                    .items_center()
+                    .justify_center()
+                    .child(spinner(SpinnerSize::Sm))
+                    .test_id("card-disconnecting-spinner")
+                    .into_element()
+            });
+        }
         let dead = connection.with(|c| c.link == Link::Dead);
         let id = connection.with_untracked(|c| c.id.clone());
         let (ctx, name) = (ctx.clone(), name.clone());
@@ -354,7 +379,7 @@ fn more(connection: ReadSignal<Connection>, name: &str, ctx: Ctx) -> AnyElement 
                 item("disconnect", t!("Disconnect"), "bolt.slash", 0),
                 item("delete", t!("Delete…"), "trash", 1),
             ];
-            native("moshpit/action-menu")
+            let menu = native("moshpit/action-menu")
                 .absolute()
                 .inset_0()
                 .prop("items", json!(items))
@@ -372,7 +397,20 @@ fn more(connection: ReadSignal<Connection>, name: &str, ctx: Ctx) -> AnyElement 
                         _ => return,
                     };
                     ctx.ask(intent);
-                })
+                });
+            view()
+                .absolute()
+                .inset_0()
+                .items_center()
+                .justify_center()
+                .child(
+                    icon("ellipsis")
+                        .size(IconSize::Md)
+                        .tone(Tone::Muted)
+                        .into_element(),
+                )
+                .child(menu)
+                .into_element()
         })
     });
     view()
@@ -380,14 +418,6 @@ fn more(connection: ReadSignal<Connection>, name: &str, ctx: Ctx) -> AnyElement 
         .w(px(MORE))
         .h(px(MORE))
         .flex_shrink_0()
-        .items_center()
-        .justify_center()
-        .child(
-            icon("ellipsis")
-                .size(IconSize::Md)
-                .tone(Tone::Muted)
-                .into_element(),
-        )
         .child(menu)
         .into_element()
 }
@@ -448,6 +478,9 @@ fn body_view(body: Option<CardBody>, connection: &Connection, ctx: &Ctx) -> AnyE
         })
         .leading(spinner(SpinnerSize::Sm))
         .test_id(&format!("card-connecting-{name}"))),
+        Some(CardBody::Disconnecting) => one(row(t!("Disconnecting…"))
+            .leading(spinner(SpinnerSize::Sm))
+            .test_id(&format!("card-disconnecting-{name}"))),
         Some(CardBody::Reconnect { lost_at, reason }) => {
             // When it was lost, and why the last try failed (its reason in
             // the screen's words: the failure's detail is the session

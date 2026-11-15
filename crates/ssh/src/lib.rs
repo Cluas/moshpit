@@ -7,8 +7,8 @@
 //!   by a [`HostKeyPolicy`], then a password, a private key or a hardware
 //!   key ([`Auth`]). Never a reconnect: the session layer owns those.
 //! - Host keys ([`host_key`]): trust on first use per `host:port`, keyed and
-//!   fingerprinted exactly as `HostKeyValidator` stores them, so the Rust
-//!   and Swift transports read and write the same keychain map. The
+//!   fingerprinted exactly as the Swift transport's `HostKeyValidator`
+//!   stored them, so every build reads and writes the same keychain map. The
 //!   host-key algorithms go out in NIOSSH's order, so a host shows this
 //!   client the key the app already trusted. A new host is the caller's
 //!   question ([`HostKeyPrompt`]); a changed key is refused unless the
@@ -47,6 +47,7 @@ mod error;
 pub mod harness;
 pub mod host_key;
 pub mod keyfile;
+mod questions;
 mod sftp;
 pub mod shell;
 mod target;
@@ -58,12 +59,14 @@ pub use auth::{
     public_key_blob,
 };
 pub use channel::{Event, Exit, Output, Process, ProcessReader, ProcessWriter, PtyRequest, Stream};
-pub use connection::{ConnectionEnd, HOST_KEY_ORDER, LinkFault, Ssh};
+pub use connection::{ConnectionEnd, HOST_KEY_ORDER, LinkFault, OLDER_HOST_KEY, Ssh};
+pub use dial::unbracketed;
 pub use error::{KeyError, ProxyError, SftpError, SignerError, Socks5Reply, SshError};
 pub use host_key::{
     BoxFuture, Decision, DenyAll, HostKey, HostKeyPolicy, HostKeyPrompt, HostKeyRefusal,
     KnownHosts, KnownHostsStore, MemoryKnownHosts, StoreError, TrustOnFirstUse,
 };
+pub use questions::{SignInQuestion, SignInQuestions, reads_as_password};
 pub use russh::Sig;
 pub use sftp::{RemoteEntry, RemoteFile, Sftp};
 pub use target::{ConnectOptions, Keepalive, Socks5Proxy, Target};

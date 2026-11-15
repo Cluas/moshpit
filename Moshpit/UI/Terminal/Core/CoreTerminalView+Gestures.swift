@@ -39,6 +39,11 @@ final class CoreTermGestureState {
     var coastAt: CFTimeInterval = 0
     /// The touch that stopped a coast: no tap of it (B521).
     weak var coastStopper: UITouch?
+    /// A sideways drag the host moves (``TerminalSwipe``,
+    /// `CoreTerminalView+Swipe.swift`), and one it left to the system's
+    /// back gesture.
+    var swiping = false
+    var swipeRefused = false
 }
 
 /// The coast's refresh, without the link keeping the view.
@@ -147,6 +152,7 @@ extension CoreTerminalView: UIGestureRecognizerDelegate, UIEditMenuInteractionDe
             if gestures.axis == nil, abs(t.x) >= 12 || abs(t.y) >= 12 {
                 gestures.axis = abs(t.x) > abs(t.y) ? .horizontal : .vertical
             }
+            if gestures.axis == .horizontal { return trackSwipe(g) }
             guard gestures.axis == .vertical else { return }
             // Every move, wherever it goes: the lift's speed (B521).
             if let term { mp_term_fling_track(term, Double(t.y * metrics.scale)) }
@@ -155,6 +161,8 @@ extension CoreTerminalView: UIGestureRecognizerDelegate, UIEditMenuInteractionDe
         case .ended:
             switch gestures.axis {
             case .horizontal:
+                // The host moved it: the host settles it.
+                if endSwipe(g) { break }
                 let dx = g.translation(in: self).x
                 if abs(dx) >= 40, surfaceDelegate?.surfaceCanSwitch == true {
                     Haptics.select()
@@ -176,6 +184,7 @@ extension CoreTerminalView: UIGestureRecognizerDelegate, UIEditMenuInteractionDe
             gestures.axis = nil
         default:
             if gestures.axis == .vertical { surfaceDelegate?.surfaceScrollDidEnd(self) }
+            if gestures.axis == .horizontal { _ = endSwipe(g, cancelled: true) }
             gestures.axis = nil
         }
     }

@@ -16,8 +16,8 @@ use moshpit_herdr::launch::{self, quote};
 use moshpit_install::{HostCapabilities, Multiplexer};
 use moshpit_mosh::bootstrap;
 use moshpit_ssh::{
-    BoxFuture, DenyAll, HostKey, HostKeyPrompt, Process, PtyRequest, Ssh, SshError, Target,
-    TrustOnFirstUse,
+    BoxFuture, DenyAll, HostKey, HostKeyPrompt, Process, PtyRequest, SignInQuestions, Ssh,
+    SshError, Target, TrustOnFirstUse,
 };
 use moshpit_tmux::controller::PinLedger;
 use moshpit_tmux::format::is_valid_id;
@@ -79,6 +79,8 @@ pub(crate) enum Established {
         degrade: Option<Degrade>,
         /// The host runs python3: herdr's push pump can.
         push: bool,
+        /// The older host-key algorithm the connection had to use (B564).
+        older_host_key: Option<&'static str>,
     },
     /// mosh-server is up, running tmux's or herdr's own client when one was
     /// asked for.
@@ -87,6 +89,8 @@ pub(crate) enum Established {
         key: [u8; 16],
         server_pid: Option<i64>,
         degrade: Option<Degrade>,
+        /// The older host-key algorithm the bootstrap had to use (B564).
+        older_host_key: Option<&'static str>,
         /// The multiplexer mosh renders; its control plane (tmux's `-CC`
         /// sidecar, herdr's control client) runs beside it on `control`.
         multiplexer: Multiplexer,
@@ -232,15 +236,18 @@ pub(crate) struct Attempt {
     pub services: Services,
     pub grid: (u16, u16),
     pub prompt: Arc<dyn HostKeyPrompt>,
+    /// Who answers the server's sign-in questions (B563).
+    pub questions: Option<Arc<dyn SignInQuestions>>,
 }
 
 impl Attempt {
     pub async fn run(self) -> Result<Established, Failure> {
-        let ssh = dial(
+        let ssh = dial_asking(
             &self.services,
             &self.spec,
             &self.timing,
             self.prompt.clone(),
+            self.questions.clone(),
         )
         .await?;
         let capabilities = self.capabilities(&ssh).await;
@@ -298,6 +305,7 @@ impl Attempt {
             multiplexer: route.multiplexer,
             degrade: route.degrade,
             push: capabilities.has_python3,
+            older_host_key: ssh.older_host_key_algorithm(),
         })
     }
 
@@ -406,6 +414,7 @@ impl Attempt {
             key: credentials.key,
             server_pid: credentials.server_pid,
             degrade: route.degrade,
+            older_host_key: ssh.older_host_key_algorithm(),
             multiplexer: route.multiplexer,
             control,
             herdr,
@@ -692,18 +701,33 @@ async fn lookup_within<I: Iterator<Item = SocketAddr>>(
 /// "check the port" — until the next tick dialled again (B391). So a dial
 /// that failed that way after a yes is made again at once: the key is
 /// trusted now and the credential cached, so nothing is asked twice.
+///
+/// Nobody answers the server's sign-in questions here: a dial off the
+/// person's sight (a side connection) can't ask them.
 pub(crate) async fn dial(
     services: &Services,
     spec: &ConnectionSpec,
     timing: &Timing,
     prompt: Arc<dyn HostKeyPrompt>,
 ) -> Result<Ssh, Failure> {
+    dial_asking(services, spec, timing, prompt, None).await
+}
+
+/// [`dial`], with `questions` answering what the server asks at sign-in
+/// beyond the password (B563).
+pub(crate) async fn dial_asking(
+    services: &Services,
+    spec: &ConnectionSpec,
+    timing: &Timing,
+    prompt: Arc<dyn HostKeyPrompt>,
+    questions: Option<Arc<dyn SignInQuestions>>,
+) -> Result<Ssh, Failure> {
     let said_yes = Arc::new(AtomicBool::new(false));
     let noting = Arc::new(NotingYes {
         prompt: prompt.clone(),
         said_yes: said_yes.clone(),
     });
-    match dial_once(services, spec, timing, noting).await {
+    match dial_once(services, spec, timing, noting, questions.clone()).await {
         Err(failure)
             if said_yes.load(Ordering::SeqCst)
                 && matches!(failure.kind, FailureKind::Handshake | FailureKind::Lost) =>
@@ -713,7 +737,7 @@ pub(crate) async fn dial(
                 target_name(&spec.target),
                 failure.log
             );
-            dial_once(services, spec, timing, prompt).await
+            dial_once(services, spec, timing, prompt, questions).await
         }
         result => result,
     }
@@ -763,6 +787,7 @@ async fn dial_once(
     spec: &ConnectionSpec,
     timing: &Timing,
     prompt: Arc<dyn HostKeyPrompt>,
+    questions: Option<Arc<dyn SignInQuestions>>,
 ) -> Result<Ssh, Failure> {
     let auth = services
         .credentials
@@ -782,7 +807,7 @@ async fn dial_once(
         })?;
     let policy = Arc::new(TrustOnFirstUse::new(services.known_hosts.clone(), prompt));
     let options = timing.connect_options(spec.proxy.clone());
-    Ssh::connect(&spec.target, auth, policy, &options)
+    Ssh::connect_asking(&spec.target, auth, policy, questions, &options)
         .await
         .map_err(|e: SshError| {
             let failure = Failure::from(&e);

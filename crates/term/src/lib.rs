@@ -2731,7 +2731,41 @@ impl Terminal {
                 ScrollAction::Wheel(bytes)
             };
         }
+        // An alternate-screen program without the mouse (less, man, git
+        // log) gets the arrow keys, as xterm's alternate scroll gives them
+        // (B500): the alternate screen keeps no history to page.
+        if self.term.is_alt_screen_active() {
+            let ticks = self.scroll.take(dy, cell).clamp(-6, 6);
+            let bytes = self.arrow_presses(ticks > 0, ticks.unsigned_abs());
+            return if bytes.is_empty() {
+                ScrollAction::None
+            } else {
+                ScrollAction::Wheel(bytes)
+            };
+        }
         self.scroll_local(dy)
+    }
+
+    /// `count` presses of Up (`up`, older) or Down, as the program reads
+    /// them (its cursor-key mode, or the kitty protocol when it has that
+    /// on), without taking the view back to the live screen as typing does:
+    /// a coast's steps come through here.
+    fn arrow_presses(&mut self, up: bool, count: u64) -> Vec<u8> {
+        if count == 0 {
+            return Vec::new();
+        }
+        let key = if up { Key::Up } else { Key::Down };
+        let flags = self.modes().kitty_flags;
+        let one = if flags != 0 {
+            input::kitty(key, 0, true, 1, flags)
+        } else if let Some((key, mods)) = input::legacy(key, 0) {
+            self.encoded(|t| {
+                let _ = t.key_down(key, mods);
+            })
+        } else {
+            Vec::new()
+        };
+        one.repeat(count as usize)
     }
 
     fn scroll_local(&mut self, dy: f64) -> ScrollAction {
@@ -2846,7 +2880,9 @@ impl Terminal {
         let row = self.cell_px() as f64;
         let pacing = if elsewhere {
             Some(scroll::Pacing::host(row))
-        } else if self.modes().mouse != 0 {
+        } else if self.modes().mouse != 0 || self.term.is_alt_screen_active() {
+            // The wheel's reports, or an alternate-screen program's arrow
+            // keys (B500): each is the program's work.
             Some(scroll::Pacing::wheel(row))
         } else {
             None

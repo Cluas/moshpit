@@ -45,6 +45,8 @@ pub(crate) enum Slot {
     PanePath(u64),
     /// `flushControlChannel`'s bound, per request.
     Flush(u64),
+    /// What waits behind a paste goes (B485).
+    PasteSettle,
 }
 
 /// What a timer does when it fires.
@@ -75,6 +77,8 @@ pub(crate) enum Action {
     Watchdog,
     PanePathTimeout(u64),
     FlushTimeout(u64),
+    /// The paste's wait is over: what was held behind it goes (B485).
+    PasteSettled,
 }
 
 #[derive(Debug, Clone)]

@@ -34,8 +34,8 @@ use moshpit_store::connections::{
 use moshpit_store::ssh_keys::SshKeyRecord;
 pub use moshpit_ui::connection_form::SecretState;
 use moshpit_ui::connection_form::{
-    self as screen, Auth, DEFAULT_PORT, DEFAULT_PROXY_PORT, FormState, KeyChoice, Message, Mux,
-    Secrets,
+    self as screen, Auth, ConnectionPredict, DEFAULT_PORT, DEFAULT_PROXY_PORT, FormState,
+    KeyChoice, Message, Mux, Secrets,
 };
 use moshpit_ui::settings::PredictMode as ScreenPredict;
 use serde_json::Value;
@@ -124,6 +124,10 @@ pub enum Refusal {
     /// ([`Draft::can_save`]): the screen's Save is off then, so only a
     /// caller that skipped it gets this.
     Incomplete,
+    /// The connection being edited was deleted meanwhile (B536): there is
+    /// nothing to save it over, and saving it as new would bring back what
+    /// the person deleted.
+    Gone,
 }
 
 impl Refusal {
@@ -133,9 +137,13 @@ impl Refusal {
         match self {
             Refusal::NewSecretNeeded(_) => NEW_SECRET_NEEDED,
             Refusal::Incomplete => "This connection can't be saved yet",
+            Refusal::Gone => GONE,
         }
     }
 }
+
+/// [`Refusal::Gone`]'s English.
+pub const GONE: &str = "This connection was deleted while you were editing it.";
 
 /// [`Refusal::NewSecretNeeded`]'s English.
 pub const NEW_SECRET_NEEDED: &str =
@@ -158,17 +166,21 @@ pub struct SavePlan {
     /// stay named by nothing: a password for good, a pasted key listed
     /// again as a "Recovered key".
     pub released: Option<String>,
-    /// The connection edited now points at another host or port (B328):
-    /// the push pairing it kept belongs to the box it pointed at before,
-    /// and the host forgets it before saving, as a delete does.
+    /// The connection edited now points at another host or port (B328),
+    /// or signs in as another user (B556): the push pairing it kept
+    /// belongs to the account it pointed at before, and the host forgets
+    /// it before saving, as a delete does.
     pub moved: bool,
 }
 
-/// Whether `after` points at another host or port than `before` (host
-/// names compare as DNS does: case aside): the store's rule, which also
-/// forgets what sessions remembered about the old box (B431).
+/// Whether the push pairing `before` kept stays behind when it is saved as
+/// `after`: another host or port (the store's rule, host names compared as
+/// DNS does, case aside), or another user. The pairing was installed in
+/// that user's home on the host, whose hooks could still push as this
+/// connection (B556). What sessions remembered about the box stays for a
+/// user change: the store's own rule (B431).
 pub fn moved(before: &ServerConnection, after: &ServerConnection) -> bool {
-    after.points_elsewhere_than(before)
+    after.points_elsewhere_than(before) || after.username != before.username
 }
 
 impl Draft {
@@ -181,8 +193,7 @@ impl Draft {
                 port: DEFAULT_PORT.to_string(),
                 auth: Auth::Password,
                 mosh: mosh_by_default,
-                predict_mode: ScreenPredict::Adaptive,
-                roam_on_cellular: true,
+                predict_mode: ConnectionPredict::Settings,
                 socks_port: DEFAULT_PROXY_PORT.to_string(),
                 // tmux unless picked otherwise: every connection saved
                 // before the picker existed ran tmux.
@@ -211,8 +222,7 @@ impl Draft {
                 key: None,
                 mosh: c.connection_protocol == ConnectionProtocol::Mosh,
                 udp_range: String::new(),
-                predict_mode: screen_predict(c.predict_mode()),
-                roam_on_cellular: c.roam_on_cellular.unwrap_or(true),
+                predict_mode: ConnectionPredict::of(c.predict().map(screen_predict)),
                 mosh_server_path: c.mosh_server_path.clone().unwrap_or_default(),
                 socks: c.use_socks_proxy.unwrap_or(false),
                 socks_host: c.socks_proxy_host.clone().unwrap_or_default(),
@@ -228,6 +238,8 @@ impl Draft {
                 tmux_path: c.tmux_path.clone().unwrap_or_default(),
                 herdr_path: c.herdr_path.clone().unwrap_or_default(),
                 emoji: c.emoji.clone().unwrap_or_default(),
+                // The host's, at message time (B532).
+                others: Vec::new(),
             },
             key: c.ssh_key_id,
             stored: Stored::of(c),
@@ -276,15 +288,14 @@ impl Draft {
             ("herdrPath", Some(t), _) => s.herdr_path = t,
             ("emoji", Some(t), _) => s.emoji = t,
             ("mosh", _, Some(f)) => s.mosh = f,
-            ("roamOnCellular", _, Some(f)) => s.roam_on_cellular = f,
             ("socks", _, Some(f)) => s.socks = f,
             ("auth", Some(t), _) => match t.as_str() {
                 "password" => s.auth = Auth::Password,
                 "key" => s.auth = Auth::Key,
                 _ => return false,
             },
-            ("predictMode", Some(t), _) => match PredictMode::from_raw(&t) {
-                Some(mode) => s.predict_mode = screen_predict(mode),
+            ("predictMode", Some(t), _) => match ConnectionPredict::named(&t) {
+                Some(predict) => s.predict_mode = predict,
                 None => return false,
             },
             ("mux", Some(t), _) => match t.as_str() {
@@ -421,7 +432,8 @@ impl Draft {
     pub fn applied(&self, connection: &ServerConnection, udp: (i64, i64)) -> ServerConnection {
         let s = &self.fields;
         let mut c = connection.clone();
-        c.name = s.name.clone();
+        // Spaces round a name are not its (B537).
+        c.name = s.name.trim().to_owned();
         // A pasted host or user brings spaces round it; the connect looks
         // them up as stored.
         c.host = s.host.trim().to_owned();
@@ -447,18 +459,32 @@ impl Draft {
                 .unwrap_or(DEFAULT_PROXY_PORT)
                 .into(),
         );
-        c.set_predict_mode(store_predict(s.predict_mode));
-        c.roam_on_cellular = Some(s.roam_on_cellular);
+        // A value this build doesn't know (a newer one's) is kept unless
+        // the form changed what it reads as (B537): it used to be written
+        // over with the form's default on every save.
+        let predict = s.predict_mode.mode().map(store_predict);
+        if connection.predict_is_known() || predict != connection.predict() {
+            c.set_predict(predict);
+        }
+        // `roam_on_cellular` stays as stored (B530): nothing read it, and
+        // its switch is gone.
         c.tmux_path = non_empty(&s.tmux_path);
         c.herdr_path = non_empty(&s.herdr_path);
         // One emoji, trimmed; anything else (Save refuses it) none.
         c.emoji = screen::emoji(&s.emoji).ok().flatten();
-        // Keeps the legacy `useTmux` flag in step too.
-        c.set_multiplexer(match s.mux {
+        let mux = match s.mux {
             Mux::None => Multiplexer::None,
             Mux::Tmux => Multiplexer::Tmux,
             Mux::Herdr => Multiplexer::Herdr,
-        });
+        };
+        let mux_known = connection
+            .multiplexer_raw
+            .as_deref()
+            .is_none_or(|raw| Multiplexer::from_raw(raw).is_some());
+        if mux_known || mux != connection.multiplexer() {
+            // Keeps the legacy `useTmux` flag in step too.
+            c.set_multiplexer(mux);
+        }
         c
     }
 
@@ -476,6 +502,9 @@ impl Draft {
         udp: (i64, i64),
         new_ref: impl FnOnce() -> String,
     ) -> Result<SavePlan, Refusal> {
+        if self.fields.editing && existing.is_none() {
+            return Err(Refusal::Gone);
+        }
         let added = existing.is_none();
         // The item the connection edited holds for itself (a managed key's
         // item is the key's).
@@ -483,20 +512,37 @@ impl Draft {
             .filter(|c| c.ssh_key_id.is_none())
             .and_then(|c| c.keychain_ref.clone());
         let mut connection = existing.cloned().unwrap_or_else(fresh);
+        // At most one new item is asked for: by the credential, for a
+        // connection with none of its own, or below, for a move.
+        let mut new_ref = Some(new_ref);
         let write = apply_credential(
             &mut connection,
             self.auth_method(),
             self.key,
             keys,
             self.given(),
-            new_ref,
+            || new_ref.take().map(|make| make()).unwrap_or_default(),
         )?;
         if !self.can_save(keys) {
             return Err(Refusal::Incomplete);
         }
-        let connection = self.applied(&connection, udp);
-        let released = owned.filter(|item| connection.keychain_ref.as_ref() != Some(item));
+        let mut connection = self.applied(&connection, udp);
         let moved = existing.is_some_and(|before| moved(before, &connection));
+        // A move writes its new secret to a fresh item (B534): the host
+        // forgets the old box's pairing between the write and the store,
+        // and either can fail. Written in place, a failed forget left the
+        // record it kept signing in with the new secret; a fresh item is
+        // undone by deleting it, and the own one goes once the save is
+        // done (`released`).
+        if moved
+            && write.is_some()
+            && owned.is_some()
+            && connection.keychain_ref == owned
+            && let Some(make) = new_ref.take()
+        {
+            connection.keychain_ref = Some(make());
+        }
+        let released = owned.filter(|item| connection.keychain_ref.as_ref() != Some(item));
         Ok(SavePlan {
             connection,
             write,
@@ -505,6 +551,21 @@ impl Draft {
             moved,
         })
     }
+}
+
+/// The other saved connections, as the form compares itself with them
+/// (B532): all of `saved` but the one `editing`.
+pub fn others(saved: &[ServerConnection], editing: Option<Uuid>) -> Vec<screen::Other> {
+    saved
+        .iter()
+        .filter(|c| Some(c.id) != editing)
+        .map(|c| screen::Other {
+            name: c.name.clone(),
+            user: c.username.clone(),
+            host: c.host.clone(),
+            port: u16::try_from(c.port).unwrap_or(DEFAULT_PORT),
+        })
+        .collect()
 }
 
 /// Settings' UDP range as the mosh row shows it: "60000 – 61000", as on

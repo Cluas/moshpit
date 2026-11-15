@@ -3,30 +3,9 @@ import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
 
-/// Add Key: the SwiftUI page (``AddKeyView``), or the NSH one while its switch
-/// is on (``NSHScreen/addKey``), from SSH Keys and from Select Key alike.
-/// With the switch off the SwiftUI page is all there is: no NSH code runs.
-struct AddKeyPage: View {
-    /// The method the page opens on (Generate, unless a capture run asks).
-    var method: AddKeyView.Method = .generate
-    /// Hears the new key right before the page dismisses itself.
-    var onCreated: ((SSHKeyRecord) -> Void)?
-
-    var body: some View {
-        if Self.showsNSH {
-            AddKeyNSHPage(method: method, onCreated: onCreated)
-        } else {
-            AddKeyView(onCreated: onCreated, method: method)
-        }
-    }
-
-    static var showsNSH: Bool {
-        #if DEBUG
-        if [.addKeyNSH, .addKeyImportNSH].contains(CaptureScreen.requested) { return NSHSurface.available }
-        #endif
-        return NSHScreen.addKey.isOn
-    }
-}
+/// How Add Key makes the key: generated on this phone, imported, or a
+/// hardware key's.
+enum AddKeyMethod: String, CaseIterable { case generate, importKey, hardware }
 
 /// Add Key drawn by NSH (`ui/src/add_key.rs`) in the sheet's own stack. The
 /// form lives in the host (``AddKeyModel``); the private key's text and its
@@ -35,15 +14,15 @@ struct AddKeyPage: View {
 /// reaches NSH. Generating and importing are the SwiftUI page's
 /// (``SSHKeyCreation``): formats converted at import, the private half in
 /// the Keychain behind Face ID when asked, the record in the store. A file
-/// is picked with the system's document picker, as on the SwiftUI page. If
-/// NSH cannot run here, the SwiftUI page shows.
+/// is picked with the system's document picker. If its screen can't run,
+/// the page says so (``NSHPageFailed``).
 struct AddKeyNSHPage: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(SSHKeyStore.self) private var keyStore
     @Environment(ConnectionStoreHolder.self) private var connections
     @Environment(KeychainServiceHolder.self) private var keychainHolder
 
-    let method: AddKeyView.Method
+    let method: AddKeyMethod
     var onCreated: ((SSHKeyRecord) -> Void)?
 
     @State private var model: AddKeyModel
@@ -51,7 +30,7 @@ struct AddKeyNSHPage: View {
     /// The document picker is up (its destination is the model's).
     @State private var importing = false
 
-    init(method: AddKeyView.Method = .generate, onCreated: ((SSHKeyRecord) -> Void)? = nil) {
+    init(method: AddKeyMethod = .generate, onCreated: ((SSHKeyRecord) -> Void)? = nil) {
         self.method = method
         self.onCreated = onCreated
         _model = State(initialValue: AddKeyModel(method: method))
@@ -59,7 +38,7 @@ struct AddKeyNSHPage: View {
 
     var body: some View {
         if failed {
-            AddKeyView(onCreated: onCreated, method: method)
+            NSHSheetFailed { failed = false }
         } else {
             NavigationStack {
                 NSHPage(
@@ -112,7 +91,7 @@ final class AddKeyModel {
     /// Which field a picked file lands in.
     enum ImportTarget { case privateKey, publicKey }
 
-    var method: AddKeyView.Method
+    var method: AddKeyMethod
     var name = ""
     var comment = ""
     var algorithm: SSHKeyAlgorithm = .ed25519
@@ -139,7 +118,7 @@ final class AddKeyModel {
     /// The private key's editor while the page shows one.
     fileprivate weak var pemEditor: KeyPEMEditor?
 
-    init(method: AddKeyView.Method = .generate) {
+    init(method: AddKeyMethod = .generate) {
         self.method = method
     }
 
@@ -327,7 +306,7 @@ final class AddKeyModel {
     }
 
     /// What the screen calls a method.
-    nonisolated static func id(_ method: AddKeyView.Method) -> String {
+    nonisolated static func id(_ method: AddKeyMethod) -> String {
         switch method {
         case .generate: "generate"
         case .importKey: "import"
@@ -335,8 +314,8 @@ final class AddKeyModel {
         }
     }
 
-    nonisolated static func method(_ id: String) -> AddKeyView.Method? {
-        AddKeyView.Method.allCases.first { Self.id($0) == id }
+    nonisolated static func method(_ id: String) -> AddKeyMethod? {
+        AddKeyMethod.allCases.first { Self.id($0) == id }
     }
 }
 

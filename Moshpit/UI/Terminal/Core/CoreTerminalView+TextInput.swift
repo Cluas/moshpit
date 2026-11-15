@@ -114,7 +114,7 @@ extension CoreTerminalView: UITextInput {
         }
         imeState = mp_term_ime_state(term)
         if let p = result.bytes.ptr, result.bytes.len > 0 {
-            surfaceDelegate?.surface(self, send: Data(bytes: p, count: result.bytes.len))
+            surfaceDelegate?.surface(self, typed: Data(bytes: p, count: result.bytes.len))
         }
         mp_bytes_free(result.bytes)
         if let p = result.paste {
@@ -134,7 +134,7 @@ extension CoreTerminalView: UITextInput {
         guard let term else { return }
         let b = mp_term_key(term, key, scalar, mods, down, count)
         if let p = b.ptr, b.len > 0 {
-            surfaceDelegate?.surface(self, send: Data(bytes: p, count: b.len))
+            surfaceDelegate?.surface(self, typed: Data(bytes: p, count: b.len))
         }
         mp_bytes_free(b)
     }
@@ -370,18 +370,32 @@ extension CoreTerminalView: UITextInput {
         positionMarkedText()
     }
 
-    /// Where the composition sits: where the cursor was when it began.
+    /// Where the composition sits: where the cursor was when it began —
+    /// moved left as far as it takes to show it whole with its caret
+    /// (B571). Near the right edge it ran past it: the view clips, so the
+    /// pinyin being typed at the end of a long line, and the caret after
+    /// it, were cut off or gone.
     func positionMarkedText() {
         guard let label = markedLabel else { return }
         let anchor = markedAnchor ?? (Int(rows.info.cursor.col), Int(rows.info.cursor.row))
-        label.frame.origin = CGPoint(x: x(ofColumn: Int(anchor.col)), y: y(ofRow: anchor.row))
+        let caretWidth = max(2, metrics.width / 4)
+        let x = Self.markedX(at: x(ofColumn: Int(anchor.col)), width: label.frame.width + caretWidth,
+                             in: bounds.width)
+        label.frame.origin = CGPoint(x: x, y: y(ofRow: anchor.row))
         let caret = compositionCaret
         caret.backgroundColor = UIColor(cgColor: coreCGColor(style.cursorColor))
-        caret.frame = CGRect(x: label.frame.maxX, y: label.frame.minY, width: max(2, metrics.width / 4),
+        caret.frame = CGRect(x: label.frame.maxX, y: label.frame.minY, width: caretWidth,
                              height: metrics.height)
         if caret.superview == nil { addSubview(caret) }
         bringSubviewToFront(label)
         bringSubviewToFront(caret)
+    }
+
+    /// Where a composition `width` points wide (its caret too) starts, put
+    /// at `x` in a view `viewWidth` wide: at `x` while it fits, else moved
+    /// left to end at the view's edge (never past its left one).
+    nonisolated static func markedX(at x: CGFloat, width: CGFloat, in viewWidth: CGFloat) -> CGFloat {
+        max(0, min(x, viewWidth - width))
     }
 
     /// A commit: the caret stays where the composition ended until the echo

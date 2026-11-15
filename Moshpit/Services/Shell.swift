@@ -19,7 +19,7 @@ enum Shell {
     /// `ExecUploadCommands.quote`, `ActiveSession.shellQuote` and the image
     /// paths pasted at a prompt are all this function; none of them may grow
     /// its own escaping again. (A name in a tmux control-mode line is not a
-    /// shell word: see `TmuxSessionController.tmuxNameArgument`.)
+    /// shell word: the core quotes those, crates/tmux `name_argument`.)
     ///
     /// By Unicode scalar, never by `Character`. The six copies this replaced
     /// each did `replacingOccurrences(of: "'", with: …)`, which compares
@@ -64,7 +64,7 @@ enum Shell {
     /// anything ran, a path-probe value ending in `\` left fish's quote open,
     /// and zsh failed the cleanup loops whose globs matched nothing (its
     /// NOMATCH). Handed one quoted word, the login shell
-    /// passes it to sh whole; `SSHExec` sends every exec request so, and the
+    /// passes it to sh whole; every exec request the app sends goes so, and the
     /// lines the app types into a terminal use the same where they loop.
     /// moshpit-ssh's `shell::portable` is the Rust side; its
     /// `harness/shells.py` runs every line the app builds through sh, dash,

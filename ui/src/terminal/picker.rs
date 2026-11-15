@@ -45,6 +45,7 @@ use super::{
 };
 use crate::{
     channel::{self, Channel},
+    home::model::display_command,
     nav_bar::{self, BarMetrics},
     screen::Screen,
     ui::{
@@ -82,8 +83,12 @@ pub struct Row {
     pub panes: Option<u32>,
     /// What runs in it (a window's active pane's command, a pane's).
     pub command: String,
-    /// The agent in a pane (its hooks' name).
+    /// The agent in a pane (its hooks' name); a window's and the active
+    /// session's: its active pane's.
     pub agent: Option<String>,
+    /// Where a window's active pane works (the active session's: its active
+    /// window's): what names a window tmux named after its program.
+    pub path: Option<String>,
     /// The agents' signal (a window's: its panes' together).
     pub signal: Option<AgentSignal>,
     /// A session another client is attached to.
@@ -217,15 +222,40 @@ impl Vocab {
     }
 }
 
-/// A window's title (`WindowInfo.displayTitle`): its number and its name,
-/// or the multiplexer's word and its number when the name says nothing
-/// more (herdr names tabs after their number; an empty name).
-pub fn window_title(index: u32, name: &str, vocab: &Vocab) -> String {
-    if name.is_empty() || name == index.to_string() {
-        format!("{} {index}", vocab.window)
-    } else {
-        format!("{index}: {name}")
+/// What a window row is called: its number and what Home calls the window
+/// (UI-DESIGN §6.1): its own name, else its pane's folder, else the agent
+/// or the program running in it; the multiplexer's word and its number
+/// when nothing says more (herdr names tabs after their number). Never
+/// tmux's automatic name: Claude Code's binary is its version, so a window
+/// it runs in said "2: 2.1.322".
+pub fn window_title(
+    index: u32,
+    name: &str,
+    command: &str,
+    path: Option<&str>,
+    agent: Option<&str>,
+    vocab: &Vocab,
+) -> String {
+    let name = if name == index.to_string() { "" } else { name };
+    let called = super::model::project_name(name, command, path)
+        .or_else(|| agent.filter(|a| !a.is_empty()).map(str::to_owned))
+        .or_else(|| (!command.is_empty()).then(|| display_command(command)));
+    match called {
+        Some(called) => format!("{index}: {called}"),
+        None => format!("{} {index}", vocab.window),
     }
+}
+
+/// `row`'s title when it is a window.
+fn window_row_title(row: &Row, vocab: &Vocab) -> String {
+    window_title(
+        row.index.unwrap_or(0),
+        &row.name,
+        &row.command,
+        row.path.as_deref(),
+        row.agent.as_deref(),
+        vocab,
+    )
 }
 
 /// A session's name, with its id after it when another session shares
@@ -237,6 +267,26 @@ pub fn session_title(row: &Row, rows: &[Row]) -> String {
     } else {
         row.name.clone()
     }
+}
+
+/// The active session's window as its row's meta names it: the host says
+/// `index:name`, and the active pane's program, folder and agent, which
+/// name it the way a window row is named.
+fn active_window_title(row: &Row, window: &str, vocab: &Vocab) -> String {
+    let Some((index, name)) = window
+        .split_once(':')
+        .and_then(|(i, n)| i.trim().parse::<u32>().ok().map(|i| (i, n)))
+    else {
+        return window.to_owned();
+    };
+    window_title(
+        index,
+        name,
+        &row.command,
+        row.path.as_deref(),
+        row.agent.as_deref(),
+        vocab,
+    )
 }
 
 /// What a signal means, in words (`AgentSignal.label`).
@@ -260,15 +310,14 @@ pub struct Shown {
 pub fn shown(row: &Row, picker: &Picker, vocab: &Vocab) -> Shown {
     match picker.kind {
         Kind::Windows => {
-            let index = row.index.unwrap_or(0);
             let panes = crate::plural!("%lld panes", i64::from(row.panes.unwrap_or(0)));
             Shown {
                 icon: vocab.window_icon.to_owned(),
-                title: window_title(index, &row.name, vocab),
+                title: window_row_title(row, vocab),
                 meta: if row.command.is_empty() {
                     panes
                 } else {
-                    format!("{panes} · {}", row.command)
+                    format!("{panes} · {}", display_command(&row.command))
                 },
             }
         }
@@ -284,7 +333,7 @@ pub fn shown(row: &Row, picker: &Picker, vocab: &Vocab) -> Shown {
                 };
                 let head = format!("{count} {noun}");
                 match &row.window {
-                    Some(window) => format!("{head} · {window}"),
+                    Some(window) => format!("{head} · {}", active_window_title(row, window, vocab)),
                     None => head,
                 }
             } else if row.attached {
@@ -336,14 +385,15 @@ pub fn title(kind: Kind, vocab: &Vocab) -> String {
 }
 
 /// The footer's hint and its keys.
-pub fn footer(kind: Kind, mux: Mux, vocab: &Vocab) -> (String, [&'static str; 2]) {
+pub fn footer(kind: Kind, vocab: &Vocab) -> (String, [&'static str; 2]) {
     match kind {
-        // herdr's frame channel has no swipe between them.
+        // The terminal's sideways swipe walks the session's panes, window
+        // by window, herdr's tabs too; it never leaves the session.
         Kind::Windows | Kind::Sessions => (
-            if mux == Mux::Herdr {
-                t!("Tap to switch")
-            } else {
+            if kind == Kind::Windows {
                 t!("Swipe to switch")
+            } else {
+                t!("Tap to switch")
             },
             if kind == Kind::Windows {
                 vocab.window_keys
@@ -389,7 +439,7 @@ pub fn kill_question(kind: Kind, row: &Row, picker: &Picker, vocab: &Vocab) -> A
                 "%@ %@ %@? Every pane in it dies.",
                 arg1 = vocab.kill,
                 arg2 = vocab.window_lower,
-                arg3 = window_title(row.index.unwrap_or(0), &row.name, vocab)
+                arg3 = window_row_title(row, vocab)
             ),
             t!("%@ %@", arg1 = vocab.kill, arg2 = vocab.window),
         ),
@@ -696,7 +746,7 @@ fn rows_section(
 /// edge.
 fn footer_view(kind: Kind, mux: Mux) -> AnyElement {
     let vocab = Vocab::of(mux);
-    let (hint, keys) = footer(kind, mux, &vocab);
+    let (hint, keys) = footer(kind, &vocab);
     view()
         .flex_row()
         .items_start()
@@ -804,9 +854,52 @@ mod tests {
     #[test]
     fn a_window_says_each_thing_once() {
         let herdr = english(Mux::Herdr);
-        assert_eq!(window_title(1, "1", &herdr), "Tab 1");
-        assert_eq!(window_title(2, "", &herdr), "Tab 2");
-        assert_eq!(window_title(3, "logs", &english(Mux::Tmux)), "3: logs");
+        assert_eq!(window_title(1, "1", "", None, None, &herdr), "Tab 1");
+        assert_eq!(window_title(2, "", "", None, None, &herdr), "Tab 2");
+        let tmux = english(Mux::Tmux);
+        assert_eq!(
+            window_title(3, "logs", "tail", None, None, &tmux),
+            "3: logs"
+        );
+    }
+
+    #[test]
+    fn a_window_is_named_the_home_way_never_by_a_version() {
+        let tmux = english(Mux::Tmux);
+        // tmux named it after Claude Code's binary: its folder says more.
+        assert_eq!(
+            window_title(
+                2,
+                "2.1.322",
+                "2.1.322",
+                Some("/home/dev/src/trainer"),
+                Some("claude"),
+                &tmux
+            ),
+            "2: trainer"
+        );
+        // No folder (the home directory): the agent, then the program.
+        assert_eq!(
+            window_title(
+                2,
+                "2.1.322",
+                "2.1.322",
+                Some("/home/dev"),
+                Some("claude"),
+                &tmux
+            ),
+            "2: claude"
+        );
+        assert_eq!(
+            window_title(2, "2.1.322", "2.1.322", None, None, &tmux),
+            "2: claude"
+        );
+        assert_eq!(window_title(4, "zsh", "zsh", None, None, &tmux), "4: zsh");
+        // A name someone gave it wins over the folder.
+        assert_eq!(
+            window_title(1, "agents", "zsh", Some("/home/dev/src/api"), None, &tmux),
+            "1: agents"
+        );
     }
 
     #[test]

@@ -88,8 +88,8 @@ fn decompression_is_strict() {
 /// distances set", "invalid literal/lengths set"). miniz_oxide, the crate's
 /// inflater before, took any length: it accepted these streams, each with
 /// a valid Adler-32, which zlib (mosh's `uncompress`, the Swift client)
-/// refuses. Made by `harness/equivalence.py`'s `dynamic_block` and checked
-/// against the real zlib there.
+/// refuses. Made by the former `harness/equivalence.py`'s `dynamic_block`
+/// and checked against the real zlib there.
 #[test]
 fn a_single_code_set_is_one_bit_or_refused() {
     use compress::CompressionError::InflateFailed;
@@ -117,7 +117,7 @@ fn a_single_code_set_is_one_bit_or_refused() {
     ] {
         assert_eq!(compress::decompress(&hex(stream)), Err(InflateFailed));
     }
-    // A corrupted stream equivalence.py's fuzzing found (distance set: one
+    // A corrupted stream the former equivalence.py's fuzzing found (distance set: one
     // code of length 3): zlib's verdict, not a checksum mismatch.
     assert_eq!(
         compress::decompress(&hex(

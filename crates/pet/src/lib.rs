@@ -13,7 +13,8 @@
 //! - [`watch`]: a connection made and a mosh roam lived through, from the
 //!   sessions' events;
 //! - [`creature`]: a host's pixel creature, made from its host key (§6.3),
-//!   the pixel companion's host mark.
+//!   the pixel companion's host mark;
+//! - [`talk`]: what it says in its bubble on Home, and when (§17).
 //!
 //! No platform code: the platform supplies the seed, the clock, the local
 //! hour and the device id, and persists the record (`moshpit-store`'s
@@ -26,6 +27,7 @@ pub mod genome;
 mod png;
 pub mod record;
 pub mod sprite;
+pub mod talk;
 pub mod view;
 pub mod watch;
 

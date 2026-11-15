@@ -87,7 +87,7 @@
 | V17 | 拖到行尾能选上最后一列（取最近的格子边） | 补丁 55，B215 | Rust 边模型 | `selection.rs` |
 | V18 | 双击选词，三击选整行（含折行） | 分叉、补丁 44 | Rust | `selection.rs` |
 | V19 | 本地历史按像素滚，偏移落在设备像素网格上；松手离底不到半行就回到底 | 补丁 21 | Rust `scroll` | `scroll.rs` |
-| V20 | 滚动去向：tmux/herdr 交给宿主；程序要鼠标就发滚轮；否则本地历史 | `project_scroll_architecture` | Rust `scroll` | `scroll.rs` |
+| V20 | 滚动去向：tmux/herdr 交给宿主；程序要鼠标就发滚轮；否则本地历史；备用屏幕上不要鼠标的程序（less、man、git log）收到上下方向键（B500，xterm 的 alternate scroll：本机按它的光标键模式编码，一下至多 6 个；tmux 里等 tmux 说了鼠标关着，由 `send-keys -N n Up/Down` 发，tmux 按 pane 真实模式编码） | `project_scroll_architecture` | Rust `scroll` | `scroll.rs` |
 | V21 | 读历史时新输出不把视口拽回底部；打字、粘贴回到底部 | App 规则 | Rust `scroll` + 内核视口 | `scroll.rs` |
 | V22 | 松手按滑动速度惯性滑行（取松手前 100 ms 的速度，按 UIScrollView 的 0.998/ms 减速；松手前停住了就不滑）；连着同向快甩会叠加：滑行中碰一下记住当时的速度，同向、够快（≥300 px/s）、400 ms 内松手就加上它，最快 30000 px/s；反向、停住、慢拖、松手晚了都不叠加；本地历史按像素滑、到顶到底就停（tmux 的 shell pane 也是它自己的终端，按像素）；滚轮（要鼠标的程序）和宿主的行（herdr、mosh 下的 tmux）每 1/30 s 放一次，每次和一次甩的总量按速度给，最少 3 行/60 行，滚轮至多 6 行/150 行、宿主至多 12 行/400 行，多出的丢掉不欠账；再碰一下就停、这一下不算点按；打字、改尺寸也停 | B521、B523（推翻 1.0.4 的「松手不滑行」；用户 11-15 要惯性、Canary 131 反馈「没有速度叠加」） | Rust `scroll`（物理）+ iOS 手势（每帧按拖动的路由送出） | `scroll.rs`、`view.rs` 的 v22_* |
 | V23 | 横向滑动切 pane/窗口，轴在头 12 pt 定下 | `TerminalScrollGesture` | iOS | 真机 |

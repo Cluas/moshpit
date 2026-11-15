@@ -40,8 +40,8 @@ moshpit-pet = { path = "../pet" }
 # What the app makes of its coding agents (src/agents.rs, W15c): the island,
 # the widget and the cards, decided in Rust.
 moshpit-agents = { path = "../agents" }
-# The session layer the app runs a terminal on behind its switch
-# (src/session.rs, through UniFFI), on the core's one runtime; ssh and
+# The session layer the app runs every terminal on (src/session.rs,
+# through UniFFI), on the core's one runtime; ssh and
 # install for the types its API crosses with.
 moshpit-session = { path = "../session" }
 moshpit-runtime = { path = "../runtime" }

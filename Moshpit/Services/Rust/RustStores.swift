@@ -2,16 +2,14 @@ import Foundation
 import MoshpitKit
 
 // The app's stores on the Rust core's store (crates/store, through
-// crates/ffi/src/store.rs), behind the `MOSHPIT_RUST_STORE` switch
-// (``RustStoreSwitch``): one adapter per store, each the backing its Swift
-// store class delegates to (``ConnectionStoreBacking`` and the rest). The
-// classes keep their API, so the views and services don't know which runs.
+// crates/ffi/src/store.rs; ``AppStores`` makes them): one adapter per store,
+// each the backing its store class delegates to (``ConnectionStoreBacking``
+// and the rest), the class keeping the API the views and services know.
 //
 // Each adapter holds one Rust handle over the host traits: the preferences
 // (``RustPreferencesHost`` on `UserDefaults.standard` — the same keys and
-// formats, nothing migrates, docs/nsh/DESIGN.md §3.5) and, for the known
-// hosts, the keychain (``RustKeychainHost``; key material never leaves it,
-// and the key store only ever names an item). Whether protected data is
+// formats, nothing migrates, docs/nsh/DESIGN.md §3.5); the key store only
+// ever names a keychain item. Whether protected data is
 // available (the sealed-launch rule, ``DefaultsReadiness``) is the
 // preferences host's to say: a Rust store made before the first unlock
 // reads, shows, never writes, and reads again when asked to reload.
@@ -486,44 +484,6 @@ final class RustSettings: AppSettingsBacking {
     }
 
     func reloadIfNeeded() { handle.reloadIfNeeded() }
-}
-
-// MARK: - Known hosts
-
-/// The trusted host keys (the keychain item `moshpit.knownHosts`) through
-/// the Rust store, for ``HostKeyValidator``: the same item and format the
-/// Swift store and the Rust sessions read, the same rules (a locked or
-/// sealed device is "can't read", never "nothing trusted", B226/B251; a
-/// map this build can't decode is copied aside before anything is written
-/// over it).
-final class RustKnownHostsStore: KnownHostsStore, @unchecked Sendable {
-    private let handle: KnownHostsHandle
-
-    init(keychain: KeychainHost, preferences: PreferencesHost) {
-        handle = KnownHostsHandle(keychain: keychain, preferences: preferences)
-    }
-
-    func read() throws -> [String: String] {
-        do {
-            return try handle.read()
-        } catch KnownHostsFailure.Locked {
-            throw KnownHostsUnreadable(reason: "the device is locked", locked: true)
-        } catch KnownHostsFailure.Unavailable(let reason) {
-            throw KnownHostsUnreadable(reason: reason)
-        }
-    }
-
-    /// A failure as the Swift store's write throws it: the keychain's
-    /// "locked" as itself.
-    func write(_ entries: [String: String]) throws {
-        do {
-            try handle.write(entries: entries)
-        } catch KnownHostsFailure.Locked {
-            throw KeychainError.interactionNotAllowed
-        } catch KnownHostsFailure.Unavailable(let reason) {
-            throw KnownHostsUnreadable(reason: reason)
-        }
-    }
 }
 
 // MARK: - Push pairings

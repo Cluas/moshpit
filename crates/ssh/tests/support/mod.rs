@@ -30,6 +30,8 @@ use tokio::task::JoinHandle;
 
 pub const USER: &str = "moshpit";
 pub const PASSWORD: &str = "correct horse";
+/// What a keyboard-interactive prompt naming a "code" takes.
+pub const ONE_TIME_CODE: &str = "424242";
 
 /// A key from `tests/fixtures/keys`.
 pub fn fixture_key(name: &str) -> String {
@@ -151,13 +153,19 @@ pub struct Bench {
     /// `server-sig-algs` lists: one naming no RSA signature reads, to the
     /// client, as a server that said nothing.
     pub preferred_keys: Option<Vec<Algorithm>>,
+    /// The ciphers the host offers (`None`: russh's).
+    pub ciphers: Option<Vec<russh::cipher::Name>>,
     /// The RSA signatures the host takes (`None`: any). An OpenSSH before
     /// 7.2 takes only `ssh-rsa`.
     pub rsa_signatures: Option<Vec<&'static str>>,
     /// What keyboard-interactive asks, round by round: each prompt and
     /// whether it is shown as typed. Taken when every hidden prompt was
-    /// answered with the password. (Offered only when `methods` names it.)
+    /// answered with the password, or, for one naming a "code", with
+    /// [`ONE_TIME_CODE`]. (Offered only when `methods` names it.)
     pub keyboard_interactive: Vec<Vec<(&'static str, bool)>>,
+    /// A key is only the first factor, keyboard-interactive the second
+    /// (`AuthenticationMethods publickey,keyboard-interactive`).
+    pub key_then_keyboard_interactive: bool,
 }
 
 impl Default for Bench {
@@ -172,8 +180,10 @@ impl Default for Bench {
             exec_noise: Vec::new(),
             shell_commands: false,
             preferred_keys: None,
+            ciphers: None,
             rsa_signatures: None,
             keyboard_interactive: Vec::new(),
+            key_then_keyboard_interactive: false,
         }
     }
 }
@@ -182,6 +192,7 @@ struct Shared {
     authorized: Vec<PublicKey>,
     rsa_signatures: Option<Vec<&'static str>>,
     keyboard_interactive: Vec<Vec<(&'static str, bool)>>,
+    key_then_keyboard_interactive: bool,
     password: Option<String>,
     methods: Vec<MethodKind>,
     sftp: bool,
@@ -221,6 +232,9 @@ impl Host {
         if let Some(keys) = &bench.preferred_keys {
             config.preferred.key = keys.clone().into();
         }
+        if let Some(ciphers) = &bench.ciphers {
+            config.preferred.cipher = ciphers.clone().into();
+        }
         let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
         let addr = listener.local_addr().unwrap();
         let mut server = Server {
@@ -228,6 +242,7 @@ impl Host {
                 authorized: bench.authorized.clone(),
                 rsa_signatures: bench.rsa_signatures.clone(),
                 keyboard_interactive: bench.keyboard_interactive.clone(),
+                key_then_keyboard_interactive: bench.key_then_keyboard_interactive,
                 password: bench.password.clone(),
                 methods: bench.methods.clone(),
                 sftp: bench.sftp,
@@ -283,6 +298,7 @@ impl server::Server for Server {
             channels: HashMap::new(),
             kinds: HashMap::new(),
             kbd_given: Vec::new(),
+            key_taken: false,
             sizes: HashMap::new(),
             env: HashMap::new(),
         }
@@ -304,6 +320,8 @@ struct Connection {
     env: HashMap<ChannelId, HashMap<String, String>>,
     /// The keyboard-interactive answers of this sign-in so far.
     kbd_given: Vec<Vec<String>>,
+    /// The key, the first factor, was taken.
+    key_taken: bool,
 }
 
 impl Connection {
@@ -354,6 +372,15 @@ impl server::Handler for Connection {
                 .unwrap()
                 .key_algorithms
                 .push(key.algorithm.as_str().to_owned());
+            if self.shared.key_then_keyboard_interactive {
+                self.key_taken = true;
+                return Ok(ServerAuth::Reject {
+                    proceed_with_methods: Some(MethodSet::from(
+                        &[MethodKind::KeyboardInteractive][..],
+                    )),
+                    partial_success: true,
+                });
+            }
             Ok(ServerAuth::Accept)
         } else {
             Ok(self.reject())
@@ -388,6 +415,7 @@ impl server::Handler for Connection {
             .methods
             .contains(&MethodKind::KeyboardInteractive)
             || rounds.is_empty()
+            || (self.shared.key_then_keyboard_interactive && !self.key_taken)
         {
             return Ok(self.reject());
         }
@@ -423,10 +451,14 @@ impl server::Handler for Connection {
             .zip(&self.kbd_given)
             .all(|(prompts, answers)| {
                 prompts.len() == answers.len()
-                    && prompts
-                        .iter()
-                        .zip(answers)
-                        .all(|((_, echo), answer)| *echo || Some(answer.as_str()) == password)
+                    && prompts.iter().zip(answers).all(|((prompt, echo), answer)| {
+                        *echo
+                            || if prompt.to_lowercase().contains("code") {
+                                answer == ONE_TIME_CODE
+                            } else {
+                                Some(answer.as_str()) == password
+                            }
+                    })
             });
         if user == USER && answered {
             Ok(ServerAuth::Accept)
@@ -1227,6 +1259,9 @@ pub struct Person {
     pub think: Duration,
     /// Set when a question is dropped before it was answered.
     pub walked_away: Arc<AtomicUsize>,
+    /// What each key asked about said of its algorithm
+    /// ([`HostKey::older_algorithm`]), in order.
+    pub older: Mutex<Vec<Option<&'static str>>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1285,6 +1320,7 @@ impl HostKeyPrompt for Person {
         port: u16,
         key: &'a HostKey,
     ) -> BoxFuture<'a, bool> {
+        self.older.lock().unwrap().push(key.older_algorithm());
         Box::pin(self.answer(Asked {
             host: host.to_owned(),
             port,
@@ -1300,6 +1336,7 @@ impl HostKeyPrompt for Person {
         key: &'a HostKey,
         expected: &'a str,
     ) -> BoxFuture<'a, bool> {
+        self.older.lock().unwrap().push(key.older_algorithm());
         Box::pin(self.answer(Asked {
             host: host.to_owned(),
             port,

@@ -278,13 +278,18 @@ impl From<&SshError> for Failure {
                     why: UnreachableWhy::TimedOut,
                 },
             ),
-            SshError::Proxy { proxy, reason } => (
-                FailureKind::Proxy,
-                Cause::Proxy {
+            SshError::Proxy { proxy, reason } => {
+                let cause = Cause::Proxy {
                     proxy: proxy.clone(),
                     why: proxy_why(reason),
-                },
-            ),
+                };
+                // B560: what the proxy said about itself or its rules holds
+                // until someone changes the proxy or the connection.
+                if proxy_is_final(reason) {
+                    return Failure::permanent(FailureKind::Proxy, cause, log);
+                }
+                (FailureKind::Proxy, cause)
+            }
             SshError::HandshakeTimeout { host, port, .. } => (
                 FailureKind::Handshake,
                 Cause::Handshake {
@@ -301,6 +306,18 @@ impl From<&SshError> for Failure {
                     timed_out: false,
                 },
             ),
+            // B561: no algorithm in common holds until one side changes.
+            SshError::Incompatible { host, port, .. } => {
+                return Failure::permanent(
+                    FailureKind::Handshake,
+                    Cause::Handshake {
+                        host: host.clone(),
+                        port: *port,
+                        timed_out: false,
+                    },
+                    log,
+                );
+            }
             SshError::HostKeyNotTrusted { host, port, .. } => (
                 FailureKind::HostKey,
                 Cause::HostKey {
@@ -329,6 +346,10 @@ impl From<&SshError> for Failure {
             }
             SshError::InteractivePrompts { .. } => {
                 return Failure::credentials(CredentialsWhy::InteractivePrompts, log);
+            }
+            // The person's own no to the server's question (B563).
+            SshError::SignInDeclined { .. } => {
+                return Failure::credentials(CredentialsWhy::Cancelled, log);
             }
             SshError::AuthMethodRejected { method, .. } => {
                 return Failure::credentials(
@@ -385,6 +406,20 @@ fn unreachable_why(error: &std::io::Error) -> UnreachableWhy {
                 UnreachableWhy::Other
             }
         }
+    }
+}
+
+/// Whether the proxy's answer is one no retry changes (B560): it wants a
+/// password, isn't SOCKS5, can't take a name this long, or refuses by its
+/// rules (RFC 1928 0x02) or the request itself (0x07 command, 0x08 address
+/// type). The proxy or the target down or unreachable (0x01, 0x03–0x06), or
+/// the proxy hanging up, may pass.
+fn proxy_is_final(error: &moshpit_ssh::ProxyError) -> bool {
+    use moshpit_ssh::ProxyError;
+    match error {
+        ProxyError::AuthRequired | ProxyError::NotSocks5 | ProxyError::NameTooLong => true,
+        ProxyError::Refused(reply) => matches!(reply.0, 2 | 7 | 8),
+        _ => false,
     }
 }
 
@@ -533,9 +568,36 @@ pub enum EventKind {
         fingerprint: String,
         /// The trusted fingerprint, when the key CHANGED.
         previous: Option<String>,
+        /// `ssh-rsa` when the server offers no better host-key algorithm
+        /// (B564): the card says so.
+        older_algorithm: Option<String>,
+    },
+    /// The connection had to use an older host-key algorithm (`ssh-rsa`,
+    /// SHA-1, B564): for the diagnostics. Every connect that did.
+    OlderHostKeyAlgorithm {
+        algorithm: String,
     },
     /// The dial that asked is gone (superseded, given up): close the card.
     HostKeyPromptWithdrawn {
+        prompt: u64,
+    },
+    /// Asking the person what the server asks at sign-in that the saved
+    /// password doesn't answer — a one-time code (B563). Shown with the
+    /// server's own words; answer with [`crate::Sessions::answer_question`].
+    SignInQuestion {
+        prompt: u64,
+        host: String,
+        /// The round's name and instructions, as the server sent them
+        /// (often empty).
+        name: String,
+        instructions: String,
+        /// The prompt: "Verification code: ".
+        text: String,
+        /// Whether the answer is shown as typed (false: a secret).
+        echo: bool,
+    },
+    /// The dial that asked is gone: close the question's card.
+    SignInQuestionWithdrawn {
         prompt: u64,
     },
     Degraded(Degrade),
@@ -596,6 +658,60 @@ pub enum ResumeOutcome {
 mod tests {
     use super::*;
     use moshpit_ssh::{KeyError, ProxyError, Socks5Reply};
+
+    /// B561: a server with no algorithm in common with this client is a
+    /// handshake failure that a retry doesn't change.
+    #[test]
+    fn no_algorithm_in_common_is_not_retried() {
+        let failure = Failure::from(&SshError::Incompatible {
+            host: "box".into(),
+            port: 22,
+            what: "host key",
+            theirs: vec!["ssh-rsa".into()],
+        });
+        assert_eq!(failure.kind, FailureKind::Handshake);
+        assert!(!failure.retryable);
+        assert!(
+            failure.log.contains("ssh-rsa"),
+            "the log keeps what it offered"
+        );
+    }
+
+    /// B560: a SOCKS proxy that can't carry the connection as configured —
+    /// it wants a password (Moshpit offers none), it isn't SOCKS5, the name
+    /// is too long for SOCKS5, or its rules refuse it (0x02) or the request
+    /// (0x07, 0x08) — says so the same way every time: redialled on every
+    /// tick, it read "Reconnecting" forever after one card. What a retry
+    /// may fix stays retryable: the proxy or the target down or unreachable.
+    #[test]
+    fn a_proxy_that_cannot_work_as_configured_is_not_retried() {
+        use moshpit_ssh::{ProxyError, Socks5Reply};
+        let failed = |reason| {
+            Failure::from(&SshError::Proxy {
+                proxy: "p:1080".into(),
+                reason,
+            })
+        };
+        for permanent in [
+            ProxyError::AuthRequired,
+            ProxyError::NotSocks5,
+            ProxyError::NameTooLong,
+            ProxyError::Refused(Socks5Reply(2)),
+            ProxyError::Refused(Socks5Reply(7)),
+            ProxyError::Refused(Socks5Reply(8)),
+        ] {
+            let failure = failed(permanent);
+            assert_eq!(failure.kind, FailureKind::Proxy);
+            assert!(!failure.retryable, "{:?}", failure.cause);
+        }
+        for transient in [1, 3, 4, 5, 6] {
+            assert!(
+                failed(ProxyError::Refused(Socks5Reply(transient))).retryable,
+                "0x{transient:02x}"
+            );
+        }
+        assert!(failed(ProxyError::Closed).retryable);
+    }
 
     #[test]
     fn a_failure_says_what_happened_never_how_to_say_it() {
@@ -725,6 +841,13 @@ mod tests {
             Cause::Credentials(CredentialsWhy::Cancelled)
         );
         assert!(!cancelled.retryable);
+        // B563: the person's no to the server's question is theirs too.
+        let declined = Failure::from(&SshError::SignInDeclined { host: "box".into() });
+        assert_eq!(
+            declined.cause,
+            Cause::Credentials(CredentialsWhy::Cancelled)
+        );
+        assert!(!declined.retryable);
         for failed in [
             SignerError::Failed("the key is gone".into()),
             SignerError::Mismatch,

@@ -2,9 +2,8 @@ import SwiftUI
 import UIKit
 
 /// The NSH Home's long-press menus: UIKit's own context menu on the
-/// surface (``NSHContextMenus``), for the row under the finger, with the
-/// actions the SwiftUI card's `.contextMenu`s carry — the head's, a
-/// session's, a window's, a pane's. The screen marks each row with its
+/// surface (``NSHContextMenus``), for the row under the finger: the head's,
+/// a session's, a window's, a pane's actions. The screen marks each row with its
 /// identifier (`home-head-<connection>`, `home-session-<connection>-<id>`,
 /// …); the menus are built from the cards as Home's record has them and
 /// their sessions' trees as they are when it last changed, and what they

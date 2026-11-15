@@ -1,40 +1,13 @@
 import SwiftUI
 import UIKit
 
-/// The editor of a custom terminal theme, in its sheet: the SwiftUI page
-/// (``ThemeEditorView``), or the NSH one while its switch is on
-/// (``NSHScreen/themeEditor``), from the SwiftUI gallery and the NSH one
-/// alike. With the switch off no NSH code runs.
-struct ThemeEditorPage: View {
-    let theme: TerminalTheme
-    let onSave: (TerminalTheme) -> Void
-
-    var body: some View {
-        if Self.showsNSH {
-            ThemeEditorNSHPage(theme: theme, onSave: onSave)
-        } else {
-            ThemeEditorView(theme: theme, onSave: onSave)
-                .darkOnlyPage()
-        }
-    }
-
-    private static var showsNSH: Bool {
-        #if DEBUG
-        if CaptureScreen.editorRequested.map({ $0.theme && $0.forcedNSH }) == true {
-            return NSHSurface.available
-        }
-        #endif
-        return NSHScreen.themeEditor.isOn
-    }
-}
-
 /// The theme editor drawn by NSH (`ui/src/theme_editor.rs`) in the sheet's
 /// own stack. The draft is the host's (``ThemeEditorModel``): the page
 /// tells it every change and draws the preview from its own copy; Save hands
-/// the draft to `onSave`, as the SwiftUI page does, and Copy as JSON puts it
+/// the draft to `onSave`, and Copy as JSON puts it
 /// on the pasteboard as the store exports it. Each color well is UIKit's
-/// (`moshpit/color-well`): a tap presents the system's color picker. If NSH
-/// cannot run here, the SwiftUI page shows, with the draft so far.
+/// (`moshpit/color-well`): a tap presents the system's color picker. If its
+/// screen can't run, the page says so (``NSHPageFailed``).
 struct ThemeEditorNSHPage: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(ThemeStore.self) private var themes
@@ -49,8 +22,7 @@ struct ThemeEditorNSHPage: View {
 
     var body: some View {
         if failed {
-            ThemeEditorView(theme: model.draft, onSave: onSave)
-                .darkOnlyPage()
+            NSHSheetFailed { failed = false }
         } else {
             NavigationStack {
                 NSHPage(

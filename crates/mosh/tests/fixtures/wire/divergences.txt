@@ -2,7 +2,8 @@
 # '# <fix id>' comment. Results: divergences.rust.txt (Rust), .swift.txt (the
 # Swift client now: the same, except for the open excerpt-unicode fix) and
 # .swift-b4b8e1b4.txt (the Swift client before the fixes: every line
-# differs). harness/equivalence.py and tests/equivalence.rs check all three.
+# differs). tests/equivalence.rs checks all three (the Swift outputs frozen
+# since the Swift client was deleted, E2).
 # zlib-strict: the Adler-32 trailer's last bit flipped
 zlib.decompress data=789ccb48cdc9c90700062c0214
 # zlib-strict: a header whose check bits fail (78 9d)

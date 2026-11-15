@@ -266,7 +266,7 @@ struct CoreTermForegroundTests {
 
     @Test("On return, a terminal another host took is hosted in the slot again")
     func stageRehostsATakenTerminal() throws {
-        let controller = TmuxSessionController(sshSession: MockTmuxTransport())
+        let controller = TerminalNSHTests.paneController()
         let stage = TerminalNSHStage()
         let (slot, window) = TerminalNSHTests.slot(for: stage)
         defer { window.isHidden = true }
@@ -285,7 +285,7 @@ struct CoreTermForegroundTests {
 
     @Test("On return, a host out of the slot on screen is moved in")
     func stageAdoptsIntoTheSlot() throws {
-        let controller = TmuxSessionController(sshSession: MockTmuxTransport())
+        let controller = TerminalNSHTests.paneController()
         let stage = TerminalNSHStage()
         let (slot, window) = TerminalNSHTests.slot(for: stage)
         defer { window.isHidden = true }
@@ -298,7 +298,7 @@ struct CoreTermForegroundTests {
 
     @Test("On return, a stuck veil over the terminal is lifted")
     func stageLiftsAStuckVeil() throws {
-        let controller = TmuxSessionController(sshSession: MockTmuxTransport())
+        let controller = TerminalNSHTests.paneController()
         let stage = TerminalNSHStage()
         let (_, window) = TerminalNSHTests.slot(for: stage)
         defer { window.isHidden = true }

@@ -2,8 +2,7 @@ import Testing
 import UIKit
 @testable import Moshpit
 
-/// The terminal screen in NSH (`MOSHPIT_NSH_TERMINAL`): its switch, what the
-/// host posts it (every state a message the Rust screen takes), what it
+/// The terminal screen in NSH: what the host posts it (every state a message the Rust screen takes), what it
 /// tells the host (every intent read back), and the stage that shows the
 /// session's terminals in its slot — a pane switch, a reconnect's kept frame,
 /// the handover that keeps a terminal in the window across a rebuild.
@@ -195,6 +194,16 @@ struct TerminalNSHTests {
     // MARK: The stage
 
     /// A slot in a window, as NSH lays it out.
+    /// A tmux surface with no core behind it: its panes' terminals, made
+    /// once each, are all the stage reads of it.
+    static func paneController() -> RustTmuxController {
+        RustTmuxController(
+            driver: nil,
+            appearance: .init(theme: .dracula, fontSize: 13, fontName: "system", cursorShape: .block,
+                              cursorColorId: "teal", cursorBlink: true),
+            grid: (cols: 80, rows: 24))
+    }
+
     static func slot(for stage: TerminalNSHStage) -> (TerminalNSHSlotView, UIWindow) {
         let scene = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first
         let window = scene.map { UIWindow(windowScene: $0) } ?? UIWindow(frame: CGRect(x: 0, y: 0, width: 744, height: 1133))
@@ -208,7 +217,7 @@ struct TerminalNSHTests {
 
     @Test("a pane shows in the slot, inset, and a switch swaps the session's own terminals")
     func paneSwitch() async throws {
-        let controller = TmuxSessionController(sshSession: MockTmuxTransport())
+        let controller = Self.paneController()
         let stage = TerminalNSHStage()
         let (slot, window) = Self.slot(for: stage)
         defer { window.isHidden = true }
@@ -237,8 +246,8 @@ struct TerminalNSHTests {
 
     @Test("a reconnect's kept frame is shown untouchable, then fades to the new attach's pane")
     func keptFrame() async throws {
-        let retired = TmuxSessionController(sshSession: MockTmuxTransport())
-        let fresh = TmuxSessionController(sshSession: MockTmuxTransport())
+        let retired = Self.paneController()
+        let fresh = Self.paneController()
         let stage = TerminalNSHStage()
         let (_, window) = Self.slot(for: stage)
         defer { window.isHidden = true }
@@ -253,7 +262,7 @@ struct TerminalNSHTests {
 
     @Test("a sheet's hold reaches the container, and a rekey's handover keeps the terminal in the window")
     func holdAndHandover() async throws {
-        let controller = TmuxSessionController(sshSession: MockTmuxTransport())
+        let controller = Self.paneController()
         let stage = TerminalNSHStage()
         let (slot, window) = Self.slot(for: stage)
         defer { window.isHidden = true }

@@ -150,8 +150,7 @@ pub struct FormState {
     pub mosh: bool,
     /// The UDP port range from Settings, as the row shows it.
     pub udp_range: String,
-    pub predict_mode: PredictMode,
-    pub roam_on_cellular: bool,
+    pub predict_mode: ConnectionPredict,
     pub mosh_server_path: String,
     pub socks: bool,
     pub socks_host: String,
@@ -163,6 +162,89 @@ pub struct FormState {
     /// as typed; empty: the face. Saved only when it is one ([`emoji`]).
     #[serde(default)]
     pub emoji: String,
+    /// The other saved connections, to warn of one this would duplicate
+    /// ([`duplicate`], B532).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub others: Vec<Other>,
+}
+
+/// Another saved connection, as the form compares itself with it (B532).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Other {
+    pub name: String,
+    pub user: String,
+    pub host: String,
+    pub port: u16,
+}
+
+impl Other {
+    /// What the form calls it: its name, or `user@host` when it has none,
+    /// as the list does (`display_name`). An unnamed one was “” (B550).
+    pub fn label(&self) -> String {
+        if self.name.trim().is_empty() {
+            format!("{}@{}", self.user.trim(), self.host.trim())
+        } else {
+            self.name.clone()
+        }
+    }
+}
+
+/// The saved connection this one would duplicate, and how (B532).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Duplicate {
+    /// The same user, host and port as the one named: one host's two
+    /// connections, which share its known host key.
+    Address(String),
+    /// Another connection has this name.
+    Name(String),
+}
+
+impl Duplicate {
+    /// What the form says: a warning, Save still saves.
+    pub fn words(&self) -> String {
+        match self {
+            Duplicate::Address(name) => {
+                t!("Same user, host and port as “%@”.", arg1 = name.as_str())
+            }
+            Duplicate::Name(name) => t!(
+                "“%@” is already another connection's name.",
+                arg1 = name.as_str()
+            ),
+        }
+    }
+}
+
+/// The saved connection `state` would duplicate: one with the same user,
+/// host (in any case) and port first, else one with the same name (in any
+/// case), spaces round them ignored.
+pub fn duplicate(state: &FormState) -> Option<Duplicate> {
+    let host = state.host.trim();
+    let user = state.username.trim();
+    let address = port(&state.port, DEFAULT_PORT).and_then(|port| {
+        (!host.is_empty())
+            .then(|| {
+                state.others.iter().find(|o| {
+                    o.port == port
+                        && o.user.trim() == user
+                        && o.host.trim().eq_ignore_ascii_case(host)
+                })
+            })
+            .flatten()
+    });
+    if let Some(other) = address {
+        return Some(Duplicate::Address(other.label()));
+    }
+    let name = state.name.trim().to_lowercase();
+    (!name.is_empty())
+        .then(|| {
+            state
+                .others
+                .iter()
+                .find(|o| o.name.trim().to_lowercase() == name)
+        })
+        .flatten()
+        .map(|other| Duplicate::Name(other.name.clone()))
 }
 
 /// The password and the private key, as far as the page may know: whether
@@ -252,6 +334,76 @@ pub fn port_is_wrong(state: &FormState) -> bool {
 /// field is not shown and saving writes SOCKS5's port).
 pub fn proxy_port_is_wrong(state: &FormState) -> bool {
     state.socks && port(&state.socks_port, DEFAULT_PROXY_PORT).is_none()
+}
+
+/// A connection's predictive echo (B531): as Settings says, or its own.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ConnectionPredict {
+    /// As Settings › Connections › Predictive echo says.
+    #[default]
+    Settings,
+    Adaptive,
+    Always,
+    Never,
+    Experimental,
+}
+
+impl ConnectionPredict {
+    /// All five, in the menu's order.
+    pub const ALL: [ConnectionPredict; 5] = [
+        ConnectionPredict::Settings,
+        ConnectionPredict::Adaptive,
+        ConnectionPredict::Always,
+        ConnectionPredict::Never,
+        ConnectionPredict::Experimental,
+    ];
+
+    /// Its id, as the form and its host say it.
+    pub fn id(self) -> &'static str {
+        match self {
+            ConnectionPredict::Settings => "settings",
+            ConnectionPredict::Adaptive => PredictMode::Adaptive.id(),
+            ConnectionPredict::Always => PredictMode::Always.id(),
+            ConnectionPredict::Never => PredictMode::Never.id(),
+            ConnectionPredict::Experimental => PredictMode::Experimental.id(),
+        }
+    }
+
+    /// The one with id `id`.
+    pub fn named(id: &str) -> Option<ConnectionPredict> {
+        ConnectionPredict::ALL.into_iter().find(|p| p.id() == id)
+    }
+
+    /// The connection's own mode; none: as Settings says.
+    pub fn mode(self) -> Option<PredictMode> {
+        match self {
+            ConnectionPredict::Settings => None,
+            ConnectionPredict::Adaptive => Some(PredictMode::Adaptive),
+            ConnectionPredict::Always => Some(PredictMode::Always),
+            ConnectionPredict::Never => Some(PredictMode::Never),
+            ConnectionPredict::Experimental => Some(PredictMode::Experimental),
+        }
+    }
+
+    /// For the connection's own `mode`; none: as Settings says.
+    pub fn of(mode: Option<PredictMode>) -> ConnectionPredict {
+        match mode {
+            None => ConnectionPredict::Settings,
+            Some(PredictMode::Adaptive) => ConnectionPredict::Adaptive,
+            Some(PredictMode::Always) => ConnectionPredict::Always,
+            Some(PredictMode::Never) => ConnectionPredict::Never,
+            Some(PredictMode::Experimental) => ConnectionPredict::Experimental,
+        }
+    }
+
+    /// What the menu calls it.
+    pub fn title(self) -> String {
+        match self.mode() {
+            None => t!("As in Settings"),
+            Some(mode) => mode.title(),
+        }
+    }
 }
 
 /// What is wrong with the host field, when something is (B517).
@@ -389,8 +541,7 @@ pub enum Field {
     Username(String),
     Auth(Auth),
     Mosh(bool),
-    PredictMode(PredictMode),
-    RoamOnCellular(bool),
+    PredictMode(ConnectionPredict),
     MoshServerPath(String),
     Socks(bool),
     SocksHost(String),
@@ -412,7 +563,6 @@ impl Field {
             Field::Auth(v) => ("auth", json!(v)),
             Field::Mosh(v) => ("mosh", json!(v)),
             Field::PredictMode(v) => ("predictMode", json!(v.id())),
-            Field::RoamOnCellular(v) => ("roamOnCellular", json!(v)),
             Field::MoshServerPath(v) => ("moshServerPath", json!(v)),
             Field::Socks(v) => ("socks", json!(v)),
             Field::SocksHost(v) => ("socksHost", json!(v)),
@@ -435,7 +585,6 @@ impl Field {
             Field::Auth(v) => s.auth = v,
             Field::Mosh(v) => s.mosh = v,
             Field::PredictMode(v) => s.predict_mode = v,
-            Field::RoamOnCellular(v) => s.roam_on_cellular = v,
             Field::MoshServerPath(v) => s.mosh_server_path = v,
             Field::Socks(v) => s.socks = v,
             Field::SocksHost(v) => s.socks_host = v,
@@ -641,12 +790,19 @@ pub fn ConnectionFormScreen(props: ScreenProps) -> impl IntoElement {
             Message::Form(next) => {
                 // A port the saved connection already has wrong (an old app
                 // saved "70000" as it was) is not being typed: it says so
-                // at once.
+                // at once. So does a saved connection's missing name or user
+                // (B517: old apps saved them) and an emoji the form refuses
+                // (B551: Save waited and nothing said why); a new
+                // connection's empty fields stay quiet until left.
+                let editing = next.editing;
                 checked.update(|c| {
                     c.port |= port_is_wrong(&next);
                     c.proxy_port |= proxy_port_is_wrong(&next);
                     c.proxy_host |= proxy_host_is_wrong(&next);
                     c.host |= host_problem(&next.host) == Some(HostProblem::NotJustAHost);
+                    c.name |= editing && next.name.trim().is_empty();
+                    c.user |= editing && user_is_wrong(&next);
+                    c.emoji |= emoji_is_wrong(&next);
                 });
                 state.set(Some(*next));
                 generation.update(|g| *g += 1);
@@ -794,6 +950,7 @@ fn sections(bar: BarMetrics, scrolled: nav_bar::ScrollEdge, draft: Draft) -> Scr
     let editing = draft.read(|s| s.editing);
     let mut sections = vec![
         connection(&draft),
+        duplicate_banner(&draft),
         sign_in(&draft),
         mosh(&draft),
         proxy(&draft),
@@ -803,6 +960,25 @@ fn sections(bar: BarMetrics, scrolled: nav_bar::ScrollEdge, draft: Draft) -> Scr
         sections.push(delete(&draft));
     }
     page::page(bar, scrolled, "connection-form-list", sections)
+}
+
+/// A warning under CONNECTION when this would duplicate another saved
+/// connection (B532), once its name or address has been left; Save still
+/// saves.
+fn duplicate_banner(draft: &Draft) -> AnyElement {
+    let (state, checked) = (draft.state, draft.checked);
+    let shown = move || {
+        checked
+            .with(|c| c.name || c.host || c.user)
+            .then(|| state.with(|s| s.as_ref().and_then(duplicate)))
+            .flatten()
+    };
+    banner(BannerTone::Warning, move || {
+        shown().map(|d| d.words()).unwrap_or_default().into()
+    })
+    .shown(move || shown().is_some())
+    .test_id("connection-form-duplicate")
+    .into_element()
 }
 
 // --- CONNECTION ----------------------------------------------------------------------
@@ -1152,29 +1328,19 @@ fn mosh_rows(draft: &Draft) -> Vec<AnyElement> {
     let mode =
         computed(move || state.with(|s| s.as_ref().map(|s| s.predict_mode).unwrap_or_default()));
     let pick = draft.setter(Field::PredictMode);
-    let roam = computed(move || state.with(|s| s.as_ref().is_some_and(|s| s.roam_on_cellular)));
-    let set_roam = draft.setter(Field::RoamOnCellular);
     vec![
         select(
             t!("Predict Mode"),
-            PredictMode::ALL.map(|m| option(m.id(), m.title())),
+            ConnectionPredict::ALL.map(|p| option(p.id(), p.title())),
             move || mode.get().id().into(),
             move |id| {
-                if let Some(mode) = PredictMode::ALL.into_iter().find(|m| m.id() == &*id) {
-                    pick(mode);
+                if let Some(predict) = ConnectionPredict::named(&id) {
+                    pick(predict);
                 }
             },
         )
         .test_id("connection-form-predict")
         .into_element(),
-        row(t!("Roam on Cellular"))
-            .subtitle(t!("Reconnect over 5G/LTE when Wi-Fi drops"))
-            .trailing(
-                switch(move || roam.get(), set_roam)
-                    .label(t!("Roam on Cellular"))
-                    .test_id("connection-form-roam"),
-            )
-            .into_element(),
         field(
             t!("mosh-server path"),
             text_input()
@@ -1371,8 +1537,7 @@ mod tests {
             }),
             mosh: true,
             udp_range: "60000 – 61000".into(),
-            predict_mode: PredictMode::Adaptive,
-            roam_on_cellular: true,
+            predict_mode: ConnectionPredict::Settings,
             socks_port: "1080".into(),
             mux: Mux::Herdr,
             ..FormState::default()
@@ -1497,7 +1662,7 @@ mod tests {
             json!({"ev": "set", "key": "mux", "value": "none"})
         );
         assert_eq!(
-            Field::PredictMode(PredictMode::Never).event(),
+            Field::PredictMode(ConnectionPredict::Never).event(),
             json!({"ev": "set", "key": "predictMode", "value": "never"})
         );
         assert_eq!(
@@ -1527,5 +1692,23 @@ mod tests {
         assert!(!can_save(&state), "a password connection with no password");
         state.secrets.password = true;
         assert!(can_save(&state));
+    }
+
+    /// B550: an unnamed saved connection is named as its list names it,
+    /// `user@host`: the warning said “” for it.
+    #[test]
+    fn a_duplicate_of_an_unnamed_connection_names_it_by_its_address() {
+        let mut state = sample();
+        state.name = String::new();
+        state.others = vec![Other {
+            name: String::new(),
+            user: "cluas".into(),
+            host: "192.0.2.22".into(),
+            port: 22,
+        }];
+        assert_eq!(
+            duplicate(&state),
+            Some(Duplicate::Address("cluas@192.0.2.22".into()))
+        );
     }
 }

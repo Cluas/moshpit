@@ -1,19 +1,5 @@
 import SwiftUI
 
-/// Settings › Voice Input › Recognition: the SwiftUI page
-/// (``VoiceEngineView``), or the NSH one while its switch is on
-/// (``NSHScreen/voiceEngine``). With the switch off the SwiftUI page is all
-/// there is: no NSH code runs.
-struct VoiceEnginePage: View {
-    var body: some View {
-        if NSHScreen.voiceEngine.isOn {
-            VoiceEngineNSHPage()
-        } else {
-            VoiceEngineView()
-        }
-    }
-}
-
 /// Settings › Voice Input › Recognition drawn by NSH
 /// (`ui/src/voice_engine.rs`): the engine in use and whether Whisper still
 /// lacks a model come from the host (``VoiceEngineModel``), a pick goes back
@@ -28,7 +14,7 @@ struct VoiceEngineNSHPage: View {
 
     var body: some View {
         if failed {
-            VoiceEngineView()
+            NSHPageFailed { failed = false }
         } else {
             NSHPage(
                 screen: .voiceEngine,
@@ -54,7 +40,7 @@ struct VoiceEngineNSHPage: View {
                 // Again on the way back from the model page, as the SwiftUI
                 // page counts the installed models on appear.
                 .onAppear { model.refresh(settings: settings) }
-                .navigationDestination(isPresented: $showModels) { WhisperModelPage() }
+                .navigationDestination(isPresented: $showModels) { WhisperModelNSHPage() }
         }
     }
 }

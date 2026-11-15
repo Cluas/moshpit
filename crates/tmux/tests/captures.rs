@@ -1,10 +1,9 @@
-//! The Rust parser against the Swift parser's recorded output, without
-//! needing swiftc: `<name>.swift.jsonl` next to each committed capture is
-//! what `harness/swift/main.swift` printed for it (`equivalence.py
-//! update-goldens`). Rust must print the same bytes — the Swift parser
-//! carries every fix the port made (`harness/divergences.json`), so no
-//! difference is accepted — and must print the same events however the
-//! capture is cut into feeds.
+//! The Rust parser against the Swift parser's recorded output:
+//! `<name>.swift.jsonl` next to each committed capture is what the app's
+//! Swift parser printed for it, frozen when that parser was retired (E3).
+//! Rust must print the same bytes — the Swift parser carried every fix the
+//! port made (`harness/divergences.json`), so no difference is accepted —
+//! and must print the same events however the capture is cut into feeds.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -109,7 +108,7 @@ fn synthetic_recovery_stream_matches_the_swift_parser() {
 }
 
 /// Each documented fix: Rust prints its recorded output under any feed
-/// plan (`equivalence.py` holds the Swift parser to the same output), and
+/// plan (the Swift parser printed the same, while it lived), and
 /// that output is not what the Swift parser printed before the port —
 /// `<fixture>.swift-fd87248f.jsonl` — or the old parser crashed.
 #[test]

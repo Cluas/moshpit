@@ -16,122 +16,82 @@ enum AppAppearance: String, CaseIterable {
 
 enum PredictMode: String, CaseIterable {
     case adaptive, always, never, experimental
-
-    var label: String { rawValue.prefix(1).uppercased() + rawValue.dropFirst() }
 }
 
-/// User-tunable settings persisted in UserDefaults — exactly the controls on
-/// the prototype's Settings screen (DISPLAY / CURSOR / BEHAVIOR /
-/// MOSH·ROAMING / NOTIFICATIONS / VOICE INPUT).
+/// User-tunable settings — exactly the controls on the prototype's Settings
+/// screen (DISPLAY / CURSOR / BEHAVIOR / MOSH·ROAMING / NOTIFICATIONS /
+/// VOICE INPUT). The Rust store (`crates/store/src/settings.rs`, through
+/// ``AppSettingsBacking``) reads and writes each — the keys and stored
+/// forms every build reads, the sealed-launch rule, the notification
+/// service's mirror of its two switches (`PushPrefs`).
 ///
 /// `@AppStorage` cannot be used inside `@Observable`, so properties are
-/// computed over UserDefaults with the access/withMutation pattern.
+/// computed over the backing with the access/withMutation pattern.
 @Observable
 final class AppSettings {
     @ObservationIgnored private let defaults: UserDefaults
 
-    /// The same store, for collaborators that persist their own bookkeeping
-    /// rather than a user-facing setting — `AgentActivityMonitor` keeps its
-    /// "already announced" record here so a relaunch does not re-notify for
-    /// prompts that are still standing. Exposed rather than duplicated so tests
-    /// that hand in a scratch suite keep isolating everything.
+    /// The preferences the settings live in, for collaborators that persist
+    /// their own bookkeeping rather than a user-facing setting —
+    /// `AgentActivityMonitor` keeps its "already announced" record here so a
+    /// relaunch does not re-notify for prompts that are still standing.
+    /// Exposed rather than duplicated so tests that hand in a scratch suite
+    /// keep isolating everything.
     @ObservationIgnored var store: UserDefaults { defaults }
 
     // The app-wide instance, `shared` — so non-View code (design tokens, icon
     // switching) can read the active settings without environment injection —
-    // is made where the app reads its storage switch (`RustStoreSwitch.swift`):
-    // on this class's own code, or on the Rust store.
+    // is made with the app's other stores (`AppStores`).
 
-    @ObservationIgnored private let readiness: DefaultsReadiness
-    /// Settings read the defaults live, so a sealed launch heals itself the
-    /// moment the file is readable — except for the one thing `init` WRITES,
-    /// the App Group mirror. That waits for a read it can trust
-    /// (``DefaultsReadiness``): mirroring the switches' fallbacks would tell
-    /// the extension "detail on, sound on" for a user who turned both off.
-    @ObservationIgnored private var isAuthoritative = false
+    @ObservationIgnored private let backing: AppSettingsBacking
 
-    /// What reads and writes the settings when it isn't the code below:
-    /// the Rust store, behind the `MOSHPIT_RUST_STORE` switch
-    /// (``AppSettingsBacking``) — which also keeps the notification
-    /// service's mirror. nil: the code below, as ever.
-    @ObservationIgnored private let backing: AppSettingsBacking?
-
-    init(defaults: UserDefaults = .standard, readiness: DefaultsReadiness = .always) {
-        self.defaults = defaults
-        self.readiness = readiness
-        backing = nil
-        // Seed the App Group mirror the notification service extension reads
-        // (see PushPrefs). At launch rather than lazily: a pushed notification
-        // can land before the user ever opens Settings, and it must see the
-        // values the switches already hold.
-        reloadIfNeeded()
+    /// The Rust store over `defaults`, readable as `readiness` says, with no
+    /// notification-service mirror (tests and scratch suites; the app's is
+    /// ``shared``).
+    convenience init(defaults: UserDefaults = .standard, readiness: DefaultsReadiness = .always) {
+        let host = RustPreferencesHost(defaults: defaults, available: readiness.protectedDataAvailable)
+        #if DEBUG
+        let debugBuild = true
+        #else
+        let debugBuild = false
+        #endif
+        self.init(defaults: defaults,
+                  backing: RustSettings(preferences: host, mirror: nil, mode: .system, debugBuild: debugBuild))
     }
 
     /// Settings whose every read and write is `backing`'s, over the
     /// preferences in `defaults` (``store`` hands those out, for the
-    /// bookkeeping that isn't a setting). `readiness` goes unused: the
-    /// backing has the sealed-launch rule, and mirrors the switches itself.
+    /// bookkeeping that isn't a setting).
     init(defaults: UserDefaults = .standard, backing: AppSettingsBacking) {
         self.defaults = defaults
-        readiness = .always
         self.backing = backing
+        // Seed the notification service's mirror (PushPrefs) once the
+        // preferences can be trusted: a pushed notification can land before
+        // the user ever opens Settings, and it must see the values the
+        // switches already hold.
         reloadIfNeeded()
     }
 
-    /// Mirror the extension-visible switches once the defaults can be
+    /// Mirror the extension-visible switches once the preferences can be
     /// trusted; a no-op once that has happened.
     func reloadIfNeeded() {
-        if let backing { return backing.reloadIfNeeded() }
-        guard !isAuthoritative, readiness.isReadable(defaults) else { return }
-        isAuthoritative = true
-        readiness.markReadable(defaults)
-        mirrorPushPrefs()
-    }
-
-    /// Push the two extension-visible switches into the App Group. Called from
-    /// init and from the two setters those switches own.
-    private func mirrorPushPrefs() {
-        // The backing's setters mirror their own.
-        guard backing == nil else { return }
-        PushPrefs.write(
-            showDetail: defaults.object(forKey: "moshpit.settings.lockScreenDetail") as? Bool ?? true,
-            sound: defaults.object(forKey: "moshpit.settings.attentionSound") as? Bool ?? true)
+        backing.reloadIfNeeded()
     }
 
     // MARK: Generic accessors
 
     private func get<T>(_ key: String, _ fallback: T) -> T {
-        if let backing { return backing.value(forKey: key) as? T ?? fallback }
-        return defaults.object(forKey: key) as? T ?? fallback
+        backing.value(forKey: key) as? T ?? fallback
     }
 
     // Store a value under its key, as each setter writes it: one overload
-    // per type, so each calls the very `UserDefaults.set` it always did.
+    // per type, each the stored form every build reads.
 
-    private func put(_ value: Bool, _ key: String) {
-        if let backing { return backing.set(value, forKey: key) }
-        defaults.set(value, forKey: key)
-    }
-
-    private func put(_ value: Int, _ key: String) {
-        if let backing { return backing.set(value, forKey: key) }
-        defaults.set(value, forKey: key)
-    }
-
-    private func put(_ value: Double, _ key: String) {
-        if let backing { return backing.set(value, forKey: key) }
-        defaults.set(value, forKey: key)
-    }
-
-    private func put(_ value: String, _ key: String) {
-        if let backing { return backing.set(value, forKey: key) }
-        defaults.set(value, forKey: key)
-    }
-
-    private func put(_ value: [String], _ key: String) {
-        if let backing { return backing.set(value, forKey: key) }
-        defaults.set(value, forKey: key)
-    }
+    private func put(_ value: Bool, _ key: String) { backing.set(value, forKey: key) }
+    private func put(_ value: Int, _ key: String) { backing.set(value, forKey: key) }
+    private func put(_ value: Double, _ key: String) { backing.set(value, forKey: key) }
+    private func put(_ value: String, _ key: String) { backing.set(value, forKey: key) }
+    private func put(_ value: [String], _ key: String) { backing.set(value, forKey: key) }
 
     // MARK: DISPLAY
 
@@ -193,7 +153,10 @@ final class AppSettings {
 
     var trailOnPredict: Bool {
         get { access(keyPath: \.trailOnPredict); return get("moshpit.settings.trailOnPredict", true) }
-        set { withMutation(keyPath: \.trailOnPredict) { put(newValue, "moshpit.settings.trailOnPredict") } }
+        set {
+            withMutation(keyPath: \.trailOnPredict) { put(newValue, "moshpit.settings.trailOnPredict") }
+            NotificationCenter.default.post(name: .moshpitPredictionChanged, object: self)
+        }
     }
 
     // MARK: BEHAVIOR
@@ -219,7 +182,10 @@ final class AppSettings {
             access(keyPath: \.predictMode)
             return PredictMode(rawValue: get("moshpit.settings.predictMode", "adaptive")) ?? .adaptive
         }
-        set { withMutation(keyPath: \.predictMode) { put(newValue.rawValue, "moshpit.settings.predictMode") } }
+        set {
+            withMutation(keyPath: \.predictMode) { put(newValue.rawValue, "moshpit.settings.predictMode") }
+            NotificationCenter.default.post(name: .moshpitPredictionChanged, object: self)
+        }
     }
 
     /// Kept as stored, read by nothing (R18 E): the setting that reaches
@@ -291,7 +257,7 @@ final class AppSettings {
             // `stringArray(forKey:)` read it as no array at all, and the next
             // host declined stored that nothing plus the one. The setter
             // writes the strings only, so every build reads it again.
-            let stored: Any? = backing != nil ? backing?.value(forKey: key) : defaults.object(forKey: key)
+            let stored = backing.value(forKey: key)
             return Set((stored as? [Any])?.compactMap { $0 as? String } ?? [])
         }
         set {
@@ -308,7 +274,7 @@ final class AppSettings {
         get {
             access(keyPath: \.hostSetupUnpaired)
             let key = "moshpit.settings.hostSetupUnpaired"
-            let stored: Any? = backing != nil ? backing?.value(forKey: key) : defaults.object(forKey: key)
+            let stored = backing.value(forKey: key)
             return Set((stored as? [Any])?.compactMap { $0 as? String } ?? [])
         }
         set {
@@ -361,7 +327,6 @@ final class AppSettings {
         get { access(keyPath: \.attentionSoundEnabled); return get("moshpit.settings.attentionSound", true) }
         set {
             withMutation(keyPath: \.attentionSoundEnabled) { put(newValue, "moshpit.settings.attentionSound") }
-            mirrorPushPrefs()
         }
     }
 
@@ -373,7 +338,6 @@ final class AppSettings {
         get { access(keyPath: \.lockScreenDetailEnabled); return get("moshpit.settings.lockScreenDetail", true) }
         set {
             withMutation(keyPath: \.lockScreenDetailEnabled) { put(newValue, "moshpit.settings.lockScreenDetail") }
-            mirrorPushPrefs()
         }
     }
 
@@ -498,14 +462,13 @@ final class AppSettings {
     }
 }
 
-/// What ``AppSettings`` reads and writes through when it isn't its own
-/// Swift code: the Rust store (crates/store, through crates/ffi), behind the
-/// `MOSHPIT_RUST_STORE` switch (`RustStoreSwitch`). By preferences key, as
-/// the settings' getters and setters go: a value read is what is stored if
-/// it is of the setting's type, else the setting's default (an enum-backed
-/// one's raw string, which its getter checks); a value written is the
-/// setter's — and the notification service's mirror follows its two
-/// switches, as ``AppSettings`` mirrors them.
+/// What ``AppSettings`` reads and writes through: the Rust store
+/// (crates/store, through crates/ffi; ``RustSettings``), or a test's
+/// stand-in. By preferences key, as the settings' getters and setters go: a
+/// value read is what is stored if it is of the setting's type, else the
+/// setting's default (an enum-backed one's raw string, which its getter
+/// checks); a value written is the setter's — and the notification
+/// service's mirror follows its two switches.
 protocol AppSettingsBacking: AnyObject {
     /// `Bool`, `Int`, `Double`, `String` or `[String]`; nil for a key that
     /// is no setting's.
@@ -513,4 +476,10 @@ protocol AppSettingsBacking: AnyObject {
     func set(_ value: Any, forKey key: String)
     /// Mirror the switches once the preferences can be trusted.
     func reloadIfNeeded()
+}
+
+extension Notification.Name {
+    /// Settings' predictive echo or its trail changed (B533): a live mosh
+    /// session takes it at once, not at its next connect.
+    static let moshpitPredictionChanged = Notification.Name("moshpit.predictionChanged")
 }

@@ -968,6 +968,63 @@ fn a_return_held_behind_a_paste_goes_apart_from_it() {
     assert_eq!(rig.typed("w1:p1"), "");
 }
 
+/// B527: the pane's attach ends and comes back (herdr re-attaching the same
+/// pane) within a paste's wait: what waited behind the paste waits for the
+/// pane's new attach and goes then, still behind the paste. It was dropped
+/// and said dropped: the image panel's Send, its Return lost.
+#[test]
+fn a_return_behind_a_paste_survives_its_panes_reattach() {
+    let mut rig = attached();
+    // The next attach takes a while to paint.
+    rig.frames.attach_ms = 600;
+    rig.client.paste("w1:p1", " /tmp/a.jpg ", rig.now);
+    rig.pump();
+    rig.type_bytes("w1:p1", b"\r");
+    rig.run(50);
+    assert_eq!(
+        rig.typed("w1:p1"),
+        "\u{1b}[200~ /tmp/a.jpg \u{1b}[201~",
+        "the paste is in, the Return waits"
+    );
+    rig.host_attach_ends("herdr: server shut down: server is shutting down");
+    rig.run(3_000);
+    assert!(
+        rig.typed("w1:p1").ends_with("\u{1b}[201~\r"),
+        "{:?}",
+        rig.typed("w1:p1")
+    );
+    assert!(
+        !rig.events()
+            .iter()
+            .any(|e| matches!(e, Event::InputDropped { .. })),
+        "nothing dropped"
+    );
+}
+
+/// B527, the other way: the attach that comes back is another pane's (the
+/// desktop's focus moved meanwhile): what waited behind the paste goes to
+/// no other pane, and its loss is said.
+#[test]
+fn a_return_behind_a_paste_goes_to_no_other_pane() {
+    let mut rig = attached();
+    rig.client.paste("w1:p1", " /tmp/a.jpg ", rig.now);
+    rig.pump();
+    rig.type_bytes("w1:p1", b"\r");
+    rig.run(50);
+    rig.host.focused = Some("w1:p2".to_owned());
+    rig.host_attach_ends("herdr: server shut down: server is shutting down");
+    rig.run(3_000);
+    assert_eq!(rig.client.attached_pane(), Some("w1:p2"));
+    assert_eq!(rig.typed("w1:p1"), "\u{1b}[200~ /tmp/a.jpg \u{1b}[201~");
+    assert_eq!(rig.typed("w1:p2"), "", "nothing into another pane");
+    assert!(
+        rig.events()
+            .iter()
+            .any(|e| matches!(e, Event::InputDropped { .. })),
+        "said"
+    );
+}
+
 #[test]
 fn an_unanswered_release_still_switches_but_typing_waits_for_the_paint() {
     let mut rig = attached();

@@ -6,9 +6,8 @@ import Testing
 /// selection (`moshpit.tmux.lastSelection.<id>`) and its host's capabilities
 /// (`hostcaps.<id>`) — stayed in UserDefaults after the connection was
 /// deleted, for good (an iPad had about 250 such keys). A delete takes them
-/// now, on the Swift store and on the Rust one (`MOSHPIT_RUST_STORE`, which
-/// the Canary build runs), and what earlier deletes left is swept once per
-/// launch — only when the saved connections can be told.
+/// now (the Rust store, crates/store), and what earlier deletes left is
+/// swept once per launch — only when the saved connections can be told.
 @Suite("Session memory goes with its connection (B199)")
 @MainActor
 struct SessionMemoryTests {

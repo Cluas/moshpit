@@ -229,6 +229,10 @@ protocol TerminalSurface: AnyObject {
 protocol TerminalSurfaceDelegate: AnyObject {
     /// Keys, a paste, the terminal's replies: in order, one call each.
     func surface(_ surface: TerminalSurface, send data: Data)
+    /// What the person typed (a key, a character, an input method's
+    /// commit), apart from what the terminal sends of its own (B570: the
+    /// bar's sticky Ctrl takes typing only).
+    func surface(_ surface: TerminalSurface, typed data: Data)
     /// The grid changed (not reported for the grid the surface was born at).
     func surface(_ surface: TerminalSurface, sizeChanged cols: Int, rows: Int)
     func surface(_ surface: TerminalSurface, titleChanged title: String)
@@ -261,6 +265,10 @@ protocol TerminalSurfaceDelegate: AnyObject {
     /// A horizontal swipe switches panes or windows.
     var surfaceCanSwitch: Bool { get }
     func surface(_ surface: TerminalSurface, switchForward forward: Bool)
+    /// The sideways drag is the host's to move as it goes
+    /// (``TerminalSwipe``), not a switch on the lift.
+    var surfaceTracksSwipe: Bool { get }
+    func surface(_ surface: TerminalSurface, swipe: TerminalSwipe)
     /// A pinch ended at this font size.
     func surface(_ surface: TerminalSurface, fontSizeCommitted size: Double)
     /// What lies outside the grid changed (``TerminalSurface/groundColor``,
@@ -271,6 +279,7 @@ protocol TerminalSurfaceDelegate: AnyObject {
 /// The quiet defaults: a test's sink (or any owner) implements what it
 /// cares about.
 extension TerminalSurfaceDelegate {
+    func surface(_ surface: TerminalSurface, typed data: Data) { self.surface(surface, send: data) }
     func surfaceGroundChanged(_ surface: TerminalSurface) {}
     func surface(_ surface: TerminalSurface, sizeChanged cols: Int, rows: Int) {}
     func surface(_ surface: TerminalSurface, titleChanged title: String) {}
@@ -290,7 +299,22 @@ extension TerminalSurfaceDelegate {
     var surfaceScrollsElsewhere: Bool { false }
     var surfaceCanSwitch: Bool { false }
     func surface(_ surface: TerminalSurface, switchForward forward: Bool) {}
+    var surfaceTracksSwipe: Bool { false }
+    func surface(_ surface: TerminalSurface, swipe: TerminalSwipe) {}
     func surface(_ surface: TerminalSurface, fontSizeCommitted size: Double) {}
+}
+
+/// A sideways drag on the terminal, as its host moves it (the NSH stage:
+/// the terminal follows the finger and uncovers the pane it would go to).
+/// Distances are points along the x axis from where the drag started.
+enum TerminalSwipe: Equatable {
+    /// The drag locked sideways.
+    case began
+    case moved(CGFloat)
+    /// The finger lifted, moving at `velocity` points a second.
+    case ended(CGFloat, velocity: CGFloat)
+    /// The system took the touch.
+    case cancelled
 }
 
 /// Makes terminals: born at a grid (what the remote is told before the

@@ -23,13 +23,6 @@ struct TerminalFontTests {
         let f = TerminalFont.font(id: "NoSuchFont-XYZ", size: 12)
         #expect(f.pointSize == 12)   // resolved to a valid font, not a crash
     }
-
-    @Test("label lookup maps ids to display names with a safe default")
-    func labels() {
-        #expect(TerminalFont.label(for: "system") == "SF Mono")
-        #expect(TerminalFont.label(for: "Menlo") == "Menlo")
-        #expect(TerminalFont.label(for: "garbage") == "SF Mono")
-    }
 }
 
 @Suite("UDPPortRange validation")

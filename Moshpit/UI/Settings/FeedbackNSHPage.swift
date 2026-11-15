@@ -3,32 +3,12 @@ import MoshpitKit
 import SwiftUI
 import UIKit
 
-/// Settings › Send Feedback: the SwiftUI page (``FeedbackView``), or the NSH
-/// one while its switch is on (``NSHScreen/feedback``). With the switch off
-/// the SwiftUI page is all there is: no NSH code runs.
-struct FeedbackPage: View {
-    var body: some View {
-        if Self.showsNSH {
-            FeedbackNSHPage()
-        } else {
-            FeedbackView()
-        }
-    }
-
-    private static var showsNSH: Bool {
-        #if DEBUG
-        if CaptureScreen.requested == .feedbackNSH { return NSHSurface.available }
-        #endif
-        return NSHScreen.feedback.isOn
-    }
-}
-
 /// Settings › Send Feedback drawn by NSH (`ui/src/feedback.rs`) in the sheet's
 /// own stack. The text is typed on the NSH page and kept by the host
 /// (``FeedbackModel``) with the two switches; sending stays the host's, as
 /// it touches the system: the mail is assembled as the SwiftUI page does and
 /// handed to the Mail compose sheet, else a `mailto:` handler, else the
-/// address is shown to copy. If NSH cannot run here, the SwiftUI page shows.
+/// address is shown to copy. If its screen can't run, the page says so.
 struct FeedbackNSHPage: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
@@ -39,7 +19,7 @@ struct FeedbackNSHPage: View {
 
     var body: some View {
         if failed {
-            FeedbackView()
+            NSHSheetFailed { failed = false }
         } else {
             NavigationStack {
                 NSHPage(
@@ -149,7 +129,7 @@ final class FeedbackModel {
                 message: message,
                 environment: includeEnvironment ? .current() : nil,
                 log: log,
-                version: FeedbackView.versionNumber)
+                version: FeedbackMail.versionNumber)
             isPreparing = false
             if canSendMail() {
                 compose(mail)

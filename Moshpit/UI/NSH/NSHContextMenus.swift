@@ -27,6 +27,15 @@ final class NSHContextMenus: NSObject, UIContextMenuInteractionDelegate {
     /// at shows over it).
     var surfaceView: UIView? { surface }
 
+    /// A screen's message naming the row it came from (`"row"`: a swipe
+    /// tray's action, B499) makes that row the one a confirmation the
+    /// message asks points at, as a menu opened on it would.
+    func anchor(to message: [String: Any]) {
+        guard let id = message["row"] as? String, let surface,
+              let view = AccentRowMenus.view(identified: id, in: surface) else { return }
+        openedPart = view
+    }
+
     /// Puts the menus on `surface` (again: a new surface replaces the old).
     func install(on surface: UIView) {
         if let interaction { interaction.view?.removeInteraction(interaction) }

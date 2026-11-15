@@ -11,14 +11,18 @@ import UIKit
 /// and which gives a page made again what was last told. What the rows ask
 /// is Home's own intents (``HomeIntent``), run as Home runs them
 /// (``HomeTreeActions``), and the rows carry Home's identifiers, so Home's
-/// long-press menus (``HomeNSHMenus``) are theirs. There is no SwiftUI page
-/// behind it: if NSH can't run here, the page goes back.
+/// long-press menus (``HomeNSHMenus``) are theirs. If NSH can't run here,
+/// the page says so (``NSHPageFailed``).
 struct SessionsNSHPage: View {
     let connectionId: UUID
     let store: ConnectionStore
     let hub: SessionHub
     let model: HomeNSHModel
     let actions: HomeNSHActions
+    /// What its back does where there is nothing to pop: the iPad's detail
+    /// column, which Home empties (B554: `dismiss()` did nothing there, and
+    /// the page's own bar hides the system's). nil: `dismiss()`.
+    var onLeave: (() -> Void)?
 
     @Environment(\.dismiss) private var dismiss
     @Environment(AgentActivityMonitor.self) private var monitor
@@ -28,14 +32,31 @@ struct SessionsNSHPage: View {
     @State private var worktreeForceTarget: ConnectionCard.WorktreeTarget?
     @State private var agentTask: HomeAgentTaskTarget?
     @State private var menus = NSHContextMenus()
+    @State private var failed = false
 
     var body: some View {
+        if failed {
+            // Under the system's bar: its back button (or, on the iPad, the
+            // sidebar's) leaves.
+            NSHPageFailed { failed = false }
+        } else {
+            content(record: record)
+        }
+    }
+
+    /// This host's card as Home's record has it.
+    private var record: HomeRecord {
         // This host only: the record is a pure reading of the registry, so
         // a record of one card is that card as Home's has it.
-        let record = HomeRecord.now(
+        HomeRecord.now(
             core: .shared, connections: store.connections.filter { $0.id == connectionId },
             session: { hub.session(for: $0)?.rust?.id },
             agents: monitor.machine, disconnecting: [], sidebar: false)
+    }
+
+    /// The page, drawn by NSH.
+    @ViewBuilder
+    private func content(record: HomeRecord) -> some View {
         let rows = tree.rows(of: record)
         NSHPage(
             screen: .sessions,
@@ -46,13 +67,15 @@ struct SessionsNSHPage: View {
             },
             onMessage: { message in
                 if message["ev"] as? String == "back" {
-                    dismiss()
+                    if let onLeave { onLeave() } else { dismiss() }
                     return
                 }
                 guard let intent = model.handle(message) else { return }
+                // A tray's action: its confirmation hangs from its row (B499).
+                menus.anchor(to: message)
                 perform(intent)
             },
-            onFailure: { dismiss() })
+            onFailure: { failed = true })
             .nshPage()
             // The title the terminal's back button shows.
             .navigationTitle(store.connections.first { $0.id == connectionId }?.displayName ?? "")

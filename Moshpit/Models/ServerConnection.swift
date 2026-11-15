@@ -113,8 +113,8 @@ struct ServerConnection: Identifiable, Codable, Equatable {
     // forwardAgent, keepAliveInterval, jumpHost, useTailscale, tmuxAutoAttach
     // and tmuxCreateNew (and compression). Nothing ever read them, so they
     // are gone; lists that still carry them decode fine, since unknown keys
-    // are ignored, and ConnectionStore keeps writing the non-optional ones
-    // for builds that still require them (`rollbackFields`).
+    // are ignored, and the store keeps writing the non-optional ones for
+    // builds that still require them (crates/store's `rollback_fields`).
 
     /// Enable tmux integration.
     ///
@@ -129,7 +129,8 @@ struct ServerConnection: Identifiable, Codable, Equatable {
     /// Mosh predictive-echo mode ("adaptive" default). Stored raw so the
     /// struct stays Codable-stable.
     var predictModeRaw: String?
-    /// Reconnect over 5G/LTE when Wi-Fi drops (prototype "Roam on Cellular").
+    /// Kept as stored, read by nothing (B530): its switch ("Roam on
+    /// Cellular") is gone; the key stays so an older build reads it.
     var roamOnCellular: Bool?
     /// Custom tmux binary path on the remote host.
     var tmuxPath: String?
@@ -173,6 +174,18 @@ struct ServerConnection: Identifiable, Codable, Equatable {
     var predictMode: PredictMode {
         get { predictModeRaw.flatMap(PredictMode.init(rawValue:)) ?? .adaptive }
         set { predictModeRaw = newValue.rawValue }
+    }
+
+    /// The connection's own predictive echo; nil: as Settings says (B531,
+    /// the store's `ServerConnection::predict`). "adaptive" has always meant
+    /// that, as no value and one this build doesn't know do; a connection
+    /// pinning Adaptive itself is "pinnedAdaptive".
+    var predictOverride: PredictMode? {
+        switch predictModeRaw {
+        case nil, "adaptive"?: nil
+        case "pinnedAdaptive"?: .adaptive
+        case let raw?: PredictMode(rawValue: raw)
+        }
     }
 
     /// Which multiplexer to drive. Migration: stored JSON written before the

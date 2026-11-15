@@ -17,23 +17,16 @@
 //! unchanged, with a `swiftc` first on its PATH that typechecks instead of
 //! compiling (a call that emits a module another one imports emits the
 //! module alone): the cuts, the checks and the file lists are the build's,
-//! without its time or the Rust library. Three are built otherwise:
+//! without its time or the Rust library. One is built otherwise: the UniFFI
+//! smoke test generates its bindings from a built library, so its Swift is
+//! typechecked over the app's generated bindings, which
+//! `scripts/rust/gen-bindings.sh --check` keeps the same. (The tmux
+//! controller's SwiftPM package went with the Swift controller, E3.)
 //!
-//! - the tmux controller is a SwiftPM package of its own sources only:
-//!   generated as its build generates it, its two targets are typechecked
-//!   as the two modules they are;
-//! - the UniFFI smoke test generates its bindings from a built library; its
-//!   Swift is typechecked over the app's generated bindings, which
-//!   `scripts/rust/gen-bindings.sh --check` keeps the same;
-//! - the ssh rigs are SwiftPM packages over the very packages the app pins
-//!   (swift-nio, swift-crypto, Citadel), copied from an Xcode checkout of the
-//!   app: their scripts' `--typecheck` has SwiftPM prepare the packages'
-//!   modules without their code and typecheck the rig's own target in full.
-//!   The packages take minutes the first time and seconds after, so the
-//!   rigs work in one place every worktree on this Mac shares (the user's
-//!   cache directory, or `$MOSHPIT_SWIFT_RIG_CACHE`), one run at a time per
-//!   rig. Without the pinned checkouts (no Xcode build of the app at these
-//!   pins on this Mac yet) they say they skipped.
+//! The ssh rigs went with the Swift SSH transport (E4-SSH): scripts/verify/
+//! ssh-live is gone, and crates/ssh/harness reads every Swift file and
+//! package pin as of 2e75a2e5, so nothing the app changes can stop it
+//! building.
 //!
 //! All of them run at once, a few at a time. Where there is no Xcode (not
 //! macOS, or a Mac without it), the test says it skipped: the typechecking
@@ -50,104 +43,48 @@ use std::sync::Mutex;
 use std::time::Instant;
 
 /// A harness: its name, the shell commands that typecheck it (run from the
-/// repo with `$OUT` an empty directory of its own and `$RIGS` the shared
-/// one), how, and the commits its cut reads the app's Swift from (`git show`
-/// or `git archive` in its build script, which names them).
+/// repo with `$OUT` an empty directory of its own, its swiftc calls
+/// typechecked by the `swiftc` first on PATH), and the commits its cut reads
+/// the app's Swift from (`git show` or `git archive` in its build script,
+/// which names them).
 struct Harness {
     name: &'static str,
     build: &'static str,
-    how: How,
     pins: &'static [&'static str],
-}
-
-#[derive(Clone, Copy, PartialEq)]
-enum How {
-    /// Its swiftc calls typechecked by the `swiftc` first on PATH.
-    Swiftc,
-    /// A SwiftPM package of the pinned packages, prepared in `$RIGS`.
-    Pinned,
 }
 
 /// In the order they start: the slowest first.
 const HARNESSES: &[Harness] = &[
     Harness {
-        name: "ssh-live (scripts/verify/ssh-live)",
-        build: r#"lockf -k "$RIGS/ssh-live.lock" env MOSHPIT_SSH_LIVE_WORK="$RIGS/ssh-live" \
-    scripts/verify/ssh-live/build.sh --typecheck"#,
-        how: How::Pinned,
-        pins: &[],
-    },
-    Harness {
         name: "store (crates/store/harness)",
         build: r#"crates/store/harness/build-swift.sh "$OUT""#,
-        how: How::Swiftc,
         pins: &["8c10490a"],
-    },
-    Harness {
-        name: "ssh (crates/ssh/harness)",
-        build: r#"lockf -k "$RIGS/ssh-harness.lock" env MOSHPIT_SSH_HARNESS_WORK="$RIGS/ssh-harness" \
-    crates/ssh/harness/build-swift.sh --typecheck"#,
-        how: How::Pinned,
-        pins: &["81c121a1"],
     },
     Harness {
         name: "host care (crates/hostcare/harness)",
         build: r#"crates/hostcare/harness/build-swift.sh "$OUT/care-swift""#,
-        how: How::Swiftc,
         pins: &["81c121a1"],
-    },
-    Harness {
-        name: "tmux controller (crates/tmux/harness/controller)",
-        build: r#"python3 crates/tmux/harness/controller/generate.py "$OUT/pkg" &&
-swiftc -swift-version 5 -parse-as-library -module-name MoshpitKit \
-    -emit-module -emit-module-path "$OUT/kit/MoshpitKit.swiftmodule" "$OUT"/pkg/Sources/MoshpitKit/*.swift &&
-find "$OUT/pkg/Sources/Controller" -name '*.swift' -print0 |
-    xargs -0 swiftc -swift-version 5 -parse-as-library -module-name controller_swift -I "$OUT/kit""#,
-        how: How::Swiftc,
-        pins: &[],
     },
     Harness {
         name: "UniFFI smoke (crates/ffi/harness)",
         build: r#"swiftc -swift-version 5 -parse-as-library -I crates/ffi/include \
     Moshpit/Services/Rust/Generated/moshpit_ffi.swift crates/ffi/harness/smoke/main.swift"#,
-        how: How::Swiftc,
         pins: &[],
     },
     Harness {
         name: "install (crates/install/harness)",
         build: r#"crates/install/harness/build-swift.sh "$OUT/install-swift""#,
-        how: How::Swiftc,
         pins: &["81c121a1"],
     },
     Harness {
         name: "seal (crates/seal/harness)",
         build: r#"crates/seal/harness/build-swift.sh "$OUT/seal-swift""#,
-        how: How::Swiftc,
-        pins: &[],
-    },
-    Harness {
-        name: "mosh (crates/mosh/harness)",
-        build: r#"crates/mosh/harness/build-swift.sh "$OUT/mosh-swift""#,
-        how: How::Swiftc,
-        pins: &[],
-    },
-    Harness {
-        name: "mosh-live (scripts/verify/mosh-live)",
-        build: r#"MOSHPIT_MOSH_LIVE_WORK="$OUT" scripts/verify/mosh-live/build.sh"#,
-        how: How::Swiftc,
-        pins: &["cf25626b"],
+        pins: &["da2146f1"],
     },
     Harness {
         name: "Home (crates/app/harness/home)",
         build: r#"crates/app/harness/home/build-swift.sh "$OUT/home-swift""#,
-        how: How::Swiftc,
         pins: &["95f649ab"],
-    },
-    Harness {
-        name: "tmux control mode (crates/tmux/harness)",
-        build: r#"crates/tmux/harness/build-swift.sh "$OUT/cc-events-swift""#,
-        how: How::Swiftc,
-        pins: &[],
     },
     Harness {
         // verify-app-language.sh's build, its one-line stub written the same.
@@ -155,7 +92,6 @@ find "$OUT/pkg/Sources/Controller" -name '*.swift' -print0 |
         build: r#"printf 'public enum PushPrefs { public static let suite = "typecheck" }\n' > "$OUT/stub.swift" &&
 swiftc -O -o "$OUT/check" Packages/MoshpitKit/Sources/MoshpitKit/AppLanguage.swift "$OUT/stub.swift" \
     scripts/verify/app-language/main.swift"#,
-        how: How::Swiftc,
         pins: &[],
     },
 ];
@@ -222,22 +158,6 @@ fn has_commit(rev: &str) -> bool {
     succeeds("git", &["-C", repo, "cat-file", "-e", rev])
 }
 
-/// Where the ssh rigs work, shared by every worktree on this Mac.
-fn rig_cache() -> PathBuf {
-    if let Some(dir) = std::env::var_os("MOSHPIT_SWIFT_RIG_CACHE") {
-        return PathBuf::from(dir);
-    }
-    let cache = Command::new("getconf")
-        .arg("DARWIN_USER_CACHE_DIR")
-        .output()
-        .ok()
-        .filter(|out| out.status.success())
-        .map(|out| String::from_utf8_lossy(&out.stdout).trim().to_owned())
-        .filter(|dir| !dir.is_empty())
-        .map_or_else(std::env::temp_dir, PathBuf::from);
-    cache.join("moshpit-ssh-rigs")
-}
-
 /// The lines of a failed build worth showing.
 fn why(text: &str) -> String {
     let mut lines: Vec<&str> = text
@@ -254,7 +174,7 @@ fn why(text: &str) -> String {
     lines.join("\n")
 }
 
-fn typecheck(harness: &Harness, out_dir: &Path, rigs: &Path, shim_path: &str) -> Outcome {
+fn typecheck(harness: &Harness, out_dir: &Path, shim_path: &str) -> Outcome {
     if let Some(rev) = harness.pins.iter().copied().find(|rev| !has_commit(rev)) {
         return Outcome::Skipped(format!(
             "its cut reads the app's Swift as of {rev}, which this clone doesn't have"
@@ -262,16 +182,11 @@ fn typecheck(harness: &Harness, out_dir: &Path, rigs: &Path, shim_path: &str) ->
     }
     std::fs::create_dir_all(out_dir).expect("its output directory");
     let log = out_dir.with_extension("calls");
-    let path = match harness.how {
-        How::Swiftc => shim_path.to_owned(),
-        How::Pinned => std::env::var("PATH").unwrap_or_default(),
-    };
     let out = Command::new("bash")
         .args(["-o", "pipefail", "-c", harness.build])
         .current_dir(repo())
-        .env("PATH", path)
+        .env("PATH", shim_path)
         .env("OUT", out_dir)
-        .env("RIGS", rigs)
         .env("TYPECHECK_LOG", &log)
         .output()
         .expect("bash runs");
@@ -280,18 +195,6 @@ fn typecheck(harness: &Harness, out_dir: &Path, rigs: &Path, shim_path: &str) ->
         String::from_utf8_lossy(&out.stdout),
         String::from_utf8_lossy(&out.stderr)
     );
-    if harness.how == How::Pinned {
-        if let Some(line) = text.lines().find(|line| line.starts_with("no checkout of")) {
-            return Outcome::Skipped(line.to_owned());
-        }
-        return if out.status.success() && text.contains("Build complete!") {
-            Outcome::Built
-        } else if out.status.success() {
-            Outcome::Failed(format!("SwiftPM said nothing of a build:\n{}", why(&text)))
-        } else {
-            Outcome::Failed(why(&text))
-        };
-    }
     let calls = std::fs::read_to_string(&log).unwrap_or_default();
     let typechecked = calls
         .lines()
@@ -327,9 +230,6 @@ fn every_swift_harness_typechecks_against_the_apps_sources() {
         bin.display(),
         std::env::var("PATH").unwrap_or_default()
     );
-    let rigs = rig_cache();
-    std::fs::create_dir_all(&rigs).expect("the ssh rigs' directory");
-
     let started = Instant::now();
     let queue = Mutex::new(HARNESSES.iter().enumerate().collect::<VecDeque<_>>());
     let results = Mutex::new(Vec::new());
@@ -345,8 +245,7 @@ fn every_swift_harness_typechecks_against_the_apps_sources() {
                     let next = queue.lock().unwrap().pop_front();
                     let Some((index, harness)) = next else { break };
                     let began = Instant::now();
-                    let outcome =
-                        typecheck(harness, &root.join(index.to_string()), &rigs, &shim_path);
+                    let outcome = typecheck(harness, &root.join(index.to_string()), &shim_path);
                     eprintln!(
                         "{:>6.1}s  {}  {}",
                         began.elapsed().as_secs_f64(),

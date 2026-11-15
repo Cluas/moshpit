@@ -255,3 +255,18 @@ fn host_message_echo_ack() {
     bare.field_bytes(1, output.bytes());
     assert_eq!(HostMessage::decode(bare.bytes()).unwrap().echo_ack, None);
 }
+
+/// Fix (fragment-count): one byte a fragment, the 65,536th piece no longer
+/// overflows the counter (it trapped the Swift client); the number wraps in
+/// 15 bits and only the last is final. Pinned by MoshWireTests until the
+/// Swift client went (E2).
+#[test]
+fn fragmenting_past_the_counter_does_not_trap() {
+    let fragments = fragment(&vec![0u8; 65_536], 1, 11);
+    assert_eq!(fragments.len(), 65_536);
+    assert!(fragments.last().is_some_and(|f| f.is_final));
+    assert_eq!(fragments.iter().filter(|f| f.is_final).count(), 1);
+    assert_eq!(fragments[32_767].num, 0x7FFF);
+    assert_eq!(fragments[32_768].num, 0);
+    assert_eq!(fragments.last().map(|f| f.num), Some(0x7FFF));
+}

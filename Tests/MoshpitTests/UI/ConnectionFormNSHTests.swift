@@ -3,8 +3,8 @@ import Testing
 import UIKit
 @testable import Moshpit
 
-/// Add Connection / Edit Connection in NSH, the host's side: its switch, the
-/// draft the host posts (every one a message the Rust screen takes), the
+/// Add Connection / Edit Connection in NSH, the host's side: the draft the
+/// host posts (every one a message the Rust screen takes), the
 /// edits the screen tells and the intents reaching the shared model, the
 /// secrets kept in the host, the draft read from and written back to a
 /// saved connection through the records, and a real surface on the device
@@ -158,7 +158,6 @@ struct ConnectionFormNSHTests {
             #expect(model.handle(["ev": "set", "key": key, "value": value]) == nil)
         }
         #expect(model.handle(["ev": "set", "key": "mosh", "value": true]) == nil)
-        #expect(model.handle(["ev": "set", "key": "roamOnCellular", "value": false]) == nil)
         #expect(model.handle(["ev": "set", "key": "socks", "value": true]) == nil)
         #expect(model.handle(["ev": "set", "key": "auth", "value": "key"]) == nil)
         #expect(model.handle(["ev": "set", "key": "predictMode", "value": "always"]) == nil)
@@ -168,8 +167,8 @@ struct ConnectionFormNSHTests {
         #expect(d.moshServerPath == "/usr/bin/mosh-server")
         #expect(d.socksProxyHost == "127.0.0.1" && d.socksProxyPort == "9050")
         #expect(d.tmuxPath == "/usr/bin/tmux" && d.herdrPath == "/usr/bin/herdr")
-        #expect(d.useMosh && !d.roamOnCellular && d.useSocksProxy)
-        #expect(d.authMethod == .key && d.predictMode == .always && d.multiplexer == Multiplexer.none)
+        #expect(d.useMosh && d.useSocksProxy)
+        #expect(d.auth == .key && d.predictModeRaw == "always" && d.multiplexerRaw == "none")
         #expect(!d.canSave(keys: [], secrets: model.secrets), "a key connection with no key")
 
         // What it does not know changes nothing.
@@ -200,13 +199,9 @@ struct ConnectionFormNSHTests {
         #expect(!draft.canSave(keys: [], secrets: ConnectionSecrets()), "no password, which nothing asks for later")
         #expect(draft.canSave(keys: [], secrets: ConnectionSecrets(password: " ")))
         draft.port = "70000"
-        #expect(draft.portIsWrong && !draft.canSave(keys: [], secrets: ConnectionSecrets(password: "p")))
+        #expect(!draft.canSave(keys: [], secrets: ConnectionSecrets(password: "p")), "70000 is no port")
         draft.port = ""
-        draft.useSocksProxy = true
-        draft.socksProxyPort = "x"
-        #expect(draft.proxyPortIsWrong)
-        draft.useSocksProxy = false
-        draft.authMethod = .key
+        draft.auth = .key
         #expect(!draft.canSave(keys: [key], secrets: ConnectionSecrets(privateKeyPEM: " \n\t")),
                 "white space saved as a key")
         draft.selectedKeyId = key.id
@@ -216,7 +211,7 @@ struct ConnectionFormNSHTests {
         var pasted = ServerConnection()
         pasted.authMethod = .key
         pasted.keychainRef = "moshpit.secret.own"
-        #expect(ConnectionDraft(pasted).stored == .pastedKey && ConnectionDraft(pasted).keepsStoredKey)
+        #expect(ConnectionDraft(pasted).stored == .pastedKey)
         let message = ConnectionFormModel(draft: ConnectionDraft(pasted)).message(settings: .shared, keys: [])
         #expect(NSHSurface.check(screen: NSHScreen.connectionForm.name, message: message), "\(message)")
         let secrets = message["secrets"] as? [String: Bool]
@@ -228,7 +223,7 @@ struct ConnectionFormNSHTests {
         let settings = AppSettings.shared
         let saved = Self.connection()
         let draft = ConnectionDraft(saved)
-        #expect(draft.port == "2222" && draft.useMosh && draft.multiplexer == .herdr)
+        #expect(draft.port == "2222" && draft.useMosh && draft.multiplexerRaw == "herdr")
         #expect(draft.moshServerPath.isEmpty, "no path: mosh-server on PATH")
         let written = draft.applied(to: saved, settings: settings)
         #expect(written.id == saved.id)
@@ -360,7 +355,7 @@ struct ConnectionFormNSHTests {
             as? UISegmentedControl)
         auth.selectedSegmentIndex = 1
         auth.sendActions(for: .valueChanged)
-        await Self.settle { model.draft.authMethod == .key }
+        await Self.settle { model.draft.auth == .key }
         let editor = try #require(await SettingsNSHTests.view(identified: "private-key-editor", in: surface)
             as? UITextView)
         for (index, character) in pem.enumerated() {
@@ -376,7 +371,7 @@ struct ConnectionFormNSHTests {
         // Back to the password: its new field starts from what was typed.
         auth.selectedSegmentIndex = 0
         auth.sendActions(for: .valueChanged)
-        await Self.settle { model.draft.authMethod == .password }
+        await Self.settle { model.draft.auth == .password }
         let again = try #require(await SettingsNSHTests.view(identified: "connection-form-password", in: surface)
             as? UITextField)
         #expect(again.text == password)

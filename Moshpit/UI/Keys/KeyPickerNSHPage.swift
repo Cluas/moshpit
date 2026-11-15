@@ -3,9 +3,9 @@ import SwiftUI
 /// Add Connection › Select Key drawn by NSH (`ui/src/key_picker.rs`) in the
 /// sheet's own stack: the saved keys, the one picked and why a key can't be
 /// used come from the host (``KeyPickerModel``); a pick sets the connection's
-/// key and closes the sheet, + (or the empty group's Generate) opens Add Key
-/// (the one its own switch picks), whose new key is picked. If NSH cannot
-/// run here, the SwiftUI page shows.
+/// key and closes the sheet, + (or the empty group's Generate) opens Add Key,
+/// whose new key is picked. If its screen can't run, the page says so
+/// (``NSHPageFailed``).
 struct KeyPickerNSHPage: View {
     let keys: [SSHKeyRecord]
     @Binding var selectedKeyId: UUID?
@@ -17,7 +17,7 @@ struct KeyPickerNSHPage: View {
 
     var body: some View {
         if failed {
-            KeyPickerView(keys: keys, selectedKeyId: $selectedKeyId)
+            NSHSheetFailed { failed = false }
         } else {
             let snapshot = KeyPickerSnapshot(keys: keys, selected: selectedKeyId)
             NavigationStack {
@@ -32,7 +32,7 @@ struct KeyPickerNSHPage: View {
                     .onChange(of: snapshot) { _, new in model.update(new) }
             }
             .appSheet(isPresented: $showAddKey) {
-                AddKeyPage(onCreated: { record in
+                AddKeyNSHPage(onCreated: { record in
                     selectedKeyId = record.id
                     showAddKey = false
                     dismiss()

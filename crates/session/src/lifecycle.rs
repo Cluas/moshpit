@@ -175,6 +175,9 @@ enum ProbePurpose {
     /// The network changed under it (B446): any doubt reconnects, as on a
     /// return, but input doesn't wait for the answer.
     Path,
+    /// A delivery asked for in the background (B524): any doubt reconnects,
+    /// and deliveries wait for the answer.
+    Delivery,
 }
 
 /// See the module documentation.
@@ -461,9 +464,11 @@ impl Lifecycle {
                 self.probe_timeouts = 0;
                 self.last_inbound = Some(now);
             }
-            // Coming back, with the person watching, or onto another path:
-            // any doubt reconnects.
-            (ProbePurpose::Resume | ProbePurpose::Path, _) => self.reconnect(now),
+            // Coming back, with the person watching, onto another path, or
+            // for a delivery: any doubt reconnects.
+            (ProbePurpose::Resume | ProbePurpose::Path | ProbePurpose::Delivery, _) => {
+                self.reconnect(now)
+            }
             (ProbePurpose::Keepalive, Probe::Failed) => {
                 self.probe_timeouts = 0;
                 self.reconnect(now);
@@ -476,6 +481,31 @@ impl Lifecycle {
                 }
             }
         }
+    }
+
+    /// A delivery is asked for in the background (a notification's Allow,
+    /// Deny or reply, the Live Activity's buttons): a live SSH transport not
+    /// heard from lately is asked first, one round trip within the return's
+    /// deadline (B524). iOS may have killed its socket while the app was
+    /// suspended, and in the background nothing else asks it: the delivery
+    /// was written into the dead socket and said sent. Any doubt reconnects;
+    /// deliveries wait for the answer ([`Lifecycle::delivery_check_pending`]).
+    pub fn check_for_delivery(&mut self, now: u64) {
+        if self.foreground || self.live() != Some(Transport::Ssh) || self.probe.is_some() {
+            return;
+        }
+        if self
+            .last_inbound
+            .is_some_and(|at| now.saturating_sub(at) < ms(self.timing.inbound_proof))
+        {
+            return;
+        }
+        self.start_probe(ProbePurpose::Delivery, self.timing.foreground_probe_timeout);
+    }
+
+    /// A delivery's question is out: deliveries wait for its answer.
+    pub fn delivery_check_pending(&self) -> bool {
+        matches!(self.probe, Some((ProbePurpose::Delivery, _)))
     }
 
     // MARK: The app
@@ -1161,6 +1191,94 @@ mod tests {
         assert!(actions.contains(&Action::State(SessionState::Ended(
             EndReason::MoshServerEnded
         ))));
+    }
+
+    /// B524: a delivery asked for in the background asks a live SSH
+    /// transport not heard from lately first, within the return's 4 s;
+    /// deliveries wait for the answer; any doubt reconnects. Not in the
+    /// foreground, not with bytes just in, not over mosh (its delivery
+    /// waits for the server's ack anyway).
+    #[test]
+    fn a_delivery_in_the_background_asks_the_transport_first() {
+        let mut life = ssh_life();
+        let generation = live(&mut life, Transport::Ssh, T0);
+        life.check_for_delivery(T0 + 20 * S);
+        assert!(!life.delivery_check_pending(), "the foreground");
+        life.background(T0 + 20 * S);
+        let _ = drain(&mut life);
+        life.inbound(T0 + 25 * S);
+        life.check_for_delivery(T0 + 30 * S);
+        assert!(!life.delivery_check_pending(), "bytes just in");
+        life.check_for_delivery(T0 + 60 * S);
+        assert!(life.delivery_check_pending());
+        let probe = match drain(&mut life).as_slice() {
+            [Action::Probe { probe, timeout, .. }] => {
+                assert_eq!(*timeout, Duration::from_secs(4));
+                *probe
+            }
+            other => panic!("{other:?}"),
+        };
+        life.probe_answered(generation, probe, Probe::TimedOut, T0 + 64 * S);
+        assert!(!life.delivery_check_pending());
+        let after = drain(&mut life);
+        assert!(
+            after.contains(&Action::Teardown {
+                generation,
+                why: Teardown::Reconnect
+            }),
+            "{after:?}"
+        );
+
+        // Alive: the transport stays.
+        let mut life = ssh_life();
+        let generation = live(&mut life, Transport::Ssh, T0);
+        life.background(T0 + S);
+        life.check_for_delivery(T0 + 60 * S);
+        let probe = match drain(&mut life).last() {
+            Some(Action::Probe { probe, .. }) => *probe,
+            other => panic!("{other:?}"),
+        };
+        life.probe_answered(generation, probe, Probe::Alive, T0 + 61 * S);
+        assert!(!life.delivery_check_pending());
+        assert_eq!(drain(&mut life), vec![]);
+        assert_eq!(life.state(), SessionState::Connected);
+
+        // mosh: no question.
+        let mut mosh = Lifecycle::new(Timing::default(), Protocol::Mosh, true, T0);
+        live(&mut mosh, Transport::Mosh, T0);
+        mosh.background(T0 + S);
+        mosh.check_for_delivery(T0 + 60 * S);
+        assert!(!mosh.delivery_check_pending());
+    }
+
+    /// The end of a mosh transport the session has since replaced is that
+    /// transport's, not the session's (the Swift client's
+    /// MoshSessionEndTests, kept when it went, E2): it changes nothing,
+    /// while the redial is out or once it has landed.
+    #[test]
+    fn a_replaced_transports_end_is_not_the_sessions() {
+        let mut life = Lifecycle::new(Timing::default(), Protocol::Mosh, true, T0);
+        let old = live(&mut life, Transport::Mosh, T0);
+        life.lost(old, T0 + S);
+        let _ = drain(&mut life);
+        let redial = life.generation();
+        assert_ne!(redial, old);
+        let state = life.state();
+        life.ended(old, EndReason::MoshServerEnded, T0 + 2 * S);
+        assert_eq!(drain(&mut life), vec![], "nothing while the redial is out");
+        assert_eq!(life.state(), state);
+        assert!(life.attempt_succeeded(redial, Transport::Mosh, T0 + 3 * S));
+        let _ = drain(&mut life);
+        life.ended(old, EndReason::MoshServerEnded, T0 + 4 * S);
+        assert_eq!(drain(&mut life), vec![], "nothing once it landed");
+        assert_eq!(life.state(), SessionState::Connected);
+        // The current one's end is the session's.
+        life.ended(redial, EndReason::MoshServerEnded, T0 + 5 * S);
+        assert!(
+            drain(&mut life).contains(&Action::State(SessionState::Ended(
+                EndReason::MoshServerEnded
+            )))
+        );
     }
 
     #[test]

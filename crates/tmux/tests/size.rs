@@ -257,6 +257,24 @@ fn an_attach_unzooms_only_the_zoom_a_dead_phone_made() {
     }
 }
 
+/// B459: with a phone's group on the server (or a desktop's linked
+/// session) `list-windows -a` names each window once per session holding
+/// it. The sweep acted on every row: the dead phone's zoom was toggled
+/// twice — off, then on again — and stayed.
+#[test]
+fn a_window_listed_once_per_session_is_swept_once() {
+    let rig = attached(|_| Tmux {
+        clients: vec!["moshpit-a".into(), "/dev/ttys004".into()],
+        windows: vec![
+            row("@1", true, "%5", "moshpit-gone %5", "moshpit-gone|iPhone|1"),
+            row("@1", true, "%5", "moshpit-gone %5", "moshpit-gone|iPhone|1"),
+        ],
+        ..Tmux::default()
+    });
+    assert_eq!(rig.count("resize-pane -Z -t @1"), 1, "{:#?}", rig.commands);
+    assert_eq!(rig.count("set-option -wu -t @1 @moshpit_zoomed"), 1);
+}
+
 /// The zoom the phone makes is marked with its client and the pane it zooms.
 #[test]
 fn the_phones_own_zoom_is_marked() {
@@ -1018,7 +1036,10 @@ fn a_session_switch_records_what_it_squashes() {
     let before = fresh
         .iter()
         .position(|c| c.starts_with("list-windows -t '$1'"));
-    let switch = fresh.iter().position(|c| c == "switch-client -t $1");
+    // B459: the switch goes into the phone's own group of `$1`.
+    let switch = fresh
+        .iter()
+        .position(|c| c.starts_with("new-session -t '$1'"));
     let after = fresh
         .iter()
         .rposition(|c| c.starts_with("list-windows -t '$1'"));
@@ -1060,7 +1081,7 @@ fn a_session_switchs_second_read_waits_for_the_first_ones_reply() {
             .count()
     };
     assert_eq!(reads(&sent), 1, "{sent:#?}");
-    assert!(sent.iter().any(|c| c == "switch-client -t $1"));
+    assert!(sent.iter().any(|c| c.starts_with("new-session -t '$1'")));
     rig.settle();
     assert_eq!(reads(rig.since(base)), 2, "{:#?}", rig.since(base));
 }

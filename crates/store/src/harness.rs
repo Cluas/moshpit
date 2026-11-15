@@ -1,9 +1,10 @@
-//! The equivalence harness's Rust side: the case format both front ends run
-//! (`harness/swift/main.swift` over the app's unchanged model sources,
-//! `examples/store_harness.rs` over this crate), the 1.0.8 view of what this
-//! crate stores (`harness/swift108/main.swift` prints the same for 1.0.8's
-//! sources), the seeded case generator and the canonical form results are
-//! compared in. `harness/equivalence.py` drives them.
+//! The equivalence harness's Rust side: the case format
+//! (`examples/store_harness.rs` runs it over this crate; the app's Swift
+//! stores ran it too until batch C deleted them, and their results stay in
+//! `tests/fixtures/swift`), the 1.0.8 view of what this crate stores
+//! (`harness/swift108/main.swift` prints the same for 1.0.8's sources), the
+//! seeded case generator and the canonical form results are compared in.
+//! `harness/equivalence.py` drives them.
 //!
 //! A case is one line: `STORE PHONE SNAPSHOT OP…`.
 //!

@@ -14,8 +14,6 @@ import QuartzCore
 ///   opens a terminal on that connection at launch; `-MOSHPIT_RUST_SEED_MUX
 ///   tmux`, `-MOSHPIT_RUST_SEED_MOSH 1` (predictive echo off, so it can run
 ///   on either path), `-MOSHPIT_RUST_SEED_TMUX_BIN`, `-MOSHPIT_RUST_SEED_MOSH_BIN`.
-///   With `-MOSHPIT_RUST_SESSION 1` it runs on the Rust core, with `0` on
-///   the Swift path — the same connection, for comparing the two.
 /// - `-MOSHPIT_RUST_FAULTS "cut@15,stall@45,blackhole@20-35,echo@40"`: the
 ///   core's fault hooks, seconds after the session first connects; what
 ///   follows each is logged with its timing (`echo@t` times ten keystrokes
@@ -92,7 +90,7 @@ enum RustSessionSeed {
             predictModeRaw: PredictMode.never.rawValue,
             tmuxPath: arg("-MOSHPIT_RUST_SEED_TMUX_BIN"))
         connection.multiplexer = arg("-MOSHPIT_RUST_SEED_MUX").flatMap(Multiplexer.init(rawValue:)) ?? .none
-        say("seeded \(user)@\(host):\(port) \(mosh ? "mosh" : "ssh")+\(connection.multiplexer.rawValue) rust=\(RustSessionSwitch.runsOnRust(connection))")
+        say("seeded \(user)@\(host):\(port) \(mosh ? "mosh" : "ssh")+\(connection.multiplexer.rawValue)")
         return connection
     }
 

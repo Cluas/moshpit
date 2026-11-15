@@ -653,3 +653,29 @@ fn identity(ctx: &Ctx) -> AnyElement {
     }
     row.into_element()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The pill's dot (what `TransportConnState.transientTint` pinned for
+    /// the SwiftUI pill, gone in D8): offline, with nothing being attempted,
+    /// is its own state and no other borrows it; connecting and
+    /// reconnecting are both an attempt; live is the transport's own, amber
+    /// only while mosh roams.
+    #[test]
+    fn the_pills_dot_says_offline_only_when_nothing_is_attempted() {
+        for kind in [PillKind::Ssh, PillKind::Mosh, PillKind::MoshRoaming] {
+            assert_eq!(pill_status(kind, LinkState::Offline), Status::Offline);
+            for attempt in [LinkState::Connecting, LinkState::Reconnecting] {
+                assert_eq!(pill_status(kind, attempt), Status::Connecting);
+            }
+        }
+        assert_eq!(pill_status(PillKind::Ssh, LinkState::Live), Status::Live);
+        assert_eq!(pill_status(PillKind::Mosh, LinkState::Live), Status::Live);
+        assert_eq!(
+            pill_status(PillKind::MoshRoaming, LinkState::Live),
+            Status::Attention
+        );
+    }
+}

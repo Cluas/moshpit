@@ -5,8 +5,7 @@ import UIKit
 /// What Install Assist offers for a session missing tmux, mosh or herdr:
 /// the packages, the command for the host's package manager, and when the
 /// re-check has found them — the core's plan (`crates/hostcare`'s
-/// `AssistPlan`, which Android runs too). One plan for both sheets
-/// (``InstallAssistView`` and ``InstallAssistNSHPage``).
+/// `AssistPlan`, which Android runs too), for ``InstallAssistNSHPage``.
 @MainActor
 struct InstallAssistPlan {
     let session: SessionHub.ActiveSession
@@ -59,8 +58,7 @@ struct InstallAssistPlan {
 /// (medium and large, the grabber, the screen's background): the message is
 /// the core's, from the plan and the sheet's own state (a re-check running,
 /// its result, the command copied), posted as it changes; what the person asks runs
-/// the plan, as ``InstallAssistView`` runs it. If NSH cannot run here, the
-/// SwiftUI sheet shows.
+/// the plan. If its screen can't run, the sheet says so (``NSHPageFailed``).
 struct InstallAssistNSHPage: View {
     let session: SessionHub.ActiveSession
     let packages: [String]
@@ -75,7 +73,7 @@ struct InstallAssistNSHPage: View {
 
     var body: some View {
         if failed {
-            InstallAssistView(session: session, packages: packages, onReconnect: onReconnect)
+            NSHSheetFailed { failed = false }
         } else {
             let state = plan.message(rechecking: rechecking, result: result, copied: copied)
             NSHPage(

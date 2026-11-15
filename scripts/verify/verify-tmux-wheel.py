@@ -7,7 +7,7 @@
 # Together: code emits X (unit test) ∧ X scrolls a real mouse app, no copy-mode
 # (this script) ⇒ the wheel path works end-to-end without a device.
 #
-# The bytes here are exactly SessionHub.ActiveSession.wheelBytes(): SGR mouse,
+# The bytes here are exactly moshpit-tmux's `wheel_bytes`: SGR mouse,
 # button 64 = wheel-up, 65 = wheel-down, at a 1-based cell.
 import os, pty, subprocess, sys, time
 
@@ -24,7 +24,7 @@ def top_line():
     return out[0] if out else ""
 
 def wheel(button, col=40, row=12):
-    # SGR: ESC [ < button ; col ; row M   (== wheelBytes for one notch)
+    # SGR: ESC [ < button ; col ; row M   (== wheel_bytes for one notch)
     return f"\x1b[<{button};{col};{row}M".encode()
 
 tx("kill-server")

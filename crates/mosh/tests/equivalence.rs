@@ -1,8 +1,7 @@
-//! The Rust port against the Swift implementation's recorded output, without
-//! swiftc: each `*.swift.txt` next to a fixture is what
-//! `harness/swift/main.swift` printed for it over the app's unchanged
-//! sources (`harness/equivalence.py update-goldens`). The Swift client now
-//! carries every fix in `harness/divergences.json` but one, so Rust must
+//! The Rust port against the Swift implementation's recorded output: each
+//! `*.swift.txt` next to a fixture is what the Swift client printed for it,
+//! frozen since that client was deleted (E2; no tool writes them any more).
+//! It carried every fix in `harness/divergences.json` but one, so Rust must
 //! print the same bytes everywhere, except on the divergence fixtures of
 //! that open fix (`excerpt-unicode`). Every divergence fixture must also
 //! differ from what the Swift client printed before the fixes

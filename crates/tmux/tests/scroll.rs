@@ -1,9 +1,11 @@
 //! Scroll routing, taps and swipes, ported from the scroll cases of
 //! `TmuxSessionControllerTests.swift`: a program with the mouse on gets the
 //! wheel, a shell its local scrollback, an alternate-screen pane without the
-//! mouse nothing; never tmux's copy-mode.
+//! mouse the arrow keys (B500); never tmux's copy-mode.
 
-use moshpit_tmux::controller::{Config, PixelScroll, ScrollRoute, ViewAction, wheel_bytes};
+use moshpit_tmux::controller::{
+    Config, PixelScroll, ScrollRoute, ViewAction, click_bytes, wheel_bytes,
+};
 use moshpit_tmux::rig::{Rig, ok};
 
 fn attached(alternate: bool) -> Rig {
@@ -101,16 +103,66 @@ fn an_alt_screen_mouse_app_gets_the_wheel_even_while_painting() {
     );
 }
 
+/// B500 (the owner's call on xterm's alternate scroll): an alternate-screen
+/// pane without the mouse (less, man, git log) gets the arrow keys, one
+/// `send-keys` a tick for tmux to encode by the pane's real cursor-key
+/// mode; a drag's pixels the same, whole rows, the rest carried. It got
+/// nothing: a swipe over a pager moved nothing.
 #[test]
-fn an_alt_screen_pane_without_the_mouse_drops_the_tick() {
+fn an_alt_screen_pane_without_the_mouse_gets_the_arrow_keys() {
     let mut rig = attached(true);
     arm_flags(&mut rig, false, true);
+    assert_eq!(
+        rig.controller.scroll_route().unwrap().1,
+        ScrollRoute::Arrows
+    );
     let before = rig.commands.len();
     let seen = rig.seen.len();
     rig.with(|c, now| c.scroll_lines(3, now));
-    assert_eq!(rig.commands.len(), before);
-    assert_eq!(rig.seen.len(), seen);
-    assert_eq!(rig.controller.scroll_route().unwrap().1, ScrollRoute::Drop);
+    rig.with(|c, now| c.scroll_lines(-2, now));
+    assert_eq!(
+        rig.since(before),
+        ["send-keys -t %0 -N 3 Up", "send-keys -t %0 -N 2 Down"],
+        "older is up"
+    );
+    assert_eq!(rig.seen.len(), seen, "nothing for the view");
+    let before = rig.commands.len();
+    let used = rig.with(|c, now| c.scroll_pixels(45.0, 30.0, now));
+    assert_eq!(used, PixelScroll::Consumed(45.0));
+    let used = rig.with(|c, now| c.scroll_pixels(45.0, 30.0, now));
+    assert_eq!(used, PixelScroll::Consumed(45.0));
+    assert_eq!(
+        rig.since(before),
+        ["send-keys -t %0 -N 1 Up", "send-keys -t %0 -N 2 Up"],
+        "a row and a half, then the half carried"
+    );
+}
+
+/// B500 behind B485's paste gate: a swipe over a pager right after a paste
+/// waits with what was typed after it, in the order given (the paste, the
+/// arrows, the key), once tmux has run the paste. The arrows went at once,
+/// ahead of the paste's wait and of the key held behind it.
+#[test]
+fn arrows_after_a_paste_wait_behind_it_in_order() {
+    let mut rig = attached(true);
+    arm_flags(&mut rig, false, true);
+    rig.settle();
+    let before = rig.commands.len();
+    rig.with(|c, now| c.send_paste("p", "%0", now));
+    rig.with(|c, now| c.scroll_lines(2, now));
+    rig.with(|c, now| c.send_input(b"q", "%0", now));
+    assert_eq!(
+        rig.since(before).len(),
+        2,
+        "the paste only: {:?}",
+        rig.since(before)
+    );
+    rig.answer_pending();
+    rig.wait(150);
+    assert_eq!(
+        rig.since(before)[2..],
+        ["send-keys -t %0 -N 2 Up", "send-keys -t %0 -H 71"]
+    );
 }
 
 #[test]
@@ -222,6 +274,24 @@ fn wheel_bytes_are_clamped_to_six() {
     assert_eq!(wheel_bytes(1, 0, 0), b"\x1b[<64;1;1M");
     assert_eq!(wheel_bytes(-100, 3, 4), b"\x1b[<65;3;4M".repeat(6));
     assert_eq!(wheel_bytes(i64::MIN, 1, 1), b"\x1b[<65;1;1M".repeat(6));
+    assert_eq!(wheel_bytes(i64::MAX, 1, 1), b"\x1b[<64;1;1M".repeat(6));
+}
+
+/// Tap-to-position: an SGR button-0 press and its release at the 1-based
+/// cell; the origin and anything left of or above it is 1;1, and a cell at
+/// i64's end saturates instead of overflowing (B149, the Swift
+/// `clickBytes` this replaced).
+#[test]
+fn a_click_is_a_press_and_its_release_at_the_one_based_cell() {
+    assert_eq!(click_bytes(8, 29), b"\x1b[<0;9;30M\x1b[<0;9;30m");
+    assert_eq!(click_bytes(0, 0), b"\x1b[<0;1;1M\x1b[<0;1;1m");
+    assert_eq!(click_bytes(-3, -1), b"\x1b[<0;1;1M\x1b[<0;1;1m");
+    let max = i64::MAX.to_string();
+    assert_eq!(
+        click_bytes(i64::MAX, i64::MAX),
+        format!("\x1b[<0;{max};{max}M\x1b[<0;{max};{max}m").into_bytes()
+    );
+    assert_eq!(click_bytes(i64::MIN, i64::MIN), b"\x1b[<0;1;1M\x1b[<0;1;1m");
 }
 
 // MARK: - B363: the flags per pane, from every repaint; Claude scrolls itself

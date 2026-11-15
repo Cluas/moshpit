@@ -204,6 +204,27 @@ struct CoreTerminalViewTests {
         #expect(view.pendingCaret != nil)
     }
 
+    /// B571: pinyin typed at the end of a long line ran past the view's
+    /// right edge, which clips: the composition and its caret were cut off.
+    @Test func aCompositionAtTheRightEdgeStaysOnScreen() throws {
+        let (view, _) = makeView(cols: 20, rows: 4)
+        let window = inWindow(view)
+        defer { window.isHidden = true }
+        feed(view, "\u{1b}[1;18H", until: { $0.rows.info.cursor.col == 17 })
+        view.setMarkedText("zhongguoren", selectedRange: NSRange(location: 11, length: 0))
+        let label = try #require(view.markedLabel)
+        #expect(label.frame.maxX <= view.bounds.width, "the composition runs past the edge: \(label.frame)")
+        #expect(view.compositionCaret.frame.maxX <= view.bounds.width + 0.5, "the caret is off screen")
+        #expect(label.frame.minY == view.y(ofRow: 0), "it stays on the cursor's row")
+        // Room enough: where the cursor is.
+        view.unmarkText()
+        feed(view, "\u{1b}[1;3H", until: { $0.rows.info.cursor.col == 2 })
+        view.setMarkedText("ni", selectedRange: NSRange(location: 2, length: 0))
+        #expect(view.markedLabel?.frame.minX == view.x(ofColumn: 2))
+        #expect(CoreTerminalView.markedX(at: 300, width: 80, in: 320) == 240)
+        #expect(CoreTerminalView.markedX(at: 10, width: 400, in: 320) == 0, "never past the left edge")
+    }
+
     @Test func japaneseKanaCommitsWhole() {
         let (view, sink) = makeView()
         let window = inWindow(view)

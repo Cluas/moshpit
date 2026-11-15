@@ -12,12 +12,25 @@
 //! it ends, and how fast, decides: past halfway open, else closed, on the
 //! structural spring (§5.1). One row of the page is open at a time; tapping an open row's
 //! content closes it rather than acting.
+//!
+//! The multiplexer's tree rows have trays too (B499: Home's pane rows,
+//! and the sessions page's sessions, windows and panes): their two or
+//! three most used actions ([`pane_tray`], [`window_tray`],
+//! [`session_tray`]), the long press keeping the whole list. Each action
+//! tells the host the intent the long-press menu's item does, with the
+//! row it came from (`"row"`: the row's identifier), so the rename's
+//! prompt and the kill's confirmation are the menu's, the confirmation
+//! hanging from that row.
 
 use std::rc::Rc;
 
 use nsh_core::prelude::*;
+use serde_json::json;
 
-use super::{Ctx, Intent};
+use super::{
+    Intent, Tell,
+    model::{Control, Mux},
+};
 use crate::ui::{
     icon::{IconSize, Tone, icon},
     motion::structural_spring,
@@ -32,7 +45,7 @@ const EDGE: f32 = 12.0;
 
 /// An action's tint: its soft fill and its ink, as the tokens pair them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Tint {
+pub enum Tint {
     Accent,
     Warn,
     Danger,
@@ -58,12 +71,27 @@ impl Tint {
 
 /// One action of a tray: a tinted square with a symbol, its title what a
 /// screen reader says (the long press carries the words).
-#[derive(Clone)]
-pub(crate) struct Action {
+#[derive(Debug, Clone, PartialEq)]
+pub struct Action {
     pub title: String,
     pub symbol: &'static str,
     pub tint: Tint,
     pub intent: Intent,
+    /// The identifier of the row it is on (`home-pane-<connection>-<pane>`,
+    /// …), told with the intent: what the host hangs the action's
+    /// confirmation from (B499). None: the host needs no row.
+    pub row: Option<String>,
+}
+
+impl Action {
+    /// What a press tells the host: the intent's event, and the row.
+    pub fn event(&self) -> serde_json::Value {
+        let mut event = self.intent.event();
+        if let Some(row) = &self.row {
+            event["row"] = json!(row);
+        }
+        event
+    }
 }
 
 /// The tray's width for `count` actions.
@@ -83,7 +111,7 @@ pub(crate) fn tray_row(
     key: String,
     open: Signal<Option<String>>,
     actions: Vec<Action>,
-    ctx: Ctx,
+    tell: Tell,
     content: AnyElement,
 ) -> AnyElement {
     if actions.is_empty() {
@@ -150,7 +178,7 @@ pub(crate) fn tray_row(
     };
     let buttons = actions
         .into_iter()
-        .map(|action| button(action, close.clone(), ctx.clone()))
+        .map(|action| button(action, close.clone(), tell.clone()))
         .collect::<Vec<_>>();
     let tray_view = view()
         .absolute()
@@ -223,12 +251,13 @@ fn settle() -> Spring {
 
 /// One action's square: its symbol in its tint's ink on the tint's soft
 /// fill.
-fn button(action: Action, close: Rc<dyn Fn()>, ctx: Ctx) -> AnyElement {
+fn button(action: Action, close: Rc<dyn Fn()>, tell: Tell) -> AnyElement {
+    let event = action.event();
     let Action {
         title,
         symbol,
         tint,
-        intent,
+        ..
     } = action;
     view()
         .w(px(BUTTON))
@@ -244,8 +273,241 @@ fn button(action: Action, close: Rc<dyn Fn()>, ctx: Ctx) -> AnyElement {
         .active(|s| s.opacity(0.75))
         .on_press(move || {
             close();
-            ctx.ask(intent.clone());
+            tell(event.clone());
         })
         .child(icon(symbol).size(IconSize::Md).tone(tint.tone()))
         .into_element()
+}
+
+// MARK: The tree's trays (B499)
+
+/// What a tree action is called, worded at its tray (the long-press
+/// menu's words: tmux kills, herdr closes).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Label {
+    Rename,
+    NewPane,
+    RemoveWorktree,
+    KillPane,
+    KillWindow,
+    KillSession,
+}
+
+impl Label {
+    /// Its words on `mux`.
+    pub fn words(self, mux: Mux) -> String {
+        let herdr = mux == Mux::Herdr;
+        let kill = if herdr { t!("Close") } else { t!("Kill") };
+        match self {
+            Label::Rename => t!("Rename"),
+            Label::NewPane => t!("New Pane"),
+            Label::RemoveWorktree => t!("Remove Worktree"),
+            Label::KillPane => t!("%@ %@", arg1 = kill, arg2 = t!("Pane")),
+            Label::KillWindow => {
+                t!(
+                    "%@ %@",
+                    arg1 = kill,
+                    arg2 = if herdr { t!("Tab") } else { t!("Window") }
+                )
+            }
+            Label::KillSession => t!(
+                "%@ %@",
+                arg1 = kill,
+                arg2 = if herdr {
+                    t!("Workspace")
+                } else {
+                    t!("Session")
+                }
+            ),
+        }
+    }
+}
+
+/// One action of a tree row's tray, before its words: what it is called,
+/// its symbol and tint, the menu's intent, and the row it is on.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TreeAction {
+    pub label: Label,
+    pub symbol: &'static str,
+    pub tint: Tint,
+    pub intent: Intent,
+    pub row: String,
+}
+
+impl TreeAction {
+    /// The tray's action, worded for `mux`.
+    pub fn action(self, mux: Mux) -> Action {
+        Action {
+            title: self.label.words(mux),
+            symbol: self.symbol,
+            tint: self.tint,
+            intent: self.intent,
+            row: Some(self.row),
+        }
+    }
+
+    /// What a press tells the host ([`Action::event`]).
+    pub fn event(&self) -> serde_json::Value {
+        let mut event = self.intent.event();
+        event["row"] = json!(self.row);
+        event
+    }
+}
+
+/// `actions` worded for `mux`: a tray's.
+pub fn worded(actions: Vec<TreeAction>, mux: Mux) -> Vec<Action> {
+    actions.into_iter().map(|a| a.action(mux)).collect()
+}
+
+/// What a pane row's Rename renames: what its title is named after —
+/// tmux's window, herdr's workspace.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Renames {
+    Window(String),
+    Session(String),
+}
+
+/// Pane `pane`'s Rename on `control`'s tree, if it has one (a pane the
+/// tree doesn't know has none).
+pub fn pane_renames(control: &Control, pane: &str) -> Option<Renames> {
+    let window = &control.panes.iter().find(|p| p.id == pane)?.window;
+    match control.mux {
+        Mux::Tmux => Some(Renames::Window(window.clone())),
+        Mux::Herdr => {
+            let session = &control.windows.iter().find(|w| w.id == *window)?.session;
+            Some(Renames::Session(session.clone()))
+        }
+    }
+}
+
+fn tree_action(
+    label: Label,
+    symbol: &'static str,
+    tint: Tint,
+    intent: Intent,
+    row: &str,
+) -> TreeAction {
+    TreeAction {
+        label,
+        symbol,
+        tint,
+        intent,
+        row: row.to_owned(),
+    }
+}
+
+/// A pane row's tray (Home's agents and other panes, the sessions page's
+/// panes): Rename (where its title comes from: [`pane_renames`]), and the
+/// kill.
+pub fn pane_tray(connection: &str, pane: &str, renames: Option<Renames>) -> Vec<TreeAction> {
+    let row = format!("home-pane-{connection}-{pane}");
+    let connection = connection.to_owned();
+    let mut actions = Vec::new();
+    let renaming = match renames {
+        Some(Renames::Window(window)) => Some(Intent::RenameWindow {
+            connection: connection.clone(),
+            window,
+        }),
+        Some(Renames::Session(session)) => Some(Intent::RenameSession {
+            connection: connection.clone(),
+            session,
+        }),
+        None => None,
+    };
+    if let Some(intent) = renaming {
+        actions.push(tree_action(
+            Label::Rename,
+            "pencil",
+            Tint::Accent,
+            intent,
+            &row,
+        ));
+    }
+    actions.push(tree_action(
+        Label::KillPane,
+        "xmark.circle",
+        Tint::Danger,
+        Intent::KillPane {
+            connection,
+            pane: pane.to_owned(),
+        },
+        &row,
+    ));
+    actions
+}
+
+/// A window's (a tab's) tray on the sessions page: Rename, New Pane, the
+/// kill.
+pub fn window_tray(connection: &str, window: &str) -> Vec<TreeAction> {
+    let row = format!("home-window-{connection}-{window}");
+    let (connection, window) = (connection.to_owned(), window.to_owned());
+    vec![
+        tree_action(
+            Label::Rename,
+            "pencil",
+            Tint::Accent,
+            Intent::RenameWindow {
+                connection: connection.clone(),
+                window: window.clone(),
+            },
+            &row,
+        ),
+        tree_action(
+            Label::NewPane,
+            "rectangle.split.2x1",
+            Tint::Accent,
+            Intent::NewPane {
+                connection: connection.clone(),
+                window: window.clone(),
+            },
+            &row,
+        ),
+        tree_action(
+            Label::KillWindow,
+            "xmark.circle",
+            Tint::Danger,
+            Intent::KillWindow { connection, window },
+            &row,
+        ),
+    ]
+}
+
+/// A session's (a workspace's) tray on the sessions page: Rename, Remove
+/// Worktree for a worktree's, the kill.
+pub fn session_tray(connection: &str, session: &str, worktree: bool) -> Vec<TreeAction> {
+    let row = format!("home-session-{connection}-{session}");
+    let (connection, session) = (connection.to_owned(), session.to_owned());
+    let mut actions = vec![tree_action(
+        Label::Rename,
+        "pencil",
+        Tint::Accent,
+        Intent::RenameSession {
+            connection: connection.clone(),
+            session: session.clone(),
+        },
+        &row,
+    )];
+    if worktree {
+        actions.push(tree_action(
+            Label::RemoveWorktree,
+            "trash.slash",
+            Tint::Danger,
+            Intent::RemoveWorktree {
+                connection: connection.clone(),
+                session: session.clone(),
+            },
+            &row,
+        ));
+    }
+    actions.push(tree_action(
+        Label::KillSession,
+        "xmark.circle",
+        Tint::Danger,
+        Intent::KillSession {
+            connection,
+            session,
+        },
+        &row,
+    ));
+    actions
 }

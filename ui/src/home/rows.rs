@@ -15,7 +15,9 @@ use nsh_core::prelude::*;
 
 use super::{
     Ctx, Intent,
-    model::{AgentRow, AgentState, Connection, HostRow, Mux, OtherPane, WaitingRow, pane_icon},
+    model::{
+        AgentRow, AgentState, Connection, HostRow, Link, Mux, OtherPane, WaitingRow, pane_icon,
+    },
     swipe::{self, Action, Tint},
 };
 use crate::ui::{
@@ -95,8 +97,37 @@ fn spoken(since: Option<f64>, now: f64) -> String {
     }
 }
 
-/// An agent's row; `host` named in its subtitle (NEEDS YOU's rows).
-fn agent(agent_row: AgentRow, user: String, host: Option<String>, ctx: &Ctx) -> Row {
+/// Pane `pane`'s swipe tray on `connection` (B499): its Rename and its
+/// kill while the host is live with a multiplexer, else none.
+pub(crate) fn pane_tray_of(connection: &Connection, pane: &str) -> Vec<Action> {
+    match &connection.control {
+        Some(control) if connection.link == Link::Live => swipe::worded(
+            swipe::pane_tray(&connection.id, pane, swipe::pane_renames(control, pane)),
+            control.mux,
+        ),
+        _ => Vec::new(),
+    }
+}
+
+/// `r` (pane `pane`'s row on `connection`) in its swipe tray, if it has
+/// one.
+fn in_tray(r: Row, connection: &str, pane: &str, tray: Vec<Action>, ctx: &Ctx) -> Row {
+    if tray.is_empty() {
+        return r;
+    }
+    let (key, open, tell) = (format!("pane:{connection}:{pane}"), ctx.open, ctx.teller());
+    r.wrapped(move |content| swipe::tray_row(key, open, tray, tell, content))
+}
+
+/// An agent's row; `host` named in its subtitle (NEEDS YOU's rows); its
+/// swipe tray `tray`.
+fn agent(
+    agent_row: AgentRow,
+    user: String,
+    host: Option<String>,
+    tray: Vec<Action>,
+    ctx: &Ctx,
+) -> Row {
     let AgentRow {
         connection,
         pane,
@@ -145,8 +176,9 @@ fn agent(agent_row: AgentRow, user: String, host: Option<String>, ctx: &Ctx) -> 
             words.join(", ").into()
         }
     };
-    let ctx = ctx.clone();
     let id = format!("home-pane-{connection}-{pane}");
+    let r = in_tray(r, &connection, &pane, tray, ctx);
+    let ctx = ctx.clone();
     r.label_with(said)
         .chevron()
         .on_press(move || {
@@ -160,12 +192,12 @@ fn agent(agent_row: AgentRow, user: String, host: Option<String>, ctx: &Ctx) -> 
 
 /// A waiting agent in NEEDS YOU: its host in the middle of its subtitle
 /// (`claude · gpu-01 · ~/src/trainer`).
-pub(crate) fn waiting_row(waiting: WaitingRow, user: String, ctx: &Ctx) -> Row {
+pub(crate) fn waiting_row(waiting: WaitingRow, user: String, tray: Vec<Action>, ctx: &Ctx) -> Row {
     let WaitingRow {
         row: agent_row,
         host,
     } = waiting;
-    agent(agent_row, user, Some(host), ctx)
+    agent(agent_row, user, Some(host), tray, ctx)
 }
 
 /// A row of a live host's card (R5's [`HostRow`]): an agent, the working
@@ -174,7 +206,10 @@ pub(crate) fn host_row(host_row: HostRow, connection: &Connection, ctx: &Ctx) ->
     let id = connection.id.clone();
     let user = connection.user.clone();
     match host_row {
-        HostRow::Agent(a) => agent(a, user, None, ctx),
+        HostRow::Agent(a) => {
+            let tray = pane_tray_of(connection, &a.pane);
+            agent(a, user, None, tray, ctx)
+        }
         HostRow::MoreWorking(n) => row(crate::plural!("%lld more working", n as i64))
             .leading(agent_mark(Status::Working))
             .chevron()
@@ -199,7 +234,10 @@ pub(crate) fn host_row(host_row: HostRow, connection: &Connection, ctx: &Ctx) ->
                 .on_press(move || ctx.toggle_idle(&toggle))
                 .test_id(&format!("home-idle-{id}"))
         }
-        HostRow::Other(other) => other_pane(other, &id, &user, ctx),
+        HostRow::Other(other) => {
+            let tray = pane_tray_of(connection, &other.pane);
+            other_pane(other, &id, &user, tray, ctx)
+        }
         HostRow::All { mux, count } => row(match mux {
             Mux::Tmux => t!("All sessions"),
             Mux::Herdr => t!("All workspaces"),
@@ -213,7 +251,7 @@ pub(crate) fn host_row(host_row: HostRow, connection: &Connection, ctx: &Ctx) ->
 
 /// A pane with no agent: called by its folder, `program · ~/path` under
 /// it, the program's symbol before it.
-fn other_pane(other: OtherPane, connection: &str, user: &str, ctx: &Ctx) -> Row {
+fn other_pane(other: OtherPane, connection: &str, user: &str, tray: Vec<Action>, ctx: &Ctx) -> Row {
     let OtherPane {
         pane,
         program,
@@ -230,7 +268,8 @@ fn other_pane(other: OtherPane, connection: &str, user: &str, ctx: &Ctx) -> Row 
     };
     let connection = connection.to_owned();
     let id = format!("home-pane-{connection}-{pane}");
-    r.chevron()
+    in_tray(r, &connection, &pane, tray, ctx)
+        .chevron()
         .on_press(ctx.asking(Intent::Pane { connection, pane }))
         .test_id(&id)
 }
@@ -265,12 +304,14 @@ pub(crate) fn saved_card(hosts: Vec<Connection>, ctx: &Ctx) -> AnyElement {
                 symbol: "pencil",
                 tint: Tint::Accent,
                 intent: Intent::Edit(id.clone()),
+                row: None,
             },
             Action {
                 title: t!("Delete…"),
                 symbol: "trash",
                 tint: Tint::Danger,
                 intent: Intent::Delete(id.clone()),
+                row: None,
             },
         ];
         let element = view()
@@ -280,7 +321,7 @@ pub(crate) fn saved_card(hosts: Vec<Connection>, ctx: &Ctx) -> AnyElement {
                 format!("saved:{id}"),
                 ctx.open,
                 tray,
-                ctx.clone(),
+                ctx.teller(),
                 saved.into_element(),
             ));
         card = card.item(element, Inset::Lead);

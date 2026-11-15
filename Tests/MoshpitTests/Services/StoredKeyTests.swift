@@ -1,6 +1,4 @@
-import Citadel
 import Foundation
-import NIOCore
 import Testing
 @testable import Moshpit
 
@@ -53,7 +51,7 @@ struct StoredKeyTests {
             #expect(try Self.publicBlob(of: stored) == expected)
         case .converted(let converted):
             #expect(converted.hasPrefix("-----BEGIN OPENSSH PRIVATE KEY-----\n"))
-            #expect(StoredKey.connectPathReads(converted), "Citadel still can't read it")
+            #expect(StoredKey.connectPathReads(converted), "1.0.8 still can't read it")
             #expect(!SSHKeyFactory.isEncrypted(converted))
             #expect(try Self.publicBlob(of: converted) == expected, "not the same key")
             #expect(!StoredKey.connectPathReads(stored) || key.isEncrypted,
@@ -104,26 +102,30 @@ struct StoredKeyTests {
 
     // MARK: At connect
 
-    private static func service(_ keychain: KeychainService, _ provider: StopAtDialProvider) -> SSHService {
-        SSHService(keychain: keychain, hostKeyValidator: .inMemory(), clientProvider: provider)
+    private static func service(_ keychain: KeychainService) -> SSHService {
+        SSHService(keychain: keychain, protectedDataAvailable: { true })
     }
 
     private static func connection(_ ref: String) -> ServerConnection {
         ServerConnection(name: "t", host: "192.0.2.1", port: 22, username: "me", authMethod: .key, keychainRef: ref)
     }
 
-    /// Connects until the dial; the dial's sentinel means the key was read,
-    /// any other error is returned.
-    private static func connectToDial(_ service: SSHService, _ connection: ServerConnection,
-                                      onKeyPassphrase: @escaping SSHService.KeyPassphraseHandler = { _, _ in nil })
-        async -> Error? {
+    /// The key the Rust core is handed to sign in with
+    /// (``SSHService/rustCoreCredential(_:onKeyPassphrase:)``), checked to
+    /// be one its key reader signs with; else the error the credential
+    /// failed with.
+    private static func signIn(_ service: SSHService, _ connection: ServerConnection,
+                               onKeyPassphrase: @escaping SSHService.KeyPassphraseHandler = { _, _ in nil })
+        async -> Result<String, Error> {
         do {
-            _ = try await service.connect(connection, onKeyPassphrase: onKeyPassphrase)
-            return nil
-        } catch SSHError.underlying(let error) where error is ReachedTheDial {
-            return nil
+            guard case .key(let key) = try await service.rustCoreCredential(connection,
+                                                                              onKeyPassphrase: onKeyPassphrase) else {
+                return .failure(NotAKey())
+            }
+            _ = try sshKeySigningParts(text: key)
+            return .success(key)
         } catch {
-            return error
+            return .failure(error)
         }
     }
 
@@ -133,11 +135,8 @@ struct StoredKeyTests {
         let keychain = KeychainService.inMemory()
         let ref = keychain.generateRef()
         try await keychain.savePrivateKey(key.privateKey, forRef: ref, requireBiometry: false)
-        let provider = StopAtDialProvider()
-
-        let error = await Self.connectToDial(Self.service(keychain, provider), Self.connection(ref))
-        #expect(error == nil, "\(String(describing: error))")
-        #expect(provider.dials >= 1, "never reached the server")
+        let signedIn = await Self.signIn(Self.service(keychain), Self.connection(ref))
+        #expect(signedIn.signs, "\(signedIn)")
 
         let stored = try await keychain.loadPrivateKey(forRef: ref)
         #expect(stored != key.privateKey, "the original stayed")
@@ -151,9 +150,7 @@ struct StoredKeyTests {
         let keychain = KeychainService.inMemory()
         let ref = keychain.generateRef()
         try await keychain.savePrivateKey(Self.crlf(key.privateKey), forRef: ref, requireBiometry: false)
-        let provider = StopAtDialProvider()
-        #expect(await Self.connectToDial(Self.service(keychain, provider), Self.connection(ref)) == nil)
-        #expect(provider.dials == 1)
+        #expect(await Self.signIn(Self.service(keychain), Self.connection(ref)).signs)
         #expect(StoredKey.connectPathReads(try await keychain.loadPrivateKey(forRef: ref)))
     }
 
@@ -163,7 +160,7 @@ struct StoredKeyTests {
         let keychain = KeychainService.inMemory()
         let ref = keychain.generateRef()
         try await keychain.savePrivateKey(key.privateKey, forRef: ref, requireBiometry: false)
-        #expect(await Self.connectToDial(Self.service(keychain, StopAtDialProvider()), Self.connection(ref)) == nil)
+        #expect(await Self.signIn(Self.service(keychain), Self.connection(ref)).signs)
         #expect(try await keychain.loadPrivateKey(forRef: ref) == key.privateKey)
     }
 
@@ -179,15 +176,15 @@ struct StoredKeyTests {
             return wrong ? SSHKeyFixtures.passphrase : "not it"
         }
 
-        let service = Self.service(keychain, StopAtDialProvider())
-        #expect(await Self.connectToDial(service, Self.connection(ref), onKeyPassphrase: answer) == nil)
+        let service = Self.service(keychain)
+        #expect(await Self.signIn(service, Self.connection(ref), onKeyPassphrase: answer).signs)
         #expect(asked.calls == [false, true], "asked \(asked.calls)")
         #expect(try Self.publicBlob(of: try await keychain.loadPrivateKey(forRef: ref)) == Self.keygenBlob(key))
 
         // Again, on the same service (its cache) and on a fresh one (the keychain).
-        #expect(await Self.connectToDial(service, Self.connection(ref), onKeyPassphrase: answer) == nil)
-        let fresh = Self.service(keychain, StopAtDialProvider())
-        #expect(await Self.connectToDial(fresh, Self.connection(ref), onKeyPassphrase: answer) == nil)
+        #expect(await Self.signIn(service, Self.connection(ref), onKeyPassphrase: answer).signs)
+        let fresh = Self.service(keychain)
+        #expect(await Self.signIn(fresh, Self.connection(ref), onKeyPassphrase: answer).signs)
         #expect(asked.calls == [false, true], "asked again: \(asked.calls)")
     }
 
@@ -197,13 +194,11 @@ struct StoredKeyTests {
         let keychain = KeychainService.inMemory()
         let ref = keychain.generateRef()
         try await keychain.savePrivateKey(key.privateKey, forRef: ref, requireBiometry: false)
-        let provider = StopAtDialProvider()
-        let error = await Self.connectToDial(Self.service(keychain, provider), Self.connection(ref))
-        guard case SSHError.keyNeedsPassphrase? = error else {
-            Issue.record("\(String(describing: error))")
+        let signedIn = await Self.signIn(Self.service(keychain), Self.connection(ref))
+        guard case .failure(SSHError.keyNeedsPassphrase) = signedIn else {
+            Issue.record("\(signedIn)")
             return
         }
-        #expect(provider.dials == 0)
         #expect(try await keychain.loadPrivateKey(forRef: ref) == key.privateKey)
         #expect(!(SSHError.keyNeedsPassphrase.description.isEmpty))
     }
@@ -213,25 +208,22 @@ struct StoredKeyTests {
         let keychain = KeychainService.inMemory()
         let ref = keychain.generateRef()
         try await keychain.savePrivateKey(SSHKeyFixtures.ecdsaP384, forRef: ref, requireBiometry: false)
-        let provider = StopAtDialProvider()
-        let error = await Self.connectToDial(Self.service(keychain, provider), Self.connection(ref))
-        #expect(error == nil, "\(String(describing: error))")
-        #expect(provider.dials == 1)
+        let signedIn = await Self.signIn(Self.service(keychain), Self.connection(ref))
+        #expect(signedIn.signs, "\(signedIn)")
         #expect(try await keychain.loadPrivateKey(forRef: ref) == SSHKeyFixtures.ecdsaP384)
     }
 
-    @Test("A DSA key fails at once, saying so, without dialling")
+    @Test("A DSA key fails at once, saying so, before the core dials")
     func dsaSaysWhy() async throws {
         let keychain = KeychainService.inMemory()
         let ref = keychain.generateRef()
         try await keychain.savePrivateKey(Self.dsaKey, forRef: ref, requireBiometry: false)
-        let provider = StopAtDialProvider()
-        let error = await Self.connectToDial(Self.service(keychain, provider), Self.connection(ref))
-        guard case SSHError.keyUnusable(.unsupportedType("DSA"))? = error else {
-            Issue.record("\(String(describing: error))")
+        let signedIn = await Self.signIn(Self.service(keychain), Self.connection(ref))
+        guard case .failure(let error) = signedIn,
+              case SSHError.keyUnusable(.unsupportedType("DSA")) = error else {
+            Issue.record("\(signedIn)")
             return
         }
-        #expect(provider.dials == 0)
         #expect((error as? SSHError)?.description.contains("DSA") == true)
         #expect(try await keychain.loadPrivateKey(forRef: ref) == Self.dsaKey)
     }
@@ -256,34 +248,9 @@ struct StoredKeyTests {
         let ref = "moshpit.secret.test"
         let backend = ReplaceRefusingBackend(seed: [ref: Data(key.privateKey.utf8)])
         let keychain = KeychainService(backend: backend)
-        let provider = StopAtDialProvider()
-        #expect(await Self.connectToDial(Self.service(keychain, provider), Self.connection(ref)) == nil)
-        #expect(provider.dials == 1)
+        #expect(await Self.signIn(Self.service(keychain), Self.connection(ref)).signs)
         #expect(backend.replaceAttempts == 1)
         #expect(try await keychain.loadPrivateKey(forRef: ref) == key.privateKey)
-    }
-
-    @MainActor
-    @Test("The terminal's view model asks through its card and hands the answer back")
-    func viewModelAsksThroughItsCard() async throws {
-        let answer = Answer()
-        let viewModel = TerminalViewModel(connection: Self.connection("r"), dial: { connection, prompts in
-            answer.set(await prompts.onKeyPassphrase(connection, false))
-            throw SSHError.keyNeedsPassphrase
-        })
-        let start = Task { await viewModel.start() }
-        var waited = 0
-        while viewModel.keyPassphrasePrompt == nil, waited < 300 {
-            waited += 1
-            try await Task.sleep(for: .milliseconds(10))
-        }
-        let prompt = try #require(viewModel.keyPassphrasePrompt)
-        #expect(prompt.host == "192.0.2.1")
-        #expect(!prompt.wrong)
-        prompt.decide("pw")
-        await start.value
-        #expect(answer.value == "pw")
-        #expect(viewModel.keyPassphrasePrompt == nil)
     }
 
     @Test("Replacing never creates an item that isn't there")
@@ -296,32 +263,15 @@ struct StoredKeyTests {
     }
 }
 
-/// What `StopAtDialProvider` throws once the connect path reached the dial.
-private struct ReachedTheDial: Error {}
+/// A credential that isn't a key, where a key was saved.
+private struct NotAKey: Error {}
 
-private final class StopAtDialProvider: SSHClientProvider, @unchecked Sendable {
-    private let lock = NSLock()
-    private var count = 0
-    var dials: Int { lock.withLock { count } }
-
-    func connect(host: String, port: Int, authenticationMethod: SSHAuthenticationMethod,
-                 hostKeyValidator: SSHHostKeyValidator) async throws -> SignedInClient {
-        lock.withLock { count += 1 }
-        throw ReachedTheDial()
+private extension Result where Success == String, Failure == Error {
+    /// A key the Rust core signs in with was handed over.
+    var signs: Bool {
+        if case .success = self { return true }
+        return false
     }
-
-    func connect(on channel: Channel, authenticationMethod: SSHAuthenticationMethod,
-                 hostKeyValidator: SSHHostKeyValidator) async throws -> SignedInClient {
-        lock.withLock { count += 1 }
-        throw ReachedTheDial()
-    }
-}
-
-private final class Answer: @unchecked Sendable {
-    private let lock = NSLock()
-    private var stored: String?
-    var value: String? { lock.withLock { stored } }
-    func set(_ value: String?) { lock.withLock { stored = value } }
 }
 
 private final class Asked: @unchecked Sendable {

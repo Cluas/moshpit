@@ -447,6 +447,16 @@ struct SwiftTerminalView: UIViewRepresentable {
         /// the active window when it has more than one, else cycles windows.
         var onSwitch: ((_ forward: Bool) -> Void)?
 
+        /// The NSH stage's step to the pane before or after (the page's
+        /// order, no wrap-around): taken over ``onSwitch`` while the stage
+        /// hosts this terminal. A lift's switch on a view that doesn't
+        /// track the drag, and VoiceOver's Next pane / Previous pane.
+        var onStep: ((_ forward: Bool) -> Void)?
+
+        /// The NSH stage moves this terminal with a sideways drag
+        /// (``TerminalSwipe``); nil: a lift switches, as ``onSwitch`` does.
+        var onSwipe: ((TerminalSwipe) -> Void)?
+
         /// Set for tmux panes: a tap asked for the cursor to move to a cell, and
         /// the controller forwards a click to the pane's program when that
         /// program wants the mouse. nil for a plain shell / local terminal,
@@ -494,8 +504,6 @@ struct SwiftTerminalView: UIViewRepresentable {
             noteFed(data)
             guard let surface else {
                 // Buffer until a terminal attaches so no early output is lost.
-                TmuxSessionController.ccTap("cc-pairing.log",
-                    Data("FEED-PENDING bytes=\(data.count)\n".utf8))
                 pendingFeed.append(data)
                 return
             }
@@ -689,8 +697,8 @@ struct SwiftTerminalView: UIViewRepresentable {
         /// The local half of ``click(col:row:)`` — the terminal encodes the
         /// press/release itself. Never consults `onClick`, so an onClick
         /// closure whose routing falls back here can't recurse. That is not
-        /// hypothetical: the mosh onClick wiring routes to
-        /// `clickActiveTerminal`, whose no-multiplexer fallback used to call
+        /// hypothetical: the mosh onClick wiring used to route to the hub's
+        /// `clickActiveTerminal`, whose no-multiplexer fallback called
         /// `click` — with a herdr frame channel that failed to attach, one
         /// tap on the terminal recursed 9000 frames deep and segfaulted
         /// (TestFlight 351 crash, 2026-08-17). `scrollLocal` learned this
@@ -1242,7 +1250,9 @@ struct SwiftTerminalView: UIViewRepresentable {
         /// Sticky-Ctrl: armed by the bar's ctrl chip; the NEXT typed key is
         /// sent as its control code (ctrl-b, ctrl-l, ctrl-r… — otherwise
         /// unreachable on the software keyboard, and the mosh degrade banner
-        /// literally tells the user to press one). One-shot.
+        /// literally tells the user to press one). One-shot: whatever is
+        /// typed next takes it, folded or not (B570), and nothing else does
+        /// (the terminal's own replies, the program's mouse reports).
         var pendingCtrl = false
         /// Lets the UI un-highlight the chip the moment the ctrl fires.
         var onPendingCtrlConsumed: (() -> Void)?
@@ -1258,21 +1268,42 @@ struct SwiftTerminalView: UIViewRepresentable {
         /// sent is still sitting in the input bar".
         var onReturnSend: (() -> Void)?
 
+        /// What the person typed — a key, a character, an input method's
+        /// commit — as the terminal encoded it: an armed sticky Ctrl takes it
+        /// first, folding it into its control code where it has one
+        /// (``ctrlFolded(_:)``), and lets go whatever it was. It used to fold
+        /// only a lone `@`…`~` and stay armed through anything else: Return,
+        /// a space, an arrow, a Chinese commit went out and the chip stayed
+        /// lit, so the next letter typed went out as a control code (a `c`
+        /// as ^C, interrupting an agent) — B570.
+        func sendTyped(_ data: ArraySlice<UInt8>) {
+            guard pendingCtrl else { return sendInput(data) }
+            pendingCtrl = false
+            onPendingCtrlConsumed?()
+            sendInput(ArraySlice(Self.ctrlFolded(Array(data))))
+        }
+
+        /// A key typed with Ctrl, as terminals send it: one character's
+        /// control code — `@`…`~` as `byte & 0x1F`, Space as NUL, `/` as
+        /// ^_, `?` as DEL; anything else (Return, an arrow's sequence, text
+        /// of more than one character) unchanged.
+        nonisolated static func ctrlFolded(_ bytes: [UInt8]) -> [UInt8] {
+            guard bytes.count == 1, let byte = bytes.first else { return bytes }
+            switch byte {
+            case 0x40...0x7e: return [byte & 0x1f]
+            case 0x20: return [0x00]
+            case 0x2f: return [0x1f]
+            case 0x3f: return [0x7f]
+            default: return bytes
+            }
+        }
+
         /// What the terminal sends upstream (keys, a paste, its replies), from
         /// either view.
         func sendInput(_ data: ArraySlice<UInt8>) {
             // Typing means "I'm done reading" — resume live output and snap to
             // the bottom (the flush makes SwiftTerm follow the tail again).
             releaseScrollHold()
-            // Sticky-Ctrl: fold the next single printable key into its control
-            // code (standard mapping: byte & 0x1F covers @A-Z[\]^_ and a-z).
-            if pendingCtrl, data.count == 1, let byte = data.first,
-               (0x40...0x7e).contains(byte) {
-                pendingCtrl = false
-                onPendingCtrlConsumed?()
-                onInput?(Data([byte & 0x1f]))
-                return
-            }
             // No repaint of our own: what a key changes on screen arrives as its
             // echo, and SwiftTerm repaints just the rows that changed (fork
             // patch 27). This used to force a FULL repaint on every key so a
@@ -1408,6 +1439,10 @@ extension SwiftTerminalView.Coordinator: TerminalSurfaceDelegate {
         sendInput(ArraySlice([UInt8](data)))
     }
 
+    func surface(_ surface: TerminalSurface, typed data: Data) {
+        sendTyped(ArraySlice([UInt8](data)))
+    }
+
     func surface(_ surface: TerminalSurface, sizeChanged cols: Int, rows: Int) {
         gridChanged(cols: cols, rows: rows)
     }
@@ -1466,10 +1501,16 @@ extension SwiftTerminalView.Coordinator: TerminalSurfaceDelegate {
     /// scrolls the pane's own terminal by the pixel, or wheels its program.
     var surfaceScrollsHostRows: Bool { onScroll != nil }
 
-    var surfaceCanSwitch: Bool { onSwitch != nil }
+    var surfaceCanSwitch: Bool { onSwitch != nil || onStep != nil || onSwipe != nil }
 
     func surface(_ surface: TerminalSurface, switchForward forward: Bool) {
-        onSwitch?(forward)
+        if let onStep { onStep(forward) } else { onSwitch?(forward) }
+    }
+
+    var surfaceTracksSwipe: Bool { onSwipe != nil }
+
+    func surface(_ surface: TerminalSurface, swipe: TerminalSwipe) {
+        onSwipe?(swipe)
     }
 
     func surface(_ surface: TerminalSurface, fontSizeCommitted size: Double) {

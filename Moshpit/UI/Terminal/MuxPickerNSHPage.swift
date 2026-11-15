@@ -7,49 +7,16 @@ enum MuxPickerKind: String {
     case windows, sessions, panes
 }
 
-/// The breadcrumb's pickers: drawn by NSH (``MuxPickerNSHPage``) when `nsh`
-/// says so — the NSH terminal's, or their own switch
-/// (``NSHScreen/muxPicker``) — else SwiftUI's sheets. Generic over the
-/// concrete controller (not an existential) so Observation tracking on its
-/// snapshot survives.
-struct MuxPicker<C: MultiplexerControlling>: View {
-    let controller: C
-    let kind: MuxPickerKind
-    let nsh: Bool
-
-    var body: some View {
-        if nsh {
-            MuxPickerNSHPage(controller: controller, kind: kind)
-        } else {
-            MuxPickerSwiftUI(controller: controller, kind: kind)
-        }
-    }
-}
-
-/// SwiftUI's sheets (`TmuxSheets.swift`).
-private struct MuxPickerSwiftUI<C: MultiplexerControlling>: View {
-    let controller: C
-    let kind: MuxPickerKind
-
-    var body: some View {
-        switch kind {
-        case .windows: WindowsSheet(controller: controller)
-        case .sessions: SessionsSheet(controller: controller)
-        case .panes: SelectPaneSheet(controller: controller)
-        }
-    }
-}
-
 /// A picker drawn by NSH (`ui/src/terminal/picker.rs`) in the sheet's own
-/// stack, in the container the SwiftUI sheets have (`CompactSheet`: medium
-/// and large detents and the grabber on a phone, the 400 × 380 popover on
-/// an iPad, iOS 26's glass or the app's sheet fill below). The list is the
+/// stack, in a compact sheet: medium and large detents and the grabber on
+/// a phone, the 400 × 380 popover on an iPad (``AdaptivePresentation``),
+/// iOS 26's glass or the app's sheet fill below. The list is the
 /// controller's, posted as it changes (``MuxPickerState``); a row's
 /// long-press menu is UIKit's on the surface (``NSHContextMenus``), its
 /// pick handed back to the screen, which asks for a name (UIKit's alert
 /// with a text field, ``NSHTextPrompt``) or confirms a kill (NSH's action
-/// sheet) before the host acts. If NSH cannot run here, the SwiftUI sheet
-/// shows.
+/// sheet) before the host acts. If its screen can't run, the picker says
+/// so (``NSHPageFailed``).
 struct MuxPickerNSHPage<C: MultiplexerControlling>: View {
     let controller: C
     let kind: MuxPickerKind
@@ -61,7 +28,7 @@ struct MuxPickerNSHPage<C: MultiplexerControlling>: View {
 
     var body: some View {
         if failed {
-            MuxPickerSwiftUI(controller: controller, kind: kind)
+            NSHSheetFailed { failed = false }
         } else {
             let state = MuxPickerState(kind: kind, controller: controller)
             NavigationStack {
@@ -150,6 +117,10 @@ struct MuxPickerState: Equatable {
         var panes: Int?
         var command = ""
         var agent: String?
+        /// Where a window's active pane works (the active session's: its
+        /// active window's): the page names a window tmux named after its
+        /// program by its folder, as Home does.
+        var path: String?
         var signal: AgentSignal?
         var attached = false
         var windows: Int?
@@ -180,10 +151,13 @@ struct MuxPickerState: Equatable {
             active = snapshot.activeWindowId
             rows = snapshot.sortedWindows.map { window in
                 let panes = snapshot.panes.values.filter { $0.windowId == window.id }
-                let command = panes.first { $0.isActive }?.command ?? panes.first?.command ?? ""
+                let shown = panes.first { $0.isActive } ?? panes.min { $0.index < $1.index }
                 let signal = AgentSignal.aggregate(panes.map { AgentSignal(hooks[$0.id]?.state) })
-                return Row(id: window.id, index: window.index, name: window.name, panes: window.paneCount,
-                           command: command, signal: signal)
+                var row = Row(id: window.id, index: window.index, name: window.name, panes: window.paneCount,
+                              command: shown?.command ?? "", signal: signal)
+                row.path = shown?.path
+                row.agent = shown.flatMap { hooks[$0.id]?.agent }.flatMap { $0.isEmpty ? nil : $0 }
+                return row
             }
         case .sessions:
             active = snapshot.activeSessionId
@@ -194,6 +168,11 @@ struct MuxPickerState: Equatable {
                 if session.id == snapshot.activeSessionId {
                     row.windows = windows.count
                     row.window = activeWindow.map { "\($0.index):\($0.name)" }
+                    // What names that window the way its row is named.
+                    let pane = snapshot.activePaneId.flatMap { snapshot.panes[$0] }
+                    row.command = pane?.command ?? ""
+                    row.path = pane?.path
+                    row.agent = pane.flatMap { hooks[$0.id]?.agent }.flatMap { $0.isEmpty ? nil : $0 }
                 }
                 return row
             }
@@ -224,6 +203,7 @@ struct MuxPickerState: Equatable {
         if let index = row.index { json["index"] = index }
         if let panes = row.panes { json["panes"] = panes }
         if let agent = row.agent { json["agent"] = agent }
+        if let path = row.path { json["path"] = path }
         if let signal = row.signal {
             json["signal"] = switch signal {
             case .attention: "attention"

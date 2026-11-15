@@ -34,6 +34,7 @@
 //! Where the port differs it says so (`Fix (<id>)`, listed in
 //! `harness/controller/divergences.json`).
 
+mod group;
 mod input;
 mod repair;
 mod sidecar;
@@ -52,6 +53,8 @@ use crate::format::{
 use crate::hooks::AgentHook;
 use crate::model::{PaneInfo, Selection, SessionInfo, Snapshot, WindowInfo, id_cmp};
 
+pub use group::{GROUP_MARK, GROUP_OF_OPTION, is_group_name};
+use group::{GroupState, PhoneGroup};
 pub use input::{InputFlags, PixelScroll, ScrollRoute, click_bytes, wheel_bytes};
 pub use sidecar::{OWNED_OPTION, STATUS_HIDDEN_OPTION};
 use size::LeaseThen;
@@ -319,6 +322,8 @@ pub fn answers_once(command: &str) -> bool {
 #[derive(Debug, Clone, PartialEq)]
 enum Reply {
     Ignore,
+    /// The paste-buffer of paste gate `n` (B485): tmux has run it.
+    Pasted(u64),
     /// A `list-sessions`: parse it (unless refused).
     Sessions {
         locating_renderer: bool,
@@ -399,6 +404,26 @@ enum Reply {
     },
     /// Every window's lease, for the dead-pin sweep (B456).
     SweepWindows,
+    /// Our group's make: its id (B459).
+    GroupMade {
+        group: PhoneGroup,
+    },
+    /// Every session's group mark, for the leftover sweep (B459).
+    GroupSweep,
+    /// The session another phone's group views (B459).
+    ForeignGroup {
+        id: String,
+        name: String,
+    },
+    /// The attach's check of who is on the session (B459): our name...
+    GroupCheckSelf,
+    /// ...the clients...
+    GroupCheckClients,
+    /// ...and which control clients are Moshpit's; then the decision.
+    GroupCheckMarks {
+        session: String,
+        name: String,
+    },
     ClientCount {
         request: u64,
         switches: u64,
@@ -475,6 +500,11 @@ pub struct Controller {
     outputs: VecDeque<Output>,
     pending: VecDeque<Pending>,
     timers: Timers,
+    /// Input held behind the paste just sent (its number), until tmux has
+    /// run it and it has had its time (B485).
+    paste_gate: Option<(u64, Vec<input::Held>)>,
+    /// The last paste's number.
+    pastes: u64,
     /// The clock of the input (or timer) being handled.
     now: u64,
 
@@ -563,6 +593,7 @@ pub struct Controller {
 
     size: size::SizeState,
     sidecar: sidecar::SidecarState,
+    group: GroupState,
 }
 
 impl Controller {
@@ -575,6 +606,8 @@ impl Controller {
             outputs: VecDeque::new(),
             pending: VecDeque::new(),
             timers: Timers::default(),
+            paste_gate: None,
+            pastes: 0,
             now: 0,
             streams: BTreeMap::new(),
             next_stream: 1,
@@ -628,6 +661,7 @@ impl Controller {
             watchdog: None,
             size: size::SizeState::default(),
             sidecar: sidecar::SidecarState::default(),
+            group: GroupState::default(),
         }
     }
 
@@ -849,6 +883,7 @@ impl Controller {
             Action::Watchdog => self.watchdog_beat(),
             Action::PanePathTimeout(request) => self.pane_path_timed_out(request),
             Action::FlushTimeout(request) => self.flush_done(request),
+            Action::PasteSettled => self.paste_settled(),
         }
     }
 
@@ -913,6 +948,9 @@ impl Controller {
         self.parser.reset();
         self.snap().is_attached = false;
         self.close_pending_commands();
+        // The next connection makes a group of its own (this one tmux
+        // destroys with the client).
+        self.group = GroupState::default();
         self.backfills_in_flight.clear();
         self.deferred_resyncs.clear();
         let panes: Vec<String> = self.pane_resize_awaiting_capture.iter().cloned().collect();
@@ -1197,6 +1235,7 @@ impl Controller {
     fn answer(&mut self, reply: Reply, response: &CommandResponse) {
         match reply {
             Reply::Ignore => {}
+            Reply::Pasted(paste) => self.pasted(paste),
             Reply::Sessions { locating_renderer } => {
                 if let Some(rows) = listing(response) {
                     self.parse_list_sessions_with(rows, locating_renderer);
@@ -1299,6 +1338,14 @@ impl Controller {
             Reply::RestoreSelf => self.restore_self_answered(response),
             Reply::RestoreClients { session } => self.restore_clients_answered(&session, response),
             Reply::SweepWindows => self.sweep_windows_answered(response),
+            Reply::GroupMade { group } => self.group_made(group, response),
+            Reply::GroupSweep => self.groups_swept(response),
+            Reply::ForeignGroup { id, name } => self.foreign_group_answered(&id, &name, response),
+            Reply::GroupCheckSelf => self.group_check_self_answered(response),
+            Reply::GroupCheckClients => self.group_check_clients_answered(response),
+            Reply::GroupCheckMarks { session, name } => {
+                self.group_check_marks_answered(&session, &name, response)
+            }
             Reply::PristineProbe { window } => self.pristine_probe_answered(&window, response),
             Reply::SizeProbe { before, .. } => self.size_probe_answered(before, response),
             Reply::SwitchProbe { session, earlier } => {
@@ -1366,13 +1413,90 @@ impl Controller {
 
     /// The first `%session-changed` after the channel comes up IS the
     /// (re)attach; later ones are session switches on a live connection.
+    ///
+    /// B459: this client views a session through a group of its own. Our
+    /// group's change stands for its session; a real session's makes the
+    /// group first; another phone's group (an attach without a target lands
+    /// on the latest session, which may be one) is left for a group of our
+    /// own on the session it views.
     fn handle_session_changed(&mut self, session_id: &str, name: &str) {
-        let fresh_attach = !self.snapshot.is_attached;
+        if let Some(session) = self.group_target(session_id, name) {
+            self.group.entering = false;
+            if let Some(group) = self.group.current.as_mut()
+                && group.id.is_none()
+            {
+                group.id = Some(session_id.to_owned());
+            }
+            if self.snapshot.is_attached
+                && self.group.client_on.as_deref() == Some(session.as_str())
+            {
+                // The make's own echo: S's change (or the switch) did the work.
+                return;
+            }
+            let name = self
+                .snapshot
+                .sessions
+                .get(&session)
+                .map(|info| info.name.clone())
+                .unwrap_or_default();
+            self.attach_to_session(&session, &name, false);
+            return;
+        }
+        if !is_group_name(name) && self.in_group() {
+            // tmux moved this client off our group: it is gone (killed under
+            // us). A new one for where we are now.
+            self.group.current = None;
+            self.group.entering = false;
+            self.group.landing = false;
+        }
+        if self.config.renders_output && !self.group.refused && is_group_name(name) {
+            // Control mode is up (tmux said where we are): the lookup goes
+            // out, and the attach still counts as fresh when it lands.
+            self.group.fresh_pending |= !self.snapshot.is_attached;
+            self.snap().is_attached = true;
+            self.send_command(
+                format!("display-message -p -t '{session_id}' '#{{{GROUP_OF_OPTION}}}'"),
+                Reply::ForeignGroup {
+                    id: session_id.to_owned(),
+                    name: name.to_owned(),
+                },
+            );
+            return;
+        }
+        let group = self.wants_group_for(session_id);
+        self.attach_to_session(session_id, name, group);
+    }
+
+    /// Landed on another phone's group: a group of our own on the session it
+    /// views; one that names none is taken as a session.
+    fn foreign_group_answered(&mut self, id: &str, name: &str, response: &CommandResponse) {
+        let session = response
+            .lines
+            .first()
+            .map(|line| trim_whitespaces(line).to_owned())
+            .filter(|s| !response.is_error && s.starts_with('$') && is_valid_id(s));
+        match session {
+            Some(session) => {
+                let base = name.split(GROUP_MARK).next().unwrap_or_default().to_owned();
+                self.enter_group(&session, &base);
+            }
+            None => self.attach_to_session(id, name, false),
+        }
+    }
+
+    /// What a `%session-changed` to `session_id` does: the attach, or a
+    /// switch on a live connection; `group`: our group of it made first.
+    fn attach_to_session(&mut self, session_id: &str, name: &str, group: bool) {
+        self.group.client_on = Some(session_id.to_owned());
+        let fresh_attach =
+            !self.snapshot.is_attached || std::mem::take(&mut self.group.fresh_pending);
         let snapshot = self.snap();
         snapshot.active_session_id = Some(session_id.to_owned());
         match snapshot.sessions.get_mut(session_id) {
             Some(session) => {
-                session.name = name.to_owned();
+                if !name.is_empty() {
+                    session.name = name.to_owned();
+                }
                 session.is_attached = true;
             }
             None => {
@@ -1390,6 +1514,18 @@ impl Controller {
         snapshot.ever_attached = true;
         if self.attached_at.is_none() {
             self.attached_at = Some(self.now);
+        }
+        if group && fresh_attach {
+            // B459: who is on the session first (a desktop's control client
+            // keeps the phone off a group); the group, if any, follows.
+            self.check_for_foreign_control(session_id, name);
+        } else if group {
+            // Before anything else, so all that follows runs there.
+            self.enter_group(session_id, name);
+        }
+        if !self.config.renders_output && fresh_attach {
+            // A mosh sidecar is a Moshpit control client too.
+            self.register_as_moshpit();
         }
         if self.config.renders_output {
             if fresh_attach {
@@ -1409,6 +1545,8 @@ impl Controller {
             if fresh_attach {
                 // B456: what a dead phone left pinned, handed back.
                 self.sweep_dead_pins();
+                // B459: groups a dead phone left behind.
+                self.sweep_groups();
             }
         } else {
             // B270: what the renderer's attach squashed, read again now.
@@ -1441,11 +1579,13 @@ impl Controller {
     }
 
     fn handle_session_window_changed(&mut self, session_id: &str, window_id: &str) {
-        // Broadcast for EVERY session: only ours is followed.
-        if self.snapshot.active_session_id.as_deref() != Some(session_id) {
+        // Broadcast for EVERY session: only the one this client is on is
+        // followed — our group, never S's own (a desktop's, B459).
+        if self.client_session_id().as_deref() != Some(session_id) {
             return;
         }
-        self.server_current_window = Some((session_id.to_owned(), window_id.to_owned()));
+        let session = self.snapshot.active_session_id.clone().unwrap_or_default();
+        self.server_current_window = Some((session, window_id.to_owned()));
         // The viewed window is local state: tmux's current window is shared
         // by every client of the session, so only adopt it when ours is gone
         // or this is the echo of our own select-window.
@@ -1507,6 +1647,7 @@ impl Controller {
     fn parse_list_sessions_with(&mut self, lines: &[String], locating_renderer: bool) {
         let mut sessions = BTreeMap::new();
         let mut last_attached: Option<String> = None;
+        let mut group_ids = BTreeSet::new();
         self.session_clients.clear();
         for line in lines {
             let parts = fields(line, b' ', 2, true);
@@ -1515,6 +1656,11 @@ impl Controller {
             }
             if let Some(count) = swift_int(parts[1]) {
                 self.session_clients.insert(parts[0].to_owned(), count);
+            }
+            // B459: a phone's group is a view of a session, never one.
+            if is_group_name(parts[2]) {
+                group_ids.insert(parts[0].to_owned());
+                continue;
             }
             let is_attached = parts[1] != "0";
             sessions.insert(
@@ -1529,6 +1675,19 @@ impl Controller {
                 last_attached = Some(parts[0].to_owned());
             }
         }
+        self.group.group_ids = group_ids;
+        if let Some(session) = self
+            .group
+            .current
+            .as_ref()
+            .map(|group| group.session.clone())
+            && let Some(info) = sessions.get_mut(&session)
+        {
+            // The phone is on it, through its group.
+            info.is_attached = true;
+        }
+        let listed: BTreeSet<String> = sessions.keys().cloned().collect();
+        self.drop_orphaned_group(&listed);
         if self.config.renders_output {
             // Our session is what tmux told US (%session-changed, or our own
             // switch); `session_attached` counts every client, so it only
@@ -1556,20 +1715,50 @@ impl Controller {
         let mut windows = BTreeMap::new();
         let mut links: BTreeMap<String, usize> = BTreeMap::new();
         let mut tmux_active: Option<String> = None;
+        // B459: our group's rows are S's, and their current window is the
+        // phone's; S's own current window is the desktop's (where the group
+        // lands). Another phone's group lists S's windows again: skipped.
+        let our_group = self
+            .group
+            .current
+            .as_ref()
+            .and_then(|group| Some((group.id.clone()?, group.session.clone())));
+        let mut session_active: Option<String> = None;
+        let mut from_group: BTreeSet<String> = BTreeSet::new();
         for line in lines {
             let parts = fields(line, b' ', 6, false);
             if parts.len() != 7 || parts[..6].iter().any(|part| part.is_empty()) {
                 continue;
             }
-            let (session_id, id) = (parts[0], parts[1]);
-            if !is_valid_id(session_id) || !is_valid_id(id) {
+            let (listed_session, id) = (parts[0], parts[1]);
+            if !is_valid_id(listed_session) || !is_valid_id(id) {
                 continue;
             }
-            let is_active = parts[4] == "1";
             *links.entry(id.to_owned()).or_default() += 1;
+            let group_row = our_group
+                .as_ref()
+                .is_some_and(|(group, _)| group == listed_session);
+            if !group_row && self.group.group_ids.contains(listed_session) {
+                continue;
+            }
+            let session_id = match &our_group {
+                Some((_, session)) if group_row => session.as_str(),
+                _ => listed_session,
+            };
+            let is_active = parts[4] == "1";
             // `-a` flags every session's current window; only ours counts.
             if is_active && self.snapshot.active_session_id.as_deref() == Some(session_id) {
-                tmux_active = Some(id.to_owned());
+                if our_group.is_none() || group_row {
+                    tmux_active = Some(id.to_owned());
+                } else {
+                    session_active = Some(id.to_owned());
+                }
+            }
+            if our_group.is_some() && !group_row && from_group.contains(id) {
+                continue;
+            }
+            if group_row {
+                from_group.insert(id.to_owned());
             }
             // Fix (linked-window-close, B87): a window linked into several
             // sessions is listed once for each; ours keeps it (the last
@@ -1597,6 +1786,16 @@ impl Controller {
             );
         }
         self.window_links = links;
+        if our_group.is_some()
+            && std::mem::take(&mut self.group.landing)
+            && let Some(window) = session_active
+        {
+            // The group starts on S's lowest window: where S is instead.
+            if tmux_active.as_deref() != Some(window.as_str()) {
+                self.send(format!("select-window -t {window}"));
+            }
+            tmux_active = Some(window);
+        }
         let current_is_ours = self
             .snapshot
             .active_window_id
@@ -1733,6 +1932,11 @@ impl Controller {
         let Some(restore) = self.pending_restore.clone() else {
             return;
         };
+        // B459: not before the attach knows whether it views the session
+        // through its own group, and is in it.
+        if self.group.deciding {
+            return;
+        }
         if !self.snapshot.is_attached || self.snapshot.sessions.is_empty() {
             return;
         }
@@ -1786,7 +1990,8 @@ impl Controller {
 
     /// The session whose current window or a window's active pane the
     /// restore would change; `None` when it changes neither (or names no
-    /// window or pane discovery knows).
+    /// window or pane discovery knows). Through our group (B459) the current
+    /// window is ours alone: only a window's active pane is shared.
     fn session_a_restore_moves(&self, restore: &Selection) -> Option<String> {
         let pane = restore
             .pane
@@ -1799,7 +2004,8 @@ impl Controller {
                 .filter(|window| self.snapshot.windows.contains_key(window.as_str()))
         })?;
         let window = self.snapshot.windows.get(&window_id)?;
-        let moves = !window.is_active || pane.is_some_and(|pane| !pane.is_active);
+        let moves =
+            (!self.in_group() && !window.is_active) || pane.is_some_and(|pane| !pane.is_active);
         (moves && !window.session_id.is_empty()).then(|| window.session_id.clone())
     }
 
@@ -1811,7 +2017,10 @@ impl Controller {
         let Some(&count) = self.session_clients.get(session) else {
             return true;
         };
-        let mut ours = i64::from(self.snapshot.active_session_id.as_deref() == Some(session));
+        // Through our group this client is on the group, not on `session`.
+        let mut ours = i64::from(
+            !self.in_group() && self.snapshot.active_session_id.as_deref() == Some(session),
+        );
         if !self.config.renders_output
             && self.sidecar.renderer_session_id.as_deref() == Some(session)
         {
@@ -1849,9 +2058,21 @@ impl Controller {
                         && Some(&row.name) != renderer_name.as_ref()
                         && (row.pid.is_none() || row.pid != renderer_pid)
                 });
+        let grouped = self.in_group();
+        let pane_window = self
+            .pending_restore
+            .as_ref()
+            .and_then(|restore| restore.pane.as_ref())
+            .and_then(|pane| self.snapshot.panes.get(pane.as_str()))
+            .map(|pane| pane.window_id.clone());
         if others && let Some(restore) = self.pending_restore.as_mut() {
             restore.session = session.to_owned();
-            restore.window = None;
+            if grouped {
+                // B459: the window is ours to pick; its active pane stays.
+                restore.window = restore.window.take().or(pane_window);
+            } else {
+                restore.window = None;
+            }
             restore.pane = None;
         }
         self.apply_pending_restore_if_ready();
@@ -1911,6 +2132,10 @@ impl Controller {
     }
 
     fn handle_window_add(&mut self, window_id: &str) {
+        // B459: the make echoes every window of S as added to our group.
+        if self.group.entering && self.snapshot.windows.contains_key(window_id) {
+            return;
+        }
         if !self.snapshot.windows.contains_key(window_id) {
             let session = self.snapshot.active_session_id.clone().unwrap_or_default();
             self.snap()
@@ -2111,6 +2336,8 @@ impl Controller {
         {
             self.select_session_now(&session);
         }
+        // Picked: the group (if one was just made) lands here, not where S is.
+        self.group.landing = false;
         let old_window = self.snapshot.active_window_id.clone();
         if old_window.as_deref() != Some(window_id) {
             if let Some(old) = old_window {
@@ -2163,7 +2390,26 @@ impl Controller {
             // B150: the switch sizes the session's windows by us (its
             // latest client): what it squashes is read on both sides.
             self.probe_switch_layouts(session_id);
-            self.send(format!("switch-client -t {session_id}"));
+            let in_its_group = self
+                .group
+                .current
+                .as_ref()
+                .is_some_and(|group| group.session == session_id);
+            if in_its_group {
+                // Already viewing it.
+            } else if self.wants_group_for(session_id) {
+                // B459: into a group of its own, in one step — the selects
+                // that follow land there, never on the session itself.
+                let name = self
+                    .snapshot
+                    .sessions
+                    .get(session_id)
+                    .map(|info| info.name.clone())
+                    .unwrap_or_default();
+                self.enter_group(session_id, &name);
+            } else {
+                self.send(format!("switch-client -t {session_id}"));
+            }
         } else {
             self.sidecar_switch(session_id, left, left_window);
         }
@@ -2210,6 +2456,7 @@ impl Controller {
         {
             self.select_session_now(&session);
         }
+        self.group.landing = false;
         if let Some(new_window) = new_window
             && Some(&new_window) != old_window.as_ref()
         {
@@ -2451,6 +2698,16 @@ impl Controller {
             return;
         }
         self.send_surfacing_errors(format!("kill-session -t {session_id}"), "kill session");
+        // B459: our group would keep the windows alive; it goes with it, and
+        // tmux moves this client on.
+        if let Some(group) = self
+            .group
+            .current
+            .take_if(|group| group.session == session_id)
+            && let Some(id) = group.id
+        {
+            self.send(format!("kill-session -t '{id}'"));
+        }
         let windows: Vec<String> = self
             .snapshot
             .windows

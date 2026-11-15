@@ -726,6 +726,68 @@ fn v21_new_cell_pixels_while_reading_keep_whole_rows() {
     assert!(f.display_offset > 0, "still reading");
 }
 
+/// B500 (xterm's alternate scroll, the owner's call): a swipe over an
+/// alternate-screen program without the mouse (less, man, git log) sends
+/// it the arrow keys, by its cursor-key mode, at most six a move, and a
+/// coast sends them paced as a wheel's reports are. It moved nothing: the
+/// alternate screen keeps no history. With the mouse on it is still the
+/// wheel; on the main screen, the history.
+#[test]
+fn v20_a_swipe_over_a_pager_is_its_arrow_keys() {
+    let mut t = tall(50);
+    t.feed(b"\x1b[?1049h");
+    let _ = t.frame();
+    assert_eq!(
+        t.scroll_drag(90.0, false),
+        ScrollAction::Wheel(b"\x1b[A\x1b[A\x1b[A".to_vec()),
+        "older is up"
+    );
+    assert_eq!(
+        t.scroll_drag(-30.0, false),
+        ScrollAction::Wheel(b"\x1b[B".to_vec())
+    );
+    assert_eq!(t.scroll_offset_px(), 0, "no history moved");
+    // A pager in application cursor mode.
+    t.feed(b"\x1b[?1h");
+    assert_eq!(
+        t.scroll_drag(30.0, false),
+        ScrollAction::Wheel(b"\x1bOA".to_vec())
+    );
+    let ScrollAction::Wheel(bytes) = t.scroll_drag(3_000.0, false) else {
+        panic!("arrows")
+    };
+    assert_eq!(bytes, b"\x1bOA".repeat(6), "six a move at most");
+    // A coast: paced as a wheel, at most six presses a step.
+    let mut now = 0;
+    for _ in 0..5 {
+        now += 10;
+        t.fling_track_at(now, 100.0);
+    }
+    assert!(t.fling_start_at(now, false));
+    let mut presses = Vec::new();
+    while let Some(dy) = t.fling_step(1.0 / 60.0) {
+        if let ScrollAction::Wheel(bytes) = t.scroll_drag(dy, false) {
+            presses.push(bytes.len() / 3);
+        }
+        assert!(presses.len() < 1_000);
+    }
+    assert!(presses.iter().all(|n| (1..=6).contains(n)), "{presses:?}");
+    assert!(presses.iter().sum::<usize>() <= 150);
+    // The mouse on: its wheel.
+    t.feed(b"\x1b[?1000h\x1b[?1006h");
+    let ScrollAction::Wheel(bytes) = t.scroll_drag(30.0, false) else {
+        panic!("the wheel")
+    };
+    assert!(bytes.starts_with(b"\x1b[<64;"), "{bytes:?}");
+    // The main screen again: its history.
+    t.feed(b"\x1b[?1000l\x1b[?1049l");
+    let _ = t.frame();
+    assert!(matches!(
+        t.scroll_drag(30.0, false),
+        ScrollAction::Local { .. }
+    ));
+}
+
 /// A drag of `px` pixels in moves of `step` every 10 ms from `at`, routed
 /// as the view routes it and tracked for the lift; when it ended.
 fn drag_for_a_fling(t: &mut moshpit_term::Terminal, at: u64, px: f64, step: f64) -> u64 {

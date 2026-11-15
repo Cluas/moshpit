@@ -9,7 +9,7 @@ use std::time::Duration;
 
 use moshpit_ssh::{
     Auth, BoxFuture, ConnectOptions, HardwareKey, HostSignature, KeyError, KeyKind, KeySigner,
-    SignerError, Ssh, SshError, inspect_private_key,
+    SignInQuestion, SignInQuestions, SignerError, Ssh, SshError, inspect_private_key,
 };
 use p256::ecdsa::signature::Signer as _;
 use russh::MethodKind;
@@ -333,6 +333,240 @@ async fn questions_only_the_person_can_answer_are_said_as_such() {
         );
         assert_eq!(host.seen().kbd_answers, answered, "{rounds:?}");
     }
+}
+
+/// B563: the saved password goes only to a prompt that reads as one. A
+/// one-time code asked first (pam_google_authenticator before pam_unix)
+/// used to get the password, spending one of the code's rate-limited tries
+/// before the sign-in stopped at the real "Password:".
+#[tokio::test]
+async fn the_password_never_answers_a_prompt_that_is_not_for_it() {
+    let host = kbd_host(vec![
+        vec![("Verification code: ", false)],
+        vec![("Password: ", false)],
+    ])
+    .await;
+    let err = sign_in_by_password(&host, PASSWORD).await.err().unwrap();
+    assert!(
+        matches!(err, SshError::InteractivePrompts { .. }),
+        "{err:?}"
+    );
+    assert_eq!(
+        host.seen().kbd_answers,
+        Vec::<Vec<String>>::new(),
+        "the code prompt got the password"
+    );
+}
+
+/// The password prompts PAM asks in the languages it ships, and the
+/// passphrase prompts, are the password's.
+#[tokio::test]
+async fn a_password_prompt_in_another_language_is_the_passwords() {
+    for prompt in [
+        "Passwort: ",
+        "Mot de passe : ",
+        "Contraseña: ",
+        "密码：",
+        "パスワード:",
+        "비밀번호:",
+        "Пароль: ",
+        "Enter passphrase: ",
+    ] {
+        let host = kbd_host(vec![vec![(prompt, false)]]).await;
+        sign_in_by_password(&host, PASSWORD)
+            .await
+            .unwrap_or_else(|e| panic!("{prompt}: {e}"));
+    }
+}
+
+/// The person at the phone: answers a code prompt with [`ONE_TIME_CODE`],
+/// any other with [`PASSWORD`] (or declines, or takes their time), and
+/// keeps what was asked.
+#[derive(Default)]
+struct Person {
+    declines: bool,
+    delay: Duration,
+    asked: std::sync::Mutex<Vec<(String, SignInQuestion)>>,
+}
+
+impl SignInQuestions for Person {
+    fn ask<'a>(
+        &'a self,
+        host: &'a str,
+        question: &'a SignInQuestion,
+    ) -> BoxFuture<'a, Option<String>> {
+        Box::pin(async move {
+            self.asked
+                .lock()
+                .unwrap()
+                .push((host.to_owned(), question.clone()));
+            tokio::time::sleep(self.delay).await;
+            let answer = if question.prompt.to_lowercase().contains("code") {
+                ONE_TIME_CODE
+            } else {
+                PASSWORD
+            };
+            (!self.declines).then(|| answer.to_owned())
+        })
+    }
+}
+
+async fn sign_in_asking(
+    host: &Host,
+    person: Arc<Person>,
+    options: &ConnectOptions,
+) -> Result<Ssh, SshError> {
+    Ssh::connect_asking(
+        &host.target(),
+        Auth::password(PASSWORD),
+        Arc::new(AcceptAny),
+        Some(person),
+        options,
+    )
+    .await
+}
+
+/// B563: a one-time code is asked of the person with the server's words,
+/// whether PAM asks it before the password (pam_google_authenticator
+/// first), after it, or in the same round; the password still goes only
+/// to the password prompt.
+#[tokio::test]
+async fn a_one_time_code_is_asked_of_the_person_wherever_it_comes() {
+    let code = ("Verification code: ", false);
+    let password = ("Password: ", false);
+    let cases: [(Rounds, Vec<Vec<String>>); 3] = [
+        (
+            vec![vec![code], vec![password]],
+            vec![vec![ONE_TIME_CODE.to_owned()], vec![PASSWORD.to_owned()]],
+        ),
+        (
+            vec![vec![password], vec![code]],
+            vec![vec![PASSWORD.to_owned()], vec![ONE_TIME_CODE.to_owned()]],
+        ),
+        (
+            vec![vec![password, code]],
+            vec![vec![PASSWORD.to_owned(), ONE_TIME_CODE.to_owned()]],
+        ),
+    ];
+    for (rounds, answered) in cases {
+        let host = kbd_host(rounds.clone()).await;
+        let person = Arc::new(Person::default());
+        let ssh = sign_in_asking(&host, person.clone(), &options())
+            .await
+            .unwrap_or_else(|e| panic!("{rounds:?}: {e}"));
+        assert_eq!(ssh.run("echo in").await.unwrap().stdout(), b"in\n");
+        assert_eq!(host.seen().kbd_answers, answered, "{rounds:?}");
+        let asked = person.asked.lock().unwrap().clone();
+        assert_eq!(asked.len(), 1, "{rounds:?}: {asked:?}");
+        assert_eq!(asked[0].0, host.target().host);
+        assert_eq!(asked[0].1.prompt, "Verification code: ");
+        assert!(!asked[0].1.echo);
+    }
+}
+
+/// The person declining the server's question ends the sign-in as theirs,
+/// with nothing sent for the round.
+#[tokio::test]
+async fn declining_the_servers_question_says_so() {
+    let host = kbd_host(vec![
+        vec![("Verification code: ", false)],
+        vec![("Password: ", false)],
+    ])
+    .await;
+    let person = Arc::new(Person {
+        declines: true,
+        ..Default::default()
+    });
+    let err = sign_in_asking(&host, person, &options())
+        .await
+        .err()
+        .unwrap();
+    assert!(matches!(err, SshError::SignInDeclined { .. }), "{err:?}");
+    assert!(host.seen().kbd_answers.is_empty());
+}
+
+/// Reading a code off an authenticator takes the person's time, not the
+/// server's.
+#[tokio::test]
+async fn a_slow_answer_does_not_time_the_handshake_out() {
+    let host = kbd_host(vec![vec![("Verification code: ", false)]]).await;
+    let person = Arc::new(Person {
+        delay: Duration::from_millis(1500),
+        ..Default::default()
+    });
+    let options = ConnectOptions {
+        handshake_timeout: Duration::from_millis(1000),
+        ..options()
+    };
+    sign_in_asking(&host, person, &options).await.unwrap();
+}
+
+/// A key that is only the first factor, with keyboard-interactive the
+/// second (`AuthenticationMethods publickey,keyboard-interactive`).
+async fn key_then_kbd_host(rounds: Rounds) -> Host {
+    Host::start(Bench {
+        methods: vec![MethodKind::PublicKey, MethodKind::KeyboardInteractive],
+        keyboard_interactive: rounds,
+        key_then_keyboard_interactive: true,
+        ..Default::default()
+    })
+    .await
+}
+
+/// B565: a one-time code asked after the key (the common 2FA setup) is
+/// the person's: it read as a wrong key ("authentication failed"), with
+/// nothing asked. With no saved password, every prompt of that second
+/// factor is theirs — a password asked there too.
+#[tokio::test]
+async fn a_second_factor_after_a_key_is_asked_of_the_person() {
+    let code = ("Verification code: ", false);
+    let password = ("Password: ", false);
+    let cases: [(Rounds, Vec<Vec<String>>, usize); 2] = [
+        (vec![vec![code]], vec![vec![ONE_TIME_CODE.to_owned()]], 1),
+        (
+            vec![vec![password], vec![code]],
+            vec![vec![PASSWORD.to_owned()], vec![ONE_TIME_CODE.to_owned()]],
+            2,
+        ),
+    ];
+    for (rounds, answered, questions) in cases {
+        let host = key_then_kbd_host(rounds.clone()).await;
+        let person = Arc::new(Person::default());
+        let ssh = Ssh::connect_asking(
+            &host.target(),
+            Auth::key(fixture_key("ed25519")),
+            Arc::new(AcceptAny),
+            Some(person.clone()),
+            &options(),
+        )
+        .await
+        .unwrap_or_else(|e| panic!("{rounds:?}: {e}"));
+        assert_eq!(ssh.run("echo in").await.unwrap().stdout(), b"in\n");
+        assert_eq!(host.seen().key_algorithms, vec!["ssh-ed25519"]);
+        assert_eq!(host.seen().kbd_answers, answered, "{rounds:?}");
+        assert_eq!(person.asked.lock().unwrap().len(), questions, "{rounds:?}");
+    }
+}
+
+/// With nobody to ask, the second factor is said as what it is — a
+/// question only the person can answer — not a wrong key.
+#[tokio::test]
+async fn a_second_factor_with_nobody_to_ask_is_said_as_such() {
+    let host = key_then_kbd_host(vec![vec![("Verification code: ", false)]]).await;
+    let err = Ssh::connect(
+        &host.target(),
+        Auth::key(fixture_key("ed25519")),
+        Arc::new(AcceptAny),
+        &options(),
+    )
+    .await
+    .err()
+    .unwrap();
+    assert!(
+        matches!(err, SshError::InteractivePrompts { .. }),
+        "{err:?}"
+    );
+    assert!(host.seen().kbd_answers.is_empty());
 }
 
 /// A host that takes passwords as such never gets one through

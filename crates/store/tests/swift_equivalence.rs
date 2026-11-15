@@ -1,9 +1,15 @@
 //! This crate against what the app's Swift stores printed for the same
-//! cases (tests/fixtures/swift, written by `harness/equivalence.py
-//! update-goldens` from the app's unchanged sources and 1.0.8's), without
-//! swiftc. The results are kept as the SHA-256 of each canonical line (they
-//! run to megabytes); on a mismatch, `harness/equivalence.py run` shows the
-//! lines themselves.
+//! cases, and against what 1.0.8 reads of what it writes (tests/fixtures/
+//! swift), without swiftc. The results are kept as the SHA-256 of each
+//! canonical line (they run to megabytes).
+//!
+//! The app's own Swift stores are gone (batch C): their hashes
+//! (`cases.swift.sha256`, `divergences.swift.sha256`) are frozen as they
+//! printed last, and `harness/equivalence.py update-goldens --from-rust`
+//! records Rust's in their place after a deliberate change to what the
+//! store writes. 1.0.8's (`views108.swift.sha256`) are written by
+//! `update-goldens` from 1.0.8's sources, and `harness/equivalence.py run`
+//! shows the lines themselves.
 
 use std::fs;
 use std::path::PathBuf;
@@ -31,8 +37,8 @@ fn sha(line: &str) -> String {
         .collect()
 }
 
-/// Every generated case prints, in canonical form, what the current app's
-/// Swift printed.
+/// Every generated case prints, in canonical form, what the app's Swift
+/// stores printed (as they last did; see the module's note).
 #[test]
 fn generated_cases_print_what_the_apps_swift_printed() {
     let cases = fixture("cases.txt");

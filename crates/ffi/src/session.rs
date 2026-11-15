@@ -182,15 +182,26 @@ pub struct SessionSpec {
 
 impl SessionSpec {
     fn core(&self) -> ConnectionSpec {
+        // An IPv6 address saved in brackets is the address (B562): dialled,
+        // proxied and trusted under the one spelling.
         let mut spec = ConnectionSpec::ssh(
             self.connection_id.clone(),
-            Target::new(self.user.clone(), self.host.clone(), self.port),
+            Target::new(
+                self.user.clone(),
+                moshpit_ssh::unbracketed(&self.host),
+                self.port,
+            ),
         );
         spec.proxy = self
             .proxy_host
             .as_ref()
             .filter(|host| !host.is_empty())
-            .map(|host| Socks5Proxy::new(host.clone(), self.proxy_port.unwrap_or(1080)));
+            .map(|host| {
+                Socks5Proxy::new(
+                    moshpit_ssh::unbracketed(host),
+                    self.proxy_port.unwrap_or(1080),
+                )
+            });
         spec.protocol = if self.mosh {
             Protocol::Mosh
         } else {
@@ -257,8 +268,30 @@ pub enum SessionEventKind {
         fingerprint: String,
         /// The trusted fingerprint, when the key CHANGED.
         previous: Option<String>,
+        /// `ssh-rsa` when the server offers no better host-key algorithm
+        /// (B564).
+        older_algorithm: Option<String>,
+    },
+    /// The connection had to use an older host-key algorithm (B564).
+    OlderHostKeyAlgorithm {
+        algorithm: String,
     },
     HostKeyPromptWithdrawn {
+        prompt: u64,
+    },
+    /// What the server asks at sign-in that the saved password doesn't
+    /// answer (a one-time code, B563), in its own words; answer with
+    /// `answer_question`.
+    SignInQuestion {
+        prompt: u64,
+        host: String,
+        name: String,
+        instructions: String,
+        text: String,
+        /// Whether the answer is shown as typed (false: a secret).
+        echo: bool,
+    },
+    SignInQuestionWithdrawn {
         prompt: u64,
     },
     Degraded {
@@ -881,6 +914,11 @@ impl CoreSessions {
         self.sessions.answer_host_key(session, prompt, trust);
     }
 
+    /// The person's answer to a `SignInQuestion` (`None`: declined).
+    pub fn answer_question(&self, session: u64, prompt: u64, answer: Option<String>) {
+        self.sessions.answer_question(session, prompt, answer);
+    }
+
     /// Something for the session's tmux to do; refused at once, with
     /// nothing sent, when a name in it can't be used as typed.
     pub fn tmux(&self, session: u64, intent: TmuxIntent) -> Result<(), TmuxRefused> {
@@ -1249,15 +1287,38 @@ fn event_value(event: core::Event) -> Option<SessionEvent> {
             port,
             fingerprint,
             previous,
+            older_algorithm,
         } => SessionEventKind::HostKeyPrompt {
             prompt,
             host,
             port,
             fingerprint,
             previous,
+            older_algorithm,
         },
+        EventKind::OlderHostKeyAlgorithm { algorithm } => {
+            SessionEventKind::OlderHostKeyAlgorithm { algorithm }
+        }
         EventKind::HostKeyPromptWithdrawn { prompt } => {
             SessionEventKind::HostKeyPromptWithdrawn { prompt }
+        }
+        EventKind::SignInQuestion {
+            prompt,
+            host,
+            name,
+            instructions,
+            text,
+            echo,
+        } => SessionEventKind::SignInQuestion {
+            prompt,
+            host,
+            name,
+            instructions,
+            text,
+            echo,
+        },
+        EventKind::SignInQuestionWithdrawn { prompt } => {
+            SessionEventKind::SignInQuestionWithdrawn { prompt }
         }
         EventKind::Degraded(degrade) => SessionEventKind::Degraded {
             degrade: degrade_value(degrade),
@@ -1657,6 +1718,34 @@ mod tests {
         assert_eq!(core.mosh_port_range, (Some(60001), None));
         assert_eq!(core.locale, "en_US.UTF-8", "the default locale");
         assert_eq!(core.initial_grid, (1, 40));
+    }
+
+    /// B562: an IPv6 address saved in brackets (`[2001:db8::1]`, as URLs
+    /// write it) is dialled, proxied and trusted as the address: the name
+    /// lookup takes no brackets, so the session was unreachable for good.
+    #[test]
+    fn an_address_in_brackets_is_the_address() {
+        let spec = SessionSpec {
+            connection_id: "0F2E2C4A-6E1B-4D8A-9C5B-2A7D3E9F1B11".into(),
+            user: "me".into(),
+            host: "[2001:db8::1]".into(),
+            port: 22,
+            proxy_host: Some("[::1]".into()),
+            proxy_port: Some(1080),
+            mosh: false,
+            multiplexer: SessionMultiplexer::None,
+            tmux_path: None,
+            mosh_server_path: None,
+            mosh_port_low: None,
+            mosh_port_high: None,
+            herdr_path: None,
+            locale: String::new(),
+            cols: 80,
+            rows: 24,
+        };
+        let core = spec.core();
+        assert_eq!(core.target, Target::new("me", "2001:db8::1", 22));
+        assert_eq!(core.proxy, Some(Socks5Proxy::new("::1", 1080)));
     }
 
     #[test]

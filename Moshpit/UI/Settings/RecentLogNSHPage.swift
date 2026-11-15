@@ -1,23 +1,9 @@
 import SwiftUI
 
-/// Settings › Recent Log: the SwiftUI page (``DiagnosticsLogView``), or the
-/// NSH one while its switch is on (``NSHScreen/recentLog``). With the switch
-/// off the SwiftUI page is all there is: no NSH code runs.
-struct RecentLogPage: View {
-    var body: some View {
-        if NSHScreen.recentLog.isOn {
-            RecentLogNSHPage()
-        } else {
-            DiagnosticsLogView()
-                .darkOnlyPage()
-        }
-    }
-}
-
 /// Settings › Recent Log drawn by NSH (`ui/src/recent_log.rs`): the same log,
 /// read the same way (``DiagnosticsLog/recent()``), posted to the screen,
-/// which shows it as the SwiftUI page does. Its back button pops the stack.
-/// If NSH cannot run here, the SwiftUI page shows instead.
+/// which shows it. Its back button pops the stack. If its screen can't run,
+/// the page says so (``NSHPageFailed``).
 struct RecentLogNSHPage: View {
     @Environment(\.dismiss) private var dismiss
     @State private var model = RecentLogModel()
@@ -25,8 +11,7 @@ struct RecentLogNSHPage: View {
 
     var body: some View {
         if failed {
-            DiagnosticsLogView()
-                .darkOnlyPage()
+            NSHPageFailed { failed = false }
         } else {
             NSHPage(
                 screen: .recentLog,
@@ -55,7 +40,7 @@ struct RecentLogNSHPage: View {
 final class RecentLogModel {
     enum State: Equatable {
         case loading
-        /// What to show: the SwiftUI page's text for the error.
+        /// What to show: the error, in words.
         case failed(String)
         case loaded([DiagnosticsLog.Entry])
 
@@ -78,7 +63,7 @@ final class RecentLogModel {
         surface.post(Self.message(for: state))
     }
 
-    /// Reads the log, as the SwiftUI page does, and shows what came back.
+    /// Reads the log and shows what came back.
     func load() async {
         switch await DiagnosticsLog.recent() {
         case .success(let rows): show(.loaded(rows))

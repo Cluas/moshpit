@@ -67,6 +67,13 @@ pub struct PetView {
     pub may_hatch: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub moment: Option<Moment>,
+    /// It talks (「让它说话」, PET-DESIGN §17): on unless turned off.
+    #[serde(default = "talks")]
+    pub talk: bool,
+}
+
+fn talks() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

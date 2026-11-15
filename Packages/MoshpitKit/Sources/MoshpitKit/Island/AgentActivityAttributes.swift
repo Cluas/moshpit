@@ -51,8 +51,14 @@ public struct AgentActivityAttributes: ActivityAttributes {
         public var paneId: String
         /// Foreground command being watched, e.g. "claude", "cargo", "node".
         public var command: String
-        /// Where it lives: "work · 2:rednote" (host · window:pane).
+        /// Where it lives: "work · 2:rednote" (host · window:pane). The
+        /// cards' wording; the island and the lock screen say ``place``.
         public var location: String
+        /// Where it is as Home says it: "moshpit · mac", Home's name for the
+        /// pane (its workspace, a window someone named, its folder) and the
+        /// host, or the host alone — never a window's raw title (a version,
+        /// "3: 1"). Decided in Rust (`moshpit-agents`); nil from older builds.
+        public var place: String?
         /// What the agent is actually doing / asking — the hook's `@moshpit_title`
         /// (e.g. "Bash: npm install", or the permission message). nil on the
         /// output heuristic (no precise content) and for older-build activities.
@@ -62,10 +68,21 @@ public struct AgentActivityAttributes: ActivityAttributes {
         public var startedAt: Date
 
         public init(id: String, connectionId: String, paneId: String, command: String,
-                    location: String, detail: String? = nil, state: AgentState, startedAt: Date) {
+                    location: String, place: String? = nil, detail: String? = nil,
+                    state: AgentState, startedAt: Date) {
             self.id = id; self.connectionId = connectionId; self.paneId = paneId
-            self.command = command; self.location = location; self.detail = detail
-            self.state = state; self.startedAt = startedAt
+            self.command = command; self.location = location; self.place = place
+            self.detail = detail; self.state = state; self.startedAt = startedAt
+        }
+
+        /// The agent's name: its command ("claude"), "shell" for none.
+        public var name: String { command.isEmpty ? "shell" : command }
+
+        /// The line saying where it is: ``place``, else (an older build's
+        /// activity) ``location``.
+        public var whereabouts: String {
+            if let place, !place.isEmpty { return place }
+            return location
         }
     }
 

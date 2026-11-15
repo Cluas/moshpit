@@ -93,6 +93,7 @@ pub fn run(script: &Script, dir: &std::path::Path, language: Language) -> Vec<St
             command: command.clone(),
             session: Some(SESSION.into()),
             window: Some(WINDOW.into()),
+            name: None,
         },
         None => PaneWhere::default(),
     };

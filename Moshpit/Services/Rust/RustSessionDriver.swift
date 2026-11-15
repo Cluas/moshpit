@@ -3,8 +3,8 @@ import MoshpitFFI
 import MoshpitKit
 import UIKit
 
-/// One ``SessionHub/ActiveSession`` running on the Rust core instead of the
-/// Swift transports (``RustSessionSwitch``): the core dials, signs in,
+/// One ``SessionHub/ActiveSession`` running on the Rust core (every session
+/// does, ``RustCore/available``): the core dials, signs in,
 /// keeps the connection alive, redials, runs tmux's controller, herdr's
 /// client or mosh; this puts what it says where the app's screens already
 /// look.
@@ -43,6 +43,8 @@ final class RustSessionDriver: RustSessionListener {
     /// dead one replaced by an edited connection) still leaves the core.
     private let registry: CoreSessionsProtocol
     nonisolated(unsafe) private var openSession: UInt64?
+    /// Settings' predictive echo, heard while this is a mosh session (B533).
+    nonisolated(unsafe) private var predictionChanges: NSObjectProtocol?
 
     /// The core's session, once connected.
     private(set) var id: UInt64? {
@@ -68,6 +70,9 @@ final class RustSessionDriver: RustSessionListener {
     private(set) var herdrSurface: RustHerdrController?
     private var appearance: RustTmuxController.Appearance
     private var hostKeyPrompt: UInt64?
+    /// The diagnostics were told of the older host-key algorithm (B564).
+    private var saidOlderHostKey = false
+    private var signInQuestion: UInt64?
     private var refusedHostKey = false
     private var settleWaiters: [CheckedContinuation<Void, Never>] = []
     private var closeWaiters: [CheckedContinuation<Void, Never>] = []
@@ -116,6 +121,7 @@ final class RustSessionDriver: RustSessionListener {
 
     deinit {
         if let openSession { registry.disconnect(session: openSession) }
+        if let predictionChanges { NotificationCenter.default.removeObserver(predictionChanges) }
     }
 
     // MARK: Lifecycle
@@ -129,8 +135,8 @@ final class RustSessionDriver: RustSessionListener {
         if let id {
             switch state {
             case .failed, .ended:
-                // A new attempt: the last one's error is not its own, as
-                // the Swift path's `resetForReconnect` drops it (B513).
+                // A new attempt: the last one's error is not its own
+                // (B513).
                 viewModel.errorMessage = nil
                 viewModel.adoptRustStatus(.connecting, automatic: automatic)
                 core.sessions.reconnect(session: id)
@@ -201,6 +207,7 @@ final class RustSessionDriver: RustSessionListener {
         settle()
         viewModel.hostKeyPrompt?.decide(false)
         viewModel.keyPassphrasePrompt?.decide(nil)
+        viewModel.signInQuestion?.decide(nil)
         guard let id, !closed else { return }
         core.sessions.disconnect(session: id)
         openSession = nil
@@ -301,13 +308,28 @@ final class RustSessionDriver: RustSessionListener {
             // plane down, B401; the connection dialled again, B483) waited
             // past their bound; an attach is back now.
             tmux?.noteRefused(RustCopy.tmuxActionsDropped)
-        case .hostKeyPrompt(let prompt, let host, let port, let fingerprint, let previous):
+        case .hostKeyPrompt(let prompt, let host, let port, let fingerprint, let previous, let older):
             presentHostKey(prompt: prompt, host: host, port: Int(port),
-                           fingerprint: fingerprint, previous: previous)
+                           fingerprint: fingerprint, previous: previous, older: older)
+        case .olderHostKeyAlgorithm(let algorithm):
+            // B564: for the diagnostics, once a session.
+            if !saidOlderHostKey {
+                saidOlderHostKey = true
+                Log.ssh.notice("rust session \(self.id ?? 0, privacy: .public): this server uses an older host-key algorithm (\(algorithm, privacy: .public), SHA-1)")
+            }
         case .hostKeyPromptWithdrawn(let prompt):
             if hostKeyPrompt == prompt {
                 hostKeyPrompt = nil
                 viewModel.hostKeyPrompt = nil
+            }
+        case .signInQuestion(let prompt, let host, let name, let instructions, let text, let echo):
+            presentQuestion(prompt: prompt, host: host,
+                            words: Self.serverWords(name: name, instructions: instructions, prompt: text),
+                            echo: echo)
+        case .signInQuestionWithdrawn(let prompt):
+            if signInQuestion == prompt {
+                signInQuestion = nil
+                viewModel.signInQuestion = nil
             }
         case .degraded(let degrade):
             publishCapabilities()
@@ -587,10 +609,23 @@ final class RustSessionDriver: RustSessionListener {
 
     /// mosh's predictive echo on the session's terminal, as the Swift path
     /// sets it up; its evidence comes in the channel (``shellMark(_:)``).
+    /// Settings' mode or trail changed while it runs is taken at once
+    /// (B533): it used to wait for the next connect.
     private func attachPrediction() {
+        if predictionChanges == nil {
+            predictionChanges = NotificationCenter.default.addObserver(
+                forName: .moshpitPredictionChanged, object: AppSettings.shared, queue: .main
+            ) { [weak self] _ in
+                MainActor.assumeIsolated { self?.predict() }
+            }
+        }
+        predict()
+    }
+
+    /// The prediction Settings and the connection say now.
+    private func predict() {
         session.coordinator.attachPrediction(MoshPrediction(
-            mode: SessionHub.ActiveSession.effectivePredictMode(
-                connection: connection.predictMode, app: AppSettings.shared.predictMode),
+            mode: connection.predictOverride ?? AppSettings.shared.predictMode,
             trail: AppSettings.shared.trailOnPredict))
     }
 
@@ -927,10 +962,11 @@ final class RustSessionDriver: RustSessionListener {
     // MARK: Cards
 
     private func presentHostKey(prompt: UInt64, host: String, port: Int, fingerprint: String,
-                                previous: String?) {
+                                previous: String?, older: String?) {
         hostKeyPrompt = prompt
         viewModel.hostKeyPrompt = TerminalViewModel.HostKeyPrompt(
-            host: host, port: port, fingerprint: fingerprint, previousFingerprint: previous
+            host: host, port: port, fingerprint: fingerprint, previousFingerprint: previous,
+            olderAlgorithm: older
         ) { [weak self] trusted in
             guard let self else { return }
             self.viewModel.hostKeyPrompt = nil
@@ -938,14 +974,43 @@ final class RustSessionDriver: RustSessionListener {
             if let id = self.id {
                 self.core.sessions.answerHostKey(session: id, prompt: prompt, trust: trusted)
             }
-            if trusted {
-                Task { await SSHService.shared.noteTrustedByRustCore(host: host, port: port,
-                                                                     fingerprint: fingerprint) }
-            } else {
+            if !trusted {
                 self.refusedHostKey = true
             }
         }
     }
+
+    private func presentQuestion(prompt: UInt64, host: String, words: String, echo: Bool) {
+        signInQuestion = prompt
+        viewModel.signInQuestion = TerminalViewModel.SignInQuestion(
+            host: host, words: words, echo: echo
+        ) { [weak self] answer in
+            guard let self else { return }
+            self.viewModel.signInQuestion = nil
+            self.signInQuestion = nil
+            if let id = self.id {
+                self.core.sessions.answerQuestion(session: id, prompt: prompt, answer: answer)
+            }
+        }
+    }
+
+    /// What the server said with its question, shown as it was sent: its
+    /// non-empty parts on lines of their own, without terminal escapes or
+    /// other control characters (noise on a card), bounded.
+    static func serverWords(name: String, instructions: String, prompt: String) -> String {
+        let parts = [name, instructions, prompt].map { part in
+            let plain = part.replacingOccurrences(of: terminalEscape, with: "",
+                                                  options: .regularExpression)
+            return String(String.UnicodeScalarView(plain.unicodeScalars.filter {
+                $0 == "\n" || !CharacterSet.controlCharacters.contains($0)
+            })).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return String(parts.filter { !$0.isEmpty }.joined(separator: "\n").prefix(600))
+    }
+
+    /// A CSI sequence (colours, cursor moves) or an OSC one (a title).
+    private static let terminalEscape =
+        "\u{1B}\\[[0-?]*[ -/]*[@-~]|\u{1B}\\][^\u{07}\u{1B}]*(\u{07}|\u{1B}\\\\)?"
 
     private func askPassphrase(wrong: Bool) async -> String? {
         await withCheckedContinuation { continuation in

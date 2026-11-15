@@ -21,8 +21,8 @@
 //! card's head opens (or connects, or reconnects) the host, ⋯ on the head
 //! is the only second button. A row's secondary actions are the host's
 //! long-press menus (by the row's identifier: `home-head-<connection>`,
-//! `home-pane-<connection>-<pane>`) and, on a head or a saved row, the
-//! swipe tray.
+//! `home-pane-<connection>-<pane>`) and the swipe tray: a head's or a saved
+//! row's, a pane's most used ones (B499, [`swipe::pane_tray`]).
 //!
 //! The host owns the data and the navigation. It posts what Home shows
 //! ([`Message`]): `{"op": "home", …}` ([`model::HomeState`]) whenever any
@@ -37,7 +37,8 @@ mod card;
 pub mod model;
 pub mod pet;
 mod rows;
-mod swipe;
+pub mod swipe;
+pub mod talk;
 pub mod words;
 
 use std::{collections::HashMap, rc::Rc, sync::Arc, time::Duration};
@@ -74,6 +75,9 @@ pub enum Message {
     /// `{"op": "pet", …}`: the companion, and the count of its moments
     /// ([`pet`]).
     Pet(Box<moshpit_pet::PetView>, u64),
+    /// `{"op": "visible", …}`: Home on screen or not, with the local hour
+    /// and day ([`talk`]).
+    Visible(talk::Visible),
 }
 
 /// What the page says of one host's lists: its idle group open or not;
@@ -90,6 +94,12 @@ pub struct TreeState {
     /// Home's idle group is open on this host's card.
     #[serde(default)]
     pub idle: bool,
+    /// The sessions page has told this host's sessions and windows (an
+    /// event carrying `collapsed` or `expanded`). A tree Home's idle group
+    /// alone made is not a disclosure the page kept: past eight sessions,
+    /// it read as "nothing folded" and opened them all (B553).
+    #[serde(default)]
+    pub told: bool,
 }
 
 #[derive(Deserialize)]
@@ -111,6 +121,9 @@ impl Message {
                 .map(|f| Message::Trees(f.trees))
                 .map_err(|e| format!("home: trees: {e}")),
             "pet" => pet::parse(fields).map(|(view, seq)| Message::Pet(Box::new(view), seq)),
+            "visible" => serde_json::from_value(fields)
+                .map(Message::Visible)
+                .map_err(|e| format!("home: visible: {e}")),
             other => Err(format!("home: no op {other:?}")),
         }
     }
@@ -128,6 +141,11 @@ impl Message {
                 let mut value = serde_json::to_value(view).expect("a pet serializes");
                 value["op"] = json!("pet");
                 value["seq"] = json!(seq);
+                value.to_string()
+            }
+            Message::Visible(visible) => {
+                let mut value = serde_json::to_value(visible).expect("a visible serializes");
+                value["op"] = json!("visible");
                 value.to_string()
             }
         }
@@ -299,6 +317,11 @@ impl Ctx {
         (self.tell)(intent.event());
     }
 
+    /// What tells the host (a swipe tray's actions: [`swipe::tray_row`]).
+    pub(crate) fn teller(&self) -> Tell {
+        self.tell.clone()
+    }
+
     /// What `intent` asks, as a press handler.
     pub(crate) fn asking(&self, intent: Intent) -> impl Fn() + 'static {
         let tell = self.tell.clone();
@@ -360,6 +383,56 @@ pub(crate) fn agent_word() -> String {
     t!("agent")
 }
 
+/// The pet's talk (§17): Home's changes, its milestones and its
+/// visibility, turned into cues for its chatter.
+fn talk_on(state: Signal<Option<HomeState>>, pet: &pet::PetCtx) {
+    // The perched agent's and its host's edges.
+    {
+        let pet = pet.clone();
+        let edges = std::rc::Rc::new(std::cell::RefCell::new(talk::Edges::default()));
+        effect(move || {
+            let cue = state.with(|s| {
+                let s = s.as_ref()?;
+                edges
+                    .borrow_mut()
+                    .next(&s.connections, &agent_word(), unix_now())
+            });
+            if let Some((cue, fill)) = cue {
+                untracked(|| pet.cue(cue, fill, unix_now()));
+            }
+        });
+    }
+    // Its milestones.
+    {
+        let pet = pet.clone();
+        let milestones = std::rc::Rc::new(std::cell::RefCell::new(talk::Milestones::default()));
+        effect(move || {
+            let seq = pet.seq.get();
+            let cue = pet.view.with(|v| {
+                v.as_ref()
+                    .and_then(|v| milestones.borrow_mut().next(v, seq))
+            });
+            if let Some(cue) = cue {
+                untracked(|| pet.cue(cue, talk::Fill::default(), unix_now()));
+            }
+        });
+    }
+    // Home on screen: the chatter knows; once it has settled, a kept
+    // milestone or the night's or the morning's line.
+    {
+        let pet = pet.clone();
+        effect(move || {
+            let visible = pet.visible.get().visible;
+            pet.chatter.borrow_mut().visible(visible, unix_now());
+            if visible {
+                let pet = pet.clone();
+                let settle = Duration::from_secs_f64(moshpit_pet::talk::SETTLE_SECS);
+                drop(set_timeout(settle, move || pet.arrived(unix_now())));
+            }
+        });
+    }
+}
+
 /// Home.
 #[component]
 pub fn HomeScreen(props: ScreenProps) -> impl IntoElement {
@@ -370,7 +443,7 @@ pub fn HomeScreen(props: ScreenProps) -> impl IntoElement {
     let state = signal(None::<HomeState>);
     let trees = signal(HashMap::<String, TreeState>::new());
     let pet_ctx = pet::PetCtx::new();
-    let (pet_view, pet_seq) = (pet_ctx.view, pet_ctx.seq);
+    let (pet_view, pet_seq, pet_visible) = (pet_ctx.view, pet_ctx.seq, pet_ctx.visible);
     channel::hear(
         channel.as_ref(),
         Screen::Home,
@@ -386,8 +459,10 @@ pub fn HomeScreen(props: ScreenProps) -> impl IntoElement {
                 pet_view.set(Some(*view));
                 pet_seq.set(seq);
             }
+            Message::Visible(visible) => pet_visible.set(visible),
         },
     );
+    talk_on(state, &pet_ctx);
     // One breath for every working dot on the page (§4.12).
     share_breath();
     let now = signal(unix_now());
@@ -515,12 +590,13 @@ fn list(
                 .into_iter()
                 .map(|w| {
                     // The login, for the path's `~`.
-                    let user = c
-                        .iter()
-                        .find(|c| c.id == w.row.connection)
-                        .map(|c| c.user.clone())
+                    let host = c.iter().find(|c| c.id == w.row.connection);
+                    let user = host.map(|c| c.user.clone()).unwrap_or_default();
+                    // Its swipe tray, as on its host's card (B499).
+                    let tray = host
+                        .map(|c| rows::pane_tray_of(c, &w.row.pane))
                         .unwrap_or_default();
-                    (w, user)
+                    (w, user, tray)
                 })
                 .collect::<Vec<_>>()
         })
@@ -608,7 +684,7 @@ fn list(
 /// The top group: NEEDS YOU while someone waits, else the line of facts.
 fn top_group(
     summary: Memo<model::Summary>,
-    waiting: Memo<Vec<(model::WaitingRow, String)>>,
+    waiting: Memo<Vec<(model::WaitingRow, String, Vec<swipe::Action>)>>,
     ctx: Ctx,
 ) -> AnyElement {
     let needs = computed(move || matches!(summary.get(), model::Summary::NeedsYou { .. }));
@@ -645,7 +721,10 @@ fn group_header(title: String, badge: Option<Badge>) -> AnyElement {
 
 /// NEEDS YOU: its title and count, then a card with a row per waiting
 /// agent, the one waiting longest first (R5's order).
-fn needs_you(waiting: Memo<Vec<(model::WaitingRow, String)>>, ctx: Ctx) -> AnyElement {
+fn needs_you(
+    waiting: Memo<Vec<(model::WaitingRow, String, Vec<swipe::Action>)>>,
+    ctx: Ctx,
+) -> AnyElement {
     let count = computed(move || waiting.with(Vec::len));
     // The rows' identity (who waits): the card is made again when it
     // changes, a new row rising in (§6.1 motion), not when a duration
@@ -653,7 +732,7 @@ fn needs_you(waiting: Memo<Vec<(model::WaitingRow, String)>>, ctx: Ctx) -> AnyEl
     let who = computed(move || {
         waiting.with(|w| {
             w.iter()
-                .map(|(w, _)| (w.row.connection.clone(), w.row.pane.clone()))
+                .map(|(w, _, _)| (w.row.connection.clone(), w.row.pane.clone()))
                 .collect::<Vec<_>>()
         })
     });
@@ -683,7 +762,7 @@ fn needs_you(waiting: Memo<Vec<(model::WaitingRow, String)>>, ctx: Ctx) -> AnyEl
                 let card = section()
                     .rows(
                         rows.into_iter()
-                            .map(|(w, user)| rows::waiting_row(w, user, &ctx)),
+                            .map(|(w, user, tray)| rows::waiting_row(w, user, tray, &ctx)),
                     )
                     .into_element();
                 pet::on(ctx.clone(), pet::Perch::NeedsYou, card)
@@ -947,6 +1026,7 @@ mod tests {
             collapsed: vec!["$1".into()],
             expanded: vec!["@2".into()],
             idle: true,
+            told: true,
         }]);
         assert_eq!(Message::parse(&trees.to_json()), Ok(trees));
         // A host that keeps no idle flag yet: the group is shut.

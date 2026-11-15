@@ -178,6 +178,29 @@ fn adaptive_hides_guesses_on_a_fast_link() {
     assert_eq!(rig.row(0), "$ ab", "a 500 ms link: guesses");
 }
 
+/// B533: Settings' predictive echo is taken by a live session at once, by
+/// attaching again. A guess shown under the old mode goes with it (the
+/// emulator never held it), and the new mode guesses from there.
+#[test]
+fn a_mode_attached_mid_session_drops_the_old_guesses() {
+    let mut rig = Rig::new(PredictMode::Always, 500.0);
+    rig.warm_up("a");
+    rig.type_("b");
+    assert_eq!(rig.row(0), "$ ab", "the guess shows");
+    rig.t.predict_attach(PredictMode::Never, false);
+    assert_eq!(rig.row(0), "$ a", "a guess outlived its mode");
+    rig.type_("c");
+    assert_eq!(rig.row(0), "$ a", "Never guesses nothing");
+    rig.host("bc");
+    assert_eq!(rig.row(0), "$ abc");
+
+    rig.t.predict_attach(PredictMode::Always, false);
+    rig.t.predict_srtt(500.0);
+    rig.warm_up("d");
+    rig.type_("e");
+    assert_eq!(rig.row(0), "$ abcde", "Always again: guesses again");
+}
+
 #[test]
 fn reading_history_starts_over() {
     let mut rig = Rig::new(PredictMode::Always, 500.0);

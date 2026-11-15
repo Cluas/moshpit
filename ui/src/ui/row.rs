@@ -119,6 +119,9 @@ pub struct Row {
     stacked: Rc<dyn Fn() -> bool>,
     below: Option<AnyElement>,
     test_id: Option<SharedString>,
+    /// What the built row is put in (a swipe tray: B499), keeping its
+    /// place on the section (its inset, its leading lane).
+    wrap: Option<Box<dyn FnOnce(AnyElement) -> AnyElement>>,
 }
 
 /// A row titled `title`.
@@ -151,6 +154,7 @@ pub fn row(title: impl Into<SharedString>) -> Row {
         stacked: Rc::new(|| false),
         below: None,
         test_id: None,
+        wrap: None,
     }
 }
 
@@ -387,6 +391,13 @@ impl Row {
         self
     }
 
+    /// The built row put in what `wrap` makes of it (a swipe tray around
+    /// it: B499); the section still places it as this row.
+    pub fn wrapped(mut self, wrap: impl FnOnce(AnyElement) -> AnyElement + 'static) -> Self {
+        self.wrap = Some(Box::new(wrap));
+        self
+    }
+
     /// Where the separator above this row starts: at the title, which is
     /// past the leading lane when the row has (or keeps) one.
     pub fn inset(&self) -> Inset {
@@ -430,7 +441,18 @@ fn line(token: TextToken, words: Text, mono: bool) -> Text {
 }
 
 impl IntoElement for Row {
-    fn into_element(self) -> AnyElement {
+    fn into_element(mut self) -> AnyElement {
+        let wrap = self.wrap.take();
+        let element = self.build();
+        match wrap {
+            Some(wrap) => wrap(element),
+            None => element,
+        }
+    }
+}
+
+impl Row {
+    fn build(self) -> AnyElement {
         let Row {
             title,
             subtitle,
@@ -458,6 +480,7 @@ impl IntoElement for Row {
             stacked,
             below,
             test_id,
+            wrap: _,
         } = self;
         let ink = match tone {
             RowTone::Default => "foreground",

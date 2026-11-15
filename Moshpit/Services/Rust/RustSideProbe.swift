@@ -13,9 +13,7 @@ import QuartzCore
 /// --console`) and in the log. `<dir>` holds `chart.png` (1 MiB) and
 /// `clip.mp4` (4 MiB) on the host.
 ///
-/// With `-MOSHPIT_SIDE_BORROW 0` the same calls take the Swift dial W14b
-/// replaced (``SessionHub/ActiveSession/lendingRust``): sign-ins counted in
-/// the private sshd's log, before against after, on one build. Nothing is
+/// Nothing is
 /// written on the host but the uploads (into `~/.moshpit/uploads`), nothing
 /// on the phone outlives the launch but the preview's temporary copies.
 @MainActor
@@ -54,7 +52,7 @@ enum RustSideProbe {
     }
 
     private static func probe(_ session: SessionHub.ActiveSession, dir: String, rounds: Int) async {
-        let path = session.rust == nil ? "swift" : (session.lendingRust == nil ? "rust+dial" : "rust+borrow")
+        let path = session.rust == nil ? "none" : "rust+borrow"
         let transport = "\(session.connection.connectionProtocol.rawValue)+\(session.connection.multiplexer.rawValue)"
         say("side probe \(path) \(transport): \(rounds) rounds on \(dir)")
         var times: [String: [Double]] = [:]

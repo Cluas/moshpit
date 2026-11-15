@@ -3,9 +3,8 @@ import UIKit
 
 // The NSH terminal's bottom: the shortcut bar's state (`{"op": "bar", …}`)
 // and the panels that ride above it — voice input, an image upload, a host
-// file's preview — read from their controllers as the SwiftUI overlays
-// read them (`DictationOverlayView`, `ImageAttachmentOverlayView`,
-// `RemotePreviewHUD`), and the host components they place.
+// file's preview — read from their controllers, and the host components
+// they place.
 
 /// The shortcut bar (`ui/src/terminal/model.rs`'s `Bar`).
 struct TerminalNSHBar: Equatable {

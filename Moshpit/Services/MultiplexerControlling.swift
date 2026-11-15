@@ -19,8 +19,9 @@ struct TmuxSnapshot: Equatable {
 
     /// Direction of the most recent pane/window switch — `true` = forward
     /// (swipe left / next), `false` = backward (swipe right / previous).
-    /// Set by `switchPaneOrWindow(forward:)`; read by `TmuxPaneSplitView` to
-    /// pick which edge the incoming pane slides in from. Switches triggered
+    /// Set by `switchPaneOrWindow(forward:)`; read by the terminal's stage
+    /// (``TerminalNSHStage``) to pick which edge the incoming pane slides in
+    /// from. Switches triggered
     /// by a tap (sessions tree, Windows/Sessions/Pane sheets) don't have a
     /// direction of their own, so they just reuse whatever this last was —
     /// an arbitrary but harmless default, not worth threading a "was this a

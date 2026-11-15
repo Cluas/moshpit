@@ -2485,6 +2485,11 @@ public protocol CoreSessionsProtocol: AnyObject, Sendable {
     func answerHostKey(session: UInt64, prompt: UInt64, trust: Bool) 
     
     /**
+     * The person's answer to a `SignInQuestion` (`None`: declined).
+     */
+    func answerQuestion(session: UInt64, prompt: UInt64, answer: String?) 
+    
+    /**
      * The session's SSH, lent to what runs beside its terminal (a file
      * preview, an upload, file transfer, host care): exec and SFTP
      * channels on the connection it already has (`crate::borrow`).
@@ -2703,6 +2708,19 @@ open func answerHostKey(session: UInt64, prompt: UInt64, trust: Bool)  {try! rus
         FfiConverterUInt64.lower(session),
         FfiConverterUInt64.lower(prompt),
         FfiConverterBool.lower(trust),$0
+    )
+}
+}
+    
+    /**
+     * The person's answer to a `SignInQuestion` (`None`: declined).
+     */
+open func answerQuestion(session: UInt64, prompt: UInt64, answer: String?)  {try! rustCall() {
+    uniffi_moshpit_ffi_fn_method_coresessions_answer_question(
+            self.uniffiCloneHandle(),
+        FfiConverterUInt64.lower(session),
+        FfiConverterUInt64.lower(prompt),
+        FfiConverterOptionString.lower(answer),$0
     )
 }
 }
@@ -5349,161 +5367,6 @@ public func FfiConverterTypeKeychainHost_lower(_ value: KeychainHost) -> UInt64 
 
 
 /**
- * The trusted host keys in the keychain item `moshpit.knownHosts`.
- */
-public protocol KnownHostsHandleProtocol: AnyObject, Sendable {
-    
-    /**
-     * `host:port` → `SHA256:…`.
-     */
-    func read() throws  -> [String: String]
-    
-    func write(entries: [String: String]) throws 
-    
-}
-/**
- * The trusted host keys in the keychain item `moshpit.knownHosts`.
- */
-open class KnownHostsHandle: KnownHostsHandleProtocol, @unchecked Sendable {
-    fileprivate let handle: UInt64
-
-    /// Used to instantiate a [FFIObject] without an actual handle, for fakes in tests, mostly.
-#if swift(>=5.8)
-    @_documentation(visibility: private)
-#endif
-    public struct NoHandle {
-        public init() {}
-    }
-
-    // TODO: We'd like this to be `private` but for Swifty reasons,
-    // we can't implement `FfiConverter` without making this `required` and we can't
-    // make it `required` without making it `public`.
-#if swift(>=5.8)
-    @_documentation(visibility: private)
-#endif
-    required public init(unsafeFromHandle handle: UInt64) {
-        self.handle = handle
-    }
-
-    // This constructor can be used to instantiate a fake object.
-    // - Parameter noHandle: Placeholder value so we can have a constructor separate from the default empty one that may be implemented for classes extending [FFIObject].
-    //
-    // - Warning:
-    //     Any object instantiated with this constructor cannot be passed to an actual Rust-backed object. Since there isn't a backing handle the FFI lower functions will crash.
-#if swift(>=5.8)
-    @_documentation(visibility: private)
-#endif
-    public init(noHandle: NoHandle) {
-        self.handle = 0
-    }
-
-#if swift(>=5.8)
-    @_documentation(visibility: private)
-#endif
-    public func uniffiCloneHandle() -> UInt64 {
-        return try! rustCall { uniffi_moshpit_ffi_fn_clone_knownhostshandle(self.handle, $0) }
-    }
-    /**
-     * `preferences` answers whether protected data is readable now: "no
-     * item" read while it isn't — a launch before the first unlock after a
-     * reboot — is [`KnownHostsFailure::Locked`], not an empty map (B226's
-     * rule, as the sessions' known hosts apply it). Without it the handle
-     * read every trusted host as new before the unlock, and the first
-     * write after it put one entry over all of them (B251).
-     */
-public convenience init(keychain: KeychainHost, preferences: PreferencesHost) {
-    let handle =
-        try! rustCall() {
-    uniffi_moshpit_ffi_fn_constructor_knownhostshandle_new(
-        FfiConverterTypeKeychainHost_lower(keychain),
-        FfiConverterTypePreferencesHost_lower(preferences),$0
-    )
-}
-    self.init(unsafeFromHandle: handle)
-}
-
-    deinit {
-        if handle == 0 {
-            // Mock objects have handle=0 don't try to free them
-            return
-        }
-
-        try! rustCall { uniffi_moshpit_ffi_fn_free_knownhostshandle(handle, $0) }
-    }
-
-    
-
-    
-    /**
-     * `host:port` → `SHA256:…`.
-     */
-open func read()throws  -> [String: String]  {
-    return try  FfiConverterDictionaryStringString.lift(try rustCallWithError(FfiConverterTypeKnownHostsFailure_lift) {
-    uniffi_moshpit_ffi_fn_method_knownhostshandle_read(
-            self.uniffiCloneHandle(),$0
-    )
-})
-}
-    
-open func write(entries: [String: String])throws   {try rustCallWithError(FfiConverterTypeKnownHostsFailure_lift) {
-    uniffi_moshpit_ffi_fn_method_knownhostshandle_write(
-            self.uniffiCloneHandle(),
-        FfiConverterDictionaryStringString.lower(entries),$0
-    )
-}
-}
-    
-
-    
-}
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public struct FfiConverterTypeKnownHostsHandle: FfiConverter {
-    typealias FfiType = UInt64
-    typealias SwiftType = KnownHostsHandle
-
-    public static func lift(_ handle: UInt64) throws -> KnownHostsHandle {
-        return KnownHostsHandle(unsafeFromHandle: handle)
-    }
-
-    public static func lower(_ value: KnownHostsHandle) -> UInt64 {
-        return value.uniffiCloneHandle()
-    }
-
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> KnownHostsHandle {
-        let handle: UInt64 = try readInt(&buf)
-        return try lift(handle)
-    }
-
-    public static func write(_ value: KnownHostsHandle, into buf: inout [UInt8]) {
-        writeInt(&buf, lower(value))
-    }
-}
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeKnownHostsHandle_lift(_ handle: UInt64) throws -> KnownHostsHandle {
-    return try FfiConverterTypeKnownHostsHandle.lift(handle)
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeKnownHostsHandle_lower(_ value: KnownHostsHandle) -> UInt64 {
-    return FfiConverterTypeKnownHostsHandle.lower(value)
-}
-
-
-
-
-
-
-/**
  * The pairings file the notification service reads (the App Group's
  * `push-pairings.json`), as the app reaches it. Each call keeps
  * `PushPairingFile`'s rules and the file's protection.
@@ -6320,6 +6183,11 @@ public protocol PetMachineProtocol: AnyObject, Sendable {
     func setPace(pace: String) 
     
     /**
+     * Whether it talks on Home (「让它说话」).
+     */
+    func setTalk(talk: Bool) 
+    
+    /**
      * The egg's and the hatch's state in a log line: what a device report
      * is read from (the host adds whether Home shows).
      */
@@ -6559,6 +6427,17 @@ open func setPace(pace: String)  {try! rustCall() {
     uniffi_moshpit_ffi_fn_method_petmachine_set_pace(
             self.uniffiCloneHandle(),
         FfiConverterString.lower(pace),$0
+    )
+}
+}
+    
+    /**
+     * Whether it talks on Home (「让它说话」).
+     */
+open func setTalk(talk: Bool)  {try! rustCall() {
+    uniffi_moshpit_ffi_fn_method_petmachine_set_talk(
+            self.uniffiCloneHandle(),
+        FfiConverterBool.lower(talk),$0
     )
 }
 }
@@ -9431,19 +9310,27 @@ public func FfiConverterTypeAgentIslandValue_lower(_ value: AgentIslandValue) ->
 
 
 /**
- * Where a pane lives, from the app's tree.
+ * Where a pane lives, from the app's tree. `window_name`, `workspace`
+ * (herdr's, none under tmux) and `path` are what Home names it from
+ * (`moshpit_ui`'s `pane_place`), so the island says it as Home does.
  */
 public struct AgentPaneWhereValue: Equatable, Hashable {
     public var command: String
     public var session: String?
     public var window: String?
+    public var windowName: String?
+    public var workspace: String?
+    public var path: String?
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(command: String, session: String?, window: String?) {
+    public init(command: String, session: String?, window: String?, windowName: String? = nil, workspace: String? = nil, path: String? = nil) {
         self.command = command
         self.session = session
         self.window = window
+        self.windowName = windowName
+        self.workspace = workspace
+        self.path = path
     }
 
     
@@ -9464,7 +9351,10 @@ public struct FfiConverterTypeAgentPaneWhereValue: FfiConverterRustBuffer {
             try AgentPaneWhereValue(
                 command: FfiConverterString.read(from: &buf), 
                 session: FfiConverterOptionString.read(from: &buf), 
-                window: FfiConverterOptionString.read(from: &buf)
+                window: FfiConverterOptionString.read(from: &buf), 
+                windowName: FfiConverterOptionString.read(from: &buf), 
+                workspace: FfiConverterOptionString.read(from: &buf), 
+                path: FfiConverterOptionString.read(from: &buf)
         )
     }
 
@@ -9472,6 +9362,9 @@ public struct FfiConverterTypeAgentPaneWhereValue: FfiConverterRustBuffer {
         FfiConverterString.write(value.command, into: &buf)
         FfiConverterOptionString.write(value.session, into: &buf)
         FfiConverterOptionString.write(value.window, into: &buf)
+        FfiConverterOptionString.write(value.windowName, into: &buf)
+        FfiConverterOptionString.write(value.workspace, into: &buf)
+        FfiConverterOptionString.write(value.path, into: &buf)
     }
 }
 
@@ -9501,18 +9394,26 @@ public struct AgentRowValue: Equatable, Hashable {
     public var paneId: String
     public var command: String
     public var location: String
+    /**
+     * "moshpit · mac": Home's name for the pane and the host.
+     */
+    public var place: String
     public var detail: String?
     public var state: String
     public var startedAt: Double
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(id: String, connectionId: String, paneId: String, command: String, location: String, detail: String?, state: String, startedAt: Double) {
+    public init(id: String, connectionId: String, paneId: String, command: String, location: String, 
+        /**
+         * "moshpit · mac": Home's name for the pane and the host.
+         */place: String, detail: String?, state: String, startedAt: Double) {
         self.id = id
         self.connectionId = connectionId
         self.paneId = paneId
         self.command = command
         self.location = location
+        self.place = place
         self.detail = detail
         self.state = state
         self.startedAt = startedAt
@@ -9539,6 +9440,7 @@ public struct FfiConverterTypeAgentRowValue: FfiConverterRustBuffer {
                 paneId: FfiConverterString.read(from: &buf), 
                 command: FfiConverterString.read(from: &buf), 
                 location: FfiConverterString.read(from: &buf), 
+                place: FfiConverterString.read(from: &buf), 
                 detail: FfiConverterOptionString.read(from: &buf), 
                 state: FfiConverterString.read(from: &buf), 
                 startedAt: FfiConverterDouble.read(from: &buf)
@@ -9551,6 +9453,7 @@ public struct FfiConverterTypeAgentRowValue: FfiConverterRustBuffer {
         FfiConverterString.write(value.paneId, into: &buf)
         FfiConverterString.write(value.command, into: &buf)
         FfiConverterString.write(value.location, into: &buf)
+        FfiConverterString.write(value.place, into: &buf)
         FfiConverterOptionString.write(value.detail, into: &buf)
         FfiConverterString.write(value.state, into: &buf)
         FfiConverterDouble.write(value.startedAt, into: &buf)
@@ -9807,7 +9710,6 @@ public struct ConnectionDraft: Equatable, Hashable {
     public var selectedKey: String?
     public var useMosh: Bool
     public var predictModeRaw: String
-    public var roamOnCellular: Bool
     public var multiplexerRaw: String
     public var tmuxPath: String
     public var herdrPath: String
@@ -9832,7 +9734,7 @@ public struct ConnectionDraft: Equatable, Hashable {
          */editing: Bool, name: String, host: String, port: String, username: String, auth: StoreAuthMethod, 
         /**
          * The managed key picked (a UUID); none: a PEM pasted.
-         */selectedKey: String?, useMosh: Bool, predictModeRaw: String, roamOnCellular: Bool, multiplexerRaw: String, tmuxPath: String, herdrPath: String, 
+         */selectedKey: String?, useMosh: Bool, predictModeRaw: String, multiplexerRaw: String, tmuxPath: String, herdrPath: String, 
         /**
          * Empty: `mosh-server` on PATH.
          */moshServerPath: String, useSocksProxy: Bool, socksProxyHost: String, socksProxyPort: String, 
@@ -9848,7 +9750,6 @@ public struct ConnectionDraft: Equatable, Hashable {
         self.selectedKey = selectedKey
         self.useMosh = useMosh
         self.predictModeRaw = predictModeRaw
-        self.roamOnCellular = roamOnCellular
         self.multiplexerRaw = multiplexerRaw
         self.tmuxPath = tmuxPath
         self.herdrPath = herdrPath
@@ -9885,7 +9786,6 @@ public struct FfiConverterTypeConnectionDraft: FfiConverterRustBuffer {
                 selectedKey: FfiConverterOptionString.read(from: &buf), 
                 useMosh: FfiConverterBool.read(from: &buf), 
                 predictModeRaw: FfiConverterString.read(from: &buf), 
-                roamOnCellular: FfiConverterBool.read(from: &buf), 
                 multiplexerRaw: FfiConverterString.read(from: &buf), 
                 tmuxPath: FfiConverterString.read(from: &buf), 
                 herdrPath: FfiConverterString.read(from: &buf), 
@@ -9908,7 +9808,6 @@ public struct FfiConverterTypeConnectionDraft: FfiConverterRustBuffer {
         FfiConverterOptionString.write(value.selectedKey, into: &buf)
         FfiConverterBool.write(value.useMosh, into: &buf)
         FfiConverterString.write(value.predictModeRaw, into: &buf)
-        FfiConverterBool.write(value.roamOnCellular, into: &buf)
         FfiConverterString.write(value.multiplexerRaw, into: &buf)
         FfiConverterString.write(value.tmuxPath, into: &buf)
         FfiConverterString.write(value.herdrPath, into: &buf)
@@ -13629,6 +13528,10 @@ public enum ConnectionSaveRefusal: Swift.Error, Equatable, Hashable, Foundation.
      */
     case Invalid(why: String
     )
+    /**
+     * The connection being edited was deleted meanwhile (B536).
+     */
+    case Gone
 
     
 
@@ -13665,6 +13568,7 @@ public struct FfiConverterTypeConnectionSaveRefusal: FfiConverterRustBuffer {
         case 3: return .Invalid(
             why: try FfiConverterString.read(from: &buf)
             )
+        case 4: return .Gone
 
          default: throw UniffiInternalError.unexpectedEnumCase
         }
@@ -13690,6 +13594,10 @@ public struct FfiConverterTypeConnectionSaveRefusal: FfiConverterRustBuffer {
             writeInt(&buf, Int32(3))
             FfiConverterString.write(why, into: &buf)
             
+        
+        case .Gone:
+            writeInt(&buf, Int32(4))
+        
         }
     }
 }
@@ -17555,92 +17463,6 @@ public func FfiConverterTypeKeychainFailure_lower(_ value: KeychainFailure) -> R
     return FfiConverterTypeKeychainFailure.lower(value)
 }
 
-
-/**
- * The trusted map can't be read (or written) now.
- */
-public enum KnownHostsFailure: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
-
-    
-    
-    /**
-     * The device is locked: decide nothing yet.
-     */
-    case Locked
-    case Unavailable(reason: String
-    )
-
-    
-
-    
-
-    
-    public var errorDescription: String? {
-        String(reflecting: self)
-    }
-    
-}
-
-#if compiler(>=6)
-extension KnownHostsFailure: Sendable {}
-#endif
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public struct FfiConverterTypeKnownHostsFailure: FfiConverterRustBuffer {
-    typealias SwiftType = KnownHostsFailure
-
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> KnownHostsFailure {
-        let variant: Int32 = try readInt(&buf)
-        switch variant {
-
-        
-
-        
-        case 1: return .Locked
-        case 2: return .Unavailable(
-            reason: try FfiConverterString.read(from: &buf)
-            )
-
-         default: throw UniffiInternalError.unexpectedEnumCase
-        }
-    }
-
-    public static func write(_ value: KnownHostsFailure, into buf: inout [UInt8]) {
-        switch value {
-
-        
-
-        
-        
-        case .Locked:
-            writeInt(&buf, Int32(1))
-        
-        
-        case let .Unavailable(reason):
-            writeInt(&buf, Int32(2))
-            FfiConverterString.write(reason, into: &buf)
-            
-        }
-    }
-}
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeKnownHostsFailure_lift(_ buf: RustBuffer) throws -> KnownHostsFailure {
-    return try FfiConverterTypeKnownHostsFailure.lift(buf)
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeKnownHostsFailure_lower(_ value: KnownHostsFailure) -> RustBuffer {
-    return FfiConverterTypeKnownHostsFailure.lower(value)
-}
-
 // Note that we don't yet support `indirect` for enums.
 // See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
 /**
@@ -18432,9 +18254,30 @@ public enum SessionEventKind: Equatable, Hashable {
     case hostKeyPrompt(prompt: UInt64, host: String, port: UInt16, fingerprint: String, 
         /**
          * The trusted fingerprint, when the key CHANGED.
-         */previous: String?
+         */previous: String?, 
+        /**
+         * `ssh-rsa` when the server offers no better host-key algorithm
+         * (B564).
+         */olderAlgorithm: String?
+    )
+    /**
+     * The connection had to use an older host-key algorithm (B564).
+     */
+    case olderHostKeyAlgorithm(algorithm: String
     )
     case hostKeyPromptWithdrawn(prompt: UInt64
+    )
+    /**
+     * What the server asks at sign-in that the saved password doesn't
+     * answer (a one-time code, B563), in its own words; answer with
+     * `answer_question`.
+     */
+    case signInQuestion(prompt: UInt64, host: String, name: String, instructions: String, text: String, 
+        /**
+         * Whether the answer is shown as typed (false: a secret).
+         */echo: Bool
+    )
+    case signInQuestionWithdrawn(prompt: UInt64
     )
     case degraded(degrade: DegradeValue
     )
@@ -18535,40 +18378,49 @@ public struct FfiConverterTypeSessionEventKind: FfiConverterRustBuffer {
         
         case 9: return .tmuxActionsDropped
         
-        case 10: return .hostKeyPrompt(prompt: try FfiConverterUInt64.read(from: &buf), host: try FfiConverterString.read(from: &buf), port: try FfiConverterUInt16.read(from: &buf), fingerprint: try FfiConverterString.read(from: &buf), previous: try FfiConverterOptionString.read(from: &buf)
+        case 10: return .hostKeyPrompt(prompt: try FfiConverterUInt64.read(from: &buf), host: try FfiConverterString.read(from: &buf), port: try FfiConverterUInt16.read(from: &buf), fingerprint: try FfiConverterString.read(from: &buf), previous: try FfiConverterOptionString.read(from: &buf), olderAlgorithm: try FfiConverterOptionString.read(from: &buf)
         )
         
-        case 11: return .hostKeyPromptWithdrawn(prompt: try FfiConverterUInt64.read(from: &buf)
+        case 11: return .olderHostKeyAlgorithm(algorithm: try FfiConverterString.read(from: &buf)
         )
         
-        case 12: return .degraded(degrade: try FfiConverterTypeDegradeValue.read(from: &buf)
+        case 12: return .hostKeyPromptWithdrawn(prompt: try FfiConverterUInt64.read(from: &buf)
         )
         
-        case 13: return .returnPathDead
-        
-        case 14: return .returnPathAlive
-        
-        case 15: return .moshMetrics(srttMs: try FfiConverterDouble.read(from: &buf), roaming: try FfiConverterBool.read(from: &buf)
+        case 13: return .signInQuestion(prompt: try FfiConverterUInt64.read(from: &buf), host: try FfiConverterString.read(from: &buf), name: try FfiConverterString.read(from: &buf), instructions: try FfiConverterString.read(from: &buf), text: try FfiConverterString.read(from: &buf), echo: try FfiConverterBool.read(from: &buf)
         )
         
-        case 16: return .moshDiagnostics(datagramsReceived: try FfiConverterUInt64.read(from: &buf), parseFailures: try FfiConverterUInt64.read(from: &buf), gapEvents: try FfiConverterUInt64.read(from: &buf), appliedHostNum: try FfiConverterUInt64.read(from: &buf), packetsSent: try FfiConverterUInt64.read(from: &buf), lastUserNum: try FfiConverterUInt64.read(from: &buf), serverAckedUserNum: try FfiConverterUInt64.read(from: &buf), channelState: try FfiConverterString.read(from: &buf), inputHeld: try FfiConverterBool.read(from: &buf)
+        case 14: return .signInQuestionWithdrawn(prompt: try FfiConverterUInt64.read(from: &buf)
         )
         
-        case 17: return .inputDiscarded(stream: try FfiConverterUInt64.read(from: &buf), bytes: try FfiConverterUInt64.read(from: &buf), why: try FfiConverterTypeDiscardedValue.read(from: &buf)
+        case 15: return .degraded(degrade: try FfiConverterTypeDegradeValue.read(from: &buf)
         )
         
-        case 18: return .resumeChecked(awayMs: try FfiConverterUInt64.read(from: &buf), waitedMs: try FfiConverterUInt64.read(from: &buf), outcome: try FfiConverterTypeResumeOutcomeValue.read(from: &buf), throughTmux: try FfiConverterBool.read(from: &buf), held: try FfiConverterUInt32.read(from: &buf)
+        case 16: return .returnPathDead
+        
+        case 17: return .returnPathAlive
+        
+        case 18: return .moshMetrics(srttMs: try FfiConverterDouble.read(from: &buf), roaming: try FfiConverterBool.read(from: &buf)
         )
         
-        case 19: return .closed
-        
-        case 20: return .flushed(token: try FfiConverterUInt64.read(from: &buf)
+        case 19: return .moshDiagnostics(datagramsReceived: try FfiConverterUInt64.read(from: &buf), parseFailures: try FfiConverterUInt64.read(from: &buf), gapEvents: try FfiConverterUInt64.read(from: &buf), appliedHostNum: try FfiConverterUInt64.read(from: &buf), packetsSent: try FfiConverterUInt64.read(from: &buf), lastUserNum: try FfiConverterUInt64.read(from: &buf), serverAckedUserNum: try FfiConverterUInt64.read(from: &buf), channelState: try FfiConverterString.read(from: &buf), inputHeld: try FfiConverterBool.read(from: &buf)
         )
         
-        case 21: return .herdrAnswer(token: try FfiConverterUInt64.read(from: &buf), answer: try FfiConverterTypeHerdrAnswerValue.read(from: &buf)
+        case 20: return .inputDiscarded(stream: try FfiConverterUInt64.read(from: &buf), bytes: try FfiConverterUInt64.read(from: &buf), why: try FfiConverterTypeDiscardedValue.read(from: &buf)
         )
         
-        case 22: return .delivered(token: try FfiConverterUInt64.read(from: &buf), delivered: try FfiConverterBool.read(from: &buf)
+        case 21: return .resumeChecked(awayMs: try FfiConverterUInt64.read(from: &buf), waitedMs: try FfiConverterUInt64.read(from: &buf), outcome: try FfiConverterTypeResumeOutcomeValue.read(from: &buf), throughTmux: try FfiConverterBool.read(from: &buf), held: try FfiConverterUInt32.read(from: &buf)
+        )
+        
+        case 22: return .closed
+        
+        case 23: return .flushed(token: try FfiConverterUInt64.read(from: &buf)
+        )
+        
+        case 24: return .herdrAnswer(token: try FfiConverterUInt64.read(from: &buf), answer: try FfiConverterTypeHerdrAnswerValue.read(from: &buf)
+        )
+        
+        case 25: return .delivered(token: try FfiConverterUInt64.read(from: &buf), delivered: try FfiConverterBool.read(from: &buf)
         )
         
         default: throw UniffiInternalError.unexpectedEnumCase
@@ -18621,41 +18473,62 @@ public struct FfiConverterTypeSessionEventKind: FfiConverterRustBuffer {
             writeInt(&buf, Int32(9))
         
         
-        case let .hostKeyPrompt(prompt,host,port,fingerprint,previous):
+        case let .hostKeyPrompt(prompt,host,port,fingerprint,previous,olderAlgorithm):
             writeInt(&buf, Int32(10))
             FfiConverterUInt64.write(prompt, into: &buf)
             FfiConverterString.write(host, into: &buf)
             FfiConverterUInt16.write(port, into: &buf)
             FfiConverterString.write(fingerprint, into: &buf)
             FfiConverterOptionString.write(previous, into: &buf)
+            FfiConverterOptionString.write(olderAlgorithm, into: &buf)
+            
+        
+        case let .olderHostKeyAlgorithm(algorithm):
+            writeInt(&buf, Int32(11))
+            FfiConverterString.write(algorithm, into: &buf)
             
         
         case let .hostKeyPromptWithdrawn(prompt):
-            writeInt(&buf, Int32(11))
+            writeInt(&buf, Int32(12))
+            FfiConverterUInt64.write(prompt, into: &buf)
+            
+        
+        case let .signInQuestion(prompt,host,name,instructions,text,echo):
+            writeInt(&buf, Int32(13))
+            FfiConverterUInt64.write(prompt, into: &buf)
+            FfiConverterString.write(host, into: &buf)
+            FfiConverterString.write(name, into: &buf)
+            FfiConverterString.write(instructions, into: &buf)
+            FfiConverterString.write(text, into: &buf)
+            FfiConverterBool.write(echo, into: &buf)
+            
+        
+        case let .signInQuestionWithdrawn(prompt):
+            writeInt(&buf, Int32(14))
             FfiConverterUInt64.write(prompt, into: &buf)
             
         
         case let .degraded(degrade):
-            writeInt(&buf, Int32(12))
+            writeInt(&buf, Int32(15))
             FfiConverterTypeDegradeValue.write(degrade, into: &buf)
             
         
         case .returnPathDead:
-            writeInt(&buf, Int32(13))
+            writeInt(&buf, Int32(16))
         
         
         case .returnPathAlive:
-            writeInt(&buf, Int32(14))
+            writeInt(&buf, Int32(17))
         
         
         case let .moshMetrics(srttMs,roaming):
-            writeInt(&buf, Int32(15))
+            writeInt(&buf, Int32(18))
             FfiConverterDouble.write(srttMs, into: &buf)
             FfiConverterBool.write(roaming, into: &buf)
             
         
         case let .moshDiagnostics(datagramsReceived,parseFailures,gapEvents,appliedHostNum,packetsSent,lastUserNum,serverAckedUserNum,channelState,inputHeld):
-            writeInt(&buf, Int32(16))
+            writeInt(&buf, Int32(19))
             FfiConverterUInt64.write(datagramsReceived, into: &buf)
             FfiConverterUInt64.write(parseFailures, into: &buf)
             FfiConverterUInt64.write(gapEvents, into: &buf)
@@ -18668,14 +18541,14 @@ public struct FfiConverterTypeSessionEventKind: FfiConverterRustBuffer {
             
         
         case let .inputDiscarded(stream,bytes,why):
-            writeInt(&buf, Int32(17))
+            writeInt(&buf, Int32(20))
             FfiConverterUInt64.write(stream, into: &buf)
             FfiConverterUInt64.write(bytes, into: &buf)
             FfiConverterTypeDiscardedValue.write(why, into: &buf)
             
         
         case let .resumeChecked(awayMs,waitedMs,outcome,throughTmux,held):
-            writeInt(&buf, Int32(18))
+            writeInt(&buf, Int32(21))
             FfiConverterUInt64.write(awayMs, into: &buf)
             FfiConverterUInt64.write(waitedMs, into: &buf)
             FfiConverterTypeResumeOutcomeValue.write(outcome, into: &buf)
@@ -18684,22 +18557,22 @@ public struct FfiConverterTypeSessionEventKind: FfiConverterRustBuffer {
             
         
         case .closed:
-            writeInt(&buf, Int32(19))
+            writeInt(&buf, Int32(22))
         
         
         case let .flushed(token):
-            writeInt(&buf, Int32(20))
+            writeInt(&buf, Int32(23))
             FfiConverterUInt64.write(token, into: &buf)
             
         
         case let .herdrAnswer(token,answer):
-            writeInt(&buf, Int32(21))
+            writeInt(&buf, Int32(24))
             FfiConverterUInt64.write(token, into: &buf)
             FfiConverterTypeHerdrAnswerValue.write(answer, into: &buf)
             
         
         case let .delivered(token,delivered):
-            writeInt(&buf, Int32(22))
+            writeInt(&buf, Int32(25))
             FfiConverterUInt64.write(token, into: &buf)
             FfiConverterBool.write(delivered, into: &buf)
             
@@ -22896,27 +22769,6 @@ public func connectionDraftHandle(draft: ConnectionDraft, messageJson: String) -
 })
 }
 /**
- * The connection edited keeps a key that saving with none picked or
- * pasted keeps.
- */
-public func connectionDraftKeepsStoredKey(draft: ConnectionDraft) -> Bool  {
-    return try!  FfiConverterBool.lift(try! rustCall() {
-    uniffi_moshpit_ffi_fn_func_connection_draft_keeps_stored_key(
-        FfiConverterTypeConnectionDraft_lower(draft),$0
-    )
-})
-}
-/**
- * The connection edited keeps a password of its own.
- */
-public func connectionDraftKeepsStoredPassword(draft: ConnectionDraft) -> Bool  {
-    return try!  FfiConverterBool.lift(try! rustCall() {
-    uniffi_moshpit_ffi_fn_func_connection_draft_keeps_stored_password(
-        FfiConverterTypeConnectionDraft_lower(draft),$0
-    )
-})
-}
-/**
  * A new connection's draft: everything at its default, mosh as the "Mosh
  * by default" setting says (B256).
  */
@@ -22946,26 +22798,6 @@ public func connectionDraftPickKey(draft: ConnectionDraft, id: String?) -> Conne
     uniffi_moshpit_ffi_fn_func_connection_draft_pick_key(
         FfiConverterTypeConnectionDraft_lower(draft),
         FfiConverterOptionString.lower(id),$0
-    )
-})
-}
-/**
- * The port field holds no port.
- */
-public func connectionDraftPortIsWrong(draft: ConnectionDraft) -> Bool  {
-    return try!  FfiConverterBool.lift(try! rustCall() {
-    uniffi_moshpit_ffi_fn_func_connection_draft_port_is_wrong(
-        FfiConverterTypeConnectionDraft_lower(draft),$0
-    )
-})
-}
-/**
- * The proxy's port field holds no port, while the proxy is on.
- */
-public func connectionDraftProxyPortIsWrong(draft: ConnectionDraft) -> Bool  {
-    return try!  FfiConverterBool.lift(try! rustCall() {
-    uniffi_moshpit_ffi_fn_func_connection_draft_proxy_port_is_wrong(
-        FfiConverterTypeConnectionDraft_lower(draft),$0
     )
 })
 }
@@ -23016,15 +22848,20 @@ public func connectionFormKeyRow(draft: ConnectionDraft, keys: [KeyRecord]) -> C
 /**
  * `{"op": "form", …}` of the draft, as JSON: of the secrets, only whether
  * there is one.
+ *
+ * `saved`: the saved connections, `editing` the one edited (a UUID), for
+ * the warning of a duplicate (B532).
  */
-public func connectionFormMessage(draft: ConnectionDraft, given: SecretsGiven, keys: [KeyRecord], udpStart: Int64, udpEnd: Int64) -> String  {
+public func connectionFormMessage(draft: ConnectionDraft, given: SecretsGiven, keys: [KeyRecord], udpStart: Int64, udpEnd: Int64, saved: [ConnectionRecord], editing: String?) -> String  {
     return try!  FfiConverterString.lift(try! rustCall() {
     uniffi_moshpit_ffi_fn_func_connection_form_message(
         FfiConverterTypeConnectionDraft_lower(draft),
         FfiConverterTypeSecretsGiven_lower(given),
         FfiConverterSequenceTypeKeyRecord.lower(keys),
         FfiConverterInt64.lower(udpStart),
-        FfiConverterInt64.lower(udpEnd),$0
+        FfiConverterInt64.lower(udpEnd),
+        FfiConverterSequenceTypeConnectionRecord.lower(saved),
+        FfiConverterOptionString.lower(editing),$0
     )
 })
 }
@@ -23625,17 +23462,6 @@ public func storeHoldRelease(preferences: PreferencesHost, mode: ReadinessMode, 
 })
 }
 /**
- * The map's key for a host: `host:port`.
- */
-public func storeKnownHostsEntry(host: String, port: UInt16) -> String  {
-    return try!  FfiConverterString.lift(try! rustCall() {
-    uniffi_moshpit_ffi_fn_func_store_known_hosts_entry(
-        FfiConverterString.lower(host),
-        FfiConverterUInt16.lower(port),$0
-    )
-})
-}
-/**
  * `DefaultsReadiness.markReadable`.
  */
 public func storeMarkDefaultsReadable(host: PreferencesHost)  {try! rustCall() {
@@ -23813,12 +23639,6 @@ private let initializationResult: InitializationResult = {
     if (uniffi_moshpit_ffi_checksum_func_connection_draft_handle() != 11981) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_moshpit_ffi_checksum_func_connection_draft_keeps_stored_key() != 45002) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_moshpit_ffi_checksum_func_connection_draft_keeps_stored_password() != 12980) {
-        return InitializationResult.apiChecksumMismatch
-    }
     if (uniffi_moshpit_ffi_checksum_func_connection_draft_new() != 57513) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -23826,12 +23646,6 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_moshpit_ffi_checksum_func_connection_draft_pick_key() != 47688) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_moshpit_ffi_checksum_func_connection_draft_port_is_wrong() != 55145) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_moshpit_ffi_checksum_func_connection_draft_proxy_port_is_wrong() != 53238) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_moshpit_ffi_checksum_func_connection_draft_save_plan() != 18721) {
@@ -23843,7 +23657,7 @@ private let initializationResult: InitializationResult = {
     if (uniffi_moshpit_ffi_checksum_func_connection_form_key_row() != 62170) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_moshpit_ffi_checksum_func_connection_form_message() != 48275) {
+    if (uniffi_moshpit_ffi_checksum_func_connection_form_message() != 59700) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_moshpit_ffi_checksum_func_connection_port() != 51411) {
@@ -24018,9 +23832,6 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_moshpit_ffi_checksum_func_store_hold_release() != 60402) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_moshpit_ffi_checksum_func_store_known_hosts_entry() != 42246) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_moshpit_ffi_checksum_func_store_mark_defaults_readable() != 15913) {
@@ -24446,6 +24257,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_moshpit_ffi_checksum_method_petmachine_set_pace() != 29199) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_moshpit_ffi_checksum_method_petmachine_set_talk() != 19890) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_moshpit_ffi_checksum_method_petmachine_status() != 42323) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -24456,6 +24270,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_moshpit_ffi_checksum_method_coresessions_answer_host_key() != 61542) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_moshpit_ffi_checksum_method_coresessions_answer_question() != 62687) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_moshpit_ffi_checksum_method_coresessions_borrow_ssh() != 53094) {
@@ -24641,12 +24458,6 @@ private let initializationResult: InitializationResult = {
     if (uniffi_moshpit_ffi_checksum_method_keychainhost_load_silently() != 33558) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_moshpit_ffi_checksum_method_knownhostshandle_read() != 20766) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_moshpit_ffi_checksum_method_knownhostshandle_write() != 62489) {
-        return InitializationResult.apiChecksumMismatch
-    }
     if (uniffi_moshpit_ffi_checksum_method_preferenceshost_get() != 51460) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -24804,9 +24615,6 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_moshpit_ffi_checksum_constructor_keystorehandle_new() != 4753) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_moshpit_ffi_checksum_constructor_knownhostshandle_new() != 7352) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_moshpit_ffi_checksum_constructor_pushpairingfilehandle_new() != 56091) {

@@ -73,19 +73,6 @@ final class DefaultsHost: PreferencesHost, @unchecked Sendable {
     func protectedDataAvailable() -> Bool { true }
 }
 
-final class DictionaryKeychain: KeychainHost, @unchecked Sendable {
-    var items: [String: Data] = [:]
-    func save(account: String, secret: Data, requireBiometry: Bool) throws { items[account] = secret }
-    func load(account: String, prompt: String) throws -> Data {
-        guard let data = items[account] else { throw KeychainFailure.NotFound }
-        return data
-    }
-    func delete(account: String) throws { items.removeValue(forKey: account) }
-    func exists(account: String) -> Bool { items[account] != nil }
-    func accounts() throws -> [String] { Array(items.keys) }
-    func loadSilently(account: String) throws -> Data { try load(account: account, prompt: "") }
-}
-
 func check(_ condition: Bool, _ what: String) {
     if !condition { print("FAIL: \(what)"); exit(1) }
     print("ok: \(what)")
@@ -149,13 +136,6 @@ struct Smoke {
         let imported = try themes.importThemes(json: storeThemeExportJson(theme: themes.theme(id: "nord")))
         check(imported.count == 1 && imported[0].name == "Nord 2", "a theme imports under a fresh name")
         check(storeThemePalette(theme: imported[0]).count == 16, "sixteen colours")
-
-        // Known hosts over the keychain host.
-        let keychain = DictionaryKeychain()
-        let hosts = KnownHostsHandle(keychain: keychain, preferences: host)
-        try hosts.write(entries: [storeKnownHostsEntry(host: "box", port: 22): "SHA256:abc/def"])
-        check(String(data: keychain.items["moshpit.knownHosts"]!, encoding: .utf8) == #"{"box:22":"SHA256:abc\/def"}"#, "the trusted map is JSONEncoder's")
-        check(try hosts.read() == ["box:22": "SHA256:abc/def"], "and reads back")
         print("all ok")
     }
 }

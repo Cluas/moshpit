@@ -1,6 +1,6 @@
-//! The Rust side of the mosh harness: the same command line as
-//! `harness/swift/main.swift`, over this crate. `harness/equivalence.py` and
-//! `harness/live.py` drive both.
+//! The mosh harness's command line over this crate, which `harness/live.py`
+//! drives against a real mosh-server. (A Swift twin over the app's mosh
+//! client printed the same formats until that client was deleted, E2.)
 //!
 //!   mosh_harness wire <cases> [<out>]
 //!   mosh_harness ssp <scenario> [<out>]

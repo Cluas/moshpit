@@ -4,8 +4,7 @@ import SwiftUI
 /// A capture run of the keys pages (DEBUG only): the keys they show, held in
 /// memory and never written (`-MOSHPIT_SEED_KEYS demo`, or `empty` for
 /// none), and the sheet or card a `-MOSHPIT_SEED_SCREEN` asks for over SSH
-/// Keys, on the SwiftUI pages or the NSH ones, so both can be shot in the
-/// same state.
+/// Keys.
 enum KeysCapture {
     /// The keys the pages show instead of the device's.
     static var seeded: Bool {
@@ -62,15 +61,10 @@ enum KeysCapture {
         }
     }
 
-    /// Whether `screen` shows the NSH SSH Keys page whatever its switch says.
-    static func forcesNSHKeys(_ screen: CaptureScreen) -> Bool {
-        [.sshKeysNSH, .sshKeyDeleteNSH].contains(screen)
-    }
-
-    /// The key whose delete card a capture run shows, on the NSH page or the
-    /// SwiftUI one: the first imported key.
-    static func deleteRequested(nsh: Bool, in snapshot: SSHKeysSnapshot) -> UUID? {
-        guard CaptureScreen.requested == (nsh ? .sshKeyDeleteNSH : .sshKeyDelete) else { return nil }
+    /// The key whose delete card a capture run shows: the first imported
+    /// key.
+    static func deleteRequested(in snapshot: SSHKeysSnapshot) -> UUID? {
+        guard CaptureScreen.requested == .sshKeyDelete else { return nil }
         return snapshot.imported.first?.id ?? snapshot.device.first?.id
     }
 
@@ -87,18 +81,17 @@ enum KeysCapture {
                 .task {
                     guard let screen = CaptureScreen.requested else { return }
                     try? await Task.sleep(for: .milliseconds(800))
-                    showAddKey = [.addKey, .addKeyNSH, .addKeyImport, .addKeyImportNSH].contains(screen)
-                    if [.keyPicker, .keyPickerNSH].contains(screen) {
+                    showAddKey = [.addKey, .addKeyImport].contains(screen)
+                    if screen == .keyPicker {
                         picked = keyStore.keys.dropFirst().first?.id
                         showPicker = true
                     }
                 }
                 .appSheet(isPresented: $showAddKey) {
-                    AddKeyPage(method: [.addKeyImport, .addKeyImportNSH].contains(CaptureScreen.requested)
-                        ? .importKey : .generate)
+                    AddKeyNSHPage(method: CaptureScreen.requested == .addKeyImport ? .importKey : .generate)
                 }
                 .appSheet(isPresented: $showPicker) {
-                    KeyPickerSheet(keys: keyStore.keys, selectedKeyId: $picked)
+                    KeyPickerNSHPage(keys: keyStore.keys, selectedKeyId: $picked)
                 }
         }
     }

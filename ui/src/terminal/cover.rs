@@ -64,7 +64,7 @@ const CAPSULE_HEIGHT: f32 = 32.0;
 const VEIL_TOP: f32 = 12.0;
 
 /// The pane area.
-pub(crate) fn pane_area(ctx: Ctx) -> AnyElement {
+pub(crate) fn pane_area(ctx: Ctx, order: Memo<super::switcher::Order>) -> AnyElement {
     let cover = {
         let ctx = ctx.clone();
         computed(move || ctx.chrome.with(|c| c.cover.clone()))
@@ -88,6 +88,9 @@ pub(crate) fn pane_area(ctx: Ctx) -> AnyElement {
         .overflow_hidden()
         .bg(move || token("terminal-bg"))
         .test_id("terminal-pane-area")
+        // Under the terminal: the panes a swipe would go to, uncovered as
+        // the host moves the terminal aside (its slot is clear then).
+        .child(super::switcher::backstage(ctx.clone(), order))
         // A new element per generation (a rekey); the host moves the same
         // terminal into it.
         .child(dynamic(move || {
@@ -134,6 +137,7 @@ pub(crate) fn pane_area(ctx: Ctx) -> AnyElement {
                 move || follow_view(ctx.clone())
             },
         ))
+        .child(super::switcher::hint(ctx.clone(), order))
         .child(super::chrome::link_chip(ctx))
         .into_element()
 }

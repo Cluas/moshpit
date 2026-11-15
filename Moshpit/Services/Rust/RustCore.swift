@@ -1,4 +1,5 @@
 import Foundation
+import MoshpitFFI
 import MoshpitKit
 import Observation
 import UIKit
@@ -12,15 +13,20 @@ protocol RustSessionListener: AnyObject {
 
 /// The app's one registry of Rust sessions (crates/ffi `CoreSessions`) and
 /// what the app tells it about itself: the foreground, the network, the
-/// terminal on screen. Made the first time a connection starts on the Rust
-/// core; an app that never turns the switch on never makes it (and never
-/// starts the core's threads).
+/// terminal on screen. Made the first time a connection starts (an app
+/// that never starts one never starts the core's threads).
 ///
 /// Events arrive in batches on the main queue (``RustEventSink``) and go to
 /// the session they name, in order; the registry-wide ones (a flush's
 /// answer) are handled here.
 @MainActor
 final class RustCore {
+    /// Whether this build can run sessions on the core at all: its library
+    /// is linked and is the one the app was compiled against (the FFI's
+    /// ABI version). Every connection runs on the core when it can (F0);
+    /// nothing else connects.
+    nonisolated static let available = mp_ffi_abi_version() == UInt32(MP_FFI_ABI_VERSION)
+
     /// The registry, if one was made.
     private(set) static var current: RustCore?
 

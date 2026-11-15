@@ -29,7 +29,8 @@ use std::time::Duration;
 
 use moshpit_install::Multiplexer;
 use moshpit_ssh::{
-    BoxFuture as SshBoxFuture, DenyAll, HostKey, HostKeyPrompt, LinkFault, Process, PtyRequest, Ssh,
+    BoxFuture as SshBoxFuture, DenyAll, HostKey, HostKeyPrompt, LinkFault, Process, PtyRequest,
+    SignInQuestion, SignInQuestions, Ssh,
 };
 use moshpit_stream::{Input, InputEvent, Stream, StreamId};
 use moshpit_tmux::boot::SidecarReturn;
@@ -94,6 +95,12 @@ pub(crate) enum Msg {
         prompt: u64,
         trust: bool,
     },
+    /// The person's answer to a server's sign-in question (`None`:
+    /// declined, B563).
+    AnswerQuestion {
+        prompt: u64,
+        answer: Option<String>,
+    },
     Tmux(TmuxAction),
     /// The person's herdr intent; `token` names its answer.
     Herdr {
@@ -132,7 +139,17 @@ pub(crate) enum Msg {
         port: u16,
         fingerprint: String,
         previous: Option<String>,
+        /// The older algorithm the key came by (B564).
+        older_algorithm: Option<&'static str>,
         reply: oneshot::Sender<bool>,
+    },
+    /// The attempt of `generation` asks the person what the server asked
+    /// at sign-in (B563).
+    Question {
+        generation: u64,
+        host: String,
+        question: SignInQuestion,
+        reply: oneshot::Sender<Option<String>>,
     },
     /// Probe `probe` of `generation` answered (B394: only the probe out
     /// counts).
@@ -198,6 +215,11 @@ pub(crate) enum Msg {
     /// waited long enough (B483).
     TmuxHoldExpired {
         hold: u64,
+    },
+    /// mosh-server acked paste `paste` to `dest` (B525).
+    PasteLanded {
+        dest: Dest,
+        paste: u64,
     },
     /// What a dropped sidecar of `epoch` owed the server, for the next.
     SidecarHandoff {
@@ -457,21 +479,60 @@ const CONTROL_HOLD: Duration = Duration::from_secs(5);
 /// leaves room for a slower host.
 const PASTE_SETTLE: Duration = Duration::from_millis(150);
 
+/// Over plain mosh, what follows a paste also waits for mosh-server's ack
+/// of the paste's state, at most this long (B525): a paste state lost on
+/// the way goes again as one diff with what was typed after it, and
+/// mosh-server writes them together.
+const PASTE_ACK_WAIT: Duration = Duration::from_secs(2);
+
 /// Where typing goes: the session's shell (plain SSH, mosh) or a
 /// multiplexer's pane.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-enum Dest {
+pub(crate) enum Dest {
     Shell,
     Pane(String),
 }
 
 /// Typing held behind the paste just sent to a place (B485).
 struct Settling {
+    /// The paste's number (an older paste's ack lands nothing of this one).
+    paste: u64,
     /// When the paste has had its time (the session clock's ms).
     until: u64,
-    /// What came after it, in order, with where each ends in the shell's
-    /// channel (mosh's echo acknowledgement counts in it).
-    queued: Vec<(StreamId, Typed, u64)>,
+    /// The paste has landed: mosh-server acked its state (B525); always,
+    /// elsewhere.
+    landed: bool,
+    /// When what follows goes, landed or not.
+    hard: u64,
+    /// What came after it, in order.
+    queued: Vec<Queued>,
+}
+
+/// One thing waiting behind a paste.
+enum Queued {
+    /// Typing, with where it ends in the shell's channel (mosh's echo
+    /// acknowledgement counts in it).
+    Typed(StreamId, Typed, u64),
+    /// A size change: it lands between the bytes it came between (V31,
+    /// B528).
+    Resize(StreamId, u16, u16),
+}
+
+/// One thing given while the in-place return waits for its answer.
+enum Kept {
+    /// Typing, and whether it was the shortcut bar's.
+    Typed(StreamId, Typed, bool),
+    /// A size change given after typing held for the same stream: it waits
+    /// behind it (V31, B529).
+    Resize(StreamId, u16, u16),
+}
+
+impl Kept {
+    fn stream(&self) -> StreamId {
+        match self {
+            Kept::Typed(stream, ..) | Kept::Resize(stream, ..) => *stream,
+        }
+    }
 }
 
 /// herdr's control plane beside the mosh leg of `generation`: the plane
@@ -595,6 +656,9 @@ pub(crate) struct Actor {
 
     pub attempt: Option<(u64, JoinHandle<()>)>,
     pub prompts: HashMap<u64, (u64, oneshot::Sender<bool>)>,
+    /// The server's sign-in questions out with the person, numbered with
+    /// the host-key prompts (B563).
+    pub questions: HashMap<u64, (u64, oneshot::Sender<Option<String>>)>,
     pub next_prompt: u64,
     leg: Option<Leg>,
     control: Option<Control>,
@@ -610,7 +674,7 @@ pub(crate) struct Actor {
     /// Input typed (or pasted) while the in-place return waits for the
     /// live transport's answer ([`Lifecycle::resume_pending`]), in order:
     /// sent once it answered, dropped as typed while not live if it didn't.
-    held: Vec<(StreamId, Typed, bool)>,
+    held: Vec<Kept>,
     /// mosh with tmux: the prefix a scroll's copy-mode keys start with
     /// (`C-b` until the sidecar has read the server's), and whether it was
     /// asked (B362).
@@ -637,6 +701,8 @@ pub(crate) struct Actor {
     /// Typing behind a paste, per place, until the paste has had its time
     /// (B485).
     settling: BTreeMap<Dest, Settling>,
+    /// The last paste's number.
+    pastes: u64,
     /// The in-place return's question, until it is settled.
     resume_question: Option<ResumeQuestion>,
     deliveries: Vec<Delivery>,
@@ -698,6 +764,7 @@ impl Actor {
             view,
             attempt: None,
             prompts: HashMap::new(),
+            questions: HashMap::new(),
             next_prompt: 0,
             leg: None,
             control: None,
@@ -718,6 +785,7 @@ impl Actor {
             tmux_hold: 0,
             tmux_dropped: false,
             settling: BTreeMap::new(),
+            pastes: 0,
             resume_question: None,
             deliveries: Vec::new(),
             grids: BTreeMap::new(),
@@ -774,7 +842,10 @@ impl Actor {
             let next = [
                 self.life.next_deadline(),
                 self.deliveries.iter().map(|d| d.deadline).min(),
-                self.settling.values().map(|s| s.until).min(),
+                self.settling
+                    .values()
+                    .map(|s| if s.landed { s.until } else { s.hard })
+                    .min(),
             ]
             .into_iter()
             .flatten()
@@ -859,7 +930,10 @@ impl Actor {
             let _ = reply.send(false);
         }
         self.discard_pending(Discarded::SessionEnded);
-        for (stream, typed, _) in std::mem::take(&mut self.held) {
+        for kept in std::mem::take(&mut self.held) {
+            let Kept::Typed(stream, typed, _) = kept else {
+                continue;
+            };
             self.emit(EventKind::InputDiscarded {
                 stream,
                 bytes: typed.len(),
@@ -941,6 +1015,12 @@ impl Actor {
                     self.life.attempt_waits_on_person(generation, false);
                 }
             }
+            Msg::AnswerQuestion { prompt, answer } => {
+                if let Some((generation, reply)) = self.questions.remove(&prompt) {
+                    let _ = reply.send(answer);
+                    self.life.attempt_waits_on_person(generation, false);
+                }
+            }
             Msg::Tmux(TmuxAction::ScrollLines(lines)) if self.mosh_renders_tmux() => {
                 self.mosh_scroll(lines);
             }
@@ -1008,6 +1088,9 @@ impl Actor {
                         reply,
                         deadline: now + crate::spec::ms(DELIVERY_WAIT),
                     });
+                    // In the background, a transport not heard from lately
+                    // is asked first (B524).
+                    self.life.check_for_delivery(now);
                     self.try_deliver();
                 }
             }
@@ -1022,6 +1105,7 @@ impl Actor {
                 port,
                 fingerprint,
                 previous,
+                older_algorithm,
                 reply,
             } => {
                 if generation != self.life.generation()
@@ -1041,6 +1125,33 @@ impl Actor {
                     port,
                     fingerprint,
                     previous,
+                    older_algorithm: older_algorithm.map(str::to_owned),
+                });
+            }
+            Msg::Question {
+                generation,
+                host,
+                question,
+                reply,
+            } => {
+                if generation != self.life.generation()
+                    || self.attempt.as_ref().map(|(g, _)| *g) != Some(generation)
+                {
+                    let _ = reply.send(None);
+                    return;
+                }
+                self.next_prompt += 1;
+                let prompt = self.next_prompt;
+                self.questions.insert(prompt, (generation, reply));
+                // The dial waits on the person's answer, as for a host key.
+                self.life.attempt_waits_on_person(generation, true);
+                self.emit(EventKind::SignInQuestion {
+                    prompt,
+                    host,
+                    name: question.name,
+                    instructions: question.instructions,
+                    text: question.prompt,
+                    echo: question.echo,
                 });
             }
             Msg::Probe {
@@ -1057,6 +1168,8 @@ impl Actor {
                     question.answer = Some((result, now));
                 }
                 self.life.probe_answered(generation, probe, result, now);
+                // Deliveries waited for a delivery's question (B524).
+                self.try_deliver();
             }
             Msg::Shell { generation, end } => match end {
                 ShellEnd::Exited { status } => {
@@ -1092,6 +1205,14 @@ impl Actor {
             Msg::ControlChecked { epoch, alive } => self.control_checked(epoch, alive),
             Msg::ControlHoldExpired { hold } => self.control_hold_expired(hold),
             Msg::TmuxHoldExpired { hold } => self.tmux_hold_expired(hold),
+            Msg::PasteLanded { dest, paste } => {
+                if let Some(settling) = self.settling.get_mut(&dest)
+                    && settling.paste == paste
+                {
+                    settling.landed = true;
+                }
+                self.release_settled(now);
+            }
             Msg::SidecarHandoff { epoch, handoff } => match self.control.as_mut() {
                 // The dropped sidecar's debt goes to the next one; with the
                 // control plane gone, to the end of the session.
@@ -1384,6 +1505,18 @@ impl Actor {
             }
             self.emit(EventKind::HostKeyPromptWithdrawn { prompt });
         }
+        let gone: Vec<u64> = self
+            .questions
+            .iter()
+            .filter(|(_, (g, _))| *g == generation)
+            .map(|(prompt, _)| *prompt)
+            .collect();
+        for prompt in gone {
+            if let Some((_, reply)) = self.questions.remove(&prompt) {
+                let _ = reply.send(None);
+            }
+            self.emit(EventKind::SignInQuestionWithdrawn { prompt });
+        }
     }
 
     // MARK: Actions
@@ -1424,7 +1557,7 @@ impl Actor {
                     waited_ms: 0,
                     outcome: ResumeOutcome::Dead,
                     through_tmux: false,
-                    held: self.held.len(),
+                    held: self.held_typing(),
                 }),
                 Action::ResumeMosh { generation, force } => {
                     if let Some(Leg::Mosh { mosh, .. }) = self.leg_of(generation) {
@@ -1528,10 +1661,12 @@ impl Actor {
             self.spec.target = target;
             self.spec.proxy = proxy;
         }
-        let prompt: Arc<dyn HostKeyPrompt> = Arc::new(Prompt {
+        let prompt = Arc::new(Prompt {
             session: self.me.clone(),
             generation,
         });
+        let questions: Arc<dyn SignInQuestions> = prompt.clone();
+        let prompt: Arc<dyn HostKeyPrompt> = prompt;
         // The credential read says while it may wait on the person (B395).
         let mut services = self.services.clone();
         services.credentials = Arc::new(ReadingCredentials {
@@ -1546,6 +1681,7 @@ impl Actor {
             services,
             grid: self.grid,
             prompt,
+            questions: Some(questions),
         };
         let me = self.me.clone();
         let task = tokio::spawn(async move {
@@ -1666,7 +1802,7 @@ impl Actor {
             waited_ms,
             outcome,
             through_tmux: question.through_tmux,
-            held: self.held.len(),
+            held: self.held_typing(),
         });
     }
 
@@ -1690,12 +1826,26 @@ impl Actor {
         if lines == 0 {
             return;
         }
-        let wants_mouse = {
+        let (wants_mouse, alt_screen) = {
             let view = self.view.lock().unwrap_or_else(|e| e.into_inner());
-            view.tmux_view
-                .as_ref()
-                .is_some_and(|tmux| tmux.input.wants_mouse)
+            view.tmux_view.as_ref().map_or((false, false), |tmux| {
+                (tmux.input.wants_mouse, tmux.input.alt_screen)
+            })
         };
+        // An alternate-screen pane without the mouse (less, man, git log):
+        // its arrow keys, from the sidecar, whose `send-keys` tmux encodes
+        // by the pane's real cursor-key mode (it sends nothing until tmux
+        // has said the mouse is off). tmux's copy-mode there pages nothing
+        // (B500).
+        if alt_screen
+            && !wants_mouse
+            && let Some(sidecar) = self.control.as_ref().and_then(|c| c.sidecar.as_ref())
+        {
+            let _ = sidecar
+                .commands
+                .send(TmuxCommand::Action(TmuxAction::ScrollLines(lines)));
+            return;
+        }
         let command = if wants_mouse {
             let (cols, rows) = self.grid;
             MoshCommand::Mouse(moshpit_tmux::controller::wheel_bytes(
@@ -1745,7 +1895,16 @@ impl Actor {
     fn release_held(&mut self) {
         let held = std::mem::take(&mut self.held);
         let live = self.life.state().is_live();
-        for (stream, typed, bar) in held {
+        for kept in held {
+            let (stream, typed, bar) = match kept {
+                Kept::Typed(stream, typed, bar) => (stream, typed, bar),
+                // Its turn, after the keys before it: on the transport that
+                // answered, or kept for the redial's grid.
+                Kept::Resize(stream, cols, rows) => {
+                    self.resize_in_turn(stream, cols, rows);
+                    continue;
+                }
+            };
             if live {
                 self.route(stream, typed);
             } else if bar {
@@ -1775,19 +1934,37 @@ impl Actor {
         }
     }
 
+    /// Writes held for the return's answer (sizes aren't writes).
+    fn held_typing(&self) -> usize {
+        self.held
+            .iter()
+            .filter(|kept| matches!(kept, Kept::Typed(..)))
+            .count()
+    }
+
     // MARK: Legs
 
     /// The degrade notice and mosh's server, before the state says
     /// Connected.
     fn note_established(&mut self, established: &Established) {
-        let (degrade, server_pid) = match established {
-            Established::Ssh { degrade, .. } => (*degrade, None),
+        let (degrade, server_pid, older_host_key) = match established {
+            Established::Ssh {
+                degrade,
+                older_host_key,
+                ..
+            } => (*degrade, None, *older_host_key),
             Established::Mosh {
                 degrade,
                 server_pid,
+                older_host_key,
                 ..
-            } => (*degrade, *server_pid),
+            } => (*degrade, *server_pid, *older_host_key),
         };
+        if let Some(algorithm) = older_host_key {
+            self.emit(EventKind::OlderHostKeyAlgorithm {
+                algorithm: algorithm.to_owned(),
+            });
+        }
         self.update(|view| {
             view.degrade = degrade;
             view.mosh_server_pid = server_pid;
@@ -2095,27 +2272,16 @@ impl Actor {
                 // stopped over the next connection (B195). The server's own
                 // end leaves nothing to stop.
                 if let Some(pid) = server_pid.filter(|_| !reaped) {
-                    match why {
-                        // Stopped once the pins are paid (`finish`).
-                        Teardown::Disconnect if self.debt_renderer_server == Some(pid) => {}
-                        Teardown::Disconnect | Teardown::SwitchToSsh => {
-                            self.owe(reap_mosh_server(
-                                self.services.clone(),
-                                self.spec.clone(),
-                                self.timing.clone(),
-                                vec![pid],
-                            ));
-                        }
-                        Teardown::Reconnect if !first_contact => {
-                            self.owe(reap_mosh_server(
-                                self.services.clone(),
-                                self.spec.clone(),
-                                self.timing.clone(),
-                                vec![pid],
-                            ));
-                        }
-                        Teardown::Reconnect => self.orphans.push(pid),
-                        Teardown::Ended => {}
+                    let debt = self.debt_renderer_server == Some(pid);
+                    match server_at_teardown(why, first_contact, debt) {
+                        ServerFate::Stop => self.owe(reap_mosh_server(
+                            self.services.clone(),
+                            self.spec.clone(),
+                            self.timing.clone(),
+                            vec![pid],
+                        )),
+                        ServerFate::Orphan => self.orphans.push(pid),
+                        ServerFate::Leave => {}
                     }
                 }
             }
@@ -3221,7 +3387,13 @@ impl Actor {
         let bar = matches!(event, InputEvent::Bar(_));
         let typed = match event {
             InputEvent::Resize { cols, rows } => {
-                self.resize(stream, cols, rows);
+                // Behind keys held for the return's answer, it waits with
+                // them (V31, B529).
+                if self.held.iter().any(|kept| kept.stream() == stream) {
+                    self.held.push(Kept::Resize(stream, cols, rows));
+                    return;
+                }
+                self.resize_in_turn(stream, cols, rows);
                 return;
             }
             InputEvent::Bytes(bytes) | InputEvent::Bar(bytes) => {
@@ -3261,7 +3433,7 @@ impl Actor {
         // during the suspension — a paste as well, behind the keys typed
         // before it (B361).
         if self.life.resume_pending() {
-            self.held.push((stream, typed, bar));
+            self.held.push(Kept::Typed(stream, typed, bar));
             return;
         }
         self.route(stream, typed);
@@ -3291,6 +3463,31 @@ impl Actor {
         }
     }
 
+    /// A size change, in its turn: behind keys that wait behind a paste it
+    /// waits with them (V31, B528): the program sees the new size after the
+    /// keys typed before it, not before.
+    fn resize_in_turn(&mut self, stream: StreamId, cols: u16, rows: u16) {
+        if let Some(settling) = self
+            .dest_of(stream)
+            .and_then(|dest| self.settling.get_mut(&dest))
+            .filter(|settling| !settling.queued.is_empty())
+        {
+            settling.queued.push(Queued::Resize(stream, cols, rows));
+            return;
+        }
+        self.resize(stream, cols, rows);
+    }
+
+    /// The place a stream's typing goes to, as its paste settles are kept.
+    fn dest_of(&self, stream: StreamId) -> Option<Dest> {
+        if self.shell.as_ref().map(|s| s.stream.id()) == Some(stream) {
+            return Some(Dest::Shell);
+        }
+        self.panes
+            .get(&stream)
+            .map(|channel| Dest::Pane(channel.pane.clone()))
+    }
+
     fn route(&mut self, stream: StreamId, typed: Typed) {
         if let Some(shell) = self.shell.as_ref().filter(|s| s.stream.id() == stream) {
             let end = shell.written;
@@ -3316,7 +3513,7 @@ impl Actor {
     /// waits for the paste to have had its time, in order (B485).
     fn send_or_wait(&mut self, dest: Dest, stream: StreamId, typed: Typed, end: u64) {
         if let Some(settling) = self.settling.get_mut(&dest) {
-            settling.queued.push((stream, typed, end));
+            settling.queued.push(Queued::Typed(stream, typed, end));
             return;
         }
         self.send_now(&dest, stream, typed, end);
@@ -3330,15 +3527,43 @@ impl Actor {
             Dest::Pane(pane) => self.send_to_pane(pane, stream, typed),
         }
         if paste {
-            let until = self.now() + crate::spec::ms(PASTE_SETTLE);
+            let now = self.now();
+            self.pastes += 1;
+            let paste = self.pastes;
+            let landed = !self.ask_paste_ack(dest, paste);
             self.settling.insert(
                 dest.clone(),
                 Settling {
-                    until,
+                    paste,
+                    until: now + crate::spec::ms(PASTE_SETTLE),
+                    landed,
+                    hard: now + crate::spec::ms(PASTE_ACK_WAIT),
                     queued: Vec::new(),
                 },
             );
         }
+    }
+
+    /// Over plain mosh, asks for mosh-server's ack of paste `paste` (B525):
+    /// true if it was asked (what follows the paste then waits for it).
+    fn ask_paste_ack(&mut self, dest: &Dest, paste: u64) -> bool {
+        let (Dest::Shell, Some(Leg::Mosh { mosh, .. }), None) = (dest, &self.leg, &self.herdr_mosh)
+        else {
+            return false;
+        };
+        let (reply, acked) = oneshot::channel();
+        if mosh.commands.send(MoshCommand::Barrier(reply)).is_err() {
+            return false;
+        }
+        let me = self.me.clone();
+        let dest = dest.clone();
+        tokio::spawn(async move {
+            // Acked, or the transport gone: either way nothing more to wait
+            // for.
+            let _ = acked.await;
+            let _ = me.send(Msg::PasteLanded { dest, paste });
+        });
+        true
     }
 
     /// The pastes whose time is up: what waited behind each goes out, in
@@ -3347,7 +3572,7 @@ impl Actor {
         let due: Vec<Dest> = self
             .settling
             .iter()
-            .filter(|(_, s)| s.until <= now)
+            .filter(|(_, s)| (s.landed && s.until <= now) || s.hard <= now)
             .map(|(dest, _)| dest.clone())
             .collect();
         for dest in due {
@@ -3355,7 +3580,14 @@ impl Actor {
                 continue;
             };
             let mut queued = settling.queued.into_iter();
-            while let Some((stream, typed, end)) = queued.next() {
+            while let Some(next) = queued.next() {
+                let (stream, typed, end) = match next {
+                    Queued::Typed(stream, typed, end) => (stream, typed, end),
+                    Queued::Resize(stream, cols, rows) => {
+                        self.resize(stream, cols, rows);
+                        continue;
+                    }
+                };
                 let paste = matches!(typed, Typed::Paste(_));
                 self.send_now(&dest, stream, typed, end);
                 if paste {
@@ -3486,7 +3718,10 @@ impl Actor {
 
     /// Content waiting for the session: what can go now goes.
     fn try_deliver(&mut self) {
-        if !self.life.state().is_live() || self.deliveries.is_empty() {
+        if !self.life.state().is_live()
+            || self.deliveries.is_empty()
+            || self.life.delivery_check_pending()
+        {
             return;
         }
         let waiting = std::mem::take(&mut self.deliveries);
@@ -3902,10 +4137,38 @@ impl Prompt {
                 port,
                 fingerprint: key.fingerprint(),
                 previous: previous.map(str::to_owned),
+                older_algorithm: key.older_algorithm(),
                 reply,
             })
             .is_ok();
         Box::pin(async move { asked && answer.await.unwrap_or(false) })
+    }
+}
+
+/// The server's sign-in questions, through the session like the host-key
+/// card (B563): `None` — declined — when the attempt is given up first.
+impl SignInQuestions for Prompt {
+    fn ask<'a>(
+        &'a self,
+        host: &'a str,
+        question: &'a SignInQuestion,
+    ) -> SshBoxFuture<'a, Option<String>> {
+        let (reply, answer) = oneshot::channel();
+        let asked = self
+            .session
+            .send(Msg::Question {
+                generation: self.generation,
+                host: host.to_owned(),
+                question: question.clone(),
+                reply,
+            })
+            .is_ok();
+        Box::pin(async move {
+            if !asked {
+                return None;
+            }
+            answer.await.ok().flatten()
+        })
     }
 }
 
@@ -3927,6 +4190,35 @@ impl HostKeyPrompt for Prompt {
         expected: &'a str,
     ) -> SshBoxFuture<'a, bool> {
         self.ask(host, port, key, Some(expected))
+    }
+}
+
+/// What becomes of the mosh-server a torn-down leg started.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ServerFate {
+    /// Stopped now, over a connection of its own.
+    Stop,
+    /// Stopped over the next connection the redial makes (B195).
+    Orphan,
+    /// Left alone: it ended the session itself, or the pins the renderer
+    /// holds are paid first and it is stopped then (`finish`, B270).
+    Leave,
+}
+
+/// A mosh-server at its leg's teardown (`why`), whether it was ever heard
+/// from (`contacted`), whether the renderer's pins are still owed on it
+/// (`debt`): one that never heard from us waits forever, so it goes; one
+/// whose session the person ended or left for SSH can never be reattached
+/// (this app doesn't keep the key), so it goes; one a reconnect leaves
+/// behind is replaced by the server the redial starts and goes over that
+/// connection; one that ended the session is gone already.
+fn server_at_teardown(why: Teardown, contacted: bool, debt: bool) -> ServerFate {
+    match why {
+        Teardown::Disconnect if debt => ServerFate::Leave,
+        Teardown::Disconnect | Teardown::SwitchToSsh => ServerFate::Stop,
+        Teardown::Reconnect if !contacted => ServerFate::Stop,
+        Teardown::Reconnect => ServerFate::Orphan,
+        Teardown::Ended => ServerFate::Leave,
     }
 }
 
@@ -4345,6 +4637,7 @@ mod tests {
                 port: 22,
                 fingerprint: "SHA256:x".into(),
                 previous: None,
+                older_algorithm: None,
                 reply,
             })
             .await;
@@ -4365,6 +4658,120 @@ mod tests {
         let restarted = std::iter::from_fn(|| actor.life.poll_action())
             .any(|action| matches!(action, Action::Abandon { .. }));
         assert!(restarted, "answered, a stalled dial is restarted as before");
+    }
+
+    /// B564: a host key that came by `ssh-rsa` says so on its card.
+    #[tokio::test]
+    async fn a_host_key_by_the_older_algorithm_says_so_on_its_card() {
+        let (mut actor, mut events) = dialing_actor(false);
+        let generation = actor.life.generation();
+        actor.attempt = Some((generation, tokio::spawn(async {})));
+        for older in [Some("ssh-rsa"), None] {
+            let (reply, _answer) = oneshot::channel();
+            actor
+                .handle(Msg::Ask {
+                    generation,
+                    host: "box".into(),
+                    port: 22,
+                    fingerprint: "SHA256:x".into(),
+                    previous: None,
+                    older_algorithm: older,
+                    reply,
+                })
+                .await;
+            let said =
+                std::iter::from_fn(|| events.try_recv().ok()).find_map(|event| match event.kind {
+                    EventKind::HostKeyPrompt {
+                        older_algorithm, ..
+                    } => Some(older_algorithm),
+                    _ => None,
+                });
+            assert_eq!(said, Some(older.map(str::to_owned)));
+        }
+    }
+
+    /// B563: the server's sign-in question goes to the person with its own
+    /// words, holds the dial like the host-key card, takes their answer
+    /// back; a question the attempt outlived is withdrawn as declined.
+    #[tokio::test]
+    async fn a_servers_sign_in_question_is_the_persons_to_answer() {
+        let (mut actor, mut events) = dialing_actor(false);
+        let generation = actor.life.generation();
+        let now = actor.now();
+        actor.attempt = Some((generation, tokio::spawn(async {})));
+        let question = SignInQuestion {
+            name: String::new(),
+            instructions: String::new(),
+            prompt: "Verification code: ".into(),
+            echo: false,
+        };
+        let (reply, answer) = oneshot::channel();
+        actor
+            .handle(Msg::Question {
+                generation,
+                host: "box".into(),
+                question: question.clone(),
+                reply,
+            })
+            .await;
+        let prompt = actor.next_prompt;
+        let asked = std::iter::from_fn(|| events.try_recv().ok()).any(|event| {
+            matches!(
+                event.kind,
+                EventKind::SignInQuestion { prompt: p, ref host, ref text, echo: false, .. }
+                    if p == prompt && host == "box" && text == "Verification code: "
+            )
+        });
+        assert!(asked, "the question wasn't shown");
+        actor.life.background(now + 50_000);
+        actor.life.foreground(now + 60_000);
+        let restarted = std::iter::from_fn(|| actor.life.poll_action())
+            .any(|action| matches!(action, Action::Abandon { .. }));
+        assert!(!restarted, "the question's dial was restarted");
+        actor
+            .handle(Msg::AnswerQuestion {
+                prompt,
+                answer: Some("424242".into()),
+            })
+            .await;
+        assert_eq!(answer.await.unwrap().as_deref(), Some("424242"));
+
+        // Asked again, then the attempt is given up: the card closes and
+        // the dial reads a no.
+        let (reply, answer) = oneshot::channel();
+        actor
+            .handle(Msg::Question {
+                generation,
+                host: "box".into(),
+                question,
+                reply,
+            })
+            .await;
+        let prompt = actor.next_prompt;
+        actor.withdraw_prompts(generation);
+        assert_eq!(answer.await.unwrap(), None);
+        let withdrawn = std::iter::from_fn(|| events.try_recv().ok()).any(|event| {
+            matches!(event.kind, EventKind::SignInQuestionWithdrawn { prompt: p } if p == prompt)
+        });
+        assert!(withdrawn, "the question's card was left up");
+
+        // A question from an attempt already gone is declined at once.
+        let (reply, answer) = oneshot::channel();
+        actor.attempt = None;
+        actor
+            .handle(Msg::Question {
+                generation,
+                host: "box".into(),
+                question: SignInQuestion {
+                    name: String::new(),
+                    instructions: String::new(),
+                    prompt: "Token: ".into(),
+                    echo: false,
+                },
+                reply,
+            })
+            .await;
+        assert_eq!(answer.await.unwrap(), None);
     }
 
     /// A tmux pane's channel on `actor`, its pump forwarding to the actor's
@@ -4484,7 +4891,10 @@ mod tests {
         let held: Vec<(StreamId, Typed)> = actor
             .held
             .iter()
-            .map(|(stream, typed, _)| (*stream, typed.clone()))
+            .filter_map(|kept| match kept {
+                Kept::Typed(stream, typed, _) => Some((*stream, typed.clone())),
+                Kept::Resize(..) => None,
+            })
             .collect();
         assert_eq!(held, made, "all of it waits for the answer");
         assert!(actor.pending.is_empty(), "nothing went ahead");
@@ -4685,6 +5095,34 @@ mod tests {
             !actor.settling.contains_key(&pane("%1")),
             "nothing left waiting"
         );
+    }
+
+    /// What a torn-down leg's mosh-server comes to (the Swift client's
+    /// MoshServerTeardownTests and their rule, kept when it went, E2): the
+    /// person's end or SSH stops it, a reconnect stops one never heard from
+    /// and leaves a contacted one to the next connection (B195), and a
+    /// server that ended the session itself is never stopped.
+    #[test]
+    fn what_a_torn_down_legs_mosh_server_comes_to() {
+        use ServerFate::*;
+        for contacted in [false, true] {
+            assert_eq!(
+                server_at_teardown(Teardown::Disconnect, contacted, false),
+                Stop
+            );
+            assert_eq!(
+                server_at_teardown(Teardown::SwitchToSsh, contacted, false),
+                Stop
+            );
+            assert_eq!(server_at_teardown(Teardown::Ended, contacted, false), Leave);
+            assert_eq!(
+                server_at_teardown(Teardown::Disconnect, contacted, true),
+                Leave,
+                "the pins first"
+            );
+        }
+        assert_eq!(server_at_teardown(Teardown::Reconnect, false, false), Stop);
+        assert_eq!(server_at_teardown(Teardown::Reconnect, true, false), Orphan);
     }
 
     /// B483: with no leg, a tmux command (a new window, a close) waits for
@@ -5051,6 +5489,452 @@ mod tests {
         );
     }
 
+    /// mosh + tmux, a swipe over an alternate-screen pane without the mouse
+    /// (less, man): its ticks go to the sidecar, which presses the arrow
+    /// keys (B500); over the primary screen, tmux's copy-mode down mosh as
+    /// before. It went to copy-mode, which pages nothing there.
+    #[tokio::test]
+    async fn a_swipe_over_a_pager_under_mosh_tmux_goes_to_the_sidecar() {
+        let (mut actor, _events) = live_actor(false);
+        actor.spec.multiplexer = Multiplexer::Tmux;
+        let (commands, mut sent) = mpsc::unbounded_channel();
+        actor.leg = Some(Leg::Mosh {
+            generation: actor.life.generation(),
+            mosh: MoshLoop {
+                commands,
+                task: tokio::spawn(async {}),
+            },
+            server_pid: None,
+            first_contact: true,
+            return_path_reported: false,
+            reaped: false,
+        });
+        let (to_sidecar, mut sidecar) = mpsc::unbounded_channel();
+        actor.control = Some(Control {
+            generation: actor.life.generation(),
+            epoch: 1,
+            ssh: None,
+            sidecar: Some(TmuxLeg::for_tests(to_sidecar)),
+            dialling: false,
+            failures: 0,
+            preferred: None,
+            handoff: Handoff::default(),
+            renderer_pid: None,
+            grid: (80, 24),
+            layouts_before_renderer: None,
+            ready: true,
+            checking: false,
+            holding: false,
+            held: Vec::new(),
+            hold: 0,
+            dropped: false,
+        });
+        let view = |alt_screen: bool| TmuxView {
+            snapshot: Snapshot::default(),
+            notice: None,
+            refreshing: false,
+            size_follow: None,
+            agent_hooks: BTreeMap::new(),
+            agent_hooks_loaded: false,
+            input: moshpit_tmux::controller::InputFlags {
+                alt_screen,
+                ..Default::default()
+            },
+            no_session: false,
+        };
+        actor.update(|v| v.tmux_view = Some(view(true)));
+        actor.handle(Msg::Tmux(TmuxAction::ScrollLines(3))).await;
+        assert!(matches!(
+            sidecar.try_recv(),
+            Ok(TmuxCommand::Action(TmuxAction::ScrollLines(3)))
+        ));
+        assert!(sent.try_recv().is_err(), "nothing down mosh");
+        // The primary screen: tmux's copy-mode, down mosh.
+        actor.update(|v| v.tmux_view = Some(view(false)));
+        actor.handle(Msg::Tmux(TmuxAction::ScrollLines(3))).await;
+        assert!(matches!(
+            sent.try_recv(),
+            Ok(MoshCommand::CopyScroll { lines: 3, .. })
+        ));
+        let to_sidecar: Vec<TmuxCommand> = std::iter::from_fn(|| sidecar.try_recv().ok()).collect();
+        assert!(
+            !to_sidecar
+                .iter()
+                .any(|c| matches!(c, TmuxCommand::Action(TmuxAction::ScrollLines(_)))),
+            "not the sidecar's"
+        );
+    }
+
+    /// B524: a reply for a pane asked for in the background, on a live SSH
+    /// session not heard from lately, waits for the transport's answer to
+    /// a question first. It went out at once, into a socket iOS may have
+    /// killed while the app slept, and was said sent: a notification's
+    /// Allow or reply that reached nothing.
+    #[tokio::test(start_paused = true)]
+    async fn a_delivery_in_the_background_waits_for_the_transports_answer() {
+        let (mut actor, _events) = live_actor(false);
+        let now = actor.now();
+        actor.life.background(now);
+        while actor.life.poll_action().is_some() {}
+        // Half a minute without a byte.
+        tokio::time::advance(Duration::from_secs(30)).await;
+        let (reply, _answer) = oneshot::channel();
+        actor
+            .handle(Msg::Deliver {
+                pane: SHELL_PANE.to_owned(),
+                bytes: b"y\r".to_vec(),
+                paste: false,
+                reply,
+            })
+            .await;
+        let asked: Vec<Action> = std::iter::from_fn(|| actor.life.poll_action()).collect();
+        assert!(
+            asked.iter().any(|a| matches!(a, Action::Probe { .. })),
+            "the transport is asked: {asked:?}"
+        );
+        assert_eq!(actor.deliveries.len(), 1, "the reply waits");
+    }
+
+    /// B525: over plain mosh, what follows a paste waits for mosh-server's
+    /// ack of the paste's state, then the paste's time: a paste state lost
+    /// on the way goes again as one diff with the Return typed after it
+    /// (mosh retransmits from the acked state to the newest), mosh-server
+    /// writes them together, and Claude Code drops the Return behind an
+    /// image path's paste. With no ack in 2 s it goes anyway.
+    #[tokio::test(start_paused = true)]
+    async fn over_mosh_what_follows_a_paste_waits_for_its_ack() {
+        let (mut actor, _events) = live_actor(false);
+        let (commands, mut sent) = mpsc::unbounded_channel();
+        actor.leg = Some(Leg::Mosh {
+            generation: actor.life.generation(),
+            mosh: MoshLoop {
+                commands,
+                task: tokio::spawn(async {}),
+            },
+            server_pid: None,
+            first_contact: true,
+            return_path_reported: false,
+            reaped: false,
+        });
+        let keys = |sent: &mut mpsc::UnboundedReceiver<MoshCommand>| -> (Vec<Vec<u8>>, Vec<oneshot::Sender<()>>) {
+            let (mut keys, mut barriers) = (Vec::new(), Vec::new());
+            while let Ok(command) = sent.try_recv() {
+                match command {
+                    MoshCommand::Keys { bytes, .. } => keys.push(bytes),
+                    MoshCommand::Barrier(reply) => barriers.push(reply),
+                    _ => {}
+                }
+            }
+            (keys, barriers)
+        };
+        actor.send_or_wait(Dest::Shell, 1, Typed::Paste("/tmp/a.jpg".into()), 0);
+        actor.send_or_wait(Dest::Shell, 1, Typed::Bytes(b"\r".to_vec()), 1);
+        let (pasted, mut barriers) = keys(&mut sent);
+        assert_eq!(pasted.len(), 1, "the paste");
+        assert_eq!(barriers.len(), 1, "the paste's ack is asked for");
+        // Its time is up, its ack not here: the Return waits.
+        let later = actor.now() + 500;
+        actor.release_settled(later);
+        assert!(keys(&mut sent).0.is_empty(), "no ack yet");
+        // The ack.
+        let _ = barriers.remove(0).send(());
+        let landed = actor.mailbox.recv().await.unwrap();
+        actor.handle(landed).await;
+        let past = actor.now() + 200;
+        actor.release_settled(past);
+        assert_eq!(keys(&mut sent).0, vec![b"\r".to_vec()], "then the Return");
+
+        // No ack at all: after 2 s.
+        actor.send_or_wait(Dest::Shell, 1, Typed::Paste("x".into()), 2);
+        actor.send_or_wait(Dest::Shell, 1, Typed::Bytes(b"y".to_vec()), 3);
+        let _ = keys(&mut sent);
+        let start = actor.now();
+        actor.release_settled(start + 1_900);
+        assert!(keys(&mut sent).0.is_empty());
+        actor.release_settled(start + 2_000);
+        assert_eq!(keys(&mut sent).0, vec![b"y".to_vec()]);
+    }
+
+    /// B529: back from the background in place, before the transport
+    /// answered: a size change given after keys held for the answer waits
+    /// with them and goes out in order (V31). It went at once, ahead of the
+    /// keys typed before it. With nothing held for its stream it still goes
+    /// at once.
+    #[tokio::test]
+    async fn a_resize_during_the_return_waits_behind_the_keys_typed_before_it() {
+        let (mut actor, _events) = live_actor(true);
+        let generation = actor.life.generation();
+        let (commands, mut sent) = mpsc::unbounded_channel();
+        actor.leg = Some(Leg::Mosh {
+            generation,
+            mosh: MoshLoop {
+                commands,
+                task: tokio::spawn(async {}),
+            },
+            server_pid: None,
+            first_contact: true,
+            return_path_reported: false,
+            reaped: false,
+        });
+        let (stream, input) = moshpit_stream::open();
+        let id = stream.id();
+        actor.shell = Some(ShellChannel {
+            stream: Arc::new(stream),
+            pump: pump(id, input, actor.me.clone()),
+            used: false,
+            written: 0,
+        });
+        let seen = |sent: &mut mpsc::UnboundedReceiver<MoshCommand>| -> Vec<String> {
+            std::iter::from_fn(|| sent.try_recv().ok())
+                .filter_map(|command| match command {
+                    MoshCommand::Keys { bytes, .. } => {
+                        Some(String::from_utf8_lossy(&bytes).into_owned())
+                    }
+                    MoshCommand::Resize { cols, rows } => Some(format!("{cols}x{rows}")),
+                    _ => None,
+                })
+                .collect()
+        };
+        let now = actor.now();
+        actor.life.background(now);
+        actor.life.foreground(now + 30_000);
+        let question = asked(&mut actor);
+        assert!(actor.life.resume_pending());
+        // Nothing held yet: the size goes now.
+        actor.input(id, InputEvent::Resize { cols: 90, rows: 20 });
+        assert_eq!(seen(&mut sent), ["90x20"]);
+        actor.input(id, InputEvent::Bytes(b"a".to_vec()));
+        actor.input(
+            id,
+            InputEvent::Resize {
+                cols: 100,
+                rows: 30,
+            },
+        );
+        actor.input(id, InputEvent::Bytes(b"b".to_vec()));
+        assert_eq!(seen(&mut sent), Vec::<String>::new(), "all three wait");
+        actor
+            .life
+            .probe_answered(generation, question, Probe::Alive, now + 30_080);
+        assert!(!actor.life.resume_pending());
+        actor.release_held();
+        assert_eq!(seen(&mut sent), ["a", "100x30", "b"], "in the order given");
+    }
+
+    /// B528: a size change given after keys that wait behind a paste waits
+    /// with them, in order (V31: a size lands between the bytes it came
+    /// between). It overtook them: the program saw the new size before the
+    /// keys typed ahead of it.
+    #[tokio::test]
+    async fn a_resize_behind_a_paste_waits_with_the_keys_in_order() {
+        let (mut actor, _events) = live_actor(false);
+        let (commands, mut sent) = mpsc::unbounded_channel();
+        actor.leg = Some(Leg::Mosh {
+            generation: actor.life.generation(),
+            mosh: MoshLoop {
+                commands,
+                task: tokio::spawn(async {}),
+            },
+            server_pid: None,
+            first_contact: true,
+            return_path_reported: false,
+            reaped: false,
+        });
+        let (stream, input) = moshpit_stream::open();
+        let id = stream.id();
+        actor.shell = Some(ShellChannel {
+            stream: Arc::new(stream),
+            pump: pump(id, input, actor.me.clone()),
+            used: false,
+            written: 0,
+        });
+        let seen = |sent: &mut mpsc::UnboundedReceiver<MoshCommand>| -> Vec<String> {
+            std::iter::from_fn(|| sent.try_recv().ok())
+                .filter_map(|command| match command {
+                    MoshCommand::Keys { bytes, .. } => {
+                        Some(String::from_utf8_lossy(&bytes).into_owned())
+                    }
+                    MoshCommand::Resize { cols, rows } => Some(format!("{cols}x{rows}")),
+                    _ => None,
+                })
+                .collect()
+        };
+        actor.input(id, InputEvent::Paste("p".into()));
+        // Nothing waits yet: the size goes now, after the paste.
+        actor.input(id, InputEvent::Resize { cols: 90, rows: 20 });
+        assert_eq!(seen(&mut sent), ["\u{1b}[200~p\u{1b}[201~", "90x20"]);
+        actor.input(id, InputEvent::Bytes(b"a".to_vec()));
+        actor.input(
+            id,
+            InputEvent::Resize {
+                cols: 100,
+                rows: 30,
+            },
+        );
+        actor.input(id, InputEvent::Bytes(b"b".to_vec()));
+        assert_eq!(seen(&mut sent), Vec::<String>::new(), "all three wait");
+        let past = actor.now() + 10_000;
+        actor.release_settled(past);
+        assert_eq!(seen(&mut sent), ["a", "100x30", "b"], "in the order given");
+    }
+
+    /// A live actor on a mosh leg whose mosh-server is `pid`; what it asks
+    /// of the mosh loop.
+    fn on_mosh(
+        pid: i64,
+    ) -> (
+        Actor,
+        mpsc::UnboundedReceiver<Event>,
+        mpsc::UnboundedReceiver<MoshCommand>,
+    ) {
+        let (mut actor, events) = live_actor(false);
+        let (commands, sent) = mpsc::unbounded_channel();
+        actor.leg = Some(Leg::Mosh {
+            generation: actor.life.generation(),
+            mosh: MoshLoop {
+                commands,
+                task: tokio::spawn(async {}),
+            },
+            server_pid: Some(pid),
+            first_contact: false,
+            return_path_reported: false,
+            reaped: false,
+        });
+        (actor, events, sent)
+    }
+
+    fn reaped(actor: &Actor) -> bool {
+        matches!(actor.leg, Some(Leg::Mosh { reaped: true, .. }))
+    }
+
+    /// A reply for a pane, given to the session; its answer.
+    async fn deliver_to(actor: &mut Actor, pane: &str) -> oneshot::Receiver<bool> {
+        let (reply, answer) = oneshot::channel();
+        actor
+            .handle(Msg::Deliver {
+                pane: pane.to_owned(),
+                bytes: b"y\r".to_vec(),
+                paste: false,
+                reply,
+            })
+            .await;
+        answer
+    }
+
+    fn went_down_mosh(sent: &mut mpsc::UnboundedReceiver<MoshCommand>) -> bool {
+        std::iter::from_fn(|| sent.try_recv().ok()).any(|c| matches!(c, MoshCommand::Keys { .. }))
+    }
+
+    /// A reply for a tmux pane over mosh (the Swift client's
+    /// MoshTmuxDeliveryTests, kept when it went, E2). With no sidecar to
+    /// place it, it waits, and past the wait it is answered "not sent";
+    /// with tmux missing on the host it is refused at once; a pane the
+    /// sidecar's tree doesn't list is refused at once, one it lists goes to
+    /// the sidecar. Never down mosh: mosh's shell is tmux's own client,
+    /// whose active pane it would land in.
+    #[tokio::test]
+    async fn a_reply_for_a_tmux_pane_over_mosh_waits_for_the_sidecar_or_is_refused() {
+        // No sidecar: it waits, then "not sent".
+        let (mut actor, _events, mut sent) = on_mosh(4242);
+        actor.spec.multiplexer = Multiplexer::Tmux;
+        let mut answer = deliver_to(&mut actor, "%1").await;
+        assert!(answer.try_recv().is_err(), "it waits for the sidecar");
+        let past = actor.now() + crate::spec::ms(DELIVERY_WAIT);
+        actor.expire_deliveries(past);
+        assert_eq!(answer.await, Ok(false));
+        assert!(!went_down_mosh(&mut sent));
+
+        // tmux missing on the host: refused at once.
+        let (mut actor, _events, mut sent) = on_mosh(4242);
+        actor.spec.multiplexer = Multiplexer::Tmux;
+        actor.update(|view| view.degrade = Some(Degrade::TmuxMissing));
+        assert_eq!(deliver_to(&mut actor, "%1").await.await, Ok(false));
+        assert!(!went_down_mosh(&mut sent));
+
+        // The sidecar lists %0 and %1: %9 is refused, %1 goes to it.
+        let (mut actor, _events, mut sent) = on_mosh(4242);
+        actor.spec.multiplexer = Multiplexer::Tmux;
+        let (commands, mut sidecar) = mpsc::unbounded_channel();
+        actor.control = Some(Control {
+            generation: actor.life.generation(),
+            epoch: 1,
+            ssh: None,
+            sidecar: Some(TmuxLeg::for_tests(commands)),
+            dialling: false,
+            failures: 0,
+            preferred: None,
+            handoff: Handoff::default(),
+            renderer_pid: None,
+            grid: (80, 24),
+            layouts_before_renderer: None,
+            ready: true,
+            checking: false,
+            holding: false,
+            held: Vec::new(),
+            hold: 0,
+            dropped: false,
+        });
+        let mut tree = Snapshot {
+            is_attached: true,
+            ..Snapshot::default()
+        };
+        for pane in ["%0", "%1"] {
+            tree.panes.insert(
+                pane.into(),
+                moshpit_tmux::model::PaneInfo::placeholder(pane, "@1"),
+            );
+        }
+        actor.update(|view| view.tmux = Some(tree));
+        assert_eq!(
+            deliver_to(&mut actor, "%9").await.await,
+            Ok(false),
+            "not listed"
+        );
+        let _answer = deliver_to(&mut actor, "%1").await;
+        let to_sidecar: Vec<TmuxCommand> = std::iter::from_fn(|| sidecar.try_recv().ok()).collect();
+        assert!(
+            to_sidecar
+                .iter()
+                .any(|c| matches!(c, TmuxCommand::Input { pane, .. } if pane == "%1")),
+            "by its id"
+        );
+        assert!(!went_down_mosh(&mut sent));
+    }
+
+    /// The return path dies (the Swift client's MoshReturnPathReapTests,
+    /// kept when it went, E2): a mosh-server never heard from waits forever
+    /// and is stopped; one that answered keeps the session, which stays
+    /// connected with the banner up. Said once either way.
+    #[tokio::test]
+    async fn a_dead_return_path_stops_only_a_server_never_heard_from() {
+        for heard in [false, true] {
+            let (mut actor, mut events, _sent) = on_mosh(4242);
+            let generation = actor.life.generation();
+            for _ in 0..2 {
+                actor
+                    .handle(Msg::Mosh {
+                        generation,
+                        note: MoshNote::ReturnPathDead {
+                            first_contact: heard,
+                        },
+                    })
+                    .await;
+            }
+            assert_eq!(reaped(&actor), !heard, "heard: {heard}");
+            assert_eq!(
+                actor.owed.len(),
+                usize::from(!heard),
+                "one stop, heard: {heard}"
+            );
+            assert_eq!(actor.life.state(), SessionState::Connected);
+            assert!(actor.view.lock().unwrap().return_path_dead);
+            let banners = std::iter::from_fn(|| events.try_recv().ok())
+                .filter(|e| e.kind == EventKind::ReturnPathDead)
+                .count();
+            assert_eq!(banners, 1, "said once, heard: {heard}");
+        }
+    }
+
     /// On mosh a paste from the stream goes as one bracketed paste among the
     /// keys, at the offset the keys before it end at: it isn't stream bytes.
     #[tokio::test]
@@ -5080,10 +5964,10 @@ mod tests {
         assert!(moshpit_stream::view::paste(id, "p\x1b[201~q"));
         assert!(moshpit_stream::view::write(id, b"c"));
         take_input(&mut actor, 3).await;
-        // The key after the paste waits behind it (B485), ending where it
-        // did when typed.
-        let until = actor.settling[&Dest::Shell].until;
-        actor.release_settled(until);
+        // The key after the paste waits behind it (B485), for the paste's
+        // ack (B525, here past its wait), ending where it did when typed.
+        let hard = actor.settling[&Dest::Shell].hard;
+        actor.release_settled(hard);
         let went: Vec<(Vec<u8>, u64)> = std::iter::from_fn(|| sent.try_recv().ok())
             .filter_map(|command| match command {
                 MoshCommand::Keys { bytes, end } => Some((bytes, end)),

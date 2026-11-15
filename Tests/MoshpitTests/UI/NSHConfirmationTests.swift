@@ -40,6 +40,28 @@ struct NSHConfirmationTests {
         #expect(menus.openedView == nil, "a row no longer on screen is no anchor")
     }
 
+    @Test("B499: a swipe tray's action names its row, and that row is the one a confirmation points at")
+    func trayActionNamesItsRow() {
+        let (window, surface, row) = page()
+        defer { window.isHidden = true }
+        let other = UIView(frame: CGRect(x: 16, y: 700, width: 358, height: 56))
+        other.accessibilityIdentifier = "home-window-C-w1:t1"
+        surface.addSubview(other)
+        let menus = NSHContextMenus()
+        menus.install(on: surface)
+        menus.anchor(to: ["ev": "kill-pane", "connection": "C", "pane": "w1:p2", "row": "home-pane-C-w1:p2"])
+        #expect(menus.openedView === row)
+        menus.anchor(to: ["ev": "kill-window", "connection": "C", "window": "w1:t1", "row": "home-window-C-w1:t1"])
+        #expect(menus.openedView === other)
+        // No row (a menu's own action), or one not on the page: unchanged.
+        menus.anchor(to: ["ev": "kill-pane", "connection": "C", "pane": "w1:p2"])
+        #expect(menus.openedView === other)
+        menus.anchor(to: ["ev": "kill-pane", "row": "home-pane-C-gone"])
+        #expect(menus.openedView === other)
+        #expect(NSHConfirmation.placement(source: menus.openedView, page: surface, idiom: .phone)
+                == .row(other.bounds))
+    }
+
     @Test("with its row on screen it hangs from the row, on a phone and an iPad alike")
     func hangsFromTheRow() {
         let (window, surface, row) = page()

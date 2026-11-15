@@ -157,6 +157,9 @@ pub struct PaneWhere {
     pub session: Option<String>,
     /// The window's display title.
     pub window: Option<String>,
+    /// Where it is as Home names it (its workspace, a window someone named,
+    /// its folder; `moshpit_ui`'s `pane_place`): none when nothing does.
+    pub name: Option<String>,
 }
 
 /// One pane of a hook poll.
@@ -185,6 +188,10 @@ pub struct Agent {
     pub pane_id: String,
     pub command: String,
     pub location: String,
+    /// Where it is as Home says it: "moshpit · mac", Home's name for the
+    /// pane and the host; the host alone when nothing names the pane. Never
+    /// a window's raw title (a version, `3: 1`).
+    pub place: String,
     pub detail: Option<String>,
     pub state: AgentState,
     /// Unix seconds.
@@ -1190,7 +1197,12 @@ impl Monitor {
                 pane_id: key.1.clone(),
                 command: display_command(&p.command).to_owned(),
                 location: self.location(key, &p.place),
-                detail: if self.settings.show_detail { p.detail.clone() } else { None },
+                place: self.named_place(key, &p.place),
+                detail: if self.settings.show_detail {
+                    p.detail.clone().filter(|d| !names_only_the_agent(d, &p.command))
+                } else {
+                    None
+                },
                 state: p.state,
                 started_at: p.since,
             })
@@ -1220,6 +1232,23 @@ impl Monitor {
             host
         } else {
             format!("{host} · {}", parts.join(" · "))
+        }
+    }
+
+    /// "name · host", the island's place: Home's name for the pane (from
+    /// the tree when it has one) and the host; the host alone without.
+    fn named_place(&self, key: &Key, place: &PaneWhere) -> String {
+        let host = self.conns.get(&key.0).cloned().unwrap_or_default();
+        let name = place.name.as_deref().or_else(|| {
+            self.trees
+                .get(&key.0)
+                .and_then(|tree| tree.get(&key.1))
+                .and_then(|p| p.name.as_deref())
+        });
+        match name.map(str::trim).filter(|n| !n.is_empty()) {
+            Some(name) if !host.is_empty() => format!("{name} · {host}"),
+            Some(name) => name.to_owned(),
+            None => host,
         }
     }
 
@@ -1264,6 +1293,21 @@ pub fn stamp_hold(interval: f64, margin: f64) -> f64 {
 }
 
 /// A login shell's leading "-" off.
+/// Whether a hook's title only names the agent ("Claude Code" for claude,
+/// "Codex CLI"): no news, so the island and the cards leave it out.
+pub fn names_only_the_agent(detail: &str, command: &str) -> bool {
+    let squeeze = |s: &str| {
+        s.chars()
+            .filter(|c| c.is_alphanumeric())
+            .flat_map(char::to_lowercase)
+            .collect::<String>()
+    };
+    let detail = squeeze(detail);
+    let agent = squeeze(display_command(command));
+    !agent.is_empty()
+        && [agent.clone(), format!("{agent}code"), format!("{agent}cli")].contains(&detail)
+}
+
 pub fn display_command(command: &str) -> &str {
     command.strip_prefix('-').unwrap_or(command)
 }

@@ -35,11 +35,14 @@ if [ "$want" != "$have" ]; then
 fi
 
 mkdir -p "$work"
+# The pairing's Swift helpers as of the same commit (HostInstaller mints its
+# self-test's name with them): the app's went with batch C.
+git -C "$repo" show "$rev:Packages/MoshpitKit/Sources/MoshpitKit/Push/PushPairing.swift" >"$work/PushPairing.swift"
 swiftc -O -wmo -swift-version 5 -parse-as-library -module-name MoshpitKit \
     -emit-module -emit-module-path "$work/MoshpitKit.swiftmodule" \
     -emit-library -static -o "$work/libMoshpitKit.a" \
     "$kit/Log.swift" "$kit/AppLanguage.swift" \
-    "$kit/Push/PushSealedBox.swift" "$kit/Push/PushPairing.swift" "$kit/Push/PushStanding.swift" \
+    "$kit/Push/PushSealedBox.swift" "$work/PushPairing.swift" "$kit/Push/PushStanding.swift" \
     "$kit/Push/AppGroupFileLock.swift" \
     "$kit/Push/AgentNotificationCopy.swift" "$kit/Push/PushRemoteNotification.swift" \
     "$kit/Push/PushPrefs.swift" "$kit/Push/PushDiagnostics.swift" \

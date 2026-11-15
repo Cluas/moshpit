@@ -31,22 +31,17 @@ struct RustSideChannelTests {
         let driver: RustSessionDriver
         let fake: FakeCoreSessions
         let borrows: Count
-        let dials: Count
     }
 
-    /// A session on a fake core, connected, lending `ssh`; its Swift dial
-    /// counted (it must never happen).
+    /// A session on a fake core, connected, lending `ssh`. There is no
+    /// Swift dial beside it any more (E4-SSH): what isn't borrowed fails.
     private func rig(_ connection: ServerConnection = ServerConnection(host: "h", username: "u"),
                      lending ssh: FakeLentSSH) async -> Rig {
         let fake = FakeCoreSessions()
-        let borrows = Count(), dials = Count()
+        let borrows = Count()
         fake.lend = { _ in borrows.add(); return ssh }
         let core = RustCore(sessions: fake, credentials: RustCredentialHost())
         let session = SessionHub.ActiveSession(connection: connection)
-        session.sidecarConnect = { _ in
-            dials.add()
-            throw SSHError.connectionFailed
-        }
         let driver = RustSessionDriver(session: session, core: core, appearance: Self.look)
         session.rust = driver
         driver.side.reconnectWait = .milliseconds(600)
@@ -56,7 +51,7 @@ struct RustSideChannelTests {
         for _ in 0..<100 where fake.connected.isEmpty { await Task.yield() }
         driver.handle(.state(state: .connected))
         await task.value
-        return Rig(session: session, driver: driver, fake: fake, borrows: borrows, dials: dials)
+        return Rig(session: session, driver: driver, fake: fake, borrows: borrows)
     }
 
     /// Waits (bounded) for the upload sweep a connect starts to have run.
@@ -95,7 +90,6 @@ struct RustSideChannelTests {
         let hits = await rig.session.probeRemotePaths(cwd: "/work", batch: [candidate])
         #expect(hits?[0]?.path == "/work/a.png")
 
-        #expect(rig.dials.value == 0, "no Swift SSH beside a Rust session")
         #expect(rig.fake.connected.count == 1, "one session in the core, its one connection")
         #expect(rig.borrows.value >= 5)
     }
@@ -131,7 +125,6 @@ struct RustSideChannelTests {
             try await Task.sleep(for: .milliseconds(10))
         }
         #expect(phase == .failed(HostConnectionError.notConnected.errorDescription ?? ""))
-        #expect(rig.dials.value == 0)
     }
 
     // MARK: Reconnects
@@ -147,7 +140,6 @@ struct RustSideChannelTests {
         rig.driver.handle(.state(state: .connected))
         #expect(try await call.value == "/home/dev")
         #expect(ContinuousClock.now - started >= .milliseconds(150))
-        #expect(rig.dials.value == 0)
     }
 
     @Test("a reconnect that takes too long is said so — bounded, never a hang")
@@ -179,7 +171,6 @@ struct RustSideChannelTests {
             _ = try await rig.session.acquireFileTransferSSH()
         }
         #expect(await rig.session.recheckCapabilities() == nil)
-        #expect(rig.dials.value == 0)
     }
 
     @Test("the path probe never waits: no session, no answer, at once")
@@ -196,7 +187,6 @@ struct RustSideChannelTests {
         let asked = ContinuousClock.now
         #expect(await rig.session.probeRemotePaths(cwd: "/work", batch: [candidate]) == nil)
         #expect(ContinuousClock.now - asked < .milliseconds(300))
-        #expect(rig.dials.value == 0)
     }
 
     @Test("the core a step ahead of its events: the borrow is asked again until the state catches up")
@@ -254,7 +244,6 @@ struct RustSideChannelTests {
         }
         let waited = ContinuousClock.now - started
         #expect(waited >= .milliseconds(250) && waited < .seconds(2), "\(waited)")
-        #expect(rig.dials.value == 0, "and no dial to make up for it")
     }
 
     @Test("a read cut off by the connection's drop is tried once more; a change never is")
@@ -281,7 +270,6 @@ struct RustSideChannelTests {
             try await host.createRemoteDirectory("/work/new")
         }
         #expect(lent.value == 1, "a change is never sent twice")
-        #expect(rig.dials.value == 0)
     }
 
     // MARK: Around the connect
@@ -328,7 +316,6 @@ struct RustSideChannelTests {
         #expect(!ssh.ran.contains { $0.contains("rm -rf") })
         rig.driver.handle(.state(state: Self.unreachable))
         #expect(await tmux.panePath("%1") == nil, "no session to ask: no answer, at once")
-        #expect(rig.dials.value == 0)
     }
 
     @Test("Install Assist's re-check reads the host over the session's connection")
@@ -343,6 +330,5 @@ struct RustSideChannelTests {
         let caps = try #require(await rig.session.recheckCapabilities())
         #expect(caps.hasTmux)
         #expect(!caps.hasMoshServer)
-        #expect(rig.dials.value == 0)
     }
 }
