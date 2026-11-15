@@ -12,9 +12,9 @@ final class NSHConnectionFlowUITest: XCTestCase {
         continueAfterFailure = false
     }
 
-    /// Save waits for what a connection needs; Use Mosh shows its tuning
-    /// rows (roaming, prediction) only while it is on, since "Roam on
-    /// Cellular" under a Mosh that is off would say something untrue.
+    /// Save waits for what a connection needs; Use Mosh shows its rows (the
+    /// prediction, the mosh-server path) only while it is on: rows for a
+    /// Mosh that is off would say something untrue.
     @MainActor
     func testSaveWaitsForAHostAndMoshShowsItsRowsOnlyWhenOn() throws {
         let app = NSHFlow.launch()
@@ -23,17 +23,17 @@ final class NSHConnectionFlowUITest: XCTestCase {
         XCTAssertFalse(app.waitNSH("save-connection").isEnabled, "Save is enabled on an empty form")
 
         let mosh = app.waitNSH("toggle-use-mosh")
-        XCTAssertFalse(app.nsh("connection-form-roam").exists, "Mosh's rows show while Use Mosh is off")
+        XCTAssertFalse(app.nsh("connection-form-predict").exists, "Mosh's rows show while Use Mosh is off")
         if !mosh.isHittable { app.reveal(mosh) }
         mosh.tap()
-        XCTAssertTrue(app.nsh("connection-form-roam").waitForExistence(timeout: 5),
+        XCTAssertTrue(app.nsh("connection-form-predict").waitForExistence(timeout: 5),
                       "turning Use Mosh on showed none of its rows")
         app.nsh("toggle-use-mosh").tap()
-        XCTAssertTrue(app.nsh("connection-form-roam").waitForNonExistence(timeout: 5),
+        XCTAssertTrue(app.nsh("connection-form-predict").waitForNonExistence(timeout: 5),
                       "Mosh's rows stayed after turning it off")
 
         app.tapNSH("connection-form-cancel")
-        app.waitNSH("home")
+        app.waitNSH("home-settings", "Cancel didn't go back to Home")
     }
 
     @MainActor
@@ -64,10 +64,12 @@ final class NSHConnectionFlowUITest: XCTestCase {
         XCTAssertTrue(row.spoken.contains("devbox.example.com") || row.spoken.contains(name),
                       "the saved row says neither its name nor its host: \(row.spoken)")
 
-        // Its menu deletes it, once confirmed.
-        let delete = app.buttons["Delete…"]
-        pressForMenu(row, until: delete, "the saved row's menu never opened")
-        delete.tap()
+        // Its menu deletes it, once confirmed. The row's swipe tray has a
+        // Delete… too, out of sight: the menu's is the one on screen.
+        let delete = app.buttons.matching(NSPredicate(format: "label == 'Delete…'"))
+        pressForMenu(row, until: delete.firstMatch, "the saved row's menu never opened")
+        let shown = (0..<delete.count).map { delete.element(boundBy: $0) }.first { $0.isHittable }
+        try XCTUnwrap(shown, "no Delete… on screen").tap()
         let confirm = app.buttons.matching(NSPredicate(format: "label == 'Delete'")).firstMatch
         XCTAssertTrue(confirm.waitForExistence(timeout: 5), "deleting asked nothing")
         confirm.tap()

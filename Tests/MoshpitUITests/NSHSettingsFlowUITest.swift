@@ -79,7 +79,9 @@ final class NSHSettingsFlowUITest: XCTestCase {
     /// The App Icon page offers the nine icons, and picking one does not
     /// touch the accent. The simulator cannot switch icons (lsd's
     /// confirmation plugin fails); a device shows iOS's alert, dismissed
-    /// here so the run doesn't stall.
+    /// here so the run doesn't stall. The pick is an icon near the top:
+    /// scrolling the gallery for the last one timed out XCUITest's queries
+    /// on CI (run 10).
     @MainActor
     func testIconGalleryOffersTheNineIcons() throws {
         let app = NSHFlow.launch()
@@ -91,7 +93,7 @@ final class NSHSettingsFlowUITest: XCTestCase {
         for id in ["default", "pit", "island", "wq", "prefix", "localhost", "prompt", "cursor", "hail"] {
             XCTAssertTrue(app.nsh("app-icon-\(id)").waitForExistence(timeout: 3), "missing icon \(id)")
         }
-        app.tapNSH("app-icon-hail")
+        app.tapNSH("app-icon-pit")
         let alert = app.alerts.firstMatch
         if alert.waitForExistence(timeout: 3) {
             alert.buttons.element(boundBy: alert.buttons.count - 1).tap()

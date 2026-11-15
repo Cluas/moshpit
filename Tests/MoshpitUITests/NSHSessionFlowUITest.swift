@@ -45,7 +45,7 @@ final class NSHSessionFlowUITest: XCTestCase {
 
         // Back is Home, with the host's card.
         app.tapNSH("terminal-back")
-        app.waitNSH("home")
+        app.waitNSH("home-settings", "Back from the terminal didn't reach Home")
         let name = ProcessInfo.processInfo.environment["MOSHPIT_SEED_NAME"] ?? "devbox"
         XCTAssertTrue(app.nsh(anyOf: ["home-card-\(name)", "connection-card-\(name)"])
                         .waitForExistence(timeout: NSHFlow.timeout),
