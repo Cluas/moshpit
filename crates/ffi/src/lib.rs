@@ -59,6 +59,7 @@ pub mod home;
 pub mod hostcare;
 pub mod keys;
 pub mod look;
+pub mod pages;
 pub mod pet;
 pub mod session;
 pub mod store;

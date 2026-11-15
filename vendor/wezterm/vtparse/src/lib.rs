@@ -314,6 +314,14 @@ const MAX_INTERMEDIATES: usize = 2;
 const MAX_OSC: usize = 64;
 const MAX_PARAMS: usize = 256;
 
+/// Moshpit (W25): the most an OSC or APC string collects. One past it is
+/// dropped whole: its bytes are still read up to its end, none is kept, and
+/// it is not dispatched (a cut payload means nothing). Without it a string
+/// grew without bound until its terminator: a clipboard write of a huge
+/// file, or a string a program opened and never closed. Above what the
+/// largest image the terminal takes needs in base64 (32 MiB decoded).
+pub const MAX_STRING_BYTES: usize = 64 << 20;
+
 struct OscState {
     #[cfg(any(feature = "std", feature = "alloc"))]
     buffer: Vec<u8>,
@@ -322,10 +330,24 @@ struct OscState {
     param_indices: [usize; MAX_OSC],
     num_params: usize,
     full: bool,
+    /// Moshpit (W25): it went past [`MAX_STRING_BYTES`].
+    overflowed: bool,
 }
 
 impl OscState {
     fn put(&mut self, param: char) {
+        if self.overflowed {
+            return;
+        }
+        if self.buffer.len() + param.len_utf8() > MAX_STRING_BYTES {
+            // What it held goes now, not at its end (which may never come).
+            self.overflowed = true;
+            self.full = true;
+            self.buffer.clear();
+            #[cfg(any(feature = "std", feature = "alloc"))]
+            self.buffer.shrink_to_fit();
+            return;
+        }
         if param == ';' {
             match self.num_params {
                 MAX_OSC => {
@@ -375,6 +397,8 @@ pub struct VTParser {
     params_full: bool,
     #[cfg(any(feature = "std", feature = "alloc"))]
     apc_data: Vec<u8>,
+    /// Moshpit (W25): the APC went past [`MAX_STRING_BYTES`].
+    apc_overflowed: bool,
 
     utf8_parser: Utf8Parser,
     utf8_return_state: State,
@@ -461,6 +485,7 @@ impl VTParser {
                 param_indices,
                 num_params: 0,
                 full: false,
+                overflowed: false,
             },
 
             params: [CsiParam::default(); MAX_PARAMS],
@@ -471,6 +496,7 @@ impl VTParser {
             utf8_parser: Utf8Parser::new(),
             #[cfg(any(feature = "std", feature = "alloc"))]
             apc_data: Vec::new(),
+            apc_overflowed: false,
         }
     }
 
@@ -531,6 +557,8 @@ impl VTParser {
                 self.ignored_excess_intermediates = false;
                 self.osc.num_params = 0;
                 self.osc.full = false;
+                self.osc.overflowed = false;
+                self.apc_overflowed = false;
                 self.num_params = 0;
                 self.params_full = false;
                 self.current_param.take();
@@ -617,11 +645,19 @@ impl VTParser {
                 self.osc.buffer.shrink_to_fit();
                 self.osc.num_params = 0;
                 self.osc.full = false;
+                self.osc.overflowed = false;
             }
             Action::OscPut => self.osc.put(param as char),
 
             Action::OscEnd => {
-                if self.osc.num_params == 0 {
+                if self.osc.overflowed {
+                    // Moshpit (W25): dropped whole, its memory let go.
+                    self.osc.buffer.clear();
+                    #[cfg(any(feature = "std", feature = "alloc"))]
+                    self.osc.buffer.shrink_to_fit();
+                    self.osc.num_params = 0;
+                    self.osc.overflowed = false;
+                } else if self.osc.num_params == 0 {
                     actor.osc_dispatch(&[]);
                 } else {
                     let mut params: [&[u8]; MAX_OSC] = [b""; MAX_OSC];
@@ -646,14 +682,32 @@ impl VTParser {
                     self.apc_data.clear();
                     self.apc_data.shrink_to_fit();
                 }
+                self.apc_overflowed = false;
             }
             Action::ApcPut => {
                 #[cfg(any(feature = "std", feature = "alloc"))]
-                self.apc_data.push(param);
+                {
+                    // Moshpit (W25): past the limit, nothing more is kept.
+                    if self.apc_data.len() >= MAX_STRING_BYTES {
+                        if !self.apc_overflowed {
+                            self.apc_overflowed = true;
+                            self.apc_data.clear();
+                            self.apc_data.shrink_to_fit();
+                        }
+                    } else if !self.apc_overflowed {
+                        self.apc_data.push(param);
+                    }
+                }
             }
             Action::ApcEnd => {
                 #[cfg(any(feature = "std", feature = "alloc"))]
-                actor.apc_dispatch(core::mem::take(&mut self.apc_data));
+                {
+                    if self.apc_overflowed {
+                        self.apc_overflowed = false;
+                    } else {
+                        actor.apc_dispatch(core::mem::take(&mut self.apc_data));
+                    }
+                }
             }
 
             Action::Utf8 => self.next_utf8(actor, param),
@@ -758,6 +812,43 @@ impl VTParser {
 
 #[cfg(test)]
 mod test {
+
+    /// Moshpit (W25): a string past the limit keeps nothing and is not
+    /// dispatched; the next one is.
+    #[test]
+    fn a_string_past_the_limit_is_let_go() {
+        let mut parser = VTParser::new();
+        let mut actions = CollectingVTActor::default();
+        parser.parse(b"\x1b]52;c;", &mut actions);
+        let chunk = vec![b'A'; 1 << 20];
+        for _ in 0..(MAX_STRING_BYTES >> 20) + 1 {
+            parser.parse(&chunk, &mut actions);
+            assert!(parser.osc.buffer.len() <= MAX_STRING_BYTES);
+        }
+        assert_eq!(parser.osc.buffer.capacity(), 0, "let go at once");
+        parser.parse(b"\x07", &mut actions);
+        parser.parse(b"\x1b]0;hi\x07", &mut actions);
+        let actions = actions.into_vec();
+        assert_eq!(
+            actions,
+            vec![VTAction::OscDispatch(vec![b"0".to_vec(), b"hi".to_vec()])]
+        );
+        let mut parser = VTParser::new();
+        let mut actions = CollectingVTActor::default();
+        parser.parse(b"\x1b_G", &mut actions);
+        for _ in 0..(MAX_STRING_BYTES >> 20) + 1 {
+            parser.parse(&chunk, &mut actions);
+        }
+        assert_eq!(parser.apc_data.capacity(), 0);
+        parser.parse(b"\x1b\\\x1b_Gok\x1b\\", &mut actions);
+        let apcs: Vec<_> = actions
+            .into_vec()
+            .into_iter()
+            .filter(|a| matches!(a, VTAction::ApcDispatch(_)))
+            .collect();
+        assert_eq!(apcs, vec![VTAction::ApcDispatch(b"Gok".to_vec())]);
+    }
+
     use super::*;
     use k9::assert_equal as assert_eq;
 

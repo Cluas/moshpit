@@ -322,7 +322,6 @@
   "Custom": "Eigene",
   "Other…": "Andere …",
   "Start": "Starten",
-  "Starting…": "Startet …",
   "Looking for repositories…": "Repositories werden gesucht …",
   "None found — no panes in repos, and nothing under ~": "Nichts gefunden: kein Panel liegt in einem Repository, und unter ~ ist auch nichts",
   "Creates a git worktree on the host, then starts the agent inside it. Your working tree is untouched.": "Legt auf dem Host einen git worktree an und startet den Agent darin. Dein Arbeitsverzeichnis bleibt unangetastet.",
@@ -534,7 +533,6 @@
   "24 hours": "24 Stunden",
   "7 days": "7 Tage",
   "ATTACHED IMAGES": "ANGEHÄNGTE BILDER",
-  "THEME JSON": "FARBSCHEMA-JSON",
   "Add %@ to toolbar": "%@ zur Symbolleiste hinzufügen",
   "Reorder %@": "%@ neu anordnen",
   "Delete %@": "%@ löschen",
@@ -888,6 +886,8 @@
   "This window is sized for %@.": "Dieses Fenster hat die Größe des %@.",
   "Use this %@'s size": "Größe dieses %@ verwenden",
   "Use this device's size": "Größe dieses Geräts verwenden",
+  "The desktop switched to another pane.": "Auf dem Desktop wurde zu einem anderen Panel gewechselt.",
+  "Take it back": "Zurückholen",
   "No %@ %@ on %@": "Keine %1$@-%2$@ auf %3$@",
   "%@ isn't installed on this host": "%@ ist auf diesem Host nicht installiert",
   "Open %@": "%@ öffnen",
@@ -1040,5 +1040,8 @@
   "Small hours. My time.": "Kurz nach Mitternacht. Meine Zeit.",
   "Let It Talk": "Sprechen lassen",
   "A short line on Home now and then": "Ab und zu ein kurzer Satz in der Übersicht",
-  "%@: %@": "%@: %@"
+  "%@: %@": "%@: %@",
+  "A share wasn't delivered": "Ein geteiltes Element wurde nicht zugestellt",
+  "That pane isn't running %@ any more.": "In diesem Panel läuft %@ nicht mehr.",
+  "That pane is closed.": "Dieses Panel ist geschlossen."
 }

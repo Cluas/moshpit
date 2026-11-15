@@ -170,7 +170,6 @@ final class RustHerdrController: MultiplexerControlling {
     func killPane(_ paneId: String) { driver?.herdr(.killPane(id: paneId)) }
 
     func startAgentTask(_ request: AgentTaskRequest) async -> AgentTaskOutcome {
-        if let invalid = request.validationError { return .failed(invalid) }
         let intent = HerdrIntent.startAgentTask(
             repoPath: request.repoPath, branch: request.branch.trimmingCharacters(in: .whitespaces),
             agent: request.agent, prompt: request.prompt)

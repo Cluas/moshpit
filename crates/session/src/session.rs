@@ -341,27 +341,81 @@ impl SessionView {
 }
 
 /// The session's clock: milliseconds since it was made, plus an offset (the
-/// lifecycle's arithmetic never sees 0).
-#[derive(Clone, Copy)]
+/// lifecycle's arithmetic never sees 0), with the time the device slept
+/// counted (B611). `Instant` doesn't count it on Apple or Linux: a phone
+/// locked for minutes slept most of them, and came back "away" a few
+/// seconds — no forced reconnect, no fresh mosh flow, a frozen dial looking
+/// young. Never goes back.
+#[derive(Clone)]
 pub(crate) struct Clock {
     epoch: Instant,
+    /// The device's sleep so far, ms (the platform's, or a test's).
+    slept: fn() -> u64,
+    slept_at_epoch: u64,
+    /// The last time read: what it says never goes back.
+    last: Arc<AtomicU64>,
 }
 
 const CLOCK_OFFSET_MS: u64 = 1_000_000;
 
 impl Clock {
     pub fn new() -> Self {
+        Self::with_sleep(system_slept_ms)
+    }
+
+    pub fn with_sleep(slept: fn() -> u64) -> Self {
         Self {
             epoch: Instant::now(),
+            slept,
+            slept_at_epoch: slept(),
+            last: Arc::new(AtomicU64::new(0)),
         }
     }
 
     pub fn now(&self) -> u64 {
-        self.epoch.elapsed().as_millis() as u64 + CLOCK_OFFSET_MS
+        let slept = (self.slept)().saturating_sub(self.slept_at_epoch);
+        let now = self.epoch.elapsed().as_millis() as u64 + slept + CLOCK_OFFSET_MS;
+        self.last.fetch_max(now, Ordering::Relaxed).max(now)
     }
 
+    /// When `ms` (this clock) comes, as an `Instant` to sleep until: by how
+    /// far off it is now, `Instant` not counting the sleep.
     fn instant(&self, ms: u64) -> Instant {
-        self.epoch + Duration::from_millis(ms.saturating_sub(CLOCK_OFFSET_MS))
+        Instant::now() + Duration::from_millis(ms.saturating_sub(self.now()))
+    }
+}
+
+/// How long the device has slept since it booted, ms: a monotonic clock
+/// that counts sleep less the one `Instant` reads, which doesn't (Apple:
+/// `CLOCK_MONOTONIC` and `CLOCK_UPTIME_RAW`; Linux and Android:
+/// `CLOCK_BOOTTIME` and `CLOCK_MONOTONIC`). The one without sleep is read
+/// first: the gap can't come out short.
+fn system_slept_ms() -> u64 {
+    #[cfg(target_vendor = "apple")]
+    let (without, with) = (libc::CLOCK_UPTIME_RAW, libc::CLOCK_MONOTONIC);
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    let (without, with) = (libc::CLOCK_MONOTONIC, libc::CLOCK_BOOTTIME);
+    #[cfg(any(target_vendor = "apple", target_os = "linux", target_os = "android"))]
+    {
+        let read = |id| {
+            let mut ts = libc::timespec {
+                tv_sec: 0,
+                tv_nsec: 0,
+            };
+            // SAFETY: `ts` is a valid, writable timespec.
+            if unsafe { libc::clock_gettime(id, &mut ts) } != 0 {
+                return None;
+            }
+            Some(ts.tv_sec as u64 * 1_000_000_000 + ts.tv_nsec as u64)
+        };
+        match (read(without), read(with)) {
+            (Some(a), Some(b)) => b.saturating_sub(a) / 1_000_000,
+            _ => 0,
+        }
+    }
+    #[cfg(not(any(target_vendor = "apple", target_os = "linux", target_os = "android")))]
+    {
+        0
     }
 }
 
@@ -713,6 +767,9 @@ pub(crate) struct Actor {
     grids: BTreeMap<StreamId, (u16, u16)>,
     /// The grid the next terminal starts at.
     grid: (u16, u16),
+    /// The grid the dial under way opened its terminal at: a size given
+    /// since is sent once its leg is up (B616).
+    dialed_grid: (u16, u16),
     handoff: Handoff,
     visible: bool,
     done: Option<oneshot::Sender<()>>,
@@ -794,6 +851,7 @@ impl Actor {
             deliveries: Vec::new(),
             grids: BTreeMap::new(),
             grid,
+            dialed_grid: grid,
             handoff: Handoff::default(),
             visible: false,
             done: None,
@@ -1678,6 +1736,7 @@ impl Actor {
             session: self.me.clone(),
             generation,
         });
+        self.dialed_grid = self.grid;
         let attempt = Attempt {
             spec: self.spec.clone(),
             protocol,
@@ -2014,7 +2073,7 @@ impl Actor {
                 Multiplexer::None => {
                     let stream = self.shell_stream();
                     let me = self.me.clone();
-                    let clock = self.clock;
+                    let clock = self.clock.clone();
                     let shell = ShellLeg::spawn(
                         pty,
                         stream,
@@ -2024,6 +2083,13 @@ impl Actor {
                             let _ = me.send(Msg::Shell { generation, end });
                         }),
                     );
+                    // The terminal was opened at the size of when the dial
+                    // began; one given since (the keyboard up, the phone
+                    // turned under the veil) goes now (B616).
+                    if self.grid != self.dialed_grid {
+                        let (cols, rows) = self.grid;
+                        let _ = shell.commands.send(ShellCommand::Resize { cols, rows });
+                    }
                     self.leg = Some(Leg::Shell {
                         generation,
                         ssh,
@@ -2049,7 +2115,7 @@ impl Actor {
                         sidecar: None,
                     };
                     let me = self.me.clone();
-                    let clock = self.clock;
+                    let clock = self.clock.clone();
                     let tmux = TmuxLeg::spawn(
                         start,
                         move || clock.now(),
@@ -2082,7 +2148,7 @@ impl Actor {
                         budgets: Default::default(),
                     };
                     let me = self.me.clone();
-                    let clock = self.clock;
+                    let clock = self.clock.clone();
                     let herdr = HerdrLeg::spawn(
                         HerdrStart {
                             ssh: ssh.clone(),
@@ -2123,7 +2189,7 @@ impl Actor {
                 let stream = self.shell_stream();
                 let me = self.me.clone();
                 let painted = Arc::new(AtomicU64::new(0));
-                let clock = self.clock;
+                let clock = self.clock.clone();
                 let mosh = mosh_udp::spawn(
                     self.services.udp.clone(),
                     MoshStart {
@@ -2465,7 +2531,7 @@ impl Actor {
         let config = self.tmux_config();
         let attach_stall = self.timing.attach_stall;
         let me = self.me.clone();
-        let clock = self.clock;
+        let clock = self.clock.clone();
         let Some(control) = self.control.as_mut() else {
             return;
         };
@@ -2959,7 +3025,7 @@ impl Actor {
             herdr.push,
         );
         let me = self.me.clone();
-        let clock = self.clock;
+        let clock = self.clock.clone();
         let leg = HerdrMoshLeg::spawn(
             HerdrMoshStart {
                 ssh: ssh.clone(),
@@ -4273,6 +4339,7 @@ fn is_momentary(action: &TmuxAction) -> bool {
             | TmuxAction::InputModeChanged { .. }
             | TmuxAction::DeferResize { .. }
             | TmuxAction::PollAgentHooks
+            | TmuxAction::Relist
     )
 }
 
@@ -5565,6 +5632,7 @@ mod tests {
             notice: None,
             refreshing: false,
             size_follow: None,
+            pane_follow: None,
             agent_hooks: BTreeMap::new(),
             agent_hooks_loaded: false,
             input: moshpit_tmux::controller::InputFlags {
@@ -5640,6 +5708,7 @@ mod tests {
                 notice: None,
                 refreshing: false,
                 size_follow: None,
+                pane_follow: None,
                 agent_hooks: BTreeMap::new(),
                 agent_hooks_loaded: false,
                 input: moshpit_tmux::controller::InputFlags {
@@ -5753,6 +5822,57 @@ mod tests {
         assert!(keys(&mut sent).0.is_empty());
         actor.release_settled(start + 2_000);
         assert_eq!(keys(&mut sent).0, vec![b"y".to_vec()]);
+    }
+
+    thread_local! {
+        /// The device's sleep, as a test says it.
+        static SLEPT: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+    }
+
+    fn test_slept() -> u64 {
+        SLEPT.with(|slept| slept.get())
+    }
+
+    /// B611: the time the device slept counts. `Instant` stops while a
+    /// phone sleeps (Apple, Linux): a lock of minutes came back as a few
+    /// seconds away, under the 20 s that forces a reconnect, and keys typed
+    /// in the next 4 s went into a dead socket. A deadline after a sleep
+    /// sleeps for what is left of it, not the slept time again.
+    #[tokio::test(start_paused = true)]
+    async fn a_return_counts_the_time_the_device_slept() {
+        SLEPT.with(|slept| slept.set(0));
+        let clock = Clock::with_sleep(test_slept);
+        let t0 = clock.now();
+        tokio::time::advance(Duration::from_secs(1)).await;
+        SLEPT.with(|slept| slept.set(60_000));
+        assert!(clock.now() - t0 >= 61_000, "{}", clock.now() - t0);
+        let soon = clock.now() + 200;
+        assert_eq!(
+            clock.instant(soon) - Instant::now(),
+            Duration::from_millis(200)
+        );
+
+        SLEPT.with(|slept| slept.set(0));
+        let (mut actor, _events) = live_actor(false);
+        actor.clock = Clock::with_sleep(test_slept);
+        let now = actor.now();
+        actor.life.background(now);
+        while actor.life.poll_action().is_some() {}
+        tokio::time::advance(Duration::from_secs(1)).await;
+        SLEPT.with(|slept| slept.set(5 * 60_000));
+        let now = actor.now();
+        actor.life.foreground(now);
+        let actions: Vec<Action> = std::iter::from_fn(|| actor.life.poll_action()).collect();
+        assert!(
+            actions.iter().any(|a| matches!(
+                a,
+                Action::Teardown {
+                    why: Teardown::Reconnect,
+                    ..
+                }
+            )),
+            "five minutes asleep is a long absence: {actions:?}"
+        );
     }
 
     /// B529: back from the background in place, before the transport

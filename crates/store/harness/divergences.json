@@ -47,7 +47,7 @@
       "trigger": "Trusting the same host typed in two normal forms (a keyboard that decomposes, a pasted name).",
       "minimal_input": "divergences.txt case 6",
       "swift_before": "read: one entry (SHA256:a); after a write: one entry",
-      "fix": "Both entries are kept: a host's key is its exact text (moshpit-ssh matches it exactly).",
+      "fix": "Both entries are kept: a host's key is its text as stored (moshpit-ssh matches it by host, case-blind and without a trailing dot, since B630).",
       "rust_outcome": "read: both entries; after a write: both",
       "severity": "low"
     },

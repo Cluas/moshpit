@@ -1,6 +1,7 @@
 //! R12's acceptance for the terminal's covers and banners
 //! (`docs/nsh/UI-DESIGN.md` §6.3, §8), headless: a reconnect shows only
-//! the veil's capsule, never the first connect's poster; the banner area
+//! the veil's capsule, never a full-screen cover (there is no poster any
+//! more, B657); the banner area
 //! holds one banner at a time, 8 pt under the top bar, 16 pt in from the
 //! sides; the multiplexer's empty state takes presses over 44 pt.
 
@@ -251,7 +252,7 @@ fn the_empty_states_and_the_follower_take_presses_over_44_points() {
             &mut app,
             &channel,
             &chrome(json!({"content": "empty",
-                           "empty": {"mux": "tmux", "missing": missing, "quiet": true,
+                           "empty": {"mux": "tmux", "missing": missing,
                                      "session": "Session", "sessionLower": "session",
                                      "sessionsLower": "sessions"}})),
         );

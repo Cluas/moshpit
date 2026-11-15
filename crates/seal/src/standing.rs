@@ -3,9 +3,11 @@
 //! Shared between the app and the notification service so both make the
 //! same call on the one question that decides whether a notification makes
 //! a sound: is this the moment "nobody is waiting on you" became "someone
-//! is"? Only that 0→1 edge rings. Staleness is handled by expiry: nothing on
-//! the phone learns that a prompt was answered at the desk while the app was
-//! not running, so an entry stops counting after [`LIFETIME_SECONDS`].
+//! is"? Only that 0→1 edge rings. An entry stands until its question is
+//! answered or resolved (a poll, the turn's `done` push) or its pane or
+//! agent ends; past [`LIFETIME_SECONDS`] (six hours, B660) it's taken for
+//! stale. It used to expire at fifteen minutes, and a question still
+//! waiting lost its card to the app opening for another host.
 //!
 //! The file (`standing-attention.json`) is a JSON object, connection id →
 //! array of [`Entry`], read an entry at a time with the pairings file's
@@ -31,9 +33,9 @@ use crate::foundation::date::Date;
 use crate::foundation::json::{self, Dialect, Object, Style, Value};
 use crate::store::{self, Read};
 
-/// How long an unrefreshed entry keeps counting: the attention push's own
-/// APNs expiry, 15 minutes.
-pub const LIFETIME_SECONDS: f64 = 15.0 * 60.0;
+/// How long an unrefreshed entry keeps counting: six hours, a safety cap
+/// (B660); its question's answer, its pane's or agent's end take it first.
+pub const LIFETIME_SECONDS: f64 = 6.0 * 3600.0;
 
 /// One standing prompt.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

@@ -78,6 +78,9 @@ pub enum Message {
     /// `{"op": "visible", …}`: Home on screen or not, with the local hour
     /// and day ([`talk`]).
     Visible(talk::Visible),
+    /// `{"op": "top"}`: scroll to the top, where "Needs you" lists every
+    /// agent waiting (B661: the island's "+N more").
+    Top,
 }
 
 /// What the page says of one host's lists: its idle group open or not;
@@ -124,6 +127,7 @@ impl Message {
             "visible" => serde_json::from_value(fields)
                 .map(Message::Visible)
                 .map_err(|e| format!("home: visible: {e}")),
+            "top" => Ok(Message::Top),
             other => Err(format!("home: no op {other:?}")),
         }
     }
@@ -148,6 +152,7 @@ impl Message {
                 value["op"] = json!("visible");
                 value.to_string()
             }
+            Message::Top => json!({"op": "top"}).to_string(),
         }
     }
 }
@@ -309,6 +314,8 @@ pub(crate) struct Ctx {
     pub(crate) perch: Memo<Option<(pet::Perch, moshpit_pet::Pose)>>,
     /// Hosts' marks are their pixel creatures ([`pet::creatures`]).
     pub(crate) creatures: Memo<bool>,
+    /// Counts the host's `{"op": "top"}`: the list scrolls to its top.
+    pub(crate) to_top: Signal<u64>,
 }
 
 impl Ctx {
@@ -444,6 +451,7 @@ pub fn HomeScreen(props: ScreenProps) -> impl IntoElement {
     let trees = signal(HashMap::<String, TreeState>::new());
     let pet_ctx = pet::PetCtx::new();
     let (pet_view, pet_seq, pet_visible) = (pet_ctx.view, pet_ctx.seq, pet_ctx.visible);
+    let to_top = signal(0u64);
     channel::hear(
         channel.as_ref(),
         Screen::Home,
@@ -460,6 +468,7 @@ pub fn HomeScreen(props: ScreenProps) -> impl IntoElement {
                 pet_seq.set(seq);
             }
             Message::Visible(visible) => pet_visible.set(visible),
+            Message::Top => to_top.update(|n| *n += 1),
         },
     );
     talk_on(state, &pet_ctx);
@@ -482,6 +491,7 @@ pub fn HomeScreen(props: ScreenProps) -> impl IntoElement {
         pet: pet_ctx,
         perch,
         creatures,
+        to_top,
     };
     let _seen = pet::seen(ctx.tell.clone());
     let offset = animated_value(0.0);
@@ -673,6 +683,15 @@ fn list(
             }
         })
         .child(content);
+    // The host's "to the top" (B661): where "Needs you" is.
+    {
+        let to_top = ctx.to_top;
+        effect(move || {
+            if to_top.get() > 0 {
+                scroller.scroll_to(point(px(0.0), px(0.0)), !reduce_motion());
+            }
+        });
+    }
     view()
         .absolute()
         .inset_0()

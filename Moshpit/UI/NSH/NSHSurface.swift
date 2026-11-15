@@ -66,6 +66,11 @@ final class NSHSurface: UIView {
     /// (``receive(_:)``).
     var onMessage: (([String: Any]) -> Void)?
 
+    /// Hears what the screen tells as its own event type (``PageEvent``,
+    /// `crates/ffi/src/pages.rs`, E6b): an event the running screen's type
+    /// reads goes here, not to ``onMessage``.
+    var onEvent: ((PageEvent) -> Void)?
+
     /// The screen's Retry, under a body that failed: run it again (B366).
     var onRetry: (() -> Void)?
 
@@ -116,8 +121,9 @@ final class NSHSurface: UIView {
             let inbox = Unmanaged<Inbox>.fromOpaque(context!).takeUnretainedValue()
             let data = Data(bytes: json, count: strlen(json))
             guard let message = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return }
+            let text = String(decoding: data, as: UTF8.self)
             DispatchQueue.main.async {
-                MainActor.assumeIsolated { inbox.surface?.receive(message) }
+                MainActor.assumeIsolated { inbox.surface?.receive(message, json: text) }
             }
         }, context)
         NSHHostComponents.register(on: self)
@@ -231,6 +237,18 @@ final class NSHSurface: UIView {
         return post(json: json)
     }
 
+    /// Posts `message` in its screen's own type (E6b): the screen's
+    /// serializer writes it (``pageMessage(message:)``).
+    @discardableResult
+    func post(_ message: PageMessage) -> Bool {
+        do {
+            return post(json: try pageMessage(message: message))
+        } catch {
+            NSHDiagnostics.error("NSH \(screenName ?? "-"): post not written: \(error)")
+            return false
+        }
+    }
+
     /// Posts a message the core wrote as JSON already (`{"op": …}`).
     @discardableResult
     func post(json: String) -> Bool {
@@ -255,7 +273,7 @@ final class NSHSurface: UIView {
 
     /// What the screen told: its error boundary's events are the surface's
     /// (logged; Retry runs it again), the rest the page's.
-    func receive(_ message: [String: Any]) {
+    func receive(_ message: [String: Any], json: String? = nil) {
         switch NSHBoundaryEvent(message) {
         case .failed(let component, let why)?:
             NSHDiagnostics.error("NSH \(screenName ?? "-"): \(component) failed: \(why)")
@@ -263,7 +281,12 @@ final class NSHSurface: UIView {
             Log.ui.notice("NSH \(self.screenName ?? "-", privacy: .public): Retry")
             onRetry?()
         case nil:
-            onMessage?(message)
+            if let onEvent, let screenName, let json,
+               let event = pageEvent(screen: screenName, json: json) {
+                onEvent(event)
+            } else {
+                onMessage?(message)
+            }
         }
     }
 

@@ -102,6 +102,7 @@ pub fn fingerprint_of_blob(blob: &[u8]) -> String {
     format!("SHA256:{}", Base64Unpadded::encode_string(&digest))
 }
 
+use moshpit_store::known_hosts::normalized as normalized_entry;
 pub use moshpit_store::known_hosts::{KnownHostsStore, StoreError, entry as known_hosts_entry};
 
 /// A store in memory, for tests and previews.
@@ -187,21 +188,23 @@ impl KnownHosts {
         let key = known_hosts_entry(host, port);
         let mut state = lock(&self.state);
         let stored = match state.unsaved.get(&key) {
-            Some(pending) => Some(pending.clone()),
+            Some(pending) => vec![pending.clone()],
             None => match self.load(&mut state) {
-                TableRead::Read(table) => table.get(&key).cloned(),
+                TableRead::Read(table) => stored_for(&table, &key),
                 TableRead::Locked => return Decision::Unverifiable,
                 // Not a lock that lifts: refusing every connection until the
                 // keychain heals would strand the person. Ask, as for a new
                 // host; nothing asked here is written over the map (see
                 // `save`).
-                TableRead::Broken => None,
+                TableRead::Broken => Vec::new(),
             },
         };
-        match stored {
+        match stored.first() {
             None => Decision::Unknown,
-            Some(stored) if stored == fingerprint => Decision::Trusted,
-            Some(stored) => Decision::Changed { expected: stored },
+            Some(_) if stored.iter().any(|s| s == fingerprint) => Decision::Trusted,
+            Some(first) => Decision::Changed {
+                expected: first.clone(),
+            },
         }
     }
 
@@ -233,7 +236,7 @@ impl KnownHosts {
             return Some(pending.clone());
         }
         match self.load(&mut state) {
-            TableRead::Read(table) => table.get(&key).cloned(),
+            TableRead::Read(table) => stored_for(&table, &key).into_iter().next(),
             TableRead::Locked | TableRead::Broken => None,
         }
     }
@@ -296,6 +299,19 @@ impl KnownHosts {
             Err(e) => log::error!("host keys: write failed ({e:?}); kept for the next try"),
         }
     }
+}
+
+/// What the map trusts for `key` ([`known_hosts_entry`]): its own entry
+/// first, then any an earlier build stored with the host as typed that is
+/// the same host (B630).
+fn stored_for(table: &BTreeMap<String, String>, key: &str) -> Vec<String> {
+    let mut found: Vec<String> = table.get(key).cloned().into_iter().collect();
+    for (stored, fingerprint) in table {
+        if stored != key && normalized_entry(stored).as_deref() == Some(key) {
+            found.push(fingerprint.clone());
+        }
+    }
+    found
 }
 
 /// Asks the person about a host key: the "New Host" card and the loud
@@ -506,14 +522,75 @@ mod tests {
             }
         );
         assert_eq!(known.decide("box", 2222, "SHA256:a"), Decision::Unknown);
-        assert_eq!(known.decide("Box", 22, "SHA256:a"), Decision::Unknown);
+    }
+
+    /// B630: a host is one host whatever its name's case, with or without
+    /// the root's trailing dot — DNS names, and an IPv6 address's hex, are
+    /// case-blind. The map was keyed by the host as typed: a key trusted
+    /// for `Build-Box.example.com` was nothing to `build-box.example.com`,
+    /// so a different key there got the quiet New Host card, never the
+    /// loud Key Changed one. Entries an earlier build stored as typed
+    /// still count.
+    #[test]
+    fn a_host_is_the_same_host_whatever_its_case_or_trailing_dot() {
+        let changed = |expected: &str| Decision::Changed {
+            expected: expected.into(),
+        };
+        let known = KnownHosts::in_memory(map(&[("Build-Box.Example.com:22", "SHA256:a")]));
+        assert_eq!(
+            known.decide("build-box.example.com", 22, "SHA256:a"),
+            Decision::Trusted
+        );
+        assert_eq!(
+            known.decide("build-box.example.com.", 22, "SHA256:b"),
+            changed("SHA256:a")
+        );
+        assert_eq!(
+            known.decide("BUILD-BOX.example.COM", 22, "SHA256:b"),
+            changed("SHA256:a")
+        );
+        assert_eq!(
+            known.trusted("build-box.example.com", 22).as_deref(),
+            Some("SHA256:a")
+        );
+        assert_eq!(
+            known.decide("build-box.example.com", 2222, "SHA256:a"),
+            Decision::Unknown,
+            "another port is another entry"
+        );
+
+        // Trust is written in the one form, and found by every spelling.
+        known.trust("Other.Local.", 22, "SHA256:c");
+        assert!(known.snapshot().contains_key("other.local:22"));
+        assert_eq!(
+            known.decide("other.local", 22, "SHA256:c"),
+            Decision::Trusted
+        );
+        assert_eq!(
+            known.decide("OTHER.local.", 22, "SHA256:d"),
+            changed("SHA256:c")
+        );
+
+        // An IPv6 address's hex.
+        let known = KnownHosts::in_memory(map(&[("2001:DB8::1:22", "SHA256:v6")]));
+        assert_eq!(
+            known.decide("2001:db8::1", 22, "SHA256:x"),
+            changed("SHA256:v6")
+        );
+        assert_eq!(
+            known.decide("2001:db8::1", 22, "SHA256:v6"),
+            Decision::Trusted
+        );
     }
 
     #[test]
-    fn entries_are_keyed_host_colon_port_as_typed() {
+    fn entries_are_keyed_host_colon_port() {
         assert_eq!(known_hosts_entry("dev.local", 22), "dev.local:22");
         assert_eq!(known_hosts_entry("::1", 2222), "::1:2222");
         assert_eq!(known_hosts_entry("192.0.2.22", 22), "192.0.2.22:22");
+        // B630: one form for one host.
+        assert_eq!(known_hosts_entry("Dev.Local.", 22), "dev.local:22");
+        assert_eq!(known_hosts_entry("FE80::1", 22), "fe80::1:22");
     }
 
     /// B22: a read that fails while the device is locked is not an empty map.

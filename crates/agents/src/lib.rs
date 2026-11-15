@@ -275,7 +275,10 @@ pub const ATTENTION_CARD: &str = "moshpit.attention.";
 /// A pane's finish card, `<this><conn>.<pane>`, likewise.
 pub const DONE_CARD: &str = "moshpit.done.";
 
-fn is_shell(command: &str) -> bool {
+/// Whether `command` (a pane's foreground) is a shell: the agent that
+/// ran there is gone. Also what decides where a queued share may go
+/// (moshpit_app::share, B622).
+pub fn is_shell(command: &str) -> bool {
     SHELLS.contains(&command)
 }
 
@@ -505,7 +508,8 @@ impl Monitor {
     ///
     /// A waiting card the notification service posted is one this machine
     /// knew nothing of. Its prompt left the waiting set when the turn's
-    /// `done` was pushed, or expired from it after fifteen minutes, and
+    /// `done` was pushed, or expired from it (fifteen minutes then; six
+    /// hours since B660, so a question still waiting keeps its card), and
     /// nothing was left to take the card down: a question answered at the
     /// desk stayed "needs you" on the lock screen, beside its own
     /// "finished", for good. A connection's waiting card goes now when

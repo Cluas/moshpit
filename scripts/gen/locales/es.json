@@ -322,7 +322,6 @@
   "Custom": "Personalizado",
   "Other…": "Otro…",
   "Start": "Iniciar",
-  "Starting…": "Iniciando…",
   "Looking for repositories…": "Buscando repositorios…",
   "None found — no panes in repos, and nothing under ~": "No se encontró ninguno: no hay paneles dentro de repositorios ni nada en ~",
   "Creates a git worktree on the host, then starts the agent inside it. Your working tree is untouched.": "Crea un git worktree en el host y arranca el agente dentro. Tu árbol de trabajo no se toca.",
@@ -534,7 +533,6 @@
   "24 hours": "24 horas",
   "7 days": "7 días",
   "ATTACHED IMAGES": "IMÁGENES ADJUNTAS",
-  "THEME JSON": "JSON DEL TEMA",
   "Add %@ to toolbar": "Añadir %@ a la barra de herramientas",
   "Reorder %@": "Reordenar %@",
   "Delete %@": "Eliminar %@",
@@ -888,6 +886,8 @@
   "This window is sized for %@.": "Esta ventana tiene el tamaño del %@.",
   "Use this %@'s size": "Usar el tamaño de este %@",
   "Use this device's size": "Usar el tamaño de este dispositivo",
+  "The desktop switched to another pane.": "En el escritorio se cambió a otro panel.",
+  "Take it back": "Recuperar",
   "No %@ %@ on %@": "No hay %2$@ de %1$@ en %3$@",
   "%@ isn't installed on this host": "%@ no está instalado en este host",
   "Open %@": "Abrir %@",
@@ -1040,5 +1040,8 @@
   "Small hours. My time.": "La madrugada es mía.",
   "Let It Talk": "Dejar que hable",
   "A short line on Home now and then": "De vez en cuando, una frase en el inicio",
-  "%@: %@": "%@: %@"
+  "%@: %@": "%@: %@",
+  "A share wasn't delivered": "Un elemento compartido no se entregó",
+  "That pane isn't running %@ any more.": "Ese panel ya no está ejecutando %@.",
+  "That pane is closed.": "Ese panel está cerrado."
 }

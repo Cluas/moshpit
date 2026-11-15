@@ -322,7 +322,6 @@
   "Custom": "사용자 설정",
   "Other…": "기타…",
   "Start": "시작",
-  "Starting…": "시작 중…",
   "Looking for repositories…": "저장소 찾는 중…",
   "None found — no panes in repos, and nothing under ~": "찾지 못했습니다. 저장소 안에 있는 패널도 없고 홈 디렉토리에도 없습니다",
   "Creates a git worktree on the host, then starts the agent inside it. Your working tree is untouched.": "호스트에 git worktree를 만들고 그 안에서 에이전트를 시작합니다. 지금 작업 중인 트리는 그대로입니다.",
@@ -534,7 +533,6 @@
   "24 hours": "24시간",
   "7 days": "7일",
   "ATTACHED IMAGES": "첨부한 이미지",
-  "THEME JSON": "테마 JSON",
   "Add %@ to toolbar": "%@을(를) 도구 막대에 추가",
   "Reorder %@": "%@ 순서 바꾸기",
   "Delete %@": "%@ 삭제",
@@ -888,6 +886,8 @@
   "This window is sized for %@.": "이 창은 %@ 크기에 맞춰져 있습니다.",
   "Use this %@'s size": "이 %@ 크기로 바꾸기",
   "Use this device's size": "이 기기 크기로 바꾸기",
+  "The desktop switched to another pane.": "데스크톱에서 다른 패널로 전환했습니다.",
+  "Take it back": "다시 가져오기",
   "No %@ %@ on %@": "%3$@에 %1$@ %2$@ 없음",
   "%@ isn't installed on this host": "이 호스트에 %@이(가) 설치되어 있지 않습니다",
   "Open %@": "%@ 열기",
@@ -1040,5 +1040,8 @@
   "Small hours. My time.": "새벽은 내 시간.",
   "Let It Talk": "말하게 하기",
   "A short line on Home now and then": "홈에서 가끔 한마디",
-  "%@: %@": "%@: %@"
+  "%@: %@": "%@: %@",
+  "A share wasn't delivered": "공유한 항목 1개를 보내지 못했습니다",
+  "That pane isn't running %@ any more.": "그 패널에서는 더 이상 %@이(가) 실행 중이 아닙니다.",
+  "That pane is closed.": "그 패널은 닫혔습니다."
 }

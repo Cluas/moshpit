@@ -35,7 +35,7 @@ struct AccentNSHPage: View {
                     seedCapture()
                     #endif
                 },
-                onMessage: handle,
+                onEvent: { if case .accent(let event) = $0 { handle(event) } },
                 onFailure: { failed = true })
                 .nshPage()
                 // The title the next page's back button would show.
@@ -53,29 +53,22 @@ struct AccentNSHPage: View {
     }
 
     /// What the screen tells the host.
-    private func handle(_ message: [String: Any]) {
-        let id = message["id"] as? String
-        switch message["ev"] as? String {
-        case "back":
+    private func handle(_ event: AccentEvent) {
+        switch event {
+        case .back:
             dismiss()
-        case "select":
-            if let id { model.select(id, settings: settings, store: store) }
-        case "add":
+        case .select(let id):
+            model.select(id, settings: settings, store: store)
+        case .add:
             editing = store.makeDraft(basedOn: AppThemeCatalog.theme(for: settings.appThemeId))
-        case "edit":
-            if let id, let theme = store.customThemes.first(where: { $0.id == id }) {
-                editing = theme
-            }
-        case "delete":
-            if let id, let theme = store.customThemes.first(where: { $0.id == id }) {
+        case .delete(let id):
+            if let theme = store.customThemes.first(where: { $0.id == id }) {
                 model.remove(theme, settings: settings, store: store)
             } else {
                 model.cancelDelete(settings: settings, store: store)
             }
-        case "cancel-delete":
+        case .cancelDelete:
             model.cancelDelete(settings: settings, store: store)
-        default:
-            break
         }
     }
 
@@ -96,8 +89,8 @@ struct AccentNSHPage: View {
 }
 
 /// What the NSH Accent page shows, owned by the host so a surface made again
-/// starts from it (``NSHPage``'s third rule), and the message that carries it
-/// (`{"op": "accents", …}`, `ui/src/accent.rs`'s `Message`).
+/// starts from it (``NSHPage``'s third rule), and the state that carries it
+/// (``AccentPageState``, the screen's own through the page bridge).
 @MainActor
 final class AccentModel {
     /// The accent picked here and not yet applied: ticked at once, written to
@@ -178,33 +171,24 @@ final class AccentModel {
     }
 
     private func post(settings: AppSettings, store: AppThemeStore) {
-        surface?.post(Self.message(builtIns: AppThemeCatalog.builtIns, custom: store.customThemes,
-                                   selected: selectedID(settings, store: store), deleting: deleting))
+        surface?.post(.accent(state: Self.state(
+            builtIns: AppThemeCatalog.builtIns, custom: store.customThemes,
+            selected: selectedID(settings, store: store), deleting: deleting)))
     }
 
-    /// The screen's message: the built-in accents, the user's own (newest
+    /// What the page shows: the built-in accents, the user's own (newest
     /// last), the one to tick, and the one the delete card asks about.
-    nonisolated static func message(builtIns: [AppTheme], custom: [AppTheme], selected: String,
-                                    deleting: String? = nil) -> [String: Any] {
-        var message: [String: Any] = [
-            "op": "accents",
-            "builtIn": builtIns.map(accent),
-            "custom": custom.map(accent),
-            "selected": selected,
-        ]
-        if let deleting { message["deleting"] = deleting }
-        return message
+    nonisolated static func state(builtIns: [AppTheme], custom: [AppTheme], selected: String,
+                                  deleting: String? = nil) -> AccentPageState {
+        AccentPageState(builtIn: builtIns.map(accent), custom: custom.map(accent),
+                        selected: selected, deleting: deleting)
     }
 
     /// One accent as the screen takes it: its name and the two colors its
     /// row's swatch shows.
-    nonisolated static func accent(_ theme: AppTheme) -> [String: Any] {
-        [
-            "id": theme.id,
-            "name": theme.name,
-            "accent": "#" + theme.accentHex,
-            "screenBG": NSHScreenParams.hex(theme.screenBG),
-        ]
+    nonisolated static func accent(_ theme: AppTheme) -> AccentEntry {
+        AccentEntry(id: theme.id, name: theme.name, accentHex: "#" + theme.accentHex,
+                    screenBgHex: NSHScreenParams.hex(theme.screenBG))
     }
 }
 

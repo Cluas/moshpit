@@ -75,6 +75,10 @@ default is upstream's behaviour; `crates/term` turns them on.
 - **W23** · behaviour · for a host mirroring a tmux pane, `ESC [J` from the
   top left (a tmux pane's `clear`) moves the screen into the history first,
   as tmux's `scroll-on-clear` does.
+- **W24** · fix · a program coming to the alternate screen starts with no
+  kitty keyboard flags; the last one there may have left its own.
+- **W25** · memory · an OSC or APC string past 64 MiB is dropped whole,
+  its memory let go at once.
 - **W0** · lint · `max_value()` to `MAX` (deprecation warnings in every build).
 
 ---
@@ -429,6 +433,39 @@ spaces included; wezterm keeps no such mark, so written spaces below the
 last line with text are not kept.
 
 **Upstream:** no (a host's choice).
+
+## W24. A new alternate screen starts with no keyboard flags
+
+**Touches:** `term/src/terminalstate/mod.rs` (`ScreenOrAlt::activate_alt_screen`).
+
+**Why:** the kitty keyboard protocol keeps a stack of flags per screen, and
+a program is meant to pop its own before it leaves the alternate screen.
+One that leaves first (crossterm's `LeaveAlternateScreen`, then
+`PopKeyboardEnhancementFlags`) pops the main screen's stack instead, and its
+flags stay on the alternate screen's: the next program there gets them
+without asking, and vim's Escape arrives as `ESC [27;1u` (B576). Coming
+from the main screen, the alternate screen's stack is emptied: a program
+there starts from nothing and pushes what it wants. The main screen's
+stack is untouched, so a shell's own flags (fish) survive a pager.
+
+**Upstream:** worth offering; the protocol's text says only that the two
+stacks are separate.
+## W25. OSC and APC strings are bounded
+
+**Touches:** `vtparse/src/lib.rs` (`MAX_STRING_BYTES`, `OscState::put`, the
+`OscEnd`, `ApcPut` and `ApcEnd` actions).
+
+**Why:** with `std`, the parser kept an OSC or APC string whole until its
+terminator, with no limit: a remote copying a huge file through OSC 52
+handed the whole of it over, and a string a program opened and never
+closed took in everything after it while the screen showed nothing, until
+iOS ended the app (B577). Past 64 MiB (room for the largest image the
+terminal takes, 32 MiB decoded, in base64) a string is dropped whole: its
+bytes are still read up to its end, what it held is let go at once, and it
+is not dispatched, since a cut payload means nothing. What follows its end
+shows as before.
+
+**Upstream:** worth offering, with the limit theirs to choose.
 
 ## W0. deprecated `max_value()`
 

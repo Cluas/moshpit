@@ -1203,17 +1203,22 @@ fn a_pushed_card_whose_turn_ended_after_the_answer_is_withdrawn_once_the_poll_sa
     assert!(withdrawn(&effects).contains(&waiting_card().as_str()), "{effects:?}");
 }
 
-/// The question answered at the desk, the app opened more than fifteen
-/// minutes later, without connecting: the entry has expired, and the card
-/// goes at once.
+/// B660: a pushed "needs you" stays while its question may still wait.
+/// It used to go once its entry was fifteen minutes old — the app opened
+/// for another host took down a question still waiting. It goes when the
+/// question is answered or resolved, or its pane or agent ends; past six
+/// hours (the set's lifetime) it's taken for stale.
 #[test]
-fn a_pushed_card_found_past_the_sets_lifetime_is_withdrawn() {
+fn a_pushed_card_stays_while_its_question_may_wait_and_goes_past_six_hours() {
     let mut bench = Bench::new(Settings::default(), &[]);
     bench.monitor.untrack(CONN, true, T0);
     bench.monitor.take_effects();
     assert!(bench.pushed("%1", T0 as i64 + 31, T0 + 31.0));
     let later = T0 + 31.0 + 16.0 * 60.0;
     bench.monitor.delivered(&[waiting_card()], Some(&saved(&[CONN])), later);
+    assert!(withdrawn(&bench.monitor.take_effects()).is_empty(), "16 minutes on, it may still wait");
+    let stale = T0 + 31.0 + 6.0 * 3600.0 + 60.0;
+    bench.monitor.delivered(&[waiting_card()], Some(&saved(&[CONN])), stale);
     assert!(withdrawn(&bench.monitor.take_effects()).contains(&waiting_card().as_str()));
 }
 

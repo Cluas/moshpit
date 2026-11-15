@@ -368,6 +368,40 @@ fn osc52_stores_nobody_takes_are_bounded() {
     assert_eq!(events.last(), Some(&Event::ClipboardStore("last".into())));
 }
 
+/// B577: an OSC or APC string grew without bound until its terminator: a
+/// clipboard write of a huge file, or a string a program opened and never
+/// closed (everything after it went in, and the screen showed nothing),
+/// held all of it in the parser. Past 64 MiB a string is dropped whole:
+/// the bytes are still read up to its end, none of it is kept, and what
+/// follows the end shows.
+#[test]
+fn a_string_past_the_limit_is_dropped_and_what_follows_shows() {
+    let mut t = term(40, 4, 100);
+    let chunk = vec![b'A'; 1 << 20];
+    t.feed(b"\x1b]52;c;");
+    for _ in 0..65 {
+        t.feed(&chunk);
+    }
+    t.feed(b"\x07after");
+    let stores: Vec<_> = t
+        .take_events()
+        .into_iter()
+        .filter(|e| matches!(e, Event::ClipboardStore(_)))
+        .collect();
+    assert!(stores.is_empty(), "a 65 MiB clipboard write was kept whole");
+    assert_eq!(rows(&t)[0], "after");
+    // Under the limit, as before.
+    t.feed(b"\x1b]52;c;aGk=\x07");
+    assert_eq!(t.take_events(), vec![Event::ClipboardStore("hi".into())]);
+    // An APC (kitty's images) past it: dropped, the screen goes on.
+    t.feed(b"\r\n\x1b_Gf=24,s=1,v=1;");
+    for _ in 0..65 {
+        t.feed(&chunk);
+    }
+    t.feed(b"\x1b\\next");
+    assert_eq!(rows(&t)[1], "next");
+}
+
 #[test]
 fn synchronized_output_is_held_until_its_end_or_deadline() {
     let mut t = term(20, 4, 100);

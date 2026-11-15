@@ -322,7 +322,6 @@
   "Custom": "自訂",
   "Other…": "其他…",
   "Start": "開始",
-  "Starting…": "正在啟動…",
   "Looking for repositories…": "正在尋找儲存庫…",
   "None found — no panes in repos, and nothing under ~": "沒找到。窗格都不在儲存庫裡，家目錄下也沒有",
   "Creates a git worktree on the host, then starts the agent inside it. Your working tree is untouched.": "在主機上新開一個 git worktree，讓智能體在裡面工作。你現在的工作樹不會被動到。",
@@ -534,7 +533,6 @@
   "24 hours": "24 小時",
   "7 days": "7 天",
   "ATTACHED IMAGES": "附加的圖片",
-  "THEME JSON": "主題 JSON",
   "Add %@ to toolbar": "把 %@ 加到快速鍵列",
   "Reorder %@": "調整 %@ 的順序",
   "Delete %@": "刪除 %@",
@@ -888,6 +886,8 @@
   "This window is sized for %@.": "這個視窗按 %@ 的尺寸顯示。",
   "Use this %@'s size": "改用這台 %@ 的尺寸",
   "Use this device's size": "改用這台裝置的尺寸",
+  "The desktop switched to another pane.": "桌面切到了別的窗格。",
+  "Take it back": "拿回來",
   "No %@ %@ on %@": "%3$@ 上沒有 %1$@ %2$@",
   "%@ isn't installed on this host": "這台主機沒裝 %@",
   "Open %@": "打開 %@",
@@ -1040,5 +1040,8 @@
   "Small hours. My time.": "凌晨，我的主場。",
   "Let It Talk": "讓它說話",
   "A short line on Home now and then": "在首頁偶爾說一句",
-  "%@: %@": "%@：%@"
+  "%@: %@": "%@：%@",
+  "A share wasn't delivered": "有 1 個分享沒送出去",
+  "That pane isn't running %@ any more.": "那個窗格裡已經不是 %@ 了。",
+  "That pane is closed.": "那個窗格已經關了。"
 }

@@ -62,13 +62,41 @@ public enum ShareQueue {
         /// retry left another copy on the host (B196). nil (and missing in
         /// what earlier builds wrote) until something is uploaded.
         public var uploaded: [String: String]?
+        /// Why the drain held this back instead of delivering it (B622):
+        /// its pane no longer runs the agent it was queued for. A held
+        /// entry is not tried again; it waits for the person (another
+        /// pane, or discard) and still ages out. nil (and missing in what
+        /// earlier builds wrote) while it may still go.
+        public var heldBack: HeldBack?
 
         public init(id: UUID = UUID(), connectionId: UUID, paneId: String, agentName: String,
                     label: String, files: [String], createdAt: Date,
-                    uploaded: [String: String]? = nil) {
+                    uploaded: [String: String]? = nil, heldBack: HeldBack? = nil) {
             self.id = id; self.connectionId = connectionId; self.paneId = paneId
             self.agentName = agentName; self.label = label; self.files = files; self.createdAt = createdAt
-            self.uploaded = uploaded
+            self.uploaded = uploaded; self.heldBack = heldBack
+        }
+    }
+
+    /// A share the drain would not type into its pane (B622).
+    public struct HeldBack: Codable, Equatable, Sendable {
+        public enum Reason: String, Codable, Sendable {
+            /// The pane is gone.
+            case paneGone
+            /// The agent exited: its pane runs a shell now.
+            case agentExited
+            /// The pane runs another program now.
+            case anotherProgram
+        }
+
+        public var reason: Reason
+        /// What runs in the pane now (the shell, the other program); nil
+        /// when the pane is gone.
+        public var now: String?
+        public var at: Date
+
+        public init(reason: Reason, now: String?, at: Date) {
+            self.reason = reason; self.now = now; self.at = at
         }
     }
 
@@ -138,6 +166,13 @@ public enum ShareQueue {
     @discardableResult
     public static func recordUpload(_ id: UUID, file: String, remotePath: String) -> Bool {
         store?.recordUpload(id, file: file, remotePath: remotePath) ?? false
+    }
+
+    /// Hold entry `id` back (``Entry/heldBack``). True when it was not held
+    /// before: the one time the person is told.
+    @discardableResult
+    public static func holdBack(_ id: UUID, _ held: HeldBack) -> Bool {
+        store?.holdBack(id, held) ?? false
     }
 
     /// Images no entry names, older than `age`: what the lost writes of
@@ -384,6 +419,16 @@ public struct ShareQueueStore: Sendable {
         guard var entry = load().first(where: { $0.id == id }) else { return false }
         entry.uploaded = (entry.uploaded ?? [:]).merging([file: remotePath]) { _, new in new }
         // An entry of an earlier build's index moves to a file of its own.
+        guard (try? save(entry)) != nil else { return false }
+        dropLegacy(id)
+        return true
+    }
+
+    /// Holds entry `id` back; true when it was not held before (B622).
+    @discardableResult
+    public func holdBack(_ id: UUID, _ held: ShareQueue.HeldBack) -> Bool {
+        guard var entry = load().first(where: { $0.id == id }), entry.heldBack == nil else { return false }
+        entry.heldBack = held
         guard (try? save(entry)) != nil else { return false }
         dropLegacy(id)
         return true

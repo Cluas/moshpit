@@ -469,6 +469,174 @@ fn pause_resumes_with_the_real_verb_and_continue_repaints() {
     assert!(rig.count("capture-pane -p -e -t %0") > before);
 }
 
+// MARK: - window places (B586)
+
+/// tmux answering the listings with the two windows swapped
+/// (`swap-window` on a desktop, which notifies nobody).
+fn swapped(rig: &mut Rig) {
+    rig.respond(Box::new(|command, _| {
+        if command.starts_with("list-sessions") {
+            return ok(["$0 1 main"]);
+        }
+        if command.starts_with("list-windows -a") {
+            return ok([
+                "$0 @0 1 81x24,0,0,0 1 1 main",
+                "$0 @1 0 81x24,0,0,1 0 1 work",
+            ]);
+        }
+        if command.starts_with("list-panes -a -F '#{pane_id} ") {
+            return ok(["%0 @0 0 80 24 1 0 0 bash", "%1 @1 0 80 24 1 0 0 vim"]);
+        }
+        ok(["0 0"])
+    }));
+}
+
+fn index_of_window(rig: &Rig, window: &str) -> i64 {
+    rig.controller.snapshot().windows[window].index
+}
+
+/// B586: a window's place changed with no word from tmux; the quiet relist
+/// (Home or the picker showing) reads it — no spinner, no repaint.
+#[test]
+fn a_relist_reads_the_windows_places_quietly() {
+    let mut rig = attached();
+    discover(&mut rig, TWO_WINDOWS);
+    rig.settle();
+    assert_eq!(index_of_window(&rig, "@0"), 0);
+    swapped(&mut rig);
+    let from = rig.commands.len();
+    rig.with(|c, now| c.relist(now));
+    rig.settle();
+    assert_eq!(index_of_window(&rig, "@0"), 1);
+    assert_eq!(index_of_window(&rig, "@1"), 0);
+    let sent = rig.since(from);
+    assert!(
+        !sent.iter().any(|c| c.starts_with("capture-pane") || c == "display-message -p done"),
+        "{sent:?}"
+    );
+    assert!(!rig.controller.is_refreshing());
+}
+
+/// B586: back from the background, the tree is read again.
+#[test]
+fn the_return_from_the_background_reads_the_windows_places() {
+    let mut rig = attached();
+    discover(&mut rig, TWO_WINDOWS);
+    rig.settle();
+    rig.with(|c, now| c.release_window_pins(now));
+    rig.settle();
+    swapped(&mut rig);
+    rig.with(|c, now| c.repin_active_window(now));
+    rig.settle();
+    assert_eq!(index_of_window(&rig, "@0"), 1, "{:?}", rig.commands);
+}
+
+// MARK: - the phone's own pane (B587)
+
+/// One window split in two, the phone on `%0`.
+const SPLIT_WINDOW: &str = "%begin 1 1 1\n$0 1 main\n%end 1 1 1\n%begin 2 2 1\n$0 @0 0 c3d4,81x24,0,0{40x24,0,0,0,40x24,41,0,1} 1 2 main\n%end 2 2 1\n%begin 3 3 1\n%0 @0 0 40 24 1 0 0 bash\n%1 @0 1 40 24 0 0 0 vim\n%end 3 3 1\n\n";
+
+fn on_split_window() -> Rig {
+    let mut rig = attached();
+    discover(&mut rig, SPLIT_WINDOW);
+    rig.settle();
+    assert_eq!(
+        rig.controller.snapshot().active_pane_id.as_deref(),
+        Some("%0")
+    );
+    rig
+}
+
+/// B587: a desktop picked another pane in the window the phone shows (the
+/// active pane is the window's, shared): the phone keeps its own under a
+/// veil — it switched under the person — and a keystroke takes it back,
+/// active and zoomed again.
+#[test]
+fn a_pane_picked_on_the_desktop_leaves_the_phone_on_its_own() {
+    let mut rig = on_split_window();
+    rig.push("%window-pane-changed @0 %1\n");
+    assert_eq!(
+        rig.controller.snapshot().active_pane_id.as_deref(),
+        Some("%0"),
+        "the phone's own pane"
+    );
+    assert_eq!(
+        rig.controller.pane_follow().map(|f| f.pane_id.as_str()),
+        Some("%0")
+    );
+    let from = rig.commands.len();
+    rig.with(|c, now| c.view_input("%0", b"x", now));
+    let sent = rig.since(from).to_vec();
+    assert!(sent.iter().any(|c| c == "select-pane -t %0"), "{sent:?}");
+    assert!(
+        sent.iter().any(|c| c == "send-keys -t %0 -H 78"),
+        "{sent:?}"
+    );
+    assert!(
+        sent.iter()
+            .any(|c| c.starts_with("display-message -p -t '@0' '#{window_panes}")),
+        "the zoom's probe: {sent:?}"
+    );
+    assert!(rig.controller.pane_follow().is_none());
+}
+
+/// The veil's button (the size-lease's take-over) takes the pane back too.
+#[test]
+fn the_veils_button_takes_the_pane_back() {
+    let mut rig = on_split_window();
+    rig.push("%window-pane-changed @0 %1\n");
+    let from = rig.commands.len();
+    rig.with(|c, now| c.take_size_ownership(now));
+    assert!(rig.since(from).iter().any(|c| c == "select-pane -t %0"));
+    assert!(rig.controller.pane_follow().is_none());
+}
+
+/// The phone's own pick, and its own split, are no other client's: their
+/// echo lands while the command is still unanswered.
+#[test]
+fn the_phones_own_pane_changes_are_followed() {
+    let mut rig = on_split_window();
+    rig.with(|c, now| c.select_pane("%1", now));
+    rig.push("%window-pane-changed @0 %1\n");
+    assert!(rig.controller.pane_follow().is_none());
+    assert_eq!(
+        rig.controller.snapshot().active_pane_id.as_deref(),
+        Some("%1")
+    );
+    rig.settle();
+    rig.with(|c, now| c.new_pane(now));
+    rig.push("%window-pane-changed @0 %2\n");
+    assert!(rig.controller.pane_follow().is_none());
+}
+
+/// The kept pane gone (exited, killed), the veil goes and the phone shows
+/// what tmux has active.
+#[test]
+fn a_kept_pane_that_goes_drops_the_veil() {
+    let mut rig = on_split_window();
+    rig.push("%window-pane-changed @0 %1\n");
+    assert!(rig.controller.pane_follow().is_some());
+    rig.respond(Box::new(|command, _| {
+        if command.starts_with("list-sessions") {
+            return ok(["$0 1 main"]);
+        }
+        if command.starts_with("list-panes -a -F '#{pane_id} ") {
+            return ok(["%1 @0 1 81 24 1 0 0 vim"]);
+        }
+        if command.starts_with("list-windows -a") {
+            return ok(["$0 @0 0 81x24,0,0,1 1 1 main"]);
+        }
+        ok(["0 0"])
+    }));
+    rig.with(|c, now| c.refresh(now));
+    rig.settle();
+    assert!(rig.controller.pane_follow().is_none());
+    assert_eq!(
+        rig.controller.snapshot().active_pane_id.as_deref(),
+        Some("%1")
+    );
+}
+
 // MARK: - pane modes (B614)
 
 /// `%pane-mode-changed`: the controller asks which mode, and the pane's

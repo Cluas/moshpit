@@ -120,6 +120,38 @@ fn kitty_protocol_presses_repeats_and_releases() {
     assert_eq!(key(&mut t, Key::Escape, 0), "\x1b");
 }
 
+/// B576: a program that leaves the alternate screen before popping its
+/// keyboard flags (crossterm's `LeaveAlternateScreen` then
+/// `PopKeyboardEnhancementFlags`: the pop lands on the main screen's
+/// stack) left them on the alternate screen's, and the next program there
+/// got them unasked: vim's Escape came as `ESC [27;1u`. A new alternate
+/// screen starts with none; the main screen's own stay its own.
+#[test]
+fn a_new_alternate_screen_starts_without_the_last_programs_keyboard_flags() {
+    let mut t = term(20, 4, 10);
+    t.feed(b"\x1b[?1049h\x1b[>1u\x1b[?1049l\x1b[<u");
+    assert_eq!(key(&mut t, Key::Escape, 0), "\x1b", "the main screen's");
+    t.feed(b"\x1b[?1049h");
+    assert_eq!(t.modes().kitty_flags, 0, "the next program asked for none");
+    assert_eq!(key(&mut t, Key::Escape, 0), "\x1b", "vim's Escape");
+    t.feed(b"\x1b[>1u");
+    assert_eq!(key(&mut t, Key::Escape, 0), "\x1b[27;1u", "one that asks gets them");
+    t.feed(b"\x1b[?1049l");
+    // The main screen keeps its own across alternate screens (fish's).
+    t.feed(b"\x1b[>1u\x1b[?1049h\x1b[?1049l");
+    assert_eq!(t.modes().kitty_flags, 1, "the main screen's flags stay");
+    // Every way into the alternate screen.
+    for enter in [&b"\x1b[?47h"[..], b"\x1b[?1047h"] {
+        t.feed(b"\x1b[<u");
+        t.feed(enter);
+        t.feed(b"\x1b[>1u");
+        t.feed(b"\x1b[?47l\x1b[?1047l");
+        t.feed(enter);
+        assert_eq!(t.modes().kitty_flags, 0, "{enter:?}");
+        t.feed(b"\x1b[?47l\x1b[?1047l");
+    }
+}
+
 #[test]
 fn kitty_report_all_keys_sends_modifiers_and_text_as_codes() {
     let mut t = term(20, 4, 10);
@@ -184,4 +216,50 @@ fn an_extra_row_rides_with_the_frame() {
     assert_eq!(f.rows, 3, "the grid is still three rows");
     let row3 = f.changed.iter().find(|r| r.row == 3).unwrap();
     assert_eq!(char::from_u32(row3.cells[0].ch), Some('5'));
+}
+
+/// B579: a program that dies leaves its modes on, and the shell got its
+/// leftovers: a tap typed `ESC[<0;…M` at the prompt, a focus change `ESC[I`,
+/// Ctrl-C came as `ESC[99;5u`. When the shell's integration marks its prompt
+/// (OSC 133), they go: mouse reporting and focus reports at the prompt (A)
+/// or a command's end (D), the kitty keyboard flags at D only. Bracketed
+/// paste stays (shells turn it on themselves); without the marks nothing
+/// changes.
+#[test]
+fn the_shells_prompt_turns_off_what_a_dead_program_left_on() {
+    let crashed = b"\x1b[?1000h\x1b[?1002h\x1b[?1006h\x1b[?1004h\x1b[>1u\x1b[?2004h";
+    // No integration: no signal, nothing changes.
+    let mut t = term(20, 4, 10);
+    t.feed(crashed);
+    t.feed(b"$ ");
+    assert_eq!(t.modes().mouse, 2);
+    assert_eq!(t.modes().kitty_flags, 1);
+    // A command's end, then the prompt.
+    t.feed(b"\x1b]133;D;139\x07\x1b]133;A\x07$ ");
+    let modes = t.modes();
+    assert_eq!(modes.mouse, 0, "mouse reporting");
+    assert!(!modes.mouse_sgr, "its encoding");
+    assert!(!modes.focus_reports, "focus reports");
+    assert_eq!(modes.kitty_flags, 0, "the kitty flags");
+    assert!(modes.bracketed_paste, "bracketed paste is the shell's");
+    assert_eq!(key(&mut t, Key::Char('c'), CTRL), "\x03");
+    assert!(t.mouse(0, 0, 1, 1, 0).is_empty(), "a tap types nothing");
+    assert!(t.focus(true).is_empty());
+
+    // The prompt alone (no D): mouse and focus go, the kitty flags stay,
+    // since a shell like fish pushes its own while it reads input.
+    let mut t = term(20, 4, 10);
+    t.feed(crashed);
+    t.feed(b"\x1b]133;A\x07$ ");
+    assert_eq!(t.modes().mouse, 0);
+    assert!(!t.modes().focus_reports);
+    assert_eq!(t.modes().kitty_flags, 1, "the shell's own flags stay");
+
+    // Inside a synchronized update, after the mark like everything else.
+    let mut t = term(20, 4, 10);
+    t.feed(crashed);
+    t.feed(b"\x1b[?2026h\x1b]133;D\x07\x1b[?1000h");
+    t.feed(b"\x1b[?2026l");
+    assert_eq!(t.modes().mouse, 1, "a mode set after the mark stays");
+    assert_eq!(t.modes().kitty_flags, 0);
 }

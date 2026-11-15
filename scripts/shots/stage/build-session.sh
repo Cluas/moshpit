@@ -79,4 +79,4 @@ printf "%b➜%b  %bpayments-api%b %bgit:(%bfix-webhook-retry%b)%b " \
   "$G" "$R" "$C" "$R" "$D" "$C" "$D" "$R"
 # Hold the frame, as claude-session.sh does: a returning shell would end the
 # window.
-while :; do sleep 3600; done
+exec sh "$(dirname "$0")/hold.sh" codex

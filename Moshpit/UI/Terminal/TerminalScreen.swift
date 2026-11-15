@@ -133,16 +133,15 @@ struct TerminalScreen: View {
     /// black not-yet-attached pane. See the `.onChange(of: connState)`.
     @State private var settleGrace = false
     /// Whether this screen's session has ever been `.live` — the difference
-    /// between a first connect (nothing behind the cover but the void, so the
-    /// poster is the honest picture) and a reconnect (a frame worth keeping
-    /// on screen is right there). Reset when the session object changes,
+    /// between a first connect (nothing to cover: no cover, B657) and a
+    /// reconnect (a frame worth keeping on screen is right there). Reset when the session object changes,
     /// unless this screen swapped it in itself (``swapCarriesLive``).
     @State private var wasEverLive = false
     /// A manual reconnect (a protocol switch, Install Assist, the ended
     /// card's Reconnect) is swapping in a new session while this screen
     /// shows a reconnect's frame: the new session comes up as a reconnect
-    /// too, under the veil, never the first connect's poster (the owner's
-    /// rule: a reconnect never shows the poster). A protocol switch always
+    /// too, under the veil (the owner's rule: a reconnect keeps its frame,
+    /// never a full-screen cover). A protocol switch always
     /// carries it. Read and cleared when the session changes
     /// (``sessionSwapped()``).
     @State private var swapCarriesLive = false
@@ -161,17 +160,17 @@ struct TerminalScreen: View {
     ///
     /// A screen that appears onto a session that is ALREADY live (entered
     /// from the home card or the session tree after connecting there) never
-    /// shows a cover: the poster would be up for the one frame before the
+    /// shows a cover: a cover would be up for the one frame before the
     /// pane paints and come straight back down in the very update that
     /// resolves `active` and hosts the pane. On iOS 27 that exact sequence
     /// left every SwiftUI control in the top bar deaf to taps for the life
     /// of the screen — breadcrumb, transport pill, back — while the UIKit
     /// terminal beneath kept working (rig, iPhone 17 Pro iOS 27.0
-    /// simulator, 2026-09-14; iOS 26.2 was unaffected). Holding the poster a
+    /// simulator, 2026-09-14; iOS 26.2 was unaffected). Holding the cover a
     /// beat longer avoided it; not putting it up at all is the honest
     /// version, since there is nothing to cover.
     @State private var coverArmed = false
-    /// The last state the poster announced before the transport came back:
+    /// The last state the veil announced before the transport came back:
     /// the label it keeps while the cover waits for the first frame, so a
     /// reconnect does not read "Opening the pit" for its last few hundred ms.
     @State private var lastCoverState: TransportConnState = .connecting
@@ -704,45 +703,17 @@ struct TerminalScreen: View {
         } message: {
             Text(String(localized: "Moshpit installs its hook scripts in ~/.moshpit and registers them in Claude Code's settings, so agents can reach you when they need you. Everything can be removed from Host Setup."))
         }
-        .moshpitCard(isPresented: $showError) {
-            if active?.viewModel.endedByServer == true {
-                sessionEndedCard
-            } else {
-                MoshpitNoticeCard(
-                    icon: "bolt.slash.fill",
-                    title: "Connection Error",
-                    message: active?.viewModel.errorMessage ?? ""
-                ) {
-                    showError = false
-                    active?.viewModel.errorMessage = nil
-                    leave()
-                }
-            }
+        .alert(active?.viewModel.endedByServer == true
+                   ? String(localized: "Session ended") : String(localized: "Connection Error"),
+               isPresented: $showError) {
+            errorActions
+        } message: {
+            Text(active?.viewModel.errorMessage ?? "")
         }
-        .moshpitCard(
-            item: Binding(
-                get: { active?.viewModel.hostKeyPrompt },
-                set: { if $0 == nil { /* dismissal handled via decide() */ } }
-            )
-        ) { prompt in
-            hostKeyPromptCard(prompt)
-        }
-        .moshpitCard(
-            item: Binding(
-                get: { active?.viewModel.keyPassphrasePrompt },
-                set: { if $0 == nil { /* dismissal handled via decide() */ } }
-            )
-        ) { prompt in
-            KeyPassphrasePromptCard(prompt: prompt)
-        }
-        .moshpitCard(
-            item: Binding(
-                get: { active?.viewModel.signInQuestion },
-                set: { if $0 == nil { /* dismissal handled via decide() */ } }
-            )
-        ) { question in
-            SignInQuestionCard(question: question)
-        }
+        .connectPrompts(
+            hostKey: { active?.viewModel.hostKeyPrompt },
+            passphrase: { active?.viewModel.keyPassphrasePrompt },
+            question: { active?.viewModel.signInQuestion })
         .appSheet(item: installTargetBinding) { target in
             if let active {
                 InstallAssistNSHPage(session: active, packages: target.packages, onReconnect: { reconnect() })
@@ -874,30 +845,32 @@ struct TerminalScreen: View {
         carried
     }
 
-    /// The card for a session the server ended — its shell exited, or
-    /// mosh-server sent its shutdown. Not an error: it used to arrive as
-    /// "Connection Error", whose only button left the screen. It says what
-    /// happened, and offers the reconnect nothing automatic will make.
-    private var sessionEndedCard: some View {
-        let reason = active?.viewModel.errorMessage ?? ""
-        return MoshpitModalCard(
-            icon: "power",
-            tone: .neutral,
-            title: "Session ended",
-            message: reason.isEmpty ? nil : Text(reason),
-            buttons: [
-                ModalButton("Done", kind: .secondary) {
-                    showError = false
-                    active?.viewModel.errorMessage = nil
-                    leave()
-                },
-                ModalButton("Reconnect", kind: .primary) {
-                    showError = false
-                    active?.viewModel.errorMessage = nil
-                    reconnect()
-                },
-            ]
-        ) { EmptyView() }
+    /// The alert's buttons. A session the server ended — its shell exited,
+    /// or mosh-server sent its shutdown — is not an error: it used to
+    /// arrive as "Connection Error", whose only button left the screen. It
+    /// says what happened, and offers the reconnect nothing automatic will
+    /// make.
+    @ViewBuilder
+    private var errorActions: some View {
+        if active?.viewModel.endedByServer == true {
+            Button("Done", role: .cancel) {
+                showError = false
+                active?.viewModel.errorMessage = nil
+                leave()
+            }
+            Button("Reconnect") {
+                showError = false
+                active?.viewModel.errorMessage = nil
+                reconnect()
+            }
+            .keyboardShortcut(.defaultAction)
+        } else {
+            Button("OK") {
+                showError = false
+                active?.viewModel.errorMessage = nil
+                leave()
+            }
+        }
     }
 
     /// Tear down and re-run the start flow at full feature — used after the
@@ -908,7 +881,7 @@ struct TerminalScreen: View {
         guard let active else { return }
         // A switch moves nothing; any other manual reconnect moves as a
         // reconnect does. Either way the new session is a reconnect when
-        // this one was (or always, for a switch): the veil, not the poster.
+        // this one was (or always, for a switch): the veil.
         if !still, stillSwitch { endStillSwitch() }
         swapCarriesLive = still || isReconnect
         // Manual reconnects (protocol switch, Install Assist) swap in a
@@ -1028,7 +1001,7 @@ struct TerminalScreen: View {
     /// What the cover says. Once the transport is back the state reads
     /// `.live`, but the cover is still up for the first frame — it keeps
     /// announcing the phase it was covering, not "Opening the pit".
-    private var posterState: TransportConnState {
+    private var coverState: TransportConnState {
         connState == .live ? lastCoverState : connState
     }
 
@@ -1036,9 +1009,9 @@ struct TerminalScreen: View {
     /// herdr until their first frame is painted, everything else for the
     /// beat `settleGrace` holds. Never both — on a fast attach the first
     /// frame lands inside the grace period, and letting the grace outlive
-    /// the signal put the poster up for the leftover ~170ms right as the
-    /// frozen frame gave way to the new one (a poster flash in the
-    /// crossfade, measured on the rig's short-suspension run).
+    /// the signal put a cover up for the leftover ~170ms right as the
+    /// frozen frame gave way to the new one (a flash in the crossfade,
+    /// measured on the rig's short-suspension run).
     private var settling: Bool {
         guard let active, connState == .live, coverArmed else { return false }
         let waits = Self.waitsForFirstFrame(transport: active.connection.connectionProtocol,
@@ -1098,17 +1071,21 @@ struct TerminalScreen: View {
     /// The kept frame is enough on its own — a ghost only exists because the
     /// dropped connection had painted, whichever screen was watching.
     private var isReconnect: Bool {
-        wasEverLive || active?.retiredTmuxController != nil
+        guard let active else { return wasEverLive }
+        return wasEverLive || active.retiredTmuxController != nil || Self.keepsFrame(active)
     }
 
-    /// Only a FIRST connect gets the poster — a reconnect keeps what is there
-    /// and takes the veil instead, even when what is there is only the bare
-    /// terminal background (the dropped connection never painted, so no
-    /// frame was kept; this path used to show the poster, and that is the
-    /// full-screen animation that kept surfacing). It holds until the
-    /// replacement has painted, not until the transport says so. `.offline`
-    /// shows no poster: nothing is being attempted.
-    private var posterVisible: Bool { paneCover == .poster }
+    /// The session's own terminal still holds what it showed: herdr, mosh
+    /// and plain SSH keep one terminal across a redial. A screen entered
+    /// while such a session reconnects is a reconnect too (B657: herdr has
+    /// no retired controller to say so, and a fresh screen took the first
+    /// connect's path, a full-screen poster saying "Reconnecting…"). tmux's
+    /// panes live in their controller; its ghost says it.
+    static func keepsFrame(_ active: SessionHub.ActiveSession) -> Bool {
+        guard active.tmuxController == nil, active.retiredTmuxController == nil,
+              let surface = active.coordinator.surface else { return false }
+        return TerminalNSHStage.hasText(surface)
+    }
 
     /// The reconnect dim and status capsule — over the kept frame, the
     /// persistent pane, or the bare background; and also over a dropped line
@@ -1121,22 +1098,23 @@ struct TerminalScreen: View {
         Self.paneCover(resolved: active != nil, reconnect: isReconnect, state: connState, settling: settling)
     }
 
-    /// What covers the pane: nothing, the first connect's poster, or a
+    /// What covers the pane: nothing (a live pane, and a first connect:
+    /// B657, the owner's 「这种动画可以删掉了 不符合我们的产品了」), or a
     /// reconnect's veil.
     enum PaneCover: Equatable {
-        case none, poster, veil
+        case none, veil
     }
 
     /// The cover for a session `resolved` (or not yet: no session object,
     /// no cover — `active` is a `@State` set on appear, so every screen
-    /// renders one frame without it; for a first connect the poster follows
-    /// a frame later over the same colour, for a screen entering a live
-    /// session it must never come, see `coverArmed`), coming back or not
+    /// renders one frame without it; for a screen entering a live session
+    /// it must never come, see `coverArmed`), coming back or not
     /// (`reconnect`), its transport in `state`, `settling` while the
     /// transport is up but nothing has painted. A reconnect — a protocol
-    /// switch always is one — gets the veil, never the poster, through the
-    /// whole cycle and over a line no longer redialled (`.offline`); a first
-    /// connect gets the poster while something is attempted.
+    /// switch always is one — gets the veil through the whole cycle and
+    /// over a line no longer redialled (`.offline`), until the replacement
+    /// has painted. A first connect gets nothing: the pane is the terminal's
+    /// background, and the bar's transport pill says it connects.
     nonisolated static func paneCover(resolved: Bool, reconnect: Bool,
                                       state: TransportConnState, settling: Bool) -> PaneCover {
         guard resolved else { return .none }
@@ -1146,11 +1124,7 @@ struct TerminalScreen: View {
             case .live: return settling ? .veil : .none
             }
         }
-        switch state {
-        case .connecting, .reconnecting: return .poster
-        case .live: return settling ? .poster : .none
-        case .offline: return .none
-        }
+        return .none
     }
 
     /// Another Moshpit device holds the live window's size: the pane is
@@ -1158,10 +1132,20 @@ struct TerminalScreen: View {
     /// offers a tap to take over. Only while nothing else covers the pane —
     /// a reconnect's own veil says what matters then.
     private var sizeFollow: RustTmuxController.SizeFollow? {
-        guard connState == .live, !posterVisible, !veilVisible,
+        guard connState == .live, !veilVisible,
               let controller = active?.tmuxController, active?.retiredTmuxController == nil
         else { return nil }
         return controller.sizeFollow
+    }
+
+    /// Another client picked another pane in the window shown: the phone
+    /// keeps its own under a veil, a tap taking it back (B587). Under the
+    /// same conditions as the size veil, which goes first.
+    private var paneFollow: String? {
+        guard connState == .live, !veilVisible,
+              let controller = active?.tmuxController, active?.retiredTmuxController == nil
+        else { return nil }
+        return controller.paneFollow
     }
 
     // MARK: - Shortcut dispatch
@@ -1540,7 +1524,32 @@ struct TerminalScreen: View {
         Haptics.tap()
         let controller = VoiceDictationController()
         dictation = controller
-        Task { await controller.start(settings.dictationRequest) }
+        var request = settings.dictationRequest
+        request.hotwords = DictationHotwords.harvest(activePaneFacts)
+        Task { await controller.start(request) }
+    }
+
+    /// What the pane being typed into is about, for the recognizer's
+    /// hotwords: its screen as it stands, the agent and command in it, its
+    /// working directory and the tmux session and window around it. Plain
+    /// SSH has the screen alone.
+    private var activePaneFacts: DictationPaneFacts {
+        var facts = DictationPaneFacts()
+        if let surface = typingCoordinator?.hostContainer?.surface {
+            facts.screen = (0..<surface.rows.rows.count).map(surface.rowText)
+        }
+        if let control = active?.tmuxControl,
+           let paneId = control.snapshot.activePaneId ?? control.snapshot.activePanes.first?.id {
+            let pane = control.snapshot.panes[paneId]
+            facts.agent = control.agentHooks[paneId]?.agent
+            facts.command = pane?.displayCommand
+            facts.path = pane?.path
+            if let window = pane.flatMap({ control.snapshot.windows[$0.windowId] }) {
+                facts.windowName = window.name
+                facts.sessionName = control.snapshot.sessions[window.sessionId]?.name
+            }
+        }
+        return facts
     }
 
     /// Stop the mic, wait for the engine's final words, and type the result
@@ -1600,111 +1609,6 @@ struct Sparkline: Shape {
             if i == 0 { path.move(to: CGPoint(x: x, y: y)) } else { path.addLine(to: CGPoint(x: x, y: y)) }
         }
         return path
-    }
-}
-
-// MARK: - The connecting poster's mark
-
-/// The connecting screen's mark, following whichever app icon the user picked.
-///
-/// The default icon keeps its bespoke choreography — the cursor blinks, the
-/// panes beside it pulse — because that animation is authored against the
-/// panes geometry itself. None of the alternates HAS a cursor hole or side
-/// panes (one is a handset, one is a house, one is the characters `:wq`), so
-/// animating them the same way is not merely wrong, it is undefined. They
-/// breathe instead: the same tempo as the cursor, carried by the artwork the
-/// user chose. (Internal, not private: the NSH page's poster hosts it,
-/// `moshpit/pane-loader`.)
-struct PaneLoaderMark: View {
-    var side: CGFloat
-    var accent: SwiftUI.Color
-    @Environment(AppSettings.self) private var settings
-
-    var body: some View {
-        let option = AppIconCatalog.option(for: settings.appIconId)
-        if option.isPrimary {
-            PaneLoaderGlyph(side: side, accent: accent)
-        } else {
-            BreathingIconMark(option: option, side: side, accent: accent)
-        }
-    }
-}
-
-/// An alternate icon, alive while the session connects.
-private struct BreathingIconMark: View {
-    let option: AppIconOption
-    var side: CGFloat
-    var accent: SwiftUI.Color
-    @State private var breathing = false
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    var body: some View {
-        AppIconThumb(option: option, side: side)
-            .scaleEffect(breathing ? 1.04 : 0.96)
-            // The glow is the accent, not the artwork's own colours: it is the
-            // connection state talking, and it has to read the same whichever
-            // icon is underneath.
-            .shadow(color: accent.opacity(breathing ? 0.55 : 0.2),
-                    radius: side * (breathing ? 0.16 : 0.09))
-            // Matches PaneLoaderGlyph's cursor, so the two loaders keep time.
-            .animation(reduceMotion ? nil : .easeInOut(duration: 1.15).repeatForever(autoreverses: true),
-                       value: breathing)
-            .frame(width: side, height: side)
-            // Reduce Motion: hold the bright, settled pose instead of pulsing.
-            .onAppear { breathing = true }
-    }
-}
-
-/// The connecting screen's animated mark: same geometry as ``MoshpitGlyph``
-/// (all values from its `Metrics`), drawn alive — the cursor blinks in the
-/// pane you are about to land in, and the panes beside it pulse in a stagger.
-/// The window is warming up. Kept local to the loader; every static placement
-/// of the mark stays `MoshpitGlyph`.
-private struct PaneLoaderGlyph: View {
-    private typealias M = MoshpitGlyph.Metrics
-
-    var side: CGFloat
-    var accent: SwiftUI.Color
-    @State private var alive = false
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    var body: some View {
-        let k = side / M.tile
-        ZStack(alignment: .topLeading) {
-            IconTile(accent: accent, side: side)
-
-            // The pane, solid; the cursor is a hole punched by the block below
-            // fading in and out — a terminal cursor blinking at 1.15s, the
-            // tempo the alternates' breathing keeps time with.
-            FocusedPaneShape(cursorOpen: false)
-                .fill(.white)
-                .frame(width: side, height: side)
-                .shadow(color: .black.opacity(M.shadowAlpha),
-                        radius: side * M.shadowBlur, y: side * M.shadowDrop)
-
-            RoundedRectangle(cornerRadius: M.cursorCorner * k, style: .continuous)
-                .fill(accent)
-                .frame(width: M.cursor.width * k, height: M.cursor.height * k)
-                .offset(x: M.cursor.minX * k, y: M.cursor.minY * k)
-                .opacity(alive ? 1 : 0.15)
-                .animation(reduceMotion ? nil : .easeInOut(duration: 1.15).repeatForever(autoreverses: true),
-                           value: alive)
-
-            ForEach(Array(M.beside.enumerated()), id: \.offset) { i, r in
-                RoundedRectangle(cornerRadius: M.besideCorner * k, style: .continuous)
-                    .fill(.white.opacity(alive ? 0.7 : 0.35))
-                    .frame(width: r.width * k, height: r.height * k)
-                    .offset(x: r.minX * k, y: r.minY * k)
-                    .shadow(color: .black.opacity(M.shadowAlpha),
-                            radius: side * M.shadowBlur, y: side * M.shadowDrop)
-                    .animation(reduceMotion ? nil : .easeInOut(duration: 0.85)
-                        .repeatForever(autoreverses: true)
-                        .delay(Double(i) * 0.3), value: alive)
-            }
-        }
-        .frame(width: side, height: side)
-        .shadow(color: accent.opacity(0.35), radius: side * 0.12, y: side * 0.04)
-        .onAppear { alive = true }
     }
 }
 
@@ -1813,13 +1717,13 @@ extension TerminalScreen {
                                   windowIcon: vocabulary.windowIcon, live: livePlan != nil)
         }
         chrome.still = stillSwitch
-        if posterVisible {
-            chrome.cover = .init(kind: .poster, state: posterState, touches: connState != .live)
-        } else if veilVisible {
-            chrome.cover = .init(kind: .veil, state: posterState,
+        if veilVisible {
+            chrome.cover = .init(kind: .veil, state: coverState,
                                  ended: active?.viewModel.endedByServer == true)
         } else if let follow = sizeFollow {
             chrome.cover = .init(kind: .follow, state: connState, owner: follow.ownerLabel, touches: true)
+        } else if paneFollow != nil {
+            chrome.cover = .init(kind: .paneFollow, state: connState, touches: true)
         }
         (chrome.content, chrome.empty) = nshContent
         if active?.moshReturnPathDead == true {
@@ -1877,21 +1781,21 @@ extension TerminalScreen {
             // Missing is the host's probe's answer: known. No sessions isn't
             // yet: the attach may only be on its way.
             let missing = active.capabilities?.hasTmux == false
-            return (.empty, .init(mux: .tmux, missing: missing, quiet: isReconnect, settled: missing))
+            return (.empty, .init(mux: .tmux, missing: missing, settled: missing))
         }
         if let herdr = active.herdrControl, herdr.serverNotRunning {
             // The server answered that it isn't running: known.
             return (.empty, .init(mux: .herdr, missing: active.capabilities?.hasHerdr == false,
-                                  quiet: isReconnect, settled: true))
+                                  settled: true))
         }
         // mosh + tmux on a server with no session (B228): the renderer on
         // screen waits for one in silence. The empty state with its Create
         // goes over it, as the SwiftUI terminal's overlay does; without it
         // the screen stayed black (B337). The server was asked already, so
-        // the answer is known: it shows at once (settled), with nothing, not
-        // the poster, before it.
+        // the answer is known: it shows at once (settled), with nothing
+        // before it.
         if active.awaitingFirstSession, connState == .live {
-            return (.empty, .init(mux: .tmux, missing: false, quiet: true, settled: true))
+            return (.empty, .init(mux: .tmux, missing: false, settled: true))
         }
         return (.terminal, nil)
     }

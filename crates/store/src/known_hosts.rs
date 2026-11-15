@@ -44,10 +44,27 @@ pub const ACCOUNT: &str = "moshpit.knownHosts";
 /// The trusted map: entry ([`entry`]) → fingerprint.
 pub type Table = BTreeMap<String, String>;
 
-/// The map's key for a host: `host:port`, the host as typed, an IPv6
-/// address unbracketed (`HostKeyValidator.entryKey`).
+/// The map's key for a host: `host:port`, an IPv6 address unbracketed.
+///
+/// B630: one form for one host — lowercase, without the root's trailing
+/// dot. DNS names and an IPv6 address's hex are case-blind, and
+/// `example.com.` is `example.com`; the host as typed
+/// (`HostKeyValidator.entryKey`) made each spelling a host of its own, so a
+/// key trusted under one was nothing to another, and a different key there
+/// got the quiet New Host card instead of the loud Key Changed one.
 pub fn entry(host: &str, port: u16) -> String {
-    format!("{host}:{port}")
+    format!("{}:{port}", host_form(host))
+}
+
+/// The [`entry`] a key stored by an earlier build stands for (it kept the
+/// host as typed). `None` for one that isn't `host:port`.
+pub fn normalized(stored: &str) -> Option<String> {
+    let (host, port) = stored.rsplit_once(':')?;
+    Some(format!("{}:{port}", host_form(host)))
+}
+
+fn host_form(host: &str) -> String {
+    host.strip_suffix('.').unwrap_or(host).to_ascii_lowercase()
 }
 
 /// The trusted map can't be read right now.

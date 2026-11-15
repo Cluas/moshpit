@@ -63,6 +63,14 @@ enum NSHScreen: String, CaseIterable, Sendable {
     /// Home › a host's sessions (`ui/src/sessions`): pushed from the NSH
     /// Home, which has no SwiftUI page of its own to fall back to.
     case sessions
+    /// A server's host key, asked about before a connection trusts it
+    /// (`HostKeyNSHPage`), over Home or the terminal.
+    case hostKey = "host-key"
+    /// A herdr host's New Agent Task (`AgentTaskNSHPage`), from Home's and
+    /// the sessions page's rows.
+    case agentTask = "agent-task"
+    /// Settings › Theme › Import… (`ThemeImportNSHPage`).
+    case themeImport = "theme-import"
 
     /// The name the Rust side runs it by (`Screen::named`).
     var name: String { rawValue }
@@ -163,11 +171,15 @@ struct NSHPage: View {
     var prepare: (NSHSurface) -> Void = { _ in }
     var attach: (NSHSurface) -> Void = { _ in }
     var onMessage: ([String: Any]) -> Void = { _ in }
+    /// What the screen tells, read by its own event type (``PageEvent``,
+    /// E6b): set, it hears every event its screen's type knows, and
+    /// `onMessage` the rest.
+    var onEvent: ((PageEvent) -> Void)? = nil
     var onFailure: () -> Void = {}
 
     var body: some View {
         NSHPageSurface(screen: screen, page: page, params: params, prepare: prepare, attach: attach,
-                       onMessage: onMessage, onFailure: onFailure)
+                       onMessage: onMessage, onEvent: onEvent, onFailure: onFailure)
             .id(NSHScreenParams.themeKey + paramsKey)
     }
 }
@@ -190,6 +202,8 @@ private struct NSHPageSurface: UIViewRepresentable {
     var attach: (NSHSurface) -> Void = { _ in }
     /// What the screen tells the host, on the main thread.
     var onMessage: ([String: Any]) -> Void = { _ in }
+    /// ``NSHPage/onEvent``.
+    var onEvent: ((PageEvent) -> Void)? = nil
     /// No surface could be made, or the screen would not run.
     var onFailure: () -> Void = {}
 
@@ -214,6 +228,7 @@ private struct NSHPageSurface: UIViewRepresentable {
             return UIView()
         }
         surface.onMessage = onMessage
+        surface.onEvent = onEvent
         prepare(surface)
         let (screen, page, extra, onFailure) = (screen, page, params, onFailure)
         let coordinator = context.coordinator
@@ -244,6 +259,7 @@ private struct NSHPageSurface: UIViewRepresentable {
 
     func updateUIView(_ uiView: UIView, context: Context) {
         (uiView as? NSHSurface)?.onMessage = onMessage
+        (uiView as? NSHSurface)?.onEvent = onEvent
         context.coordinator.attach = attach
     }
 }

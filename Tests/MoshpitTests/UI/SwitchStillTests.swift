@@ -8,24 +8,25 @@ import UIKit
 /// 有个动画 我们直接去掉」). It swaps in a new session: before, the new
 /// session started from "never live" and came up under the first connect's
 /// animated poster, faded in and out; now it carries "was live", so it comes
-/// up under the reconnect's veil, never the poster, with the pane's last
-/// picture under it, and nothing fades: the covers, the pill's word and the
-/// terminal's swap all happen at once.
+/// up under the reconnect's veil, with the pane's last picture under it,
+/// and nothing fades: the covers, the pill's word and the terminal's swap
+/// all happen at once. The poster itself is gone (B657): a first connect
+/// has no cover at all.
 @Suite("protocol switch, no motion")
 @MainActor
 struct SwitchStillTests {
 
     private static let states: [TransportConnState] = [.connecting, .reconnecting, .offline, .live]
 
-    @Test("A switch's new session is a reconnect: the veil through every state, never the poster")
-    func aSwitchNeverShowsThePoster() {
+    @Test("A switch's new session is a reconnect: the veil until the new frame has painted")
+    func aSwitchTakesTheVeil() {
         let reconnect = TerminalScreen.liveAfterSwap(carried: true)
         #expect(reconnect)
-        for state in Self.states {
+        for state in [TransportConnState.connecting, .reconnecting, .offline] {
             for settling in [false, true] {
                 let cover = TerminalScreen.paneCover(resolved: true, reconnect: reconnect,
                                                      state: state, settling: settling)
-                #expect(cover != .poster, "\(state), settling \(settling)")
+                #expect(cover == .veil, "\(state), settling \(settling)")
             }
         }
         let connecting = TerminalScreen.paneCover(resolved: true, reconnect: true, state: .connecting, settling: false)
@@ -36,16 +37,38 @@ struct SwitchStillTests {
         #expect(painted == .none)
     }
 
-    @Test("A first connect still gets the poster; a session not resolved yet gets nothing")
-    func aFirstConnectKeepsThePoster() {
+    @Test("A first connect, and a reconnect with no frame kept, have no cover: the bar's pill says it (B657)")
+    func aFirstConnectHasNoCover() {
         let first = TerminalScreen.liveAfterSwap(carried: false)
         #expect(!first)
-        let connecting = TerminalScreen.paneCover(resolved: true, reconnect: first, state: .connecting, settling: false)
-        #expect(connecting == .poster)
-        let offline = TerminalScreen.paneCover(resolved: true, reconnect: first, state: .offline, settling: false)
-        #expect(offline == .none, "nothing attempted: no poster")
-        let unresolved = TerminalScreen.paneCover(resolved: false, reconnect: false, state: .connecting, settling: false)
+        for state in Self.states {
+            for settling in [false, true] {
+                let cover = TerminalScreen.paneCover(resolved: true, reconnect: first,
+                                                     state: state, settling: settling)
+                #expect(cover == .none, "\(state), settling \(settling)")
+            }
+        }
+        let unresolved = TerminalScreen.paneCover(resolved: false, reconnect: true, state: .connecting, settling: false)
         #expect(unresolved == .none)
+    }
+
+    @Test("A screen entered while herdr, mosh or SSH redials over a kept frame is a reconnect: the veil (B657)")
+    func aKeptFrameIsAReconnect() async {
+        let session = SessionHub.ActiveSession(connection: ServerConnection(host: "192.0.2.10", username: "dev"))
+        #expect(!TerminalScreen.keepsFrame(session), "no terminal yet")
+        let surface = TerminalSurfaces.make(font: .monospacedSystemFont(ofSize: 12, weight: .regular),
+                                            grid: TerminalGrid(cols: 40, rows: 6))
+        session.coordinator.attach(surface)
+        #expect(!TerminalScreen.keepsFrame(session), "a terminal with nothing on it: a first connect")
+        session.coordinator.feed(data: Data("dev@box:~$ herdr\r\n".utf8))
+        let deadline = Date().addingTimeInterval(5)
+        while !TerminalScreen.keepsFrame(session), Date() < deadline {
+            try? await Task.sleep(for: .milliseconds(20))
+        }
+        #expect(TerminalScreen.keepsFrame(session), "the frame it showed is still there")
+        let cover = TerminalScreen.paneCover(resolved: true, reconnect: TerminalScreen.keepsFrame(session),
+                                             state: .reconnecting, settling: false)
+        #expect(cover == .veil)
     }
 
     @Test("The NSH chrome tells the page a switch is under way")

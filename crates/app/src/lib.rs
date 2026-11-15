@@ -40,4 +40,5 @@ pub mod image_attachment;
 pub mod looks;
 pub mod remote_folder;
 pub mod remote_paths;
+pub mod share;
 pub mod shortcuts;

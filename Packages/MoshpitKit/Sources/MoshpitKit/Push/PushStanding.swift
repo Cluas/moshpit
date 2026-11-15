@@ -45,10 +45,11 @@ public enum PushStanding {
         }
     }
 
-    /// How long an unrefreshed entry keeps counting. Matches the attention
-    /// push's own APNs expiry: past 15 minutes the prompt is stale enough that
-    /// re-ringing for a "new" one is better than staying silent for it.
-    public static let lifetime: TimeInterval = 15 * 60
+    /// How long an unrefreshed entry keeps counting: six hours (B660), the
+    /// Rust set's `LIFETIME_SECONDS`. An entry stands until its question is
+    /// answered or resolved, or its pane or agent ends; it used to expire at
+    /// fifteen minutes, taking down a card for a question still waiting.
+    public static let lifetime: TimeInterval = 6 * 60 * 60
 
     private static let filename = "standing-attention.json"
 

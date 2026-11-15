@@ -71,6 +71,17 @@ pub struct SizeFollow {
     pub owner_label: String,
 }
 
+/// Another client picked another pane in the window the phone shows (a
+/// desktop's `select-pane`; the active pane is the window's, shared): the
+/// phone keeps its own — by id — under a veil, and takes it back at the
+/// person's touch, the last touch winning (B587).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PaneFollow {
+    pub window_id: String,
+    /// The pane the phone keeps showing.
+    pub pane_id: String,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -1,9 +1,11 @@
 import XCTest
 
 /// The path a person takes most, on a live host: the seeded connection
-/// connects, its terminal comes up, the breadcrumb's window segment opens
-/// the window picker on the window the terminal shows, picking it closes
-/// the picker on the same terminal, and Back is Home with the host's card.
+/// connects, its terminal comes up, a tap on the breadcrumb's window
+/// segment opens the pane overview (since b4b43be1) and Done closes it, a
+/// long press opens the window picker on the window the terminal shows,
+/// picking it closes the picker on the same terminal, and Back is Home with
+/// the host's card.
 /// Replaces HomeEntryBreadcrumbUITest and SheetFocusUITest, which looked
 /// for the SwiftUI Windows sheet's "Swipe to switch".
 ///
@@ -37,9 +39,15 @@ final class NSHSessionFlowUITest: XCTestCase {
         let window = app.waitNSH("terminal-crumb-window", timeout: 30, "no window segment on the breadcrumb")
         XCTAssertTrue(window.isEnabled, "the window segment is inert on a live session")
 
-        // The picker opens on the window the terminal shows.
+        // A tap: the overview of every window and pane; Done closes it.
         window.tap()
-        app.waitNSH("mux-picker")
+        app.waitNSH("terminal-overview", "a tap on the window segment didn't open the overview")
+        app.tapNSH("terminal-overview-done")
+        XCTAssertTrue(app.nsh("terminal-overview").waitForNonExistence(timeout: 5), "Done left the overview up")
+
+        // A long press: the picker, on the window the terminal shows.
+        window.press(forDuration: 0.8)
+        app.waitNSH("mux-picker", "a long press on the window segment didn't open the picker")
         let current = app.descendants(matching: .any)
             .matching(NSPredicate(format: "identifier BEGINSWITH 'mux-picker-row-' AND selected == true"))
             .firstMatch

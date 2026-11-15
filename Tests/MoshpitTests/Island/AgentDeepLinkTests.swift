@@ -119,3 +119,25 @@ struct LandingSaidTests {
         #expect(TerminalScreen.flashSeconds > 0 && TerminalScreen.flashSeconds <= 5, "a moment")
     }
 }
+
+/// B661: the island's "+N more" opens Home's "Needs you", where every agent
+/// waiting is listed: the link is told apart from a pane's, and the router
+/// asks Home for it, not for a pane.
+@Suite("Needs-you link")
+@MainActor
+struct NeedsYouLinkTests {
+    @Test("the needs-you link routes to Home, not to a pane")
+    func needsYouRoutesHome() throws {
+        let url = try #require(URL(string: AgentDeepLink.needsYou))
+        #expect(AgentDeepLink.isNeedsYou(url))
+        #expect(AgentDeepLink.parse(url) == nil, "not a pane's link")
+        let pane = try #require(URL(string: AgentDeepLink.string(connectionId: UUID(), paneId: "%1")))
+        #expect(!AgentDeepLink.isNeedsYou(pane))
+        let router = DeepLinkRouter()
+        router.handle(url)
+        #expect(router.needsYouRequest == 1)
+        #expect(router.paneRequest == nil)
+        router.handle(url)
+        #expect(router.needsYouRequest == 2, "a second tap scrolls again")
+    }
+}

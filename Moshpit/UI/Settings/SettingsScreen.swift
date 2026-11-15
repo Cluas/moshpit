@@ -55,8 +55,26 @@ struct SettingsScreen: View {
     @State private var showsFilingNumber = false
 
     var body: some View {
+        if nshFailed {
+            // The hub's screen could not run: the page says so, with
+            // Cancel to close Settings.
+            NSHSheetFailed { nshFailed = false }
+        } else {
+            stack
+        }
+    }
+
+    /// Settings' stack: the NSH hub at its root, the pages its rows ask
+    /// for pushed on it, the sheets presented over it. The hub draws its
+    /// own bar; the stack's title is what a pushed page's back button says.
+    private var stack: some View {
         NavigationStack {
-            root
+            SettingsNSHPage(
+                liveSession: liveSession,
+                showsFilingNumber: showsFilingNumber,
+                onOpen: open,
+                onDone: { dismiss() },
+                onFailure: { nshFailed = true })
             .navigationDestination(isPresented: $pushTheme) { ThemeGalleryNSHPage() }
             .navigationDestination(item: $pushed) { page in page.page }
             .navigationDestination(item: $pushedPart) { part in
@@ -94,14 +112,6 @@ struct SettingsScreen: View {
                 showsFilingNumber = await MainlandStorefront.isMainland()
             }
             .navigationTitle("Settings")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Done") { dismiss() }
-                        .foregroundStyle(Ink.accent)
-                        .accessibilityIdentifier("settings-done")
-                }
-            }
         }
         .appSheet(isPresented: $showShortcuts) { ShortcutsPage() }
         .appSheet(isPresented: $showKeys) { SSHKeysPage() }
@@ -119,22 +129,6 @@ struct SettingsScreen: View {
             Text("Setup runs on the host over a live session. Connect first, then set it up here.")
         }
         .appSheet(isPresented: $showFeedback) { FeedbackNSHPage() }
-    }
-
-    /// The page at the root of Settings' stack: the NSH hub. Its rows ask
-    /// for a page (``open(_:)``), pushed on this stack.
-    @ViewBuilder
-    private var root: some View {
-        if nshFailed {
-            NSHPageFailed { nshFailed = false }
-        } else {
-            SettingsNSHPage(
-                liveSession: liveSession,
-                showsFilingNumber: showsFilingNumber,
-                onOpen: open,
-                onDone: { dismiss() },
-                onFailure: { nshFailed = true })
-        }
     }
 
     /// Set up a host, where `route` goes: the list pushed, the host's setup
@@ -199,60 +193,6 @@ struct SettingsScreen: View {
         let stamp = info?["MoshpitBuildStamp"] as? String ?? "dev"
         return "Moshpit \(version) (\(build)) · \(stamp)"
     }()
-}
-
-// MARK: - Host setup, seen from offline
-
-/// What "Set up this host" can honestly show with nothing connected: the half
-/// of each pairing the PHONE holds, and the fact that the other half lives on
-/// hosts this screen cannot reach right now.
-///
-/// This view exists because the row used to be a dead grey "connect to a host
-/// first" — a settings entry that looked like an unmet obligation. Since host
-/// care became automatic (install, pairing, repair all run on connect; the
-/// only question left is asked there, once), the row's offline job is to say
-/// so, and to list what is already paired.
-struct OfflineHostInfoView: View {
-    @Environment(\.dismiss) private var dismiss
-    private let pairings = PushPairingStore.read()
-
-    var body: some View {
-        NavigationStack {
-            Form {
-                Section {
-                    Text("Host setup is automatic. Connecting to a host installs and repairs everything it needs — scripts, hooks registration, push pairing — and asks before its first install. Connect to a host to inspect or remove its setup here.")
-                        .font(.footnote)
-                        .foregroundStyle(Ink.secondary)
-                }
-                .listRowBackground(Color.clear)
-
-                if !pairings.isEmpty {
-                    FormGroup(title: "PAIRED HOSTS") {
-                        ForEach(pairings) { pairing in
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(pairing.hostLabel)
-                                    .font(.system(.body, design: .monospaced).weight(.semibold))
-                                    .foregroundStyle(Ink.primary)
-                                Text("paired \(pairing.createdAt.formatted(date: .abbreviated, time: .shortened))")
-                                    .font(.footnote)
-                                    .foregroundStyle(Ink.meta)
-                            }
-                        }
-                    }
-                }
-            }
-            .moshpitForm()
-            .navigationTitle("Set up this host")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { dismiss() }.foregroundStyle(Ink.accentText)
-                }
-            }
-        }
-        // The app's appearance (R18): its form inks have both sides. Also
-        // what Host Setup shows if its NSH page can't run.
-    }
 }
 
 #if DEBUG

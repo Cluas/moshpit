@@ -23,8 +23,7 @@ extension HostCare: HostSetupSource {}
 /// proof that it works. Everything it says and does is the core's
 /// (``HostSetupSource``); this page posts the message the core wrote and
 /// passes on the buttons. Its header is the page's own: no navigation bar.
-/// If NSH can't run here, what the phone knows offline shows instead
-/// (``OfflineHostInfoView``).
+/// If its screen can't run, the sheet says so.
 struct HostSetupPage: View {
     let connection: ServerConnection
     /// The tmux pane to fire the hook self-test into, when there is one.
@@ -48,7 +47,7 @@ struct HostSetupNSHPage: View {
 
     var body: some View {
         if failed {
-            OfflineHostInfoView()
+            NSHSheetFailed { failed = false }
         } else {
             let message = page.flatMap { source.setupMessage($0) }
             NSHPage(

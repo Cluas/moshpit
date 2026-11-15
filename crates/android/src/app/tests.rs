@@ -705,7 +705,8 @@ fn a_terminal_page_runs_the_shared_terminal_screen() {
         .expect("a chrome");
     assert_eq!(chrome["name"], "box");
     assert_eq!(chrome["pill"], "ssh");
-    assert_eq!(chrome["cover"]["kind"], "poster", "{chrome}");
+    // A first connect has no cover (B657), only the pill's state.
+    assert_eq!(chrome["cover"]["kind"], "none", "{chrome}");
     let bar = posts.iter().find(|p| p["op"] == "bar").expect("a bar");
     assert!(!bar["chips"].as_array().unwrap().is_empty());
     assert!(

@@ -38,12 +38,11 @@ struct TerminalNSHTests {
 
     static func states() -> [TerminalNSHChrome] {
         var states = [chrome()]
-        var poster = chrome()
-        poster.crumbs = nil
-        poster.state = .connecting
-        poster.content = .none
-        poster.cover = .init(kind: .poster, state: .connecting, touches: true)
-        states.append(poster)
+        var connecting = chrome()
+        connecting.crumbs = nil
+        connecting.state = .connecting
+        connecting.content = .none
+        states.append(connecting)
         var veil = chrome()
         veil.state = .reconnecting
         veil.crumbs?.live = false
@@ -54,11 +53,11 @@ struct TerminalNSHTests {
         states.append(follow)
         var empty = chrome()
         empty.content = .empty
-        empty.empty = .init(mux: .herdr, missing: true, quiet: false)
+        empty.empty = .init(mux: .herdr, missing: true)
         states.append(empty)
         // The host knows the answer: the screen shows it at once.
         var known = empty
-        known.empty = .init(mux: .tmux, missing: false, quiet: true, settled: true)
+        known.empty = .init(mux: .tmux, missing: false, settled: true)
         states.append(known)
         for banner: TerminalNSHChrome.Banner in [
             .returnPath, .roam(srtt: 182.5, history: [100, 182.5]), .roam(srtt: nil, history: []),
@@ -354,11 +353,10 @@ struct TerminalNSHTests {
     /// The states R12 is checked by, by name.
     static func r12States() -> [(String, TerminalNSHChrome)] {
         let live = r12Chrome()
-        var poster = live
-        poster.crumbs = nil
-        poster.state = .connecting
-        poster.content = .none
-        poster.cover = .init(kind: .poster, state: .connecting, touches: true)
+        var connecting = live
+        connecting.crumbs = nil
+        connecting.state = .connecting
+        connecting.content = .none
         var veil = live
         veil.state = .reconnecting
         veil.crumbs?.live = false
@@ -375,8 +373,8 @@ struct TerminalNSHTests {
         var empty = live
         empty.crumbs = nil
         empty.content = .empty
-        empty.empty = .init(mux: .tmux, missing: false, quiet: false)
-        return [("live", live), ("poster", poster), ("veil", veil), ("ended", ended),
+        empty.empty = .init(mux: .tmux, missing: false)
+        return [("live", live), ("connecting", connecting), ("veil", veil), ("ended", ended),
                 ("follow", follow), ("banner", banner), ("empty", empty)]
     }
 

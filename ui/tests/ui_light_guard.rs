@@ -90,6 +90,10 @@ fn draws_with(screen: Screen) -> &'static [&'static str] {
         Screen::HostSetup => &["host_setup.rs"],
         // Settings: the hub and its five pages, one file.
         Screen::Settings => &["settings.rs"],
+        // E6c: the sheets that were SwiftUI's.
+        Screen::HostKey => &["host_key.rs"],
+        Screen::AgentTask => &["agent_task.rs"],
+        Screen::ThemeImport => &["theme_import.rs"],
     }
 }
 

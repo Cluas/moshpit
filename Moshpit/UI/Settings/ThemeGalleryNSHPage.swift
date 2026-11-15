@@ -5,7 +5,7 @@ import UIKit
 /// and the user's own terminal themes, from the host (``ThemeGalleryModel``).
 /// A pick applies at once; New Theme, Duplicate and a custom theme's edit
 /// button open the editor sheet (``ThemeEditorNSHPage``); Import JSON…
-/// opens the import sheet (``ThemeImportView``); each row has a long-press
+/// opens the import sheet (``ThemeImportNSHPage``); each row has a long-press
 /// menu (UIKit's, on the NSH surface: ``NSHContextMenus``); Delete asks with
 /// the card the NSH page draws, for the theme the model names.
 struct ThemeGalleryNSHPage: View {
@@ -17,7 +17,6 @@ struct ThemeGalleryNSHPage: View {
     @State private var failed = false
     @State private var editing: TerminalTheme?
     @State private var showImport = false
-    @State private var importText = ""
     @State private var importError: String?
 
     var body: some View {
@@ -35,7 +34,7 @@ struct ThemeGalleryNSHPage: View {
                     seedCapture(snapshot)
                     #endif
                 },
-                onMessage: handle,
+                onEvent: { if case .themeGallery(let event) = $0 { handle(event) } },
                 onFailure: { failed = true })
                 .nshPage()
                 // The title the next page's back button would show.
@@ -53,33 +52,27 @@ struct ThemeGalleryNSHPage: View {
                     }
                 }
                 .appSheet(isPresented: $showImport) {
-                    ThemeImportView(text: $importText, error: $importError) { runImport() }
+                    ThemeImportNSHPage(error: $importError) { runImport($0) }
                 }
         }
     }
 
     /// What the screen tells the host.
-    private func handle(_ message: [String: Any]) {
-        let id = message["id"] as? String
-        switch message["ev"] as? String {
-        case "back":
+    private func handle(_ event: ThemeGalleryEvent) {
+        switch event {
+        case .back:
             dismiss()
-        case "select":
-            if let id { settings.themeId = id }
-        case "edit":
-            if let id, let theme = themes.customThemes.first(where: { $0.id == id }) { editing = theme }
-        case "new":
+        case .select(let id):
+            settings.themeId = id
+        case .new:
             editing = themes.makeDraft()
-        case "import":
-            importText = ""
+        case .import:
             importError = nil
             showImport = true
-        case "delete":
-            if let id { model.remove(id, settings: settings, themes: themes) }
-        case "cancel-delete":
+        case .delete(let id):
+            model.remove(id, settings: settings, themes: themes)
+        case .cancelDelete:
             model.cancelDelete()
-        default:
-            break
         }
     }
 
@@ -113,9 +106,9 @@ struct ThemeGalleryNSHPage: View {
     }
 
     /// The SwiftUI page's import, the first theme imported picked.
-    private func runImport() {
+    private func runImport(_ text: String) {
         do {
-            let imported = try themes.importThemes(json: importText)
+            let imported = try themes.importThemes(json: text)
             if let first = imported.first { settings.themeId = first.id }
             showImport = false
             importError = nil
@@ -168,9 +161,9 @@ struct ThemeGallerySnapshot: Equatable {
 
 /// What the NSH Theme page shows, owned by the host so a surface made again
 /// starts from it (``NSHPage``'s third rule): the themes, the one in effect
-/// and the theme the delete card asks about; the message that carries it
-/// (`{"op": "themes", …}`, `ui/src/theme_gallery.rs`'s `Message`); and what
-/// the page's intents do.
+/// and the theme the delete card asks about; the state that carries it
+/// (``ThemeGalleryPageState``, the screen's own through the page bridge);
+/// and what the page's intents do.
 @MainActor
 final class ThemeGalleryModel {
     /// The custom theme the delete card asks about, while it shows.
@@ -234,39 +227,31 @@ final class ThemeGalleryModel {
 
     /// Scrolls the user's own themes to the top (a capture run's).
     func reveal() {
-        surface?.post(["op": "reveal"])
+        surface?.post(.themeGalleryReveal)
     }
 
     private func post() {
         guard let snapshot else { return }
-        surface?.post(Self.message(builtIns: TerminalTheme.builtIns, custom: snapshot.custom,
-                                   selected: snapshot.selected, deleting: deleting))
+        surface?.post(.themeGallery(state: Self.state(
+            builtIns: TerminalTheme.builtIns, custom: snapshot.custom,
+            selected: snapshot.selected, deleting: deleting)))
     }
 
-    /// The screen's message.
-    nonisolated static func message(builtIns: [TerminalTheme], custom: [TerminalTheme], selected: String,
-                                    deleting: String?) -> [String: Any] {
-        var message: [String: Any] = [
-            "op": "themes",
-            "builtIn": builtIns.map(palette),
-            "custom": custom.map(palette),
-            "selected": selected,
-        ]
-        if let deleting { message["deleting"] = deleting }
-        return message
+    /// What the page shows.
+    nonisolated static func state(builtIns: [TerminalTheme], custom: [TerminalTheme], selected: String,
+                                  deleting: String?) -> ThemeGalleryPageState {
+        ThemeGalleryPageState(builtIn: builtIns.map(palette), custom: custom.map(palette),
+                              selected: selected, deleting: deleting)
     }
 
     /// One theme as the screen takes it: its name and the colors its row
     /// previews.
-    nonisolated static func palette(_ theme: TerminalTheme) -> [String: Any] {
-        [
-            "id": theme.id,
-            "name": theme.name,
-            "background": "#" + theme.backgroundHex,
-            "foreground": "#" + theme.foregroundHex,
-            "cursor": "#" + theme.cursorHex,
-            "ansi": TerminalTheme.ANSISlot.allCases.map { "#" + theme.ansiHex($0) },
-        ]
+    nonisolated static func palette(_ theme: TerminalTheme) -> ThemePaletteEntry {
+        ThemePaletteEntry(
+            id: theme.id, name: theme.name,
+            backgroundHex: "#" + theme.backgroundHex, foregroundHex: "#" + theme.foregroundHex,
+            cursorHex: "#" + theme.cursorHex,
+            ansiHex: TerminalTheme.ANSISlot.allCases.map { "#" + theme.ansiHex($0) })
     }
 
     /// The accessibility identifier of theme `id`'s row on the NSH screen

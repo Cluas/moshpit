@@ -51,7 +51,7 @@ use moshpit_stream::Mark;
 use wezterm_escape_parser::{
     Action, CSI, Esc, EscCode, OperatingSystemCommand,
     csi::{DecPrivateMode, DecPrivateModeCode, Device, Edit, EraseInDisplay, Mode},
-    osc::Selection as OscSelection,
+    osc::{FinalTermSemanticPrompt, Selection as OscSelection},
     parser::Parser,
 };
 use wezterm_surface::{CursorShape, CursorVisibility, SequenceNo};
@@ -558,6 +558,36 @@ fn cell_runs(cells: &[Cell]) -> Vec<SpanRun> {
     runs
 }
 
+/// What a prompt mark (OSC 133, the shell's integration) turns off that a
+/// program which died left on (B579): it never sent its own resets, and the
+/// shell got its leftovers — a tap typed `ESC[<0;12;5M` at the prompt, a
+/// focus change `ESC[I`, Ctrl-C arrived as `ESC[99;5u`. Every mouse report
+/// mode and its encodings and focus reports at the prompt's start (A) or a
+/// command's end (D); the kitty keyboard flags only at D, a command's end:
+/// a shell that uses them itself (fish) pushes its own while reading input,
+/// and pops them before it runs a command, so only a program's are left
+/// then. Bracketed paste stays: shells turn it on themselves.
+const PROMPT_START_RESETS: &[u8] =
+    b"\x1b[?9l\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1005l\x1b[?1006l\x1b[?1015l\x1b[?1016l\x1b[?1004l";
+const COMMAND_END_RESETS: &[u8] =
+    b"\x1b[?9l\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1005l\x1b[?1006l\x1b[?1015l\x1b[?1016l\x1b[?1004l\x1b[<999u";
+
+/// The resets a prompt mark brings, if `action` is one ([`PROMPT_START_RESETS`]).
+fn prompt_resets(action: &Action) -> Option<&'static [u8]> {
+    match action {
+        Action::OperatingSystemCommand(osc) => match &**osc {
+            OperatingSystemCommand::FinalTermSemanticPrompt(
+                FinalTermSemanticPrompt::FreshLineAndStartPrompt { .. },
+            ) => Some(PROMPT_START_RESETS),
+            OperatingSystemCommand::FinalTermSemanticPrompt(
+                FinalTermSemanticPrompt::CommandStatus { .. },
+            ) => Some(COMMAND_END_RESETS),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
 /// How long a synchronized update may hold the screen (vte's and
 /// alacritty's 150 ms).
 const SYNC_TIMEOUT: Duration = Duration::from_millis(150);
@@ -843,10 +873,21 @@ impl Terminal {
                 self.full_damage = true;
             }
         }
+        let resets = prompt_resets(&action);
         if self.holding_since.is_some() {
             self.held.push(action);
         } else {
             batch.push(action);
+        }
+        // The shell's prompt is back (B579): what a program that died left on
+        // goes, after the mark, in the same place.
+        if let Some(resets) = resets {
+            let target = if self.holding_since.is_some() {
+                &mut self.held
+            } else {
+                batch
+            };
+            target.extend(Parser::new().parse_as_vec(resets));
         }
     }
 

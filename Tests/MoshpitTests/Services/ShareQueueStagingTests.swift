@@ -342,3 +342,38 @@ struct ShareQueueBadEntryTests {
         #expect(FileManager.default.fileExists(atPath: unreadable.path), "a file that can't be read now went")
     }
 }
+
+@Suite("share queue: a share whose pane moved on is held back, and said once (B622)")
+struct ShareQueueHeldBackTests {
+    @Test("held once: the second hold says nothing new; images and upload kept")
+    func heldOnce() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("share-held-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = ShareQueueStore(directory: directory)
+        try store.append(target: (UUID(), "%3"), agentName: "claude", label: "claude · work",
+                         images: [Data([1])])
+        let entry = try #require(store.load().first)
+        #expect(store.recordUpload(entry.id, file: entry.files[0], remotePath: "/tmp/up.png"))
+        let held = ShareQueue.HeldBack(reason: .anotherProgram, now: "vim", at: Date())
+
+        #expect(store.holdBack(entry.id, held), "the first hold is the one to tell")
+        #expect(!store.holdBack(entry.id, ShareQueue.HeldBack(reason: .paneGone, now: nil, at: Date())),
+                "a held share was told again")
+        let after = try #require(store.load().first)
+        #expect(after.heldBack == held)
+        #expect(after.uploaded == [entry.files[0]: "/tmp/up.png"])
+        #expect(store.images(for: after).count == 1)
+        #expect(!store.holdBack(UUID(), held), "an entry that isn't there was held")
+    }
+
+    @Test("an entry an earlier build wrote reads as not held")
+    func earlierBuild() throws {
+        let json = """
+        {"id":"\(UUID().uuidString)","connectionId":"\(UUID().uuidString)","paneId":"%3",
+         "agentName":"claude","label":"claude","files":["a.img"],"createdAt":0}
+        """
+        let entry = try JSONDecoder().decode(ShareQueue.Entry.self, from: Data(json.utf8))
+        #expect(entry.heldBack == nil)
+    }
+}

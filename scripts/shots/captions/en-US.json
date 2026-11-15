@@ -1,0 +1,47 @@
+{
+  "language": "en",
+  "iphone": [
+    {
+      "shot": "01-lock",
+      "title": "Your agent needs a yes. Your phone buzzes."
+    },
+    {
+      "shot": "02-pane",
+      "title": "Tap in, land on the pane that asked."
+    },
+    {
+      "shot": "03-home",
+      "title": "See who's working and who's waiting."
+    },
+    {
+      "shot": "04-island",
+      "title": "Progress right on the Dynamic Island."
+    },
+    {
+      "shot": "05-overview",
+      "title": "Every tmux and herdr pane at a glance."
+    },
+    {
+      "shot": "06-preview",
+      "title": "Open the file your agent just touched."
+    },
+    {
+      "shot": "07-pet",
+      "title": "Hatch a pixel buddy to wait with you."
+    },
+    {
+      "shot": "08-keyboard",
+      "title": "A keyboard made for the terminal."
+    }
+  ],
+  "ipad": [
+    {
+      "shot": "panes",
+      "title": "Every window and pane on one screen."
+    },
+    {
+      "shot": "home-terminal",
+      "title": "Home and terminal, side by side."
+    }
+  ]
+}

@@ -1,0 +1,47 @@
+{
+  "language": "ko",
+  "iphone": [
+    {
+      "shot": "01-lock",
+      "title": "에이전트가 확인을 기다리면 폰이 울려요"
+    },
+    {
+      "shot": "02-pane",
+      "title": "탭하면 물어본 그 패널로 바로"
+    },
+    {
+      "shot": "03-home",
+      "title": "누가 일하고 누가 기다리는지 한눈에"
+    },
+    {
+      "shot": "04-island",
+      "title": "앱을 안 열어도 진행 상황이 보여요"
+    },
+    {
+      "shot": "05-overview",
+      "title": "tmux, herdr 패널을 한 화면에"
+    },
+    {
+      "shot": "06-preview",
+      "title": "에이전트가 고친 파일, 탭 한 번으로 열기"
+    },
+    {
+      "shot": "07-pet",
+      "title": "같이 기다려 줄 픽셀 친구를 키워요"
+    },
+    {
+      "shot": "08-keyboard",
+      "title": "터미널을 위해 만든 키보드"
+    }
+  ],
+  "ipad": [
+    {
+      "shot": "panes",
+      "title": "모든 창과 패널을 한 화면에"
+    },
+    {
+      "shot": "home-terminal",
+      "title": "홈과 터미널을 나란히"
+    }
+  ]
+}

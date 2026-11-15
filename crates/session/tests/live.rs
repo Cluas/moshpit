@@ -410,6 +410,43 @@ async fn ssh_the_way_back_from_the_background() {
     let _ = bench.sessions.disconnect(id).await;
 }
 
+/// B616: a size given while a redial is under way reaches the new shell.
+/// The redial opened its terminal at the size of when it began, and no one
+/// told the new shell of the size given since (the keyboard up, the phone
+/// turned during the veil): vim, htop, an agent drew at the wrong size
+/// until the next change.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "needs sshd; see the module docs"]
+async fn ssh_a_size_given_during_the_redial_reaches_the_new_shell() {
+    need_sshd!();
+    let sshd = Sshd::start().await;
+    let relay = Relay::start(sshd.addr()).await;
+    let addr = std::net::SocketAddr::from(([127, 0, 0, 1], relay.port));
+    let udp = ProxiedUdp::new();
+    let mut services = Bench::services(&udp, addr);
+    let gate = Arc::new(tokio::sync::Notify::new());
+    services.credentials = Arc::new(GatedKeys::new(1, gate.clone()));
+    let mut bench = Bench::new(services, quick());
+    bench.udp = udp;
+    let id = bench.sessions.connect(spec(relay.port));
+    bench.connected(id).await;
+    let (_, panes) = bench.panes(id, 10).await;
+    let mut term = Term::attach(shell(&panes).stream);
+    relay.cut();
+    bench
+        .state(id, 10, |s| *s == SessionState::Reconnecting)
+        .await;
+    // The redial has begun and waits on its credential read.
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert!(term.resize(90, 28));
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    gate.notify_one();
+    bench.state(id, 15, |s| *s == SessionState::Connected).await;
+    assert!(term.write(b"stty size\r"));
+    assert!(term.wait_for("28 90", 15).await, "{}", term.text());
+    let _ = bench.sessions.disconnect(id).await;
+}
+
 /// Typed while the session isn't live: dropped and said so, never replayed.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[ignore = "needs sshd; see the module docs"]

@@ -216,6 +216,14 @@ impl ScreenOrAlt {
     }
 
     pub fn activate_alt_screen(&mut self, seqno: SequenceNo) {
+        // Moshpit (W24): a program coming to the alternate screen starts with
+        // no keyboard flags. The last one there may have left its own (it
+        // left the screen before popping them, its pop landing on the main
+        // screen's stack), and the next got them unasked: vim's Escape came
+        // as `ESC [27;1u`. The main screen's stack is untouched.
+        if !self.alt_screen_is_active {
+            self.alt_screen.keyboard_stack.clear();
+        }
         self.alt_screen_is_active = true;
         self.dirty_top_phys_rows(seqno);
     }

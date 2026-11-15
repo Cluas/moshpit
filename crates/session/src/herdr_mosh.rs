@@ -1622,13 +1622,14 @@ async fn run(
     if !foreground {
         task.plane.background(now);
     }
-    let epoch = (Instant::now(), now);
+    // Deadlines are the session clock's, which counts the device's
+    // sleep and `Instant` doesn't: each sleeps for what is left of it (B611).
     loop {
         task.pump();
         let deadline = task
             .plane
             .next_deadline()
-            .map(|at| epoch.0 + Duration::from_millis(at.saturating_sub(epoch.1)));
+            .map(|at| Instant::now() + Duration::from_millis(at.saturating_sub(task.now())));
         let probe_at = task.probe_at();
         tokio::select! {
             Some(wake) = wake_rx.recv() => task.wake(wake),

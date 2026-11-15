@@ -79,7 +79,7 @@ struct InstallAssistNSHPage: View {
             NSHPage(
                 screen: .installAssist,
                 attach: { model.attach($0, current: state) },
-                onMessage: handle,
+                onEvent: { if case .installAssist(let event) = $0 { handle(event) } },
                 onFailure: { failed = true })
                 .ignoresSafeArea(.all)
                 .onAppear { model.update(state) }
@@ -92,19 +92,19 @@ struct InstallAssistNSHPage: View {
 
     private var plan: InstallAssistPlan { InstallAssistPlan(session: session, packages: packages) }
 
-    private func handle(_ message: [String: Any]) {
-        switch message["ev"] as? String {
-        case "done":
+    private func handle(_ event: InstallAssistEvent) {
+        switch event {
+        case .done:
             dismiss()
-        case "run":
+        case .run:
             if let command = plan.command { plan.run(command) }
             dismiss()
-        case "copy":
+        case .copy:
             if let command = plan.command {
                 UIPasteboard.general.string = command
                 copied = true
             }
-        case "recheck":
+        case .recheck:
             guard !rechecking else { return }
             rechecking = true
             result = nil
@@ -114,11 +114,9 @@ struct InstallAssistNSHPage: View {
                 rechecking = false
                 result = found
             }
-        case "reconnect":
+        case .reconnect:
             onReconnect()
             dismiss()
-        default:
-            Log.ui.error("install assist: no event \(String(describing: message["ev"]), privacy: .public)")
         }
     }
 }

@@ -86,6 +86,15 @@ struct HomeNSHPage: View {
                 model.visible = false
                 pet.onHome = false
             }
+            .task {
+                // tmux says nothing when a window's place changes
+                // (`swap-window`, `move-window -r`): the trees ask as Home
+                // shows, and every 30 s while it does (B586).
+                while !Task.isCancelled {
+                    relistTrees()
+                    try? await Task.sleep(for: .seconds(30))
+                }
+            }
             .onChange(of: pet.revision) { _, _ in model.updatePet(pet.message) }
             .onChange(of: scenePhase) { _, phase in model.active = phase == .active }
             .onChange(of: record) { _, new in model.update(new) }
@@ -94,6 +103,13 @@ struct HomeNSHPage: View {
                 killTarget: $killTarget, worktreeTarget: $worktreeTarget,
                 worktreeForceTarget: $worktreeForceTarget, agentTask: $agentTask,
                 menus: menus, actions: actions))
+    }
+
+    /// Every live connection's tree, re-listed quietly (B586).
+    private func relistTrees() {
+        for connection in store.connections {
+            hub.session(for: connection)?.tmuxControl?.relist()
+        }
     }
 
     /// ⌘, and ⌘N: the bar is the screen's, so the shortcuts ride on
@@ -163,7 +179,8 @@ struct HomeNSHActions {
     var delete: (UUID) -> Void
     var disconnect: (UUID) -> Void
     var retryAttach: (UUID) -> Void
-    /// Draws a card over the whole screen (``HomeView``'s `cardModal`).
+    /// Asks with the system's alert over the whole screen (``HomeView``'s
+    /// `cardModal`).
     var present: (ConnectionCard.Modal) -> Void
 
     /// The rename card, pre-filled with `currentName`, applying through
@@ -171,7 +188,7 @@ struct HomeNSHActions {
     static func rename(title: String, currentName: String,
                        apply: @escaping (String) -> Void) -> ConnectionCard.Modal {
         ConnectionCard.Modal(kind: .input(ConnectionCard.InputRequest(
-            icon: "pencil", title: "\(title)", placeholder: "Name",
+            title: "\(title)", placeholder: "Name",
             initialText: currentName, confirmLabel: "Rename",
             refuses: refusal, apply: apply)))
     }
@@ -180,7 +197,7 @@ struct HomeNSHActions {
     /// (`apply` gets nil).
     static func create(noun: String, apply: @escaping (String?) -> Void) -> ConnectionCard.Modal {
         ConnectionCard.Modal(kind: .input(ConnectionCard.InputRequest(
-            icon: "plus", title: "New \(noun)",
+            title: "New \(noun)",
             message: Text("Leave blank for an automatic name."),
             placeholder: "Name (optional)", confirmLabel: "Create",
             refuses: refusal,
@@ -311,7 +328,24 @@ final class HomeNSHModel {
         if let record { surface.post(json: record.message) }
         if let pet { surface.post(json: pet) }
         postVisible()
+        if revealOnAttach {
+            revealOnAttach = false
+            surface.post(json: #"{"op":"top"}"#)
+        }
     }
+
+    /// Scroll Home to its top, where "Needs you" lists the agents waiting
+    /// (B661); once the page is up if it isn't yet.
+    func revealNeedsYou() {
+        guard let surface else {
+            revealOnAttach = true
+            return
+        }
+        surface.post(json: #"{"op":"top"}"#)
+    }
+
+    /// A "Needs you" asked for before the page was up.
+    private var revealOnAttach = false
 
     /// The companion as it is now.
     func updatePet(_ message: String) {

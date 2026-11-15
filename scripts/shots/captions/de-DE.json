@@ -1,0 +1,47 @@
+{
+  "language": "de",
+  "iphone": [
+    {
+      "shot": "01-lock",
+      "title": "Dein Agent wartet auf ein Ja. Dein iPhone sagt Bescheid."
+    },
+    {
+      "shot": "02-pane",
+      "title": "Antippen, und du bist im Panel, das gefragt hat."
+    },
+    {
+      "shot": "03-home",
+      "title": "Wer arbeitet, wer wartet – auf einen Blick."
+    },
+    {
+      "shot": "04-island",
+      "title": "Der Fortschritt steht in der Dynamic Island."
+    },
+    {
+      "shot": "05-overview",
+      "title": "Alle tmux- und herdr-Panels auf einem Bildschirm."
+    },
+    {
+      "shot": "06-preview",
+      "title": "Was dein Agent geändert hat, mit einem Tipp öffnen."
+    },
+    {
+      "shot": "07-pet",
+      "title": "Brüte dir einen Pixel-Begleiter fürs Warten aus."
+    },
+    {
+      "shot": "08-keyboard",
+      "title": "Eine Tastatur fürs Terminal."
+    }
+  ],
+  "ipad": [
+    {
+      "shot": "panes",
+      "title": "Alle Fenster und Panels auf einem Bildschirm."
+    },
+    {
+      "shot": "home-terminal",
+      "title": "Start und Terminal nebeneinander."
+    }
+  ]
+}

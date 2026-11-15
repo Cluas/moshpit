@@ -1,0 +1,47 @@
+{
+  "language": "zh-Hant",
+  "iphone": [
+    {
+      "shot": "01-lock",
+      "title": "智能體要你點頭時，手機會響"
+    },
+    {
+      "shot": "02-pane",
+      "title": "點開，直接回到發問的那個窗格"
+    },
+    {
+      "shot": "03-home",
+      "title": "誰在跑、誰在等你，一眼就知道"
+    },
+    {
+      "shot": "04-island",
+      "title": "不用打開 App，進度就在動態島上"
+    },
+    {
+      "shot": "05-overview",
+      "title": "tmux、herdr 的窗格，一個畫面全看到"
+    },
+    {
+      "shot": "06-preview",
+      "title": "改了哪個檔案，點一下就能看"
+    },
+    {
+      "shot": "07-pet",
+      "title": "孵一隻陪你等的像素夥伴"
+    },
+    {
+      "shot": "08-keyboard",
+      "title": "專為終端機設計的鍵盤"
+    }
+  ],
+  "ipad": [
+    {
+      "shot": "panes",
+      "title": "所有視窗和窗格，一個畫面看完"
+    },
+    {
+      "shot": "home-terminal",
+      "title": "首頁和終端機並排"
+    }
+  ]
+}

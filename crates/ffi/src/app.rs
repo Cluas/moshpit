@@ -27,6 +27,7 @@ use moshpit_app::image_attachment::{self, Attachments, InsertStyle, Phase};
 use moshpit_app::looks::{AccentEditor, EditorIntent, Handled, ThemeEditor};
 use moshpit_app::remote_folder::{Failure as FolderFailure, Folder, NameRefusal};
 use moshpit_app::remote_paths::{self, Candidate, Entry, Kind};
+use moshpit_app::share;
 use moshpit_app::shortcuts::{self, EditorSave, ListOp, ShortcutEditor};
 use moshpit_seal::foundation::uuid::Uuid;
 use moshpit_store::app_themes::AppTheme;
@@ -941,6 +942,49 @@ fn failure(f: Option<&FolderFailure>) -> Option<FolderFailureRecord> {
         message: f.message.clone(),
         id: f.id,
     })
+}
+
+/// A pane as the session shows it now (`moshpit_app::share::PaneNow`).
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct SharePaneRecord {
+    pub id: String,
+    /// The pane's stamped agent (`@moshpit_agent`), if any.
+    pub agent: Option<String>,
+    /// What runs in its foreground now.
+    pub command: String,
+}
+
+/// Where a queued share goes (`moshpit_app::share::Target`, B622).
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Enum)]
+pub enum ShareTarget {
+    /// Into this pane: it still runs the agent the share was queued for.
+    Deliver { pane: String },
+    /// Nowhere: the pane is gone.
+    PaneGone,
+    /// Nowhere: the agent exited, its pane runs this shell now.
+    AgentExited { shell: String },
+    /// Nowhere: the pane runs another program now.
+    AnotherProgram { now: String },
+}
+
+/// Where a share queued for `pane`, to `agent`, goes among `panes`: never
+/// into a pane that no longer runs that agent (B622).
+#[uniffi::export]
+pub fn share_target(pane: String, agent: String, panes: Vec<SharePaneRecord>) -> ShareTarget {
+    let panes: Vec<share::PaneNow> = panes
+        .into_iter()
+        .map(|p| share::PaneNow {
+            id: p.id,
+            agent: p.agent,
+            command: p.command,
+        })
+        .collect();
+    match share::target(&pane, &agent, &panes) {
+        share::Target::Deliver { pane } => ShareTarget::Deliver { pane },
+        share::Target::PaneGone => ShareTarget::PaneGone,
+        share::Target::AgentExited { shell } => ShareTarget::AgentExited { shell },
+        share::Target::AnotherProgram { now } => ShareTarget::AnotherProgram { now },
+    }
 }
 
 /// One folder in the folder sheet (`moshpit_app::remote_folder::Folder`):

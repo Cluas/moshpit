@@ -628,7 +628,8 @@ struct TerminalNSHChrome: Equatable {
         var live: Bool
     }
 
-    enum CoverKind: String { case none, poster, veil, follow }
+    /// No poster (B657): a first connect has no cover.
+    enum CoverKind: String { case none, veil, follow, paneFollow = "panefollow" }
 
     struct Cover: Equatable {
         var kind: CoverKind = .none
@@ -643,7 +644,6 @@ struct TerminalNSHChrome: Equatable {
     struct Empty: Equatable {
         var mux: Multiplexer
         var missing: Bool
-        var quiet: Bool
         /// The host has the answer already (the binary known missing, the
         /// server said it has no session or no server): the screen shows it
         /// at once instead of waiting out the attach's seconds first (the
@@ -686,7 +686,6 @@ struct TerminalNSHChrome: Equatable {
             message["empty"] = [
                 "mux": empty.mux.rawValue,
                 "missing": empty.missing,
-                "quiet": empty.quiet,
                 "settled": empty.settled,
                 "session": vocabulary.session,
                 "sessionLower": vocabulary.sessionLower,

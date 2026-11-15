@@ -615,6 +615,9 @@ pub struct TmuxReadModel {
     /// another device (`size_follow_window`, its `size_follow_owner`).
     pub size_follow_window: Option<String>,
     pub size_follow_owner: Option<String>,
+    /// Another client picked another pane in the window shown: the pane
+    /// the phone keeps under a veil, a tap taking it back (B587).
+    pub pane_follow_pane: Option<String>,
     pub agent_hooks: Vec<AgentHookValue>,
     pub agent_hooks_loaded: bool,
     /// The active pane's program wants the mouse / is on the alternate
@@ -681,6 +684,8 @@ pub enum TmuxIntent {
         id: String,
     },
     Refresh,
+    /// Re-list quietly (Home or the window picker showing, B586).
+    Relist,
     TakeSizeOwnership,
     Paste {
         pane: String,
@@ -1236,6 +1241,7 @@ impl TmuxIntent {
             TmuxIntent::KillWindow { id } => TmuxAction::KillWindow(id),
             TmuxIntent::KillPane { id } => TmuxAction::KillPane(id),
             TmuxIntent::Refresh => TmuxAction::Refresh,
+            TmuxIntent::Relist => TmuxAction::Relist,
             TmuxIntent::TakeSizeOwnership => TmuxAction::TakeSizeOwnership,
             TmuxIntent::Paste { pane, text } => TmuxAction::Paste { pane, text },
             TmuxIntent::ScrollLines { lines } => TmuxAction::ScrollLines(lines),
@@ -1588,6 +1594,7 @@ fn tmux_value(view: &TmuxView) -> TmuxReadModel {
         refreshing: view.refreshing,
         size_follow_window: view.size_follow.as_ref().map(|f| f.window_id.clone()),
         size_follow_owner: view.size_follow.as_ref().map(|f| f.owner_label.clone()),
+        pane_follow_pane: view.pane_follow.as_ref().map(|f| f.pane_id.clone()),
         agent_hooks: hooks,
         agent_hooks_loaded: view.agent_hooks_loaded,
         wants_mouse: view.input.wants_mouse,
@@ -1625,6 +1632,7 @@ mod tests {
             notice: None,
             refreshing: false,
             size_follow: None,
+            pane_follow: None,
             agent_hooks: Default::default(),
             agent_hooks_loaded: true,
             input: Default::default(),

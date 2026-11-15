@@ -104,6 +104,43 @@ impl Message {
     }
 }
 
+/// What the page tells the host (`{"ev": …}`). The one spelling of it: the
+/// page tells through it, and the host reads it back typed (`crates/ffi`'s
+/// `pages`, E6b).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "ev", rename_all = "kebab-case")]
+pub enum FeedbackEvent {
+    /// Cancel: the sheet goes.
+    Cancel,
+    /// The message as typed so far.
+    Text { value: String },
+    /// One of the two switches flipped.
+    Set { key: FeedbackSwitch, value: bool },
+    /// Send, with the message as typed.
+    Send { message: String },
+    /// Copy Address.
+    CopyAddress,
+    /// Open an issue on GitHub.
+    GithubIssue,
+}
+
+/// The page's two switches.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum FeedbackSwitch {
+    /// Include the device and app facts.
+    Environment,
+    /// Attach the recent log.
+    Log,
+}
+
+impl FeedbackEvent {
+    /// The event as the page tells it.
+    pub fn json(&self) -> serde_json::Value {
+        serde_json::to_value(self).expect("an event serializes")
+    }
+}
+
 /// The page's props: the surface whose channel it talks through.
 #[derive(Clone, PartialEq, Props)]
 pub struct ScreenProps {
@@ -147,12 +184,17 @@ pub fn FeedbackScreen(props: ScreenProps) -> impl IntoElement {
             // The keyboard goes down while the mail is prepared, as it does
             // on the SwiftUI page.
             dismiss_keyboard();
-            tell(json!({"ev": "send", "message": message.get_untracked()}));
+            tell(
+                FeedbackEvent::Send {
+                    message: message.get_untracked(),
+                }
+                .json(),
+            );
         }
     };
     let cancel = {
         let tell = tell.clone();
-        move || tell(json!({"ev": "cancel"}))
+        move || tell(FeedbackEvent::Cancel.json())
     };
     let preparing = computed(move || read(|s| s.preparing));
     let body = {
@@ -236,7 +278,12 @@ fn message_field(start: String, message: Signal<String>, tell: Tell) -> AnyEleme
                     .placeholder(t!("What broke, or what you want"))
                     .auto_focus()
                     .on_change(move |text| {
-                        tell(json!({"ev": "text", "value": text}));
+                        tell(
+                            FeedbackEvent::Text {
+                                value: text.clone(),
+                            }
+                            .json(),
+                        );
                         message.set(text);
                     }),
             )
@@ -252,21 +299,24 @@ fn include(
     read: impl Fn(fn(&FeedbackState) -> bool) -> bool + Copy + 'static,
     tell: Tell,
 ) -> Section {
-    let set = |key: &'static str| {
+    let set = |key: FeedbackSwitch| {
         let tell = tell.clone();
-        move |on: bool| tell(json!({"ev": "set", "key": key, "value": on}))
+        move |on: bool| tell(FeedbackEvent::Set { key, value: on }.json())
     };
     section()
         .row(
             row(t!("Include device and version")).trailing(
-                switch(move || read(|s| s.environment), set("environment"))
-                    .label(t!("Include device and version"))
-                    .test_id("feedback-environment"),
+                switch(
+                    move || read(|s| s.environment),
+                    set(FeedbackSwitch::Environment),
+                )
+                .label(t!("Include device and version"))
+                .test_id("feedback-environment"),
             ),
         )
         .row(
             row(t!("Include recent log")).trailing(
-                switch(move || read(|s| s.log), set("log"))
+                switch(move || read(|s| s.log), set(FeedbackSwitch::Log))
                     .label(t!("Include recent log"))
                     .test_id("feedback-log"),
             ),
@@ -299,7 +349,7 @@ fn address(state: Signal<Option<FeedbackState>>, tell: Tell) -> AnyElement {
                     } else {
                         t!("Copy address")
                     },
-                    move || tell(json!({"ev": "copy-address"})),
+                    move || tell(FeedbackEvent::CopyAddress.json()),
                 )
                 .action_test_id("feedback-copy-address")
                 .test_id("feedback-no-mail")
@@ -328,7 +378,7 @@ fn issue(tell: Tell) -> Section {
                         .size(IconSize::Sm)
                         .tone(Tone::Primary),
                 )
-                .on_press(move || tell(json!({"ev": "github-issue"})))
+                .on_press(move || tell(FeedbackEvent::GithubIssue.json()))
                 .test_id("feedback-github-issue"),
         )
         .footer(t!("Issues are public; keep security reports to mail."))

@@ -64,7 +64,8 @@ private let green = AgentPalette.doneAdaptive
 /// - **bottom**, inset from the curved corners: what it's asking or doing
 ///   (amber when it asks), then up to two other agents, one line each
 ///   (dot · name · place … time or state), each a link to its own pane,
-///   then "+N more" as plain words when there are more. The whole island
+///   then "+N more" when there are more, a 44 pt row that opens Home's
+///   "Needs you" (B661), where every agent is listed. The whole island
 ///   opens the headline's pane. (Canary 141: the Switch button that cycled
 ///   the headline read as nothing and did nothing visible; it's gone.)
 ///
@@ -130,9 +131,20 @@ struct MoshpitIslandLiveActivity: Widget {
                         OtherAgentRows(state: context.state)
                         let more = context.state.agents.count - 1 - OtherAgentRows.shown
                         if more > 0 {
-                            Text(AppLanguage.string("+\(more) more"))
-                                .font(.system(size: 11, weight: .medium))
-                                .foregroundStyle(Color.primary.opacity(0.45))
+                            // Every agent is on Home's "Needs you" (B661): a
+                            // whole-width row, 44 pt tall, to tap.
+                            Link(destination: URL(string: AgentDeepLink.needsYou)!) {
+                                HStack(spacing: 4) {
+                                    Text(AppLanguage.string("+\(more) more"))
+                                        .font(.system(size: 12, weight: .medium))
+                                    Image(systemName: "chevron.right")
+                                        .font(.system(size: 10, weight: .semibold))
+                                    Spacer(minLength: 0)
+                                }
+                                .foregroundStyle(Color.primary.opacity(0.55))
+                                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                                .contentShape(Rectangle())
+                            }
                         }
                         if context.isStale {
                             StaleHint()

@@ -91,6 +91,10 @@ struct DictationRequest: Equatable, Sendable {
     var whisperLanguage: String = ""
     /// Whisper variant; "" means use the best installed one.
     var whisperModelId: String = ""
+    /// Words to expect, best first: the agent, the project, file names and
+    /// identifiers on the pane's screen (`DictationHotwords`). Read from the
+    /// pane when the mic key is tapped; empty outside a terminal.
+    var hotwords: [String] = []
 }
 
 extension DictationFailure: LocalizedError {

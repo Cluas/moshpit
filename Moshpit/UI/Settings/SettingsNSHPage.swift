@@ -135,12 +135,14 @@ struct SettingsNSHPage: View {
                 }]
                 menus.install(on: surface)
             },
-            onMessage: { message in
-                if message["ev"] as? String == "setup" {
-                    if let id = (message["id"] as? String).flatMap(UUID.init(uuidString:)) { onSetup(id) }
+            onMessage: { Log.ui.error("settings: unread \(String(describing: $0["ev"]), privacy: .public)") },
+            onEvent: { event in
+                guard case .settings(let event) = event else { return }
+                if case .setup(let id) = event {
+                    if let id = UUID(uuidString: id) { onSetup(id) }
                     return
                 }
-                model.handle(message, settings: settings, onOpen: open, onDone: onDone,
+                model.handle(event, settings: settings, onOpen: open, onDone: onDone,
                              onBack: { dismiss() })
             },
             onFailure: {
@@ -175,102 +177,68 @@ struct SettingsNSHPage: View {
     }
 }
 
-/// Everything the NSH Settings page shows, as the SwiftUI page reads it.
-struct SettingsSnapshot: Equatable {
-    var accentName: String
-    var accentHex: String
-    var icon: AppIconOption
-    var font: String
-    var fontSize: Double
-    var themeName: String
-    /// The scheme's background and words' colors (`#RRGGBB`): the Terminal
-    /// page's preview draws in them, as the terminal does.
-    var themeBackground: String
-    var themeForeground: String
-    var themeSwatches: [String]
-    var cursorShape: CursorShape
-    var cursorColor: String
-    var cursorBlink: Bool
-    var trailOnPredict: Bool
-    var keyboardOnOpen: Bool
-    var remoteClipboardRead: Bool
-    var uploadRetentionDays: Int
-    var moshByDefault: Bool
-    var predictMode: PredictMode
-    var udpRange: [Int]
-    var shortcuts: Int
-    var keys: Int
-    var notifications: Bool
-    var liveActivity: Bool
-    var alertSound: Bool
-    var lockScreenDetail: Bool
-    var liveSession: Bool
-    var voiceInput: Bool
-    var voiceEngine: VoiceEngineKind
-    var voiceModel: String?
-    var voiceLanguage: String
-    var filing: String?
-    /// The appearance chosen (Settings › Appearance, R18; its control shows
-    /// once R18's host part is in).
-    var appearance: AppAppearance
-    /// The theme the app wears, as the screen's params carry one
-    /// (``NSHScreenParams``): the page's own colors follow a new pick.
-    var appTheme: [String: String]
+/// Everything the NSH Settings page shows: the screen's own state
+/// (`ui/src/settings.rs`'s `SettingsState`), as the page bridge carries it.
+typealias SettingsSnapshot = SettingsPageState
 
+extension SettingsPageState {
     @MainActor
     init(settings: AppSettings, shortcuts: ShortcutStore, keys: SSHKeyStore, themes: ThemeStore,
          liveSession: Bool, showsFilingNumber: Bool,
          shownIcon: () -> String? = { UIApplication.shared.alternateIconName }) {
         let accent = AppThemeCatalog.theme(for: settings.appThemeId)
-        accentName = accent.name
-        accentHex = "#" + accent.accentHex
-        appTheme = [
-            "accent": NSHScreenParams.hex(accent.accent),
-            "accentPressed": NSHScreenParams.hex(accent.accentPressed),
-            "screenBG": NSHScreenParams.hex(accent.screenBG),
-            "terminalBG": NSHScreenParams.hex(accent.terminalBG),
-        ]
-        // The icon iOS shows, as the NSH App Icon page ticks it (the SwiftUI
-        // row names the stored setting, which can differ).
+        // The icon iOS shows, as the NSH App Icon page ticks it (the
+        // stored setting can differ).
         let shown = shownIcon()
-        icon = AppIconCatalog.all.first { $0.alternateName == shown }
+        let icon = AppIconCatalog.all.first { $0.alternateName == shown }
             ?? AppIconCatalog.option(for: settings.appIconId)
-        font = settings.fontName
-        fontSize = settings.fontSize
         let theme = themes.theme(id: settings.themeId)
-        themeName = theme.name
-        themeBackground = "#" + theme.backgroundHex
-        themeForeground = "#" + theme.foregroundHex
-        themeSwatches = TerminalTheme.ANSISlot.allCases.map { "#" + theme.ansiHex($0) }
-        cursorShape = settings.cursorShape
-        cursorColor = settings.cursorColorId
-        cursorBlink = settings.cursorBlink
-        trailOnPredict = settings.trailOnPredict
-        keyboardOnOpen = settings.raiseKeyboardOnOpen
-        remoteClipboardRead = settings.remoteClipboardReadEnabled
-        uploadRetentionDays = settings.uploadRetentionDays
-        moshByDefault = settings.moshByDefault
-        predictMode = settings.predictMode
-        udpRange = [settings.udpRangeStart, settings.udpRangeEnd]
-        self.shortcuts = shortcuts.toolbarCount
-        self.keys = keys.keys.count
-        notifications = settings.notificationsEnabled
-        liveActivity = settings.liveActivityEnabled
-        alertSound = settings.attentionSoundEnabled
-        lockScreenDetail = settings.lockScreenDetailEnabled
-        self.liveSession = liveSession
-        voiceInput = settings.voiceInputEnabled
-        voiceEngine = settings.voiceEngine
-        voiceModel = WhisperModelStore.resolvedVariant(preferring: settings.whisperModelId)
-            .map(WhisperModelStore.displayName(for:))
-        voiceLanguage = Self.languageName(settings)
-        filing = showsFilingNumber ? SettingsScreen.icpFilingNumber : nil
-        appearance = settings.appearance
+        self.init(
+            accent: SettingsSwatch(name: accent.name, colorHex: "#" + accent.accentHex),
+            appIcon: SettingsIcon(id: icon.id, name: icon.name, image: AppIconModel.previewURI(icon)),
+            fonts: TerminalFont.families.map { SettingsChoice(id: $0.id, name: $0.label) },
+            font: settings.fontName,
+            fontSize: settings.fontSize,
+            theme: SettingsTerminalTheme(
+                name: theme.name, backgroundHex: "#" + theme.backgroundHex,
+                foregroundHex: "#" + theme.foregroundHex,
+                swatchesHex: TerminalTheme.ANSISlot.allCases.map { "#" + theme.ansiHex($0) }),
+            cursorShape: settings.cursorShape.rawValue,
+            cursorColor: settings.cursorColorId,
+            cursorBlink: settings.cursorBlink,
+            trailOnPredict: settings.trailOnPredict,
+            keyboardOnOpen: settings.raiseKeyboardOnOpen,
+            remoteClipboardRead: settings.remoteClipboardReadEnabled,
+            uploadRetentionDays: Int64(settings.uploadRetentionDays),
+            moshByDefault: settings.moshByDefault,
+            predictMode: settings.predictMode.rawValue,
+            udpRange: PortRange(start: Int64(settings.udpRangeStart), end: Int64(settings.udpRangeEnd)),
+            shortcuts: SettingsCount(count: Int64(shortcuts.toolbarCount), limit: Int64(ShortcutStore.toolbarLimit)),
+            keys: Int64(keys.keys.count),
+            notifications: settings.notificationsEnabled,
+            liveActivity: settings.liveActivityEnabled,
+            alertSound: settings.attentionSoundEnabled,
+            lockScreenDetail: settings.lockScreenDetailEnabled,
+            liveSession: liveSession,
+            voiceInput: settings.voiceInputEnabled,
+            voiceEngine: settings.voiceEngine.rawValue,
+            voiceModel: WhisperModelStore.resolvedVariant(preferring: settings.whisperModelId)
+                .map(WhisperModelStore.displayName(for:)),
+            voiceLanguage: Self.languageName(settings),
+            version: SettingsScreen.versionLine,
+            filing: showsFilingNumber ? SettingsScreen.icpFilingNumber : nil,
+            // The theme the app wears, as the screen's params carry one
+            // (``NSHScreenParams``): the page's own colors follow a new pick.
+            appTheme: SettingsAppTheme(
+                accentHex: NSHScreenParams.hex(accent.accent),
+                accentPressedHex: NSHScreenParams.hex(accent.accentPressed),
+                screenBgHex: NSHScreenParams.hex(accent.screenBG),
+                terminalBgHex: NSHScreenParams.hex(accent.terminalBG)),
+            appearance: settings.appearance.rawValue)
     }
 
     /// What the dictation language is called, for the engine in use: ""
-    /// reads as Automatic or Auto-detect (the SwiftUI page's
-    /// `voiceLanguageName`).
+    /// reads as Automatic or Auto-detect.
     static func languageName(_ settings: AppSettings) -> String {
         if settings.voiceEngine == .whisper {
             return WhisperLanguageCatalog.displayName(for: settings.whisperLanguage)
@@ -282,9 +250,7 @@ struct SettingsSnapshot: Equatable {
 }
 
 /// What the NSH Settings page shows, owned by the host so a surface made again
-/// starts from it (``NSHPage``'s third rule), the message that carries it
-/// (`{"op": "settings", …}`, `ui/src/settings.rs`'s `Message`), and what the
-/// page's intents do.
+/// starts from it (``NSHPage``'s third rule), and what the page's intents do.
 @MainActor
 final class SettingsModel {
     /// The version line's identifier on the screen (its Copy menu's part).
@@ -300,7 +266,7 @@ final class SettingsModel {
     /// ones.
     func attach(_ surface: NSHSurface) {
         self.surface = surface
-        if let snapshot { surface.post(Self.message(snapshot)) }
+        if let snapshot { surface.post(.settings(state: snapshot)) }
         if let pet { surface.post(json: pet) }
         #if DEBUG
         // Twice: once the page is up, and again once the native controls
@@ -309,7 +275,7 @@ final class SettingsModel {
         if let anchor = SettingsAnchor.requested {
             for delay in [0.9, 2.0] {
                 DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak surface] in
-                    surface?.post(["op": "reveal", "anchor": anchor.rawValue])
+                    surface?.post(.settingsReveal(anchor: anchor.reveal))
                 }
             }
         }
@@ -332,7 +298,7 @@ final class SettingsModel {
     func update(_ snapshot: SettingsSnapshot) {
         guard snapshot != self.snapshot else { return }
         self.snapshot = snapshot
-        surface?.post(Self.message(snapshot))
+        surface?.post(.settings(state: snapshot))
     }
 
     /// The companion as it is now.
@@ -343,132 +309,75 @@ final class SettingsModel {
     }
 
     /// What the screen told the host.
-    func handle(_ message: [String: Any], settings: AppSettings,
+    func handle(_ event: SettingsEvent, settings: AppSettings,
                 onOpen: (String) -> Void, onDone: () -> Void, onBack: () -> Void = {}) {
-        switch message["ev"] as? String {
-        case "done":
+        switch event {
+        case .done:
             onDone()
-        case "back":
+        case .back:
             onBack()
-        case "open":
-            if let page = message["page"] as? String { onOpen(page) }
-        case "set":
-            guard let key = message["key"] as? String,
-                  Self.apply(key, message["value"], to: settings)
-            else {
-                return Log.ui.error("settings: no setting \(String(describing: message["key"]), privacy: .public)")
+        case .open(let page):
+            onOpen(page)
+        case .set(let change):
+            if !Self.apply(change, to: settings) {
+                Log.ui.error("settings: refused \(String(describing: change), privacy: .public)")
             }
-        default:
+        case .setup:
             break
         }
     }
 
-    /// Applies setting `key` (`ui/src/settings.rs`'s `Setting`) to
-    /// `settings`, as the SwiftUI page's controls set them. false for a key
-    /// or value it does not know.
+    /// Applies `change` to `settings`. false for a value out of what the
+    /// setting takes (a font this build doesn't ship, a range that isn't
+    /// one): checked here again, as the page checked it.
     @discardableResult
-    static func apply(_ key: String, _ value: Any?, to settings: AppSettings) -> Bool {
-        let flag = value as? Bool
-        switch key {
-        case "companion":
-            guard let choice = value as? [String: Any], let style = choice["style"] as? String,
-                  let shown = choice["shown"] as? Bool else { return false }
+    static func apply(_ change: SettingsChange, to settings: AppSettings) -> Bool {
+        switch change {
+        case .companion(let style, let shown):
             CompanionPet.shared.choose(style: style, shown: shown)
-        case "petName":
-            guard let name = value as? String else { return false }
+        case .petName(let name):
             CompanionPet.shared.rename(name)
-        case "petTalk":
-            guard let on = flag else { return false }
+        case .petTalk(let on):
             CompanionPet.shared.setTalk(on)
-        case "font":
-            guard let id = value as? String, TerminalFont.families.contains(where: { $0.id == id }) else { return false }
+        case .font(let id):
+            guard TerminalFont.families.contains(where: { $0.id == id }) else { return false }
             settings.fontName = id
-        case "fontSize":
-            guard let size = (value as? NSNumber)?.doubleValue, size.isFinite else { return false }
+        case .fontSize(let size):
+            guard size.isFinite else { return false }
             settings.fontSize = min(max(size.rounded(), 8), 32)
-        case "cursorShape":
-            guard let shape = (value as? String).flatMap(CursorShape.init(rawValue:)) else { return false }
+        case .cursorShape(let id):
+            guard let shape = CursorShape(rawValue: id) else { return false }
             settings.cursorShape = shape
-        case "cursorColor":
-            guard let id = value as? String, ["teal", "green", "white", "accent"].contains(id) else { return false }
+        case .cursorColor(let id):
+            guard ["teal", "green", "white", "accent"].contains(id) else { return false }
             settings.cursorColorId = id
-        case "uploadRetentionDays":
-            guard let days = (value as? NSNumber)?.intValue, [0, 1, 7].contains(days) else { return false }
-            settings.uploadRetentionDays = days
-        case "predictMode":
-            guard let mode = (value as? String).flatMap(PredictMode.init(rawValue:)) else { return false }
+        case .uploadRetentionDays(let days):
+            guard [0, 1, 7].contains(days) else { return false }
+            settings.uploadRetentionDays = Int(days)
+        case .predictMode(let id):
+            guard let mode = PredictMode(rawValue: id) else { return false }
             settings.predictMode = mode
-        case "appearance":
-            guard let appearance = (value as? String).flatMap(AppAppearance.init(rawValue:)) else { return false }
+        case .appearance(let id):
+            guard let appearance = AppAppearance(rawValue: id) else { return false }
             settings.appearance = appearance
-        case "udpRange":
-            // The UDP range's page checked it (`udp_ports`); checked again,
-            // as the SwiftUI editor checks it.
-            guard let range = value as? [Any], range.count == 2,
-                  let from = (range[0] as? NSNumber)?.intValue, let to = (range[1] as? NSNumber)?.intValue,
-                  case .success(let (start, end)) = UDPPortRange.validate(from: String(from), to: String(to))
-            else { return false }
+        case .udpRange(let range):
+            // The UDP range's page checked it (`udp_ports`); checked again.
+            guard case .success(let (start, end)) = UDPPortRange.validate(
+                from: String(range.start), to: String(range.end)) else { return false }
             settings.udpRangeStart = start
             settings.udpRangeEnd = end
-        default:
-            guard let flag, let setting = Self.flags[key] else { return false }
-            settings[keyPath: setting] = flag
+        case .cursorBlink(let on): settings.cursorBlink = on
+        case .trailOnPredict(let on): settings.trailOnPredict = on
+        case .keyboardOnOpen(let on): settings.raiseKeyboardOnOpen = on
+        case .remoteClipboardRead(let on): settings.remoteClipboardReadEnabled = on
+        case .moshByDefault(let on): settings.moshByDefault = on
+        case .notifications(let on): settings.notificationsEnabled = on
+        case .liveActivity(let on): settings.liveActivityEnabled = on
+        case .alertSound(let on): settings.attentionSoundEnabled = on
+        case .lockScreenDetail(let on): settings.lockScreenDetailEnabled = on
+        case .voiceInput(let on): settings.voiceInputEnabled = on
         }
         return true
-    }
-
-    /// The switches, by their keys.
-    static let flags: [String: ReferenceWritableKeyPath<AppSettings, Bool>] = [
-        "cursorBlink": \.cursorBlink,
-        "trailOnPredict": \.trailOnPredict,
-        "keyboardOnOpen": \.raiseKeyboardOnOpen,
-        "remoteClipboardRead": \.remoteClipboardReadEnabled,
-        "moshByDefault": \.moshByDefault,
-        "notifications": \.notificationsEnabled,
-        "liveActivity": \.liveActivityEnabled,
-        "alertSound": \.attentionSoundEnabled,
-        "lockScreenDetail": \.lockScreenDetailEnabled,
-        "voiceInput": \.voiceInputEnabled,
-    ]
-
-    /// The screen's message for `snapshot`.
-    nonisolated static func message(_ s: SettingsSnapshot) -> [String: Any] {
-        var message: [String: Any] = [
-            "op": "settings",
-            "accent": ["name": s.accentName, "color": s.accentHex],
-            "appIcon": AppIconModel.icon(s.icon),
-            "fonts": TerminalFont.families.map { ["id": $0.id, "name": $0.label] },
-            "font": s.font,
-            "fontSize": s.fontSize,
-            "theme": ["name": s.themeName, "background": s.themeBackground,
-                      "foreground": s.themeForeground, "swatches": s.themeSwatches],
-            "cursorShape": s.cursorShape.rawValue,
-            "cursorColor": s.cursorColor,
-            "cursorBlink": s.cursorBlink,
-            "trailOnPredict": s.trailOnPredict,
-            "keyboardOnOpen": s.keyboardOnOpen,
-            "remoteClipboardRead": s.remoteClipboardRead,
-            "uploadRetentionDays": s.uploadRetentionDays,
-            "moshByDefault": s.moshByDefault,
-            "predictMode": s.predictMode.rawValue,
-            "udpRange": s.udpRange,
-            "shortcuts": ["count": s.shortcuts, "limit": ShortcutStore.toolbarLimit],
-            "keys": s.keys,
-            "notifications": s.notifications,
-            "liveActivity": s.liveActivity,
-            "alertSound": s.alertSound,
-            "lockScreenDetail": s.lockScreenDetail,
-            "liveSession": s.liveSession,
-            "voiceInput": s.voiceInput,
-            "voiceEngine": s.voiceEngine.rawValue,
-            "voiceLanguage": s.voiceLanguage,
-            "version": SettingsScreen.versionLine,
-            "appTheme": s.appTheme,
-            "appearance": s.appearance.rawValue,
-        ]
-        if let model = s.voiceModel { message["voiceModel"] = model }
-        if let filing = s.filing { message["filing"] = filing }
-        return message
     }
 }
 
@@ -477,6 +386,17 @@ final class SettingsModel {
 /// it (``SettingsModel/attach(_:)``).
 enum SettingsAnchor: String, CaseIterable {
     case cursor, behavior, mosh, notifications, bottom
+
+    /// As the bridge carries it.
+    var reveal: SettingsRevealAnchor {
+        switch self {
+        case .cursor: .cursor
+        case .behavior: .behavior
+        case .mosh: .mosh
+        case .notifications: .notifications
+        case .bottom: .bottom
+        }
+    }
 
     #if DEBUG
     static var requested: SettingsAnchor? {
@@ -515,13 +435,12 @@ struct SettingsHost: Equatable, Identifiable {
                   host: connection.host, port: connection.port, live: live)
     }
 
-    /// `{"op": "hosts", …}` for `hosts`, in their order.
-    static func message(_ hosts: [SettingsHost]) -> [String: Any] {
-        ["op": "hosts",
-         "hosts": hosts.map {
-             ["id": $0.id.uuidString, "name": $0.name, "user": $0.user, "host": $0.host,
-              "port": $0.port, "live": $0.live] as [String: Any]
-         }]
+    /// Set up a host's list for `hosts`, in their order.
+    static func message(_ hosts: [SettingsHost]) -> PageMessage {
+        .settingsHosts(hosts: hosts.map {
+            SettingsHostEntry(id: $0.id.uuidString, name: $0.name, user: $0.user, host: $0.host,
+                              port: Int64($0.port), live: $0.live)
+        })
     }
 }
 

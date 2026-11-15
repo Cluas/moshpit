@@ -2371,6 +2371,8 @@ dependencies = [
  "moshpit-term",
  "moshpit-tmux",
  "moshpit-ui",
+ "nsh-core",
+ "serde",
  "serde_json",
  "tokio",
  "uniffi",
@@ -2455,6 +2457,7 @@ name = "moshpit-session"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "libc",
  "log",
  "moshpit-herdr",
  "moshpit-hostcare",
@@ -2555,6 +2558,7 @@ name = "moshpit-ui"
 version = "0.1.0"
 dependencies = [
  "log",
+ "moshpit-herdr",
  "moshpit-hostcare",
  "moshpit-install",
  "moshpit-pet",

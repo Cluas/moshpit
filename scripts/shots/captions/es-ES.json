@@ -1,0 +1,47 @@
+{
+  "language": "es",
+  "iphone": [
+    {
+      "shot": "01-lock",
+      "title": "Tu agente necesita un sí y tu iPhone te avisa."
+    },
+    {
+      "shot": "02-pane",
+      "title": "Toca y llegas al panel que preguntó."
+    },
+    {
+      "shot": "03-home",
+      "title": "Quién trabaja y quién te espera, de un vistazo."
+    },
+    {
+      "shot": "04-island",
+      "title": "El progreso, en la Dynamic Island."
+    },
+    {
+      "shot": "05-overview",
+      "title": "Todos los paneles de tmux y herdr en una pantalla."
+    },
+    {
+      "shot": "06-preview",
+      "title": "Abre el archivo que tu agente acaba de tocar."
+    },
+    {
+      "shot": "07-pet",
+      "title": "Incuba un compañero pixelado para esperar juntos."
+    },
+    {
+      "shot": "08-keyboard",
+      "title": "Un teclado hecho para la terminal."
+    }
+  ],
+  "ipad": [
+    {
+      "shot": "panes",
+      "title": "Todas las ventanas y paneles en una pantalla."
+    },
+    {
+      "shot": "home-terminal",
+      "title": "Inicio y terminal, lado a lado."
+    }
+  ]
+}

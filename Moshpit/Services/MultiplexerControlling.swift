@@ -177,6 +177,10 @@ protocol MultiplexerControlling: AnyObject, Observable {
     func killPane(_ paneId: String)
     /// Re-read tmux state (sidecar: SSH-exec query; -CC: resend discovery).
     func refresh()
+    /// Re-list quietly — no spinner, no repaint: tmux says nothing when a
+    /// window's place changes (`swap-window`, `move-window -r`), so a tree
+    /// on screen asks now and then (B586).
+    func relist()
 
     /// The repository a session is a git worktree of, or nil when it isn't
     /// one. Only herdr can answer yes — tmux has no notion of a session being
@@ -186,6 +190,7 @@ protocol MultiplexerControlling: AnyObject, Observable {
 
 extension MultiplexerControlling {
     func worktreeRepo(for sessionId: String) -> String? { nil }
+    func relist() {}
 }
 
 /// Names a person types for a session or a window (tmux's, herdr's).

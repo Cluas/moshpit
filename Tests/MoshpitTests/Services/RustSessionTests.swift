@@ -325,7 +325,7 @@ struct RustSessionTests {
         return predicate()
     }
 
-    @Test("the core's states drive the view model; a reconnect is never a poster")
+    @Test("the core's states drive the view model; a reconnect keeps its frame")
     func states() async {
         let (driver, session, fake) = driver(ServerConnection(host: "h", username: "u"))
         let first = await started(driver, fake)
@@ -468,7 +468,7 @@ struct RustSessionTests {
         #expect(session.awaitingFirstSession)
         let (content, empty) = TerminalScreen.paneContent(of: session, isReconnect: false, connState: .live)
         #expect(content == .empty)
-        #expect(empty == TerminalNSHChrome.Empty(mux: .tmux, missing: false, quiet: true, settled: true))
+        #expect(empty == TerminalNSHChrome.Empty(mux: .tmux, missing: false, settled: true))
         // Mid-reconnect it stays behind the veil.
         let (dropped, _) = TerminalScreen.paneContent(of: session, isReconnect: true, connState: .reconnecting)
         #expect(dropped == .terminal)
@@ -626,6 +626,96 @@ struct RustSessionTests {
         }
         #expect(!SSHKeyFactory.isEncrypted(openssh))
         #expect(session.viewModel.keyPassphrasePrompt == nil)
+        driver.handle(.state(state: .connected))
+        await task.value
+    }
+
+    /// B631: two reads of a key behind a passphrase at once (the dial and a
+    /// side connection) share one card and its one answer; the card is
+    /// answered once, whatever else answers it after (Cancel racing
+    /// Unlock: a continuation resumed twice trapped).
+    @Test("reads asking for the passphrase at once share one card, answered once")
+    func passphraseAnsweredOnce() async throws {
+        let key = try #require(SSHKeyFixtures.all.first { $0.name == "Ed25519 · OpenSSH · passphrase" })
+        let keychain = KeychainService.inMemory()
+        let ref = keychain.generateRef()
+        try await keychain.savePrivateKey(key.privateKey, forRef: ref, requireBiometry: false)
+        let connection = ServerConnection(name: "t", host: "192.0.2.1", port: 22, username: "me",
+                                          authMethod: .key, keychainRef: ref)
+        let fake = FakeCoreSessions()
+        let credentials = RustCredentialHost(service: SSHService(keychain: keychain, protectedDataAvailable: { true }))
+        let core = RustCore(sessions: fake, credentials: credentials)
+        let session = SessionHub.ActiveSession(connection: connection)
+        let driver = RustSessionDriver(session: session, core: core, appearance: Self.look)
+        session.rust = driver
+        let task = await started(driver, fake)
+
+        let first = Task { try await credentials.credential(connectionId: connection.id.uuidString) }
+        let second = Task { try await credentials.credential(connectionId: connection.id.uuidString) }
+        var waited = 0
+        while driver.passphraseWaiting < 2, waited < 300 {
+            waited += 1
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(driver.passphraseWaiting == 2, "the second read didn't wait on the card")
+        let prompt = try #require(session.viewModel.keyPassphrasePrompt)
+        prompt.decide(SSHKeyFixtures.passphrase)
+        prompt.decide(nil)
+        for read in [first, second] {
+            guard case .key(let openssh) = try await read.value else {
+                Issue.record("not a key")
+                return
+            }
+            #expect(!SSHKeyFactory.isEncrypted(openssh))
+        }
+        #expect(session.viewModel.keyPassphrasePrompt == nil)
+        #expect(driver.passphraseWaiting == 0)
+        driver.handle(.state(state: .connected))
+        await task.value
+    }
+
+    /// B631: a host-key sheet on its way out after the core withdrew its
+    /// prompt and asked the next answers late: its answer goes to the core
+    /// (which takes it only while that prompt is asked) and clears nothing
+    /// of the next one, which used to vanish and leave the dial waiting.
+    @Test("a late host-key answer leaves the next prompt up")
+    func lateHostKeyAnswer() async throws {
+        let (driver, session, fake) = driver(ServerConnection(host: "h", username: "u"))
+        let task = await started(driver, fake)
+        driver.handle(.hostKeyPrompt(prompt: 3, host: "h", port: 22, fingerprint: "SHA256:a", previous: nil,
+                                     olderAlgorithm: nil))
+        let first = try #require(session.viewModel.hostKeyPrompt)
+        driver.handle(.hostKeyPromptWithdrawn(prompt: 3))
+        driver.handle(.hostKeyPrompt(prompt: 4, host: "h", port: 22, fingerprint: "SHA256:b", previous: nil,
+                                     olderAlgorithm: nil))
+        first.decide(false)
+        #expect(session.viewModel.hostKeyPrompt?.fingerprint == "SHA256:b")
+        #expect(fake.answers.last.map { $0.1 == 3 && !$0.2 } == true)
+        session.viewModel.hostKeyPrompt?.decide(true)
+        #expect(session.viewModel.hostKeyPrompt == nil)
+        #expect(fake.answers.last.map { $0.1 == 4 && $0.2 } == true)
+        driver.handle(.state(state: .connected))
+        await task.value
+        #expect(!session.viewModel.declinedHostKey, "the late no read as the person's refusal")
+    }
+
+    /// B631: the same for the server's sign-in question.
+    @Test("a late answer to a sign-in question leaves the next one up")
+    func lateQuestionAnswer() async throws {
+        let (driver, session, fake) = driver(ServerConnection(host: "h", username: "u"))
+        let task = await started(driver, fake)
+        driver.handle(.signInQuestion(prompt: 5, host: "h", name: "", instructions: "",
+                                      text: "Verification code: ", echo: false))
+        let first = try #require(session.viewModel.signInQuestion)
+        driver.handle(.signInQuestionWithdrawn(prompt: 5))
+        driver.handle(.signInQuestion(prompt: 6, host: "h", name: "", instructions: "",
+                                      text: "Token: ", echo: false))
+        first.decide(nil)
+        #expect(session.viewModel.signInQuestion?.words == "Token:")
+        #expect(fake.questionAnswers.last.map { $0.1 == 5 && $0.2 == nil } == true)
+        session.viewModel.signInQuestion?.decide("424242")
+        #expect(session.viewModel.signInQuestion == nil)
+        #expect(fake.questionAnswers.last.map { $0.1 == 6 && $0.2 == "424242" } == true)
         driver.handle(.state(state: .connected))
         await task.value
     }
@@ -1005,7 +1095,7 @@ struct RustSessionTests {
             activeSessionId: "$0", activeWindowId: "@1", activePaneId: active,
             isAttached: true, everAttached: true, lastSwitchForward: true,
             hasSwipedSinceAttach: false, notice: nil, refreshing: false,
-            sizeFollowWindow: nil, sizeFollowOwner: nil, agentHooks: [],
+            sizeFollowWindow: nil, sizeFollowOwner: nil, paneFollowPane: nil, agentHooks: [],
             agentHooksLoaded: false, wantsMouse: false, altScreen: false, scrollsItself: false,
             holdsTicks: false, noSession: false)
     }
@@ -1016,7 +1106,7 @@ struct RustSessionTests {
             sessions: [], windows: [], panes: [], activeSessionId: nil, activeWindowId: nil,
             activePaneId: nil, isAttached: false, everAttached: false, lastSwitchForward: true,
             hasSwipedSinceAttach: false, notice: nil, refreshing: false, sizeFollowWindow: nil,
-            sizeFollowOwner: nil, agentHooks: [], agentHooksLoaded: true, wantsMouse: false,
+            sizeFollowOwner: nil, paneFollowPane: nil, agentHooks: [], agentHooksLoaded: true, wantsMouse: false,
             altScreen: false, scrollsItself: false, holdsTicks: false, noSession: true)
     }
 }

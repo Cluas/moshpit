@@ -1,0 +1,47 @@
+{
+  "language": "pt-BR",
+  "iphone": [
+    {
+      "shot": "01-lock",
+      "title": "Seu agente precisa de um sim, e o iPhone avisa."
+    },
+    {
+      "shot": "02-pane",
+      "title": "Toque e caia direto no painel que perguntou."
+    },
+    {
+      "shot": "03-home",
+      "title": "Quem está trabalhando e quem está esperando, num relance."
+    },
+    {
+      "shot": "04-island",
+      "title": "O progresso aparece na Dynamic Island."
+    },
+    {
+      "shot": "05-overview",
+      "title": "Todos os painéis do tmux e do herdr numa tela só."
+    },
+    {
+      "shot": "06-preview",
+      "title": "Abra na hora o arquivo que o agente acabou de alterar."
+    },
+    {
+      "shot": "07-pet",
+      "title": "Choque um amiguinho em pixel para esperar com você."
+    },
+    {
+      "shot": "08-keyboard",
+      "title": "Um teclado feito para o terminal."
+    }
+  ],
+  "ipad": [
+    {
+      "shot": "panes",
+      "title": "Todas as janelas e painéis numa tela só."
+    },
+    {
+      "shot": "home-terminal",
+      "title": "Início e terminal, lado a lado."
+    }
+  ]
+}

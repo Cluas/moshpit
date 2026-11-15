@@ -117,25 +117,14 @@ pub fn chrome(app: &App, page: &TerminalPage) -> Chrome {
         state,
         ..Chrome::default()
     };
+    // A first connect has no cover (B657): the pane is the terminal's
+    // background, the transport pill says it connects.
     let Some(conn) = conn else {
-        chrome.cover = Cover {
-            kind: CoverKind::Poster,
-            state: LinkState::Connecting,
-            touches: true,
-            ..Cover::default()
-        };
         return chrome;
     };
     chrome.crumbs = crumbs(conn).or_else(|| herdr_crumbs(conn));
     let ended = matches!(conn.state, SessionState::Ended(_));
-    if !conn.ever_live && state != LinkState::Live {
-        chrome.cover = Cover {
-            kind: CoverKind::Poster,
-            state,
-            touches: true,
-            ..Cover::default()
-        };
-    } else if state != LinkState::Live {
+    if conn.ever_live && state != LinkState::Live {
         chrome.cover = Cover {
             kind: CoverKind::Veil,
             state,
@@ -281,7 +270,6 @@ fn content(conn: &Conn, mux: Mux, state: LinkState) -> (Content, Option<Empty>) 
                 Some(Empty {
                     mux: Mux::Herdr,
                     missing: conn.degrade == Some(Degrade::HerdrMissing),
-                    quiet: conn.ever_live,
                     // The server answered that it isn't running: known.
                     settled: true,
                     session: "Workspace".to_owned(),
@@ -321,7 +309,6 @@ fn content(conn: &Conn, mux: Mux, state: LinkState) -> (Content, Option<Empty>) 
         Some(Empty {
             mux: Mux::Tmux,
             missing: false,
-            quiet: conn.ever_live,
             // Known once the server said it has no session (B228, B337);
             // no sessions in the tree alone may be an attach on its way.
             settled: tmux.no_session,

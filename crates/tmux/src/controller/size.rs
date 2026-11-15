@@ -603,6 +603,8 @@ impl Controller {
         if !self.config.renders_output || !self.snapshot.is_attached {
             return;
         }
+        // The pane another client moved off (B587): the touch takes it back.
+        self.retake_pane();
         let Some(window) = self.snapshot.active_window_id.clone() else {
             return;
         };
@@ -626,9 +628,11 @@ impl Controller {
         }
     }
 
-    /// The follower's tap: take the active window back.
+    /// The follower's tap: take the active window back — and the pane
+    /// another client moved off (B587).
     pub fn take_size_ownership(&mut self, now: u64) {
         self.begin_input(now);
+        self.retake_pane();
         if let Some(window) = self.snapshot.active_window_id.clone() {
             self.request_pin(&window, PinReason::User);
         }
@@ -970,11 +974,66 @@ impl Controller {
             self.send(format!("set-option -u -w -t {window} window-size"));
         }
         self.release_size_ownership(window);
-        // The replay below puts the user's layout back, our zoom with it.
-        if self.size.pristine_layouts.contains_key(window) && self.size.zoom_marks.remove(window) {
-            self.send(format!("set-option -wu -t {window} {ZOOM_MARK_OPTION}"));
-        }
+        self.hand_back_zoom(window);
         self.check_replay(window, !self.config.renders_output);
+    }
+
+    /// Our immersive zoom on a window we hand back. The replay of the
+    /// layout we found puts the user's layout back and our zoom goes with
+    /// it; with no replay to come — the panes changed since (a split on the
+    /// desktop, a pane an agent opened), or the window had one pane when we
+    /// came (our own split) — the zoom is undone here (B588: it stayed, on
+    /// the desktop's window, marked with a client still attached, so no
+    /// sweep took it either). Only while the window is still zoomed on the
+    /// pane we zoomed: a zoom made since is somebody else's.
+    fn hand_back_zoom(&mut self, window: &str) {
+        if !self.size.zoom_marks.remove(window) {
+            return;
+        }
+        let replays = self
+            .size
+            .pristine_layouts
+            .get(window)
+            .is_some_and(|pristine| self.pristine_still_applies(window, pristine));
+        if replays {
+            self.send(format!("set-option -wu -t {window} {ZOOM_MARK_OPTION}"));
+            return;
+        }
+        self.send_command(
+            format!(
+                "display-message -p -t {window} '#{{window_zoomed_flag}} #{{pane_id}} #{{{ZOOM_MARK_OPTION}}}'"
+            ),
+            Reply::ZoomHandBack {
+                window: window.to_owned(),
+            },
+        );
+    }
+
+    /// `zoomed active-pane mark`, read for [`Self::hand_back_zoom`].
+    pub(super) fn zoom_hand_back_answered(&mut self, window: &str, response: &CommandResponse) {
+        if response.is_error {
+            return;
+        }
+        let Some(line) = response.lines.first() else {
+            return;
+        };
+        let mut words = line.splitn(3, ' ');
+        let (Some(zoomed), Some(active), mark) = (words.next(), words.next(), words.next()) else {
+            return;
+        };
+        let mark = mark.map(trim_whitespaces).unwrap_or("");
+        let Some(name) = self.size.our_client_name.clone() else {
+            return;
+        };
+        let Some(pane) = mark.strip_prefix(&format!("{name} ")) else {
+            // Somebody else's mark, or none: theirs to keep.
+            return;
+        };
+        if zoomed == "1" && pane == active {
+            self.send(zoom_command(window));
+            self.bump_zoom_epoch();
+        }
+        self.send(format!("set-option -wu -t {window} {ZOOM_MARK_OPTION}"));
     }
 
     /// The window's layout after a replay: kept as its record again when the
@@ -1434,6 +1493,11 @@ impl Controller {
             self.size.leases.clear();
             self.set_follow(None);
             self.timers.cancel(&Slot::ForegroundProbe);
+            let mut zoomed: Vec<String> = self.size.zoom_marks.iter().cloned().collect();
+            zoomed.sort_by(|a, b| id_cmp(a, b));
+            for window in &zoomed {
+                self.hand_back_zoom(window);
+            }
             let mut recorded: Vec<String> = self.size.pristine_layouts.keys().cloned().collect();
             recorded.sort_by(|a, b| id_cmp(a, b));
             for window in &recorded {
@@ -1456,6 +1520,8 @@ impl Controller {
     }
 
     fn repin_active_window_now(&mut self) {
+        // What moved while away, numbers and order included (B586).
+        self.relist_now();
         let Some(window) = self
             .snapshot
             .active_window_id

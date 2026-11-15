@@ -35,81 +35,91 @@ struct SettingsRootNSHTests {
         #expect(NSHScreen.settings.name == "settings")
     }
 
-    @Test("every state is a message the Rust screen takes; bad ones are refused")
-    func messages() {
+    /// The state as the host builds it from the app's settings; that the
+    /// screen takes it is the bridge's (`crates/ffi/src/pages`' tests).
+    @Test("the page's state is the app's settings, and the screen takes it")
+    func state() throws {
         let (settings, _, _, _) = Self.scratch()
-        let screen = NSHScreen.settings.name
-        #expect(NSHSurface.check(screen: screen, message: SettingsModel.message(Self.snapshot(settings))))
         settings.voiceEngine = .whisper
         settings.cursorShape = .underline
         settings.predictMode = .experimental
         settings.uploadRetentionDays = 0
-        let full = SettingsModel.message(Self.snapshot(settings, liveSession: true, filing: true))
-        #expect(NSHSurface.check(screen: screen, message: full), "\(full)")
-        #expect(full["filing"] as? String == SettingsScreen.icpFilingNumber)
-        #expect((full["fonts"] as? [[String: Any]])?.count == TerminalFont.families.count)
-        #expect((full["theme"] as? [String: Any]).flatMap { $0["swatches"] as? [String] }?.count == 8)
+        let full = Self.snapshot(settings, liveSession: true, filing: true)
+        #expect(full.filing == SettingsScreen.icpFilingNumber)
+        #expect(full.fonts.count == TerminalFont.families.count)
+        #expect(full.theme.swatchesHex.count == 8)
+        #expect(full.cursorShape == "underline" && full.predictMode == "experimental")
+        #expect(full.voiceEngine == "whisper" && full.uploadRetentionDays == 0 && full.liveSession)
+        let json = try pageMessage(message: .settings(state: full))
+        #expect(NSHSurface.check(screen: NSHScreen.settings.name, json: json), "\(json)")
         var bad = full
-        bad["cursorShape"] = "beam"
-        #expect(!NSHSurface.check(screen: screen, message: bad))
-        bad = full
-        bad.removeValue(forKey: "keyboardOnOpen")
-        #expect(!NSHSurface.check(screen: screen, message: bad))
+        bad.cursorShape = "beam"
+        #expect(throws: PageError.self) { try pageMessage(message: .settings(state: bad)) }
         for anchor in SettingsAnchor.allCases {
-            #expect(NSHSurface.check(screen: screen, message: ["op": "reveal", "anchor": anchor.rawValue]))
+            let reveal = try pageMessage(message: .settingsReveal(anchor: anchor.reveal))
+            #expect(NSHSurface.check(screen: NSHScreen.settings.name, json: reveal))
         }
-        #expect(!NSHSurface.check(screen: screen, message: ["op": "reveal", "anchor": "top"]))
     }
 
     @Test("the row names the icon iOS shows, as the NSH App Icon page ticks it")
     func iconName() {
         let (settings, _, _, _) = Self.scratch()
         settings.appIconId = "default"
-        #expect(Self.snapshot(settings, shownIcon: "AppIcon-Pit").icon.id == "pit")
-        #expect(Self.snapshot(settings, shownIcon: nil).icon.id == "default")
+        #expect(Self.snapshot(settings, shownIcon: "AppIcon-Pit").appIcon.id == "pit")
+        #expect(Self.snapshot(settings, shownIcon: nil).appIcon.id == "default")
         settings.appIconId = "wq"
-        #expect(Self.snapshot(settings, shownIcon: "AppIcon-Gone").icon.id == "wq")
+        #expect(Self.snapshot(settings, shownIcon: "AppIcon-Gone").appIcon.id == "wq")
     }
 
-    @Test("a setting the screen sends is applied as the SwiftUI controls apply it")
+    @Test("a setting the screen sends is applied, within what the setting takes")
     func apply() {
         let (settings, _, _, _) = Self.scratch()
-        for (key, path) in SettingsModel.flags {
+        let switches: [((Bool) -> SettingsChange, ReferenceWritableKeyPath<AppSettings, Bool>)] = [
+            ({ .cursorBlink(on: $0) }, \.cursorBlink),
+            ({ .trailOnPredict(on: $0) }, \.trailOnPredict),
+            ({ .keyboardOnOpen(on: $0) }, \.raiseKeyboardOnOpen),
+            ({ .remoteClipboardRead(on: $0) }, \.remoteClipboardReadEnabled),
+            ({ .moshByDefault(on: $0) }, \.moshByDefault),
+            ({ .notifications(on: $0) }, \.notificationsEnabled),
+            ({ .liveActivity(on: $0) }, \.liveActivityEnabled),
+            ({ .alertSound(on: $0) }, \.attentionSoundEnabled),
+            ({ .lockScreenDetail(on: $0) }, \.lockScreenDetailEnabled),
+            ({ .voiceInput(on: $0) }, \.voiceInputEnabled),
+        ]
+        for (change, path) in switches {
             let before = settings[keyPath: path]
-            #expect(SettingsModel.apply(key, !before, to: settings), "\(key)")
-            #expect(settings[keyPath: path] == !before, "\(key)")
+            #expect(SettingsModel.apply(change(!before), to: settings), "\(path)")
+            #expect(settings[keyPath: path] == !before, "\(path)")
         }
-        #expect(SettingsModel.apply("font", "Menlo", to: settings))
+        #expect(SettingsModel.apply(.font(id: "Menlo"), to: settings))
         #expect(settings.fontName == "Menlo")
-        #expect(!SettingsModel.apply("font", "Comic Sans", to: settings))
+        #expect(!SettingsModel.apply(.font(id: "Comic Sans"), to: settings))
         #expect(settings.fontName == "Menlo")
-        #expect(SettingsModel.apply("fontSize", 12.0, to: settings))
+        #expect(SettingsModel.apply(.fontSize(points: 12), to: settings))
         #expect(settings.fontSize == 12)
-        #expect(SettingsModel.apply("fontSize", 24, to: settings))
+        #expect(SettingsModel.apply(.fontSize(points: 24), to: settings))
         #expect(settings.fontSize == 24, "a pinch's size, kept (B515)")
-        #expect(SettingsModel.apply("fontSize", 40, to: settings))
+        #expect(SettingsModel.apply(.fontSize(points: 40), to: settings))
         #expect(settings.fontSize == 32, "clamped to the pinch's range")
-        #expect(SettingsModel.apply("cursorShape", "bar", to: settings))
+        #expect(SettingsModel.apply(.cursorShape(id: "bar"), to: settings))
         #expect(settings.cursorShape == .bar)
-        #expect(!SettingsModel.apply("cursorShape", "beam", to: settings))
-        #expect(SettingsModel.apply("cursorColor", "white", to: settings))
+        #expect(!SettingsModel.apply(.cursorShape(id: "beam"), to: settings))
+        #expect(SettingsModel.apply(.cursorColor(id: "white"), to: settings))
         #expect(settings.cursorColorId == "white")
-        #expect(!SettingsModel.apply("cursorColor", "red", to: settings))
-        #expect(SettingsModel.apply("uploadRetentionDays", 0, to: settings))
+        #expect(!SettingsModel.apply(.cursorColor(id: "red"), to: settings))
+        #expect(SettingsModel.apply(.uploadRetentionDays(days: 0), to: settings))
         #expect(settings.uploadRetentionDays == 0)
-        #expect(!SettingsModel.apply("uploadRetentionDays", 3, to: settings))
-        #expect(SettingsModel.apply("predictMode", "never", to: settings))
+        #expect(!SettingsModel.apply(.uploadRetentionDays(days: 3), to: settings))
+        #expect(SettingsModel.apply(.predictMode(id: "never"), to: settings))
         #expect(settings.predictMode == .never)
-        #expect(!SettingsModel.apply("keyboardOnOpen", "yes", to: settings))
-        // Gone with its switch (B516): nothing read it.
-        #expect(!SettingsModel.apply("keepAlive", false, to: settings))
-        #expect(!SettingsModel.apply("colour", true, to: settings))
+        #expect(SettingsModel.apply(.appearance(id: "light"), to: settings))
+        #expect(settings.appearance == .light)
         // The UDP range's page (R18): a range the rule allows, or nothing.
-        #expect(SettingsModel.apply("udpRange", [50000, 50010], to: settings))
+        #expect(SettingsModel.apply(.udpRange(range: PortRange(start: 50000, end: 50010)), to: settings))
         #expect(settings.udpRangeStart == 50000 && settings.udpRangeEnd == 50010)
-        let refused: [Any] = [[61000, 60000], [0, 10], [10, 65536], [1], "60000-61000"]
-        for value in refused {
-            #expect(!SettingsModel.apply("udpRange", value, to: settings), "\(value)")
+        for (start, end) in [(61000, 60000), (0, 10), (10, 65536)] {
+            let range = PortRange(start: Int64(start), end: Int64(end))
+            #expect(!SettingsModel.apply(.udpRange(range: range), to: settings), "\(range)")
         }
         #expect(settings.udpRangeStart == 50000 && settings.udpRangeEnd == 50010)
     }
@@ -121,15 +131,15 @@ struct SettingsRootNSHTests {
         var opened: [String] = []
         var done = 0
         var back = 0
-        let handle = { (message: [String: Any]) in
-            model.handle(message, settings: settings, onOpen: { opened.append($0) },
+        let handle = { (event: SettingsEvent) in
+            model.handle(event, settings: settings, onOpen: { opened.append($0) },
                          onDone: { done += 1 }, onBack: { back += 1 })
         }
-        handle(["ev": "open", "page": "whisper-model"])
-        handle(["ev": "open", "page": "terminal"])
-        handle(["ev": "done"])
-        handle(["ev": "back"])
-        handle(["ev": "set", "key": "voiceInput", "value": false])
+        handle(.open(page: "whisper-model"))
+        handle(.open(page: "terminal"))
+        handle(.done)
+        handle(.back)
+        handle(.set(change: .voiceInput(on: false)))
         #expect(opened == ["whisper-model", "terminal"])
         #expect(done == 1)
         #expect(back == 1)
@@ -151,7 +161,7 @@ struct SettingsRootNSHTests {
         let (settings, _, _, _) = Self.scratch()
         let (surface, heard, done) = try SettingsNSHTests.surface(running: .settings)
         defer { done() }
-        #expect(surface.post(SettingsModel.message(Self.snapshot(settings))))
+        #expect(surface.post(.settings(state: Self.snapshot(settings))))
         let terminal = try #require(await SettingsNSHTests.view(identified: "settings-open-terminal", in: surface))
         await NSHTouchAudit.pressablesTakeTouches(in: surface)
         #expect(terminal.accessibilityActivate())
@@ -179,7 +189,7 @@ struct SettingsRootNSHTests {
         settings.fontName = "Menlo"
         let (surface, heard, done) = try SettingsNSHTests.surface(running: .settings, page: "terminal")
         defer { done() }
-        #expect(surface.post(SettingsModel.message(Self.snapshot(settings))))
+        #expect(surface.post(.settings(state: Self.snapshot(settings))))
         let shape = try #require(await SettingsNSHTests.view(identified: "settings-cursor-shape", in: surface)
             as? UISegmentedControl)
         await NSHTouchAudit.pressablesTakeTouches(in: surface)
@@ -203,7 +213,7 @@ struct SettingsRootNSHTests {
         settings.raiseKeyboardOnOpen = true
         let (surface, heard, done) = try SettingsNSHTests.surface(running: .settings, page: "connections")
         defer { done() }
-        #expect(surface.post(SettingsModel.message(Self.snapshot(settings))))
+        #expect(surface.post(.settings(state: Self.snapshot(settings))))
         let keyboard = try #require(await SettingsNSHTests.view(identified: "settings-keyboard-on-open", in: surface)
             as? UISwitch)
         await NSHTouchAudit.pressablesTakeTouches(in: surface)
@@ -265,7 +275,7 @@ struct AppAppearanceWindowTests {
         params["appearance"] = "system"
         #expect(surface.run(screen: NSHScreen.settings.name, params: params))
         let (settings, _, _, _) = SettingsRootNSHTests.scratch()
-        #expect(surface.post(SettingsModel.message(SettingsRootNSHTests.snapshot(settings))))
+        #expect(surface.post(.settings(state: SettingsRootNSHTests.snapshot(settings))))
         let row = try #require(await SettingsNSHTests.view(identified: "settings-open-appearance", in: surface))
         #expect(row.traitCollection.userInterfaceStyle == .dark)
         window.overrideUserInterfaceStyle = .light
@@ -302,38 +312,6 @@ struct AppAppearanceWindowTests {
         for (name, ink) in [("warn", Ink.warnText), ("section", Ink.sectionTitle)] {
             let rgb = side(ink, light).prefix(3).map { Double($0) / 255 }
             #expect(InkContrast.contrast((rgb[0], rgb[1], rgb[2]), page) >= 4.5, "\(name)")
-        }
-    }
-
-    /// Draws `view` alone in a phone-sized window of `style` to the app's tmp
-    /// folder as `<name>.png`.
-    private static func shoot<V: View>(_ view: V, _ style: UIUserInterfaceStyle, _ name: String) async {
-        let scene = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first
-        let window = scene.map { UIWindow(windowScene: $0) } ?? UIWindow(frame: NavBarNSHTests.phone)
-        window.frame = NavBarNSHTests.phone
-        window.overrideUserInterfaceStyle = style
-        window.rootViewController = UIHostingController(rootView: view.environment(AppSettings.shared))
-        window.isHidden = false
-        defer {
-            window.isHidden = true
-            window.rootViewController = nil
-        }
-        try? await Task.sleep(for: .milliseconds(700))
-        let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
-            window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
-        }
-        try? image.pngData()?.write(to: FileManager.default.temporaryDirectory.appendingPathComponent("\(name).png"))
-    }
-
-    @Test("the SwiftUI sheets that follow the app draw dark and light (R18 E)")
-    func swiftUISheetShots() async {
-        for (look, style) in [("dark", UIUserInterfaceStyle.dark), ("light", .light)] {
-            await Self.shoot(OfflineHostInfoView(), style, "r18e-offline-host-\(look)")
-            await Self.shoot(NewAgentTaskSheet(
-                initialRepos: ["~/src/api", "~/src/web"],
-                load: { (repos: ["~/src/api", "~/src/web"], agents: ["claude", "codex"]) },
-                start: { _ in .failed("The host refused: branch already exists") }),
-                style, "r18e-agent-task-\(look)")
         }
     }
 
@@ -522,8 +500,12 @@ struct HostSetupRouteTests {
     func messages() {
         let hosts = [Self.host(1, live: true), Self.host(2, live: false)]
         let list = SettingsHost.message(hosts)
-        #expect(NSHSurface.check(screen: NSHScreen.settings.name, message: list))
-        #expect((list["hosts"] as? [[String: Any]])?.count == 2)
+        #expect(NSHSurface.check(screen: NSHScreen.settings.name, json: try! pageMessage(message: list)))
+        guard case .settingsHosts(let entries) = list else {
+            Issue.record("not the hosts' message")
+            return
+        }
+        #expect(entries.count == 2 && entries[0].port == 22 && entries[0].live)
         let connection = ServerConnection(name: "gpu-01", host: "192.0.2.10", port: 2222, username: "dev")
         let named = HostSetupScreenModel.host(connection)
         #expect(NSHSurface.check(screen: NSHScreen.hostSetup.name, message: named))

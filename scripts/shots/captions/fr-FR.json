@@ -1,0 +1,47 @@
+{
+  "language": "fr",
+  "iphone": [
+    {
+      "shot": "01-lock",
+      "title": "Votre agent attend votre feu vert : votre iPhone sonne."
+    },
+    {
+      "shot": "02-pane",
+      "title": "Touchez, et vous voilà dans le panneau qui demande."
+    },
+    {
+      "shot": "03-home",
+      "title": "Qui travaille, qui vous attend : tout se voit d’un coup d’œil."
+    },
+    {
+      "shot": "04-island",
+      "title": "L’avancement, directement dans la Dynamic Island."
+    },
+    {
+      "shot": "05-overview",
+      "title": "Tous vos panneaux tmux et herdr sur un seul écran."
+    },
+    {
+      "shot": "06-preview",
+      "title": "Ouvrez le fichier que votre agent vient de modifier."
+    },
+    {
+      "shot": "07-pet",
+      "title": "Faites éclore un compagnon en pixels pour patienter."
+    },
+    {
+      "shot": "08-keyboard",
+      "title": "Un clavier pensé pour le terminal."
+    }
+  ],
+  "ipad": [
+    {
+      "shot": "panes",
+      "title": "Toutes vos fenêtres et tous vos panneaux sur un écran."
+    },
+    {
+      "shot": "home-terminal",
+      "title": "Accueil et terminal, côte à côte."
+    }
+  ]
+}

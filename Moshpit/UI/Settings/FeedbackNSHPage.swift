@@ -25,7 +25,7 @@ struct FeedbackNSHPage: View {
                 NSHPage(
                     screen: .feedback,
                     attach: { model.attach($0) },
-                    onMessage: handle,
+                    onEvent: { if case .feedback(let event) = $0 { handle(event) } },
                     onFailure: { failed = true })
                     .nshPage()
                     .navigationTitle("Feedback")
@@ -43,26 +43,24 @@ struct FeedbackNSHPage: View {
     }
 
     /// What the screen tells the host.
-    private func handle(_ message: [String: Any]) {
-        switch message["ev"] as? String {
-        case "cancel":
+    private func handle(_ event: FeedbackEvent) {
+        switch event {
+        case .cancel:
             dismiss()
-        case "text":
-            model.message = message["value"] as? String ?? ""
-        case "set":
-            if let key = message["key"] as? String, let on = message["value"] as? Bool { model.set(key, on) }
-        case "send":
-            if let text = message["message"] as? String { model.message = text }
+        case .text(let value):
+            model.message = value
+        case .set(let key, let on):
+            model.set(key, on)
+        case .send(let text):
+            model.message = text
             model.send(
                 compose: { composing = FeedbackCompose(mail: $0) },
                 openMailto: { url, done in openURL(url) { done($0) } })
-        case "copy-address":
+        case .copyAddress:
             model.copyAddress()
-        case "github-issue":
+        case .githubIssue:
             // The redesign's Feedback page (§6.12) has the issue link too.
             openURL(FeedbackChannels.newIssueURL)
-        default:
-            break
         }
     }
 }
@@ -75,8 +73,8 @@ struct FeedbackCompose: Identifiable {
 
 /// What the NSH Feedback page shows, owned by the host so a surface made again
 /// starts from it (``NSHPage``'s third rule): the text typed so far, the two
-/// switches, and the send's progress; the message that carries it
-/// (`{"op": "feedback", …}`, `ui/src/feedback.rs`'s `Message`).
+/// switches, and the send's progress; the state that carries it
+/// (``FeedbackState``, `ui/src/feedback.rs`'s own, through the page bridge).
 @MainActor
 final class FeedbackModel {
     /// The text typed so far, as the page last told it.
@@ -105,11 +103,10 @@ final class FeedbackModel {
     }
 
     /// The user flipped switch `key`.
-    func set(_ key: String, _ on: Bool) {
+    func set(_ key: FeedbackSwitch, _ on: Bool) {
         switch key {
-        case "environment": includeEnvironment = on
-        case "log": attachLog = on
-        default: return
+        case .environment: includeEnvironment = on
+        case .log: attachLog = on
         }
         post()
     }
@@ -154,24 +151,14 @@ final class FeedbackModel {
     }
 
     private func post(withText: Bool = false) {
-        surface?.post(Self.message(
-            text: withText ? message : nil, environment: includeEnvironment, log: attachLog,
-            preparing: isPreparing, showAddress: showAddress, copied: copied))
+        surface?.post(.feedback(state: state(withText: withText)))
     }
 
-    /// The screen's message; `text` only when the page should take it.
-    nonisolated static func message(text: String?, environment: Bool, log: Bool, preparing: Bool,
-                                    showAddress: Bool, copied: Bool) -> [String: Any] {
-        var message: [String: Any] = [
-            "op": "feedback",
-            "environment": environment,
-            "log": log,
-            "preparing": preparing,
-            "showAddress": showAddress,
-            "copied": copied,
-            "recipient": FeedbackMail.recipient,
-        ]
-        if let text { message["message"] = text }
-        return message
+    /// What the page shows; the text only when the page should take it.
+    func state(withText: Bool = false) -> FeedbackState {
+        FeedbackState(
+            message: withText ? message : nil, environment: includeEnvironment, log: attachLog,
+            preparing: isPreparing, showAddress: showAddress, copied: copied,
+            recipient: FeedbackMail.recipient)
     }
 }

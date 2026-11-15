@@ -1,0 +1,47 @@
+{
+  "language": "ja",
+  "iphone": [
+    {
+      "shot": "01-lock",
+      "title": "エージェントが承認待ち。iPhoneが鳴る"
+    },
+    {
+      "shot": "02-pane",
+      "title": "タップすれば、聞いてきたペインへ"
+    },
+    {
+      "shot": "03-home",
+      "title": "誰が作業中で、誰が待っているか、ひと目で"
+    },
+    {
+      "shot": "04-island",
+      "title": "アプリを開かなくても、進み具合がわかる"
+    },
+    {
+      "shot": "05-overview",
+      "title": "tmuxもherdrも、ペインをまとめて見渡せる"
+    },
+    {
+      "shot": "06-preview",
+      "title": "エージェントが変えたファイルを、タップで確認"
+    },
+    {
+      "shot": "07-pet",
+      "title": "待ち時間の相棒を、たまごから育てる"
+    },
+    {
+      "shot": "08-keyboard",
+      "title": "ターミナルのための\nキーボード"
+    }
+  ],
+  "ipad": [
+    {
+      "shot": "panes",
+      "title": "ウィンドウもペインも、ひと画面で"
+    },
+    {
+      "shot": "home-terminal",
+      "title": "ホームとターミナルを並べて"
+    }
+  ]
+}

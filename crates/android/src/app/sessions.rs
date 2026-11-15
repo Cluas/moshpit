@@ -72,7 +72,7 @@ pub struct Conn {
     /// The mosh-server this session started (the tests stop only theirs).
     pub mosh_server_pid: Option<i64>,
     /// It has been live once (a reconnect veils the kept frame; before
-    /// that, the poster).
+    /// that, no cover: B657).
     pub ever_live: bool,
     /// mosh's smoothed round trip, when it says.
     pub srtt_ms: Option<f64>,

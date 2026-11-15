@@ -27,6 +27,8 @@ moshpit-term = { path = "../term" }
 # with NSH itself: in this library, not one of their own, as the design
 # requires of every Rust crate the app links.
 moshpit-ui = { path = "../../ui" }
+# The screens' colors, for the page bridge's conversions (src/pages).
+nsh-core.workspace = true
 # The screens' host models, shared with Android (src/app.rs exports them
 # through UniFFI): the hosts keep only the platform's pieces.
 moshpit-app = { path = "../app" }
@@ -50,6 +52,7 @@ moshpit-install = { path = "../install" }
 # Host care (src/hostcare.rs, through UniFFI): the machine and its driver.
 moshpit-hostcare = { path = "../hostcare" }
 serde_json = "1"
+serde = "1"
 # herdr's intents, outcomes and notices, as the session layer's herdr API
 # crosses with them.
 moshpit-herdr = { path = "../herdr" }

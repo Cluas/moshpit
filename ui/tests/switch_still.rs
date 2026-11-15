@@ -2,8 +2,8 @@
 //! 有个动画 我们直接去掉」): while the host says so (`still`), the veil is
 //! there at once and gone at once, even when the post that lifts it no
 //! longer says it is a switch, and a banner leaves at once. An ordinary
-//! reconnect's veil and banner still fade. The host never posts a poster
-//! for a switch (Swift: `TerminalScreen.coverKind`).
+//! reconnect's veil and banner still fade. There is no poster to post
+//! (B657).
 
 mod common;
 

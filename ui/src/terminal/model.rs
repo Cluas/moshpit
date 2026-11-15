@@ -228,14 +228,17 @@ impl Crumbs {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum CoverKind {
+    /// Nothing: a live pane, and a first connect too (no poster, B657: the
+    /// bar's transport pill says it connects).
     #[default]
     None,
-    /// A first connect's poster (`TerminalConnectingView`).
-    Poster,
     /// A reconnect's veil over the kept frame (`ReconnectVeil`).
     Veil,
     /// Another device holds the window's size (`SizeFollowVeil`).
     Follow,
+    /// Another client picked another pane in the window shown: the phone
+    /// keeps its own, a tap taking it back (B587).
+    PaneFollow,
 }
 
 /// The cover over the pane and what it says.
@@ -250,8 +253,7 @@ pub struct Cover {
     pub ended: bool,
     /// Who holds the window's size ("iPad", "iPhone").
     pub owner: Option<String>,
-    /// The poster takes the touches (nothing usable beneath it): not while
-    /// it only waits for the first frame of a live session.
+    /// The cover takes the touches: the follower's card (its button).
     pub touches: bool,
 }
 
@@ -277,9 +279,6 @@ pub struct Empty {
     pub mux: Mux,
     /// The binary is not on the host (else: no sessions).
     pub missing: bool,
-    /// A reconnect: the wait before it decides shows nothing (the veil is
-    /// up), not the poster.
-    pub quiet: bool,
     /// The host has the answer already (the binary is known missing, the
     /// server said it has no session or no server): it shows at once. Else
     /// the empty state waits out the attach handshake's seconds first,

@@ -8,6 +8,8 @@ publish.workspace = true
 
 [dependencies]
 log = "0.4"
+# The clock that counts the device's sleep (B611).
+libc = "0.2"
 # The shell quoting every command line shares (round nineteen).
 moshpit-herdr = { path = "../herdr" }
 moshpit-install = { path = "../install" }

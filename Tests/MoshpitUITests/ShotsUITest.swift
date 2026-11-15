@@ -1,17 +1,29 @@
 import XCTest
 
-/// The store and README screenshots a tap reaches, or that must wait for a
-/// page to be there rather than for a fixed time: Home with its agents, the
-/// agent's pane, the tmux window picker. Run by the screenshot workflow
-/// only (`scripts/shots/ci-capture.sh`, which hands the runner its locales
-/// and seeds as `TEST_RUNNER_SHOTS_*` and the staged host's
+/// The App Store screenshots, shot on CI's simulators against the staged
+/// hosts (scripts/shots/stage-host.sh): what each store image shows under
+/// its headline (scripts/shots/captions/, composed by
+/// scripts/shots/compose.swift). Run by the screenshot workflow only
+/// (`scripts/shots/ci-capture.sh`, which hands the runner its locales and
+/// seeds as `TEST_RUNNER_SHOTS_*` and the staged host's
 /// `TEST_RUNNER_MOSHPIT_SEED_*`); it skips anywhere else, CI's tests
 /// included.
 ///
-/// Every shot waits on its page's id (the same ids the NSH flows tap,
-/// ``NSHFlow``), then a short settle for the page's own animation, then
-/// keeps the screen as an attachment named `shot~<locale>~<shot>`, which
-/// the workflow exports out of the result bundle as `<locale>/<shot>.png`.
+/// The iPhone's eight, in the store's order: the lock screen with an
+/// agent's question and the Live Activity (01), the pane that asked (02),
+/// Home's Needs You across three hosts (03), the Dynamic Island expanded
+/// (04), the pane overview (05), a file the agent wrote, previewed (06),
+/// the companion talking (07), the key bar with the keyboard up (08). The
+/// iPad's two: the overview (panes) and Home beside a terminal
+/// (home-terminal).
+///
+/// Every shot waits on its page's id, and a terminal shot on the session
+/// being live with nothing over it (no connecting poster, no reconnect
+/// veil), then a short settle for the page's own animation; then it keeps
+/// the screen as an attachment named `shot~<locale>~<shot>`, which the
+/// workflow exports out of the result bundle as `<locale>/<shot>.png`. The
+/// test methods run in name order, each over every locale; the two that
+/// leave the app (the lock screen, the island) run last.
 final class ShotsUITest: XCTestCase {
     /// A store locale, the app language it runs in and its region.
     struct Locale {
@@ -32,14 +44,32 @@ final class ShotsUITest: XCTestCase {
         }
     }
 
-    /// `SHOTS_ARGS_JSON`: the launch arguments every shot takes (quiet, the
-    /// pet, no first-run hints), as the simulator shots take them.
-    private static var common: [String] {
-        guard let json = env["SHOTS_ARGS_JSON"], let data = json.data(using: .utf8),
+    private static func json(_ name: String) -> [String] {
+        guard let json = env[name], let data = json.data(using: .utf8),
               let args = try? JSONDecoder().decode([String].self, from: data)
         else { return [] }
         return args
     }
+
+    /// `SHOTS_ARGS_JSON`: what every shot takes (the companion hatched, no
+    /// first-run hints, no host care).
+    private static var common: [String] { json("SHOTS_ARGS_JSON") }
+
+    /// `SHOTS_QUIET_JSON`: no notifications and no Live Activity, for the
+    /// shots inside the app (a simulator's banner never goes by itself).
+    private static var quiet: [String] { json("SHOTS_QUIET_JSON") }
+
+    /// What the lock screen and the island take instead of quiet: the
+    /// question announced at once and every time (no 30 s grace, no
+    /// episode remembered from the locale before), with its words on the
+    /// lock screen; the Live Activity on.
+    private static let loud = [
+        "-MOSHPIT_ANNOUNCE_GRACE", "0", "-island.announcedEpisodes", "<dict/>",
+        "-moshpit.settings.notifications", "<true/>", "-moshpit.settings.liveActivity", "<true/>",
+        "-moshpit.settings.lockScreenDetail", "<true/>", "-moshpit.settings.attentionSound", "<false/>",
+    ]
+
+    @MainActor private static var phone: Bool { UIDevice.current.userInterfaceIdiom == .phone }
 
     override func setUpWithError() throws {
         continueAfterFailure = true
@@ -49,12 +79,17 @@ final class ShotsUITest: XCTestCase {
     }
 
     @MainActor
-    private func launch(_ locale: Locale, _ extra: [String]) -> XCUIApplication {
+    private func launch(_ locale: Locale, _ extra: [String], quiet: Bool = true) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = ["-AppleLanguages", "(\(locale.language))", "-AppleLocale", locale.region]
-            + Self.common + extra
+            + Self.common + (quiet ? Self.quiet : Self.loud) + extra
         app.launch()
         return app
+    }
+
+    /// Home with the three staged hosts, each connecting.
+    private var home: [String]? {
+        Self.env["SHOTS_HOME_FIXTURE"].map { ["-MOSHPIT_SEED_HOME_FIXTURE", $0] }
     }
 
     /// Lets the page's own animation finish once its id is there.
@@ -70,103 +105,195 @@ final class ShotsUITest: XCTestCase {
         add(attachment)
     }
 
-    /// Home: the staged host connected, its agents listed (one waiting on
-    /// the person, so the Needs You group is there), the companion on its
-    /// card.
+    // MARK: Waiting
+
+    /// Waits for `element` to be enabled (a breadcrumb segment is inert
+    /// until the session is live).
+    private func waitEnabled(_ element: XCUIElement, _ timeout: TimeInterval) -> Bool {
+        let enabled = expectation(for: NSPredicate(format: "isEnabled == true"), evaluatedWith: element)
+        return XCTWaiter().wait(for: [enabled], timeout: timeout) == .completed
+    }
+
+    /// The terminal live with nothing over it: the window segment answers
+    /// (a live, attached tree), and neither the connecting poster nor the
+    /// reconnect veil is there (the tree can be live a moment before the
+    /// first frame is painted).
     @MainActor
-    func test01HomeAgents() throws {
-        guard let fixture = Self.env["SHOTS_HOME_FIXTURE"] else { throw XCTSkip("no SHOTS_HOME_FIXTURE") }
-        for locale in Self.locales {
-            let app = launch(locale, ["-MOSHPIT_SEED_HOME_FIXTURE", fixture])
-            let waiting = app.nsh("home-needs-you")
-            // A cold Home should list the waiting agent on its own (the core
-            // attaches tmux on connect and polls the stamps every 2 s); dry
-            // run 2 shot none at 24 s. Say which happened (B620), then fall
-            // back to what a person would do.
-            let cold = waiting.waitForExistence(timeout: 45)
-            print("SHOTS B620 \(locale.name): Home listed the waiting agent without a terminal: \(cold)")
-            if !cold {
-                // Open devbox's terminal from its card and come back.
-                let head = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'devbox'")).firstMatch
-                if head.waitForExistence(timeout: 30) { head.tap() }
-                let crumb = app.nsh("terminal-crumb-window")
-                if crumb.waitForExistence(timeout: 30), waitEnabled(crumb, 30) {
-                    app.tapNSH("terminal-back")
-                }
+    private func waitLive(_ app: XCUIApplication, _ locale: Locale) -> Bool {
+        let window = app.nsh("terminal-crumb-window")
+        guard window.waitForExistence(timeout: 60), waitEnabled(window, 30) else {
+            XCTFail("\(locale.name): the seeded session never went live")
+            return false
+        }
+        for cover in ["terminal-connecting", "terminal-reconnect-veil"] {
+            if !app.nsh(cover).waitForNonExistence(timeout: 20) {
+                XCTFail("\(locale.name): \(cover) is still up")
+                return false
             }
-            if waiting.waitForExistence(timeout: 30) {
-                settle(2)
-                keep(locale, "01-home")
-            } else {
-                XCTFail("\(locale.name): Home never listed an agent waiting")
+        }
+        settle(0.8)
+        return true
+    }
+
+    /// Home listing its agents, someone among them waiting (B620: a cold
+    /// Home should, on its own; if it doesn't, the log says so and the test
+    /// does what a person would: opens devbox's terminal and comes back).
+    @MainActor
+    private func waitNeedsYou(_ app: XCUIApplication, _ locale: Locale) -> Bool {
+        let waiting = app.nsh("home-needs-you")
+        let cold = waiting.waitForExistence(timeout: 45)
+        print("SHOTS B620 \(locale.name): Home listed the waiting agent without a terminal: \(cold)")
+        if !cold {
+            let head = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'devbox'")).firstMatch
+            if head.waitForExistence(timeout: 30) { head.tap() }
+            let crumb = app.nsh("terminal-crumb-window")
+            if crumb.waitForExistence(timeout: 30), waitEnabled(crumb, 30) {
+                app.tapNSH("terminal-back")
+            }
+        }
+        guard waiting.waitForExistence(timeout: 30) else {
+            XCTFail("\(locale.name): Home never listed an agent waiting")
+            return false
+        }
+        return true
+    }
+
+    // MARK: Inside the app
+
+    /// 02: the pane that asked: Claude Code's permission prompt, the key
+    /// bar under it to answer with.
+    @MainActor
+    func test02Pane() throws {
+        guard Self.phone else { throw XCTSkip("iPhone only") }
+        guard let session = NSHFlow.seededSession() else { throw XCTSkip("no staged host") }
+        for locale in Self.locales {
+            let app = launch(locale, session)
+            if waitLive(app, locale) {
+                settle(1.2)
+                keep(locale, "02-pane")
             }
             app.terminate()
         }
     }
 
-    /// The agent's pane: the staged Claude Code turn asking for an edit, the
-    /// session live (its window segment answers).
+    /// 03: Home's Needs You over three hosts' agents, waiting, at work and
+    /// done, the companion perched.
     @MainActor
-    func test02AgentPane() throws {
-        guard let session = NSHFlow.seededSession() else { throw XCTSkip("no staged host") }
+    func test03Home() throws {
+        guard Self.phone else { throw XCTSkip("iPhone only") }
+        guard let home else { throw XCTSkip("no SHOTS_HOME_FIXTURE") }
         for locale in Self.locales {
-            let app = launch(locale, session)
-            let window = app.nsh("terminal-crumb-window")
-            if window.waitForExistence(timeout: 60) && waitEnabled(window, 30) {
+            let app = launch(locale, home)
+            if waitNeedsYou(app, locale) {
                 settle(2)
-                keep(locale, "02-agent-pane")
-            } else {
-                XCTFail("\(locale.name): the seeded session never went live")
+                keep(locale, "03-home")
             }
             app.terminate()
         }
     }
 
-    /// tmux's windows: the picker the breadcrumb's window segment opens,
-    /// each row with its agent's state.
+    /// 05 (and the iPad's panes): the pane overview, every window of the
+    /// session as a card, the split one with its three panes. A tap on the
+    /// window segment opens it once the tree is live.
     @MainActor
-    func test04TmuxWindows() throws {
+    func test05Overview() throws {
         guard let session = NSHFlow.seededSession() else { throw XCTSkip("no staged host") }
         for locale in Self.locales {
             let app = launch(locale, session)
-            let window = app.nsh("terminal-crumb-window")
-            guard window.waitForExistence(timeout: 60), waitEnabled(window, 30) else {
-                XCTFail("\(locale.name): the seeded session never went live")
-                app.terminate()
-                continue
-            }
-            window.tap()
-            if app.nsh("mux-picker-rows").waitForExistence(timeout: 15) {
+            guard waitLive(app, locale) else { app.terminate(); continue }
+            app.nsh("terminal-crumb-window").tap()
+            if app.nsh("terminal-overview").waitForExistence(timeout: 15) {
                 settle()
-                keep(locale, "04-tmux-windows")
+                keep(locale, Self.phone ? "05-overview" : "panes")
             } else {
-                XCTFail("\(locale.name): the window picker never listed its windows")
+                XCTFail("\(locale.name): the overview never opened")
             }
             app.terminate()
         }
     }
 
-    /// The pane with the software keyboard and the key bar up, raised by
-    /// the key bar's own keyboard key and shot once iOS's keyboard is
-    /// there (a clock missed it in both Chinese locales: the CJK keyboard
-    /// takes longer). iPhone only: the iPad simulator raises no software
-    /// keyboard.
+    /// 06: the chart the agent wrote, opened from its path in the pane
+    /// (a link once the host confirmed the file), previewed. If the tap
+    /// misses the link, the Files chip's folder sheet reaches it.
     @MainActor
-    func test06Keyboard() throws {
-        guard UIDevice.current.userInterfaceIdiom == .phone else { throw XCTSkip("iPhone only") }
+    func test06Preview() throws {
+        guard Self.phone else { throw XCTSkip("iPhone only") }
         guard let session = NSHFlow.seededSession() else { throw XCTSkip("no staged host") }
         for locale in Self.locales {
             let app = launch(locale, session)
-            let window = app.nsh("terminal-crumb-window")
-            guard window.waitForExistence(timeout: 60), waitEnabled(window, 30) else {
-                XCTFail("\(locale.name): the seeded session never went live")
-                app.terminate()
-                continue
+            guard waitLive(app, locale) else { app.terminate(); continue }
+            // The path is a link once the host's probe confirmed it.
+            settle(4)
+            let preview = app.navigationBars.matching(
+                NSPredicate(format: "identifier CONTAINS 'latency' OR label CONTAINS 'latency'")).firstMatch
+            let row = app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'bench/latency.png'")).firstMatch
+            if row.waitForExistence(timeout: 10) {
+                // The path starts after "     Wrote ": aim at its middle.
+                let label = row.label as NSString
+                let start = label.range(of: "bench/latency.png").location
+                let columns = max(label.length, 40)
+                let x = (CGFloat(start) + 8) / CGFloat(columns)
+                row.coordinate(withNormalizedOffset: CGVector(dx: min(x, 0.6), dy: 0.5)).tap()
             }
+            if !preview.waitForExistence(timeout: 20) {
+                // The folder sheet: the pane's folder, then bench/.
+                app.tapNSH("shortcut-files")
+                let bench = app.descendants(matching: .any)
+                    .matching(NSPredicate(format: "identifier ENDSWITH '/bench'")).firstMatch
+                if bench.waitForExistence(timeout: 20) { bench.tap() }
+                let file = app.descendants(matching: .any)
+                    .matching(NSPredicate(format: "identifier ENDSWITH '/latency.png'")).firstMatch
+                if file.waitForExistence(timeout: 20) { file.tap() }
+            }
+            if preview.waitForExistence(timeout: 30) {
+                settle(2)
+                keep(locale, "06-preview")
+            } else {
+                XCTFail("\(locale.name): the chart never opened")
+            }
+            app.terminate()
+        }
+    }
+
+    /// 07: the companion, hatched and grown, perched on Needs You and
+    /// saying something (a tap always answers; its bubble is hidden from
+    /// accessibility, so the shot waits a beat instead).
+    @MainActor
+    func test07Pet() throws {
+        guard Self.phone else { throw XCTSkip("iPhone only") }
+        guard let home else { throw XCTSkip("no SHOTS_HOME_FIXTURE") }
+        for locale in Self.locales {
+            let app = launch(locale, home)
+            guard waitNeedsYou(app, locale) else { app.terminate(); continue }
+            let pet = app.nsh("home-pet")
+            if pet.waitForExistence(timeout: 15) {
+                settle(1)
+                pet.tap()
+                settle(0.7)
+                keep(locale, "07-pet")
+            } else {
+                XCTFail("\(locale.name): no companion on Home")
+            }
+            app.terminate()
+        }
+    }
+
+    /// 08: the key bar with the keyboard up, raised by the bar's own
+    /// keyboard key and shot once iOS's keyboard is there (a clock missed
+    /// it in both Chinese locales: the CJK keyboard takes longer). The bar
+    /// carries the image and voice keys by default. iPhone only: the iPad
+    /// simulator raises no software keyboard.
+    @MainActor
+    func test08Keyboard() throws {
+        guard Self.phone else { throw XCTSkip("iPhone only") }
+        guard let session = NSHFlow.seededSession() else { throw XCTSkip("no staged host") }
+        for locale in Self.locales {
+            let app = launch(locale, session)
+            guard waitLive(app, locale) else { app.terminate(); continue }
             app.tapNSH("keyboard-toggle")
             if app.keyboards.firstMatch.waitForExistence(timeout: 15) {
                 settle(2)
-                keep(locale, "06-keyboard")
+                keep(locale, "08-keyboard")
             } else {
                 XCTFail("\(locale.name): the keyboard never came up")
             }
@@ -174,10 +301,103 @@ final class ShotsUITest: XCTestCase {
         }
     }
 
-    /// Waits for `element` to be enabled (a breadcrumb segment is inert
-    /// until the session is live).
-    private func waitEnabled(_ element: XCUIElement, _ timeout: TimeInterval) -> Bool {
-        let enabled = expectation(for: NSPredicate(format: "isEnabled == true"), evaluatedWith: element)
-        return XCTWaiter().wait(for: [enabled], timeout: timeout) == .completed
+    /// The iPad's Home beside a terminal: the split view in landscape (in
+    /// portrait the terminal takes the screen and Home only overlays it),
+    /// devbox's terminal opened from its card.
+    @MainActor
+    func test10HomeAndTerminal() throws {
+        guard !Self.phone else { throw XCTSkip("iPad only") }
+        guard let home else { throw XCTSkip("no SHOTS_HOME_FIXTURE") }
+        XCUIDevice.shared.orientation = .landscapeLeft
+        defer { XCUIDevice.shared.orientation = .portrait }
+        for locale in Self.locales {
+            let app = launch(locale, home)
+            guard waitNeedsYou(app, locale) else { app.terminate(); continue }
+            let head = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'devbox'")).firstMatch
+            if head.waitForExistence(timeout: 30) { head.tap() }
+            if waitLive(app, locale) {
+                // The sidebar back beside it, if opening hid it.
+                if !app.nsh("home-needs-you").exists { app.nsh("terminal-sidebar").tap() }
+                settle(1.5)
+                keep(locale, "home-terminal")
+            }
+            app.terminate()
+        }
+    }
+
+    // MARK: Outside the app (last: they leave it)
+
+    /// SpringBoard: the lock screen and the Dynamic Island.
+    @MainActor private var springboard: XCUIApplication {
+        XCUIApplication(bundleIdentifier: "com.apple.springboard")
+    }
+
+    /// The system's notification permission, allowed when it asks (the
+    /// first launch on a fresh simulator): its second button, whatever the
+    /// language says.
+    @MainActor
+    private func allowNotifications() {
+        let alert = springboard.alerts.firstMatch
+        if alert.waitForExistence(timeout: 5), alert.buttons.count > 1 {
+            alert.buttons.element(boundBy: 1).tap()
+        }
+    }
+
+    /// Home's agents loaded, the question announced and the Live Activity
+    /// up, then the app sent to the background.
+    @MainActor
+    private func announceAndLeave(_ locale: Locale) -> XCUIApplication? {
+        guard let home else { return nil }
+        let app = launch(locale, home, quiet: false)
+        allowNotifications()
+        guard waitNeedsYou(app, locale) else { app.terminate(); return nil }
+        // The announcement's sweep runs every 2 s; the island's state with
+        // it.
+        settle(5)
+        XCUIDevice.shared.press(.home)
+        settle(2)
+        return app
+    }
+
+    /// 04: the Dynamic Island, expanded (a long press on it from the home
+    /// screen), its agents and their timers.
+    @MainActor
+    func test90Island() throws {
+        guard Self.phone else { throw XCTSkip("iPhone only") }
+        for locale in Self.locales {
+            guard let app = announceAndLeave(locale) else { throw XCTSkip("no SHOTS_HOME_FIXTURE") }
+            // A banner from the announcement may sit on the island first.
+            settle(5)
+            springboard.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.025))
+                .press(forDuration: 1.2)
+            settle(1.2)
+            keep(locale, "04-island")
+            print("SHOTS island \(locale.name): kept; check it shows the expanded island")
+            app.terminate()
+        }
+    }
+
+    /// 01: the lock screen: the agent's question as a notification and
+    /// the Live Activity under the clock.
+    @MainActor
+    func test91Lock() throws {
+        guard Self.phone else { throw XCTSkip("iPhone only") }
+        for locale in Self.locales {
+            guard let app = announceAndLeave(locale) else { throw XCTSkip("no SHOTS_HOME_FIXTURE") }
+            XCUIDevice.shared.perform(NSSelectorFromString("pressLockButton"))
+            settle(1.5)
+            // The lock button darkens the screen; the home button wakes it
+            // on the lock screen.
+            XCUIDevice.shared.press(.home)
+            settle(2.5)
+            keep(locale, "01-lock")
+            print("SHOTS lock \(locale.name): kept; check it shows the notification and the Live Activity")
+            // Unlock (no passcode on a simulator) for the next locale.
+            XCUIDevice.shared.press(.home)
+            settle(1)
+            springboard.swipeUp()
+            settle(1)
+            app.terminate()
+        }
     }
 }

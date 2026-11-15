@@ -1,0 +1,47 @@
+{
+  "language": "zh-Hans",
+  "iphone": [
+    {
+      "shot": "01-lock",
+      "title": "智能体等你拍板，手机会响"
+    },
+    {
+      "shot": "02-pane",
+      "title": "点开就是提问的那个窗格"
+    },
+    {
+      "shot": "03-home",
+      "title": "谁在干活、谁在等你，一眼看清"
+    },
+    {
+      "shot": "04-island",
+      "title": "不开 App，也知道跑到哪了"
+    },
+    {
+      "shot": "05-overview",
+      "title": "tmux、herdr 的窗格，一屏看全"
+    },
+    {
+      "shot": "06-preview",
+      "title": "改了哪个文件，点一下就能看"
+    },
+    {
+      "shot": "07-pet",
+      "title": "孵一只陪你等的伙伴"
+    },
+    {
+      "shot": "08-keyboard",
+      "title": "为终端做的键盘"
+    }
+  ],
+  "ipad": [
+    {
+      "shot": "panes",
+      "title": "所有窗口和窗格，一屏看全"
+    },
+    {
+      "shot": "home-terminal",
+      "title": "首页和终端并排"
+    }
+  ]
+}

@@ -319,27 +319,47 @@ fn the_sidebar_button_stands_in_for_back_on_the_ipad() {
 }
 
 #[test]
-fn a_first_connect_shows_the_poster_and_a_reconnect_only_the_veil() {
+fn a_first_connect_has_no_cover_and_a_reconnect_only_the_veil() {
     let (mut app, channel, natives) = open(Params::default());
+    // B657: a first connect is the terminal's background; the bar's pill
+    // says it connects. No poster: no big mark, no grid, no name in the
+    // middle of the pane.
     show(
         &mut app,
         &channel,
         &with(
             chrome(),
             json!({"crumbs": null, "state": "connecting", "content": "none",
-                   "cover": {"kind": "poster", "state": "connecting", "touches": true}}),
+                   "cover": {"kind": "none", "state": "connecting"}}),
         ),
     );
-    app.wait_for("id:terminal-connecting").unwrap();
-    for text in ["studio", "cluas@studio.local:22", "Connecting…"] {
-        assert!(
-            app.screen().shows(text),
-            "{text}: {:?}",
-            app.screen().texts()
-        );
-    }
-    assert_eq!(natives.count("moshpit/pane-loader"), 1);
-    // A reconnect over the kept frame: the veil, its capsule, no poster.
+    app.wait_for("id:terminal-pane-area").unwrap();
+    app.run_for(Duration::from_millis(400)).unwrap();
+    assert_eq!(
+        app.screen().count("id:terminal-connecting").unwrap(),
+        0,
+        "the poster"
+    );
+    assert_eq!(natives.count("moshpit/pane-loader"), 0, "the big mark");
+    assert_eq!(app.screen().count("id:terminal-reconnect-veil").unwrap(), 0);
+    assert!(
+        !app.screen().shows("Connecting…"),
+        "the pane says nothing: {:?}",
+        app.screen().texts()
+    );
+    // A host that still says "poster" is refused, not drawn.
+    assert!(
+        moshpit_ui::terminal::Message::parse(
+            &with(
+                chrome(),
+                json!({"cover": {"kind": "poster", "state": "connecting"}})
+            )
+            .to_string()
+        )
+        .is_err(),
+        "no poster to draw"
+    );
+    // A reconnect over the kept frame: the veil, its capsule.
     show(
         &mut app,
         &channel,
@@ -351,8 +371,6 @@ fn a_first_connect_shows_the_poster_and_a_reconnect_only_the_veil() {
     );
     app.wait_for("id:terminal-reconnect-veil").unwrap();
     app.wait_for("id:terminal-reconnect-capsule").unwrap();
-    app.wait_for_gone("id:terminal-connecting", Duration::from_secs(5))
-        .unwrap();
     assert!(app.screen().shows("Reconnecting…"));
     // Nothing being attempted: the phone waits for a network; an ended
     // session says so.
@@ -451,14 +469,14 @@ fn the_empty_state_waits_then_offers_what_the_host_lacks() {
         &with(
             chrome(),
             json!({"crumbs": null, "content": "empty",
-                   "empty": {"mux": "tmux", "missing": false, "quiet": false,
+                   "empty": {"mux": "tmux", "missing": false,
                              "session": "Session", "sessionLower": "session",
                              "sessionsLower": "sessions"}}),
         ),
     );
     app.wait_for("id:terminal-empty-state").unwrap();
-    // The wait looks like the connection's own (the poster), then answers.
-    app.wait_for("id:terminal-connecting").unwrap();
+    // The wait is the bare background (no poster, B657), then answers.
+    assert_eq!(app.screen().count("id:terminal-connecting").unwrap(), 0);
     app.wait_for_within(
         "id:multiplexer-create-first-session",
         Duration::from_secs(8),
@@ -479,7 +497,7 @@ fn the_empty_state_waits_then_offers_what_the_host_lacks() {
         .unwrap_or(());
     no_intent(&heard);
     // The creating failed (the controller's notice): Create is back.
-    let empty = json!({"mux": "tmux", "missing": false, "quiet": false,
+    let empty = json!({"mux": "tmux", "missing": false,
                        "session": "Session", "sessionLower": "session",
                        "sessionsLower": "sessions"});
     show(
@@ -498,14 +516,13 @@ fn the_empty_state_waits_then_offers_what_the_host_lacks() {
     channel.close();
 }
 
-/// The empty state's chrome: tmux with no sessions, a reconnect's quiet
-/// wait (nothing over the terminal's ground while it waits), `settled` as
-/// the host says.
+/// The empty state's chrome: tmux with no sessions (nothing over the
+/// terminal's ground while it waits), `settled` as the host says.
 fn no_sessions(settled: bool) -> Value {
     with(
         chrome(),
         json!({"crumbs": null, "content": "empty",
-               "empty": {"mux": "tmux", "missing": false, "quiet": true, "settled": settled,
+               "empty": {"mux": "tmux", "missing": false, "settled": settled,
                          "session": "Session", "sessionLower": "session",
                          "sessionsLower": "sessions"}}),
     )

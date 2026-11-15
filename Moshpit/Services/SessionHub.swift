@@ -107,7 +107,7 @@ final class SessionHub {
         /// True from the start of a tmux attempt until the new controller
         /// reveals its first frame: the window in which the transport may
         /// already say `.live` while the pane has nothing worth uncovering.
-        /// The screen keeps its cover (ghost or poster) up for exactly this
+        /// The screen keeps its cover (the ghost under the veil) up for exactly this
         /// long — measured on paint, not on a guessed grace period.
         private(set) var awaitingFirstFrame = false
 

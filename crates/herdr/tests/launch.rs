@@ -382,18 +382,24 @@ fn the_daemon_detaches_from_the_exec_channel_it_runs_on() {
     );
 }
 
-/// The PATH list is `HostCapabilities.extraPathDirs`, kept in step with the
-/// app's (the harness build checks the same).
+/// The PATH list is the host probe's (`moshpit_install::capabilities`),
+/// which the app asks the core for since E6a batch 2a
+/// (`HostCapabilities.extraPathDirs` is `hostExtraPathDirs()`): a launch
+/// looks where the probe found herdr.
 #[test]
 fn the_path_dirs_are_the_apps() {
-    let swift = std::fs::read_to_string(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/../../Moshpit/Services/HostCapabilities.swift"
-    ));
-    // Only checked where the app's sources are around (not in an export of
-    // the crate alone).
-    if let Ok(swift) = swift {
-        assert!(swift.contains(&format!("\"{}\"", launch::EXTRA_PATH_DIRS)));
+    let read =
+        |path: &str| std::fs::read_to_string(format!("{}/{path}", env!("CARGO_MANIFEST_DIR")));
+    // Only checked where the sources are around (not in an export of the
+    // crate alone).
+    if let Ok(probe) = read("../install/src/capabilities.rs") {
+        assert!(probe.contains(&format!("\"{}\"", launch::EXTRA_PATH_DIRS)));
+    }
+    if let Ok(swift) = read("../../Moshpit/Services/HostCapabilities.swift") {
+        assert!(
+            swift.contains("hostExtraPathDirs()"),
+            "the app keeps a PATH list of its own again"
+        );
     }
 }
 

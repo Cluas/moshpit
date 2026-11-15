@@ -61,22 +61,24 @@ struct ThemeNSHTests {
     // MARK: Theme
 
     @Test("every Theme state is a message the Rust screen takes; bad ones are refused")
-    func themeMessages() {
+    func themeMessages() throws {
         let screen = NSHScreen.theme.name
         let mine = Self.harbor()
         for deleting in [nil, mine.id] {
-            let message = ThemeGalleryModel.message(builtIns: TerminalTheme.builtIns, custom: [mine],
-                                                    selected: mine.id, deleting: deleting)
-            #expect(NSHSurface.check(screen: screen, message: message), "\(message)")
-            #expect(message["deleting"] as? String == deleting)
+            let state = ThemeGalleryModel.state(builtIns: TerminalTheme.builtIns, custom: [mine],
+                                                selected: mine.id, deleting: deleting)
+            #expect(state.deleting == deleting)
+            #expect(NSHSurface.check(screen: screen, json: try pageMessage(message: .themeGallery(state: state))))
         }
-        let palette = ThemeGalleryModel.palette(mine)
-        #expect(palette["background"] as? String == "#0B1420")
-        #expect((palette["ansi"] as? [String])?.count == 8)
-        #expect(NSHSurface.check(screen: screen, message: ["op": "reveal"]))
-        var bad = ThemeGalleryModel.message(builtIns: [], custom: [mine], selected: mine.id, deleting: nil)
-        bad["custom"] = [palette.merging(["ansi": ["#000000"]]) { $1 }]
-        #expect(!NSHSurface.check(screen: screen, message: bad))
+        var palette = ThemeGalleryModel.palette(mine)
+        #expect(palette.backgroundHex == "#0B1420")
+        #expect(palette.ansiHex.count == 8)
+        #expect(NSHSurface.check(screen: screen, json: try pageMessage(message: .themeGalleryReveal)))
+        palette.ansiHex = ["#000000"]
+        #expect(throws: PageError.self) {
+            try pageMessage(message: .themeGallery(state: ThemeGalleryPageState(
+                builtIn: [], custom: [palette], selected: mine.id, deleting: nil)))
+        }
         #expect(!NSHSurface.check(screen: screen, message: ["op": "reveal", "anchor": "custom"]))
         #expect(!NSHSurface.check(screen: screen, message: ["op": "accents", "selected": "x"]))
     }
@@ -198,16 +200,16 @@ struct ThemeNSHTests {
     }
 
     @Test("the Accent page's card: asked, cancelled, answered")
-    func accentCard() {
+    func accentCard() throws {
         let (settings, _, store) = Self.scratch()
         let mine = AppTheme.custom(id: "app-1a2b3c4d", name: "Mint", accentHex: "2FD8A8")
         store.save(mine)
         let model = AccentModel()
         model.confirmDelete(mine.id, settings: settings, store: store)
         #expect(model.deleting == mine.id)
-        let message = AccentModel.message(builtIns: AppThemeCatalog.builtIns, custom: store.customThemes,
-                                          selected: "signal-room", deleting: model.deleting)
-        #expect(NSHSurface.check(screen: NSHScreen.accent.name, message: message), "\(message)")
+        let state = AccentModel.state(builtIns: AppThemeCatalog.builtIns, custom: store.customThemes,
+                                      selected: "signal-room", deleting: model.deleting)
+        #expect(NSHSurface.check(screen: NSHScreen.accent.name, json: try pageMessage(message: .accent(state: state))))
         model.cancelDelete(settings: settings, store: store)
         #expect(model.deleting == nil)
         model.confirmDelete(mine.id, settings: settings, store: store)
@@ -223,8 +225,8 @@ struct ThemeNSHTests {
         let (surface, heard, done) = try SettingsNSHTests.surface(running: .theme)
         defer { done() }
         let mine = Self.harbor()
-        #expect(surface.post(ThemeGalleryModel.message(builtIns: TerminalTheme.builtIns, custom: [mine],
-                                                       selected: "dracula", deleting: nil)))
+        #expect(surface.post(.themeGallery(state: ThemeGalleryModel.state(
+            builtIns: TerminalTheme.builtIns, custom: [mine], selected: "dracula", deleting: nil))))
         let dracula = try #require(await SettingsNSHTests.view(identified: "theme-row-dracula", in: surface))
         #expect(dracula.accessibilityTraits.contains(.selected))
         let add = try #require(await SettingsNSHTests.view(identified: "theme-add", in: surface) as? UIButton)
@@ -249,8 +251,8 @@ struct ThemeNSHTests {
         // The question the host asks for: the system's alert, Delete then
         // Cancel, Delete destructive (UI-DESIGN §4.10).
         let presenter = try Self.presenter(for: surface)
-        #expect(surface.post(ThemeGalleryModel.message(builtIns: TerminalTheme.builtIns, custom: [mine],
-                                                       selected: "dracula", deleting: mine.id)))
+        #expect(surface.post(.themeGallery(state: ThemeGalleryModel.state(
+            builtIns: TerminalTheme.builtIns, custom: [mine], selected: "dracula", deleting: mine.id))))
         let alert = try #require(await Self.alert(over: presenter))
         #expect(alert.title == String(format: String(localized: "Delete %@?"), mine.name))
         #expect(alert.actions.map(\.title) == [String(localized: "Delete"), String(localized: "Cancel")])
@@ -347,8 +349,8 @@ struct ThemeNSHTests {
         defer { done() }
         let mine = AppTheme.custom(id: "app-1a2b3c4d", name: "Mint", accentHex: "2FD8A8")
         let presenter = try Self.presenter(for: surface)
-        #expect(surface.post(AccentModel.message(builtIns: AppThemeCatalog.builtIns, custom: [mine],
-                                                 selected: "signal-room", deleting: mine.id)))
+        #expect(surface.post(.accent(state: AccentModel.state(
+            builtIns: AppThemeCatalog.builtIns, custom: [mine], selected: "signal-room", deleting: mine.id))))
         let alert = try #require(await Self.alert(over: presenter))
         #expect(alert.title == String(format: String(localized: "Delete %@?"), "Mint"))
         #expect(alert.actions.map(\.title) == [String(localized: "Delete"), String(localized: "Cancel")])
@@ -365,22 +367,25 @@ struct ThemeNSHTests {
     func pictures() async throws {
         let mine = Self.harbor()
         let mint = AppTheme.custom(id: "app-1a2b3c4d", name: "Mint", accentHex: "2FD8A8")
-        let pages: [(NSHScreen, String, [String: Any], String)] = [
-            (.theme, "theme", ThemeGalleryModel.message(builtIns: TerminalTheme.builtIns, custom: [mine],
-                                                        selected: "dracula", deleting: nil), "theme-row-dracula"),
-            (.themeEditor, "theme-editor", ThemeEditorModel.message(mine, overrideBright: false),
+        let theme = PageMessage.themeGallery(state: ThemeGalleryModel.state(
+            builtIns: TerminalTheme.builtIns, custom: [mine], selected: "dracula", deleting: nil))
+        let accent = PageMessage.accent(state: AccentModel.state(
+            builtIns: AppThemeCatalog.builtIns, custom: [mint], selected: "signal-room", deleting: nil))
+        let pages: [(NSHScreen, String, (NSHSurface) -> Bool, String)] = [
+            (.theme, "theme", { $0.post(theme) }, "theme-row-dracula"),
+            (.themeEditor, "theme-editor", { $0.post(ThemeEditorModel.message(mine, overrideBright: false)) },
              "theme-editor-name"),
-            (.accent, "accent", AccentModel.message(builtIns: AppThemeCatalog.builtIns, custom: [mint],
-                                                    selected: "signal-room", deleting: nil), "accent-row-signal-room"),
-            (.accentEditor, "accent-editor", AccentEditorModel.message(name: "Mint", accentHex: "2FD8A8"),
-             "accent-editor-name"),
-            (.appIcon, "app-icon", AppIconModel.message(selected: AppIconCatalog.all.first?.id ?? "", failure: nil),
+            (.accent, "accent", { $0.post(accent) }, "accent-row-signal-room"),
+            (.accentEditor, "accent-editor",
+             { $0.post(AccentEditorModel.message(name: "Mint", accentHex: "2FD8A8")) }, "accent-editor-name"),
+            (.appIcon, "app-icon",
+             { $0.post(AppIconModel.message(selected: AppIconCatalog.all.first?.id ?? "", failure: nil)) },
              "app-icon-grid"),
         ]
-        for (screen, name, message, ready) in pages {
+        for (screen, name, post, ready) in pages {
             for light in [false, true] {
                 let look = light ? "light" : "dark"
-                try await Self.picture(screen, message, ready: ready, light: light, name: "r14-\(name)-\(look)")
+                try await Self.picture(screen, ready: ready, light: light, name: "r14-\(name)-\(look)", post: post)
             }
         }
     }
@@ -389,6 +394,12 @@ struct ThemeNSHTests {
     /// drawn once `ready` shows and the page has settled.
     static func picture(_ screen: NSHScreen, _ message: [String: Any], ready: String, light: Bool,
                         name: String) async throws {
+        try await picture(screen, ready: ready, light: light, name: name) { $0.post(message) }
+    }
+
+    /// ``picture(_:_:ready:light:name:)`` of what `post` posts.
+    static func picture(_ screen: NSHScreen, ready: String, light: Bool, name: String,
+                        post: (NSHSurface) -> Bool) async throws {
         let scene = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first
         let window = scene.map { UIWindow(windowScene: $0) }
             ?? UIWindow(frame: CGRect(x: 0, y: 0, width: 744, height: 1133))
@@ -400,7 +411,7 @@ struct ThemeNSHTests {
             window.isHidden = true
         }
         #expect(surface.run(screen: screen.name, params: UIGallerySurface.params(light: light)), "\(name)")
-        #expect(surface.post(message), "\(name)")
+        #expect(post(surface), "\(name)")
         #expect(await SettingsNSHTests.view(identified: ready, in: surface) != nil, "\(name): \(ready)")
         try? await Task.sleep(for: .milliseconds(600))
         UIGalleryNSHTests.shoot(surface, name)

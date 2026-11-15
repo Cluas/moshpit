@@ -11,7 +11,7 @@ import UIKit
 ///
 /// - State: into the session's ``TerminalViewModel`` (the cover, the
 ///   capsule, the transport pill, the cards) — a reconnect is `.reconnecting`
-///   over the kept frame, never a poster. A failure's words are the app's
+///   over the kept frame, never a full-screen cover. A failure's words are the app's
 ///   (``RustCopy``): the core says only what happened (B202).
 /// - The host-key card, a key's passphrase card: the view model's prompts.
 /// - A plain shell or mosh: the pane's byte channel into the session's own
@@ -73,6 +73,10 @@ final class RustSessionDriver: RustSessionListener {
     /// The diagnostics were told of the older host-key algorithm (B564).
     private var saidOlderHostKey = false
     private var signInQuestion: UInt64?
+    /// The reads waiting on the passphrase card now, and which card that is
+    /// (B631): every read that asks while it is up gets its one answer.
+    private var passphraseWaiters: [CheckedContinuation<String?, Never>] = []
+    private var passphraseCard = 0
     private var refusedHostKey = false
     private var settleWaiters: [CheckedContinuation<Void, Never>] = []
     private var closeWaiters: [CheckedContinuation<Void, Never>] = []
@@ -975,13 +979,20 @@ final class RustSessionDriver: RustSessionListener {
             olderAlgorithm: older
         ) { [weak self] trusted in
             guard let self else { return }
-            self.viewModel.hostKeyPrompt = nil
-            self.hostKeyPrompt = nil
+            // B631: only the prompt still up is cleared, and only its no is
+            // the person's refusal. A late answer — a sheet on its way out
+            // after the core withdrew its prompt and asked the next — wiped
+            // the next one, and the dial waited on a card nobody showed.
+            // The core takes the answer only while that prompt is asked.
+            if self.hostKeyPrompt == prompt {
+                self.viewModel.hostKeyPrompt = nil
+                self.hostKeyPrompt = nil
+                if !trusted {
+                    self.refusedHostKey = true
+                }
+            }
             if let id = self.id {
                 self.core.sessions.answerHostKey(session: id, prompt: prompt, trust: trusted)
-            }
-            if !trusted {
-                self.refusedHostKey = true
             }
         }
     }
@@ -992,8 +1003,11 @@ final class RustSessionDriver: RustSessionListener {
             host: host, words: words, echo: echo
         ) { [weak self] answer in
             guard let self else { return }
-            self.viewModel.signInQuestion = nil
-            self.signInQuestion = nil
+            // B631: a late answer clears nothing but its own question.
+            if self.signInQuestion == prompt {
+                self.viewModel.signInQuestion = nil
+                self.signInQuestion = nil
+            }
             if let id = self.id {
                 self.core.sessions.answerQuestion(session: id, prompt: prompt, answer: answer)
             }
@@ -1018,16 +1032,39 @@ final class RustSessionDriver: RustSessionListener {
     private static let terminalEscape =
         "\u{1B}\\[[0-?]*[ -/]*[@-~]|\u{1B}\\][^\u{07}\u{1B}]*(\u{07}|\u{1B}\\\\)?"
 
+    /// The passphrase of the connection's key, from the person (B631):
+    ///
+    /// - A read that asks while the card is up waits on that card. A second
+    ///   card replaced the first, and the read that raised the first waited
+    ///   forever (the session's dial and a side connection both read the
+    ///   key).
+    /// - The card is answered once. A second answer — Cancel racing
+    ///   Unlock, `stop()` racing either — resumed the read again, and a
+    ///   continuation resumed twice traps.
+    /// - A late answer from a card already answered touches the next one
+    ///   not at all.
     private func askPassphrase(wrong: Bool) async -> String? {
         await withCheckedContinuation { continuation in
+            passphraseWaiters.append(continuation)
+            guard viewModel.keyPassphrasePrompt == nil else { return }
+            passphraseCard += 1
+            let card = passphraseCard
             viewModel.keyPassphrasePrompt = TerminalViewModel.KeyPassphrasePrompt(
                 host: session.connection.host, wrong: wrong
             ) { [weak self] passphrase in
-                self?.viewModel.keyPassphrasePrompt = nil
-                continuation.resume(returning: passphrase)
+                guard let self, self.passphraseCard == card, !self.passphraseWaiters.isEmpty else { return }
+                let waiters = self.passphraseWaiters
+                self.passphraseWaiters = []
+                self.viewModel.keyPassphrasePrompt = nil
+                for waiter in waiters {
+                    waiter.resume(returning: passphrase)
+                }
             }
         }
     }
+
+    /// How many reads wait on the passphrase card (tests).
+    var passphraseWaiting: Int { passphraseWaiters.count }
 
     // MARK: Waiting
 

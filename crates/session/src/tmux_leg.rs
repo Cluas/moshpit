@@ -50,7 +50,7 @@ use moshpit_tmux::controller::{
     ViewAction,
 };
 use moshpit_tmux::hooks::AgentHook;
-use moshpit_tmux::lease::SizeFollow;
+use moshpit_tmux::lease::{PaneFollow, SizeFollow};
 use moshpit_tmux::model::{Selection, Snapshot};
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
@@ -95,6 +95,8 @@ pub enum TmuxAction {
     KillPane(String),
     /// The refresh control: re-list and repaint.
     Refresh,
+    /// Re-list quietly: Home or the window picker showing (B586).
+    Relist,
     /// The follower's tap: take the window's size back.
     TakeSizeOwnership,
     Paste {
@@ -181,6 +183,9 @@ pub struct TmuxView {
     pub notice: Option<String>,
     pub refreshing: bool,
     pub size_follow: Option<SizeFollow>,
+    /// Another client picked another pane in the window shown: the phone
+    /// keeps its own under a veil (B587).
+    pub pane_follow: Option<PaneFollow>,
     pub agent_hooks: BTreeMap<String, AgentHook>,
     pub agent_hooks_loaded: bool,
     pub input: InputFlags,
@@ -198,6 +203,7 @@ impl TmuxView {
             notice: controller.notice().map(str::to_owned),
             refreshing: controller.is_refreshing(),
             size_follow: controller.size_follow().cloned(),
+            pane_follow: controller.pane_follow().cloned(),
             agent_hooks: controller.agent_hooks().clone(),
             agent_hooks_loaded: controller.agent_hooks_loaded(),
             input: controller.active_input_flags(),
@@ -542,7 +548,8 @@ async fn run(
     // running; what it printed waits in the channel for the read below.
     let stall_at = Instant::now() + attach_stall;
     let mut stall_reported = false;
-    let epoch = (Instant::now(), now);
+    // Deadlines are the session clock's, which counts the device's
+    // sleep and `Instant` doesn't: each sleeps for what is left of it (B611).
 
     // Whether the session closed this attach (else its channel died).
     let mut closed = false;
@@ -559,7 +566,7 @@ async fn run(
         let deadline = task
             .controller
             .next_deadline()
-            .map(|at| epoch.0 + Duration::from_millis(at.saturating_sub(epoch.1)));
+            .map(|at| Instant::now() + Duration::from_millis(at.saturating_sub(task.now())));
         let stall =
             (!stall_reported && !task.controller.snapshot().is_attached).then_some(stall_at);
         tokio::select! {
@@ -1000,6 +1007,7 @@ impl Task {
                 TmuxAction::KillWindow(id) => c.kill_window(&id, now),
                 TmuxAction::KillPane(id) => c.kill_pane(&id, now),
                 TmuxAction::Refresh => c.refresh(now),
+                TmuxAction::Relist => c.relist(now),
                 TmuxAction::TakeSizeOwnership => c.take_size_ownership(now),
                 TmuxAction::Paste { pane, text } => c.send_paste(&text, &pane, now),
                 TmuxAction::ScrollLines(lines) => c.scroll_lines(lines, now),
@@ -1305,6 +1313,7 @@ mod first_session_tests {
                 text: "a\nb".to_owned(),
             },
             TmuxAction::Refresh,
+            TmuxAction::Relist,
         ];
         for action in taken {
             assert_eq!(action.refusal(), None, "{action:?}");

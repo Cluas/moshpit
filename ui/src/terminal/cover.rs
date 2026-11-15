@@ -11,12 +11,12 @@
 //! - The multiplexer's empty state, when there is no session to show: an
 //!   inline [`crate::ui::empty::Empty`], centered.
 //! - Over them, one of, as the host posts it (never on a timer of the
-//!   page's: the host lifts a cover on the first frame it has painted):
-//!   - a first connect's poster (`TerminalConnectingView`): the signal
-//!     grid, the app's mark alive, the connection's name and what is
-//!     happening, until the first frame; it fades out `slow`;
+//!   page's: the host lifts a cover on the first frame it has painted).
+//!   A first connect has none (B657, the owner: 「这种动画可以删掉了 不符合
+//!   我们的产品了」): the pane is the terminal's background until the
+//!   first frame, and the bar's transport pill says what is under way.
 //!   - a reconnect's veil (`ReconnectVeil`): the kept frame dimmed under
-//!     one status capsule, **never a poster** (the owner's rule: a
+//!     one status capsule, never a full-screen cover (the owner's rule: a
 //!     reconnect keeps the last frame, dimmed 45%, and the host
 //!     cross-fades it to the new one); a protocol switch's veil
 //!     ([`super::model::Chrome::still`]) comes and goes at once, its
@@ -27,11 +27,7 @@
 
 use std::time::Duration as Timer;
 
-use nsh_core::{
-    color::{Hsla, Rgba},
-    platform::Idiom,
-    prelude::*,
-};
+use nsh_core::{color::Hsla, platform::Idiom, prelude::*};
 use serde_json::json;
 
 use super::{
@@ -41,7 +37,6 @@ use super::{
 };
 use crate::{
     os::Os,
-    theme::hex_string,
     ui::{
         button::{Size, Variant, button},
         empty::{EmptyVariant, empty},
@@ -73,10 +68,9 @@ pub(crate) fn pane_area(ctx: Ctx, order: Memo<super::switcher::Order>) -> AnyEle
         let ctx = ctx.clone();
         computed(move || ctx.chrome.with(|c| c.content))
     };
-    let poster = computed(move || cover.with(|c| c.kind == CoverKind::Poster));
     let veil = computed(move || cover.with(|c| c.kind == CoverKind::Veil));
     let follow = computed(move || cover.with(|c| c.kind == CoverKind::Follow));
-    let poster_touches = computed(move || cover.with(|c| c.touches));
+    let pane_follow = computed(move || cover.with(|c| c.kind == CoverKind::PaneFollow));
     let still = {
         let ctx = ctx.clone();
         computed(move || ctx.still())
@@ -102,22 +96,6 @@ pub(crate) fn pane_area(ctx: Ctx, order: Memo<super::switcher::Order>) -> AnyEle
             move || empty_state(ctx.clone())
         }))
         .child(fading(
-            move || poster.get(),
-            move || still.get(),
-            move || {
-                if poster_touches.get() {
-                    PointerEvents::Auto
-                } else {
-                    PointerEvents::None
-                }
-            },
-            (Duration::Base, Duration::Slow),
-            {
-                let ctx = ctx.clone();
-                move || poster_view(ctx.clone())
-            },
-        ))
-        .child(fading(
             move || veil.get(),
             move || still.get(),
             || PointerEvents::None,
@@ -135,6 +113,16 @@ pub(crate) fn pane_area(ctx: Ctx, order: Memo<super::switcher::Order>) -> AnyEle
             {
                 let ctx = ctx.clone();
                 move || follow_view(ctx.clone())
+            },
+        ))
+        .child(fading(
+            move || pane_follow.get(),
+            move || still.get(),
+            || PointerEvents::Auto,
+            (Duration::Base, Duration::Base),
+            {
+                let ctx = ctx.clone();
+                move || pane_follow_view(ctx.clone())
             },
         ))
         .child(super::switcher::hint(ctx.clone(), order))
@@ -262,15 +250,6 @@ pub(crate) fn chrome_text(token: TextToken, content: impl IntoReactive<SharedStr
     )
 }
 
-/// Color token `name` now, as a native component's prop takes it.
-fn hex(name: &'static str, opacity: f32) -> String {
-    let color = Rgba::from(color(token(name)));
-    hex_string(Rgba {
-        a: color.a * opacity,
-        ..color
-    })
-}
-
 /// What a status capsule says over a cover (`ReconnectVeil.label`, in the
 /// design's words): an ended session says so; with nothing being
 /// attempted the phone waits for a network; otherwise it reconnects.
@@ -343,111 +322,9 @@ fn status_capsule(lead: Memo<Status>, label: Memo<String>, still: Memo<bool>) ->
         }))
 }
 
-/// A first connect's poster (`TerminalConnectingView`): the signal grid,
-/// the app's mark alive, the connection's name, a status capsule saying
-/// what is happening and where it goes.
-fn poster_view(ctx: Ctx) -> AnyElement {
-    let cover = while_shown(&ctx, CoverKind::Poster);
-    let state =
-        computed(move || cover.with(|c| c.as_ref().map_or(LinkState::Connecting, |c| c.state)));
-    let (name, user, host, port) = ctx
-        .chrome
-        .with_untracked(|c| (c.name.clone(), c.user.clone(), c.host.clone(), c.port));
-    poster(name, format!("{user}@{host}:{port}"), state)
-}
-
-/// What the poster's capsule says: the first connect is under way, a
-/// dropped one comes back, or the phone waits for a network.
-fn poster_label(state: LinkState) -> String {
-    match state {
-        LinkState::Reconnecting => t!("Reconnecting…"),
-        LinkState::Offline => t!("Waiting for network…"),
-        _ => t!("Connecting…"),
-    }
-}
-
-/// The poster for connection `name` at `address`, its capsule following
-/// `state`.
-fn poster(name: String, address: String, state: Memo<LinkState>) -> AnyElement {
-    let lead = computed(move || capsule_status(state.get(), false));
-    let label = computed(move || poster_label(state.get()));
-    view()
-        .absolute()
-        .inset_0()
-        .bg(move || token("terminal-bg"))
-        .test_id("terminal-connecting")
-        // The brand's grid and the accent's glow under the mark, in this
-        // appearance's colors.
-        .child(dynamic(|| {
-            let (grid, glow) = (hex("grid-line", 1.0), hex("primary", 0.13));
-            untracked(move || {
-                view()
-                    .absolute()
-                    .inset_0()
-                    .pointer_events(PointerEvents::None)
-                    .child(
-                        native("moshpit/signal-grid")
-                            .absolute()
-                            .inset_0()
-                            .prop("color", json!(grid))
-                            .prop("lineWidth", json!(0.6)),
-                    )
-                    .child(
-                        native("moshpit/glow")
-                            .absolute()
-                            .inset_0()
-                            .prop("color", json!(glow))
-                            .prop("center", json!([0.5, 0.38]))
-                            .prop("radius", json!(300.0)),
-                    )
-                    .into_element()
-            })
-        }))
-        .child(
-            view()
-                .absolute()
-                .inset_0()
-                .items_center()
-                .justify_center()
-                .px(px(number("space-page")))
-                .translate_y(px(-14.0))
-                .child(dynamic(|| {
-                    let accent = hex("primary", 1.0);
-                    untracked(move || {
-                        native("moshpit/pane-loader")
-                            .w(px(112.0))
-                            .h(px(112.0))
-                            .accessibility_elements_hidden(true)
-                            .prop("accent", json!(accent))
-                            .into_element()
-                    })
-                }))
-                .child(
-                    chrome_text(TextToken::Title, name)
-                        .number_of_lines(1u32)
-                        .mt(px(28.0))
-                        .text_center()
-                        .text_color(move || token("foreground")),
-                )
-                .child(
-                    chrome_text(TextToken::MonoFootnote, address)
-                        .number_of_lines(1u32)
-                        .mt(px(4.0))
-                        .text_center()
-                        .text_color(move || token("muted-foreground")),
-                )
-                .child(
-                    status_capsule(lead, label, computed(|| false))
-                        .mt(px(24.0))
-                        .test_id("terminal-connecting-capsule"),
-                ),
-        )
-        .into_element()
-}
-
 /// The reconnect's veil (`ReconnectVeil`): the kept frame dimmed 45%
-/// under one status capsule, centered at the pane's top. It never draws a
-/// poster: the frame under it is the person's last view of the pane, and
+/// under one status capsule, centered at the pane's top. It never covers
+/// the whole pane: the frame under it is the person's last view of it, and
 /// the host cross-fades it to the new one. The capsule drops 8 pt into
 /// place as it fades in (`slow`) once the veil is up; a protocol switch's
 /// is in place at once, and the host swaps its frames at once.
@@ -509,6 +386,67 @@ fn this_device() -> Option<&'static str> {
 /// The follower's veil (`SizeFollowVeil`): the window is sized for another
 /// of the person's devices, so the pane keeps its frame, dimmed, under a
 /// card that names the holder and offers this device's size back.
+/// B587: the desktop picked another pane in the window shown (tmux keeps
+/// one active pane per window, shared); the phone keeps its own, frozen on
+/// its last frame, and the button takes it back — the last touch wins, as
+/// with the size lease. A keystroke takes it back too.
+fn pane_follow_view(ctx: Ctx) -> AnyElement {
+    let take = ctx.asking(Intent::TakeOver);
+    view()
+        .absolute()
+        .inset_0()
+        .items_center()
+        .bg(veil_scrim)
+        .test_id("terminal-pane-follow")
+        .child(
+            view()
+                .mt(px(VEIL_TOP))
+                .mx(px(number("space-page")))
+                .max_w(px(360.0))
+                .items_center()
+                .gap(px(12.0))
+                .p(px(16.0))
+                .rounded(px(number("radius-lg")))
+                .border_curve(BorderCurve::Continuous)
+                .bg(move || token("popover"))
+                .border(px(0.5))
+                .border_color(move || token("border-strong"))
+                .shadow([BoxShadow {
+                    offset_x: px(0.0),
+                    offset_y: px(SHADOW_LG.y),
+                    blur: px(SHADOW_LG.blur),
+                    spread: px(0.0),
+                    color: color(token("shadow-lg")).into(),
+                    inset: false,
+                }])
+                .test_id("terminal-pane-follow-card")
+                .child(
+                    view()
+                        .flex_row()
+                        .items_center()
+                        .gap(px(8.0))
+                        .child(icon("desktopcomputer").size(IconSize::Md).tone(Tone::Muted))
+                        .child(
+                            chrome_text(
+                                TextToken::Subhead,
+                                t!("The desktop switched to another pane."),
+                            )
+                            .flex_shrink(1.0)
+                            .text_color(move || token("popover-foreground")),
+                        ),
+                )
+                .child(
+                    // `Size::Md`: 44 pt high, the tap target's minimum.
+                    button(t!("Take it back"))
+                        .variant(Variant::Primary)
+                        .size(Size::Md)
+                        .on_press(take)
+                        .test_id("terminal-pane-follow-take"),
+                ),
+        )
+        .into_element()
+}
+
 fn follow_view(ctx: Ctx) -> AnyElement {
     let owner = ctx
         .chrome
@@ -576,7 +514,7 @@ fn follow_view(ctx: Ctx) -> AnyElement {
 const SETTLE: Timer = Timer::from_secs(4);
 
 /// The multiplexer's empty state (`MultiplexerEmptyStateView`): the wait
-/// first (the poster, or nothing on a reconnect, whose veil is up), then
+/// first (the bare background: no poster, B657), then
 /// one of two honest answers: not installed (Install…), or no sessions
 /// (New Session; Moshpit never makes one behind the person's back). When
 /// the host has the answer already ([`Empty::settled`]) there is no wait:
@@ -614,24 +552,7 @@ fn empty_state(ctx: Ctx) -> AnyElement {
             let ctx = ctx.clone();
             untracked(move || {
                 if !settled {
-                    return if empty.quiet {
-                        view().into_element()
-                    } else {
-                        let (name, user, host, port, state) = ctx.chrome.with_untracked(|c| {
-                            (
-                                c.name.clone(),
-                                c.user.clone(),
-                                c.host.clone(),
-                                c.port,
-                                c.state,
-                            )
-                        });
-                        poster(
-                            name,
-                            format!("{user}@{host}:{port}"),
-                            computed(move || state),
-                        )
-                    };
+                    return view().into_element();
                 }
                 answer(&empty, busy, creating, ctx)
             })

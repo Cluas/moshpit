@@ -19,27 +19,13 @@ struct FeedbackWhisperNSHTests {
 
     // MARK: Feedback
 
-    @Test("every Feedback state is a message the Rust screen takes")
-    func feedbackMessages() {
-        let screen = NSHScreen.feedback.name
-        for text in [nil, "", "It froze when I rotated the iPad"] {
-            for flags in [(true, false, false, false, false), (false, true, true, true, true)] {
-                let message = FeedbackModel.message(
-                    text: text, environment: flags.0, log: flags.1, preparing: flags.2,
-                    showAddress: flags.3, copied: flags.4)
-                #expect(NSHSurface.check(screen: screen, message: message), "\(message)")
-            }
-        }
-        #expect(!NSHSurface.check(screen: screen, message: ["op": "feedback", "environment": true]))
-    }
-
     @Test("Send assembles the mail as the SwiftUI page does, else shows the address")
     func feedbackSend() async throws {
         let model = FeedbackModel()
         model.transcript = { "09:41 log line" }
         model.message = "It froze"
-        model.set("log", true)
-        model.set("environment", false)
+        model.set(.log, true)
+        model.set(.environment, false)
         var composed: [FeedbackMail] = []
         model.canSendMail = { true }
         model.send(compose: { composed.append($0) }, openMailto: { _, _ in Issue.record("no mailto with Mail") })
@@ -63,9 +49,9 @@ struct FeedbackWhisperNSHTests {
     func feedbackSurface() async throws {
         let (surface, heard, done) = try SettingsNSHTests.surface(running: .feedback)
         defer { done() }
-        #expect(surface.post(FeedbackModel.message(
-            text: "Half a sentence", environment: true, log: false, preparing: false,
-            showAddress: false, copied: false)))
+        #expect(surface.post(.feedback(state: FeedbackState(
+            message: "Half a sentence", environment: true, log: false, preparing: false,
+            showAddress: false, copied: false, recipient: FeedbackMail.recipient))))
         let environment = try #require(await SettingsNSHTests.view(identified: "feedback-environment", in: surface)
             as? UISwitch)
         #expect(environment.isOn)
@@ -94,25 +80,24 @@ struct FeedbackWhisperNSHTests {
         ]
     }
 
-    @Test("every Model state is a message the Rust screen takes")
-    func whisperMessages() {
-        let screen = NSHScreen.whisperModel.name
-        let options = Self.seededOptions()
-        let message = WhisperModelPageModel.message(
-            options: options, progress: ["small": 0.42], failure: "The network connection was lost.",
-            selected: "big")
-        #expect(NSHSurface.check(screen: screen, message: message), "\(message)")
-        let models = try? #require(message["models"] as? [[String: Any]])
-        #expect(models?[0]["selected"] as? Bool == true)
-        #expect(models?[0]["installed"] as? String == WhisperModelPageModel.format(1_621_000_000))
-        #expect(models?[1]["partial"] as? String == WhisperModelPageModel.format(120_000_000))
-        #expect(models?[1]["progress"] as? Double == 0.42)
-        #expect(models?[2]["partial"] == nil)
-        #expect(message["storage"] as? String == WhisperModelPageModel.format(1_621_000_000))
-        let empty = WhisperModelPageModel.message(options: [], progress: [:], failure: nil, selected: nil)
-        #expect(NSHSurface.check(screen: screen, message: empty))
-        #expect(empty["storage"] == nil)
-        #expect(!NSHSurface.check(screen: screen, message: ["op": "models", "models": [["id": "x"]]]))
+    @Test("the Model page's state: sizes formatted, progress, the model in use")
+    func whisperState() throws {
+        let state = WhisperModelPageModel.state(
+            options: Self.seededOptions(), progress: ["small": 0.42],
+            failure: "The network connection was lost.", selected: "big")
+        let models = state.models
+        try #require(models.count == 3)
+        #expect(models[0].selected)
+        #expect(models[0].installed == WhisperModelPageModel.format(1_621_000_000))
+        #expect(models[1].partial == WhisperModelPageModel.format(120_000_000))
+        #expect(models[1].progress == 0.42)
+        #expect(models[2].partial == nil)
+        #expect(state.storage == WhisperModelPageModel.format(1_621_000_000))
+        #expect(state.failure == "The network connection was lost.")
+        let empty = WhisperModelPageModel.state(options: [], progress: [:], failure: nil, selected: nil)
+        #expect(empty.storage == nil)
+        #expect(NSHSurface.check(screen: NSHScreen.whisperModel.name,
+                                 json: try pageMessage(message: .whisperModel(state: state))))
     }
 
     @Test("a row picks only a downloaded model that is not in use")
@@ -132,8 +117,8 @@ struct FeedbackWhisperNSHTests {
     func whisperSurface() async throws {
         let (surface, heard, done) = try SettingsNSHTests.surface(running: .whisperModel)
         defer { done() }
-        #expect(surface.post(WhisperModelPageModel.message(
-            options: Self.seededOptions(), progress: ["small": 0.42], failure: nil, selected: "big")))
+        #expect(surface.post(.whisperModel(state: WhisperModelPageModel.state(
+            options: Self.seededOptions(), progress: ["small": 0.42], failure: nil, selected: "big"))))
         let big = try #require(await SettingsNSHTests.view(identified: "whisper-model-big", in: surface))
         #expect(big.accessibilityTraits.contains(.selected))
         let bar = try #require(Self.first(UIProgressView.self, in: surface))
@@ -165,7 +150,7 @@ struct FeedbackWhisperNSHTests {
     /// once the group that ends it is.
     private static func settingsShots() -> [Shot] {
         let (settings, _, _, _) = SettingsRootNSHTests.scratch()
-        let message = SettingsModel.message(SettingsRootNSHTests.snapshot(settings))
+        let json = try! pageMessage(message: .settings(state: SettingsRootNSHTests.snapshot(settings)))
         let pages: [(state: String, page: String?, root: String)] = [
             ("hub", nil, "settings-open-appearance"),
             ("appearance", "appearance", "settings-appearance-group"),
@@ -178,7 +163,7 @@ struct FeedbackWhisperNSHTests {
             ("notification-info", "notification-info", "settings-notification-info-group"),
         ]
         return pages.map { shown in
-            Shot(screen: .settings, root: shown.root, state: shown.state, message: message, page: shown.page)
+            Shot(screen: .settings, root: shown.root, state: shown.state, json: json, page: shown.page)
         }
     }
 
@@ -296,8 +281,14 @@ struct FeedbackWhisperNSHTests {
             {"time":"09:40:58.003","category":"push-extension","message":"decrypted a notification for %3 and handed it to the system; nothing else in it was read, the rest of the payload stays sealed until the app opens it"}]}
             """
         let feedback = { (preparing: Bool, showAddress: Bool) in
-            FeedbackModel.message(text: "It froze when I rotated the iPad", environment: true, log: false,
-                                  preparing: preparing, showAddress: showAddress, copied: false)
+            try! pageMessage(message: .feedback(state: FeedbackState(
+                message: "It froze when I rotated the iPad", environment: true, log: false,
+                preparing: preparing, showAddress: showAddress, copied: false,
+                recipient: FeedbackMail.recipient)))
+        }
+        let whisperModels = { (progress: [String: Double], failure: String?) in
+            try! pageMessage(message: .whisperModel(state: WhisperModelPageModel.state(
+                options: seededOptions(), progress: progress, failure: failure, selected: "big")))
         }
         return [
             Shot(screen: .voiceEngine, root: "voice-engine", state: "setup",
@@ -309,16 +300,13 @@ struct FeedbackWhisperNSHTests {
             Shot(screen: .voiceLanguage, root: "voice-language", state: "reading",
                  json: #"{"op":"languages","engine":"apple","automatic":"English","selected":""}"#),
             Shot(screen: .whisperModel, root: "whisper-model", state: "downloading",
-                 message: WhisperModelPageModel.message(
-                    options: seededOptions(), progress: ["small": 0.42],
-                    failure: "There isn’t enough space on this iPhone.", selected: "big")),
+                 json: whisperModels(["small": 0.42], "There isn’t enough space on this iPhone.")),
             Shot(screen: .whisperModel, root: "whisper-model", state: "idle",
-                 message: WhisperModelPageModel.message(
-                    options: seededOptions(), progress: [:], failure: nil, selected: "big")),
+                 json: whisperModels([:], nil)),
             Shot(screen: .feedback, root: "feedback", state: "no-mail",
-                 message: feedback(false, true)),
-            Shot(screen: .feedback, root: "feedback", state: "mail", message: feedback(false, false)),
-            Shot(screen: .feedback, root: "feedback", state: "preparing", message: feedback(true, false)),
+                 json: feedback(false, true)),
+            Shot(screen: .feedback, root: "feedback", state: "mail", json: feedback(false, false)),
+            Shot(screen: .feedback, root: "feedback", state: "preparing", json: feedback(true, false)),
             Shot(screen: .recentLog, root: "recent-log", state: "loaded", json: log),
             Shot(screen: .recentLog, root: "recent-log", state: "loading", json: #"{"op":"log","state":"loading"}"#),
             Shot(screen: .recentLog, root: "recent-log", state: "empty",

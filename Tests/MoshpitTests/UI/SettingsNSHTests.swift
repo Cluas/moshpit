@@ -115,20 +115,21 @@ struct SettingsNSHTests {
     // MARK: Accent
 
     @Test("every Accent state is a message the Rust screen takes")
-    func accentMessages() {
+    func accentMessages() throws {
         let mine = AppTheme.custom(id: "app-1a2b3c4d", name: "Mint", accentHex: "2FD8A8")
-        let message = AccentModel.message(builtIns: AppThemeCatalog.builtIns, custom: [mine], selected: mine.id)
-        #expect(NSHSurface.check(screen: NSHScreen.accent.name, message: message), "\(message)")
-        #expect(NSHSurface.check(screen: NSHScreen.accent.name,
-                                 message: AccentModel.message(builtIns: AppThemeCatalog.builtIns, custom: [],
-                                                              selected: "signal-room")))
-        let accent = AccentModel.accent(mine)
-        #expect(accent["accent"] as? String == "#2FD8A8")
-        #expect(accent["screenBG"] as? String == NSHScreenParams.hex(mine.screenBG))
-        #expect(!NSHSurface.check(screen: NSHScreen.accent.name, message: [
-            "op": "accents", "builtIn": [["id": "a", "name": "A", "accent": "teal", "screenBG": "#000000"]],
-            "custom": [], "selected": "a",
-        ]))
+        for (custom, selected) in [([mine], mine.id), ([], "signal-room")] {
+            let state = AccentModel.state(builtIns: AppThemeCatalog.builtIns, custom: custom, selected: selected)
+            #expect(NSHSurface.check(screen: NSHScreen.accent.name,
+                                     json: try pageMessage(message: .accent(state: state))))
+        }
+        var accent = AccentModel.accent(mine)
+        #expect(accent.accentHex == "#2FD8A8")
+        #expect(accent.screenBgHex == NSHScreenParams.hex(mine.screenBG))
+        accent.accentHex = "teal"
+        #expect(throws: PageError.self) {
+            try pageMessage(message: .accent(state: AccentPageState(
+                builtIn: [accent], custom: [], selected: accent.id, deleting: nil)))
+        }
     }
 
     @Test("a pick is ticked at once and applied as the page goes away, as on the SwiftUI page")
@@ -272,8 +273,8 @@ struct SettingsNSHTests {
         let (surface, heard, done) = try Self.surface(running: .accent)
         defer { done() }
         let mine = AppTheme.custom(id: "app-1a2b3c4d", name: "Mint", accentHex: "2FD8A8")
-        #expect(surface.post(AccentModel.message(builtIns: AppThemeCatalog.builtIns, custom: [mine],
-                                                 selected: "signal-room")))
+        #expect(surface.post(.accent(state: AccentModel.state(
+            builtIns: AppThemeCatalog.builtIns, custom: [mine], selected: "signal-room"))))
         let cell = try #require(await Self.view(identified: AccentRowMenus.cellID(mine.id), in: surface))
         let builtIn = try #require(await Self.view(identified: "accent-row-moshpit-classic", in: surface))
         await NSHTouchAudit.pressablesTakeTouches(in: surface)

@@ -47,7 +47,16 @@ struct MuxPickerNSHPage<C: MultiplexerControlling>: View {
             .presentationDetents([.medium, .large])
             .presentationDragIndicator(.visible)
             .sheetSurface()
-            .task { controller.refresh() }
+            .task {
+                controller.refresh()
+                // tmux says nothing when a window's place changes: the list
+                // asks again while it shows (B586).
+                while !Task.isCancelled {
+                    try? await Task.sleep(for: .seconds(30))
+                    guard !Task.isCancelled else { break }
+                    controller.relist()
+                }
+            }
         }
     }
 

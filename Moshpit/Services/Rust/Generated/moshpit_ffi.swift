@@ -8941,6 +8941,167 @@ public func FfiConverterTypeTransferProgress_lower(_ value: TransferProgress) ->
 
 
 /**
+ * One accent (`Accent`): its name and the two colors its row's swatch
+ * shows.
+ */
+public struct AccentEntry: Equatable, Hashable {
+    public var id: String
+    public var name: String
+    public var accentHex: String
+    /**
+     * The screen background it derives, the swatch's ground.
+     */
+    public var screenBgHex: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(id: String, name: String, accentHex: String, 
+        /**
+         * The screen background it derives, the swatch's ground.
+         */screenBgHex: String) {
+        self.id = id
+        self.name = name
+        self.accentHex = accentHex
+        self.screenBgHex = screenBgHex
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension AccentEntry: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeAccentEntry: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> AccentEntry {
+        return
+            try AccentEntry(
+                id: FfiConverterString.read(from: &buf), 
+                name: FfiConverterString.read(from: &buf), 
+                accentHex: FfiConverterString.read(from: &buf), 
+                screenBgHex: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: AccentEntry, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.id, into: &buf)
+        FfiConverterString.write(value.name, into: &buf)
+        FfiConverterString.write(value.accentHex, into: &buf)
+        FfiConverterString.write(value.screenBgHex, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeAccentEntry_lift(_ buf: RustBuffer) throws -> AccentEntry {
+    return try FfiConverterTypeAccentEntry.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeAccentEntry_lower(_ value: AccentEntry) -> RustBuffer {
+    return FfiConverterTypeAccentEntry.lower(value)
+}
+
+
+/**
+ * What the Accent page shows (`Accents`).
+ */
+public struct AccentPageState: Equatable, Hashable {
+    /**
+     * The app's own accents.
+     */
+    public var builtIn: [AccentEntry]
+    /**
+     * The user's, newest last.
+     */
+    public var custom: [AccentEntry]
+    /**
+     * The id of the row to tick.
+     */
+    public var selected: String
+    /**
+     * The custom accent the delete card asks about, while it shows.
+     */
+    public var deleting: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * The app's own accents.
+         */builtIn: [AccentEntry], 
+        /**
+         * The user's, newest last.
+         */custom: [AccentEntry], 
+        /**
+         * The id of the row to tick.
+         */selected: String, 
+        /**
+         * The custom accent the delete card asks about, while it shows.
+         */deleting: String?) {
+        self.builtIn = builtIn
+        self.custom = custom
+        self.selected = selected
+        self.deleting = deleting
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension AccentPageState: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeAccentPageState: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> AccentPageState {
+        return
+            try AccentPageState(
+                builtIn: FfiConverterSequenceTypeAccentEntry.read(from: &buf), 
+                custom: FfiConverterSequenceTypeAccentEntry.read(from: &buf), 
+                selected: FfiConverterString.read(from: &buf), 
+                deleting: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: AccentPageState, into buf: inout [UInt8]) {
+        FfiConverterSequenceTypeAccentEntry.write(value.builtIn, into: &buf)
+        FfiConverterSequenceTypeAccentEntry.write(value.custom, into: &buf)
+        FfiConverterString.write(value.selected, into: &buf)
+        FfiConverterOptionString.write(value.deleting, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeAccentPageState_lift(_ buf: RustBuffer) throws -> AccentPageState {
+    return try FfiConverterTypeAccentPageState.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeAccentPageState_lower(_ value: AccentPageState) -> RustBuffer {
+    return FfiConverterTypeAccentPageState.lower(value)
+}
+
+
+/**
  * An accent theme (`AppTheme`), colours as bare hex.
  */
 public struct AccentThemeRecord: Equatable, Hashable {
@@ -10442,6 +10603,83 @@ public func FfiConverterTypeExecUploadPlan_lower(_ value: ExecUploadPlan) -> Rus
 
 
 /**
+ * What the Feedback page shows.
+ */
+public struct FeedbackState: Equatable, Hashable {
+    public var message: String?
+    public var environment: Bool
+    public var log: Bool
+    public var preparing: Bool
+    public var showAddress: Bool
+    public var copied: Bool
+    public var recipient: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(message: String?, environment: Bool, log: Bool, preparing: Bool, showAddress: Bool, copied: Bool, recipient: String) {
+        self.message = message
+        self.environment = environment
+        self.log = log
+        self.preparing = preparing
+        self.showAddress = showAddress
+        self.copied = copied
+        self.recipient = recipient
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension FeedbackState: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeFeedbackState: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> FeedbackState {
+        return
+            try FeedbackState(
+                message: FfiConverterOptionString.read(from: &buf), 
+                environment: FfiConverterBool.read(from: &buf), 
+                log: FfiConverterBool.read(from: &buf), 
+                preparing: FfiConverterBool.read(from: &buf), 
+                showAddress: FfiConverterBool.read(from: &buf), 
+                copied: FfiConverterBool.read(from: &buf), 
+                recipient: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: FeedbackState, into buf: inout [UInt8]) {
+        FfiConverterOptionString.write(value.message, into: &buf)
+        FfiConverterBool.write(value.environment, into: &buf)
+        FfiConverterBool.write(value.log, into: &buf)
+        FfiConverterBool.write(value.preparing, into: &buf)
+        FfiConverterBool.write(value.showAddress, into: &buf)
+        FfiConverterBool.write(value.copied, into: &buf)
+        FfiConverterString.write(value.recipient, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeFeedbackState_lift(_ buf: RustBuffer) throws -> FeedbackState {
+    return try FfiConverterTypeFeedbackState.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeFeedbackState_lower(_ value: FeedbackState) -> RustBuffer {
+    return FfiConverterTypeFeedbackState.lower(value)
+}
+
+
+/**
  * A slice of a remote file, and the file's size.
  */
 public struct FileChunk: Equatable, Hashable {
@@ -11773,6 +12011,63 @@ public func FfiConverterTypePlistValue_lower(_ value: PlistValue) -> RustBuffer 
 
 
 /**
+ * A range of ports, first and last (`[i64; 2]` in the screen).
+ */
+public struct PortRange: Equatable, Hashable {
+    public var start: Int64
+    public var end: Int64
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(start: Int64, end: Int64) {
+        self.start = start
+        self.end = end
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension PortRange: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypePortRange: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> PortRange {
+        return
+            try PortRange(
+                start: FfiConverterInt64.read(from: &buf), 
+                end: FfiConverterInt64.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: PortRange, into buf: inout [UInt8]) {
+        FfiConverterInt64.write(value.start, into: &buf)
+        FfiConverterInt64.write(value.end, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePortRange_lift(_ buf: RustBuffer) throws -> PortRange {
+    return try FfiConverterTypePortRange.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePortRange_lower(_ value: PortRange) -> RustBuffer {
+    return FfiConverterTypePortRange.lower(value)
+}
+
+
+/**
  * The two switches the notification service reads.
  */
 public struct PushPrefsRecord: Equatable, Hashable {
@@ -12424,6 +12719,712 @@ public func FfiConverterTypeSessionSpec_lower(_ value: SessionSpec) -> RustBuffe
 
 
 /**
+ * The theme the app wears now (`theme::AppTheme`).
+ */
+public struct SettingsAppTheme: Equatable, Hashable {
+    public var accentHex: String
+    public var accentPressedHex: String
+    public var screenBgHex: String
+    public var terminalBgHex: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(accentHex: String, accentPressedHex: String, screenBgHex: String, terminalBgHex: String) {
+        self.accentHex = accentHex
+        self.accentPressedHex = accentPressedHex
+        self.screenBgHex = screenBgHex
+        self.terminalBgHex = terminalBgHex
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension SettingsAppTheme: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeSettingsAppTheme: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SettingsAppTheme {
+        return
+            try SettingsAppTheme(
+                accentHex: FfiConverterString.read(from: &buf), 
+                accentPressedHex: FfiConverterString.read(from: &buf), 
+                screenBgHex: FfiConverterString.read(from: &buf), 
+                terminalBgHex: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: SettingsAppTheme, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.accentHex, into: &buf)
+        FfiConverterString.write(value.accentPressedHex, into: &buf)
+        FfiConverterString.write(value.screenBgHex, into: &buf)
+        FfiConverterString.write(value.terminalBgHex, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSettingsAppTheme_lift(_ buf: RustBuffer) throws -> SettingsAppTheme {
+    return try FfiConverterTypeSettingsAppTheme.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSettingsAppTheme_lower(_ value: SettingsAppTheme) -> RustBuffer {
+    return FfiConverterTypeSettingsAppTheme.lower(value)
+}
+
+
+/**
+ * One choice of a menu.
+ */
+public struct SettingsChoice: Equatable, Hashable {
+    public var id: String
+    public var name: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(id: String, name: String) {
+        self.id = id
+        self.name = name
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension SettingsChoice: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeSettingsChoice: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SettingsChoice {
+        return
+            try SettingsChoice(
+                id: FfiConverterString.read(from: &buf), 
+                name: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: SettingsChoice, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.id, into: &buf)
+        FfiConverterString.write(value.name, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSettingsChoice_lift(_ buf: RustBuffer) throws -> SettingsChoice {
+    return try FfiConverterTypeSettingsChoice.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSettingsChoice_lower(_ value: SettingsChoice) -> RustBuffer {
+    return FfiConverterTypeSettingsChoice.lower(value)
+}
+
+
+/**
+ * How many of something, of how many there can be.
+ */
+public struct SettingsCount: Equatable, Hashable {
+    public var count: Int64
+    public var limit: Int64
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(count: Int64, limit: Int64) {
+        self.count = count
+        self.limit = limit
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension SettingsCount: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeSettingsCount: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SettingsCount {
+        return
+            try SettingsCount(
+                count: FfiConverterInt64.read(from: &buf), 
+                limit: FfiConverterInt64.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: SettingsCount, into buf: inout [UInt8]) {
+        FfiConverterInt64.write(value.count, into: &buf)
+        FfiConverterInt64.write(value.limit, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSettingsCount_lift(_ buf: RustBuffer) throws -> SettingsCount {
+    return try FfiConverterTypeSettingsCount.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSettingsCount_lower(_ value: SettingsCount) -> RustBuffer {
+    return FfiConverterTypeSettingsCount.lower(value)
+}
+
+
+/**
+ * A saved connection on Set up a host's list.
+ */
+public struct SettingsHostEntry: Equatable, Hashable {
+    public var id: String
+    public var name: String
+    public var user: String
+    public var host: String
+    public var port: Int64
+    public var live: Bool
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(id: String, name: String, user: String, host: String, port: Int64, live: Bool) {
+        self.id = id
+        self.name = name
+        self.user = user
+        self.host = host
+        self.port = port
+        self.live = live
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension SettingsHostEntry: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeSettingsHostEntry: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SettingsHostEntry {
+        return
+            try SettingsHostEntry(
+                id: FfiConverterString.read(from: &buf), 
+                name: FfiConverterString.read(from: &buf), 
+                user: FfiConverterString.read(from: &buf), 
+                host: FfiConverterString.read(from: &buf), 
+                port: FfiConverterInt64.read(from: &buf), 
+                live: FfiConverterBool.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: SettingsHostEntry, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.id, into: &buf)
+        FfiConverterString.write(value.name, into: &buf)
+        FfiConverterString.write(value.user, into: &buf)
+        FfiConverterString.write(value.host, into: &buf)
+        FfiConverterInt64.write(value.port, into: &buf)
+        FfiConverterBool.write(value.live, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSettingsHostEntry_lift(_ buf: RustBuffer) throws -> SettingsHostEntry {
+    return try FfiConverterTypeSettingsHostEntry.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSettingsHostEntry_lower(_ value: SettingsHostEntry) -> RustBuffer {
+    return FfiConverterTypeSettingsHostEntry.lower(value)
+}
+
+
+/**
+ * The home-screen icon (`app_icon::Icon`).
+ */
+public struct SettingsIcon: Equatable, Hashable {
+    public var id: String
+    public var name: String
+    public var image: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(id: String, name: String, image: String?) {
+        self.id = id
+        self.name = name
+        self.image = image
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension SettingsIcon: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeSettingsIcon: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SettingsIcon {
+        return
+            try SettingsIcon(
+                id: FfiConverterString.read(from: &buf), 
+                name: FfiConverterString.read(from: &buf), 
+                image: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: SettingsIcon, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.id, into: &buf)
+        FfiConverterString.write(value.name, into: &buf)
+        FfiConverterOptionString.write(value.image, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSettingsIcon_lift(_ buf: RustBuffer) throws -> SettingsIcon {
+    return try FfiConverterTypeSettingsIcon.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSettingsIcon_lower(_ value: SettingsIcon) -> RustBuffer {
+    return FfiConverterTypeSettingsIcon.lower(value)
+}
+
+
+/**
+ * What Settings shows (`SettingsState`), colors written `#RRGGBB`.
+ */
+public struct SettingsPageState: Equatable, Hashable {
+    public var accent: SettingsSwatch
+    public var appIcon: SettingsIcon
+    public var fonts: [SettingsChoice]
+    public var font: String
+    public var fontSize: Double
+    public var theme: SettingsTerminalTheme
+    /**
+     * `block`, `bar` or `underline`.
+     */
+    public var cursorShape: String
+    public var cursorColor: String
+    public var cursorBlink: Bool
+    public var trailOnPredict: Bool
+    public var keyboardOnOpen: Bool
+    public var remoteClipboardRead: Bool
+    public var uploadRetentionDays: Int64
+    public var moshByDefault: Bool
+    /**
+     * `adaptive`, `always`, `never` or `experimental`.
+     */
+    public var predictMode: String
+    public var udpRange: PortRange
+    public var shortcuts: SettingsCount
+    public var keys: Int64
+    public var notifications: Bool
+    public var liveActivity: Bool
+    public var alertSound: Bool
+    public var lockScreenDetail: Bool
+    public var liveSession: Bool
+    public var voiceInput: Bool
+    /**
+     * `apple` or `whisper`.
+     */
+    public var voiceEngine: String
+    public var voiceModel: String?
+    public var voiceLanguage: String
+    public var version: String
+    public var filing: String?
+    public var appTheme: SettingsAppTheme
+    /**
+     * `system`, `light` or `dark`.
+     */
+    public var appearance: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(accent: SettingsSwatch, appIcon: SettingsIcon, fonts: [SettingsChoice], font: String, fontSize: Double, theme: SettingsTerminalTheme, 
+        /**
+         * `block`, `bar` or `underline`.
+         */cursorShape: String, cursorColor: String, cursorBlink: Bool, trailOnPredict: Bool, keyboardOnOpen: Bool, remoteClipboardRead: Bool, uploadRetentionDays: Int64, moshByDefault: Bool, 
+        /**
+         * `adaptive`, `always`, `never` or `experimental`.
+         */predictMode: String, udpRange: PortRange, shortcuts: SettingsCount, keys: Int64, notifications: Bool, liveActivity: Bool, alertSound: Bool, lockScreenDetail: Bool, liveSession: Bool, voiceInput: Bool, 
+        /**
+         * `apple` or `whisper`.
+         */voiceEngine: String, voiceModel: String?, voiceLanguage: String, version: String, filing: String?, appTheme: SettingsAppTheme, 
+        /**
+         * `system`, `light` or `dark`.
+         */appearance: String) {
+        self.accent = accent
+        self.appIcon = appIcon
+        self.fonts = fonts
+        self.font = font
+        self.fontSize = fontSize
+        self.theme = theme
+        self.cursorShape = cursorShape
+        self.cursorColor = cursorColor
+        self.cursorBlink = cursorBlink
+        self.trailOnPredict = trailOnPredict
+        self.keyboardOnOpen = keyboardOnOpen
+        self.remoteClipboardRead = remoteClipboardRead
+        self.uploadRetentionDays = uploadRetentionDays
+        self.moshByDefault = moshByDefault
+        self.predictMode = predictMode
+        self.udpRange = udpRange
+        self.shortcuts = shortcuts
+        self.keys = keys
+        self.notifications = notifications
+        self.liveActivity = liveActivity
+        self.alertSound = alertSound
+        self.lockScreenDetail = lockScreenDetail
+        self.liveSession = liveSession
+        self.voiceInput = voiceInput
+        self.voiceEngine = voiceEngine
+        self.voiceModel = voiceModel
+        self.voiceLanguage = voiceLanguage
+        self.version = version
+        self.filing = filing
+        self.appTheme = appTheme
+        self.appearance = appearance
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension SettingsPageState: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeSettingsPageState: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SettingsPageState {
+        return
+            try SettingsPageState(
+                accent: FfiConverterTypeSettingsSwatch.read(from: &buf), 
+                appIcon: FfiConverterTypeSettingsIcon.read(from: &buf), 
+                fonts: FfiConverterSequenceTypeSettingsChoice.read(from: &buf), 
+                font: FfiConverterString.read(from: &buf), 
+                fontSize: FfiConverterDouble.read(from: &buf), 
+                theme: FfiConverterTypeSettingsTerminalTheme.read(from: &buf), 
+                cursorShape: FfiConverterString.read(from: &buf), 
+                cursorColor: FfiConverterString.read(from: &buf), 
+                cursorBlink: FfiConverterBool.read(from: &buf), 
+                trailOnPredict: FfiConverterBool.read(from: &buf), 
+                keyboardOnOpen: FfiConverterBool.read(from: &buf), 
+                remoteClipboardRead: FfiConverterBool.read(from: &buf), 
+                uploadRetentionDays: FfiConverterInt64.read(from: &buf), 
+                moshByDefault: FfiConverterBool.read(from: &buf), 
+                predictMode: FfiConverterString.read(from: &buf), 
+                udpRange: FfiConverterTypePortRange.read(from: &buf), 
+                shortcuts: FfiConverterTypeSettingsCount.read(from: &buf), 
+                keys: FfiConverterInt64.read(from: &buf), 
+                notifications: FfiConverterBool.read(from: &buf), 
+                liveActivity: FfiConverterBool.read(from: &buf), 
+                alertSound: FfiConverterBool.read(from: &buf), 
+                lockScreenDetail: FfiConverterBool.read(from: &buf), 
+                liveSession: FfiConverterBool.read(from: &buf), 
+                voiceInput: FfiConverterBool.read(from: &buf), 
+                voiceEngine: FfiConverterString.read(from: &buf), 
+                voiceModel: FfiConverterOptionString.read(from: &buf), 
+                voiceLanguage: FfiConverterString.read(from: &buf), 
+                version: FfiConverterString.read(from: &buf), 
+                filing: FfiConverterOptionString.read(from: &buf), 
+                appTheme: FfiConverterTypeSettingsAppTheme.read(from: &buf), 
+                appearance: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: SettingsPageState, into buf: inout [UInt8]) {
+        FfiConverterTypeSettingsSwatch.write(value.accent, into: &buf)
+        FfiConverterTypeSettingsIcon.write(value.appIcon, into: &buf)
+        FfiConverterSequenceTypeSettingsChoice.write(value.fonts, into: &buf)
+        FfiConverterString.write(value.font, into: &buf)
+        FfiConverterDouble.write(value.fontSize, into: &buf)
+        FfiConverterTypeSettingsTerminalTheme.write(value.theme, into: &buf)
+        FfiConverterString.write(value.cursorShape, into: &buf)
+        FfiConverterString.write(value.cursorColor, into: &buf)
+        FfiConverterBool.write(value.cursorBlink, into: &buf)
+        FfiConverterBool.write(value.trailOnPredict, into: &buf)
+        FfiConverterBool.write(value.keyboardOnOpen, into: &buf)
+        FfiConverterBool.write(value.remoteClipboardRead, into: &buf)
+        FfiConverterInt64.write(value.uploadRetentionDays, into: &buf)
+        FfiConverterBool.write(value.moshByDefault, into: &buf)
+        FfiConverterString.write(value.predictMode, into: &buf)
+        FfiConverterTypePortRange.write(value.udpRange, into: &buf)
+        FfiConverterTypeSettingsCount.write(value.shortcuts, into: &buf)
+        FfiConverterInt64.write(value.keys, into: &buf)
+        FfiConverterBool.write(value.notifications, into: &buf)
+        FfiConverterBool.write(value.liveActivity, into: &buf)
+        FfiConverterBool.write(value.alertSound, into: &buf)
+        FfiConverterBool.write(value.lockScreenDetail, into: &buf)
+        FfiConverterBool.write(value.liveSession, into: &buf)
+        FfiConverterBool.write(value.voiceInput, into: &buf)
+        FfiConverterString.write(value.voiceEngine, into: &buf)
+        FfiConverterOptionString.write(value.voiceModel, into: &buf)
+        FfiConverterString.write(value.voiceLanguage, into: &buf)
+        FfiConverterString.write(value.version, into: &buf)
+        FfiConverterOptionString.write(value.filing, into: &buf)
+        FfiConverterTypeSettingsAppTheme.write(value.appTheme, into: &buf)
+        FfiConverterString.write(value.appearance, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSettingsPageState_lift(_ buf: RustBuffer) throws -> SettingsPageState {
+    return try FfiConverterTypeSettingsPageState.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSettingsPageState_lower(_ value: SettingsPageState) -> RustBuffer {
+    return FfiConverterTypeSettingsPageState.lower(value)
+}
+
+
+/**
+ * The accent: its name and color.
+ */
+public struct SettingsSwatch: Equatable, Hashable {
+    public var name: String
+    public var colorHex: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(name: String, colorHex: String) {
+        self.name = name
+        self.colorHex = colorHex
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension SettingsSwatch: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeSettingsSwatch: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SettingsSwatch {
+        return
+            try SettingsSwatch(
+                name: FfiConverterString.read(from: &buf), 
+                colorHex: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: SettingsSwatch, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.name, into: &buf)
+        FfiConverterString.write(value.colorHex, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSettingsSwatch_lift(_ buf: RustBuffer) throws -> SettingsSwatch {
+    return try FfiConverterTypeSettingsSwatch.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSettingsSwatch_lower(_ value: SettingsSwatch) -> RustBuffer {
+    return FfiConverterTypeSettingsSwatch.lower(value)
+}
+
+
+/**
+ * The terminal's color scheme: its name, background, words' color and
+ * eight ANSI colors.
+ */
+public struct SettingsTerminalTheme: Equatable, Hashable {
+    public var name: String
+    public var backgroundHex: String
+    public var foregroundHex: String
+    public var swatchesHex: [String]
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(name: String, backgroundHex: String, foregroundHex: String, swatchesHex: [String]) {
+        self.name = name
+        self.backgroundHex = backgroundHex
+        self.foregroundHex = foregroundHex
+        self.swatchesHex = swatchesHex
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension SettingsTerminalTheme: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeSettingsTerminalTheme: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SettingsTerminalTheme {
+        return
+            try SettingsTerminalTheme(
+                name: FfiConverterString.read(from: &buf), 
+                backgroundHex: FfiConverterString.read(from: &buf), 
+                foregroundHex: FfiConverterString.read(from: &buf), 
+                swatchesHex: FfiConverterSequenceString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: SettingsTerminalTheme, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.name, into: &buf)
+        FfiConverterString.write(value.backgroundHex, into: &buf)
+        FfiConverterString.write(value.foregroundHex, into: &buf)
+        FfiConverterSequenceString.write(value.swatchesHex, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSettingsTerminalTheme_lift(_ buf: RustBuffer) throws -> SettingsTerminalTheme {
+    return try FfiConverterTypeSettingsTerminalTheme.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSettingsTerminalTheme_lower(_ value: SettingsTerminalTheme) -> RustBuffer {
+    return FfiConverterTypeSettingsTerminalTheme.lower(value)
+}
+
+
+/**
+ * A pane as the session shows it now (`moshpit_app::share::PaneNow`).
+ */
+public struct SharePaneRecord: Equatable, Hashable {
+    public var id: String
+    /**
+     * The pane's stamped agent (`@moshpit_agent`), if any.
+     */
+    public var agent: String?
+    /**
+     * What runs in its foreground now.
+     */
+    public var command: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(id: String, 
+        /**
+         * The pane's stamped agent (`@moshpit_agent`), if any.
+         */agent: String?, 
+        /**
+         * What runs in its foreground now.
+         */command: String) {
+        self.id = id
+        self.agent = agent
+        self.command = command
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension SharePaneRecord: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeSharePaneRecord: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SharePaneRecord {
+        return
+            try SharePaneRecord(
+                id: FfiConverterString.read(from: &buf), 
+                agent: FfiConverterOptionString.read(from: &buf), 
+                command: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: SharePaneRecord, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.id, into: &buf)
+        FfiConverterOptionString.write(value.agent, into: &buf)
+        FfiConverterString.write(value.command, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSharePaneRecord_lift(_ buf: RustBuffer) throws -> SharePaneRecord {
+    return try FfiConverterTypeSharePaneRecord.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSharePaneRecord_lower(_ value: SharePaneRecord) -> RustBuffer {
+    return FfiConverterTypeSharePaneRecord.lower(value)
+}
+
+
+/**
  * One chip (`TerminalShortcut`).
  */
 public struct ShortcutRecord: Equatable, Hashable {
@@ -12594,6 +13595,169 @@ public func FfiConverterTypeStoreSettledRelease_lift(_ buf: RustBuffer) throws -
 #endif
 public func FfiConverterTypeStoreSettledRelease_lower(_ value: StoreSettledRelease) -> RustBuffer {
     return FfiConverterTypeStoreSettledRelease.lower(value)
+}
+
+
+/**
+ * What the Theme page shows (`Themes`).
+ */
+public struct ThemeGalleryPageState: Equatable, Hashable {
+    /**
+     * The app's own themes.
+     */
+    public var builtIn: [ThemePaletteEntry]
+    /**
+     * The user's.
+     */
+    public var custom: [ThemePaletteEntry]
+    /**
+     * The id of the theme in effect.
+     */
+    public var selected: String
+    /**
+     * The custom theme the delete card asks about, while it shows.
+     */
+    public var deleting: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * The app's own themes.
+         */builtIn: [ThemePaletteEntry], 
+        /**
+         * The user's.
+         */custom: [ThemePaletteEntry], 
+        /**
+         * The id of the theme in effect.
+         */selected: String, 
+        /**
+         * The custom theme the delete card asks about, while it shows.
+         */deleting: String?) {
+        self.builtIn = builtIn
+        self.custom = custom
+        self.selected = selected
+        self.deleting = deleting
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension ThemeGalleryPageState: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeThemeGalleryPageState: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ThemeGalleryPageState {
+        return
+            try ThemeGalleryPageState(
+                builtIn: FfiConverterSequenceTypeThemePaletteEntry.read(from: &buf), 
+                custom: FfiConverterSequenceTypeThemePaletteEntry.read(from: &buf), 
+                selected: FfiConverterString.read(from: &buf), 
+                deleting: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: ThemeGalleryPageState, into buf: inout [UInt8]) {
+        FfiConverterSequenceTypeThemePaletteEntry.write(value.builtIn, into: &buf)
+        FfiConverterSequenceTypeThemePaletteEntry.write(value.custom, into: &buf)
+        FfiConverterString.write(value.selected, into: &buf)
+        FfiConverterOptionString.write(value.deleting, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeThemeGalleryPageState_lift(_ buf: RustBuffer) throws -> ThemeGalleryPageState {
+    return try FfiConverterTypeThemeGalleryPageState.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeThemeGalleryPageState_lower(_ value: ThemeGalleryPageState) -> RustBuffer {
+    return FfiConverterTypeThemeGalleryPageState.lower(value)
+}
+
+
+/**
+ * One theme (`Palette`): its name and the colors its row previews, the
+ * eight ANSI ones in order.
+ */
+public struct ThemePaletteEntry: Equatable, Hashable {
+    public var id: String
+    public var name: String
+    public var backgroundHex: String
+    public var foregroundHex: String
+    public var cursorHex: String
+    public var ansiHex: [String]
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(id: String, name: String, backgroundHex: String, foregroundHex: String, cursorHex: String, ansiHex: [String]) {
+        self.id = id
+        self.name = name
+        self.backgroundHex = backgroundHex
+        self.foregroundHex = foregroundHex
+        self.cursorHex = cursorHex
+        self.ansiHex = ansiHex
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension ThemePaletteEntry: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeThemePaletteEntry: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ThemePaletteEntry {
+        return
+            try ThemePaletteEntry(
+                id: FfiConverterString.read(from: &buf), 
+                name: FfiConverterString.read(from: &buf), 
+                backgroundHex: FfiConverterString.read(from: &buf), 
+                foregroundHex: FfiConverterString.read(from: &buf), 
+                cursorHex: FfiConverterString.read(from: &buf), 
+                ansiHex: FfiConverterSequenceString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: ThemePaletteEntry, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.id, into: &buf)
+        FfiConverterString.write(value.name, into: &buf)
+        FfiConverterString.write(value.backgroundHex, into: &buf)
+        FfiConverterString.write(value.foregroundHex, into: &buf)
+        FfiConverterString.write(value.cursorHex, into: &buf)
+        FfiConverterSequenceString.write(value.ansiHex, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeThemePaletteEntry_lift(_ buf: RustBuffer) throws -> ThemePaletteEntry {
+    return try FfiConverterTypeThemePaletteEntry.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeThemePaletteEntry_lower(_ value: ThemePaletteEntry) -> RustBuffer {
+    return FfiConverterTypeThemePaletteEntry.lower(value)
 }
 
 
@@ -12789,6 +13953,11 @@ public struct TmuxReadModel: Equatable, Hashable {
      */
     public var sizeFollowWindow: String?
     public var sizeFollowOwner: String?
+    /**
+     * Another client picked another pane in the window shown: the pane
+     * the phone keeps under a veil, a tap taking it back (B587).
+     */
+    public var paneFollowPane: String?
     public var agentHooks: [AgentHookValue]
     public var agentHooksLoaded: Bool
     /**
@@ -12824,7 +13993,11 @@ public struct TmuxReadModel: Equatable, Hashable {
         /**
          * The size-lease follower's veil: the active window is sized for
          * another device (`size_follow_window`, its `size_follow_owner`).
-         */sizeFollowWindow: String?, sizeFollowOwner: String?, agentHooks: [AgentHookValue], agentHooksLoaded: Bool, 
+         */sizeFollowWindow: String?, sizeFollowOwner: String?, 
+        /**
+         * Another client picked another pane in the window shown: the pane
+         * the phone keeps under a veil, a tap taking it back (B587).
+         */paneFollowPane: String?, agentHooks: [AgentHookValue], agentHooksLoaded: Bool, 
         /**
          * The active pane's program wants the mouse / is on the alternate
          * screen (unknown: discovery's `alternate_on`): where a scroll goes.
@@ -12857,6 +14030,7 @@ public struct TmuxReadModel: Equatable, Hashable {
         self.refreshing = refreshing
         self.sizeFollowWindow = sizeFollowWindow
         self.sizeFollowOwner = sizeFollowOwner
+        self.paneFollowPane = paneFollowPane
         self.agentHooks = agentHooks
         self.agentHooksLoaded = agentHooksLoaded
         self.wantsMouse = wantsMouse
@@ -12896,6 +14070,7 @@ public struct FfiConverterTypeTmuxReadModel: FfiConverterRustBuffer {
                 refreshing: FfiConverterBool.read(from: &buf), 
                 sizeFollowWindow: FfiConverterOptionString.read(from: &buf), 
                 sizeFollowOwner: FfiConverterOptionString.read(from: &buf), 
+                paneFollowPane: FfiConverterOptionString.read(from: &buf), 
                 agentHooks: FfiConverterSequenceTypeAgentHookValue.read(from: &buf), 
                 agentHooksLoaded: FfiConverterBool.read(from: &buf), 
                 wantsMouse: FfiConverterBool.read(from: &buf), 
@@ -12921,6 +14096,7 @@ public struct FfiConverterTypeTmuxReadModel: FfiConverterRustBuffer {
         FfiConverterBool.write(value.refreshing, into: &buf)
         FfiConverterOptionString.write(value.sizeFollowWindow, into: &buf)
         FfiConverterOptionString.write(value.sizeFollowOwner, into: &buf)
+        FfiConverterOptionString.write(value.paneFollowPane, into: &buf)
         FfiConverterSequenceTypeAgentHookValue.write(value.agentHooks, into: &buf)
         FfiConverterBool.write(value.agentHooksLoaded, into: &buf)
         FfiConverterBool.write(value.wantsMouse, into: &buf)
@@ -13081,6 +14257,281 @@ public func FfiConverterTypeTmuxWindowValue_lift(_ buf: RustBuffer) throws -> Tm
 public func FfiConverterTypeTmuxWindowValue_lower(_ value: TmuxWindowValue) -> RustBuffer {
     return FfiConverterTypeTmuxWindowValue.lower(value)
 }
+
+
+/**
+ * One model as the page shows it (`Model`): its sizes formatted.
+ */
+public struct WhisperModelRow: Equatable, Hashable {
+    public var id: String
+    public var name: String
+    public var summary: String
+    public var approximate: String
+    public var installed: String?
+    public var partial: String?
+    /**
+     * How far its download is, 0 to 1, while one runs.
+     */
+    public var progress: Double?
+    public var selected: Bool
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(id: String, name: String, summary: String, approximate: String, installed: String?, partial: String?, 
+        /**
+         * How far its download is, 0 to 1, while one runs.
+         */progress: Double?, selected: Bool) {
+        self.id = id
+        self.name = name
+        self.summary = summary
+        self.approximate = approximate
+        self.installed = installed
+        self.partial = partial
+        self.progress = progress
+        self.selected = selected
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension WhisperModelRow: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeWhisperModelRow: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> WhisperModelRow {
+        return
+            try WhisperModelRow(
+                id: FfiConverterString.read(from: &buf), 
+                name: FfiConverterString.read(from: &buf), 
+                summary: FfiConverterString.read(from: &buf), 
+                approximate: FfiConverterString.read(from: &buf), 
+                installed: FfiConverterOptionString.read(from: &buf), 
+                partial: FfiConverterOptionString.read(from: &buf), 
+                progress: FfiConverterOptionDouble.read(from: &buf), 
+                selected: FfiConverterBool.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: WhisperModelRow, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.id, into: &buf)
+        FfiConverterString.write(value.name, into: &buf)
+        FfiConverterString.write(value.summary, into: &buf)
+        FfiConverterString.write(value.approximate, into: &buf)
+        FfiConverterOptionString.write(value.installed, into: &buf)
+        FfiConverterOptionString.write(value.partial, into: &buf)
+        FfiConverterOptionDouble.write(value.progress, into: &buf)
+        FfiConverterBool.write(value.selected, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeWhisperModelRow_lift(_ buf: RustBuffer) throws -> WhisperModelRow {
+    return try FfiConverterTypeWhisperModelRow.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeWhisperModelRow_lower(_ value: WhisperModelRow) -> RustBuffer {
+    return FfiConverterTypeWhisperModelRow.lower(value)
+}
+
+
+/**
+ * What the Model page shows (`Models`).
+ */
+public struct WhisperModelsState: Equatable, Hashable {
+    /**
+     * The models this device can run, best first.
+     */
+    public var models: [WhisperModelRow]
+    /**
+     * The last download failure, in the system's words.
+     */
+    public var failure: String?
+    /**
+     * What the downloaded models take, formatted.
+     */
+    public var storage: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * The models this device can run, best first.
+         */models: [WhisperModelRow], 
+        /**
+         * The last download failure, in the system's words.
+         */failure: String?, 
+        /**
+         * What the downloaded models take, formatted.
+         */storage: String?) {
+        self.models = models
+        self.failure = failure
+        self.storage = storage
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension WhisperModelsState: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeWhisperModelsState: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> WhisperModelsState {
+        return
+            try WhisperModelsState(
+                models: FfiConverterSequenceTypeWhisperModelRow.read(from: &buf), 
+                failure: FfiConverterOptionString.read(from: &buf), 
+                storage: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: WhisperModelsState, into buf: inout [UInt8]) {
+        FfiConverterSequenceTypeWhisperModelRow.write(value.models, into: &buf)
+        FfiConverterOptionString.write(value.failure, into: &buf)
+        FfiConverterOptionString.write(value.storage, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeWhisperModelsState_lift(_ buf: RustBuffer) throws -> WhisperModelsState {
+    return try FfiConverterTypeWhisperModelsState.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeWhisperModelsState_lower(_ value: WhisperModelsState) -> RustBuffer {
+    return FfiConverterTypeWhisperModelsState.lower(value)
+}
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+/**
+ * What the Accent page tells the host.
+ */
+
+public enum AccentEvent: Equatable, Hashable {
+    
+    case back
+    /**
+     * A row picked.
+     */
+    case select(id: String
+    )
+    /**
+     * New: the editor, on a draft.
+     */
+    case add
+    /**
+     * The delete card's Delete.
+     */
+    case delete(id: String
+    )
+    /**
+     * The delete card's Cancel.
+     */
+    case cancelDelete
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension AccentEvent: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeAccentEvent: FfiConverterRustBuffer {
+    typealias SwiftType = AccentEvent
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> AccentEvent {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .back
+        
+        case 2: return .select(id: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 3: return .add
+        
+        case 4: return .delete(id: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 5: return .cancelDelete
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: AccentEvent, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .back:
+            writeInt(&buf, Int32(1))
+        
+        
+        case let .select(id):
+            writeInt(&buf, Int32(2))
+            FfiConverterString.write(id, into: &buf)
+            
+        
+        case .add:
+            writeInt(&buf, Int32(3))
+        
+        
+        case let .delete(id):
+            writeInt(&buf, Int32(4))
+            FfiConverterString.write(id, into: &buf)
+            
+        
+        case .cancelDelete:
+            writeInt(&buf, Int32(5))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeAccentEvent_lift(_ buf: RustBuffer) throws -> AccentEvent {
+    return try FfiConverterTypeAccentEvent.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeAccentEvent_lower(_ value: AccentEvent) -> RustBuffer {
+    return FfiConverterTypeAccentEvent.lower(value)
+}
+
 
 // Note that we don't yet support `indirect` for enums.
 // See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
@@ -14642,6 +16093,184 @@ public func FfiConverterTypeFailureKindValue_lift(_ buf: RustBuffer) throws -> F
 #endif
 public func FfiConverterTypeFailureKindValue_lower(_ value: FailureKindValue) -> RustBuffer {
     return FfiConverterTypeFailureKindValue.lower(value)
+}
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+/**
+ * What the Feedback page tells the host.
+ */
+
+public enum FeedbackEvent: Equatable, Hashable {
+    
+    case cancel
+    case text(value: String
+    )
+    case set(key: FeedbackSwitch, value: Bool
+    )
+    case send(message: String
+    )
+    case copyAddress
+    case githubIssue
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension FeedbackEvent: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeFeedbackEvent: FfiConverterRustBuffer {
+    typealias SwiftType = FeedbackEvent
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> FeedbackEvent {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .cancel
+        
+        case 2: return .text(value: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 3: return .set(key: try FfiConverterTypeFeedbackSwitch.read(from: &buf), value: try FfiConverterBool.read(from: &buf)
+        )
+        
+        case 4: return .send(message: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 5: return .copyAddress
+        
+        case 6: return .githubIssue
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: FeedbackEvent, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .cancel:
+            writeInt(&buf, Int32(1))
+        
+        
+        case let .text(value):
+            writeInt(&buf, Int32(2))
+            FfiConverterString.write(value, into: &buf)
+            
+        
+        case let .set(key,value):
+            writeInt(&buf, Int32(3))
+            FfiConverterTypeFeedbackSwitch.write(key, into: &buf)
+            FfiConverterBool.write(value, into: &buf)
+            
+        
+        case let .send(message):
+            writeInt(&buf, Int32(4))
+            FfiConverterString.write(message, into: &buf)
+            
+        
+        case .copyAddress:
+            writeInt(&buf, Int32(5))
+        
+        
+        case .githubIssue:
+            writeInt(&buf, Int32(6))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeFeedbackEvent_lift(_ buf: RustBuffer) throws -> FeedbackEvent {
+    return try FfiConverterTypeFeedbackEvent.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeFeedbackEvent_lower(_ value: FeedbackEvent) -> RustBuffer {
+    return FfiConverterTypeFeedbackEvent.lower(value)
+}
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+/**
+ * The Feedback page's two switches.
+ */
+
+public enum FeedbackSwitch: Equatable, Hashable {
+    
+    case environment
+    case log
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension FeedbackSwitch: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeFeedbackSwitch: FfiConverterRustBuffer {
+    typealias SwiftType = FeedbackSwitch
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> FeedbackSwitch {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .environment
+        
+        case 2: return .log
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: FeedbackSwitch, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .environment:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .log:
+            writeInt(&buf, Int32(2))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeFeedbackSwitch_lift(_ buf: RustBuffer) throws -> FeedbackSwitch {
+    return try FfiConverterTypeFeedbackSwitch.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeFeedbackSwitch_lower(_ value: FeedbackSwitch) -> RustBuffer {
+    return FfiConverterTypeFeedbackSwitch.lower(value)
 }
 
 
@@ -16788,6 +18417,112 @@ public func FfiConverterTypeInjectedFault_lower(_ value: InjectedFault) -> RustB
 
 // Note that we don't yet support `indirect` for enums.
 // See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+/**
+ * What Install Assist tells the host.
+ */
+
+public enum InstallAssistEvent: Equatable, Hashable {
+    
+    /**
+     * Done: the sheet goes.
+     */
+    case done
+    /**
+     * Run in Terminal: the command typed into the live shell.
+     */
+    case run
+    /**
+     * Copy: the command on the pasteboard.
+     */
+    case copy
+    /**
+     * Re-check: the host probed again.
+     */
+    case recheck
+    /**
+     * Reconnect, once a re-check found everything (or had no channel).
+     */
+    case reconnect
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension InstallAssistEvent: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeInstallAssistEvent: FfiConverterRustBuffer {
+    typealias SwiftType = InstallAssistEvent
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> InstallAssistEvent {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .done
+        
+        case 2: return .run
+        
+        case 3: return .copy
+        
+        case 4: return .recheck
+        
+        case 5: return .reconnect
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: InstallAssistEvent, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .done:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .run:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .copy:
+            writeInt(&buf, Int32(3))
+        
+        
+        case .recheck:
+            writeInt(&buf, Int32(4))
+        
+        
+        case .reconnect:
+            writeInt(&buf, Int32(5))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeInstallAssistEvent_lift(_ buf: RustBuffer) throws -> InstallAssistEvent {
+    return try FfiConverterTypeInstallAssistEvent.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeInstallAssistEvent_lower(_ value: InstallAssistEvent) -> RustBuffer {
+    return FfiConverterTypeInstallAssistEvent.lower(value)
+}
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
 
 public enum KeyAlgorithm: Equatable, Hashable {
     
@@ -17727,6 +19462,364 @@ public func FfiConverterTypeMoshWhyValue_lift(_ buf: RustBuffer) throws -> MoshW
 #endif
 public func FfiConverterTypeMoshWhyValue_lower(_ value: MoshWhyValue) -> RustBuffer {
     return FfiConverterTypeMoshWhyValue.lower(value)
+}
+
+
+
+/**
+ * A message the bridge couldn't write: a value the screen's type can't
+ * hold (a color that isn't `#RRGGBB`).
+ */
+public enum PageError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
+
+    
+    
+    /**
+     * `value` isn't one `field` can hold (a color that isn't `#RRGGBB`,
+     * an id the screen doesn't know).
+     */
+    case Invalid(field: String, value: String
+    )
+
+    
+
+    
+
+    
+    public var errorDescription: String? {
+        String(reflecting: self)
+    }
+    
+}
+
+#if compiler(>=6)
+extension PageError: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypePageError: FfiConverterRustBuffer {
+    typealias SwiftType = PageError
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> PageError {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+
+        
+
+        
+        case 1: return .Invalid(
+            field: try FfiConverterString.read(from: &buf), 
+            value: try FfiConverterString.read(from: &buf)
+            )
+
+         default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: PageError, into buf: inout [UInt8]) {
+        switch value {
+
+        
+
+        
+        
+        case let .Invalid(field,value):
+            writeInt(&buf, Int32(1))
+            FfiConverterString.write(field, into: &buf)
+            FfiConverterString.write(value, into: &buf)
+            
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePageError_lift(_ buf: RustBuffer) throws -> PageError {
+    return try FfiConverterTypePageError.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePageError_lower(_ value: PageError) -> RustBuffer {
+    return FfiConverterTypePageError.lower(value)
+}
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+/**
+ * What a page's screen told its host, read by the screen's own type.
+ */
+
+public enum PageEvent: Equatable, Hashable {
+    
+    case feedback(event: FeedbackEvent
+    )
+    case settings(event: SettingsEvent
+    )
+    case whisperModel(event: WhisperModelEvent
+    )
+    case installAssist(event: InstallAssistEvent
+    )
+    case accent(event: AccentEvent
+    )
+    case themeGallery(event: ThemeGalleryEvent
+    )
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension PageEvent: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypePageEvent: FfiConverterRustBuffer {
+    typealias SwiftType = PageEvent
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> PageEvent {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .feedback(event: try FfiConverterTypeFeedbackEvent.read(from: &buf)
+        )
+        
+        case 2: return .settings(event: try FfiConverterTypeSettingsEvent.read(from: &buf)
+        )
+        
+        case 3: return .whisperModel(event: try FfiConverterTypeWhisperModelEvent.read(from: &buf)
+        )
+        
+        case 4: return .installAssist(event: try FfiConverterTypeInstallAssistEvent.read(from: &buf)
+        )
+        
+        case 5: return .accent(event: try FfiConverterTypeAccentEvent.read(from: &buf)
+        )
+        
+        case 6: return .themeGallery(event: try FfiConverterTypeThemeGalleryEvent.read(from: &buf)
+        )
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: PageEvent, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case let .feedback(event):
+            writeInt(&buf, Int32(1))
+            FfiConverterTypeFeedbackEvent.write(event, into: &buf)
+            
+        
+        case let .settings(event):
+            writeInt(&buf, Int32(2))
+            FfiConverterTypeSettingsEvent.write(event, into: &buf)
+            
+        
+        case let .whisperModel(event):
+            writeInt(&buf, Int32(3))
+            FfiConverterTypeWhisperModelEvent.write(event, into: &buf)
+            
+        
+        case let .installAssist(event):
+            writeInt(&buf, Int32(4))
+            FfiConverterTypeInstallAssistEvent.write(event, into: &buf)
+            
+        
+        case let .accent(event):
+            writeInt(&buf, Int32(5))
+            FfiConverterTypeAccentEvent.write(event, into: &buf)
+            
+        
+        case let .themeGallery(event):
+            writeInt(&buf, Int32(6))
+            FfiConverterTypeThemeGalleryEvent.write(event, into: &buf)
+            
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePageEvent_lift(_ buf: RustBuffer) throws -> PageEvent {
+    return try FfiConverterTypePageEvent.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePageEvent_lower(_ value: PageEvent) -> RustBuffer {
+    return FfiConverterTypePageEvent.lower(value)
+}
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+/**
+ * A message for a page's screen: the screen's own state type.
+ */
+
+public enum PageMessage: Equatable, Hashable {
+    
+    /**
+     * `{"op": "feedback", …}`.
+     */
+    case feedback(state: FeedbackState
+    )
+    /**
+     * `{"op": "settings", …}`.
+     */
+    case settings(state: SettingsPageState
+    )
+    /**
+     * `{"op": "reveal", …}`: scroll Settings to `anchor`.
+     */
+    case settingsReveal(anchor: SettingsRevealAnchor
+    )
+    /**
+     * `{"op": "hosts", …}`: Set up a host's list.
+     */
+    case settingsHosts(hosts: [SettingsHostEntry]
+    )
+    /**
+     * `{"op": "models", …}`: Voice Input › Model.
+     */
+    case whisperModel(state: WhisperModelsState
+    )
+    /**
+     * `{"op": "accents", …}`: Settings › Accent.
+     */
+    case accent(state: AccentPageState
+    )
+    /**
+     * `{"op": "themes", …}`: Settings › Theme.
+     */
+    case themeGallery(state: ThemeGalleryPageState
+    )
+    /**
+     * `{"op": "reveal"}`: the user's own themes scrolled to the top (a
+     * capture run's).
+     */
+    case themeGalleryReveal
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension PageMessage: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypePageMessage: FfiConverterRustBuffer {
+    typealias SwiftType = PageMessage
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> PageMessage {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .feedback(state: try FfiConverterTypeFeedbackState.read(from: &buf)
+        )
+        
+        case 2: return .settings(state: try FfiConverterTypeSettingsPageState.read(from: &buf)
+        )
+        
+        case 3: return .settingsReveal(anchor: try FfiConverterTypeSettingsRevealAnchor.read(from: &buf)
+        )
+        
+        case 4: return .settingsHosts(hosts: try FfiConverterSequenceTypeSettingsHostEntry.read(from: &buf)
+        )
+        
+        case 5: return .whisperModel(state: try FfiConverterTypeWhisperModelsState.read(from: &buf)
+        )
+        
+        case 6: return .accent(state: try FfiConverterTypeAccentPageState.read(from: &buf)
+        )
+        
+        case 7: return .themeGallery(state: try FfiConverterTypeThemeGalleryPageState.read(from: &buf)
+        )
+        
+        case 8: return .themeGalleryReveal
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: PageMessage, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case let .feedback(state):
+            writeInt(&buf, Int32(1))
+            FfiConverterTypeFeedbackState.write(state, into: &buf)
+            
+        
+        case let .settings(state):
+            writeInt(&buf, Int32(2))
+            FfiConverterTypeSettingsPageState.write(state, into: &buf)
+            
+        
+        case let .settingsReveal(anchor):
+            writeInt(&buf, Int32(3))
+            FfiConverterTypeSettingsRevealAnchor.write(anchor, into: &buf)
+            
+        
+        case let .settingsHosts(hosts):
+            writeInt(&buf, Int32(4))
+            FfiConverterSequenceTypeSettingsHostEntry.write(hosts, into: &buf)
+            
+        
+        case let .whisperModel(state):
+            writeInt(&buf, Int32(5))
+            FfiConverterTypeWhisperModelsState.write(state, into: &buf)
+            
+        
+        case let .accent(state):
+            writeInt(&buf, Int32(6))
+            FfiConverterTypeAccentPageState.write(state, into: &buf)
+            
+        
+        case let .themeGallery(state):
+            writeInt(&buf, Int32(7))
+            FfiConverterTypeThemeGalleryPageState.write(state, into: &buf)
+            
+        
+        case .themeGalleryReveal:
+            writeInt(&buf, Int32(8))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePageMessage_lift(_ buf: RustBuffer) throws -> PageMessage {
+    return try FfiConverterTypePageMessage.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePageMessage_lower(_ value: PageMessage) -> RustBuffer {
+    return FfiConverterTypePageMessage.lower(value)
 }
 
 
@@ -18979,6 +21072,483 @@ public func FfiConverterTypeSettingValue_lower(_ value: SettingValue) -> RustBuf
 // Note that we don't yet support `indirect` for enums.
 // See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
 /**
+ * A setting the user changed (`Setting`); an enum's value is its id.
+ */
+
+public enum SettingsChange: Equatable, Hashable {
+    
+    case font(id: String
+    )
+    case fontSize(points: Double
+    )
+    case cursorShape(id: String
+    )
+    case cursorColor(id: String
+    )
+    case cursorBlink(on: Bool
+    )
+    case trailOnPredict(on: Bool
+    )
+    case keyboardOnOpen(on: Bool
+    )
+    case remoteClipboardRead(on: Bool
+    )
+    case uploadRetentionDays(days: Int64
+    )
+    case moshByDefault(on: Bool
+    )
+    case predictMode(id: String
+    )
+    case notifications(on: Bool
+    )
+    case liveActivity(on: Bool
+    )
+    case alertSound(on: Bool
+    )
+    case lockScreenDetail(on: Bool
+    )
+    case voiceInput(on: Bool
+    )
+    case appearance(id: String
+    )
+    case udpRange(range: PortRange
+    )
+    /**
+     * The companion's style id (`minimal`, `pixel`) and whether it shows.
+     */
+    case companion(style: String, shown: Bool
+    )
+    case petName(name: String
+    )
+    case petTalk(on: Bool
+    )
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension SettingsChange: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeSettingsChange: FfiConverterRustBuffer {
+    typealias SwiftType = SettingsChange
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SettingsChange {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .font(id: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 2: return .fontSize(points: try FfiConverterDouble.read(from: &buf)
+        )
+        
+        case 3: return .cursorShape(id: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 4: return .cursorColor(id: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 5: return .cursorBlink(on: try FfiConverterBool.read(from: &buf)
+        )
+        
+        case 6: return .trailOnPredict(on: try FfiConverterBool.read(from: &buf)
+        )
+        
+        case 7: return .keyboardOnOpen(on: try FfiConverterBool.read(from: &buf)
+        )
+        
+        case 8: return .remoteClipboardRead(on: try FfiConverterBool.read(from: &buf)
+        )
+        
+        case 9: return .uploadRetentionDays(days: try FfiConverterInt64.read(from: &buf)
+        )
+        
+        case 10: return .moshByDefault(on: try FfiConverterBool.read(from: &buf)
+        )
+        
+        case 11: return .predictMode(id: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 12: return .notifications(on: try FfiConverterBool.read(from: &buf)
+        )
+        
+        case 13: return .liveActivity(on: try FfiConverterBool.read(from: &buf)
+        )
+        
+        case 14: return .alertSound(on: try FfiConverterBool.read(from: &buf)
+        )
+        
+        case 15: return .lockScreenDetail(on: try FfiConverterBool.read(from: &buf)
+        )
+        
+        case 16: return .voiceInput(on: try FfiConverterBool.read(from: &buf)
+        )
+        
+        case 17: return .appearance(id: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 18: return .udpRange(range: try FfiConverterTypePortRange.read(from: &buf)
+        )
+        
+        case 19: return .companion(style: try FfiConverterString.read(from: &buf), shown: try FfiConverterBool.read(from: &buf)
+        )
+        
+        case 20: return .petName(name: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 21: return .petTalk(on: try FfiConverterBool.read(from: &buf)
+        )
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: SettingsChange, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case let .font(id):
+            writeInt(&buf, Int32(1))
+            FfiConverterString.write(id, into: &buf)
+            
+        
+        case let .fontSize(points):
+            writeInt(&buf, Int32(2))
+            FfiConverterDouble.write(points, into: &buf)
+            
+        
+        case let .cursorShape(id):
+            writeInt(&buf, Int32(3))
+            FfiConverterString.write(id, into: &buf)
+            
+        
+        case let .cursorColor(id):
+            writeInt(&buf, Int32(4))
+            FfiConverterString.write(id, into: &buf)
+            
+        
+        case let .cursorBlink(on):
+            writeInt(&buf, Int32(5))
+            FfiConverterBool.write(on, into: &buf)
+            
+        
+        case let .trailOnPredict(on):
+            writeInt(&buf, Int32(6))
+            FfiConverterBool.write(on, into: &buf)
+            
+        
+        case let .keyboardOnOpen(on):
+            writeInt(&buf, Int32(7))
+            FfiConverterBool.write(on, into: &buf)
+            
+        
+        case let .remoteClipboardRead(on):
+            writeInt(&buf, Int32(8))
+            FfiConverterBool.write(on, into: &buf)
+            
+        
+        case let .uploadRetentionDays(days):
+            writeInt(&buf, Int32(9))
+            FfiConverterInt64.write(days, into: &buf)
+            
+        
+        case let .moshByDefault(on):
+            writeInt(&buf, Int32(10))
+            FfiConverterBool.write(on, into: &buf)
+            
+        
+        case let .predictMode(id):
+            writeInt(&buf, Int32(11))
+            FfiConverterString.write(id, into: &buf)
+            
+        
+        case let .notifications(on):
+            writeInt(&buf, Int32(12))
+            FfiConverterBool.write(on, into: &buf)
+            
+        
+        case let .liveActivity(on):
+            writeInt(&buf, Int32(13))
+            FfiConverterBool.write(on, into: &buf)
+            
+        
+        case let .alertSound(on):
+            writeInt(&buf, Int32(14))
+            FfiConverterBool.write(on, into: &buf)
+            
+        
+        case let .lockScreenDetail(on):
+            writeInt(&buf, Int32(15))
+            FfiConverterBool.write(on, into: &buf)
+            
+        
+        case let .voiceInput(on):
+            writeInt(&buf, Int32(16))
+            FfiConverterBool.write(on, into: &buf)
+            
+        
+        case let .appearance(id):
+            writeInt(&buf, Int32(17))
+            FfiConverterString.write(id, into: &buf)
+            
+        
+        case let .udpRange(range):
+            writeInt(&buf, Int32(18))
+            FfiConverterTypePortRange.write(range, into: &buf)
+            
+        
+        case let .companion(style,shown):
+            writeInt(&buf, Int32(19))
+            FfiConverterString.write(style, into: &buf)
+            FfiConverterBool.write(shown, into: &buf)
+            
+        
+        case let .petName(name):
+            writeInt(&buf, Int32(20))
+            FfiConverterString.write(name, into: &buf)
+            
+        
+        case let .petTalk(on):
+            writeInt(&buf, Int32(21))
+            FfiConverterBool.write(on, into: &buf)
+            
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSettingsChange_lift(_ buf: RustBuffer) throws -> SettingsChange {
+    return try FfiConverterTypeSettingsChange.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSettingsChange_lower(_ value: SettingsChange) -> RustBuffer {
+    return FfiConverterTypeSettingsChange.lower(value)
+}
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+/**
+ * What Settings tells the host.
+ */
+
+public enum SettingsEvent: Equatable, Hashable {
+    
+    /**
+     * The hub's Done.
+     */
+    case done
+    /**
+     * A page's back.
+     */
+    case back
+    /**
+     * A row asked for page `page` (`ui/src/settings.rs`'s `Page` or `Part`
+     * id: `"udp-range"`, `"feedback"`…).
+     */
+    case `open`(page: String
+    )
+    /**
+     * A setting changed.
+     */
+    case set(change: SettingsChange
+    )
+    /**
+     * A connection picked on Set up a host's list.
+     */
+    case setup(id: String
+    )
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension SettingsEvent: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeSettingsEvent: FfiConverterRustBuffer {
+    typealias SwiftType = SettingsEvent
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SettingsEvent {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .done
+        
+        case 2: return .back
+        
+        case 3: return .`open`(page: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 4: return .set(change: try FfiConverterTypeSettingsChange.read(from: &buf)
+        )
+        
+        case 5: return .setup(id: try FfiConverterString.read(from: &buf)
+        )
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: SettingsEvent, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .done:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .back:
+            writeInt(&buf, Int32(2))
+        
+        
+        case let .`open`(page):
+            writeInt(&buf, Int32(3))
+            FfiConverterString.write(page, into: &buf)
+            
+        
+        case let .set(change):
+            writeInt(&buf, Int32(4))
+            FfiConverterTypeSettingsChange.write(change, into: &buf)
+            
+        
+        case let .setup(id):
+            writeInt(&buf, Int32(5))
+            FfiConverterString.write(id, into: &buf)
+            
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSettingsEvent_lift(_ buf: RustBuffer) throws -> SettingsEvent {
+    return try FfiConverterTypeSettingsEvent.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSettingsEvent_lower(_ value: SettingsEvent) -> RustBuffer {
+    return FfiConverterTypeSettingsEvent.lower(value)
+}
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+/**
+ * Where the list scrolls to (`{"op": "reveal"}`, the screen's `Anchor`).
+ */
+
+public enum SettingsRevealAnchor: Equatable, Hashable {
+    
+    case cursor
+    case behavior
+    case mosh
+    case notifications
+    case bottom
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension SettingsRevealAnchor: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeSettingsRevealAnchor: FfiConverterRustBuffer {
+    typealias SwiftType = SettingsRevealAnchor
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SettingsRevealAnchor {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .cursor
+        
+        case 2: return .behavior
+        
+        case 3: return .mosh
+        
+        case 4: return .notifications
+        
+        case 5: return .bottom
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: SettingsRevealAnchor, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .cursor:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .behavior:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .mosh:
+            writeInt(&buf, Int32(3))
+        
+        
+        case .notifications:
+            writeInt(&buf, Int32(4))
+        
+        
+        case .bottom:
+            writeInt(&buf, Int32(5))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSettingsRevealAnchor_lift(_ buf: RustBuffer) throws -> SettingsRevealAnchor {
+    return try FfiConverterTypeSettingsRevealAnchor.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSettingsRevealAnchor_lower(_ value: SettingsRevealAnchor) -> RustBuffer {
+    return FfiConverterTypeSettingsRevealAnchor.lower(value)
+}
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+/**
  * What SFTP said.
  */
 
@@ -19093,6 +21663,111 @@ public func FfiConverterTypeSftpWhyValue_lift(_ buf: RustBuffer) throws -> SftpW
 #endif
 public func FfiConverterTypeSftpWhyValue_lower(_ value: SftpWhyValue) -> RustBuffer {
     return FfiConverterTypeSftpWhyValue.lower(value)
+}
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+/**
+ * Where a queued share goes (`moshpit_app::share::Target`, B622).
+ */
+
+public enum ShareTarget: Equatable, Hashable {
+    
+    /**
+     * Into this pane: it still runs the agent the share was queued for.
+     */
+    case deliver(pane: String
+    )
+    /**
+     * Nowhere: the pane is gone.
+     */
+    case paneGone
+    /**
+     * Nowhere: the agent exited, its pane runs this shell now.
+     */
+    case agentExited(shell: String
+    )
+    /**
+     * Nowhere: the pane runs another program now.
+     */
+    case anotherProgram(now: String
+    )
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension ShareTarget: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeShareTarget: FfiConverterRustBuffer {
+    typealias SwiftType = ShareTarget
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ShareTarget {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .deliver(pane: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 2: return .paneGone
+        
+        case 3: return .agentExited(shell: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 4: return .anotherProgram(now: try FfiConverterString.read(from: &buf)
+        )
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: ShareTarget, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case let .deliver(pane):
+            writeInt(&buf, Int32(1))
+            FfiConverterString.write(pane, into: &buf)
+            
+        
+        case .paneGone:
+            writeInt(&buf, Int32(2))
+        
+        
+        case let .agentExited(shell):
+            writeInt(&buf, Int32(3))
+            FfiConverterString.write(shell, into: &buf)
+            
+        
+        case let .anotherProgram(now):
+            writeInt(&buf, Int32(4))
+            FfiConverterString.write(now, into: &buf)
+            
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeShareTarget_lift(_ buf: RustBuffer) throws -> ShareTarget {
+    return try FfiConverterTypeShareTarget.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeShareTarget_lower(_ value: ShareTarget) -> RustBuffer {
+    return FfiConverterTypeShareTarget.lower(value)
 }
 
 
@@ -20324,6 +22999,125 @@ public func FfiConverterTypeStoredCredential_lower(_ value: StoredCredential) ->
 }
 
 
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+/**
+ * What the Theme page tells the host.
+ */
+
+public enum ThemeGalleryEvent: Equatable, Hashable {
+    
+    case back
+    /**
+     * A row picked: the theme applies.
+     */
+    case select(id: String
+    )
+    /**
+     * The add menu's New…: the editor, on a draft.
+     */
+    case new
+    /**
+     * The add menu's Import…
+     */
+    case `import`
+    /**
+     * The delete card's Delete.
+     */
+    case delete(id: String
+    )
+    /**
+     * The delete card's Cancel.
+     */
+    case cancelDelete
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension ThemeGalleryEvent: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeThemeGalleryEvent: FfiConverterRustBuffer {
+    typealias SwiftType = ThemeGalleryEvent
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ThemeGalleryEvent {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .back
+        
+        case 2: return .select(id: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 3: return .new
+        
+        case 4: return .`import`
+        
+        case 5: return .delete(id: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 6: return .cancelDelete
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: ThemeGalleryEvent, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .back:
+            writeInt(&buf, Int32(1))
+        
+        
+        case let .select(id):
+            writeInt(&buf, Int32(2))
+            FfiConverterString.write(id, into: &buf)
+            
+        
+        case .new:
+            writeInt(&buf, Int32(3))
+        
+        
+        case .`import`:
+            writeInt(&buf, Int32(4))
+        
+        
+        case let .delete(id):
+            writeInt(&buf, Int32(5))
+            FfiConverterString.write(id, into: &buf)
+            
+        
+        case .cancelDelete:
+            writeInt(&buf, Int32(6))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeThemeGalleryEvent_lift(_ buf: RustBuffer) throws -> ThemeGalleryEvent {
+    return try FfiConverterTypeThemeGalleryEvent.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeThemeGalleryEvent_lower(_ value: ThemeGalleryEvent) -> RustBuffer {
+    return FfiConverterTypeThemeGalleryEvent.lower(value)
+}
+
+
 
 /**
  * Why an import failed.
@@ -20439,6 +23233,10 @@ public enum TmuxIntent: Equatable, Hashable {
     case killPane(id: String
     )
     case refresh
+    /**
+     * Re-list quietly (Home or the window picker showing, B586).
+     */
+    case relist
     case takeSizeOwnership
     case paste(pane: String, text: String
     )
@@ -20520,31 +23318,33 @@ public struct FfiConverterTypeTmuxIntent: FfiConverterRustBuffer {
         
         case 15: return .refresh
         
-        case 16: return .takeSizeOwnership
+        case 16: return .relist
         
-        case 17: return .paste(pane: try FfiConverterString.read(from: &buf), text: try FfiConverterString.read(from: &buf)
+        case 17: return .takeSizeOwnership
+        
+        case 18: return .paste(pane: try FfiConverterString.read(from: &buf), text: try FfiConverterString.read(from: &buf)
         )
         
-        case 18: return .scrollLines(lines: try FfiConverterInt64.read(from: &buf)
+        case 19: return .scrollLines(lines: try FfiConverterInt64.read(from: &buf)
         )
         
-        case 19: return .click(col: try FfiConverterInt64.read(from: &buf), row: try FfiConverterInt64.read(from: &buf)
+        case 20: return .click(col: try FfiConverterInt64.read(from: &buf), row: try FfiConverterInt64.read(from: &buf)
         )
         
-        case 20: return .viewRevealed(pane: try FfiConverterString.read(from: &buf)
+        case 21: return .viewRevealed(pane: try FfiConverterString.read(from: &buf)
         )
         
-        case 21: return .returnSent(pane: try FfiConverterString.read(from: &buf)
+        case 22: return .returnSent(pane: try FfiConverterString.read(from: &buf)
         )
         
-        case 22: return .inputModeChanged(pane: try FfiConverterString.read(from: &buf)
+        case 23: return .inputModeChanged(pane: try FfiConverterString.read(from: &buf)
         )
         
-        case 23: return .scrollBegan
+        case 24: return .scrollBegan
         
-        case 24: return .pollAgentHooks
+        case 25: return .pollAgentHooks
         
-        case 25: return .deferResize(pane: try FfiConverterString.read(from: &buf), cols: try FfiConverterUInt16.read(from: &buf), rows: try FfiConverterUInt16.read(from: &buf)
+        case 26: return .deferResize(pane: try FfiConverterString.read(from: &buf), cols: try FfiConverterUInt16.read(from: &buf), rows: try FfiConverterUInt16.read(from: &buf)
         )
         
         default: throw UniffiInternalError.unexpectedEnumCase
@@ -20631,52 +23431,56 @@ public struct FfiConverterTypeTmuxIntent: FfiConverterRustBuffer {
             writeInt(&buf, Int32(15))
         
         
-        case .takeSizeOwnership:
+        case .relist:
             writeInt(&buf, Int32(16))
         
         
-        case let .paste(pane,text):
+        case .takeSizeOwnership:
             writeInt(&buf, Int32(17))
+        
+        
+        case let .paste(pane,text):
+            writeInt(&buf, Int32(18))
             FfiConverterString.write(pane, into: &buf)
             FfiConverterString.write(text, into: &buf)
             
         
         case let .scrollLines(lines):
-            writeInt(&buf, Int32(18))
+            writeInt(&buf, Int32(19))
             FfiConverterInt64.write(lines, into: &buf)
             
         
         case let .click(col,row):
-            writeInt(&buf, Int32(19))
+            writeInt(&buf, Int32(20))
             FfiConverterInt64.write(col, into: &buf)
             FfiConverterInt64.write(row, into: &buf)
             
         
         case let .viewRevealed(pane):
-            writeInt(&buf, Int32(20))
-            FfiConverterString.write(pane, into: &buf)
-            
-        
-        case let .returnSent(pane):
             writeInt(&buf, Int32(21))
             FfiConverterString.write(pane, into: &buf)
             
         
-        case let .inputModeChanged(pane):
+        case let .returnSent(pane):
             writeInt(&buf, Int32(22))
             FfiConverterString.write(pane, into: &buf)
             
         
-        case .scrollBegan:
+        case let .inputModeChanged(pane):
             writeInt(&buf, Int32(23))
+            FfiConverterString.write(pane, into: &buf)
+            
         
-        
-        case .pollAgentHooks:
+        case .scrollBegan:
             writeInt(&buf, Int32(24))
         
         
-        case let .deferResize(pane,cols,rows):
+        case .pollAgentHooks:
             writeInt(&buf, Int32(25))
+        
+        
+        case let .deferResize(pane,cols,rows):
+            writeInt(&buf, Int32(26))
             FfiConverterString.write(pane, into: &buf)
             FfiConverterUInt16.write(cols, into: &buf)
             FfiConverterUInt16.write(rows, into: &buf)
@@ -20934,6 +23738,131 @@ public func FfiConverterTypeUnreachableValue_lift(_ buf: RustBuffer) throws -> U
 #endif
 public func FfiConverterTypeUnreachableValue_lower(_ value: UnreachableValue) -> RustBuffer {
     return FfiConverterTypeUnreachableValue.lower(value)
+}
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+/**
+ * What the Model page tells the host.
+ */
+
+public enum WhisperModelEvent: Equatable, Hashable {
+    
+    case back
+    /**
+     * Use downloaded model `id`.
+     */
+    case select(id: String
+    )
+    /**
+     * Download, or Resume.
+     */
+    case download(id: String
+    )
+    case pause(id: String
+    )
+    /**
+     * A paused download's trash.
+     */
+    case discard(id: String
+    )
+    /**
+     * A downloaded model's trash (the host asks first).
+     */
+    case remove(id: String
+    )
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension WhisperModelEvent: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeWhisperModelEvent: FfiConverterRustBuffer {
+    typealias SwiftType = WhisperModelEvent
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> WhisperModelEvent {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .back
+        
+        case 2: return .select(id: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 3: return .download(id: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 4: return .pause(id: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 5: return .discard(id: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 6: return .remove(id: try FfiConverterString.read(from: &buf)
+        )
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: WhisperModelEvent, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .back:
+            writeInt(&buf, Int32(1))
+        
+        
+        case let .select(id):
+            writeInt(&buf, Int32(2))
+            FfiConverterString.write(id, into: &buf)
+            
+        
+        case let .download(id):
+            writeInt(&buf, Int32(3))
+            FfiConverterString.write(id, into: &buf)
+            
+        
+        case let .pause(id):
+            writeInt(&buf, Int32(4))
+            FfiConverterString.write(id, into: &buf)
+            
+        
+        case let .discard(id):
+            writeInt(&buf, Int32(5))
+            FfiConverterString.write(id, into: &buf)
+            
+        
+        case let .remove(id):
+            writeInt(&buf, Int32(6))
+            FfiConverterString.write(id, into: &buf)
+            
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeWhisperModelEvent_lift(_ buf: RustBuffer) throws -> WhisperModelEvent {
+    return try FfiConverterTypeWhisperModelEvent.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeWhisperModelEvent_lower(_ value: WhisperModelEvent) -> RustBuffer {
+    return FfiConverterTypeWhisperModelEvent.lower(value)
 }
 
 
@@ -21684,6 +24613,30 @@ fileprivate struct FfiConverterOptionTypeHerdrNoticeValue: FfiConverterRustBuffe
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterOptionTypePageEvent: FfiConverterRustBuffer {
+    typealias SwiftType = PageEvent?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypePageEvent.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypePageEvent.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterOptionTypeRemoteFileKind: FfiConverterRustBuffer {
     typealias SwiftType = RemoteFileKind?
 
@@ -21944,6 +24897,31 @@ fileprivate struct FfiConverterSequenceData: FfiConverterRustBuffer {
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
             seq.append(try FfiConverterData.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeAccentEntry: FfiConverterRustBuffer {
+    typealias SwiftType = [AccentEntry]
+
+    public static func write(_ value: [AccentEntry], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeAccentEntry.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [AccentEntry] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [AccentEntry]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeAccentEntry.read(from: &buf))
         }
         return seq
     }
@@ -22302,6 +25280,81 @@ fileprivate struct FfiConverterSequenceTypeSessionEvent: FfiConverterRustBuffer 
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterSequenceTypeSettingsChoice: FfiConverterRustBuffer {
+    typealias SwiftType = [SettingsChoice]
+
+    public static func write(_ value: [SettingsChoice], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeSettingsChoice.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [SettingsChoice] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [SettingsChoice]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeSettingsChoice.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeSettingsHostEntry: FfiConverterRustBuffer {
+    typealias SwiftType = [SettingsHostEntry]
+
+    public static func write(_ value: [SettingsHostEntry], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeSettingsHostEntry.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [SettingsHostEntry] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [SettingsHostEntry]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeSettingsHostEntry.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeSharePaneRecord: FfiConverterRustBuffer {
+    typealias SwiftType = [SharePaneRecord]
+
+    public static func write(_ value: [SharePaneRecord], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeSharePaneRecord.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [SharePaneRecord] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [SharePaneRecord]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeSharePaneRecord.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceTypeShortcutRecord: FfiConverterRustBuffer {
     typealias SwiftType = [ShortcutRecord]
 
@@ -22344,6 +25397,31 @@ fileprivate struct FfiConverterSequenceTypeStoreSettledRelease: FfiConverterRust
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
             seq.append(try FfiConverterTypeStoreSettledRelease.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeThemePaletteEntry: FfiConverterRustBuffer {
+    typealias SwiftType = [ThemePaletteEntry]
+
+    public static func write(_ value: [ThemePaletteEntry], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeThemePaletteEntry.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [ThemePaletteEntry] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [ThemePaletteEntry]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeThemePaletteEntry.read(from: &buf))
         }
         return seq
     }
@@ -22444,6 +25522,31 @@ fileprivate struct FfiConverterSequenceTypeTmuxWindowValue: FfiConverterRustBuff
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
             seq.append(try FfiConverterTypeTmuxWindowValue.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeWhisperModelRow: FfiConverterRustBuffer {
+    typealias SwiftType = [WhisperModelRow]
+
+    public static func write(_ value: [WhisperModelRow], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeWhisperModelRow.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [WhisperModelRow] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [WhisperModelRow]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeWhisperModelRow.read(from: &buf))
         }
         return seq
     }
@@ -23198,6 +26301,19 @@ public func remotePathTidy(path: String) -> String  {
 })
 }
 /**
+ * Where a share queued for `pane`, to `agent`, goes among `panes`: never
+ * into a pane that no longer runs that agent (B622).
+ */
+public func shareTarget(pane: String, agent: String, panes: [SharePaneRecord]) -> ShareTarget  {
+    return try!  FfiConverterTypeShareTarget_lift(try! rustCall() {
+    uniffi_moshpit_ffi_fn_func_share_target(
+        FfiConverterString.lower(pane),
+        FfiConverterString.lower(agent),
+        FfiConverterSequenceTypeSharePaneRecord.lower(panes),$0
+    )
+})
+}
+/**
  * The shipped set, as the store seeds it.
  */
 public func shortcutBuiltins() -> [ShortcutRecord]  {
@@ -23519,6 +26635,30 @@ public func terminalCursorColor(id: String, theme: String, light: Bool) -> UInt3
         FfiConverterString.lower(id),
         FfiConverterString.lower(theme),
         FfiConverterBool.lower(light),$0
+    )
+})
+}
+/**
+ * What screen `screen` (its name, `"feedback"`) told, read by its own
+ * event type; `None` for a screen with no typed events yet, or an event
+ * it doesn't know (the host logs it).
+ */
+public func pageEvent(screen: String, json: String) -> PageEvent?  {
+    return try!  FfiConverterOptionTypePageEvent.lift(try! rustCall() {
+    uniffi_moshpit_ffi_fn_func_page_event(
+        FfiConverterString.lower(screen),
+        FfiConverterString.lower(json),$0
+    )
+})
+}
+/**
+ * The JSON `message` posts (`NSHSurface.post(json:)`): written by the
+ * screen's own serializer, so it is what the screen parses.
+ */
+public func pageMessage(message: PageMessage)throws  -> String  {
+    return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypePageError_lift) {
+    uniffi_moshpit_ffi_fn_func_page_message(
+        FfiConverterTypePageMessage_lower(message),$0
     )
 })
 }
@@ -23872,6 +27012,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_moshpit_ffi_checksum_func_remote_path_tidy() != 37952) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_moshpit_ffi_checksum_func_share_target() != 11511) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_moshpit_ffi_checksum_func_shortcut_builtins() != 61689) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -23951,6 +27094,12 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_moshpit_ffi_checksum_func_terminal_cursor_color() != 37646) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_moshpit_ffi_checksum_func_page_event() != 617) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_moshpit_ffi_checksum_func_page_message() != 34887) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_moshpit_ffi_checksum_func_store_accent_theme() != 12419) {

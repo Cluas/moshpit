@@ -557,3 +557,153 @@ fn the_sidecar_killing_the_renderers_session_keeps_mosh_running() {
     let _ = renderer.kill();
     let _ = renderer.wait();
 }
+
+/// B587: tmux keeps one active pane per window, shared with every session
+/// holding it: a desktop's `select-pane` in the window the phone shows
+/// moved the phone too (and unzoomed it). The phone keeps its own pane, by
+/// id, until the person touches it; then its pane is the active one again,
+/// zoomed — the last touch wins.
+#[test]
+#[ignore = "needs tmux; see the module docs"]
+fn a_pane_picked_on_the_desktop_leaves_the_phone_on_its_own() {
+    let server = Server::start("ownpane");
+    server.tmux(&["split-window", "-t", "main:1"]);
+    let window = server.tmux(&["display-message", "-p", "-t", "main:1", "#{window_id}"]);
+    let mut desk = server.desktop("main");
+    assert!(
+        eventually(10, || server
+            .tmux(&["list-clients", "-F", "#{client_control_mode}"])
+            .lines()
+            .any(|l| l == "0")),
+        "the desktop attached"
+    );
+    let (child, stdin, rx) = server.client("main");
+    let mut phone = Phone {
+        controller: Controller::new(Config::default()),
+        child,
+        stdin,
+        rx,
+        start: Instant::now(),
+    };
+    let now = phone.now();
+    phone.controller.begin_control_mode(now);
+    let shown = phone.pump_until(15, |c| {
+        c.phone_group().is_some()
+            && c.snapshot().active_window_id.as_deref() == Some(window.as_str())
+    });
+    assert!(shown, "{:?}", phone.controller.snapshot());
+    phone.pump(800);
+    let ours = phone.controller.snapshot().active_pane_id.clone().unwrap();
+    let other = server
+        .tmux(&["list-panes", "-t", &window, "-F", "#{pane_id}"])
+        .lines()
+        .find(|pane| *pane != ours)
+        .unwrap()
+        .to_owned();
+    // The desktop picks the other pane.
+    server.tmux(&["select-pane", "-t", &other]);
+    phone.pump(1000);
+    assert_eq!(
+        phone.controller.snapshot().active_pane_id.as_deref(),
+        Some(ours.as_str()),
+        "the phone keeps its pane"
+    );
+    assert!(phone.controller.pane_follow().is_some(), "under the veil");
+    // The person types on the phone.
+    let now = phone.now();
+    phone.controller.view_input(&ours, b"echo own\r", now);
+    phone.pump(1200);
+    let state = server.tmux(&[
+        "display-message",
+        "-p",
+        "-t",
+        &window,
+        "#{pane_id} #{window_zoomed_flag}",
+    ]);
+    assert_eq!(
+        state,
+        format!("{ours} 1"),
+        "its pane active and zoomed again"
+    );
+    assert!(phone.controller.pane_follow().is_none());
+    let typed = server.tmux(&["capture-pane", "-p", "-t", &ours]);
+    assert!(typed.contains("own"), "the keys went to its pane: {typed}");
+    let _ = desk.kill();
+    let _ = desk.wait();
+}
+
+impl Server {
+    /// `zoomed panes mark` of a window.
+    fn zoom_of(&self, window: &str) -> String {
+        self.tmux(&[
+            "display-message",
+            "-p",
+            "-t",
+            window,
+            "#{window_zoomed_flag} #{window_panes} #{@moshpit_zoomed}",
+        ])
+    }
+}
+
+/// B588: the phone zooms the pane it shows (the immersive zoom), and a
+/// window it hands back gets its zoom undone only by the replay of the
+/// layout it found — none when the panes changed while the phone was there
+/// (a split on the desktop, a pane an agent opened) or when the window had
+/// one pane at the pin (the phone's own split). The desktop's window stayed
+/// zoomed on one pane, marked with a client still attached, so no sweep
+/// took it either.
+#[test]
+#[ignore = "needs tmux; see the module docs"]
+fn a_window_handed_back_after_its_panes_changed_is_not_left_zoomed() {
+    let server = Server::start("zoomback");
+    server.tmux(&["split-window", "-t", "main:1"]);
+    let split = server.tmux(&["display-message", "-p", "-t", "main:1", "#{window_id}"]);
+    let single = server.tmux(&["display-message", "-p", "-t", "main:2", "#{window_id}"]);
+    let mut desk = server.desktop_on("main");
+    let mut phone = server.phone("main");
+    // A pane more while the phone is on the split window, then the app to
+    // the background.
+    let now = phone.now();
+    phone.controller.select_window(&split, now);
+    phone.pump(1200);
+    assert!(
+        server.zoom_of(&split).starts_with("1 2 "),
+        "{}",
+        server.zoom_of(&split)
+    );
+    server.tmux(&["split-window", "-t", &split]);
+    phone.pump(1200);
+    assert!(server.zoom_of(&split).starts_with("1 3 "), "zoomed again");
+    let now = phone.now();
+    phone.controller.release_window_pins(now);
+    phone.pump(1200);
+    assert!(
+        server.zoom_of(&split).starts_with("0 3"),
+        "backgrounded: {}",
+        server.zoom_of(&split)
+    );
+    // Back, onto the one-pane window, split from the phone, then away.
+    let now = phone.now();
+    phone.controller.repin_active_window(now);
+    let now = phone.now();
+    phone.controller.select_window(&single, now);
+    phone.pump(1200);
+    let now = phone.now();
+    phone.controller.new_pane(now);
+    phone.pump(1500);
+    assert!(
+        server.zoom_of(&single).starts_with("1 2 "),
+        "{}",
+        server.zoom_of(&single)
+    );
+    let now = phone.now();
+    phone.controller.select_window(&split, now);
+    phone.pump(1500);
+    assert!(
+        server.zoom_of(&single).starts_with("0 2"),
+        "switched away: {}",
+        server.zoom_of(&single)
+    );
+    let _ = desk.kill();
+    let _ = desk.wait();
+}

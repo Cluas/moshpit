@@ -329,6 +329,9 @@ final class DeepLinkRouter {
 
     private(set) var paneRequest: PaneRequest?
     private var nextToken = 0
+    /// Counts the requests to land on Home's "Needs you" (B661: the
+    /// island's "+N more"); Home pops to its root and scrolls to the top.
+    private(set) var needsYouRequest = 0
 
     func request(connectionId: UUID, paneId: String?) {
         nextToken += 1
@@ -348,6 +351,11 @@ final class DeepLinkRouter {
     }
 
     func handle(_ url: URL) {
+        if AgentDeepLink.isNeedsYou(url) {
+            needsYouRequest += 1
+            Log.island.info("land: Home's Needs you #\(self.needsYouRequest, privacy: .public)")
+            return
+        }
         guard let link = AgentDeepLink.parse(url) else { return }
         request(connectionId: link.connectionId, paneId: link.paneId)
     }

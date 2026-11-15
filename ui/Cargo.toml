@@ -23,6 +23,9 @@ moshpit-install = { path = "../crates/install" }
 # The companion pet: its sprites, drawn here from what the host posts
 # (`{"op": "pet"}`), and its easter eggs' taps.
 moshpit-pet = { path = "../crates/pet" }
+# herdr's rules for a new agent task (a branch name git would refuse), so
+# New Agent Task waits on the check the core itself makes.
+moshpit-herdr = { path = "../crates/herdr" }
 nsh-core.workspace = true
 nsh-base.workspace = true
 log = "0.4"

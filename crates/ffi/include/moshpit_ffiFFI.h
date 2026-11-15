@@ -2301,6 +2301,11 @@ RustBuffer uniffi_moshpit_ffi_fn_func_remote_path_probe_command(RustBuffer cwd, 
 RustBuffer uniffi_moshpit_ffi_fn_func_remote_path_tidy(RustBuffer path, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_SHARE_TARGET
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_SHARE_TARGET
+RustBuffer uniffi_moshpit_ffi_fn_func_share_target(RustBuffer pane, RustBuffer agent, RustBuffer panes, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_SHORTCUT_BUILTINS
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_SHORTCUT_BUILTINS
 RustBuffer uniffi_moshpit_ffi_fn_func_shortcut_builtins(RustCallStatus *_Nonnull out_status
@@ -2438,6 +2443,16 @@ RustBuffer uniffi_moshpit_ffi_fn_func_ssh_key_storable(RustBuffer pasted, RustCa
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_TERMINAL_CURSOR_COLOR
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_TERMINAL_CURSOR_COLOR
 uint32_t uniffi_moshpit_ffi_fn_func_terminal_cursor_color(RustBuffer id, RustBuffer theme, int8_t light, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_PAGE_EVENT
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_PAGE_EVENT
+RustBuffer uniffi_moshpit_ffi_fn_func_page_event(RustBuffer screen, RustBuffer json, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_PAGE_MESSAGE
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_PAGE_MESSAGE
+RustBuffer uniffi_moshpit_ffi_fn_func_page_message(RustBuffer message, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_STORE_ACCENT_THEME
@@ -3027,6 +3042,12 @@ uint16_t uniffi_moshpit_ffi_checksum_func_remote_path_tidy(void
     
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_SHARE_TARGET
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_SHARE_TARGET
+uint16_t uniffi_moshpit_ffi_checksum_func_share_target(void
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_SHORTCUT_BUILTINS
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_SHORTCUT_BUILTINS
 uint16_t uniffi_moshpit_ffi_checksum_func_shortcut_builtins(void
@@ -3186,6 +3207,18 @@ uint16_t uniffi_moshpit_ffi_checksum_func_ssh_key_storable(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_TERMINAL_CURSOR_COLOR
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_TERMINAL_CURSOR_COLOR
 uint16_t uniffi_moshpit_ffi_checksum_func_terminal_cursor_color(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_PAGE_EVENT
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_PAGE_EVENT
+uint16_t uniffi_moshpit_ffi_checksum_func_page_event(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_PAGE_MESSAGE
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_PAGE_MESSAGE
+uint16_t uniffi_moshpit_ffi_checksum_func_page_message(void
     
 );
 #endif

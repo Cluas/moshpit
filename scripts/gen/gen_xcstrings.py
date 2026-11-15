@@ -31,7 +31,7 @@ def plural_spec(key, en_one, zh, ja, en_other=None):
     return spec
 
 # ---------- Brand / protocol / glyphs (identical everywhere) ----------
-for k in ["Moshpit", "MOSH"]:
+for k in ["Moshpit", "MOSH", "JSON"]:
     add(k, SAME)
 
 # ---------- Common actions ----------
@@ -682,7 +682,6 @@ add("Choose", "选择", "選択")
 add("Custom", "自定义", "カスタム")
 add("Other…", "其他…", "その他…")
 add("Start", "开始", "開始")
-add("Starting…", "正在启动…", "開始中…")
 add("Looking for repositories…", "正在查找仓库…", "リポジトリを検索中…")
 add("None found — no panes in repos, and nothing under ~",
     "没找到——窗格都不在仓库里，主目录下也没有", "見つかりません——リポジトリ内のペインがなく、ホーム直下にもありません")
@@ -1102,6 +1101,10 @@ add("Agents", "智能体", "エージェント")
 add("Images", "图片", "画像")
 add("No readable images were provided.", "没有收到可读取的图片。", "読み取れる画像がありませんでした。")
 add("Queued for %@ — delivers when the session is next live.", "已排队，等 %@ 的会话下次在线时送达。", "%@ にキュー済み。セッションが次にオンラインになったら届けます。")
+# A queued share held back: its pane no longer runs the agent (B622).
+add("A share wasn't delivered", "有 1 个分享没送出去", "共有を 1 件届けられませんでした")
+add("That pane isn't running %@ any more.", "那个窗格里已经不是 %@ 了。", "そのペインではもう %@ が動いていません。")
+add("That pane is closed.", "那个窗格已经关了。", "そのペインはもう閉じています。")
 add("Send Image to Agent", "把图片发给智能体", "エージェントに画像を送信")
 add("Sent to %@.", "已发给 %@。", "%@ に送信しました。")
 add("Uploads images to the agent's server and hands it the file paths.", "把图片上传到智能体所在的服务器，再把文件路径交给它。", "画像をエージェントのサーバーにアップロードし、ファイルパスを渡します。")
@@ -1211,7 +1214,6 @@ add("Waiting for it to arrive…", "等它送到…", "到着を待っていま�
 add("24 hours", "24 小时", "24 時間")
 add("7 days", "7 天", "7 日")
 add("ATTACHED IMAGES", "附带的图片", "添付画像")
-add("THEME JSON", "主题 JSON", "テーマ JSON")
 # Shortcuts
 add("Add %@ to toolbar", "把 %@ 加到快捷键栏", "%@ をツールバーに追加")
 # The shortcut editor's edit controls on the NSH page (W11e): each is
@@ -1360,6 +1362,10 @@ add("Install…", "安装…", "インストール…")
 add("This window is sized for %@.", "这个窗口按 %@ 的尺寸显示。", "このウインドウは %@ のサイズで表示されています。")
 add("Use this %@'s size", "改用这台 %@ 的尺寸", "この %@ のサイズにする")
 add("Use this device's size", "改用这台设备的尺寸", "このデバイスのサイズにする")
+# B587: the desktop picked another pane in the window shown; the phone keeps
+# its own until the person takes it back.
+add("The desktop switched to another pane.", "桌面切到了别的窗格。", "デスクトップで別のペインに切り替わりました。")
+add("Take it back", "拿回来", "こちらに戻す")
 add("No %@ %@ on %@", "%3$@ 上没有 %1$@ %2$@", "%3$@ に %1$@ %2$@ がありません")
 add("%@ isn't installed on this host", "这台主机没装 %@", "このホストには %@ がありません")
 add("Open %@", "打开 %@", "%@ を開く")

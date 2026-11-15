@@ -98,6 +98,7 @@ fn tmux_view(snapshot: tmux::Snapshot) -> TmuxView {
         notice: None,
         refreshing: false,
         size_follow: None,
+        pane_follow: None,
         agent_hooks: hooks,
         agent_hooks_loaded: true,
         input: Default::default(),

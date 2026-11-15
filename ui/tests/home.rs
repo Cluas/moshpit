@@ -1062,3 +1062,28 @@ fn a_tap_on_the_pet_answers_in_a_bubble_unless_it_is_told_not_to_talk() {
         channel.close();
     }
 }
+
+/// B661: the island's "+N more" opens Home at "Needs you", where every
+/// agent waiting is listed: the host posts `{"op": "top"}` and the list
+/// scrolls back to its top.
+#[test]
+fn the_host_s_top_brings_needs_you_back_into_view() {
+    let (mut app, channel, _) = phone(Params::default());
+    show(&mut app, &channel, hosts());
+    find(&mut app, "id:home-needs-you");
+    let at = |app: &mut Headless| node(&app.screen().layout_nodes(), "home-needs-you").bounds.origin.y.0;
+    let top = at(&mut app);
+    app.scroll("id:home-list", Points(700.0)).unwrap();
+    assert!(at(&mut app) < top - 100.0, "scrolled away: {} from {top}", at(&mut app));
+    post(&mut app, &channel, r#"{"op":"top"}"#);
+    app.wait_for("id:home-needs-you").unwrap();
+    for _ in 0..40 {
+        if (at(&mut app) - top).abs() < 1.0 {
+            break;
+        }
+        app.run_for(std::time::Duration::from_millis(50)).unwrap();
+    }
+    assert!((at(&mut app) - top).abs() < 1.0, "back at the top: {} vs {top}", at(&mut app));
+    assert!(Message::parse(r#"{"op":"top"}"#).is_ok());
+    channel.close();
+}

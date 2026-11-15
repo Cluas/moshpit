@@ -15,7 +15,11 @@ import MoshpitKit
 ///    (the SpeechAnalyzer stack). Best accuracy, fully local, no speech-
 ///    recognition permission needed; assets download on first use.
 /// 2. **DictationTranscriber** (iOS 26+) — the on-device keyboard-dictation
-///    model, covering many locales the large model doesn't yet.
+///    model, covering many locales the large model doesn't yet. Not first,
+///    although it is the one that takes the pane's words: measured on
+///    Chinese speech carrying English terms (docs/nsh/ASR-2026-11.md) it got
+///    11% of the terms right where SpeechTranscriber got 30%, and the words
+///    only lifted it to 17%.
 /// 3. **SFSpeechRecognizer** (iOS 18–25) — *on-device only*. The server
 ///    variant is deliberately never used: the mic/speech purpose strings and
 ///    the privacy label promise audio never leaves the device, so a locale
@@ -45,7 +49,7 @@ enum DictationEngineFactory {
                 label: whisperLabel(variant: variant, language: language)))
         }
         let locale = await appleLocale(request: request, spokenLanguages: spokenLanguages)
-        engines.append(contentsOf: await appleEngines(locale: locale))
+        engines.append(contentsOf: await appleEngines(locale: locale, hotwords: request.hotwords))
         guard !engines.isEmpty else {
             if request.engine == .whisper, request.whisperModelId.isEmpty,
                WhisperModelStore.resolvedVariant(preferring: "") == nil {
@@ -58,25 +62,32 @@ enum DictationEngineFactory {
     }
 
     /// Apple's transcribers for a locale, best first. Empty when none of them
-    /// can do that language on this device.
-    private static func appleEngines(locale: Locale) async -> [DictationEngine] {
+    /// can do that language on this device. `hotwords` reach every one of
+    /// them, capped at what Apple takes.
+    private static func appleEngines(locale: Locale, hotwords: [String] = []) async -> [DictationEngine] {
+        let strings = Array(hotwords.prefix(DictationHotwords.appleLimit))
         var engines: [DictationEngine] = []
         if #available(iOS 26.0, *) {
             if let match = await SpeechTranscriber.supportedLocale(equivalentTo: locale) {
-                engines.append(ModernDictationEngine(module: .advanced(SpeechTranscriber(
-                    locale: match,
-                    transcriptionOptions: [],
-                    reportingOptions: [.volatileResults],
-                    attributeOptions: []))))
+                engines.append(ModernDictationEngine(
+                    module: .advanced(SpeechTranscriber(
+                        locale: match,
+                        transcriptionOptions: [],
+                        reportingOptions: [.volatileResults],
+                        attributeOptions: [])),
+                    contextualStrings: strings))
             }
             if let match = await DictationTranscriber.supportedLocale(equivalentTo: locale) {
-                engines.append(ModernDictationEngine(module: .dictation(DictationTranscriber(
-                    locale: match, preset: .progressiveLongDictation))))
+                // The short-dictation preset: what is said to a terminal is a
+                // command or a prompt, and it finalizes sooner.
+                engines.append(ModernDictationEngine(
+                    module: .dictation(DictationTranscriber(locale: match, preset: .progressiveShortDictation)),
+                    contextualStrings: strings))
             }
         }
         if let recognizer = SFSpeechRecognizer(locale: locale),
            recognizer.supportsOnDeviceRecognition {
-            engines.append(LegacyDictationEngine(recognizer: recognizer))
+            engines.append(LegacyDictationEngine(recognizer: recognizer, contextualStrings: strings))
         }
         return engines
     }
@@ -142,6 +153,9 @@ final class ModernDictationEngine: DictationEngine {
     }
 
     private let module: Module
+    /// The pane's words (``DictationHotwords``), handed to the analyzer as
+    /// its context. Empty: no context is set.
+    private let contextualStrings: [String]
     private let updateContinuation: AsyncThrowingStream<DictationUpdate, Error>.Continuation
     private let converter = DictationBufferConverter()
     private var analyzer: SpeechAnalyzer?
@@ -156,8 +170,9 @@ final class ModernDictationEngine: DictationEngine {
     /// the volatile hypothesis is replaced by every non-final result.
     private var finalized = ""
 
-    init(module: Module) {
+    init(module: Module, contextualStrings: [String] = []) {
         self.module = module
+        self.contextualStrings = contextualStrings
         (updates, updateContinuation) = AsyncThrowingStream.makeStream()
     }
 
@@ -206,6 +221,17 @@ final class ModernDictationEngine: DictationEngine {
     func start() async throws {
         let analyzer = SpeechAnalyzer(modules: [module.speechModule])
         self.analyzer = analyzer
+        if !contextualStrings.isEmpty {
+            // Before any audio, so the first words are already biased. A
+            // context the module won't take costs the bias, not the session.
+            let context = AnalysisContext()
+            context.contextualStrings[.general] = contextualStrings
+            do {
+                try await analyzer.setContext(context)
+            } catch {
+                Log.voice.error("analysis context refused: \(error.localizedDescription)")
+            }
+        }
         analyzerFormat = await SpeechAnalyzer.bestAvailableAudioFormat(
             compatibleWith: [module.speechModule])
         let (inputSequence, inputContinuation) = AsyncStream<AnalyzerInput>.makeStream()
@@ -344,13 +370,16 @@ final class LegacyDictationEngine: DictationEngine {
     }
 
     private let recognizer: SFSpeechRecognizer
+    /// The pane's words, as the request's `contextualStrings`.
+    private let contextualStrings: [String]
     private let updateContinuation: AsyncThrowingStream<DictationUpdate, Error>.Continuation
     private var request: SFSpeechAudioBufferRecognitionRequest?
     private var task: SFSpeechRecognitionTask?
     private var cancelled = false
 
-    init(recognizer: SFSpeechRecognizer) {
+    init(recognizer: SFSpeechRecognizer, contextualStrings: [String] = []) {
         self.recognizer = recognizer
+        self.contextualStrings = contextualStrings
         (updates, updateContinuation) = AsyncThrowingStream.makeStream()
     }
 
@@ -366,6 +395,7 @@ final class LegacyDictationEngine: DictationEngine {
         request.shouldReportPartialResults = true
         request.taskHint = .dictation
         request.addsPunctuation = true
+        request.contextualStrings = contextualStrings
         // Unconditional — never fall back to Apple's server (see class doc).
         request.requiresOnDeviceRecognition = true
         self.request = request

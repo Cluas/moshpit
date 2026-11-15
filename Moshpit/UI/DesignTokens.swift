@@ -39,21 +39,13 @@ enum Ink {
     /// appearance (R18) and the theme's screen in the dark one.
     static var pageBG: Color { Color(light: Color(hex: "F3F2EE"), dark: screenBG) }
     static let terminalGrid = Color(hex: "26303C").opacity(0.24)
-    // The modal card's colours follow the appearance where it shows (R18):
-    // over the NSH Home or terminal it is light in the light appearance.
+    // A remote preview's ground, which follows the appearance (R18).
     static let modalBG = Color(light: Color(hex: "FFFFFF"), dark: Color(hex: "0C0E12"))
-    static let modalEdge = Color(light: Color.black.opacity(0.08), dark: Color.white.opacity(0.10))
-    static let modalShadow = Color(light: Color.black.opacity(0.18), dark: Color.black.opacity(0.55))
-    static let modalButtonFill = Color(light: Color.black.opacity(0.05), dark: Color.white.opacity(0.06))
-    static let modalPrimaryText = Color(light: Color(hex: "4E4DEC"), dark: Color(hex: "CFCEFF"))
-    static let modalDangerText = Color(light: Color(hex: "BC262C"), dark: Color(hex: "FFC4C4"))
     // A form row's fill: the tokens' `card` in the light appearance (R18).
     static let group = Color(light: Color(hex: "FFFFFF"), dark: Color(hex: "11141A").opacity(0.94))
     static let groupRaised = Color(hex: "171B22").opacity(0.96)
     static let sheet = Color(light: Color(hex: "F3F2EE").opacity(0.98), dark: Color(hex: "10131A").opacity(0.98))
     static let hairline = Color(light: Color.black.opacity(0.08), dark: Color.white.opacity(0.075))
-    // Faint neutral fill on dark chrome (SSH pill, inactive sheet-row icon).
-    static let neutralFill = Color(light: Color.black.opacity(0.04), dark: Color.white.opacity(0.045))
 
     // MARK: - Text
     // Light in the light appearance (R18), as the tokens' `foreground` and
@@ -66,66 +58,12 @@ enum Ink {
     // spacing/tone over color for grouping. Neutral, not accent-tinted.
     static let sectionTitle = Color(light: Color(hex: "5E5C56"), dark: Color(hex: "DED7C9").opacity(0.42))
     static let placeholder = Color(hex: "DAD3C3").opacity(0.32)
-    static let disabledNav = Color(light: Color.black.opacity(0.25), dark: Color.white.opacity(0.22))
 
     // MARK: - Segmented controls
     // Every segmented control's track and pill (`Chrome.installAppearance`):
     // the tokens' `muted` and `card` in the light appearance (R18).
     static let segTrack = Color(uiColor: InkUI.segTrack)
     static let segActive = Color(uiColor: InkUI.segActive)
-}
-
-/// Typography helpers. Display uses SF Rounded for a warmer iOS-native logo
-/// voice; dense UI and terminal affordances stay monospaced.
-///
-/// Sizes are design-time numbers. Each resolves to the nearest system text
-/// style, so every label follows Dynamic Type the way the rest of iOS does —
-/// a fixed 14pt row label was the single biggest "this is a web view" tell.
-/// Only micro labels below the smallest style stay fixed: those are terminal
-/// chrome (crumbs, pills) whose dense grid cannot grow.
-enum Face {
-    static func display(_ size: CGFloat, _ weight: Font.Weight = .regular) -> Font {
-        font(size, weight, design: .rounded)
-    }
-
-    static func text(_ size: CGFloat, _ weight: Font.Weight = .regular) -> Font {
-        font(size, weight, design: .default)
-    }
-
-    static func mono(_ size: CGFloat, _ weight: Font.Weight = .regular) -> Font {
-        font(size, weight, design: .monospaced)
-    }
-
-    private static func font(_ size: CGFloat, _ weight: Font.Weight, design: Font.Design) -> Font {
-        guard let style = style(for: size) else {
-            return .system(size: size, weight: weight, design: design)
-        }
-        return .system(style, design: design, weight: weight)
-    }
-
-    /// The system text style a design size stands for, by nearest default
-    /// point size (caption2 11 · caption 12 · footnote 13 · subheadline 15 ·
-    /// callout 16 · body 17 · title3 20 · title2 22 · title 28 · largeTitle
-    /// 34). nil below caption2: those labels keep their exact size.
-    static func style(for size: CGFloat) -> Font.TextStyle? {
-        switch size {
-        case ..<9.75: return nil
-        case ..<11.75: return .caption2
-        case ..<12.75: return .caption
-        case ..<14: return .footnote
-        case ..<15.5: return .subheadline
-        case ..<16.5: return .callout
-        case ..<19: return .body
-        case ..<21: return .title3
-        case ..<25: return .title2
-        case ..<31: return .title
-        default: return .largeTitle
-        }
-    }
-}
-
-enum Motion {
-    static let settle = Animation.snappy(duration: 0.24, extraBounce: 0.08)
 }
 
 /// The adaptive inks UIKit draws with (`Chrome.installAppearance`), as

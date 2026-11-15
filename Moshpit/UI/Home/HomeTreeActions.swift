@@ -162,8 +162,8 @@ struct HomeTreeDialogs: ViewModifier {
                 confirmForce(target)
             }
             .appSheet(item: $agentTask) { target in
-                NewAgentTaskSheet(initialRepos: target.initialRepos,
-                                  load: target.load, start: target.start)
+                AgentTaskNSHPage(initialRepos: target.initialRepos,
+                                 load: target.load, start: target.start)
             }
     }
 
@@ -215,7 +215,6 @@ struct HomeTreeDialogs: ViewModifier {
                 worktreeForceTarget = item
             case .failed(let message):
                 actions.present(ConnectionCard.Modal(kind: .notice(ConnectionCard.NoticeRequest(
-                    icon: "trash.slash.fill",
                     title: "Couldn't remove the worktree",
                     message: message))))
             }

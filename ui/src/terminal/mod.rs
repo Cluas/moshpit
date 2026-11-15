@@ -9,10 +9,10 @@
 //!   transport pill, the breadcrumb on glass with its session segment that
 //!   gives up its name only when three full segments do not fit.
 //! - The pane area ([`cover`]): the terminal slot, the multiplexer's empty
-//!   state, and over them the first connect's poster, a reconnect's veil
-//!   with its capsule (never a poster: the old frame stays until the new
-//!   one has painted, and the two cross-fade, which the host's view does),
-//!   or the size-lease follower's veil.
+//!   state, and over them a reconnect's veil with its capsule (never a
+//!   full-screen cover, a first connect none at all: the old frame stays
+//!   until the new one has painted, and the two cross-fade, which the
+//!   host's view does), or the size-lease follower's veil.
 //! - Under the bar, over the pane ([`chrome`]): the one banner (mosh's dead
 //!   return path, roaming, a degraded session), the multiplexer's notice
 //!   with its remedy, the chip that opens a link just copied.

@@ -113,8 +113,10 @@ jobs:
           scripts/shots/ci-capture.sh build/dd/Build/Products/Debug-iphonesimulator/Moshpit.app \
             shots/iphone-6.9 iphone $LOCALES
 
+      # Run even when the iPhone's step failed: a missing shot there is no
+      # reason to lose the iPad's.
       - name: iPad 13"
-        if: inputs.devices != 'iphone'
+        if: ${{ !cancelled() && inputs.devices != 'iphone' }}
         env:
           LOCALES: ${{ inputs.locales }}
         run: |

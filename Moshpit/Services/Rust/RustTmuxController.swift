@@ -67,6 +67,9 @@ final class RustTmuxController: MultiplexerControlling {
         var windowId: String
         var ownerLabel: String
     }
+    /// The pane this phone keeps while another client picked another in the
+    /// same window (B587): a veil, a tap taking it back.
+    private(set) var paneFollow: String?
     /// Each pane's agent stamps (`@moshpit_*`), as the core last read them.
     @ObservationIgnored private(set) var agentHooks: [String: AgentHook] = [:]
     private(set) var agentHooksLoaded = false
@@ -201,6 +204,8 @@ final class RustTmuxController: MultiplexerControlling {
         if self.notice != notice { self.notice = notice }
         if self.isRefreshing != isRefreshing { self.isRefreshing = isRefreshing }
         if self.sizeFollow != sizeFollow { self.sizeFollow = sizeFollow }
+        let paneFollow = model?.paneFollowPane
+        if self.paneFollow != paneFollow { self.paneFollow = paneFollow }
         if self.agentHooks != agentHooks { self.agentHooks = agentHooks }
         if self.agentHooksLoaded != agentHooksLoaded { self.agentHooksLoaded = agentHooksLoaded }
     }
@@ -519,6 +524,7 @@ final class RustTmuxController: MultiplexerControlling {
     func killWindow(_ windowId: String) { driver?.perform(.killWindow(id: windowId)) }
     func killPane(_ paneId: String) { driver?.perform(.killPane(id: paneId)) }
     func refresh() { driver?.perform(.refresh) }
+    func relist() { driver?.perform(.relist) }
     func pollAgentHooks() { driver?.perform(.pollAgentHooks) }
     func takeSizeOwnership() { driver?.perform(.takeSizeOwnership) }
 

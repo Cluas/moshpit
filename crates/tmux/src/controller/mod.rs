@@ -230,6 +230,33 @@ struct Pending {
     fence: Option<String>,
     /// The first of a fenced command's blocks has answered it.
     answered: bool,
+    /// It may move a window's active pane (B587): until it is answered, a
+    /// `%window-pane-changed` is ours.
+    moves_panes: bool,
+}
+
+/// What may move a window's active pane: a `%window-pane-changed` while one
+/// of ours is unanswered is our own doing, not another client's (B587).
+fn moves_panes(command: &str) -> bool {
+    [
+        "select-pane",
+        "select-window",
+        "split-window",
+        "kill-pane",
+        "kill-window",
+        "resize-pane -Z",
+        "new-window",
+        "swap-pane",
+        "break-pane",
+        "join-pane",
+        "respawn-pane",
+        "switch-client",
+        "new-session",
+        "kill-session",
+    ]
+    .iter()
+    .any(|verb| command.starts_with(verb))
+        || !answers_once(command)
 }
 
 /// The verbs tmux answers with exactly one block of the command's own when
@@ -338,6 +365,11 @@ enum Reply {
         fresh_attach: bool,
         restore: bool,
         then: Option<Then>,
+    },
+    /// `zoomed active-pane mark` of a window whose zoom we hand back
+    /// (B588).
+    ZoomHandBack {
+        window: String,
     },
     ZoomProbe {
         window: String,
@@ -506,6 +538,11 @@ pub struct Controller {
     dirty: bool,
     outputs: VecDeque<Output>,
     pending: VecDeque<Pending>,
+    /// Commands of ours that may move an active pane, unanswered (B587).
+    own_pane_moves: u32,
+    /// The pane the phone keeps while another client picked another
+    /// (B587).
+    pane_follow: Option<crate::lease::PaneFollow>,
     timers: Timers,
     /// Input held behind the paste just sent (its number), until tmux has
     /// run it and it has had its time (B485).
@@ -612,6 +649,8 @@ impl Controller {
             dirty: false,
             outputs: VecDeque::new(),
             pending: VecDeque::new(),
+            own_pane_moves: 0,
+            pane_follow: None,
             timers: Timers::default(),
             paste_gate: None,
             pastes: 0,
@@ -1170,11 +1209,16 @@ impl Controller {
             self.fences = self.fences.wrapping_add(1);
             format!("moshpit-fence-{}", self.fences)
         });
+        let moves_panes = moves_panes(&command);
+        if moves_panes {
+            self.own_pane_moves = self.own_pane_moves.saturating_add(1);
+        }
         self.pending.push_back(Pending {
             reply,
             waits,
             fence: fence.clone(),
             answered: false,
+            moves_panes,
         });
         self.outputs.push_back(Output::Command(command));
         if let Some(fence) = fence {
@@ -1212,6 +1256,9 @@ impl Controller {
             let Some(entry) = self.pending.pop_front() else {
                 return;
             };
+            if entry.moves_panes {
+                self.own_pane_moves = self.own_pane_moves.saturating_sub(1);
+            }
             if !entry.answered && entry.waits {
                 // No block of its own came (it can't: a parse error is one).
                 self.answer(entry.reply, &channel_closed());
@@ -1221,6 +1268,9 @@ impl Controller {
         let Some(entry) = self.pending.pop_front() else {
             return;
         };
+        if entry.moves_panes {
+            self.own_pane_moves = self.own_pane_moves.saturating_sub(1);
+        }
         self.answer(entry.reply, &response);
     }
 
@@ -1229,6 +1279,7 @@ impl Controller {
     fn close_pending_commands(&mut self) {
         self.sessions_relist = Relist::default();
         self.windows_relist = Relist::default();
+        self.own_pane_moves = 0;
         if self.pending.is_empty() {
             return;
         }
@@ -1293,6 +1344,7 @@ impl Controller {
                     None => {}
                 }
             }
+            Reply::ZoomHandBack { window } => self.zoom_hand_back_answered(&window, response),
             Reply::ZoomProbe { window, epoch } => {
                 self.zoom_probe_answered(&window, epoch, response)
             }
@@ -1632,9 +1684,62 @@ impl Controller {
         {
             pane.is_active = true;
         }
-        if self.snapshot.active_window_id.as_deref() == Some(window_id) {
-            self.snap().active_pane_id = Some(pane_id.to_owned());
+        if self.snapshot.active_window_id.as_deref() != Some(window_id) {
+            return;
         }
+        // Fix (B587): another client picked another pane in the window we
+        // show — tmux keeps one active pane per window, shared — and the
+        // phone used to switch to it under the person. It keeps its own,
+        // by id, under a veil; a touch takes it back.
+        if self.config.renders_output
+            && self.own_pane_moves == 0
+            && let Some(ours) = self.snapshot.active_pane_id.clone().filter(|ours| {
+                ours != pane_id
+                    && self
+                        .snapshot
+                        .panes
+                        .get(ours)
+                        .is_some_and(|pane| pane.window_id == window_id)
+            })
+        {
+            self.set_pane_follow(Some(crate::lease::PaneFollow {
+                window_id: window_id.to_owned(),
+                pane_id: ours,
+            }));
+            return;
+        }
+        self.snap().active_pane_id = Some(pane_id.to_owned());
+        self.set_pane_follow(None);
+    }
+
+    /// The pane the phone keeps while another client picked another in the
+    /// same window (B587): the view's veil.
+    pub fn pane_follow(&self) -> Option<&crate::lease::PaneFollow> {
+        self.pane_follow.as_ref()
+    }
+
+    fn set_pane_follow(&mut self, follow: Option<crate::lease::PaneFollow>) {
+        if self.pane_follow != follow {
+            self.pane_follow = follow;
+            self.dirty = true;
+        }
+    }
+
+    /// The person touched the phone (a keystroke, the veil's button): its
+    /// own pane again, active and zoomed — the last touch wins (B587).
+    /// Whether there was one to take back.
+    pub(super) fn retake_pane(&mut self) -> bool {
+        let Some(follow) = self.pane_follow.take() else {
+            return false;
+        };
+        self.dirty = true;
+        if self.snapshot.active_window_id.as_deref() == Some(follow.window_id.as_str())
+            && self.snapshot.active_pane_id.as_deref() == Some(follow.pane_id.as_str())
+        {
+            self.send(format!("select-pane -t {}", follow.pane_id));
+            self.ensure_immersive_zoom();
+        }
+        true
     }
 
     /// `list-windows` and `list-panes` (`refreshWindowsAndPanes`).
@@ -1881,9 +1986,26 @@ impl Controller {
                 active_pane = Some(id.to_owned());
             }
         }
+        // B587: the pane we keep stays shown while it is there; gone, or
+        // active again, the veil goes.
+        let kept = self
+            .pane_follow
+            .as_ref()
+            .filter(|follow| {
+                self.snapshot.active_window_id.as_deref() == Some(follow.window_id.as_str())
+                    && panes
+                        .get(&follow.pane_id)
+                        .is_some_and(|pane| pane.window_id == follow.window_id && !pane.is_active)
+            })
+            .map(|follow| follow.pane_id.clone());
+        if kept.is_none() {
+            self.set_pane_follow(None);
+        }
         let snapshot = self.snap();
         snapshot.panes = panes;
-        if active_pane.is_some() {
+        if kept.is_some() {
+            snapshot.active_pane_id = kept;
+        } else if active_pane.is_some() {
             snapshot.active_pane_id = active_pane;
         }
     }
@@ -2347,6 +2469,7 @@ impl Controller {
     fn select_window_now(&mut self, window_id: &str) {
         // A manual switch beats a reconnect's restore still on its way.
         self.pending_restore = None;
+        self.set_pane_follow(None);
         self.release_scroll_holds();
         if let Some(session) = self
             .snapshot
@@ -2449,6 +2572,7 @@ impl Controller {
 
     fn select_pane_now(&mut self, pane_id: &str) {
         self.pending_restore = None;
+        self.set_pane_follow(None);
         // Known only from its own %output: wait for discovery to place it.
         if let Some(pane) = self.snapshot.panes.get(pane_id)
             && pane.window_id.is_empty()
@@ -2629,6 +2753,19 @@ impl Controller {
         if let Some(window) = self.snapshot.active_window_id.clone() {
             self.send(format!("resize-pane -Z -t {window}"));
             self.bump_zoom_epoch();
+            // Fix (B588): marked as ours, as the probe's zoom is (B458): the
+            // window handed back gets it undone, and a sweep after our death
+            // tells it from a desktop's own. The new pane is the window's
+            // active one: `-F` names it.
+            if self.config.renders_output
+                && let Some(name) = self.size.our_client_name.clone()
+            {
+                self.send(format!(
+                    "set-option -w -t {window} -F {ZOOM_MARK_OPTION} {}",
+                    crate::format::command_string_literal(&format!("{name} #{{pane_id}}"))
+                ));
+                self.size.zoom_marks.insert(window);
+            }
         }
         self.refresh_windows_and_panes(false, None);
     }
@@ -2874,6 +3011,31 @@ impl Controller {
             self.send_command("display-message -p done".to_owned(), Reply::RefreshDone);
         }
         self.finish_input();
+    }
+
+    /// Re-list sessions, windows and panes, quietly: no spinner, no
+    /// repaint (B586). tmux says nothing when a window's place changes
+    /// (`swap-window`, `move-window -r`, a renumber after a kill elsewhere
+    /// in the order): the tree kept the old numbers and order. The app asks
+    /// as Home or the window picker shows, every 30 s while either does,
+    /// and the controller itself on the return from the background.
+    pub fn relist(&mut self, now: u64) {
+        self.begin_input(now);
+        self.relist_now();
+        self.finish_input();
+    }
+
+    pub(super) fn relist_now(&mut self) {
+        if !self.snapshot.is_attached {
+            return;
+        }
+        self.send_command(
+            LIST_SESSIONS.to_owned(),
+            Reply::Sessions {
+                locating_renderer: true,
+            },
+        );
+        self.refresh_windows_and_panes(false, None);
     }
 
     fn send_surfacing_errors(&mut self, command: String, verb: &'static str) {

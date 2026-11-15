@@ -706,12 +706,21 @@ impl Lifecycle {
 
     fn force_resume(&mut self, now: u64) {
         match &self.phase {
+            // A fresh flow, and what any return does for a live transport:
+            // the sidecar's window pins taken back, herdr's tree read
+            // (B615). SSH's reconnect makes a new leg, which starts with
+            // them.
             Phase::Live {
                 transport: Transport::Mosh,
-            } => self.push(Action::ResumeMosh {
-                generation: self.generation,
-                force: true,
-            }),
+            } => {
+                self.push(Action::Foreground {
+                    generation: self.generation,
+                });
+                self.push(Action::ResumeMosh {
+                    generation: self.generation,
+                    force: true,
+                });
+            }
             Phase::Live {
                 transport: Transport::Ssh,
             } => self.reconnect(now),
@@ -1413,6 +1422,10 @@ mod tests {
         assert_eq!(dials(&actions), vec![(generation + 1, true)]);
         assert!(!actions.iter().any(|a| matches!(a, Action::Probe { .. })));
 
+        // mosh: a fresh flow, and the foreground's own work too — the
+        // sidecar takes its window pins back, herdr's plane reads its tree
+        // (B615: a long absence skipped them, and the desktop's size won
+        // until the person left the terminal and came back).
         let mut life = Lifecycle::new(Timing::default(), Protocol::Mosh, true, T0);
         let generation = live(&mut life, Transport::Mosh, T0);
         life.background(T0 + S);
@@ -1420,10 +1433,13 @@ mod tests {
         life.foreground(T0 + 22 * S);
         assert_eq!(
             drain(&mut life),
-            vec![Action::ResumeMosh {
-                generation,
-                force: true
-            }]
+            vec![
+                Action::Foreground { generation },
+                Action::ResumeMosh {
+                    generation,
+                    force: true
+                }
+            ]
         );
     }
 
@@ -1688,10 +1704,13 @@ mod tests {
         life.foreground(T0 + 22 * S);
         assert_eq!(
             drain(&mut life),
-            vec![Action::ResumeMosh {
-                generation,
-                force: true
-            }]
+            vec![
+                Action::Foreground { generation },
+                Action::ResumeMosh {
+                    generation,
+                    force: true
+                }
+            ]
         );
         assert!(!life.resume_pending());
 

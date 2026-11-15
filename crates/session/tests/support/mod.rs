@@ -576,6 +576,36 @@ impl Credentials for Keys {
     }
 }
 
+/// Signs in as [`Keys`] does, but every read from the `hold_from`-th on
+/// (0-based) waits for `gate`: a redial held mid-dial, after its start.
+pub struct GatedKeys {
+    reads: std::sync::atomic::AtomicUsize,
+    hold_from: usize,
+    gate: Arc<tokio::sync::Notify>,
+}
+
+impl GatedKeys {
+    pub fn new(hold_from: usize, gate: Arc<tokio::sync::Notify>) -> Self {
+        Self {
+            reads: std::sync::atomic::AtomicUsize::new(0),
+            hold_from,
+            gate,
+        }
+    }
+}
+
+impl Credentials for GatedKeys {
+    fn auth<'a>(&'a self, _: &'a str) -> BoxFuture<'a, Result<Auth, CredentialError>> {
+        Box::pin(async move {
+            let read = self.reads.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            if read >= self.hold_from {
+                self.gate.notified().await;
+            }
+            Ok(Auth::key(fixture("ed25519")))
+        })
+    }
+}
+
 /// The fixture host key, trusted for `host:port`.
 pub fn trusting(addr: SocketAddr) -> Arc<KnownHosts> {
     Arc::new(KnownHosts::in_memory(BTreeMap::from([(

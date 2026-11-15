@@ -27,6 +27,16 @@ public enum AgentDeepLink {
         string(connectionId: connectionId.uuidString, paneId: paneId)
     }
 
+    /// `moshpit://home/needs-you`: Home, at its top, where "Needs you" lists
+    /// every agent waiting (B661) — what the island's "+N more" opens.
+    public static let needsYou = "\(scheme)://home/needs-you"
+
+    /// Whether `url` is the link to Home's "Needs you".
+    public static func isNeedsYou(_ url: URL, schemes: Set<String> = [scheme]) -> Bool {
+        guard let urlScheme = url.scheme, schemes.contains(urlScheme) else { return false }
+        return url.host() == "home"
+    }
+
     /// The connection and (optional) pane a link points at, or nil when it
     /// isn't a connection link in one of `schemes`.
     public static func parse(_ url: URL, schemes: Set<String> = [scheme])

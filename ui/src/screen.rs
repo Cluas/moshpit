@@ -11,12 +11,12 @@ use nsh_core::{element::Root, platform::Appearance};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    accent, accent_editor, add_key, add_shortcut, app_icon,
+    accent, accent_editor, add_key, add_shortcut, agent_task, app_icon,
     channel::{Channel, SurfaceId},
-    connection_form, feedback, home, host_setup, key_picker, recent_log, sessions, settings,
-    shortcuts, ssh_keys, strings, terminal,
+    connection_form, feedback, home, host_key, host_setup, key_picker, recent_log, sessions,
+    settings, shortcuts, ssh_keys, strings, terminal,
     theme::{self, AppTheme},
-    theme_editor, theme_gallery, ui, voice_engine, voice_language, whisper_model,
+    theme_editor, theme_gallery, theme_import, ui, voice_engine, voice_language, whisper_model,
 };
 
 /// A screen moved from SwiftUI to NSH.
@@ -72,13 +72,19 @@ pub enum Screen {
     RemoteFolder,
     /// Home › a host's sessions ([`sessions`]).
     Sessions,
+    /// A server's host key, before a connection trusts it ([`host_key`]).
+    HostKey,
+    /// A herdr host's New Agent Task ([`agent_task`]).
+    AgentTask,
+    /// Settings › Theme › Import… ([`theme_import`]).
+    ThemeImport,
     /// The `ui` layer's gallery, a debug screen ([`ui::gallery`]).
     UiGallery,
 }
 
 impl Screen {
     /// Every screen.
-    pub const ALL: [Screen; 25] = [
+    pub const ALL: [Screen; 28] = [
         Screen::RecentLog,
         Screen::AppIcon,
         Screen::Accent,
@@ -103,6 +109,9 @@ impl Screen {
         Screen::InstallAssist,
         Screen::RemoteFolder,
         Screen::Sessions,
+        Screen::HostKey,
+        Screen::AgentTask,
+        Screen::ThemeImport,
         Screen::UiGallery,
     ];
 
@@ -141,6 +150,9 @@ impl Screen {
                 | Screen::HostSetup
                 | Screen::Sessions
                 | Screen::InstallAssist
+                | Screen::HostKey
+                | Screen::AgentTask
+                | Screen::ThemeImport
                 | Screen::Settings
         )
     }
@@ -180,6 +192,9 @@ impl Screen {
                 | Screen::AddShortcut
                 | Screen::Terminal
                 | Screen::InstallAssist
+                | Screen::HostKey
+                | Screen::AgentTask
+                | Screen::ThemeImport
                 | Screen::Sessions
                 | Screen::VoiceEngine
                 | Screen::VoiceLanguage
@@ -266,6 +281,9 @@ impl Screen {
             Screen::InstallAssist => "install-assist",
             Screen::RemoteFolder => "remote-folder",
             Screen::Sessions => "sessions",
+            Screen::HostKey => "host-key",
+            Screen::AgentTask => "agent-task",
+            Screen::ThemeImport => "theme-import",
             Screen::UiGallery => "ui-gallery",
         }
     }
@@ -297,6 +315,9 @@ impl Screen {
             Screen::InstallAssist => terminal::install::Message::parse(message).map(drop),
             Screen::RemoteFolder => terminal::folder::Message::parse(message).map(drop),
             Screen::Sessions => sessions::Message::parse(message).map(drop),
+            Screen::HostKey => host_key::Message::parse(message).map(drop),
+            Screen::AgentTask => agent_task::Message::parse(message).map(drop),
+            Screen::ThemeImport => theme_import::Message::parse(message).map(drop),
             Screen::UiGallery => Err("the gallery takes no messages".to_owned()),
         }
     }
@@ -422,6 +443,21 @@ impl Screen {
             }),
             Screen::Sessions => {
                 Root::new::<sessions::SessionsScreen>(move || sessions::ScreenProps {
+                    surface: surface.into(),
+                })
+            }
+            Screen::HostKey => {
+                Root::new::<host_key::HostKeyScreen>(move || host_key::ScreenProps {
+                    surface: surface.into(),
+                })
+            }
+            Screen::AgentTask => {
+                Root::new::<agent_task::AgentTaskScreen>(move || agent_task::ScreenProps {
+                    surface: surface.into(),
+                })
+            }
+            Screen::ThemeImport => {
+                Root::new::<theme_import::ThemeImportScreen>(move || theme_import::ScreenProps {
                     surface: surface.into(),
                 })
             }
@@ -606,6 +642,9 @@ mod tests {
         assert_eq!(Screen::named("mux-picker"), Some(Screen::MuxPicker));
         assert_eq!(Screen::named("install-assist"), Some(Screen::InstallAssist));
         assert_eq!(Screen::named("remote-folder"), Some(Screen::RemoteFolder));
+        assert_eq!(Screen::named("host-key"), Some(Screen::HostKey));
+        assert_eq!(Screen::named("agent-task"), Some(Screen::AgentTask));
+        assert_eq!(Screen::named("theme-import"), Some(Screen::ThemeImport));
         assert_eq!(Screen::named("ui-gallery"), Some(Screen::UiGallery));
         assert_eq!(Screen::named("terminal-screen"), None);
     }

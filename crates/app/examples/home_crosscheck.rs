@@ -188,6 +188,7 @@ fn tmux_view(t: &Tree) -> TmuxView {
         notice: None,
         refreshing: t.refreshing,
         size_follow: None,
+        pane_follow: None,
         agent_hooks: t
             .hooks
             .iter()

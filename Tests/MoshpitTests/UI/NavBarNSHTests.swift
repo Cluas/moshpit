@@ -99,7 +99,7 @@ struct NavBarNSHTests {
         let (settings, _, _, _) = SettingsRootNSHTests.scratch()
         let (surface, done) = try Self.surface(running: .settings)
         defer { done() }
-        #expect(surface.post(SettingsModel.message(SettingsRootNSHTests.snapshot(settings))))
+        #expect(surface.post(.settings(state: SettingsRootNSHTests.snapshot(settings))))
         let list = try await Self.list("settings-list", in: surface)
         try? await Task.sleep(for: .milliseconds(400))
         Self.shoot(surface, "settings-hub-top")
@@ -120,7 +120,7 @@ struct NavBarNSHTests {
         for (page, anchor) in [("terminal", "cursor"), ("connections", "mosh")] {
             let (surface, done) = try Self.surface(running: .settings, page: page)
             defer { done() }
-            #expect(surface.post(SettingsModel.message(SettingsRootNSHTests.snapshot(settings))))
+            #expect(surface.post(.settings(state: SettingsRootNSHTests.snapshot(settings))))
             let list = try await Self.list("settings-list", in: surface)
             try? await Task.sleep(for: .milliseconds(400))
             Self.shoot(surface, "settings-\(page)-top")

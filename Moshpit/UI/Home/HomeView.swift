@@ -62,15 +62,21 @@ struct HomeView: View {
     /// Oldest in-flight session with a pending host-key prompt / error — the
     /// one the (single) alert presents. The next surfaces when this resolves.
     private var promptingSession: SessionHub.ActiveSession? {
-        connecting.first { $0.viewModel.hostKeyPrompt != nil }
+        asking.first { $0.viewModel.hostKeyPrompt != nil }
     }
     /// Oldest in-flight session waiting for its key's passphrase.
     private var passphraseSession: SessionHub.ActiveSession? {
-        connecting.first { $0.viewModel.keyPassphrasePrompt != nil }
+        asking.first { $0.viewModel.keyPassphrasePrompt != nil }
     }
     /// Oldest in-flight session the server asked a question at sign-in.
     private var questionSession: SessionHub.ActiveSession? {
-        connecting.first { $0.viewModel.signInQuestion != nil }
+        asking.first { $0.viewModel.signInQuestion != nil }
+    }
+    /// The in-flight sessions whose questions Home asks: not one whose
+    /// terminal is open, which asks them itself (two presenters of one
+    /// question would race for the screen).
+    private var asking: [SessionHub.ActiveSession] {
+        connecting.filter { !path.contains(.terminal($0.id)) }
     }
     private var erroredSession: SessionHub.ActiveSession? {
         connecting.first { $0.viewModel.errorMessage?.isEmpty == false }
@@ -135,6 +141,11 @@ struct HomeView: View {
         // `initial: true`: a cold launch from a tapped notification can file
         // the request before this view is on screen, and a plain `.onChange`
         // never reports the value it starts with — the tap opened Home.
+        // The island's "+N more" (B661): Home itself, at "Needs you".
+        .onChange(of: router.needsYouRequest) { _, _ in
+            path = []
+            nshModel.revealNeedsYou()
+        }
         .onChange(of: router.paneRequest, initial: true) { _, request in
             guard let request, store.connections.contains(where: { $0.id == request.connectionId })
             else { return }
@@ -148,12 +159,8 @@ struct HomeView: View {
             Log.island.info("land: home opens terminal path=\(path.count, privacy: .public)")
             open(request.connectionId)
         }
-        .moshpitCard(isPresented: $showConnectError) {
-            MoshpitNoticeCard(
-                icon: "bolt.slash.fill",
-                title: "Connection Error",
-                message: erroredSession?.viewModel.errorMessage ?? ""
-            ) {
+        .alert("Connection Error", isPresented: $showConnectError) {
+            Button("OK") {
                 showConnectError = false
                 // Drop the dead session so its card returns to the offline
                 // state (tappable to retry); the next queued error (if any)
@@ -165,6 +172,8 @@ struct HomeView: View {
                     Task { await hub.disconnect(id) }
                 }
             }
+        } message: {
+            Text(erroredSession?.viewModel.errorMessage ?? "")
         }
         // A connection saved while its session runs: the session's next
         // connect uses what was saved (B329).
@@ -176,33 +185,17 @@ struct HomeView: View {
         .onChange(of: erroredSession?.viewModel.errorMessage) { _, message in
             showConnectError = message?.isEmpty == false
         }
-        .moshpitCard(item: $cardModal) { modal in
-            cardModalView(modal)
+        .alert(cardModal.map(\.title) ?? Text(verbatim: ""),
+               isPresented: Binding(get: { cardModal != nil }, set: { if !$0 { cardModal = nil } }),
+               presenting: cardModal) { modal in
+            cardModalActions(modal)
+        } message: { modal in
+            modal.message
         }
-        .moshpitCard(
-            item: Binding(
-                get: { promptingSession?.viewModel.hostKeyPrompt },
-                set: { if $0 == nil { /* dismissal handled via decide() */ } }
-            )
-        ) { prompt in
-            hostKeyPromptCard(prompt)
-        }
-        .moshpitCard(
-            item: Binding(
-                get: { passphraseSession?.viewModel.keyPassphrasePrompt },
-                set: { if $0 == nil { /* dismissal handled via decide() */ } }
-            )
-        ) { prompt in
-            KeyPassphrasePromptCard(prompt: prompt)
-        }
-        .moshpitCard(
-            item: Binding(
-                get: { questionSession?.viewModel.signInQuestion },
-                set: { if $0 == nil { /* dismissal handled via decide() */ } }
-            )
-        ) { question in
-            SignInQuestionCard(question: question)
-        }
+        .connectPrompts(
+            hostKey: { promptingSession?.viewModel.hostKeyPrompt },
+            passphrase: { passphraseSession?.viewModel.keyPassphrasePrompt },
+            question: { questionSession?.viewModel.signInQuestion })
         .appSheet(isPresented: $showSettings) {
             SettingsScreen(hosts: settingsHosts, session: liveSession, onConnect: { id in
                 // Connect from Set up a host: Settings closes, the terminal opens.
@@ -292,7 +285,6 @@ struct HomeView: View {
             } catch {
                 Log.push.error("delete \(connection.displayName, privacy: .public) stopped: \(error.localizedDescription, privacy: .public)")
                 cardModal = ConnectionCard.Modal(kind: .notice(ConnectionCard.NoticeRequest(
-                    icon: "trash.slash.fill",
                     title: "Couldn't delete the connection",
                     message: String(localized: "Its push pairing couldn't be removed from this phone, so the connection was kept. The diagnostics log has the reason."))))
             }
@@ -300,35 +292,39 @@ struct HomeView: View {
         }
     }
 
-    /// The input card (rename / name-before-create) or the notice a
-    /// connection card requested, drawn over the whole screen.
+    /// The buttons (and the field) of the alert a row asked for: a rename
+    /// or a name-before-create, or a notice. A name the multiplexer would
+    /// not take as typed asks again, the reason as its message, the text
+    /// kept.
     @ViewBuilder
-    private func cardModalView(_ modal: ConnectionCard.Modal) -> some View {
+    private func cardModalActions(_ modal: ConnectionCard.Modal) -> some View {
         switch modal.kind {
         case .input(let input):
-            MoshpitInputCard(
-                icon: input.icon,
-                title: input.title,
-                message: input.message,
-                placeholder: input.placeholder,
-                text: $cardModalText,
-                confirmLabel: input.confirmLabel,
-                onCancel: { cardModal = nil },
-                onConfirm: {
-                    if let refusal = input.refuses?(cardModalText) {
-                        var again = input
-                        again.message = Text(refusal)
-                        again.initialText = cardModalText
-                        cardModal = ConnectionCard.Modal(kind: .input(again))
-                        return
-                    }
-                    input.apply(cardModalText)
-                    cardModal = nil
-                })
-        case .notice(let notice):
-            MoshpitNoticeCard(icon: notice.icon, title: notice.title, message: notice.message) {
+            TextField(input.placeholder, text: $cardModalText)
+                .autocorrectionDisabled()
+                .textInputAutocapitalization(.never)
+                .accessibilityIdentifier("card-input-field")
+            Button("Cancel", role: .cancel) { cardModal = nil }
+            Button(input.confirmLabel) {
+                let typed = cardModalText
                 cardModal = nil
+                if let refusal = input.refuses?(typed) {
+                    var again = input
+                    again.message = Text(refusal)
+                    again.initialText = typed
+                    // Once this alert has gone: one alert at a time.
+                    Task { @MainActor in
+                        try? await Task.sleep(for: .milliseconds(400))
+                        cardModalText = typed
+                        cardModal = ConnectionCard.Modal(kind: .input(again))
+                    }
+                    return
+                }
+                input.apply(typed)
             }
+            .keyboardShortcut(.defaultAction)
+        case .notice:
+            Button("OK") { cardModal = nil }
         }
     }
 
@@ -617,7 +613,7 @@ struct HomeStage: View {
 /// `present`, ``HomeTreeDialogs``): a modal card, and a worktree about to be
 /// removed. The SwiftUI card these came from is gone (D8).
 enum ConnectionCard {
-    /// A modal card for Home to present on a row's behalf.
+    /// The system's alert Home presents on a row's behalf.
     struct Modal: Identifiable {
         enum Kind {
             case input(InputRequest)
@@ -625,32 +621,44 @@ enum ConnectionCard {
         }
         let id = UUID()
         let kind: Kind
-        /// What the input card's field starts with — the current name for a
+        /// What the input's field starts with — the current name for a
         /// rename, nothing for a name-before-create or a notice.
         var initialText: String {
             if case .input(let input) = kind { return input.initialText }
             return ""
+        }
+
+        var title: Text {
+            switch kind {
+            case .input(let input): Text(input.title)
+            case .notice(let notice): Text(notice.title)
+            }
+        }
+
+        var message: Text {
+            switch kind {
+            case .input(let input): input.message ?? Text(verbatim: "")
+            case .notice(let notice): Text(notice.message)
+            }
         }
     }
 
     /// A one-field prompt: rename, or name the thing about to be created.
     /// `apply` closes over the concrete controller so Home can run it.
     struct InputRequest {
-        var icon: String
         var title: LocalizedStringKey
         var message: Text?
         var placeholder: LocalizedStringKey
         var initialText = ""
         var confirmLabel: LocalizedStringKey
         /// Why what was typed won't be applied, or nil (see
-        /// ``MultiplexerName/refusal(_:)``): the card stays up with the
-        /// reason as its message.
+        /// ``MultiplexerName/refusal(_:)``): it asks again with the reason
+        /// as its message.
         var refuses: ((String) -> String?)?
         let apply: (String) -> Void
     }
 
     struct NoticeRequest {
-        var icon: String
         var title: LocalizedStringKey
         var message: String
     }

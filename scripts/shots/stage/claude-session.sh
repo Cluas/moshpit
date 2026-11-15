@@ -27,8 +27,9 @@ printf "     %bsrc/queue.js%b\n" "$D" "$R"
 printf "     %btest/retry.test.js%b\n\n" "$D" "$R"
 printf "%b● %bRead(retry.js)%b\n" "$C" "$B" "$R"
 printf "  %b⎿  6 lines%b\n\n" "$D" "$R"
-printf "%b● %bRead(webhook.js)%b\n" "$C" "$B" "$R"
-printf "  %b⎿  84 lines%b\n\n" "$D" "$R"
+printf "%b● %bBash(npm run bench -- --events 1000)%b\n" "$C" "$B" "$R"
+printf "  %b⎿  p99 9.8s, 41 of 1000 events dropped%b\n" "$D" "$R"
+printf "     %bWrote bench/latency.png%b\n\n" "$D" "$R"
 printf "%b● %bIt retries three times with no delay, so a rate-limited endpoint\n" "$G" "$R"
 printf "  gets three requests inside a second and then the event is dropped.\n"
 printf "  I'll add exponential backoff with jitter, capped at 30s.%b\n\n" "$R"
@@ -44,4 +45,4 @@ printf "  %b2. Yes, allow all edits this session%b\n" "$D" "$R"
 printf "  %b3. No, tell Claude what to do differently%b\n" "$D" "$R"
 # Hold the frame: the capture wants this screen, and a returning shell prompt
 # would scroll it away.
-while :; do sleep 3600; done
+exec sh "$(dirname "$0")/hold.sh" claude

@@ -26,7 +26,7 @@ struct WhisperModelNSHPage: View {
             NSHPage(
                 screen: .whisperModel,
                 attach: { model.attach($0, settings: settings) },
-                onMessage: handle,
+                onEvent: { if case .whisperModel(let event) = $0 { handle(event) } },
                 onFailure: { failed = true })
                 .nshPage()
                 .navigationTitle("Whisper Model")
@@ -51,30 +51,27 @@ struct WhisperModelNSHPage: View {
     }
 
     /// What the screen tells the host.
-    private func handle(_ message: [String: Any]) {
-        let id = message["id"] as? String ?? ""
-        switch message["ev"] as? String {
-        case "back":
+    private func handle(_ event: WhisperModelEvent) {
+        switch event {
+        case .back:
             dismiss()
-        case "select":
+        case .select(let id):
             model.select(id, settings: settings)
-        case "download":
+        case .download(let id):
             model.download(id, settings: settings)
-        case "pause":
+        case .pause(let id):
             downloads.pause(id)
-        case "discard":
+        case .discard(let id):
             Task { await downloads.discard(id) }
-        case "remove":
+        case .remove(let id):
             pendingDelete = model.options.first { $0.id == id && $0.isInstalled }
-        default:
-            break
         }
     }
 }
 
 /// What the NSH Model page shows, owned by the host so a surface made again
-/// starts from it (``NSHPage``'s third rule), and the message that carries it
-/// (`{"op": "models", …}`, `ui/src/whisper_model.rs`'s `Message`).
+/// starts from it (``NSHPage``'s third rule), and the state that carries it
+/// (``WhisperModelsState``, the screen's own through the page bridge).
 @MainActor
 final class WhisperModelPageModel {
     /// The models this device can run, as last read from disk.
@@ -138,38 +135,30 @@ final class WhisperModelPageModel {
     func post(_ settings: AppSettings) {
         let downloads = WhisperDownloadCenter.shared
         let seed = WhisperModelSeed.requested
-        surface?.post(Self.message(
+        surface?.post(.whisperModel(state: Self.state(
             options: options,
             progress: seed?.progress ?? downloads.progress,
             failure: seed?.failure ?? downloads.lastFailure,
-            selected: Self.selected(settings)))
+            selected: Self.selected(settings))))
     }
 
-    /// The screen's message: every model with its sizes formatted, its
+    /// What the page shows: every model with its sizes formatted, its
     /// download's progress and whether it is the one in use; the last
     /// failure; what the downloaded ones take.
-    nonisolated static func message(options: [WhisperModelOption], progress: [String: Double],
-                                    failure: String?, selected: String?) -> [String: Any] {
+    nonisolated static func state(options: [WhisperModelOption], progress: [String: Double],
+                                  failure: String?, selected: String?) -> WhisperModelsState {
         let installed = options.compactMap(\.installedBytes).reduce(0, +)
-        var message: [String: Any] = [
-            "op": "models",
-            "models": options.map { option in
-                var model: [String: Any] = [
-                    "id": option.id,
-                    "name": option.name,
-                    "summary": option.summary,
-                    "approximate": format(option.approximateBytes),
-                    "selected": option.id == selected,
-                ]
-                if let bytes = option.installedBytes { model["installed"] = format(bytes) }
-                if option.isPartial { model["partial"] = format(option.partialBytes) }
-                if let fraction = progress[option.id] { model["progress"] = fraction }
-                return model
+        return WhisperModelsState(
+            models: options.map { option in
+                WhisperModelRow(
+                    id: option.id, name: option.name, summary: option.summary,
+                    approximate: format(option.approximateBytes),
+                    installed: option.installedBytes.map(format),
+                    partial: option.isPartial ? format(option.partialBytes) : nil,
+                    progress: progress[option.id], selected: option.id == selected)
             },
-        ]
-        if let failure { message["failure"] = failure }
-        if installed > 0 { message["storage"] = format(installed) }
-        return message
+            failure: failure,
+            storage: installed > 0 ? format(installed) : nil)
     }
 
     /// Bytes as a file size (`ByteCountFormatter`'s `.file` style).
