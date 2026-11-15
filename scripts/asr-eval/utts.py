@@ -1,0 +1,60 @@
+# Eval set: developer speech to a terminal / coding agent. Synthetic (macOS `say`).
+# kind: mix | zh | en ; terms: English tokens that must come out verbatim
+# (case-insensitive) — commands, identifiers, flags, numbers.
+UTTS = [
+ ("mix", "帮我把这个 PR merge 一下", ["PR", "merge"]),
+ ("mix", "这个 function 的 return value 不对", ["function", "return value"]),
+ ("mix", "git checkout feature/login 然后跑一下 npm test", ["git checkout", "feature/login", "npm test"]),
+ ("mix", "把 timeout 改成 30 秒", ["timeout", "30"]),
+ ("mix", "用 Claude Code 看一下这个 bug", ["Claude Code", "bug"]),
+ ("mix", "让 Codex 把 README 更新一下", ["Codex", "README"]),
+ ("mix", "先 git pull 再 rebase 到 main 上", ["git pull", "rebase", "main"]),
+ ("mix", "这个 API 返回 404 了，看一下 log", ["API", "404", "log"]),
+ ("mix", "把 useEffect 里面的 dependency 加上", ["useEffect", "dependency"]),
+ ("mix", "跑一下 cargo test，看看哪个 case 挂了", ["cargo test", "case"]),
+ ("mix", "帮我写一个 Python script 把 CSV 转成 JSON", ["Python", "script", "CSV", "JSON"]),
+ ("mix", "这个 commit 先 revert 掉", ["commit", "revert"]),
+ ("mix", "docker compose up 起不来，端口被占了", ["docker compose up"]),
+ ("mix", "把 config 里面的 debug 打开", ["config", "debug"]),
+ ("mix", "打开 AppSettings.swift 看一下", ["AppSettings.swift"]),
+ ("mix", "在 DictationEngines 里面加一个 engine", ["DictationEngines", "engine"]),
+ ("mix", "kubectl get pods 看一下哪个 pod 在 restart", ["kubectl get pods", "pod", "restart"]),
+ ("mix", "这个 branch 落后 main 十个 commit", ["branch", "main", "commit"]),
+ ("mix", "把 tmux 的 window 拆成两个 pane", ["tmux", "window", "pane"]),
+ ("mix", "用 pnpm install 重新装一下依赖", ["pnpm install"]),
+ ("mix", "这里有个 race condition，加个 lock 吧", ["race condition", "lock"]),
+ ("mix", "TypeScript 报 type error，说 undefined 不能赋值给 string", ["TypeScript", "type error", "undefined", "string"]),
+ ("mix", "把 max_tokens 调到 4096", ["max_tokens", "4096"]),
+ ("mix", "帮我 review 一下这个 diff", ["review", "diff"]),
+ ("mix", "这个 test 是 flaky 的，retry 三次", ["test", "flaky", "retry"]),
+ ("mix", "ssh 到 staging 服务器上看一下 nginx 的配置", ["ssh", "staging", "nginx"]),
+ ("mix", "把 env 里的 API key 换成新的", ["env", "API key"]),
+ ("mix", "跑一下 make build，然后把 binary 拷到 /usr/local/bin", ["make build", "binary", "/usr/local/bin"]),
+ ("mix", "让 agent 先写测试，再改实现", ["agent"]),
+ ("mix", "这个 Swift 的 async await 写法有问题", ["Swift", "async", "await"]),
+ ("mix", "把 Cargo.toml 里的 tokio 升级到 1.40", ["Cargo.toml", "tokio", "1.40"]),
+ ("mix", "在 package.json 里加一个 lint 的 script", ["package.json", "lint", "script"]),
+ ("zh", "帮我看一下为什么编译失败了", []),
+ ("zh", "把刚才那段代码删掉，重新写一遍", []),
+ ("zh", "先别提交，等我确认一下", []),
+ ("zh", "这个函数太长了，拆成几个小的", []),
+ ("zh", "今天下午三点之前要上线", []),
+ ("zh", "把上一条命令再执行一次", []),
+ ("en", "Run the tests again and show me the failures", ["tests", "failures"]),
+ ("en", "Please refactor this function into smaller pieces", ["refactor", "function"]),
+ ("en", "git status", ["git status"]),
+ ("en", "Open the README and fix the typo in the install section", ["README", "typo"]),
+ ("en", "Ask Claude Code to explain this stack trace", ["Claude Code", "stack trace"]),
+ ("en", "Revert the last commit and push to origin", ["revert", "commit", "origin"]),
+]
+
+# Fake pane context, the way the app would harvest it: cwd, branch, files the
+# agent named, agent name, tools seen in scrollback. Deliberately includes
+# terms that do NOT occur in the eval set, as a real context would.
+HOTWORDS = [
+ "Claude Code", "Codex", "moshpit", "feature/login", "main",
+ "AppSettings.swift", "DictationEngines", "VoiceDictation.swift",
+ "README", "package.json", "Cargo.toml", "tokio", "useEffect",
+ "max_tokens", "kubectl", "tmux", "pnpm", "cargo test", "npm test",
+ "nginx", "staging", "WhisperKit", "SpeechAnalyzer", "rebase",
+]

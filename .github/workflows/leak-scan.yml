@@ -1,0 +1,40 @@
+name: Leak scan
+
+# The public rules of scripts/oss-scan.py on what every push and pull
+# request adds: access tokens, App Store Connect ids, private-key material,
+# device UDIDs, a person's home folder, tailnet addresses. The private
+# rules (a maintainer's denylist, the team's names) run in each team
+# member's pre-push gate, never here: their lists never enter this
+# repository.
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    name: Leak scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Scan what this push or pull request adds
+        env:
+          EVENT: ${{ github.event_name }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.sha }}
+        run: |
+          if [ "$EVENT" = pull_request ]; then
+            base="$PR_BASE"; head="$PR_HEAD"
+          else
+            base="$BEFORE"; head="$AFTER"
+          fi
+          python3 -I scripts/oss-scan.py --public ${base:+--base "$base"} --head "$head"

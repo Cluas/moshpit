@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+# The gate on what leaves this machine for the public repository, installed
+# by scripts/setup-hooks.sh (every team member's checkout has it):
+#
+# - only main goes out (and tags): branches stay local, integrated work
+#   reaches main and main is pushed;
+# - only as a fast-forward: no force push, ever;
+# - only once scripts/oss-scan.py passes on every commit it would publish,
+#   with the private lists of the ops checkout (MOSHPIT_OPS, or
+#   ../moshpit-ops). MOSHPIT_SCAN_PUBLIC_ONLY=1 runs the public rules alone,
+#   for a contributor outside the team; the team never sets it.
+#
+# git gives the hook its remote and URL as arguments, and one line per ref
+# on stdin: <local ref> <local sha> <remote ref> <remote sha>.
+set -uo pipefail
+
+remote="${1:-origin}"
+zero=0000000000000000000000000000000000000000
+root="$(git rev-parse --show-toplevel)"
+scan=(python3 -I "$root/scripts/oss-scan.py")
+[ "${MOSHPIT_SCAN_PUBLIC_ONLY:-}" = 1 ] && scan+=(--public)
+status=0
+
+while read -r local_ref local_sha remote_ref remote_sha; do
+    [ -n "${local_ref:-}" ] || continue
+    if [ "$local_sha" = "$zero" ]; then
+        echo "pre-push: not deleting $remote_ref from $remote here" >&2
+        status=1
+        continue
+    fi
+    case "$remote_ref" in
+        refs/heads/main | refs/tags/*) ;;
+        *)
+            echo "pre-push: only main goes to $remote, not $remote_ref: branches stay local" >&2
+            status=1
+            continue
+            ;;
+    esac
+    base=""
+    if [ "$remote_sha" != "$zero" ]; then
+        if ! git merge-base --is-ancestor "$remote_sha" "$local_sha" 2>/dev/null; then
+            echo "pre-push: $remote_ref on $remote isn't an ancestor of what you push: no force push" >&2
+            status=1
+            continue
+        fi
+        base="$remote_sha"
+    fi
+    if ! "${scan[@]}" ${base:+--base "$base"} --head "$local_sha"; then
+        echo "pre-push: $remote_ref refused by the leak scan (above)" >&2
+        status=1
+    fi
+done
+
+exit "$status"
