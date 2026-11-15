@@ -16,6 +16,19 @@ speech engine under Settings ▸ Voice Input ▸ Recognition. Only its `WhisperK
 library product is linked; the package's CLI target and that target's
 `swift-argument-parser` dependency are not built.
 
+### sherpa-onnx and ONNX Runtime
+
+- Source: https://github.com/k2-fsa/sherpa-onnx (2.0.1)
+- License: Apache License 2.0 (Copyright © Xiaomi Corporation and the k2-fsa
+  contributors)
+- Source: https://github.com/microsoft/onnxruntime (1.28.2, as packaged by
+  https://github.com/csukuangfj/onnxruntime-libs)
+- License: MIT (Copyright © Microsoft Corporation)
+
+sherpa-onnx runs the optional Qwen3-ASR model on the device, on ONNX Runtime.
+Both are linked as the prebuilt static libraries their releases publish; only
+sherpa-onnx's C API and its `sherpa-onnx` library product are used.
+
 ## Downloaded Speech Models
 
 Moshpit ships **no** speech model weights. When you choose the Whisper engine
@@ -26,6 +39,17 @@ directory. They are Core ML conversions of OpenAI's Whisper models, which are
 released by OpenAI under the MIT License; the conversions are distributed by
 Argmax under the MIT License. No audio or transcript is uploaded by this
 download — it only fetches model files.
+
+When you download Qwen3-ASR 0.6B, its files are fetched at runtime from the
+[`goodpixelltd/qwen3-asr-0.6b-int4-sherpa-onnx`](https://huggingface.co/goodpixelltd/qwen3-asr-0.6b-int4-sherpa-onnx)
+repository on Hugging Face, pinned to one revision and checked file by file
+against SHA-256 hashes before they are used. They are a 4-bit quantization of
+the sherpa-onnx export of Alibaba's
+[Qwen3-ASR-0.6B](https://huggingface.co/Qwen/Qwen3-ASR-0.6B), released by the
+Qwen team under the Apache License 2.0; the quantized files are distributed
+under the same license. As with Whisper, nothing is uploaded: the words the
+model is told to expect (file names and branches on the pane's screen) stay on
+the device.
 
 Apple's own speech models (the default engine) are part of iOS and are managed
 by the system, not by Moshpit.

@@ -452,6 +452,11 @@ struct CoreTerminalHost: UIViewRepresentable {
             return height > 0 ? height : 16
         }
 
+        /// The cell the scroll under way began on (B578).
+        var wheelAim: (col: Int, row: Int)? {
+            withSurface { $0.wheelAim } ?? nil
+        }
+
         /// A horizontal swipe asked to switch pane/window. `forward == true` =
         /// next (swipe left), false = previous (swipe right). Set for tmux panes;
         /// nil for a plain shell (nothing to switch). The handler cycles panes in
@@ -1529,6 +1534,8 @@ extension CoreTerminalHost.Coordinator: CoreTerminalViewDelegate {
     var surfaceScrollsHostRows: Bool { onScroll != nil }
 
     var surfaceCanSwitch: Bool { onSwitch != nil || onStep != nil || onSwipe != nil }
+
+    var surfaceCtrlArmed: Bool { pendingCtrl }
 
     func surface(_ surface: CoreTerminalView, switchForward forward: Bool) {
         if let onStep { onStep(forward) } else { onSwitch?(forward) }

@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// What a connect asks the person on its way in, over Home or the terminal,
-/// whichever is connecting:
+/// What a connect asks the person on its way in, presented by the app over
+/// whatever is frontmost (``PromptOverlay``, B632):
 ///
 /// - the server's host key, before it is trusted: the NSH sheet
 ///   (``HostKeyNSHPage``, `ui/src/host_key.rs`), whose fingerprints are

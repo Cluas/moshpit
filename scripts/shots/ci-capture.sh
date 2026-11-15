@@ -66,7 +66,7 @@ log "simulator $udid ($device, want $px)"
 xcrun simctl boot "$udid" 2>/dev/null || true
 xcrun simctl bootstatus "$udid" -b >/dev/null
 xcrun simctl ui "$udid" appearance dark
-xcrun simctl status_bar "$udid" override --time 9:41 --dataNetwork wifi --wifiMode active \
+xcrun simctl status_bar "$udid" override --time 9:41 --operatorName "" --dataNetwork wifi --wifiMode active \
     --wifiBars 3 --cellularMode active --cellularBars 4 --batteryState charged --batteryLevel 100
 xcrun simctl install "$udid" "$app"
 
@@ -144,6 +144,10 @@ if [ -n "${SHOTS_XCTESTRUN:-}" ]; then
     args_json="$(python3 -I -c 'import json,sys; print(json.dumps(sys.argv[1:]))' "${common[@]}")"
     quiet_json="$(python3 -I -c 'import json,sys; print(json.dumps(sys.argv[1:]))' "${quiet[@]}")"
     result="$work/shots-$device.xcresult"
+    # The agents' timers read minutes all through the run: their states
+    # dated from now again every 45 s while the test shoots.
+    ( while sleep 45; do "$root/scripts/shots/stage-host.sh" restamp "$work/host" 2>/dev/null; done ) &
+    restamper=$!
     env TEST_RUNNER_SHOTS_LOCALES="${specs# }" TEST_RUNNER_SHOTS_ARGS_JSON="$args_json" \
         TEST_RUNNER_SHOTS_QUIET_JSON="$quiet_json" \
         TEST_RUNNER_SHOTS_HOME_FIXTURE="$home_fixture" \
@@ -154,6 +158,7 @@ if [ -n "${SHOTS_XCTESTRUN:-}" ]; then
         xcodebuild test-without-building -xctestrun "$SHOTS_XCTESTRUN" -destination "id=$udid" \
         -only-testing:MoshpitUITests/ShotsUITest -resultBundlePath "$result" \
         > "$out/shots-ui-$device.log" 2>&1 || echo "✘ ShotsUITest failed: $out/shots-ui-$device.log" >&2
+    kill "$restamper" 2>/dev/null || true
     exported="$work/attachments-$device"
     xcrun xcresulttool export attachments --path "$result" --output-path "$exported" >/dev/null 2>&1 || true
     python3 -I - "$exported" "$out" "$px" <<'PY' || sizes_wrong=1
@@ -167,6 +172,13 @@ bad = 0
 for test in manifest:
     for attachment in test["attachments"]:
         name = attachment["suggestedHumanReadableName"]
+        if name.startswith("debug~"):
+            # What a missing shot's screen showed (ShotsUITest's explain).
+            _, locale, shot = name.split("~", 2)
+            os.makedirs(os.path.join(out, "debug"), exist_ok=True)
+            shutil.copyfile(os.path.join(src, attachment["exportedFileName"]),
+                            os.path.join(out, "debug", f"{locale}-{shot.split('_', 1)[0]}.png"))
+            continue
         if not name.startswith("shot~"):
             continue
         _, locale, shot = name.split("~", 2)

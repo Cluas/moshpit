@@ -63,7 +63,8 @@ struct ShortcutCopyTests {
         mine.isBuiltin = false
         #expect(mine.displaySummary == "Escape")
         // The NSH page gets the built-in's name in the app's language.
-        let message = ShortcutsModel.message(ShortcutsSnapshot(shortcuts: [builtin]))
+        let json = ShortcutsModel.message(ShortcutsSnapshot(shortcuts: [builtin]))
+        let message = (try? JSONSerialization.jsonObject(with: Data(json.utf8))) as? [String: Any] ?? [:]
         let listed = ((message["toolbar"] as? [[String: Any]]) ?? []) + ((message["available"] as? [[String: Any]]) ?? [])
         #expect(listed.first?["summary"] as? String == builtin.displaySummary)
     }

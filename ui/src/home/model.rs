@@ -30,6 +30,33 @@ pub struct HomeState {
     pub sidebar: bool,
 }
 
+/// A share the host held back instead of delivering it (B622): the pane
+/// it was queued for no longer runs the agent it was queued for.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct HeldShare {
+    /// The share's id (the host's queue entry): what the page's intents
+    /// name.
+    pub id: String,
+    /// The connection it was queued on (its id).
+    pub connection: String,
+    /// The agent it was queued for ("claude").
+    pub agent: String,
+    pub reason: HeldReason,
+}
+
+/// Why a share was held back.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum HeldReason {
+    /// The pane is gone.
+    PaneGone,
+    /// The agent exited: its pane runs a shell now.
+    AgentExited,
+    /// The pane runs another program now.
+    AnotherProgram,
+}
+
 /// Where a connection's session is (the host's reading of the session
 /// hub: `ConnectionCard`'s `isDead`, `isConnecting`, `isAttachStalled`,
 /// `isLive`).

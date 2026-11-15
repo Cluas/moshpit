@@ -44,11 +44,8 @@ struct AddKeyNSHPage: View {
                 NSHPage(
                     screen: .addKey,
                     prepare: { model.register(on: $0) },
-                    attach: { surface in
-                        model.hosts = connections.store.connections.map(\.displayName)
-                        model.attach(surface)
-                    },
-                    onMessage: handle,
+                    attach: { model.attach($0) },
+                    onEvent: { if case .addKey(let event) = $0 { handle(event) } },
                     onFailure: { failed = true })
                     .nshPage()
                     .navigationTitle("Add Key")
@@ -60,32 +57,30 @@ struct AddKeyNSHPage: View {
     }
 
     /// What the screen tells the host.
-    private func handle(_ message: [String: Any]) {
-        switch message["ev"] as? String {
-        case "cancel":
+    private func handle(_ event: AddKeyEvent) {
+        switch event {
+        case .cancel:
             dismiss()
-        case "submit":
+        case .submit:
             Task {
                 guard let record = await model.submit(to: keyStore, keychain: keychainHolder.service) else { return }
                 onCreated?(record)
                 dismiss()
             }
-        case "import-file":
-            if model.apply(message) { importing = true }
+        case .importFile:
+            if model.apply(event) { importing = true }
         default:
-            if !model.apply(message) {
-                Log.ui.error("add-key: no event \(String(describing: message["ev"]), privacy: .public)")
-            }
+            model.apply(event)
         }
     }
 }
 
 /// The NSH Add Key page's form, owned by the host so a surface made again
-/// starts from it (``NSHPage``'s third rule); the message that carries it
-/// (`{"op": "add-key", …}`, `ui/src/add_key.rs`'s `Message`), which says
-/// of the private key only whether there is one and whether it is behind a
-/// passphrase; and what the page's intents do, as the SwiftUI page's
-/// bindings and submit do.
+/// starts from it (``NSHPage``'s third rule); the state that carries it
+/// (``AddKeyPageState``, the screen's own through the page bridge), which
+/// says of the private key only whether there is one and whether it is
+/// behind a passphrase; and what the page's intents do, as the SwiftUI
+/// page's bindings and submit do.
 @MainActor
 final class AddKeyModel {
     /// Which field a picked file lands in.
@@ -97,11 +92,6 @@ final class AddKeyModel {
     var algorithm: SSHKeyAlgorithm = .ed25519
     var requireFaceID = true
     var storeInSecureEnclave = false
-    var boundHosts: Set<String> = []
-    /// Every host the user has (for the chips).
-    var hosts: [String] = [] {
-        didSet { if hosts != oldValue { post() } }
-    }
     /// The private key as pasted: in the host's editor, never posted.
     private(set) var importPEM = ""
     /// Its passphrase, in the host's secure field, never posted.
@@ -156,50 +146,36 @@ final class AddKeyModel {
         post()
     }
 
-    /// Applies what the screen told (`{"ev": …}`); false for an event it
-    /// does not know (submit and cancel are the page's).
+    /// Applies what the screen told; false for an event that is not the
+    /// form's (submit and cancel are the page's).
     @discardableResult
-    func apply(_ message: [String: Any]) -> Bool {
-        let value = message["value"]
-        switch message["ev"] as? String {
-        case "method":
-            guard let id = value as? String, let method = Self.method(id) else { return false }
+    func apply(_ event: AddKeyEvent) -> Bool {
+        switch event {
+        case .method(let id):
+            guard let method = Self.method(id) else { return false }
             self.method = method
-        case "name":
-            guard let text = value as? String else { return false }
+        case .name(let text):
             name = text
-        case "comment":
-            guard let text = value as? String else { return false }
+        case .comment(let text):
             comment = text
-        case "public-line":
-            guard let text = value as? String else { return false }
+        case .publicLine(let text):
             importPublicLine = text
-        case "algorithm":
-            switch value as? String {
+        case .algorithm(let id):
+            switch id {
             case "ed25519": algorithm = .ed25519
             case "rsa": algorithm = .rsa4096
             default: return false
             }
-        case "set":
-            guard let on = value as? Bool else { return false }
-            switch message["key"] as? String {
-            case "requireFaceID": requireFaceID = on
-            case "secureEnclave": storeInSecureEnclave = on
-            default: return false
-            }
-        case "host":
-            guard let host = message["name"] as? String else { return false }
-            if boundHosts.contains(host) { boundHosts.remove(host) } else { boundHosts.insert(host) }
-        case "import-file":
-            switch message["target"] as? String {
-            case "private": importTarget = .privateKey
-            case "public": importTarget = .publicKey
-            default: return false
-            }
+        case .set(.requireFaceId, let on):
+            requireFaceID = on
+        case .set(.secureEnclave, let on):
+            storeInSecureEnclave = on
+        case .importFile(let target):
+            importTarget = target == .privateKey ? .privateKey : .publicKey
             return true
-        case "dismiss-error":
+        case .dismissError:
             errorMessage = nil
-        default:
+        case .submit, .cancel:
             return false
         }
         post()
@@ -274,35 +250,22 @@ final class AddKeyModel {
             importing: method == .importKey, name: name,
             algorithm: storeInSecureEnclave ? .seP256 : algorithm, comment: comment,
             requireFaceID: requireFaceID, secureEnclave: storeInSecureEnclave,
-            boundHosts: Array(boundHosts), privateKey: importPEM, passphrase: importPassphrase,
+            privateKey: importPEM, passphrase: importPassphrase,
             publicKeyLine: importPublicLine)
     }
 
     private func post() {
-        surface?.post(message)
+        surface?.post(.addKey(state: page))
     }
 
-    /// The screen's message for the form now.
-    var message: [String: Any] {
-        var message: [String: Any] = [
-            "op": "add-key",
-            "method": Self.id(method),
-            "algorithm": algorithm == .rsa4096 ? "rsa" : "ed25519",
-            "requireFaceID": requireFaceID,
-            "secureEnclave": storeInSecureEnclave,
-            "hosts": hosts,
-            "bound": boundHosts.sorted(),
-            "pem": ["empty": importPEM.isEmpty, "encrypted": needsPassphrase],
-            "name": name,
-            "comment": comment,
-            "publicLine": importPublicLine,
-            "fields": fields,
-            "canSubmit": canSubmit,
-            "working": working,
-        ]
-        if let generatedFingerprint { message["fingerprint"] = generatedFingerprint }
-        if let errorMessage { message["error"] = errorMessage }
-        return message
+    /// The form now, as the page bridge carries it.
+    var page: AddKeyPageState {
+        AddKeyPageState(
+            method: Self.id(method), algorithm: algorithm == .rsa4096 ? "rsa" : "ed25519",
+            requireFaceId: requireFaceID, secureEnclave: storeInSecureEnclave,
+            pem: AddKeyPem(empty: importPEM.isEmpty, encrypted: needsPassphrase),
+            name: name, comment: comment, publicLine: importPublicLine, fields: fields,
+            canSubmit: canSubmit, working: working, fingerprint: generatedFingerprint, error: errorMessage)
     }
 
     /// What the screen calls a method.
@@ -332,7 +295,6 @@ enum SSHKeyCreation {
         var comment: String
         var requireFaceID: Bool
         var secureEnclave: Bool
-        var boundHosts: [String]
         var privateKey: String
         var passphrase: String
         var publicKeyLine: String
@@ -340,9 +302,11 @@ enum SSHKeyCreation {
 
     /// The new key's record, once its private half is in the Keychain;
     /// `generated` hears its fingerprint first (shown even if the Keychain
-    /// then refuses it).
+    /// then refuses it). `generate` makes a new key (a test's own).
     @MainActor
     static func create(_ request: Request, keychain: KeychainService,
+                       generate: @escaping @Sendable (SSHKeyAlgorithm, String) throws -> SSHKeyFactory.Generated
+                           = { try SSHKeyFactory.generate(algorithm: $0, comment: $1) },
                        generated: (String) -> Void) async throws -> SSHKeyRecord {
         let key: SSHKeyFactory.Generated
         if request.importing {
@@ -359,9 +323,14 @@ enum SSHKeyCreation {
                     comment: comment)
             }.value
         } else {
-            key = try SSHKeyFactory.generate(
-                algorithm: request.algorithm,
-                comment: request.comment.isEmpty ? request.name : request.comment)
+            let (algorithm, comment) = (request.algorithm, request.comment.isEmpty ? request.name : request.comment)
+            // Off the main thread too, as an import is (B605): an RSA-4096
+            // key is a search for two large primes, seconds on a phone, and
+            // made here it froze the sheet — its spinner with it — for all
+            // of them.
+            key = try await Task.detached(priority: .userInitiated) {
+                try generate(algorithm, comment)
+            }.value
         }
         generated(key.fingerprint)
         let ref = keychain.generateRef()
@@ -374,7 +343,6 @@ enum SSHKeyCreation {
             fingerprint: key.fingerprint,
             publicKey: key.publicKeyLine,
             source: request.importing ? .imported : (request.secureEnclave ? .secureEnclave : .generated),
-            boundHosts: request.boundHosts,
             keychainRef: ref,
             requireBiometry: request.requireFaceID)
     }

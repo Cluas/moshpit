@@ -3,48 +3,22 @@ import UIKit
 
 /// The question with a line of text for its answer that an NSH screen asks
 /// through its host (`ui/src/terminal/prompt.rs`): NSH's alerts have no
-/// text field, so the screen says what to ask (`{"ev": "prompt", "id",
-/// "title", "message", "placeholder", "text", "confirm", "cancel"}`, every
-/// word already in the app's language) and the host asks it with UIKit's
-/// alert, as SwiftUI's `.alert` with a `TextField` does, then answers the
-/// screen with `{"op": "prompted", "id", "text": … | null}` (null: Cancel).
+/// text field, so the screen says what to ask (``TextPromptQuestion``,
+/// every word already in the app's language, in the event of the screen
+/// that asks) and the host asks it with UIKit's alert, as SwiftUI's
+/// `.alert` with a `TextField` does, then answers the screen
+/// (``PageMessage/prompted(id:text:)``, no text: Cancel).
 @MainActor
 enum NSHTextPrompt {
-    /// What `message` asks, or nil when it is not a prompt.
-    struct Question: Equatable {
-        var id: Int
-        var title: String
-        var message: String?
-        var placeholder: String
-        var text: String
-        var confirm: String
-        var cancel: String
-
-        init?(_ message: [String: Any]) {
-            guard message["ev"] as? String == "prompt",
-                  let id = (message["id"] as? NSNumber)?.intValue,
-                  let title = message["title"] as? String,
-                  let confirm = message["confirm"] as? String,
-                  let cancel = message["cancel"] as? String else { return nil }
-            self.id = id
-            self.title = title
-            self.message = message["message"] as? String
-            placeholder = message["placeholder"] as? String ?? ""
-            text = message["text"] as? String ?? ""
-            self.confirm = confirm
-            self.cancel = cancel
-        }
-    }
-
     /// The screen's answer to prompt `id`.
-    nonisolated static func answer(id: Int, text: String?) -> [String: Any] {
-        ["op": "prompted", "id": id, "text": text.map { $0 as Any } ?? NSNull()]
+    nonisolated static func answer(id: UInt32, text: String?) -> PageMessage {
+        .prompted(id: id, text: text)
     }
 
     /// Asks `question` over the screen `view` is on; `answer` hears the
     /// screen's message (once).
-    static func present(_ question: Question, from view: UIView,
-                        answer: @escaping ([String: Any]) -> Void) {
+    static func present(_ question: TextPromptQuestion, from view: UIView,
+                        answer: @escaping (PageMessage) -> Void) {
         guard let presenter = presenter(for: view) else {
             Log.ui.error("prompt: no screen to ask on")
             return answer(Self.answer(id: question.id, text: nil))
@@ -77,5 +51,22 @@ enum NSHTextPrompt {
         var top = view.window?.rootViewController
         while let next = top?.presentedViewController, !next.isBeingDismissed { top = next }
         return top
+    }
+}
+
+extension TextPromptQuestion {
+    /// What `message` asks (`{"ev": "prompt", "id", "title", "message",
+    /// "placeholder", "text", "confirm", "cancel"}`), for a screen whose
+    /// events don't cross the page bridge yet (the terminal's); nil when it
+    /// is not a prompt.
+    init?(_ message: [String: Any]) {
+        guard message["ev"] as? String == "prompt",
+              let id = (message["id"] as? NSNumber).flatMap({ UInt32(exactly: $0.int64Value) }),
+              let title = message["title"] as? String,
+              let confirm = message["confirm"] as? String,
+              let cancel = message["cancel"] as? String else { return nil }
+        self.init(id: id, title: title, message: message["message"] as? String,
+                  placeholder: message["placeholder"] as? String ?? "", text: message["text"] as? String ?? "",
+                  confirm: confirm, cancel: cancel)
     }
 }

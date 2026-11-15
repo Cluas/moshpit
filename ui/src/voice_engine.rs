@@ -1,6 +1,7 @@
 //! Settings › Voice Input › Recognition
 //! (`Moshpit/UI/Settings/VoiceEngineView.swift`) in NSH: which speech engine
-//! dictation runs on, Apple's or a local Whisper model.
+//! dictation runs on, Apple's or a local model (Qwen3-ASR or Whisper, the one
+//! picked under Model).
 //!
 //! The host owns the setting: it posts what the page shows ([`Message`]),
 //! `{"op": "engine", "engine": "apple" | "whisper", "needsModel": false}`,
@@ -45,7 +46,8 @@ pub enum Engine {
     /// Apple's on-device transcribers (the setting's default).
     #[default]
     Apple,
-    /// A local Whisper model.
+    /// A local model: Qwen3-ASR or Whisper, the one picked under Model. The
+    /// id stays "whisper", what the setting stored before there were two.
     Whisper,
 }
 
@@ -65,15 +67,15 @@ impl Engine {
     pub fn name(self) -> String {
         match self {
             Engine::Apple => t!("Apple (built in)"),
-            Engine::Whisper => t!("Whisper (local model)"),
+            Engine::Whisper => t!("Local model"),
         }
     }
 
     /// Its row's title: the engine's own name.
-    pub fn title(self) -> &'static str {
+    pub fn title(self) -> String {
         match self {
-            Engine::Apple => "Apple",
-            Engine::Whisper => "Whisper",
+            Engine::Apple => "Apple".into(),
+            Engine::Whisper => t!("Local model"),
         }
     }
 

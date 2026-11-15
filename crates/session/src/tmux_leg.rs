@@ -104,6 +104,12 @@ pub enum TmuxAction {
         text: String,
     },
     ScrollLines(i64),
+    /// The scroll beginning is aimed at this cell (0-based, the input
+    /// pane's): a program with the mouse gets its wheel there (B578).
+    AimWheel {
+        col: i64,
+        row: i64,
+    },
     Click {
         col: i64,
         row: i64,
@@ -1011,6 +1017,7 @@ impl Task {
                 TmuxAction::TakeSizeOwnership => c.take_size_ownership(now),
                 TmuxAction::Paste { pane, text } => c.send_paste(&text, &pane, now),
                 TmuxAction::ScrollLines(lines) => c.scroll_lines(lines, now),
+                TmuxAction::AimWheel { col, row } => c.aim_wheel(col, row),
                 TmuxAction::Click { col, row } => c.click(col, row, now),
                 TmuxAction::ViewRevealed { pane } => c.view_revealed(&pane, now),
                 TmuxAction::ReturnSent { pane } => c.view_return_sent(&pane, now),

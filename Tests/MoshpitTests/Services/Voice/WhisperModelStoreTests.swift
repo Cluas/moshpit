@@ -51,7 +51,7 @@ struct WhisperModelTurnTests {
             self.inside = inside
         }
 
-        func transcribe(samples: [Float], language: String?) async throws -> String {
+        func transcribe(samples: [Float], language: String?, hotwords _: [String]) async throws -> String {
             let label = language ?? ""
             await inside.enter(label)
             return label

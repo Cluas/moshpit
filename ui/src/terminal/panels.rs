@@ -359,9 +359,11 @@ fn dictation_content(d: &Dictation) -> AnyElement {
     }
     // The settled words, then the engine's guess, quieter; hugging the text
     // up to about six lines, then scrolling, pinned to the newest words.
+    // Side by side as they come: the guess carries the space the host's
+    // join puts before it, so this is what Insert types (B673) — a space
+    // added here showed "帮我把这个 PR" for an inserted "帮我把这个PR".
     let spoken = words("", TextToken::Subhead, "foreground")
         .child(text(d.finalized.clone()).text_color(move || token("foreground")))
-        .child(if d.finalized.is_empty() { "" } else { " " })
         .child(text(d.volatile.clone()).text_color(move || token("muted-foreground")));
     scroll()
         .max_h(px(132.0))

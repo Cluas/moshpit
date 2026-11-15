@@ -29,7 +29,7 @@ struct WhisperModelNSHPage: View {
                 onEvent: { if case .whisperModel(let event) = $0 { handle(event) } },
                 onFailure: { failed = true })
                 .nshPage()
-                .navigationTitle("Whisper Model")
+                .navigationTitle("Model")
                 .onAppear { model.reload(settings: settings) }
                 // Install state lives on disk: read it again when a download
                 // ends; the rest is the download centre's and the setting's.

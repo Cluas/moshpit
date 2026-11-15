@@ -485,6 +485,20 @@ impl Transport {
         self.nudge(now);
     }
 
+    /// The return after a long absence (B619): a fresh flow, as
+    /// [`Transport::resume`] with `force` makes, without asking for a
+    /// repaint. mosh's own sync brings the screen up to date from the acked
+    /// state; the repaint sent the remote program two size changes, so a
+    /// full-screen one redrew twice, and nothing needed it. The person's
+    /// Repaint ([`Transport::request_full_redraw`]) still asks for one.
+    pub fn replace_flow(&mut self, now: u64) {
+        if self.closed {
+            return;
+        }
+        self.rebuild_flow();
+        self.nudge(now);
+    }
+
     /// Stops everything. The driver cancels its flow; waiters are released.
     pub fn close(&mut self) {
         if self.closed {

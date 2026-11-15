@@ -96,8 +96,9 @@ pub enum MoshCommand {
         cols: u16,
         rows: u16,
     },
-    /// The app came back: `force` after a real suspension (a fresh flow and
-    /// a full repaint), otherwise a datagram now so the server re-homes.
+    /// The app came back: `force` after a real suspension (a fresh flow; no
+    /// forced repaint, B619), otherwise a datagram now so the server
+    /// re-homes.
     Resume {
         force: bool,
     },
@@ -604,7 +605,10 @@ async fn run(
                 MoshCommand::Resize { cols, rows } => {
                     transport.resize(i32::from(cols), i32::from(rows), now)
                 }
-                MoshCommand::Resume { force } => transport.resume(force, now),
+                // A long absence's return: a fresh flow, no forced repaint
+                // (B619).
+                MoshCommand::Resume { force: true } => transport.replace_flow(now),
+                MoshCommand::Resume { force: false } => transport.resume(false, now),
                 MoshCommand::Barrier(reply) => {
                     // The newest input, not an idle state after it: the
                     // server acks one of those only when it next speaks
@@ -1708,6 +1712,47 @@ mod tests {
             "no narrowed width reached the server: {:?}",
             resizes.lock().unwrap()
         );
+    }
+
+    /// B619: the return after a long absence replaces the flow and lets
+    /// mosh's own sync bring the screen up to date: no forced repaint. It
+    /// sent the width one narrower and the real one back, so the remote
+    /// program got two size changes and full-screen ones (Claude Code)
+    /// redrew twice; the core keeps its screen through the suspension and
+    /// mosh diffs from the acked state, so nothing needed it. The person's
+    /// Repaint still asks for one.
+    #[tokio::test(start_paused = true)]
+    async fn a_long_return_replaces_the_flow_without_resizing() {
+        let (net, end) = fake::network();
+        let mut bench = start(net);
+        let server = EchoServer::new(end);
+        let resizes = server.resizes.clone();
+        tokio::spawn(server.serve());
+        bench.until(|n| *n == MoshNote::FirstContact).await;
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        let before = resizes.lock().unwrap().len();
+        bench
+            .mosh
+            .commands
+            .send(MoshCommand::Resume { force: true })
+            .unwrap();
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        assert_eq!(bench.net.opened(), 2, "a fresh flow");
+        assert_eq!(
+            resizes.lock().unwrap()[before..],
+            [],
+            "no size changes reached the program"
+        );
+        // Still talking: keys typed after the return echo.
+        bench
+            .mosh
+            .commands
+            .send(MoshCommand::Keys {
+                bytes: b"ok".to_vec(),
+                end: 2,
+            })
+            .unwrap();
+        bench.read_until(b"ok").await;
     }
 
     #[tokio::test(start_paused = true)]

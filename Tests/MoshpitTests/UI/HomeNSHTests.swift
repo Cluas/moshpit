@@ -2,6 +2,7 @@ import Foundation
 import Observation
 import Testing
 import UIKit
+import MoshpitKit
 @testable import Moshpit
 
 /// Home in NSH: the data path between the host and the screen — the page asks the core for Home's record (`app::home`, whose
@@ -169,6 +170,16 @@ struct HomeNSHTests {
         _ = model.handle(["ev": "tree", "connection": Self.studio.uuidString,
                           "collapsed": ["$0"], "expanded": ["@2"]])
         #expect(NSHSurface.check(screen: screen, message: model.treesMessage))
+        // The shares held back (B622): an entry not held isn't one.
+        let held = ShareQueue.Entry(connectionId: Self.studio, paneId: "%3", agentName: "claude",
+                                    label: "claude", files: ["a.img"], createdAt: Date(),
+                                    heldBack: .init(reason: .anotherProgram, now: "vim", at: Date()))
+        let waiting = ShareQueue.Entry(connectionId: Self.studio, paneId: "%4", agentName: "codex",
+                                       label: "codex", files: ["b.img"], createdAt: Date())
+        let json = HeldShares.message([held, waiting])
+        #expect(NSHSurface.check(screen: screen, json: json), "\(json)")
+        #expect(json.contains(held.id.uuidString) && !json.contains(waiting.id.uuidString))
+        #expect(NSHSurface.check(screen: screen, json: HeldShares.message([])))
     }
 
     @Test("what the screen tells the host: an intent, or the trees' disclosure it keeps")
@@ -190,6 +201,12 @@ struct HomeNSHTests {
         #expect(HomeIntent(["ev": "window", "connection": id]) == nil, "a window intent names its window")
         #expect(HomeIntent(["ev": "enter", "connection": "not-a-uuid"]) == nil)
         #expect(HomeIntent(["ev": "jump", "connection": id]) == nil)
+        let share = UUID()
+        #expect(HomeIntent(["ev": "share-send", "connection": id, "share": share.uuidString])
+                == .sendShare(Self.studio, share))
+        #expect(HomeIntent(["ev": "share-discard", "connection": id, "share": share.uuidString])
+                == .discardShare(Self.studio, share))
+        #expect(HomeIntent(["ev": "share-send", "connection": id, "share": "nope"]) == nil)
 
         let model = HomeNSHModel()
         // Home's idle group alone makes a tree the sessions page didn't

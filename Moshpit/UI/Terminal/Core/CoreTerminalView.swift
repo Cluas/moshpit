@@ -81,7 +81,9 @@ final class CoreTerminalView: UIView {
     weak var inputDelegate: UITextInputDelegate?
     lazy var tokenizer: UITextInputTokenizer = UITextInputStringTokenizer(textInput: self)
     var markedLabel: UILabel?
-    /// The cell the composition started at.
+    /// The cell the composition started at, its row counted on the live
+    /// screen: the history scrolled in above it moves it down with its row
+    /// (B693).
     var markedAnchor: (col: Int, row: Int)?
     /// The caret at the composition's end.
     lazy var compositionCaret: UIView = {
@@ -820,6 +822,15 @@ final class CoreTerminalView: UIView {
         if let term { mp_term_resize(term, UInt16(clamping: c), UInt16(clamping: r)) }
         applyCellPixels()
         canvas.view.frame = canvasFrame
+        if markedLabel != nil {
+            // The core reflowed the lines and took the cursor with them; the
+            // composition's cell, numbered in the old grid, was off its line
+            // or below the view (B692). Taken again from the cursor now: the
+            // remote's redraw for the new size moves the cursor about.
+            takeFrame()
+            markedAnchor = liveCursorCell
+            positionMarkedText()
+        }
         surfaceDelegate?.surface(self, sizeChanged: c, rows: r)
     }
 
@@ -947,6 +958,13 @@ final class CoreTerminalView: UIView {
 
     var isReadingScrollback: Bool { rows.info.display_offset > 0 }
 
+    /// The cursor's cell, its row counted on the live screen: the history
+    /// the view shows above it doesn't count.
+    var liveCursorCell: (col: Int, row: Int) {
+        let c = rows.info.cursor
+        return (Int(c.col), Int(c.row) - Int(rows.info.display_offset))
+    }
+
     /// A drag of `dy` points (positive: older). The core decides where it
     /// goes (V20): the host's rows (returned, when `hostRows`), wheel ticks
     /// for a program that wants the mouse (sent from here), or this
@@ -1000,11 +1018,14 @@ final class CoreTerminalView: UIView {
 
     // MARK: The mouse, for a program that asked for it
 
-    /// Wheel ticks at the grid's centre (positive: older), at most six.
+    /// Wheel ticks (positive: older), at most six: where the drag began
+    /// (B578; a program split in panes scrolls the one under the finger),
+    /// else at the grid's centre.
     func sendWheel(lines: Int) {
         guard let term, lines != 0 else { return }
         let count = Int(min(lines.magnitude, 6))
-        let row = UInt16(clamping: max(0, gridRows / 2)), col = UInt16(clamping: max(0, cols / 2))
+        let aim = Self.wheelCell(aim: gestures.wheelAim, cols: cols, rows: gridRows)
+        let row = UInt16(clamping: aim.row), col = UInt16(clamping: aim.col)
         var out = Data()
         for _ in 0..<count {
             let b = mp_term_mouse(term, 0, lines > 0 ? 4 : 5, row, col, 0)
@@ -1013,6 +1034,17 @@ final class CoreTerminalView: UIView {
         }
         if !out.isEmpty { surfaceDelegate?.surface(self, send: out) }
     }
+
+    /// Where a wheel goes (0-based): the aimed cell, kept on the grid, else
+    /// the grid's centre (B578).
+    nonisolated static func wheelCell(aim: (col: Int, row: Int)?, cols: Int, rows: Int) -> (col: Int, row: Int) {
+        guard let aim else { return (max(0, cols / 2), max(0, rows / 2)) }
+        return (min(max(0, aim.col), max(0, cols - 1)), min(max(0, aim.row), max(0, rows - 1)))
+    }
+
+    /// The cell the scroll under way is aimed at (B578), for a host that
+    /// sends the wheel itself (a tmux pane's controller).
+    var wheelAim: (col: Int, row: Int)? { gestures.wheelAim }
 
     /// A left click at a viewport cell: press and release, as the program
     /// asked them encoded; nothing when it asked for no reports.

@@ -18,6 +18,20 @@ final class CoreTermRowElement: UIAccessibilityElement {
 
 extension CoreTerminalView: UIAccessibilityReadingContent {
     /// The text a row shows (wide characters once, trailing blanks off).
+    /// The screen's rows as the core holds them now, framed or not (a
+    /// pane in no window is fed but never framed): the overview's picture
+    /// of the pane (B658). Trailing spaces cut; at most `limit` rows.
+    func screenRows(limit: Int = 300) -> [String] {
+        guard let term else { return [] }
+        return (0..<min(Int(gridRows), limit)).map { r in
+            guard let c = mp_term_view_row_text(term, UInt16(r), nil) else { return "" }
+            defer { mp_string_free(c) }
+            var s = String(cString: c)
+            while s.last == " " { s.removeLast() }
+            return s
+        }
+    }
+
     func rowText(_ r: Int) -> String {
         guard r < rows.rows.count else { return "" }
         let row = rows.rows[r]

@@ -36,7 +36,7 @@ pub mod bar;
 mod card;
 pub mod model;
 pub mod pet;
-mod rows;
+pub(crate) mod rows;
 pub mod swipe;
 pub mod talk;
 pub mod words;
@@ -56,6 +56,7 @@ use crate::{
         button::{Variant, button},
         empty::empty,
         motion,
+        notice::{BannerTone, banner},
         section::section,
         status::{Badge, BadgeVariant, Status, badge, share_breath, status_dot},
         tokens::{number, token},
@@ -81,6 +82,9 @@ pub enum Message {
     /// `{"op": "top"}`: scroll to the top, where "Needs you" lists every
     /// agent waiting (B661: the island's "+N more").
     Top,
+    /// `{"op": "held", "shares": […]}`: the shares the host held back
+    /// (B622), oldest first.
+    Held(Vec<model::HeldShare>),
 }
 
 /// What the page says of one host's lists: its idle group open or not;
@@ -111,6 +115,12 @@ struct TreesFields {
     trees: Vec<TreeState>,
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct HeldFields {
+    shares: Vec<model::HeldShare>,
+}
+
 impl Message {
     /// The message of `json`, or why it is not one.
     pub fn parse(json: &str) -> Result<Message, String> {
@@ -128,6 +138,9 @@ impl Message {
                 .map(Message::Visible)
                 .map_err(|e| format!("home: visible: {e}")),
             "top" => Ok(Message::Top),
+            "held" => serde_json::from_value::<HeldFields>(fields)
+                .map(|f| Message::Held(f.shares))
+                .map_err(|e| format!("home: held: {e}")),
             other => Err(format!("home: no op {other:?}")),
         }
     }
@@ -153,6 +166,7 @@ impl Message {
                 value.to_string()
             }
             Message::Top => json!({"op": "top"}).to_string(),
+            Message::Held(shares) => json!({"op": "held", "shares": shares}).to_string(),
         }
     }
 }
@@ -235,6 +249,16 @@ pub enum Intent {
         connection: String,
         pane: String,
     },
+    /// Send a held share to another pane (B622): the host offers its panes.
+    SendShare {
+        connection: String,
+        share: String,
+    },
+    /// Discard a held share.
+    DiscardShare {
+        connection: String,
+        share: String,
+    },
 }
 
 impl Intent {
@@ -283,6 +307,10 @@ impl Intent {
             }
             Intent::NewPane { connection, window } => at("new-pane", connection, "window", window),
             Intent::KillPane { connection, pane } => at("kill-pane", connection, "pane", pane),
+            Intent::SendShare { connection, share } => at("share-send", connection, "share", share),
+            Intent::DiscardShare { connection, share } => {
+                at("share-discard", connection, "share", share)
+            }
         }
     }
 }
@@ -448,6 +476,7 @@ pub fn HomeScreen(props: ScreenProps) -> impl IntoElement {
     // standard bar.
     let bar = BarMetrics::standard(idiom());
     let state = signal(None::<HomeState>);
+    let held = signal(Vec::<model::HeldShare>::new());
     let trees = signal(HashMap::<String, TreeState>::new());
     let pet_ctx = pet::PetCtx::new();
     let (pet_view, pet_seq, pet_visible) = (pet_ctx.view, pet_ctx.seq, pet_ctx.visible);
@@ -469,6 +498,7 @@ pub fn HomeScreen(props: ScreenProps) -> impl IntoElement {
             }
             Message::Visible(visible) => pet_visible.set(visible),
             Message::Top => to_top.update(|n| *n += 1),
+            Message::Held(shares) => held.set(shares),
         },
     );
     talk_on(state, &pet_ctx);
@@ -501,7 +531,7 @@ pub fn HomeScreen(props: ScreenProps) -> impl IntoElement {
         computed(move || state.with(|s| s.as_ref().is_some_and(|s| s.connections.is_empty())));
     let list = {
         let ctx = ctx.clone();
-        move || list(state, bar, ctx.clone(), offset, pull)
+        move || list(state, held, bar, ctx.clone(), offset, pull)
     };
     let trailing = vec![
         bar::BarButton {
@@ -581,6 +611,7 @@ pub(crate) fn margin() -> f32 {
 /// under the bar's large title; at most `content-max-width` wide, centered.
 fn list(
     state: Signal<Option<HomeState>>,
+    held: Signal<Vec<model::HeldShare>>,
     bar: BarMetrics,
     ctx: Ctx,
     offset: AnimatedValue,
@@ -628,22 +659,41 @@ fn list(
         })
     });
     // What shows, in order, so each group knows whether one is above it.
+    let has_held = computed(move || held.with(|h| !h.is_empty()));
     let top = computed(move || summary.get() != model::Summary::Nothing);
     let has_hosts = computed(move || hosts.with(|h| !h.is_empty()));
     let has_saved = computed(move || saved.with(|s| !s.is_empty()));
     let gap = |above: bool| px(if above { GROUP_GAP } else { FIRST_GAP });
 
     let scroller = element_ref();
+    // The pet asks about the app icon (B668), once its hatch has played.
+    let offers_icon = {
+        let pet = ctx.pet.clone();
+        computed(move || pet::offers_icon(&pet))
+    };
     let content = view()
         .w_full()
         .px(move || px(margin()))
         .child(view().h(move || bar::space(bar)))
-        .child(when(move || top.get(), {
+        .child(when(move || has_held.get(), {
             let ctx = ctx.clone();
             move || {
                 view()
                     .w_full()
                     .mt(px(FIRST_GAP))
+                    .child(held_group(held, ctx.clone()))
+            }
+        }))
+        .child(when(move || offers_icon.get(), {
+            let ctx = ctx.clone();
+            move || view().w_full().mt(px(FIRST_GAP)).child(pet::icon_offer(ctx.clone()))
+        }))
+        .child(when(move || top.get(), {
+            let ctx = ctx.clone();
+            move || {
+                view()
+                    .w_full()
+                    .mt(move || gap(has_held.get()))
                     .child(top_group(summary, waiting, ctx.clone()))
             }
         }))
@@ -652,7 +702,7 @@ fn list(
             move || {
                 view()
                     .w_full()
-                    .mt(move || gap(top.get()))
+                    .mt(move || gap(has_held.get() || top.get()))
                     .child(connections_group(hosts, ctx.clone()))
             }
         }))
@@ -661,7 +711,7 @@ fn list(
             move || {
                 view()
                     .w_full()
-                    .mt(move || gap(top.get() || has_hosts.get()))
+                    .mt(move || gap(has_held.get() || top.get() || has_hosts.get()))
                     .child(saved_group(saved, ctx.clone()))
             }
         }))
@@ -698,6 +748,57 @@ fn list(
         .items_center()
         .child(scroll)
         .into_element()
+}
+
+/// The shares the host held back (B622), above the rest of the page: a
+/// quiet notice each (a banner, §4.16), saying what happened, with Send
+/// to… and a close that discards the share.
+fn held_group(held: Signal<Vec<model::HeldShare>>, ctx: Ctx) -> AnyElement {
+    view()
+        .w_full()
+        .gap(px(8.0))
+        .test_id("home-held")
+        .child(each(
+            held,
+            |share: &model::HeldShare| share.id.clone(),
+            move |share, _| {
+                let (id, connection) =
+                    share.with_untracked(|s| (s.id.clone(), s.connection.clone()));
+                banner(BannerTone::Info, move || {
+                    share.with(|s| held_words(s).into())
+                })
+                .icon("photo")
+                .action(
+                    t!("Send to…"),
+                    ctx.asking(Intent::SendShare {
+                        connection: connection.clone(),
+                        share: id.clone(),
+                    }),
+                )
+                .action_test_id(&format!("home-held-send-{id}"))
+                .on_close(ctx.asking(Intent::DiscardShare {
+                    connection,
+                    share: id.clone(),
+                }))
+                .close_label(t!("Discard"))
+                .close_test_id(&format!("home-held-discard-{id}"))
+                .test_id(&format!("home-held-{id}"))
+                .into_element()
+            },
+        ))
+        .into_element()
+}
+
+/// What a held share's notice says: that it wasn't delivered, and why.
+pub(crate) fn held_words(share: &model::HeldShare) -> String {
+    match share.reason {
+        model::HeldReason::PaneGone => t!("A share wasn't delivered: that pane is closed."),
+        model::HeldReason::AgentExited | model::HeldReason::AnotherProgram => t!(
+            "A share wasn't delivered: that pane isn't running %@ any more.",
+            arg1 = share.agent.clone()
+        ),
+    }
+    .to_string()
 }
 
 /// The top group: NEEDS YOU while someone waits, else the line of facts.
@@ -1062,6 +1163,18 @@ mod tests {
             Message::parse(r#"{"op":"home","connections":[],"version":""}"#),
             Ok(Message::Home(Box::default()))
         );
+        let held = Message::Held(vec![model::HeldShare {
+            id: "s".into(),
+            connection: "a".into(),
+            agent: "claude".into(),
+            reason: model::HeldReason::AgentExited,
+        }]);
+        assert_eq!(Message::parse(&held.to_json()), Ok(held));
+        assert!(
+            Message::parse(r#"{"op":"held","shares":[{"id":"s","connection":"a","agent":"x","reason":"asleep"}]}"#)
+                .unwrap_err()
+                .contains("asleep")
+        );
     }
 
     #[test]
@@ -1130,6 +1243,14 @@ mod tests {
             }
             .event(),
             json!({"ev": "kill-window", "connection": "a", "window": "@1"})
+        );
+        assert_eq!(
+            Intent::DiscardShare {
+                connection: "a".into(),
+                share: "s".into()
+            }
+            .event(),
+            json!({"ev": "share-discard", "connection": "a", "share": "s"})
         );
     }
 }

@@ -33,7 +33,6 @@ pub struct AddKeyDraft {
     pub name: String,
     pub comment: String,
     pub public_line: String,
-    pub bound: Vec<String>,
     /// The private key as pasted, and its passphrase: from the host's
     /// fields, never posted.
     pem: Secret,
@@ -108,7 +107,9 @@ impl AddKeyDraft {
 
 // MARK: - SSH Keys
 
-fn key_row(record: &SshKeyRecord) -> Key {
+/// `record`'s row; `users`, the saved connections that sign in with it
+/// (B602).
+fn key_row(record: &SshKeyRecord, users: Vec<String>) -> Key {
     Key {
         id: record.id.to_string(),
         name: record.name.clone(),
@@ -120,7 +121,7 @@ fn key_row(record: &SshKeyRecord) -> Key {
         },
         stale: false,
         fingerprint: record.fingerprint.clone(),
-        hosts: record.bound_hosts.clone(),
+        hosts: users,
         unused_since: None,
         has_public_key: !record.public_key.is_empty(),
     }
@@ -138,9 +139,17 @@ fn badge(record: &SshKeyRecord) -> String {
 
 /// `{"op": "keys", …}` for SSH Keys.
 pub fn keys_message(app: &App, deleting: Option<Uuid>, notice: Option<Notice>) -> String {
+    // Each key's users: the connections that sign in with it (B602).
+    let row = |record: &SshKeyRecord| {
+        let users = app
+            .connections
+            .names_using_key(record.id, record.keychain_ref.as_deref())
+            .unwrap_or_default();
+        key_row(record, users)
+    };
     let keys = Keys {
-        device: app.keys.device_keys().into_iter().map(key_row).collect(),
-        imported: app.keys.imported_keys().into_iter().map(key_row).collect(),
+        device: app.keys.device_keys().into_iter().map(row).collect(),
+        imported: app.keys.imported_keys().into_iter().map(row).collect(),
         deleting: deleting.map(|id| id.to_string()),
         notice,
     };
@@ -242,19 +251,12 @@ pub fn delete_key(app: &mut App, record: &SshKeyRecord) -> Option<Notice> {
 // MARK: - Add Key
 
 /// `{"op": "add-key", …}`.
-pub fn add_key_message(app: &App, draft: &AddKeyDraft) -> String {
+pub fn add_key_message(draft: &AddKeyDraft) -> String {
     let form = AddKey {
         method: draft.method(),
         algorithm: draft.algorithm.unwrap_or(Algorithm::Ed25519),
         require_face_id: draft.require_face_id,
         secure_enclave: draft.secure_enclave,
-        hosts: app
-            .connections
-            .connections()
-            .iter()
-            .map(|c| c.display_name())
-            .collect(),
-        bound: draft.bound.clone(),
         pem: Pem {
             empty: draft.pem.0.is_empty(),
             encrypted: draft.needs_passphrase(),
@@ -301,15 +303,6 @@ pub fn on_add_key_event(app: &mut App, core: &Core, surface: u64, ev: &str, even
         "name" => draft.name = value.unwrap_or_default(),
         "comment" => draft.comment = value.unwrap_or_default(),
         "public-line" => draft.public_line = value.unwrap_or_default(),
-        "host" => {
-            if let Some(name) = text(event, "name") {
-                if let Some(i) = draft.bound.iter().position(|h| *h == name) {
-                    draft.bound.remove(i);
-                } else {
-                    draft.bound.push(name);
-                }
-            }
-        }
         "dismiss-error" => draft.error = None,
         "import-file" => {
             // The system's document picker (the Storage Access Framework):
@@ -409,7 +402,7 @@ impl App {
             .find(|p| p.surface == surface)
             .map(|p| &p.kind)
         {
-            Some(PageKind::AddKey(draft)) => add_key_message(self, draft),
+            Some(PageKind::AddKey(draft)) => add_key_message(draft),
             _ => return,
         };
         self.post(surface, json);
@@ -502,7 +495,6 @@ fn make(
         record.comment = draft.comment.clone();
         record.fingerprint = fingerprint;
         record.public_key = line;
-        record.bound_hosts = draft.bound.clone();
         record.keychain_ref = Some(alias);
         record.require_biometry = draft.require_face_id;
         return Ok((record, None));
@@ -540,7 +532,6 @@ fn make(
     record.comment = draft.comment.clone();
     record.fingerprint = stored.info.fingerprint.clone();
     record.public_key = stored.info.public_key.clone();
-    record.bound_hosts = draft.bound.clone();
     record.keychain_ref = Some(new_keychain_ref());
     record.require_biometry = draft.require_face_id;
     Ok((record, Some(zeroize_text::Text(stored.openssh.to_string()))))

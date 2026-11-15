@@ -448,6 +448,32 @@ impl SshKeyStore {
         self.persist();
     }
 
+    /// How often a key's last use is written: once a day is all SSH Keys
+    /// tells (unused for ninety days, or since a month).
+    pub const LAST_USED_GRANULARITY: f64 = 24.0 * 60.0 * 60.0;
+
+    /// Key `id` signed in `now` (B601): its `last_used_at`, written at most
+    /// once a day. Nothing ever wrote it — in no build — so SSH Keys' unused
+    /// key (the gray avatar, "unused since") never showed. Whether it was
+    /// written; false for an unknown key, a day not yet out, or a list that
+    /// can't be trusted.
+    pub fn mark_used(&mut self, id: Uuid, now: Date) -> bool {
+        self.reload_if_needed();
+        let Some(key) = self.keys.iter_mut().find(|k| k.id == id) else {
+            return false;
+        };
+        if let Some(last) = key.last_used_at {
+            let since = now.seconds_since(last);
+            // A clock set back leaves the stored day ahead: written again.
+            if (0.0..Self::LAST_USED_GRANULARITY).contains(&since) {
+                return false;
+            }
+        }
+        key.last_used_at = Some(now);
+        self.persist();
+        self.is_authoritative
+    }
+
     pub fn reload_if_needed(&mut self) {
         if !self.is_authoritative {
             self.load();
@@ -759,6 +785,67 @@ mod tests {
                 .keys()
                 .len(),
             2
+        );
+    }
+    /// B601: a key's last use, recorded at most once a day, the day kept
+    /// across a launch; nothing for a key not stored, nothing over a list
+    /// that can't be trusted.
+    #[test]
+    fn a_sign_in_records_the_keys_last_use_once_a_day() {
+        let defaults = Arc::new(MemoryDefaults::new());
+        let mut store = SshKeyStore::new(defaults.clone(), Readiness::Always);
+        let key = SshKeyRecord::new(
+            Uuid::new_v4(),
+            "laptop",
+            SshKeyAlgorithm::Ed25519,
+            SshKeySource::Generated,
+            now(),
+        );
+        let id = key.id;
+        store.add(key);
+        let first = Date::from_unix(1_790_000_000.0);
+        assert!(store.mark_used(id, first));
+        assert_eq!(store.keys()[0].last_used_at, Some(first));
+        let reread = SshKeyStore::new(defaults.clone(), Readiness::Always);
+        assert_eq!(reread.keys()[0].last_used_at, Some(first), "stored");
+
+        assert!(
+            !store.mark_used(id, first.adding(3_600.0)),
+            "within the day"
+        );
+        assert_eq!(store.keys()[0].last_used_at, Some(first));
+        let next_day = first.adding(SshKeyStore::LAST_USED_GRANULARITY);
+        assert!(store.mark_used(id, next_day));
+        assert_eq!(store.keys()[0].last_used_at, Some(next_day));
+        let set_back = first.adding(-SshKeyStore::LAST_USED_GRANULARITY);
+        assert!(
+            store.mark_used(id, set_back),
+            "a clock set back writes again"
+        );
+
+        assert!(!store.mark_used(Uuid::new_v4(), next_day), "no such key");
+
+        let sealed = Arc::new(MemoryDefaults::new());
+        let mut writer = SshKeyStore::new(sealed.clone(), Readiness::Always);
+        let other = SshKeyRecord::new(
+            Uuid::new_v4(),
+            "pi",
+            SshKeyAlgorithm::Ed25519,
+            SshKeySource::Generated,
+            now(),
+        );
+        let other_id = other.id;
+        writer.add(other);
+        // A launch before the first unlock: no sentinel, the phone locked.
+        sealed.set(crate::readiness::SENTINEL_KEY, None);
+        sealed.set_protected_data_available(false);
+        let mut locked = SshKeyStore::new(sealed.clone(), Readiness::System);
+        let stored = sealed.get(SshKeyStore::STORAGE_KEY);
+        assert!(!locked.mark_used(other_id, next_day), "an untrusted list");
+        assert_eq!(
+            sealed.get(SshKeyStore::STORAGE_KEY),
+            stored,
+            "nothing written"
         );
     }
 }

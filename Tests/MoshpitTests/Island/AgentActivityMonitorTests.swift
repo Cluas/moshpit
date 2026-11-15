@@ -101,6 +101,25 @@ struct AgentActivityMonitorTests {
         #expect(State(agents: [], workingCount: 0, attentionCount: 0).compactSignal == nil)
     }
 
+    /// B667: after a relaunch the Home Screen widget kept the last
+    /// process's agents until this one had a state to write, which a launch
+    /// that connects nowhere never has. At launch an earlier process's
+    /// agents are cleared; an empty widget is left alone.
+    @Test("a launch clears the agents an earlier process left on the widget")
+    func launchClearsTheLeftoverWidget() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let item = AgentWidgetState.Item(id: "C:%1", command: "claude", location: "mac",
+                                         state: "working", startedAt: now.addingTimeInterval(-600))
+        let left = AgentWidgetState(items: [item], attentionCount: 0, workingCount: 1,
+                                    headlineDeepLink: "moshpit://connection/C?pane=%1",
+                                    updatedAt: now.addingTimeInterval(-3600))
+        let cleared = AgentActivityMonitor.leftoverWidgetCleared(left, at: now)
+        #expect(cleared?.items.isEmpty == true)
+        #expect(cleared?.workingCount == 0 && cleared?.headlineDeepLink == nil)
+        #expect(cleared?.updatedAt == now, "fresh, not read as a stale snapshot")
+        #expect(AgentActivityMonitor.leftoverWidgetCleared(.empty, at: now) == nil)
+    }
+
     @Test("the announced record is read and written where earlier builds kept it")
     func announcedRecordKeepsItsKey() {
         #expect(AgentActivityMonitor.announcedKey == "island.announcedEpisodes")
@@ -114,8 +133,8 @@ struct AgentActivityMonitorTests {
         var now = Date(timeIntervalSince1970: 1_790_000_000)
     }
 
-    private func sealedMonitor() -> (AgentActivityMonitor, AgentStandingTests.FakeMux, ServerConnection,
-                                     UserDefaults, String, Device) {
+    private func sealedMonitor(writeWidget: @escaping (AgentWidgetState) -> Void = { _ in })
+        -> (AgentActivityMonitor, AgentStandingTests.FakeMux, ServerConnection, UserDefaults, String, Device) {
         let name = "test.agentmonitor.sealed.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: name)!
         let settings = AppSettings(defaults: defaults)
@@ -129,7 +148,7 @@ struct AgentActivityMonitorTests {
                      forKey: AgentActivityMonitor.announcedKey)
         let device = Device()
         let monitor = AgentActivityMonitor(
-            settings: settings, standing: nil, writeWidget: { _ in },
+            settings: settings, standing: nil, writeWidget: writeWidget,
             island: AgentStandingTests.CountingIsland(), finishes: nil,
             notifier: AgentStandingTests.Cards().notifier, clock: { device.now },
             readiness: DefaultsReadiness { device.unlocked })
@@ -184,5 +203,38 @@ struct AgentActivityMonitorTests {
         let meanwhile = record["\(conn)|%1"]
         #expect(before == 1_789_999_000.0, "the stored episode")
         #expect(meanwhile == asked.timeIntervalSince1970, "the one announced meanwhile")
+    }
+
+    /// What the monitor wrote for the widget.
+    private final class Snapshots {
+        var written: [AgentWidgetState] = []
+    }
+
+    /// B603: the widget's snapshot lives in the App Group's preferences,
+    /// which are sealed until the first unlock as the app's are, and a write
+    /// into a domain that reads as empty can replace it with that one key —
+    /// the push switches the notification service reads and the recorded
+    /// language gone with it (``AppLanguage/recordIfTrusted``). Every other
+    /// write there waits for the preferences to be believable; the snapshot
+    /// was written on every sync. Now it is held, and the latest one written
+    /// once they can be believed.
+    @Test("a launch before the first unlock holds the widget's snapshot until it can be believed")
+    func sealedHoldsTheWidget() {
+        let snapshots = Snapshots()
+        let (monitor, mux, connection, defaults, name, device) = sealedMonitor(
+            writeWidget: { snapshots.written.append($0) })
+        defer {
+            monitor.untrack(connectionId: connection.id)
+            defaults.removePersistentDomain(forName: name)
+        }
+        mux.poll(["%1": AgentHook(state: "working", agent: "claude", since: device.now,
+                                  command: "claude", title: "Bash: npm test")])
+        #expect(snapshots.written.isEmpty, "a snapshot written into sealed preferences")
+        device.unlocked = true
+        monitor.reloadIfNeeded()
+        #expect(snapshots.written.count == 1, "the held snapshot, once")
+        #expect(snapshots.written.last?.workingCount == 1)
+        monitor.reloadIfNeeded()
+        #expect(snapshots.written.count == 1, "written once")
     }
 }

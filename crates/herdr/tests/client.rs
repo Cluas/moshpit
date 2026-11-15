@@ -1025,6 +1025,35 @@ fn a_return_behind_a_paste_goes_to_no_other_pane() {
     );
 }
 
+/// B680: a pick's release is still on its way when the server shuts down
+/// (a restart, a pane closing under it): the attach being let go says its
+/// last words, and the release reaches the reader loop, which ignores it —
+/// no close comes. The next attach waited for that close anyway, and when
+/// its wait ran out (5 s) nothing named the pane: blank under the veil until
+/// a read's re-ask, seconds more.
+#[test]
+fn a_release_overtaken_by_the_servers_shutdown_does_not_stall_the_next_attach() {
+    let mut rig = attached();
+    rig.frames.latency = 200;
+    rig.act(Action::SelectPane("w1:p2".to_owned()));
+    rig.run(50);
+    rig.host_restarted_elsewhere();
+    let gone_at = rig.now;
+    let mut back = None;
+    while rig.now < gone_at + 2_500 {
+        rig.run(50);
+        if rig.client.attached_pane() == Some("w1:p2") {
+            back = Some(rig.now - gone_at);
+            break;
+        }
+    }
+    assert!(
+        back.is_some(),
+        "never back on w1:p2 within 2.5 s: {:?}",
+        rig.frame_writes()
+    );
+}
+
 #[test]
 fn an_unanswered_release_still_switches_but_typing_waits_for_the_paint() {
     let mut rig = attached();
@@ -1888,6 +1917,43 @@ fn a_push_channel_that_dies_puts_the_poll_back_in_charge_and_comes_back() {
     assert!(rig.push_open);
 }
 
+/// B682: push was up and the server restarted quickly (the desktop
+/// upgraded herdr): its socket closed under the pump, and the server
+/// answered again before any read found it gone. Push came back only on
+/// its 10 s retry — the tree and the agents' states that slow meanwhile.
+/// It opens again at the first read that finds the server answering.
+#[test]
+fn push_opens_again_at_the_first_read_after_a_quick_restart() {
+    let mut config = config();
+    config.push = true;
+    let mut rig = Rig::new(config);
+    rig.start();
+    rig.run(500);
+    rig.open_push();
+    rig.push_subscribed();
+    rig.run(60_000);
+    assert!(rig.client.push_active());
+    let now = rig.now;
+    rig.client.push_closed(now);
+    rig.pump();
+    rig.push_open = false;
+    rig.run(2_000);
+    assert!(rig.push_open, "opened again at the first read");
+    rig.open_push();
+    rig.push_subscribed();
+    assert!(rig.client.push_active());
+    // Dying again at once: no faster than its retry this time (a channel
+    // that keeps dying isn't reopened at every read).
+    let now = rig.now;
+    rig.client.push_closed(now);
+    rig.pump();
+    rig.push_open = false;
+    rig.run(5_000);
+    assert!(!rig.push_open, "not at every read");
+    rig.run(6_000);
+    assert!(rig.push_open, "its retry");
+}
+
 /// B422: push was up and the server went away for longer than the retry
 /// waits (an upgrade with the server stopped a while): the one retry found
 /// no server to subscribe to. Push stayed off for the rest of the session,
@@ -2370,6 +2436,51 @@ fn a_server_seen_down_ends_the_hold_another_device_had() {
         Some(Notice::OnAnotherDevice)
     );
     assert_eq!(rig.client.attached_pane(), Some("w1:p1"));
+}
+
+/// B681: the server restarts (the desktop upgraded herdr) and every
+/// client's attach ends with it; each device asks for its pane again.
+/// Another device that had only been showing "open on another device" for
+/// this pane asked first, plainly, and got it: the device the person was
+/// using lost its pane to an idle one, and said so. The device that had the
+/// pane asks for it back with `--takeover`, once; the other shows the
+/// notice it showed before.
+#[test]
+fn a_restart_gives_the_pane_back_to_the_device_that_had_it() {
+    let mut rig = attached();
+    rig.host_restarted_elsewhere();
+    // The other device asked first.
+    rig.host.held_elsewhere.push("w1:p1".to_owned());
+    rig.run(3_000);
+    assert_eq!(rig.client.attached_pane(), Some("w1:p1"));
+    assert_ne!(
+        rig.client.notice().map(|(notice, _)| notice.clone()),
+        Some(Notice::OnAnotherDevice)
+    );
+    assert_eq!(rig.frames.took_over.last(), Some(&true), "{:?}", rig.frames.took_over);
+    assert_eq!(rig.host.taken_from_others, ["w1:p1"]);
+}
+
+/// The other way: a device that was showing the notice when the server
+/// restarted asks plainly (B467), never with `--takeover`.
+#[test]
+fn a_restart_takes_nothing_for_the_device_that_showed_the_notice() {
+    let mut rig = attached();
+    rig.host_take_over();
+    rig.run(2_000);
+    assert_eq!(
+        rig.client.notice().map(|(notice, _)| notice.clone()),
+        Some(Notice::OnAnotherDevice)
+    );
+    let asked = rig.frames.took_over.len();
+    rig.host_restarted_elsewhere();
+    rig.host.held_elsewhere.push("w1:p1".to_owned());
+    rig.run(3_000);
+    assert!(
+        rig.frames.took_over[asked..].iter().all(|took| !took),
+        "{:?}",
+        rig.frames.took_over
+    );
 }
 
 // MARK: - B470: a pick whose focus couldn't run

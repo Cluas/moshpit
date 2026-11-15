@@ -182,4 +182,40 @@ struct SSHKeyRecordTests {
         #expect(try Self.decodeAsOlderBuild(defaults).map(\.algorithm) == [.rsa4096])
         #expect(SSHKeyStore(defaults: defaults).keys.first?.bits == 3072)
     }
+
+    /// B601: SSH Keys tells a key unused for ninety days (the gray avatar,
+    /// "unused since") by its last use, which nothing ever wrote. A sign-in
+    /// with a managed key writes it now: found by the connection's key id,
+    /// else by the keychain item it signs in with; once a day; never for a
+    /// password connection.
+    @Test("a sign-in with a managed key records the key's last use, once a day")
+    func signInRecordsLastUse() {
+        let (defaults, name) = Self.makeDefaults()
+        defer { defaults.removePersistentDomain(forName: name) }
+        let store = SSHKeyStore(defaults: defaults)
+        var laptop = SSHKeyRecord(name: "laptop", algorithm: .ed25519, source: .generated)
+        laptop.keychainRef = "moshpit.secret.laptop"
+        var pi = SSHKeyRecord(name: "pi", algorithm: .ed25519, source: .imported)
+        pi.keychainRef = "moshpit.secret.pi"
+        store.add(laptop)
+        store.add(pi)
+        var byId = ServerConnection(name: "nas", host: "192.0.2.7", port: 22, username: "me",
+                                    authMethod: .key, keychainRef: "moshpit.secret.laptop")
+        byId.sshKeyId = laptop.id
+        #expect(store.signedIn(with: byId))
+        let first = store.keys.first { $0.id == laptop.id }?.lastUsedAt
+        #expect(first != nil)
+        #expect(SSHKeyStore(defaults: defaults).keys.first { $0.id == laptop.id }?.lastUsedAt == first,
+                "stored")
+        #expect(!store.signedIn(with: byId), "once a day")
+        // A connection saved without the key's id: its keychain item names it.
+        let byRef = ServerConnection(name: "pi", host: "192.0.2.8", port: 22, username: "me",
+                                     authMethod: .key, keychainRef: "moshpit.secret.pi")
+        #expect(store.signedIn(with: byRef))
+        #expect(store.keys.first { $0.id == pi.id }?.lastUsedAt != nil)
+        let password = ServerConnection(name: "box", host: "192.0.2.9", port: 22, username: "me",
+                                        authMethod: .password, keychainRef: "moshpit.secret.laptop")
+        #expect(!store.signedIn(with: password))
+    }
 }
+

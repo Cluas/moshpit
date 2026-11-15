@@ -652,6 +652,9 @@ final class SessionHub {
     @ObservationIgnored var makeSession: @MainActor (ServerConnection) -> ActiveSession = {
         ActiveSession(connection: $0)
     }
+    /// A session signed in, as the connection it started with: its managed
+    /// key's last use (B601, ``SSHKeyStore/signedIn(with:)``).
+    @ObservationIgnored var signedIn: @MainActor (ServerConnection) -> Void = { _ in }
     /// The sessions' unlock, network-path and keepalive rules are the Rust
     /// core's (``RustCore``): it hears the device's unlock and the path
     /// changes itself.
@@ -763,6 +766,7 @@ final class SessionHub {
         if case .connected = active.viewModel.status {
             m.state = .live
             m.connectedAt = Date()
+            signedIn(active.connection)
         } else {
             m.state = .offline
         }

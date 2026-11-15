@@ -194,14 +194,18 @@ add("VOICE INPUT", "语音输入", "音声入力")
 # ---------- Voice input · engine + model (Whisper) ----------
 add("Recognition", "识别引擎", "認識エンジン")
 add("Apple (built in)", "Apple（内置）", "Apple（内蔵）")
-add("Whisper (local model)", "Whisper（本地模型）", "Whisper（ローカルモデル）")
+add("Local model", "本机模型", "ローカルモデル")
+add("Best for Chinese with English terms in it. Listens for the file names and branches on screen.",
+    "中英混着说最准，还会留意屏幕上的文件名和分支名。",
+    "中国語に英語の用語が混ざる話し方に最適。画面に出ているファイル名やブランチ名も手がかりにします。")
+add("The server answered %lld.", "服务器返回了 %lld。", "サーバーの応答は %lld でした。")
+add("%@ arrived damaged. Try again.", "%@ 下载下来是坏的，再试一次。", "%@ が壊れた状態で届きました。もう一度お試しください。")
 add("No download. One language per session.", "无需下载。每次会话只识别一种语言。", "ダウンロード不要。1 セッションに 1 言語。")
 add("Downloads a model. Around 100 languages, and copes with a sentence that mixes two.",
     "需下载模型。覆盖约 100 种语言，一句话里混用两种也能听准。",
     "モデルのダウンロードが必要。約 100 言語に対応し、1 つの文に 2 言語が混在しても処理できます。")
 
 add("Model", "模型", "モデル")
-add("Whisper Model", "Whisper 模型", "Whisper モデル")
 # Variant names stay verbatim: they're the identifiers users match against
 # Hugging Face and Whisper's own docs, so translating them would break lookup.
 for k in ["Tiny", "Base", "Small", "Large v3 Turbo"]:
@@ -290,8 +294,6 @@ add("Return", "回车", "Return")
 add("Host setup is automatic. Connecting to a host installs and repairs everything it needs — scripts, hooks registration, push pairing — and asks before its first install. Connect to a host to inspect or remove its setup here.",
     "主机这边不用手动配置。每次连接，Moshpit 都会把需要的东西自动装好、修好：脚本、状态脚本的注册、推送配对，第一次安装前会先问你。连上主机后，可以在这里查看或移除。",
     "ホスト設定は自動です。ホストに接続すると必要なもの——スクリプト、フック登録、プッシュペアリング——を自動でインストール・修復し、初回インストール前には確認します。接続するとここで確認・削除できます。")
-add("PAIRED HOSTS", "已配对主机", "ペアリング済みホスト")
-add("paired %@", "配对于 %@", "%@ にペアリング")
 # Notification info sheet
 add("Agents stamp their state", "智能体自报状态", "エージェントが状態を報告")
 add("Coding agents (Claude Code, Codex, …) report working / needs-you / done through hooks Moshpit installs on your host — precise states, not guesses. The terminal bell still works as a fallback for everything else.",
@@ -465,10 +467,6 @@ add("Unlock", "解锁", "ロック解除")
 add("Sign In to %@", "登录 %@", "%@ にサインイン")
 add("Answer", "回答", "回答")
 add("Can't sign in with %@ keys yet", "暂时还不能用 %@ 密钥登录", "%@ 鍵ではまだサインインできません")
-add("BIND TO HOSTS", "绑定主机", "ホストにバインド")
-add("When bound, this key is used only for the selected hosts by default; change it anytime in the SSH Keys detail page.",
-    "绑定后，这把密钥默认只用于选中的主机。之后随时可以在「SSH 密钥」详情页改。",
-    "バインドすると、このキーはデフォルトで選択したホストにのみ使われます。SSH キーの詳細ページでいつでも変更できます。")
 add("—:—:—:—:—:—:—:—:—:—  (shown after generation)", "—:—:—:—:—:—:—:—:—:—（生成后显示）", "—:—:—:—:—:—:—:—:—:—  （生成後に表示）")
 add("Key error", "密钥错误", "キーエラー")
 
@@ -744,6 +742,19 @@ add("Stored", "已保存", "保存済み")
 add("Offered now", "本次收到", "今回提示された値")
 add("Verify on server", "在服务器上核对", "サーバー側で確認")
 add("Host Key Changed", "主机密钥已变更", "ホストキーが変更されました")
+# What a connection waiting on the person says while the app is in the background (B632)
+add("Confirm %@'s host key to finish connecting.",
+    "确认 %@ 的主机密钥后才能连上。",
+    "%@ のホストキーを確認すると接続が完了します。")
+add("%@'s host key has changed. Open Moshpit to decide.",
+    "%@ 的主机密钥变了，打开 Moshpit 决定要不要信任。",
+    "%@ のホストキーが変わりました。Moshpit を開いて判断してください。")
+add("Enter the passphrase of the key for %@ to finish connecting.",
+    "输入连接 %@ 用的密钥口令后才能连上。",
+    "%@ に使う鍵のパスフレーズを入力すると接続が完了します。")
+add("%@ asks a question before you can sign in. Open Moshpit to answer.",
+    "登录 %@ 前要回答一个问题，打开 Moshpit 回答。",
+    "%@ へのサインインの前に質問があります。Moshpit を開いて答えてください。")
 # The New Host card of a server that offers nothing better than ssh-rsa (B564)
 add("This server uses an older host-key algorithm (%@, SHA-1).",
     "这台服务器用的是较旧的主机密钥算法（%@，SHA-1）。",
@@ -1105,6 +1116,16 @@ add("Queued for %@ — delivers when the session is next live.", "已排队，�
 add("A share wasn't delivered", "有 1 个分享没送出去", "共有を 1 件届けられませんでした")
 add("That pane isn't running %@ any more.", "那个窗格里已经不是 %@ 了。", "そのペインではもう %@ が動いていません。")
 add("That pane is closed.", "那个窗格已经关了。", "そのペインはもう閉じています。")
+# Home's notice for a held share (B622): what happened, Send to…, Discard.
+add("A share wasn't delivered: that pane isn't running %@ any more.",
+    "有 1 个分享没送出去：那个窗格里已经不是 %@ 了。",
+    "共有を 1 件届けられませんでした。そのペインではもう %@ が動いていません。")
+add("A share wasn't delivered: that pane is closed.",
+    "有 1 个分享没送出去：那个窗格已经关了。",
+    "共有を 1 件届けられませんでした。そのペインはもう閉じています。")
+add("Send to…", "换个窗格…", "送り先を選ぶ…")
+add("Discard", "丢掉", "破棄")
+add("Panes running %@ come first.", "跑着 %@ 的窗格排在前面。", "%@ が動いているペインを先に並べています。")
 add("Send Image to Agent", "把图片发给智能体", "エージェントに画像を送信")
 add("Sent to %@.", "已发给 %@。", "%@ に送信しました。")
 add("Uploads images to the agent's server and hands it the file paths.", "把图片上传到智能体所在的服务器，再把文件路径交给它。", "画像をエージェントのサーバーにアップロードし、ファイルパスを渡します。")
@@ -1193,7 +1214,6 @@ add("Reaches you when Moshpit isn't running. Your relay signs the push; it never
     "Moshpit が起動していないときも届きます。リレーはプッシュに署名するだけで、エージェントの内容は見えません。")
 add("Reinstall", "重新安装", "再インストール")
 add("Send a test notification", "发一条测试通知", "テスト通知を送信")
-add("Set up this host", "设置这台主机", "このホストを設定")
 add("Test the status script", "测试状态脚本", "ステータススクリプトをテスト")
 add("Runs the command %@'s config registers for its hooks, in this tmux pane, and reads the pane back. The agent itself isn't started.", "在这个 tmux 窗格里运行 %@ 配置里登记的状态脚本命令，再读回窗格。不会启动智能体本身。", "%@ の設定に登録されたフックのコマンドをこの tmux ペインで実行し、ペインを読み戻します。エージェント自体は起動しません。")
 add("Running it in this pane…", "正在这个窗格里运行…", "このペインで実行中…")
@@ -1362,9 +1382,10 @@ add("Install…", "安装…", "インストール…")
 add("This window is sized for %@.", "这个窗口按 %@ 的尺寸显示。", "このウインドウは %@ のサイズで表示されています。")
 add("Use this %@'s size", "改用这台 %@ 的尺寸", "この %@ のサイズにする")
 add("Use this device's size", "改用这台设备的尺寸", "このデバイスのサイズにする")
-# B587: the desktop picked another pane in the window shown; the phone keeps
-# its own until the person takes it back.
-add("The desktop switched to another pane.", "桌面切到了别的窗格。", "デスクトップで別のペインに切り替わりました。")
+# B587: another client (a desktop, another phone) picked another pane in the
+# window shown; the phone keeps its own until the person takes it back (B589:
+# not "the desktop", which another phone is too).
+add("Another device switched to a different pane.", "另一台设备切到了别的窗格。", "別のデバイスで別のペインに切り替わりました。")
 add("Take it back", "拿回来", "こちらに戻す")
 add("No %@ %@ on %@", "%3$@ 上没有 %1$@ %2$@", "%3$@ に %1$@ %2$@ がありません")
 add("%@ isn't installed on this host", "这台主机没装 %@", "このホストには %@ がありません")
@@ -1466,6 +1487,10 @@ add("Speech is transcribed on this device and never leaves it.", "语音只在�
 add("Tap to pet", "轻点摸摸它", "タップでなでる")
 add("An egg. Tap it three times to hatch it; it also hatches by itself when an agent finishes a task.", "一枚蛋。点三下就能孵化，智能体完成任务时它也会自己破壳。", "たまご。3回タップするとかえります。エージェントがタスクを終えたときにも、ひとりでにかえります。")
 add("Tap three times to hatch", "点三下孵化", "3回タップでかえる")
+# The icon card after the hatch or a new look (B668): the owner's words.
+add("Make %@ the app icon?", "把 App 图标换成%@吗？", "アプリのアイコンを%@にしますか？")
+add("Change", "换", "変える")
+add("Not Yet", "先不换", "まだ変えない")
 # The pet talks (PET-DESIGN §17): its lines, the switch, the announcement.
 add("Hm?", "嗯？", "ん？")
 add("I'm here.", "在呢。", "いるよ。")
@@ -1668,8 +1693,8 @@ INFOPLIST_ZH_JA = {
         "用 Face ID 解锁 SSH 密钥",
         "Face ID で SSH キーをロック解除します"),
     "NSMicrophoneUsageDescription": (
-        "语音输入要用麦克风，这样你可以把命令和提示词直接说进终端。音频在这台设备上转写，用 Apple 的语音模型或你下载的 Whisper 模型，不会上传到任何地方。",
-        "音声入力はマイクを使い、コマンドやプロンプトをターミナルに向けて話せるようにします。音声はこの端末上で、Apple の音声モデルまたはダウンロードした Whisper モデルによって書き起こされ、どこにもアップロードされません。"),
+        "语音输入要用麦克风，这样你可以把命令和提示词直接说进终端。音频在这台设备上转写，用 Apple 的语音模型或你下载的语音模型，不会上传到任何地方。",
+        "音声入力はマイクを使い、コマンドやプロンプトをターミナルに向けて話せるようにします。音声はこの端末上で、Apple の音声モデルまたはダウンロードした音声モデルによって書き起こされ、どこにもアップロードされません。"),
     "NSSpeechRecognitionUsageDescription": (
         "听写在本机做语音识别。你的语音和转写文字都不会离开这台设备，Moshpit 不使用服务器端识别。",
         "音声入力は端末内で音声認識を行います。音声も書き起こしもこの端末を離れず、Moshpit はサーバー側の認識を使いません。"),

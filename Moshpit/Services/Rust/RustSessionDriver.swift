@@ -325,6 +325,7 @@ final class RustSessionDriver: RustSessionListener {
             if hostKeyPrompt == prompt {
                 hostKeyPrompt = nil
                 viewModel.hostKeyPrompt = nil
+                PromptNotifier.shared.answered(PromptNotice.id(connection.id, .hostKey))
             }
         case .signInQuestion(let prompt, let host, let name, let instructions, let text, let echo):
             presentQuestion(prompt: prompt, host: host,
@@ -334,6 +335,7 @@ final class RustSessionDriver: RustSessionListener {
             if signInQuestion == prompt {
                 signInQuestion = nil
                 viewModel.signInQuestion = nil
+                PromptNotifier.shared.answered(PromptNotice.id(connection.id, .question))
             }
         case .degraded(let degrade):
             publishCapabilities()
@@ -541,7 +543,13 @@ final class RustSessionDriver: RustSessionListener {
             // scrolled a local buffer mosh never fills: nothing moved. The
             // drag's start re-reads the active pane's mouse flag.
             session.coordinator.onScroll = { [weak self] lines in self?.scroll(lines: lines) }
-            session.coordinator.onScrollBegin = { [weak self] in self?.perform(.scrollBegan) }
+            session.coordinator.onScrollBegin = { [weak self] in
+                // The wheel goes where the drag began (B578).
+                if let aim = self?.session.coordinator.wheelAim {
+                    self?.perform(.aimWheel(col: Int64(aim.col), row: Int64(aim.row)))
+                }
+                self?.perform(.scrollBegan)
+            }
         }
         if let size = session.coordinator.lastReportedSize {
             feeder.resize(cols: size.cols, rows: size.rows)
@@ -974,6 +982,8 @@ final class RustSessionDriver: RustSessionListener {
     private func presentHostKey(prompt: UInt64, host: String, port: Int, fingerprint: String,
                                 previous: String?, older: String?) {
         hostKeyPrompt = prompt
+        // In the background, a notification says it waits (B632).
+        PromptNotifier.shared.asked(.hostKey(connection: connection.id, host: host, changed: previous != nil))
         viewModel.hostKeyPrompt = TerminalViewModel.HostKeyPrompt(
             host: host, port: port, fingerprint: fingerprint, previousFingerprint: previous,
             olderAlgorithm: older
@@ -987,6 +997,7 @@ final class RustSessionDriver: RustSessionListener {
             if self.hostKeyPrompt == prompt {
                 self.viewModel.hostKeyPrompt = nil
                 self.hostKeyPrompt = nil
+                PromptNotifier.shared.answered(PromptNotice.id(self.connection.id, .hostKey))
                 if !trusted {
                     self.refusedHostKey = true
                 }
@@ -999,6 +1010,7 @@ final class RustSessionDriver: RustSessionListener {
 
     private func presentQuestion(prompt: UInt64, host: String, words: String, echo: Bool) {
         signInQuestion = prompt
+        PromptNotifier.shared.asked(.question(connection: connection.id, host: host))
         viewModel.signInQuestion = TerminalViewModel.SignInQuestion(
             host: host, words: words, echo: echo
         ) { [weak self] answer in
@@ -1007,6 +1019,7 @@ final class RustSessionDriver: RustSessionListener {
             if self.signInQuestion == prompt {
                 self.viewModel.signInQuestion = nil
                 self.signInQuestion = nil
+                PromptNotifier.shared.answered(PromptNotice.id(self.connection.id, .question))
             }
             if let id = self.id {
                 self.core.sessions.answerQuestion(session: id, prompt: prompt, answer: answer)
@@ -1049,6 +1062,7 @@ final class RustSessionDriver: RustSessionListener {
             guard viewModel.keyPassphrasePrompt == nil else { return }
             passphraseCard += 1
             let card = passphraseCard
+            PromptNotifier.shared.asked(.passphrase(connection: connection.id, host: session.connection.host))
             viewModel.keyPassphrasePrompt = TerminalViewModel.KeyPassphrasePrompt(
                 host: session.connection.host, wrong: wrong
             ) { [weak self] passphrase in
@@ -1056,6 +1070,7 @@ final class RustSessionDriver: RustSessionListener {
                 let waiters = self.passphraseWaiters
                 self.passphraseWaiters = []
                 self.viewModel.keyPassphrasePrompt = nil
+                PromptNotifier.shared.answered(PromptNotice.id(self.connection.id, .passphrase))
                 for waiter in waiters {
                     waiter.resume(returning: passphrase)
                 }

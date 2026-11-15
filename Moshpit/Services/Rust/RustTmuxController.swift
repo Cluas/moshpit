@@ -398,8 +398,12 @@ final class RustTmuxController: MultiplexerControlling {
         coordinator.onScroll = { [weak self] lines in self?.scroll(lines: lines) }
         coordinator.onScrollPixels = { [weak self] dy in self?.scroll(pixels: dy) ?? 0 }
         coordinator.onScrollEnd = { [weak self] in self?.scrollDidEnd() }
-        coordinator.onScrollBegin = { [weak self] in
+        coordinator.onScrollBegin = { [weak self, weak coordinator] in
             self?.rowCarry.reset()
+            // The wheel goes where the drag began (B578).
+            if let aim = coordinator?.wheelAim {
+                self?.driver?.perform(.aimWheel(col: Int64(aim.col), row: Int64(aim.row)))
+            }
             self?.driver?.perform(.scrollBegan)
         }
         coordinator.onClick = { [weak self] col, row in self?.click(col: col, row: row) }
@@ -493,6 +497,12 @@ final class RustTmuxController: MultiplexerControlling {
 
     func coordinator(for paneId: String) -> CoreTerminalHost.Coordinator? {
         panes[paneId]?.coordinator
+    }
+
+    /// Pane `paneId`'s terminal if it has one already (every pane of the
+    /// attach has, fed by its channel): never one made for asking (B658).
+    func existingSurface(for paneId: String) -> CoreTerminalView? {
+        panes[paneId]?.terminal
     }
 
     var activeCoordinator: CoreTerminalHost.Coordinator? {

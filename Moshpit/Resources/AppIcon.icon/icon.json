@@ -2,15 +2,18 @@
   "fill-specializations": [
     {
       "value": {
-        "automatic-gradient": "extended-srgb:0.42353,0.41961,0.93725,1.00000"
+        "linear-gradient": [
+          "extended-srgb:0.49020,0.48627,0.94118,1.00000",
+          "extended-srgb:0.24706,0.23922,0.72157,1.00000"
+        ]
       }
     },
     {
       "appearance": "dark",
       "value": {
         "linear-gradient": [
-          "extended-srgb:0.30,0.29,0.62,1.0",
-          "extended-srgb:0.16,0.15,0.36,1.0"
+          "extended-srgb:0.30196,0.29412,0.62745,1.00000",
+          "extended-srgb:0.11765,0.11373,0.35294,1.00000"
         ]
       }
     }
@@ -20,25 +23,44 @@
       "layers": [
         {
           "glass": true,
-          "image-name": "pane-focused.png",
-          "name": "pane-focused"
+          "image-name": "cursor.png",
+          "name": "cursor"
         },
         {
           "glass": true,
-          "image-name": "panes-beside.png",
-          "name": "panes-beside",
-          "opacity": 0.55
+          "image-name": "pane.png",
+          "name": "pane",
+          "opacity": 0.5
         }
       ],
-      "lighting": "individual",
+      "lighting": "combined",
       "shadow": {
         "kind": "neutral",
-        "opacity": 0.5
+        "opacity": 0.3
       },
-      "specular": true,
+      "specular": false,
       "translucency": {
         "enabled": true,
-        "value": 0.5
+        "value": 0.3
+      }
+    },
+    {
+      "layers": [
+        {
+          "glass": true,
+          "image-name": "creature.png",
+          "name": "creature"
+        }
+      ],
+      "lighting": "combined",
+      "shadow": {
+        "kind": "neutral",
+        "opacity": 0.3
+      },
+      "specular": false,
+      "translucency": {
+        "enabled": false,
+        "value": 0
       }
     }
   ],

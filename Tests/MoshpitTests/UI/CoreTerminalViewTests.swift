@@ -211,6 +211,34 @@ struct CoreTerminalViewTests {
         #expect(!TerminalScreen.cancelsComposition([Data([0x1B]), Data([0x0D])]), "Esc then Return commits")
     }
 
+    /// B694: the caret UIKit asks for (a hardware keyboard's candidate
+    /// window and the system's caret popovers sit by it) was always the
+    /// remote's cursor cell. Output that moves that cursor mid-composition
+    /// leaves the composition where it is (V7), so the candidates went
+    /// one way and the pinyin stayed the other.
+    @Test func theCaretUIKitSeesIsTheCompositions() throws {
+        let (view, _) = makeView(cols: 20, rows: 6)
+        let window = inWindow(view)
+        defer { window.isHidden = true }
+        feed(view, "\u{1b}[4;6H", until: { $0.rows.info.cursor.row == 3 && $0.rows.info.cursor.col == 5 })
+        #expect(view.caretRect(for: view.endOfDocument) == view.cursorCellRect(), "nothing composing: the cursor")
+        view.setMarkedText("ni", selectedRange: NSRange(location: 2, length: 0))
+        // A status line redrawn elsewhere: the cursor goes up and stays.
+        feed(view, "\u{1b}[1;1Hworking", until: { $0.rows.info.cursor.row == 0 })
+        let caret = view.caretRect(for: view.endOfDocument)
+        let label = try #require(view.markedLabel)
+        #expect(caret == view.compositionCaret.frame, "the caret is at \(caret), the composition's at \(view.compositionCaret.frame)")
+        #expect(abs(caret.minY - label.frame.minY) < 0.001 && abs(caret.minX - label.frame.maxX) < 0.001)
+        // Committed: the caret held at its end until the echo.
+        view.unmarkText()
+        let held = try #require(view.pendingCaret)
+        #expect(view.caretRect(for: view.endOfDocument) == held.frame)
+        // The echo moves the cursor: the cursor again.
+        feed(view, "\u{1b}[4;8H", until: { $0.rows.info.cursor.col == 7 })
+        #expect(view.pendingCaret == nil)
+        #expect(view.caretRect(for: view.endOfDocument) == view.cursorCellRect())
+    }
+
     /// B571: pinyin typed at the end of a long line ran past the view's
     /// right edge, which clips: the composition and its caret were cut off.
     @Test func aCompositionAtTheRightEdgeStaysOnScreen() throws {
@@ -234,6 +262,86 @@ struct CoreTerminalViewTests {
         #expect(abs(minX - view.x(ofColumn: 2)) < 0.001, "\(minX) against \(view.x(ofColumn: 2))")
         #expect(CoreTerminalView.markedX(at: 300, width: 80, in: 320) == 240)
         #expect(CoreTerminalView.markedX(at: 10, width: 400, in: 320) == 0, "never past the left edge")
+    }
+
+    /// B692: the grid changed size under a composition (a rotation, the
+    /// iPad's window, a keyboard's bar coming or going). The core reflows
+    /// the lines and takes the cursor with them; the pinyin stayed on the
+    /// cell it began at, numbered in the old grid: below the view once the
+    /// rows were fewer, off its line once the columns were.
+    @Test func aCompositionStaysOnItsLineThroughAResize() throws {
+        let (view, sink) = makeView(cols: 20, rows: 12)
+        let window = inWindow(view)
+        defer { window.isHidden = true }
+        feed(view, "\u{1b}[11;1H$ abcdefghijklm", until: {
+            $0.rows.info.cursor.row == 10 && $0.rows.info.cursor.col == 15
+        })
+        view.setMarkedText("ni", selectedRange: NSRange(location: 2, length: 0))
+        // Fewer rows: the cursor's line stays on the screen, higher up. The
+        // composition is there at once, before any output.
+        view.frame.size.height = view.cellSize.height * 6
+        view.layoutIfNeeded()
+        #expect(Int(view.rows.info.rows) == 6)
+        var cursor = view.rows.info.cursor
+        #expect(cursor.row < 6 && cursor.col == 15, "the core lost the cursor: \(cursor.col),\(cursor.row)")
+        var label = try #require(view.markedLabel)
+        #expect(label.frame.maxY <= view.bounds.height + 0.001, "the composition is below the view: \(label.frame)")
+        #expect(abs(label.frame.minY - view.y(ofRow: Int(cursor.row))) < 0.001, "off the cursor's row")
+        #expect(abs(label.frame.minX - view.x(ofColumn: 15)) < 0.001)
+        // The remote's redraw for the new size takes the cursor to the
+        // line's start on its way: the composition stays.
+        feed(view, "\r", until: { $0.rows.info.cursor.col == 0 })
+        #expect(abs(label.frame.minX - view.x(ofColumn: 15)) < 0.001, "the redraw moved the composition")
+        feed(view, "\u{1b}[16G", until: { $0.rows.info.cursor.col == 15 })
+        // Fewer columns: the line wraps; the composition goes where the
+        // cursor went, on the wrapped line's second row.
+        view.frame.size.width = view.cellSize.width * 10 + 1
+        view.layoutIfNeeded()
+        #expect(Int(view.rows.info.cols) == 10)
+        cursor = view.rows.info.cursor
+        #expect(cursor.col == 5, "the core didn't wrap the line: \(cursor.col),\(cursor.row)")
+        label = try #require(view.markedLabel)
+        #expect(abs(label.frame.minY - view.y(ofRow: Int(cursor.row))) < 0.001, "off the cursor's row")
+        #expect(abs(label.frame.minX - view.x(ofColumn: 5)) < 0.001, "\(label.frame.minX) against \(view.x(ofColumn: 5))")
+        // Output meanwhile still doesn't move it (V7).
+        feed(view, "\u{1b}[1;1H", until: { $0.rows.info.cursor.row == 0 })
+        #expect(abs(label.frame.minX - view.x(ofColumn: 5)) < 0.001, "output moved the composition")
+        // Still the same composition: committed, it goes out as picked.
+        view.setMarkedText("你", selectedRange: NSRange(location: 1, length: 0))
+        view.unmarkText()
+        #expect(sink.take() == "你")
+    }
+
+    /// B693: a composition and the history. Begun while the view showed the
+    /// history (scrolled up to read what an agent printed), the pinyin sat
+    /// at the cursor, below the view: nothing showed what was being typed
+    /// until it was committed. A key brings the live screen back (B363);
+    /// composing didn't. And the history scrolled mid-composition slid
+    /// under it: the pinyin stayed put on the screen, over old lines.
+    @Test func aCompositionLandsOnTheLiveScreenAndScrollsWithIt() throws {
+        let (view, sink) = makeView(cols: 20, rows: 5)
+        let window = inWindow(view)
+        defer { window.isHidden = true }
+        var text = ""
+        for i in 0..<50 { text += "\(i)\r\n" }
+        feed(view, text + "$ ", until: { $0.rowText(4) == "$" && $0.rows.info.cursor.col == 2 })
+        view.scrollLines(10)
+        #expect(view.isReadingScrollback)
+        view.setMarkedText("ni", selectedRange: NSRange(location: 2, length: 0))
+        #expect(!view.isReadingScrollback, "composing left the view in the history")
+        let label = try #require(view.markedLabel)
+        #expect(label.frame.maxY <= view.bounds.height + 0.001, "the composition is below the view: \(label.frame)")
+        #expect(abs(label.frame.minY - view.y(ofRow: 4)) < 0.001)
+        #expect(abs(label.frame.minX - view.x(ofColumn: 2)) < 0.001)
+        // Scrolled mid-composition: it goes down with its row.
+        view.scrollLines(2)
+        #expect(view.rows.info.display_offset == 2)
+        #expect(abs(label.frame.minY - view.y(ofRow: 6)) < 0.001, "the composition stayed over the history")
+        view.scrollToBottom()
+        #expect(abs(label.frame.minY - view.y(ofRow: 4)) < 0.001)
+        #expect(sink.sent.isEmpty)
+        view.unmarkText()
+        #expect(sink.take() == "ni")
     }
 
     /// B575: herdr's frames are paintings of a pane herdr emulates and
@@ -265,6 +373,67 @@ struct CoreTerminalViewTests {
         #expect(view.settle { _ in String(decoding: sent, as: UTF8.self).contains("R") })
         let answer = String(decoding: sent, as: UTF8.self)
         #expect(answer.contains("]4;191;rgb:d7d7/ffff/5f5f"), "\(answer)")
+    }
+
+    /// B578: a program split in panes (vim's windows, lazygit's panels)
+    /// scrolls the one under the finger: the wheel goes to the cell the
+    /// drag began on, kept on the grid; the grid's centre when no drag
+    /// aimed it. It went to the centre always.
+    @Test func theWheelGoesWhereTheDragBegan() {
+        let (view, sink) = makeView(cols: 20, rows: 6)
+        let window = inWindow(view)
+        defer { window.isHidden = true }
+        feed(view, "\u{1b}[?1000h\u{1b}[?1006h", until: { $0.termModes.mouse != 0 })
+        view.sendWheel(lines: 1)
+        #expect(sink.take() == "\u{1b}[<64;11;4M", "unaimed: the centre")
+        view.gestures.wheelAim = (col: 3, row: 1)
+        view.sendWheel(lines: -2)
+        #expect(sink.take() == String(repeating: "\u{1b}[<65;4;2M", count: 2), "where the drag began")
+        #expect(CoreTerminalView.wheelCell(aim: (col: 99, row: -4), cols: 20, rows: 6) == (col: 19, row: 0))
+        #expect(CoreTerminalView.wheelCell(aim: nil, cols: 20, rows: 6) == (col: 10, row: 3))
+    }
+
+    /// B691: with a Chinese keyboard up, the bar's Ctrl then `c` composed
+    /// Pinyin `c`, sent the candidate picked later and spent the Ctrl on
+    /// it: no Ctrl-C from the bar. The key the input method would compose is
+    /// the chord: the composition goes unsent and ^C goes out. Unarmed, or a
+    /// composition already under way, or kana, composing goes on as before.
+    @Test func anArmedCtrlTakesTheKeyAnInputMethodWouldCompose() {
+        let (view, _) = makeView()
+        let window = inWindow(view)
+        defer { window.isHidden = true }
+        let coordinator = CoreTerminalHost.Coordinator()
+        coordinator.attach(view)
+        var sent = Data()
+        coordinator.onInput = { sent.append($0) }
+        coordinator.pendingCtrl = true
+        view.setMarkedText("c", selectedRange: NSRange(location: 1, length: 0))
+        #expect(view.settle(timeout: 2) { _ in sent == Data([0x03]) }, "sent: \(Array(sent))")
+        #expect(view.markedLabel == nil, "the composition went")
+        #expect(view.markedTextRange == nil)
+        #expect(!coordinator.pendingCtrl, "the Ctrl is spent on its chord")
+        // Not armed: Pinyin composes, nothing goes.
+        sent = Data()
+        view.setMarkedText("ni", selectedRange: NSRange(location: 2, length: 0))
+        #expect(view.settle(timeout: 0.3) { _ in !sent.isEmpty } == false)
+        #expect(view.markedLabel?.attributedText?.string == "ni")
+        // Armed during a composition: the composition is the person's.
+        coordinator.pendingCtrl = true
+        view.setMarkedText("nih", selectedRange: NSRange(location: 3, length: 0))
+        #expect(view.settle(timeout: 0.3) { _ in !sent.isEmpty } == false)
+        #expect(view.markedLabel?.attributedText?.string == "nih")
+        view.unmarkText()
+        #expect(sent == Data("nih".utf8), "the commit is typed, unfolded (B570: text of more than one character)")
+        #expect(!coordinator.pendingCtrl, "and takes the armed Ctrl, as typing does")
+        // Kana is no chord.
+        sent = Data()
+        coordinator.pendingCtrl = true
+        view.setMarkedText("に", selectedRange: NSRange(location: 1, length: 0))
+        #expect(view.settle(timeout: 0.3) { _ in !sent.isEmpty } == false)
+        #expect(view.markedLabel?.attributedText?.string == "に")
+        #expect(CoreTerminalView.ctrlChordKey("c") == 0x63)
+        #expect(CoreTerminalView.ctrlChordKey("你") == nil)
+        #expect(CoreTerminalView.ctrlChordKey("ab") == nil)
     }
 
     @Test func japaneseKanaCommitsWhole() {

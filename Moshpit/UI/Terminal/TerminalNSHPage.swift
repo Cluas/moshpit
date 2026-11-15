@@ -387,15 +387,32 @@ final class TerminalNSHModel {
             return nil
         case "prompt":
             // The overview's rename and new window ask for a name.
-            guard let surface, let question = NSHTextPrompt.Question(message) else { return nil }
+            guard let surface, let question = TextPromptQuestion(message) else { return nil }
             NSHTextPrompt.present(question, from: surface) { [weak self] answer in
-                self?.post(answer)
+                self?.surface?.post(answer)
             }
             return nil
         case "overview":
             overviewOpen = message["open"] as? Bool ?? false
             armOverviewMenus()
+            stage.overview(open: overviewOpen)
             return TerminalNSHIntent(message)
+        case "overview-anchor":
+            // Where a pane's cell is: the terminal shrinks into the shown
+            // pane's, and grows from a picked one's (B658).
+            guard let surface, let pane = message["pane"] as? String,
+                  let rect = (message["rect"] as? [Any])?.compactMap(NSHHostComponents.number),
+                  rect.count == 4 else { return nil }
+            stage.overviewAnchor(pane: pane, rect: CGRect(x: rect[0], y: rect[1], width: rect[2], height: rect[3]),
+                                 picked: message["picked"] as? Bool ?? false, in: surface)
+            return nil
+        case "pictures":
+            // The overview's pane pictures: the screens the session's
+            // terminals already hold, read once, not drawn (B658).
+            guard let panes = message["panes"] as? [String] else { return nil }
+            let pictures = stage.pictures(of: panes, current: message["current"] as? String)
+            _ = post(["op": "pictures", "panes": pictures])
+            return nil
         case "swipe-hint":
             // Shown once on this device; the terminal leans toward the pane
             // a swipe would go to.

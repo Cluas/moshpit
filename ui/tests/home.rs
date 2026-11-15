@@ -1028,6 +1028,58 @@ fn a_disconnect_under_way_says_so_and_takes_no_taps() {
     channel.close();
 }
 
+/// B668, the owner's call: once the pet has hatched (and its hatch has
+/// played), Home asks whether to make it the app icon — 「把 App 图标换成
+/// 墩墩吗？」, 「换」 and 「先不换」 — and tells the host the answer; the
+/// host switches nothing on its own. No offer, no card.
+#[test]
+fn home_asks_about_the_pets_icon_and_tells_the_host_the_answer() {
+    let pet = |icon: Option<serde_json::Value>| {
+        let mut message = json!({
+            "op": "pet", "style": "pixel", "shown": true, "may_hatch": false, "seq": 0,
+            "pet": {
+                "seed": "07070707070707070707070707070707", "stage": 1, "hatch_hour": 14,
+                "flags": 0, "crowned": false, "name": "", "species": "tun",
+                "hatched_at": 1_800_000_000, "tasks": 12,
+                "traits": {"fur": "natural", "shiny": false, "pattern": "plain", "eyes": "dot", "size": "regular"},
+                "history": [], "found": []
+            }
+        });
+        if let Some(icon) = icon {
+            message["icon"] = icon;
+        }
+        message.to_string()
+    };
+    let offer = |keep_default: bool| json!({"id": "tun", "species": "tun", "keep_default": keep_default});
+    for (answer, keep_default) in [("home-icon-change", false), ("home-icon-not-yet", true)] {
+        let (mut app, channel, _) = phone(Params::default());
+        let heard = hear(&channel);
+        show(&mut app, &channel, hosts());
+        post(&mut app, &channel, &pet(None));
+        find(&mut app, "id:home-pet");
+        assert!(!app.screen().shows("Make Tun the app icon?"), "no offer, no card");
+        post(&mut app, &channel, &pet(Some(offer(keep_default))));
+        find(&mut app, "text:Make Tun the app icon?");
+        for id in ["home-icon-change", "home-icon-not-yet"] {
+            let bounds = node(&app.screen().layout_nodes(), id).bounds;
+            assert!(bounds.size.height.0 >= 44.0, "{id}: {:?}", bounds.size);
+        }
+        app.press(&format!("id:{answer}")).unwrap();
+        let switch = answer == "home-icon-change";
+        loop {
+            let event = next(&heard);
+            if event["ev"] == "icon" {
+                assert_eq!(event, json!({"ev": "icon", "switch": switch}));
+                break;
+            }
+        }
+        // Answered: the host stops offering, and the card goes.
+        post(&mut app, &channel, &pet(None));
+        assert!(!app.screen().shows("Make Tun the app icon?"));
+        channel.close();
+    }
+}
+
 /// It talks (PET-DESIGN §17): a tap on the pet answers with a line in a
 /// bubble beside it, which takes no touches; with 「让它说话」 off, a tap
 /// only pets it.
@@ -1085,5 +1137,93 @@ fn the_host_s_top_brings_needs_you_back_into_view() {
     }
     assert!((at(&mut app) - top).abs() < 1.0, "back at the top: {} vs {top}", at(&mut app));
     assert!(Message::parse(r#"{"op":"top"}"#).is_ok());
+    channel.close();
+}
+
+/// B622: a share the host held back (its pane no longer runs the agent it
+/// was queued for) is a quiet notice at the top of Home, one per share:
+/// what happened, Send to…, and a close that discards it, each reaching
+/// the host with the share. A share the host no longer holds goes.
+#[test]
+fn a_held_share_is_a_quiet_notice_that_sends_or_discards() {
+    let held = |shares: serde_json::Value| json!({"op": "held", "shares": shares}).to_string();
+    let (mut app, channel, _) = phone(Params::default());
+    let heard = hear(&channel);
+    show(&mut app, &channel, hosts());
+    post(
+        &mut app,
+        &channel,
+        &held(json!([
+            {"id": "s1", "connection": BOX, "agent": "claude", "reason": "anotherProgram"},
+            {"id": "s2", "connection": GPU, "agent": "codex", "reason": "paneGone"},
+        ])),
+    );
+    find(&mut app, "id:home-held-s1");
+    for words in [
+        "A share wasn't delivered: that pane isn't running claude any more.",
+        "A share wasn't delivered: that pane is closed.",
+    ] {
+        assert!(
+            app.screen().shows(words),
+            "{words}: {:?}",
+            app.screen().texts()
+        );
+    }
+    // Above everything else on the page: it is about something already
+    // gone wrong.
+    let nodes = app.screen().layout_nodes();
+    assert!(
+        node(&nodes, "home-held-s1").bounds.origin.y
+            < node(&nodes, "home-needs-you").bounds.origin.y
+    );
+
+    app.press("id:home-held-send-s1").unwrap();
+    assert_eq!(
+        next(&heard),
+        json!({"ev": "share-send", "connection": BOX, "share": "s1"})
+    );
+    app.press("id:home-held-discard-s2").unwrap();
+    assert_eq!(
+        next(&heard),
+        json!({"ev": "share-discard", "connection": GPU, "share": "s2"})
+    );
+    quiet(&heard);
+
+    post(
+        &mut app,
+        &channel,
+        &held(json!([
+            {"id": "s1", "connection": BOX, "agent": "claude", "reason": "agentExited"},
+        ])),
+    );
+    app.wait_for_gone("id:home-held-s2", std::time::Duration::from_secs(2))
+        .unwrap_or_else(|e| panic!("s2 stayed: {e}"));
+    assert!(
+        app.screen()
+            .shows("A share wasn't delivered: that pane isn't running claude any more.")
+    );
+    channel.close();
+
+    // In the app's language.
+    let (mut app, channel, _) = phone(zh_hans());
+    show(&mut app, &channel, hosts());
+    post(
+        &mut app,
+        &channel,
+        &held(json!([
+            {"id": "s1", "connection": BOX, "agent": "claude", "reason": "anotherProgram"},
+        ])),
+    );
+    find(&mut app, "id:home-held-s1");
+    for words in [
+        "有 1 个分享没送出去：那个窗格里已经不是 claude 了。",
+        "换个窗格…",
+    ] {
+        assert!(
+            app.screen().shows(words),
+            "{words}: {:?}",
+            app.screen().texts()
+        );
+    }
     channel.close();
 }

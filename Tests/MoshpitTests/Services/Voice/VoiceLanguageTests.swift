@@ -7,6 +7,19 @@ import Testing
 @Suite("Voice language resolution")
 struct VoiceLanguageTests {
 
+    @Test("Chinese output follows the script of the user's first non-English language (B670)")
+    func chineseScript() {
+        #expect(VoiceLanguageResolver.chineseScript(for: ["zh-Hans-CN", "en-US"]) == .simplified)
+        #expect(VoiceLanguageResolver.chineseScript(for: ["en-US", "zh-Hant-TW"]) == .traditional)
+        #expect(VoiceLanguageResolver.chineseScript(for: ["en-US", "zh-TW"]) == .traditional)
+        #expect(VoiceLanguageResolver.chineseScript(for: ["zh-Hans-HK"]) == .simplified)
+        #expect(VoiceLanguageResolver.chineseScript(for: ["yue-Hant-HK"]) == .traditional)
+        #expect(VoiceLanguageResolver.chineseScript(for: ["zh"]) == .simplified)
+        // A Japanese speaker's kanji are left alone, Chinese keyboard or not.
+        #expect(VoiceLanguageResolver.chineseScript(for: ["ja-JP", "zh-Hans-CN"]) == nil)
+        #expect(VoiceLanguageResolver.chineseScript(for: ["en-US"]) == nil)
+    }
+
     @Test("A stored language wins over anything inferred")
     func storedWins() {
         #expect(VoiceLanguageResolver.whisperCode(stored: "zh") == "zh")

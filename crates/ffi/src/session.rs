@@ -714,6 +714,13 @@ pub enum TmuxIntent {
         cols: u16,
         rows: u16,
     },
+    /// The scroll beginning is aimed at this cell (0-based, the input
+    /// pane's): a program with the mouse gets its wheel there, not in the
+    /// pane's middle (B578).
+    AimWheel {
+        col: i64,
+        row: i64,
+    },
 }
 
 /// Why the core refused what was asked of tmux, before sending anything:
@@ -1245,6 +1252,7 @@ impl TmuxIntent {
             TmuxIntent::TakeSizeOwnership => TmuxAction::TakeSizeOwnership,
             TmuxIntent::Paste { pane, text } => TmuxAction::Paste { pane, text },
             TmuxIntent::ScrollLines { lines } => TmuxAction::ScrollLines(lines),
+            TmuxIntent::AimWheel { col, row } => TmuxAction::AimWheel { col, row },
             TmuxIntent::Click { col, row } => TmuxAction::Click { col, row },
             TmuxIntent::ViewRevealed { pane } => TmuxAction::ViewRevealed { pane },
             TmuxIntent::ReturnSent { pane } => TmuxAction::ReturnSent { pane },

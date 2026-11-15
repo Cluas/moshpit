@@ -61,10 +61,16 @@ struct WhisperSessionLedger {
 /// session to end (``WhisperSessionLedger``).
 @MainActor
 final class WhisperModelResidency {
+    /// Posted by ``WhisperDownloadCenter`` when a variant finished
+    /// installing, its id under ``variantKey``.
+    static let modelInstalled = Notification.Name("moshpit.whisperModelInstalled")
+    static let variantKey = "variant"
+
     private let settings: AppSettings
     private let unload: @Sendable () async -> Void
     private let notifications: NotificationCenter
     private let memoryWarnings: NSObjectProtocol
+    private var installs: NSObjectProtocol?
 
     /// `unload` defaults to `WhisperModelStore.shared.unload()`; tests count
     /// calls instead.
@@ -81,11 +87,32 @@ final class WhisperModelResidency {
             Log.voice.info("memory warning: unloading the whisper model once it is idle")
             Task { await unload() }
         }
+        installs = notifications.addObserver(forName: Self.modelInstalled, object: nil, queue: nil) { [weak self] note in
+            guard let variant = note.userInfo?[Self.variantKey] as? String else { return }
+            Task { @MainActor [weak self] in self?.installed(variant) }
+        }
         track()
     }
 
     deinit {
         notifications.removeObserver(memoryWarnings)
+        if let installs { notifications.removeObserver(installs) }
+    }
+
+    /// A variant finished installing — and the install loaded it, on
+    /// purpose, so CoreML compiles it while the download screen still has a
+    /// network (`WhisperModelStore.install`). It may stay only if it is the
+    /// model a dictation would use (B675): installed while dictation had
+    /// meanwhile moved to Apple's engine or voice input was switched off, or
+    /// installed beside the model in use, it used to stay resident — up to a
+    /// gigabyte, nothing listening for it — until the next memory warning.
+    private func installed(_ variant: String) {
+        let inUse = Self.wantsWhisper(settings)
+            && (settings.whisperModelId.isEmpty || settings.whisperModelId == variant)
+        guard !inUse else { return }
+        Log.voice.info("installed \(variant, privacy: .public) isn't the model in use: unloading it")
+        let unload = self.unload
+        Task { await unload() }
     }
 
     /// Whether a dictation started now would run on Whisper.

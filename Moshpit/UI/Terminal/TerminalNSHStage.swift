@@ -26,6 +26,12 @@ import UIKit
 /// - a reconnect's kept frame (the retired controller's pane, frozen,
 ///   untouchable) stays until the new attach has painted, then cross-fades
 ///   to it (0.3 s), so the frame never jumps;
+/// - the pane overview (B658): the terminal shrinks into its pane's cell
+///   as the overview fades in over it, and grows back out of the cell on
+///   closing; a picked pane's terminal grows from the picked cell (0.24 s,
+///   interruptible, nothing waits on it; under Reduce Motion the page's
+///   cross-fade alone); and the overview's pictures are read from the
+///   terminals the session already keeps;
 /// - the keyboard follows the person's intent (``TerminalFocusPolicy``),
 ///   and a sheet's geometry hold keeps the grid across it.
 ///
@@ -40,6 +46,12 @@ import UIKit
 protocol PaneTerminalSource: AnyObject {
     func surface(for paneId: String) -> CoreTerminalView
     func coordinator(for paneId: String) -> CoreTerminalHost.Coordinator?
+    /// The pane's terminal if it has one, never one made for asking.
+    func existingSurface(for paneId: String) -> CoreTerminalView?
+}
+
+extension PaneTerminalSource {
+    func existingSurface(for paneId: String) -> CoreTerminalView? { nil }
 }
 
 extension RustTmuxController: PaneTerminalSource {}
@@ -611,6 +623,21 @@ final class TerminalNSHStage {
         committed = nil
         let slide = reconnect ? nil : (swiped ?? target.slide)
         let duration = reconnect ? Self.crossfadeDuration : Self.switchDuration
+        // The pane picked in the overview: it grows from its cell over the
+        // old one fading (B658).
+        if !reconnect, let from = pickedCell(for: target) {
+            if old.coordinator !== next.coordinator {
+                old.coordinator?.onSwipe = nil
+                old.coordinator?.onStep = nil
+                old.coordinator?.onShowAll = nil
+            }
+            retire(old, duration: Self.overviewDuration, slideForward: nil)
+            next.container.alpha = 1
+            next.container.transform = Self.fit(next.container.bounds.size, at: next.container.center, into: from)
+            animateOverview(next, to: .identity)
+            applyFocus()
+            return
+        }
         if let forward = slide, let slot = next.container.superview {
             let width = slot.bounds.width
             next.container.transform = CGAffineTransform(translationX: forward ? width : -width, y: 0)
@@ -820,7 +847,9 @@ final class TerminalNSHStage {
                 drag = nil
                 return
             }
-            // A settle still in flight stops where it is.
+            // A settle still in flight stops where it is (an overview's
+            // growth too).
+            stopOverviewMotion()
             if let presentation = host.container.layer.presentation() {
                 host.container.transform = presentation.affineTransform()
             }
@@ -953,6 +982,166 @@ final class TerminalNSHStage {
                 self.uncover(false)
             }
         }
+    }
+
+    // MARK: The overview (B658)
+
+    /// The live terminal shrinking into its cell, or growing out of one:
+    /// `base`, inside the owner's 250 ms.
+    static let overviewDuration: TimeInterval = 0.24
+    /// How long a picked cell waits for its pane's terminal to show (a tmux
+    /// switch is a round trip); later, the pane comes the ordinary way.
+    static let pickedFor: CFTimeInterval = 1
+
+    /// The overview is open.
+    private(set) var overviewOpen = false
+    /// Where the shown pane's cell is, in the slot's points.
+    private(set) var overviewCard: CGRect?
+    /// The cell a pane was picked from (the slot's points), and when.
+    private var picked: (pane: String, rect: CGRect, at: CFTimeInterval)?
+    /// The shown terminal is in (or on its way into) its cell.
+    private(set) var shrunk = false
+    private var overviewAnimator: UIViewPropertyAnimator?
+
+    /// The rows of `panes`' screens the stage can read without drawing
+    /// anything: each pane's own terminal on a tmux attach; on a mosh or
+    /// herdr session only the pane it shows (`current`), from its one
+    /// terminal.
+    func pictures(of panes: [String], current: String?) -> [String: [String]] {
+        guard let target, !target.frozen else { return [:] }
+        var pictures: [String: [String]] = [:]
+        switch target.source {
+        case .pane(let controller, _):
+            for pane in panes {
+                if let surface = controller.existingSurface(for: pane) { pictures[pane] = surface.screenRows() }
+            }
+        case .plain(let session):
+            if let current, panes.contains(current), let surface = session.coordinator.surface {
+                pictures[current] = surface.screenRows()
+            }
+        }
+        return pictures
+    }
+
+    /// The overview opened (it waits for the shown pane's cell,
+    /// ``overviewAnchor(pane:rect:picked:in:)``) or closed: the terminal
+    /// grows back out of its cell, or out of the one just picked.
+    func overview(open: Bool) {
+        guard open != overviewOpen else { return }
+        overviewOpen = open
+        if open {
+            overviewCard = nil
+            picked = nil
+            return
+        }
+        guard let hosted, hosted.owns else {
+            stopOverviewMotion()
+            shrunk = false
+            return
+        }
+        if let picked, CACurrentMediaTime() - picked.at < Self.pickedFor {
+            if shows(picked.pane) {
+                // The pane shown, or the one terminal a mosh or herdr
+                // session switches in place.
+                self.picked = nil
+                grow(hosted, from: picked.rect)
+            } else {
+                // A tmux pane on its way: this one is back in place at
+                // once, under the page's fade; the picked one grows from its
+                // cell when it shows.
+                settleOverview(hosted)
+            }
+            return
+        }
+        grow(hosted, from: shrunk ? overviewCard : nil)
+    }
+
+    /// Where pane `pane`'s cell is (`rect`, in `surface`'s points): the
+    /// shown pane's, which the terminal shrinks into, or the one just
+    /// `picked`.
+    func overviewAnchor(pane: String, rect: CGRect, picked isPick: Bool, in surface: UIView) {
+        guard let slot else { return }
+        let cell = slot.convert(rect, from: surface)
+        if isPick {
+            picked = (pane, cell, CACurrentMediaTime())
+            return
+        }
+        guard overviewOpen else { return }
+        overviewCard = cell
+        guard let hosted, hosted.owns, target?.frozen != true, drag == nil, !reduceMotion else { return }
+        shrunk = true
+        animateOverview(hosted, to: Self.fit(hosted.container.bounds.size, at: hosted.container.center, into: cell))
+    }
+
+    /// The transform that puts a view of `size` centred at `center` inside
+    /// `rect`, its shape kept, centred in it.
+    nonisolated static func fit(_ size: CGSize, at center: CGPoint, into rect: CGRect) -> CGAffineTransform {
+        guard size.width > 0, size.height > 0, rect.width > 0, rect.height > 0 else { return .identity }
+        let scale = min(rect.width / size.width, rect.height / size.height)
+        return CGAffineTransform(translationX: rect.midX - center.x, y: rect.midY - center.y)
+            .scaledBy(x: scale, y: scale)
+    }
+
+    /// Whether pane `pane` is what the slot shows: the pane itself, or any
+    /// pane of the one terminal a mosh or herdr session has.
+    private func shows(_ pane: String) -> Bool {
+        guard let target else { return false }
+        switch target.source {
+        case .pane(_, let shown): return shown == pane
+        case .plain: return true
+        }
+    }
+
+    /// The cell `target`'s pane was just picked from, taken.
+    private func pickedCell(for target: Target) -> CGRect? {
+        guard let picked, !reduceMotion, CACurrentMediaTime() - picked.at < Self.pickedFor,
+              case .pane(_, let pane) = target.source, pane == picked.pane else { return nil }
+        self.picked = nil
+        return picked.rect
+    }
+
+    /// `host` grows to its place from `rect` (from where it is when it is
+    /// in that cell already); at once without a cell or under Reduce
+    /// Motion.
+    private func grow(_ host: Hosted, from rect: CGRect?) {
+        shrunk = false
+        guard let rect, !reduceMotion else { return settleOverview(host) }
+        if rect != overviewCard || host.container.transform.isIdentity {
+            stopOverviewMotion()
+            host.container.transform = Self.fit(host.container.bounds.size, at: host.container.center, into: rect)
+        }
+        animateOverview(host, to: .identity)
+    }
+
+    /// `host` in its place at once.
+    private func settleOverview(_ host: Hosted) {
+        stopOverviewMotion()
+        shrunk = false
+        host.container.transform = .identity
+    }
+
+    /// The overview's motion stops where it is.
+    private func stopOverviewMotion() {
+        guard let animator = overviewAnimator else { return }
+        overviewAnimator = nil
+        // Stopped without finishing, the properties stay where they were.
+        animator.stopAnimation(true)
+    }
+
+    /// `host` moves to `transform` from where it is (an interrupted motion
+    /// carries on from its place): touches go where it is going at once.
+    private func animateOverview(_ host: Hosted, to transform: CGAffineTransform) {
+        stopOverviewMotion()
+        let animator = UIViewPropertyAnimator(duration: Self.overviewDuration, curve: .easeInOut) {
+            host.container.transform = transform
+        }
+        animator.isUserInteractionEnabled = true
+        animator.addCompletion { [weak self, weak animator] _ in
+            guard let self, let animator, self.overviewAnimator === animator else { return }
+            self.overviewAnimator = nil
+        }
+        overviewAnimator = animator
+        animator.startAnimation()
     }
 
     // MARK: The keyboard and the geometry hold

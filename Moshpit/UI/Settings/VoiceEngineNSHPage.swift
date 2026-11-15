@@ -73,15 +73,13 @@ final class VoiceEngineModel {
         post(settings)
     }
 
-    /// The user picked `engine`, as the SwiftUI page applies it: the first
-    /// switch to Whisper names the user's own language rather than leaving
-    /// it on auto-detect.
+    /// The user picked `engine`. Whisper starts on auto-detect: naming the
+    /// user's own language for them (as this did until B670) made mixed
+    /// Chinese–English speech worse, and pure English sentences came out
+    /// translated or not at all.
     func select(_ engine: VoiceEngineKind, settings: AppSettings) {
         guard settings.voiceEngine != engine else { return }
         settings.voiceEngine = engine
-        if engine == .whisper, settings.whisperLanguage.isEmpty {
-            settings.whisperLanguage = VoiceLanguageResolver.initialWhisperLanguage()
-        }
         post(settings)
     }
 

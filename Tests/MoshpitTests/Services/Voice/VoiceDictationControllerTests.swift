@@ -490,6 +490,32 @@ struct DictationTranscriptTests {
         #expect(DictationTranscript.join("你好。", "再说一次") == "你好。再说一次")
     }
 
+    @Test("Chinese characters change script; English and punctuation don't (B670)")
+    func scriptConversion() {
+        let traditional = "因為我也很少stay in home，所以是我的parents。"
+        let simplified = "因为我也很少stay in home，所以是我的parents。"
+        #expect(DictationTranscript.converting(traditional, to: .simplified) == simplified)
+        #expect(DictationTranscript.converting(simplified, to: .traditional) == traditional)
+        #expect(DictationTranscript.converting(traditional, to: nil) == traditional)
+        #expect(DictationTranscript.converting("git status", to: .simplified) == "git status")
+    }
+
+    @Test("A decoder loop is kept once (B670)")
+    func repetitionLoop() {
+        let loop = "那如果有" + String(repeating: "SK-", count: 40)
+        #expect(DictationTranscript.collapsingRepeats(loop) == "那如果有SK-")
+        let phrase = "我的parents，" + String(repeating: "my parents，", count: 9)
+        #expect(DictationTranscript.collapsingRepeats(phrase) == "我的parents，my parents，")
+    }
+
+    @Test("Speech that repeats itself a few times is left alone")
+    func ordinaryRepeats() {
+        for text in ["the name is blah blah blah blah blah", "git checkout feature/login 然后跑一下 npm test",
+                     "好好好", "no no no no", "----", ""] {
+            #expect(DictationTranscript.collapsingRepeats(text) == text)
+        }
+    }
+
     @Test("Empty sides pass through")
     func empties() {
         #expect(DictationTranscript.join("", "x") == "x")

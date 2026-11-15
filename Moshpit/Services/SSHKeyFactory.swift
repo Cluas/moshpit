@@ -148,18 +148,47 @@ enum SSHKeyFactory {
         }
     }
 
+    /// Whether a software P-256 key may stand in when the Secure Enclave
+    /// can't make one: only on the simulator, which has no enclave, so the
+    /// flow can be walked there.
+    #if targetEnvironment(simulator)
+    static let enclaveStandIn = true
+    #else
+    static let enclaveStandIn = false
+    #endif
+
     /// A P-256 key in the Secure Enclave, whose private half never leaves
     /// it; its public half becomes the record's line and fingerprint.
     private static func generateSecureEnclaveP256(comment: String) throws -> Generated {
+        try generateSecureEnclaveP256(comment: comment, make: { try SecureEnclave.P256.Signing.PrivateKey() },
+                                      standIn: enclaveStandIn)
+    }
+
+    /// ``generateSecureEnclaveP256(comment:)`` with the enclave's key made
+    /// by `make`; a software key stands in when it can't only while
+    /// `standIn` (the simulator).
+    ///
+    /// B604: a software key stood in wherever the enclave couldn't make
+    /// one, on a phone too, and was saved as a Secure Enclave key — "SE ·
+    /// P256", the page saying its private half never leaves the chip. It
+    /// was a key in the Keychain, and it could never sign: signing reads
+    /// the stored bytes as an enclave key's handle. Off the simulator, the
+    /// enclave failing is the error the person sees, and nothing is saved.
+    static func generateSecureEnclaveP256(comment: String,
+                                          make: () throws -> SecureEnclave.P256.Signing.PrivateKey,
+                                          standIn: Bool) throws -> Generated {
         let publicKey: P256.Signing.PublicKey
         let privateBlob: Data
         do {
-            let key = try SecureEnclave.P256.Signing.PrivateKey()
+            let key = try make()
             publicKey = key.publicKey
             privateBlob = key.dataRepresentation
         } catch {
-            // Simulator / devices without SE: fall back to a software P-256
-            // key so the flow stays testable end-to-end.
+            guard standIn else {
+                throw KeyError.generationFailed(
+                    "the Secure Enclave couldn't make a key (\(error.localizedDescription))")
+            }
+            // The simulator: a software P-256 key, so the flow can be walked.
             let key = P256.Signing.PrivateKey()
             publicKey = key.publicKey
             privateBlob = key.rawRepresentation

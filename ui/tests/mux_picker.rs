@@ -362,3 +362,70 @@ fn a_sessions_window_never_says_its_name_again() {
     assert!(!app.screen().shows("3 tabs · 1: moshpit"));
     channel.close();
 }
+
+/// B652: a session's windows counted in the language's own way. The meta
+/// glued the number to a bare noun ("3 窗口", "3 ウィンドウ", "3 창").
+#[test]
+fn a_sessions_windows_are_counted_the_languages_way() {
+    let (mut app, channel) = open(zh_hans());
+    for (mux, said) in [
+        ("tmux", "3 个窗口 · 1: api"),
+        ("herdr", "3 个标签页 · 1: api"),
+    ] {
+        show(
+            &mut app,
+            &channel,
+            &json!({
+                "op": "picker", "kind": "sessions", "mux": mux, "active": "$0",
+                "rows": [
+                    {"id": "$0", "name": "work", "windows": 3, "window": "1:api"},
+                    {"id": "$1", "name": "ops"}
+                ]
+            }),
+        );
+        app.wait_for("id:mux-picker-row-$1").unwrap();
+        assert!(
+            app.screen().shows(said),
+            "{mux}: {:?}",
+            app.screen().texts()
+        );
+    }
+    channel.close();
+}
+
+/// B622: the picker as a held share's: every pane of the tree with its
+/// place, those running the share's agent first (the host's order), the
+/// hint saying so; no ＋ and no keys. A row tells the host which pane.
+#[test]
+fn a_held_shares_picker_lists_panes_by_place_and_sends_to_the_one_picked() {
+    let (mut app, channel) = open(Params::default());
+    let heard = hear(&channel);
+    show(
+        &mut app,
+        &channel,
+        &json!({
+            "op": "picker", "kind": "panes", "mux": "tmux", "send": "claude",
+            "rows": [
+                {"id": "%2", "index": 0, "command": "claude", "agent": "claude",
+                 "window": "work · review", "signal": "working"},
+                {"id": "%9", "index": 1, "command": "vim", "window": "work · claude"},
+            ]
+        }),
+    );
+    app.wait_for("id:mux-picker-row-%9").unwrap();
+    for text in ["Select Pane", "work · review", "work · claude", "Panes running claude come first."] {
+        assert!(app.screen().shows(text), "{text}: {:?}", app.screen().texts());
+    }
+    assert!(!app.screen().shows("⌃"), "a key under a share's picker");
+    assert!(
+        !app.screen()
+            .layout_nodes()
+            .iter()
+            .any(|n| n.test_id.as_deref() == Some("mux-picker-new")),
+        "a share's picker offers to make a pane"
+    );
+    app.press("id:mux-picker-row-%2").unwrap();
+    assert_eq!(next(&heard), json!({"ev": "select", "id": "%2"}));
+    quiet(&heard);
+    channel.close();
+}

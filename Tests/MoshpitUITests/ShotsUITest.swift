@@ -71,6 +71,14 @@ final class ShotsUITest: XCTestCase {
 
     @MainActor private static var phone: Bool { UIDevice.current.userInterfaceIdiom == .phone }
 
+    /// A terminal shot: the staged session, its text at 11 pt on the phone
+    /// (the default 9 pt left the pane's words too small to read on a
+    /// store page, dry run 4).
+    @MainActor
+    private static func terminal(_ session: [String]) -> [String] {
+        session + (phone ? ["-moshpit.settings.fontSize", "11"] : [])
+    }
+
     override func setUpWithError() throws {
         continueAfterFailure = true
         guard !Self.locales.isEmpty else {
@@ -99,10 +107,51 @@ final class ShotsUITest: XCTestCase {
 
     @MainActor
     private func keep(_ locale: Locale, _ shot: String) {
-        let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        let screen = XCUIScreen.main.screenshot()
+        // The screen comes in the device's own portrait, a landscape page
+        // on its side (dry run 4's iPad split): turned back to how it shows.
+        let landscape = XCUIDevice.shared.orientation.isLandscape
+        let attachment = landscape && screen.image.size.width < screen.image.size.height
+            ? XCTAttachment(image: Self.turned(screen.image))
+            : XCTAttachment(screenshot: screen)
         attachment.name = "shot~\(locale.name)~\(shot)"
         attachment.lifetime = .keepAlways
         add(attachment)
+    }
+
+    /// `image` a quarter turn back (counterclockwise), at its own scale.
+    private static func turned(_ image: UIImage) -> UIImage {
+        let size = CGSize(width: image.size.height, height: image.size.width)
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = image.scale
+        return UIGraphicsImageRenderer(size: size, format: format).image { context in
+            context.cgContext.translateBy(x: 0, y: size.height)
+            context.cgContext.rotate(by: -.pi / 2)
+            image.draw(at: .zero)
+        }
+    }
+
+    /// A shot that didn't come: the screen as it was and what the app's
+    /// accessibility tree held, for the next run's fix (`debug~` beside
+    /// the shots; the tree in the log).
+    @MainActor
+    private func explain(_ app: XCUIApplication, _ locale: Locale, _ shot: String) {
+        let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        attachment.name = "debug~\(locale.name)~\(shot)"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+        print("SHOTS debug \(locale.name) \(shot):\n\(app.debugDescription.prefix(8000))")
+    }
+
+    /// The first of `ids` to show within `timeout`, if one does.
+    @MainActor
+    private func first(_ app: XCUIApplication, of ids: [String], within timeout: TimeInterval) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        repeat {
+            if ids.contains(where: { app.nsh($0).exists }) { return true }
+            Thread.sleep(forTimeInterval: 0.5)
+        } while Date() < deadline
+        return false
     }
 
     // MARK: Waiting
@@ -167,12 +216,17 @@ final class ShotsUITest: XCTestCase {
         guard Self.phone else { throw XCTSkip("iPhone only") }
         guard let session = NSHFlow.seededSession() else { throw XCTSkip("no staged host") }
         for locale in Self.locales {
-            let app = launch(locale, session)
-            if waitLive(app, locale) {
-                settle(1.2)
-                keep(locale, "02-pane")
+            // Twice: a UI query that timed out (ko and pt-BR, dry run 4)
+            // took the shot with it.
+            for _ in 0..<2 {
+                let app = launch(locale, Self.terminal(session))
+                defer { app.terminate() }
+                if waitLive(app, locale) {
+                    settle(1.2)
+                    keep(locale, "02-pane")
+                    break
+                }
             }
-            app.terminate()
         }
     }
 
@@ -199,13 +253,24 @@ final class ShotsUITest: XCTestCase {
     func test05Overview() throws {
         guard let session = NSHFlow.seededSession() else { throw XCTSkip("no staged host") }
         for locale in Self.locales {
-            let app = launch(locale, session)
+            let app = launch(locale, Self.terminal(session))
             guard waitLive(app, locale) else { app.terminate(); continue }
+            let shot = Self.phone ? "05-overview" : "panes"
+            // The page, its bar's Done or its summary: whichever the tree
+            // shows (dry run 4 waited on the page's own id and saw nothing).
+            let page = ["terminal-overview", "terminal-overview-done", "terminal-overview-summary",
+                        "terminal-overview-scroll"]
             app.nsh("terminal-crumb-window").tap()
-            if app.nsh("terminal-overview").waitForExistence(timeout: 15) {
+            var open = first(app, of: page, within: 8)
+            if !open {
+                app.nsh("terminal-crumb-window").tap()
+                open = first(app, of: page, within: 8)
+            }
+            if open {
                 settle()
-                keep(locale, Self.phone ? "05-overview" : "panes")
+                keep(locale, shot)
             } else {
+                explain(app, locale, shot)
                 XCTFail("\(locale.name): the overview never opened")
             }
             app.terminate()
@@ -220,12 +285,14 @@ final class ShotsUITest: XCTestCase {
         guard Self.phone else { throw XCTSkip("iPhone only") }
         guard let session = NSHFlow.seededSession() else { throw XCTSkip("no staged host") }
         for locale in Self.locales {
-            let app = launch(locale, session)
+            let app = launch(locale, Self.terminal(session))
             guard waitLive(app, locale) else { app.terminate(); continue }
             // The path is a link once the host's probe confirmed it.
             settle(4)
-            let preview = app.navigationBars.matching(
-                NSPredicate(format: "identifier CONTAINS 'latency' OR label CONTAINS 'latency'")).firstMatch
+            // QuickLook: its title is the file's name (the pane's row says
+            // more around it), or its own view.
+            let preview = app.descendants(matching: .any).matching(NSPredicate(
+                format: "label == 'latency.png' OR identifier == 'QLPreviewControllerView'")).firstMatch
             let row = app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'bench/latency.png'")).firstMatch
             if row.waitForExistence(timeout: 10) {
                 // The path starts after "     Wrote ": aim at its middle.
@@ -249,30 +316,29 @@ final class ShotsUITest: XCTestCase {
                 settle(2)
                 keep(locale, "06-preview")
             } else {
+                explain(app, locale, "06-preview")
                 XCTFail("\(locale.name): the chart never opened")
             }
             app.terminate()
         }
     }
 
-    /// 07: the companion, hatched and grown, perched on Needs You and
-    /// saying something (a tap always answers; its bubble is hidden from
-    /// accessibility, so the shot waits a beat instead).
+    /// 07: the companion itself: its card (Settings › Appearance › the
+    /// companion), the hatched and grown pet large, its name, species and
+    /// stage, how it grew. Home showed it small on a card, the same picture
+    /// as 03 (dry run 4).
     @MainActor
     func test07Pet() throws {
         guard Self.phone else { throw XCTSkip("iPhone only") }
-        guard let home else { throw XCTSkip("no SHOTS_HOME_FIXTURE") }
         for locale in Self.locales {
-            let app = launch(locale, home)
-            guard waitNeedsYou(app, locale) else { app.terminate(); continue }
-            let pet = app.nsh("home-pet")
-            if pet.waitForExistence(timeout: 15) {
-                settle(1)
-                pet.tap()
-                settle(0.7)
+            let app = launch(locale, ["-MOSHPIT_SEED_SCREEN", "settings",
+                                      "-MOSHPIT_SEED_SETTINGS_PAGE", "companion"])
+            if app.nsh("settings-pet-hero").waitForExistence(timeout: 30) {
+                settle(1.5)
                 keep(locale, "07-pet")
             } else {
-                XCTFail("\(locale.name): no companion on Home")
+                explain(app, locale, "07-pet")
+                XCTFail("\(locale.name): the companion's card never came")
             }
             app.terminate()
         }
@@ -288,7 +354,7 @@ final class ShotsUITest: XCTestCase {
         guard Self.phone else { throw XCTSkip("iPhone only") }
         guard let session = NSHFlow.seededSession() else { throw XCTSkip("no staged host") }
         for locale in Self.locales {
-            let app = launch(locale, session)
+            let app = launch(locale, Self.terminal(session))
             guard waitLive(app, locale) else { app.terminate(); continue }
             app.tapNSH("keyboard-toggle")
             if app.keyboards.firstMatch.waitForExistence(timeout: 15) {
@@ -390,6 +456,13 @@ final class ShotsUITest: XCTestCase {
             // on the lock screen.
             XCUIDevice.shared.press(.home)
             settle(2.5)
+            // The first time, the lock screen asks whether Moshpit may show
+            // Live Activities there (dry run 4): its second button allows.
+            let ask = springboard.buttons.matching(NSPredicate(format: "label == 'Allow'")).firstMatch
+            if ask.exists {
+                ask.tap()
+                settle(2)
+            }
             keep(locale, "01-lock")
             print("SHOTS lock \(locale.name): kept; check it shows the notification and the Live Activity")
             // Unlock (no passcode on a simulator) for the next locale.

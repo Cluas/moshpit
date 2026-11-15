@@ -8,7 +8,7 @@ struct MoshpitApp: App {
     @State private var metrics: SessionMetricsRegistry
     // Every store on the Rust core's store (AppStores).
     @State private var shortcuts = AppStores.shortcuts()
-    @State private var sshKeys = AppStores.sshKeys()
+    @State private var sshKeys: SSHKeyStore
     @State private var themes = AppStores.themes()
     @State private var appThemes = AppThemeStore.shared
     @State private var hub: SessionHub
@@ -45,6 +45,9 @@ struct MoshpitApp: App {
         HostCare.shared.connectionStore = store
         let hub = SessionHub(metrics: metrics)
         HostCare.shared.hub = hub
+        let sshKeys = AppStores.sshKeys()
+        // A sign-in with a managed key is that key's last use (B601).
+        hub.signedIn = { [weak sshKeys] connection in sshKeys?.signedIn(with: connection) }
         // The language Moshpit shows, for the island, the widget and the
         // notification service extension to write in (AppLanguage). iOS
         // relaunches the app whenever it changes, so launch is enough —
@@ -59,6 +62,7 @@ struct MoshpitApp: App {
         _metrics = State(initialValue: metrics)
         _settings = State(initialValue: settings)
         _store = State(initialValue: store)
+        _sshKeys = State(initialValue: sshKeys)
         _hub = State(initialValue: hub)
         _monitor = State(initialValue: monitor)
         _router = State(initialValue: router)
@@ -205,6 +209,14 @@ struct MoshpitApp: App {
         .commands { TerminalCommands() }
     }
 
+    private var environment: AppEnvironment {
+        AppEnvironment(
+            settings: settings, metrics: metrics, shortcuts: shortcuts,
+            sshKeys: sshKeys, themes: themes, appThemes: appThemes,
+            monitor: monitor, connectionHolder: connectionHolder,
+            keychainHolder: keychainHolder, router: router)
+    }
+
     @ViewBuilder
     private var mainScene: some View {
         Group {
@@ -219,11 +231,13 @@ struct MoshpitApp: App {
             .appThemeRoot()
             // One bundle, injected here and re-injected at every sheet /
             // cover / popover boundary (see AppEnvironment.swift for why).
-            .appEnvironment(AppEnvironment(
-                settings: settings, metrics: metrics, shortcuts: shortcuts,
-                sshKeys: sshKeys, themes: themes, appThemes: appThemes,
-                monitor: monitor, connectionHolder: connectionHolder,
-                keychainHolder: keychainHolder, router: router))
+            .appEnvironment(environment)
+            // What a connect asks the person, over whatever is frontmost:
+            // the app's one presenter, in a window of its own (B632).
+            .background(PromptWindowAnchor { [hub, environment] in
+                AnyView(PromptOverlay(center: PromptCenter(hub: hub)).appEnvironment(environment))
+            })
+            .modifier(PromptWatcher(center: PromptCenter(hub: hub)))
             .onOpenURL { url in
                 router.handle(url)
             }
@@ -247,6 +261,8 @@ struct MoshpitApp: App {
                 case .active:
                     reloadStoresIfNeeded()
                     hub.setForeground(true)
+                    // A question waiting shows itself now: its notification goes (B632).
+                    PromptNotifier.shared.foreground()
                     // Cards whose questions ended while we were away (B433).
                     monitor.sweepDelivered()
                     // Re-announce this phone to its relays. Unconditional: a

@@ -82,7 +82,7 @@ fn elapsed(since: Option<f64>, now: f64) -> String {
 
 /// The same time in words, for screen readers ("12 minutes", "1 hour 12
 /// minutes").
-fn spoken(since: Option<f64>, now: f64) -> String {
+pub(crate) fn spoken(since: Option<f64>, now: f64) -> String {
     let Some(since) = since else {
         return String::new();
     };

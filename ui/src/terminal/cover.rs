@@ -386,10 +386,11 @@ fn this_device() -> Option<&'static str> {
 /// The follower's veil (`SizeFollowVeil`): the window is sized for another
 /// of the person's devices, so the pane keeps its frame, dimmed, under a
 /// card that names the holder and offers this device's size back.
-/// B587: the desktop picked another pane in the window shown (tmux keeps
-/// one active pane per window, shared); the phone keeps its own, frozen on
-/// its last frame, and the button takes it back — the last touch wins, as
-/// with the size lease. A keystroke takes it back too.
+/// B587: another client — a desktop, another phone — picked another pane in
+/// the window shown (tmux keeps one active pane per window, shared); the
+/// phone keeps its own, frozen on its last frame, and the button takes it
+/// back — the last touch wins, as with the size lease. A keystroke takes it
+/// back too. The copy names no desktop (B589): a phone is a device too.
 fn pane_follow_view(ctx: Ctx) -> AnyElement {
     let take = ctx.asking(Intent::TakeOver);
     view()
@@ -425,11 +426,11 @@ fn pane_follow_view(ctx: Ctx) -> AnyElement {
                         .flex_row()
                         .items_center()
                         .gap(px(8.0))
-                        .child(icon("desktopcomputer").size(IconSize::Md).tone(Tone::Muted))
+                        .child(icon("rectangle.split.2x1").size(IconSize::Md).tone(Tone::Muted))
                         .child(
                             chrome_text(
                                 TextToken::Subhead,
-                                t!("The desktop switched to another pane."),
+                                t!("Another device switched to a different pane."),
                             )
                             .flex_shrink(1.0)
                             .text_color(move || token("popover-foreground")),

@@ -121,6 +121,50 @@ fn open_screen(
     (app, channel, heard, natives)
 }
 
+/// Where view `id` is laid out, in the surface's points.
+fn bounds(app: &common::App, id: &str) -> [f32; 4] {
+    let b = app
+        .0
+        .screen()
+        .layout_nodes()
+        .into_iter()
+        .find(|node| node.test_id.as_deref() == Some(id))
+        .unwrap_or_else(|| panic!("no view {id}"))
+        .bounds;
+    [b.origin.x.0, b.origin.y.0, b.size.width.0, b.size.height.0]
+}
+
+/// `rect` (an event's) is `expected`, to half a point.
+fn same_place(rect: &Value, expected: [f32; 4]) {
+    let rect: Vec<f32> = rect
+        .as_array()
+        .unwrap_or_else(|| panic!("a rect: {rect}"))
+        .iter()
+        .map(|v| v.as_f64().unwrap() as f32)
+        .collect();
+    assert_eq!(rect.len(), 4);
+    for (a, b) in rect.iter().zip(expected) {
+        assert!((a - b).abs() < 0.5, "{rect:?} vs {expected:?}");
+    }
+}
+
+/// The events the screen tells the host up to and with the first named
+/// `ev`.
+fn events_until(rx: &mpsc::Receiver<String>, ev: &str) -> Vec<Value> {
+    let mut events = Vec::new();
+    loop {
+        let json = rx
+            .recv_timeout(common::WAIT)
+            .unwrap_or_else(|_| panic!("the screen tells the host {ev}: {events:?}"));
+        let value: Value = serde_json::from_str(&json).unwrap();
+        let done = value["ev"] == ev;
+        events.push(value);
+        if done {
+            return events;
+        }
+    }
+}
+
 fn shows_overview(app: &common::App) -> bool {
     app.0.screen().count("id:terminal-overview").unwrap() > 0
 }
@@ -398,5 +442,257 @@ fn without_a_live_tree_the_host_cannot_open_it() {
     );
     none_of(&heard, "overview");
     assert!(!shows_overview(&app));
+    channel.close();
+}
+
+/// B653: VoiceOver hears a pane's state in words: minutes said as
+/// minutes (Home's rule; "13m" is the eye's), and "+3" as what it is.
+#[test]
+fn voiceover_hears_minutes_and_what_more_opens() {
+    let (mut app, channel, _heard, _) = open_screen("tmux", "%2");
+    let since = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs_f64()
+        - 13.0 * 60.0
+        - 30.0;
+    let mut tree = work("tmux", "%2");
+    tree["hooks"][0]["since"] = json!(since);
+    post(
+        &mut app.0,
+        &channel,
+        &json!({"op": "switcher", "tree": tree, "hintSeen": true}).to_string(),
+    );
+    post(
+        &mut app.0,
+        &channel,
+        &json!({"op": "overview", "open": true}).to_string(),
+    );
+    app.0.wait_for("id:overview-pane-%1").unwrap();
+    assert!(
+        app.0.wait_for("label:codex, working 13 minutes").is_ok(),
+        "the pane's words: {:?}",
+        app.0.screen().texts()
+    );
+    assert!(app.0.wait_for("label:3 more").is_ok(), "what +3 opens");
+    channel.close();
+}
+
+/// B654: the bar's session capsule is drawn 36 pt tall; the finger gets
+/// the platform's 44.
+#[test]
+fn the_overviews_bar_is_big_enough_to_press() {
+    let (mut app, channel, _heard, _) = open_screen("tmux", "%2");
+    post(
+        &mut app.0,
+        &channel,
+        &json!({"op": "overview", "open": true}).to_string(),
+    );
+    app.0.wait_for("id:terminal-overview-session").unwrap();
+    let target = app
+        .0
+        .screen()
+        .layout_nodes()
+        .into_iter()
+        .find(|n| n.test_id.as_deref() == Some("terminal-overview-session"))
+        .unwrap()
+        .bounds;
+    assert!(
+        target.size.height.0 >= 44.0 && target.size.width.0 >= 44.0,
+        "{target:?}"
+    );
+    channel.close();
+}
+
+/// B655: the session's tree goes (a reconnect): the overview goes with
+/// it, never left showing "0 windows · 0 panes" and a New window that
+/// would land nowhere.
+#[test]
+fn a_tree_gone_takes_the_overview_with_it() {
+    let (mut app, channel, heard, _) = open_screen("tmux", "%2");
+    post(
+        &mut app.0,
+        &channel,
+        &json!({"op": "overview", "open": true}).to_string(),
+    );
+    app.0.wait_for("id:terminal-overview").unwrap();
+    assert_eq!(next_of(&heard, "overview")["open"], true);
+    post(
+        &mut app.0,
+        &channel,
+        &json!({"op": "switcher", "tree": null, "hintSeen": true}).to_string(),
+    );
+    assert_eq!(
+        next_of(&heard, "overview"),
+        json!({"ev": "overview", "open": false})
+    );
+    app.0.run_for(Duration::from_millis(400)).unwrap();
+    assert!(!shows_overview(&app));
+    channel.close();
+}
+
+/// B656: herdr's workspace has its own symbol (the breadcrumb's); the
+/// overview's capsule wore tmux's session stack.
+#[test]
+fn the_overview_names_herdrs_workspace_with_its_symbol() {
+    let (mut app, channel, _heard, natives) = open_screen("herdr", "%2");
+    post(
+        &mut app.0,
+        &channel,
+        &json!({"op": "overview", "open": true}).to_string(),
+    );
+    app.0.wait_for("id:terminal-overview-session").unwrap();
+    let names: Vec<String> = natives
+        .all("moshpit/symbol")
+        .into_iter()
+        .filter_map(|n| natives.prop(n, "name"))
+        .filter_map(|v| v.as_str().map(str::to_owned))
+        .collect();
+    assert!(names.iter().any(|n| n == "rectangle.grid.2x2"), "{names:?}");
+    channel.close();
+}
+
+#[test]
+fn opening_asks_for_the_pictures_once_and_a_cell_shows_its_screens_end() {
+    let (mut app, channel, heard, _) = open_screen("tmux", "%2");
+    post(
+        &mut app.0,
+        &channel,
+        &json!({"op": "overview", "open": true}).to_string(),
+    );
+    // Every pane of the session, once, and which one shows (a mosh or herdr
+    // session has a picture of that one only).
+    let ask = next_of(&heard, "pictures");
+    assert_eq!(ask["current"], "%2");
+    let asked: Vec<&str> = ask["panes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|p| p.as_str().unwrap())
+        .collect();
+    assert_eq!(asked.len(), 13, "{asked:?}");
+    assert!(asked.contains(&"%1") && asked.contains(&"%15"), "{asked:?}");
+    post(
+        &mut app.0,
+        &channel,
+        &json!({"op": "pictures", "panes": {
+            "%1": ["dev@api:~/src/api$ make test", "ok  api 0.42s  ", "dev@api:~/src/api$ ", "", ""],
+            "%6": ["", "  "]
+        }})
+        .to_string(),
+    );
+    app.0.wait_for("id:overview-picture-%1").unwrap();
+    let picture = app
+        .0
+        .screen()
+        .texts()
+        .into_iter()
+        .map(|t| t.to_string())
+        .find(|t| t.contains("make test"))
+        .expect("the picture's text");
+    assert_eq!(
+        picture, "dev@api:~/src/api$ make test\nok  api 0.42s\ndev@api:~/src/api$",
+        "the screen's end, its blank tail cut"
+    );
+    // A blank screen and a pane the host had nothing for: no picture.
+    for pane in ["%6", "%5"] {
+        assert_eq!(
+            app.0
+                .screen()
+                .count(&format!("id:overview-picture-{pane}"))
+                .unwrap(),
+            0,
+            "{pane}"
+        );
+    }
+    // The pane's cell still says what it is, the picture unsaid.
+    assert!(app.0.screen().shows("codex"));
+    // The tree again (a tick): nothing asked again.
+    post(&mut app.0, &channel, &switcher("tmux", "%2"));
+    none_of(&heard, "pictures");
+    // A pane that comes while it is open: asked for alone.
+    let mut tree = work("tmux", "%2");
+    tree["panes"].as_array_mut().unwrap().push(
+        json!({"id": "%20", "window": "@3", "index": 2, "command": "zsh", "path": "/home/dev/src/web"}),
+    );
+    tree["windows"][2]["paneCount"] = json!(3);
+    post(
+        &mut app.0,
+        &channel,
+        &json!({"op": "switcher", "tree": tree, "hintSeen": true}).to_string(),
+    );
+    assert_eq!(next_of(&heard, "pictures")["panes"], json!(["%20"]));
+    // Closed: the pictures go; opened again, asked again.
+    app.0.press("id:terminal-overview-done").unwrap();
+    assert_eq!(next_of(&heard, "overview")["open"], false);
+    app.0
+        .wait_for_gone("id:terminal-overview", Duration::from_secs(2))
+        .unwrap();
+    post(
+        &mut app.0,
+        &channel,
+        &json!({"op": "overview", "open": true}).to_string(),
+    );
+    app.0.wait_for("id:overview-pane-%1").unwrap();
+    assert_eq!(app.0.screen().count("id:overview-picture-%1").unwrap(), 0);
+    assert_eq!(
+        next_of(&heard, "pictures")["panes"]
+            .as_array()
+            .unwrap()
+            .len(),
+        14
+    );
+    channel.close();
+}
+
+#[test]
+fn the_shown_panes_cell_and_a_picked_one_tell_the_host_where_they_are() {
+    let (mut app, channel, heard, _) = open_screen("tmux", "%2");
+    post(
+        &mut app.0,
+        &channel,
+        &json!({"op": "overview", "open": true}).to_string(),
+    );
+    // The shown pane's cell: the live terminal shrinks into it.
+    let anchor = next_of(&heard, "overview-anchor");
+    assert_eq!(anchor["pane"], "%2");
+    assert_eq!(anchor["picked"], false);
+    app.0.wait_for("id:overview-pane-%6").unwrap();
+    same_place(&anchor["rect"], bounds(&app, "overview-pane-%2"));
+    // Laid out again (a tick of the tree), still there: not told again.
+    post(&mut app.0, &channel, &switcher("tmux", "%2"));
+    none_of(&heard, "overview-anchor");
+    // A pane picked: where its cell is first (its terminal grows from
+    // there), then the switch at once, then the overview goes.
+    let cell = bounds(&app, "overview-pane-%6");
+    app.0.press("id:overview-pane-%6").unwrap();
+    let events: Vec<Value> = events_until(&heard, "overview")
+        .into_iter()
+        .filter(|e| {
+            ["overview-anchor", "select-pane", "overview"].contains(&e["ev"].as_str().unwrap())
+        })
+        .collect();
+    assert_eq!(events.len(), 3, "{events:?}");
+    assert_eq!(events[0]["ev"], "overview-anchor");
+    assert_eq!(events[0]["pane"], "%6");
+    assert_eq!(events[0]["picked"], true);
+    same_place(&events[0]["rect"], cell);
+    assert_eq!(events[1], json!({"ev": "select-pane", "id": "%6"}));
+    assert_eq!(events[2], json!({"ev": "overview", "open": false}));
+    channel.close();
+}
+
+#[test]
+fn a_shown_pane_behind_more_has_no_cell_to_shrink_into() {
+    // %15 is the sixth of logs' panes: behind "+3".
+    let (mut app, channel, heard, _) = open_screen("tmux", "%15");
+    post(
+        &mut app.0,
+        &channel,
+        &json!({"op": "overview", "open": true}).to_string(),
+    );
+    app.0.wait_for("id:overview-more-panes-@5").unwrap();
+    // The host fades the page over the terminal alone.
+    none_of(&heard, "overview-anchor");
     channel.close();
 }

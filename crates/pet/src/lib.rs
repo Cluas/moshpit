@@ -43,4 +43,4 @@ pub use record::{
     reconcile,
 };
 pub use sprite::{Appearance, EggPose, Ink, Look, Pose, Sprite, egg, egg_durations};
-pub use view::{EggView, Moment, PetInfo, PetView, Style};
+pub use view::{EggView, IconOffer, Moment, PetInfo, PetView, Style, icon_id, icon_look};

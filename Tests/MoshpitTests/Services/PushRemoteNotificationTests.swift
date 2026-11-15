@@ -261,6 +261,41 @@ struct PushRemoteNotificationTests {
 @Suite("Self-test recognition")
 struct SelfTestRecognitionTests {
 
+    /// B669: a pushed `done` took its pane out of the waiting set but left
+    /// the waiting card as it was — "claude +1", its tap to the pane that
+    /// had finished — until the app next ran. The card is redrawn from what
+    /// still waits: the newest question, the count, silent; none left, it
+    /// goes.
+    @Test("a pushed finish redraws the waiting card from what still waits")
+    func pushedFinishRedrawsTheWaitingCard() {
+        let conn = "3F2504E0-4F89-11D3-9A0C-0305E82C3301"
+        let entry = { (pane: String, agent: String?, title: String?, since: Int) in
+            PushStanding.Entry(pane: pane, agent: agent, title: title, location: "work · m1-pro",
+                               since: since, recordedAt: Date())
+        }
+        let two = [entry("%5", "codex", "Edit: main.rs", 1_800_000_100),
+                   entry("%3", "claude", "Bash: npm test", 1_800_000_000)]
+        let card = PushRemoteNotification.summary(after: two, conn: conn, host: "m1-pro")
+        #expect(card?.title == "codex +1 needs you")
+        #expect(card?.body == "Edit: main.rs — work · m1-pro")
+        #expect(card?.sound == nil && card?.interruptionLevel == .passive, "a redraw rings nothing")
+        #expect(card?.userInfo[AgentNotifications.connectionKey] as? String == conn)
+        #expect(card?.userInfo[AgentNotifications.paneKey] as? String == "%5", "the tap goes to one still waiting")
+        // One left: no count. Detail off: where, not what.
+        let one = PushRemoteNotification.summary(after: [two[1]], conn: conn, host: "m1-pro",
+                                                 prefs: .init(showDetail: false, sound: true))
+        #expect(one?.title == "claude needs you")
+        #expect(one?.body == "work · m1-pro")
+        // An entry with no agent or place: the host's name.
+        let bare = PushRemoteNotification.summary(
+            after: [PushStanding.Entry(pane: "%7", agent: nil, title: nil, location: nil,
+                                       since: 1_800_000_000, recordedAt: Date())],
+            conn: conn, host: "m1-pro")
+        #expect(bare?.title == "m1-pro needs you" && bare?.body == "m1-pro")
+        // Nothing waits: the card goes.
+        #expect(PushRemoteNotification.summary(after: [], conn: conn, host: "m1-pro") == nil)
+    }
+
     private func selfTestInfo(nonce: String) -> [AnyHashable: Any] {
         let content = UNMutableNotificationContent()
         PushRemoteNotification.apply(

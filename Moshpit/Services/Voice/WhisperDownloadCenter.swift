@@ -53,12 +53,16 @@ final class WhisperDownloadCenter {
                                    _ onProgress: @escaping @Sendable (Double) -> Void) async throws -> Void
 
     @ObservationIgnored private let install: Install
+    /// Where a finished install is announced (``WhisperModelResidency``
+    /// listens: B675).
+    @ObservationIgnored private let notifications: NotificationCenter
 
     /// `shared` is the app's; tests make their own, with an install of their own.
     init(install: @escaping Install = { variant, onProgress in
         try await WhisperModelStore.shared.install(variant: variant, onProgress: onProgress)
-    }) {
+    }, notifications: NotificationCenter = .default) {
         self.install = install
+        self.notifications = notifications
     }
 
     /// `variant` failed with `message`: the most recent failure now.
@@ -107,6 +111,9 @@ final class WhisperDownloadCenter {
                 guard !Task.isCancelled else { self.completions += 1; return }
                 self.completions += 1
                 onFinished(variant)
+                // After `onFinished`, which may have made it the model in use.
+                self.notifications.post(name: WhisperModelResidency.modelInstalled, object: nil,
+                                        userInfo: [WhisperModelResidency.variantKey: variant])
                 Haptics.success()
             } catch {
                 guard !Task.isCancelled else { return }

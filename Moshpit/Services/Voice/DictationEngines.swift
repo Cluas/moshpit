@@ -7,7 +7,8 @@ import MoshpitKit
 
 /// Builds the ordered list of engines a session should try.
 ///
-/// With Whisper selected the local model leads and Apple's engines stay
+/// With a local model selected (Qwen3-ASR or Whisper; the setting's value is
+/// still `.whisper`, from before there were two) it leads and Apple's engines stay
 /// behind it as a fallback — a model that failed to load should cost accuracy,
 /// not the ability to dictate at all. With Apple selected, the preference is:
 ///
@@ -41,12 +42,21 @@ enum DictationEngineFactory {
         var engines: [DictationEngine] = []
         if request.engine == .whisper,
            let variant = WhisperModelStore.resolvedVariant(preferring: request.whisperModelId) {
-            let language = VoiceLanguageResolver.whisperCode(stored: request.whisperLanguage)
+            // Qwen3-ASR decides the language per sentence and takes the
+            // pane's words; Whisper takes the language setting and no words.
+            let qwen = WhisperModelStore.family(of: variant) == .qwen3
+            let language = qwen ? nil : VoiceLanguageResolver.whisperCode(stored: request.whisperLanguage)
+            // Chinese comes out in the user's own script; a pinned language
+            // other than Chinese is left as the model writes it.
+            let script = language == nil || language == "zh" || language == "yue"
+                ? VoiceLanguageResolver.chineseScript(for: spokenLanguages) : nil
             engines.append(WhisperDictationEngine(
                 store: WhisperModelStore.shared,
                 variant: variant,
                 language: language,
-                label: whisperLabel(variant: variant, language: language)))
+                label: whisperLabel(variant: variant, language: language),
+                hotwords: qwen ? Array(request.hotwords.prefix(Qwen3ASR.hotwordLimit)) : [],
+                script: script))
         }
         let locale = await appleLocale(request: request, spokenLanguages: spokenLanguages)
         engines.append(contentsOf: await appleEngines(locale: locale, hotwords: request.hotwords))
@@ -449,7 +459,7 @@ final class LegacyDictationEngine: DictationEngine {
 final class MicrophoneAudioSource: DictationAudioSource {
     private let audioEngine = AVAudioEngine()
     private var tapInstalled = false
-    private var interruptionObserver: NSObjectProtocol?
+    private var stopObservers: [NSObjectProtocol] = []
 
     func requestPermission() async -> Bool {
         switch AVAudioApplication.shared.recordPermission {
@@ -481,22 +491,17 @@ final class MicrophoneAudioSource: DictationAudioSource {
         audioEngine.prepare()
         try audioEngine.start()
 
-        interruptionObserver = NotificationCenter.default.addObserver(
-            forName: AVAudioSession.interruptionNotification,
-            object: session, queue: nil
-        ) { note in
-            let raw = note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt
-            if raw.flatMap(AVAudioSession.InterruptionType.init(rawValue:)) == .began {
-                onInterruption()
-            }
-        }
+        let engine = audioEngine
+        stopObservers = CaptureStops.observe(
+            .default, session: session, engine: engine,
+            engineRunning: { engine.isRunning }, onStop: onInterruption)
     }
 
     func stop() {
-        if let interruptionObserver {
-            NotificationCenter.default.removeObserver(interruptionObserver)
-            self.interruptionObserver = nil
+        for observer in stopObservers {
+            NotificationCenter.default.removeObserver(observer)
         }
+        stopObservers = []
         if tapInstalled {
             audioEngine.inputNode.removeTap(onBus: 0)
             tapInstalled = false
@@ -516,6 +521,44 @@ final class MicrophoneAudioSource: DictationAudioSource {
         let rms = sqrt(sum / Float(frames))
         let db = 20 * log10(max(rms, 1e-7))
         return max(0, min(1, (db + 50) / 50))
+    }
+}
+
+/// What ends a capture from outside the app: the system taking the
+/// microphone (a call, Siri), and the audio hardware changing under the
+/// engine (B674).
+///
+/// A change of route — AirPods connecting mid-dictation, a wired headset
+/// pulled — changes the input's sample rate or channel count, and
+/// AVAudioEngine answers by stopping, uninitializing itself and posting
+/// `AVAudioEngineConfigurationChange`. Nothing listened for it: the tap fell
+/// silent, the overlay went on saying it was listening, and the words said
+/// after that were never heard. Now it ends the capture as an interruption
+/// does, keeping what was heard for Insert. Only once the engine has really
+/// stopped: a change it rode out costs nothing.
+enum CaptureStops {
+    static func observe(_ center: NotificationCenter, session: AVAudioSession, engine: AVAudioEngine,
+                        engineRunning: @escaping @Sendable () -> Bool,
+                        onStop: @escaping @Sendable () -> Void) -> [NSObjectProtocol] {
+        let interruption = center.addObserver(
+            forName: AVAudioSession.interruptionNotification, object: session, queue: nil
+        ) { note in
+            let raw = note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt
+            if raw.flatMap(AVAudioSession.InterruptionType.init(rawValue:)) == .began {
+                onStop()
+            }
+        }
+        let configuration = center.addObserver(
+            forName: .AVAudioEngineConfigurationChange, object: engine, queue: nil
+        ) { _ in
+            if !engineRunning() { onStop() }
+        }
+        let reset = center.addObserver(
+            forName: AVAudioSession.mediaServicesWereResetNotification, object: session, queue: nil
+        ) { _ in
+            onStop()
+        }
+        return [interruption, configuration, reset]
     }
 }
 

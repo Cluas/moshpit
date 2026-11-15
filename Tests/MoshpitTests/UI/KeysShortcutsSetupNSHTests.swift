@@ -23,10 +23,10 @@ struct KeysShortcutsSetupNSHTests {
     }
 
     private static func key(_ name: String, source: SSHKeySource = .imported, algorithm: SSHKeyAlgorithm = .ed25519,
-                            publicKey: String = "ssh-ed25519 AAAAC3Nza test", lastUsed: Date? = nil,
-                            hosts: [String] = []) -> SSHKeyRecord {
+                            publicKey: String = "ssh-ed25519 AAAAC3Nza test",
+                            lastUsed: Date? = nil) -> SSHKeyRecord {
         SSHKeyRecord(name: name, algorithm: algorithm, comment: "", fingerprint: "SHA256:\(name)",
-                     publicKey: publicKey, source: source, boundHosts: hosts, lastUsedAt: lastUsed)
+                     publicKey: publicKey, source: source, lastUsedAt: lastUsed)
     }
 
     // MARK: Screens
@@ -44,28 +44,55 @@ struct KeysShortcutsSetupNSHTests {
         let now = Date()
         let stale = Self.key("old", algorithm: .rsa4096, publicKey: "ssh-rsa AAAAB3Nza old",
                              lastUsed: now.addingTimeInterval(-100 * 86400))
-        let se = Self.key("iPad", source: .secureEnclave, algorithm: .seP256, hosts: ["m1-pro"])
-        let plain = Self.key("laptop", hosts: ["m1-pro", "nas"])
-        let snapshot = SSHKeysSnapshot(device: [se], imported: [plain, stale])
+        let se = Self.key("iPad", source: .secureEnclave, algorithm: .seP256)
+        let plain = Self.key("laptop")
+        let snapshot = SSHKeysSnapshot(device: [se], imported: [plain, stale],
+                                       users: [se.id: ["m1-pro"], plain.id: ["m1-pro", "nas"]])
         for deleting in [nil, plain.id] {
-            let message = SSHKeysModel.message(snapshot, deleting: deleting, now: now)
-            #expect(NSHSurface.check(screen: NSHScreen.sshKeys.name, message: message), "\(message)")
+            let state = SSHKeysModel.state(snapshot, deleting: deleting, now: now)
+            #expect(state.deleting == deleting?.uuidString)
+            #expect(NSHSurface.check(screen: NSHScreen.sshKeys.name,
+                                     json: try pageMessage(message: .sshKeys(state: state))))
         }
-        let message = SSHKeysModel.message(snapshot, deleting: nil, now: now)
-        let imported = try #require(message["imported"] as? [[String: Any]])
-        #expect(imported[1]["avatar"] as? String == "gray", "an RSA key unused for 90 days")
-        #expect(imported[1]["stale"] as? Bool == true)
-        #expect(imported[1]["unusedSince"] as? String != nil)
-        #expect(imported[0]["avatar"] as? String == "imported")
-        #expect(imported[0]["hosts"] as? [String] == ["m1-pro", "nas"])
-        let device = try #require(message["device"] as? [[String: Any]])
-        #expect(device[0]["avatar"] as? String == "secure-enclave")
-        #expect(device[0]["badge"] as? String == "SE · P256")
+        let state = SSHKeysModel.state(snapshot, deleting: nil, now: now)
+        try #require(state.imported.count == 2 && state.device.count == 1)
+        #expect(state.imported[1].avatar == .gray, "an RSA key unused for 90 days")
+        #expect(state.imported[1].stale)
+        #expect(state.imported[1].unusedSince != nil)
+        #expect(state.imported[0].avatar == .imported)
+        #expect(state.imported[0].hosts == ["m1-pro", "nas"])
+        #expect(state.device[0].avatar == .secureEnclave)
+        #expect(state.device[0].badge == "SE · P256")
         // Metadata only: no key, no Keychain reference.
-        let json = String(decoding: try JSONSerialization.data(withJSONObject: message), as: UTF8.self)
+        let json = try pageMessage(message: .sshKeys(state: state))
         #expect(!json.contains("publicKey\":\"ssh"))
         #expect(!json.contains("keychainRef"))
         #expect(!NSHSurface.check(screen: NSHScreen.sshKeys.name, message: ["op": "keys", "device": []]))
+    }
+
+    /// B602: a key's row said "used for" the hosts picked once at Add Key —
+    /// a label stored on the key that bound nothing — whatever the
+    /// connections said, stale after any rename or delete. It lists the
+    /// saved connections that sign in with the key: by its id, or by the
+    /// keychain item it holds.
+    @Test("a key's row lists the connections that sign in with it, not hosts picked at Add Key")
+    func keyRowListsItsUsers() {
+        let defaults = Self.scratch()
+        let keys = SSHKeyStore(defaults: defaults, readiness: .always)
+        let connections = ConnectionStore(defaults: defaults)
+        var laptop = Self.key("laptop")
+        laptop.boundHosts = ["old-box"]
+        laptop.keychainRef = "moshpit.secret.laptop"
+        keys.add(laptop)
+        var nas = ServerConnection(name: "nas", host: "192.0.2.7", username: "me", authMethod: .key,
+                                   keychainRef: "moshpit.secret.laptop")
+        nas.sshKeyId = laptop.id
+        connections.add(nas)
+        connections.add(ServerConnection(name: "pi", host: "192.0.2.8", username: "me", authMethod: .key,
+                                         keychainRef: "moshpit.secret.laptop"))
+        connections.add(ServerConnection(name: "box", host: "192.0.2.9", username: "me", authMethod: .password))
+        let state = SSHKeysModel.state(SSHKeysSnapshot(store: keys, connections: connections), deleting: nil)
+        #expect(state.imported.first?.hosts == ["nas", "pi"])
     }
 
     @Test("the card asks about a key; Delete deletes it — record and private key — as the SwiftUI page does")
@@ -78,7 +105,7 @@ struct KeysShortcutsSetupNSHTests {
         store.add(laptop)
         let keychain = KeychainService.inMemory(seed: ["moshpit.secret.laptop": Data("PRIVATE".utf8)])
         let model = SSHKeysModel()
-        model.update(SSHKeysSnapshot(store: store))
+        model.update(SSHKeysSnapshot(store: store, connections: connections))
         model.confirmDelete(laptop.id)
         #expect(model.deleting == laptop.id)
         model.cancelDelete()
@@ -97,10 +124,10 @@ struct KeysShortcutsSetupNSHTests {
         // A card about a key gone from the store goes with it.
         let other = Self.key("other")
         store.add(other)
-        model.update(SSHKeysSnapshot(store: store))
+        model.update(SSHKeysSnapshot(store: store, connections: connections))
         model.confirmDelete(other.id)
         store.remove(id: other.id)
-        model.update(SSHKeysSnapshot(store: store))
+        model.update(SSHKeysSnapshot(store: store, connections: connections))
         #expect(model.deleting == nil)
         #expect(SSHKeysModel.rowID(other.id) == "ssh-key-row-\(other.id.uuidString)")
     }
@@ -120,29 +147,25 @@ struct KeysShortcutsSetupNSHTests {
     @Test("every Add Key state is a message the Rust screen takes; the key itself never is")
     func addKeyMessages() throws {
         let model = AddKeyModel()
-        model.hosts = ["m1-pro", "nas"]
-        #expect(NSHSurface.check(screen: NSHScreen.addKey.name, message: model.message))
-        #expect(model.apply(["ev": "method", "value": "import"]))
+        #expect(NSHSurface.check(screen: NSHScreen.addKey.name,
+                                 json: try pageMessage(message: .addKey(state: model.page))))
+        #expect(model.apply(.method(id: "import")))
         #expect(model.method == .importKey)
-        #expect(model.apply(["ev": "name", "value": "work"]))
-        #expect(model.apply(["ev": "public-line", "value": "ssh-ed25519 AAAA work"]))
-        #expect(model.apply(["ev": "host", "name": "nas"]))
-        #expect(model.boundHosts == ["nas"])
-        #expect(model.apply(["ev": "host", "name": "nas"]))
-        #expect(model.boundHosts.isEmpty)
-        #expect(model.apply(["ev": "set", "key": "requireFaceID", "value": false]))
+        #expect(model.apply(.name(text: "work")))
+        #expect(model.apply(.publicLine(text: "ssh-ed25519 AAAA work")))
+        #expect(model.apply(.set(key: .requireFaceId, on: false)))
         #expect(!model.requireFaceID)
-        #expect(model.apply(["ev": "algorithm", "value": "rsa"]))
+        #expect(model.apply(.algorithm(id: "rsa")))
         #expect(model.algorithm == .rsa4096)
-        #expect(!model.apply(["ev": "algorithm", "value": "dsa"]))
-        #expect(!model.apply(["ev": "set", "key": "pin", "value": true]))
-        #expect(!model.apply(["ev": "submit"]), "the page's own")
-        let message = model.message
-        #expect(NSHSurface.check(screen: NSHScreen.addKey.name, message: message), "\(message)")
-        #expect((message["pem"] as? [String: Bool]) == ["empty": true, "encrypted": false])
-        #expect(message["canSubmit"] as? Bool == false, "no key pasted")
-        #expect(message.keys.allSatisfy { !["privateKey", "passphrase", "pemText"].contains($0) })
-        var bad = message
+        #expect(!model.apply(.algorithm(id: "dsa")))
+        #expect(!model.apply(.submit), "the page's own")
+        let page = model.page
+        let json = try pageMessage(message: .addKey(state: page))
+        #expect(NSHSurface.check(screen: NSHScreen.addKey.name, json: json), "\(json)")
+        #expect(page.pem == AddKeyPem(empty: true, encrypted: false))
+        #expect(!page.canSubmit, "no key pasted")
+        var bad = Self.object(json)
+        #expect(bad.keys.allSatisfy { !["privateKey", "passphrase", "pemText"].contains($0) })
         bad["privateKey"] = "-----BEGIN OPENSSH PRIVATE KEY-----"
         #expect(!NSHSurface.check(screen: NSHScreen.addKey.name, message: bad), "the screen refuses key material")
     }
@@ -152,20 +175,43 @@ struct KeysShortcutsSetupNSHTests {
         let store = SSHKeyStore(defaults: Self.scratch(), readiness: .always)
         let keychain = KeychainService.inMemory()
         let model = AddKeyModel()
-        #expect(model.apply(["ev": "name", "value": "phone"]))
-        #expect(model.apply(["ev": "host", "name": "m1-pro"]))
+        #expect(model.apply(.name(text: "phone")))
         #expect(model.canSubmit)
         let record = try #require(await model.submit(to: store, keychain: keychain))
         #expect(record.name == "phone")
         #expect(record.algorithm == .ed25519)
         #expect(record.source == .generated)
-        #expect(record.boundHosts == ["m1-pro"])
+        #expect(record.boundHosts.isEmpty, "Add Key binds nothing (B602)")
         #expect(record.publicKey.hasPrefix("ssh-ed25519 "))
         #expect(store.keys.map(\.id) == [record.id])
         let ref = try #require(record.keychainRef)
         let secret = try await keychain.loadSecret(forRef: ref)
         #expect(!secret.isEmpty)
-        #expect(model.message["fingerprint"] as? String == record.fingerprint)
+        #expect(model.page.fingerprint == record.fingerprint)
+    }
+
+    /// Where a key generation ran.
+    private final class Seen: @unchecked Sendable {
+        var onMain: Bool?
+    }
+
+    /// B605: an import was unlocked off the main thread, a generation made
+    /// on it — an RSA-4096 key's search for its primes froze the sheet,
+    /// spinner and all, for seconds on a phone.
+    @Test("a key is made off the main thread, as an import is")
+    func keyGenerationLeavesTheMainThread() async throws {
+        let seen = Seen()
+        let request = SSHKeyCreation.Request(
+            importing: false, name: "box", algorithm: .ed25519, comment: "", requireFaceID: false,
+            secureEnclave: false, privateKey: "", passphrase: "", publicKeyLine: "")
+        let record = try await SSHKeyCreation.create(request, keychain: KeychainService.inMemory(),
+                                                     generate: { algorithm, comment in
+            seen.onMain = Thread.isMainThread
+            return try SSHKeyFactory.generate(algorithm: algorithm, comment: comment)
+        }) { _ in }
+        #expect(seen.onMain == false, "the key was made on the main thread")
+        #expect(record.algorithm == .ed25519)
+        #expect(record.publicKey.hasSuffix(" box"), "an empty comment is the name, as before")
     }
 
     @Test("Import converts what is pasted, and says why it can't")
@@ -174,25 +220,25 @@ struct KeysShortcutsSetupNSHTests {
         let keychain = KeychainService.inMemory()
         let generated = try SSHKeyFactory.generate(algorithm: .ed25519, comment: "pasted")
         let model = AddKeyModel(method: .importKey)
-        #expect(model.apply(["ev": "name", "value": "pasted"]))
+        #expect(model.apply(.name(text: "pasted")))
         #expect(!model.canSubmit, "nothing pasted")
         // What the host's editor does as the user pastes.
         let editor = KeyPEMEditor(model: model, context: nil)
         editor.paste(String(decoding: generated.privateBlob, as: UTF8.self))
         #expect(model.canSubmit)
-        #expect((model.message["pem"] as? [String: Bool]) == ["empty": false, "encrypted": false])
+        #expect(model.page.pem == AddKeyPem(empty: false, encrypted: false))
         let record = try #require(await model.submit(to: store, keychain: keychain))
         #expect(record.source == .imported)
         #expect(record.fingerprint == generated.fingerprint)
         // Garbage: the card says why, nothing is stored.
         let bad = AddKeyModel(method: .importKey)
-        #expect(bad.apply(["ev": "name", "value": "bad"]))
+        #expect(bad.apply(.name(text: "bad")))
         KeyPEMEditor(model: bad, context: nil).paste("-----BEGIN OPENSSH PRIVATE KEY-----\nnot a key\n-----END OPENSSH PRIVATE KEY-----")
         #expect(await bad.submit(to: store, keychain: keychain) == nil)
-        #expect(bad.message["error"] as? String != nil)
+        #expect(bad.page.error != nil)
         #expect(store.keys.count == 1)
-        #expect(bad.apply(["ev": "dismiss-error"]))
-        #expect(bad.message["error"] == nil)
+        #expect(bad.apply(.dismissError))
+        #expect(bad.page.error == nil)
     }
 
     // MARK: Select Key
@@ -239,8 +285,9 @@ struct KeysShortcutsSetupNSHTests {
         mine.summary = "list"
         store.add(mine)
         store.removeFromToolbar(id: mine.id)
-        let message = ShortcutsModel.message(ShortcutsSnapshot(store: store))
-        #expect(NSHSurface.check(screen: NSHScreen.shortcuts.name, message: message), "\(message)")
+        let json = ShortcutsModel.message(ShortcutsSnapshot(store: store))
+        #expect(NSHSurface.check(screen: NSHScreen.shortcuts.name, json: json), "\(json)")
+        let message = Self.object(json)
         let available = try #require(message["available"] as? [[String: Any]])
         #expect(available.contains { $0["id"] as? String == mine.id.uuidString },
                 "a custom shortcut off the bar can go back")
@@ -255,20 +302,20 @@ struct KeysShortcutsSetupNSHTests {
         let store = ShortcutStore(defaults: defaults, readiness: .always)
         let first = try #require(store.toolbar.first)
         let second = try #require(store.toolbar.dropFirst().first)
-        #expect(ShortcutsModel.apply(["ev": "move", "from": 0, "to": 2], to: store))
+        #expect(ShortcutsModel.apply(.move(from: 0, to: 2), to: store))
         #expect(store.toolbar.prefix(2).map(\.id) == [second.id, first.id])
-        #expect(!ShortcutsModel.apply(["ev": "move", "from": 40, "to": 0], to: store))
-        #expect(ShortcutsModel.apply(["ev": "remove-from-toolbar", "id": first.id.uuidString], to: store))
+        #expect(!ShortcutsModel.apply(.move(from: 40, to: 0), to: store))
+        #expect(ShortcutsModel.apply(.removeFromToolbar(id: first.id.uuidString), to: store))
         #expect(!store.toolbar.contains { $0.id == first.id })
         #expect(store.shortcuts.contains { $0.id == first.id }, "a built-in stays, off the bar")
-        #expect(ShortcutsModel.apply(["ev": "add-to-toolbar", "id": first.id.uuidString], to: store))
+        #expect(ShortcutsModel.apply(.addToToolbar(id: first.id.uuidString), to: store))
         #expect(store.toolbar.contains { $0.id == first.id })
-        #expect(!ShortcutsModel.apply(["ev": "delete", "id": first.id.uuidString], to: store), "a built-in is not deleted")
+        #expect(!ShortcutsModel.apply(.delete(id: first.id.uuidString), to: store), "a built-in is not deleted")
         var mine = TerminalShortcut()
         mine.chipLabel = "x"
         mine.key = "x"
         store.add(mine)
-        #expect(ShortcutsModel.apply(["ev": "delete", "id": mine.id.uuidString], to: store))
+        #expect(ShortcutsModel.apply(.delete(id: mine.id.uuidString), to: store))
         #expect(!store.shortcuts.contains { $0.id == mine.id })
         // B153: the files chip is stored as a kind 1.0.8 reads, its real kind beside it.
         let stored = try #require(defaults.data(forKey: "moshpit.shortcuts.v1"))
@@ -281,15 +328,18 @@ struct KeysShortcutsSetupNSHTests {
     func shortcutEditor() throws {
         let store = ShortcutStore(defaults: Self.scratch(), readiness: .always)
         let model = AddShortcutModel(existing: nil)
-        #expect(NSHSurface.check(screen: NSHScreen.addShortcut.name, message: model.message))
+        #expect(NSHSurface.check(screen: NSHScreen.addShortcut.name, json: model.message))
         #expect(model.save(to: store) == .notSaved, "nothing to save yet")
-        model.apply(["kind": "keyCombo", "modifiers": ["ctrl", "nonsense"], "key": "bbbbbbbb", "chipLabel": "C-b-long",
-                     "summary": "", "colorId": "mosh", "scopeHosts": ["nas"], "onlyInTmux": true,
-                     "payload": "", "appendReturn": false, "repeatOnHold": true])
-        #expect(model.draft["key"] as? String == "bbbbbb", "six characters at most")
-        #expect(model.draft["chipLabel"] as? String == "C-b-lo")
-        #expect(model.draft["modifiers"] as? [String] == ["ctrl"])
-        #expect(NSHSurface.check(screen: NSHScreen.addShortcut.name, message: model.message), "\(model.message)")
+        model.apply(draftJson: """
+            {"kind": "keyCombo", "modifiers": ["ctrl", "nonsense"], "key": "bbbbbbbb", "chipLabel": "C-b-long",
+             "summary": "", "colorId": "mosh", "scopeHosts": ["nas"], "onlyInTmux": true,
+             "payload": "", "appendReturn": false, "repeatOnHold": true}
+            """)
+        let draft = Self.object(model.draftJson)
+        #expect(draft["key"] as? String == "bbbbbb", "six characters at most")
+        #expect(draft["chipLabel"] as? String == "C-b-lo")
+        #expect(draft["modifiers"] as? [String] == ["ctrl"])
+        #expect(NSHSurface.check(screen: NSHScreen.addShortcut.name, json: model.message), "\(model.message)")
         let count = store.shortcuts.count
         #expect(model.save(to: store) == .saved)
         let saved = try #require(store.shortcuts.last)
@@ -300,8 +350,8 @@ struct KeysShortcutsSetupNSHTests {
         #expect(saved.onlyInTmux)
         // Editing keeps its id and updates in place.
         let editor = AddShortcutModel(existing: saved)
-        #expect(editor.message["editing"] as? Bool == true)
-        editor.apply(["summary": "prefix"])
+        #expect(Self.object(editor.message)["editing"] as? Bool == true)
+        editor.apply(draftJson: #"{"summary": "prefix"}"#)
         #expect(editor.save(to: store) == .saved)
         #expect(store.shortcuts.count == count + 1)
         #expect(store.shortcuts.last?.summary == "prefix")
@@ -322,14 +372,14 @@ struct KeysShortcutsSetupNSHTests {
             store.add(filler)
         }
         let model = AddShortcutModel(existing: nil)
-        model.apply(["kind": "text", "payload": "git status", "chipLabel": "gs"])
+        model.apply(draftJson: #"{"kind": "text", "payload": "git status", "chipLabel": "gs"}"#)
         #expect(model.save(to: store) == .savedOffToolbar, "saved off a full bar in silence")
         let saved = try #require(store.shortcuts.last)
         #expect(saved.chipLabel == "gs" && !saved.inToolbar)
         #expect(store.available.contains { $0.id == saved.id })
 
         let editor = AddShortcutModel(existing: saved)
-        editor.apply(["summary": "status"])
+        editor.apply(draftJson: #"{"summary": "status"}"#)
         #expect(editor.save(to: store) == .saved, "an edit isn't a new place on the bar")
     }
 
@@ -340,9 +390,9 @@ struct KeysShortcutsSetupNSHTests {
         let store = ShortcutStore(defaults: Self.scratch(), readiness: .always)
         let count = store.shortcuts.count
         let model = AddShortcutModel(existing: nil)
-        model.apply(["kind": "text", "payload": "git status", "chipLabel": "gs"])
+        model.apply(draftJson: #"{"kind": "text", "payload": "git status", "chipLabel": "gs"}"#)
         #expect(model.save(to: store) == .saved)
-        model.apply(["summary": "status"])
+        model.apply(draftJson: #"{"summary": "status"}"#)
         #expect(model.save(to: store) == .saved)
         #expect(store.shortcuts.count == count + 1, "the second Save added another copy")
         #expect(store.shortcuts.last?.summary == "status", "the second Save is the first one updated")
@@ -460,8 +510,9 @@ struct KeysShortcutsSetupNSHTests {
     func keysSurface() async throws {
         let (surface, heard, done) = try Self.surface(running: .sshKeys)
         defer { done() }
-        let laptop = Self.key("laptop", hosts: ["m1-pro"])
-        #expect(surface.post(SSHKeysModel.message(SSHKeysSnapshot(device: [], imported: [laptop]), deleting: nil)))
+        let laptop = Self.key("laptop")
+        #expect(surface.post(.sshKeys(state: SSHKeysModel.state(
+            SSHKeysSnapshot(device: [], imported: [laptop]), deleting: nil))))
         let row = try #require(await SettingsNSHTests.view(identified: SSHKeysModel.rowID(laptop.id), in: surface))
         let add = try #require(await SettingsNSHTests.view(identified: "ssh-keys-add", in: surface))
         await NSHTouchAudit.pressablesTakeTouches(in: surface)
@@ -481,7 +532,8 @@ struct KeysShortcutsSetupNSHTests {
         #expect(asked["ev"] as? String == "confirm-delete")
         #expect(asked["id"] as? String == laptop.id.uuidString)
         // The host asks: the system's alert, its Delete in red.
-        #expect(surface.post(SSHKeysModel.message(SSHKeysSnapshot(device: [], imported: [laptop]), deleting: laptop.id)))
+        #expect(surface.post(.sshKeys(state: SSHKeysModel.state(
+            SSHKeysSnapshot(device: [], imported: [laptop]), deleting: laptop.id))))
         let alert = try #require(await Self.alert(over: surface, style: .alert))
         #expect(alert.preferredStyle == .alert)
         #expect(alert.actions.first { $0.title == String(localized: "Delete") }?.style == .destructive)
@@ -495,7 +547,8 @@ struct KeysShortcutsSetupNSHTests {
     func keysEmptySurface() async throws {
         let (surface, heard, done) = try Self.surface(running: .sshKeys)
         defer { done() }
-        #expect(surface.post(SSHKeysModel.message(SSHKeysSnapshot(device: [], imported: []), deleting: nil)))
+        #expect(surface.post(.sshKeys(state: SSHKeysModel.state(
+            SSHKeysSnapshot(device: [], imported: []), deleting: nil))))
         let generate = try #require(await SettingsNSHTests.view(identified: "ssh-keys-generate", in: surface))
         let importKey = try #require(await SettingsNSHTests.view(identified: "ssh-keys-import", in: surface))
         await NSHTouchAudit.pressablesTakeTouches(in: surface)
@@ -513,8 +566,8 @@ struct KeysShortcutsSetupNSHTests {
         defer { done() }
         let laptop = Self.key("laptop")
         let notice = SSHKeyDeletion.Failure.inUse(["pi", "nas"])
-        #expect(surface.post(SSHKeysModel.message(SSHKeysSnapshot(device: [], imported: [laptop]),
-                                                  deleting: nil, notice: notice)))
+        #expect(surface.post(.sshKeys(state: SSHKeysModel.state(
+            SSHKeysSnapshot(device: [], imported: [laptop]), deleting: nil, notice: notice))))
         let alert = try #require(await Self.alert(over: surface, style: .alert))
         #expect(alert.actions.map(\.title) == [String(localized: "OK")], "only the way out")
         await Self.press(alert, String(localized: "OK"))
@@ -535,8 +588,9 @@ struct KeysShortcutsSetupNSHTests {
         let pem = String(decoding: generated.privateBlob, as: UTF8.self)
         editor.text = pem
         editor.delegate?.textViewDidChange?(editor)
-        #expect(!model.message.description.contains("PRIVATE KEY-----\n"), "the post says only that there is one")
-        #expect((model.message["pem"] as? [String: Bool])?["empty"] == false)
+        #expect(!(try pageMessage(message: .addKey(state: model.page))).contains("PRIVATE KEY-----"),
+                "the post says only that there is one")
+        #expect(!model.page.pem.empty)
         let method = try #require(await SettingsNSHTests.view(identified: "add-key-method", in: surface)
             as? UISegmentedControl)
         #expect(method.selectedSegmentIndex == 1)
@@ -553,7 +607,7 @@ struct KeysShortcutsSetupNSHTests {
         let store = ShortcutStore(defaults: Self.scratch(), readiness: .always)
         let (surface, heard, done) = try Self.surface(running: .shortcuts)
         defer { done() }
-        #expect(surface.post(ShortcutsModel.message(ShortcutsSnapshot(store: store))))
+        #expect(surface.post(json: ShortcutsModel.message(ShortcutsSnapshot(store: store))))
         let first = try #require(store.toolbar.first)
         let remove = try #require(await SettingsNSHTests.view(identified: "shortcut-remove-\(first.id.uuidString)",
                                                               in: surface))
@@ -637,13 +691,15 @@ struct KeysShortcutsSetupNSHTests {
 
     @Test("SSH Keys, Add Key, Select Key, Shortcuts and Add Shortcut drawn dark and light (R10, R11)")
     func pictures() async throws {
-        let laptop = Self.key("laptop", hosts: ["build-box", "gpu-01"])
+        let laptop = Self.key("laptop")
         let old = Self.key("old box", algorithm: .rsa4096, publicKey: "ssh-rsa AAAAB3Nza old",
                            lastUsed: Date(timeIntervalSinceNow: -200 * 86_400))
         let store = ShortcutStore(defaults: Self.scratch(), readiness: .always)
         for light in [false, true] {
             try await Self.picture(.sshKeys, light: light, ready: SSHKeysModel.rowID(laptop.id), name: "ssh-keys") {
-                $0.post(SSHKeysModel.message(SSHKeysSnapshot(device: [], imported: [laptop, old]), deleting: nil))
+                $0.post(.sshKeys(state: SSHKeysModel.state(
+                    SSHKeysSnapshot(device: [], imported: [laptop, old],
+                                    users: [laptop.id: ["build-box", "gpu-01"]]), deleting: nil)))
             }
             let generate = AddKeyModel(method: .generate)
             try await Self.picture(.addKey, light: light, ready: "add-key-name", name: "add-key",
@@ -655,7 +711,7 @@ struct KeysShortcutsSetupNSHTests {
                 $0.post(KeyPickerModel.message(KeyPickerSnapshot(keys: [laptop, old], selected: laptop.id)))
             }
             try await Self.picture(.shortcuts, light: light, ready: "shortcuts-preview", name: "shortcuts") {
-                $0.post(ShortcutsModel.message(ShortcutsSnapshot(store: store)))
+                $0.post(json: ShortcutsModel.message(ShortcutsSnapshot(store: store)))
             }
             let editor = AddShortcutModel(existing: nil)
             try await Self.picture(.addShortcut, light: light, ready: "shortcut-type", name: "add-shortcut") {

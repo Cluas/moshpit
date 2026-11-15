@@ -209,9 +209,36 @@ extension CoreTerminalView: UITextInput {
             start = ns.substring(to: location).count
             length = ns.substring(with: NSRange(location: location, length: min(sel.length, ns.length - location))).count
         }
+        let starting = !composing
         ime { t in
             guard let markedText else { return mp_term_ime_set_marked(t, nil, 0, 0) }
             return markedText.withCString { mp_term_ime_set_marked(t, $0, UInt32(start), UInt32(length)) }
+        }
+        // B691: the bar's Ctrl armed, a key an input method takes to start
+        // composing (Pinyin's `c`) is the chord the person asked for, not a
+        // composition: with a Chinese keyboard up, Ctrl-C from the bar
+        // composed `c`, sent the candidate picked later, and spent the Ctrl
+        // on it. Once the input method's call is over (it is not told of its
+        // own edit inside it), the composition goes unsent and the key goes
+        // as typed, which folds it.
+        if starting, let markedText, let chord = Self.ctrlChordKey(markedText),
+           surfaceDelegate?.surfaceCtrlArmed == true {
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.composing, self.surfaceDelegate?.surfaceCtrlArmed == true else { return }
+                self.endComposition(cancel: true)
+                self.surfaceDelegate?.surface(self, typed: Data([chord]))
+            }
+        }
+    }
+
+    /// The byte of `text` when it is one key a Ctrl chord folds (a letter,
+    /// `@[\]^_`, Space, `/`, `?`): an input method's first marked character.
+    nonisolated static func ctrlChordKey(_ text: String) -> UInt8? {
+        let bytes = Array(text.utf8)
+        guard bytes.count == 1, let byte = bytes.first else { return nil }
+        switch byte {
+        case 0x40...0x7e, 0x20, 0x2f, 0x3f: return byte
+        default: return nil
         }
     }
 
@@ -263,9 +290,18 @@ extension CoreTerminalView: UITextInput {
 
     func setBaseWritingDirection(_ writingDirection: NSWritingDirection, for range: UITextRange) {}
 
-    /// The caret's rectangle: the cursor's cell (the candidate bar and the
-    /// system's caret-relative popovers sit by it).
-    func caretRect(for position: UITextPosition) -> CGRect { cursorCellRect() }
+    /// The caret's rectangle (the candidate bar and the system's
+    /// caret-relative popovers sit by it): the caret the person sees. While
+    /// composing that is the composition's, at its end, and after a commit
+    /// the one held there until the echo; the cursor's cell otherwise.
+    /// Output that moved the remote's cursor mid-composition (which doesn't
+    /// move the composition, V7) took the candidates away from the pinyin
+    /// (B694).
+    func caretRect(for position: UITextPosition) -> CGRect {
+        if markedLabel != nil, compositionCaret.superview != nil { return compositionCaret.frame }
+        if let pendingCaret { return pendingCaret.frame }
+        return cursorCellRect()
+    }
 
     func firstRect(for range: UITextRange) -> CGRect { markedLabel?.frame ?? cursorCellRect() }
 
@@ -349,13 +385,17 @@ extension CoreTerminalView: UITextInput {
         if let existing = markedLabel {
             label = existing
         } else {
+            // Composing is typing: back on the live screen, where it lands,
+            // as a key brings it back (B693). Begun while the view showed
+            // the history, the composition sat at the cursor below the view.
+            if isReadingScrollback { scrollToBottom() }
             label = UILabel()
             label.numberOfLines = 1
             label.isUserInteractionEnabled = false
             label.accessibilityIdentifier = "core-terminal-marked-text"
             addSubview(label)
             markedLabel = label
-            markedAnchor = (Int(rows.info.cursor.col), Int(rows.info.cursor.row))
+            markedAnchor = liveCursorCell
         }
         let fg = UIColor(cgColor: coreCGColor(style.foreground))
         label.attributedText = NSAttributedString(string: text, attributes: [
@@ -377,11 +417,13 @@ extension CoreTerminalView: UITextInput {
     /// it, were cut off or gone.
     func positionMarkedText() {
         guard let label = markedLabel else { return }
-        let anchor = markedAnchor ?? (Int(rows.info.cursor.col), Int(rows.info.cursor.row))
+        let anchor = markedAnchor ?? liveCursorCell
         let caretWidth = max(2, metrics.width / 4)
         let x = Self.markedX(at: x(ofColumn: Int(anchor.col)), width: label.frame.width + caretWidth,
                              in: bounds.width)
-        label.frame.origin = CGPoint(x: x, y: y(ofRow: anchor.row))
+        // On its row as the view shows it: a history scroll mid-composition
+        // takes it down with the row (B693); it stayed put over old lines.
+        label.frame.origin = CGPoint(x: x, y: y(ofRow: anchor.row + Int(rows.info.display_offset)))
         let caret = compositionCaret
         caret.backgroundColor = UIColor(cgColor: coreCGColor(style.cursorColor))
         caret.frame = CGRect(x: label.frame.maxX, y: label.frame.minY, width: caretWidth,

@@ -46,7 +46,7 @@ pub mod prompt;
 pub mod shortcuts;
 pub mod switcher;
 
-use std::{rc::Rc, sync::Arc};
+use std::{collections::HashMap, rc::Rc, sync::Arc};
 
 use nsh_core::prelude::*;
 use serde_json::json;
@@ -97,6 +97,11 @@ pub enum Message {
     OverviewAct { action: String, pane: String },
     /// `{"op": "prompted", "id", "text"}`: the host's answer to a prompt.
     Prompted(prompt::Answer),
+    /// `{"op": "pictures", "panes": {"%1": ["row", …]}}`: the screens of
+    /// the panes the overview asked for, as text rows, read from the
+    /// terminals the session already keeps (B658). A pane left out has no
+    /// picture.
+    Pictures(HashMap<String, Vec<String>>),
 }
 
 #[derive(serde::Deserialize)]
@@ -171,6 +176,9 @@ impl Message {
                 .map_err(error),
             "prompted" => serde_json::from_value(fields)
                 .map(Message::Prompted)
+                .map_err(error),
+            "pictures" => serde_json::from_value::<overview::PicturesFields>(fields)
+                .map(|f| Message::Pictures(f.panes))
                 .map_err(error),
             "rekey" if fields.as_object().is_some_and(|f| f.is_empty()) => Ok(Message::Rekey),
             "rekey" => Err("terminal: rekey: takes no fields".to_owned()),
@@ -317,6 +325,21 @@ pub enum Intent {
     Overview(bool),
     /// The overview picked pane `id`: the host switches to it.
     SelectPane(String),
+    /// The overview asks for the pictures of `panes` (`current`: the pane
+    /// shown, the only one a mosh or herdr session has a picture of).
+    Pictures {
+        panes: Vec<String>,
+        current: Option<String>,
+    },
+    /// Where pane `pane`'s cell is in the overview (the surface's points):
+    /// the one shown, which the live terminal shrinks into and grows back
+    /// from (`picked` false), or the one just picked, which the pane's
+    /// terminal grows from (`picked` true) (B658).
+    OverviewAnchor {
+        pane: String,
+        rect: [f32; 4],
+        picked: bool,
+    },
     /// Split window `id` (`newPane(inWindow:)`).
     NewPane(String),
     /// A new window, named so (none: the program names it).
@@ -376,6 +399,12 @@ impl Intent {
             Intent::SwipeHint { forward } => json!({"ev": "swipe-hint", "forward": forward}),
             Intent::Overview(open) => json!({"ev": "overview", "open": open}),
             Intent::SelectPane(id) => json!({"ev": "select-pane", "id": id}),
+            Intent::Pictures { panes, current } => {
+                json!({"ev": "pictures", "panes": panes, "current": current})
+            }
+            Intent::OverviewAnchor { pane, rect, picked } => {
+                json!({"ev": "overview-anchor", "pane": pane, "rect": rect, "picked": picked})
+            }
             Intent::NewPane(window) => json!({"ev": "new-pane", "window": window}),
             Intent::NewWindow(name) => json!({"ev": "new-window", "name": name}),
             Intent::RenameWindow { id, name } => {
@@ -421,6 +450,8 @@ pub(crate) struct Ctx {
     pub swiping: Signal<bool>,
     /// The pane overview is open.
     pub overview: Signal<bool>,
+    /// The overview's pane pictures, by pane id, while it is open.
+    pub pictures: Signal<HashMap<String, Vec<String>>>,
 }
 
 impl Ctx {
@@ -551,6 +582,7 @@ pub fn TerminalScreen(props: ScreenProps) -> impl IntoElement {
         switcher: signal(Switcher::default()),
         swiping: signal(false),
         overview: signal(false),
+        pictures: signal(HashMap::new()),
     };
     let prompts = prompt::Prompts::default();
     shortcuts::bind(&ctx, &keys);
@@ -558,6 +590,7 @@ pub fn TerminalScreen(props: ScreenProps) -> impl IntoElement {
     switcher::tell_neighbours(&ctx, order);
     let panes = overview::model(&ctx);
     overview::tell_open(&ctx);
+    overview::ask_pictures(&ctx, panes);
     {
         let ctx = ctx.clone();
         let prompts = prompts.clone();
@@ -610,6 +643,13 @@ pub fn TerminalScreen(props: ScreenProps) -> impl IntoElement {
                     overview::hear_act(&ctx, &prompts, panes, &action, &pane)
                 }
                 Message::Prompted(answer) => prompts.answer(answer),
+                Message::Pictures(pictures) => {
+                    // Only while it is open (one that comes after a close
+                    // is dropped with the rest).
+                    if ctx.overview.get_untracked() {
+                        ctx.pictures.update(|p| p.extend(pictures));
+                    }
+                }
                 Message::Rekey => {
                     // The host hears this before the batch that takes the
                     // old element out of the window: it moves the terminal

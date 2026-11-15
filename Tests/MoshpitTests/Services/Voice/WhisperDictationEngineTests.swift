@@ -20,6 +20,8 @@ struct WhisperDictationEngineTests {
         /// Sample counts each `transcribe` call saw, in order.
         private(set) var sampleCounts: [Int] = []
         private(set) var languages: [String?] = []
+        /// The hotwords each `transcribe` call was given, in order.
+        private(set) var hotwordsHeard: [[String]] = []
         private var warmUpError: Error?
         /// Delay before each answer, to keep a preview in flight.
         private var latency: Duration = .zero
@@ -55,8 +57,10 @@ struct WhisperDictationEngineTests {
             events.append("end")
         }
 
-        func transcribe(samples: [Float], language: String?, variant _: String) async throws -> String {
+        func transcribe(samples: [Float], language: String?, hotwords: [String],
+                        variant _: String) async throws -> String {
             events.append("transcribe")
+            hotwordsHeard.append(hotwords)
             sampleCounts.append(samples.count)
             languages.append(language)
             if latency != .zero { try? await Task.sleep(for: latency) }
@@ -118,6 +122,37 @@ struct WhisperDictationEngineTests {
         // chunk — that whole-utterance context is the entire point.
         let counts = await store.sampleCounts
         #expect(counts.last == 48_000)
+    }
+
+    @Test("The pane's hotwords reach the model on every pass")
+    func hotwordsPassedThrough() async throws {
+        let store = ScriptedTranscriber(answers: ["打开 AppSettings.swift"])
+        let engine = WhisperDictationEngine(
+            store: store, variant: Qwen3ASR.variant, language: nil, label: "Qwen3-ASR 0.6B",
+            hotwords: ["Claude Code", "AppSettings.swift"])
+        try await engine.prepare { _ in }
+        try await engine.start()
+        engine.append(try buffer(frames: 16_000))
+        await engine.finishAudio()
+        for try await _ in engine.updates {}
+
+        let heard = await store.hotwordsHeard
+        #expect(!heard.isEmpty)
+        #expect(heard.allSatisfy { $0 == ["Claude Code", "AppSettings.swift"] })
+    }
+
+    @Test("What the model writes comes out in the user's Chinese script (B670)")
+    func scriptApplied() async throws {
+        let store = ScriptedTranscriber(answers: ["那個economic status就是買不買得起"])
+        let engine = WhisperDictationEngine(store: store, variant: "openai_whisper-small",
+                                            language: nil, label: "Small · Auto", script: .simplified)
+        try await engine.prepare { _ in }
+        try await engine.start()
+        engine.append(try buffer(frames: 16_000))
+        await engine.finishAudio()
+        var updates: [DictationUpdate] = []
+        for try await update in engine.updates { updates.append(update) }
+        #expect(updates.last?.finalizedText == "那个economic status就是买不买得起")
     }
 
     @Test("The configured language reaches the model")

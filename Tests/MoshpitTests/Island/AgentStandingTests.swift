@@ -131,7 +131,10 @@ struct AgentStandingTests {
         let monitor = AgentActivityMonitor(settings: settings, standing: file,
                                            writeWidget: { writes.snapshots.append($0) },
                                            island: island, finishes: finishes,
-                                           notifier: cards.notifier)
+                                           notifier: cards.notifier,
+                                           // An unlocked phone, whatever the
+                                           // test host says (B603).
+                                           readiness: .always)
         let mux = FakeMux()
         monitor.track(connection: connection, controller: mux)
         return Bench(monitor: monitor, mux: mux, file: file, finishes: finishes,

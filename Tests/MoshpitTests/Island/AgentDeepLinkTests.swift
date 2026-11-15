@@ -20,6 +20,28 @@ struct AgentDeepLinkTests {
         #expect(parsed.paneId == pane)
     }
 
+    /// B702: a tap on the lock-screen card only opened the app — the
+    /// `widgetURL` was the Dynamic Island's alone. The card opens its first
+    /// row's pane, the most urgent agent's, as the Home Screen widget does.
+    @Test("the lock-screen card opens its first row's pane")
+    func lockScreenCardOpensItsFirstRow() throws {
+        typealias Agent = AgentActivityAttributes.Agent
+        let agents = [
+            Agent(id: "\(id.uuidString):%12", connectionId: id.uuidString, paneId: "%12",
+                  command: "claude", location: "mac", state: .attention, startedAt: Date()),
+            Agent(id: "\(id.uuidString):%3", connectionId: id.uuidString, paneId: "%3",
+                  command: "codex", location: "mac", state: .working, startedAt: Date()),
+        ]
+        // The headline cycled to the second: the card still opens the first.
+        let state = AgentActivityAttributes.ContentState(agents: agents, workingCount: 1, attentionCount: 1,
+                                                         headlineId: agents[1].id)
+        let url = try #require(LockScreenView.deepLink(for: state))
+        let parsed = try #require(AgentDeepLink.parse(url.absoluteString))
+        #expect(parsed.connectionId == id && parsed.paneId == "%12")
+        let none = AgentActivityAttributes.ContentState(agents: [], workingCount: 0, attentionCount: 0)
+        #expect(LockScreenView.deepLink(for: none) == nil)
+    }
+
     @Test("the uuid is the path, not the host")
     func uuidIsThePath() throws {
         let url = try #require(URL(string: AgentDeepLink.string(connectionId: id, paneId: "%3")))

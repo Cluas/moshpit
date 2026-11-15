@@ -44,7 +44,13 @@ pub(super) struct Push {
     revive: bool,
     /// Lost with its connection: opened again on the next one.
     reopen: bool,
+    /// When a read last opened it again at once (B682): once a minute at
+    /// most; a channel that keeps dying waits for its retry.
+    revived_at: Option<u64>,
 }
+
+/// How often push may be opened again at once by a read (B682), in ms.
+const REVIVE_AT_READ_EVERY: u64 = 60_000;
 
 impl Push {
     pub fn active(&self) -> bool {
@@ -89,10 +95,12 @@ impl Client {
                 return;
             };
             let revive = self.push.revive;
+            let revived_at = self.push.revived_at;
             self.push = Push {
                 state: State::Opening,
                 socket: SocketClient::new(),
                 revive,
+                revived_at,
                 ..Push::default()
             };
             self.outputs.push_back(Output::OpenPush { program });
@@ -268,6 +276,28 @@ impl Client {
         {
             self.start_push();
         }
+    }
+
+    /// A read found the server answering, and push died while it was up
+    /// and waits for its retry (B682): opened again now. A server restarted
+    /// quickly (the desktop upgraded herdr) answered before any read found
+    /// it gone, so nothing tied to its coming back fired (B422), and push
+    /// came back only on its 10 s retry — the tree and the agents' states
+    /// as slow as the poll meanwhile. Once a minute at most.
+    pub(super) fn revive_push_at_read(&mut self) {
+        if self.push.state != State::Dead
+            || !self.push.revive
+            || !self.timers.is_armed(&Slot::PushRetry)
+            || self
+                .push
+                .revived_at
+                .is_some_and(|at| self.now.saturating_sub(at) < REVIVE_AT_READ_EVERY)
+        {
+            return;
+        }
+        self.push.revived_at = Some(self.now);
+        self.timers.cancel(&Slot::PushRetry);
+        self.start_push();
     }
 
     /// The connection the push channel rode is gone, and the channel with

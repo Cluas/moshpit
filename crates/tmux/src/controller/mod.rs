@@ -55,7 +55,7 @@ use crate::model::{PaneInfo, Selection, SessionInfo, Snapshot, WindowInfo, id_cm
 
 pub use group::{GROUP_MARK, GROUP_OF_OPTION, is_group_name};
 use group::{GroupState, PhoneGroup};
-pub use input::{InputFlags, PixelScroll, ScrollRoute, click_bytes, wheel_bytes};
+pub use input::{InputFlags, PixelScroll, ScrollRoute, click_bytes, wheel_bytes, wheel_cell};
 pub use sidecar::{OWNED_OPTION, STATUS_HIDDEN_OPTION};
 use size::LeaseThen;
 pub use size::{
@@ -616,6 +616,9 @@ pub struct Controller {
     /// What tmux said about each pane's program (B363).
     pane_flags: BTreeMap<String, input::PaneFlags>,
     wheel_carry: input::RowCarry,
+    /// The cell (0-based, the input pane's) the scroll under way is aimed
+    /// at: where its drag began (B578).
+    wheel_aim: Option<(i64, i64)>,
     /// Each pane terminal's grid: born at the client size, then what its
     /// view reported.
     pane_grids: BTreeMap<String, (i64, i64)>,
@@ -697,6 +700,7 @@ impl Controller {
             refresh_holds: 0,
             pane_flags: BTreeMap::new(),
             wheel_carry: input::RowCarry::default(),
+            wheel_aim: None,
             pane_grids: BTreeMap::new(),
             held_grids: BTreeMap::new(),
             last_incoming_at: None,

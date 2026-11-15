@@ -226,6 +226,7 @@ fn picker(tree: &Tree, kind: Kind) -> Picker {
             Kind::Sessions => tree.active_session.clone(),
             Kind::Panes => tree.active_pane.clone(),
         },
+        send: None,
     }
 }
 

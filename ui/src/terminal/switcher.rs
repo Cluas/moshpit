@@ -346,6 +346,19 @@ pub(crate) fn appearing(
     (enter, leave): (Duration, Duration),
     make: impl Fn() -> AnyElement + 'static,
 ) -> AnyElement {
+    appearing_ms(
+        visible,
+        move |show| if show { enter.ms() } else { leave.ms() },
+        make,
+    )
+}
+
+/// [`appearing`], its fades `length(showing)` ms long (none at 0).
+pub(crate) fn appearing_ms(
+    visible: Memo<bool>,
+    length: impl Fn(bool) -> f32 + 'static,
+    make: impl Fn() -> AnyElement + 'static,
+) -> AnyElement {
     let shown = visible.get_untracked();
     let mounted = signal(shown);
     let opacity = animated_value(if shown { 1.0 } else { 0.0 });
@@ -357,14 +370,14 @@ pub(crate) fn appearing(
         }
         if show {
             mounted.set(true);
-            let ms = enter.ms();
+            let ms = length(true);
             if ms > 0.0 {
                 drop(opacity.timing(1.0, ms, ENTER));
             } else {
                 opacity.set(1.0);
             }
         } else {
-            let ms = leave.ms();
+            let ms = length(false);
             if ms > 0.0 {
                 drop(opacity.timing(0.0, ms, LEAVE));
                 pending.replace(Some(set_timeout(

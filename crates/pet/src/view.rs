@@ -70,6 +70,39 @@ pub struct PetView {
     /// It talks (「让它说话」, PET-DESIGN §17): on unless turned off.
     #[serde(default = "talks")]
     pub talk: bool,
+    /// The app icon Home offers now (B668), after the hatch or a new look.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub icon: Option<IconOffer>,
+}
+
+/// The app icon the pet offers (B668, the owner's call): once it hatches,
+/// and again each time it grows into a new look, Home asks
+/// 「把 App 图标换成墩墩吗？」 (换 / 先不换). Nothing switches without a yes.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct IconOffer {
+    /// The icon's id in the gallery ([`icon_id`]).
+    pub id: String,
+    /// The species' id (`tun`), whose name the card says.
+    pub species: String,
+    /// The person picked their icon by hand in the gallery: 「先不换」 is
+    /// the default.
+    pub keep_default: bool,
+}
+
+/// The gallery's id of a species' icon (`tun`, `tun-shiny`): fur a stage
+/// changed keeps the natural icon; only a shiny has its own.
+pub fn icon_id(species: &str, shiny: bool) -> String {
+    if shiny {
+        format!("{species}-shiny")
+    } else {
+        species.to_owned()
+    }
+}
+
+/// Which look an offer is about: the species, shiny or not, and the stage.
+/// A look asked about once is not asked about again.
+pub fn icon_look(species: &str, shiny: bool, stage: u8) -> String {
+    format!("{}.{stage}", icon_id(species, shiny))
 }
 
 fn talks() -> bool {

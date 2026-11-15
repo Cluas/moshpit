@@ -10,10 +10,11 @@ enum VoiceEngineKind: String, CaseIterable, Identifiable, Sendable {
     /// SFSpeechRecognizer). Nothing to download, but each session is locked to
     /// exactly one locale — Apple exposes no code-switching mode.
     case apple
-    /// Local Whisper through WhisperKit. A single multilingual model covers
-    /// ~100 languages at once, which is the only way a sentence that starts in
-    /// one language and ends in "git rebase --onto" survives intact. Costs a
-    /// several-hundred-MB download and more time per utterance.
+    /// A local model: Qwen3-ASR (sherpa-onnx) or Whisper (WhisperKit), the
+    /// one picked under Model. Either hears a sentence that starts in one
+    /// language and ends in "git rebase --onto" as one sentence. Costs a
+    /// several-hundred-MB download and more time per utterance. The raw value
+    /// stays "whisper": it is what installs from before Qwen3-ASR stored.
     case whisper
 
     var id: String { rawValue }
@@ -21,7 +22,7 @@ enum VoiceEngineKind: String, CaseIterable, Identifiable, Sendable {
     var displayName: String {
         switch self {
         case .apple: return String(localized: "Apple (built in)")
-        case .whisper: return String(localized: "Whisper (local model)")
+        case .whisper: return String(localized: "Local model")
         }
     }
 
@@ -108,24 +109,27 @@ enum VoiceLanguageResolver {
         return "zh"
     }
 
-    /// The language to preselect the first time someone switches to Whisper.
+    /// The Chinese script to write Whisper's output in, from the user's first
+    /// non-English language; nil when that isn't Chinese (a Japanese
+    /// speaker's kanji must not be "simplified").
     ///
-    /// The user's top **non-English** language, when their device settings
-    /// name one; otherwise empty, meaning auto-detect.
-    ///
-    /// Two reasons it isn't just auto-detect for everyone. Naming a language
-    /// beats per-window detection on exactly the code-switched speech this
-    /// engine is for — detection can flip mid-sentence. And English is the
-    /// one language that needs no help here: shell commands are English
-    /// whoever is speaking, so an English-only speaker gains nothing from
-    /// pinning it, while someone who speaks anything else gains a lot.
-    @MainActor
-    static func initialWhisperLanguage() -> String {
-        for identifier in spokenLanguageCandidates() {
-            if let code = whisperCode(forIdentifier: identifier), code != "en" {
-                return code
+    /// B670: left to detect the language, Whisper writes Traditional
+    /// characters about one sentence in six (8 of 50 real clips) — the
+    /// Simplified primer that used to prevent it made the transcripts
+    /// themselves worse. Explicit Traditional script, or Taiwan, Hong Kong
+    /// or Macau without a script, or Cantonese, means Traditional.
+    static func chineseScript(for candidates: [String]) -> DictationTranscript.ChineseScript? {
+        for identifier in candidates {
+            let locale = Locale(identifier: identifier)
+            guard let code = locale.language.languageCode?.identifier, code != "en" else { continue }
+            guard code == "zh" || code == "yue" else { return nil }
+            if code == "yue" { return .traditional }
+            if let script = locale.language.script?.identifier {
+                return script == "Hant" ? .traditional : .simplified
             }
+            let region = locale.language.region?.identifier
+            return ["TW", "HK", "MO"].contains(region ?? "") ? .traditional : .simplified
         }
-        return ""
+        return nil
     }
 }

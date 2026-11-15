@@ -201,6 +201,19 @@ fn a_failed_flow_is_replaced_a_second_later() {
     assert_eq!(transport.diagnostics().flow_rebuilds, 1);
 }
 
+/// B619: a fresh flow for a long absence's return asks no repaint: no
+/// narrowed size goes in a user state, the flow is rebuilt and nudged.
+#[test]
+fn replacing_the_flow_asks_no_repaint() {
+    let mut transport = transport();
+    transport.start(80, 24, T0);
+    drain(&mut transport);
+    transport.replace_flow(T0 + 500);
+    let events = drain(&mut transport);
+    assert!(events.contains(&Event::RebuildFlow), "{events:?}");
+    assert_eq!(transport.diagnostics().flow_rebuilds, 1);
+}
+
 /// A flow replaced in the meantime (a forced resume) has not failed: the
 /// failure's replacement does not replace it again.
 #[test]

@@ -1,6 +1,7 @@
 //! Add Key (`docs/nsh/UI-DESIGN.md` §6.6) in NSH, in its sheet: generate a
-//! key pair on the device (in the Secure Enclave if asked), or import one,
-//! and bind it to hosts.
+//! key pair on the device (in the Secure Enclave if asked), or import one.
+//! Which connections sign in with it is theirs to say (each picks its key);
+//! SSH Keys lists them (B602).
 //!
 //! Key material never comes here. The private key's text and its
 //! passphrase are typed into the host's own views, laid out by this page
@@ -23,7 +24,7 @@
 //!   `{"ev": "algorithm", "value": "ed25519" | "rsa"}`,
 //!   `{"ev": "set", "key": "requireFaceID" | "secureEnclave", "value"}`;
 //! - `{"ev": "name" | "comment" | "public-line", "value": …}` as a field
-//!   changes, and `{"ev": "host", "name": …}` for a host chip;
+//!   changes;
 //! - `{"ev": "import-file", "target": "private" | "public"}` (the host's
 //!   document picker fills the field);
 //! - `{"ev": "submit"}`, `{"ev": "cancel"}`, and `{"ev": "dismiss-error"}`
@@ -57,9 +58,8 @@ use crate::{
         field::{
             ControlState, FieldControl, FieldLayout, field, remount, secret_field, text_input,
         },
-        key::{ChipVariant, chip},
         page,
-        row::{PADDING_X, PADDING_Y, Row, RowTone, row},
+        row::{PADDING_X, Row, RowTone, row},
         section::{Inset, section},
         tokens::token,
         typography::TextToken,
@@ -103,9 +103,6 @@ pub struct AddKey {
     #[serde(rename = "requireFaceID")]
     pub require_face_id: bool,
     pub secure_enclave: bool,
-    /// Every host the user has, and those the key will be bound to.
-    pub hosts: Vec<String>,
-    pub bound: Vec<String>,
     pub pem: Pem,
     /// The text fields, as the host has them: taken when `fields` moves.
     pub name: String,
@@ -241,7 +238,7 @@ pub fn AddKeyScreen(props: ScreenProps) -> impl IntoElement {
                         }
                     })
                     .into_element(),
-                    bind_section(state, tell.clone()),
+                    fingerprint_section(state),
                     // Room for the keyboard while it is up, so the last
                     // fields scroll above it.
                     view().w_full().pb_keyboard().into_element(),
@@ -769,65 +766,27 @@ fn words(os: Os) -> Words {
     }
 }
 
-/// BIND TO HOSTS: a chip for each host, on for those the key will be
-/// bound to; and the new key's fingerprint, once there is one. Made again
-/// when the hosts change.
-fn bind_section(state: State, tell: Tell) -> AnyElement {
-    let hosts = computed(move || read(state, |s| s.hosts.clone()).unwrap_or_default());
-    dynamic(move || {
-        let hosts = hosts.get();
-        let tell = tell.clone();
-        untracked(move || {
-            let mut section = section().header(t!("BIND TO HOSTS")).footer(t!(
-                "When bound, this key is used only for the selected hosts by default; change it anytime in the SSH Keys detail page."
-            ));
-            if !hosts.is_empty() {
-                section = section.item(host_chips(hosts, state, tell), Inset::Content);
-            }
-            section
-                .row(
-                    row(t!("Fingerprint"))
-                        .subtitle_with(move || {
-                            read(state, |s| s.fingerprint.clone())
-                                .flatten()
-                                .unwrap_or_else(|| {
-                                    t!("—:—:—:—:—:—:—:—:—:—  (shown after generation)")
-                                })
-                                .into()
-                        })
-                        .mono_subtitle()
-                        .test_id("add-key-fingerprint"),
-                )
-                .into_element()
-        })
-    })
-    .into_element()
-}
-
-/// A toggle chip for each of `hosts`, on while the key is bound to it.
-fn host_chips(hosts: Vec<String>, state: State, tell: Tell) -> AnyElement {
-    view()
-        .w_full()
-        .flex_row()
-        .flex_wrap()
-        .gap(px(8.0))
-        .px(px(PADDING_X))
-        .py(px(PADDING_Y))
-        .children(hosts.into_iter().map(move |host| {
-            let picked = {
-                let host = host.clone();
-                move || read(state, |s| s.bound.contains(&host)).unwrap_or(false)
-            };
-            let tell = tell.clone();
-            let id = format!("add-key-host-{host}");
-            chip(host.clone())
-                .variant(ChipVariant::Toggle)
-                .mono()
-                .selected(picked)
-                .on_press(move || tell(json!({"ev": "host", "name": host})))
-                .test_id(&id)
-                .into_element()
-        }))
+/// The new key's fingerprint, once there is one.
+///
+/// B602: this was BIND TO HOSTS, a chip for each host the key would be
+/// "bound" to — a label stored on the key and nothing else. No connection
+/// signed in with the key for it, the footer sent the person to a detail
+/// page that doesn't exist, and SSH Keys listed the chips as the hosts the
+/// key is used for, whatever the connections said. A connection picks its
+/// key; SSH Keys lists the ones that do.
+fn fingerprint_section(state: State) -> AnyElement {
+    section()
+        .row(
+            row(t!("Fingerprint"))
+                .subtitle_with(move || {
+                    read(state, |s| s.fingerprint.clone())
+                        .flatten()
+                        .unwrap_or_else(|| t!("—:—:—:—:—:—:—:—:—:—  (shown after generation)"))
+                        .into()
+                })
+                .mono_subtitle()
+                .test_id("add-key-fingerprint"),
+        )
         .into_element()
 }
 
@@ -847,8 +806,6 @@ mod tests {
             algorithm: Algorithm::Ed25519,
             require_face_id: true,
             secure_enclave: false,
-            hosts: vec!["m1-pro".into(), "nas".into()],
-            bound: vec![],
             pem: Pem {
                 empty: true,
                 encrypted: false,
@@ -874,7 +831,6 @@ mod tests {
                     empty: false,
                     encrypted: true,
                 },
-                bound: vec!["nas".into()],
                 fingerprint: Some("SHA256:abc".into()),
                 error: Some("Unsupported: DSA".into()),
                 ..form()
@@ -887,7 +843,7 @@ mod tests {
 
     #[test]
     fn the_host_message_as_written() {
-        let json = r#"{"op":"add-key","method":"hardware","algorithm":"rsa","requireFaceID":false,"secureEnclave":true,"hosts":[],"bound":[],"pem":{"empty":true,"encrypted":false},"name":"a","comment":"","publicLine":"","fields":3,"canSubmit":false,"working":false}"#;
+        let json = r#"{"op":"add-key","method":"hardware","algorithm":"rsa","requireFaceID":false,"secureEnclave":true,"pem":{"empty":true,"encrypted":false},"name":"a","comment":"","publicLine":"","fields":3,"canSubmit":false,"working":false}"#;
         let Message::AddKey(form) = Message::parse(json).unwrap();
         assert_eq!(form.method, Method::Hardware);
         assert_eq!(form.algorithm, Algorithm::Rsa);

@@ -38,17 +38,30 @@ use moshpit_ui::feedback::{self, FeedbackEvent, FeedbackState};
 use moshpit_ui::screen::Screen;
 use moshpit_ui::theme::parse_hex;
 use nsh_core::color::Rgba;
+use serde::de::DeserializeOwned;
 
 mod accent;
+mod add_key;
 mod feedback_page;
 mod install_assist;
+mod mux_picker;
+mod prompt;
+mod remote_folder;
 mod settings;
+mod shortcuts;
+mod ssh_keys;
 mod theme_gallery;
 mod whisper_model;
 
 pub use accent::*;
+pub use add_key::*;
 pub use install_assist::*;
+pub use mux_picker::*;
+pub use prompt::*;
+pub use remote_folder::*;
 pub use settings::*;
+pub use shortcuts::*;
+pub use ssh_keys::*;
 pub use theme_gallery::*;
 pub use whisper_model::*;
 
@@ -78,6 +91,24 @@ pub enum PageMessage {
     /// `{"op": "reveal"}`: the user's own themes scrolled to the top (a
     /// capture run's).
     ThemeGalleryReveal,
+    /// `{"op": "keys", …}`: Settings › SSH Keys.
+    SshKeys { state: SshKeysPageState },
+    /// `{"op": "picker", …}`: a multiplexer's list.
+    MuxPicker { state: MuxPickerPageState },
+    /// `{"op": "act", …}`: a picker row's menu picked `action`.
+    MuxPickerAct { action: MuxPickerAction, id: String },
+    /// `{"op": "prompted", …}`: the answer to prompt `id` (none: Cancel),
+    /// for whichever screen asked.
+    Prompted { id: u32, text: Option<String> },
+    /// `{"op": "folder", …}`: a folder on the host.
+    RemoteFolder { state: RemoteFolderPageState },
+    /// `{"op": "act", …}`: an entry's menu picked `action`.
+    RemoteFolderAct {
+        action: RemoteFolderAction,
+        path: String,
+    },
+    /// `{"op": "add-key", …}`: Add Key's form.
+    AddKey { state: AddKeyPageState },
 }
 
 /// What a page's screen told its host, read by the screen's own type.
@@ -89,6 +120,12 @@ pub enum PageEvent {
     InstallAssist { event: InstallAssistEvent },
     Accent { event: AccentEvent },
     ThemeGallery { event: ThemeGalleryEvent },
+    SshKeys { event: SshKeysEvent },
+    Shortcuts { event: ShortcutsEvent },
+    AddShortcut { event: AddShortcutEvent },
+    MuxPicker { event: MuxPickerEvent },
+    RemoteFolder { event: RemoteFolderEvent },
+    AddKey { event: AddKeyEvent },
 }
 
 /// A message the bridge couldn't write: a value the screen's type can't
@@ -109,6 +146,17 @@ impl std::fmt::Display for PageError {
 }
 
 impl std::error::Error for PageError {}
+
+/// One of a screen's small enums by its id (`"bar"`), or the error naming
+/// `field`.
+fn choice<T: DeserializeOwned>(field: &'static str, id: &str) -> Result<T, PageError> {
+    serde_json::from_value(serde_json::Value::String(id.to_owned())).map_err(|_| {
+        PageError::Invalid {
+            field: field.to_owned(),
+            value: id.to_owned(),
+        }
+    })
+}
 
 /// Color `hex` (`#RRGGBB` or `#RRGGBBAA`), or the error naming `field`.
 fn color(field: &'static str, hex: &str) -> Result<Rgba, PageError> {
@@ -142,6 +190,17 @@ pub fn page_message(message: PageMessage) -> Result<String, PageError> {
             moshpit_ui::theme_gallery::Message::Themes(state.try_into()?).to_json()
         }
         PageMessage::ThemeGalleryReveal => moshpit_ui::theme_gallery::Message::Reveal.to_json(),
+        PageMessage::MuxPicker { state } => mux_picker::picker(state.try_into()?),
+        PageMessage::MuxPickerAct { action, id } => mux_picker::act(action, id),
+        PageMessage::RemoteFolder { state } => remote_folder::folder(state.into()),
+        PageMessage::RemoteFolderAct { action, path } => remote_folder::act(action, path),
+        PageMessage::AddKey { state } => {
+            moshpit_ui::add_key::Message::AddKey(state.try_into()?).to_json()
+        }
+        PageMessage::Prompted { id, text } => prompt::answer(id, text),
+        PageMessage::SshKeys { state } => {
+            moshpit_ui::ssh_keys::Message::Keys(state.into()).to_json()
+        }
     })
 }
 
@@ -165,6 +224,20 @@ pub fn page_event(screen: String, json: String) -> Option<PageEvent> {
         Screen::Theme => {
             ThemeGalleryEvent::read(&json).map(|event| PageEvent::ThemeGallery { event })
         }
+        Screen::SshKeys => SshKeysEvent::read(&json).map(|event| PageEvent::SshKeys { event }),
+        Screen::Shortcuts => {
+            ShortcutsEvent::read(&json).map(|event| PageEvent::Shortcuts { event })
+        }
+        Screen::AddShortcut => {
+            AddShortcutEvent::read(&json).map(|event| PageEvent::AddShortcut { event })
+        }
+        Screen::MuxPicker => {
+            MuxPickerEvent::read(&json).map(|event| PageEvent::MuxPicker { event })
+        }
+        Screen::RemoteFolder => {
+            RemoteFolderEvent::read(&json).map(|event| PageEvent::RemoteFolder { event })
+        }
+        Screen::AddKey => AddKeyEvent::read(&json).map(|event| PageEvent::AddKey { event }),
         _ => None,
     }
 }
@@ -671,6 +744,539 @@ mod tests {
                 Some(PageEvent::ThemeGallery { event }),
                 "{told}"
             );
+        }
+    }
+    fn ssh_key(id: &str) -> SshKeyRow {
+        SshKeyRow {
+            id: id.into(),
+            name: "laptop".into(),
+            badge: "ED25519".into(),
+            avatar: SshKeyAvatar::Gray,
+            stale: true,
+            fingerprint: "SHA256:abc".into(),
+            hosts: vec!["nas".into()],
+            unused_since: Some("Mar 2026".into()),
+            has_public_key: true,
+        }
+    }
+
+    /// The SSH Keys page's metadata crosses into the screen's own, and its
+    /// events read back as the page tells them.
+    #[test]
+    fn ssh_keys_cross_both_ways() {
+        let state = SshKeysPageState {
+            device: vec![],
+            imported: vec![ssh_key("A1")],
+            deleting: Some("A1".into()),
+            notice: Some(SshKeysNotice {
+                title: "Key kept".into(),
+                message: "nas still signs in with it".into(),
+            }),
+        };
+        let json = page_message(PageMessage::SshKeys { state }).unwrap();
+        let moshpit_ui::ssh_keys::Message::Keys(keys) =
+            moshpit_ui::ssh_keys::Message::parse(&json).unwrap();
+        assert_eq!(keys.imported[0].avatar, moshpit_ui::ssh_keys::Avatar::Gray);
+        assert_eq!(keys.imported[0].unused_since.as_deref(), Some("Mar 2026"));
+        assert_eq!(keys.deleting.as_deref(), Some("A1"));
+        assert_eq!(keys.notice.unwrap().title, "Key kept");
+        let value: Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(value["imported"][0]["avatar"], "gray");
+        assert_eq!(value["imported"][0]["hasPublicKey"], true);
+
+        for (told, event) in [
+            (json!({"ev": "done"}), SshKeysEvent::Done),
+            (
+                json!({"ev": "add"}),
+                SshKeysEvent::Add {
+                    method: SshKeyAddMethod::Generate,
+                },
+            ),
+            (
+                json!({"ev": "add", "method": "import"}),
+                SshKeysEvent::Add {
+                    method: SshKeyAddMethod::Import,
+                },
+            ),
+            (
+                json!({"ev": "copy-public-key", "id": "A1"}),
+                SshKeysEvent::CopyPublicKey { id: "A1".into() },
+            ),
+            (
+                json!({"ev": "copy-fingerprint", "id": "A1"}),
+                SshKeysEvent::CopyFingerprint { id: "A1".into() },
+            ),
+            (
+                json!({"ev": "share-public-key", "id": "A1"}),
+                SshKeysEvent::SharePublicKey { id: "A1".into() },
+            ),
+            (
+                json!({"ev": "confirm-delete", "id": "A1"}),
+                SshKeysEvent::ConfirmDelete { id: "A1".into() },
+            ),
+            (json!({"ev": "cancel-delete"}), SshKeysEvent::CancelDelete),
+            (
+                json!({"ev": "delete", "id": "A1"}),
+                SshKeysEvent::Delete { id: "A1".into() },
+            ),
+            (json!({"ev": "dismiss-notice"}), SshKeysEvent::DismissNotice),
+        ] {
+            assert_eq!(
+                page_event("ssh-keys".into(), told.to_string()),
+                Some(PageEvent::SshKeys { event }),
+                "{told}"
+            );
+        }
+        assert_eq!(
+            page_event(
+                "ssh-keys".into(),
+                json!({"ev": "add", "method": "hardware"}).to_string()
+            ),
+            None,
+            "a method Add Key doesn't open on"
+        );
+    }
+
+    /// What the Shortcuts pages tell reads back as they tell it, and a list
+    /// event goes back to the shared model as told.
+    #[test]
+    fn shortcuts_events_read_as_the_pages_tell_them() {
+        for told in [
+            json!({"ev": "done"}),
+            json!({"ev": "add"}),
+            json!({"ev": "edit", "id": "5C00"}),
+            json!({"ev": "delete", "id": "5C00"}),
+            json!({"ev": "remove-from-toolbar", "id": "5C00"}),
+            json!({"ev": "add-to-toolbar", "id": "5C00"}),
+            json!({"ev": "move", "from": 1, "to": 3}),
+        ] {
+            let Some(PageEvent::Shortcuts { event }) =
+                page_event("shortcuts".into(), told.to_string())
+            else {
+                panic!("not read: {told}");
+            };
+            assert_eq!(event.told(), told);
+        }
+        assert_eq!(
+            page_event(
+                "shortcuts".into(),
+                json!({"ev": "move", "from": -1, "to": 3}).to_string()
+            ),
+            None
+        );
+        let draft = json!({"kind": "text", "payload": "ls", "chipLabel": "ls"});
+        assert_eq!(
+            page_event(
+                "add-shortcut".into(),
+                json!({"ev": "change", "draft": draft}).to_string()
+            ),
+            Some(PageEvent::AddShortcut {
+                event: AddShortcutEvent::Change {
+                    draft_json: draft.to_string()
+                }
+            })
+        );
+        for (told, event) in [
+            ("save", AddShortcutEvent::Save),
+            ("cancel", AddShortcutEvent::Cancel),
+        ] {
+            assert_eq!(
+                page_event("add-shortcut".into(), json!({"ev": told}).to_string()),
+                Some(PageEvent::AddShortcut { event })
+            );
+        }
+        assert_eq!(
+            page_event("add-shortcut".into(), json!({"ev": "change"}).to_string()),
+            None,
+            "a change carries the draft"
+        );
+    }
+    /// The picker's list crosses into the screen's own, its small enums by
+    /// id; a row's menu and a prompt's answer are messages it takes; what
+    /// it tells reads back, a prompt with its question.
+    #[test]
+    fn mux_picker_crosses_both_ways() {
+        use moshpit_ui::terminal::picker::{self, Act};
+        use moshpit_ui::terminal::prompt::{self as asked, Prompt};
+
+        let state = MuxPickerPageState {
+            kind: "windows".into(),
+            mux: "tmux".into(),
+            rows: vec![MuxPickerRow {
+                id: "@1".into(),
+                index: Some(1),
+                name: "build".into(),
+                panes: Some(2),
+                command: "cargo".into(),
+                signal: Some("attention".into()),
+                ..MuxPickerRow::default()
+            }],
+            active: Some("@1".into()),
+            send: None,
+        };
+        let json = page_message(PageMessage::MuxPicker {
+            state: state.clone(),
+        })
+        .unwrap();
+        let picker::Message::Picker(parsed) = picker::Message::parse(&json).unwrap() else {
+            panic!("not a picker: {json}");
+        };
+        assert_eq!(parsed.kind, picker::Kind::Windows);
+        assert_eq!(parsed.rows[0].panes, Some(2));
+        let value: Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(value["rows"][0]["signal"], "attention");
+        assert_eq!(value["mux"], "tmux");
+
+        // A held share's picker (B622): its agent crosses, each pane's
+        // place with it.
+        let mut sending = state.clone();
+        sending.kind = "panes".into();
+        sending.active = None;
+        sending.send = Some("claude".into());
+        sending.rows[0].window = Some("work · review".into());
+        let json = page_message(PageMessage::MuxPicker { state: sending }).unwrap();
+        let picker::Message::Picker(parsed) = picker::Message::parse(&json).unwrap() else {
+            panic!("not a picker: {json}");
+        };
+        assert_eq!(parsed.send.as_deref(), Some("claude"));
+        assert_eq!(parsed.rows[0].window.as_deref(), Some("work · review"));
+
+        let mut tabs = state;
+        tabs.kind = "tabs".into();
+        assert_eq!(
+            page_message(PageMessage::MuxPicker { state: tabs }),
+            Err(PageError::Invalid {
+                field: "kind".into(),
+                value: "tabs".into()
+            })
+        );
+        assert_eq!(
+            picker::Message::parse(
+                &page_message(PageMessage::MuxPickerAct {
+                    action: MuxPickerAction::Kill,
+                    id: "$0".into()
+                })
+                .unwrap()
+            ),
+            Ok(picker::Message::Act {
+                action: Act::Kill,
+                id: "$0".into()
+            })
+        );
+        for text in [Some("build".to_owned()), None] {
+            let answer = page_message(PageMessage::Prompted {
+                id: 3,
+                text: text.clone(),
+            })
+            .unwrap();
+            assert_eq!(
+                picker::Message::parse(&answer),
+                Ok(picker::Message::Prompted(asked::Answer { id: 3, text }))
+            );
+        }
+
+        let prompt = Prompt {
+            title: "Rename window".into(),
+            message: None,
+            placeholder: "Name".into(),
+            text: "build".into(),
+            confirm: "Rename".into(),
+            cancel: "Cancel".into(),
+        };
+        assert_eq!(
+            page_event("mux-picker".into(), asked::event(7, &prompt).to_string()),
+            Some(PageEvent::MuxPicker {
+                event: MuxPickerEvent::Prompt {
+                    question: TextPromptQuestion {
+                        id: 7,
+                        title: "Rename window".into(),
+                        message: None,
+                        placeholder: "Name".into(),
+                        text: "build".into(),
+                        confirm: "Rename".into(),
+                        cancel: "Cancel".into(),
+                    }
+                }
+            })
+        );
+        for (told, event) in [
+            (
+                json!({"ev": "select", "id": "@2"}),
+                MuxPickerEvent::Select { id: "@2".into() },
+            ),
+            (
+                json!({"ev": "new", "name": null}),
+                MuxPickerEvent::New { name: None },
+            ),
+            (
+                json!({"ev": "new", "name": "logs"}),
+                MuxPickerEvent::New {
+                    name: Some("logs".into()),
+                },
+            ),
+            (
+                json!({"ev": "rename", "id": "@2", "name": "web"}),
+                MuxPickerEvent::Rename {
+                    id: "@2".into(),
+                    name: "web".into(),
+                },
+            ),
+            (
+                json!({"ev": "kill", "id": "@2"}),
+                MuxPickerEvent::Kill { id: "@2".into() },
+            ),
+        ] {
+            assert_eq!(
+                page_event("mux-picker".into(), told.to_string()),
+                Some(PageEvent::MuxPicker { event }),
+                "{told}"
+            );
+        }
+        assert_eq!(
+            page_event(
+                "mux-picker".into(),
+                json!({"ev": "rename", "id": "@2"}).to_string()
+            ),
+            None,
+            "a rename names the new name"
+        );
+    }
+    /// A folder crosses into the screen's own; an entry's menu and a
+    /// prompt's answer are messages it takes; what it tells reads back.
+    #[test]
+    fn remote_folder_crosses_both_ways() {
+        use moshpit_ui::terminal::folder::{self, Act};
+
+        let state = RemoteFolderPageState {
+            name: "shots".into(),
+            path: "/home/me/shots".into(),
+            parents: vec!["/home/me".into(), "/home".into(), "/".into()],
+            pushed: true,
+            uploading: Some(0.5),
+            media: vec![RemoteFolderItem {
+                path: "/home/me/shots/a.mov".into(),
+                name: "a.mov".into(),
+                video: true,
+                symbol: "film".into(),
+                duration: Some("1:05".into()),
+                ..RemoteFolderItem::default()
+            }],
+            edit_failure: Some(RemoteFolderFailure {
+                title: "Can't rename".into(),
+                message: "Permission denied".into(),
+            }),
+            edit_failure_id: 4,
+            ..RemoteFolderPageState::default()
+        };
+        let json = page_message(PageMessage::RemoteFolder { state }).unwrap();
+        let folder::Message::Folder(parsed) = folder::Message::parse(&json).unwrap() else {
+            panic!("not a folder: {json}");
+        };
+        assert_eq!(parsed.media[0].duration.as_deref(), Some("1:05"));
+        assert_eq!(parsed.edit_failure.unwrap().title, "Can't rename");
+        assert_eq!(parsed.edit_failure_id, 4);
+        assert_eq!(parsed.uploading, Some(0.5));
+        assert_eq!(
+            folder::Message::parse(
+                &page_message(PageMessage::RemoteFolderAct {
+                    action: RemoteFolderAction::Share,
+                    path: "/a".into()
+                })
+                .unwrap()
+            ),
+            Ok(folder::Message::Act {
+                action: Act::Share,
+                path: "/a".into()
+            })
+        );
+        assert!(matches!(
+            folder::Message::parse(
+                &page_message(PageMessage::Prompted { id: 2, text: None }).unwrap()
+            ),
+            Ok(folder::Message::Prompted(_))
+        ));
+
+        for (told, event) in [
+            (
+                json!({"ev": "open", "path": "/a"}),
+                RemoteFolderEvent::Open { path: "/a".into() },
+            ),
+            (
+                json!({"ev": "share", "path": "/a"}),
+                RemoteFolderEvent::Share { path: "/a".into() },
+            ),
+            (json!({"ev": "back"}), RemoteFolderEvent::Back),
+            (
+                json!({"ev": "climb", "path": "/"}),
+                RemoteFolderEvent::Climb { path: "/".into() },
+            ),
+            (
+                json!({"ev": "add", "item": "photos"}),
+                RemoteFolderEvent::Add {
+                    item: RemoteFolderUpload::Photos,
+                },
+            ),
+            (
+                json!({"ev": "add", "item": "files"}),
+                RemoteFolderEvent::Add {
+                    item: RemoteFolderUpload::Files,
+                },
+            ),
+            (
+                json!({"ev": "new-folder", "name": "new"}),
+                RemoteFolderEvent::NewFolder { name: "new".into() },
+            ),
+            (
+                json!({"ev": "rename", "path": "/a", "name": "b"}),
+                RemoteFolderEvent::Rename {
+                    path: "/a".into(),
+                    name: "b".into(),
+                },
+            ),
+            (
+                json!({"ev": "delete", "path": "/a"}),
+                RemoteFolderEvent::Delete { path: "/a".into() },
+            ),
+            (json!({"ev": "refresh"}), RemoteFolderEvent::Refresh),
+            (
+                json!({"ev": "dismiss", "failure": "edit"}),
+                RemoteFolderEvent::Dismiss {
+                    failure: RemoteFolderAlert::Edit,
+                },
+            ),
+        ] {
+            assert_eq!(
+                page_event("remote-folder".into(), told.to_string()),
+                Some(PageEvent::RemoteFolder { event }),
+                "{told}"
+            );
+        }
+        for bad in [
+            json!({"ev": "add", "item": "camera"}),
+            json!({"ev": "dismiss", "failure": "upload"}),
+            json!({"ev": "prompt", "id": 1}),
+        ] {
+            assert_eq!(
+                page_event("remote-folder".into(), bad.to_string()),
+                None,
+                "{bad}"
+            );
+        }
+    }
+    /// Add Key's form crosses into the screen's own, never a key; its
+    /// events read back as it tells them.
+    #[test]
+    fn add_key_crosses_both_ways() {
+        use moshpit_ui::add_key::{self as screen, Algorithm, Method};
+
+        let state = AddKeyPageState {
+            method: "import".into(),
+            algorithm: "rsa".into(),
+            require_face_id: false,
+            secure_enclave: false,
+            pem: AddKeyPem {
+                empty: false,
+                encrypted: true,
+            },
+            name: "work".into(),
+            comment: String::new(),
+            public_line: "ssh-ed25519 AAAA work".into(),
+            fields: 3,
+            can_submit: false,
+            working: false,
+            fingerprint: None,
+            error: Some("Wrong passphrase".into()),
+        };
+        let json = page_message(PageMessage::AddKey {
+            state: state.clone(),
+        })
+        .unwrap();
+        let screen::Message::AddKey(form) = screen::Message::parse(&json).unwrap();
+        assert_eq!(form.method, Method::Import);
+        assert_eq!(form.algorithm, Algorithm::Rsa);
+        assert!(form.pem.encrypted);
+        assert_eq!(form.fields, 3);
+        let value: Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(value["requireFaceID"], false);
+        assert!(value.get("fingerprint").is_none());
+        let mut dsa = state;
+        dsa.algorithm = "dsa".into();
+        assert_eq!(
+            page_message(PageMessage::AddKey { state: dsa }),
+            Err(PageError::Invalid {
+                field: "algorithm".into(),
+                value: "dsa".into()
+            })
+        );
+
+        for (told, event) in [
+            (
+                json!({"ev": "method", "value": "import"}),
+                AddKeyEvent::Method {
+                    id: "import".into(),
+                },
+            ),
+            (
+                json!({"ev": "algorithm", "value": "rsa"}),
+                AddKeyEvent::Algorithm { id: "rsa".into() },
+            ),
+            (
+                json!({"ev": "set", "key": "requireFaceID", "value": false}),
+                AddKeyEvent::Set {
+                    key: AddKeySwitch::RequireFaceId,
+                    on: false,
+                },
+            ),
+            (
+                json!({"ev": "set", "key": "secureEnclave", "value": true}),
+                AddKeyEvent::Set {
+                    key: AddKeySwitch::SecureEnclave,
+                    on: true,
+                },
+            ),
+            (
+                json!({"ev": "name", "value": "work"}),
+                AddKeyEvent::Name {
+                    text: "work".into(),
+                },
+            ),
+            (
+                json!({"ev": "comment", "value": "me@laptop"}),
+                AddKeyEvent::Comment {
+                    text: "me@laptop".into(),
+                },
+            ),
+            (
+                json!({"ev": "public-line", "value": "ssh-ed25519 AAAA"}),
+                AddKeyEvent::PublicLine {
+                    text: "ssh-ed25519 AAAA".into(),
+                },
+            ),
+            (
+                json!({"ev": "import-file", "target": "public"}),
+                AddKeyEvent::ImportFile {
+                    target: AddKeyFile::PublicKey,
+                },
+            ),
+            (json!({"ev": "submit"}), AddKeyEvent::Submit),
+            (json!({"ev": "cancel"}), AddKeyEvent::Cancel),
+            (json!({"ev": "dismiss-error"}), AddKeyEvent::DismissError),
+        ] {
+            assert_eq!(
+                page_event("add-key".into(), told.to_string()),
+                Some(PageEvent::AddKey { event }),
+                "{told}"
+            );
+        }
+        for bad in [
+            json!({"ev": "algorithm", "value": "dsa"}),
+            json!({"ev": "set", "key": "pin", "value": true}),
+            json!({"ev": "import-file", "target": "clipboard"}),
+            json!({"ev": "name"}),
+            // B602: the host chips are gone.
+            json!({"ev": "host", "name": "nas"}),
+        ] {
+            assert_eq!(page_event("add-key".into(), bad.to_string()), None, "{bad}");
         }
     }
 }

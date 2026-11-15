@@ -1343,6 +1343,11 @@ void uniffi_moshpit_ffi_fn_method_petmachine_connected(uint64_t ptr, RustCallSta
 int8_t uniffi_moshpit_ffi_fn_method_petmachine_hatch(uint64_t ptr, RustBuffer seed, int64_t now, uint8_t local_hour, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_PETMACHINE_ICON_ANSWERED
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_PETMACHINE_ICON_ANSWERED
+void uniffi_moshpit_ffi_fn_method_petmachine_icon_answered(uint64_t ptr, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_PETMACHINE_ISLAND
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_PETMACHINE_ISLAND
 RustBuffer uniffi_moshpit_ffi_fn_method_petmachine_island(uint64_t ptr, RustBuffer state, RustCallStatus *_Nonnull out_status
@@ -1376,6 +1381,11 @@ void uniffi_moshpit_ffi_fn_method_petmachine_set_choice(uint64_t ptr, RustBuffer
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_PETMACHINE_SET_CLOUD
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_PETMACHINE_SET_CLOUD
 void uniffi_moshpit_ffi_fn_method_petmachine_set_cloud(uint64_t ptr, RustBuffer cloud, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_PETMACHINE_SET_ICON
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_PETMACHINE_SET_ICON
+void uniffi_moshpit_ffi_fn_method_petmachine_set_icon(uint64_t ptr, RustBuffer current, int8_t by_hand, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_PETMACHINE_SET_LISTENER
@@ -1771,6 +1781,11 @@ RustBuffer uniffi_moshpit_ffi_fn_method_keystorehandle_keychain_refs(uint64_t pt
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_KEYSTOREHANDLE_KEYS
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_KEYSTOREHANDLE_KEYS
 RustBuffer uniffi_moshpit_ffi_fn_method_keystorehandle_keys(uint64_t ptr, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_KEYSTOREHANDLE_MARK_USED
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_KEYSTOREHANDLE_MARK_USED
+int8_t uniffi_moshpit_ffi_fn_method_keystorehandle_mark_used(uint64_t ptr, RustBuffer id, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_KEYSTOREHANDLE_RELOAD_IF_NEEDED
@@ -2314,7 +2329,7 @@ RustBuffer uniffi_moshpit_ffi_fn_func_shortcut_builtins(RustCallStatus *_Nonnull
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_SHORTCUTS_LIST_OP
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_SHORTCUTS_LIST_OP
-RustBuffer uniffi_moshpit_ffi_fn_func_shortcuts_list_op(RustBuffer message_json, RustBuffer shortcuts, RustCallStatus *_Nonnull out_status
+RustBuffer uniffi_moshpit_ffi_fn_func_shortcuts_list_op(RustBuffer event, RustBuffer shortcuts, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_SHORTCUTS_PAGE_MESSAGE
@@ -4050,6 +4065,12 @@ uint16_t uniffi_moshpit_ffi_checksum_method_petmachine_hatch(void
     
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_PETMACHINE_ICON_ANSWERED
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_PETMACHINE_ICON_ANSWERED
+uint16_t uniffi_moshpit_ffi_checksum_method_petmachine_icon_answered(void
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_PETMACHINE_ISLAND
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_PETMACHINE_ISLAND
 uint16_t uniffi_moshpit_ffi_checksum_method_petmachine_island(void
@@ -4089,6 +4110,12 @@ uint16_t uniffi_moshpit_ffi_checksum_method_petmachine_set_choice(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_PETMACHINE_SET_CLOUD
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_PETMACHINE_SET_CLOUD
 uint16_t uniffi_moshpit_ffi_checksum_method_petmachine_set_cloud(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_PETMACHINE_SET_ICON
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_PETMACHINE_SET_ICON
+uint16_t uniffi_moshpit_ffi_checksum_method_petmachine_set_icon(void
     
 );
 #endif
@@ -4455,6 +4482,12 @@ uint16_t uniffi_moshpit_ffi_checksum_method_keystorehandle_keychain_refs(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_KEYSTOREHANDLE_KEYS
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_KEYSTOREHANDLE_KEYS
 uint16_t uniffi_moshpit_ffi_checksum_method_keystorehandle_keys(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_KEYSTOREHANDLE_MARK_USED
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_KEYSTOREHANDLE_MARK_USED
+uint16_t uniffi_moshpit_ffi_checksum_method_keystorehandle_mark_used(void
     
 );
 #endif

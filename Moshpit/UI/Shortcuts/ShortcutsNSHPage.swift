@@ -37,7 +37,7 @@ struct ShortcutsNSHPage: View {
                 NSHPage(
                     screen: .shortcuts,
                     attach: { model.attach($0, current: snapshot) },
-                    onMessage: handle,
+                    onEvent: { if case .shortcuts(let event) = $0 { handle(event) } },
                     onFailure: { failed = true })
                     .nshPage()
                     .navigationTitle("Shortcuts")
@@ -51,9 +51,9 @@ struct ShortcutsNSHPage: View {
 
     /// What the screen tells the host: what the shared model
     /// (`crates/app/src/shortcuts.rs`) makes of it against the store.
-    private func handle(_ message: [String: Any]) {
-        guard let op = ShortcutsModel.op(message, in: store) else {
-            Log.ui.error("shortcuts: no event \(String(describing: message["ev"]), privacy: .public)")
+    private func handle(_ event: ShortcutsEvent) {
+        guard let op = ShortcutsModel.op(event, in: store) else {
+            Log.ui.error("shortcuts: the store can't take \(String(describing: event), privacy: .public)")
             return
         }
         switch op {
@@ -84,8 +84,8 @@ struct ShortcutsSnapshot: Equatable {
 
 /// What the NSH Shortcuts page shows, owned by the host so a surface made
 /// again starts from it (``NSHPage``'s third rule), the message that carries
-/// it (`{"op": "shortcuts", …}`, `ui/src/shortcuts.rs`'s `Message`), and
-/// what the page's changes do to the store.
+/// it (`{"op": "shortcuts", …}`, the shared model's JSON), and what the
+/// page's changes do to the store.
 @MainActor
 final class ShortcutsModel {
     private(set) var snapshot: ShortcutsSnapshot?
@@ -93,7 +93,7 @@ final class ShortcutsModel {
 
     func attach(_ surface: NSHSurface) {
         self.surface = surface
-        if let snapshot { surface.post(Self.message(snapshot)) }
+        if let snapshot { surface.post(json: Self.message(snapshot)) }
     }
 
     /// ``attach(_:)``, the model filled from `current` (the page's shortcuts as
@@ -111,28 +111,24 @@ final class ShortcutsModel {
     func update(_ snapshot: ShortcutsSnapshot) {
         guard snapshot != self.snapshot else { return }
         self.snapshot = snapshot
-        surface?.post(Self.message(snapshot))
+        surface?.post(json: Self.message(snapshot))
     }
 
     /// The screen's message, as the shared model makes it: the bar, the
     /// user's own, and every shortcut off the bar as shown (B233), each
     /// built-in called by its name in the app's language (B234, this
     /// host's words).
-    nonisolated static func message(_ snapshot: ShortcutsSnapshot) -> [String: Any] {
+    nonisolated static func message(_ snapshot: ShortcutsSnapshot) -> String {
         let names = Dictionary(snapshot.shortcuts.map { ($0.id.uuidString, $0.displaySummary) },
                                uniquingKeysWith: { first, _ in first })
-        let json = shortcutsPageMessage(shortcuts: snapshot.shortcuts.map(ShortcutRecord.init), names: names)
-        return (try? JSONSerialization.jsonObject(with: Data(json.utf8))) as? [String: Any] ?? [:]
+        return shortcutsPageMessage(shortcuts: snapshot.shortcuts.map(ShortcutRecord.init), names: names)
     }
 
-    /// What `message` (`{"ev": …}`) asks, checked against the store by the
-    /// shared model: nil for an event it does not know, a shortcut the store
-    /// does not have, a built-in's edit or delete, or a move off the bar.
-    static func op(_ message: [String: Any], in store: ShortcutStore) -> ShortcutListOp? {
-        guard JSONSerialization.isValidJSONObject(message),
-              let data = try? JSONSerialization.data(withJSONObject: message) else { return nil }
-        return shortcutsListOp(messageJson: String(decoding: data, as: UTF8.self),
-                               shortcuts: store.shortcuts.map(ShortcutRecord.init))
+    /// What `event` asks, checked against the store by the shared model:
+    /// nil for a shortcut the store does not have, a built-in's edit or
+    /// delete, or a move off the bar.
+    static func op(_ event: ShortcutsEvent, in store: ShortcutStore) -> ShortcutListOp? {
+        shortcutsListOp(event: event, shortcuts: store.shortcuts.map(ShortcutRecord.init))
     }
 
     /// Does `op` to `store` (the page's own ops: the host opens and closes).
@@ -152,10 +148,10 @@ final class ShortcutsModel {
     }
 
     /// Applies a change the page asked for to `store`; false for an event
-    /// it does not know or a shortcut it does not have.
+    /// that changes nothing or a shortcut it does not have.
     @discardableResult
-    static func apply(_ message: [String: Any], to store: ShortcutStore) -> Bool {
-        guard let op = op(message, in: store) else { return false }
+    static func apply(_ event: ShortcutsEvent, to store: ShortcutStore) -> Bool {
+        guard let op = op(event, in: store) else { return false }
         switch op {
         case .done, .add, .edit: return false
         default:
@@ -196,7 +192,7 @@ struct AddShortcutNSHPage: View {
                         model.attach(surface, hosts: connections.store.connections.map(\.displayName),
                                      toolbarCount: store.toolbarCount)
                     },
-                    onMessage: handle,
+                    onEvent: { if case .addShortcut(let event) = $0 { handle(event) } },
                     onFailure: { failed = true })
                     .nshPage()
                     .navigationTitle(existing == nil ? "Add Shortcut" : "Edit Shortcut")
@@ -206,20 +202,18 @@ struct AddShortcutNSHPage: View {
     }
 
     /// What the screen tells the host.
-    private func handle(_ message: [String: Any]) {
-        switch message["ev"] as? String {
-        case "change":
-            if let draft = message["draft"] as? [String: Any] { model.apply(draft) }
-        case "save":
+    private func handle(_ event: AddShortcutEvent) {
+        switch event {
+        case .change(let draft):
+            model.apply(draftJson: draft)
+        case .save:
             switch model.save(to: store) {
             case .saved: dismiss()
             case .savedOffToolbar: savedOffToolbar = true
             case .notSaved: break
             }
-        case "cancel":
+        case .cancel:
             dismiss()
-        default:
-            break
         }
     }
 }
@@ -249,22 +243,18 @@ final class AddShortcutModel {
         self.surface = surface
         self.hosts = hosts
         self.toolbarCount = toolbarCount
-        surface.post(message)
+        surface.post(json: message)
     }
 
     /// Whether Save may save.
     var canSave: Bool { editor.canSave() }
 
-    /// The draft as the page has it (`{"kind", "modifiers", …}`).
-    var draft: [String: Any] {
-        (try? JSONSerialization.jsonObject(with: Data(editor.draftJson().utf8))) as? [String: Any] ?? [:]
-    }
+    /// The draft as the page has it, as JSON (`{"kind", "modifiers", …}`).
+    var draftJson: String { editor.draftJson() }
 
     /// The page's whole draft, as it told it: the model takes what it reads.
-    func apply(_ draft: [String: Any]) {
-        guard JSONSerialization.isValidJSONObject(draft),
-              let data = try? JSONSerialization.data(withJSONObject: draft) else { return }
-        editor.apply(draftJson: String(decoding: data, as: UTF8.self))
+    func apply(draftJson: String) {
+        editor.apply(draftJson: draftJson)
     }
 
     /// What Save did.
@@ -293,10 +283,9 @@ final class AddShortcutModel {
         }
     }
 
-    /// The screen's message.
-    var message: [String: Any] {
-        let json = editor.message(hosts: hosts, toolbarCount: UInt32(max(0, toolbarCount)))
-        return (try? JSONSerialization.jsonObject(with: Data(json.utf8))) as? [String: Any] ?? [:]
+    /// The screen's message, as JSON.
+    var message: String {
+        editor.message(hosts: hosts, toolbarCount: UInt32(max(0, toolbarCount)))
     }
 }
 

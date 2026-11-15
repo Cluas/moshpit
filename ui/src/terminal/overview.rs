@@ -1,6 +1,6 @@
-//! The pane overview (the pane-switching design's step 2: names and
-//! states; the pictures come in step 3): every pane of the session, one card
-//! per window, over the terminal screen.
+//! The pane overview (the pane-switching design's steps 2 and 3: names,
+//! states and pictures): every pane of the session, one card per window,
+//! over the terminal screen.
 //!
 //! - Opened from the breadcrumb's window and pane segments (a long press on
 //!   them still opens the old lists, until the owner has tried this), ⌘K,
@@ -20,13 +20,28 @@
 //!   window…). A rename asks for the name (the host's prompt); a kill asks
 //!   on NSH's action sheet first. The last card makes a new window.
 //! - The session's capsule opens the sessions list.
+//! - Pictures (B658): a pane's cell shows the end of its screen as tiny
+//!   text, read from the terminals the session already keeps (every pane of
+//!   an SSH tmux attach has one; a mosh or herdr session only the pane it
+//!   shows): asked for once on opening and for panes that come while it is
+//!   open, never drawn live. A pane without one shows its name and state
+//!   only. Decorative: hidden from screen readers.
+//! - Its coming and going (B658): the page fades (`base` in, `fast` out;
+//!   a cross-fade of `fast` both ways under reduced motion), and tells the
+//!   host where the shown pane's cell is (`overview-anchor`), so the live
+//!   terminal shrinks into it and grows back out of it, and where a picked
+//!   pane's cell is, so its terminal grows from there. The motion is the
+//!   host's, under the page; nothing waits for it.
 //!
 //! The overview reads the tree the switcher already has (`{"op":
 //! "switcher"}`): the active session, whole.
 
-use std::{collections::HashSet, rc::Rc};
+use std::{
+    collections::{HashMap, HashSet},
+    rc::Rc,
+};
 
-use nsh_core::prelude::*;
+use nsh_core::{EllipsizeMode, LineHeight, prelude::*};
 
 use super::{
     Crumb, Ctx, Intent,
@@ -60,6 +75,15 @@ pub const ROW_GAP: f32 = 20.0;
 pub const BOX: f32 = 112.0;
 /// A row of an opened card's panes (past four).
 pub const OPEN_ROW: f32 = 54.0;
+/// A picture's text and its line (points): a texture to recognise a
+/// screen by, not to read.
+pub const PICTURE_TEXT: f32 = 4.5;
+pub const PICTURE_LINE: f32 = 5.5;
+/// The most rows a picture keeps (the screen's end).
+pub const PICTURE_ROWS: usize = 24;
+/// Wide enough for any row at [`PICTURE_TEXT`]: a row is cut by its cell,
+/// never wrapped.
+const PICTURE_WIDTH: f32 = 1200.0;
 /// Between two panes of a card: the window's own dividers.
 const DIVIDER: f32 = 2.0;
 
@@ -208,6 +232,32 @@ pub fn columns(width: f32) -> usize {
     (((width + GAP) / (CARD_MIN + GAP)).floor() as usize).clamp(2, 4)
 }
 
+/// What a pane's picture shows of its screen's `rows`, `fits` lines of it:
+/// the screen up to its last row with text (where the newest output and
+/// the prompt are), its last `fits` rows when it has more, from the top
+/// when it has fewer; trailing blanks cut. Nothing for a blank screen.
+pub fn picture_rows(rows: &[String], fits: usize) -> Vec<String> {
+    let Some(last) = rows.iter().rposition(|r| !r.trim().is_empty()) else {
+        return Vec::new();
+    };
+    let shown = &rows[..=last];
+    let keep = fits.min(PICTURE_ROWS).min(shown.len());
+    shown[shown.len() - keep..]
+        .iter()
+        .map(|r| r.trim_end().to_owned())
+        .collect()
+}
+
+/// How long the overview's fade is, `showing` or going (ms): `base` in,
+/// `fast` out; under reduced motion a plain cross-fade, `fast` both ways
+/// (the host's shrink and growth don't play then).
+pub fn fade_ms(reduced: bool, showing: bool) -> f32 {
+    match (reduced, showing) {
+        (false, true) => Duration::Base.nominal_ms(),
+        _ => Duration::Fast.nominal_ms(),
+    }
+}
+
 /// The words a card's second line says, with the state's status when it
 /// has one: the strongest state ("Needs you · 3m" for one pane, "Needs you
 /// · 3 panes" for more), else the panes ("3 panes"), else what runs in its
@@ -258,6 +308,23 @@ fn stop_of(cell: &Cell, card: &Card) -> switcher::Stop {
         name: cell.name.clone(),
         signal: cell.signal,
         since: cell.since,
+    }
+}
+
+/// A state in words for screen readers: "working 13 minutes", as Home's
+/// rows say it.
+fn spoken_state(signal: AgentSignal, since: Option<f64>, now: f64) -> String {
+    // The agents' states in the word list (`picker::signal_label`'s).
+    let word = match signal {
+        AgentSignal::Attention => t!("needs you"),
+        AgentSignal::Working => t!("working"),
+        AgentSignal::Done => t!("done"),
+    };
+    let time = crate::home::rows::spoken(since, now);
+    if time.is_empty() {
+        word
+    } else {
+        format!("{word} {time}")
     }
 }
 
@@ -418,6 +485,7 @@ pub(crate) fn act_on_window(
                 mux: picker_mux(overview.mux),
                 rows: vec![row.clone()],
                 active: None,
+                send: None,
             };
             let answer = picker::kill_question(Kind::Windows, &row, &snapshot, &vocab).show();
             let ctx = ctx.clone();
@@ -509,6 +577,56 @@ fn pick(ctx: &Ctx, pane: &str) {
     ctx.overview.set(false);
 }
 
+/// Pane `pane` picked from its cell at `rect` (the surface's points): the
+/// host hears where first, so the pane's terminal grows from there, then
+/// switches at once (B658).
+fn pick_from(ctx: &Ctx, pane: &str, rect: Option<[f32; 4]>) {
+    if let Some(rect) = rect {
+        ctx.ask(Intent::OverviewAnchor {
+            pane: pane.to_owned(),
+            rect,
+            picked: true,
+        });
+    }
+    pick(ctx, pane);
+}
+
+/// Tells the host where the shown pane's cell `target` is (`pane`), once
+/// per place (`told`): its live terminal shrinks into it, and grows back
+/// out of it on closing.
+fn tell_anchor(
+    ctx: &Ctx,
+    target: ElementRef,
+    pane: String,
+    told: Stored<Option<(String, [f32; 4])>>,
+) {
+    let ctx = ctx.clone();
+    drop(spawn(async move {
+        let Some(m) = target.measure().await else {
+            return;
+        };
+        let rect = [
+            m.page.x.0,
+            m.page.y.0,
+            m.frame.size.width.0,
+            m.frame.size.height.0,
+        ];
+        if rect[2] <= 0.0 || rect[3] <= 0.0 || !ctx.overview.get_untracked() {
+            return;
+        }
+        let place = Some((pane.clone(), rect));
+        if told.with(|t| *t == place) {
+            return;
+        }
+        told.replace(place);
+        ctx.ask(Intent::OverviewAnchor {
+            pane,
+            rect,
+            picked: false,
+        });
+    }));
+}
+
 // --- On the page ----------------------------------------------------------------
 
 /// The overview's model, from the tree the host posts.
@@ -528,13 +646,68 @@ pub(crate) fn model(ctx: &Ctx) -> Memo<Overview> {
 /// down while it is up, and comes back).
 pub(crate) fn tell_open(ctx: &Ctx) {
     let open = ctx.overview;
+    // The session's tree gone (a reconnect, the multiplexer gone): the
+    // overview goes too, never left on "0 windows · 0 panes" and a New
+    // window that would land nowhere (B655).
+    let switcher = ctx.switcher;
+    effect(move || {
+        if switcher.with(|s| s.tree.is_none()) && open.get_untracked() {
+            open.set(false);
+        }
+    });
     let told = stored(false);
     let ctx = ctx.clone();
     effect(move || {
         let now = open.get();
         if told.replace(now) != now {
-            untracked(|| ctx.ask(Intent::Overview(now)));
+            untracked(|| {
+                if !now {
+                    ctx.pictures.set(HashMap::new());
+                }
+                ctx.ask(Intent::Overview(now));
+            });
         }
+    });
+}
+
+/// Asks the host for the pictures of the session's panes when the overview
+/// opens, and for the panes that come while it is open: once each, never
+/// on a tick (B658).
+pub(crate) fn ask_pictures(ctx: &Ctx, model: Memo<Overview>) {
+    let open = ctx.overview;
+    let asked = stored(HashSet::<String>::new());
+    let ctx = ctx.clone();
+    effect(move || {
+        if !open.get() {
+            asked.replace(HashSet::new());
+            return;
+        }
+        let (panes, current) = model.with(|o| {
+            let panes: Vec<String> = o
+                .cards
+                .iter()
+                .flat_map(|c| c.cells.iter().map(|c| c.pane.clone()))
+                .collect();
+            let current = o
+                .cards
+                .iter()
+                .flat_map(|c| &c.cells)
+                .find(|c| c.current)
+                .map(|c| c.pane.clone());
+            (panes, current)
+        });
+        let new: Vec<String> =
+            asked.with(|a| panes.into_iter().filter(|p| !a.contains(p)).collect());
+        if new.is_empty() {
+            return;
+        }
+        asked.with(|a| a.extend(new.iter().cloned()));
+        untracked(|| {
+            ctx.ask(Intent::Pictures {
+                panes: new,
+                current,
+            })
+        });
     });
 }
 
@@ -553,17 +726,45 @@ pub(crate) fn overview(ctx: Ctx, model: Memo<Overview>, prompts: Prompts) -> Any
         .absolute()
         .inset_0()
         .pointer_events(PointerEvents::BoxNone)
-        .child(switcher::appearing(
+        .child(switcher::appearing_ms(
             visible,
-            (Duration::Base, Duration::Fast),
+            |showing| fade_ms(reduce_motion(), showing),
             move || page(ctx.clone(), model, prompts.clone()),
         ))
         .into_element()
 }
 
+/// The shown pane's cell, for the host's shrink and growth: the element
+/// and the place last told.
+#[derive(Clone, Copy)]
+struct Anchor {
+    target: ElementRef,
+    told: Stored<Option<(String, [f32; 4])>>,
+}
+
 /// The page: its bar, the summary, the cards.
 fn page(ctx: Ctx, model: Memo<Overview>, prompts: Prompts) -> AnyElement {
     let opened = signal(HashSet::<String>::new());
+    let anchor = Anchor {
+        target: element_ref(),
+        told: stored(None),
+    };
+    // Scrolled, the shown pane's cell moved: told again where it is.
+    let rescroll = {
+        let ctx = ctx.clone();
+        move |_: &Point<Points>| {
+            let current = model.with_untracked(|o| {
+                o.cards
+                    .iter()
+                    .flat_map(|c| &c.cells)
+                    .find(|c| c.current)
+                    .map(|c| c.pane.clone())
+            });
+            if let Some(pane) = current {
+                tell_anchor(&ctx, anchor.target, pane, anchor.told);
+            }
+        }
+    };
     view()
         .absolute()
         .inset_0()
@@ -573,24 +774,30 @@ fn page(ctx: Ctx, model: Memo<Overview>, prompts: Prompts) -> AnyElement {
         .test_id("terminal-overview")
         .child(bar(ctx.clone(), model))
         .child(
-            scroll().flex_1().test_id("terminal-overview-scroll").child(
-                view()
-                    .px(px(number("space-page")))
-                    .pt(px(4.0))
-                    .gap(px(12.0))
-                    .child(summary(model))
-                    .child(dynamic({
-                        let ctx = ctx.clone();
-                        move || {
-                            let overview = model.get();
-                            let open_cards = opened.get();
+            scroll()
+                .flex_1()
+                .test_id("terminal-overview-scroll")
+                .on_scroll_end(rescroll)
+                .child(
+                    view()
+                        .px(px(number("space-page")))
+                        .pt(px(4.0))
+                        .gap(px(12.0))
+                        .child(summary(model))
+                        .child(dynamic({
                             let ctx = ctx.clone();
-                            let prompts = prompts.clone();
-                            untracked(move || grid(ctx, overview, open_cards, opened, prompts))
-                        }
-                    }))
-                    .child(view().h(move || px(32.0 + safe_area().bottom.0))),
-            ),
+                            move || {
+                                let overview = model.get();
+                                let open_cards = opened.get();
+                                let ctx = ctx.clone();
+                                let prompts = prompts.clone();
+                                untracked(move || {
+                                    grid(ctx, overview, open_cards, opened, prompts, anchor)
+                                })
+                            }
+                        }))
+                        .child(view().h(move || px(32.0 + safe_area().bottom.0))),
+                ),
         )
         .into_element()
 }
@@ -598,6 +805,8 @@ fn page(ctx: Ctx, model: Memo<Overview>, prompts: Prompts) -> AnyElement {
 /// The overview's bar: the session (its list), Done.
 fn bar(ctx: Ctx, model: Memo<Overview>) -> AnyElement {
     let session = computed(move || model.with(|o| o.session.clone()));
+    // herdr's workspace wears its own symbol, as in the breadcrumb (B656).
+    let symbol = computed(move || model.with(|o| vocab(o.mux).session_icon));
     let close = {
         let open = ctx.overview;
         Rc::new(move || open.set(false))
@@ -612,33 +821,44 @@ fn bar(ctx: Ctx, model: Memo<Overview>) -> AnyElement {
                 .justify_between()
                 .px(px(number("space-page")))
                 .child(
+                    // The finger's target is the bar's 44 pt; the capsule
+                    // drawn in it is 36 (B654).
                     view()
-                        .flex_row()
-                        .items_center()
-                        .gap(px(6.0))
-                        .h(px(36.0))
-                        .px(px(12.0))
+                        .h(px(44.0))
                         .min_w(px(44.0))
-                        .rounded(px(number("radius-full")))
-                        .bg(move || token("chrome"))
-                        .border(px(0.5))
-                        .border_color(move || token("border-strong"))
+                        .justify_center()
                         .role(AccessibilityRole::Button)
                         .label(move || session.get())
                         .test_id("terminal-overview-session")
                         .active(|s| s.opacity(0.5))
                         .on_press(ctx.asking(Intent::Crumb(Crumb::Session)))
                         .child(
-                            icon("square.stack.3d.up")
-                                .size(IconSize::Sm)
-                                .tone(Tone::Muted),
-                        )
-                        .child(
-                            chrome_text(TextToken::Subhead, move || session.get())
-                                .number_of_lines(1u32)
-                                .text_color(move || token("foreground")),
-                        )
-                        .child(icon("chevron.down").size(IconSize::Sm).tone(Tone::Muted)),
+                            view()
+                                .flex_row()
+                                .items_center()
+                                .gap(px(6.0))
+                                .h(px(36.0))
+                                .px(px(12.0))
+                                .rounded(px(number("radius-full")))
+                                .bg(move || token("chrome"))
+                                .border(px(0.5))
+                                .border_color(move || token("border-strong"))
+                                .child(dynamic(move || {
+                                    let name = symbol.get();
+                                    untracked(move || {
+                                        icon(name)
+                                            .size(IconSize::Sm)
+                                            .tone(Tone::Muted)
+                                            .into_element()
+                                    })
+                                }))
+                                .child(
+                                    chrome_text(TextToken::Subhead, move || session.get())
+                                        .number_of_lines(1u32)
+                                        .text_color(move || token("foreground")),
+                                )
+                                .child(icon("chevron.down").size(IconSize::Sm).tone(Tone::Muted)),
+                        ),
                 )
                 .child(nav_bar::text_button(
                     t!("Done"),
@@ -691,6 +911,7 @@ fn grid(
     open_cards: HashSet<String>,
     opened: Signal<HashSet<String>>,
     prompts: Prompts,
+    anchor: Anchor,
 ) -> AnyElement {
     let columns = columns(window().width.0 - 2.0 * number("space-page"));
     let now = switcher::unix_now();
@@ -708,6 +929,7 @@ fn grid(
                 &prompts,
                 now,
                 &words,
+                anchor,
             )
         })
         .collect();
@@ -737,11 +959,12 @@ fn card_view(
     prompts: &Prompts,
     now: f64,
     words: &Words,
+    anchor: Anchor,
 ) -> AnyElement {
     let (count, more) = shown(card.cells.len(), open);
     let cells: Vec<AnyElement> = card.cells[..count]
         .iter()
-        .map(|cell| cell_view(ctx, card, cell, card.cells.len() > 1, now, words))
+        .map(|cell| cell_view(ctx, card, cell, card.cells.len() > 1, now, words, anchor))
         .collect();
     let window = card.window.clone();
     let more_view = (more > 0).then(|| {
@@ -752,7 +975,8 @@ fn card_view(
             .justify_center()
             .bg(move || token("muted"))
             .role(AccessibilityRole::Button)
-            .label(format!("+{more}"))
+            // What it opens, not the glyph (B653).
+            .label(crate::plural!("%lld more", more as i64))
             .test_id(&format!("overview-more-panes-{window}"))
             .active(|s| s.bg(move || token("accent")))
             .on_press(move || {
@@ -774,10 +998,19 @@ fn card_view(
         second = second.child(status_dot(status));
     }
     let line_tone = status.map_or("muted-foreground", tone);
+    // Screen readers hear a lone pane's minutes as minutes (B653).
+    let said = match card.cells.as_slice() {
+        [cell] if status.is_some() => cell
+            .signal
+            .map(|signal| spoken_state(signal, cell.since, now))
+            .unwrap_or_else(|| line.clone()),
+        _ => line.clone(),
+    };
     second = second.child(
         chrome_text(TextToken::Footnote, line)
             .number_of_lines(1u32)
             .flex_shrink(1.0)
+            .label(said)
             .text_color(move || token(line_tone)),
     );
     let more_label = t!("More for %@", arg1 = card.place.clone());
@@ -896,11 +1129,13 @@ fn cell_view(
     many: bool,
     now: f64,
     words: &Words,
+    anchor: Anchor,
 ) -> AnyElement {
     let state = switcher::state_line(&stop_of(cell, card), now, words);
     let mut label_parts = vec![cell.name.clone()];
-    if let Some((words, ..)) = &state {
-        label_parts.push(words.clone());
+    if let Some(signal) = cell.signal {
+        // In words, minutes said as minutes (B653: "13m" is the eye's).
+        label_parts.push(spoken_state(signal, cell.since, now));
     }
     if many {
         label_parts.push(card.place.clone());
@@ -909,6 +1144,13 @@ fn cell_view(
         label_parts.push(t!("current"));
     }
     let pane = cell.pane.clone();
+    // Its size, for where a press says it is (B658).
+    let size = stored(None::<Size<Points>>);
+    let current = cell.current.then(|| {
+        let ctx = ctx.clone();
+        let pane = cell.pane.clone();
+        move || tell_anchor(&ctx, anchor.target, pane.clone(), anchor.told)
+    });
     let mut v = view()
         .flex_1()
         .min_w(px(0.0))
@@ -918,6 +1160,12 @@ fn cell_view(
         .justify_end()
         .gap(px(2.0))
         .bg(move || token("card"))
+        .on_layout(move |b: &Bounds<Points>| {
+            size.replace(Some(b.size));
+            if let Some(tell) = &current {
+                tell();
+            }
+        })
         .role(AccessibilityRole::Button)
         .label(label_parts.join(", "))
         .accessibility_state(AccessibilityState {
@@ -928,8 +1176,21 @@ fn cell_view(
         .active(|s| s.bg(move || token("accent")))
         .on_press({
             let ctx = ctx.clone();
-            move || pick(&ctx, &pane)
+            move |e: &PressEvent| {
+                // The cell's place: where the press is in the surface, less
+                // where it is in the cell.
+                let rect = size.get().map(|s| {
+                    [
+                        e.page_position.x.0 - e.position.x.0,
+                        e.page_position.y.0 - e.position.y.0,
+                        s.width.0,
+                        s.height.0,
+                    ]
+                });
+                pick_from(&ctx, &pane, rect)
+            }
         })
+        .child(picture(ctx, &cell.pane))
         .child(
             chrome_text(TextToken::Subhead, cell.name.clone())
                 .number_of_lines(1u32)
@@ -950,6 +1211,7 @@ fn cell_view(
         );
     }
     if cell.current {
+        v = v.element_ref(&anchor.target);
         // The accent's ring, inside the cell (the card's box clips).
         v = v.child(
             view()
@@ -961,6 +1223,60 @@ fn cell_view(
         );
     }
     v.into_element()
+}
+
+/// Pane `pane`'s picture, filling what its cell leaves above its words:
+/// the end of its screen as tiny text ([`picture_rows`]), as many rows as
+/// fit; nothing until (unless) the host has one. Decorative.
+fn picture(ctx: &Ctx, pane: &str) -> AnyElement {
+    let pictures = ctx.pictures;
+    let height = signal(0.0_f32);
+    let rows = {
+        let pane = pane.to_owned();
+        computed(move || {
+            let fits = (height.get() / PICTURE_LINE).floor().max(0.0) as usize;
+            pictures.with(|p| {
+                p.get(&pane)
+                    .map(|rows| picture_rows(rows, fits))
+                    .unwrap_or_default()
+            })
+        })
+    };
+    let id = format!("overview-picture-{pane}");
+    view()
+        .flex_1()
+        .min_h(px(0.0))
+        .relative()
+        .overflow_hidden()
+        .pointer_events(PointerEvents::None)
+        .accessibility_elements_hidden(true)
+        .on_layout(move |b: &Bounds<Points>| {
+            if height.get_untracked() != b.size.height.0 {
+                height.set(b.size.height.0);
+            }
+        })
+        .child(dynamic(move || {
+            let rows = rows.get();
+            if rows.is_empty() {
+                return view().into_element();
+            }
+            let lines = rows.len() as u32;
+            text(rows.join("\n"))
+                .absolute()
+                .top(px(0.0))
+                .left(px(0.0))
+                .w(px(PICTURE_WIDTH))
+                .font_family("monospace")
+                .text_size(px(PICTURE_TEXT))
+                .line_height(LineHeight::Points(px(PICTURE_LINE)))
+                .allow_font_scaling(false)
+                .number_of_lines(lines)
+                .text_overflow(EllipsizeMode::Clip)
+                .text_color(move || token("muted-foreground"))
+                .test_id(&id)
+                .into_element()
+        }))
+        .into_element()
 }
 
 /// The last card: a new window (herdr: tab), named first.
@@ -1017,9 +1333,59 @@ pub(crate) struct OpenFields {
     pub open: bool,
 }
 
+/// What `{"op": "pictures"}` carries: each pane's screen rows.
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct PicturesFields {
+    pub panes: HashMap<String, Vec<String>>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn rows(lines: &[&str]) -> Vec<String> {
+        lines.iter().map(|l| (*l).to_owned()).collect()
+    }
+
+    #[test]
+    fn a_picture_is_the_screens_end_cut_to_what_fits() {
+        // The blank tail cut; fewer rows than fit: all of them, from the
+        // top, their trailing spaces cut.
+        assert_eq!(
+            picture_rows(&rows(&["$ ls", "a  b  ", "$ ", "", "  "]), 10),
+            ["$ ls", "a  b", "$"]
+        );
+        // More than fit: the last ones, where the newest output and the
+        // prompt are.
+        assert_eq!(
+            picture_rows(&rows(&["1", "2", "3", "4", ""]), 2),
+            ["3", "4"]
+        );
+        // A blank screen, or no room: nothing.
+        assert!(picture_rows(&rows(&["", "  "]), 5).is_empty());
+        assert!(picture_rows(&rows(&["x"]), 0).is_empty());
+        assert!(picture_rows(&[], 5).is_empty());
+        // Never past PICTURE_ROWS.
+        let tall: Vec<String> = (0..40).map(|i| i.to_string()).collect();
+        let shown = picture_rows(&tall, 100);
+        assert_eq!(shown.len(), PICTURE_ROWS);
+        assert_eq!(shown[0], "16");
+    }
+
+    #[test]
+    fn reduced_motion_still_cross_fades_the_overview() {
+        assert_eq!(fade_ms(false, true), Duration::Base.nominal_ms());
+        assert_eq!(fade_ms(false, false), Duration::Fast.nominal_ms());
+        // Reduced: a plain cross-fade, not a cut (the host's shrink and
+        // growth don't play).
+        assert!(fade_ms(true, true) > 0.0);
+        assert_eq!(fade_ms(true, true), fade_ms(true, false));
+        // Inside the owner's 250 ms either way.
+        for (reduced, showing) in [(false, true), (false, false), (true, true), (true, false)] {
+            assert!(fade_ms(reduced, showing) <= 250.0);
+        }
+    }
     use crate::home::model::{Hook, PaneInfo, SessionInfo, WindowInfo};
 
     fn english() -> Words {

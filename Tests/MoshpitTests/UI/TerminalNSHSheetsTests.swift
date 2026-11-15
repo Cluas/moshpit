@@ -20,8 +20,13 @@ struct TerminalNSHSheetsTests {
         #expect(NSHScreen.muxPicker.name == "mux-picker")
     }
 
+    /// `message` as the page bridge writes it.
+    private static func json(_ message: PageMessage) throws -> String {
+        try pageMessage(message: message)
+    }
+
     @Test("every list the host posts is a message the picker takes, in both multiplexers' words")
-    func pickerCrossesTheBoundary() {
+    func pickerCrossesTheBoundary() throws {
         let screen = NSHScreen.muxPicker.name
         for kind in [MuxPickerKind.windows, .sessions, .panes] {
             for mux in [Multiplexer.tmux, .herdr] {
@@ -30,64 +35,51 @@ struct TerminalNSHSheetsTests {
                 rows[1].attached = true
                 rows[1].windows = 3
                 rows[1].window = "1:agents"
-                let state = MuxPickerState(kind: kind, mux: mux, rows: rows, active: "@2")
-                #expect(NSHSurface.check(screen: screen, message: state.message), "\(kind) \(mux)")
-                #expect(state.message["mux"] as? String == (mux == .herdr ? "herdr" : "tmux"))
+                let state = MuxPickerState(kind: kind, mux: mux, rows: rows, active: "@2").page
+                #expect(NSHSurface.check(screen: screen, json: try Self.json(.muxPicker(state: state))),
+                        "\(kind) \(mux)")
+                #expect(state.mux == (mux == .herdr ? "herdr" : "tmux"))
             }
         }
-        let empty = MuxPickerState(kind: .panes, mux: .tmux, rows: [], active: nil)
-        #expect(NSHSurface.check(screen: screen, message: empty.message))
-        #expect(empty.message["active"] == nil)
-        let json = (MuxPickerState(kind: .windows, mux: .tmux, rows: Self.rows, active: "@1")
-            .message["rows"] as? [[String: Any]])?.first
-        #expect(json?["signal"] as? String == "attention")
-        #expect(json?["panes"] as? Int == 2)
+        let empty = MuxPickerState(kind: .panes, mux: .tmux, rows: [], active: nil).page
+        #expect(NSHSurface.check(screen: screen, json: try Self.json(.muxPicker(state: empty))))
+        #expect(empty.active == nil)
+        let row = MuxPickerState(kind: .windows, mux: .tmux, rows: Self.rows, active: "@1").page.rows.first
+        #expect(row?.signal == "attention")
+        #expect(row?.panes == 2)
     }
 
     @Test("a row menu's pick and the prompt's answer are the picker's messages")
-    func pickerAnswers() {
+    func pickerAnswers() throws {
         let screen = NSHScreen.muxPicker.name
-        #expect(NSHSurface.check(screen: screen, message: ["op": "act", "action": "rename", "id": "@1"]))
-        #expect(NSHSurface.check(screen: screen, message: ["op": "act", "action": "kill", "id": "$0"]))
-        #expect(!NSHSurface.check(screen: screen, message: ["op": "act", "action": "zap", "id": "@1"]))
-        #expect(NSHSurface.check(screen: screen, message: NSHTextPrompt.answer(id: 3, text: "build")))
-        #expect(NSHSurface.check(screen: screen, message: NSHTextPrompt.answer(id: 3, text: nil)))
-        #expect(!NSHSurface.check(screen: screen, message: ["op": "picker", "kind": "tabs"]))
+        #expect(NSHSurface.check(screen: screen, json: try Self.json(.muxPickerAct(action: .rename, id: "@1"))))
+        #expect(NSHSurface.check(screen: screen, json: try Self.json(.muxPickerAct(action: .kill, id: "$0"))))
+        #expect(NSHSurface.check(screen: screen, json: try Self.json(NSHTextPrompt.answer(id: 3, text: "build"))))
+        #expect(NSHSurface.check(screen: screen, json: try Self.json(NSHTextPrompt.answer(id: 3, text: nil))))
     }
 
-    @Test("what the picker tells the host is read back; anything else is nothing")
-    func pickerEvents() {
-        #expect(MuxPickerModel.event(["ev": "select", "id": "@2"]) == .select("@2"))
-        #expect(MuxPickerModel.event(["ev": "new", "name": "build"]) == .new("build"))
-        #expect(MuxPickerModel.event(["ev": "new", "name": NSNull()]) == .new(nil))
-        #expect(MuxPickerModel.event(["ev": "new"]) == .new(nil))
-        #expect(MuxPickerModel.event(["ev": "rename", "id": "@1", "name": "ops"]) == .rename("@1", "ops"))
-        #expect(MuxPickerModel.event(["ev": "kill", "id": "@1"]) == .kill("@1"))
+    @Test("the terminal's prompt, still told in a dictionary, is read as the bridge reads one")
+    func promptFromDictionary() {
         let prompt: [String: Any] = ["ev": "prompt", "id": 4, "title": "New Window",
                                      "message": "Leave blank to let the program name it.",
                                      "placeholder": "Name (optional)", "text": "",
                                      "confirm": "Create", "cancel": "Cancel"]
-        guard case .prompt(let question)? = MuxPickerModel.event(prompt) else {
-            Issue.record("no prompt")
-            return
-        }
-        #expect(question.id == 4)
-        #expect(question.message == "Leave blank to let the program name it.")
-        #expect(question.confirm == "Create")
+        let question = TextPromptQuestion(prompt)
+        #expect(question?.id == 4)
+        #expect(question?.message == "Leave blank to let the program name it.")
+        #expect(question?.confirm == "Create")
         var bare = prompt
         bare["message"] = NSNull()
-        if case .prompt(let q)? = MuxPickerModel.event(bare) { #expect(q.message == nil) }
-        for bad: [String: Any] in [["ev": "select"], ["ev": "rename", "id": "@1"], ["ev": "prompt", "id": 1],
-                                   ["ev": "fly"], [:]] {
-            #expect(MuxPickerModel.event(bad) == nil, "\(bad)")
-        }
+        #expect(TextPromptQuestion(bare)?.message == nil)
+        #expect(TextPromptQuestion(["ev": "prompt", "id": 1]) == nil)
+        #expect(TextPromptQuestion(["ev": "fly"]) == nil)
     }
 
     @Test("windows and sessions rows carry Rename and the kill in the multiplexer's words; panes none")
     func pickerMenus() {
         var picked: [(String, String)] = []
         let windows = MuxPickerState(kind: .windows, mux: .herdr, rows: Self.rows, active: "@1")
-        let menus = MuxPickerModel.menus(for: windows) { picked.append(($0, $1)) }
+        let menus = MuxPickerModel.menus(for: windows) { picked.append(("\($0)", $1)) }
         #expect(Set(menus.keys) == ["mux-picker-row-@1", "mux-picker-row-@2"])
         let items = menus["mux-picker-row-@2"]?() ?? []
         let titles = items.compactMap { ($0 as? UIAction)?.title }
@@ -170,20 +162,20 @@ struct TerminalNSHSheetsTests {
     }
 
     @Test("a host folder's facts, its menu's picks and the prompt's answers are the screen's messages")
-    func folderCrossesTheBoundary() {
+    func folderCrossesTheBoundary() throws {
         let screen = NSHScreen.remoteFolder.name
         var facts = Self.folder()
-        #expect(NSHSurface.check(screen: screen, message: facts.message))
+        #expect(NSHSurface.check(screen: screen, json: try Self.json(.remoteFolder(state: facts.page))))
         facts.uploading = 0.5
         facts.failure = "Permission denied"
         facts.openFailure = "gone"
         facts.editFailure = .init(title: "Couldn't rename", message: "taken")
         facts.pushed = true
-        #expect(NSHSurface.check(screen: screen, message: facts.message))
-        for action in ["open", "share", "rename", "delete"] {
-            #expect(NSHSurface.check(screen: screen, message: ["op": "act", "action": action, "path": "/a"]))
+        #expect(NSHSurface.check(screen: screen, json: try Self.json(.remoteFolder(state: facts.page))))
+        for action in [RemoteFolderAction.open, .share, .rename, .delete] {
+            #expect(NSHSurface.check(screen: screen, json: try Self.json(.remoteFolderAct(action: action, path: "/a"))))
         }
-        #expect(NSHSurface.check(screen: screen, message: NSHTextPrompt.answer(id: 1, text: "x")))
+        #expect(NSHSurface.check(screen: screen, json: try Self.json(NSHTextPrompt.answer(id: 1, text: "x"))))
         #expect(!NSHSurface.check(screen: screen, message: ["op": "folder", "colour": 1]))
     }
 
@@ -192,7 +184,7 @@ struct TerminalNSHSheetsTests {
     /// cleared failure set again in the same words before that used to be a
     /// snapshot equal to the last one, never posted, and never said.
     @Test("a failure set anew gets a new number, so its snapshot is posted and said")
-    func folderFailuresAreNumbered() {
+    func folderFailuresAreNumbered() throws {
         let model = RemoteFolderModel(
             folder: RemoteFileEntry(path: "/srv/work", isDirectory: true, size: nil, modified: nil),
             files: RemoteFileAccess(scope: "test", channel: { throw CancellationError() }))
@@ -207,8 +199,9 @@ struct TerminalNSHSheetsTests {
         model.openFailure = "The file is gone."
         let again = RemoteFolderFacts(model: model, pushed: false)
         #expect(again != first, "the same words failing again made the same snapshot: never posted")
-        #expect(again.message["openFailureId"] as? Int == again.openFailureId)
-        #expect(NSHSurface.check(screen: NSHScreen.remoteFolder.name, message: again.message))
+        #expect(again.page.openFailureId == UInt64(again.openFailureId))
+        #expect(NSHSurface.check(screen: NSHScreen.remoteFolder.name,
+                                 json: try Self.json(.remoteFolder(state: again.page))))
         model.editFailure = .init(title: "Couldn't rename", message: "taken")
         let edit = RemoteFolderFacts(model: model, pushed: false)
         model.editFailure = nil
@@ -219,7 +212,7 @@ struct TerminalNSHSheetsTests {
     @Test("a file's menu opens, shares, renames and deletes; a folder's renames and deletes")
     func folderMenus() {
         var picked: [(String, String)] = []
-        let menus = RemoteFolderNSHModel.menus(for: Self.folder()) { picked.append(($0, $1)) }
+        let menus = RemoteFolderNSHModel.menus(for: Self.folder()) { picked.append(("\($0)", $1)) }
         #expect(Set(menus.keys) == ["remote-folder-item-/srv/work/a.png", "remote-folder-item-/srv/work/logs"])
         let file = (menus["remote-folder-item-/srv/work/a.png"]?() ?? []).compactMap { ($0 as? UIAction)?.title }
         #expect(file == [String(localized: "Open"), String(localized: "Share"), String(localized: "Rename"),
@@ -257,7 +250,7 @@ struct TerminalNSHSheetsTests {
             .init(path: "/srv/work/src", name: "src", dir: true, video: false, symbol: "folder",
                   meta: "", thumb: false, duration: nil, opening: nil),
         ]
-        #expect(surface.post(facts.message))
+        #expect(surface.post(.remoteFolder(state: facts.page)))
         for path in ["/srv/work/logs", "/srv/work/notes.md", "/srv/work/src", "/srv/work/a.png"] {
             let item = try #require(await SettingsNSHTests.view(identified: "remote-folder-item-\(path)", in: surface),
                                     "\(path) never showed")
@@ -292,7 +285,8 @@ struct TerminalNSHSheetsTests {
         for kind in [MuxPickerKind.windows, .sessions, .panes] {
             let (surface, done) = try Self.surface(running: .muxPicker)
             defer { done() }
-            #expect(surface.post(MuxPickerState(kind: kind, mux: .tmux, rows: Self.rows, active: "@1").message))
+            #expect(surface.post(.muxPicker(state: MuxPickerState(kind: kind, mux: .tmux, rows: Self.rows,
+                                                                 active: "@1").page)))
             await NSHTouchAudit.pressablesTakeTouches(in: surface)
 
         }
@@ -346,18 +340,18 @@ struct TerminalNSHSheetsTests {
         empty.rows = []
         var loading = empty
         loading.loading = true
-        let pages: [(NSHScreen, String, [String: Any], String)] = [
-            (.remoteFolder, "folder", folder.message, "remote-folder-item-/srv/work/logs"),
-            (.remoteFolder, "folder-empty", empty.message, "remote-folder-empty"),
-            (.remoteFolder, "folder-loading", loading.message, "remote-folder-skeleton"),
-            (.muxPicker, "picker", MuxPickerState(kind: .windows, mux: .tmux, rows: Self.rows, active: "@1").message,
-             "mux-picker-row-@1"),
+        let picker = MuxPickerState(kind: .windows, mux: .tmux, rows: Self.rows, active: "@1").page
+        let pages: [(NSHScreen, String, PageMessage, String)] = [
+            (.remoteFolder, "folder", .remoteFolder(state: folder.page), "remote-folder-item-/srv/work/logs"),
+            (.remoteFolder, "folder-empty", .remoteFolder(state: empty.page), "remote-folder-empty"),
+            (.remoteFolder, "folder-loading", .remoteFolder(state: loading.page), "remote-folder-skeleton"),
+            (.muxPicker, "picker", .muxPicker(state: picker), "mux-picker-row-@1"),
         ]
         for (screen, name, message, ready) in pages {
             for light in [false, true] {
                 let look = light ? "light" : "dark"
-                try await ThemeNSHTests.picture(screen, message, ready: ready, light: light,
-                                                name: "r13-\(name)-\(look)")
+                try await ThemeNSHTests.picture(screen, ready: ready, light: light,
+                                                name: "r13-\(name)-\(look)") { $0.post(message) }
             }
         }
     }

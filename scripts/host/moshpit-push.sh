@@ -171,6 +171,27 @@ esc() {
     | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g'
 }
 
+# --- An agent's message markup (B599) ----------------------------------------
+# A title can come wrapped in XML-like tags (<agent-message from="…">…
+# </agent-message>, also written <\agent-message …>): they come off with their
+# attributes, nested ones too, as the app's own copy does (moshpit-agents'
+# plain_detail). A tag goes when it has attributes, a "-" or ":" in its name,
+# or its pair; a "<" that opens no tag stays ("a < b", "Vec<String>"). Bytes,
+# not characters (LC_ALL=C): no sed refuses a title that isn't valid UTF-8.
+plain() {
+  printf '%s' "$1" \
+    | LC_ALL=C sed \
+        -e 's/<\\\(\/\{0,1\}[A-Za-z]\)/<\1/g' \
+        -e 's/<\/\{0,1\}[A-Za-z][A-Za-z0-9_:.-]*[[:space:]][^<>]*>/ /g' \
+        -e 's/<\/\{0,1\}[A-Za-z][A-Za-z0-9_.]*[-:][A-Za-z0-9_:.-]*\/\{0,1\}>/ /g' \
+        -e ':pair' \
+        -e 's/<\([A-Za-z][A-Za-z0-9_.]*\)>\([^<]*\)<\/\1>/ \2 /' \
+        -e 't pair' \
+    | LC_ALL=C tr -s '[:space:]' ' ' \
+    | LC_ALL=C sed -e 's/^ //' -e 's/ $//'
+}
+TITLE=$(plain "$TITLE")
+
 # A lock screen shows ~2 lines. Cut to 120 characters, then let iconv drop any
 # UTF-8 sequence the cut split in half — the same treatment the stamp script
 # gives its titles, for the same reason (a half character breaks JSON parsers

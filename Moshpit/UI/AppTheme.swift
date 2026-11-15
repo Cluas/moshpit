@@ -159,6 +159,35 @@ enum AppIconCatalog {
     static let all: [AppIconOption] = [
         AppIconOption(id: "default", name: "Moshpit", alternateName: nil,
                       previewAsset: "IconPreview-Moshpit"),
+        // The pet peeking over a pane, a species each and its shiny
+        // (B668): the hatched pet offers its own (``PetIconPrompt``). Then
+        // the three panes that were the primary until the egg took over.
+        AppIconOption(id: "tun", name: "Tun", alternateName: "AppIcon-Tun",
+                      previewAsset: "IconPreview-Tun"),
+        AppIconOption(id: "tun-shiny", name: "Shiny Tun", alternateName: "AppIcon-TunShiny",
+                      previewAsset: "IconPreview-TunShiny"),
+        AppIconOption(id: "coo", name: "Coo", alternateName: "AppIcon-Coo",
+                      previewAsset: "IconPreview-Coo"),
+        AppIconOption(id: "coo-shiny", name: "Shiny Coo", alternateName: "AppIcon-CooShiny",
+                      previewAsset: "IconPreview-CooShiny"),
+        AppIconOption(id: "dig", name: "Dig", alternateName: "AppIcon-Dig",
+                      previewAsset: "IconPreview-Dig"),
+        AppIconOption(id: "dig-shiny", name: "Shiny Dig", alternateName: "AppIcon-DigShiny",
+                      previewAsset: "IconPreview-DigShiny"),
+        AppIconOption(id: "hex", name: "Hex", alternateName: "AppIcon-Hex",
+                      previewAsset: "IconPreview-Hex"),
+        AppIconOption(id: "hex-shiny", name: "Shiny Hex", alternateName: "AppIcon-HexShiny",
+                      previewAsset: "IconPreview-HexShiny"),
+        AppIconOption(id: "ether", name: "Ether", alternateName: "AppIcon-Ether",
+                      previewAsset: "IconPreview-Ether"),
+        AppIconOption(id: "ether-shiny", name: "Shiny Ether", alternateName: "AppIcon-EtherShiny",
+                      previewAsset: "IconPreview-EtherShiny"),
+        AppIconOption(id: "moth", name: "Lumen", alternateName: "AppIcon-Moth",
+                      previewAsset: "IconPreview-Moth"),
+        AppIconOption(id: "moth-shiny", name: "Shiny Lumen", alternateName: "AppIcon-MothShiny",
+                      previewAsset: "IconPreview-MothShiny"),
+        AppIconOption(id: "classic", name: "Classic", alternateName: "AppIcon-Classic",
+                      previewAsset: "IconPreview-Classic"),
         // The crowd-surf mark that shipped as primary in 1.0.0–1.0.2. Retired
         // when the panes icon took over (the crowd read as an ellipsis at
         // 60pt), kept so nobody loses the icon they bought the app with.

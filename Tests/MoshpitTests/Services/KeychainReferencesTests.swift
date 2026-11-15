@@ -214,14 +214,14 @@ struct KeychainReferencesTests {
         s.keys.add(work)
         s.connections.add(Self.connection("nas", key: work))
         let model = SSHKeysModel()
-        model.update(SSHKeysSnapshot(store: s.keys))
+        model.update(SSHKeysSnapshot(store: s.keys, connections: s.connections))
 
         model.requestDelete(work, SSHKeyDeletion.check(work, connections: s.connections, keys: s.keys))
         #expect(model.deleting == nil, "no delete card for a key a connection uses")
         #expect(model.notice == .inUse(["nas"]))
-        let message = SSHKeysModel.message(SSHKeysSnapshot(store: s.keys), deleting: nil, notice: model.notice)
-        let notice = try #require(message["notice"] as? [String: String])
-        #expect(notice["message"]?.contains("nas") == true)
+        let state = SSHKeysModel.state(SSHKeysSnapshot(store: s.keys, connections: s.connections), deleting: nil, notice: model.notice)
+        let notice = try #require(state.notice)
+        #expect(notice.message.contains("nas"))
         model.dismissNotice()
         #expect(model.notice == nil)
 
@@ -348,7 +348,7 @@ struct KeychainReferencesTests {
         // Stored: SSH Keys lists it after a relaunch, and the keys page
         // shows it with the rest.
         #expect(SSHKeyStore(defaults: s.defaults).keys.contains { $0.keychainRef == orphan })
-        #expect(SSHKeysSnapshot(store: s.keys).imported.contains { $0.id == record.id })
+        #expect(SSHKeysSnapshot(store: s.keys, connections: s.connections).imported.contains { $0.id == record.id })
     }
 
     @Test("a second launch adds nothing: a recovered key is named from then on")

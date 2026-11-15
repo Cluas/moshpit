@@ -38,7 +38,7 @@ struct MuxPickerNSHPage<C: MultiplexerControlling>: View {
                         model.attach(surface, current: state)
                         menus.install(on: surface)
                     },
-                    onMessage: handle,
+                    onEvent: { if case .muxPicker(let event) = $0 { handle(event) } },
                     onFailure: { failed = true })
                     .nshPage()
                     .onAppear { show(state) }
@@ -63,15 +63,15 @@ struct MuxPickerNSHPage<C: MultiplexerControlling>: View {
     private func show(_ state: MuxPickerState) {
         model.update(state)
         menus.menus = MuxPickerModel.menus(for: state) { [weak model] action, id in
-            model?.post(["op": "act", "action": action, "id": id])
+            model?.post(.muxPickerAct(action: action, id: id))
         }
         menus.cornerRadius = [:]
     }
 
     /// What the screen tells the host.
-    private func handle(_ message: [String: Any]) {
-        switch MuxPickerModel.event(message) {
-        case .select(let id)?:
+    private func handle(_ event: MuxPickerEvent) {
+        switch event {
+        case .select(let id):
             Haptics.select()
             switch kind {
             case .windows: controller.selectWindow(id)
@@ -79,7 +79,7 @@ struct MuxPickerNSHPage<C: MultiplexerControlling>: View {
             case .panes: controller.selectPane(id)
             }
             dismiss()
-        case .new(let name)?:
+        case .new(let name):
             Haptics.tap()
             switch kind {
             case .windows:
@@ -92,32 +92,30 @@ struct MuxPickerNSHPage<C: MultiplexerControlling>: View {
             case .panes:
                 controller.newPane()
             }
-        case .rename(let id, let name)?:
+        case .rename(let id, let name):
             switch kind {
             case .windows: controller.renameWindow(id, to: name)
             case .sessions: controller.renameSession(id, to: name)
             case .panes: break
             }
-        case .kill(let id)?:
+        case .kill(let id):
             switch kind {
             case .windows: controller.killWindow(id)
             case .sessions: controller.killSession(id)
             case .panes: break
             }
-        case .prompt(let question)?:
+        case .prompt(let question):
             guard let surface = model.surface else { return }
             NSHTextPrompt.present(question, from: surface) { [weak model] answer in
                 model?.post(answer)
             }
-        case nil:
-            Log.ui.error("mux picker: no event in \(String(describing: message["ev"]), privacy: .public)")
         }
     }
 }
 
-/// What the NSH picker shows: the controller's list as `{"op": "picker",
-/// …}` carries it (`ui/src/terminal/picker.rs`'s `Picker`), the facts of
-/// each row; the screen words them.
+/// What the NSH picker shows: the controller's list as the screen's
+/// `Picker` carries it (``MuxPickerPageState``, through the page bridge),
+/// the facts of each row; the screen words them.
 struct MuxPickerState: Equatable {
     struct Row: Equatable {
         var id: String
@@ -140,6 +138,9 @@ struct MuxPickerState: Equatable {
     var mux: Multiplexer
     var rows: [Row] = []
     var active: String?
+    /// The list picks where a held share goes (B622): the share's agent
+    /// (``sending(_:controller:)``, ``ShareSendPicker``).
+    var send: String?
 
     init(kind: MuxPickerKind, mux: Multiplexer, rows: [Row], active: String?) {
         self.kind = kind
@@ -195,34 +196,24 @@ struct MuxPickerState: Equatable {
         }
     }
 
-    var message: [String: Any] {
-        var message: [String: Any] = [
-            "op": "picker",
-            "kind": kind.rawValue,
-            "mux": mux == .herdr ? "herdr" : "tmux",
-            "rows": rows.map(Self.json),
-        ]
-        if let active { message["active"] = active }
-        return message
+    /// The list as the page bridge carries it.
+    var page: MuxPickerPageState {
+        MuxPickerPageState(kind: kind.rawValue, mux: mux == .herdr ? "herdr" : "tmux",
+                           rows: rows.map(Self.row), active: active, send: send)
     }
 
-    private static func json(_ row: Row) -> [String: Any] {
-        var json: [String: Any] = ["id": row.id, "name": row.name, "command": row.command,
-                                   "attached": row.attached]
-        if let index = row.index { json["index"] = index }
-        if let panes = row.panes { json["panes"] = panes }
-        if let agent = row.agent { json["agent"] = agent }
-        if let path = row.path { json["path"] = path }
-        if let signal = row.signal {
-            json["signal"] = switch signal {
+    private static func row(_ row: Row) -> MuxPickerRow {
+        let count = { (n: Int?) in n.map { UInt32(clamping: $0) } }
+        let signal: String? = row.signal.map {
+            switch $0 {
             case .attention: "attention"
             case .working: "working"
             case .done: "done"
             }
         }
-        if let windows = row.windows { json["windows"] = windows }
-        if let window = row.window { json["window"] = window }
-        return json
+        return MuxPickerRow(id: row.id, index: count(row.index), name: row.name, panes: count(row.panes),
+                            command: row.command, agent: row.agent, path: row.path, signal: signal,
+                            attached: row.attached, windows: count(row.windows), window: row.window)
     }
 }
 
@@ -235,7 +226,7 @@ final class MuxPickerModel {
 
     func attach(_ surface: NSHSurface) {
         self.surface = surface
-        if let state { surface.post(state.message) }
+        if let state { surface.post(.muxPicker(state: state.page)) }
     }
 
     /// ``attach(_:)``, the model filled from `current` (the page's picker as
@@ -253,39 +244,12 @@ final class MuxPickerModel {
     func update(_ state: MuxPickerState) {
         guard state != self.state else { return }
         self.state = state
-        surface?.post(state.message)
+        surface?.post(.muxPicker(state: state.page))
     }
 
     @discardableResult
-    func post(_ message: [String: Any]) -> Bool {
+    func post(_ message: PageMessage) -> Bool {
         surface?.post(message) ?? false
-    }
-
-    /// What the screen asks the host.
-    enum Event: Equatable {
-        case select(String)
-        case new(String?)
-        case rename(String, String)
-        case kill(String)
-        case prompt(NSHTextPrompt.Question)
-    }
-
-    static func event(_ message: [String: Any]) -> Event? {
-        switch message["ev"] as? String {
-        case "select":
-            return (message["id"] as? String).map(Event.select)
-        case "new":
-            return .new(message["name"] as? String)
-        case "rename":
-            guard let id = message["id"] as? String, let name = message["name"] as? String else { return nil }
-            return .rename(id, name)
-        case "kill":
-            return (message["id"] as? String).map(Event.kill)
-        case "prompt":
-            return NSHTextPrompt.Question(message).map(Event.prompt)
-        default:
-            return nil
-        }
     }
 
     /// The long-press menus of `state`'s rows, by the row's identifier
@@ -293,7 +257,7 @@ final class MuxPickerModel {
     /// `.contextMenu`; panes have none. A pick goes back to the screen
     /// (`perform(action, id)`), which asks before the host acts.
     static func menus(for state: MuxPickerState,
-                      perform: @escaping (String, String) -> Void) -> [String: () -> [UIMenuElement]] {
+                      perform: @escaping (MuxPickerAction, String) -> Void) -> [String: () -> [UIMenuElement]] {
         guard state.kind != .panes else { return [:] }
         let vocab = state.mux.vocabulary
         let noun = state.kind == .sessions ? vocab.session : vocab.window
@@ -303,11 +267,11 @@ final class MuxPickerModel {
             menus["mux-picker-row-\(id)"] = {
                 [
                     UIAction(title: String(localized: "Rename"), image: UIImage(systemName: "pencil")) { _ in
-                        perform("rename", id)
+                        perform(.rename, id)
                     },
                     UIAction(title: String(localized: "\(vocab.killVerb) \(noun)"),
                              image: UIImage(systemName: "trash"), attributes: .destructive) { _ in
-                        perform("kill", id)
+                        perform(.kill, id)
                     },
                 ]
             }

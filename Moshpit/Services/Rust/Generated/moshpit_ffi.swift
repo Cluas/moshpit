@@ -4741,6 +4741,12 @@ public protocol KeyStoreHandleProtocol: AnyObject, Sendable {
     
     func keys()  -> [KeyRecord]
     
+    /**
+     * Key `id` signed in now (B601): its last use, written at most once a
+     * day (`SshKeyStore::mark_used`). Whether it was written.
+     */
+    func markUsed(id: String) throws  -> Bool
+    
     func reloadIfNeeded() 
     
     /**
@@ -4878,6 +4884,19 @@ open func keys() -> [KeyRecord]  {
     return try!  FfiConverterSequenceTypeKeyRecord.lift(try! rustCall() {
     uniffi_moshpit_ffi_fn_method_keystorehandle_keys(
             self.uniffiCloneHandle(),$0
+    )
+})
+}
+    
+    /**
+     * Key `id` signed in now (B601): its last use, written at most once a
+     * day (`SshKeyStore::mark_used`). Whether it was written.
+     */
+open func markUsed(id: String)throws  -> Bool  {
+    return try  FfiConverterBool.lift(try rustCallWithError(FfiConverterTypeStoreError_lift) {
+    uniffi_moshpit_ffi_fn_method_keystorehandle_mark_used(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(id),$0
     )
 })
 }
@@ -6138,6 +6157,12 @@ public protocol PetMachineProtocol: AnyObject, Sendable {
     func hatch(seed: Data, now: Int64, localHour: UInt8)  -> Bool
     
     /**
+     * The person answered Home's icon card (B668), either way: this look
+     * is not asked about again; the next one is.
+     */
+    func iconAnswered() 
+    
+    /**
      * The Live Activity's stills for the agents' headline state (`working`,
      * `attention`, `done`, `idle`), or none while the companion is off.
      */
@@ -6174,6 +6199,13 @@ public protocol PetMachineProtocol: AnyObject, Sendable {
      * iCloud, when the person has it on.
      */
     func setCloud(cloud: PetCloudHost?) 
+    
+    /**
+     * The app icon iOS shows now (B668): its gallery id, and whether the
+     * person picked it by hand. Home offers the pet's icon only once the
+     * app has said.
+     */
+    func setIcon(current: String, byHand: Bool) 
     
     func setListener(listener: PetListener?) 
     
@@ -6330,6 +6362,17 @@ open func hatch(seed: Data, now: Int64, localHour: UInt8) -> Bool  {
 }
     
     /**
+     * The person answered Home's icon card (B668), either way: this look
+     * is not asked about again; the next one is.
+     */
+open func iconAnswered()  {try! rustCall() {
+    uniffi_moshpit_ffi_fn_method_petmachine_icon_answered(
+            self.uniffiCloneHandle(),$0
+    )
+}
+}
+    
+    /**
      * The Live Activity's stills for the agents' headline state (`working`,
      * `attention`, `done`, `idle`), or none while the companion is off.
      */
@@ -6408,6 +6451,20 @@ open func setCloud(cloud: PetCloudHost?)  {try! rustCall() {
     uniffi_moshpit_ffi_fn_method_petmachine_set_cloud(
             self.uniffiCloneHandle(),
         FfiConverterOptionTypePetCloudHost.lower(cloud),$0
+    )
+}
+}
+    
+    /**
+     * The app icon iOS shows now (B668): its gallery id, and whether the
+     * person picked it by hand. Home offers the pet's icon only once the
+     * app has said.
+     */
+open func setIcon(current: String, byHand: Bool)  {try! rustCall() {
+    uniffi_moshpit_ffi_fn_method_petmachine_set_icon(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(current),
+        FfiConverterBool.lower(byHand),$0
     )
 }
 }
@@ -9178,6 +9235,219 @@ public func FfiConverterTypeAccentThemeRecord_lower(_ value: AccentThemeRecord) 
 }
 
 
+/**
+ * The form, as the host has it (`AddKey`).
+ */
+public struct AddKeyPageState: Equatable, Hashable {
+    /**
+     * `generate`, `import` or `hardware`.
+     */
+    public var method: String
+    /**
+     * `ed25519` or `rsa`.
+     */
+    public var algorithm: String
+    public var requireFaceId: Bool
+    public var secureEnclave: Bool
+    public var pem: AddKeyPem
+    /**
+     * The text fields, as the host has them: taken when `fields` moves.
+     */
+    public var name: String
+    public var comment: String
+    public var publicLine: String
+    public var fields: UInt64
+    /**
+     * Generate or Import can be pressed.
+     */
+    public var canSubmit: Bool
+    /**
+     * A key is being made or imported.
+     */
+    public var working: Bool
+    /**
+     * The new key's fingerprint, once there is one.
+     */
+    public var fingerprint: String?
+    /**
+     * Why the key could not be made.
+     */
+    public var error: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * `generate`, `import` or `hardware`.
+         */method: String, 
+        /**
+         * `ed25519` or `rsa`.
+         */algorithm: String, requireFaceId: Bool, secureEnclave: Bool, pem: AddKeyPem, 
+        /**
+         * The text fields, as the host has them: taken when `fields` moves.
+         */name: String, comment: String, publicLine: String, fields: UInt64, 
+        /**
+         * Generate or Import can be pressed.
+         */canSubmit: Bool, 
+        /**
+         * A key is being made or imported.
+         */working: Bool, 
+        /**
+         * The new key's fingerprint, once there is one.
+         */fingerprint: String?, 
+        /**
+         * Why the key could not be made.
+         */error: String?) {
+        self.method = method
+        self.algorithm = algorithm
+        self.requireFaceId = requireFaceId
+        self.secureEnclave = secureEnclave
+        self.pem = pem
+        self.name = name
+        self.comment = comment
+        self.publicLine = publicLine
+        self.fields = fields
+        self.canSubmit = canSubmit
+        self.working = working
+        self.fingerprint = fingerprint
+        self.error = error
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension AddKeyPageState: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeAddKeyPageState: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> AddKeyPageState {
+        return
+            try AddKeyPageState(
+                method: FfiConverterString.read(from: &buf), 
+                algorithm: FfiConverterString.read(from: &buf), 
+                requireFaceId: FfiConverterBool.read(from: &buf), 
+                secureEnclave: FfiConverterBool.read(from: &buf), 
+                pem: FfiConverterTypeAddKeyPem.read(from: &buf), 
+                name: FfiConverterString.read(from: &buf), 
+                comment: FfiConverterString.read(from: &buf), 
+                publicLine: FfiConverterString.read(from: &buf), 
+                fields: FfiConverterUInt64.read(from: &buf), 
+                canSubmit: FfiConverterBool.read(from: &buf), 
+                working: FfiConverterBool.read(from: &buf), 
+                fingerprint: FfiConverterOptionString.read(from: &buf), 
+                error: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: AddKeyPageState, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.method, into: &buf)
+        FfiConverterString.write(value.algorithm, into: &buf)
+        FfiConverterBool.write(value.requireFaceId, into: &buf)
+        FfiConverterBool.write(value.secureEnclave, into: &buf)
+        FfiConverterTypeAddKeyPem.write(value.pem, into: &buf)
+        FfiConverterString.write(value.name, into: &buf)
+        FfiConverterString.write(value.comment, into: &buf)
+        FfiConverterString.write(value.publicLine, into: &buf)
+        FfiConverterUInt64.write(value.fields, into: &buf)
+        FfiConverterBool.write(value.canSubmit, into: &buf)
+        FfiConverterBool.write(value.working, into: &buf)
+        FfiConverterOptionString.write(value.fingerprint, into: &buf)
+        FfiConverterOptionString.write(value.error, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeAddKeyPageState_lift(_ buf: RustBuffer) throws -> AddKeyPageState {
+    return try FfiConverterTypeAddKeyPageState.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeAddKeyPageState_lower(_ value: AddKeyPageState) -> RustBuffer {
+    return FfiConverterTypeAddKeyPageState.lower(value)
+}
+
+
+/**
+ * What the host's private key editor holds, as far as the page may know
+ * (`Pem`).
+ */
+public struct AddKeyPem: Equatable, Hashable {
+    /**
+     * Nothing pasted yet.
+     */
+    public var empty: Bool
+    /**
+     * The pasted key is behind a passphrase.
+     */
+    public var encrypted: Bool
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * Nothing pasted yet.
+         */empty: Bool, 
+        /**
+         * The pasted key is behind a passphrase.
+         */encrypted: Bool) {
+        self.empty = empty
+        self.encrypted = encrypted
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension AddKeyPem: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeAddKeyPem: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> AddKeyPem {
+        return
+            try AddKeyPem(
+                empty: FfiConverterBool.read(from: &buf), 
+                encrypted: FfiConverterBool.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: AddKeyPem, into buf: inout [UInt8]) {
+        FfiConverterBool.write(value.empty, into: &buf)
+        FfiConverterBool.write(value.encrypted, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeAddKeyPem_lift(_ buf: RustBuffer) throws -> AddKeyPem {
+    return try FfiConverterTypeAddKeyPem.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeAddKeyPem_lower(_ value: AddKeyPem) -> RustBuffer {
+    return FfiConverterTypeAddKeyPem.lower(value)
+}
+
+
 public struct AgentCardValue: Equatable, Hashable {
     public var id: String
     public var title: String
@@ -11625,6 +11895,242 @@ public func FfiConverterTypeKeyRecord_lower(_ value: KeyRecord) -> RustBuffer {
 
 
 /**
+ * What the picker shows (`Picker`).
+ */
+public struct MuxPickerPageState: Equatable, Hashable {
+    /**
+     * `windows`, `sessions` or `panes`.
+     */
+    public var kind: String
+    /**
+     * `tmux` or `herdr`.
+     */
+    public var mux: String
+    /**
+     * In the order the list shows them.
+     */
+    public var rows: [MuxPickerRow]
+    /**
+     * The row the multiplexer is on.
+     */
+    public var active: String?
+    /**
+     * The list picks where a held share goes (B622): the share's agent,
+     * whose panes come first. A pick is a `Select` all the same.
+     */
+    public var send: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * `windows`, `sessions` or `panes`.
+         */kind: String, 
+        /**
+         * `tmux` or `herdr`.
+         */mux: String, 
+        /**
+         * In the order the list shows them.
+         */rows: [MuxPickerRow], 
+        /**
+         * The row the multiplexer is on.
+         */active: String?, 
+        /**
+         * The list picks where a held share goes (B622): the share's agent,
+         * whose panes come first. A pick is a `Select` all the same.
+         */send: String?) {
+        self.kind = kind
+        self.mux = mux
+        self.rows = rows
+        self.active = active
+        self.send = send
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension MuxPickerPageState: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeMuxPickerPageState: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> MuxPickerPageState {
+        return
+            try MuxPickerPageState(
+                kind: FfiConverterString.read(from: &buf), 
+                mux: FfiConverterString.read(from: &buf), 
+                rows: FfiConverterSequenceTypeMuxPickerRow.read(from: &buf), 
+                active: FfiConverterOptionString.read(from: &buf), 
+                send: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: MuxPickerPageState, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.kind, into: &buf)
+        FfiConverterString.write(value.mux, into: &buf)
+        FfiConverterSequenceTypeMuxPickerRow.write(value.rows, into: &buf)
+        FfiConverterOptionString.write(value.active, into: &buf)
+        FfiConverterOptionString.write(value.send, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeMuxPickerPageState_lift(_ buf: RustBuffer) throws -> MuxPickerPageState {
+    return try FfiConverterTypeMuxPickerPageState.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeMuxPickerPageState_lower(_ value: MuxPickerPageState) -> RustBuffer {
+    return FfiConverterTypeMuxPickerPageState.lower(value)
+}
+
+
+/**
+ * One row, in the host's facts (`Row`; the page words them).
+ */
+public struct MuxPickerRow: Equatable, Hashable {
+    /**
+     * What the multiplexer knows it by (`@3`, `$1`, `%7`, herdr's `w4`).
+     */
+    public var id: String
+    /**
+     * A window's or a pane's number.
+     */
+    public var index: UInt32?
+    /**
+     * A window's or a session's name.
+     */
+    public var name: String
+    /**
+     * A window's panes.
+     */
+    public var panes: UInt32?
+    public var command: String
+    public var agent: String?
+    public var path: String?
+    /**
+     * The agents' signal: `attention`, `working` or `done`.
+     */
+    public var signal: String?
+    /**
+     * A session another client is attached to.
+     */
+    public var attached: Bool
+    /**
+     * The active session's windows, and its active window (`index:name`).
+     */
+    public var windows: UInt32?
+    public var window: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * What the multiplexer knows it by (`@3`, `$1`, `%7`, herdr's `w4`).
+         */id: String, 
+        /**
+         * A window's or a pane's number.
+         */index: UInt32?, 
+        /**
+         * A window's or a session's name.
+         */name: String, 
+        /**
+         * A window's panes.
+         */panes: UInt32?, command: String, agent: String?, path: String?, 
+        /**
+         * The agents' signal: `attention`, `working` or `done`.
+         */signal: String?, 
+        /**
+         * A session another client is attached to.
+         */attached: Bool, 
+        /**
+         * The active session's windows, and its active window (`index:name`).
+         */windows: UInt32?, window: String?) {
+        self.id = id
+        self.index = index
+        self.name = name
+        self.panes = panes
+        self.command = command
+        self.agent = agent
+        self.path = path
+        self.signal = signal
+        self.attached = attached
+        self.windows = windows
+        self.window = window
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension MuxPickerRow: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeMuxPickerRow: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> MuxPickerRow {
+        return
+            try MuxPickerRow(
+                id: FfiConverterString.read(from: &buf), 
+                index: FfiConverterOptionUInt32.read(from: &buf), 
+                name: FfiConverterString.read(from: &buf), 
+                panes: FfiConverterOptionUInt32.read(from: &buf), 
+                command: FfiConverterString.read(from: &buf), 
+                agent: FfiConverterOptionString.read(from: &buf), 
+                path: FfiConverterOptionString.read(from: &buf), 
+                signal: FfiConverterOptionString.read(from: &buf), 
+                attached: FfiConverterBool.read(from: &buf), 
+                windows: FfiConverterOptionUInt32.read(from: &buf), 
+                window: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: MuxPickerRow, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.id, into: &buf)
+        FfiConverterOptionUInt32.write(value.index, into: &buf)
+        FfiConverterString.write(value.name, into: &buf)
+        FfiConverterOptionUInt32.write(value.panes, into: &buf)
+        FfiConverterString.write(value.command, into: &buf)
+        FfiConverterOptionString.write(value.agent, into: &buf)
+        FfiConverterOptionString.write(value.path, into: &buf)
+        FfiConverterOptionString.write(value.signal, into: &buf)
+        FfiConverterBool.write(value.attached, into: &buf)
+        FfiConverterOptionUInt32.write(value.windows, into: &buf)
+        FfiConverterOptionString.write(value.window, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeMuxPickerRow_lift(_ buf: RustBuffer) throws -> MuxPickerRow {
+    return try FfiConverterTypeMuxPickerRow.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeMuxPickerRow_lower(_ value: MuxPickerRow) -> RustBuffer {
+    return FfiConverterTypeMuxPickerRow.lower(value)
+}
+
+
+/**
  * One paired host (`PushPairing`): dates as seconds since 2001, the
  * connection id as its upper-case UUID string.
  */
@@ -12263,6 +12769,321 @@ public func FfiConverterTypeRemoteFileRecord_lift(_ buf: RustBuffer) throws -> R
 #endif
 public func FfiConverterTypeRemoteFileRecord_lower(_ value: RemoteFileRecord) -> RustBuffer {
     return FfiConverterTypeRemoteFileRecord.lower(value)
+}
+
+
+/**
+ * A failure to say in an alert (`Failure`).
+ */
+public struct RemoteFolderFailure: Equatable, Hashable {
+    public var title: String
+    public var message: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(title: String, message: String) {
+        self.title = title
+        self.message = message
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension RemoteFolderFailure: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeRemoteFolderFailure: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> RemoteFolderFailure {
+        return
+            try RemoteFolderFailure(
+                title: FfiConverterString.read(from: &buf), 
+                message: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: RemoteFolderFailure, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.title, into: &buf)
+        FfiConverterString.write(value.message, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRemoteFolderFailure_lift(_ buf: RustBuffer) throws -> RemoteFolderFailure {
+    return try FfiConverterTypeRemoteFolderFailure.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRemoteFolderFailure_lower(_ value: RemoteFolderFailure) -> RustBuffer {
+    return FfiConverterTypeRemoteFolderFailure.lower(value)
+}
+
+
+/**
+ * One file or folder (`Entry`).
+ */
+public struct RemoteFolderItem: Equatable, Hashable {
+    public var path: String
+    public var name: String
+    public var dir: Bool
+    public var video: Bool
+    /**
+     * The SF Symbol of its kind.
+     */
+    public var symbol: String
+    /**
+     * When it changed and how big it is.
+     */
+    public var meta: String
+    /**
+     * The host has its thumbnail.
+     */
+    public var thumb: Bool
+    /**
+     * A video's length (`1:05`).
+     */
+    public var duration: String?
+    /**
+     * It is downloading to open, this far.
+     */
+    public var opening: Double?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(path: String, name: String, dir: Bool, video: Bool, 
+        /**
+         * The SF Symbol of its kind.
+         */symbol: String, 
+        /**
+         * When it changed and how big it is.
+         */meta: String, 
+        /**
+         * The host has its thumbnail.
+         */thumb: Bool, 
+        /**
+         * A video's length (`1:05`).
+         */duration: String?, 
+        /**
+         * It is downloading to open, this far.
+         */opening: Double?) {
+        self.path = path
+        self.name = name
+        self.dir = dir
+        self.video = video
+        self.symbol = symbol
+        self.meta = meta
+        self.thumb = thumb
+        self.duration = duration
+        self.opening = opening
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension RemoteFolderItem: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeRemoteFolderItem: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> RemoteFolderItem {
+        return
+            try RemoteFolderItem(
+                path: FfiConverterString.read(from: &buf), 
+                name: FfiConverterString.read(from: &buf), 
+                dir: FfiConverterBool.read(from: &buf), 
+                video: FfiConverterBool.read(from: &buf), 
+                symbol: FfiConverterString.read(from: &buf), 
+                meta: FfiConverterString.read(from: &buf), 
+                thumb: FfiConverterBool.read(from: &buf), 
+                duration: FfiConverterOptionString.read(from: &buf), 
+                opening: FfiConverterOptionDouble.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: RemoteFolderItem, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.path, into: &buf)
+        FfiConverterString.write(value.name, into: &buf)
+        FfiConverterBool.write(value.dir, into: &buf)
+        FfiConverterBool.write(value.video, into: &buf)
+        FfiConverterString.write(value.symbol, into: &buf)
+        FfiConverterString.write(value.meta, into: &buf)
+        FfiConverterBool.write(value.thumb, into: &buf)
+        FfiConverterOptionString.write(value.duration, into: &buf)
+        FfiConverterOptionDouble.write(value.opening, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRemoteFolderItem_lift(_ buf: RustBuffer) throws -> RemoteFolderItem {
+    return try FfiConverterTypeRemoteFolderItem.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRemoteFolderItem_lower(_ value: RemoteFolderItem) -> RustBuffer {
+    return FfiConverterTypeRemoteFolderItem.lower(value)
+}
+
+
+/**
+ * What the folder page shows (`Folder`).
+ */
+public struct RemoteFolderPageState: Equatable, Hashable {
+    public var name: String
+    public var path: String
+    /**
+     * The folders above this one, nearest first (the title's menu).
+     */
+    public var parents: [String]
+    /**
+     * The page was pushed (it has a back button).
+     */
+    public var pushed: Bool
+    public var loading: Bool
+    /**
+     * Why the listing failed.
+     */
+    public var failure: String?
+    /**
+     * An upload is under way, this far.
+     */
+    public var uploading: Double?
+    /**
+     * Images and videos, then everything else.
+     */
+    public var media: [RemoteFolderItem]
+    public var rows: [RemoteFolderItem]
+    /**
+     * A file that would not open, a change the host refused.
+     */
+    public var openFailure: String?
+    public var editFailure: RemoteFolderFailure?
+    /**
+     * Each failure's number: an alert is said once per number.
+     */
+    public var openFailureId: UInt64
+    public var editFailureId: UInt64
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(name: String, path: String, 
+        /**
+         * The folders above this one, nearest first (the title's menu).
+         */parents: [String], 
+        /**
+         * The page was pushed (it has a back button).
+         */pushed: Bool, loading: Bool, 
+        /**
+         * Why the listing failed.
+         */failure: String?, 
+        /**
+         * An upload is under way, this far.
+         */uploading: Double?, 
+        /**
+         * Images and videos, then everything else.
+         */media: [RemoteFolderItem], rows: [RemoteFolderItem], 
+        /**
+         * A file that would not open, a change the host refused.
+         */openFailure: String?, editFailure: RemoteFolderFailure?, 
+        /**
+         * Each failure's number: an alert is said once per number.
+         */openFailureId: UInt64, editFailureId: UInt64) {
+        self.name = name
+        self.path = path
+        self.parents = parents
+        self.pushed = pushed
+        self.loading = loading
+        self.failure = failure
+        self.uploading = uploading
+        self.media = media
+        self.rows = rows
+        self.openFailure = openFailure
+        self.editFailure = editFailure
+        self.openFailureId = openFailureId
+        self.editFailureId = editFailureId
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension RemoteFolderPageState: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeRemoteFolderPageState: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> RemoteFolderPageState {
+        return
+            try RemoteFolderPageState(
+                name: FfiConverterString.read(from: &buf), 
+                path: FfiConverterString.read(from: &buf), 
+                parents: FfiConverterSequenceString.read(from: &buf), 
+                pushed: FfiConverterBool.read(from: &buf), 
+                loading: FfiConverterBool.read(from: &buf), 
+                failure: FfiConverterOptionString.read(from: &buf), 
+                uploading: FfiConverterOptionDouble.read(from: &buf), 
+                media: FfiConverterSequenceTypeRemoteFolderItem.read(from: &buf), 
+                rows: FfiConverterSequenceTypeRemoteFolderItem.read(from: &buf), 
+                openFailure: FfiConverterOptionString.read(from: &buf), 
+                editFailure: FfiConverterOptionTypeRemoteFolderFailure.read(from: &buf), 
+                openFailureId: FfiConverterUInt64.read(from: &buf), 
+                editFailureId: FfiConverterUInt64.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: RemoteFolderPageState, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.name, into: &buf)
+        FfiConverterString.write(value.path, into: &buf)
+        FfiConverterSequenceString.write(value.parents, into: &buf)
+        FfiConverterBool.write(value.pushed, into: &buf)
+        FfiConverterBool.write(value.loading, into: &buf)
+        FfiConverterOptionString.write(value.failure, into: &buf)
+        FfiConverterOptionDouble.write(value.uploading, into: &buf)
+        FfiConverterSequenceTypeRemoteFolderItem.write(value.media, into: &buf)
+        FfiConverterSequenceTypeRemoteFolderItem.write(value.rows, into: &buf)
+        FfiConverterOptionString.write(value.openFailure, into: &buf)
+        FfiConverterOptionTypeRemoteFolderFailure.write(value.editFailure, into: &buf)
+        FfiConverterUInt64.write(value.openFailureId, into: &buf)
+        FfiConverterUInt64.write(value.editFailureId, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRemoteFolderPageState_lift(_ buf: RustBuffer) throws -> RemoteFolderPageState {
+    return try FfiConverterTypeRemoteFolderPageState.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRemoteFolderPageState_lower(_ value: RemoteFolderPageState) -> RustBuffer {
+    return FfiConverterTypeRemoteFolderPageState.lower(value)
 }
 
 
@@ -13542,6 +14363,273 @@ public func FfiConverterTypeShortcutRecord_lower(_ value: ShortcutRecord) -> Rus
 
 
 /**
+ * One key's metadata (`Key`).
+ */
+public struct SshKeyRow: Equatable, Hashable {
+    public var id: String
+    public var name: String
+    /**
+     * The algorithm badge (`SE · P256`, `ED25519`, `RSA-4096`).
+     */
+    public var badge: String
+    public var avatar: SshKeyAvatar
+    /**
+     * Unused for 90 days.
+     */
+    public var stale: Bool
+    /**
+     * `SHA256:…` (empty: none shown).
+     */
+    public var fingerprint: String
+    /**
+     * The hosts it is bound to.
+     */
+    public var hosts: [String]
+    /**
+     * The month and year it was last used, for a stale key.
+     */
+    public var unusedSince: String?
+    /**
+     * Whether it has a public key to copy or share.
+     */
+    public var hasPublicKey: Bool
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(id: String, name: String, 
+        /**
+         * The algorithm badge (`SE · P256`, `ED25519`, `RSA-4096`).
+         */badge: String, avatar: SshKeyAvatar, 
+        /**
+         * Unused for 90 days.
+         */stale: Bool, 
+        /**
+         * `SHA256:…` (empty: none shown).
+         */fingerprint: String, 
+        /**
+         * The hosts it is bound to.
+         */hosts: [String], 
+        /**
+         * The month and year it was last used, for a stale key.
+         */unusedSince: String?, 
+        /**
+         * Whether it has a public key to copy or share.
+         */hasPublicKey: Bool) {
+        self.id = id
+        self.name = name
+        self.badge = badge
+        self.avatar = avatar
+        self.stale = stale
+        self.fingerprint = fingerprint
+        self.hosts = hosts
+        self.unusedSince = unusedSince
+        self.hasPublicKey = hasPublicKey
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension SshKeyRow: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeSshKeyRow: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SshKeyRow {
+        return
+            try SshKeyRow(
+                id: FfiConverterString.read(from: &buf), 
+                name: FfiConverterString.read(from: &buf), 
+                badge: FfiConverterString.read(from: &buf), 
+                avatar: FfiConverterTypeSshKeyAvatar.read(from: &buf), 
+                stale: FfiConverterBool.read(from: &buf), 
+                fingerprint: FfiConverterString.read(from: &buf), 
+                hosts: FfiConverterSequenceString.read(from: &buf), 
+                unusedSince: FfiConverterOptionString.read(from: &buf), 
+                hasPublicKey: FfiConverterBool.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: SshKeyRow, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.id, into: &buf)
+        FfiConverterString.write(value.name, into: &buf)
+        FfiConverterString.write(value.badge, into: &buf)
+        FfiConverterTypeSshKeyAvatar.write(value.avatar, into: &buf)
+        FfiConverterBool.write(value.stale, into: &buf)
+        FfiConverterString.write(value.fingerprint, into: &buf)
+        FfiConverterSequenceString.write(value.hosts, into: &buf)
+        FfiConverterOptionString.write(value.unusedSince, into: &buf)
+        FfiConverterBool.write(value.hasPublicKey, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSshKeyRow_lift(_ buf: RustBuffer) throws -> SshKeyRow {
+    return try FfiConverterTypeSshKeyRow.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSshKeyRow_lower(_ value: SshKeyRow) -> RustBuffer {
+    return FfiConverterTypeSshKeyRow.lower(value)
+}
+
+
+/**
+ * A key that wasn't deleted, and why, in the host's words (`Notice`).
+ */
+public struct SshKeysNotice: Equatable, Hashable {
+    public var title: String
+    public var message: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(title: String, message: String) {
+        self.title = title
+        self.message = message
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension SshKeysNotice: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeSshKeysNotice: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SshKeysNotice {
+        return
+            try SshKeysNotice(
+                title: FfiConverterString.read(from: &buf), 
+                message: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: SshKeysNotice, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.title, into: &buf)
+        FfiConverterString.write(value.message, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSshKeysNotice_lift(_ buf: RustBuffer) throws -> SshKeysNotice {
+    return try FfiConverterTypeSshKeysNotice.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSshKeysNotice_lower(_ value: SshKeysNotice) -> RustBuffer {
+    return FfiConverterTypeSshKeysNotice.lower(value)
+}
+
+
+/**
+ * What the SSH Keys page shows (`Keys`).
+ */
+public struct SshKeysPageState: Equatable, Hashable {
+    /**
+     * The Secure Enclave's keys.
+     */
+    public var device: [SshKeyRow]
+    /**
+     * The others.
+     */
+    public var imported: [SshKeyRow]
+    /**
+     * The key the delete card asks about, while it shows.
+     */
+    public var deleting: String?
+    /**
+     * Why a key wasn't deleted, while the card saying so shows.
+     */
+    public var notice: SshKeysNotice?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * The Secure Enclave's keys.
+         */device: [SshKeyRow], 
+        /**
+         * The others.
+         */imported: [SshKeyRow], 
+        /**
+         * The key the delete card asks about, while it shows.
+         */deleting: String?, 
+        /**
+         * Why a key wasn't deleted, while the card saying so shows.
+         */notice: SshKeysNotice?) {
+        self.device = device
+        self.imported = imported
+        self.deleting = deleting
+        self.notice = notice
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension SshKeysPageState: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeSshKeysPageState: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SshKeysPageState {
+        return
+            try SshKeysPageState(
+                device: FfiConverterSequenceTypeSshKeyRow.read(from: &buf), 
+                imported: FfiConverterSequenceTypeSshKeyRow.read(from: &buf), 
+                deleting: FfiConverterOptionString.read(from: &buf), 
+                notice: FfiConverterOptionTypeSshKeysNotice.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: SshKeysPageState, into buf: inout [UInt8]) {
+        FfiConverterSequenceTypeSshKeyRow.write(value.device, into: &buf)
+        FfiConverterSequenceTypeSshKeyRow.write(value.imported, into: &buf)
+        FfiConverterOptionString.write(value.deleting, into: &buf)
+        FfiConverterOptionTypeSshKeysNotice.write(value.notice, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSshKeysPageState_lift(_ buf: RustBuffer) throws -> SshKeysPageState {
+    return try FfiConverterTypeSshKeysPageState.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSshKeysPageState_lower(_ value: SshKeysPageState) -> RustBuffer {
+    return FfiConverterTypeSshKeysPageState.lower(value)
+}
+
+
+/**
  * One listed item, as a launch's settling left it.
  */
 public struct StoreSettledRelease: Equatable, Hashable {
@@ -13595,6 +14683,102 @@ public func FfiConverterTypeStoreSettledRelease_lift(_ buf: RustBuffer) throws -
 #endif
 public func FfiConverterTypeStoreSettledRelease_lower(_ value: StoreSettledRelease) -> RustBuffer {
     return FfiConverterTypeStoreSettledRelease.lower(value)
+}
+
+
+/**
+ * What a screen asks (`prompt::Prompt`, with the id it waits on), every
+ * word already in the app's language.
+ */
+public struct TextPromptQuestion: Equatable, Hashable {
+    public var id: UInt32
+    public var title: String
+    public var message: String?
+    /**
+     * What the empty field says.
+     */
+    public var placeholder: String
+    /**
+     * What the field starts with.
+     */
+    public var text: String
+    /**
+     * The button that answers, and the one that does not.
+     */
+    public var confirm: String
+    public var cancel: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(id: UInt32, title: String, message: String?, 
+        /**
+         * What the empty field says.
+         */placeholder: String, 
+        /**
+         * What the field starts with.
+         */text: String, 
+        /**
+         * The button that answers, and the one that does not.
+         */confirm: String, cancel: String) {
+        self.id = id
+        self.title = title
+        self.message = message
+        self.placeholder = placeholder
+        self.text = text
+        self.confirm = confirm
+        self.cancel = cancel
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension TextPromptQuestion: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeTextPromptQuestion: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> TextPromptQuestion {
+        return
+            try TextPromptQuestion(
+                id: FfiConverterUInt32.read(from: &buf), 
+                title: FfiConverterString.read(from: &buf), 
+                message: FfiConverterOptionString.read(from: &buf), 
+                placeholder: FfiConverterString.read(from: &buf), 
+                text: FfiConverterString.read(from: &buf), 
+                confirm: FfiConverterString.read(from: &buf), 
+                cancel: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: TextPromptQuestion, into buf: inout [UInt8]) {
+        FfiConverterUInt32.write(value.id, into: &buf)
+        FfiConverterString.write(value.title, into: &buf)
+        FfiConverterOptionString.write(value.message, into: &buf)
+        FfiConverterString.write(value.placeholder, into: &buf)
+        FfiConverterString.write(value.text, into: &buf)
+        FfiConverterString.write(value.confirm, into: &buf)
+        FfiConverterString.write(value.cancel, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTextPromptQuestion_lift(_ buf: RustBuffer) throws -> TextPromptQuestion {
+    return try FfiConverterTypeTextPromptQuestion.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTextPromptQuestion_lower(_ value: TextPromptQuestion) -> RustBuffer {
+    return FfiConverterTypeTextPromptQuestion.lower(value)
 }
 
 
@@ -14530,6 +15714,390 @@ public func FfiConverterTypeAccentEvent_lift(_ buf: RustBuffer) throws -> Accent
 #endif
 public func FfiConverterTypeAccentEvent_lower(_ value: AccentEvent) -> RustBuffer {
     return FfiConverterTypeAccentEvent.lower(value)
+}
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+/**
+ * What Add Key tells the host.
+ */
+
+public enum AddKeyEvent: Equatable, Hashable {
+    
+    /**
+     * Generate or Import (`generate`, `import`).
+     */
+    case method(id: String
+    )
+    /**
+     * `ed25519` or `rsa`.
+     */
+    case algorithm(id: String
+    )
+    case set(key: AddKeySwitch, on: Bool
+    )
+    case name(text: String
+    )
+    case comment(text: String
+    )
+    case publicLine(text: String
+    )
+    /**
+     * Import File…: the host's document picker.
+     */
+    case importFile(target: AddKeyFile
+    )
+    case submit
+    case cancel
+    /**
+     * The error alert was read.
+     */
+    case dismissError
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension AddKeyEvent: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeAddKeyEvent: FfiConverterRustBuffer {
+    typealias SwiftType = AddKeyEvent
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> AddKeyEvent {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .method(id: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 2: return .algorithm(id: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 3: return .set(key: try FfiConverterTypeAddKeySwitch.read(from: &buf), on: try FfiConverterBool.read(from: &buf)
+        )
+        
+        case 4: return .name(text: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 5: return .comment(text: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 6: return .publicLine(text: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 7: return .importFile(target: try FfiConverterTypeAddKeyFile.read(from: &buf)
+        )
+        
+        case 8: return .submit
+        
+        case 9: return .cancel
+        
+        case 10: return .dismissError
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: AddKeyEvent, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case let .method(id):
+            writeInt(&buf, Int32(1))
+            FfiConverterString.write(id, into: &buf)
+            
+        
+        case let .algorithm(id):
+            writeInt(&buf, Int32(2))
+            FfiConverterString.write(id, into: &buf)
+            
+        
+        case let .set(key,on):
+            writeInt(&buf, Int32(3))
+            FfiConverterTypeAddKeySwitch.write(key, into: &buf)
+            FfiConverterBool.write(on, into: &buf)
+            
+        
+        case let .name(text):
+            writeInt(&buf, Int32(4))
+            FfiConverterString.write(text, into: &buf)
+            
+        
+        case let .comment(text):
+            writeInt(&buf, Int32(5))
+            FfiConverterString.write(text, into: &buf)
+            
+        
+        case let .publicLine(text):
+            writeInt(&buf, Int32(6))
+            FfiConverterString.write(text, into: &buf)
+            
+        
+        case let .importFile(target):
+            writeInt(&buf, Int32(7))
+            FfiConverterTypeAddKeyFile.write(target, into: &buf)
+            
+        
+        case .submit:
+            writeInt(&buf, Int32(8))
+        
+        
+        case .cancel:
+            writeInt(&buf, Int32(9))
+        
+        
+        case .dismissError:
+            writeInt(&buf, Int32(10))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeAddKeyEvent_lift(_ buf: RustBuffer) throws -> AddKeyEvent {
+    return try FfiConverterTypeAddKeyEvent.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeAddKeyEvent_lower(_ value: AddKeyEvent) -> RustBuffer {
+    return FfiConverterTypeAddKeyEvent.lower(value)
+}
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+/**
+ * The field a picked file fills.
+ */
+
+public enum AddKeyFile: Equatable, Hashable {
+    
+    case privateKey
+    case publicKey
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension AddKeyFile: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeAddKeyFile: FfiConverterRustBuffer {
+    typealias SwiftType = AddKeyFile
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> AddKeyFile {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .privateKey
+        
+        case 2: return .publicKey
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: AddKeyFile, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .privateKey:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .publicKey:
+            writeInt(&buf, Int32(2))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeAddKeyFile_lift(_ buf: RustBuffer) throws -> AddKeyFile {
+    return try FfiConverterTypeAddKeyFile.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeAddKeyFile_lower(_ value: AddKeyFile) -> RustBuffer {
+    return FfiConverterTypeAddKeyFile.lower(value)
+}
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+/**
+ * One of the form's two switches.
+ */
+
+public enum AddKeySwitch: Equatable, Hashable {
+    
+    case requireFaceId
+    case secureEnclave
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension AddKeySwitch: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeAddKeySwitch: FfiConverterRustBuffer {
+    typealias SwiftType = AddKeySwitch
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> AddKeySwitch {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .requireFaceId
+        
+        case 2: return .secureEnclave
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: AddKeySwitch, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .requireFaceId:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .secureEnclave:
+            writeInt(&buf, Int32(2))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeAddKeySwitch_lift(_ buf: RustBuffer) throws -> AddKeySwitch {
+    return try FfiConverterTypeAddKeySwitch.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeAddKeySwitch_lower(_ value: AddKeySwitch) -> RustBuffer {
+    return FfiConverterTypeAddKeySwitch.lower(value)
+}
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+/**
+ * What the shortcut editor tells the host.
+ */
+
+public enum AddShortcutEvent: Equatable, Hashable {
+    
+    /**
+     * The whole draft as it changed, as JSON: the shared editor's to read
+     * (`ShortcutEditorHandle::apply`).
+     */
+    case change(draftJson: String
+    )
+    case save
+    case cancel
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension AddShortcutEvent: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeAddShortcutEvent: FfiConverterRustBuffer {
+    typealias SwiftType = AddShortcutEvent
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> AddShortcutEvent {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .change(draftJson: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 2: return .save
+        
+        case 3: return .cancel
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: AddShortcutEvent, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case let .change(draftJson):
+            writeInt(&buf, Int32(1))
+            FfiConverterString.write(draftJson, into: &buf)
+            
+        
+        case .save:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .cancel:
+            writeInt(&buf, Int32(3))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeAddShortcutEvent_lift(_ buf: RustBuffer) throws -> AddShortcutEvent {
+    return try FfiConverterTypeAddShortcutEvent.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeAddShortcutEvent_lower(_ value: AddShortcutEvent) -> RustBuffer {
+    return FfiConverterTypeAddShortcutEvent.lower(value)
 }
 
 
@@ -19465,6 +21033,193 @@ public func FfiConverterTypeMoshWhyValue_lower(_ value: MoshWhyValue) -> RustBuf
 }
 
 
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+/**
+ * What a row's long-press menu picked, handed back to the screen to ask
+ * about (`picker::Act`).
+ */
+
+public enum MuxPickerAction: Equatable, Hashable {
+    
+    case rename
+    case kill
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension MuxPickerAction: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeMuxPickerAction: FfiConverterRustBuffer {
+    typealias SwiftType = MuxPickerAction
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> MuxPickerAction {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .rename
+        
+        case 2: return .kill
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: MuxPickerAction, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .rename:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .kill:
+            writeInt(&buf, Int32(2))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeMuxPickerAction_lift(_ buf: RustBuffer) throws -> MuxPickerAction {
+    return try FfiConverterTypeMuxPickerAction.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeMuxPickerAction_lower(_ value: MuxPickerAction) -> RustBuffer {
+    return FfiConverterTypeMuxPickerAction.lower(value)
+}
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+/**
+ * What the picker tells the host.
+ */
+
+public enum MuxPickerEvent: Equatable, Hashable {
+    
+    /**
+     * A row: the host switches and closes.
+     */
+    case select(id: String
+    )
+    /**
+     * The bar's +, with the name asked for (none: the multiplexer's own).
+     */
+    case new(name: String?
+    )
+    case rename(id: String, name: String
+    )
+    case kill(id: String
+    )
+    /**
+     * A name to ask for.
+     */
+    case prompt(question: TextPromptQuestion
+    )
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension MuxPickerEvent: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeMuxPickerEvent: FfiConverterRustBuffer {
+    typealias SwiftType = MuxPickerEvent
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> MuxPickerEvent {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .select(id: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 2: return .new(name: try FfiConverterOptionString.read(from: &buf)
+        )
+        
+        case 3: return .rename(id: try FfiConverterString.read(from: &buf), name: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 4: return .kill(id: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 5: return .prompt(question: try FfiConverterTypeTextPromptQuestion.read(from: &buf)
+        )
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: MuxPickerEvent, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case let .select(id):
+            writeInt(&buf, Int32(1))
+            FfiConverterString.write(id, into: &buf)
+            
+        
+        case let .new(name):
+            writeInt(&buf, Int32(2))
+            FfiConverterOptionString.write(name, into: &buf)
+            
+        
+        case let .rename(id,name):
+            writeInt(&buf, Int32(3))
+            FfiConverterString.write(id, into: &buf)
+            FfiConverterString.write(name, into: &buf)
+            
+        
+        case let .kill(id):
+            writeInt(&buf, Int32(4))
+            FfiConverterString.write(id, into: &buf)
+            
+        
+        case let .prompt(question):
+            writeInt(&buf, Int32(5))
+            FfiConverterTypeTextPromptQuestion.write(question, into: &buf)
+            
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeMuxPickerEvent_lift(_ buf: RustBuffer) throws -> MuxPickerEvent {
+    return try FfiConverterTypeMuxPickerEvent.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeMuxPickerEvent_lower(_ value: MuxPickerEvent) -> RustBuffer {
+    return FfiConverterTypeMuxPickerEvent.lower(value)
+}
+
+
 
 /**
  * A message the bridge couldn't write: a value the screen's type can't
@@ -19569,6 +21324,18 @@ public enum PageEvent: Equatable, Hashable {
     )
     case themeGallery(event: ThemeGalleryEvent
     )
+    case sshKeys(event: SshKeysEvent
+    )
+    case shortcuts(event: ShortcutsEvent
+    )
+    case addShortcut(event: AddShortcutEvent
+    )
+    case muxPicker(event: MuxPickerEvent
+    )
+    case remoteFolder(event: RemoteFolderEvent
+    )
+    case addKey(event: AddKeyEvent
+    )
 
 
 
@@ -19608,6 +21375,24 @@ public struct FfiConverterTypePageEvent: FfiConverterRustBuffer {
         case 6: return .themeGallery(event: try FfiConverterTypeThemeGalleryEvent.read(from: &buf)
         )
         
+        case 7: return .sshKeys(event: try FfiConverterTypeSshKeysEvent.read(from: &buf)
+        )
+        
+        case 8: return .shortcuts(event: try FfiConverterTypeShortcutsEvent.read(from: &buf)
+        )
+        
+        case 9: return .addShortcut(event: try FfiConverterTypeAddShortcutEvent.read(from: &buf)
+        )
+        
+        case 10: return .muxPicker(event: try FfiConverterTypeMuxPickerEvent.read(from: &buf)
+        )
+        
+        case 11: return .remoteFolder(event: try FfiConverterTypeRemoteFolderEvent.read(from: &buf)
+        )
+        
+        case 12: return .addKey(event: try FfiConverterTypeAddKeyEvent.read(from: &buf)
+        )
+        
         default: throw UniffiInternalError.unexpectedEnumCase
         }
     }
@@ -19644,6 +21429,36 @@ public struct FfiConverterTypePageEvent: FfiConverterRustBuffer {
         case let .themeGallery(event):
             writeInt(&buf, Int32(6))
             FfiConverterTypeThemeGalleryEvent.write(event, into: &buf)
+            
+        
+        case let .sshKeys(event):
+            writeInt(&buf, Int32(7))
+            FfiConverterTypeSshKeysEvent.write(event, into: &buf)
+            
+        
+        case let .shortcuts(event):
+            writeInt(&buf, Int32(8))
+            FfiConverterTypeShortcutsEvent.write(event, into: &buf)
+            
+        
+        case let .addShortcut(event):
+            writeInt(&buf, Int32(9))
+            FfiConverterTypeAddShortcutEvent.write(event, into: &buf)
+            
+        
+        case let .muxPicker(event):
+            writeInt(&buf, Int32(10))
+            FfiConverterTypeMuxPickerEvent.write(event, into: &buf)
+            
+        
+        case let .remoteFolder(event):
+            writeInt(&buf, Int32(11))
+            FfiConverterTypeRemoteFolderEvent.write(event, into: &buf)
+            
+        
+        case let .addKey(event):
+            writeInt(&buf, Int32(12))
+            FfiConverterTypeAddKeyEvent.write(event, into: &buf)
             
         }
     }
@@ -19713,6 +21528,42 @@ public enum PageMessage: Equatable, Hashable {
      * capture run's).
      */
     case themeGalleryReveal
+    /**
+     * `{"op": "keys", …}`: Settings › SSH Keys.
+     */
+    case sshKeys(state: SshKeysPageState
+    )
+    /**
+     * `{"op": "picker", …}`: a multiplexer's list.
+     */
+    case muxPicker(state: MuxPickerPageState
+    )
+    /**
+     * `{"op": "act", …}`: a picker row's menu picked `action`.
+     */
+    case muxPickerAct(action: MuxPickerAction, id: String
+    )
+    /**
+     * `{"op": "prompted", …}`: the answer to prompt `id` (none: Cancel),
+     * for whichever screen asked.
+     */
+    case prompted(id: UInt32, text: String?
+    )
+    /**
+     * `{"op": "folder", …}`: a folder on the host.
+     */
+    case remoteFolder(state: RemoteFolderPageState
+    )
+    /**
+     * `{"op": "act", …}`: an entry's menu picked `action`.
+     */
+    case remoteFolderAct(action: RemoteFolderAction, path: String
+    )
+    /**
+     * `{"op": "add-key", …}`: Add Key's form.
+     */
+    case addKey(state: AddKeyPageState
+    )
 
 
 
@@ -19756,6 +21607,27 @@ public struct FfiConverterTypePageMessage: FfiConverterRustBuffer {
         )
         
         case 8: return .themeGalleryReveal
+        
+        case 9: return .sshKeys(state: try FfiConverterTypeSshKeysPageState.read(from: &buf)
+        )
+        
+        case 10: return .muxPicker(state: try FfiConverterTypeMuxPickerPageState.read(from: &buf)
+        )
+        
+        case 11: return .muxPickerAct(action: try FfiConverterTypeMuxPickerAction.read(from: &buf), id: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 12: return .prompted(id: try FfiConverterUInt32.read(from: &buf), text: try FfiConverterOptionString.read(from: &buf)
+        )
+        
+        case 13: return .remoteFolder(state: try FfiConverterTypeRemoteFolderPageState.read(from: &buf)
+        )
+        
+        case 14: return .remoteFolderAct(action: try FfiConverterTypeRemoteFolderAction.read(from: &buf), path: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 15: return .addKey(state: try FfiConverterTypeAddKeyPageState.read(from: &buf)
+        )
         
         default: throw UniffiInternalError.unexpectedEnumCase
         }
@@ -19803,6 +21675,44 @@ public struct FfiConverterTypePageMessage: FfiConverterRustBuffer {
         case .themeGalleryReveal:
             writeInt(&buf, Int32(8))
         
+        
+        case let .sshKeys(state):
+            writeInt(&buf, Int32(9))
+            FfiConverterTypeSshKeysPageState.write(state, into: &buf)
+            
+        
+        case let .muxPicker(state):
+            writeInt(&buf, Int32(10))
+            FfiConverterTypeMuxPickerPageState.write(state, into: &buf)
+            
+        
+        case let .muxPickerAct(action,id):
+            writeInt(&buf, Int32(11))
+            FfiConverterTypeMuxPickerAction.write(action, into: &buf)
+            FfiConverterString.write(id, into: &buf)
+            
+        
+        case let .prompted(id,text):
+            writeInt(&buf, Int32(12))
+            FfiConverterUInt32.write(id, into: &buf)
+            FfiConverterOptionString.write(text, into: &buf)
+            
+        
+        case let .remoteFolder(state):
+            writeInt(&buf, Int32(13))
+            FfiConverterTypeRemoteFolderPageState.write(state, into: &buf)
+            
+        
+        case let .remoteFolderAct(action,path):
+            writeInt(&buf, Int32(14))
+            FfiConverterTypeRemoteFolderAction.write(action, into: &buf)
+            FfiConverterString.write(path, into: &buf)
+            
+        
+        case let .addKey(state):
+            writeInt(&buf, Int32(15))
+            FfiConverterTypeAddKeyPageState.write(state, into: &buf)
+            
         }
     }
 }
@@ -20323,6 +22233,410 @@ public func FfiConverterTypeRemoteFileKind_lift(_ buf: RustBuffer) throws -> Rem
 #endif
 public func FfiConverterTypeRemoteFileKind_lower(_ value: RemoteFileKind) -> RustBuffer {
     return FfiConverterTypeRemoteFileKind.lower(value)
+}
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+/**
+ * What a tile's or a row's menu picked, handed back to the page
+ * (`folder::Act`).
+ */
+
+public enum RemoteFolderAction: Equatable, Hashable {
+    
+    case `open`
+    case share
+    case rename
+    case delete
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension RemoteFolderAction: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeRemoteFolderAction: FfiConverterRustBuffer {
+    typealias SwiftType = RemoteFolderAction
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> RemoteFolderAction {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .`open`
+        
+        case 2: return .share
+        
+        case 3: return .rename
+        
+        case 4: return .delete
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: RemoteFolderAction, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .`open`:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .share:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .rename:
+            writeInt(&buf, Int32(3))
+        
+        
+        case .delete:
+            writeInt(&buf, Int32(4))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRemoteFolderAction_lift(_ buf: RustBuffer) throws -> RemoteFolderAction {
+    return try FfiConverterTypeRemoteFolderAction.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRemoteFolderAction_lower(_ value: RemoteFolderAction) -> RustBuffer {
+    return FfiConverterTypeRemoteFolderAction.lower(value)
+}
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+/**
+ * Which failure's alert went.
+ */
+
+public enum RemoteFolderAlert: Equatable, Hashable {
+    
+    case `open`
+    case edit
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension RemoteFolderAlert: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeRemoteFolderAlert: FfiConverterRustBuffer {
+    typealias SwiftType = RemoteFolderAlert
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> RemoteFolderAlert {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .`open`
+        
+        case 2: return .edit
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: RemoteFolderAlert, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .`open`:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .edit:
+            writeInt(&buf, Int32(2))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRemoteFolderAlert_lift(_ buf: RustBuffer) throws -> RemoteFolderAlert {
+    return try FfiConverterTypeRemoteFolderAlert.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRemoteFolderAlert_lower(_ value: RemoteFolderAlert) -> RustBuffer {
+    return FfiConverterTypeRemoteFolderAlert.lower(value)
+}
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+/**
+ * What the folder page tells the host.
+ */
+
+public enum RemoteFolderEvent: Equatable, Hashable {
+    
+    /**
+     * A tile or a row (a folder pushes its page).
+     */
+    case `open`(path: String
+    )
+    case share(path: String
+    )
+    /**
+     * The bar's back button on a pushed folder.
+     */
+    case back
+    /**
+     * The title's menu: start over at a folder above.
+     */
+    case climb(path: String
+    )
+    case add(item: RemoteFolderUpload
+    )
+    case newFolder(name: String
+    )
+    case rename(path: String, name: String
+    )
+    case delete(path: String
+    )
+    /**
+     * Pulled down.
+     */
+    case refresh
+    /**
+     * A failure's alert was read.
+     */
+    case dismiss(failure: RemoteFolderAlert
+    )
+    /**
+     * A name to ask for.
+     */
+    case prompt(question: TextPromptQuestion
+    )
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension RemoteFolderEvent: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeRemoteFolderEvent: FfiConverterRustBuffer {
+    typealias SwiftType = RemoteFolderEvent
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> RemoteFolderEvent {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .`open`(path: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 2: return .share(path: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 3: return .back
+        
+        case 4: return .climb(path: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 5: return .add(item: try FfiConverterTypeRemoteFolderUpload.read(from: &buf)
+        )
+        
+        case 6: return .newFolder(name: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 7: return .rename(path: try FfiConverterString.read(from: &buf), name: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 8: return .delete(path: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 9: return .refresh
+        
+        case 10: return .dismiss(failure: try FfiConverterTypeRemoteFolderAlert.read(from: &buf)
+        )
+        
+        case 11: return .prompt(question: try FfiConverterTypeTextPromptQuestion.read(from: &buf)
+        )
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: RemoteFolderEvent, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case let .`open`(path):
+            writeInt(&buf, Int32(1))
+            FfiConverterString.write(path, into: &buf)
+            
+        
+        case let .share(path):
+            writeInt(&buf, Int32(2))
+            FfiConverterString.write(path, into: &buf)
+            
+        
+        case .back:
+            writeInt(&buf, Int32(3))
+        
+        
+        case let .climb(path):
+            writeInt(&buf, Int32(4))
+            FfiConverterString.write(path, into: &buf)
+            
+        
+        case let .add(item):
+            writeInt(&buf, Int32(5))
+            FfiConverterTypeRemoteFolderUpload.write(item, into: &buf)
+            
+        
+        case let .newFolder(name):
+            writeInt(&buf, Int32(6))
+            FfiConverterString.write(name, into: &buf)
+            
+        
+        case let .rename(path,name):
+            writeInt(&buf, Int32(7))
+            FfiConverterString.write(path, into: &buf)
+            FfiConverterString.write(name, into: &buf)
+            
+        
+        case let .delete(path):
+            writeInt(&buf, Int32(8))
+            FfiConverterString.write(path, into: &buf)
+            
+        
+        case .refresh:
+            writeInt(&buf, Int32(9))
+        
+        
+        case let .dismiss(failure):
+            writeInt(&buf, Int32(10))
+            FfiConverterTypeRemoteFolderAlert.write(failure, into: &buf)
+            
+        
+        case let .prompt(question):
+            writeInt(&buf, Int32(11))
+            FfiConverterTypeTextPromptQuestion.write(question, into: &buf)
+            
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRemoteFolderEvent_lift(_ buf: RustBuffer) throws -> RemoteFolderEvent {
+    return try FfiConverterTypeRemoteFolderEvent.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRemoteFolderEvent_lower(_ value: RemoteFolderEvent) -> RustBuffer {
+    return FfiConverterTypeRemoteFolderEvent.lower(value)
+}
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+/**
+ * The ＋ menu's uploads.
+ */
+
+public enum RemoteFolderUpload: Equatable, Hashable {
+    
+    case photos
+    case files
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension RemoteFolderUpload: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeRemoteFolderUpload: FfiConverterRustBuffer {
+    typealias SwiftType = RemoteFolderUpload
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> RemoteFolderUpload {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .photos
+        
+        case 2: return .files
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: RemoteFolderUpload, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .photos:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .files:
+            writeInt(&buf, Int32(2))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRemoteFolderUpload_lift(_ buf: RustBuffer) throws -> RemoteFolderUpload {
+    return try FfiConverterTypeRemoteFolderUpload.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRemoteFolderUpload_lower(_ value: RemoteFolderUpload) -> RustBuffer {
+    return FfiConverterTypeRemoteFolderUpload.lower(value)
 }
 
 
@@ -21977,6 +24291,145 @@ public func FfiConverterTypeShortcutListOp_lower(_ value: ShortcutListOp) -> Rus
 // Note that we don't yet support `indirect` for enums.
 // See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
 /**
+ * What Settings › Shortcuts tells the host, as told (unchecked).
+ */
+
+public enum ShortcutsEvent: Equatable, Hashable {
+    
+    case done
+    /**
+     * The bar's +.
+     */
+    case add
+    /**
+     * A custom shortcut pressed: its editor.
+     */
+    case edit(id: String
+    )
+    /**
+     * A custom shortcut's Delete.
+     */
+    case delete(id: String
+    )
+    /**
+     * A bar row's −: it goes to Available.
+     */
+    case removeFromToolbar(id: String
+    )
+    /**
+     * An Available row's +.
+     */
+    case addToToolbar(id: String
+    )
+    /**
+     * A bar shortcut dragged from place `from` to before place `to`.
+     */
+    case move(from: UInt32, to: UInt32
+    )
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension ShortcutsEvent: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeShortcutsEvent: FfiConverterRustBuffer {
+    typealias SwiftType = ShortcutsEvent
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ShortcutsEvent {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .done
+        
+        case 2: return .add
+        
+        case 3: return .edit(id: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 4: return .delete(id: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 5: return .removeFromToolbar(id: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 6: return .addToToolbar(id: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 7: return .move(from: try FfiConverterUInt32.read(from: &buf), to: try FfiConverterUInt32.read(from: &buf)
+        )
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: ShortcutsEvent, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .done:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .add:
+            writeInt(&buf, Int32(2))
+        
+        
+        case let .edit(id):
+            writeInt(&buf, Int32(3))
+            FfiConverterString.write(id, into: &buf)
+            
+        
+        case let .delete(id):
+            writeInt(&buf, Int32(4))
+            FfiConverterString.write(id, into: &buf)
+            
+        
+        case let .removeFromToolbar(id):
+            writeInt(&buf, Int32(5))
+            FfiConverterString.write(id, into: &buf)
+            
+        
+        case let .addToToolbar(id):
+            writeInt(&buf, Int32(6))
+            FfiConverterString.write(id, into: &buf)
+            
+        
+        case let .move(from,to):
+            writeInt(&buf, Int32(7))
+            FfiConverterUInt32.write(from, into: &buf)
+            FfiConverterUInt32.write(to, into: &buf)
+            
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeShortcutsEvent_lift(_ buf: RustBuffer) throws -> ShortcutsEvent {
+    return try FfiConverterTypeShortcutsEvent.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeShortcutsEvent_lower(_ value: ShortcutsEvent) -> RustBuffer {
+    return FfiConverterTypeShortcutsEvent.lower(value)
+}
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+/**
  * A software key's private numbers, for the Swift connect path's signers
  * (CryptoKit, Security) — big-endian; an ECDSA scalar at its curve's full
  * width, the rest without leading zeros.
@@ -22064,6 +24517,321 @@ public func FfiConverterTypeSigningParts_lift(_ buf: RustBuffer) throws -> Signi
 #endif
 public func FfiConverterTypeSigningParts_lower(_ value: SigningParts) -> RustBuffer {
     return FfiConverterTypeSigningParts.lower(value)
+}
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+/**
+ * How Add Key opens.
+ */
+
+public enum SshKeyAddMethod: Equatable, Hashable {
+    
+    case generate
+    case `import`
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension SshKeyAddMethod: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeSshKeyAddMethod: FfiConverterRustBuffer {
+    typealias SwiftType = SshKeyAddMethod
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SshKeyAddMethod {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .generate
+        
+        case 2: return .`import`
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: SshKeyAddMethod, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .generate:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .`import`:
+            writeInt(&buf, Int32(2))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSshKeyAddMethod_lift(_ buf: RustBuffer) throws -> SshKeyAddMethod {
+    return try FfiConverterTypeSshKeyAddMethod.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSshKeyAddMethod_lower(_ value: SshKeyAddMethod) -> RustBuffer {
+    return FfiConverterTypeSshKeyAddMethod.lower(value)
+}
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+/**
+ * A key's avatar (`Avatar`): its kind, as its gradient tells it.
+ */
+
+public enum SshKeyAvatar: Equatable, Hashable {
+    
+    case secureEnclave
+    case hardware
+    /**
+     * Imported or generated.
+     */
+    case imported
+    /**
+     * An RSA key unused for 90 days.
+     */
+    case gray
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension SshKeyAvatar: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeSshKeyAvatar: FfiConverterRustBuffer {
+    typealias SwiftType = SshKeyAvatar
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SshKeyAvatar {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .secureEnclave
+        
+        case 2: return .hardware
+        
+        case 3: return .imported
+        
+        case 4: return .gray
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: SshKeyAvatar, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .secureEnclave:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .hardware:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .imported:
+            writeInt(&buf, Int32(3))
+        
+        
+        case .gray:
+            writeInt(&buf, Int32(4))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSshKeyAvatar_lift(_ buf: RustBuffer) throws -> SshKeyAvatar {
+    return try FfiConverterTypeSshKeyAvatar.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSshKeyAvatar_lower(_ value: SshKeyAvatar) -> RustBuffer {
+    return FfiConverterTypeSshKeyAvatar.lower(value)
+}
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+/**
+ * What the SSH Keys page tells the host.
+ */
+
+public enum SshKeysEvent: Equatable, Hashable {
+    
+    case done
+    /**
+     * The bar's + (Generate), or an empty group's button.
+     */
+    case add(method: SshKeyAddMethod
+    )
+    /**
+     * A key's action sheet.
+     */
+    case copyPublicKey(id: String
+    )
+    case copyFingerprint(id: String
+    )
+    case sharePublicKey(id: String
+    )
+    /**
+     * Delete Key: the host checks the key can go and names it.
+     */
+    case confirmDelete(id: String
+    )
+    /**
+     * The delete alert's Cancel.
+     */
+    case cancelDelete
+    /**
+     * The delete alert's Delete.
+     */
+    case delete(id: String
+    )
+    /**
+     * The notice's OK.
+     */
+    case dismissNotice
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension SshKeysEvent: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeSshKeysEvent: FfiConverterRustBuffer {
+    typealias SwiftType = SshKeysEvent
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SshKeysEvent {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .done
+        
+        case 2: return .add(method: try FfiConverterTypeSshKeyAddMethod.read(from: &buf)
+        )
+        
+        case 3: return .copyPublicKey(id: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 4: return .copyFingerprint(id: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 5: return .sharePublicKey(id: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 6: return .confirmDelete(id: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 7: return .cancelDelete
+        
+        case 8: return .delete(id: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 9: return .dismissNotice
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: SshKeysEvent, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .done:
+            writeInt(&buf, Int32(1))
+        
+        
+        case let .add(method):
+            writeInt(&buf, Int32(2))
+            FfiConverterTypeSshKeyAddMethod.write(method, into: &buf)
+            
+        
+        case let .copyPublicKey(id):
+            writeInt(&buf, Int32(3))
+            FfiConverterString.write(id, into: &buf)
+            
+        
+        case let .copyFingerprint(id):
+            writeInt(&buf, Int32(4))
+            FfiConverterString.write(id, into: &buf)
+            
+        
+        case let .sharePublicKey(id):
+            writeInt(&buf, Int32(5))
+            FfiConverterString.write(id, into: &buf)
+            
+        
+        case let .confirmDelete(id):
+            writeInt(&buf, Int32(6))
+            FfiConverterString.write(id, into: &buf)
+            
+        
+        case .cancelDelete:
+            writeInt(&buf, Int32(7))
+        
+        
+        case let .delete(id):
+            writeInt(&buf, Int32(8))
+            FfiConverterString.write(id, into: &buf)
+            
+        
+        case .dismissNotice:
+            writeInt(&buf, Int32(9))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSshKeysEvent_lift(_ buf: RustBuffer) throws -> SshKeysEvent {
+    return try FfiConverterTypeSshKeysEvent.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSshKeysEvent_lower(_ value: SshKeysEvent) -> RustBuffer {
+    return FfiConverterTypeSshKeysEvent.lower(value)
 }
 
 
@@ -23254,6 +26022,13 @@ public enum TmuxIntent: Equatable, Hashable {
     case pollAgentHooks
     case deferResize(pane: String, cols: UInt16, rows: UInt16
     )
+    /**
+     * The scroll beginning is aimed at this cell (0-based, the input
+     * pane's): a program with the mouse gets its wheel there, not in the
+     * pane's middle (B578).
+     */
+    case aimWheel(col: Int64, row: Int64
+    )
 
 
 
@@ -23345,6 +26120,9 @@ public struct FfiConverterTypeTmuxIntent: FfiConverterRustBuffer {
         case 25: return .pollAgentHooks
         
         case 26: return .deferResize(pane: try FfiConverterString.read(from: &buf), cols: try FfiConverterUInt16.read(from: &buf), rows: try FfiConverterUInt16.read(from: &buf)
+        )
+        
+        case 27: return .aimWheel(col: try FfiConverterInt64.read(from: &buf), row: try FfiConverterInt64.read(from: &buf)
         )
         
         default: throw UniffiInternalError.unexpectedEnumCase
@@ -23484,6 +26262,12 @@ public struct FfiConverterTypeTmuxIntent: FfiConverterRustBuffer {
             FfiConverterString.write(pane, into: &buf)
             FfiConverterUInt16.write(cols, into: &buf)
             FfiConverterUInt16.write(rows, into: &buf)
+            
+        
+        case let .aimWheel(col,row):
+            writeInt(&buf, Int32(27))
+            FfiConverterInt64.write(col, into: &buf)
+            FfiConverterInt64.write(row, into: &buf)
             
         }
     }
@@ -24445,6 +27229,30 @@ fileprivate struct FfiConverterOptionTypeRemoteFileRecord: FfiConverterRustBuffe
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterOptionTypeRemoteFolderFailure: FfiConverterRustBuffer {
+    typealias SwiftType = RemoteFolderFailure?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeRemoteFolderFailure.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeRemoteFolderFailure.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterOptionTypeSessionReadModel: FfiConverterRustBuffer {
     typealias SwiftType = SessionReadModel?
 
@@ -24485,6 +27293,30 @@ fileprivate struct FfiConverterOptionTypeShortcutRecord: FfiConverterRustBuffer 
         switch try readInt(&buf) as Int8 {
         case 0: return nil
         case 1: return try FfiConverterTypeShortcutRecord.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionTypeSshKeysNotice: FfiConverterRustBuffer {
+    typealias SwiftType = SshKeysNotice?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeSshKeysNotice.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeSshKeysNotice.read(from: &buf)
         default: throw UniffiInternalError.unexpectedOptionalTag
         }
     }
@@ -25130,6 +27962,31 @@ fileprivate struct FfiConverterSequenceTypeKeyRecord: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterSequenceTypeMuxPickerRow: FfiConverterRustBuffer {
+    typealias SwiftType = [MuxPickerRow]
+
+    public static func write(_ value: [MuxPickerRow], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeMuxPickerRow.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [MuxPickerRow] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [MuxPickerRow]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeMuxPickerRow.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceTypePairingRecord: FfiConverterRustBuffer {
     typealias SwiftType = [PairingRecord]
 
@@ -25255,6 +28112,31 @@ fileprivate struct FfiConverterSequenceTypeRemoteFileRecord: FfiConverterRustBuf
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterSequenceTypeRemoteFolderItem: FfiConverterRustBuffer {
+    typealias SwiftType = [RemoteFolderItem]
+
+    public static func write(_ value: [RemoteFolderItem], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeRemoteFolderItem.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [RemoteFolderItem] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [RemoteFolderItem]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeRemoteFolderItem.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceTypeSessionEvent: FfiConverterRustBuffer {
     typealias SwiftType = [SessionEvent]
 
@@ -25372,6 +28254,31 @@ fileprivate struct FfiConverterSequenceTypeShortcutRecord: FfiConverterRustBuffe
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
             seq.append(try FfiConverterTypeShortcutRecord.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeSshKeyRow: FfiConverterRustBuffer {
+    typealias SwiftType = [SshKeyRow]
+
+    public static func write(_ value: [SshKeyRow], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeSshKeyRow.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [SshKeyRow] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [SshKeyRow]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeSshKeyRow.read(from: &buf))
         }
         return seq
     }
@@ -26323,14 +29230,14 @@ public func shortcutBuiltins() -> [ShortcutRecord]  {
 })
 }
 /**
- * What Settings › Shortcuts told (`{"ev": …}`, as JSON), checked against
- * the store's `shortcuts`: none for an event it does not know, a shortcut
- * it does not have, a built-in's edit or delete, or a move off the bar.
+ * What Settings › Shortcuts told (its page event), checked against the
+ * store's `shortcuts`: none for a shortcut it does not have, a built-in's
+ * edit or delete, or a move off the bar.
  */
-public func shortcutsListOp(messageJson: String, shortcuts: [ShortcutRecord]) -> ShortcutListOp?  {
+public func shortcutsListOp(event: ShortcutsEvent, shortcuts: [ShortcutRecord]) -> ShortcutListOp?  {
     return try!  FfiConverterOptionTypeShortcutListOp.lift(try! rustCall() {
     uniffi_moshpit_ffi_fn_func_shortcuts_list_op(
-        FfiConverterString.lower(messageJson),
+        FfiConverterTypeShortcutsEvent_lower(event),
         FfiConverterSequenceTypeShortcutRecord.lower(shortcuts),$0
     )
 })
@@ -27018,7 +29925,7 @@ private let initializationResult: InitializationResult = {
     if (uniffi_moshpit_ffi_checksum_func_shortcut_builtins() != 61689) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_moshpit_ffi_checksum_func_shortcuts_list_op() != 27999) {
+    if (uniffi_moshpit_ffi_checksum_func_shortcuts_list_op() != 62756) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_moshpit_ffi_checksum_func_shortcuts_page_message() != 25344) {
@@ -27516,6 +30423,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_moshpit_ffi_checksum_method_petmachine_hatch() != 32922) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_moshpit_ffi_checksum_method_petmachine_icon_answered() != 38873) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_moshpit_ffi_checksum_method_petmachine_island() != 1817) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -27535,6 +30445,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_moshpit_ffi_checksum_method_petmachine_set_cloud() != 56353) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_moshpit_ffi_checksum_method_petmachine_set_icon() != 49597) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_moshpit_ffi_checksum_method_petmachine_set_listener() != 2437) {
@@ -27718,6 +30631,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_moshpit_ffi_checksum_method_keystorehandle_keys() != 34608) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_moshpit_ffi_checksum_method_keystorehandle_mark_used() != 43528) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_moshpit_ffi_checksum_method_keystorehandle_reload_if_needed() != 24787) {

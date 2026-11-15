@@ -81,11 +81,12 @@ pub struct Key {
     pub stale: bool,
     /// `SHA256:…` (empty: none shown).
     pub fingerprint: String,
-    /// The hosts it is bound to.
+    /// The saved connections that sign in with it (B602: it was the
+    /// hosts picked once at Add Key, a label that bound nothing).
     #[serde(default)]
     pub hosts: Vec<String>,
     /// When it was last used, as the app writes the month and year, for a
-    /// stale key bound to no host ("unused since %@").
+    /// stale key no connection signs in with ("unused since %@").
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub unused_since: Option<String>,
     /// Whether it has a public key to copy or share.

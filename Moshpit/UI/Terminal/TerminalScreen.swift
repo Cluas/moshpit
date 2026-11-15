@@ -710,10 +710,6 @@ struct TerminalScreen: View {
         } message: {
             Text(active?.viewModel.errorMessage ?? "")
         }
-        .connectPrompts(
-            hostKey: { active?.viewModel.hostKeyPrompt },
-            passphrase: { active?.viewModel.keyPassphrasePrompt },
-            question: { active?.viewModel.signInQuestion })
         .appSheet(item: installTargetBinding) { target in
             if let active {
                 InstallAssistNSHPage(session: active, packages: target.packages, onReconnect: { reconnect() })
@@ -1554,8 +1550,10 @@ struct TerminalScreen: View {
 
     /// Stop the mic, wait for the engine's final words, and type the result
     /// into the live session. `sendPaste` (not raw bytes) so bracketed-paste
-    /// apps — Claude Code prompts being the whole point — receive multi-line
-    /// dictation as one block instead of executing it line by line.
+    /// apps — Claude Code prompts being the whole point — receive the
+    /// dictation as one block. It is one line by now (the controller folds a
+    /// spoken "new line" into a space, B672): a pane without bracketed paste
+    /// would take a line break as Return.
     ///
     /// `submit` appends the Return that actually sends it, so dictating a
     /// prompt is one tap rather than Insert-then-find-the-Enter-key. It stays a
@@ -1566,9 +1564,12 @@ struct TerminalScreen: View {
     private func finishDictation(submit: Bool = false) {
         guard let dictation else { return }
         Task {
-            if let text = await dictation.finish() {
-                active?.sendPaste(text)
-                if submit {
+            if let commit = await dictation.finish(submit: submit) {
+                active?.sendPaste(commit.text)
+                // Send presses Return only on the words that were read: a
+                // final pass that changed them leaves the text to be read
+                // and sent (B676).
+                if commit.submit {
                     // After the paste, not bundled into it: a bracketed-paste
                     // app treats bytes inside the ESC[200~…ESC[201~ wrapper as
                     // literal text, so a CR in there would be inserted as a

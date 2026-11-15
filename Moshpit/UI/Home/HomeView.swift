@@ -59,25 +59,8 @@ struct HomeView: View {
         themes.theme(id: settings.themeId)
     }
 
-    /// Oldest in-flight session with a pending host-key prompt / error — the
-    /// one the (single) alert presents. The next surfaces when this resolves.
-    private var promptingSession: SessionHub.ActiveSession? {
-        asking.first { $0.viewModel.hostKeyPrompt != nil }
-    }
-    /// Oldest in-flight session waiting for its key's passphrase.
-    private var passphraseSession: SessionHub.ActiveSession? {
-        asking.first { $0.viewModel.keyPassphrasePrompt != nil }
-    }
-    /// Oldest in-flight session the server asked a question at sign-in.
-    private var questionSession: SessionHub.ActiveSession? {
-        asking.first { $0.viewModel.signInQuestion != nil }
-    }
-    /// The in-flight sessions whose questions Home asks: not one whose
-    /// terminal is open, which asks them itself (two presenters of one
-    /// question would race for the screen).
-    private var asking: [SessionHub.ActiveSession] {
-        connecting.filter { !path.contains(.terminal($0.id)) }
-    }
+    // A session's questions (host key, passphrase, sign-in) are the app's
+    // to present, over whatever is frontmost (B632, PromptPresenter.swift).
     private var erroredSession: SessionHub.ActiveSession? {
         connecting.first { $0.viewModel.errorMessage?.isEmpty == false }
     }
@@ -192,10 +175,6 @@ struct HomeView: View {
         } message: { modal in
             modal.message
         }
-        .connectPrompts(
-            hostKey: { promptingSession?.viewModel.hostKeyPrompt },
-            passphrase: { passphraseSession?.viewModel.keyPassphrasePrompt },
-            question: { questionSession?.viewModel.signInQuestion })
         .appSheet(isPresented: $showSettings) {
             SettingsScreen(hosts: settingsHosts, session: liveSession, onConnect: { id in
                 // Connect from Set up a host: Settings closes, the terminal opens.

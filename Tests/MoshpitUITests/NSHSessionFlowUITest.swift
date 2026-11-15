@@ -1,7 +1,7 @@
 import XCTest
 
 /// The path a person takes most, on a live host: the seeded connection
-/// connects, its terminal comes up, a tap on the breadcrumb's window
+/// connects from Home, its card's head opens its terminal, a tap on the breadcrumb's window
 /// segment opens the pane overview (since b4b43be1) and Done closes it, a
 /// long press opens the window picker on the window the terminal shows,
 /// picking it closes the picker on the same terminal, and Back is Home with
@@ -30,11 +30,20 @@ final class NSHSessionFlowUITest: XCTestCase {
         let app = NSHFlow.launch(session + ["-MOSHPIT_SEED_HOME", "1"])
         let name = ProcessInfo.processInfo.environment["MOSHPIT_SEED_NAME"] ?? "devbox"
 
-        // The connection connects from Home; its card's head opens its
-        // terminal.
+        // The seeded connection is only saved (`-MOSHPIT_SEED_HOME 1`
+        // connects nothing): its row connects it in place, on Home (run 13
+        // tapped it and waited for a terminal that a saved row never opens).
+        // Connected, its card's head opens its terminal.
         let head = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", name)).firstMatch
         XCTAssertTrue(head.waitForExistence(timeout: 30), "Home has no card for \(name)")
-        head.tap()
+        if !app.nsh("home-card-\(name)").exists {
+            head.tap()
+            XCTAssertTrue(app.nsh("home-card-\(name)").waitForExistence(timeout: 45),
+                          "\(name) never connected from Home")
+        }
+        let live = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", name)).firstMatch
+        XCTAssertTrue(live.waitForExistence(timeout: 10), "the connected card has no head")
+        live.tap()
         app.waitNSH("terminal-screen", timeout: 30, "the seeded session's terminal never came up")
         let window = app.waitNSH("terminal-crumb-window", timeout: 30, "no window segment on the breadcrumb")
         XCTAssertTrue(window.isEnabled, "the window segment is inert on a live session")

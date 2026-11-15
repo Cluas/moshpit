@@ -39,7 +39,7 @@ struct SSHKeysNSHPage: View {
         if failed {
             NSHSheetFailed { failed = false }
         } else {
-            let snapshot = SSHKeysSnapshot(store: keyStore)
+            let snapshot = Self.snapshot(keyStore, connections.store)
             NavigationStack {
                 NSHPage(
                     screen: .sshKeys,
@@ -51,7 +51,7 @@ struct SSHKeysNSHPage: View {
                         }
                         #endif
                     },
-                    onMessage: handle,
+                    onEvent: { if case .sshKeys(let event) = $0 { handle(event) } },
                     onFailure: { failed = true })
                     .nshPage()
                     .navigationTitle("SSH Keys")
@@ -62,59 +62,77 @@ struct SSHKeysNSHPage: View {
         }
     }
 
+    /// The page's keys and who signs in with each; a capture run's keys,
+    /// which its connections don't name, with the users it shows.
+    private static func snapshot(_ keys: SSHKeyStore, _ connections: ConnectionStore) -> SSHKeysSnapshot {
+        var snapshot = SSHKeysSnapshot(store: keys, connections: connections)
+        #if DEBUG
+        if KeysCapture.seeded { snapshot.users.merge(KeysCapture.users) { _, capture in capture } }
+        #endif
+        return snapshot
+    }
+
     /// What the screen tells the host.
-    private func handle(_ message: [String: Any]) {
-        let id = (message["id"] as? String).flatMap(UUID.init(uuidString:))
-        let key = id.flatMap { id in keyStore.keys.first { $0.id == id } }
-        switch message["ev"] as? String {
-        case "done":
+    private func handle(_ event: SshKeysEvent) {
+        let key = { (id: String) in
+            UUID(uuidString: id).flatMap { id in keyStore.keys.first { $0.id == id } }
+        }
+        switch event {
+        case .done:
             dismiss()
-        case "add":
+        case .add(let method):
             // The bar's + and Generate key open on Generate; Import key on
             // Import.
-            addMethod = message["method"] as? String == "import" ? .importKey : .generate
+            addMethod = method == .import ? .importKey : .generate
             showAdd = true
-        case "copy-public-key":
-            if let key { SSHKeysModel.copy(key.publicKey) }
-        case "copy-fingerprint":
-            if let key { SSHKeysModel.copy(key.fingerprint) }
-        case "share-public-key":
-            if let key { model.share(key) }
-        case "confirm-delete":
-            if let key {
+        case .copyPublicKey(let id):
+            if let key = key(id) { SSHKeysModel.copy(key.publicKey) }
+        case .copyFingerprint(let id):
+            if let key = key(id) { SSHKeysModel.copy(key.fingerprint) }
+        case .sharePublicKey(let id):
+            if let key = key(id) { model.share(key) }
+        case .confirmDelete(let id):
+            if let key = key(id) {
                 model.requestDelete(key, SSHKeyDeletion.check(key, connections: connections.store, keys: keyStore))
             }
-        case "cancel-delete":
+        case .cancelDelete:
             model.cancelDelete()
-        case "delete":
-            if let key {
+        case .delete(let id):
+            if let key = key(id) {
                 let keychain = keychainHolder.service
                 model.delete(key, from: keyStore, connections: connections.store) {
                     try await keychain.delete(forRef: $0)
                 }
             }
-        case "dismiss-notice":
+        case .dismissNotice:
             model.dismissNotice()
-        default:
-            break
         }
     }
 }
 
 /// What the NSH SSH Keys page shows: the store's keys, as the SwiftUI page
-/// splits them.
+/// splits them, and the saved connections that sign in with each (B602:
+/// the row listed the hosts picked once at Add Key, a label that bound
+/// nothing and went stale with every rename or delete).
 struct SSHKeysSnapshot: Equatable {
     var device: [SSHKeyRecord]
     var imported: [SSHKeyRecord]
+    /// The names of the connections that sign in with each key, by key id;
+    /// none for a key while that can't be told.
+    var users: [UUID: [String]]
 
-    init(store: SSHKeyStore) {
+    init(store: SSHKeyStore, connections: ConnectionStore) {
         device = store.deviceKeys
         imported = store.importedKeys
+        users = Dictionary(store.keys.map {
+            ($0.id, connections.names(usingKey: $0.id, ref: $0.keychainRef) ?? [])
+        }, uniquingKeysWith: { first, _ in first })
     }
 
-    init(device: [SSHKeyRecord], imported: [SSHKeyRecord]) {
+    init(device: [SSHKeyRecord], imported: [SSHKeyRecord], users: [UUID: [String]] = [:]) {
         self.device = device
         self.imported = imported
+        self.users = users
     }
 
     func contains(_ id: UUID) -> Bool {
@@ -124,9 +142,9 @@ struct SSHKeysSnapshot: Equatable {
 
 /// What the NSH SSH Keys page shows, owned by the host so a surface made
 /// again starts from it (``NSHPage``'s third rule): the keys, the one the
-/// delete alert asks about, and why a key wasn't deleted; the message that
-/// carries them (`{"op": "keys", …}`, `ui/src/ssh_keys.rs`'s `Message`):
-/// metadata only, never a key; and what the page's intents do.
+/// delete alert asks about, and why a key wasn't deleted; the state that
+/// carries them (``SshKeysPageState``, the screen's own through the page
+/// bridge): metadata only, never a key; and what the page's intents do.
 @MainActor
 final class SSHKeysModel {
     /// The key the delete alert asks about, while it shows.
@@ -210,7 +228,7 @@ final class SSHKeysModel {
             } catch {
                 show(.keychain(String(describing: error)))
             }
-            snapshot = SSHKeysSnapshot(store: store)
+            snapshot = SSHKeysSnapshot(store: store, connections: connections)
             post()
         }
     }
@@ -240,50 +258,39 @@ final class SSHKeysModel {
 
     private func post() {
         guard let snapshot else { return }
-        surface?.post(Self.message(snapshot, deleting: deleting, notice: notice))
+        surface?.post(.sshKeys(state: Self.state(snapshot, deleting: deleting, notice: notice)))
     }
 
-    /// The screen's message.
-    nonisolated static func message(_ snapshot: SSHKeysSnapshot, deleting: UUID?,
-                                    notice: SSHKeyDeletion.Failure? = nil,
-                                    now: Date = Date()) -> [String: Any] {
-        var message: [String: Any] = [
-            "op": "keys",
-            "device": snapshot.device.map { key($0, now: now) },
-            "imported": snapshot.imported.map { key($0, now: now) },
-        ]
-        if let deleting { message["deleting"] = deleting.uuidString }
-        if let notice { message["notice"] = ["title": notice.title, "message": notice.message] }
-        return message
+    /// What the page shows.
+    nonisolated static func state(_ snapshot: SSHKeysSnapshot, deleting: UUID?,
+                                  notice: SSHKeyDeletion.Failure? = nil,
+                                  now: Date = Date()) -> SshKeysPageState {
+        SshKeysPageState(
+            device: snapshot.device.map { key($0, users: snapshot.users[$0.id] ?? [], now: now) },
+            imported: snapshot.imported.map { key($0, users: snapshot.users[$0.id] ?? [], now: now) },
+            deleting: deleting?.uuidString,
+            notice: notice.map { SshKeysNotice(title: $0.title, message: $0.message) })
     }
 
     /// How long a key goes unused before its row says so.
     nonisolated static let staleAfter: TimeInterval = 90 * 86400
 
     /// One key's metadata, as the SwiftUI row reads it: the avatar its source
-    /// (and an RSA key's age) picks, its badge, fingerprint and hosts, and,
+    /// (and an RSA key's age) picks, its badge, fingerprint and the
+    /// connections that sign in with it (B602), and,
     /// for a stale key, the month and year it was last used.
-    nonisolated static func key(_ record: SSHKeyRecord, now: Date) -> [String: Any] {
+    nonisolated static func key(_ record: SSHKeyRecord, users: [String], now: Date) -> SshKeyRow {
         let stale = record.lastUsedAt.map { now.timeIntervalSince($0) > staleAfter } ?? false
-        let avatar = switch record.source {
-        case .secureEnclave: "secure-enclave"
-        case .hardware: "hardware"
-        case .generated, .imported: record.algorithm == .rsa4096 && stale ? "gray" : "imported"
+        let avatar: SshKeyAvatar = switch record.source {
+        case .secureEnclave: .secureEnclave
+        case .hardware: .hardware
+        case .generated, .imported: record.algorithm == .rsa4096 && stale ? .gray : .imported
         }
-        var key: [String: Any] = [
-            "id": record.id.uuidString,
-            "name": record.name,
-            "badge": record.badgeText,
-            "avatar": avatar,
-            "stale": stale,
-            "fingerprint": record.fingerprint,
-            "hosts": record.boundHosts,
-            "hasPublicKey": !record.publicKey.isEmpty,
-        ]
-        if stale, let last = record.lastUsedAt {
-            key["unusedSince"] = last.formatted(.dateTime.month(.abbreviated).year())
-        }
-        return key
+        return SshKeyRow(
+            id: record.id.uuidString, name: record.name, badge: record.badgeText, avatar: avatar,
+            stale: stale, fingerprint: record.fingerprint, hosts: users,
+            unusedSince: stale ? record.lastUsedAt?.formatted(.dateTime.month(.abbreviated).year()) : nil,
+            hasPublicKey: !record.publicKey.isEmpty)
     }
 
     /// The accessibility identifier of key `id`'s row on both pages.

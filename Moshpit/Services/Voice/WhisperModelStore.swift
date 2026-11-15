@@ -112,7 +112,9 @@ enum WhisperLanguageCatalog {
 /// transcription on it at a time.
 protocol WhisperLoadedModel: AnyObject {
     /// Transcribe 16 kHz mono samples. `language` nil = let Whisper detect.
-    func transcribe(samples: [Float], language: String?) async throws -> String
+    /// `hotwords`: words the pane says to expect, for a model that takes them
+    /// (Qwen3-ASR); Whisper's decoding ignores them.
+    func transcribe(samples: [Float], language: String?, hotwords: [String]) async throws -> String
 }
 
 /// Where the store's models come from.
@@ -124,7 +126,22 @@ struct WhisperModelLoader: Sendable {
 
     static let whisperKit = WhisperModelLoader(
         isInstalled: { WhisperModelStore.isInstalled($0) },
-        load: { try await WhisperKitModel.load(variant: $0) })
+        load: { variant in
+            switch WhisperModelStore.family(of: variant) {
+            case .whisper: return try await WhisperKitModel.load(variant: variant)
+            case .qwen3: return try await Qwen3ASRModel.load(folder: WhisperModelStore.folder(for: variant))
+            }
+        })
+}
+
+/// What runs a local model. The store, its downloads, the model page and the
+/// dictation engine treat both alike; only fetching, telling whether a
+/// download is complete, and loading differ.
+enum LocalModelFamily: Sendable, Equatable {
+    /// A WhisperKit (Core ML) variant from argmaxinc/whisperkit-coreml.
+    case whisper
+    /// Qwen3-ASR on sherpa-onnx (``Qwen3ASR``).
+    case qwen3
 }
 
 // MARK: - Store
@@ -169,9 +186,20 @@ actor WhisperModelStore {
         let name: String
         let summary: String
         let bytes: Int64
+        var family: LocalModelFamily = .whisper
     }
 
+    /// Qwen3-ASR leads. On synthetic Chinese speech carrying English terms,
+    /// with the pane's hotwords, it got 75% of the terms right where Large v3
+    /// Turbo (language set to Chinese, as the app sets it) got 68%, at 10%
+    /// mixed error against 16%; on 50 real code-switched clips (ASCEND) 13%
+    /// against 30%. It dropped no sentence and fell into no repetition loop
+    /// in either, and needs no language set to get an English sentence right
+    /// (docs/nsh/ASR-2026-11.md).
     private static let curated: [CuratedModel] = [
+        CuratedModel(id: Qwen3ASR.variant, name: "Qwen3-ASR 0.6B",
+         summary: String(localized: "Best for Chinese with English terms in it. Listens for the file names and branches on screen."),
+         bytes: Qwen3ASR.totalBytes, family: .qwen3),
         CuratedModel(id: "openai_whisper-large-v3_turbo_954MB", name: String(localized: "Large v3 Turbo"),
          summary: String(localized: "Most accurate, especially on mixed-language speech. Needs a recent chip."),
          bytes: 954 * 1_000_000),
@@ -238,21 +266,60 @@ actor WhisperModelStore {
     /// layout ever changes, installed models read as missing and re-download
     /// rather than corrupting anything.
     nonisolated static func folder(for variant: String) -> URL {
-        downloadBase
-            .appendingPathComponent("models", isDirectory: true)
-            .appendingPathComponent(repo, isDirectory: true)
-            .appendingPathComponent(variant, isDirectory: true)
+        switch family(of: variant) {
+        case .whisper:
+            return downloadBase
+                .appendingPathComponent("models", isDirectory: true)
+                .appendingPathComponent(repo, isDirectory: true)
+                .appendingPathComponent(variant, isDirectory: true)
+        case .qwen3:
+            return downloadBase
+                .appendingPathComponent("sherpa", isDirectory: true)
+                .appendingPathComponent(variant, isDirectory: true)
+        }
     }
 
-    /// True only when every required CoreML bundle is present — an interrupted
-    /// download leaves the folder there with some of them.
+    /// Which runtime a catalog id belongs to. Anything not Qwen3-ASR's is a
+    /// WhisperKit variant, as every stored id was before Qwen3-ASR.
+    nonisolated static func family(of variant: String) -> LocalModelFamily {
+        variant == Qwen3ASR.variant ? .qwen3 : .whisper
+    }
+
+    /// True only when every required CoreML bundle is on disk in full. For
+    /// Qwen3-ASR: every pinned file in place at its size.
     nonisolated static func isInstalled(_ variant: String) -> Bool {
         let folder = folder(for: variant)
+        if family(of: variant) == .qwen3 { return Qwen3ASR.isComplete(folder) }
+        return isComplete(folder)
+    }
+
+    /// Every required bundle in `folder` downloaded in full (B671).
+    ///
+    /// The bundles' folders are no evidence: the Hub downloader fetches a
+    /// variant one file at a time, in name order, and a bundle's folder
+    /// appears with its first, smallest file. Large v3 Turbo's three folders
+    /// all exist from the TextDecoder's first kilobyte on, while its 591 MB
+    /// of weights — the longest stretch of the download, so the likeliest
+    /// moment for a pause, a kill or a trip to the background — are still to
+    /// come. Read as installed, the half-download offered no Resume, was
+    /// picked as the model in use, failed to load, and dictation fell back to
+    /// Apple's engine without a word.
+    ///
+    /// A bundle's last file is `weights/weight.bin`, and the downloader moves
+    /// each file into place only once it is whole, so the weights being there
+    /// means the bundle is. A bundle with no `model.mil` (a neural-network
+    /// model, none of the curated ones) is judged by its `coremldata.bin`.
+    nonisolated static func isComplete(_ folder: URL) -> Bool {
+        let files = FileManager.default
         return requiredModels.allSatisfy { name in
             let compiled = folder.appendingPathComponent("\(name).mlmodelc")
-            let package = folder.appendingPathComponent("\(name).mlpackage")
-            return FileManager.default.fileExists(atPath: compiled.path)
-                || FileManager.default.fileExists(atPath: package.path)
+            guard files.fileExists(atPath: compiled.path) else {
+                return files.fileExists(atPath: folder.appendingPathComponent("\(name).mlpackage").path)
+            }
+            if files.fileExists(atPath: compiled.appendingPathComponent("model.mil").path) {
+                return files.fileExists(atPath: compiled.appendingPathComponent("weights/weight.bin").path)
+            }
+            return files.fileExists(atPath: compiled.appendingPathComponent("coremldata.bin").path)
         }
     }
 
@@ -264,12 +331,17 @@ actor WhisperModelStore {
     /// without touching the network.
     nonisolated static func catalog() -> [WhisperModelOption] {
         let supported = Set(WhisperKit.recommendedModels().supported)
-        var offered = curated.filter { supported.contains($0.id) }
+        var offered = curated.filter { $0.family == .whisper && supported.contains($0.id) }
         // A chip missing from WhisperKit's table (or a table that disagrees
         // with our curation) must not produce an empty screen — fall back to
         // the two variants every supported device can run.
         if offered.isEmpty {
             offered = curated.filter { $0.id == "openai_whisper-base" || $0.id == "openai_whisper-tiny" }
+        }
+        // Qwen3-ASR by memory rather than WhisperKit's chip table; once on
+        // the device it stays listed, so it can always be removed.
+        if Qwen3ASR.isSupportedDevice || isInstalled(Qwen3ASR.variant) || partialBytes(for: Qwen3ASR.variant) > 0 {
+            offered.insert(contentsOf: curated.filter { $0.family == .qwen3 }, at: 0)
         }
         return offered.map { entry in
             WhisperModelOption(
@@ -301,12 +373,17 @@ actor WhisperModelStore {
     /// the time already spent — provided nothing deletes these files. Surfacing
     /// the number is what turns "it broke, start over" into "carry on".
     nonisolated static func partialBytes(for variant: String) -> Int64 {
+        // Qwen3-ASR keeps its partial file beside the finished ones
+        // (`<file>.part`): the folder is the whole story.
+        if family(of: variant) == .qwen3 {
+            return logicalSize(of: folder(for: variant)) { _ in true }
+        }
         // Both halves, because a repo is fetched file by file: the one in
         // flight sits in the resume cache as `.incomplete`, and each finished
         // file MOVES out of that cache into the model folder. Counting only the
         // cache made the figure fall back every time a file completed — progress
         // appearing to go backwards is worse than no figure at all.
-        logicalSize(of: resumeCache(for: variant)) { $0.pathExtension == "incomplete" }
+        return logicalSize(of: resumeCache(for: variant)) { $0.pathExtension == "incomplete" }
             + logicalSize(of: folder(for: variant)) { _ in true }
     }
 
@@ -329,8 +406,10 @@ actor WhisperModelStore {
     }
 
     /// Where the Hub downloader keeps this variant's partial files + metadata.
+    /// Qwen3-ASR's partial files sit in its own folder (``ModelFileDownloader``).
     nonisolated static func resumeCache(for variant: String) -> URL {
-        downloadBase
+        if family(of: variant) == .qwen3 { return folder(for: variant) }
+        return downloadBase
             .appendingPathComponent("models", isDirectory: true)
             .appendingPathComponent(repo, isDirectory: true)
             .appendingPathComponent(".cache/huggingface/download", isDirectory: true)
@@ -403,6 +482,12 @@ actor WhisperModelStore {
 
     private func downloadOnce(variant: String,
                               onProgress: @escaping @Sendable (Double) -> Void) async throws {
+        if Self.family(of: variant) == .qwen3 {
+            try await ModelFileDownloader.fetch(
+                Qwen3ASR.files, into: Self.folder(for: variant), url: Qwen3ASR.url(for:),
+                onProgress: { onProgress(min(0.9, $0 * 0.9)) })
+            return
+        }
         _ = try await WhisperKit.download(
             variant: variant,
             downloadBase: Self.downloadBase,
@@ -449,6 +534,9 @@ actor WhisperModelStore {
 
     /// Throw away a half-finished download without touching installed models.
     func discardPartial(variant: String) throws {
+        // Qwen3-ASR's resume cache is its folder: only a download that never
+        // finished may go.
+        if Self.family(of: variant) == .qwen3, loader.isInstalled(variant) { return }
         let cache = Self.resumeCache(for: variant)
         guard FileManager.default.fileExists(atPath: cache.path) else { return }
         try FileManager.default.removeItem(at: cache)
@@ -503,13 +591,35 @@ actor WhisperModelStore {
     /// WhisperKit next checks for cancellation — so the final pass waits for
     /// it here instead of decoding on the same instance beside it. A pass
     /// cancelled while it waits never starts.
-    func transcribe(samples: [Float], language: String?, variant: String) async throws -> String {
+    func transcribe(samples: [Float], language: String?, hotwords: [String] = [],
+                    variant: String) async throws -> String {
         guard samples.count >= Self.minimumSamples else { return "" }
         let model = try await model(for: variant)
         await takeTurn()
         defer { passTurn() }
         try Task.checkCancellation()
-        return try await model.transcribe(samples: samples, language: language)
+        let started = ContinuousClock.now
+        defer {
+            // B677: every pass, previews included; the audio against the
+            // time the model took on it, not the wait for a turn.
+            let audio = Double(samples.count) / 16_000
+            let (whole, attoseconds) = (ContinuousClock.now - started).components
+            let decode = Double(whole) + Double(attoseconds) / 1e18
+            let line = String(format: "audio=%.2fs decode=%.2fs rtf=%.2f", audio, decode, decode / max(audio, 0.01))
+            Log.voice.info(
+                "voice decode: model=\(variant, privacy: .public) \(line, privacy: .public) hotwords=\(hotwords.count, privacy: .public)")
+        }
+        // A decoder stuck repeating itself — Whisper's temperature fallback
+        // doesn't always get it out, and Fun-ASR-Nano did it too in the
+        // eval — is kept to one copy (B670).
+        let text = try await model.transcribe(samples: samples, language: language, hotwords: hotwords)
+        return DictationTranscript.collapsingRepeats(text)
+    }
+
+    /// A duration in seconds, two decimals, for log lines.
+    nonisolated static func seconds(_ duration: Duration) -> String {
+        let (whole, attoseconds) = duration.components
+        return String(format: "%.2f", Double(whole) + Double(attoseconds) / 1e18)
     }
 
     /// Whisper needs at least a window's worth of audio to say anything
@@ -567,7 +677,12 @@ actor WhisperModelStore {
         }
         let generation = sessions.generation
         let removal = removals[variant, default: 0]
+        let started = ContinuousClock.now
         let model = try await loader.load(variant)
+        // B677: what a device check reads, numbers only.
+        let loadSeconds = Self.seconds(ContinuousClock.now - started)
+        Log.voice.info(
+            "voice load: model=\(variant, privacy: .public) seconds=\(loadSeconds, privacy: .public)\(ProcessMemory.logSuffix, privacy: .public)")
         // An unload, or a removal of this variant, that landed while this
         // loaded wins: the caller gets the model for this one use, but it is
         // not kept.
@@ -605,7 +720,7 @@ private final class WhisperKitModel: WhisperLoadedModel {
         WhisperKitModel(kit: try await WhisperModelStore.loadWhisperKit(variant: variant))
     }
 
-    func transcribe(samples: [Float], language: String?) async throws -> String {
+    func transcribe(samples: [Float], language: String?, hotwords _: [String]) async throws -> String {
         let options = DecodingOptions(
             verbose: false,
             task: .transcribe,
@@ -623,24 +738,27 @@ private final class WhisperKitModel: WhisperLoadedModel {
             noSpeechThreshold: 0.6,
             chunkingStrategy: .vad)
         let results = try await kit.transcribe(audioArray: samples, decodeOptions: options)
-        return results.map(\.text).joined(separator: " ")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let text = results.map(\.text).joined(separator: " ")
+        return text.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     /// A short primer in the target language, fed as Whisper's "previous
-    /// text" context.
+    /// text" context, for a pinned Cantonese or Japanese: it establishes that
+    /// Latin words mid-sentence are expected, so "git rebase" isn't
+    /// transliterated.
     ///
-    /// This is the one lever that fixes two real defects for free. Whisper
-    /// asked for `zh` emits **Traditional** characters about as often as
-    /// Simplified, and a Simplified primer flips that; the primer also
-    /// establishes that Latin words appearing mid-sentence are expected, which
-    /// keeps it from transliterating "git rebase" into Chinese characters.
+    /// Not for Chinese any more (B670). On 50 real Mandarin–English clips
+    /// the Mandarin primer took Whisper from 15.8% to 30.2% mixed error —
+    /// English words rewritten ("friends" → "French、French、French"), two
+    /// sentences dropped, one looped — with no English word gained, and to
+    /// 34.4% under auto-detect. Its other job, Simplified rather than
+    /// Traditional characters, is done by converting the output to the
+    /// user's script (`DictationTranscript.converting`). The Cantonese and
+    /// Japanese primers were not measured.
     private func promptTokens(for language: String?) -> [Int]? {
         guard let tokenizer = kit.tokenizer else { return nil }
         let primer: String
         switch language {
-        case "zh":
-            primer = "以下是普通话的转写，其中夹杂英文技术词汇，例如 git commit、Docker、SSH。"
         case "yue":
             primer = "以下是粵語嘅轉寫，其中夾雜英文技術詞彙，例如 git commit、Docker、SSH。"
         case "ja":

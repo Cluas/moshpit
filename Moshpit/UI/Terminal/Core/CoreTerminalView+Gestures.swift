@@ -44,6 +44,10 @@ final class CoreTermGestureState {
     /// back gesture.
     var swiping = false
     var swipeRefused = false
+    /// The cell (viewport, 0-based) the scroll under way began on: a
+    /// program with the mouse gets its wheel there, the coast after the
+    /// lift too, until the next drag (B578).
+    var wheelAim: (col: Int, row: Int)?
 }
 
 /// The coast's refresh, without the link keeping the view.
@@ -146,6 +150,9 @@ extension CoreTerminalView: UIGestureRecognizerDelegate, UIEditMenuInteractionDe
         switch g.state {
         case .began:
             gestures.axis = nil
+            // Where the finger came down, not where it is now: the pan
+            // begins some points into the drag (B578).
+            gestures.wheelAim = cell(at: g.location(in: self) - g.translation(in: self))
             surfaceDelegate?.surfaceScrollWillBegin(self)
         case .changed:
             let t = g.translation(in: self)

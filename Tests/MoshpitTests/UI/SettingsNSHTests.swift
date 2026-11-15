@@ -91,6 +91,32 @@ struct SettingsNSHTests {
         #expect(asked.count == 3)
     }
 
+    /// B668: the pet's icon card switches through the gallery's own call,
+    /// and a switch it made is not one picked by hand (its next card
+    /// defaults to 「换」); one picked in the gallery is.
+    @Test("an icon the pet's card switched to is not picked by hand")
+    func appIconPickedByHand() async throws {
+        let (settings, _, _) = Self.scratch()
+        settings.appIconId = "default"
+        #expect(!settings.appIconPickedByHand, "the primary, never picked")
+        let model = AppIconModel()
+        var shown: String?
+        model.shownIcon = { shown }
+        model.setIcon = { name, done in shown = name; done(nil) }
+        var switched: Bool?
+        model.select("tun-shiny", settings: settings, byHand: false) { switched = $0 }
+        try await Self.settle { switched != nil }
+        #expect(switched == true && settings.appIconId == "tun-shiny")
+        #expect(shown == "AppIcon-TunShiny")
+        #expect(!settings.appIconPickedByHand)
+        model.select("classic", settings: settings)
+        try await Self.settle { settings.appIconId == "classic" }
+        #expect(settings.appIconPickedByHand)
+        // The card's offer, read from the pet's message.
+        #expect(CompanionPet.offeredIcon(#"{"op":"pet","icon":{"id":"tun","species":"tun","keep_default":true}}"#) == "tun")
+        #expect(CompanionPet.offeredIcon(#"{"op":"pet"}"#) == nil)
+    }
+
     @Test("the tick is the icon iOS shows, not a stale setting")
     func appIconTick() {
         let (settings, _, _) = Self.scratch()
@@ -197,7 +223,7 @@ struct SettingsNSHTests {
                                                                              "needsModel": false]))
     }
 
-    @Test("picking Whisper the first time names the user's language, as the SwiftUI page does")
+    @Test("picking Whisper leaves it on auto-detect (B670)")
     func voiceEngineSelect() {
         let (settings, _, _) = Self.scratch()
         settings.voiceEngine = .apple
@@ -206,7 +232,7 @@ struct SettingsNSHTests {
         model.countInstalled = { 0 }
         model.select(.whisper, settings: settings)
         #expect(settings.voiceEngine == .whisper)
-        #expect(settings.whisperLanguage == VoiceLanguageResolver.initialWhisperLanguage())
+        #expect(settings.whisperLanguage == "")
         settings.whisperLanguage = "ja"
         model.select(.apple, settings: settings)
         model.select(.whisper, settings: settings)

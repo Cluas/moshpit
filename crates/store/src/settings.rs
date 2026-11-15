@@ -160,7 +160,7 @@ pub const DEFAULT_PUSH_RELAY: &str = "https://push.moshpit.cluas.eu.org";
 /// Every setting of `AppSettings` at the app's committed `HEAD`, in its
 /// order. (Not yet here: `moshpit.settings.showHiddenFiles`, a Bool
 /// defaulting to false, in uncommitted work on the main tree.)
-pub const ALL: [Spec; 31] = [
+pub const ALL: [Spec; 32] = [
     spec(
         "fontSize",
         "moshpit.settings.fontSize",
@@ -329,6 +329,17 @@ pub const ALL: [Spec; 31] = [
         Kind::String,
         Default::String(""),
     ),
+    // B670: the language Whisper is pinned to, empty for auto-detect. A new
+    // key rather than the old `whisperLanguage`, which held the language the
+    // app itself preselected the first time Whisper was picked: pinning it
+    // measured worse than detection on mixed Chinese–English speech, so
+    // every install starts on auto-detect once. The old key stays for 1.0.8.
+    spec(
+        "whisperLanguagePinned",
+        "moshpit.settings.whisperLanguagePinned",
+        Kind::String,
+        Default::String(""),
+    ),
     spec(
         "whisperModelId",
         "moshpit.settings.whisperModel",
@@ -357,7 +368,7 @@ pub const ALL: [Spec; 31] = [
 
 /// The settings 1.0.8 did not have: its view of what the app writes
 /// leaves them out.
-pub const SINCE_108: [&str; 2] = ["appearance", "hostSetupUnpaired"];
+pub const SINCE_108: [&str; 3] = ["appearance", "hostSetupUnpaired", "whisperLanguagePinned"];
 
 /// The setting called `name` in `AppSettings`.
 pub fn spec_named(name: &str) -> Option<&'static Spec> {

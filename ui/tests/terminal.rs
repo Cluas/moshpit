@@ -766,6 +766,27 @@ fn the_voice_panel_composes_then_commits_on_the_persons_word() {
 }
 
 #[test]
+fn the_voice_panel_shows_exactly_what_insert_types() {
+    // B673: the host sends the guess with the space its join puts before it
+    // (none between Chinese and an English word), and the panel adds none.
+    let (mut app, channel, _) = open(Params::default());
+    show(&mut app, &channel, &chrome());
+    show(&mut app, &channel, &bar());
+    show(
+        &mut app,
+        &channel,
+        &json!({"op": "dictation", "panel": {
+            "phase": {"phase": "listening"}, "engine": "Apple · zh-CN",
+            "finalized": "帮我把这个", "volatile": "PR merge 一下", "insertable": true
+        }}),
+    );
+    app.wait_for("id:dictation-overlay").unwrap();
+    assert!(app.screen().shows("帮我把这个PR merge 一下"));
+    assert!(!app.screen().shows("帮我把这个 PR merge 一下"));
+    channel.close();
+}
+
+#[test]
 fn the_image_and_preview_panels_offer_their_buttons() {
     let (mut app, channel, natives) = open(Params::default());
     let heard = hear(&channel);

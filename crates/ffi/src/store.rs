@@ -830,6 +830,12 @@ impl KeyStoreHandle {
         Ok(())
     }
 
+    /// Key `id` signed in now (B601): its last use, written at most once a
+    /// day (`SshKeyStore::mark_used`). Whether it was written.
+    pub fn mark_used(&self, id: String) -> Result<bool, StoreError> {
+        Ok(lock(&self.0).mark_used(uuid(&id)?, Date::now()))
+    }
+
     /// Every keychain ref a key record holds, the carried ones' too; `None`
     /// when that can't be known (`SshKeyStore::keychain_refs`, B232).
     /// `excluding` leaves one record out.
@@ -1858,7 +1864,7 @@ mod tests {
                 .set("fontSize".into(), SettingValue::Int { value: 1 })
                 .is_err()
         );
-        assert_eq!(store_setting_names().len(), 31);
+        assert_eq!(store_setting_names().len(), 32);
         assert_eq!(store_app_icon("nope".into()).id, "default");
         assert_eq!(
             store_theme_palette((&TerminalTheme::nord()).into()).len(),

@@ -60,6 +60,31 @@ packages:
   WhisperKit:
     url: https://github.com/argmaxinc/WhisperKit.git
     from: "1.1.0"
+  # Qwen3-ASR for dictation (Settings → VOICE INPUT → Recognition → Model):
+  # the local model for Chinese speech that carries English terms, with the
+  # pane's file names and branches as hotwords (docs/nsh/ASR-2026-11.md).
+  # There is no maintained Core ML build of it — FluidAudio dropped its port
+  # in June (slow, and it broke on devices) — so it runs on sherpa-onnx's
+  # onnxruntime, on the CPU. Both are prebuilt static xcframeworks pinned by
+  # checksum in sherpa-onnx's own manifest (and its onnxruntime-libs
+  # dependency, exact 1.28.2). Measured cost: 23.8 MB on the stripped arm64
+  # binary (8.7 MB compressed), against a 0.6 GB model download.
+  #
+  # Both pinned by revision, not by tag, so a tag moved upstream can't change
+  # what ships: the manifests at these revisions name the zips the size and
+  # memory measurements were taken on. sherpa-onnx af2d8d81 is v2.0.1
+  # (iOS static zip 88aa569f…). onnxruntime-libs 8ebc5ebf is its SwiftPM
+  # 1.28.2 (iOS 2c2299ac…, macOS cb0b0bec…) — not the commit its v1.28.2
+  # release tag sits on, which is SwiftPM 1.28.1 and names the 1.28.1 zips.
+  # onnxruntime-libs is listed only to pin it: a root revision overrides
+  # sherpa-onnx's own `exact: "1.28.2"` (checked with SwiftPM: a root pin on
+  # another revision wins). Bump both together, re-measuring.
+  SherpaOnnx:
+    url: https://github.com/k2-fsa/sherpa-onnx
+    revision: af2d8d81dbfa61c4cea4c568da78f3982edca005
+  OnnxRuntimeLibs:
+    url: https://github.com/csukuangfj/onnxruntime-libs
+    revision: 8ebc5ebf92190903c274a7621ba4c96a732335ec
 
 targets:
   Moshpit:
@@ -148,7 +173,7 @@ targets:
         # flatten its iOS 18/19 fallbacks, and write the CFBundleAlternateIcons
         # entries into Info.plist itself — the iPad sizes included, which the
         # hand-written plist block and loose PNGs used to get wrong (ITMS-90892).
-        ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES: AppIcon-Pit AppIcon-Island AppIcon-Wq AppIcon-Prefix AppIcon-Localhost AppIcon-Prompt AppIcon-Cursor AppIcon-Hail
+        ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES: AppIcon-Tun AppIcon-TunShiny AppIcon-Coo AppIcon-CooShiny AppIcon-Dig AppIcon-DigShiny AppIcon-Hex AppIcon-HexShiny AppIcon-Ether AppIcon-EtherShiny AppIcon-Moth AppIcon-MothShiny AppIcon-Classic AppIcon-Pit AppIcon-Island AppIcon-Wq AppIcon-Prefix AppIcon-Localhost AppIcon-Prompt AppIcon-Cursor AppIcon-Hail
         ENABLE_PREVIEWS: YES
         SWIFT_EMIT_LOC_STRINGS: YES
         # iPhone + iPad, CONFIRMED as a shipping decision (2026-08-08), not
@@ -227,6 +252,8 @@ targets:
       - package: MoshpitKit
       - package: WhisperKit
         product: WhisperKit
+      - package: SherpaOnnx
+        product: sherpa-onnx
       - target: MoshpitIsland
         embed: true
       - target: MoshpitShare
@@ -299,7 +326,7 @@ targets:
         # Hugging Face — weights in, nothing out — which is why the strings
         # below say "audio" rather than a blanket "nothing leaves the device".
         # Keep code and copy in lockstep if either ever changes.
-        NSMicrophoneUsageDescription: "Voice input uses the microphone so you can dictate commands and prompts into your terminal. Your audio is transcribed on this device — by Apple's speech models or by a Whisper model you download — and is never uploaded anywhere."
+        NSMicrophoneUsageDescription: "Voice input uses the microphone so you can dictate commands and prompts into your terminal. Your audio is transcribed on this device — by Apple's speech models or by a speech model you download — and is never uploaded anywhere."
         NSSpeechRecognitionUsageDescription: "Dictation runs on-device speech recognition. Your voice and transcripts never leave this device — Moshpit does not use server-based recognition."
         # MUST live here, not just in Info.plist: XcodeGen regenerates that file
         # from this block, so a key added to the plist by hand silently vanishes

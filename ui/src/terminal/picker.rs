@@ -109,6 +109,11 @@ pub struct Picker {
     pub rows: Vec<Row>,
     /// The row the multiplexer is on.
     pub active: Option<String>,
+    /// The list picks where a held share goes (B622), not where to switch:
+    /// the share's agent, whose panes the host lists first. Every pane of
+    /// the host's tree, each with its place (`Row::window`); no ＋, no
+    /// active row.
+    pub send: Option<String>,
 }
 
 /// What a row's menu picked.
@@ -350,14 +355,14 @@ pub fn shown(row: &Row, picker: &Picker, vocab: &Vocab) -> Shown {
         Kind::Sessions => {
             let active = picker.active.as_deref() == Some(row.id.as_str());
             let meta = if active {
-                // One window is one window (SwiftUI says "1 windows").
-                let count = row.windows.unwrap_or(0);
-                let noun = if count == 1 {
-                    &vocab.window_lower
+                // Counted in the language's own way (B652: a number glued
+                // to a bare noun said "3 窗口", "3 ウィンドウ", "3 창").
+                let count = i64::from(row.windows.unwrap_or(0));
+                let head = if picker.mux == Mux::Herdr {
+                    crate::plural!("%lld tabs", count)
                 } else {
-                    &vocab.windows_lower
+                    crate::plural!("%lld windows", count)
                 };
-                let head = format!("{count} {noun}");
                 match &row.window {
                     Some(window) => format!("{head} · {}", active_window_title(row, window, vocab)),
                     None => head,
@@ -391,10 +396,12 @@ pub fn shown(row: &Row, picker: &Picker, vocab: &Vocab) -> Shown {
                     "number.square".to_owned()
                 },
                 title,
-                meta: if row.agent.is_some() {
-                    row.command.clone()
-                } else {
-                    String::new()
+                // A share's picker lists every pane of the tree: where each
+                // is, rather than its program again.
+                meta: match (&row.window, &row.agent) {
+                    (Some(place), _) => place.clone(),
+                    (None, Some(_)) => row.command.clone(),
+                    (None, None) => String::new(),
                 },
             }
         }
@@ -432,6 +439,13 @@ pub fn footer(kind: Kind, vocab: &Vocab) -> (String, [&'static str; 2]) {
             vocab.pane_keys,
         ),
     }
+}
+
+/// The footer's hint while the list picks a held share's pane: the panes
+/// running its `agent` come first. No keys: a multiplexer's key doesn't
+/// send anything.
+pub fn send_hint(agent: &str) -> String {
+    t!("Panes running %@ come first.", arg1 = agent)
 }
 
 /// What screen readers say for a row: its words, what its dot means, and
@@ -565,7 +579,8 @@ pub fn MuxPickerScreen(props: ScreenProps) -> impl IntoElement {
             });
             let foot = dynamic(move || {
                 let (kind, mux) = (kind.get(), mux.get());
-                untracked(move || footer_view(kind, mux))
+                let send = picker.with(|p| p.send.clone());
+                untracked(move || footer_view(kind, mux, send))
             });
             page(
                 bar,
@@ -582,9 +597,9 @@ pub fn MuxPickerScreen(props: ScreenProps) -> impl IntoElement {
             .into_element()
         }
     };
-    let new = {
+    let new: Rc<dyn Fn()> = {
         let (tell, prompts) = (tell.clone(), prompts.clone());
-        move || {
+        Rc::new(move || {
             let (kind, mux) = picker.with_untracked(|p| (p.kind, p.mux));
             match kind {
                 Kind::Panes => tell(json!({"ev": "new"})),
@@ -600,8 +615,10 @@ pub fn MuxPickerScreen(props: ScreenProps) -> impl IntoElement {
                     });
                 }
             }
-        }
+        })
     };
+    // A share's picker makes nothing: no ＋.
+    let sending = computed(move || picker.with(|p| p.send.is_some()));
     view()
         .flex_1()
         .relative()
@@ -613,22 +630,30 @@ pub fn MuxPickerScreen(props: ScreenProps) -> impl IntoElement {
             body,
             tell.clone(),
         ))
-        .child(nav_bar::root_bar(nav_bar::NavBar {
-            metrics: bar,
-            back_title: String::new(),
-            title: Box::new(move || title(kind.get(), &Vocab::of(mux.get()))),
-            leading: None,
-            trailing: vec![nav_bar::BarButton {
-                label: t!("New"),
-                content: nav_bar::BarContent::Symbol("plus"),
-                enabled: computed(|| true),
-                emphasized: false,
-                test_id: "mux-picker-new",
-                on_press: Box::new(new),
-                menu: None,
-            }],
-            on_back: Box::new(|| {}),
-            scrolled,
+        .child(dynamic(move || {
+            let new = (!sending.get()).then(|| new.clone());
+            untracked(move || {
+                nav_bar::root_bar(nav_bar::NavBar {
+                    metrics: bar,
+                    back_title: String::new(),
+                    title: Box::new(move || title(kind.get(), &Vocab::of(mux.get()))),
+                    leading: None,
+                    trailing: new
+                        .map(|new| nav_bar::BarButton {
+                            label: t!("New"),
+                            content: nav_bar::BarContent::Symbol("plus"),
+                            enabled: computed(|| true),
+                            emphasized: false,
+                            test_id: "mux-picker-new",
+                            on_press: Box::new(move || new()),
+                            menu: None,
+                        })
+                        .into_iter()
+                        .collect(),
+                    on_back: Box::new(|| {}),
+                    scrolled,
+                })
+            })
         }))
 }
 
@@ -769,10 +794,16 @@ fn rows_section(
 }
 
 /// Under the card: the hint, and the multiplexer's keys at the trailing
-/// edge.
-fn footer_view(kind: Kind, mux: Mux) -> AnyElement {
+/// edge (none while the list picks a held share's pane: `send`).
+fn footer_view(kind: Kind, mux: Mux, send: Option<String>) -> AnyElement {
     let vocab = Vocab::of(mux);
-    let (hint, keys) = footer(kind, &vocab);
+    let (hint, keys) = match send {
+        Some(agent) => (send_hint(&agent), None),
+        None => {
+            let (hint, keys) = footer(kind, &vocab);
+            (hint, Some(keys))
+        }
+    };
     view()
         .flex_row()
         .items_start()
@@ -791,7 +822,7 @@ fn footer_view(kind: Kind, mux: Mux) -> AnyElement {
                 .flex_row()
                 .gap(px(4.0))
                 .flex_shrink_0()
-                .children(keys.into_iter().map(key_chip)),
+                .children(keys.into_iter().flatten().map(key_chip)),
         )
         .into_element()
 }

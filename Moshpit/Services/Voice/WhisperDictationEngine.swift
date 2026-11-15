@@ -11,7 +11,9 @@ protocol WhisperTranscribing: Sendable {
     /// Load the variant if it isn't already; cheap once warm.
     func warmUp(variant: String) async throws
     /// Transcribe 16 kHz mono samples. `language` nil = let Whisper detect.
-    func transcribe(samples: [Float], language: String?, variant: String) async throws -> String
+    /// `hotwords` reach a model that takes them (Qwen3-ASR).
+    func transcribe(samples: [Float], language: String?, hotwords: [String],
+                    variant: String) async throws -> String
     /// Hold the loaded model for one dictation: an unload asked for before
     /// the matching `endSession` waits for it.
     func beginSession() async -> UUID
@@ -36,8 +38,12 @@ extension WhisperModelStore: WhisperTranscribing {}
 ///   publishes that as finalized. This is the transcript that matters — full
 ///   context, so the tail of a sentence can still fix the head of it.
 ///
+/// The same engine runs Qwen3-ASR (sherpa-onnx, on the CPU), which does not
+/// stream either and also takes the pane's hotwords; the store picks the
+/// runtime by the variant.
+///
 /// Audio never leaves the device; the model was downloaded once by
-/// `WhisperModelStore` and everything here is CoreML on the Neural Engine.
+/// `WhisperModelStore`.
 final class WhisperDictationEngine: DictationEngine {
     let updates: AsyncThrowingStream<DictationUpdate, Error>
     let label: String
@@ -55,6 +61,11 @@ final class WhisperDictationEngine: DictationEngine {
     private let variant: String
     /// Whisper language code, or nil to let the model detect it.
     private let language: String?
+    /// The pane's words, for a model that takes them (``DictationHotwords``).
+    private let hotwords: [String]
+    /// The Chinese script the user writes, applied to what the model returns
+    /// (``VoiceLanguageResolver/chineseScript(for:)``); nil leaves it alone.
+    private let script: DictationTranscript.ChineseScript?
     private let updateContinuation: AsyncThrowingStream<DictationUpdate, Error>.Continuation
     private let converter = DictationBufferConverter()
 
@@ -81,6 +92,8 @@ final class WhisperDictationEngine: DictationEngine {
     /// while preview passes read from a Task.
     private let lock = NSLock()
     private var samples: [Float] = []
+    /// Preview passes that came back, for the final pass's log line.
+    private var previewPasses = 0
 
     private var previewTask: Task<Void, Never>?
     private var cancelled = false
@@ -99,10 +112,13 @@ final class WhisperDictationEngine: DictationEngine {
         return Double(samples.count) / 16_000
     }
 
-    init(store: any WhisperTranscribing, variant: String, language: String?, label: String) {
+    init(store: any WhisperTranscribing, variant: String, language: String?, label: String,
+         hotwords: [String] = [], script: DictationTranscript.ChineseScript? = nil) {
         self.store = store
         self.variant = variant
         self.language = language
+        self.hotwords = hotwords
+        self.script = script
         self.label = label
         (updates, updateContinuation) = AsyncThrowingStream.makeStream()
     }
@@ -200,8 +216,16 @@ final class WhisperDictationEngine: DictationEngine {
             return
         }
         do {
-            let text = try await store.transcribe(
-                samples: final, language: language, variant: variant)
+            let started = ContinuousClock.now
+            let text = DictationTranscript.converting(
+                try await store.transcribe(samples: final, language: language, hotwords: hotwords, variant: variant),
+                to: script)
+            // B677: what the person waited for after the tap, with the
+            // memory it took. The length of the text, never the text.
+            let audio = String(format: "%.2f", Double(final.count) / 16_000)
+            let previews = lock.withLock { previewPasses }
+            Log.voice.info(
+                "voice final: model=\(self.variant, privacy: .public) audio=\(audio, privacy: .public)s wall=\(WhisperModelStore.seconds(ContinuousClock.now - started), privacy: .public)s chars=\(text.count, privacy: .public) previews=\(previews, privacy: .public)\(ProcessMemory.logSuffix, privacy: .public)")
             updateContinuation.yield(DictationUpdate(finalizedText: text, volatileText: ""))
             updateContinuation.finish()
         } catch {
@@ -265,9 +289,12 @@ final class WhisperDictationEngine: DictationEngine {
             guard snapshot.count >= Self.previewFloorSamples else { continue }
             let started = ContinuousClock.now
             do {
-                let text = try await store.transcribe(
-                    samples: snapshot, language: language, variant: variant)
+                let text = DictationTranscript.converting(
+                    try await store.transcribe(
+                        samples: snapshot, language: language, hotwords: hotwords, variant: variant),
+                    to: script)
                 if Task.isCancelled { return }
+                lock.withLock { previewPasses += 1 }
                 if !text.isEmpty {
                     updateContinuation.yield(
                         DictationUpdate(finalizedText: "", volatileText: text))

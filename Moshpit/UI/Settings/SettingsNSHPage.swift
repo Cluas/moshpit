@@ -135,7 +135,6 @@ struct SettingsNSHPage: View {
                 }]
                 menus.install(on: surface)
             },
-            onMessage: { Log.ui.error("settings: unread \(String(describing: $0["ev"]), privacy: .public)") },
             onEvent: { event in
                 guard case .settings(let event) = event else { return }
                 if case .setup(let id) = event {

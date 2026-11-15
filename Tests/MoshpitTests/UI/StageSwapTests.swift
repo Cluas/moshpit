@@ -164,3 +164,89 @@ struct StageSwapTests {
         #expect(stage.check(why: "test") == nil, "the slot is in no window")
     }
 }
+
+/// B658, the overview's step 3: the live terminal shrinks into its pane's
+/// cell and grows back out of it, a picked pane's terminal grows from the
+/// picked cell, and the pictures are read from terminals the session
+/// already keeps. The motion's end values are what a touch meets at once
+/// (UIKit hit-tests the model, not the moving picture).
+@Suite("the overview's shrink, growth and pictures (B658)", .serialized)
+@MainActor
+struct OverviewStageTests {
+
+    @Test("The shrink puts the terminal inside its cell, its shape kept, centred")
+    func fitKeepsShape() {
+        let size = CGSize(width: 400, height: 800)
+        let center = CGPoint(x: 200, y: 400)
+        let cell = CGRect(x: 20, y: 100, width: 160, height: 112)
+        let t = TerminalNSHStage.fit(size, at: center, into: cell)
+        // The view's frame under `t`, about its centre.
+        let moved = CGRect(x: -200, y: -400, width: 400, height: 800).applying(t)
+            .offsetBy(dx: center.x, dy: center.y)
+        #expect(abs(moved.height - 112) < 0.01, "as tall as the cell")
+        #expect(abs(moved.width - 56) < 0.01, "its shape kept")
+        #expect(abs(moved.midX - cell.midX) < 0.01 && abs(moved.midY - cell.midY) < 0.01, "centred in it")
+        #expect(TerminalNSHStage.fit(size, at: center, into: .zero) == .identity, "no cell: no move")
+    }
+
+    @Test("Opened, the terminal goes into its cell; closed, it is back in place")
+    func shrinksAndGrows() throws {
+        let controller = TerminalNSHTests.paneController()
+        let stage = TerminalNSHStage()
+        let (slot, window) = TerminalNSHTests.slot(for: stage)
+        defer { window.isHidden = true }
+        stage.show(.init(source: .pane(controller, "%1")))
+        let container = try #require(stage.container)
+        stage.overview(open: true)
+        #expect(container.transform.isIdentity, "nothing moves before the page says where the cell is")
+        let cell = CGRect(x: 20, y: 300, width: 160, height: 112)
+        stage.overviewAnchor(pane: "%1", rect: cell, picked: false, in: window)
+        if !UIAccessibility.isReduceMotionEnabled {
+            let local = slot.convert(cell, from: window)
+            #expect(container.transform == TerminalNSHStage.fit(container.bounds.size, at: container.center, into: local))
+            #expect(stage.shrunk)
+        }
+        stage.overview(open: false)
+        #expect(container.transform.isIdentity, "back in place: a touch meets it there at once")
+        #expect(!stage.shrunk)
+    }
+
+    @Test("A tmux pane picked: the old terminal is back at once, the picked one grows from its cell")
+    func pickedPaneGrows() throws {
+        let controller = TerminalNSHTests.paneController()
+        let stage = TerminalNSHStage()
+        let (_, window) = TerminalNSHTests.slot(for: stage)
+        defer { window.isHidden = true }
+        stage.show(.init(source: .pane(controller, "%1")))
+        let old = try #require(stage.container)
+        stage.overview(open: true)
+        stage.overviewAnchor(pane: "%1", rect: CGRect(x: 20, y: 300, width: 160, height: 112), picked: false, in: window)
+        stage.overviewAnchor(pane: "%2", rect: CGRect(x: 200, y: 300, width: 160, height: 112), picked: true, in: window)
+        stage.overview(open: false)
+        #expect(old.transform.isIdentity, "the old pane is in place under the page's fade")
+        stage.show(.init(source: .pane(controller, "%2")))
+        let new = try #require(stage.container)
+        #expect(new !== old)
+        #expect(new.transform.isIdentity && new.alpha == 1, "where it ends: touches go there at once")
+        if !UIAccessibility.isReduceMotionEnabled {
+            #expect(new.layer.animationKeys()?.contains { $0.contains("transform") } == true, "it grows")
+        }
+    }
+
+    @Test("The pictures are the panes' own terminals, read; a pane without one gets none made")
+    func picturesNeverMint() async throws {
+        let controller = TerminalNSHTests.paneController()
+        let stage = TerminalNSHStage()
+        let (_, window) = TerminalNSHTests.slot(for: stage)
+        defer { window.isHidden = true }
+        stage.show(.init(source: .pane(controller, "%1")))
+        let coordinator = try #require(controller.coordinator(for: "%1"))
+        coordinator.feed(data: Data("dev@box:~/src/api$ make test\r\nok  api 0.42s\r\n".utf8))
+        let surface = controller.surface(for: "%1")
+        try await TerminalNSHTests.settle { surface.screenRows().contains("ok  api 0.42s") }
+        let pictures = stage.pictures(of: ["%1", "%9"], current: "%1")
+        #expect(pictures["%1"]?.contains("dev@box:~/src/api$ make test") == true)
+        #expect(pictures["%9"] == nil)
+        #expect(controller.existingSurface(for: "%9") == nil, "asking made no terminal")
+    }
+}

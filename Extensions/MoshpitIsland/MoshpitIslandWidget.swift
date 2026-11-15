@@ -224,6 +224,9 @@ struct LockScreenCard: View {
         LockScreenView(state: state, isStale: isStale)
             .activityBackgroundTint(scheme == .dark ? Color.black.opacity(0.85) : Color.white.opacity(0.85))
             .activitySystemActionForegroundColor(scheme == .dark ? .white : .black)
+            // The island's `widgetURL` is the Dynamic Island's alone: a tap
+            // on this card only opened the app, wherever it was (B702).
+            .widgetURL(LockScreenView.deepLink(for: state))
     }
 }
 
@@ -291,6 +294,14 @@ struct LockScreenView: View {
     }
 
     private var summary: String { Self.summary(for: state) }
+
+    /// Where a tap on the card goes (B702): the pane of its first row — the
+    /// most urgent agent, the one drawn largest — as the Home Screen widget
+    /// opens its first row (B594); nil with no agent.
+    static func deepLink(for state: AgentActivityAttributes.ContentState) -> URL? {
+        guard let first = state.agents.first else { return nil }
+        return URL(string: AgentDeepLink.string(connectionId: first.connectionId, paneId: first.paneId))
+    }
 
     /// The header's phrase ("1 needs you · 2 working"), in the language
     /// Moshpit shows (``AppLanguage``) — not this extension's, which is the

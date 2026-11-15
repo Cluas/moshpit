@@ -488,6 +488,35 @@ fn rows_that_would_read_the_same_are_told_apart() {
     assert_eq!(island(vec![at("%1", 1, 1), codex]), ["x · devbox", "x · devbox"]);
 }
 
+// MARK: - The widget opens its first row (B594)
+
+/// The widget draws its first row, the most urgent agent, and opens it
+/// (B594, on the app's side). The machine's widget state still named the
+/// island's headline, which cycling moves: the app and the machine
+/// disagreed on every script with a cycle (CI run 12, AgentsScriptTests).
+/// Its headline is its first row; a cycle moves the island's alone, and
+/// writes no widget.
+#[test]
+fn the_widget_s_headline_is_its_first_row_whatever_the_island_cycles_to() {
+    let widget_of = |effects: &[Effect]| {
+        effects.iter().rev().find_map(|e| if let Effect::Widget(state) = e { Some(state.clone()) } else { None })
+    };
+    let mut bench = Bench::new(Settings::default(), &[]);
+    bench.monitor.hooks(CONN, vec![hook("%1", "working", T0), hook("%2", "attention", T0)], T0 + 1.0, TMUX);
+    let widget = widget_of(&bench.monitor.take_effects()).expect("a widget");
+    assert_eq!(widget.agents[0].pane_id, "%2");
+    assert_eq!(widget.headline_id.as_deref(), Some(widget.agents[0].id.as_str()));
+    bench.monitor.cycle_headline(T0 + 2.0);
+    let effects = bench.monitor.take_effects();
+    let island = effects
+        .iter()
+        .rev()
+        .find_map(|e| if let Effect::Island(state) = e { Some(state.clone()) } else { None })
+        .expect("the island's headline moved");
+    assert_ne!(island.headline_id, widget.headline_id);
+    assert!(widget_of(&effects).is_none(), "the widget did not change: {effects:?}");
+}
+
 // MARK: - A long finish rings once
 
 #[test]

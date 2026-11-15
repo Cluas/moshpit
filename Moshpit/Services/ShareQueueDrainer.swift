@@ -67,6 +67,8 @@ enum ShareQueueDrainer {
     }
 
     private static func drainOnce(hub: SessionHub) async {
+        // Home's notices follow what this drain held, delivered or let go.
+        defer { HeldShares.shared.refresh() }
         // What earlier builds' lost writes left in the App Group (B269).
         ShareQueue.sweepOrphanedImages(olderThan: maxAge)
 
@@ -82,58 +84,13 @@ enum ShareQueueDrainer {
             // Where it may go, before anything is uploaded for it.
             guard let before = await target(of: entry, in: session) else { continue }
             guard case .deliver = before else {
-                holdBack(entry, before)
-                continue
-            }
-            // Read one at a time as the loop reaches each (B342): never the
-            // whole batch of originals at once.
-            let images = ShareQueue.images(for: entry)
-            guard !images.isEmpty else {
-                ShareQueue.remove(entry.id)
+                holdBack(entry, before, hub: hub)
                 continue
             }
             do {
-                // Each image is uploaded once (B196): one that already went
-                // in an earlier drain — whose delivery then failed, so the
-                // entry stayed — is delivered by the path it went to.
-                var uploader: (any HostConnection)?
-                var paths: [String] = []
-                for image in images {
-                    if let path = image.uploadedTo {
-                        paths.append(path)
-                        continue
-                    }
-                    let raw = image.data
-                    let processed: ImageAttachmentPipeline.Processed
-                    do {
-                        processed = try await Task.detached(priority: .utility) {
-                            try ImageAttachmentPipeline.process(raw)
-                        }.value
-                    } catch ImageAttachmentPipeline.PipelineError.undecodable {
-                        // Never going to decode — an SVG passes for an image
-                        // to the share sheet and Shortcuts, and ImageIO has
-                        // nothing for it. It used to fail the whole batch on
-                        // every drain until the entry aged out, the good
-                        // images in it with it: "Queued for claude", and
-                        // nothing ever came. Leave it out; deliver the rest.
-                        Log.island.error("share: an image in the queue can't be decoded — left out")
-                        continue
-                    }
-                    let host: any HostConnection
-                    if let uploader {
-                        host = uploader
-                    } else {
-                        host = try await session.acquireFileTransferSSH()
-                        uploader = host
-                    }
-                    let path = try await host.uploadToUploadsDirectory(
-                        processed.data, named: processed.filename, progress: nil)
-                    ShareQueue.recordUpload(entry.id, file: image.file, remotePath: path)
-                    session.imageUploads.record(remotePath: path)
-                    paths.append(path)
-                }
-                guard !paths.isEmpty else {
-                    // Not one of its images decodes: nothing will ever go.
+                guard let paths = try await upload(entry, over: session) else {
+                    // Not one of its images is there or decodes: nothing
+                    // will ever go.
                     ShareQueue.remove(entry.id)
                     continue
                 }
@@ -143,7 +100,7 @@ enum ShareQueueDrainer {
                 // Again: an upload takes long enough for the pane to change.
                 guard let now = await target(of: entry, in: session) else { continue }
                 guard case .deliver(let pane) = now else {
-                    holdBack(entry, now)
+                    holdBack(entry, now, hub: hub)
                     continue
                 }
                 if await session.deliverPaste(text, toPane: pane) {
@@ -154,6 +111,88 @@ enum ShareQueueDrainer {
                 // fresh channel. maxAge caps how long it can linger.
                 continue
             }
+        }
+    }
+
+    /// `entry`'s images on the host, by the paths they went to, in order:
+    /// uploaded over `session` now unless an earlier try already did (B196),
+    /// read one at a time (B342), an image that won't decode left out. Nil
+    /// when not one of them is there or decodes.
+    private static func upload(_ entry: ShareQueue.Entry,
+                               over session: SessionHub.ActiveSession) async throws -> [String]? {
+        let images = ShareQueue.images(for: entry)
+        guard !images.isEmpty else { return nil }
+        // Each image is uploaded once (B196): one that already went in an
+        // earlier drain — whose delivery then failed, so the entry stayed —
+        // is delivered by the path it went to.
+        var uploader: (any HostConnection)?
+        var paths: [String] = []
+        for image in images {
+            if let path = image.uploadedTo {
+                paths.append(path)
+                continue
+            }
+            let raw = image.data
+            let processed: ImageAttachmentPipeline.Processed
+            do {
+                processed = try await Task.detached(priority: .utility) {
+                    try ImageAttachmentPipeline.process(raw)
+                }.value
+            } catch ImageAttachmentPipeline.PipelineError.undecodable {
+                // Never going to decode — an SVG passes for an image to the
+                // share sheet and Shortcuts, and ImageIO has nothing for it.
+                // It used to fail the whole batch on every drain until the
+                // entry aged out, the good images in it with it: "Queued for
+                // claude", and nothing ever came. Leave it out; deliver the
+                // rest.
+                Log.island.error("share: an image in the queue can't be decoded — left out")
+                continue
+            }
+            let host: any HostConnection
+            if let uploader {
+                host = uploader
+            } else {
+                host = try await session.acquireFileTransferSSH()
+                uploader = host
+            }
+            let path = try await host.uploadToUploadsDirectory(
+                processed.data, named: processed.filename, progress: nil)
+            ShareQueue.recordUpload(entry.id, file: image.file, remotePath: path)
+            session.imageUploads.record(remotePath: path)
+            paths.append(path)
+        }
+        return paths.isEmpty ? nil : paths
+    }
+
+    // MARK: The person's pick (B622)
+
+    /// Sends held share `id` into `pane` of its session, which the person
+    /// picked: no agent check, the pane's own agent (its stamp, else its
+    /// program) picks the insert's dialect. True once it is delivered and
+    /// gone from the queue; false leaves it held, to pick again.
+    static func send(_ id: UUID, toPane pane: String, hub: SessionHub) async -> Bool {
+        defer { HeldShares.shared.refresh() }
+        guard let entry = ShareQueue.load().first(where: { $0.id == id }),
+              let session = hub.sessions[entry.connectionId],
+              session.viewModel.connState == .live else { return false }
+        do {
+            guard let paths = try await upload(entry, over: session) else {
+                ShareQueue.remove(entry.id)
+                return false
+            }
+            let agent: String?
+            if let control = session.tmuxControl {
+                agent = control.agentHooks[pane]?.agent ?? control.snapshot.panes[pane]?.command
+            } else {
+                agent = session.herdrControl?.agentHooks[pane]?.agent
+            }
+            let text = ImageAttachmentPipeline.insertText(forRemotePaths: paths, style: .forAgent(agent))
+            guard await session.deliverPaste(text, toPane: pane) else { return false }
+            ShareQueue.remove(entry.id)
+            return true
+        } catch {
+            Log.island.error("share: a held share's upload failed: \(error.localizedDescription, privacy: .public)")
+            return false
         }
     }
 
@@ -199,8 +238,10 @@ enum ShareQueueDrainer {
         return session.connection.multiplexer == .none ? [] : nil
     }
 
-    /// Hold `entry` back for `target`, and tell the person the first time.
-    private static func holdBack(_ entry: ShareQueue.Entry, _ target: ShareTarget) {
+    /// Hold `entry` back for `target`, and tell the person the first time:
+    /// Home says it while the app is in front, a notification while it is
+    /// not.
+    private static func holdBack(_ entry: ShareQueue.Entry, _ target: ShareTarget, hub: SessionHub) {
         let held: ShareQueue.HeldBack
         switch target {
         case .deliver: return
@@ -209,12 +250,12 @@ enum ShareQueueDrainer {
         case .anotherProgram(let now): held = .init(reason: .anotherProgram, now: now, at: Date())
         }
         Log.island.info("share: held back, its pane moved on (\(held.reason.rawValue, privacy: .public))")
-        guard ShareQueue.holdBack(entry.id, held) else { return }
+        guard ShareQueue.holdBack(entry.id, held), !hub.isForeground else { return }
         tell(entry, held)
     }
 
-    /// The one word the person gets about a held share: a notification,
-    /// so it reaches them wherever they are.
+    /// The one word the person gets about a share held while the app is
+    /// away: a notification. (In front, Home's notice says it.)
     private static func tell(_ entry: ShareQueue.Entry, _ held: ShareQueue.HeldBack) {
         let content = UNMutableNotificationContent()
         content.title = String(localized: "A share wasn't delivered")
@@ -224,5 +265,43 @@ enum ShareQueueDrainer {
         let request = UNNotificationRequest(identifier: "moshpit.share.held.\(entry.id.uuidString)",
                                             content: content, trigger: nil)
         UNUserNotificationCenter.current().add(request)
+    }
+}
+
+/// The shares the drain held back (B622), as Home's notices show them:
+/// read from the queue again whenever a drain ends or Home asks.
+@Observable
+@MainActor
+final class HeldShares {
+    static let shared = HeldShares()
+
+    /// Held entries, oldest first.
+    private(set) var entries: [ShareQueue.Entry] = []
+
+    /// The queue's held entries now.
+    func refresh() {
+        let held = ShareQueue.load().filter { $0.heldBack != nil }
+        if held != entries { entries = held }
+    }
+
+    /// `{"op": "held", "shares": […]}`: Home's message for them.
+    var message: String { Self.message(entries) }
+
+    /// Home's message for held `entries`.
+    nonisolated static func message(_ entries: [ShareQueue.Entry]) -> String {
+        let shares: [[String: String]] = entries.compactMap { entry in
+            guard let held = entry.heldBack else { return nil }
+            return ["id": entry.id.uuidString, "connection": entry.connectionId.uuidString,
+                    "agent": entry.agentName, "reason": held.reason.rawValue]
+        }
+        let data = (try? JSONSerialization.data(
+            withJSONObject: ["op": "held", "shares": shares], options: [.sortedKeys])) ?? Data()
+        return String(decoding: data, as: UTF8.self)
+    }
+
+    /// Lets the held share `id` go.
+    func discard(_ id: UUID) {
+        ShareQueue.remove(id)
+        refresh()
     }
 }

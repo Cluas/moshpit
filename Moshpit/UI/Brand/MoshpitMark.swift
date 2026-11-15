@@ -5,10 +5,12 @@ import MoshpitKit
 /// are in is white, with the cursor as a hole the tile shows through; the two
 /// beside it are half-transparent, open and waiting.
 ///
-/// The shipped app icon is the Icon Composer document `Moshpit/Resources/AppIcon.icon`
-/// (Liquid Glass on iOS 26, flattened by Xcode for iOS 18/19). Its layers are
-/// authored in a 1024-unit tile, and ``MoshpitGlyph/Metrics`` carries the same
-/// numbers, so the in-app mark and the home-screen icon cannot drift apart.
+/// The three panes were the shipped app icon until the pet's egg took over
+/// (B668); they ship on as the Classic alternate,
+/// `Moshpit/Resources/AlternateIcons/AppIcon-Classic.icon` (Liquid Glass on
+/// iOS 26, flattened by Xcode for iOS 18/19). Its layers are authored in a
+/// 1024-unit tile, and ``MoshpitGlyph/Metrics`` carries the same numbers, so
+/// this mark and that icon cannot drift apart.
 ///
 /// The tile follows the accent, which is the point of this view: it is the
 /// THEME's mark. Anywhere that means "this app" to the user uses ``AppIconMark``.

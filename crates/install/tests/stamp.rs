@@ -128,3 +128,40 @@ fn the_self_test_quotes_the_hosts_tmux_socket_path() {
         );
     }
 }
+
+/// B599: the pushed copy of a question or a finish showed an agent's
+/// message wrapper raw on the lock screen (`<agent-message from="…40">
+/// 收到…`): the app's own copy strips it (`moshpit-agents`' `plain_detail`,
+/// B595), the push didn't. The sender's `plain` does the same, in POSIX
+/// sed, on the same cases.
+#[test]
+fn the_sender_strips_an_agents_message_markup_as_the_app_does() {
+    let sender = scripts::sender();
+    let start = sender
+        .find("\nplain() {")
+        .expect("the sender has a plain() that strips markup");
+    let end = start + sender[start..].find("\n}\n").expect("plain()'s end") + 3;
+    let function = &sender[start..end];
+    for (raw, shown) in [
+        (r#"<agent-message from="team-lead-40"> 收到，不用 Chrome </agent-message>"#, "收到，不用 Chrome"),
+        (r#"<\agent-message from="x">done<\/agent-message>"#, "done"),
+        (r#"<outer-tag a="1"><inner-tag>Bash: npm test</inner-tag></outer-tag>"#, "Bash: npm test"),
+        ("<b>bold</b> move", "bold move"),
+        ("if a < b && c > d", "if a < b && c > d"),
+        ("x<5 and 3>y", "x<5 and 3>y"),
+        ("Edit: fn f() -> Vec<String>", "Edit: fn f() -> Vec<String>"),
+        ("Bash: npm test", "Bash: npm test"),
+        (r#"<agent-message from="x">"#, ""),
+    ] {
+        let out = Command::new("sh")
+            .arg("-c")
+            .arg(format!("{function}\nplain \"$1\""))
+            .arg("sh")
+            .arg(raw)
+            .env_clear()
+            .env("PATH", "/usr/bin:/bin")
+            .output()
+            .expect("sh runs");
+        assert_eq!(String::from_utf8_lossy(&out.stdout), shown, "{raw}");
+    }
+}

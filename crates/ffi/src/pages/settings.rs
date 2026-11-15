@@ -25,7 +25,7 @@ use moshpit_ui::voice_engine::Engine;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 
-use super::{PageError, color};
+use super::{PageError, choice, color};
 
 /// What Settings shows (`SettingsState`), colors written `#RRGGBB`.
 #[derive(Debug, Clone, PartialEq, uniffi::Record)]
@@ -231,14 +231,6 @@ pub enum SettingsChange {
 
 // MARK: - Into the screen's types
 
-/// One of the screen's enums by its id (`"bar"`).
-fn id<T: DeserializeOwned>(field: &'static str, id: &str) -> Result<T, PageError> {
-    serde_json::from_value(Value::String(id.to_owned())).map_err(|_| PageError::Invalid {
-        field: field.to_owned(),
-        value: id.to_owned(),
-    })
-}
-
 impl TryFrom<SettingsPageState> for SettingsState {
     type Error = PageError;
 
@@ -274,7 +266,7 @@ impl TryFrom<SettingsPageState> for SettingsState {
                     .map(|hex| color("theme.swatches", hex))
                     .collect::<Result<_, _>>()?,
             },
-            cursor_shape: id::<CursorShape>("cursorShape", &s.cursor_shape)?,
+            cursor_shape: choice::<CursorShape>("cursorShape", &s.cursor_shape)?,
             cursor_color: s.cursor_color,
             cursor_blink: s.cursor_blink,
             trail_on_predict: s.trail_on_predict,
@@ -282,7 +274,7 @@ impl TryFrom<SettingsPageState> for SettingsState {
             remote_clipboard_read: s.remote_clipboard_read,
             upload_retention_days: s.upload_retention_days,
             mosh_by_default: s.mosh_by_default,
-            predict_mode: id::<PredictMode>("predictMode", &s.predict_mode)?,
+            predict_mode: choice::<PredictMode>("predictMode", &s.predict_mode)?,
             udp_range: [s.udp_range.start, s.udp_range.end],
             shortcuts: Count {
                 count: s.shortcuts.count,
@@ -295,7 +287,7 @@ impl TryFrom<SettingsPageState> for SettingsState {
             lock_screen_detail: s.lock_screen_detail,
             live_session: s.live_session,
             voice_input: s.voice_input,
-            voice_engine: id::<Engine>("voiceEngine", &s.voice_engine)?,
+            voice_engine: choice::<Engine>("voiceEngine", &s.voice_engine)?,
             voice_model: s.voice_model,
             voice_language: s.voice_language,
             version: s.version,
@@ -306,7 +298,7 @@ impl TryFrom<SettingsPageState> for SettingsState {
                 screen_bg: color("appTheme.screenBG", &s.app_theme.screen_bg_hex)?,
                 terminal_bg: color("appTheme.terminalBG", &s.app_theme.terminal_bg_hex)?,
             },
-            appearance: id::<AppearanceChoice>("appearance", &s.appearance)?,
+            appearance: choice::<AppearanceChoice>("appearance", &s.appearance)?,
         })
     }
 }

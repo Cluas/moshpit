@@ -126,7 +126,13 @@ final class NotificationService: UNNotificationServiceExtension {
                                          prefs: prefs, label: label)
         } else {
             // A `done` closes its pane's turn — that pane is no longer waiting.
-            PushStanding.clear(conn: status.conn, pane: status.pane)
+            let wasWaiting = PushStanding.standing(conn: status.conn).contains { $0.pane == status.pane }
+            let remaining = PushStanding.clear(conn: status.conn, pane: status.pane)
+            // Its waiting card says what still waits, or goes (B669).
+            if wasWaiting {
+                redrawWaitingCard(conn: status.conn, remaining: remaining,
+                                  host: label ?? status.host, prefs: prefs)
+            }
             // A long turn's finish rings once between this card and the
             // app's local copy of it: whichever lands first.
             var rings = true
@@ -139,6 +145,23 @@ final class NotificationService: UNNotificationServiceExtension {
                                          doneRings: rings)
         }
         contentHandler(content)
+    }
+
+    /// The connection's waiting card after a finish left the set (B669):
+    /// replaced in place, silently, under the identifier it was posted
+    /// with, or withdrawn when nothing waits.
+    private func redrawWaitingCard(conn: String, remaining: [PushStanding.Entry], host: String,
+                                   prefs: PushPrefs.Values) {
+        let id = "moshpit.attention.\(conn)"
+        let center = UNUserNotificationCenter.current()
+        guard let content = PushRemoteNotification.summary(after: remaining, conn: conn, host: host,
+                                                           prefs: prefs) else {
+            center.removeDeliveredNotifications(withIdentifiers: [id])
+            PushDiagnostics.record("a finish left nothing waiting — withdrew the waiting card")
+            return
+        }
+        center.add(UNNotificationRequest(identifier: id, content: content, trigger: nil))
+        PushDiagnostics.record("a finish left \(remaining.count) waiting — redrew the waiting card")
     }
 
     override func serviceExtensionTimeWillExpire() {

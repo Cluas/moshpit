@@ -5,6 +5,8 @@
 # by .github/workflows/ci.yml).
 #
 #   scripts/shots/stage-host.sh start <work dir>    stage it; print the seeds
+#   scripts/shots/stage-host.sh restamp <work dir>  date the agents' states
+#                                                   from now again
 #   scripts/shots/stage-host.sh stop <work dir>     take it all down again
 #
 # `start` prints the app's seeds as KEY=value lines, one per line:
@@ -34,6 +36,40 @@ user="$(id -un)"
 log() { echo "▶ $*" >&2; }
 fail() { echo "✘ $*" >&2; exit 1; }
 
+# The agents' states, stamped as the host's hooks stamp them
+# (scripts/host/moshpit-stamp.sh: the pane's @moshpit_state, _agent, _since,
+# _title): two waiting on the person, four at work, two done. Every agent
+# pane's foreground is its agent's name (stage/hold.sh), never a shell, so
+# the app takes the stamps as they are (crates/agents' reclassify); the
+# done claude's pane is back at its shell, as a finished one is. Dated from
+# now: `restamp` dates them again, so a timer a shot shows an hour into the
+# run still reads minutes (the capture restamps while it shoots).
+stamp_all() {
+    local now
+    now=$(date +%s)
+    stamp() {  # <tmux> <pane> <state> <agent> <since> [title]
+        "$1" set -p -t "$2" @moshpit_state "$3"
+        "$1" set -p -t "$2" @moshpit_agent "$4"
+        "$1" set -p -t "$2" @moshpit_since "$5"
+        [ -z "${6:-}" ] || "$1" set -p -t "$2" @moshpit_title "$6"
+    }
+    stamp "$work/stage-tmux" work:claude attention claude $((now - 95)) \
+        "Claude needs your permission to use Edit"
+    stamp "$work/stage-tmux" work:build working codex $((now - 380)) "Running the test suite"
+    stamp "$work/stage-tmux" work:review.0 working claude $((now - 610)) "Writing tests for backoff.js"
+    stamp "$work/stage-tmux" work:shell done claude $((now - 1500))
+    stamp "$work/stage-tmux-gpu" train:claude working claude $((now - 1260)) "Tuning the learning-rate warmup"
+    stamp "$work/stage-tmux-gpu" train:eval attention gemini $((now - 40)) \
+        "Allow execution of: 'python eval.py'?"
+    stamp "$work/stage-tmux-build" ci:deploy working claude $((now - 200)) "Planning the bucket move"
+    stamp "$work/stage-tmux-build" ci:codex done codex $((now - 900))
+}
+
+if [ "$cmd" = restamp ]; then
+    stamp_all
+    exit 0
+fi
+
 if [ "$cmd" = stop ]; then
     for wrapper in stage-tmux stage-tmux-gpu stage-tmux-build; do
         [ -x "$work/$wrapper" ] && "$work/$wrapper" kill-server 2>/dev/null || true
@@ -41,7 +77,7 @@ if [ "$cmd" = stop ]; then
     [ -f "$work/sshd.pid" ] && sudo kill "$(cat "$work/sshd.pid")" 2>/dev/null || true
     exit 0
 fi
-[ "$cmd" = start ] || fail "start or stop, not $cmd"
+[ "$cmd" = start ] || fail "start, restamp or stop, not $cmd"
 mkdir -p "$work"
 
 log "a throwaway key and an sshd of our own on 127.0.0.1:$port"
@@ -91,7 +127,10 @@ gpu() { "$work/stage-tmux-gpu" "$@"; }
 build() { "$work/stage-tmux-build" "$@"; }
 
 log "staged repos and a tmux session on its own socket"
-stage="$work/stage"
+# On a CI runner the repos sit in its home (~/src/payments-api, as a
+# person's would; the runner is thrown away); anywhere else under the work
+# dir, never in a person's home.
+if [ -n "${GITHUB_ACTIONS:-}" ]; then stage="$HOME/src"; else stage="$work/stage"; fi
 stage_repo() {  # <name> <branch> <file> <content>
     local dir="$stage/$1"
     mkdir -p "$dir"
@@ -223,27 +262,7 @@ build new-session -d -s ci -x 120 -y 40 -c "$stage/infra" -n deploy "exec sh $ho
 build new-window -t ci -n codex -c "$stage/dashboard" "exec sh $hold codex $text/ci-codex.txt"
 build select-window -t ci:deploy
 
-# The agents' states, stamped as the host's hooks stamp them
-# (scripts/host/moshpit-stamp.sh: the pane's @moshpit_state, _agent, _since,
-# _title): two waiting on the person, four at work, two done. Every agent
-# pane's foreground is its agent's name (stage/hold.sh), never a shell, so
-# the app takes the stamps as they are (crates/agents' reclassify); the
-# done claude's pane is back at its shell, as a finished one is.
-now=$(date +%s)
-stamp() {  # <tmux> <pane> <state> <agent> <since> [title]
-    "$1" set -p -t "$2" @moshpit_state "$3"
-    "$1" set -p -t "$2" @moshpit_agent "$4"
-    "$1" set -p -t "$2" @moshpit_since "$5"
-    [ -z "${6:-}" ] || "$1" set -p -t "$2" @moshpit_title "$6"
-}
-stamp tmux work:claude attention claude $((now - 95)) "Claude needs your permission to use Edit"
-stamp tmux work:build working codex $((now - 380)) "Running the test suite"
-stamp tmux work:review.0 working claude $((now - 610)) "Writing tests for backoff.js"
-stamp tmux work:shell done claude $((now - 1500))
-stamp gpu train:claude working claude $((now - 1260)) "Tuning the learning-rate warmup"
-stamp gpu train:eval attention gemini $((now - 40)) "Allow execution of: 'python eval.py'?"
-stamp build ci:deploy working claude $((now - 200)) "Planning the bucket move"
-stamp build ci:codex done codex $((now - 900))
+stamp_all
 tmux list-panes -a -F 'devbox #{session_name}:#{window_name} #{pane_id} #{pane_current_command}' >&2
 gpu list-panes -a -F 'gpu-01 #{session_name}:#{window_name} #{pane_id} #{pane_current_command}' >&2
 build list-panes -a -F 'build-box #{session_name}:#{window_name} #{pane_id} #{pane_current_command}' >&2

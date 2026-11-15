@@ -214,6 +214,21 @@ final class SSHKeyStore {
         backing.reloadIfNeeded()
         adopt()
     }
+
+    /// `connection` signed in (B601): the managed key it signs in with — its
+    /// record by id, else the one holding its keychain item — gets its last
+    /// use, at most once a day. Nothing ever wrote it, so SSH Keys' unused
+    /// key (the gray avatar, "unused since") never showed. Whether it was
+    /// written.
+    @discardableResult
+    func signedIn(with connection: ServerConnection) -> Bool {
+        guard connection.authMethod == .key else { return false }
+        let record = keys.first { $0.id == connection.sshKeyId }
+            ?? connection.keychainRef.flatMap { ref in keys.first { $0.keychainRef == ref } }
+        guard let record, backing.markUsed(id: record.id) else { return false }
+        adopt()
+        return true
+    }
 }
 
 /// What an ``SSHKeyStore`` reads and writes through: the Rust store
@@ -228,6 +243,9 @@ protocol SSHKeyStoreBacking: AnyObject {
     func remove(id: UUID)
     func reloadIfNeeded()
     func keychainRefs(excluding: UUID?) -> Set<String>?
+    /// Key `id` signed in now: its last use, at most once a day; whether it
+    /// was written.
+    func markUsed(id: UUID) -> Bool
 }
 
 #if DEBUG

@@ -59,6 +59,7 @@ pub struct Banner {
     symbol: Option<&'static str>,
     action: Option<(SharedString, Rc<dyn Fn()>)>,
     on_close: Option<Rc<dyn Fn()>>,
+    close_label: Option<SharedString>,
     shown: Rc<dyn Fn() -> bool>,
     still: Rc<dyn Fn() -> bool>,
     action_test_id: Option<SharedString>,
@@ -75,6 +76,7 @@ pub fn banner(tone: BannerTone, message: impl Fn() -> SharedString + 'static) ->
         symbol: None,
         action: None,
         on_close: None,
+        close_label: None,
         shown: Rc::new(|| true),
         still: Rc::new(|| false),
         action_test_id: None,
@@ -124,6 +126,13 @@ impl Banner {
         self
     }
 
+    /// What screen readers call the close button, when closing does more
+    /// than close ("Discard"): "Close" otherwise.
+    pub fn close_label(mut self, label: impl Into<SharedString>) -> Self {
+        self.close_label = Some(label.into());
+        self
+    }
+
     /// While this holds the banner shows; when it stops, the banner fades
     /// out and then goes (NSH has no exit transition: it stays mounted for
     /// the fade). Without it, the banner shows for as long as it is
@@ -168,6 +177,7 @@ impl IntoElement for Banner {
             symbol,
             action,
             on_close,
+            close_label,
             shown,
             still,
             action_test_id,
@@ -246,7 +256,8 @@ impl IntoElement for Banner {
                 row = row.child(action);
             }
             if let Some(on_close) = on_close.clone() {
-                let mut close = icon_button("xmark", t!("Close"))
+                let label = close_label.clone().unwrap_or_else(|| t!("Close").into());
+                let mut close = icon_button("xmark", label)
                     .size(IconButtonSize::Sm)
                     .on_press(move || on_close());
                 if let Some(id) = &close_test_id {

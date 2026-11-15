@@ -1276,6 +1276,7 @@ impl Client {
                 if server_was_down {
                     self.revive_push();
                 }
+                self.revive_push_at_read();
                 if !self.config.frame_channel {
                     self.server_answers_again();
                 }

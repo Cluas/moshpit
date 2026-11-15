@@ -94,7 +94,7 @@ struct RemoteFolderNSHPage: View {
                 page.attach(surface, current: facts)
                 menus.install(on: surface)
             },
-            onMessage: handle,
+            onEvent: { if case .remoteFolder(let event) = $0 { handle(event) } },
             onFailure: onFailure)
             .nshPage()
             .onAppear { show(facts) }
@@ -116,65 +116,57 @@ struct RemoteFolderNSHPage: View {
     private func show(_ facts: RemoteFolderFacts) {
         page.update(facts)
         menus.menus = RemoteFolderNSHModel.menus(for: facts) { [weak page] action, path in
-            page?.post(["op": "act", "action": action, "path": path])
+            page?.post(.remoteFolderAct(action: action, path: path))
         }
         menus.cornerRadius = Dictionary(uniqueKeysWithValues: facts.media.map {
             ("remote-folder-item-\($0.path)", CGFloat(10))
         })
     }
 
-    private func entry(_ message: [String: Any]) -> RemoteFileEntry? {
-        guard let path = message["path"] as? String else { return nil }
-        return model.entries.first { $0.path == path }
+    private func entry(_ path: String) -> RemoteFileEntry? {
+        model.entries.first { $0.path == path }
     }
 
-    private func handle(_ message: [String: Any]) {
-        switch message["ev"] as? String {
-        case "open":
-            guard let entry = entry(message) else { return }
+    private func handle(_ event: RemoteFolderEvent) {
+        switch event {
+        case .open(let path):
+            guard let entry = entry(path) else { return }
             Haptics.tap()
             if entry.isDirectory { open(entry) } else { Task { await model.open(entry) } }
-        case "share":
-            guard let entry = entry(message) else { return }
+        case .share(let path):
+            guard let entry = entry(path) else { return }
             Task { await model.share(entry) }
-        case "back":
+        case .back:
             dismiss()
-        case "climb":
-            if let path = message["path"] as? String { climb(path) }
-        case "add":
-            switch message["item"] as? String {
-            case "photos": showPhotos = true
-            case "files": showFiles = true
-            default: break
-            }
-        case "new-folder":
-            guard let name = message["name"] as? String else { return }
+        case .climb(let path):
+            climb(path)
+        case .add(.photos):
+            showPhotos = true
+        case .add(.files):
+            showFiles = true
+        case .newFolder(let name):
             Task { await model.createFolder(named: name) }
-        case "rename":
-            guard let entry = entry(message), let name = message["name"] as? String else { return }
+        case .rename(let path, let name):
+            guard let entry = entry(path) else { return }
             Task { await model.rename(entry, to: name) }
-        case "delete":
-            guard let entry = entry(message) else { return }
+        case .delete(let path):
+            guard let entry = entry(path) else { return }
             Task { await model.delete(entry) }
-        case "refresh":
+        case .refresh:
             Task { await model.load() }
-        case "dismiss":
-            switch message["failure"] as? String {
-            case "open": model.openFailure = nil
-            case "edit": model.editFailure = nil
-            default: break
-            }
-        case "prompt":
-            guard let question = NSHTextPrompt.Question(message), let surface = page.surface else { return }
+        case .dismiss(.open):
+            model.openFailure = nil
+        case .dismiss(.edit):
+            model.editFailure = nil
+        case .prompt(let question):
+            guard let surface = page.surface else { return }
             NSHTextPrompt.present(question, from: surface) { [weak page] answer in page?.post(answer) }
-        default:
-            Log.ui.error("remote folder: no event \(String(describing: message["ev"]), privacy: .public)")
         }
     }
 }
 
-/// What the NSH folder page shows (`{"op": "folder", …}`), each entry
-/// said in the system's words.
+/// What the NSH folder page shows (``RemoteFolderPageState``, the screen's
+/// own through the page bridge), each entry said in the system's words.
 struct RemoteFolderFacts: Equatable {
     struct Entry: Equatable {
         var path: String
@@ -242,32 +234,20 @@ struct RemoteFolderFacts: Equatable {
         return parts.joined(separator: " · ")
     }
 
-    var message: [String: Any] {
-        var message: [String: Any] = [
-            "op": "folder", "name": name, "path": path, "parents": parents, "pushed": pushed,
-            "loading": loading, "media": media.map(Self.json), "rows": rows.map(Self.json),
-        ]
-        if let failure { message["failure"] = failure }
-        if let uploading { message["uploading"] = uploading }
-        if let openFailure {
-            message["openFailure"] = openFailure
-            message["openFailureId"] = openFailureId
-        }
-        if let editFailure {
-            message["editFailure"] = ["title": editFailure.title, "message": editFailure.message]
-            message["editFailureId"] = editFailureId
-        }
-        return message
+    /// The folder as the page bridge carries it.
+    var page: RemoteFolderPageState {
+        RemoteFolderPageState(
+            name: name, path: path, parents: parents, pushed: pushed, loading: loading, failure: failure,
+            uploading: uploading, media: media.map(Self.item), rows: rows.map(Self.item),
+            openFailure: openFailure,
+            editFailure: editFailure.map { RemoteFolderFailure(title: $0.title, message: $0.message) },
+            openFailureId: UInt64(clamping: openFailureId), editFailureId: UInt64(clamping: editFailureId))
     }
 
-    private static func json(_ entry: Entry) -> [String: Any] {
-        var json: [String: Any] = [
-            "path": entry.path, "name": entry.name, "dir": entry.dir, "video": entry.video,
-            "symbol": entry.symbol, "meta": entry.meta, "thumb": entry.thumb,
-        ]
-        if let duration = entry.duration { json["duration"] = duration }
-        if let opening = entry.opening { json["opening"] = opening }
-        return json
+    private static func item(_ entry: Entry) -> RemoteFolderItem {
+        RemoteFolderItem(path: entry.path, name: entry.name, dir: entry.dir, video: entry.video,
+                         symbol: entry.symbol, meta: entry.meta, thumb: entry.thumb,
+                         duration: entry.duration, opening: entry.opening)
     }
 }
 
@@ -283,7 +263,7 @@ final class RemoteFolderNSHModel {
 
     func attach(_ surface: NSHSurface) {
         self.surface = surface
-        if let facts { surface.post(facts.message) }
+        if let facts { surface.post(.remoteFolder(state: facts.page)) }
     }
 
     /// ``attach(_:)``, the model filled from `current` (the page's folder as
@@ -301,11 +281,11 @@ final class RemoteFolderNSHModel {
     func update(_ facts: RemoteFolderFacts) {
         guard facts != self.facts else { return }
         self.facts = facts
-        surface?.post(facts.message)
+        surface?.post(.remoteFolder(state: facts.page))
     }
 
     @discardableResult
-    func post(_ message: [String: Any]) -> Bool {
+    func post(_ message: PageMessage) -> Bool {
         surface?.post(message) ?? false
     }
 
@@ -313,7 +293,7 @@ final class RemoteFolderNSHModel {
     /// identifier: Open and Share for a file, Rename, Delete. A pick goes
     /// back to the page (`perform(action, path)`), which asks where it asks.
     static func menus(for facts: RemoteFolderFacts,
-                      perform: @escaping (String, String) -> Void) -> [String: () -> [UIMenuElement]] {
+                      perform: @escaping (RemoteFolderAction, String) -> Void) -> [String: () -> [UIMenuElement]] {
         var menus: [String: () -> [UIMenuElement]] = [:]
         for entry in facts.media + facts.rows {
             let path = entry.path
@@ -322,19 +302,19 @@ final class RemoteFolderNSHModel {
                 var items: [UIMenuElement] = []
                 if !dir {
                     items.append(UIAction(title: String(localized: "Open"), image: UIImage(systemName: "eye")) { _ in
-                        perform("open", path)
+                        perform(.open, path)
                     })
                     items.append(UIAction(title: String(localized: "Share"),
                                           image: UIImage(systemName: "square.and.arrow.up")) { _ in
-                        perform("share", path)
+                        perform(.share, path)
                     })
                 }
                 items.append(UIAction(title: String(localized: "Rename"), image: UIImage(systemName: "pencil")) { _ in
-                    perform("rename", path)
+                    perform(.rename, path)
                 })
                 items.append(UIAction(title: String(localized: "Delete"), image: UIImage(systemName: "trash"),
                                       attributes: .destructive) { _ in
-                    perform("delete", path)
+                    perform(.delete, path)
                 })
                 return items
             }

@@ -67,8 +67,9 @@ final class NSHSurface: UIView {
     var onMessage: (([String: Any]) -> Void)?
 
     /// Hears what the screen tells as its own event type (``PageEvent``,
-    /// `crates/ffi/src/pages.rs`, E6b): an event the running screen's type
-    /// reads goes here, not to ``onMessage``.
+    /// `crates/ffi/src/pages`, E6b): an event the running screen's type
+    /// reads goes here, not to ``onMessage``. One it can't read is logged
+    /// (once per event name) and goes to ``onMessage``.
     var onEvent: ((PageEvent) -> Void)?
 
     /// The screen's Retry, under a body that failed: run it again (B366).
@@ -80,6 +81,8 @@ final class NSHSurface: UIView {
 
     /// The ops of posts already logged as refused, once each (B366).
     private var refusedPosts = NSHPostLog()
+    /// The events a page with ``onEvent`` told that its type couldn't read.
+    private var unreadEvents = NSHPostLog()
 
     /// Called once, the first time the surface is in a window: where the
     /// host can measure what the screen stands in for
@@ -213,6 +216,7 @@ final class NSHSurface: UIView {
     func run(screen: String, params: [String: Any]) -> Bool {
         screenName = screen
         refusedPosts = NSHPostLog()
+        unreadEvents = NSHPostLog()
         guard let json = Self.json(params) else {
             NSHDiagnostics.error("NSH \(screen): params are not JSON (\(NSHPostLog.unwritable(params).joined(separator: ", ")))")
             return false
@@ -281,12 +285,16 @@ final class NSHSurface: UIView {
             Log.ui.notice("NSH \(self.screenName ?? "-", privacy: .public): Retry")
             onRetry?()
         case nil:
-            if let onEvent, let screenName, let json,
-               let event = pageEvent(screen: screenName, json: json) {
-                onEvent(event)
-            } else {
-                onMessage?(message)
+            if let onEvent, let screenName, let json {
+                if let event = pageEvent(screen: screenName, json: json) {
+                    return onEvent(event)
+                }
+                let ev = message["ev"] as? String ?? "?"
+                if unreadEvents.first(ev) {
+                    NSHDiagnostics.error("NSH \(screenName): event \(ev) not read")
+                }
             }
+            onMessage?(message)
         }
     }
 

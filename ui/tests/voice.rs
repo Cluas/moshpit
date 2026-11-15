@@ -64,7 +64,7 @@ fn the_engines_show_the_one_in_use_selected() {
         "Recognition",
         "Apple",
         "Built in and quick; one language at a time",
-        "Whisper",
+        "Local model",
         "A model on this device; follows speech that mixes languages",
         "Both run on this device. Your voice is never uploaded.",
     ] {

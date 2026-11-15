@@ -98,11 +98,13 @@ struct TerminalNSHPanel: Equatable {
         }
         // The engine's chip says nothing over a denied microphone.
         let engine = controller.phase == .failed(.microphoneDenied) ? "" : controller.engineLabel
+        // Side by side, the two are what Insert types (B673).
+        let shown = DictationTranscript.shownPieces(controller.finalizedText, controller.volatileText)
         return TerminalNSHPanel([
             "phase": phase,
             "engine": engine,
-            "finalized": controller.finalizedText,
-            "volatile": controller.volatileText,
+            "finalized": shown.finalized,
+            "volatile": shown.volatile,
             "insertable": !controller.transcript.isEmpty || controller.phase == .listening,
         ])
     }

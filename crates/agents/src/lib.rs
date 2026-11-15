@@ -1222,9 +1222,15 @@ impl Monitor {
         }
 
         let state = self.build_state();
-        if needs_sending(&state, self.widget_sent.as_ref(), now, self.tunables.resend_unchanged_after) {
-            self.effects.push(Effect::Widget(state.clone()));
-            self.widget_sent = Some((state.clone(), now));
+        // The widget draws its first row, the most urgent agent, and opens
+        // that one (B594); the headline is the island's, which cycling
+        // moves. Its state said the island's, and the app's widget its
+        // first row: the two disagreed in every script with a cycle.
+        let mut widget = state.clone();
+        widget.headline_id = widget.agents.first().map(|agent| agent.id.clone());
+        if needs_sending(&widget, self.widget_sent.as_ref(), now, self.tunables.resend_unchanged_after) {
+            self.effects.push(Effect::Widget(widget.clone()));
+            self.widget_sent = Some((widget, now));
         }
         if state.agents.is_empty() {
             if !self.island_ended {

@@ -468,7 +468,9 @@ pub struct Dictation {
     pub phase: DictationPhase,
     /// The engine and language in use.
     pub engine: String,
-    /// What is settled, and the engine's live guess after it.
+    /// What is settled, and the engine's live guess after it, carrying the
+    /// space (if any) that goes between them: drawn side by side they are
+    /// exactly the text Insert types.
     pub finalized: String,
     pub volatile: String,
     /// Insert and Send are offered.

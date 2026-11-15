@@ -112,6 +112,23 @@ final class AgentActivityMonitor {
         // What a killed process left up: none of its agents is known here
         // yet (B441).
         self.island.endLeftovers()
+        // Its widget too (B667): the snapshot stayed on the Home Screen
+        // until this process had a state of its own to write, which a
+        // launch that connects nowhere never has. A test's widget is its
+        // own (`writeWidget`).
+        if writeWidget == nil, let cleared = Self.leftoverWidgetCleared(AgentWidgetStore.read(),
+                                                                         at: clock?() ?? Date()) {
+            self.writeWidget(cleared)
+        }
+    }
+
+    /// What the widget shows at launch in place of `stored`, an earlier
+    /// process's snapshot (B667): no agents, as this process knows none
+    /// yet; nil when it shows none already.
+    static func leftoverWidgetCleared(_ stored: AgentWidgetState, at now: Date) -> AgentWidgetState? {
+        guard !stored.items.isEmpty else { return nil }
+        return AgentWidgetState(items: [], attentionCount: 0, workingCount: 0,
+                                headlineDeepLink: nil, updatedAt: now)
     }
 
     private var now: Double { (clock?() ?? Date()).timeIntervalSince1970 }
@@ -128,10 +145,16 @@ final class AgentActivityMonitor {
         defaults.dictionary(forKey: announcedKey) as? [String: Double] ?? [:]
     }
 
+    /// The widget's latest snapshot while the preferences couldn't be
+    /// believed (B603): written once they can.
+    @ObservationIgnored private var heldWidget: AgentWidgetState?
+
     /// The app came forward: the record a sealed launch couldn't read joins
     /// what the machine kept meanwhile, and is saved (B348). A no-op once
-    /// the record has been read.
+    /// the record has been read. The widget's held snapshot, if any, goes
+    /// out (B603).
     func reloadIfNeeded() {
+        defer { writeHeldWidget() }
         guard !recordTrusted, readiness.isReadable(settings.store) else { return }
         recordTrusted = true
         let stored = Self.storedRecord(settings.store)
@@ -316,6 +339,14 @@ final class AgentActivityMonitor {
 
     // MARK: - The machine's answers
 
+    /// The snapshot held while the preferences couldn't be believed, now
+    /// that they can (B603).
+    private func writeHeldWidget() {
+        guard let held = heldWidget, readiness.isReadable(settings.store) else { return }
+        heldWidget = nil
+        writeWidget(held)
+    }
+
     private func drive(_ step: (AgentMachine) -> [AgentEffectValue]) {
         // What a switch changed does first: the island ended when the Live
         // Activity was turned off (B436), within a sweep of it.
@@ -345,7 +376,19 @@ final class AgentActivityMonitor {
         case .endIsland:
             island.endAll()
         case .widget(let state):
-            writeWidget(Self.widget(state, at: Date(timeIntervalSince1970: now)))
+            let snapshot = Self.widget(state, at: Date(timeIntervalSince1970: now))
+            // The snapshot is a write into the App Group's preferences,
+            // sealed until the first unlock as the app's are: one written
+            // then can replace them with this one key, the push switches and
+            // the recorded language gone with it (B603, as
+            // `AppLanguage.recordIfTrusted`). Held until they can be
+            // believed; the latest goes then.
+            guard readiness.isReadable(settings.store) else {
+                heldWidget = snapshot
+                return
+            }
+            heldWidget = nil
+            writeWidget(snapshot)
         case .post(let card):
             notifier.add(Self.request(card))
         case .withdraw(let id):

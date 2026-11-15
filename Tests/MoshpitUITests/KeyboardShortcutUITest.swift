@@ -82,12 +82,19 @@ final class KeyboardShortcutUITest: XCTestCase {
 
         // ⌘K with the keyboard down: nothing is first responder, so UIKit
         // starts its key-command walk at the view controller — the case a
-        // hidden SwiftUI shortcut button never covered.
+        // hidden SwiftUI shortcut button never covered. It does what a tap
+        // on the window crumb does: the pane overview ("Show All Panes").
         app.typeKey("k", modifierFlags: .command)
-        XCTAssertTrue(app.navigationBars["Windows"].waitForExistence(timeout: 4), "⌘K opens Windows")
-        app.buttons.matching(NSPredicate(format: "label BEGINSWITH '2: logs'")).firstMatch.tap()
+        let done = app.buttons["terminal-overview-done"]
+        XCTAssertTrue(done.waitForExistence(timeout: 4), "⌘K opens the pane overview")
+        // Its panes, card by card in window order: window 1's two, then
+        // window 2's first.
+        let panes = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'overview-pane-'"))
+        XCTAssertGreaterThan(panes.count, 2, "window 1's two panes and window 2's")
+        panes.element(boundBy: 2).tap()
         XCTAssertTrue(app.buttons["2:logs"].waitForExistence(timeout: 6),
-                      "picking a window should move the breadcrumb")
+                      "picking window 2's pane should move the breadcrumb")
+        XCTAssertTrue(done.waitForNonExistence(timeout: 3), "and the overview goes")
 
         // ⌘1 with the terminal focused: the chord now goes through SwiftTerm's
         // pressesBegan first, which must hand it on.

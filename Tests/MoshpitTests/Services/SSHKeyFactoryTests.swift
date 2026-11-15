@@ -26,6 +26,22 @@ struct SSHKeyFactoryTests {
         #expect(!gen.privateBlob.isEmpty)
     }
 
+    /// B604: off the simulator, a software key used to stand in for one the
+    /// enclave couldn't make, saved as a Secure Enclave key that could never
+    /// sign. The enclave failing is now the error; the simulator's stand-in
+    /// stays, for walking the flow there.
+    @Test("an enclave that can't make a key is an error off the simulator, not a software key under its name")
+    func enclaveFailureIsAnError() {
+        struct NoEnclave: Error {}
+        #expect(throws: SSHKeyFactory.KeyError.self) {
+            try SSHKeyFactory.generateSecureEnclaveP256(comment: "phone", make: { throw NoEnclave() },
+                                                        standIn: false)
+        }
+        let standIn = try? SSHKeyFactory.generateSecureEnclaveP256(comment: "phone", make: { throw NoEnclave() },
+                                                                    standIn: true)
+        #expect(standIn?.algorithm == .seP256, "the simulator's stand-in")
+    }
+
     // MARK: - Generate: RSA-4096
 
     @Test("RSA-4096 generation emits an ssh-rsa line over an openssh-key-v1 key")

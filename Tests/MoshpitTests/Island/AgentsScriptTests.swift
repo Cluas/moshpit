@@ -213,7 +213,10 @@ struct AgentsScriptTests {
             settings: settings, standing: standing,
             writeWidget: { recorder.lines.append("widget " + Self.compact($0)) },
             island: recorder, finishes: finishes, notifier: notifier,
-            clock: { clock.now })
+            clock: { clock.now },
+            // A scratch suite and an unlocked phone, whatever the test host
+            // says: the widget's snapshot waits for that (B603).
+            readiness: .always)
         let connection = Self.connection()
         let mux = AgentStandingTests.FakeMux()
         var lastT = 0.0

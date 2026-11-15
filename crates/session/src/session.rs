@@ -770,6 +770,9 @@ pub(crate) struct Actor {
     /// The grid the dial under way opened its terminal at: a size given
     /// since is sent once its leg is up (B616).
     dialed_grid: (u16, u16),
+    /// Where a mosh-rendered tmux pane's wheel goes: the cell the scroll
+    /// under way began on (B578).
+    mosh_wheel_aim: Option<(i64, i64)>,
     handoff: Handoff,
     visible: bool,
     done: Option<oneshot::Sender<()>>,
@@ -852,6 +855,7 @@ impl Actor {
             grids: BTreeMap::new(),
             grid,
             dialed_grid: grid,
+            mosh_wheel_aim: None,
             handoff: Handoff::default(),
             visible: false,
             done: None,
@@ -1085,6 +1089,9 @@ impl Actor {
             }
             Msg::Tmux(TmuxAction::ScrollLines(lines)) if self.mosh_renders_tmux() => {
                 self.mosh_scroll(lines);
+            }
+            Msg::Tmux(TmuxAction::AimWheel { col, row }) if self.mosh_renders_tmux() => {
+                self.mosh_wheel_aim = Some((col, row));
             }
             Msg::Tmux(action) => self.tmux_action(action),
             Msg::Herdr { action, token } => match (&self.leg, &self.herdr_mosh) {
@@ -1693,6 +1700,13 @@ impl Actor {
                         if !matches!(state, SessionState::Connected) {
                             view.attach_stalled = false;
                         }
+                        // Live on SSH: nothing of a mosh flow it left stays
+                        // (B617) — the card said "roaming" over SSH.
+                        if transport == Some(Transport::Ssh) {
+                            view.mosh_roaming = false;
+                            view.mosh_srtt_ms = None;
+                            view.mosh_diagnostics = None;
+                        }
                     });
                     self.emit(EventKind::State(state.clone()));
                     if ended {
@@ -1911,11 +1925,12 @@ impl Actor {
         }
         let command = if wants_mouse {
             let (cols, rows) = self.grid;
-            MoshCommand::Mouse(moshpit_tmux::controller::wheel_bytes(
-                lines,
-                i64::from(cols / 2).max(1),
-                i64::from(rows / 2).max(1),
-            ))
+            let (col, row) = moshpit_tmux::controller::wheel_cell(
+                self.mosh_wheel_aim,
+                i64::from(cols),
+                i64::from(rows),
+            );
+            MoshCommand::Mouse(moshpit_tmux::controller::wheel_bytes(lines, col, row))
         } else {
             self.ask_mosh_prefix();
             MoshCommand::CopyScroll {
@@ -4332,6 +4347,7 @@ fn is_momentary(action: &TmuxAction) -> bool {
     matches!(
         action,
         TmuxAction::ScrollLines(_)
+            | TmuxAction::AimWheel { .. }
             | TmuxAction::Click { .. }
             | TmuxAction::ScrollBegan
             | TmuxAction::ViewRevealed { .. }
@@ -5873,6 +5889,34 @@ mod tests {
             )),
             "five minutes asleep is a long absence: {actions:?}"
         );
+    }
+
+    /// B617: a session on SSH shows nothing of mosh's — not "roaming", no
+    /// round trip, no counters. They stayed from the mosh flow it left (a
+    /// switch to SSH is made exactly while mosh roams with no replies), and
+    /// the Home card kept saying "roaming" over an SSH session.
+    #[tokio::test]
+    async fn an_ssh_session_shows_nothing_of_moshs_flow() {
+        let (mut actor, _events) = live_actor(false);
+        actor.update(|view| {
+            view.mosh_roaming = true;
+            view.mosh_srtt_ms = Some(900.0);
+            view.mosh_diagnostics = Some(moshpit_mosh::Diagnostics::default());
+        });
+        let now = actor.now();
+        actor.life.lost(actor.life.generation(), now);
+        let generation = actor.life.generation();
+        assert!(
+            actor
+                .life
+                .attempt_succeeded(generation, Transport::Ssh, now + 1)
+        );
+        actor.act().await;
+        let view = actor.view.lock().unwrap().clone();
+        assert_eq!(view.state, SessionState::Connected);
+        assert!(!view.mosh_roaming, "not roaming");
+        assert_eq!(view.mosh_srtt_ms, None);
+        assert!(view.mosh_diagnostics.is_none());
     }
 
     /// B529: back from the background in place, before the transport

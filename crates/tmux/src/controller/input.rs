@@ -130,6 +130,19 @@ pub fn wheel_bytes(lines: i64, col: i64, row: i64) -> Vec<u8> {
     event.repeat(count as usize).into_bytes()
 }
 
+/// Where a wheel goes in a pane `cols` × `rows` (1-based, as SGR has it):
+/// the cell it was aimed at (0-based), kept within the pane, else the
+/// middle (B578).
+pub fn wheel_cell(aim: Option<(i64, i64)>, cols: i64, rows: i64) -> (i64, i64) {
+    match aim {
+        Some((col, row)) => (
+            col.saturating_add(1).clamp(1, cols.max(1)),
+            row.saturating_add(1).clamp(1, rows.max(1)),
+        ),
+        None => ((cols / 2).max(1), (rows / 2).max(1)),
+    }
+}
+
 /// SGR press and release of the left button at a 0-based cell
 /// (`clickBytes`).
 pub fn click_bytes(col: i64, row: i64) -> Vec<u8> {
@@ -539,9 +552,18 @@ impl Controller {
         self.send(format!("send-keys -t {pane} -N {count} {key}"));
     }
 
+    /// Aims the wheel of the scroll beginning at cell (`col`, `row`),
+    /// 0-based in the input pane: its ticks go there, the coast after the
+    /// lift too, until the next drag aims again (B578). Unaimed, a wheel
+    /// goes to the pane's middle.
+    pub fn aim_wheel(&mut self, col: i64, row: i64) {
+        self.wheel_aim = Some((col, row));
+    }
+
     fn send_wheel(&mut self, lines: i64, pane: &str) {
         let (cols, rows) = self.pane_grid(pane);
-        let wheel = wheel_bytes(lines, (cols / 2).max(1), (rows / 2).max(1));
+        let (col, row) = wheel_cell(self.wheel_aim, cols, rows);
+        let wheel = wheel_bytes(lines, col, row);
         if !wheel.is_empty() {
             self.send_input_now(&wheel, pane);
         }

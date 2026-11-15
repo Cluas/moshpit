@@ -26,7 +26,11 @@ struct AppIconNSHPage: View {
                     case "back":
                         dismiss()
                     case "select":
-                        if let id = message["id"] as? String { model.select(id, settings: settings) }
+                        // The pet's icon card asks about the icon iOS shows
+                        // now (B668).
+                        if let id = message["id"] as? String {
+                            model.select(id, settings: settings) { _ in CompanionPet.shared.syncIcon(settings) }
+                        }
                     default:
                         break
                     }
@@ -76,17 +80,24 @@ final class AppIconModel {
 
     /// The user picked icon `id`: iOS switches to it, then the setting
     /// follows; a refusal is shown, and the setting kept, so the checkmark
-    /// never disagrees with the home screen.
-    func select(_ id: String, settings: AppSettings) {
+    /// never disagrees with the home screen. `byHand`: picked in the
+    /// gallery, not by a yes to the pet's card (B668). `done` is told
+    /// whether iOS switched.
+    func select(_ id: String, settings: AppSettings, byHand: Bool = true,
+                done: @escaping @MainActor (Bool) -> Void = { _ in }) {
         guard id != selectedID(settings),
               let option = AppIconCatalog.all.first(where: { $0.id == id })
-        else { return }
+        else { return done(false) }
         setIcon(option.alternateName) { [weak self] error in
             let detail = error?.localizedDescription
             Task { @MainActor in
+                if detail == nil {
+                    settings.appIconId = option.id
+                    settings.appIconPickedByHand = byHand
+                }
+                done(detail == nil)
                 guard let self else { return }
                 self.failure = detail
-                if detail == nil { settings.appIconId = option.id }
                 self.post(settings)
             }
         }

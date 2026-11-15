@@ -33,12 +33,16 @@ struct HomeNSHPage: View {
     /// The companion (moshpit-design PET-DESIGN §7.3): its message is posted
     /// beside Home's record whenever it changes.
     private let pet = CompanionPet.shared
+    /// The shares held back (B622): Home's notices.
+    private let held = HeldShares.shared
     /// The app in front or not: the pet talks only while Home is seen.
     @Environment(\.scenePhase) private var scenePhase
     @State private var killTarget: HomeKillTarget?
     @State private var worktreeTarget: ConnectionCard.WorktreeTarget?
     @State private var worktreeForceTarget: ConnectionCard.WorktreeTarget?
     @State private var agentTask: HomeAgentTaskTarget?
+    /// A held share's pane picker, once its session is live (B622).
+    @State private var sending: HomeShareSend?
     /// The rows' long-press menus (``HomeNSHMenus``), on the surface.
     @State private var menus = NSHContextMenus()
 
@@ -77,6 +81,8 @@ struct HomeNSHPage: View {
                 model.visible = true
                 pet.onHome = true
                 model.updatePet(pet.message)
+                held.refresh()
+                model.updateHeld(held.message)
                 pet.seen()
                 // A ready egg hatches when Home shows (the core refuses
                 // unless it's ready and iCloud has settled).
@@ -96,9 +102,11 @@ struct HomeNSHPage: View {
                 }
             }
             .onChange(of: pet.revision) { _, _ in model.updatePet(pet.message) }
+            .onChange(of: held.entries) { _, _ in model.updateHeld(held.message) }
             .onChange(of: scenePhase) { _, phase in model.active = phase == .active }
             .onChange(of: record) { _, new in model.update(new) }
             .onChange(of: cards) { _, new in show(new) }
+            .sheet(item: $sending) { send in shareSheet(send) }
             .modifier(HomeTreeDialogs(
                 killTarget: $killTarget, worktreeTarget: $worktreeTarget,
                 worktreeForceTarget: $worktreeForceTarget, agentTask: $agentTask,
@@ -160,7 +168,53 @@ struct HomeNSHPage: View {
         case .delete(let id): actions.delete(id)
         case .disconnect(let id): actions.disconnect(id)
         case .retryAttach(let id): actions.retryAttach(id)
+        case .discardShare(_, let share): held.discard(share)
+        case .sendShare(let connection, let share):
+            Task { await openSend(share, on: connection) }
         default: break
+        }
+    }
+}
+
+// MARK: - A held share, sent elsewhere (B622)
+
+/// A held share whose pane picker shows: the share and its session.
+struct HomeShareSend: Identifiable {
+    let id: UUID
+    let connection: UUID
+    let agent: String
+}
+
+extension HomeNSHPage {
+    /// Send to…: the share's session connected (if it isn't), then its
+    /// pane picker once its tree is in, 20 s at most (the card says why
+    /// it isn't, if it never comes).
+    @MainActor
+    func openSend(_ share: UUID, on connection: UUID) async {
+        guard let entry = held.entries.first(where: { $0.id == share }) else { return }
+        if hub.sessions[connection]?.viewModel.connState != .live { actions.connect(connection) }
+        let deadline = ContinuousClock.now + .seconds(20)
+        while ContinuousClock.now < deadline {
+            if let session = hub.sessions[connection], session.viewModel.connState == .live,
+               session.tmuxControl?.snapshot.isAttached ?? session.herdrControl?.snapshot.isAttached ?? false {
+                sending = HomeShareSend(id: share, connection: connection, agent: entry.agentName)
+                return
+            }
+            try? await Task.sleep(for: .milliseconds(250))
+        }
+        Log.ui.error("share: the held share's session never showed its panes")
+    }
+
+    /// The picker over the share's session's tree; a pick sends it.
+    @ViewBuilder
+    func shareSheet(_ send: HomeShareSend) -> some View {
+        let pick = { (pane: String) in
+            Task { _ = await ShareQueueDrainer.send(send.id, toPane: pane, hub: hub) }
+        }
+        if let control = hub.sessions[send.connection]?.tmuxControl {
+            ShareSendPicker(controller: control, agent: send.agent, pick: { _ = pick($0) })
+        } else if let control = hub.sessions[send.connection]?.herdrControl {
+            ShareSendPicker(controller: control, agent: send.agent, pick: { _ = pick($0) })
         }
     }
 }
@@ -243,6 +297,8 @@ enum HomeIntent: Equatable {
     case removeWorktree(UUID, String)
     case renameWindow(UUID, String), killWindow(UUID, String), newPane(UUID, String)
     case killPane(UUID, String)
+    /// A held share (B622): to another pane, or let go.
+    case sendShare(UUID, UUID), discardShare(UUID, UUID)
 
     /// The intent of the screen's message, or nil when it is none.
     init?(_ message: [String: Any]) {
@@ -254,6 +310,13 @@ enum HomeIntent: Equatable {
         default: break
         }
         guard let id = (message["connection"] as? String).flatMap(UUID.init(uuidString:)) else { return nil }
+        if let share = (message["share"] as? String).flatMap(UUID.init(uuidString:)) {
+            switch ev {
+            case "share-send": self = .sendShare(id, share); return
+            case "share-discard": self = .discardShare(id, share); return
+            default: return nil
+            }
+        }
         let session = message["session"] as? String
         let window = message["window"] as? String
         let pane = message["pane"] as? String
@@ -300,6 +363,8 @@ final class HomeNSHModel {
     private weak var surface: NSHSurface?
     /// The companion's last message (`{"op": "pet"}`).
     private var pet: String?
+    /// The held shares' last message (`{"op": "held"}`, B622).
+    private var held: String?
     /// Home is on screen (not under a pushed page): the egg hatches only
     /// then, so the person sees it, and the pet talks only then.
     var visible = false {
@@ -327,6 +392,7 @@ final class HomeNSHModel {
         if !trees.isEmpty { surface.post(treesMessage) }
         if let record { surface.post(json: record.message) }
         if let pet { surface.post(json: pet) }
+        if let held { surface.post(json: held) }
         postVisible()
         if revealOnAttach {
             revealOnAttach = false
@@ -346,6 +412,13 @@ final class HomeNSHModel {
 
     /// A "Needs you" asked for before the page was up.
     private var revealOnAttach = false
+
+    /// The held shares as they are now.
+    func updateHeld(_ message: String) {
+        guard message != held else { return }
+        held = message
+        surface?.post(json: message)
+    }
 
     /// The companion as it is now.
     func updatePet(_ message: String) {
@@ -387,6 +460,10 @@ final class HomeNSHModel {
             return nil
         case "pet-seen":
             if visible { CompanionPet.shared.seen() }
+            return nil
+        case "icon":
+            // The pet's icon card (B668): 「换」 or 「先不换」.
+            CompanionPet.shared.answerIcon(switch: message["switch"] as? Bool ?? false)
             return nil
         default:
             break

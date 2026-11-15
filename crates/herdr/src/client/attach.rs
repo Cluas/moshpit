@@ -77,6 +77,10 @@ pub(super) struct Attach {
     pub stuck: bool,
     /// The target's attach has painted.
     pub painted: bool,
+    /// The pane our attach had when the server shut down under it (B681):
+    /// asked for again with `--takeover`, once — another device asking
+    /// first after the restart must not keep it from us.
+    pub reclaim: Option<String>,
     pub asked_at: Option<u64>,
     /// Releases whose `terminal.closed` hasn't come back, oldest first.
     pub expected: VecDeque<u64>,
@@ -370,8 +374,10 @@ impl Client {
         if self.attach.held.pane.as_deref() != Some(pane) {
             self.drop_all_held(true);
         }
-        // A re-ask of the same pane keeps the person's word.
-        self.attach.take_over = user || (reasking && self.attach.take_over);
+        // A re-ask of the same pane keeps the person's word; the pane the
+        // server's shutdown took from us is ours again (B681).
+        let reclaim = self.attach.reclaim.take().is_some_and(|reclaim| reclaim == pane);
+        self.attach.take_over = user || reclaim || (reasking && self.attach.take_over);
         self.attach.target = Some(pane.to_owned());
         self.attach.painted = false;
         self.attach.asked_at = Some(self.now);
@@ -631,6 +637,8 @@ impl Client {
             // No close is coming for the release: what arrives now is the
             // next attach's (B415).
             self.attach.releasing = None;
+            // B680: and a switch waiting for that close goes now.
+            self.channel_free();
         }
     }
 
@@ -745,6 +753,9 @@ impl Client {
             self.channel_free();
             return;
         }
+        if reason.as_deref().is_some_and(|reason| reason.contains("shutting down")) {
+            self.note_reclaim();
+        }
         let Some(pane) = self.attach.attached.take() else {
             // Nothing of ours is attached: a close from no attach we know.
             return;
@@ -786,6 +797,18 @@ impl Client {
         // A pane that doesn't exist (closed, or a stale focus), or anything
         // else: the focused pane, by itself.
         self.quicken();
+    }
+
+    /// The server shut down under our attach (B681): the pane it had, if it
+    /// was ours — painting, not the one another device holds — is asked for
+    /// back with `--takeover` when the next attach names it.
+    fn note_reclaim(&mut self) {
+        if self.attach.painted
+            && self.attach.held_elsewhere.is_none()
+            && let Some(pane) = self.attach.attached.clone()
+        {
+            self.attach.reclaim = Some(pane);
+        }
     }
 
     /// Whether the server, running and read since, no longer has `pane`.
@@ -830,6 +853,9 @@ impl Client {
         if message.contains("shutting down")
             || (message.contains("terminal attach") && message.contains("not found"))
         {
+            if message.contains("shutting down") {
+                self.note_reclaim();
+            }
             return self.attach_gone(&message);
         }
         if message.contains("taken over") || crate::launch::held_elsewhere(&message) {
@@ -883,6 +909,18 @@ impl Client {
     /// The attach let go of the channel on the host's side: nothing of ours
     /// reads it, and nothing typed for it goes anywhere now.
     fn attach_ended(&mut self) {
+        // Fix (B680): the attach a release was out for ended on the host's
+        // side (its last words: the server shut down, the pane closed):
+        // it let go of the channel, and no close is coming for the release
+        // (the reader loop takes the release's line for nothing). The next
+        // attach waited for that close anyway, then for nobody: the
+        // switch's line was never written.
+        if self.attach.releasing.take().is_some() {
+            for id in self.attach.expected.drain(..) {
+                self.timers.cancel(&Slot::ExpectedClose(id));
+            }
+            self.attach.release_sent_at = None;
+        }
         self.attach.attached = None;
         self.attach.target = None;
         self.attach.input_open = false;

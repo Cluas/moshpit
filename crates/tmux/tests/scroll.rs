@@ -4,7 +4,7 @@
 //! mouse the arrow keys (B500); never tmux's copy-mode.
 
 use moshpit_tmux::controller::{
-    Config, PixelScroll, ScrollRoute, ViewAction, click_bytes, wheel_bytes,
+    Config, PixelScroll, ScrollRoute, ViewAction, click_bytes, wheel_bytes, wheel_cell,
 };
 use moshpit_tmux::rig::{Rig, ok};
 
@@ -86,6 +86,40 @@ fn an_idle_mouse_app_gets_the_wheel() {
         rig.commands.last().unwrap(),
         &format!("send-keys -t %0 -H {}", expected.join(" "))
     );
+}
+
+/// B578: the wheel went to the pane's middle wherever the finger was: in vim
+/// split across the pane, or lazygit's panels, a swipe over one scrolled
+/// another. It goes to the cell the drag began on (0-based, as the view
+/// says it), kept within the pane; the middle while nothing aimed it.
+#[test]
+fn the_wheel_goes_where_the_drag_began() {
+    let mut rig = attached(false);
+    arm_flags(&mut rig, true, false);
+    let sent = |rig: &Rig| rig.commands.last().unwrap().clone();
+    let hex = |bytes: Vec<u8>| {
+        bytes
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect::<Vec<_>>()
+            .join(" ")
+    };
+    rig.with(|c, _| c.aim_wheel(4, 2));
+    rig.with(|c, now| c.scroll_lines(3, now));
+    assert_eq!(sent(&rig), format!("send-keys -t %0 -H {}", hex(wheel_bytes(3, 5, 3))));
+    // A drag's coast goes on where it began.
+    rig.with(|c, now| c.scroll_lines(1, now));
+    assert_eq!(sent(&rig), format!("send-keys -t %0 -H {}", hex(wheel_bytes(1, 5, 3))));
+    // Past the pane: its last cell.
+    rig.with(|c, _| c.aim_wheel(500, -3));
+    rig.with(|c, now| c.scroll_lines(-1, now));
+    assert_eq!(sent(&rig), format!("send-keys -t %0 -H {}", hex(wheel_bytes(-1, 70, 1))));
+    // The cell, as the mosh-painted client's wheel takes it too: 1-based,
+    // kept within the grid; the middle unaimed.
+    assert_eq!(wheel_cell(None, 80, 24), (40, 12));
+    assert_eq!(wheel_cell(Some((4, 2)), 80, 24), (5, 3));
+    assert_eq!(wheel_cell(Some((-9, 99)), 80, 24), (1, 24));
+    assert_eq!(wheel_cell(Some((i64::MAX, 0)), 80, 24), (80, 1));
 }
 
 #[test]

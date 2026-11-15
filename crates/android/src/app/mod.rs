@@ -524,7 +524,7 @@ impl App {
             PageKind::SshKeys { deleting, notice } => {
                 Some(keys::keys_message(self, *deleting, notice.clone()))
             }
-            PageKind::AddKey(draft) => Some(keys::add_key_message(self, draft)),
+            PageKind::AddKey(draft) => Some(keys::add_key_message(draft)),
             PageKind::KeyPicker => Some(keys::picker_message(self)),
             PageKind::Shortcuts => Some(shortcuts::message(self)),
             PageKind::AddShortcut(_) => None,

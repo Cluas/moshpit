@@ -33,6 +33,8 @@ pub const STYLE_KEY: &str = "moshpit.pet.style";
 pub const SHOWN_KEY: &str = "moshpit.pet.shown";
 /// Whether it talks (「让它说话」).
 pub const TALK_KEY: &str = "moshpit.pet.talk";
+/// The look whose app icon Home last asked about (B668): asked once a look.
+pub const ICON_ASKED_KEY: &str = "moshpit.pet.iconAsked";
 
 /// What the preferences hold.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -101,6 +103,23 @@ pub fn read_shown(defaults: &dyn Defaults) -> bool {
         Some(Plist::Bool(on)) => on,
         _ => true,
     }
+}
+
+/// The look whose app icon Home last asked about (B668), if any.
+pub fn read_icon_asked(defaults: &dyn Defaults) -> Option<String> {
+    match defaults.get(ICON_ASKED_KEY) {
+        Some(Plist::String(look)) => Some(look),
+        _ => None,
+    }
+}
+
+/// Keeps the look last asked about, under the same rule. Whether written.
+pub fn write_icon_asked(defaults: &dyn Defaults, readiness: &Readiness, look: &str) -> bool {
+    if !readiness.is_readable(defaults) {
+        return false;
+    }
+    defaults.set(ICON_ASKED_KEY, Some(Plist::String(look.to_owned())));
+    true
 }
 
 /// Whether it talks; on until it's turned off.

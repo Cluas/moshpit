@@ -34,6 +34,25 @@ extension AgentIsland {
     func endLeftovers() {}
 }
 
+/// What brings back an island the user swiped away (B665): a question that
+/// was not on it then. Work going on, a finish, an agent going quiet keep
+/// it away; a new "needs you" — what the user most wants to see — brings
+/// it back. A question is its agent and the moment it asked: the same
+/// agent asking again is a new one.
+enum IslandReturn {
+    /// The questions `state` shows.
+    static func questions(_ state: AgentActivityAttributes.ContentState) -> Set<String> {
+        Set(state.agents.filter { $0.state == .attention }
+            .map { "\($0.id)@\($0.startedAt.timeIntervalSince1970)" })
+    }
+
+    /// Whether `state` asks something the island swiped away did not show.
+    static func bringsBack(_ state: AgentActivityAttributes.ContentState,
+                           swipedWith shown: Set<String>) -> Bool {
+        !questions(state).subtracting(shown).isEmpty
+    }
+}
+
 /// The island as ActivityKit shows it.
 @MainActor
 final class ActivityKitIsland: AgentIsland {
@@ -54,6 +73,11 @@ final class ActivityKitIsland: AgentIsland {
     private var activity: Activity<AgentActivityAttributes>?
     /// The user swiped the island away while agents were listed.
     private var dismissed = false
+    /// The questions the island showed when it was swiped away: only a
+    /// question not among them brings it back (B665).
+    private var swipedWith: Set<String> = []
+    /// What the island was last sent.
+    private var lastSent: AgentActivityAttributes.ContentState?
     /// The update on its way, which the next one waits for.
     private var pending: Task<Void, Never>?
     /// Islands this process asked to end. Ending is asynchronous: until it
@@ -82,25 +106,39 @@ final class ActivityKitIsland: AgentIsland {
         // was still listed — for a long-running agent, the rest of the day.
         if let current = activity, !Self.takesUpdates(current.activityState) {
             Log.island.info("island: \(current.id, privacy: .public) is \(String(describing: current.activityState), privacy: .public) — letting it go")
-            if current.activityState == .dismissed { dismissed = true }
+            if current.activityState == .dismissed {
+                dismissed = true
+                swipedWith = lastSent.map(IslandReturn.questions) ?? []
+            }
             activity = nil
         }
         // Swiped away: not back on the next sweep, two seconds later. It
-        // returns once the agents it showed have all gone and new ones come.
+        // returns once the agents it showed have all gone and new ones come,
+        // or when a new question comes (``request(_:)``, B665).
         guard !dismissed else { return nil }
         if activity == nil { adoptOrphans() }
         return activity?.id
     }
 
     func request(_ state: AgentActivityAttributes.ContentState) -> String? {
-        guard enabled, !dismissed else { return nil }
+        guard enabled else { return nil }
+        if dismissed {
+            // Swiped away (B665): it stayed away for good while any agent
+            // was listed, a new question included.
+            guard IslandReturn.bringsBack(state, swipedWith: swipedWith) else { return nil }
+            Log.island.info("island: a new question brings back the island the user swiped away")
+            dismissed = false
+            swipedWith = []
+        }
         activity = try? Activity.request(attributes: AgentActivityAttributes(),
                                          content: content(state))
+        if activity != nil { lastSent = state }
         return activity?.id
     }
 
     func update(_ state: AgentActivityAttributes.ContentState) {
         guard let activity else { return }
+        lastSent = state
         let content = content(state)
         // One at a time, in order: an update still on its way is not
         // overtaken by the next one.
@@ -119,6 +157,8 @@ final class ActivityKitIsland: AgentIsland {
         end(live)
         activity = nil
         dismissed = false
+        swipedWith = []
+        lastSent = nil
     }
 
     /// Every island an earlier process left up, ended at launch (B441). A

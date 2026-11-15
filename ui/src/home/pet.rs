@@ -13,6 +13,10 @@
 //! has settled). It says the pet was seen (`{"ev": "pet-seen"}`, which
 //! lets it grow). A tap pets it, with a light tap of the haptics; seven
 //! quick taps, a pogo.
+//!
+//! Once it has hatched, and each time it grows into a new look, Home asks
+//! whether to make it the app icon ([`icon_offer`], B668): the host
+//! switches only on a yes (`{"ev": "icon", "switch": true}`).
 
 use std::{
     cell::{Cell, RefCell},
@@ -34,7 +38,11 @@ use super::{
 };
 use crate::ui::{
     bubble::speech,
+    button::{Size, Variant, button},
     companion::{Figure, companion},
+    section::{Inset, section},
+    tokens::token,
+    typography::TextToken,
 };
 
 use super::talk::{Fill, Visible, pet_name, speaker, talks, who, words};
@@ -394,6 +402,116 @@ fn perched(ctx: Ctx) -> AnyElement {
                 .pointer_events(PointerEvents::None)
                 .child(speech(saying)),
         )
+        .into_element()
+}
+
+/// Whether Home asks about the app icon now (B668): the host offers it,
+/// and no moment is playing (the hatch plays first).
+pub(crate) fn offers_icon(pet: &PetCtx) -> bool {
+    pet.showing.get().is_none()
+        && pet
+            .view
+            .with(|v| v.as_ref().is_some_and(|v| v.icon.is_some()))
+}
+
+/// The pet's size on the icon card.
+const OFFER_ART: f32 = 48.0;
+
+/// Home's question once the pet has hatched or grown into a new look
+/// (B668, the owner's call): 「把 App 图标换成墩墩吗？」 with 「换」 and
+/// 「先不换」. The host switches the icon only on 「换」, and asks no more
+/// about this look either way. An icon the person picked by hand makes
+/// 「先不换」 the default (the filled button).
+pub(crate) fn icon_offer(ctx: Ctx) -> AnyElement {
+    let pet_view = ctx.pet.view;
+    let offer = computed(move || pet_view.with(|v| v.as_ref().and_then(|v| v.icon.clone())));
+    let question = computed(move || {
+        offer.with(|o| {
+            o.as_ref()
+                .map(|o| t!("Make %@ the app icon?", arg1 = species_name(&o.species)))
+                .unwrap_or_default()
+        })
+    });
+    let keep_default = computed(move || offer.with(|o| o.as_ref().is_some_and(|o| o.keep_default)));
+    let figure = move || {
+        pet_view.with(|v| {
+            v.as_ref().and_then(look).map(|look| Figure::Pet {
+                look,
+                pose: Pose::Idle,
+            })
+        })
+    };
+    let answer = {
+        let tell = ctx.tell.clone();
+        move |switch: bool| {
+            let tell = tell.clone();
+            move || tell(json!({"ev": "icon", "switch": switch}))
+        }
+    };
+    let buttons = dynamic(move || {
+        let keep = keep_default.get();
+        let change = answer(true);
+        let not_yet = answer(false);
+        untracked(move || {
+            let (change_variant, not_yet_variant) = if keep {
+                (Variant::Secondary, Variant::Primary)
+            } else {
+                (Variant::Primary, Variant::Secondary)
+            };
+            view()
+                .flex_row()
+                .justify_end()
+                .gap(px(8.0))
+                .child(
+                    button(t!("Not Yet"))
+                        .variant(not_yet_variant)
+                        .size(Size::Md)
+                        .test_id("home-icon-not-yet")
+                        .on_press(not_yet),
+                )
+                .child(
+                    button(t!("Change"))
+                        .variant(change_variant)
+                        .size(Size::Md)
+                        .test_id("home-icon-change")
+                        .on_press(change),
+                )
+                .into_element()
+        })
+    });
+    let body = view()
+        .w_full()
+        .p(px(crate::ui::row::PADDING_X))
+        .gap(px(12.0))
+        .child(
+            view()
+                .flex_row()
+                .items_center()
+                .gap(px(12.0))
+                .child(
+                    view()
+                        .w(px(OFFER_ART))
+                        .h(px(OFFER_ART))
+                        .items_center()
+                        .justify_center()
+                        .accessibility_elements_hidden(true)
+                        .child(dynamic(move || match figure() {
+                            Some(f) => untracked(move || companion(move || f, OFFER_ART)),
+                            None => untracked(|| view().into_element()),
+                        })),
+                )
+                .child(
+                    TextToken::Headline
+                        .apply(text(move || question.get()))
+                        .flex_shrink(1.0)
+                        .text_color(move || token("foreground"))
+                        .role(AccessibilityRole::Header),
+                ),
+        )
+        .child(buttons);
+    section()
+        .item(body, Inset::Content)
+        .test_id("home-icon-offer")
         .into_element()
 }
 

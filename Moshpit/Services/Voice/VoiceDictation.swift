@@ -253,7 +253,8 @@ final class VoiceDictationController {
         var selected: DictationEngine?
         var lastError: Error?
         do {
-            for candidate in try await makeEngines(request, spoken) {
+            let candidates = try await makeEngines(request, spoken)
+            for (index, candidate) in candidates.enumerated() {
                 // Cancelled meanwhile: don't go on preparing the next one.
                 guard attempt == self.attempt else { break }
                 do {
@@ -264,6 +265,10 @@ final class VoiceDictationController {
                     }
                     try await candidate.start()
                     selected = candidate
+                    // B677: which engine actually runs, and how far down
+                    // the list it was.
+                    Log.voice.info(
+                        "voice engine: \(candidate.label, privacy: .public) (\(index + 1, privacy: .public) of \(candidates.count, privacy: .public))")
                     break
                 } catch let failure as DictationFailure where failure == .speechRecognitionDenied {
                     // Denial is a user decision, not an engine defect —
@@ -308,8 +313,9 @@ final class VoiceDictationController {
             do {
                 for try await update in engine.updates {
                     guard let self else { return }
-                    finalizedText = update.finalizedText
-                    volatileText = update.volatileText
+                    // One line, shown and inserted alike (B672).
+                    finalizedText = DictationTranscript.singleLine(update.finalizedText)
+                    volatileText = DictationTranscript.singleLine(update.volatileText)
                 }
             } catch {
                 guard let self, phase == .listening else { return }
@@ -349,14 +355,38 @@ final class VoiceDictationController {
     /// were typed into the terminal, with a Return after them if Send had
     /// started the finish.
     func finish() async -> String? {
+        await finish(submit: false)?.text
+    }
+
+    /// What a finish hands the terminal: the text, and whether Send may
+    /// press Return after it.
+    struct Commit: Equatable {
+        let text: String
+        let submit: Bool
+    }
+
+    /// ``finish()`` for Insert (`submit` false) and Send (`submit` true).
+    ///
+    /// Send presses Return only on what the user read (B676). The tap comes
+    /// before the engine's last word: Whisper decodes the whole recording
+    /// only now, its live preview a second or more behind the speech, and
+    /// Apple's engines may still revise their guess. The transcript that
+    /// comes back can name a different file, or carry words the preview
+    /// never showed — and Send used to press Return on it, executing a shell
+    /// command nobody had read. When the words changed (not their case, their
+    /// spacing or a sentence's punctuation: ``DictationTranscript/sameWords``)
+    /// the text is typed and left for the user to send.
+    func finish(submit: Bool) async -> Commit? {
         guard !finishClaimed else { return nil }
         finishClaimed = true
+        let shown = transcript
         let attempt = self.attempt
         await stopListening()
         guard attempt == self.attempt else { return nil }
         let text = transcript
         reset()
-        return text.isEmpty ? nil : text
+        guard !text.isEmpty else { return nil }
+        return Commit(text: text, submit: submit && DictationTranscript.sameWords(shown, text))
     }
 
     /// Abandon the session and discard the transcript.
@@ -428,7 +458,11 @@ final class VoiceDictationController {
         }
         finalPass = finishing
         defer { finalPass = nil }
+        let stopped = ContinuousClock.now
         let finalized = await WriteLane.wait(atMost: budget) { await finishing.value }
+        // B677: the wait between the tap and the text, whatever the engine.
+        Log.voice.info(
+            "voice finish: engine=\(engine.label, privacy: .public) wait=\(WhisperModelStore.seconds(ContinuousClock.now - stopped), privacy: .public)s finalized=\(finalized, privacy: .public)")
         if !finalized {
             // Out of budget. Stop the final pass where it can still be
             // stopped — a Whisper decode checks between windows, and would
@@ -476,5 +510,52 @@ enum DictationTranscript {
         guard wordlike.contains(first) else { return head + tail }
         let needsSpace = wordlike.contains(last) || clauseEnders.contains(last)
         return needsSpace ? head + " " + tail : head + tail
+    }
+
+    /// The two ways of writing Chinese.
+    enum ChineseScript: Sendable {
+        case simplified
+        case traditional
+    }
+
+    /// `text` with its Chinese characters in `script` (ICU's Hant-Hans
+    /// transform); everything else — English, punctuation, kana — as it was.
+    /// Nil `script` leaves the text alone.
+    static func converting(_ text: String, to script: ChineseScript?) -> String {
+        guard let script, !text.isEmpty else { return text }
+        let transform = StringTransform("Hant-Hans")
+        return text.applyingTransform(transform, reverse: script == .traditional) ?? text
+    }
+
+    /// A stretch of 2–16 characters said six or more times in a row is a
+    /// decoder stuck in a loop, not speech: keep it once. Pure.
+    ///
+    /// B670: Whisper turned "那如果有smart phone的话其实" into "SK-SK-SK-…" for
+    /// the rest of its token budget, temperature fallback and all; a person
+    /// saying the same thing six times running ("blah blah blah…") loses
+    /// the repeats, which is the cheaper mistake.
+    static func collapsingRepeats(_ text: String, minimumRepeats: Int = 6) -> String {
+        let chars = Array(text)
+        var out: [Character] = []
+        out.reserveCapacity(chars.count)
+        var i = 0
+        scan: while i < chars.count {
+            for length in 2 ... 16 where i + length * minimumRepeats <= chars.count {
+                let unit = chars[i ..< i + length]
+                var end = i + length
+                var count = 1
+                while end + length <= chars.count, chars[end ..< end + length].elementsEqual(unit) {
+                    count += 1
+                    end += length
+                }
+                guard count >= minimumRepeats else { continue }
+                out.append(contentsOf: unit)
+                i = end
+                continue scan
+            }
+            out.append(chars[i])
+            i += 1
+        }
+        return String(out)
     }
 }

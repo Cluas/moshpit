@@ -131,6 +131,10 @@ final class RustSSHKeyStore: SSHKeyStoreBacking {
         RustStoreCall.run("keys: remove") { try handle.remove(id: id.uuidString) }
     }
 
+    func markUsed(id: UUID) -> Bool {
+        RustStoreCall.value("keys: mark used") { try handle.markUsed(id: id.uuidString) } ?? false
+    }
+
     func reloadIfNeeded() { handle.reloadIfNeeded() }
 
     func keychainRefs(excluding: UUID?) -> Set<String>? {

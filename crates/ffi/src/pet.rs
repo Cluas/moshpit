@@ -12,8 +12,8 @@
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use moshpit_pet::{
-    EggPose, EggProgress, EggView, Look, Moment, PetInfo, PetRecord, PetView, Pose, Seed, Style,
-    Thresholds, egg, may_hatch, reconcile,
+    EggPose, EggProgress, EggView, IconOffer, Look, Moment, PetInfo, PetRecord, PetView, Pose,
+    Seed, Style, Thresholds, egg, icon_id, icon_look, may_hatch, reconcile,
 };
 use moshpit_store::Readiness;
 use moshpit_store::pet::{self as stored, Stored};
@@ -56,6 +56,11 @@ struct State {
     /// Counts the moments, so a page plays each once.
     moment_seq: u64,
     thresholds: Thresholds,
+    /// The app icon as the app last said (B668): the gallery id iOS shows,
+    /// and whether the person picked it by hand. None until it says.
+    icon: Option<(String, bool)>,
+    /// The look whose icon Home last asked about.
+    icon_asked: Option<String>,
 }
 
 /// The pet, its egg and the person's choices.
@@ -98,7 +103,9 @@ impl PetMachine {
             ready: s.egg.cracked(),
             taps: s.egg.taps,
         });
+        let icon = Self::icon_offer(s, pet.as_ref());
         PetView {
+            icon,
             style: s.style,
             shown: s.shown,
             may_hatch: matches!(s.stored, Stored::NoPet)
@@ -113,6 +120,33 @@ impl PetMachine {
             moment: s.moment,
             talk: s.talk,
         }
+    }
+
+    /// The icon Home offers now (B668): the pet's, once the app has said
+    /// which icon it shows, while the companion is shown, when it isn't the
+    /// pet's already and this look hasn't been asked about.
+    fn icon_offer(s: &State, pet: Option<&PetInfo>) -> Option<IconOffer> {
+        let pet = pet?;
+        let (current, by_hand) = s.icon.as_ref()?;
+        if !s.shown || s.style == Style::Minimal {
+            return None;
+        }
+        let id = icon_id(&pet.species, pet.traits.shiny);
+        let look = icon_look(&pet.species, pet.traits.shiny, pet.stage);
+        (*current != id && s.icon_asked.as_deref() != Some(look.as_str())).then(|| IconOffer {
+            id,
+            species: pet.species.clone(),
+            keep_default: *by_hand,
+        })
+    }
+
+    /// The look the pet has now, as an offer names it.
+    fn look_now(s: &State) -> Option<String> {
+        let Stored::Pet(record) = &s.stored else {
+            return None;
+        };
+        let pet = PetInfo::of(record, &s.thresholds);
+        Some(icon_look(&pet.species, pet.traits.shiny, pet.stage))
     }
 }
 
@@ -133,6 +167,8 @@ impl PetMachine {
             moment: None,
             moment_seq: 0,
             thresholds: Thresholds::MEDIUM,
+            icon: None,
+            icon_asked: stored::read_icon_asked(&defaults),
         };
         Arc::new(Self {
             defaults,
@@ -384,6 +420,32 @@ impl PetMachine {
         self.notify();
     }
 
+    /// The app icon iOS shows now (B668): its gallery id, and whether the
+    /// person picked it by hand. Home offers the pet's icon only once the
+    /// app has said.
+    pub fn set_icon(&self, current: String, by_hand: bool) {
+        let mut s = lock(&self.state);
+        if s.icon.as_ref() == Some(&(current.clone(), by_hand)) {
+            return;
+        }
+        s.icon = Some((current, by_hand));
+        drop(s);
+        self.notify();
+    }
+
+    /// The person answered Home's icon card (B668), either way: this look
+    /// is not asked about again; the next one is.
+    pub fn icon_answered(&self) {
+        let mut s = lock(&self.state);
+        let Some(look) = Self::look_now(&s) else {
+            return;
+        };
+        stored::write_icon_asked(&self.defaults, &Readiness::System, &look);
+        s.icon_asked = Some(look);
+        drop(s);
+        self.notify();
+    }
+
     /// The screens' message: `{"op": "pet", …}` ([`PetView`]), with `seq`
     /// counting the moments so a page plays each once.
     pub fn message(&self) -> String {
@@ -524,6 +586,64 @@ mod tests {
             1,
             "the iPad's task reached the phone"
         );
+    }
+
+    /// B668, the owner's call: after the hatch Home asks whether to make
+    /// the pet the app icon (「把 App 图标换成墩墩吗？」 换 / 先不换), and again
+    /// when it grows into a new look; nothing switches without a yes. An
+    /// icon picked by hand is still asked about, 「先不换」 the default.
+    #[test]
+    fn the_pet_offers_its_icon_once_a_look_and_never_switches_it() {
+        let prefs = Arc::new(Prefs::default());
+        let m = PetMachine::new(prefs.clone(), "phone".into());
+        m.cloud_unavailable();
+        m.agent_finished();
+        assert!(m.hatch(vec![1; 16], 1_800_000_000, 14));
+        assert!(
+            message(&m)["icon"].is_null(),
+            "not before the app says which icon it shows"
+        );
+        m.set_icon("default".into(), false);
+        let pet = message(&m)["pet"].clone();
+        let species = pet["species"].as_str().unwrap().to_owned();
+        let id = icon_id(&species, pet["traits"]["shiny"].as_bool().unwrap());
+        let offer = message(&m)["icon"].clone();
+        assert_eq!(
+            (
+                offer["id"].as_str(),
+                offer["species"].as_str(),
+                offer["keep_default"].as_bool()
+            ),
+            (Some(id.as_str()), Some(species.as_str()), Some(false))
+        );
+        // The pet's icon already: nothing to ask.
+        m.set_icon(id.clone(), false);
+        assert!(message(&m)["icon"].is_null());
+        // 先不换: this look isn't asked about again, after a relaunch either.
+        m.set_icon("pit".into(), true);
+        assert!(!message(&m)["icon"].is_null());
+        m.icon_answered();
+        assert!(message(&m)["icon"].is_null());
+        let relaunched = PetMachine::new(prefs.clone(), "phone".into());
+        relaunched.cloud_unavailable();
+        relaunched.set_icon("pit".into(), true);
+        assert!(message(&relaunched)["icon"].is_null(), "asked once a look");
+        // It grows into a new look: asked again; picked by hand, 先不换 first.
+        for _ in 0..10 {
+            relaunched.agent_finished();
+        }
+        assert!(
+            relaunched.seen(1_800_000_000 + 4 * 86_400).is_some(),
+            "it grew"
+        );
+        let offer = message(&relaunched)["icon"].clone();
+        assert_eq!(
+            (offer["id"].as_str(), offer["keep_default"].as_bool()),
+            (Some(id.as_str()), Some(true))
+        );
+        // The companion off: no card.
+        relaunched.set_choice("pixel".into(), false);
+        assert!(message(&relaunched)["icon"].is_null());
     }
 
     #[test]

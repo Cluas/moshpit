@@ -122,6 +122,34 @@ public enum PushRemoteNotification {
     /// the host where both ends of the turn were stamped.
     public static let doneSoundThreshold = 180
 
+    /// The connection's waiting card once a pushed `done` took a pane out of
+    /// the waiting set (B669): the newest question still standing, with the
+    /// count, silent — or nil when none stands, and the card goes. The card
+    /// used to keep its "+1" and its tap to the pane that had finished,
+    /// until the app next ran. `host` names the agent and the place when an
+    /// entry has none, as the app's own digest does.
+    public static func summary(after remaining: [PushStanding.Entry], conn: String, host: String,
+                               prefs: PushPrefs.Values = .default) -> UNMutableNotificationContent? {
+        guard let newest = remaining.max(by: { $0.since < $1.since }) else { return nil }
+        let content = UNMutableNotificationContent()
+        let who = newest.agent.flatMap { $0.isEmpty ? nil : $0 } ?? host
+        let stored = newest.location?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let detail = newest.title?.trimmingCharacters(in: .whitespacesAndNewlines)
+        AgentNotificationCopy.attention(agent: who, standingCount: remaining.count,
+                                        detail: prefs.showDetail ? detail : nil,
+                                        place: stored.isEmpty ? host : stored,
+                                        edge: false, sound: false, into: content)
+        content.userInfo = [
+            AgentNotifications.connectionKey: conn,
+            AgentNotifications.paneKey: newest.pane,
+            agentKey: newest.agent ?? "",
+            stateKey: "attention",
+            detailKey: detail ?? "",
+        ]
+        content.categoryIdentifier = ""
+        return content
+    }
+
     /// Render a status into notification content.
     ///
     /// `attentionEdge` is the caller's answer to the one question that decides

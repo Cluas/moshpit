@@ -159,12 +159,93 @@ impl AppIconOption {
 pub mod icons {
     use super::AppIconOption;
 
-    pub const ALL: [AppIconOption; 9] = [
+    pub const ALL: [AppIconOption; 22] = [
         AppIconOption {
             id: "default",
             name: "Moshpit",
             alternate_name: None,
             preview_asset: "IconPreview-Moshpit",
+        },
+        // The pet peeking over a pane, a species each and its shiny
+        // (B668): the hatched pet offers its own; then the three panes that
+        // were the primary until the egg took over.
+        AppIconOption {
+            id: "tun",
+            name: "Tun",
+            alternate_name: Some("AppIcon-Tun"),
+            preview_asset: "IconPreview-Tun",
+        },
+        AppIconOption {
+            id: "tun-shiny",
+            name: "Shiny Tun",
+            alternate_name: Some("AppIcon-TunShiny"),
+            preview_asset: "IconPreview-TunShiny",
+        },
+        AppIconOption {
+            id: "coo",
+            name: "Coo",
+            alternate_name: Some("AppIcon-Coo"),
+            preview_asset: "IconPreview-Coo",
+        },
+        AppIconOption {
+            id: "coo-shiny",
+            name: "Shiny Coo",
+            alternate_name: Some("AppIcon-CooShiny"),
+            preview_asset: "IconPreview-CooShiny",
+        },
+        AppIconOption {
+            id: "dig",
+            name: "Dig",
+            alternate_name: Some("AppIcon-Dig"),
+            preview_asset: "IconPreview-Dig",
+        },
+        AppIconOption {
+            id: "dig-shiny",
+            name: "Shiny Dig",
+            alternate_name: Some("AppIcon-DigShiny"),
+            preview_asset: "IconPreview-DigShiny",
+        },
+        AppIconOption {
+            id: "hex",
+            name: "Hex",
+            alternate_name: Some("AppIcon-Hex"),
+            preview_asset: "IconPreview-Hex",
+        },
+        AppIconOption {
+            id: "hex-shiny",
+            name: "Shiny Hex",
+            alternate_name: Some("AppIcon-HexShiny"),
+            preview_asset: "IconPreview-HexShiny",
+        },
+        AppIconOption {
+            id: "ether",
+            name: "Ether",
+            alternate_name: Some("AppIcon-Ether"),
+            preview_asset: "IconPreview-Ether",
+        },
+        AppIconOption {
+            id: "ether-shiny",
+            name: "Shiny Ether",
+            alternate_name: Some("AppIcon-EtherShiny"),
+            preview_asset: "IconPreview-EtherShiny",
+        },
+        AppIconOption {
+            id: "moth",
+            name: "Lumen",
+            alternate_name: Some("AppIcon-Moth"),
+            preview_asset: "IconPreview-Moth",
+        },
+        AppIconOption {
+            id: "moth-shiny",
+            name: "Shiny Lumen",
+            alternate_name: Some("AppIcon-MothShiny"),
+            preview_asset: "IconPreview-MothShiny",
+        },
+        AppIconOption {
+            id: "classic",
+            name: "Classic",
+            alternate_name: Some("AppIcon-Classic"),
+            preview_asset: "IconPreview-Classic",
         },
         AppIconOption {
             id: "pit",

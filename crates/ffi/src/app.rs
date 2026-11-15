@@ -546,18 +546,17 @@ pub fn shortcuts_page_message(
     })
 }
 
-/// What Settings › Shortcuts told (`{"ev": …}`, as JSON), checked against
-/// the store's `shortcuts`: none for an event it does not know, a shortcut
-/// it does not have, a built-in's edit or delete, or a move off the bar.
+/// What Settings › Shortcuts told (its page event), checked against the
+/// store's `shortcuts`: none for a shortcut it does not have, a built-in's
+/// edit or delete, or a move off the bar.
 #[uniffi::export]
 pub fn shortcuts_list_op(
-    message_json: String,
+    event: crate::pages::ShortcutsEvent,
     shortcuts: Vec<ShortcutRecord>,
 ) -> Option<ShortcutListOp> {
-    let message: serde_json::Value = serde_json::from_str(&message_json).ok()?;
     let to = |n: usize| u32::try_from(n).unwrap_or(u32::MAX);
     Some(
-        match shortcuts::list_op(&message, &self::shortcuts(shortcuts))? {
+        match shortcuts::list_op(&event.told(), &self::shortcuts(shortcuts))? {
             ListOp::Done => ShortcutListOp::Done,
             ListOp::Add => ShortcutListOp::Add,
             ListOp::Edit(id) => ShortcutListOp::Edit { id: id.to_string() },

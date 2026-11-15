@@ -180,55 +180,55 @@
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Die Spracheingabe nutzt das Mikrofon, damit du Befehle und Prompts direkt ins Terminal sprechen kannst. Audio wird auf diesem Gerät in Text umgewandelt, mit Apples Sprachmodell oder einem geladenen Whisper-Modell, und nirgendwohin hochgeladen."
+            "value": "Die Spracheingabe nutzt das Mikrofon, damit du Befehle und Prompts direkt ins Terminal sprechen kannst. Audio wird auf diesem Gerät in Text umgewandelt, mit Apples Sprachmodell oder einem geladenen Modell, und nirgendwohin hochgeladen."
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Voice input uses the microphone so you can dictate commands and prompts into your terminal. Your audio is transcribed on this device — by Apple's speech models or by a Whisper model you download — and is never uploaded anywhere."
+            "value": "Voice input uses the microphone so you can dictate commands and prompts into your terminal. Your audio is transcribed on this device — by Apple's speech models or by a speech model you download — and is never uploaded anywhere."
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "La entrada de voz usa el micrófono para que puedas dictar comandos y prompts directamente al terminal. El audio se transcribe en este dispositivo, con el modelo de voz de Apple o con un modelo Whisper que hayas descargado, y no se sube a ningún sitio."
+            "value": "La entrada de voz usa el micrófono para que puedas dictar comandos y prompts directamente al terminal. El audio se transcribe en este dispositivo, con el modelo de voz de Apple o con un modelo de voz que hayas descargado, y no se sube a ningún sitio."
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "La saisie vocale utilise le micro pour que vous puissiez dicter commandes et prompts directement dans le terminal. L’audio est transcrit sur cet appareil, avec le modèle vocal d’Apple ou un modèle Whisper que vous avez téléchargé, et n’est envoyé nulle part."
+            "value": "La saisie vocale utilise le micro pour que vous puissiez dicter commandes et prompts directement dans le terminal. L’audio est transcrit sur cet appareil, avec le modèle vocal d’Apple ou un modèle vocal que vous avez téléchargé, et n’est envoyé nulle part."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "音声入力はマイクを使い、コマンドやプロンプトをターミナルに向けて話せるようにします。音声はこの端末上で、Apple の音声モデルまたはダウンロードした Whisper モデルによって書き起こされ、どこにもアップロードされません。"
+            "value": "音声入力はマイクを使い、コマンドやプロンプトをターミナルに向けて話せるようにします。音声はこの端末上で、Apple の音声モデルまたはダウンロードした音声モデルによって書き起こされ、どこにもアップロードされません。"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "음성 입력에 마이크를 사용해 명령과 프롬프트를 터미널에 말로 입력할 수 있습니다. 오디오는 Apple 음성 모델이나 다운로드한 Whisper 모델로 이 기기에서 텍스트로 바뀌며, 어디에도 업로드되지 않습니다."
+            "value": "음성 입력에 마이크를 사용해 명령과 프롬프트를 터미널에 말로 입력할 수 있습니다. 오디오는 Apple 음성 모델이나 다운로드한 음성 모델로 이 기기에서 텍스트로 바뀌며, 어디에도 업로드되지 않습니다."
           }
         },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
-            "value": "A entrada de voz usa o microfone para você ditar comandos e prompts direto no terminal. O áudio é transcrito neste aparelho, com o modelo de voz da Apple ou com um modelo Whisper que você baixou, e não é enviado para lugar nenhum."
+            "value": "A entrada de voz usa o microfone para você ditar comandos e prompts direto no terminal. O áudio é transcrito neste aparelho, com o modelo de voz da Apple ou com um modelo de voz que você baixou, e não é enviado para lugar nenhum."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "语音输入要用麦克风，这样你可以把命令和提示词直接说进终端。音频在这台设备上转写，用 Apple 的语音模型或你下载的 Whisper 模型，不会上传到任何地方。"
+            "value": "语音输入要用麦克风，这样你可以把命令和提示词直接说进终端。音频在这台设备上转写，用 Apple 的语音模型或你下载的语音模型，不会上传到任何地方。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "語音輸入需要使用麥克風，這樣你可以把指令和提示詞直接說進終端機。音訊會在這部裝置上轉寫，用 Apple 的語音模型或你下載的 Whisper 模型，不會上傳到任何地方。"
+            "value": "語音輸入需要使用麥克風，這樣你可以把指令和提示詞直接說進終端機。音訊會在這部裝置上轉寫，用 Apple 的語音模型或你下載的語音模型，不會上傳到任何地方。"
           }
         }
       }

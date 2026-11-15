@@ -117,6 +117,9 @@ protocol CoreTerminalViewDelegate: AnyObject {
     var surfaceScrollsHostRows: Bool { get }
     /// A horizontal swipe switches panes or windows.
     var surfaceCanSwitch: Bool { get }
+    /// The shortcut bar's Ctrl is armed: the next character typed is a
+    /// control chord (B570), even one an input method would compose (B691).
+    var surfaceCtrlArmed: Bool { get }
     func surface(_ surface: CoreTerminalView, switchForward forward: Bool)
     /// The sideways drag is the host's to move as it goes
     /// (``TerminalSwipe``), not a switch on the lift.
@@ -156,6 +159,7 @@ extension CoreTerminalViewDelegate {
     func surface(_ surface: CoreTerminalView, click col: Int, row: Int) { surface.clickLocal(col: col, row: row) }
     var surfaceScrollsElsewhere: Bool { false }
     var surfaceCanSwitch: Bool { false }
+    var surfaceCtrlArmed: Bool { false }
     func surface(_ surface: CoreTerminalView, switchForward forward: Bool) {}
     var surfaceTracksSwipe: Bool { false }
     func surface(_ surface: CoreTerminalView, swipe: TerminalSwipe) {}

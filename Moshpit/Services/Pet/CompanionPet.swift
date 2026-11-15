@@ -59,6 +59,7 @@ final class CompanionPet {
             NSUbiquitousKeyValueStore.default.synchronize()
             machine.cloudChanged()
         }
+        syncIcon()
     }
 
     /// `{"op": "pet", …}`, for Home and Settings.
@@ -94,6 +95,34 @@ final class CompanionPet {
     }
 
     func rename(_ name: String) { machine.rename(name: name, now: Self.now) }
+
+    /// The app icon iOS shows and whether it was picked by hand (B668):
+    /// Home's card offers the pet's icon from it.
+    func syncIcon(_ settings: AppSettings = .shared) {
+        machine.setIcon(current: AppIconModel().selectedID(settings),
+                        byHand: settings.appIconPickedByHand)
+    }
+
+    /// The person answered Home's icon card (B668): 「换」 switches to the
+    /// pet's icon through the gallery's own call; either way this look is
+    /// not asked about again. Never switched otherwise.
+    func answerIcon(switch change: Bool, settings: AppSettings = .shared) {
+        defer { machine.iconAnswered() }
+        guard change, let id = Self.offeredIcon(machine.message()) else { return }
+        Log.ui.notice("pet: switching the app icon to \(id, privacy: .public)")
+        AppIconModel().select(id, settings: settings, byHand: false) { [weak self] _ in
+            self?.syncIcon(settings)
+        }
+    }
+
+    /// The icon Home's card offers, from the screens' message.
+    nonisolated static func offeredIcon(_ message: String) -> String? {
+        guard let data = message.data(using: .utf8),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let icon = object["icon"] as? [String: Any]
+        else { return nil }
+        return icon["id"] as? String
+    }
 
     /// Settings › Appearance: 「让它说话」.
     func setTalk(_ on: Bool) { machine.setTalk(talk: on) }

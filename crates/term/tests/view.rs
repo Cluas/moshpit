@@ -219,6 +219,32 @@ fn v10_auto_period_after_two_spaces() {
     assert_eq!(typed(&ime.replace(3, 4, ". ")), "⌫  ");
 }
 
+/// B690: a period the person types after deleting a space is a period. The
+/// keyboard's double-space deletes the space and inserts ". " in the same
+/// turn of the event loop; a person who deletes a space and types "."
+/// later (`example .com` mended to `example.com`) got a space instead:
+/// the delete left the auto-period armed until the next insertion.
+#[test]
+fn b690_a_period_typed_after_a_deleted_space_is_a_period() {
+    let mut ime = focused();
+    ime.insert("example ");
+    assert_eq!(typed(&ime.delete_backward()), "⌫");
+    ime.turn_end();
+    assert_eq!(typed(&ime.insert(".")), ".", "the person's period");
+    assert_eq!(typed(&ime.insert("com")), "com");
+    // Full-width punctuation is the person's whatever came before it.
+    let mut ime = focused();
+    ime.insert("你好 ");
+    ime.delete_backward();
+    assert_eq!(typed(&ime.insert("。")), "。");
+    // The keyboard's own double-space, in one turn, still sends spaces.
+    let mut ime = focused();
+    ime.insert("ls ");
+    ime.delete_backward();
+    assert_eq!(typed(&ime.insert(". ")), "  ");
+    ime.turn_end();
+}
+
 #[test]
 fn graphemes_are_one_character() {
     let mut ime = focused();

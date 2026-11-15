@@ -420,8 +420,6 @@ mod add {
             algorithm: Algorithm::Ed25519,
             require_face_id: true,
             secure_enclave: false,
-            hosts: vec!["m1-pro".into(), "nas".into()],
-            bound: vec!["nas".into()],
             pem: Pem {
                 empty: true,
                 encrypted: false,
@@ -462,7 +460,6 @@ mod add {
             "PROTECTION",
             "Require Face ID",
             "Store in Secure Enclave",
-            "BIND TO HOSTS",
             "Fingerprint",
             "—:—:—:—:—:—:—:—:—:—  (shown after generation)",
             "Generate",
@@ -477,8 +474,10 @@ mod add {
         assert_eq!(natives.prop(method, "selected"), Some(json!(0)));
         let face_id = natives.find("moshpit/switch", "add-key-face-id").unwrap();
         assert_eq!(natives.prop(face_id, "on"), Some(json!(true)));
-        assert!(app.screen().selected("id:add-key-host-nas").unwrap());
-        assert!(!app.screen().selected("id:add-key-host-m1-pro").unwrap());
+        // B602: no BIND TO HOSTS — a label stored on the key that bound
+        // nothing, which SSH Keys then showed as the hosts it is used for.
+        assert!(!app.screen().shows("BIND TO HOSTS"));
+        assert!(app.screen().id("id:add-key-host-nas").is_err());
         // Generate waits for the host's word.
         assert!(!app.screen().enabled("id:add-key-submit").unwrap());
         post_form(
@@ -492,8 +491,6 @@ mod add {
         assert!(app.screen().enabled("id:add-key-submit").unwrap());
         app.press("id:add-key-submit").unwrap();
         assert_eq!(next(&told), json!({"ev": "submit"}));
-        app.press("id:add-key-host-m1-pro").unwrap();
-        assert_eq!(next(&told), json!({"ev": "host", "name": "m1-pro"}));
         emit(&mut app, face_id, "change", json!(false));
         assert_eq!(
             next(&told),

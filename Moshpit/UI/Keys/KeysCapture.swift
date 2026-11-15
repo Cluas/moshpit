@@ -21,8 +21,8 @@ enum KeysCapture {
         return arguments[at + 1] == "empty"
     }
 
-    /// A Secure Enclave key, an imported key bound to two hosts, and an RSA
-    /// key nobody used since March: each kind of row.
+    /// A Secure Enclave key, an imported key two connections sign in with,
+    /// and an RSA key nobody used since March: each kind of row.
     static let records: [SSHKeyRecord] = {
         let march = DateComponents(calendar: Calendar(identifier: .gregorian), year: 2026, month: 3, day: 9).date!
         return [
@@ -31,13 +31,13 @@ enum KeysCapture {
                 name: "iPad mini", algorithm: .seP256, comment: "moshpit",
                 fingerprint: "SHA256:qK7mU3hVr1ycWJ5n0pE2aLx9TfB4gD6sZo8iNcR1yHk",
                 publicKey: "ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTY= moshpit",
-                source: .secureEnclave, boundHosts: ["m1-pro"]),
+                source: .secureEnclave),
             SSHKeyRecord(
                 id: UUID(uuidString: "1A000000-0000-4000-8000-000000000002")!,
                 name: "work laptop", algorithm: .ed25519, comment: "dev@laptop",
                 fingerprint: "SHA256:Hc4vXw9LmQ2tR7yP0aS3dF6gJ8kZ1xC5vB2nM4qW7eE",
                 publicKey: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExample dev@laptop",
-                source: .imported, boundHosts: ["m1-pro", "nas"]),
+                source: .imported),
             SSHKeyRecord(
                 id: UUID(uuidString: "0D000000-0000-4000-8000-000000000003")!,
                 name: "old build box", algorithm: .rsa4096, bits: 3072, comment: "",
@@ -46,6 +46,13 @@ enum KeysCapture {
                 source: .generated, lastUsedAt: march),
         ]
     }()
+
+    /// The connections that sign in with each of ``records``, as the rows
+    /// say (B602): a capture run's connections don't name these keys.
+    static let users: [UUID: [String]] = [
+        UUID(uuidString: "5E000000-0000-4000-8000-000000000001")!: ["m1-pro"],
+        UUID(uuidString: "1A000000-0000-4000-8000-000000000002")!: ["m1-pro", "nas"],
+    ]
 
     /// The store a capture run's pages read: these keys, in memory.
     @MainActor static let store = SSHKeyStore.capture(seedsNone ? [] : records)

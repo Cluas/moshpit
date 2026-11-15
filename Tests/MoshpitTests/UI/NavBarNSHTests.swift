@@ -174,8 +174,18 @@ struct NavBarNSHTests {
         // beside it (NSH e78cce60 changed how a child's slop meets its
         // parent's bounds; the square needs no slop).
         let window = try #require(surface.window)
-        let frame = add.convert(add.bounds, to: window)
+        // Measured once the bar has settled: run 13 measured ＋ at
+        // (52, 0) — the leading side, mid-layout — and every point inside
+        // it reached the view laid over it then.
+        var frame = add.convert(add.bounds, to: window)
+        for _ in 0..<20 {
+            try? await Task.sleep(for: .milliseconds(100))
+            let now = add.convert(add.bounds, to: window)
+            if now == frame { break }
+            frame = now
+        }
         #expect(frame.width >= 43.5 && frame.height >= 43.5, "＋: \(frame)")
+        #expect(frame.midX > surface.frame.midX, "＋ is on the bar's leading side: \(frame) in \(surface.frame)")
         for (side, point) in [("left", CGPoint(x: frame.minX + 3, y: frame.midY)),
                               ("right", CGPoint(x: frame.maxX - 3, y: frame.midY)),
                               ("top", CGPoint(x: frame.midX, y: frame.minY + 3)),

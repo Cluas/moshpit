@@ -123,6 +123,17 @@ final class AppSettings {
         set { withMutation(keyPath: \.appIconId) { put(newValue, "moshpit.settings.appIconId") } }
     }
 
+    /// The person picked the icon by hand in the gallery (B668): the pet's
+    /// icon card then makes 「先不换」 the default. One picked before this was
+    /// kept counts as picked by hand; the card's own switch doesn't.
+    var appIconPickedByHand: Bool {
+        get {
+            access(keyPath: \.appIconPickedByHand)
+            return get("moshpit.settings.appIconPickedByHand", appIconId != AppIconCatalog.primary.id)
+        }
+        set { withMutation(keyPath: \.appIconPickedByHand) { put(newValue, "moshpit.settings.appIconPickedByHand") } }
+    }
+
     /// Monospaced font family for the terminal. "system" = the SF Mono system
     /// font; otherwise a `UIFont(name:)` family (see TerminalFont.families).
     var fontName: String {
@@ -425,12 +436,18 @@ final class AppSettings {
         }
     }
 
-    /// Whisper language code ("zh", "en"…). Empty = let Whisper detect it
-    /// from the audio, which is a better default than any guess from system
-    /// configuration.
+    /// Whisper language code ("zh", "en"…) the user pinned. Empty = let
+    /// Whisper detect it from the audio, which beat pinning even on mixed
+    /// Chinese–English speech (B670: 16.1% against 30.2% error on 50 real
+    /// clips, docs/nsh/ASR-2026-11.md).
+    ///
+    /// Stored under a new key. The old `moshpit.settings.whisperLanguage` held
+    /// the language the app preselected the first time Whisper was picked,
+    /// indistinguishable from one the user chose, so every install starts on
+    /// auto-detect once; 1.0.8 still reads the old key.
     var whisperLanguage: String {
-        get { access(keyPath: \.whisperLanguage); return get("moshpit.settings.whisperLanguage", "") }
-        set { withMutation(keyPath: \.whisperLanguage) { put(newValue, "moshpit.settings.whisperLanguage") } }
+        get { access(keyPath: \.whisperLanguage); return get("moshpit.settings.whisperLanguagePinned", "") }
+        set { withMutation(keyPath: \.whisperLanguage) { put(newValue, "moshpit.settings.whisperLanguagePinned") } }
     }
 
     /// WhisperKit model variant. Empty = use whichever supported model is

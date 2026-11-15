@@ -74,7 +74,8 @@ pub struct Ime {
     /// the platform's event loop ([`Ime::turn_end`] ends the wait).
     phantom_reinsert: bool,
     /// The last delete removed a space at the end: an auto-period may
-    /// follow.
+    /// follow, in the same turn ([`Ime::turn_end`] ends the wait; a period
+    /// typed after it is the person's, B690).
     auto_period_space: bool,
 }
 
@@ -234,9 +235,12 @@ impl Ime {
     /// of a selection it deleted within that turn; a Return after it is
     /// the person's (B410). Without this, every delete into the remote's
     /// text (a third-party keyboard selects the one character before the
-    /// caret: the phantom) left the next Return swallowed.
+    /// caret: the phantom) left the next Return swallowed. The keyboard's
+    /// double-space period comes in that turn too; a period typed after a
+    /// delete of a space is the person's (B690).
     pub fn turn_end(&mut self) {
         self.phantom_reinsert = false;
+        self.auto_period_space = false;
     }
 
     /// UIKit putting back the phantom it just deleted: only the document
